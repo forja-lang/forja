@@ -148,14 +148,26 @@ impl ForjaFast {
 
         // Primera pasada: indexar labels, funciones, y calcular vars_size
         let mut label_positions: HashMap<usize, usize> = HashMap::new();
+        // Pre-calcular rangos de funciones para limitar escaneo de vars_size
+        let mut func_ranges: Vec<(usize, usize)> = Vec::new(); // (start, end)
+        for (i, op) in self.bytecode.iter().enumerate() {
+            if let Opcode::FunctionDef(_, _) = op {
+                func_ranges.push((i, self.bytecode.len())); // end temporal
+                if func_ranges.len() > 1 {
+                    let prev = func_ranges.len() - 2;
+                    func_ranges[prev].1 = i; // el FunctionDef anterior termina aquí
+                }
+            }
+        }
+
         for (i, op) in self.bytecode.iter().enumerate() {
             match op {
                 Opcode::FunctionDef(n, params) => {
-                    // Calcular vars_size: escanear desde ip+1 hasta el próximo FunctionDef o Halt
+                    // Calcular vars_size: solo escanear el cuerpo de la función
                     let mut max_idx: usize = params.len();
-                    for j in (i + 1)..self.bytecode.len() {
+                    let end = func_ranges.iter().find(|r| r.0 == i).map(|r| r.1).unwrap_or(self.bytecode.len());
+                    for j in (i + 1)..end {
                         match &self.bytecode[j] {
-                            Opcode::FunctionDef(_, _) | Opcode::Halt => break,
                             Opcode::LoadIdx(idx) | Opcode::StoreIdx(idx) | Opcode::DeclareIdx(idx, _) => {
                                 if *idx + 1 > max_idx { max_idx = *idx + 1; }
                             }
@@ -235,11 +247,11 @@ impl ForjaFast {
     }
 
     pub fn ejecutar(&mut self) -> Result<(), ErrFast> {
-        // Decidir automáticamente si usar uops basado en la presencia de opcodes compuestos
-        if tiene_opcodes_compuestos(&self.bytecode) {
-            // Expandir y ejecutar como uops si hay opcodes compuestos
-            return self.ejecutar_uops();
-        }
+        // NOTA: No redirigir automáticamente a ejecutar_uops() cuando hay opcodes compuestos.
+        // ejecutar() ya maneja correctamente todos los opcodes compuestos (DeclareEnteroOp, etc.)
+        // El pipeline de uops es una optimización opt-in que se llama explícitamente.
+        // La redirección automática causaba bugs con DeclareIdx después de Add/Call,
+        // ya que en uops DeclareIdx se expande a DeclareVar (sin pop del stack).
 
         let len = self.bytecode.len();
 

@@ -207,10 +207,9 @@ impl ForjaVMOpt {
     }
 
     pub fn ejecutar(&mut self) -> Result<(), ErrorVMOpt> {
-        // Decidir automáticamente si usar uops basado en la presencia de opcodes compuestos
-        if tiene_opcodes_compuestos(&self.bytecode) {
-            return self.ejecutar_uops();
-        }
+        // NOTA: No redirigir automáticamente a ejecutar_uops().
+        // ejecutar() maneja correctamente todos los opcodes compuestos inline.
+        // La redirección automática causaba bugs en el pipeline de uops.
 
         let len = self.bytecode.len();
 
