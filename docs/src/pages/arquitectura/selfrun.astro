@@ -1,0 +1,83 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Self-run — Forja">
+  <h1>Self-run (Ejecutable autónomo)</h1>
+
+  <p><strong>Archivo:</strong> <code>src/selfrun.rs</code></p>
+
+  <p>El módulo que permite que <code>forja.exe</code> funcione como <strong>runtime autónomo</strong> cuando tiene bytecode incrustado al final del archivo.</p>
+
+  <div class="info">💡 <strong>Idea brillante:</strong> Un solo binario (forja.exe) funciona como compilador <strong>y</strong> como runtime. Cuando genera un ejecutable con <code>forja build</code>, se copia a sí mismo y le agrega el bytecode al final.</div>
+
+  <h2>¿Qué hace <code>try_selfrun()</code>?</h2>
+
+  <pre><code>1. Abrir el propio .exe como archivo
+2. Leer los últimos 8 bytes
+3. Verificar si contienen el magic "FBC\0"
+4. Si sí → leer el tamaño del bytecode (u32)
+5. Leer el bytecode desde el archivo
+6. Deserializar y ejecutar en la VM
+7. Si no hay magic → funcionar como CLI normal</code></pre>
+
+  <h2>Código</h2>
+
+  <pre><code><span class="kw">pub fn</span> try_selfrun() -> Option&lt;()&gt; &lbrace;
+    <span class="kw">let</span> exe_path = std::env::current_exe().ok()?;
+    <span class="kw">let mut</span> file = fs::File::open(&exe_path).ok()?;
+    <span class="kw">let</span> file_len = file.metadata().ok()?.len();
+
+    <span class="co">// Leer últimos 8 bytes (footer)</span>
+    file.seek(SeekFrom::End(-8)).ok()?;
+    <span class="kw">let mut</span> footer = [0u8; 8];
+    file.read_exact(&mut footer).ok()?;
+
+    <span class="co">// Verificar magic "FBC\0"</span>
+    <span class="kw">if</span> &footer[4..8] != b<span class="st">"FBC\0"</span> &lbrace;
+        <span class="kw">return</span> None;  <span class="co">// no hay bytecode → modo CLI</span>
+    &rbrace;
+
+    <span class="co">// Leer tamaño y bytecode</span>
+    <span class="kw">let</span> bc_size = u32::from_le_bytes(...) <span class="kw">as</span> u64;
+    <span class="kw">let</span> bc_start = file_len - 8 - bc_size;
+    file.seek(SeekFrom::Start(bc_start)).ok()?;
+    <span class="kw">let mut</span> bytecode_data = vec![0u8; bc_size <span class="kw">as</span> usize];
+    file.read_exact(&mut bytecode_data).ok()?;
+
+    <span class="co">// Deserializar y ejecutar</span>
+    <span class="kw">let</span> opcodes = bytecode::deserializar_bytecode(&bytecode_data)?;
+    <span class="kw">let mut</span> vm = ForjaVM::new();
+    vm.cargar_bytecode(opcodes);
+    vm.ejecutar().ok()?;
+
+    Some(())
+&rbrace;</code></pre>
+
+  <h2>Integración con main()</h2>
+
+  <pre><code><span class="kw">fn</span> main() &lbrace;
+    <span class="co">// Intentar self-run primero</span>
+    <span class="kw">if</span> selfrun::try_selfrun().is_some() &lbrace;
+        <span class="kw">return</span>;  <span class="co">// el bytecode se ejecutó, salir</span>
+    &rbrace;
+
+    <span class="co">// No hay bytecode: funcionar como CLI</span>
+    <span class="kw">let</span> args: Vec&lt;String&gt; = env::args().collect();
+    <span class="co">// ... manejar comandos ...</span>
+&rbrace;</code></pre>
+
+  <h2>Formato del ejecutable generado</h2>
+
+  <pre><code>┌─────────────────────────────────────┐
+│  forja.exe                           │
+│  (código del compilador + VM)       │
+├─────────────────────────────────────┤
+│  bytecode.fbc                        │
+│  (tu programa compilado)            │
+├─────────────────────────────────────┤
+│  [tamaño: u32 LE] + ["FBC\0"]       │  ← 8 bytes de footer
+└─────────────────────────────────────┘</code></pre>
+
+  <div class="tip"><strong>🔧 0 dependencias:</strong> Este sistema usa solo <code>std::fs</code>, <code>std::env</code>. No necesita scripts batch, ni runtimes, ni intérpretes externos. Un solo .exe que funciona en cualquier PC con Windows.</div>
+</Layout>

@@ -1,0 +1,97 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Máquina Virtual (VM) — Forja">
+  <h1>Máquina Virtual</h1>
+
+  <p><strong>Archivo:</strong> <code>src/vm.rs</code></p>
+
+  <p>VM <strong>stack-based</strong> que interpreta bytecode Forja. Permite ejecutar programas sin compilar a Rust.</p>
+
+  <h2>Arquitectura interna</h2>
+
+  <pre><code><span class="kw">pub struct</span> ForjaVM &lbrace;
+    ip: usize,                           <span class="co">// Instruction Pointer</span>
+    stack: Vec&lt;ValorVM&gt;,                  <span class="co">// Pila de datos</span>
+    call_stack: Vec&lt;Frame&gt;,               <span class="co">// Pila de llamadas</span>
+    variables: Vec&lt;HashMap&lt;String, ValorVM&gt;&gt;, <span class="co">// Ámbitos</span>
+    funciones: HashMap&lt;String, usize&gt;,    <span class="co">// nombre → posición</span>
+    bytecode: Vec&lt;Opcode&gt;,                <span class="co">// código a ejecutar</span>
+    output: Vec&lt;String&gt;,                  <span class="co">// output capturado</span>
+&rbrace;</code></pre>
+
+  <h2>Sistema de valores</h2>
+
+  <pre><code><span class="kw">pub enum</span> ValorVM &lbrace;
+    Entero(i64),
+    Decimal(f64),
+    Texto(String),
+    Booleano(bool),
+    Nulo,
+    Objeto(ObjetoRef),  <span class="co">// Rc&lt;RefCell&lt;ObjetoVM&gt;&gt;</span>
+&rbrace;</code></pre>
+
+  <div class="info">💡 Los objetos usan <code>Rc&lt;RefCell&gt;</code> para ownership compartido con mutabilidad interior, permitiendo que múltiples referencias apunten al mismo objeto en el heap.</div>
+
+  <h2>Ciclo de ejecución</h2>
+
+  <pre><code><span class="kw">loop</span> &lbrace;
+    <span class="kw">let</span> opcode = self.bytecode[self.ip].clone();
+    self.ip += 1;
+    <span class="kw">match</span> opcode &lbrace;
+        Opcode::PushEntero(n)   => stack.push(ValorVM::Entero(n)),
+        Opcode::Add             => &lbrace; <span class="co">// pop b, pop a, push a + b</span> &rbrace;
+        Opcode::Jump(target)    => self.ip = target,
+        Opcode::JumpSiFalso(t)  => &lbrace; <span class="co">// pop cond, saltar si falsy</span> &rbrace;
+        Opcode::Print           => &lbrace; <span class="co">// pop, println, guardar en output</span> &rbrace;
+        Opcode::Halt            => <span class="kw">break</span>,
+        <span class="co">// ~30 opcodes más...</span>
+    &rbrace;
+&rbrace;</code></pre>
+
+  <h2>Llamadas a funciones</h2>
+
+  <pre><code>Opcode::Call(nombre, nargs) => &lbrace;
+    <span class="co">// 1. Buscar label de la función</span>
+    <span class="co">// 2. Guardar frame de retorno en call_stack</span>
+    <span class="co">// 3. Crear nuevo ámbito con parámetros como variables</span>
+    <span class="co">// 4. Saltar al cuerpo de la función (self.ip = label)</span>
+&rbrace;
+
+Opcode::Return => &lbrace;
+    <span class="co">// 1. Pop frame de call_stack</span>
+    <span class="co">// 2. Pop ámbito de variables</span>
+    <span class="co">// 3. Restaurar IP (self.ip = frame.ip_retorno)</span>
+&rbrace;</code></pre>
+
+  <h2>Soporte POO en VM</h2>
+
+  <table>
+    <tr><th>Opcode</th><th>Qué hace</th></tr>
+    <tr><td><code>NewObject("Persona")</code></td><td>Crea <code>ObjetoVM &lbrace; clase, campos: &lbrace;&rbrace; &rbrace;</code> en heap, push a pila</td></tr>
+    <tr><td><code>SetField("nombre")</code></td><td>Pop valor, pop objeto, asigna <code>objeto.campos["nombre"] = valor</code></td></tr>
+    <tr><td><code>GetField("nombre")</code></td><td>Pop objeto, push <code>objeto.campos["nombre"]</code></td></tr>
+    <tr><td><code>CallMethod("saludar", 0)</code></td><td>Resuelve <code>Clase.metodo</code> en runtime y llama pasando self</td></tr>
+  </table>
+
+  <h2>Coerción automática</h2>
+
+  <table>
+    <tr><th>Operación</th><th>Resultado</th></tr>
+    <tr><td><code>Entero + Decimal</code></td><td><code>Decimal</code></td></tr>
+    <tr><td><code>Texto + cualquier tipo</code></td><td>Concatenación como <code>Texto</code></td></tr>
+    <tr><td><code>es_verdadero()</code></td><td>0, 0.0, "", nulo → falso; todo lo demás → verdadero</td></tr>
+  </table>
+
+  <h2>Errores en runtime</h2>
+
+  <table>
+    <tr><th>Error</th><th>Significado</th></tr>
+    <tr><td><code>StackUnderflow</code></td><td>Pop en pila vacía (bug interno)</td></tr>
+    <tr><td><code>VariableNoDeclarada</code></td><td>Variable inexistente</td></tr>
+    <tr><td><code>TipoIncompatible</code></td><td>Operación entre tipos no válidos</td></tr>
+    <tr><td><code>DivisionPorCero</code></td><td>/ por 0</td></tr>
+    <tr><td><code>FuncionNoDefinida</code></td><td>Call a función que no existe</td></tr>
+  </table>
+</Layout>

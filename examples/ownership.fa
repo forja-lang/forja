@@ -1,0 +1,20 @@
+// Ownership y Préstamos en Forja
+
+// Ejemplo 1: Variables y mutabilidad
+variable contador = 0
+contador = contador + 1
+escribir("Contador: " + contador)
+
+// Ejemplo 2: Uso de &
+variable x = 42
+variable ref = &x
+escribir("Valor de x: " + x)
+
+// Ejemplo 3: Variable pasada a función (simulado)
+funcion mostrar(valor) {
+    escribir("El valor es: " + valor)
+}
+
+variable dato = 100
+mostrar(dato)
+escribir("Dato sigue disponible: " + dato)

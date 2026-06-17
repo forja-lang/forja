@@ -1,0 +1,14 @@
+// 🎓 Lección 4: Operaciones aritméticas
+// Podés hacer cuentas con +, -, *, /
+
+variable a = 10
+variable b = 3
+
+escribir("Suma: " + (a + b))        // 13
+escribir("Resta: " + (a - b))       // 7
+escribir("Multiplicación: " + (a * b))  // 30
+escribir("División: " + (a / b))    // 3 (división entera)
+
+// También podés comparar números:
+escribir("¿10 > 3?: " + (a > b))    // verdadero
+escribir("¿10 == 3?: " + (a == b))  // falso

@@ -1,0 +1,10 @@
+// Test POO simple - constructor sin parámetros
+clase Persona {
+    nombre
+    constructor() {
+        este.nombre = "Ana"
+    }
+}
+
+variable p = nuevo Persona()
+escribir(p.nombre)

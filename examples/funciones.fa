@@ -1,0 +1,15 @@
+// Funciones en Forja
+
+funcion suma(a, b) {
+    retornar a + b
+}
+
+variable resultado = suma(3, 4)
+escribir("Suma: " + resultado)
+
+funcion saludo(nombre) {
+    escribir("Hola, " + nombre + "!")
+}
+
+saludo("Mundo")
+saludo("Forja")

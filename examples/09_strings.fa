@@ -1,0 +1,17 @@
+// 🎓 Lección 9: Operaciones con texto (strings)
+// Los textos tienen métodos útiles.
+
+variable mensaje = "Hola, Forja!"
+escribir(mensaje.length())       // 12 (cantidad de caracteres)
+escribir(mensaje.to_upper())     // "HOLA, FORJA!"
+escribir(mensaje.to_lower())     // "hola, forja!"
+escribir(mensaje.contains("Forja"))  // verdadero
+
+// Se puede concatenar (unir) con +:
+variable saludo = "Hola"
+variable nombre = "Ana"
+escribir(saludo + " " + nombre + "!")  // "Hola Ana!"
+
+// Eliminar espacios:
+variable texto = "  hola  "
+escribir("'" + texto.trim() + "'")     // 'hola'

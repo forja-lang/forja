@@ -1,0 +1,65 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Borrow Checker (Semántica) — Forja">
+  <h1>Borrow Checker</h1>
+
+  <p><strong>Archivo:</strong> <code>src/semantics.rs</code></p>
+
+  <p>El <strong>Borrow Checker</strong> recorre el AST y verifica las reglas de <strong>ownership</strong>, <strong>mutabilidad</strong> y <strong>ámbito</strong> antes de generar código. Es el análisis semántico de Forja, inspirado en el sistema de ownership de Rust.</p>
+
+  <h2>Tabla de símbolos</h2>
+
+  <pre><code><span class="kw">struct</span> TablaSimbolos &lbrace;
+    ambitos: Vec&lt;HashMap&lt;String, InfoVariable&gt;&gt;,
+&rbrace;
+
+<span class="kw">struct</span> InfoVariable &lbrace;
+    nombre: String,
+    mutable: bool,
+    estado: EstadoVariable,  <span class="co">// Viva | Movida | Prestada(n)</span>
+    linea_decl: usize,
+    columna_decl: usize,
+&rbrace;
+
+<span class="kw">enum</span> EstadoVariable &lbrace;
+    Viva,                    <span class="co">// disponible para usar</span>
+    Movida,                  <span class="co">// ownership transferido</span>
+    Prestada(usize),         <span class="co">// N préstamos activos</span>
+&rbrace;</code></pre>
+
+  <h2>¿Qué verifica?</h2>
+
+  <table>
+    <tr><th>Verificación</th><th>¿Qué detecta?</th><th>Error</th></tr>
+    <tr><td>Variable no declarada</td><td>Usar <code>x</code> sin declararlo antes</td><td><code>ErrorSemantico</code></td></tr>
+    <tr><td>Redeclaración</td><td>Dos <code>variable x</code> en el mismo bloque</td><td><code>ErrorSemantico</code></td></tr>
+    <tr><td>Modificar inmutable</td><td>Asignar a <code>constante</code></td><td><code>ErrorDePropiedad</code></td></tr>
+    <tr><td>Variable movida</td><td>Usar <code>x</code> después de transferirla</td><td><code>ErrorDePropiedad</code></td></tr>
+    <tr><td>Préstamo inválido</td><td>Prestar <code>x</code> cuando ya se movió</td><td><code>ErrorDePropiedad</code></td></tr>
+    <tr><td>Modificar con referencias</td><td>Escribir <code>x</code> mientras hay <code>&amp;x</code></td><td><code>ErrorDePropiedad</code></td></tr>
+  </table>
+
+  <h2>Scoping automático</h2>
+
+  <p>Cada estructura de control crea su propio ámbito:</p>
+
+  <ul>
+    <li><strong>Si / Sino:</strong> ámbitos separados para cada rama</li>
+    <li><strong>Mientras / Repetir:</strong> ámbito para el bloque</li>
+    <li><strong>Para:</strong> ámbito para init + bloque</li>
+    <li><strong>Función:</strong> ámbito para parámetros + cuerpo</li>
+    <li><strong>Clase / Método:</strong> <code>self</code> se declara automáticamente</li>
+  </ul>
+
+  <h2>Ejemplo de error</h2>
+
+  <div class="code-header">❌ Código que falla</div>
+  <pre><code><span class="kw">constante</span> x = 5
+x = 10  <span class="co">// ← intentando modificar constante</span></code></pre>
+
+  <div class="code-header">💬 Error generado</div>
+  <pre><code>[ErrorDePropiedad] línea 2, columna 0: No se puede modificar 'x' porque es inmutable.
+  💡 Sugerencia: Usá 'variable mut' para declarar una variable mutable.</code></pre>
+</Layout>

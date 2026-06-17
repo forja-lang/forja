@@ -1,0 +1,77 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="AST — Forja">
+  <h1>AST (Árbol de Sintaxis Abstracta)</h1>
+
+  <p><strong>Archivo:</strong> <code>src/ast.rs</code></p>
+
+  <p>Define las estructuras que representan un programa Forja después del parsing. Es un árbol con dos grandes familias: <strong>Declaraciones</strong> (sentencias) y <strong>Expresiones</strong> (valores).</p>
+
+  <h2>Programa (raíz)</h2>
+
+  <pre><code><span class="kw">pub struct</span> Programa &lbrace;
+    <span class="kw">pub</span> declaraciones: Vec&lt;Declaracion&gt;,
+&rbrace;</code></pre>
+
+  <h2><code>Declaracion</code> — 14 variantes</h2>
+
+  <table>
+    <tr><th>Variante</th><th>Descripción</th></tr>
+    <tr><td><code>Variable</code></td><td>Declaración de variable/constante: mutable, nombre, tipo opcional, valor opcional</td></tr>
+    <tr><td><code>Asignacion</code></td><td>Reasignación: <code>x = expr</code></td></tr>
+    <tr><td><code>AsignacionMiembro</code></td><td>Asignación a campo: <code>objeto.campo = expr</code></td></tr>
+    <tr><td><code>Funcion</code></td><td>Función: nombre, parámetros, tipo_retorno, cuerpo</td></tr>
+    <tr><td><code>Clase</code></td><td>Clase: nombre, campos, métodos</td></tr>
+    <tr><td><code>Si</code></td><td>Condicional: condición, bloque verdadero, bloque falso opcional</td></tr>
+    <tr><td><code>Mientras</code></td><td>Bucle while</td></tr>
+    <tr><td><code>Para</code></td><td>Bucle for (init, cond, incr)</td></tr>
+    <tr><td><code>Repetir</code></td><td>Bucle de repetición fija</td></tr>
+    <tr><td><code>LlamadaFuncion</code></td><td>Llamada como statement</td></tr>
+    <tr><td><code>AccesoMiembro</code></td><td>Acceso como statement</td></tr>
+    <tr><td><code>Retornar</code></td><td>Return con valor opcional</td></tr>
+    <tr><td><code>Expresion</code></td><td>Expresión usada como statement</td></tr>
+  </table>
+
+  <h2><code>Expresion</code> — 13 variantes</h2>
+
+  <table>
+    <tr><th>Variante</th><th>Descripción</th></tr>
+    <tr><td><code>LiteralNumero(i64)</code></td><td>Literal entero</td></tr>
+    <tr><td><code>LiteralDecimal(f64)</code></td><td>Literal decimal</td></tr>
+    <tr><td><code>LiteralTexto(String)</code></td><td>Literal string</td></tr>
+    <tr><td><code>LiteralBooleano(bool)</code></td><td>Literal booleano</td></tr>
+    <tr><td><code>LiteralNulo</code></td><td>Literal nulo</td></tr>
+    <tr><td><code>Identificador(String)</code></td><td>Referencia a variable/nombre</td></tr>
+    <tr><td><code>Binaria</code></td><td>Operación binaria (izquierda, operador, derecha)</td></tr>
+    <tr><td><code>Unaria</code></td><td>Operación unaria (!, -)</td></tr>
+    <tr><td><code>LlamadaFuncion</code></td><td>Llamada a función en expresión</td></tr>
+    <tr><td><code>AccesoMiembro</code></td><td>Acceso con .</td></tr>
+    <tr><td><code>Instanciacion</code></td><td>nuevo Clase(args)</td></tr>
+    <tr><td><code>Referencia</code></td><td>&amp;expr o &amp;mut expr</td></tr>
+    <tr><td><code>Arreglo</code></td><td>[a, b, c]</td></tr>
+    <tr><td><code>Grupo</code></td><td>(expr) — agrupación</td></tr>
+  </table>
+
+  <h2>Estructuras auxiliares</h2>
+
+  <pre><code><span class="kw">pub struct</span> Parametro &lbrace;
+    <span class="kw">pub</span> nombre: String,
+    <span class="kw">pub</span> prestado: bool,    <span class="co">// &T</span>
+    <span class="kw">pub</span> mutable: bool,      <span class="co">// &mut T</span>
+    <span class="kw">pub</span> tipo: Option&lt;Tipo&gt;,
+&rbrace;
+
+<span class="kw">pub enum</span> Tipo &lbrace;
+    Entero, Decimal, Texto, Booleano, Nulo,
+    Clase(String),
+    Arreglo(Box&lt;Tipo&gt;),
+&rbrace;
+
+<span class="kw">pub enum</span> Operador &lbrace;
+    Suma, Resta, Multiplicacion, Division,
+    Mayor, Menor, MayorIgual, MenorIgual,
+    IgualIgual, Diferente, Y, O,
+&rbrace;</code></pre>
+</Layout>

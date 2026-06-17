@@ -1,0 +1,60 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Variables y constantes — Forja">
+  <h1>Variables y constantes</h1>
+
+  <p>Forja distingue entre <strong>variables</strong> (mutables, se pueden reasignar) y <strong>constantes</strong> (inmutables, no se pueden modificar). Esto refleja el sistema de mutabilidad de Rust pero con palabras en español.</p>
+
+  <div class="info">💡 <strong>Regla de oro:</strong> <code><span class="kw">variable</span></code> = <code>let mut</code> en Rust. <code><span class="kw">constante</span></code> = <code>let</code> en Rust.</div>
+
+  <h2><code>variable</code> — Mutable</h2>
+
+  <div class="code-header">📝 Se puede reasignar</div>
+  <pre><code><span class="kw">variable</span> nombre = <span class="st">"Gaucho"</span>
+<span class="kw">variable</span> edad = 30
+
+<span class="co">// ✅ Reasignación permitida</span>
+edad = 31
+nombre = <span class="st">"Otro nombre"</span></code></pre>
+
+  <h2><code>constante</code> — Inmutable</h2>
+
+  <div class="code-header">📝 No se puede reasignar</div>
+  <pre><code><span class="kw">constante</span> altura = 1.85
+<span class="kw">constante</span> pais = <span class="st">"Argentina"</span>
+
+<span class="co">// ❌ Error: No se puede modificar una constante</span>
+<span class="co">// altura = 2.0  → ErrorDePropiedad</span></code></pre>
+
+  <h2>Con tipo explícito</h2>
+
+  <pre><code><span class="kw">variable</span> nombre: <span class="ty">Texto</span> = <span class="st">"Gaucho"</span>
+<span class="kw">variable</span> edad: <span class="ty">Entero</span> = 30
+<span class="kw">variable</span> altura: <span class="ty">Decimal</span> = 1.85
+<span class="kw">constante</span> activo: <span class="ty">Booleano</span> = verdadero</code></pre>
+
+  <h2>Sin valor inicial</h2>
+
+  <pre><code><span class="kw">variable</span> mensaje: <span class="ty">Texto</span> = <span class="st">""</span>
+<span class="kw">variable</span> contador = 0</code></pre>
+
+  <h2>Inferencia de tipos</h2>
+  <p>Si no se especifica el tipo, Forja lo infiere automáticamente del valor asignado:</p>
+
+  <pre><code><span class="kw">variable</span> ciudad = <span class="st">"Buenos Aires"</span>   <span class="co">// inferido → Texto</span>
+<span class="kw">variable</span> edad = 25                  <span class="co">// inferido → Entero</span></code></pre>
+
+  <h2>Equivalencia con Rust</h2>
+
+  <table>
+    <tr><th>Forja</th><th>Rust generado</th></tr>
+    <tr><td><code>variable x = 5</code></td><td><code>let mut x = 5;</code></td></tr>
+    <tr><td><code>constante x = 5</code></td><td><code>let x = 5;</code></td></tr>
+    <tr><td><code>variable x: Entero = 5</code></td><td><code>let mut x: i64 = 5;</code></td></tr>
+    <tr><td><code>constante x: Texto = "a"</code></td><td><code>let x: String = String::from("a");</code></td></tr>
+  </table>
+
+  <div class="warning">⚠️ <strong>Diferencia clave con Rust:</strong> En Rust las variables son <strong>inmutables por defecto</strong>. Forja invierte esto: <code>variable</code> es mutable, <code>constante</code> es inmutable. Esto es más intuitivo para quienes están aprendiendo.</div>
+</Layout>

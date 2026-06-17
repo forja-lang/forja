@@ -1,0 +1,95 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Clases y POO — Forja">
+  <h1>Clases y POO</h1>
+
+  <p>Forja soporta programación orientada a objetos con <strong>clases</strong>, <strong>constructores</strong>, <strong>métodos</strong> y el keyword <code><span class="kw">este</span></code> (equivalente a <code>self</code> en Rust).</p>
+
+  <h2>Estructura de una clase</h2>
+
+  <div class="code-header">🧱 Plantilla</div>
+  <pre><code><span class="kw">clase</span> Nombre &lbrace;
+    campo1
+    campo2
+
+    <span class="kw">constructor</span>(param1, param2) &lbrace;
+        <span class="kw">este</span>.campo1 = param1
+        <span class="kw">este</span>.campo2 = param2
+    &rbrace;
+
+    <span class="kw">funcion</span> metodo() &lbrace;
+        <span class="co">// usar este.campo</span>
+    &rbrace;
+&rbrace;</code></pre>
+
+  <h2>Ejemplo completo</h2>
+
+  <div class="code-header">🎓 Clase Estudiante</div>
+  <pre><code><span class="kw">clase</span> Estudiante &lbrace;
+    nombre
+    edad
+
+    <span class="kw">constructor</span>(n, e) &lbrace;
+        <span class="kw">este</span>.nombre = n
+        <span class="kw">este</span>.edad = e
+    &rbrace;
+
+    <span class="kw">funcion</span> presentarse() &lbrace;
+        <span class="fn">escribir</span>(<span class="st">"Hola, soy "</span> + <span class="kw">este</span>.nombre +
+                <span class="st">" y tengo "</span> + <span class="kw">este</span>.edad + <span class="st">" años"</span>)
+    &rbrace;
+
+    <span class="kw">funcion</span> esMayorDeEdad() -> <span class="ty">Booleano</span> &lbrace;
+        <span class="kw">retornar</span> <span class="kw">este</span>.edad >= 18
+    &rbrace;
+&rbrace;
+
+<span class="co">// Uso</span>
+<span class="kw">variable</span> alumno = <span class="kw">nuevo</span> Estudiante(<span class="st">"Ana"</span>, 20)
+alumno.presentarse()
+<span class="co">// → Hola, soy Ana y tengo 20 años</span>
+
+<span class="kw">si</span> (alumno.esMayorDeEdad()) &lbrace;
+    <span class="fn">escribir</span>(<span class="st">"Es mayor de edad"</span>)
+&rbrace;</code></pre>
+
+  <h2>Keyword <code>este</code></h2>
+  <p><code>este</code> se refiere a la instancia actual. Se usa para acceder a campos y métodos propios:</p>
+
+  <table>
+    <tr><th>Forja</th><th>Rust / Otros</th></tr>
+    <tr><td><code>este.nombre</code></td><td><code>self.nombre</code> / <code>this.nombre</code></td></tr>
+    <tr><td><code>este.edad = 10</code></td><td><code>self.edad = 10</code></td></tr>
+  </table>
+
+  <h2>Keyword <code>nuevo</code></h2>
+  <p>Instancia una clase y (si existe) llama al constructor automáticamente:</p>
+
+  <div class="code-header">🚀 Instanciación</div>
+  <pre><code><span class="kw">variable</span> p = <span class="kw">nuevo</span> Persona(<span class="st">"Juan"</span>)    <span class="co">// con constructor</span>
+<span class="kw">variable</span> q = <span class="kw">nuevo</span> Punto()               <span class="co">// sin constructor</span></code></pre>
+
+  <h2>Clase sin constructor</h2>
+
+  <div class="code-header">📍 Punto 2D</div>
+  <pre><code><span class="kw">clase</span> Punto &lbrace;
+    x
+    y
+&rbrace;
+
+<span class="kw">variable</span> p = <span class="kw">nuevo</span> Punto()
+<span class="fn">escribir</span>(p.x)  <span class="co">// → nulo (no inicializado)</span></code></pre>
+
+  <h2>Equivalencia con Rust</h2>
+
+  <table>
+    <tr><th>Forja</th><th>Rust generado</th></tr>
+    <tr><td><code>clase X &lbrace; ... &rbrace;</code></td><td><code>struct X &lbrace; ... &rbrace;</code> + <code>impl X &lbrace; ... &rbrace;</code></td></tr>
+    <tr><td><code>constructor(p) &lbrace; ... &rbrace;</code></td><td><code>fn nuevo(p: String) -> Self &lbrace; ... &rbrace;</code></td></tr>
+    <tr><td><code>este.campo</code></td><td><code>self.campo</code></td></tr>
+    <tr><td><code>nuevo X(args)</code></td><td><code>X::nuevo(args)</code></td></tr>
+    <tr><td><code>objeto.metodo()</code></td><td><code>objeto.metodo()</code></td></tr>
+  </table>
+</Layout>

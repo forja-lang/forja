@@ -1,0 +1,23 @@
+// 🎓 Lección 10: Clases (POO)
+// Las clases son plantillas para crear objetos.
+
+clase Persona {
+    nombre
+    edad
+
+    constructor(n, e) {
+        este.nombre = n
+        este.edad = e
+    }
+
+    funcion presentarse() {
+        escribir("Hola, soy " + este.nombre + " y tengo " + este.edad + " años")
+    }
+}
+
+// Crear objetos usando 'nuevo':
+variable p1 = nuevo Persona("Ana", 25)
+variable p2 = nuevo Persona("Pedro", 30)
+
+p1.presentarse()
+p2.presentarse()

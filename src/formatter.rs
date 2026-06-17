@@ -1,0 +1,132 @@
+use crate::ast::*;
+
+pub struct Formatter {
+    output: String,
+    indent: usize,
+}
+
+impl Formatter {
+    pub fn new() -> Self {
+        Formatter { output: String::new(), indent: 0 }
+    }
+
+    pub fn formatear(&mut self, programa: &Programa) -> String {
+        for decl in &programa.declaraciones {
+            self.formatear_declaracion(decl);
+            self.output.push('\n');
+        }
+        self.output.clone()
+    }
+
+    fn indent_str(&self) -> String { "    ".repeat(self.indent) }
+
+    fn formatear_declaracion(&mut self, decl: &Declaracion) {
+        match decl {
+            Declaracion::Variable { mutable, nombre, valor, .. } => {
+                let kw = if *mutable { "variable" } else { "constante" };
+                if let Some(v) = valor {
+                    self.push(&format!("{} {} = ", kw, nombre));
+                    self.formatear_expresion(v);
+                    self.push("\n");
+                } else {
+                    self.push(&format!("{} {}\n", kw, nombre));
+                }
+            }
+            Declaracion::Asignacion { nombre, valor } => {
+                self.push(nombre);
+                self.push(" = ");
+                self.formatear_expresion(valor);
+                self.push("\n");
+            }
+            Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+                self.push("si (");
+                self.formatear_expresion(condicion);
+                self.push(") {\n");
+                self.indent += 1;
+                for d in bloque_verdadero { self.formatear_declaracion(d); }
+                self.indent -= 1;
+                self.push(&format!("{}}}", self.indent_str()));
+                if let Some(bf) = bloque_falso {
+                    self.push(" sino {\n");
+                    self.indent += 1;
+                    for d in bf { self.formatear_declaracion(d); }
+                    self.indent -= 1;
+                    self.push(&format!("{}}}", self.indent_str()));
+                }
+                self.push("\n");
+            }
+            Declaracion::Mientras { condicion, bloque } => {
+                self.push("mientras (");
+                self.formatear_expresion(condicion);
+                self.push(") {\n");
+                self.indent += 1;
+                for d in bloque { self.formatear_declaracion(d); }
+                self.indent -= 1;
+                self.push(&format!("{}}}\n", self.indent_str()));
+            }
+            Declaracion::Funcion { nombre, parametros, cuerpo, .. } => {
+                let params: Vec<String> = parametros.iter().map(|p| p.nombre.clone()).collect();
+                self.push(&format!("funcion {}({}) {{\n", nombre, params.join(", ")));
+                self.indent += 1;
+                for d in cuerpo { self.formatear_declaracion(d); }
+                self.indent -= 1;
+                self.push(&format!("{}}}\n", self.indent_str()));
+            }
+            Declaracion::LlamadaFuncion { nombre, argumentos } => {
+                let args: Vec<String> = argumentos.iter().map(|a| self.expresion_a_string(a)).collect();
+                self.push(&format!("{}({})\n", nombre, args.join(", ")));
+            }
+            Declaracion::Retornar { valor } => {
+                if let Some(v) = valor {
+                    self.push("retornar ");
+                    self.formatear_expresion(v);
+                    self.push("\n");
+                } else {
+                    self.push("retornar\n");
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn formatear_expresion(&mut self, expr: &Expresion) {
+        self.push(&self.expresion_a_string(expr));
+    }
+
+    fn expresion_a_string(&self, expr: &Expresion) -> String {
+        match expr {
+            Expresion::LiteralNumero(n) => n.to_string(),
+            Expresion::LiteralDecimal(d) => d.to_string(),
+            Expresion::LiteralTexto(s) => format!("\"{}\"", s),
+            Expresion::LiteralBooleano(b) => (if *b { "verdadero" } else { "falso" }).to_string(),
+            Expresion::LiteralNulo => "nulo".to_string(),
+            Expresion::Identificador(n) => n.clone(),
+            Expresion::Binaria { izquierda, operador, derecha } => {
+                let op = match operador {
+                    Operador::Suma => " + ", Operador::Resta => " - ",
+                    Operador::Multiplicacion => " * ", Operador::Division => " / ",
+                    Operador::Mayor => " > ", Operador::Menor => " < ",
+                    Operador::MayorIgual => " >= ", Operador::MenorIgual => " <= ",
+                    Operador::IgualIgual => " == ", Operador::Diferente => " != ",
+                    Operador::Y => " && ", Operador::O => " || ",
+                };
+                format!("{}{}{}", self.expresion_a_string(izquierda), op, self.expresion_a_string(derecha))
+            }
+            Expresion::LlamadaFuncion { nombre, argumentos } => {
+                let args: Vec<String> = argumentos.iter().map(|a| self.expresion_a_string(a)).collect();
+                format!("{}({})", nombre, args.join(", "))
+            }
+            Expresion::AccesoMiembro { objeto, miembro } => {
+                format!("{}.{}", self.expresion_a_string(objeto), miembro)
+            }
+            Expresion::Arreglo(elementos) => {
+                let elems: Vec<String> = elementos.iter().map(|e| self.expresion_a_string(e)).collect();
+                format!("[{}]", elems.join(", "))
+            }
+            Expresion::Grupo(expr) => format!("({})", self.expresion_a_string(expr)),
+            _ => "?".to_string(),
+        }
+    }
+
+    fn push(&mut self, s: &str) { self.output.push_str(s); }
+}

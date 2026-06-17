@@ -1,0 +1,18 @@
+// 🎓 Lección 2: Variables
+// Las variables guardan datos para usarlos después.
+// 'variable' = se puede cambiar; 'constante' = no se puede cambiar.
+
+variable nombre = "Ana"
+variable edad = 25
+constante pais = "Argentina"
+
+escribir("Hola, soy " + nombre)
+escribir("Tengo " + edad + " años")
+escribir("Vivo en " + pais)
+
+// Las variables mutables pueden cambiar:
+edad = 26
+escribir("Ahora tengo " + edad + " años")
+
+// Las constantes NO pueden cambiar (probalo!):
+// pais = "Chile"  // ← ERROR
