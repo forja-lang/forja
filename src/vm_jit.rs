@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::sync::LazyLock;
 
 const OP_PUSH_ENTERO: u8 = 0;  const OP_PUSH_DECIMAL: u8 = 1;
 const OP_PUSH_TEXTO: u8 = 2;   const OP_PUSH_BOOL: u8 = 3;
@@ -28,6 +29,25 @@ const OP_ARRAY_GET: u8 = 36;   const OP_ARRAY_SET: u8 = 37;
 const OP_ARRAY_LEN: u8 = 38;   const OP_MAP_NEW: u8 = 39;
 const OP_MAP_GET: u8 = 40;     const OP_MAP_SET: u8 = 41;
 const OP_HALT: u8 = 42;
+
+// Small Integer Cache [-5, 256] — evita construir el enum repetidamente
+static SMALL_INT_CACHE_DT: LazyLock<[ValorDT; 262]> = LazyLock::new(|| {
+    let mut cache = [ValorDT::Entero(0); 262];
+    for i in 0..262 {
+        cache[i] = ValorDT::Entero(i as i64 - 5);
+    }
+    cache
+});
+
+/// Devuelve ValorDT::Entero(n) usando la Small Integer Cache si n está en [-5, 256]
+#[inline(always)]
+pub fn get_small_int_dt(n: i64) -> ValorDT {
+    if n >= -5 && n <= 256 {
+        SMALL_INT_CACHE_DT[(n + 5) as usize].clone()
+    } else {
+        ValorDT::Entero(n)
+    }
+}
 
 #[derive(Clone)]
 pub enum ValorDT {
@@ -352,7 +372,7 @@ impl ForjaDT {
             self.ip += 1;
 
             match op {
-                OP_PUSH_ENTERO => { let n = self.ri(); self.push(ValorDT::Entero(n)); }
+                OP_PUSH_ENTERO => { let n = self.ri(); self.push(get_small_int_dt(n)); }
                 OP_PUSH_DECIMAL => { let f = self.rf(); self.push(ValorDT::Decimal(f)); }
                 OP_PUSH_TEXTO => { let s = self.rs(); self.push(ValorDT::Texto(Rc::from(s.as_str()))); }
                 OP_PUSH_BOOL => { let b = self.ri() != 0; self.push(ValorDT::Booleano(b)); }
@@ -500,7 +520,7 @@ impl ForjaDT {
                 OP_ARRAY_NEW => { let n = self.ri() as usize; let mut e = Vec::with_capacity(n); for _ in 0..n { e.push(self.pop()?); } e.reverse(); self.push(ValorDT::Arreglo(e)); }
                 OP_ARRAY_GET => { let i=self.pop()?;let a=self.pop()?;match(&a,&i){(ValorDT::Arreglo(e),ValorDT::Entero(i))=>if *i>=0&&(*i as usize)<e.len(){self.push(e[*i as usize].clone())}else{return Err(ErrorDT::IndiceFueraRango(format!("[{}]",i)))},_=>return Err(ErrorDT::TipoIncompatible("ArrayGet".into()))} }
                 OP_ARRAY_SET => { let i=self.pop()?;let mut a=self.pop()?;let v=self.pop()?;if let(ValorDT::Arreglo(ref mut e),ValorDT::Entero(i))=(&mut a,&i){if *i>=0&&(*i as usize)<e.len(){e[*i as usize]=v;self.push(a)}else{return Err(ErrorDT::IndiceFueraRango("set".into()))}}else{return Err(ErrorDT::TipoIncompatible("ArraySet".into()))} }
-                OP_ARRAY_LEN => { if let ValorDT::Arreglo(e)=self.pop()?{self.push(ValorDT::Entero(e.len() as i64))}else{return Err(ErrorDT::TipoIncompatible("ArrayLen".into()))} }
+                OP_ARRAY_LEN => { if let ValorDT::Arreglo(e)=self.pop()?{self.push(get_small_int_dt(e.len() as i64))}else{return Err(ErrorDT::TipoIncompatible("ArrayLen".into()))} }
                 OP_MAP_NEW => { let n=self.ri() as usize;let mut m=HashMap::with_capacity(n);for _ in 0..n{let v=self.pop()?;if let ValorDT::Texto(k)=self.pop()?{m.insert(k.to_string(),v);}}self.push(ValorDT::Mapa(m)); }
                 OP_MAP_GET => { let k=self.pop()?;let m=self.pop()?;match(&m,&k){(ValorDT::Mapa(m),ValorDT::Texto(k))=>self.push(m.get(k.as_ref()).cloned().unwrap_or(ValorDT::Nulo)),_=>return Err(ErrorDT::TipoIncompatible("MapGet".into()))} }
                 OP_MAP_SET => { let v=self.pop()?;let k=self.pop()?;let mut map=self.pop()?;if let(ValorDT::Mapa(ref mut m),ValorDT::Texto(k))=(&mut map,k){m.insert(k.to_string(),v);self.push(map)}else{return Err(ErrorDT::TipoIncompatible("MapSet".into()))} }
@@ -550,7 +570,7 @@ fn resolver_builtin_dt(metodo: &str) -> Option<BuiltinDT> {
 impl ForjaDT {
     fn ejecutar_builtin_dt(&mut self, b: BuiltinDT, _n: usize) -> Result<(), ErrorDT> {
         match b {
-            BuiltinDT::Length => { match self.pop()? { ValorDT::Texto(s) => self.push(ValorDT::Entero(s.len() as i64)), _ => return Err(ErrorDT::TipoIncompatible("length".into())) } }
+            BuiltinDT::Length => { match self.pop()? { ValorDT::Texto(s) => self.push(get_small_int_dt(s.len() as i64)), _ => return Err(ErrorDT::TipoIncompatible("length".into())) } }
             BuiltinDT::ToUpper => { match self.pop()? { ValorDT::Texto(s) => self.push(ValorDT::Texto(Rc::from(s.to_uppercase().as_str()))), _ => return Err(ErrorDT::TipoIncompatible("to_upper".into())) } }
             BuiltinDT::ToLower => { match self.pop()? { ValorDT::Texto(s) => self.push(ValorDT::Texto(Rc::from(s.to_lowercase().as_str()))), _ => return Err(ErrorDT::TipoIncompatible("to_lower".into())) } }
             BuiltinDT::Contains => { let sub = self.pop()?; match (self.pop()?, sub) { (ValorDT::Texto(s), ValorDT::Texto(sub)) => self.push(ValorDT::Booleano(s.contains(sub.as_ref()))), _ => return Err(ErrorDT::TipoIncompatible("contains".into())) } }
