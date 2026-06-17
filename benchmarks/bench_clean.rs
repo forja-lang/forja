@@ -69,7 +69,7 @@ fn main() {
     println!("\n⏳ Midiendo Forja ({} iteraciones)...", iters);
     let mut forja_times: Vec<f64> = Vec::new();
 
-    for (i, bc) in bcs.iter().enumerate() {
+    for (_i, bc) in bcs.iter().enumerate() {
         // Calentar
         for _ in 0..10 {
             let mut vm = ForjaFast::new();

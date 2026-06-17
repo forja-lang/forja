@@ -38,5 +38,9 @@ path = "benchmarks/bench_completo.rs"
 name = "bench-jit"
 path = "benchmarks/bench_jit.rs"
 
+[[bin]]
+name = "bench-jit-100k"
+path = "benchmarks/bench_jit_100k.rs"
+
 [profile.release]
 opt-level = 2
