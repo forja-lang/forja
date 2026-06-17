@@ -1,7 +1,7 @@
 
 # 🔨 Forja (fa)
 
-**Forja** es un lenguaje de programación educativo en **español** que transpila a **Rust**, ejecuta en su propia **Máquina Virtual** con **JIT**, compila a **assembly nativo** (x86-64 / ARM64), y funciona en el **navegador via WASM**.
+**Forja** es un lenguaje de programación educativo, intuitivo y autoexplicativo en **español** que se puede transpilar a **Rust**, o ejecutar en su propia **Máquina Virtual** con **JIT**, compilarse a **assembly nativo** (x86-64 / ARM64), y funcionar en el **navegador via WASM**.
 
 > Aprender conceptos modernos de sistemas (ownership, mutabilidad, borrowing, POO) sin la complejidad sintáctica de Rust, y en tu idioma.
 
