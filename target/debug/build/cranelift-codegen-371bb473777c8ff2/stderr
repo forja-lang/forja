@@ -1,0 +1,21 @@
+Writing generated file: c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\settings.rs
+Writing generated file: c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\types.rs
+Writing generated file: c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\opcodes.rs
+Writing generated file: c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\inst_builder.rs
+Writing generated file: c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\settings-x86.rs
+Writing generated file: c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\numerics.isle
+Writing generated file: c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\isle_numerics.rs
+Writing generated file: c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\clif_opt.isle
+Writing generated file: c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\clif_lower.isle
+Writing generated file: c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\assembler.isle
+Writing generated file: c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\assembler-isle-macro.rs
+Rebuilding c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\isle_opt.rs
+Writing ISLE-generated Rust code to c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\isle_opt.rs
+Rebuilding c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\isle_x64.rs
+Writing ISLE-generated Rust code to c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\isle_x64.rs
+Rebuilding c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\isle_aarch64.rs
+Writing ISLE-generated Rust code to c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\isle_aarch64.rs
+Rebuilding c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\isle_s390x.rs
+Writing ISLE-generated Rust code to c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\isle_s390x.rs
+Rebuilding c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\isle_riscv64.rs
+Writing ISLE-generated Rust code to c:\Users\gaucho\forja\target\debug\build\cranelift-codegen-371bb473777c8ff2\out\isle_riscv64.rs

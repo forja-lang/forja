@@ -1,0 +1,82 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Uso (CLI) — Forja">
+  <h1>Uso del CLI</h1>
+
+  <p>Forja tiene 4 modos de ejecución. Cada uno cubre un caso de uso distinto.</p>
+
+  <div class="code-header">📋 Ayuda completa</div>
+  <pre><code>Forja (fa) — Lenguaje educativo que compila a Rust y ejecuta en VM
+
+USO:
+  forja &lt;archivo.fa&gt; [-o &lt;salida.rs&gt;]     Transpilar a Rust
+  forja run &lt;archivo.fa&gt;                    Ejecutar en VM
+  forja repl                                Modo interactivo
+  forja build &lt;archivo.fa&gt; -o &lt;salida&gt;      Generar ejecutable
+  forja transpile &lt;archivo.fa&gt; [-o &lt;rs&gt;]   Transpilar a Rust
+  forja --help                              Mostrar ayuda</code></pre>
+
+  <h2><code>transpile</code> — Forja → Rust</h2>
+  <p>Genera código <strong>Rust compilable</strong> desde un archivo <code>.fa</code>. Ideal si querés llevar tu programa a producción con Rust.</p>
+
+  <div class="code-header">📄 Ejemplos</div>
+  <pre><code><span class="co"># Genera hola_mundo.rs automáticamente</span>
+forja examples/hola_mundo.fa
+
+<span class="co"># Con salida personalizada</span>
+forja transpile examples/hola_mundo.fa -o salida.rs
+
+<span class="co"># Errores en JSON (ideal para IDEs)</span>
+forja transpile examples/clases.fa --json-errors
+
+<span class="co"># Atajo: pasar solo el .fa también transpila</span>
+forja examples/hola_mundo.fa</code></pre>
+
+  <h2><code>run</code> — Ejecutar en VM</h2>
+  <p>Compila y ejecuta el <strong>bytecode</strong> directamente en la VM. No necesitás Rust instalado para ejecutar.</p>
+
+  <div class="code-header">⚡ Ejemplos</div>
+  <pre><code>forja run examples/hola_mundo.fa
+<span class="co">// → Hola, mundo desde Forja!</span>
+
+forja run examples/clases.fa
+<span class="co">// → Hola, soy Ana y tengo 20 años</span>
+<span class="co">// → Es mayor de edad</span></code></pre>
+
+  <h2><code>repl</code> — Modo interactivo</h2>
+  <p>Intérprete línea por línea. Ideal para <strong>aprender</strong> y <strong>experimentar</strong>.</p>
+
+  <div class="code-header">💬 Sesión de ejemplo</div>
+  <pre><code>$ forja repl
+🔨 Forja v0.1.0 — Escribí 'salir' para terminar
+
+> <span class="kw">variable</span> x = 5
+> x = x + 10
+> <span class="fn">escribir</span>(x)
+15
+> <span class="kw">constante</span> nombre = <span class="st">"Gaucho"</span>
+> <span class="fn">escribir</span>(<span class="st">"Hola "</span> + nombre)
+Hola Gaucho
+> salir
+👋 ¡Hasta luego!</code></pre>
+
+  <h2><code>build</code> — Ejecutable autónomo</h2>
+  <p>Genera un <code>.exe</code> que contiene la VM + bytecode. Funciona en <strong>cualquier PC</strong> sin Rust ni nada instalado.</p>
+
+  <div class="code-header">📦 Ejemplo</div>
+  <pre><code>forja build examples/hola_mundo.fa -o hola.exe
+<span class="co">// → ✅ Ejecutable generado: hola.exe (1234 bytes)</span>
+
+<span class="co">// Ahora cualquiera puede ejecutarlo:</span>
+./hola.exe
+<span class="co">// → Hola, mundo desde Forja!</span></code></pre>
+
+  <h2>Compilar el Rust generado</h2>
+  <p>Si usaste <code>transpile</code>, el archivo <code>.rs</code> se compila con Rust:</p>
+
+  <div class="code-header">🦀 Rust</div>
+  <pre><code>rustc examples/hola_mundo.rs
+./hola_mundo</code></pre>
+</Layout>

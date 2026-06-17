@@ -1,0 +1,15 @@
+// 🎓 Lección 8: Listas (arrays)
+// Las listas guardan varios valores en una variable.
+
+variable frutas = ["manzana", "banana", "naranja"]
+escribir(frutas)           // ["manzana", "banana", "naranja"]
+escribir(frutas[0])        // manzana (el primer elemento)
+escribir(frutas[1])        // banana
+
+// Modificar un elemento:
+frutas[1] = "pera"
+escribir(frutas)
+
+// Lista de números:
+variable numeros = [10, 20, 30]
+escribir(numeros[0] + numeros[2])  // 40

@@ -1,0 +1,60 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Operadores — Forja">
+  <h1>Operadores</h1>
+
+  <h2>Aritméticos</h2>
+
+  <table>
+    <tr><th>Op</th><th>Descripción</th><th>Ejemplo</th><th>Resultado</th></tr>
+    <tr><td><code><span class="op">+</span></code></td><td>Suma</td><td><code>5 + 3</code></td><td><code>8</code></td></tr>
+    <tr><td><code><span class="op">-</span></code></td><td>Resta</td><td><code>10 - 4</code></td><td><code>6</code></td></tr>
+    <tr><td><code><span class="op">*</span></code></td><td>Multiplicación</td><td><code>6 * 7</code></td><td><code>42</code></td></tr>
+    <tr><td><code><span class="op">/</span></code></td><td>División</td><td><code>20 / 5</code></td><td><code>4</code></td></tr>
+  </table>
+
+  <div class="info">💡 El operador <code>+</code> también concatena strings: <code>"Hola " + "mundo"</code> → <code>"Hola mundo"</code></div>
+
+  <h2>Relacionales</h2>
+
+  <table>
+    <tr><th>Op</th><th>Descripción</th><th>Ejemplo</th></tr>
+    <tr><td><code><span class="op">></span></code></td><td>Mayor que</td><td><code>x > 5</code></td></tr>
+    <tr><td><code><span class="op"><</span></code></td><td>Menor que</td><td><code>x &lt; 10</code></td></tr>
+    <tr><td><code><span class="op">>=</span></code></td><td>Mayor o igual</td><td><code>x >= 18</code></td></tr>
+    <tr><td><code><span class="op"><=</span></code></td><td>Menor o igual</td><td><code>x <= 100</code></td></tr>
+    <tr><td><code><span class="op">==</span></code></td><td>Igualdad</td><td><code>x == 5</code></td></tr>
+    <tr><td><code><span class="op">!=</span></code></td><td>Diferente</td><td><code>x != 0</code></td></tr>
+  </table>
+
+  <h2>Lógicos</h2>
+
+  <table>
+    <tr><th>Op</th><th>Descripción</th><th>Ejemplo</th></tr>
+    <tr><td><code><span class="op">&&</span></code></td><td>Y (AND)</td><td><code>x > 0 && x &lt; 10</code></td></tr>
+    <tr><td><code><span class="op">||</span></code></td><td>O (OR)</td><td><code>x == 0 || y == 0</code></td></tr>
+    <tr><td><code><span class="op">!</span></code></td><td>NO (NOT)</td><td><code>!activo</code></td></tr>
+  </table>
+
+  <h2>Precedencia</h2>
+
+  <p>De <strong>mayor</strong> a <strong>menor</strong> precedencia:</p>
+
+  <table>
+    <tr><th>Nivel</th><th>Operadores</th></tr>
+    <tr><td>1 (más alta)</td><td><code>!</code>, <code>-</code> (unarios), <code>&amp;</code></td></tr>
+    <tr><td>2</td><td><code>*</code>, <code>/</code></td></tr>
+    <tr><td>3</td><td><code>+</code>, <code>-</code></td></tr>
+    <tr><td>4</td><td><code>></code>, <code><</code>, <code>>=</code>, <code><=</code></td></tr>
+    <tr><td>5</td><td><code>==</code>, <code>!=</code></td></tr>
+    <tr><td>6</td><td><code>&&</code></td></tr>
+    <tr><td>7 (más baja)</td><td><code>||</code></td></tr>
+  </table>
+
+  <p>Usá paréntesis <code>( ... )</code> para agrupar y forzar precedencia:</p>
+
+  <pre><code><span class="kw">variable</span> resultado = (2 + 3) * (10 - 5)
+<span class="co">// resultado = 25</span></code></pre>
+</Layout>

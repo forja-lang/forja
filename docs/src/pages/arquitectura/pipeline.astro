@@ -1,0 +1,98 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Pipeline de compilación — Forja">
+  <h1>Pipeline de compilación</h1>
+
+  <p>Forja tiene un pipeline de <strong>5 fases</strong> que transforma código fuente <code>.fa</code> en código Rust o bytecode ejecutable. Dependiendo del comando, se usan diferentes rutas.</p>
+
+  <div class="code-header">🔀 Flujo completo</div>
+  <pre><code>┌────────────┐
+│  Source.fa │
+└─────┬──────┘
+      ▼
+┌────────────┐   <span class="co">FASE 1: Lexer</span>
+│   Lexer    │   <span class="co">Texto → Tokens</span>
+│  tokenize  │   <span class="co">Keywords, símbolos, literales</span>
+└─────┬──────┘
+      ▼
+┌────────────┐   <span class="co">FASE 2-3: Parser</span>
+│   Parser   │   <span class="co">Tokens → AST</span>
+│   parse()  │   <span class="co">Recursive descent + precedencia</span>
+└─────┬──────┘
+      ▼
+┌──────────────┐ <span class="co">FASE 4: Semántica</span>
+│  Borrow      │ <span class="co">Borrow Checker</span>
+│  Checker     │ <span class="co">Ownership, mutabilidad, scoping</span>
+└─────┬──────┘
+      ▼
+     ══╦══
+   ┌───║───┐
+   ▼       ▼
+┌────────┐ ┌──────────┐ <span class="co">FASE 5</span>
+│ Rust   │ │ Bytecode │
+│ .rs    │ │ .fbc     │
+└────────┘ └────┬─────┘
+                ▼
+          ┌──────────┐
+          │ VM / JIT │
+          └──────────┘</code></pre>
+
+  <h2>Rutas según el comando</h2>
+
+  <table>
+    <tr><th>Comando</th><th>Pipeline</th></tr>
+    <tr><td><code>forja archivo.fa</code></td><td>Lexer → Parser → Borrow Checker → <strong>Transpilador</strong> → .rs</td></tr>
+    <tr><td><code>forja run archivo.fa</code></td><td>Lexer → Parser → Borrow Checker → <strong>Bytecode → VM</strong> → Output</td></tr>
+    <tr><td><code>forja repl</code></td><td>Por línea: Lexer → Parser → <strong>Bytecode → VM</strong> (variables persisten)</td></tr>
+    <tr><td><code>forja build archivo.fa</code></td><td>Lexer → Parser → Borrow Checker → <strong>Bytecode → AOT</strong> → .exe</td></tr>
+  </table>
+
+  <h2>Los 15 módulos del proyecto</h2>
+
+  <div class="feature-grid">
+    <div class="feature-card"><div class="icon">🎯</div><h4>main.rs</h4><p>CLI entrada</p></div>
+    <div class="feature-card"><div class="icon">📚</div><h4>lib.rs</h4><p>API pública</p></div>
+    <div class="feature-card"><div class="icon">🔤</div><h4>token.rs</h4><p>Def. de tokens</p></div>
+    <div class="feature-card"><div class="icon">📖</div><h4>lexer.rs</h4><p>Tokenizador</p></div>
+    <div class="feature-card"><div class="icon">🌳</div><h4>ast.rs</h4><p>AST definitions</p></div>
+    <div class="feature-card"><div class="icon">🔧</div><h4>parser.rs</h4><p>Parsing</p></div>
+    <div class="feature-card"><div class="icon">🚫</div><h4>error.rs</h4><p>Errores + JSON</p></div>
+    <div class="feature-card"><div class="icon">🔍</div><h4>semantics.rs</h4><p>Borrow Checker</p></div>
+    <div class="feature-card"><div class="icon">🦀</div><h4>transpiler.rs</h4><p>Forja → Rust</p></div>
+    <div class="feature-card"><div class="icon">💾</div><h4>bytecode.rs</h4><p>Bytecode gen</p></div>
+    <div class="feature-card"><div class="icon">⚙️</div><h4>vm.rs</h4><p>Máquina Virtual</p></div>
+    <div class="feature-card"><div class="icon">⚡</div><h4>jit.rs</h4><p>JIT Cranelift</p></div>
+    <div class="feature-card"><div class="icon">💬</div><h4>repl.rs</h4><p>REPL</p></div>
+    <div class="feature-card"><div class="icon">📦</div><h4>aot.rs</h4><p>AOT compiler</p></div>
+    <div class="feature-card"><div class="icon">🏃</div><h4>selfrun.rs</h4><p>Bytecode embed</p></div>
+  </div>
+
+  <h2>API pública (lib.rs)</h2>
+
+  <div class="code-header">📄 Las dos funciones principales</div>
+  <pre><code><span class="co">/// Compila .fa → código Rust</span>
+<span class="kw">pub fn</span> compilar(source: &str) -> Result&lt;String, Vec&lt;ErrorForja&gt;&gt; &lbrace;
+    <span class="kw">let mut</span> lexer = lexer::Lexer::new(source);
+    <span class="kw">let</span> tokens = lexer.tokenize()?;
+    <span class="kw">let mut</span> parser = parser::Parser::new(tokens);
+    <span class="kw">let</span> programa = parser.parse()?;
+    <span class="kw">let mut</span> checker = semantics::BorrowChecker::new();
+    checker.analizar(&programa)?;
+    <span class="kw">let mut</span> transpiler = transpiler::Transpiler::new();
+    <span class="kw">let</span> rust_code = transpiler.transpilar(&programa)?;
+    Ok(rust_code)
+&rbrace;
+
+<span class="co">/// Ejecuta .fa en la VM</span>
+<span class="kw">pub fn</span> ejecutar(source: &str) -> Result&lt;Vec&lt;String&gt;, String&gt; &lbrace;
+    <span class="co">// ... lexer + parser (igual) ...</span>
+    <span class="kw">let mut</span> gen = BytecodeGenerator::new();
+    <span class="kw">let</span> bytecode = gen.generar(&programa)?;
+    <span class="kw">let mut</span> vm = ForjaVM::new();
+    vm.cargar_bytecode(bytecode);
+    vm.ejecutar()?;
+    Ok(vm.obtener_output().to_vec())
+&rbrace;</code></pre>
+</Layout>

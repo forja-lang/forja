@@ -1,0 +1,22 @@
+// 🎓 Lección 5: Si / Sino (condicionales)
+// Tomá decisiones con 'si' y 'sino'.
+
+variable edad = 18
+
+si (edad >= 18) {
+    escribir("Sos mayor de edad")
+} sino {
+    escribir("Sos menor de edad")
+}
+
+// Se pueden anidar:
+variable nota = 85
+si (nota >= 90) {
+    escribir("Excelente!")
+} sino {
+    si (nota >= 70) {
+        escribir("Buen trabajo!")
+    } sino {
+        escribir("Seguí estudiando!")
+    }
+}

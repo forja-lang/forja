@@ -1,0 +1,17 @@
+// 🎓 Lección 7: Funciones
+// Las funciones agrupan código para reutilizarlo.
+
+funcion saludar(nombre) {
+    escribir("Hola, " + nombre + "!")
+}
+
+funcion suma(a, b) {
+    retornar a + b
+}
+
+// Llamar funciones:
+saludar("Ana")
+saludar("Pedro")
+
+variable resultado = suma(10, 5)
+escribir("10 + 5 = " + resultado)

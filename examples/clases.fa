@@ -1,0 +1,31 @@
+// Programación Orientada a Objetos en Forja
+
+clase Estudiante {
+    nombre
+    edad
+
+    constructor(n, e) {
+        este.nombre = n
+        este.edad = e
+    }
+
+    funcion presentarse() {
+        escribir("Hola, soy " + este.nombre + " y tengo " + este.edad + " años")
+    }
+
+    funcion esMayorDeEdad() {
+        retornar este.edad >= 18
+    }
+}
+
+// Uso de la clase
+variable alumno = nuevo Estudiante("Ana", 20)
+alumno.presentarse()
+
+variable mensaje = ""
+si (alumno.esMayorDeEdad()) {
+    mensaje = "Es mayor de edad"
+} sino {
+    mensaje = "Es menor de edad"
+}
+escribir(mensaje)

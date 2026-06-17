@@ -1,0 +1,59 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="REPL — Forja">
+  <h1>REPL Interactivo</h1>
+
+  <p><strong>Archivo:</strong> <code>src/repl.rs</code></p>
+
+  <p>Intérprete línea por línea. Ideal para <strong>aprender</strong>, <strong>experimentar</strong> y <strong>debuggear</strong>. Las variables persisten entre líneas.</p>
+
+  <h2>Iniciar el REPL</h2>
+
+  <div class="code-header">💬 Terminal</div>
+  <pre><code>$ forja repl
+🔨 Forja v0.1.0 — Escribí 'salir' para terminar
+    Escribí 'variables' para ver las variables activas
+    Escribí 'limpiar' para reiniciar el estado
+
+></code></pre>
+
+  <h2>Sesión completa</h2>
+
+  <div class="code-header">📝 Ejemplo interactivo</div>
+  <pre><code><span class="kw">variable</span> x = 5
+> x = x + 10
+> <span class="fn">escribir</span>(x)
+15
+> <span class="kw">constante</span> nombre = <span class="st">"Gaucho"</span>
+> <span class="fn">escribir</span>(<span class="st">"Hola "</span> + nombre)
+Hola Gaucho
+> <span class="kw">variable</span> suma = 2 + 3
+> <span class="fn">escribir</span>(suma)
+5
+> <span class="fn">escribir</span>(x + suma)
+20
+> salir
+👋 ¡Hasta luego!</code></pre>
+
+  <h2>Comandos disponibles</h2>
+
+  <table>
+    <tr><th>Comando</th><th>Función</th></tr>
+    <tr><td><code>salir</code>, <code>exit</code>, <code>quit</code></td><td>Salir del REPL</td></tr>
+    <tr><td><code>variables</code></td><td>Mostrar las variables activas</td></tr>
+    <tr><td><code>limpiar</code>, <code>reset</code></td><td>Reiniciar todo el estado de la VM</td></tr>
+  </table>
+
+  <h2>¿Cómo funciona por dentro?</h2>
+
+  <pre><code>Cada línea pasa por: Lexer → Parser → Bytecode Generator
+Luego:  VM.cargar_bytecode(bytecode)  <span class="co">// sin reiniciar variables</span>
+        VM.reset()                    <span class="co">// resetea IP y stack</span>
+        VM.ejecutar()                 <span class="co">// ejecuta la línea</span></code></pre>
+
+  <p>Como la VM <strong>no se reinicia entre líneas</strong>, las variables que declarás siguen existiendo. Podés construir programas paso a paso.</p>
+
+  <div class="tip"><strong>🔧 Ideal para:</strong> Aprender sintaxis nueva, probar expresiones rápidas, debuggear algoritmos paso a paso, y experimentar con las características del lenguaje sin crear archivos.</div>
+</Layout>

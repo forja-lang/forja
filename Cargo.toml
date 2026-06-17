@@ -1,0 +1,14 @@
+[package]
+name = "forja"
+version = "0.1.0"
+edition = "2021"
+description = "Compilador/Transpilador Forja (fa) → Rust"
+authors = ["Forja Team"]
+
+[dependencies]
+rustyline = "14"
+# Sin dependencias externas - solo std de Rust
+# El JSON se genera manualmente en error.rs
+
+[profile.release]
+opt-level = 2

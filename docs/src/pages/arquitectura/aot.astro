@@ -1,0 +1,62 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Compilador AOT — Forja">
+  <h1>Compilador AOT</h1>
+
+  <p><strong>Archivo:</strong> <code>src/aot.rs</code></p>
+
+  <p>Genera un <strong>ejecutable autónomo</strong> (<code>.exe</code>) que contiene la VM + bytecode incrustado. Funciona en cualquier PC <strong>sin Rust, sin scripts, sin dependencias</strong>.</p>
+
+  <h2>¿Cómo funciona?</h2>
+
+  <pre><code>1. Compila .fa → bytecode (igual que forja run)
+2. Lee el propio forja.exe como stub
+3. Concatena: [stub] + [bytecode] + [size:u32] + [magic:"FBC\0"]
+4. El .exe resultante se auto-ejecuta al abrirlo</code></pre>
+
+  <h2>Estructura del ejecutable</h2>
+
+  <pre><code>┌──────────────────────────────────┐
+│  forja.exe (stub)                │  ← el compilador mismo
+│  (contiene la VM completa)       │
+├──────────────────────────────────┤
+│  bytecode.fbc (payload)          │  ← tu programa compilado
+├──────────────────────────────────┤
+│  Tamaño: u32 LE (4 bytes)        │
+│  Magic: "FBC\0" (4 bytes)        │  ← footer
+└──────────────────────────────────┘</code></pre>
+
+  <h2>Uso</h2>
+
+  <div class="code-header">📦 Ejemplo</div>
+  <pre><code>forja build examples/hola_mundo.fa -o hola.exe
+<span class="co">// → ✅ Ejecutable generado: hola.exe (1234 bytes)</span>
+
+<span class="co">// Ahora cualquiera puede ejecutarlo, sin Rust:</span>
+./hola.exe
+<span class="co">// → Hola, mundo desde Forja!</span></code></pre>
+
+  <h2>Implementación</h2>
+
+  <pre><code><span class="kw">impl</span> AOTCompiler &lbrace;
+    <span class="kw">fn</span> generar_ejecutable(bytecode: &[u8], salida: &str) -> Result&lt;(), String&gt; &lbrace;
+        <span class="co">// Leer el propio .exe como stub</span>
+        <span class="kw">let</span> self_path = std::env::current_exe()?;
+        <span class="kw">let</span> stub = fs::read(&self_path)?;
+
+        <span class="co">// Concatenar: stub + bytecode + [size][magic]</span>
+        <span class="kw">let mut</span> output = Vec::new();
+        output.extend_from_slice(&stub);
+        output.extend_from_slice(bytecode);
+        output.extend_from_slice(&(bytecode.len() <span class="kw">as</span> u32).to_le_bytes());
+        output.extend_from_slice(b<span class="st">"FBC\0"</span>);
+
+        fs::write(salida, &output)?;
+        Ok(())
+    &rbrace;
+&rbrace;</code></pre>
+
+  <div class="tip"><strong>🔧 Innovación:</strong> El ejecutable generado se <strong>lee a sí mismo</strong> al inicio. El módulo <code>selfrun.rs</code> busca el magic <code>"FBC\0"</code> al final del archivo, extrae el bytecode y lo ejecuta en la VM. ¡Un solo archivo que es compilador y runtime a la vez!</div>
+</Layout>

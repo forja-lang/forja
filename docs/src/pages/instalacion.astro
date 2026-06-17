@@ -1,0 +1,223 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Instalación — Forja">
+  <h1>Instalación</h1>
+
+  <p>Compilá Forja desde el código fuente. Solo necesitás <strong>Rust</strong> instalado.</p>
+
+  <div class="info">💡 <strong>Requisito único:</strong> <a href="https://rustup.rs" target="_blank">rustup.rs</a> — Instalá Rust con <code>rustup-init.exe</code> en Windows, o con el script oficial en Linux/Mac.</div>
+
+  <h2>1. Clonar el repositorio</h2>
+
+  <div class="code-header">📥 bash</div>
+  <pre><code>git clone https://github.com/forja-lang/forja.git
+<span class="kw">cd</span> forja</code></pre>
+
+  <h2>2. Compilar</h2>
+
+  <div class="code-header">🔨 Debug</div>
+  <pre><code>
+        import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Instalación — Forja">
+  <h1>Instalación</h1>
+
+  <p>Compilá Forja desde el código fuente. Solo necesitás <strong>Rust</strong> instalado.</p>
+
+  <div class="info">💡 <strong>Requisito único:</strong> <a href="https://rustup.rs" target="_blank">rustup.rs</a> — Instalá Rust con <code>rustup-init.exe</code> en Windows, o con el script oficial en Linux/Mac.</div>
+
+  <h2>1. Clonar el repositorio</h2>
+
+  <div class="code-header">📥 bash</div>
+  <pre><code>git clone https://github.com/forja-lang/forja.git
+<span class="kw">cd</span> forja</code></pre>
+
+  <h2>2. Compilar</h2>
+
+  <div class="code-header">🔨 Debug</div>
+  <pre><code>cargo build --target x86_64-pc-windows-gnu</code></pre>
+
+  <div class="code-header">🚀 Release (recomendado)</div>
+  <pre><code>cargo build --release --target x86_64-pc-windows-gnu</code></pre>
+
+  <div class="tip"><strong>💡 Tip:</strong> En Windows, el target <code>x86_64-pc-windows-gnu</code> es necesario si usás LLVM MinGW. En Linux/Mac podés omitir el flag <code>--target</code>.</div>
+
+  <h2>3. Verificar</h2>
+
+  <pre><code>.\target\x86_64-pc-windows-gnu\debug\forja.exe --help</code></pre>
+
+  <p>Deberías ver la ayuda completa del comando Forja.</p>
+
+  <div class="info">🔧 <strong>Pro tip:</strong> Agregá la carpeta del binario a tu PATH para usar <code>forja</code> desde cualquier directorio:
+  <br><code>$env:Path += ";C:\Users\tu.usuario\forja\target\x86_64-pc-windows-gnu\debug\"</code> (PowerShell)</div>
+
+  <h2>4. Ejecutar los tests</h2>
+
+  <div class="code-header">🧪 ~50 tests</div>
+  <pre><code><span class="co"># Todos los tests</span>
+cargo test --target x86_64-pc-windows-gnu
+
+<span class="co"># Tests por módulo</span>
+cargo test --target x86_64-pc-windows-gnu -- lexer
+cargo test --target x86_64-pc-windows-gnu -- parser
+cargo test --target x86_64-pc-windows-gnu -- semantics
+cargo test --target x86_64-pc-windows-gnu -- transpiler
+cargo test --target x86_64-pc-windows-gnu -- bytecode
+cargo test --target x86_64-pc-windows-gnu -- vm</code></pre>
+
+  <h2>5. Probar con un ejemplo</h2>
+
+  <pre><code>.\target\x86_64-pc-windows-gnu\debug\forja.exe run examples/hola_mundo.fa
+<span class="co">// → Hola, mundo desde Forja!</span></code></pre>
+</Layout>
+.Value -replace '\&lbrace;', '&lbrace;' -replace '\&rbrace;', '&rbrace;'
+    </code></pre>
+
+  <div class="code-header">🚀 Release (recomendado)</div>
+  <pre><code>
+        import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Instalación — Forja">
+  <h1>Instalación</h1>
+
+  <p>Compilá Forja desde el código fuente. Solo necesitás <strong>Rust</strong> instalado.</p>
+
+  <div class="info">💡 <strong>Requisito único:</strong> <a href="https://rustup.rs" target="_blank">rustup.rs</a> — Instalá Rust con <code>rustup-init.exe</code> en Windows, o con el script oficial en Linux/Mac.</div>
+
+  <h2>1. Clonar el repositorio</h2>
+
+  <div class="code-header">📥 bash</div>
+  <pre><code>git clone https://github.com/forja-lang/forja.git
+<span class="kw">cd</span> forja</code></pre>
+
+  <h2>2. Compilar</h2>
+
+  <div class="code-header">🔨 Debug</div>
+  <pre><code>cargo build --target x86_64-pc-windows-gnu</code></pre>
+
+  <div class="code-header">🚀 Release (recomendado)</div>
+  <pre><code>cargo build --release --target x86_64-pc-windows-gnu</code></pre>
+
+  <div class="tip"><strong>💡 Tip:</strong> En Windows, el target <code>x86_64-pc-windows-gnu</code> es necesario si usás LLVM MinGW. En Linux/Mac podés omitir el flag <code>--target</code>.</div>
+
+  <h2>3. Verificar</h2>
+
+  <pre><code>.\target\x86_64-pc-windows-gnu\debug\forja.exe --help</code></pre>
+
+  <p>Deberías ver la ayuda completa del comando Forja.</p>
+
+  <div class="info">🔧 <strong>Pro tip:</strong> Agregá la carpeta del binario a tu PATH para usar <code>forja</code> desde cualquier directorio:
+  <br><code>$env:Path += ";C:\Users\tu.usuario\forja\target\x86_64-pc-windows-gnu\debug\"</code> (PowerShell)</div>
+
+  <h2>4. Ejecutar los tests</h2>
+
+  <div class="code-header">🧪 ~50 tests</div>
+  <pre><code><span class="co"># Todos los tests</span>
+cargo test --target x86_64-pc-windows-gnu
+
+<span class="co"># Tests por módulo</span>
+cargo test --target x86_64-pc-windows-gnu -- lexer
+cargo test --target x86_64-pc-windows-gnu -- parser
+cargo test --target x86_64-pc-windows-gnu -- semantics
+cargo test --target x86_64-pc-windows-gnu -- transpiler
+cargo test --target x86_64-pc-windows-gnu -- bytecode
+cargo test --target x86_64-pc-windows-gnu -- vm</code></pre>
+
+  <h2>5. Probar con un ejemplo</h2>
+
+  <pre><code>.\target\x86_64-pc-windows-gnu\debug\forja.exe run examples/hola_mundo.fa
+<span class="co">// → Hola, mundo desde Forja!</span></code></pre>
+</Layout>
+.Value -replace '\&lbrace;', '&lbrace;' -replace '\&rbrace;', '&rbrace;'
+    </code></pre>
+
+  <div class="tip"><strong>💡 Tip:</strong> En Windows, el target <code>x86_64-pc-windows-gnu</code> es necesario si usás LLVM MinGW. En Linux/Mac podés omitir el flag <code>--target</code>.</div>
+
+  <h2>3. Verificar</h2>
+
+  <pre><code>
+        import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Instalación — Forja">
+  <h1>Instalación</h1>
+
+  <p>Compilá Forja desde el código fuente. Solo necesitás <strong>Rust</strong> instalado.</p>
+
+  <div class="info">💡 <strong>Requisito único:</strong> <a href="https://rustup.rs" target="_blank">rustup.rs</a> — Instalá Rust con <code>rustup-init.exe</code> en Windows, o con el script oficial en Linux/Mac.</div>
+
+  <h2>1. Clonar el repositorio</h2>
+
+  <div class="code-header">📥 bash</div>
+  <pre><code>git clone https://github.com/forja-lang/forja.git
+<span class="kw">cd</span> forja</code></pre>
+
+  <h2>2. Compilar</h2>
+
+  <div class="code-header">🔨 Debug</div>
+  <pre><code>cargo build --target x86_64-pc-windows-gnu</code></pre>
+
+  <div class="code-header">🚀 Release (recomendado)</div>
+  <pre><code>cargo build --release --target x86_64-pc-windows-gnu</code></pre>
+
+  <div class="tip"><strong>💡 Tip:</strong> En Windows, el target <code>x86_64-pc-windows-gnu</code> es necesario si usás LLVM MinGW. En Linux/Mac podés omitir el flag <code>--target</code>.</div>
+
+  <h2>3. Verificar</h2>
+
+  <pre><code>.\target\x86_64-pc-windows-gnu\debug\forja.exe --help</code></pre>
+
+  <p>Deberías ver la ayuda completa del comando Forja.</p>
+
+  <div class="info">🔧 <strong>Pro tip:</strong> Agregá la carpeta del binario a tu PATH para usar <code>forja</code> desde cualquier directorio:
+  <br><code>$env:Path += ";C:\Users\tu.usuario\forja\target\x86_64-pc-windows-gnu\debug\"</code> (PowerShell)</div>
+
+  <h2>4. Ejecutar los tests</h2>
+
+  <div class="code-header">🧪 ~50 tests</div>
+  <pre><code><span class="co"># Todos los tests</span>
+cargo test --target x86_64-pc-windows-gnu
+
+<span class="co"># Tests por módulo</span>
+cargo test --target x86_64-pc-windows-gnu -- lexer
+cargo test --target x86_64-pc-windows-gnu -- parser
+cargo test --target x86_64-pc-windows-gnu -- semantics
+cargo test --target x86_64-pc-windows-gnu -- transpiler
+cargo test --target x86_64-pc-windows-gnu -- bytecode
+cargo test --target x86_64-pc-windows-gnu -- vm</code></pre>
+
+  <h2>5. Probar con un ejemplo</h2>
+
+  <pre><code>.\target\x86_64-pc-windows-gnu\debug\forja.exe run examples/hola_mundo.fa
+<span class="co">// → Hola, mundo desde Forja!</span></code></pre>
+</Layout>
+.Value -replace '\&lbrace;', '&lbrace;' -replace '\&rbrace;', '&rbrace;'
+    </code></pre>
+
+  <p>Deberías ver la ayuda completa del comando Forja.</p>
+
+  <div class="info">🔧 <strong>Pro tip:</strong> Agregá la carpeta del binario a tu PATH para usar <code>forja</code> desde cualquier directorio:
+  <br><code>$env:Path += ";C:\Users\tu.usuario\forja\target\x86_64-pc-windows-gnu\debug\"</code> (PowerShell)</div>
+
+  <h2>4. Ejecutar los tests</h2>
+
+  <div class="code-header">🧪 ~50 tests</div>
+  <pre><code><span class="co"># Todos los tests</span>
+cargo test --target x86_64-pc-windows-gnu
+
+<span class="co"># Tests por módulo</span>
+cargo test --target x86_64-pc-windows-gnu -- lexer
+cargo test --target x86_64-pc-windows-gnu -- parser
+cargo test --target x86_64-pc-windows-gnu -- semantics
+cargo test --target x86_64-pc-windows-gnu -- transpiler
+cargo test --target x86_64-pc-windows-gnu -- bytecode
+cargo test --target x86_64-pc-windows-gnu -- vm</code></pre>
+
+  <h2>5. Probar con un ejemplo</h2>
+
+  <pre><code>.\target\x86_64-pc-windows-gnu\debug\forja.exe run examples/hola_mundo.fa
+<span class="co">// → Hola, mundo desde Forja!</span></code></pre>
+</Layout>

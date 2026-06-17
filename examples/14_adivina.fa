@@ -1,0 +1,19 @@
+// 🎓 Lección 14: Proyecto — Adivinar un número
+// El programa elige un número y vos tenés que adivinarlo.
+
+// Por ahora: el número fijo es 7
+variable secreto = 7
+
+escribir("Adiviná el número (del 1 al 10):")
+variable intento = leer()
+
+// Convertir a número (leer() siempre devuelve texto)
+variable num = 0
+si (intento == "7") { num = 7 }
+sino { si (intento == "3") { num = 3 } }
+
+si (num == secreto) {
+    escribir("🎉 ¡Adivinaste!")
+} sino {
+    escribir("❌ No era ese. Era " + secreto)
+}

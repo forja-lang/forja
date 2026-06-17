@@ -1,0 +1,65 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Lexer — Forja">
+  <h1>Lexer (Analizador Léxico)</h1>
+
+  <p><strong>Archivo:</strong> <code>src/lexer.rs</code></p>
+
+  <p>El Lexer convierte el código fuente <code>.fa</code> en una secuencia de <strong>tokens</strong> que el Parser puede consumir. Es el primer paso del pipeline.</p>
+
+  <h2>Estructura</h2>
+
+  <pre><code><span class="kw">pub struct</span> Lexer &lbrace;
+    source: Vec&lt;char&gt;,   <span class="co">// código fuente como chars</span>
+    pos: usize,           <span class="co">// posición actual</span>
+    linea: usize,         <span class="co">// línea actual (1-indexed)</span>
+    columna: usize,       <span class="co">// columna actual (1-indexed)</span>
+&rbrace;</code></pre>
+
+  <h2>¿Qué tokeniza?</h2>
+
+  <div class="feature-grid">
+    <div class="feature-card"><div class="icon">🔑</div><h4>20 keywords</h4><p>variable, si, clase, mientras, este, funcion, nuevo, retornar, prestado...</p></div>
+    <div class="feature-card"><div class="icon">💠</div><h4>Tipos</h4><p>Texto, Entero, Decimal, Booleano</p></div>
+    <div class="feature-card"><div class="icon">🔣</div><h4>15+ símbolos</h4><p>&lbrace;&rbrace;, (), [], ; :, =, . , &</p></div>
+    <div class="feature-card"><div class="icon">🧮</div><h4>Operadores</h4><p>+, -, *, /, >, <, >=, <=, ==, !=, &&, ||, !</p></div>
+    <div class="feature-card"><div class="icon">🔢</div><h4>Literales</h4><p>Enteros (i64), decimales (f64), strings con escape</p></div>
+    <div class="feature-card"><div class="icon">📝</div><h4>Comentarios</h4><p>// línea y /* bloque */</p></div>
+  </div>
+
+  <h2>TokenKind (token.rs)</h2>
+
+  <pre><code><span class="kw">pub enum</span> TokenKind &lbrace;
+    <span class="co">// Keywords</span>
+    Variable, Constante, Mut, Si, Sino, Mientras, Para,
+    Repetir, Clase, Constructor, Este, Nuevo, Funcion,
+    Prestado, Escribir, BD, Verdadero, Falso, Nulo, Retornar,
+
+    <span class="co">// Tipos</span>
+    TipoTexto, TipoEntero, TipoDecimal, TipoBooleano,
+
+    <span class="co">// Símbolos y operadores</span>
+    Amp, LlaveAbrir, LlaveCerrar, ParenAbrir, ParenCerrar,
+    CorcheteAbrir, CorcheteCerrar, Coma, Punto, DosPuntos,
+    PuntoComa, Igual, Mas, Menos, Por, Dividido,
+    Mayor, Menor, MayorIgual, MenorIgual, IgualIgual,
+    Diferente, Y, O, No,
+
+    <span class="co">// Literales</span>
+    Identificador(String), Numero(i64), Decimal(f64), Texto(String),
+
+    <span class="co">// Especiales</span>
+    EOF, Error(char),
+&rbrace;</code></pre>
+
+  <h2>Manejo de errores</h2>
+
+  <table>
+    <tr><th>Error</th><th>Ejemplo</th><th>Sugerencia</th></tr>
+    <tr><td>String sin cerrar</td><td><code>"hola</code></td><td>"Agregá una comilla doble al final"</td></tr>
+    <tr><td>Carácter no reconocido</td><td><code>@</code></td><td>"Revisá que no haya caracteres extraños"</td></tr>
+    <tr><td><code>|</code> suelto</td><td><code>|</code> sin <code>||</code></td><td>"Usá '||' para el operador O lógico"</td></tr>
+  </table>
+</Layout>

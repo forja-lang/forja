@@ -1,0 +1,67 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Bytecode Generator — Forja">
+  <h1>Bytecode Generator</h1>
+
+  <p><strong>Archivo:</strong> <code>src/bytecode.rs</code></p>
+
+  <p>Genera <strong>bytecode stack-based</strong> a partir del AST. Es el paso intermedio para la VM y el compilador AOT.</p>
+
+  <div class="info">💡 <strong>Stack-based:</strong> Todas las operaciones trabajan sobre una pila. <code>2 + 3</code> → <code>PushEntero(2) + PushEntero(3) + Add</code></div>
+
+  <h2>Opcodes</h2>
+
+  <table>
+    <tr><th>Categoría</th><th>Opcodes</th><th>Byte</th></tr>
+    <tr><td><strong>Pila</strong></td><td><code>PushEntero</code>, <code>PushDecimal</code>, <code>PushTexto</code>, <code>PushBooleano</code>, <code>PushNulo</code>, <code>Pop</code>, <code>Dup</code></td><td>0-6</td></tr>
+    <tr><td><strong>Variables</strong></td><td><code>Load</code>, <code>Store</code>, <code>Declare</code></td><td>10-12</td></tr>
+    <tr><td><strong>Aritmética</strong></td><td><code>Add</code>, <code>Sub</code>, <code>Mul</code>, <code>Div</code></td><td>20-23</td></tr>
+    <tr><td><strong>Comparación</strong></td><td><code>Igual</code>, <code>Diferente</code>, <code>Menor</code>, <code>Mayor</code>, <code>MenorIgual</code>, <code>MayorIgual</code></td><td>30-35</td></tr>
+    <tr><td><strong>Lógica</strong></td><td><code>Y</code>, <code>O</code>, <code>No</code></td><td>40-42</td></tr>
+    <tr><td><strong>Control</strong></td><td><code>Jump</code>, <code>JumpSiFalso</code>, <code>Label</code>, <code>Halt</code></td><td>50-53</td></tr>
+    <tr><td><strong>Funciones</strong></td><td><code>FunctionDef</code>, <code>Call</code>, <code>Return</code></td><td>55, 60, 61</td></tr>
+    <tr><td><strong>POO</strong></td><td><code>NewObject</code>, <code>SetField</code>, <code>GetField</code>, <code>CallMethod</code></td><td>62-65</td></tr>
+    <tr><td><strong>I/O</strong></td><td><code>Print</code></td><td>70</td></tr>
+  </table>
+
+  <h2>Ejemplo de generación</h2>
+
+  <div class="code-header">📄 Código Forja</div>
+  <pre><code><span class="kw">variable</span> x = 2 + 3
+<span class="fn">escribir</span>(x)</code></pre>
+
+  <div class="code-header">💾 Bytecode generado</div>
+  <pre><code>PushEntero(2)        <span class="co">// stack: [2]</span>
+PushEntero(3)        <span class="co">// stack: [2, 3]</span>
+Add                  <span class="co">// stack: [5]</span>
+Declare("x", true)   <span class="co">// x = 5, stack: []</span>
+Load("x")            <span class="co">// stack: [5]</span>
+Print                <span class="co">// imprime 5</span>
+Halt                 <span class="co">// fin</span></code></pre>
+
+  <h2>Clases en bytecode</h2>
+
+  <p>Los métodos de clase se extraen y se convierten en funciones con prefijo <code>Clase.metodo</code>:</p>
+  <ul>
+    <li><code>constructor</code> → <code>Persona.nuevo</code></li>
+    <li><code>funcion saludar()</code> → <code>Persona.saludar</code></li>
+    <li>El primer parámetro es siempre <code>self</code> (la instancia)</li>
+  </ul>
+
+  <h2>Serialización .fbc</h2>
+
+  <pre><code>┌─────────────────────────────────────┐
+│ Magic: "FBC\0"       (4 bytes)     │
+│ Version: u32 LE      (4 bytes)     │
+│ String Pool Count    (4 bytes)     │
+│ String Pool: [len, utf8...]*       │
+│ Opcodes Count        (4 bytes)     │
+│ Opcodes: [byte + payload...]       │
+└─────────────────────────────────────┘</code></pre>
+
+  <p>Cada opcode se guarda como 1 byte (tipo) + payload según tipo (enteros 8 bytes, strings como índice al pool de 4 bytes, etc.)</p>
+
+  <div class="tip"><strong>🔧 String Pool:</strong> Los strings (nombres de variables, funciones) se almacenan una sola vez en un pool y se referencian por índice. Ahorra espacio y acelera la serialización.</div>
+</Layout>

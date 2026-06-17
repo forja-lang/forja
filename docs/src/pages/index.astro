@@ -1,0 +1,145 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Forja — Lenguaje de programación en español" description="Forja (fa) es un lenguaje educativo en español que transpila a Rust y ejecuta en su propia VM con JIT">
+
+  <div class="hero">
+    <h1>Forja</h1>
+    <div class="subtitle">Lenguaje de programación en <strong>español</strong> que transpila a <strong>Rust</strong> y ejecuta en <strong>VM</strong> con <strong>JIT</strong></div>
+    <div class="badge-row">
+      <span class="badge dot">⚡ Bytecode + JIT</span>
+      <span class="badge">🔧 Rust backend</span>
+      <span class="badge">🎯 Educativo</span>
+      <span class="badge">📦 Ejecutable único</span>
+      <span class="badge">🇪🇸 100% español</span>
+    </div>
+  </div>
+
+  <p><strong>Forja (fa)</strong> es un lenguaje de programación educativo — similar a PSeInt o ESJS — pero con <strong>tipado estático</strong>, <strong>ownership</strong>, <strong>préstamos</strong>, y la potencia de Rust como lenguaje final. Todo en <strong>español</strong>.</p>
+
+  <div class="info">💡 <strong>Filosofía:</strong> Aprender conceptos modernos de sistemas (ownership, mutabilidad, borrowing) sin la complejidad sintáctica de Rust, y en tu idioma.</div>
+
+  <div class="code-header">📄 hola_mundo.fa</div>
+  <pre><code><span class="co">// Tu primer programa en Forja</span>
+<span class="fn">escribir</span>(<span class="st">"Hola, mundo desde Forja!"</span>)</code></pre>
+
+  <div class="code-header">⚡ Ejecutalo ya</div>
+  <pre><code><span class="co"># Transpilar a Rust</span>
+forja ejemplo.fa -o salida.rs
+
+<span class="co"># Ejecutar en VM (sin Rust)</span>
+forja run ejemplo.fa
+
+<span class="co"># Modo interactivo</span>
+forja repl
+
+<span class="co"># Generar .exe autónomo</span>
+forja build ejemplo.fa -o programa.exe</code></pre>
+
+  <h2>¿Qué lo hace único?</h2>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="icon">🌎</div>
+      <h4>100% en español</h4>
+      <p>Keywords, errores, documentación y mensajes completamente en español. Ideal para hispanohablantes.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🦀</div>
+      <h4>Transpila a Rust</h4>
+      <p>Genera código Rust válido y compilable. Aprendés Rust indirectamente mientras escribís Forja.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">⚡</div>
+      <h4>VM + JIT</h4>
+      <p>Ejecutá código directamente sin compilar a Rust. El JIT con Cranelift acelera los hot paths a código máquina.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">📦</div>
+      <h4>Ejecutable único</h4>
+      <p>Generá un .exe autónomo con la VM + bytecode incrustado. Funciona en cualquier PC sin dependencias.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🔍</div>
+      <h4>Borrow Checker</h4>
+      <p>Análisis de ownership y préstamos al estilo Rust, con mensajes de error educativos en español.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">💬</div>
+      <h4>REPL interactivo</h4>
+      <p>Probá código línea por línea con feedback inmediato. Las variables persisten entre líneas.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🧱</div>
+      <h4>POO nativa</h4>
+      <p>Clases, constructores, métodos, herencia de campos. TODO con sintaxis en español.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🔧</div>
+      <h4>0 dependencias externas</h4>
+      <p>La VM y el bytecode usan solo Rust std. Sin serde, sin runtime pesado, sin scripts.</p>
+    </div>
+  </div>
+
+  <h2>Pipeline de compilación</h2>
+
+  <pre><code>┌─────────┐   ┌───────┐   ┌─────┐   ┌──────────────┐   ┌─────────────┐
+│ Source  │ → │ Lexer │ → │Parser│ → │Borrow Checker│ → │ Transpiler  │ → Rust .rs
+│  .fa    │   │       │   │     │   │  (semántica)  │   │             │
+└─────────┘   └───────┘   └─────┘   └──────────────┘   └─────────────┘
+                                     ════════════════════
+                                     ‖  o también (VM):  ‖
+                                     ════════════════════
+                               ┌──────────────┐   ┌───────────┐   ┌──────────┐
+                               │ Bytecode Gen │ → │  VM / JIT  │ → │ Output   │
+                               │  (bytecode)  │   │  (vm/jit)  │   │          │
+                               └──────────────┘   └───────────┘   └──────────┘
+                                         │
+                                         ▼
+                               ┌──────────────────┐
+                               │ AOT Compiler      │ → .exe autónomo
+                               │ (aot + selfrun)   │
+                               └──────────────────┘</code></pre>
+
+  <h2>Hacé tus primeros pasos</h2>
+
+  <pre><code><span class="co">// 1. Variables mutables e inmutables</span>
+<span class="kw">variable</span> nombre = <span class="st">"Gaucho"</span>
+<span class="kw">constante</span> edad = 30
+
+<span class="co">// 2. Condicionales en español</span>
+<span class="kw">si</span> (edad >= 18) &lbrace;
+    <span class="fn">escribir</span>(nombre + <span class="st">" es mayor de edad"</span>)
+&rbrace; <span class="kw">sino</span> &lbrace;
+    <span class="fn">escribir</span>(nombre + <span class="st">" es menor"</span>)
+&rbrace;
+
+<span class="co">// 3. Bucles</span>
+<span class="kw">para</span> (<span class="kw">variable</span> i = 0; i &lt; 5; i = i + 1) &lbrace;
+    <span class="fn">escribir</span>(<span class="st">"Iteración "</span> + i)
+&rbrace;
+
+<span class="co">// 4. Funciones</span>
+<span class="kw">funcion</span> suma(a, b) &lbrace;
+    <span class="kw">retornar</span> a + b
+&rbrace;
+
+<span class="fn">escribir</span>(<span class="st">"2 + 3 = "</span> + suma(2, 3))
+
+<span class="co">// 5. Clases</span>
+<span class="kw">clase</span> Persona &lbrace;
+    nombre
+    <span class="kw">constructor</span>(n) &lbrace;
+        <span class="kw">este</span>.nombre = n
+    &rbrace;
+    <span class="kw">funcion</span> saludar() &lbrace;
+        <span class="fn">escribir</span>(<span class="st">"Hola, soy "</span> + <span class="kw">este</span>.nombre)
+    &rbrace;
+&rbrace;
+
+<span class="kw">variable</span> p = <span class="kw">nuevo</span> Persona(<span class="st">"Ana"</span>)
+p.saludar()</code></pre>
+
+  <div class="tip"><strong>🔧 ¿Listo para empezar?</strong> Andá a <a href="/instalacion">Instalación</a> para compilar Forja, o directamente a <a href="/uso">Uso</a> para ver los comandos disponibles.</div>
+</Layout>

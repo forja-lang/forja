@@ -1,0 +1,10 @@
+// 🎓 Lección 12: Entrada del usuario
+// 'leer()' pide al usuario que escriba algo.
+
+escribir("¿Cómo te llamás?")
+variable nombre = leer()
+escribir("¡Hola, " + nombre + "!")
+
+escribir("¿Cuántos años tenés?")
+variable edad = leer()
+escribir("Tenés " + edad + " años. ¡Qué bien!")

@@ -1,0 +1,21 @@
+// Condicionales en Forja
+variable x = 10
+variable y = 5
+
+si (x > y) {
+    escribir("x es mayor que y")
+} sino {
+    escribir("x no es mayor que y")
+}
+
+// si anidado
+variable nota = 85
+si (nota >= 90) {
+    escribir("Excelente!")
+} sino {
+    si (nota >= 70) {
+        escribir("Buen trabajo!")
+    } sino {
+        escribir("Sigue intentando!")
+    }
+}
