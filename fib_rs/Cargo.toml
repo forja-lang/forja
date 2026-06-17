@@ -1,9 +1,0 @@
-[package]
-name = "fib"
-version = "0.1.0"
-edition = "2021"
-
-# Generado por Forja (fa) desde fib.fa
-# https://github.com/forja-lang/forja
-
-[dependencies]

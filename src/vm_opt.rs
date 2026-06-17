@@ -1,5 +1,5 @@
 // Forja VM Optimizada v3 — Ultra
-// 1. Variables: Vec<(String, ValorVM)> con búsqueda lineal (más rápido que HashMap para scopes pequeños)
+// 1. Variables: Vec<ValorVMOpt> por ámbito, acceso O(1) por índice numérico
 // 2. Call/Return: push/pop de Vec, sin HashMap allocation
 // 3. Print: buffer interno, sin println!() en cada opcode
 // 4. Aritmética inline
@@ -7,23 +7,28 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::sync::LazyLock;
 use crate::bytecode::Opcode;
 
-// Small Integer Cache [-5, 256] — evita construir el enum repetidamente
-static SMALL_INT_CACHE_OPT: LazyLock<[ValorVMOpt; 262]> = LazyLock::new(|| {
-    let mut cache = [ValorVMOpt::Entero(0); 262];
-    for i in 0..262 {
-        cache[i] = ValorVMOpt::Entero(i as i64 - 5);
-    }
-    cache
-});
+// Small Integer Cache [-5, 256] — thread_local! porque ValorVMOpt no es Send/Sync
+use std::cell::OnceCell;
+thread_local! {
+    static SMALL_INT_CACHE_OPT: OnceCell<[ValorVMOpt; 262]> = OnceCell::new();
+}
 
 /// Devuelve ValorVMOpt::Entero(n) usando la Small Integer Cache si n está en [-5, 256]
 #[inline(always)]
 pub fn get_small_int_opt(n: i64) -> ValorVMOpt {
     if n >= -5 && n <= 256 {
-        SMALL_INT_CACHE_OPT[(n + 5) as usize].clone()
+        SMALL_INT_CACHE_OPT.with(|cell| {
+            let cache = cell.get_or_init(|| {
+                let mut cache: [ValorVMOpt; 262] = std::array::from_fn(|_| ValorVMOpt::Entero(0));
+                for i in 0..262 {
+                    cache[i] = ValorVMOpt::Entero(i as i64 - 5);
+                }
+                cache
+            });
+            cache[(n + 5) as usize].clone()
+        })
     } else {
         ValorVMOpt::Entero(n)
     }
@@ -70,9 +75,12 @@ pub struct ForjaVMOpt {
     stack: Vec<ValorVMOpt>,
     call_stack: Vec<FrameOpt>,
 
-    // Variables: Vec<(nombre, valor)> por ámbito — búsqueda lineal O(n) con n<20
-    // MUCHO más rápido que HashMap para scopes pequeños típicos de Forja
-    variables: Vec<Vec<(String, ValorVMOpt)>>,
+    // Variables: Vec<ValorVMOpt> por ámbito — acceso O(1) por índice numérico
+    // optimizar_indices() asigna índices globales, usamos Vec por ámbito
+    variables: Vec<Vec<ValorVMOpt>>,
+
+    // Mapa nombre→índice por ámbito (compatibilidad con Load/Store por nombre)
+    nombre_a_indice: Vec<HashMap<String, usize>>,
 
     funciones: HashMap<String, FuncInfo>,
     bytecode: Vec<Opcode>,
@@ -82,7 +90,10 @@ pub struct ForjaVMOpt {
     instrucciones_ejecutadas: usize,
 }
 
-struct FrameOpt { ip_retorno: usize }
+struct FrameOpt {
+    ip_retorno: usize,
+    ambito: usize,
+}
 
 #[derive(Debug, Clone)]
 pub enum ErrorVMOpt {
@@ -111,6 +122,7 @@ impl ForjaVMOpt {
         ForjaVMOpt {
             ip: 0, stack: Vec::with_capacity(256), call_stack: Vec::with_capacity(64),
             variables: vec![Vec::with_capacity(16)],
+            nombre_a_indice: vec![HashMap::with_capacity(16)],
             funciones: HashMap::new(), bytecode: Vec::new(),
             output: Vec::with_capacity(64),
             max_instrucciones: 100_000_000, instrucciones_ejecutadas: 0,
@@ -153,38 +165,41 @@ impl ForjaVMOpt {
         self.bytecode = new_bc;
     }
 
-    pub fn reset(&mut self) { self.ip = 0; self.stack.clear(); self.call_stack.clear(); self.output.clear(); }
+    pub fn reset(&mut self) {
+        self.ip = 0;
+        self.stack.clear();
+        self.call_stack.clear();
+        self.output.clear();
+    }
 
-    #[inline(always)] fn pop(&mut self) -> Result<ValorVMOpt, ErrorVMOpt> { self.stack.pop().ok_or(ErrorVMOpt::StackUnderflow("pop".into())) }
+    pub fn reset_completo(&mut self) {
+        self.ip = 0;
+        self.stack.clear();
+        self.call_stack.clear();
+        self.variables = vec![Vec::with_capacity(16)];
+        self.nombre_a_indice = vec![HashMap::with_capacity(16)];
+        self.output.clear();
+        self.funciones.clear();
+        self.bytecode.clear();
+    }
+
+    #[inline(always)] fn pop(&mut self) -> Result<ValorVMOpt, ErrorVMOpt> {
+        self.stack.pop().ok_or(ErrorVMOpt::StackUnderflow("pop".into()))
+    }
     #[inline(always)] fn push(&mut self, v: ValorVMOpt) { self.stack.push(v); }
 
-    // Búsqueda lineal O(n) — más rápido que HashMap para n < 20
+    /// Obtiene el ámbito actual
     #[inline(always)]
-    fn buscar_pos(&self, nombre: &str) -> Option<(usize, usize)> {
-        for (a_idx, ambito) in self.variables.iter().enumerate().rev() {
-            for (v_idx, (name, _)) in ambito.iter().enumerate().rev() {
-                if name == nombre { return Some((a_idx, v_idx)); }
-            }
+    fn ambito_actual(&self) -> usize {
+        self.call_stack.last().map(|f| f.ambito).unwrap_or(0)
+    }
+
+    /// Asegura que el Vec del ámbito tenga al menos `idx + 1` elementos
+    #[inline(always)]
+    fn asegurar_indice(&mut self, ambito: usize, idx: usize) {
+        if idx >= self.variables[ambito].len() {
+            self.variables[ambito].resize(idx + 1, ValorVMOpt::Nulo);
         }
-        None
-    }
-
-    fn buscar_variable(&self, nombre: &str) -> Result<&ValorVMOpt, ErrorVMOpt> {
-        self.buscar_pos(nombre)
-            .and_then(|(a, v)| self.variables.get(a)?.get(v).map(|(_, val)| val))
-            .ok_or_else(|| ErrorVMOpt::VariableNoDeclarada(nombre.to_string()))
-    }
-
-    fn asignar_variable(&mut self, nombre: &str, val: ValorVMOpt) -> Result<(), ErrorVMOpt> {
-        if let Some((a, v)) = self.buscar_pos(nombre) {
-            if let Some(slot) = self.variables[a].get_mut(v) { slot.1 = val; return Ok(()); }
-        }
-        Err(ErrorVMOpt::VariableNoDeclarada(nombre.to_string()))
-    }
-
-    fn declarar_variable(&mut self, nombre: &str, val: ValorVMOpt) {
-        let a = self.variables.len() - 1;
-        self.variables[a].push((nombre.to_string(), val));
     }
 
     pub fn ejecutar(&mut self) -> Result<(), ErrorVMOpt> {
@@ -208,33 +223,66 @@ impl ForjaVMOpt {
                 Opcode::PushBooleano(b) => self.stack.push(ValorVMOpt::Booleano(b)),
                 Opcode::PushNulo => self.stack.push(ValorVMOpt::Nulo),
                 Opcode::Pop => { self.pop()?; }
-                Opcode::Dup => { let v = self.stack.last().ok_or(ErrorVMOpt::StackUnderflow("Dup".into()))?.clone(); self.stack.push(v); }
+                Opcode::Dup => {
+                    let v = self.stack.last().ok_or(ErrorVMOpt::StackUnderflow("Dup".into()))?.clone();
+                    self.stack.push(v);
+                }
 
-                Opcode::Load(nombre) => { let v = self.buscar_variable(&nombre)?.clone(); self.stack.push(v); }
-                Opcode::Store(nombre) => { let v = self.pop()?; self.asignar_variable(&nombre, v)?; }
-                Opcode::Declare(nombre, _) => { let v = self.pop()?; self.declarar_variable(&nombre, v); }
+                // Load/Store/Declare por nombre (compatibilidad)
+                Opcode::Load(nombre) => {
+                    let v = self.buscar_variable(&nombre)?.clone();
+                    self.stack.push(v);
+                }
+                Opcode::Store(nombre) => {
+                    let v = self.pop()?;
+                    self.asignar_variable(&nombre, v)?;
+                }
+                Opcode::Declare(nombre, _) => {
+                    let v = self.pop()?;
+                    let ambito = self.ambito_actual();
+                    let idx = self.variables[ambito].len();
+                    self.nombre_a_indice[ambito].insert(nombre, idx);
+                    self.variables[ambito].push(v);
+                }
 
-                // LoadIdx/StoreIdx/DeclareIdx — convertir a nombre temporal (para compatibilidad)
-                Opcode::LoadIdx(idx) => { let nombre = format!("%idx_{}", idx); let v = self.buscar_variable(&nombre)?.clone(); self.stack.push(v); }
-                Opcode::StoreIdx(idx) => { let v = self.pop()?; let nombre = format!("%idx_{}", idx); self.asignar_variable(&nombre, v)?; }
-                Opcode::DeclareIdx(idx, _) => { let v = self.pop()?; let nombre = format!("%idx_{}", idx); self.declarar_variable(&nombre, v); }
+                // === LoadIdx/StoreIdx/DeclareIdx — ACCESO DIRECTO O(1) ===
+                // Sin format!() ni HashMap — acceso directo por índice
+                Opcode::LoadIdx(idx) => {
+                    let ambito = self.ambito_actual();
+                    if idx < self.variables[ambito].len() {
+                        self.stack.push(self.variables[ambito][idx].clone());
+                    } else {
+                        self.stack.push(ValorVMOpt::Nulo);
+                    }
+                }
+                Opcode::StoreIdx(idx) => {
+                    let v = self.pop()?;
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = v;
+                }
+                Opcode::DeclareIdx(idx, _) => {
+                    let v = self.pop()?;
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = v;
+                }
 
-                // === Opcodes fusionados ===
+                // === Opcodes fusionados — acceso directo O(1) ===
                 Opcode::DeclareEnteroOp(idx, n) => {
-                    let nombre = format!("%idx_{}", idx);
-                    self.declarar_variable(&nombre, get_small_int_opt(n));
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = get_small_int_opt(n);
                 }
                 Opcode::DeclareBooleanoOp(idx, b) => {
-                    let nombre = format!("%idx_{}", idx);
-                    self.declarar_variable(&nombre, ValorVMOpt::Booleano(b));
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = ValorVMOpt::Booleano(b);
                 }
                 Opcode::StoreEnteroOp(idx, n) => {
-                    let nombre = format!("%idx_{}", idx);
-                    if self.buscar_pos(&nombre).is_some() {
-                        self.asignar_variable(&nombre, get_small_int_opt(n))?;
-                    } else {
-                        self.declarar_variable(&nombre, get_small_int_opt(n));
-                    }
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = get_small_int_opt(n);
                 }
 
                 Opcode::Add => { let (b,a)=(self.pop()?,self.pop()?);match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x+y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x+y)),(ValorVMOpt::Entero(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(*x as f64+y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Decimal(x+*y as f64)),(ValorVMOpt::Texto(t),v)=>self.push(ValorVMOpt::Texto(Rc::from(format!("{}{}",t,v.mostrar()).as_str()))),_=>return Err(ErrorVMOpt::TipoIncompatible("suma".into()))}}
@@ -258,30 +306,37 @@ impl ForjaVMOpt {
                 Opcode::Label(_) => {}
                 Opcode::FunctionDef(_, _) => {}
 
-                // Call optimizado: Vec<(String, ValorVM)> sin HashMap allocation
+                // Call optimizado: push/pop de Vec<ValorVMOpt>, sin HashMap allocation
                 Opcode::Call(nombre, nargs) => {
                     if let Some(func) = self.funciones.get(&nombre).cloned() {
-                        self.call_stack.push(FrameOpt { ip_retorno: self.ip });
+                        // Crear nuevo ámbito
+                        let ambito = self.variables.len();
+                        self.variables.push(Vec::with_capacity(func.param_names.len()));
+                        self.nombre_a_indice.push(HashMap::with_capacity(func.param_names.len()));
+
+                        self.call_stack.push(FrameOpt { ip_retorno: self.ip, ambito });
+
                         let mut args: Vec<ValorVMOpt> = Vec::with_capacity(nargs);
                         for _ in 0..nargs { args.push(self.pop()?); }
                         args.reverse();
 
-                        // Vec<(String, ValorVM)> — sin HashMap, sin allocation por parámetro
-                        let mut new_scope = Vec::with_capacity(func.param_names.len());
+                        // Asignar parámetros por índice O(1)
                         for (i, name) in func.param_names.iter().enumerate() {
                             let val = if i < args.len() {
                                 std::mem::replace(&mut args[i], ValorVMOpt::Nulo)
                             } else { ValorVMOpt::Nulo };
-                            new_scope.push((name.clone(), val));
+                            self.nombre_a_indice[ambito].insert(name.clone(), i);
+                            self.asegurar_indice(ambito, i);
+                            self.variables[ambito][i] = val;
                         }
-                        self.variables.push(new_scope);
                         self.ip = func.ip;
                     } else { return Err(ErrorVMOpt::FuncionNoDefinida(nombre)); }
                 }
                 Opcode::Return => {
-                    if let Some(frame) = self.call_stack.pop() {
+                    if let Some(_frame) = self.call_stack.pop() {
                         self.variables.pop();
-                        self.ip = frame.ip_retorno;
+                        self.nombre_a_indice.pop();
+                        self.ip = _frame.ip_retorno;
                     } else { break; }
                 }
 
@@ -310,14 +365,18 @@ impl ForjaVMOpt {
                         let clase = obj_ref.0.borrow().clase.clone();
                         let fn_name = format!("{}.{}", clase, metodo);
                         if let Some(func) = self.funciones.get(&fn_name).cloned() {
-                            self.call_stack.push(FrameOpt { ip_retorno: self.ip });
+                            let ambito = self.variables.len();
+                            self.variables.push(Vec::with_capacity(func.param_names.len()));
+                            self.nombre_a_indice.push(HashMap::with_capacity(func.param_names.len()));
+
+                            self.call_stack.push(FrameOpt { ip_retorno: self.ip, ambito });
                             let mut all = vec![ValorVMOpt::Objeto(obj_ref)]; all.extend(args);
-                            let mut ns = Vec::with_capacity(func.param_names.len());
                             for (i, name) in func.param_names.iter().enumerate() {
                                 let val = if i < all.len() { std::mem::replace(&mut all[i], ValorVMOpt::Nulo) } else { ValorVMOpt::Nulo };
-                                ns.push((name.clone(), val));
+                                self.nombre_a_indice[ambito].insert(name.clone(), i);
+                                self.asegurar_indice(ambito, i);
+                                self.variables[ambito][i] = val;
                             }
-                            self.variables.push(ns);
                             self.ip = func.ip;
                         } else { return Err(ErrorVMOpt::FuncionNoDefinida(fn_name)); }
                     } else { return Err(ErrorVMOpt::TipoIncompatible("CallMethod".into())); }
@@ -338,6 +397,30 @@ impl ForjaVMOpt {
 
     pub fn obtener_output(&self) -> &[String] { &self.output }
     pub fn obtener_output_string(&self) -> String { self.output.join("\n") }
+
+    /// Búsqueda de variable por nombre (compatibilidad — O(n) sobre scopes, O(1) dentro de cada scope)
+    fn buscar_variable(&self, nombre: &str) -> Result<&ValorVMOpt, ErrorVMOpt> {
+        for (ambito_idx, nombre_map) in self.nombre_a_indice.iter().enumerate().rev() {
+            if let Some(&idx) = nombre_map.get(nombre) {
+                if let Some(val) = self.variables.get(ambito_idx).and_then(|v| v.get(idx)) {
+                    return Ok(val);
+                }
+            }
+        }
+        Err(ErrorVMOpt::VariableNoDeclarada(nombre.to_string()))
+    }
+
+    fn asignar_variable(&mut self, nombre: &str, val: ValorVMOpt) -> Result<(), ErrorVMOpt> {
+        for (ambito_idx, nombre_map) in self.nombre_a_indice.iter().enumerate().rev() {
+            if let Some(&idx) = nombre_map.get(nombre) {
+                if let Some(slot) = self.variables.get_mut(ambito_idx).and_then(|v| v.get_mut(idx)) {
+                    *slot = val;
+                    return Ok(());
+                }
+            }
+        }
+        Err(ErrorVMOpt::VariableNoDeclarada(nombre.to_string()))
+    }
 }
 
 // Builtins

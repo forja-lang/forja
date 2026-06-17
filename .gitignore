@@ -1,1 +1,7 @@
 plans/
+benchmarks/
+fib_rs/
+scripts/
+target/
+test_inline_rs/
+tests/

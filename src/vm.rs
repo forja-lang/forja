@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::io::Write;
-use std::sync::LazyLock;
 use crate::bytecode::Opcode;
 
 /// Un objeto en la VM (instancia de clase) con referencia compartida
@@ -45,25 +44,31 @@ impl StringPool {
         }
     }
 }
-
-// Small Integer Cache [-5, 256] — evita construir el enum repetidamente
-static SMALL_INT_CACHE_VM: LazyLock<[ValorVM; 262]> = LazyLock::new(|| {
-    let mut cache = [ValorVM::Entero(0); 262];
-    for i in 0..262 {
-        cache[i] = ValorVM::Entero(i as i64 - 5);
-    }
-    cache
-});
+// Small Integer Cache [-5, 256] — thread_local! porque ValorVM no es Send/Sync
+use std::cell::OnceCell;
+thread_local! {
+    static SMALL_INT_CACHE_VM: OnceCell<[ValorVM; 262]> = OnceCell::new();
+}
 
 /// Devuelve ValorVM::Entero(n) usando la Small Integer Cache si n está en [-5, 256]
 #[inline(always)]
 pub fn get_small_int_vm(n: i64) -> ValorVM {
     if n >= -5 && n <= 256 {
-        SMALL_INT_CACHE_VM[(n + 5) as usize].clone()
+        SMALL_INT_CACHE_VM.with(|cell| {
+            let cache = cell.get_or_init(|| {
+                let mut cache: [ValorVM; 262] = std::array::from_fn(|_| ValorVM::Entero(0));
+                for i in 0..262 {
+                    cache[i] = ValorVM::Entero(i as i64 - 5);
+                }
+                cache
+            });
+            cache[(n + 5) as usize].clone()
+        })
     } else {
         ValorVM::Entero(n)
     }
 }
+
 
 #[derive(Debug, Clone)]
 pub enum ValorVM {
@@ -233,7 +238,10 @@ pub struct ForjaVM {
     ip: usize,
     stack: Vec<ValorVM>,
     call_stack: Vec<Frame>,
-    variables: Vec<HashMap<String, ValorVM>>,
+    /// Variables: Vec por ámbito, acceso O(1) por índice numérico
+    variables: Vec<Vec<ValorVM>>,
+    /// Mapa nombre→índice por ámbito (solo para compatibilidad con Load/Store por nombre)
+    nombre_a_indice: Vec<HashMap<String, usize>>,
     funciones: HashMap<String, usize>,
     bytecode: Vec<Opcode>,
     output: Vec<String>,
@@ -250,6 +258,8 @@ struct Frame {
     ip_retorno: usize,
     #[allow(dead_code)]
     nombre: String,
+    /// Índice del ámbito de variables (posición en self.variables)
+    ambito: usize,
 }
 
 impl ForjaVM {
@@ -258,7 +268,8 @@ impl ForjaVM {
             ip: 0,
             stack: Vec::new(),
             call_stack: Vec::new(),
-            variables: vec![HashMap::new()],
+            variables: vec![Vec::new()],
+            nombre_a_indice: vec![HashMap::new()],
             funciones: HashMap::new(),
             bytecode: Vec::new(),
             output: Vec::new(),
@@ -328,10 +339,23 @@ impl ForjaVM {
         self.ip = 0;
         self.stack.clear();
         self.call_stack.clear();
-        self.variables = vec![HashMap::new()];
+        self.variables = vec![Vec::new()];
+        self.nombre_a_indice = vec![HashMap::new()];
         self.output.clear();
         self.funciones.clear();
         self.bytecode.clear();
+    }
+
+    /// Obtiene el ámbito actual (índice del Vec<Vec<ValorVM>> activo)
+    fn ambito_actual(&self) -> usize {
+        self.call_stack.last().map(|f| f.ambito).unwrap_or(0)
+    }
+
+    /// Asegura que el Vec del ámbito actual tenga al menos `idx + 1` elementos
+    fn asegurar_indice(&mut self, ambito: usize, idx: usize) {
+        if idx >= self.variables[ambito].len() {
+            self.variables[ambito].resize(idx + 1, ValorVM::Nulo);
+        }
     }
 
     /// Ejecuta el bytecode cargado
@@ -369,6 +393,7 @@ impl ForjaVM {
                     self.stack.push(val);
                 }
 
+                // Load/Store/Declare por nombre (compatibilidad — resuelve nombre→índice)
                 Opcode::Load(nombre) => {
                     let val = self.buscar_variable(&nombre)?;
                     self.stack.push(val.clone());
@@ -381,53 +406,50 @@ impl ForjaVM {
 
                 Opcode::Declare(nombre, _mutable) => {
                     let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Declare".to_string()))?;
-                    let ambito = self.variables.last_mut().unwrap();
-                    ambito.insert(nombre, val);
+                    let ambito = self.ambito_actual();
+                    let idx = self.variables[ambito].len();
+                    self.nombre_a_indice[ambito].insert(nombre, idx);
+                    self.variables[ambito].push(val);
                 }
 
-                // LoadIdx/StoreIdx/DeclareIdx — convertir a nombre temporal (para compatibilidad)
+                // === LoadIdx/StoreIdx/DeclareIdx — ACCESO DIRECTO O(1) ===
+                // Sin format!() ni HashMap — acceso directo a variables[ambito][idx]
                 Opcode::LoadIdx(idx) => {
-                    let nombre = format!("%idx_{}", idx);
-                    let val = self.buscar_variable(&nombre)?;
-                    self.stack.push(val.clone());
+                    let ambito = self.ambito_actual();
+                    if idx < self.variables[ambito].len() {
+                        self.stack.push(self.variables[ambito][idx].clone());
+                    } else {
+                        self.stack.push(ValorVM::Nulo);
+                    }
                 }
                 Opcode::StoreIdx(idx) => {
                     let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("StoreIdx".to_string()))?;
-                    let nombre = format!("%idx_{}", idx);
-                    self.asignar_variable(&nombre, val)?;
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = val;
                 }
                 Opcode::DeclareIdx(idx, _mutable) => {
                     let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DeclareIdx".to_string()))?;
-                    let nombre = format!("%idx_{}", idx);
-                    let ambito = self.variables.last_mut().unwrap();
-                    ambito.insert(nombre, val);
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = val;
                 }
 
-                // === Opcodes fusionados ===
+                // === Opcodes fusionados — acceso directo O(1) ===
                 Opcode::DeclareEnteroOp(idx, n) => {
-                    let nombre = format!("%idx_{}", idx);
-                    let ambito = self.variables.last_mut().unwrap();
-                    ambito.insert(nombre, get_small_int_vm(n));
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = get_small_int_vm(n);
                 }
                 Opcode::DeclareBooleanoOp(idx, b) => {
-                    let nombre = format!("%idx_{}", idx);
-                    let ambito = self.variables.last_mut().unwrap();
-                    ambito.insert(nombre, ValorVM::Booleano(b));
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = ValorVM::Booleano(b);
                 }
                 Opcode::StoreEnteroOp(idx, n) => {
-                    let nombre = format!("%idx_{}", idx);
-                    let mut encontrada = false;
-                    for ambito in self.variables.iter_mut().rev() {
-                        if let Some(slot) = ambito.get_mut(&nombre) {
-                            *slot = get_small_int_vm(n);
-                            encontrada = true;
-                            break;
-                        }
-                    }
-                    if !encontrada {
-                        let ambito = self.variables.last_mut().unwrap();
-                        ambito.insert(nombre, get_small_int_vm(n));
-                    }
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = get_small_int_vm(n);
                 }
 
                 Opcode::Add => {
@@ -530,21 +552,22 @@ impl ForjaVM {
 
                 Opcode::FunctionDef(_, _) => {
                     // FunctionDef se salta (ya se registró en cargar_bytecode)
-                    // Las declaraciones de variables dentro de la función
-                    // se ejecutan normalmente.
                 }
 
                 Opcode::Call(nombre, nargs) => {
                     // Buscar la función por nombre
                     if let Some(&label) = self.funciones.get(&nombre) {
+                        // Crear nuevo ámbito
+                        let ambito = self.variables.len();
+                        self.variables.push(Vec::new());
+                        self.nombre_a_indice.push(HashMap::new());
+
                         let frame = Frame {
                             ip_retorno: self.ip,
                             nombre: nombre.clone(),
+                            ambito,
                         };
                         self.call_stack.push(frame);
-
-                        // Crear nuevo ámbito para los parámetros
-                        let mut nuevo_ambito = HashMap::new();
 
                         // Obtener nombres de parámetros del bytecode
                         let param_names: Vec<String> = self.bytecode.iter()
@@ -563,13 +586,15 @@ impl ForjaVM {
                         }
                         args.reverse();
 
+                        // Registrar parámetros con nombre→índice + valor en Vec
                         for (i, val) in args.into_iter().enumerate() {
                             if i < param_names.len() {
-                                nuevo_ambito.insert(param_names[i].clone(), val);
+                                self.nombre_a_indice[ambito].insert(param_names[i].clone(), i);
+                                self.asegurar_indice(ambito, i);
+                                self.variables[ambito][i] = val;
                             }
                         }
 
-                        self.variables.push(nuevo_ambito);
                         self.ip = label;
                     } else {
                         return Err(ErrorVM::FuncionNoDefinida(nombre));
@@ -578,7 +603,9 @@ impl ForjaVM {
 
                 Opcode::Return => {
                     if let Some(frame) = self.call_stack.pop() {
+                        // Pop del ámbito (variables y nombre_a_indice)
                         self.variables.pop();
+                        self.nombre_a_indice.pop();
                         self.ip = frame.ip_retorno;
                     } else {
                         // Return global → fin
@@ -618,8 +645,13 @@ impl ForjaVM {
                             let clase = obj_ref.0.borrow().clase.clone();
                             let func_name = format!("{}.{}", clase, metodo);
                             if let Some(&label) = self.funciones.get(&func_name) {
-                                let frame = Frame { ip_retorno: self.ip, nombre: func_name.clone() };
+                                let ambito = self.variables.len();
+                                self.variables.push(Vec::new());
+                                self.nombre_a_indice.push(HashMap::new());
+
+                                let frame = Frame { ip_retorno: self.ip, nombre: func_name.clone(), ambito };
                                 self.call_stack.push(frame);
+
                                 let param_names: Vec<String> = self.bytecode.iter()
                                     .find_map(|op| {
                                         if let Opcode::FunctionDef(n, params) = op {
@@ -627,15 +659,16 @@ impl ForjaVM {
                                         } else { None }
                                     })
                                     .unwrap_or_default();
-                                let mut nuevo_ambito = HashMap::new();
+
                                 let mut all_args = vec![obj_val];
                                 all_args.extend(args);
                                 for (i, val) in all_args.into_iter().enumerate() {
                                     if i < param_names.len() {
-                                        nuevo_ambito.insert(param_names[i].clone(), val);
+                                        self.nombre_a_indice[ambito].insert(param_names[i].clone(), i);
+                                        self.asegurar_indice(ambito, i);
+                                        self.variables[ambito][i] = val;
                                     }
                                 }
-                                self.variables.push(nuevo_ambito);
                                 self.ip = label;
                             } else {
                                 return Err(ErrorVM::FuncionNoDefinida(func_name));
@@ -811,38 +844,52 @@ impl ForjaVM {
     /// Devuelve todas las variables activas
     pub fn obtener_variables(&self) -> Vec<(String, String, String)> {
         let mut vars = Vec::new();
-        for ambito in self.variables.iter() {
-            for (nombre, valor) in ambito {
-                let tipo = match valor {
-                    ValorVM::Entero(_) => "Entero",
-                    ValorVM::Decimal(_) => "Decimal",
-                    ValorVM::Texto(_) => "Texto",
-                    ValorVM::Booleano(_) => "Booleano",
-                    ValorVM::Nulo => "Nulo",
-                    ValorVM::Objeto(_) => "Objeto",
-                    ValorVM::Arreglo(_) => "Arreglo",
-                    ValorVM::Mapa(_) => "Mapa",
-                };
-                vars.push((nombre.clone(), valor.mostrar(), tipo.to_string()));
+        for (ambito_idx, ambito) in self.variables.iter().enumerate() {
+            // Usar nombre_a_indice para obtener nombres
+            let nombre_map = if ambito_idx < self.nombre_a_indice.len() {
+                &self.nombre_a_indice[ambito_idx]
+            } else {
+                continue;
+            };
+            // Construir reverse-map índice→nombre
+            for (nombre, &idx) in nombre_map {
+                if idx < ambito.len() {
+                    let valor = &ambito[idx];
+                    let tipo = match valor {
+                        ValorVM::Entero(_) => "Entero",
+                        ValorVM::Decimal(_) => "Decimal",
+                        ValorVM::Texto(_) => "Texto",
+                        ValorVM::Booleano(_) => "Booleano",
+                        ValorVM::Nulo => "Nulo",
+                        ValorVM::Objeto(_) => "Objeto",
+                        ValorVM::Arreglo(_) => "Arreglo",
+                        ValorVM::Mapa(_) => "Mapa",
+                    };
+                    vars.push((nombre.clone(), valor.mostrar(), tipo.to_string()));
+                }
             }
         }
         vars
     }
 
     fn buscar_variable(&self, nombre: &str) -> Result<&ValorVM, ErrorVM> {
-        for ambito in self.variables.iter().rev() {
-            if let Some(val) = ambito.get(nombre) {
-                return Ok(val);
+        for (ambito_idx, nombre_map) in self.nombre_a_indice.iter().enumerate().rev() {
+            if let Some(&idx) = nombre_map.get(nombre) {
+                if let Some(val) = self.variables.get(ambito_idx).and_then(|v| v.get(idx)) {
+                    return Ok(val);
+                }
             }
         }
         Err(ErrorVM::VariableNoDeclarada(nombre.to_string()))
     }
 
     fn asignar_variable(&mut self, nombre: &str, valor: ValorVM) -> Result<(), ErrorVM> {
-        for ambito in self.variables.iter_mut().rev() {
-            if ambito.contains_key(nombre) {
-                ambito.insert(nombre.to_string(), valor);
-                return Ok(());
+        for (ambito_idx, nombre_map) in self.nombre_a_indice.iter().enumerate().rev() {
+            if let Some(&idx) = nombre_map.get(nombre) {
+                if let Some(slot) = self.variables.get_mut(ambito_idx).and_then(|v| v.get_mut(idx)) {
+                    *slot = valor;
+                    return Ok(());
+                }
             }
         }
         Err(ErrorVM::VariableNoDeclarada(nombre.to_string()))
@@ -970,6 +1017,8 @@ mod tests {
     use crate::lexer::Lexer;
     use crate::parser::Parser;
     use crate::bytecode::BytecodeGenerator;
+    use crate::bytecode::optimizar_indices;
+    use crate::bytecode::fusionar_opcodes;
 
     fn ejecutar_source(source: &str) -> Result<ForjaVM, ErrorVM> {
         let mut lexer = Lexer::new(source);
@@ -978,6 +1027,9 @@ mod tests {
         let programa = parser.parse().map_err(|_| ErrorVM::StackUnderflow("Parser".to_string()))?;
         let mut gen = BytecodeGenerator::new();
         let bytecode = gen.generar(&programa).map_err(|_| ErrorVM::StackUnderflow("Bytecode".to_string()))?;
+        // Aplicar optimización de índices y fusión (como hace lib.rs)
+        let bytecode = optimizar_indices(&bytecode);
+        let bytecode = fusionar_opcodes(&bytecode);
         let mut vm = ForjaVM::new();
         vm.cargar_bytecode(bytecode);
         vm.ejecutar()?;
