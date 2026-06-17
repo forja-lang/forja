@@ -302,6 +302,8 @@ impl std::fmt::Display for ErrorDT {
     }
 }
 
+impl std::error::Error for ErrorDT {}
+
 impl ForjaDT {
     pub fn new() -> Self {
         ForjaDT {
@@ -374,19 +376,18 @@ impl ForjaDT {
             if self.stack.len() > 10000 { return Err(ErrorDT::StackOverflow("pila".into())); }
 
             let op = self.code[self.ip];
-            self.ip += 1;
 
             match op {
-                OP_PUSH_ENTERO => { let n = self.ri(); self.push(get_small_int_dt(n)); }
-                OP_PUSH_DECIMAL => { let f = self.rf(); self.push(ValorDT::Decimal(f)); }
-                OP_PUSH_TEXTO => { let s = self.rs(); self.push(ValorDT::Texto(Rc::from(s.as_str()))); }
-                OP_PUSH_BOOL => { let b = self.ri() != 0; self.push(ValorDT::Booleano(b)); }
-                OP_PUSH_NULO => self.push(ValorDT::Nulo),
-                OP_POP => { self.pop()?; }
-                OP_DUP => { let v = self.stack.last().ok_or(ErrorDT::StackUnderflow("Dup".into()))?.clone(); self.push(v); }
-                OP_LOAD => { let n = self.rs(); let v = self.buscar_var(&n)?.clone(); self.push(v); }
-                OP_STORE => { let v = self.pop()?; let n = self.rs(); self.asignar_var(&n, v)?; }
-                OP_DECLARE => { let v = self.pop()?; let n = self.rs(); self.declarar_var(&n, v); }
+                OP_PUSH_ENTERO => { let n = self.ri(); self.push(get_small_int_dt(n)); self.ip += 1; }
+                OP_PUSH_DECIMAL => { let f = self.rf(); self.push(ValorDT::Decimal(f)); self.ip += 1; }
+                OP_PUSH_TEXTO => { let s = self.rs(); self.push(ValorDT::Texto(Rc::from(s.as_str()))); self.ip += 1; }
+                OP_PUSH_BOOL => { let b = self.ri() != 0; self.push(ValorDT::Booleano(b)); self.ip += 1; }
+                OP_PUSH_NULO => { self.push(ValorDT::Nulo); self.ip += 1; }
+                OP_POP => { self.pop()?; self.ip += 1; }
+                OP_DUP => { let v = self.stack.last().ok_or(ErrorDT::StackUnderflow("Dup".into()))?.clone(); self.push(v); self.ip += 1; }
+                OP_LOAD => { let n = self.rs(); let v = self.buscar_var(&n)?.clone(); self.push(v); self.ip += 1; }
+                OP_STORE => { let v = self.pop()?; let n = self.rs(); self.asignar_var(&n, v)?; self.ip += 1; }
+                OP_DECLARE => { let v = self.pop()?; let n = self.rs(); self.declarar_var(&n, v); self.ip += 1; }
 
                 OP_ADD => { let (b,a)=(self.pop()?,self.pop()?); match (&a,&b) {
                     (ValorDT::Entero(x),ValorDT::Entero(y))=>self.push(ValorDT::Entero(x+y)),
@@ -395,33 +396,33 @@ impl ForjaDT {
                     (ValorDT::Decimal(x),ValorDT::Entero(y))=>self.push(ValorDT::Decimal(x+*y as f64)),
                     (ValorDT::Texto(t),v)=>self.push(ValorDT::Texto(Rc::from(format!("{}{}",t,v.mostrar()).as_str()))),
                     _=>return Err(ErrorDT::TipoIncompatible("suma".into()))}
-                }
+                self.ip += 1; }
                 OP_SUB => { let (b,a)=(self.pop()?,self.pop()?); match (&a,&b) {
                     (ValorDT::Entero(x),ValorDT::Entero(y))=>self.push(ValorDT::Entero(x-y)),
                     (ValorDT::Decimal(x),ValorDT::Decimal(y))=>self.push(ValorDT::Decimal(x-y)),
                     _=>return Err(ErrorDT::TipoIncompatible("resta".into()))}
-                }
+                self.ip += 1; }
                 OP_MUL => { let (b,a)=(self.pop()?,self.pop()?); match (&a,&b) {
                     (ValorDT::Entero(x),ValorDT::Entero(y))=>self.push(ValorDT::Entero(x*y)),
                     (ValorDT::Decimal(x),ValorDT::Decimal(y))=>self.push(ValorDT::Decimal(x*y)),
                     _=>return Err(ErrorDT::TipoIncompatible("mul".into()))}
-                }
+                self.ip += 1; }
                 OP_DIV => { let (b,a)=(self.pop()?,self.pop()?); match (&a,&b) {
                     (_,ValorDT::Entero(0))|(_,ValorDT::Decimal(0.0))=>return Err(ErrorDT::DivisionPorCero),
                     (ValorDT::Entero(x),ValorDT::Entero(y))=>self.push(ValorDT::Entero(x/y)),
                     (ValorDT::Decimal(x),ValorDT::Decimal(y))=>self.push(ValorDT::Decimal(x/y)),
                     _=>return Err(ErrorDT::TipoIncompatible("div".into()))}
-                }
+                self.ip += 1; }
 
-                OP_IGUAL => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x==y,(ValorDT::Decimal(x),ValorDT::Decimal(y))=>x==y,(ValorDT::Texto(x),ValorDT::Texto(y))=>x==y,(ValorDT::Booleano(x),ValorDT::Booleano(y))=>x==y,_=>return Err(ErrorDT::TipoIncompatible("==".into()))})); }
-                OP_DIF => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x!=y,(ValorDT::Decimal(x),ValorDT::Decimal(y))=>x!=y,_=>return Err(ErrorDT::TipoIncompatible("!=".into()))})); }
-                OP_MENOR => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x<y,(ValorDT::Decimal(x),ValorDT::Decimal(y))=>x<y,_=>return Err(ErrorDT::TipoIncompatible("<".into()))})); }
-                OP_MAYOR => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x>y,(ValorDT::Decimal(x),ValorDT::Decimal(y))=>x>y,_=>return Err(ErrorDT::TipoIncompatible(">".into()))})); }
-                OP_MENOR_IGUAL => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x<=y,(ValorDT::Decimal(x),ValorDT::Decimal(y))=>x<=y,_=>return Err(ErrorDT::TipoIncompatible("<=".into()))})); }
-                OP_MAYOR_IGUAL => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x>=y,(ValorDT::Decimal(x),ValorDT::Decimal(y))=>x>=y,_=>return Err(ErrorDT::TipoIncompatible(">=".into()))})); }
-                OP_Y => { let b=self.pop()?;let a=self.pop()?;self.push(ValorDT::Booleano(a.es_verdadero()&&b.es_verdadero())); }
-                OP_O => { let b=self.pop()?;let a=self.pop()?;self.push(ValorDT::Booleano(a.es_verdadero()||b.es_verdadero())); }
-                OP_NO => { let a=self.pop()?;self.push(ValorDT::Booleano(!a.es_verdadero())); }
+                OP_IGUAL => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x==y,(ValorDT::Decimal(x),ValorDT::Decimal(y))=>x==y,(ValorDT::Texto(x),ValorDT::Texto(y))=>x==y,(ValorDT::Booleano(x),ValorDT::Booleano(y))=>x==y,_=>return Err(ErrorDT::TipoIncompatible("==".into()))})); self.ip += 1; }
+                OP_DIF => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x!=y,(ValorDT::Decimal(x),ValorDT::Decimal(y))=>x!=y,_=>return Err(ErrorDT::TipoIncompatible("!=".into()))})); self.ip += 1; }
+                OP_MENOR => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x<y,(ValorDT::Decimal(x),ValorDT::Decimal(y))=>x<y,_=>return Err(ErrorDT::TipoIncompatible("<".into()))})); self.ip += 1; }
+                OP_MAYOR => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x>y,(ValorDT::Decimal(x),ValorDT::Decimal(y))=>x>y,_=>return Err(ErrorDT::TipoIncompatible(">".into()))})); self.ip += 1; }
+                OP_MENOR_IGUAL => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x<=y,(ValorDT::Decimal(x),ValorDT::Decimal(y))=>x<=y,_=>return Err(ErrorDT::TipoIncompatible("<=".into()))})); self.ip += 1; }
+                OP_MAYOR_IGUAL => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x>=y,(ValorDT::Decimal(x),ValorDT::Decimal(y))=>x>=y,_=>return Err(ErrorDT::TipoIncompatible(">=".into()))})); self.ip += 1; }
+                OP_Y => { let b=self.pop()?;let a=self.pop()?;self.push(ValorDT::Booleano(a.es_verdadero()&&b.es_verdadero())); self.ip += 1; }
+                OP_O => { let b=self.pop()?;let a=self.pop()?;self.push(ValorDT::Booleano(a.es_verdadero()||b.es_verdadero())); self.ip += 1; }
+                OP_NO => { let a=self.pop()?;self.push(ValorDT::Booleano(!a.es_verdadero())); self.ip += 1; }
 
                 OP_JUMP => {
                     self.ip = self.jump_ops[self.jump_idx];
@@ -442,17 +443,19 @@ impl ForjaDT {
                             let (s, i, f, j) = self.idx_at_ip[self.ip];
                             self.str_idx = s; self.int_idx = i; self.float_idx = f; self.jump_idx = j;
                         }
+                    } else {
+                        self.ip += 1;
                     }
                 }
-                OP_LABEL => {}
-                OP_FN_DEF => { self.str_idx += 1; self.str_list_idx += 1; }
+                OP_LABEL => { self.ip += 1; }
+                OP_FN_DEF => { self.str_idx += 1; self.str_list_idx += 1; self.ip += 1; }
 
                 OP_CALL => {
-                    let call_ip = self.ip - 1;
+                    let call_ip = self.ip;
                     let nombre = self.call_names.get(&call_ip).cloned().unwrap_or_default();
                     let nargs = self.ri() as usize;
                     if let Some(func) = self.funciones.get(&nombre).cloned() {
-                        self.call_stack.push(FrameDT { ip_retorno: self.ip, int_ret: self.int_idx, float_ret: self.float_idx, str_ret: self.str_idx, strl_ret: self.str_list_idx, jump_ret: self.jump_idx });
+                        self.call_stack.push(FrameDT { ip_retorno: call_ip + 1, int_ret: self.int_idx, float_ret: self.float_idx, str_ret: self.str_idx, strl_ret: self.str_list_idx, jump_ret: self.jump_idx });
                         // Sincronizar índices al inicio del cuerpo de la función
                         if let Some(&str_start) = self.fn_str_start.get(&nombre) {
                             self.str_idx = str_start;
@@ -487,27 +490,29 @@ impl ForjaDT {
                     } else { break; }
                 }
 
-                OP_PRINT => { let v = self.pop()?; let t = v.mostrar(); self.output.push(t); }
+                OP_PRINT => { let v = self.pop()?; let t = v.mostrar(); self.output.push(t); self.ip += 1; }
                 OP_READ => {
                     let mut i = String::new(); print!("> "); let _ = std::io::Write::flush(&mut std::io::stdout());
                     if std::io::stdin().read_line(&mut i).is_ok() { self.push(ValorDT::Texto(Rc::from(i.trim()))); }
                     else { self.push(ValorDT::Texto(Rc::from(""))); }
+                    self.ip += 1;
                 }
 
-                OP_NEW_OBJ => { let c = self.rs(); self.push(ValorDT::Objeto(ObjetoRefDT(Rc::new(RefCell::new(ObjetoDT { clase: c, campos: HashMap::new() }))))); }
-                OP_SET_FIELD => { let c = self.rs(); if let ValorDT::Objeto(o) = self.pop()? { let v = self.pop()?; o.0.borrow_mut().campos.insert(c, v); } else { return Err(ErrorDT::TipoIncompatible("SetField".into())); } }
-                OP_GET_FIELD => { let c = self.rs(); if let ValorDT::Objeto(o) = self.pop()? { let b = o.0.borrow(); self.push(b.campos.get(&c).cloned().unwrap_or(ValorDT::Nulo)); } else { return Err(ErrorDT::TipoIncompatible("GetField".into())); } }
+                OP_NEW_OBJ => { let c = self.rs(); self.push(ValorDT::Objeto(ObjetoRefDT(Rc::new(RefCell::new(ObjetoDT { clase: c, campos: HashMap::new() }))))); self.ip += 1; }
+                OP_SET_FIELD => { let c = self.rs(); if let ValorDT::Objeto(o) = self.pop()? { let v = self.pop()?; o.0.borrow_mut().campos.insert(c, v); } else { return Err(ErrorDT::TipoIncompatible("SetField".into())); } self.ip += 1; }
+                OP_GET_FIELD => { let c = self.rs(); if let ValorDT::Objeto(o) = self.pop()? { let b = o.0.borrow(); self.push(b.campos.get(&c).cloned().unwrap_or(ValorDT::Nulo)); } else { return Err(ErrorDT::TipoIncompatible("GetField".into())); } self.ip += 1; }
 
                 OP_CALL_METHOD => {
+                    let call_ip = self.ip;
                     let metodo = self.rs(); let nargs = self.ri() as usize;
-                    if let Some(b) = resolver_builtin_dt(&metodo) { self.ejecutar_builtin_dt(b, nargs)?; return Ok(()); }
+                    if let Some(b) = resolver_builtin_dt(&metodo) { self.ejecutar_builtin_dt(b, nargs)?; self.ip += 1; return Ok(()); }
                     let mut args: Vec<ValorDT> = Vec::with_capacity(nargs);
                     for _ in 0..nargs { args.push(self.pop()?); } args.reverse();
                     if let ValorDT::Objeto(obj_ref) = self.pop()? {
                         let clase = obj_ref.0.borrow().clase.clone();
                         let fn_name = format!("{}.{}", clase, metodo);
                         if let Some(func) = self.funciones.get(&fn_name).cloned() {
-                            self.call_stack.push(FrameDT { ip_retorno: self.ip, int_ret: self.int_idx, float_ret: self.float_idx, str_ret: self.str_idx, strl_ret: self.str_list_idx, jump_ret: self.jump_idx });
+                            self.call_stack.push(FrameDT { ip_retorno: call_ip + 1, int_ret: self.int_idx, float_ret: self.float_idx, str_ret: self.str_idx, strl_ret: self.str_list_idx, jump_ret: self.jump_idx });
                             let mut all = vec![ValorDT::Objeto(obj_ref)]; all.extend(args);
                             let mut nv = Vec::with_capacity(func.param_names.len());
                             let mut ni = HashMap::with_capacity(func.param_names.len());
@@ -522,13 +527,13 @@ impl ForjaDT {
                     } else { return Err(ErrorDT::TipoIncompatible("CallMethod".into())); }
                 }
 
-                OP_ARRAY_NEW => { let n = self.ri() as usize; let mut e = Vec::with_capacity(n); for _ in 0..n { e.push(self.pop()?); } e.reverse(); self.push(ValorDT::Arreglo(e)); }
-                OP_ARRAY_GET => { let i=self.pop()?;let a=self.pop()?;match(&a,&i){(ValorDT::Arreglo(e),ValorDT::Entero(i))=>if *i>=0&&(*i as usize)<e.len(){self.push(e[*i as usize].clone())}else{return Err(ErrorDT::IndiceFueraRango(format!("[{}]",i)))},_=>return Err(ErrorDT::TipoIncompatible("ArrayGet".into()))} }
-                OP_ARRAY_SET => { let i=self.pop()?;let mut a=self.pop()?;let v=self.pop()?;if let(ValorDT::Arreglo(ref mut e),ValorDT::Entero(i))=(&mut a,&i){if *i>=0&&(*i as usize)<e.len(){e[*i as usize]=v;self.push(a)}else{return Err(ErrorDT::IndiceFueraRango("set".into()))}}else{return Err(ErrorDT::TipoIncompatible("ArraySet".into()))} }
-                OP_ARRAY_LEN => { if let ValorDT::Arreglo(e)=self.pop()?{self.push(get_small_int_dt(e.len() as i64))}else{return Err(ErrorDT::TipoIncompatible("ArrayLen".into()))} }
-                OP_MAP_NEW => { let n=self.ri() as usize;let mut m=HashMap::with_capacity(n);for _ in 0..n{let v=self.pop()?;if let ValorDT::Texto(k)=self.pop()?{m.insert(k.to_string(),v);}}self.push(ValorDT::Mapa(m)); }
-                OP_MAP_GET => { let k=self.pop()?;let m=self.pop()?;match(&m,&k){(ValorDT::Mapa(m),ValorDT::Texto(k))=>self.push(m.get(k.as_ref()).cloned().unwrap_or(ValorDT::Nulo)),_=>return Err(ErrorDT::TipoIncompatible("MapGet".into()))} }
-                OP_MAP_SET => { let v=self.pop()?;let k=self.pop()?;let mut map=self.pop()?;if let(ValorDT::Mapa(ref mut m),ValorDT::Texto(k))=(&mut map,k){m.insert(k.to_string(),v);self.push(map)}else{return Err(ErrorDT::TipoIncompatible("MapSet".into()))} }
+                OP_ARRAY_NEW => { let n = self.ri() as usize; let mut e = Vec::with_capacity(n); for _ in 0..n { e.push(self.pop()?); } e.reverse(); self.push(ValorDT::Arreglo(e)); self.ip += 1; }
+                OP_ARRAY_GET => { let i=self.pop()?;let a=self.pop()?;match(&a,&i){(ValorDT::Arreglo(e),ValorDT::Entero(i))=>if *i>=0&&(*i as usize)<e.len(){self.push(e[*i as usize].clone())}else{return Err(ErrorDT::IndiceFueraRango(format!("[{}]",i)))},_=>return Err(ErrorDT::TipoIncompatible("ArrayGet".into()))} self.ip += 1; }
+                OP_ARRAY_SET => { let i=self.pop()?;let mut a=self.pop()?;let v=self.pop()?;if let(ValorDT::Arreglo(ref mut e),ValorDT::Entero(i))=(&mut a,&i){if *i>=0&&(*i as usize)<e.len(){e[*i as usize]=v;self.push(a)}else{return Err(ErrorDT::IndiceFueraRango("set".into()))}}else{return Err(ErrorDT::TipoIncompatible("ArraySet".into()))} self.ip += 1; }
+                OP_ARRAY_LEN => { if let ValorDT::Arreglo(e)=self.pop()?{self.push(get_small_int_dt(e.len() as i64))}else{return Err(ErrorDT::TipoIncompatible("ArrayLen".into()))} self.ip += 1; }
+                OP_MAP_NEW => { let n=self.ri() as usize;let mut m=HashMap::with_capacity(n);for _ in 0..n{let v=self.pop()?;if let ValorDT::Texto(k)=self.pop()?{m.insert(k.to_string(),v);}}self.push(ValorDT::Mapa(m)); self.ip += 1; }
+                OP_MAP_GET => { let k=self.pop()?;let m=self.pop()?;match(&m,&k){(ValorDT::Mapa(m),ValorDT::Texto(k))=>self.push(m.get(k.as_ref()).cloned().unwrap_or(ValorDT::Nulo)),_=>return Err(ErrorDT::TipoIncompatible("MapGet".into()))} self.ip += 1; }
+                OP_MAP_SET => { let v=self.pop()?;let k=self.pop()?;let mut map=self.pop()?;if let(ValorDT::Mapa(ref mut m),ValorDT::Texto(k))=(&mut map,k){m.insert(k.to_string(),v);self.push(map)}else{return Err(ErrorDT::TipoIncompatible("MapSet".into()))} self.ip += 1; }
                 OP_HALT => break,
                 _ => break,
             }

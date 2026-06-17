@@ -34,6 +34,27 @@ pub enum Opcode {
     Mul,
     Div,
 
+    // === Opcodes aritméticos especializados (PEP 659 — Specializing Adaptive Interpreter) ===
+    AddInt,
+    AddFloat,
+    SubInt,
+    SubFloat,
+    MulInt,
+    MulFloat,
+    DivInt,
+    DivFloat,
+
+    // === Opcodes de comparación especializados ===
+    IgualInt,
+    MenorInt,
+    MayorInt,
+
+    // === Opcodes de carga/guardado especializados por tipo ===
+    LoadIdxEntero(usize),    // La variable en idx siempre es entero
+    LoadIdxFloat(usize),     // La variable en idx siempre es float
+    StoreIdxEntero(usize),   // Guardar entero directo en idx
+    StoreIdxFloat(usize),    // Guardar float directo en idx
+
     // === Comparaciones ===
     Igual,
     Diferente,
@@ -707,6 +728,8 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::MapSet => 92,
         Opcode::Print => 70,
         Opcode::ReadLine => 71,
+        // Opcodes especializados (runtime-only, no serializables)
+        _ => 255,
     }
 }
 
