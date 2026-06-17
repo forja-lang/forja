@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::io::Write;
+use std::sync::LazyLock;
 use crate::bytecode::Opcode;
 
 /// Un objeto en la VM (instancia de clase) con referencia compartida
@@ -42,6 +43,25 @@ impl StringPool {
             pool.insert(s.to_string(), interned);
             result
         }
+    }
+}
+
+// Small Integer Cache [-5, 256] — evita construir el enum repetidamente
+static SMALL_INT_CACHE_VM: LazyLock<[ValorVM; 262]> = LazyLock::new(|| {
+    let mut cache = [ValorVM::Entero(0); 262];
+    for i in 0..262 {
+        cache[i] = ValorVM::Entero(i as i64 - 5);
+    }
+    cache
+});
+
+/// Devuelve ValorVM::Entero(n) usando la Small Integer Cache si n está en [-5, 256]
+#[inline(always)]
+pub fn get_small_int_vm(n: i64) -> ValorVM {
+    if n >= -5 && n <= 256 {
+        SMALL_INT_CACHE_VM[(n + 5) as usize].clone()
+    } else {
+        ValorVM::Entero(n)
     }
 }
 
@@ -337,7 +357,7 @@ impl ForjaVM {
             self.ip += 1;
 
             match opcode {
-                Opcode::PushEntero(n) => self.stack.push(ValorVM::Entero(n)),
+                Opcode::PushEntero(n) => self.stack.push(get_small_int_vm(n)),
                 Opcode::PushDecimal(d) => self.stack.push(ValorVM::Decimal(d)),
                 Opcode::PushTexto(s) => self.stack.push(ValorVM::Texto(s)),
                 Opcode::PushBooleano(b) => self.stack.push(ValorVM::Booleano(b)),
@@ -387,7 +407,7 @@ impl ForjaVM {
                 Opcode::DeclareEnteroOp(idx, n) => {
                     let nombre = format!("%idx_{}", idx);
                     let ambito = self.variables.last_mut().unwrap();
-                    ambito.insert(nombre, ValorVM::Entero(n));
+                    ambito.insert(nombre, get_small_int_vm(n));
                 }
                 Opcode::DeclareBooleanoOp(idx, b) => {
                     let nombre = format!("%idx_{}", idx);
@@ -399,14 +419,14 @@ impl ForjaVM {
                     let mut encontrada = false;
                     for ambito in self.variables.iter_mut().rev() {
                         if let Some(slot) = ambito.get_mut(&nombre) {
-                            *slot = ValorVM::Entero(n);
+                            *slot = get_small_int_vm(n);
                             encontrada = true;
                             break;
                         }
                     }
                     if !encontrada {
                         let ambito = self.variables.last_mut().unwrap();
-                        ambito.insert(nombre, ValorVM::Entero(n));
+                        ambito.insert(nombre, get_small_int_vm(n));
                     }
                 }
 
@@ -714,7 +734,7 @@ impl ForjaVM {
                         .ok_or(ErrorVM::StackUnderflow("ArrayLen".to_string()))?;
                     match arr {
                         ValorVM::Arreglo(elementos) => {
-                            self.stack.push(ValorVM::Entero(elementos.len() as i64));
+                            self.stack.push(get_small_int_vm(elementos.len() as i64));
                         }
                         _ => return Err(ErrorVM::TipoIncompatible(
                             "ArrayLen: se esperaba arreglo".to_string())),
@@ -867,7 +887,7 @@ impl ForjaVM {
                 let val = self.stack.pop()
                     .ok_or(ErrorVM::StackUnderflow("Length".to_string()))?;
                 match val {
-                    ValorVM::Texto(s) => self.stack.push(ValorVM::Entero(s.len() as i64)),
+                    ValorVM::Texto(s) => self.stack.push(get_small_int_vm(s.len() as i64)),
                     _ => return Err(ErrorVM::TipoIncompatible("length: se esperaba Texto".to_string())),
                 }
             }
