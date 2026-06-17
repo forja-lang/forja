@@ -13,10 +13,20 @@ pub enum Opcode {
     Pop,
     Dup,
 
-    // === Variables ===
+    // === Variables (búsqueda por nombre — original) ===
     Load(String),
     Store(String),
     Declare(String, bool), // (nombre, mutable)
+
+    // === Variables (acceso por índice — ultra rápido) ===
+    LoadIdx(usize),
+    StoreIdx(usize),
+    DeclareIdx(usize, bool), // (índice, mutable)
+
+    // === Opcodes fusionados (opcode fusion — eliminan push/pop) ===
+    DeclareEnteroOp(usize, i64),   // fusion: PushEntero(n) + DeclareIdx(idx, _)
+    DeclareBooleanoOp(usize, bool), // fusion: PushBooleano(b) + DeclareIdx(idx, _)
+    StoreEnteroOp(usize, i64),     // fusion: PushEntero(n) + StoreIdx(idx)
 
     // === Aritméticas ===
     Add,
@@ -623,6 +633,18 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
                 let idx = string_indices.get(s).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
             }
+            Opcode::DeclareEnteroOp(idx, n) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&n.to_le_bytes());
+            }
+            Opcode::DeclareBooleanoOp(idx, b) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.push(if *b { 1 } else { 0 });
+            }
+            Opcode::StoreEnteroOp(idx, n) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&n.to_le_bytes());
+            }
             _ => {} // Opcodes sin payload
         }
     }
@@ -646,6 +668,12 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::Load(_) => 10,
         Opcode::Store(_) => 11,
         Opcode::Declare(_, _) => 12,
+        Opcode::LoadIdx(_) => 13,
+        Opcode::StoreIdx(_) => 14,
+        Opcode::DeclareIdx(_, _) => 15,
+        Opcode::DeclareEnteroOp(_, _) => 16,
+        Opcode::DeclareBooleanoOp(_, _) => 17,
+        Opcode::StoreEnteroOp(_, _) => 18,
         Opcode::Add => 20,
         Opcode::Sub => 21,
         Opcode::Mul => 22,
@@ -695,6 +723,12 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         10 => Some(Opcode::Load(String::new())),
         11 => Some(Opcode::Store(String::new())),
         12 => Some(Opcode::Declare(String::new(), false)),
+        13 => Some(Opcode::LoadIdx(0)),
+        14 => Some(Opcode::StoreIdx(0)),
+        15 => Some(Opcode::DeclareIdx(0, false)),
+        16 => Some(Opcode::DeclareEnteroOp(0, 0)),
+        17 => Some(Opcode::DeclareBooleanoOp(0, false)),
+        18 => Some(Opcode::StoreEnteroOp(0, 0)),
         20 => Some(Opcode::Add),
         21 => Some(Opcode::Sub),
         22 => Some(Opcode::Mul),
@@ -867,6 +901,32 @@ if version >= 2 {
                 pos += 1;
                 opcodes.push(Opcode::PushBooleano(b));
             }
+            16 => { // DeclareEnteroOp
+                if pos + 12 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let n = i64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
+                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+                pos += 8;
+                opcodes.push(Opcode::DeclareEnteroOp(idx, n));
+            }
+            17 => { // DeclareBooleanoOp
+                if pos + 5 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let b = data[pos] == 1;
+                pos += 1;
+                opcodes.push(Opcode::DeclareBooleanoOp(idx, b));
+            }
+            18 => { // StoreEnteroOp
+                if pos + 12 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let n = i64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
+                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+                pos += 8;
+                opcodes.push(Opcode::StoreEnteroOp(idx, n));
+            }
             50 | 51 | 52 => { // Jump | JumpSiFalso | Label
                 if pos + 4 > data.len() { return None; }
                 let target = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
@@ -948,6 +1008,93 @@ if version >= 2 {
     }
 
     Some(opcodes)
+}
+
+/// Optimiza bytecode reemplazando Load/Store/Declare(String) por LoadIdx/StoreIdx/DeclareIdx(usize)
+/// Asigna un índice único a cada nombre de variable para acceso directo en Vec
+pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
+    use std::collections::HashMap;
+    let mut var_indices: HashMap<String, usize> = HashMap::new();
+    let mut next_idx: usize = 0;
+    let mut result: Vec<Opcode> = Vec::with_capacity(bytecode.len());
+
+    for op in bytecode {
+        match op {
+            Opcode::Load(name) => {
+                let idx = *var_indices.entry(name.clone()).or_insert_with(|| {
+                    let i = next_idx; next_idx += 1; i
+                });
+                result.push(Opcode::LoadIdx(idx));
+            }
+            Opcode::Store(name) => {
+                let idx = *var_indices.entry(name.clone()).or_insert_with(|| {
+                    let i = next_idx; next_idx += 1; i
+                });
+                result.push(Opcode::StoreIdx(idx));
+            }
+            Opcode::Declare(name, mutable) => {
+                let idx = *var_indices.entry(name.clone()).or_insert_with(|| {
+                    let i = next_idx; next_idx += 1; i
+                });
+                result.push(Opcode::DeclareIdx(idx, *mutable));
+            }
+            // Para Call/FunctionDef necesitamos mapear los nombres de parámetros también
+            Opcode::FunctionDef(_name, params) => {
+                // Asignar índices a los parámetros
+                for p in params {
+                    var_indices.entry(p.clone()).or_insert_with(|| {
+                        let i = next_idx; next_idx += 1; i
+                    });
+                }
+                result.push(op.clone());
+            }
+            Opcode::Call(_, _) => {
+                result.push(op.clone());
+            }
+            _ => { result.push(op.clone()); }
+        }
+    }
+
+    result
+}
+
+/// Fusión de opcodes: combina patrones Push+Declare/Store en un solo opcode
+/// Elimina operaciones de stack innecesarias para asignaciones con literales.
+///
+/// Patrones fusionados:
+/// - PushEntero(n) + DeclareIdx(idx) → DeclareEnteroOp(idx, n)
+/// - PushBooleano(b) + DeclareIdx(idx) → DeclareBooleanoOp(idx, b)
+/// - PushEntero(n) + StoreIdx(idx) → StoreEnteroOp(idx, n)
+pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
+    let mut result = Vec::with_capacity(bc.len());
+    let mut i = 0;
+
+    while i < bc.len() {
+        if i + 1 < bc.len() {
+            match (&bc[i], &bc[i + 1]) {
+                (Opcode::PushEntero(n), Opcode::DeclareIdx(idx, _)) => {
+                    result.push(Opcode::DeclareEnteroOp(*idx, *n));
+                    i += 2;
+                    continue;
+                }
+                (Opcode::PushBooleano(b), Opcode::DeclareIdx(idx, _)) => {
+                    result.push(Opcode::DeclareBooleanoOp(*idx, *b));
+                    i += 2;
+                    continue;
+                }
+                (Opcode::PushEntero(n), Opcode::StoreIdx(idx)) => {
+                    result.push(Opcode::StoreEnteroOp(*idx, *n));
+                    i += 2;
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        result.push(bc[i].clone());
+        i += 1;
+    }
+
+    result
 }
 
 #[cfg(test)]

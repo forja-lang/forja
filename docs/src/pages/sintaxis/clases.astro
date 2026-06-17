@@ -5,12 +5,13 @@ import Layout from '../../layouts/Layout.astro';
 <Layout title="Clases y POO — Forja">
   <h1>Clases y POO</h1>
 
-  <p>Forja soporta programación orientada a objetos con <strong>clases</strong>, <strong>constructores</strong>, <strong>métodos</strong> y el keyword <code><span class="kw">este</span></code> (equivalente a <code>self</code> en Rust).</p>
+  <p>Forja soporta programación orientada a objetos con <strong>clases</strong>, <strong>constructores</strong>, <strong>métodos</strong> y el keyword <code><span class="kw">este</span></code> (equivalente a <code>self</code> en Rust o <code>this</code> en otros lenguajes).</p>
 
   <h2>Estructura de una clase</h2>
 
-  <div class="code-header">🧱 Plantilla</div>
-  <pre><code><span class="kw">clase</span> Nombre &lbrace;
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🧱 Plantilla</span></div>
+    <pre><code><span class="kw">clase</span> Nombre &lbrace;
     campo1
     campo2
 
@@ -23,11 +24,15 @@ import Layout from '../../layouts/Layout.astro';
         <span class="co">// usar este.campo</span>
     &rbrace;
 &rbrace;</code></pre>
+  </div>
 
   <h2>Ejemplo completo</h2>
 
-  <div class="code-header">🎓 Clase Estudiante</div>
-  <pre><code><span class="kw">clase</span> Estudiante &lbrace;
+  <p>Una clase <code>Estudiante</code> con campos, constructor y métodos:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🎓 Clase Estudiante</span></div>
+    <pre><code><span class="kw">clase</span> Estudiante &lbrace;
     nombre
     edad
 
@@ -54,9 +59,11 @@ alumno.presentarse()
 <span class="kw">si</span> (alumno.esMayorDeEdad()) &lbrace;
     <span class="fn">escribir</span>(<span class="st">"Es mayor de edad"</span>)
 &rbrace;</code></pre>
+  </div>
 
   <h2>Keyword <code>este</code></h2>
-  <p><code>este</code> se refiere a la instancia actual. Se usa para acceder a campos y métodos propios:</p>
+
+  <p><code>este</code> se refiere a la instancia actual. Se usa para acceder a campos y métodos propios desde adentro de la clase:</p>
 
   <table>
     <tr><th>Forja</th><th>Rust / Otros</th></tr>
@@ -65,22 +72,29 @@ alumno.presentarse()
   </table>
 
   <h2>Keyword <code>nuevo</code></h2>
+
   <p>Instancia una clase y (si existe) llama al constructor automáticamente:</p>
 
-  <div class="code-header">🚀 Instanciación</div>
-  <pre><code><span class="kw">variable</span> p = <span class="kw">nuevo</span> Persona(<span class="st">"Juan"</span>)    <span class="co">// con constructor</span>
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🚀 Instanciación</span></div>
+    <pre><code><span class="kw">variable</span> p = <span class="kw">nuevo</span> Persona(<span class="st">"Juan"</span>)    <span class="co">// con constructor</span>
 <span class="kw">variable</span> q = <span class="kw">nuevo</span> Punto()               <span class="co">// sin constructor</span></code></pre>
+  </div>
 
   <h2>Clase sin constructor</h2>
 
-  <div class="code-header">📍 Punto 2D</div>
-  <pre><code><span class="kw">clase</span> Punto &lbrace;
+  <p>Si no definís un constructor, los campos se inicializan con <code>nulo</code>:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📍 Punto 2D</span></div>
+    <pre><code><span class="kw">clase</span> Punto &lbrace;
     x
     y
 &rbrace;
 
 <span class="kw">variable</span> p = <span class="kw">nuevo</span> Punto()
 <span class="fn">escribir</span>(p.x)  <span class="co">// → nulo (no inicializado)</span></code></pre>
+  </div>
 
   <h2>Equivalencia con Rust</h2>
 

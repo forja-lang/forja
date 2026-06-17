@@ -2,26 +2,32 @@
 import Layout from '../../layouts/Layout.astro';
 ---
 
-<Layout title="AST — Forja">
+<Layout title="AST (Árbol de Sintaxis Abstracta) — Forja">
   <h1>AST (Árbol de Sintaxis Abstracta)</h1>
 
   <p><strong>Archivo:</strong> <code>src/ast.rs</code></p>
 
-  <p>Define las estructuras que representan un programa Forja después del parsing. Es un árbol con dos grandes familias: <strong>Declaraciones</strong> (sentencias) y <strong>Expresiones</strong> (valores).</p>
+  <p>Define las estructuras que representan un programa Forja <strong>después del parsing</strong>. Es un árbol con dos grandes familias: <strong>Declaraciones</strong> (sentencias, instrucciones) y <strong>Expresiones</strong> (valores, cálculos).</p>
 
-  <h2>Programa (raíz)</h2>
+  <div class="info">💡 <strong>Analogía:</strong> Si el código fuente es un edificio, el AST es el plano arquitectónico. Muestra la estructura pero ignora detalles superficiales como espacios y comentarios.</div>
 
-  <pre><code><span class="kw">pub struct</span> Programa &lbrace;
-    <span class="kw">pub</span> declaraciones: Vec&lt;Declaracion&gt;,
+  <h2>Programa (raíz del árbol)</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🌳 Nodo raíz</span></div>
+    <pre><code><span class="kw">pub struct</span> Programa &lbrace;
+    <span class="kw">pub</span> declaraciones: Vec&#60;Declaracion&#62;,
 &rbrace;</code></pre>
+  </div>
 
-  <h2><code>Declaracion</code> — 14 variantes</h2>
+  <h2><code>Declaracion</code> — 16 variantes</h2>
 
   <table>
     <tr><th>Variante</th><th>Descripción</th></tr>
     <tr><td><code>Variable</code></td><td>Declaración de variable/constante: mutable, nombre, tipo opcional, valor opcional</td></tr>
     <tr><td><code>Asignacion</code></td><td>Reasignación: <code>x = expr</code></td></tr>
     <tr><td><code>AsignacionMiembro</code></td><td>Asignación a campo: <code>objeto.campo = expr</code></td></tr>
+    <tr><td><code>AsignacionIndex</code></td><td>Asignación por índice: <code>arr[0] = expr</code></td></tr>
     <tr><td><code>Funcion</code></td><td>Función: nombre, parámetros, tipo_retorno, cuerpo</td></tr>
     <tr><td><code>Clase</code></td><td>Clase: nombre, campos, métodos</td></tr>
     <tr><td><code>Si</code></td><td>Condicional: condición, bloque verdadero, bloque falso opcional</td></tr>
@@ -31,10 +37,12 @@ import Layout from '../../layouts/Layout.astro';
     <tr><td><code>LlamadaFuncion</code></td><td>Llamada como statement</td></tr>
     <tr><td><code>AccesoMiembro</code></td><td>Acceso como statement</td></tr>
     <tr><td><code>Retornar</code></td><td>Return con valor opcional</td></tr>
+    <tr><td><code>Importar</code></td><td>Importar módulo: <code>importar "ruta"</code></td></tr>
+    <tr><td><code>Enum</code></td><td>Definición de tipo algebraico</td></tr>
     <tr><td><code>Expresion</code></td><td>Expresión usada como statement</td></tr>
   </table>
 
-  <h2><code>Expresion</code> — 13 variantes</h2>
+  <h2><code>Expresion</code> — 15 variantes</h2>
 
   <table>
     <tr><th>Variante</th><th>Descripción</th></tr>
@@ -49,24 +57,31 @@ import Layout from '../../layouts/Layout.astro';
     <tr><td><code>LlamadaFuncion</code></td><td>Llamada a función en expresión</td></tr>
     <tr><td><code>AccesoMiembro</code></td><td>Acceso con .</td></tr>
     <tr><td><code>Instanciacion</code></td><td>nuevo Clase(args)</td></tr>
-    <tr><td><code>Referencia</code></td><td>&amp;expr o &amp;mut expr</td></tr>
+    <tr><td><code>Referencia</code></td><td>&expr o &mut expr</td></tr>
     <tr><td><code>Arreglo</code></td><td>[a, b, c]</td></tr>
+    <tr><td><code>Mapa</code></td><td>&#123;"clave": valor&#125;</td></tr>
+    <tr><td><code>Coincidir</code></td><td>Pattern matching</td></tr>
+    <tr><td><code>Index</code></td><td>arr[0] — acceso por índice</td></tr>
+    <tr><td><code>Closure</code></td><td>Función anónima</td></tr>
     <tr><td><code>Grupo</code></td><td>(expr) — agrupación</td></tr>
   </table>
 
   <h2>Estructuras auxiliares</h2>
 
-  <pre><code><span class="kw">pub struct</span> Parametro &lbrace;
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 Tipos de soporte</span></div>
+    <pre><code><span class="kw">pub struct</span> Parametro &lbrace;
     <span class="kw">pub</span> nombre: String,
     <span class="kw">pub</span> prestado: bool,    <span class="co">// &T</span>
     <span class="kw">pub</span> mutable: bool,      <span class="co">// &mut T</span>
-    <span class="kw">pub</span> tipo: Option&lt;Tipo&gt;,
+    <span class="kw">pub</span> tipo: Option&#60;Tipo&#62;,
 &rbrace;
 
 <span class="kw">pub enum</span> Tipo &lbrace;
     Entero, Decimal, Texto, Booleano, Nulo,
     Clase(String),
-    Arreglo(Box&lt;Tipo&gt;),
+    Arreglo(Box&#60;Tipo&#62;),
+    Funcion(Vec&#60;Tipo&#62;, Box&#60;Tipo&#62;),
 &rbrace;
 
 <span class="kw">pub enum</span> Operador &lbrace;
@@ -74,4 +89,5 @@ import Layout from '../../layouts/Layout.astro';
     Mayor, Menor, MayorIgual, MenorIgual,
     IgualIgual, Diferente, Y, O,
 &rbrace;</code></pre>
+  </div>
 </Layout>

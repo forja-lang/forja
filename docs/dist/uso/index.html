@@ -1,0 +1,52 @@
+<!DOCTYPE html><html lang="es"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Uso (CLI) — Forja | Forja</title><meta name="description" content="Documentación del lenguaje de programación Forja (fa)"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/_astro/aot.CXsMH8_2.css"></head> <body> <aside class="sidebar"> <div class="sidebar-header"> <a href="/" class="logo"> <div class="logo-icon">⎔</div> <span class="logo-text">Forja</span> </a> <div class="logo-sub">Lenguaje en español</div> </div> <nav class="sidebar-nav"> <div class="section-title">Introducción</div> <a href="/">¿Qué es Forja?</a> <a href="/playground">Playground</a> <a href="/instalacion">Instalación</a> <a href="/uso">Uso (CLI)</a> <div class="section-title">Guía del Lenguaje</div> <a href="/sintaxis/variables" class="sub"><span class="nav-dot"></span>Variables y constantes</a> <a href="/sintaxis/tipos" class="sub"><span class="nav-dot"></span>Tipos de datos</a> <a href="/sintaxis/funciones" class="sub"><span class="nav-dot"></span>Funciones</a> <a href="/sintaxis/condicionales" class="sub"><span class="nav-dot"></span>Condicionales</a> <a href="/sintaxis/bucles" class="sub"><span class="nav-dot"></span>Bucles</a> <a href="/sintaxis/clases" class="sub"><span class="nav-dot"></span>Clases y POO</a> <a href="/sintaxis/ownership" class="sub"><span class="nav-dot"></span>Ownership</a> <a href="/sintaxis/operadores" class="sub"><span class="nav-dot"></span>Operadores</a> <a href="/sintaxis/entrada" class="sub"><span class="nav-dot"></span>Entrada de usuario</a> <a href="/sintaxis/coincidir" class="sub"><span class="nav-dot"></span>Pattern matching</a> <a href="/sintaxis/enums" class="sub"><span class="nav-dot"></span>Tipos algebraicos</a> <a href="/sintaxis/modulos" class="sub"><span class="nav-dot"></span>Módulos (importar)</a> <div class="section-title">Arquitectura</div> <a href="/arquitectura/pipeline" class="sub"><span class="nav-dot"></span>Pipeline</a> <a href="/arquitectura/lexer" class="sub"><span class="nav-dot"></span>Lexer</a> <a href="/arquitectura/parser" class="sub"><span class="nav-dot"></span>Parser</a> <a href="/arquitectura/ast" class="sub"><span class="nav-dot"></span>AST</a> <a href="/arquitectura/semantica" class="sub"><span class="nav-dot"></span>Borrow Checker</a> <a href="/arquitectura/transpilador" class="sub"><span class="nav-dot"></span>Transpilador</a> <a href="/arquitectura/bytecode" class="sub"><span class="nav-dot"></span>Bytecode</a> <a href="/arquitectura/vm" class="sub"><span class="nav-dot"></span>VM</a> <a href="/arquitectura/compiler_asm" class="sub"><span class="nav-dot"></span>Compilador ASM</a> <a href="/arquitectura/aot" class="sub"><span class="nav-dot"></span>AOT</a> <a href="/arquitectura/jit" class="sub"><span class="nav-dot"></span>JIT</a> <a href="/arquitectura/repl" class="sub"><span class="nav-dot"></span>REPL</a> <a href="/arquitectura/selfrun" class="sub"><span class="nav-dot"></span>Self-run</a> <a href="/arquitectura/optimizer" class="sub"><span class="nav-dot"></span>Optimizador</a> <a href="/arquitectura/formatter" class="sub"><span class="nav-dot"></span>Formateador</a> <div class="section-title">Referencia</div> <a href="/errores">Sistema de errores</a> <a href="/ejemplos">Ejemplos</a> <a href="/roadmap">Roadmap</a> </nav> </aside> <main class="main"> <div class="main-inner">  <h1>Uso del CLI</h1> <p>Forja tiene <strong>5 modos de ejecución</strong>. Cada uno cubre un caso de uso distinto, desde transpilar a Rust hasta generar ejecutables autónomos.</p> <div class="code-block-wrapper"> <div class="code-header"><span>📋 Ayuda completa</span></div> <pre><code>Forja (fa) — Lenguaje educativo que compila a Rust y ejecuta en VM
+
+USO:
+  forja &#x3C;archivo.fa&#x3E; [-o &#x3C;salida.rs&#x3E;]     Transpilar a Rust
+  forja run &#x3C;archivo.fa&#x3E;                    Ejecutar en VM
+  forja repl                                Modo interactivo
+  forja build &#x3C;archivo.fa&#x3E; -o &#x3C;salida&#x3E;      Generar ejecutable
+  forja transpile &#x3C;archivo.fa&#x3E; [-o &#x3C;rs&#x3E;]   Transpilar a Rust
+  forja --help                              Mostrar ayuda</code></pre> </div> <h2><code>transpile</code> — Forja → Rust</h2> <p>Genera código <strong>Rust compilable</strong> desde un archivo <code>.fa</code>. Ideal si querés llevar tu programa a producción con Rust o aprender cómo se traduce cada concepto.</p> <div class="info">💡 <strong>¿Sabías que…?</strong> El código Rust generado es perfectamente compilable con <code>rustc</code>. Podés usarlo como puente para aprender Rust progresivamente.</div> <div class="code-block-wrapper"> <div class="code-header"><span>📄 Ejemplos de transpilación</span></div> <pre><code><span class="co"># Genera hola_mundo.rs automáticamente</span>
+forja examples/hola_mundo.fa
+
+<span class="co"># Con salida personalizada</span>
+forja transpile examples/hola_mundo.fa -o salida.rs
+
+<span class="co"># Errores en JSON (ideal para IDEs)</span>
+forja transpile examples/clases.fa --json-errors
+
+<span class="co"># Atajo: pasar solo el .fa también transpila</span>
+forja examples/hola_mundo.fa</code></pre> </div> <h2><code>run</code> — Ejecutar en VM</h2> <p>Compila y ejecuta el <strong>bytecode</strong> directamente en la Máquina Virtual. No necesitás Rust instalado para ejecutar programas.</p> <div class="code-block-wrapper"> <div class="code-header"><span>⚡ Ejemplos de ejecución</span></div> <pre><code>forja run examples/hola_mundo.fa
+<span class="co">// → ¡Hola, mundo desde Forja!</span>
+
+forja run examples/clases.fa
+<span class="co">// → Hola, soy Ana y tengo 20 años</span>
+<span class="co">// → Es mayor de edad</span></code></pre> </div> <h2><code>repl</code> — Modo interactivo</h2> <p>Intérprete línea por línea. Ideal para <strong>aprender</strong>, <strong>experimentar</strong> y <strong>debuggear</strong> algoritmos sin crear archivos.</p> <div class="code-block-wrapper"> <div class="code-header"><span>💬 Sesión de ejemplo</span></div> <pre><code>$ forja repl
+🔨 Forja v0.1.0 — Escribí 'salir' para terminar
+
+> <span class="kw">variable</span> x = 5
+> x = x + 10
+> <span class="fn">escribir</span>(x)
+15
+> <span class="kw">constante</span> nombre = <span class="st">"Gaucho"</span>
+> <span class="fn">escribir</span>(<span class="st">"Hola "</span> + nombre)
+Hola Gaucho
+> salir
+👋 ¡Hasta luego!</code></pre> </div> <h2><code>build</code> — Ejecutable autónomo</h2> <p>Genera un <code>.exe</code> que contiene la VM + bytecode incrustado. Funciona en <strong>cualquier PC</strong> sin Rust, sin scripts, sin dependencias.</p> <div class="tip"><strong>🔧 ¿Cómo funciona?</strong> Forja se copia a sí mismo y le agrega el bytecode al final del .exe. Al ejecutarlo, detecta el bytecode y lo corre en la VM. ¡Un solo archivo que es compilador y runtime a la vez!</div> <div class="code-block-wrapper"> <div class="code-header"><span>📦 Ejemplo de build</span></div> <pre><code>forja build examples/hola_mundo.fa -o hola.exe
+<span class="co">// → ✅ Ejecutable generado: hola.exe (1234 bytes)</span>
+
+<span class="co">// Ahora cualquiera puede ejecutarlo, sin Rust:</span>
+./hola.exe
+<span class="co">// → ¡Hola, mundo desde Forja!</span></code></pre> </div> <h2><code>build-asm</code> — Assembly nativo (el más rápido)</h2> <p>Genera código <strong>assembly x86-64 o ARM64</strong> directamente desde tu <code>.fa</code> y lo compila con <code>gcc -O2</code>. Es la forma <strong>más rápida</strong> de ejecutar Forja — velocidad nativa, igual que C o Rust.</p> <div class="info">⚡ <strong>Rendimiento:</strong> El assembly nativo es ~<strong>1,750x más rápido</strong> que la VM de Forja, y ~<strong>30x más rápido</strong> que Python.</div> <details> <summary><strong>🔧 ¿Cómo se compara con otros modos?</strong></summary> <table> <thead> <tr><th>Modo</th><th>Velocidad (fib(30))</th><th>vs Python</th></tr> </thead> <tbody> <tr><td><code>build-asm</code> (gcc -O2)</td><td>0.02 μs</td><td><strong>30x más rápido</strong></td></tr> <tr><td><code>transpile</code> (Rust)</td><td>0.02 μs</td><td><strong>30x más rápido</strong></td></tr> <tr><td>Python (CPython 3.11)</td><td>0.60 μs</td><td>— referencia</td></tr> <tr><td><code>run</code> (VM)</td><td>37 μs</td><td>62x más lento</td></tr> </tbody> </table> </details> <div class="code-block-wrapper"> <div class="code-header"><span>🛠️ Ejemplos de build-asm</span></div> <pre><code><span class="co"># Mínimo: genera hola.exe automáticamente (target = plataforma actual)</span>
+forja build-asm examples/hola_mundo.fa
+
+<span class="co"># Con nombre de salida personalizado</span>
+forja build-asm examples/hola_mundo.fa -o programa.exe
+
+<span class="co"># Especificar arquitectura destino</span>
+forja build-asm examples/hola_mundo.fa --target arm64 -o programa
+
+<span class="co"># El assembly generado se puede compilar manualmente</span>
+forja build-asm examples/hola_mundo.fa --target x86_64-linux -o prog
+gcc -O2 -o prog prog.s</code></pre> </div> <details> <summary><strong>🎯 Targets disponibles</strong></summary> <table> <thead> <tr><th>Flag</th><th>Arquitectura</th><th>Convención</th></tr> </thead> <tbody> <tr><td><em>(ninguno)</em></td><td>Detección automática</td><td>Según SO y CPU</td></tr> <tr><td><code>--target x86_64-windows</code></td><td>x86-64</td><td>Microsoft x64 (RCX, RDX, R8, R9)</td></tr> <tr><td><code>--target x86_64-linux</code></td><td>x86-64</td><td>System V (RDI, RSI, RDX, RCX)</td></tr> <tr><td><code>--target arm64</code></td><td>ARM64 AArch64</td><td>X0..X7, stp/ldp, cbz</td></tr> </tbody> </table> </details> <h2>Compilar el Rust generado</h2> <p>Si usaste <code>transpile</code>, el archivo <code>.rs</code> generado se compila con Rust de forma estándar:</p> <div class="code-block-wrapper"> <div class="code-header"><span>🦀 Compilar con rustc</span></div> <pre><code>rustc examples/hola_mundo.rs
+./hola_mundo</code></pre> </div>  </div> </main> </body></html>

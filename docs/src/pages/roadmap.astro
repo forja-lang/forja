@@ -5,33 +5,35 @@ import Layout from '../layouts/Layout.astro';
 <Layout title="Roadmap — Forja">
   <h1>Roadmap</h1>
 
-  <p>El desarrollo de Forja está organizado en 4 grandes pilares, implementados en orden de dependencia.</p>
+  <p>El desarrollo de Forja está organizado en <strong>4 grandes pilares</strong>, implementados en orden de dependencia. Cada pilar representa un avance significativo en las capacidades del lenguaje.</p>
 
   <div class="feature-grid">
-    <div class="feature-card" style="border-color: rgba(74,222,128,0.3)">
-      <div class="icon">✅</div>
+    <div class="feature-card" style="border-color: rgba(16,185,129,0.3)">
+      <span class="icon">✅</span>
       <h4>D: Funciones en VM</h4>
-      <p>Call/Return, FunctionDef, ámbitos anidados</p>
+      <p>Call/Return, FunctionDef, ámbitos anidados — <strong>Completado</strong></p>
     </div>
-    <div class="feature-card" style="border-color: rgba(74,222,128,0.3)">
-      <div class="icon">✅</div>
+    <div class="feature-card" style="border-color: rgba(16,185,129,0.3)">
+      <span class="icon">✅</span>
       <h4>C: POO en VM</h4>
-      <p>NewObject, SetField, GetField, CallMethod</p>
+      <p>NewObject, SetField, GetField, CallMethod — <strong>Completado</strong></p>
     </div>
     <div class="feature-card" style="border-color: rgba(245,158,11,0.3)">
-      <div class="icon">🔄</div>
+      <span class="icon">🔄</span>
       <h4>A: Runtime Stub</h4>
-      <p>Ejecutable único con bytecode incrustado</p>
+      <p>Ejecutable único con bytecode incrustado — <strong>En progreso</strong></p>
     </div>
-    <div class="feature-card" style="border-color: rgba(192,132,252,0.3)">
-      <div class="icon">🔄</div>
+    <div class="feature-card" style="border-color: rgba(99,102,241,0.3)">
+      <span class="icon">🔄</span>
       <h4>B: JIT Cranelift</h4>
-      <p>Compilación a código máquina nativo</p>
+      <p>Compilación a código máquina nativo — <strong>Prototipo funcional</strong></p>
     </div>
   </div>
 
   <h2>✅ D: Funciones en VM</h2>
-  <p>Soporte completo para llamadas a funciones con argumentos, retorno y ámbitos anidados.</p>
+
+  <p>Soporte completo para llamadas a funciones con argumentos, retorno y ámbitos anidados dentro de la VM.</p>
+
   <table>
     <tr><th>Componente</th><th>Estado</th></tr>
     <tr><td><code>Call</code> / <code>Return</code> opcodes</td><td>✅ Completado</td></tr>
@@ -41,17 +43,21 @@ import Layout from '../layouts/Layout.astro';
   </table>
 
   <h2>✅ C: POO en VM</h2>
-  <p>Clases, constructores, métodos, <code>nuevo</code>, <code>este</code>, y dispatch en runtime.</p>
+
+  <p>Clases, constructores, métodos, <code>nuevo</code>, <code>este</code>, y dispatch en runtime. ¡Programación orientada a objetos completamente en español!</p>
+
   <table>
     <tr><th>Componente</th><th>Estado</th></tr>
     <tr><td><code>NewObject</code>, <code>SetField</code>, <code>GetField</code></td><td>✅ Completado</td></tr>
     <tr><td><code>CallMethod</code> con dispatch en runtime</td><td>✅ Completado</td></tr>
-    <tr><td>Objetos con <code>Rc&lt;RefCell&gt;</code></td><td>✅ Completado</td></tr>
+    <tr><td>Objetos con <code>Rc&#x3C;RefCell&#x3E;</code></td><td>✅ Completado</td></tr>
     <tr><td>Constructor → método "nuevo"</td><td>✅ Completado</td></tr>
   </table>
 
   <h2>🔄 A: Runtime Stub (En progreso)</h2>
-  <p>Generar un único <code>.exe</code> autónomo que contenga la VM + bytecode.</p>
+
+  <p>Generar un único <code>.exe</code> autónomo que contenga la VM + bytecode incrustado. ¡Un solo archivo que funciona en cualquier PC!</p>
+
   <table>
     <tr><th>Componente</th><th>Estado</th></tr>
     <tr><td>Bytecode append al final del .exe</td><td>✅ Completado</td></tr>
@@ -61,7 +67,9 @@ import Layout from '../layouts/Layout.astro';
   </table>
 
   <h2>🔄 B: JIT con Cranelift (Prototipo)</h2>
-  <p>Compilar bytecode a código máquina nativo para acelerar hot paths.</p>
+
+  <p>Compilar bytecode a código máquina nativo para acelerar hot paths. Ofrece rendimiento 10-50x superior a la VM interpretada.</p>
+
   <table>
     <tr><th>Componente</th><th>Estado</th></tr>
     <tr><td>Compilación de opcodes básicos</td><td>✅ Prototipo funcional</td></tr>
@@ -71,14 +79,18 @@ import Layout from '../layouts/Layout.astro';
     <tr><td>POO y funciones en JIT</td><td>⏳ Pendiente</td></tr>
   </table>
 
-  <h2>Features futuras</h2>
+  <h2>🧩 Features futuras</h2>
+
+  <p>Más allá de los 4 pilares, hay un mundo de posibilidades:</p>
 
   <div class="feature-grid">
-    <div class="feature-card"><div class="icon">🧩</div><h4>Módulos</h4><p>Importar otros archivos .fa</p></div>
-    <div class="feature-card"><div class="icon">📊</div><h4>Más tipos</h4><p>Tuplas, enums, arreglos fijos</p></div>
-    <div class="feature-card"><div class="icon">🗄️</div><h4>BD integrada</h4><p>Soporte completo para BD()</p></div>
-    <div class="feature-card"><div class="icon">🖥️</div><h4>LSP</h4><p>Servidor de lenguaje para IDEs</p></div>
-    <div class="feature-card"><div class="icon">🔬</div><h4>Inferencia de tipos</h4><p>Tracking completo de no-Copy</p></div>
-    <div class="feature-card"><div class="icon">🎮</div><h4>Más ejemplos</h4><p>Algoritmos, estructuras, juegos</p></div>
+    <div class="feature-card"><span class="icon">🧩</span><h4>Módulos</h4><p>Importar otros archivos .fa</p></div>
+    <div class="feature-card"><span class="icon">📊</span><h4>Más tipos</h4><p>Tuplas, enums, arreglos fijos</p></div>
+    <div class="feature-card"><span class="icon">🗄️</span><h4>BD integrada</h4><p>Soporte completo para <code>BD()</code></p></div>
+    <div class="feature-card"><span class="icon">🖥️</span><h4>LSP</h4><p>Servidor de lenguaje para IDEs</p></div>
+    <div class="feature-card"><span class="icon">🔬</span><h4>Inferencia de tipos</h4><p>Tracking completo de no-Copy</p></div>
+    <div class="feature-card"><span class="icon">🎮</span><h4>Más ejemplos</h4><p>Algoritmos, estructuras, juegos</p></div>
   </div>
+
+  <div class="tip"><strong>🔥 ¿Querés contribuir?</strong> Forja es código abierto. Si te interesa alguna de estas features, ¡podés empezar a implementarla! Mirá el <a href="/arquitectura/pipeline">pipeline</a> para entender la base.</div>
 </Layout>

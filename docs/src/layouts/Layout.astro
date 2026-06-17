@@ -15,31 +15,42 @@ const { title, description } = Astro.props;
     <meta name="description" content={description || "Documentación del lenguaje de programación Forja (fa)"} />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
+    <style is:global>
+      /* ===== RESET & BASE ===== */
+      *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
       :root {
-        --bg: #0a0c10;
-        --bg-card: #111318;
-        --bg-hover: #181b22;
-        --bg-elevated: #1a1d27;
-        --border: #1e2230;
-        --border-glow: #2a2f42;
-        --text: #e2e4ea;
-        --text-dim: #8a8fa6;
-        --text-muted: #565c74;
-        --accent: #6c8cff;
-        --accent-glow: #4a6cf7;
-        --accent2: #4ade80;
-        --accent3: #c084fc;
-        --orange: #f59e0b;
-        --red: #ef4444;
-        --pink: #f472b6;
-        --cyan: #22d3ee;
+        --bg: #0c0e14;
+        --bg-card: #11141c;
+        --bg-hover: #171b26;
+        --bg-elevated: #1a1f2e;
+        --border: #1e2538;
+        --border-glow: #2a3348;
+        --text: #edf2f7;
+        --text-dim: #94a3b8;
+        --text-muted: #5b6a84;
+
+        --fuego: #f59e0b;
+        --fuego-glow: #d97706;
+        --fuego-light: #fbbf24;
+        --fuego-dark: #b45309;
+        --fuego-bg: rgba(245, 158, 11, 0.08);
+
+        --acero: #6366f1;
+        --acero-glow: #4f46e5;
+        --acero-light: #818cf8;
+
+        --verde: #10b981;
+        --rosa: #ec4899;
+        --cian: #06b6d4;
+        --rojo: #ef4444;
+
         --sidebar-w: 280px;
         --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
         --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
       }
 
-      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
 
       body {
         font-family: var(--font);
@@ -52,16 +63,16 @@ const { title, description } = Astro.props;
         -moz-osx-font-smoothing: grayscale;
       }
 
-      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar { width: 5px; }
       ::-webkit-scrollbar-track { background: transparent; }
-      ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+      ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
       ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
       /* ===== SIDEBAR ===== */
       .sidebar {
         width: var(--sidebar-w);
         min-width: var(--sidebar-w);
-        background: var(--bg-card);
+        background: linear-gradient(180deg, var(--bg-card) 0%, #0f131d 100%);
         border-right: 1px solid var(--border);
         height: 100vh;
         position: sticky;
@@ -69,26 +80,39 @@ const { title, description } = Astro.props;
         display: flex;
         flex-direction: column;
         overflow: hidden;
+        z-index: 10;
+      }
+
+      .sidebar::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: -1px;
+        width: 1px;
+        height: 100%;
+        background: linear-gradient(180deg, transparent, var(--fuego), transparent);
+        opacity: 0.15;
       }
 
       .sidebar-header {
         padding: 24px 20px 16px;
         border-bottom: 1px solid var(--border);
         flex-shrink: 0;
+        position: relative;
       }
 
       .sidebar-header .logo {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 12px;
         text-decoration: none;
         margin-bottom: 4px;
       }
 
       .sidebar-header .logo-icon {
-        width: 36px;
-        height: 36px;
-        background: linear-gradient(135deg, var(--accent), var(--accent3));
+        width: 38px;
+        height: 38px;
+        background: linear-gradient(135deg, var(--fuego), var(--fuego-dark));
         border-radius: 10px;
         display: flex;
         align-items: center;
@@ -96,13 +120,23 @@ const { title, description } = Astro.props;
         font-size: 18px;
         color: #fff;
         font-weight: 800;
-        box-shadow: 0 4px 12px rgba(74, 108, 247, 0.3);
+        box-shadow: 0 4px 16px rgba(245, 158, 11, 0.25);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .sidebar-header .logo-icon::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.12));
+        border-radius: 10px;
       }
 
       .sidebar-header .logo-text {
         font-size: 1.35rem;
         font-weight: 800;
-        background: linear-gradient(135deg, var(--accent), var(--accent3));
+        background: linear-gradient(135deg, var(--fuego-light), var(--fuego));
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
@@ -113,36 +147,37 @@ const { title, description } = Astro.props;
         font-size: 0.7rem;
         color: var(--text-muted);
         font-weight: 500;
-        letter-spacing: 1px;
+        letter-spacing: 1.5px;
         text-transform: uppercase;
-        margin-left: 46px;
+        margin-left: 50px;
       }
 
       .sidebar-nav {
         flex: 1;
         overflow-y: auto;
-        padding: 12px 0 24px;
+        padding: 8px 0 24px;
+        scrollbar-width: thin;
       }
 
       .sidebar-nav .section-title {
-        padding: 16px 20px 4px 20px;
-        font-size: 0.65rem;
+        padding: 20px 20px 4px 20px;
+        font-size: 0.6rem;
         text-transform: uppercase;
-        letter-spacing: 1.8px;
+        letter-spacing: 2px;
         color: var(--text-muted);
-        font-weight: 600;
+        font-weight: 700;
       }
 
       .sidebar-nav a {
         display: flex;
         align-items: center;
         gap: 8px;
-        padding: 7px 20px 7px 20px;
+        padding: 6px 20px 6px 20px;
         color: var(--text-dim);
         text-decoration: none;
         font-size: 0.875rem;
         font-weight: 400;
-        transition: all 0.15s ease;
+        transition: all 0.18s ease;
         border-left: 2px solid transparent;
         position: relative;
       }
@@ -150,20 +185,17 @@ const { title, description } = Astro.props;
       .sidebar-nav a:hover {
         color: var(--text);
         background: var(--bg-hover);
-        border-left-color: var(--accent);
+        border-left-color: var(--fuego);
       }
 
       .sidebar-nav a.active {
-        color: var(--accent);
-        background: rgba(108, 140, 255, 0.08);
-        border-left-color: var(--accent);
+        color: var(--fuego-light);
+        background: var(--fuego-bg);
+        border-left-color: var(--fuego);
         font-weight: 500;
       }
 
-      .sidebar-nav a.sub {
-        padding-left: 36px;
-        font-size: 0.82rem;
-      }
+      .sidebar-nav a.sub { padding-left: 36px; font-size: 0.82rem; }
 
       .sidebar-nav a .nav-dot {
         width: 4px;
@@ -174,10 +206,7 @@ const { title, description } = Astro.props;
         opacity: 0.4;
       }
 
-      .sidebar-nav a:hover .nav-dot {
-        opacity: 1;
-        background: var(--accent);
-      }
+      .sidebar-nav a:hover .nav-dot { opacity: 1; background: var(--fuego); }
 
       /* ===== MAIN ===== */
       .main {
@@ -193,15 +222,12 @@ const { title, description } = Astro.props;
         padding: 48px 56px 80px;
       }
 
-      @media (max-width: 900px) {
-        .sidebar {
-          width: 240px;
-          min-width: 240px;
-        }
-        .main-inner { padding: 32px 28px 60px; }
+      @media (max-width: 1100px) {
+        .sidebar { width: 240px; min-width: 240px; }
+        .main-inner { padding: 32px 32px 60px; }
       }
 
-      @media (max-width: 640px) {
+      @media (max-width: 768px) {
         body { flex-direction: column; }
         .sidebar {
           width: 100%;
@@ -212,24 +238,25 @@ const { title, description } = Astro.props;
           border-right: none;
           border-bottom: 1px solid var(--border);
         }
+        .sidebar::after { display: none; }
         .main-inner { padding: 24px 20px 60px; }
       }
 
       /* ===== TYPOGRAPHY ===== */
       h1 {
-        font-size: 2.4rem;
+        font-size: 2.6rem;
         font-weight: 800;
-        margin-bottom: 12px;
+        margin-bottom: 16px;
         letter-spacing: -0.8px;
-        line-height: 1.2;
-        background: linear-gradient(135deg, var(--text), var(--accent));
+        line-height: 1.15;
+        background: linear-gradient(135deg, var(--text) 40%, var(--fuego-light));
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
       }
 
       h2 {
-        font-size: 1.5rem;
+        font-size: 1.55rem;
         font-weight: 700;
         margin-top: 48px;
         margin-bottom: 12px;
@@ -237,7 +264,7 @@ const { title, description } = Astro.props;
         color: var(--text);
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 12px;
       }
 
       h2::after {
@@ -248,7 +275,7 @@ const { title, description } = Astro.props;
       }
 
       h3 {
-        font-size: 1.15rem;
+        font-size: 1.2rem;
         font-weight: 600;
         margin-top: 32px;
         margin-bottom: 8px;
@@ -257,26 +284,58 @@ const { title, description } = Astro.props;
 
       p { margin-bottom: 16px; color: var(--text-dim); font-size: 0.95rem; }
 
-      a { color: var(--accent); text-decoration: none; font-weight: 500; }
-      a:hover { text-decoration: underline; }
+      a { color: var(--fuego-light); text-decoration: none; font-weight: 500; transition: color 0.15s; }
+      a:hover { color: var(--fuego); text-decoration: underline; }
 
       ul, ol { margin-bottom: 20px; padding-left: 24px; color: var(--text-dim); }
       li { margin-bottom: 6px; }
 
       strong { color: var(--text); font-weight: 600; }
 
-      /* ===== CODE ===== */
-      pre {
-        background: linear-gradient(135deg, #0e1017, #11141e);
+      /* ===== CODE BLOCKS ===== */
+      .code-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 16px;
+        background: linear-gradient(135deg, #0a0d14, #0e111a);
         border: 1px solid var(--border);
-        border-radius: 12px;
+        border-bottom: none;
+        border-radius: 10px 10px 0 0;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+        position: relative;
+      }
+
+      .code-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(to right, transparent, var(--fuego), transparent);
+        opacity: 0.15;
+      }
+
+      .code-header + pre {
+        border-radius: 0 0 10px 10px;
+        border-top: none;
+        margin-top: 0;
+      }
+
+      pre {
+        background: linear-gradient(135deg, #0b0e16, #0f131e);
+        border: 1px solid var(--border);
+        border-radius: 10px;
         padding: 18px 22px;
         overflow-x: auto;
         margin-bottom: 24px;
         font-family: var(--font-mono);
         font-size: 0.82rem;
-        line-height: 1.6;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        line-height: 1.65;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(245, 158, 11, 0.03);
         position: relative;
       }
 
@@ -287,18 +346,18 @@ const { title, description } = Astro.props;
         left: 0;
         right: 0;
         height: 1px;
-        background: linear-gradient(to right, transparent, var(--accent), transparent);
-        opacity: 0.3;
-        border-radius: 12px 12px 0 0;
+        background: linear-gradient(to right, transparent, var(--fuego), transparent);
+        opacity: 0.2;
+        border-radius: 10px 10px 0 0;
       }
 
       code {
         font-family: var(--font-mono);
         font-size: 0.85em;
-        background: rgba(108, 140, 255, 0.08);
+        background: var(--fuego-bg);
         padding: 2px 7px;
         border-radius: 5px;
-        color: var(--accent);
+        color: var(--fuego-light);
         font-weight: 500;
       }
 
@@ -306,18 +365,27 @@ const { title, description } = Astro.props;
         background: none;
         padding: 0;
         border-radius: 0;
-        color: var(--text);
+        color: #e2e8f0;
         font-weight: 400;
       }
 
-      /* Syntax highlight classes for inline code in docs */
-      .kw { color: var(--accent3); font-weight: 500; }
-      .fn { color: var(--accent2); }
-      .ty { color: var(--cyan); }
-      .st { color: var(--orange); }
+      /* ===== PALETA DE COLORES FORJA =====
+       * Coherente entre: VS Code extension, CLI, playground, docs
+       * .kw  → keywords       #f59e0b (fuego/amber)
+       * .fn  → builtins       #10b981 (verde/emerald)
+       * .ty  → tipos          #06b6d4 (cian/cyan)
+       * .st  → strings        #fbbf24 (gold/amber claro)
+       * .co  → comentarios    #5b6a84 (gris azulado)
+       * .op  → operadores     #ec4899 (rosa/pink)
+       * .nu  → números        #818cf8 (acero/indigo)
+       */
+      .kw { color: var(--fuego-light); font-weight: 500; }
+      .fn { color: var(--verde); }
+      .ty { color: var(--cian); }
+      .st { color: #fbbf24; }
       .co { color: var(--text-muted); font-style: italic; }
-      .op { color: var(--pink); }
-      .nu { color: var(--accent); }
+      .op { color: var(--rosa); }
+      .nu { color: var(--acero-light); }
 
       /* ===== INFO BOXES ===== */
       .info, .warning, .tip {
@@ -327,28 +395,42 @@ const { title, description } = Astro.props;
         font-size: 0.9rem;
         position: relative;
         border: 1px solid transparent;
+        overflow: hidden;
+      }
+
+      .info::before, .warning::before, .tip::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 3px;
+        height: 100%;
+        border-radius: 10px 0 0 10px;
       }
 
       .info {
-        background: rgba(108, 140, 255, 0.06);
-        border-color: rgba(108, 140, 255, 0.15);
-        color: #a8bfff;
+        background: rgba(99, 102, 241, 0.06);
+        border-color: rgba(99, 102, 241, 0.15);
+        color: #c7d2fe;
       }
-      .info strong { color: var(--accent); }
+      .info::before { background: var(--acero); }
+      .info strong { color: var(--acero-light); }
 
       .warning {
         background: rgba(245, 158, 11, 0.06);
         border-color: rgba(245, 158, 11, 0.15);
-        color: #fcd34d;
+        color: #fde68a;
       }
-      .warning strong { color: var(--orange); }
+      .warning::before { background: var(--fuego); }
+      .warning strong { color: var(--fuego-light); }
 
       .tip {
-        background: rgba(74, 222, 128, 0.06);
-        border-color: rgba(74, 222, 128, 0.15);
-        color: #86efac;
+        background: rgba(16, 185, 129, 0.06);
+        border-color: rgba(16, 185, 129, 0.15);
+        color: #a7f3d0;
       }
-      .tip strong { color: var(--accent2); }
+      .tip::before { background: var(--verde); }
+      .tip strong { color: var(--verde); }
 
       /* ===== TABLES ===== */
       table {
@@ -391,46 +473,61 @@ const { title, description } = Astro.props;
         font-weight: 600;
         font-family: var(--font-mono);
       }
-      .tag.kw { background: rgba(192, 132, 252, 0.12); color: var(--accent3); }
-      .tag.ty { background: rgba(34, 211, 238, 0.12); color: var(--cyan); }
-      .tag.fn { background: rgba(74, 222, 128, 0.12); color: var(--accent2); }
-      .tag.st { background: rgba(245, 158, 11, 0.12); color: var(--orange); }
+      .tag.kw { background: rgba(245, 158, 11, 0.12); color: var(--fuego-light); }
+      .tag.ty { background: rgba(6, 182, 212, 0.12); color: var(--cian); }
+      .tag.fn { background: rgba(16, 185, 129, 0.12); color: var(--verde); }
+      .tag.st { background: rgba(251, 191, 36, 0.12); color: var(--fuego-light); }
 
       /* ===== HERO SECTION ===== */
       .hero {
         margin-bottom: 40px;
+        position: relative;
       }
-      .hero h1 {
-        font-size: 3rem;
-        margin-bottom: 6px;
+
+      .hero::before {
+        content: '';
+        position: absolute;
+        top: -40px;
+        left: -40px;
+        right: -40px;
+        bottom: -20px;
+        background: radial-gradient(ellipse 600px 300px at 50% 0%, rgba(245, 158, 11, 0.04), transparent 70%);
+        pointer-events: none;
       }
-      .hero .subtitle {
-        font-size: 1.1rem;
-        color: var(--text-dim);
-        margin-bottom: 4px;
-      }
+
+      .hero h1 { font-size: 3.2rem; margin-bottom: 8px; }
+      .hero .subtitle { font-size: 1.1rem; color: var(--text-dim); margin-bottom: 6px; }
       .hero .badge-row {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
-        margin-top: 16px;
+        margin-top: 18px;
       }
+
       .hero .badge {
         display: inline-flex;
         align-items: center;
         gap: 5px;
-        padding: 4px 12px;
+        padding: 4px 14px;
         border-radius: 20px;
         font-size: 0.78rem;
         font-weight: 500;
         border: 1px solid var(--border);
         background: var(--bg-card);
         color: var(--text-dim);
+        transition: all 0.2s;
       }
+
+      .hero .badge:hover {
+        border-color: var(--fuego);
+        color: var(--fuego-light);
+        background: var(--fuego-bg);
+      }
+
       .hero .badge.dot {
         border-color: transparent;
-        background: rgba(108, 140, 255, 0.1);
-        color: var(--accent);
+        background: var(--fuego-bg);
+        color: var(--fuego-light);
       }
 
       /* ===== FEATURE GRID ===== */
@@ -440,49 +537,186 @@ const { title, description } = Astro.props;
         gap: 12px;
         margin-bottom: 32px;
       }
+
       .feature-card {
         background: var(--bg-card);
         border: 1px solid var(--border);
         border-radius: 10px;
-        padding: 16px 18px;
-        transition: all 0.2s ease;
+        padding: 18px 20px;
+        transition: all 0.25s ease;
+        position: relative;
+        overflow: hidden;
       }
+
+      .feature-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(to right, transparent, var(--fuego), transparent);
+        opacity: 0;
+        transition: opacity 0.25s;
+      }
+
       .feature-card:hover {
-        border-color: var(--border-glow);
+        border-color: var(--fuego);
         background: var(--bg-hover);
-        transform: translateY(-1px);
-        box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.25), 0 0 0 1px rgba(245, 158, 11, 0.05);
       }
-      .feature-card .icon { font-size: 1.3rem; margin-bottom: 6px; }
-      .feature-card h4 { font-size: 0.9rem; font-weight: 600; margin-bottom: 4px; color: var(--text); }
+
+      .feature-card:hover::before { opacity: 0.4; }
+
+      .feature-card .icon { font-size: 1.4rem; margin-bottom: 8px; display: block; }
+      .feature-card h4 { font-size: 0.92rem; font-weight: 600; margin-bottom: 4px; color: var(--text); }
       .feature-card p { font-size: 0.82rem; color: var(--text-dim); margin: 0; }
 
-      /* ===== RESPONSIVE CODE ===== */
-      .code-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 8px 16px;
+      /* ===== RESPONSIVE ===== */
+      @media (max-width: 600px) {
+        h1 { font-size: 1.8rem; }
+        h2 { font-size: 1.25rem; }
+        .hero h1 { font-size: 2rem; }
+        .hero .subtitle { font-size: 0.95rem; }
+        .feature-grid { grid-template-columns: 1fr; }
+        pre { font-size: 0.75rem; padding: 14px 16px; }
+        table { font-size: 0.75rem; }
+        th, td { padding: 8px 10px; }
+      }
+
+      /* ===== ANIMATIONS ===== */
+      @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      .main-inner > * {
+        animation: fadeInUp 0.4s ease forwards;
+      }
+
+      .main-inner > *:nth-child(2) { animation-delay: 0.05s; }
+      .main-inner > *:nth-child(3) { animation-delay: 0.1s; }
+      .main-inner > *:nth-child(4) { animation-delay: 0.15s; }
+      .main-inner > *:nth-child(5) { animation-delay: 0.2s; }
+
+      /* ===== COPY BUTTON (CSS only, JS not needed) ===== */
+      .code-block-wrapper {
+        position: relative;
+        margin-bottom: 24px;
+      }
+
+      .copy-btn {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        padding: 4px 10px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--text-muted);
+        font-size: 0.7rem;
+        font-family: var(--font-mono);
+        cursor: pointer;
+        opacity: 0;
+        transition: all 0.2s;
+        z-index: 2;
+      }
+
+      .code-block-wrapper:hover .copy-btn { opacity: 1; }
+      .copy-btn:hover { background: var(--fuego-bg); color: var(--fuego-light); border-color: var(--fuego); }
+
+      /* ===== STEP NUMBERS ===== */
+      .step-list {
+        counter-reset: step;
+        list-style: none;
+        padding: 0;
+      }
+
+      .step-list li {
+        counter-increment: step;
+        padding: 16px 20px 16px 56px;
         background: var(--bg-card);
         border: 1px solid var(--border);
-        border-bottom: none;
-        border-radius: 12px 12px 0 0;
-        font-size: 0.75rem;
-        color: var(--text-muted);
+        border-radius: 10px;
+        margin-bottom: 10px;
+        position: relative;
+        font-size: 0.95rem;
+        color: var(--text-dim);
+        transition: all 0.2s;
+      }
+
+      .step-list li:hover {
+        border-color: var(--border-glow);
+        background: var(--bg-hover);
+      }
+
+      .step-list li::before {
+        content: counter(step);
+        position: absolute;
+        left: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 28px;
+        height: 28px;
+        background: linear-gradient(135deg, var(--fuego), var(--fuego-dark));
+        border-radius: 7px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #fff;
         font-family: var(--font-mono);
       }
-      .code-header + pre {
-        border-radius: 0 0 12px 12px;
-        border-top: none;
-        margin-top: 0;
+
+      .step-list li strong { color: var(--text); }
+
+      /* ===== COLLAPSIBLE (details/summary) ===== */
+      details {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin-bottom: 24px;
+        overflow: hidden;
+        transition: border-color 0.2s;
       }
+      details:hover { border-color: var(--border-glow); }
+
+      summary {
+        padding: 14px 20px;
+        cursor: pointer;
+        font-weight: 500;
+        color: var(--text);
+        font-size: 0.9rem;
+        user-select: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.2s;
+      }
+      summary:hover { background: var(--bg-hover); }
+      summary::marker { color: var(--fuego); }
+      summary::-webkit-details-marker { color: var(--fuego); }
+
+      details[open] summary {
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-hover);
+      }
+
+      details > *:not(summary) {
+        padding: 16px 20px;
+      }
+
+      details table { margin: 0; }
+      details .code-block-wrapper { margin: 0; }
     </style>
   </head>
   <body>
     <aside class="sidebar">
       <div class="sidebar-header">
         <a href="/" class="logo">
-          <div class="logo-icon">F</div>
+          <div class="logo-icon">⎔</div>
           <span class="logo-text">Forja</span>
         </a>
         <div class="logo-sub">Lenguaje en español</div>
@@ -490,6 +724,7 @@ const { title, description } = Astro.props;
       <nav class="sidebar-nav">
         <div class="section-title">Introducción</div>
         <a href="/">¿Qué es Forja?</a>
+        <a href="/playground">Playground</a>
         <a href="/instalacion">Instalación</a>
         <a href="/uso">Uso (CLI)</a>
 
@@ -502,6 +737,10 @@ const { title, description } = Astro.props;
         <a href="/sintaxis/clases" class="sub"><span class="nav-dot"></span>Clases y POO</a>
         <a href="/sintaxis/ownership" class="sub"><span class="nav-dot"></span>Ownership</a>
         <a href="/sintaxis/operadores" class="sub"><span class="nav-dot"></span>Operadores</a>
+        <a href="/sintaxis/entrada" class="sub"><span class="nav-dot"></span>Entrada de usuario</a>
+        <a href="/sintaxis/coincidir" class="sub"><span class="nav-dot"></span>Pattern matching</a>
+        <a href="/sintaxis/enums" class="sub"><span class="nav-dot"></span>Tipos algebraicos</a>
+        <a href="/sintaxis/modulos" class="sub"><span class="nav-dot"></span>Módulos (importar)</a>
 
         <div class="section-title">Arquitectura</div>
         <a href="/arquitectura/pipeline" class="sub"><span class="nav-dot"></span>Pipeline</a>
@@ -512,10 +751,13 @@ const { title, description } = Astro.props;
         <a href="/arquitectura/transpilador" class="sub"><span class="nav-dot"></span>Transpilador</a>
         <a href="/arquitectura/bytecode" class="sub"><span class="nav-dot"></span>Bytecode</a>
         <a href="/arquitectura/vm" class="sub"><span class="nav-dot"></span>VM</a>
+        <a href="/arquitectura/compiler_asm" class="sub"><span class="nav-dot"></span>Compilador ASM</a>
         <a href="/arquitectura/aot" class="sub"><span class="nav-dot"></span>AOT</a>
         <a href="/arquitectura/jit" class="sub"><span class="nav-dot"></span>JIT</a>
         <a href="/arquitectura/repl" class="sub"><span class="nav-dot"></span>REPL</a>
         <a href="/arquitectura/selfrun" class="sub"><span class="nav-dot"></span>Self-run</a>
+        <a href="/arquitectura/optimizer" class="sub"><span class="nav-dot"></span>Optimizador</a>
+        <a href="/arquitectura/formatter" class="sub"><span class="nav-dot"></span>Formateador</a>
 
         <div class="section-title">Referencia</div>
         <a href="/errores">Sistema de errores</a>

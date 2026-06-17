@@ -7,14 +7,19 @@ import Layout from '../../layouts/Layout.astro';
 
   <p><strong>Archivo:</strong> <code>src/transpiler.rs</code></p>
 
-  <p>Genera <strong>código Rust compilable</strong> a partir del AST. Es el backend original de Forja.</p>
+  <p>Genera <strong>código Rust compilable</strong> a partir del AST. Es el backend original de Forja y te permite llevar tus programas al ecosistema Rust.</p>
+
+  <div class="info">💡 <strong>¿Sabías que…?</strong> El transpilador optimiza ciertos patrones de Forja a Rust idiomático. Por ejemplo, <code>para (i=0; i{'<'}N; i=i+1)</code> se convierte en <code>for i in 0..N</code>.</div>
 
   <h2>Pipeline de generación</h2>
 
-  <pre><code>1. Recolectar clases (primera pasada por el AST)
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🔀 Pasos del transpilador</span></div>
+    <pre><code>1. Recolectar clases (primera pasada por el AST)
 2. Generar struct + impl para cada clase
 3. Generar funciones globales como fn
 4. Generar fn main() con el código global restante</code></pre>
+  </div>
 
   <h2>Mapeo completo Forja → Rust</h2>
 
@@ -28,7 +33,7 @@ import Layout from '../../layouts/Layout.astro';
     <tr><td><code>x: Booleano</code></td><td><code>x: bool</code></td></tr>
     <tr><td><code>si (c) &lbrace; ... &rbrace; sino &lbrace; ... &rbrace;</code></td><td><code>if c &lbrace; ... &rbrace; else &lbrace; ... &rbrace;</code></td></tr>
     <tr><td><code>mientras (c) &lbrace; ... &rbrace;</code></td><td><code>while c &lbrace; ... &rbrace;</code></td></tr>
-    <tr><td><code>para (i=0; i&lt;N; i=i+1) &lbrace; ... &rbrace;</code></td><td><code>for i in 0..N &lbrace; ... &rbrace;</code> ✅ optimizado</td></tr>
+    <tr><td><code>para (i=0; i{'<'}N; i=i+1) &lbrace; ... &rbrace;</code></td><td><code>for i in 0..N &lbrace; ... &rbrace;</code> ✅ optimizado</td></tr>
     <tr><td><code>repetir (N) &lbrace; ... &rbrace;</code></td><td><code>for _ in 0..N &lbrace; ... &rbrace;</code></td></tr>
     <tr><td><code>clase X &lbrace; ... &rbrace;</code></td><td><code>struct X &lbrace; ... &rbrace;</code> + <code>impl X &lbrace; ... &rbrace;</code></td></tr>
     <tr><td><code>constructor(p) &lbrace; ... &rbrace;</code></td><td><code>fn nuevo(p: String) -> Self &lbrace; ... &rbrace;</code></td></tr>
@@ -46,24 +51,28 @@ import Layout from '../../layouts/Layout.astro';
   <h2>Optimizaciones clave</h2>
 
   <ul>
-    <li><strong>Bucle para:</strong> detecta <code>i=0; i&lt;N; i=i+1</code> y genera <code>for i in 0..N</code></li>
+    <li><strong>Bucle para:</strong> detecta <code>i=0; i{'<'}N; i=i+1</code> y genera <code>for i in 0..N</code></li>
     <li><strong>Repetir:</strong> genera <code>for _ in 0..N</code> directamente</li>
     <li><strong>Main detection:</strong> si hay <code>funcion main()</code>, no genera <code>fn main()</code> extra</li>
   </ul>
 
   <h2>Ejemplo</h2>
 
-  <div class="code-header">📄 entrada.fa</div>
-  <pre><code><span class="kw">variable</span> x = 5
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 entrada.fa</span></div>
+    <pre><code><span class="kw">variable</span> x = 5
 <span class="kw">variable</span> y = 10
 <span class="fn">escribir</span>(x + y)</code></pre>
+  </div>
 
-  <div class="code-header">🦀 salida.rs</div>
-  <pre><code><span class="co">// Código generado por Forja (fa) → Rust</span>
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🦀 salida.rs</span></div>
+    <pre><code><span class="co">// Código generado por Forja (fa) → Rust</span>
 
 <span class="kw">fn</span> main() &lbrace;
     <span class="kw">let mut</span> x = 5;
     <span class="kw">let mut</span> y = 10;
     println!(<span class="st">"&lbrace;&rbrace;"</span>, (x + y));
 &rbrace;</code></pre>
+  </div>
 </Layout>

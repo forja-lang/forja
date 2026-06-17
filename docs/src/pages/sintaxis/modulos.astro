@@ -1,0 +1,63 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Módulos (importar) — Forja">
+  <h1>Módulos: <code>importar</code></h1>
+
+  <p>Forja permite organizar tu código en múltiples archivos usando el sistema de <strong>módulos</strong> con la palabra clave <code><span class="kw">importar</span></code>.</p>
+
+  <div class="info">💡 <strong>Idea:</strong> Dividí tu programa en archivos separados y conectalos con <code>importar</code>. Cada archivo es un módulo.</div>
+
+  <h2>Sintaxis</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📐 Importar un módulo</span></div>
+    <pre><code><span class="kw">importar</span> <span class="st">"ruta/del/modulo"</span></code></pre>
+  </div>
+
+  <p>La ruta es relativa al directorio del proyecto, sin la extensión <code>.fa</code>.</p>
+
+  <h2>Ejemplo</h2>
+
+  <p>Proyecto con dos archivos:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 main.fa</span></div>
+    <pre><code><span class="kw">importar</span> <span class="st">"modulos/matematica"</span>
+
+<span class="fn">escribir</span>(sumar(5, 3))
+<span class="fn">escribir</span>(restar(10, 4))</code></pre>
+  </div>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 modulos/matematica.fa</span></div>
+    <pre><code><span class="kw">funcion</span> sumar(a, b) &lbrace;
+    <span class="kw">retornar</span> a + b
+&rbrace;
+
+<span class="kw">funcion</span> restar(a, b) &lbrace;
+    <span class="kw">retornar</span> a - b
+&rbrace;</code></pre>
+  </div>
+
+  <h2>Resolución de rutas</h2>
+
+  <table>
+    <tr><th>Ruta</th><th>Archivo buscado</th></tr>
+    <tr><td><code>"modulos/matematica"</code></td><td><code>./modulos/matematica.fa</code></td></tr>
+    <tr><td><code>"util/colores"</code></td><td><code>./util/colores.fa</code></td></tr>
+    <tr><td><code>"principal"</code></td><td><code>./principal.fa</code></td></tr>
+  </table>
+
+  <div class="warning">⚠️ <strong>Seguridad:</strong> Las rutas con <code>..</code> (path traversal) son rechazadas por el resolvedor de módulos. Esto evita accesos no autorizados a archivos fuera del proyecto.</div>
+
+  <h2>Importar en el CLI</h2>
+
+  <p>Los proyectos con módulos se ejecutan desde el directorio raíz:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>⚡ Ejecutar</span></div>
+    <pre><code>forja run main.fa</code></pre>
+  </div>
+</Layout>

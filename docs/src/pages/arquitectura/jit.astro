@@ -3,15 +3,19 @@ import Layout from '../../layouts/Layout.astro';
 ---
 
 <Layout title="Compilador JIT — Forja">
-  <h1>Compilador JIT</h1>
+  <h1>Compilador JIT (Just-In-Time)</h1>
 
   <p><strong>Archivo:</strong> <code>src/jit.rs</code></p>
 
-  <p>Compila bytecode Forja a <strong>código máquina nativo</strong> en tiempo real usando <strong>Cranelift</strong>. Ofrece rendimiento 10-50x superior a la VM interpretada.</p>
+  <p>Compila bytecode Forja a <strong>código máquina nativo</strong> en tiempo real usando <strong>Cranelift</strong>. Ofrece rendimiento 10-50x superior a la VM interpretada, acercándose al rendimiento de Rust nativo.</p>
+
+  <div class="info">⚡ <strong>¿Cómo funciona?</strong> El JIT traduce bytecode a IR de Cranelift, que luego genera código x86 nativo. Ese código se almacena en memoria y se ejecuta directamente como una función.</div>
 
   <h2>Arquitectura</h2>
 
-  <pre><code>┌────────────┐    ┌──────────────┐    ┌────────────────┐
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🔀 Flujo JIT</span></div>
+    <pre><code>┌────────────┐    ┌──────────────┐    ┌────────────────┐
 │  Bytecode  │ →  │ Cranelift JIT│ →  │ Código máquina │
 │  .fbc      │    │  (jit.rs)    │    │  nativo (x86)  │
 └────────────┘    └──────────────┘    └────────────────┘
@@ -21,8 +25,11 @@ import Layout from '../../layouts/Layout.astro';
                                       │ Ejecución directa│
                                       │ en memoria (fn*) │
                                       └──────────────────┘</code></pre>
+  </div>
 
   <h2>Mapeo Bytecode → Cranelift IR</h2>
+
+  <p>Cada opcode de Forja se traduce a instrucciones de Cranelift:</p>
 
   <table>
     <tr><th>Opcode</th><th>IR de Cranelift</th></tr>
@@ -37,8 +44,9 @@ import Layout from '../../layouts/Layout.astro';
 
   <h2>Ejemplo</h2>
 
-  <div class="code-header">⚡ Compilar y ejecutar</div>
-  <pre><code><span class="kw">let mut</span> jit = ForjaJIT::new().unwrap();
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>⚡ Compilar y ejecutar con JIT</span></div>
+    <pre><code><span class="kw">let mut</span> jit = ForjaJIT::new().unwrap();
 
 <span class="co">// Compila 3 + 4 → código máquina</span>
 jit.compile_block(<span class="st">"add"</span>,
@@ -48,21 +56,28 @@ jit.compile_block(<span class="st">"add"</span>,
 <span class="co">// Ejecuta directamente</span>
 <span class="kw">let</span> result = <span class="kw">unsafe</span> &lbrace; jit.execute(<span class="st">"add"</span>) &rbrace;;
 <span class="co">// result = Some(7)</span></code></pre>
+  </div>
 
   <h2>Dependencia</h2>
 
-  <pre><code><span class="co"># En Cargo.toml</span>
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📦 Cargo.toml</span></div>
+    <pre><code><span class="co"># En Cargo.toml</span>
 [dependencies]
 cranelift-simplejit = <span class="st">"0.68.0"</span></code></pre>
+  </div>
 
-  <div class="info">💡 Cranelift agrega ~2-5 MB al binario, pero ofrece rendimiento cercano a Rust nativo.</div>
+  <div class="info">💡 Cranelift agrega ~2-5 MB al binario, pero ofrece rendimiento cercano a Rust nativo. ¡Vale la pena para código que se ejecuta muchas veces!</div>
 
   <div class="warning">⚠️ <strong>Estado:</strong> JIT es un <strong>prototipo funcional</strong> para aritmética y variables. El plan es integrarlo con la VM en modo híbrido: la VM interpreta código frío, y los hot paths se compilan a código máquina automáticamente.</div>
 
   <h2>Plan de integración híbrida</h2>
 
-  <pre><code>1. Cada función/bloque tiene un contador de ejecución
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🔮 Visión futura</span></div>
+    <pre><code>1. Cada función/bloque tiene un contador de ejecución
 2. Cuando supera un threshold (ej: 50 ejecuciones), se compila con JIT
 3. El código nativo se almacena y se ejecuta directamente
 4. La VM sigue interpretando código frío sin overhead</code></pre>
+  </div>
 </Layout>
