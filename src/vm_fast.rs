@@ -65,7 +65,7 @@ impl ValorFast {
 }
 
 #[derive(Clone)]
-struct FuncFast { ip: usize }
+struct FuncFast { ip: usize, vars_size: usize }
 
 pub struct ForjaFast {
     ip: usize,
@@ -146,12 +146,29 @@ impl ForjaFast {
         self.funciones.clear();
         self.func_params.clear();
 
-        // Primera pasada: indexar labels y funciones
+        // Primera pasada: indexar labels, funciones, y calcular vars_size
         let mut label_positions: HashMap<usize, usize> = HashMap::new();
         for (i, op) in self.bytecode.iter().enumerate() {
             match op {
                 Opcode::FunctionDef(n, params) => {
-                    self.funciones.insert(n.clone(), FuncFast { ip: i + 1 });
+                    // Calcular vars_size: escanear desde ip+1 hasta el próximo FunctionDef o Halt
+                    let mut max_idx: usize = params.len();
+                    for j in (i + 1)..self.bytecode.len() {
+                        match &self.bytecode[j] {
+                            Opcode::FunctionDef(_, _) | Opcode::Halt => break,
+                            Opcode::LoadIdx(idx) | Opcode::StoreIdx(idx) | Opcode::DeclareIdx(idx, _) => {
+                                if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                            }
+                            Opcode::DeclareEnteroOp(idx, _) | Opcode::DeclareBooleanoOp(idx, _) | Opcode::StoreEnteroOp(idx, _) => {
+                                if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                            }
+                            Opcode::LoadIdxEntero(idx) | Opcode::LoadIdxFloat(idx) | Opcode::StoreIdxEntero(idx) | Opcode::StoreIdxFloat(idx) => {
+                                if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                            }
+                            _ => {}
+                        }
+                    }
+                    self.funciones.insert(n.clone(), FuncFast { ip: i + 1, vars_size: max_idx });
                     self.func_params.insert(n.clone(), params.clone());
                 }
                 Opcode::Label(l) => {
@@ -861,14 +878,16 @@ impl ForjaFast {
                             for _ in 0..nargs { args.push(self.pop()?); }
                             args.reverse();
 
-                            // Crear nuevo vars con args en índices locales (0, 1, 2...)
-                            // optimizar_indices() asigna índices empezando desde 0 para
-                            // los parámetros de la primera función en el bytecode.
-                            let num_params = self.func_params.get(&nombre).map_or(0, |p| p.len());
-                            let mut new_vars = Vec::with_capacity(nargs.max(num_params));
+                            // Crear nuevo vars con tamaño suficiente para todos los índices
+                            // que la función usa (pre-calculado en vars_size).
+                            // Poner args en índices 0, 1, 2... (locales al ámbito de la función).
+                            let vars_size = func.vars_size.max(nargs);
+                            let mut new_vars = Vec::with_capacity(vars_size);
                             for arg in args {
                                 new_vars.push(arg);
                             }
+                            // Rellenar con Nulo hasta alcanzar vars_size
+                            new_vars.resize(vars_size, ValorFast::Nulo);
 
                             self.call_stack.push(FrmFast { ip_ret: next_ip, vars_previas: prev_vars });
                             self.vars = new_vars;
@@ -939,7 +958,7 @@ impl ForjaFast {
             for (i, uop) in uops.iter().enumerate() {
                 if let Uop::FunctionDef(n, _) = uop {
                     if n == nombre {
-                        nuevas_funciones.insert(nombre.clone(), FuncFast { ip: i + 1 });
+                        nuevas_funciones.insert(nombre.clone(), FuncFast { ip: i + 1, vars_size: func.vars_size });
                         encontrada = true;
                         break;
                     }
@@ -947,7 +966,7 @@ impl ForjaFast {
             }
             if !encontrada {
                 // Mantener IP original como fallback (no debería ocurrir)
-                nuevas_funciones.insert(nombre.clone(), FuncFast { ip: func.ip });
+                nuevas_funciones.insert(nombre.clone(), FuncFast { ip: func.ip, vars_size: func.vars_size });
             }
         }
         self.funciones = nuevas_funciones;
@@ -1296,10 +1315,12 @@ impl ForjaFast {
                             for _ in 0..nargs { args.push(self.pop()?); }
                             args.reverse();
 
-                            let mut new_vars = Vec::with_capacity(nargs);
+                            let vars_size = func.vars_size.max(nargs);
+                            let mut new_vars = Vec::with_capacity(vars_size);
                             for arg in args {
                                 new_vars.push(arg);
                             }
+                            new_vars.resize(vars_size, ValorFast::Nulo);
 
                             self.call_stack.push(FrmFast { ip_ret: next_ip, vars_previas: prev_vars });
                             self.vars = new_vars;

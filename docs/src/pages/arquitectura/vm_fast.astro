@@ -1,0 +1,85 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="VM Fast v5 (ForjaFast) — Forja">
+  <h1>ForjaFast v5 — VM de Producción</h1>
+
+  <p><strong>Archivo:</strong> <code>src/vm_fast.rs</code> (1454 líneas)</p>
+
+  <p><strong>ForjaFast</strong> es la quinta generación de la Máquina Virtual de Forja, y la que se usa en producción para <code>forja run</code>. Incorpora todas las optimizaciones aprendidas en las versiones anteriores: índices globales, stack caching y scope management eficiente.</p>
+
+  <div class="info">⚡ <strong>Rendimiento:</strong> ForjaFast es la VM más rápida de las 4 generaciones. Su diseño está inspirado en técnicas de máquinas virtuales modernas como HotSpot y V8.</div>
+
+  <h2>Innovaciones de ForjaFast v5</h2>
+
+  <table>
+    <tr><th>Innovación</th><th>Descripción</th><th>Beneficio</th></tr>
+    <tr><td><strong>Stack Caching</strong></td><td>El tope de la pila (Top-of-Stack) se cachea en un campo <code>tos: Option<ValorFast></code> en lugar de estar siempre en el Vec</td><td>Elimina push/pop redundantes para el caso más común</td></tr>
+    <tr><td><strong>Variables globales O(1)</strong></td><td>Todas las variables tienen un índice único global asignado por <code>optimizar_indices()</code>. Un solo <code>Vec<ValorFast></code> plano</td><td>Acceso directo sin HashMap ni búsqueda por ámbito</td></tr>
+    <tr><td><strong>Scope por Frame</strong></td><td>Cada frame en el call stack guarda <code>scope_start</code> (índice donde empiezan sus variables). Al hacer return, se truncan las variables</td><td>Limpieza O(1) sin iterar ámbitos</td></tr>
+    <tr><td><strong>Small Integer Cache</strong></td><td>Enteros en [-5, 256] pre-asignados en un array estático thread-local</td><td>Zero allocation para enteros pequeños</td></tr>
+  </table>
+
+  <h2>Estructura interna</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>⚙️ ForjaFast</span></div>
+    <pre><code><span class="kw">pub struct</span> ForjaFast &lbrace;
+    ip: usize,                          <span class="co">// Instruction Pointer</span>
+    stack: Vec<ValorFast>,              <span class="co">// Pila de datos (sin tope)</span>
+    tos: Option<ValorFast>,             <span class="co">// Top-of-Stack cache</span>
+    call_stack: Vec<FrmFast>,           <span class="co">// Pila de llamadas</span>
+    vars: Vec<ValorFast>,               <span class="co">// Variables globales O(1)</span>
+    bytecode: Vec<Opcode>,              <span class="co">// Código a ejecutar</span>
+    output: Vec<String>,                <span class="co">// Output capturado</span>
+    max_inst: u64,                      <span class="co">// Límite de instrucciones</span>
+&rbrace;</code></pre>
+  </div>
+
+  <h2>Ciclo de ejecución con Stack Caching</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🔄 Main loop optimizado</span></div>
+    <pre><code><span class="kw">loop</span> &lbrace;
+    <span class="kw">let</span> op = self.bytecode[self.ip].clone();
+    self.ip += 1;
+    <span class="kw">match</span> op &lbrace;
+        Opcode::PushEntero(n) => &lbrace;
+            <span class="co">// Si hay TOS, push a stack. Luego cachear nuevo valor</span>
+            <span class="kw">if</span> <span class="kw">let</span> Some(tos) = self.tos.take() &lbrace;
+                self.stack.push(tos);
+            &rbrace;
+            self.tos = Some(get_small_int_fast(n));
+        &rbrace;
+        Opcode::Add => &lbrace;
+            <span class="co">// TOS + pop del stack o TOS anterior</span>
+            <span class="kw">let</span> b = self.tos.take().unwrap();
+            <span class="kw">let</span> a = self.stack.pop().unwrap_or_else(|| ...);
+            self.tos = Some(a + b); <span class="co">// con type checking</span>
+        &rbrace;
+        Opcode::LoadIdx(i) => &lbrace;
+            <span class="co">// Cargar variable directo al TOS cache</span>
+            <span class="kw">if</span> <span class="kw">let</span> Some(tos) = self.tos.take() &lbrace;
+                self.stack.push(tos);
+            &rbrace;
+            self.tos = Some(self.vars[i].clone());
+        &rbrace;
+        Opcode::Halt => <span class="kw">break</span>,
+        <span class="co">// ... resto de opcodes</span>
+    &rbrace;
+&rbrace;</code></pre>
+  </div>
+
+  <h2>Comparativa de rendimiento entre VMs</h2>
+
+  <table>
+    <tr><th>VM</th><th>Variables</th><th>Pila</th><th>Output</th><th>Líneas</th></tr>
+    <tr><td><code>ForjaVM</code> (v1)</td><td>Vec<HashMap> — O(n) búsqueda</td><td>Vec estándar</td><td>println!() directo</td><td>2038</td></tr>
+    <tr><td><code>ForjaVMOpt</code> (v3)</td><td>Vec plano por ámbito — O(1) índice</td><td>Vec estándar</td><td>Buffer interno</td><td>1091</td></tr>
+    <tr><td><code>ForjaDT</code> (v3 DT)</td><td>u8 planos + arrays paralelos</td><td>Vec estándar</td><td>Buffer interno</td><td>645</td></tr>
+    <tr><td><code>ForjaFast</code> (v5)</td><td>Vec global + scope_start — O(1)</td><td>Stack caching (TOS register)</td><td>Buffer interno</td><td>1454</td></tr>
+  </table>
+
+  <div class="tip"><strong>🔧 Producción:</strong> ForjaFast es la VM que usa <code>forja run</code>. Incluye límite de instrucciones (<code>max_inst</code>) para evitar bucles infinitos.</div>
+</Layout>

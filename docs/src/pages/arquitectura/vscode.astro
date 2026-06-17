@@ -1,0 +1,75 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Extensión VS Code — Forja">
+  <h1>Extensión para VS Code</h1>
+
+  <p><strong>Directorio:</strong> <code>vscode/forja-syntax/</code></p>
+
+  <p>Forja incluye una extensión para <strong>Visual Studio Code</strong> que provee resaltado de sintaxis para archivos <code>.fa</code>. Está implementada como una <strong>TextMate grammar</strong> (formato JSON) con language configuration.</p>
+
+  <h2>Instalación</h2>
+
+  <ol>
+    <li>Abrí VS Code</li>
+    <li>Presioná <kbd>Ctrl+Shift+P</kbd> → "Extensions: Install from VSIX..."</li>
+    <li>Seleccioná <code>vscode/forja-syntax/forja-syntax-0.1.0.vsix</code></li>
+    <li>Listo. Los archivos <code>.fa</code> ahora tienen resaltado de sintaxis</li>
+  </ol>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📦 Instalación desde terminal</span></div>
+    <pre><code>code --install-extension vscode/forja-syntax/forja-syntax-0.1.0.vsix</code></pre>
+  </div>
+
+  <h2>Archivos de la extensión</h2>
+
+  <table>
+    <tr><th>Archivo</th><th>Propósito</th></tr>
+    <tr><td><code>package.json</code></td><td>Manifiesto de la extensión: nombre, versión, idioma asociado</td></tr>
+    <tr><td><code>syntaxes/forja.tmLanguage.json</code></td><td>TextMate grammar: define las reglas de resaltado de sintaxis</td></tr>
+    <tr><td><code>language-configuration.json</code></td><td>Configuración del lenguaje: comentarios, brackets, auto-cierre</td></tr>
+  </table>
+
+  <h2>Resaltado de sintaxis</h2>
+
+  <p>La grammar define colores para los siguientes elementos:</p>
+
+  <table>
+    <tr><th>Elemento</th><th>Color</th><th>Palabras</th></tr>
+    <tr><td><strong>Keywords</strong></td><td>Amarillo / Naranja</td><td><code>variable</code>, <code>constante</code>, <code>si</code>, <code>sino</code>, <code>funcion</code>, <code>retornar</code>, <code>clase</code>, <code>nuevo</code>, <code>este</code>, <code>prestado</code>, <code>mientras</code>, <code>para</code>, <code>repetir</code>, <code>importar</code>, <code>coincidir</code>, <code>caso</code>, <code>tipo</code></td></tr>
+    <tr><td><strong>Tipos</strong></td><td>Cian</td><td><code>Entero</code>, <code>Decimal</code>, <code>Texto</code>, <code>Booleano</code>, <code>Nulo</code></td></tr>
+    <tr><td><strong>Funciones builtin</strong></td><td>Verde</td><td><code>escribir()</code>, <code>leer()</code></td></tr>
+    <tr><td><strong>Strings</strong></td><td>Naranja brillante</td><td>Todo texto entre comillas dobles</td></tr>
+    <tr><td><strong>Comentarios</strong></td><td>Gris</td><td>Líneas que empiezan con <code>//</code></td></tr>
+    <tr><td><strong>Números</strong></td><td>Azul</td><td>Literales numéricos (enteros y decimales)</td></tr>
+    <tr><td><strong>Booleanos</strong></td><td>Amarillo</td><td><code>verdadero</code>, <code>falso</code></td></tr>
+  </table>
+
+  <h2>Language Configuration</h2>
+
+  <p>El archivo <code>language-configuration.json</code> define:</p>
+  <ul>
+    <li><strong>Comentarios:</strong> <code>//</code> para línea simple</li>
+    <li><strong>Brackets:</strong> <code>{}</code>, <code>()</code>, <code>[]</code> con auto-cierre</li>
+    <li><strong>Auto-cerrar:</strong> <code>"</code> (comillas) y brackets automáticamente</li>
+    <li><strong>On-enter rules:</strong> Indentación automática después de <code>{</code></li>
+  </ul>
+
+  <div class="tip"><strong>💡 Paleta de colores:</strong> La grammar de VS Code usa la misma paleta que el comando <code>forja highlight</code> en terminal y que la documentación web de Forja.</div>
+
+  <h2>Desarrollo</h2>
+
+  <p>Si querés modificar la extensión:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🔧 Recargar extensión</span></div>
+    <pre><code><span class="co"># 1. Editá los archivos .json</span>
+<span class="co"># 2. En VS Code: Ctrl+Shift+P → "Developer: Reload Window"</span>
+
+<span class="co"># O reinstalá el VSIX actualizado:</span>
+vsce package
+code --install-extension forja-syntax-0.1.0.vsix</code></pre>
+  </div>
+</Layout>
