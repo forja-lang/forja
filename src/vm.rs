@@ -378,30 +378,32 @@ impl ForjaVM {
             }
 
             let opcode = self.bytecode[self.ip].clone();
-            self.ip += 1;
 
             match opcode {
-                Opcode::PushEntero(n) => self.stack.push(get_small_int_vm(n)),
-                Opcode::PushDecimal(d) => self.stack.push(ValorVM::Decimal(d)),
-                Opcode::PushTexto(s) => self.stack.push(ValorVM::Texto(s)),
-                Opcode::PushBooleano(b) => self.stack.push(ValorVM::Booleano(b)),
-                Opcode::PushNulo => self.stack.push(ValorVM::Nulo),
+                Opcode::PushEntero(n) => { self.stack.push(get_small_int_vm(n)); self.ip += 1; }
+                Opcode::PushDecimal(d) => { self.stack.push(ValorVM::Decimal(d)); self.ip += 1; }
+                Opcode::PushTexto(s) => { self.stack.push(ValorVM::Texto(s)); self.ip += 1; }
+                Opcode::PushBooleano(b) => { self.stack.push(ValorVM::Booleano(b)); self.ip += 1; }
+                Opcode::PushNulo => { self.stack.push(ValorVM::Nulo); self.ip += 1; }
 
-                Opcode::Pop => { self.stack.pop().ok_or(ErrorVM::StackUnderflow("Pop".to_string()))?; }
+                Opcode::Pop => { self.stack.pop().ok_or(ErrorVM::StackUnderflow("Pop".to_string()))?; self.ip += 1; }
                 Opcode::Dup => {
                     let val = self.stack.last().ok_or(ErrorVM::StackUnderflow("Dup".to_string()))?.clone();
                     self.stack.push(val);
+                    self.ip += 1;
                 }
 
                 // Load/Store/Declare por nombre (compatibilidad — resuelve nombre→índice)
                 Opcode::Load(nombre) => {
                     let val = self.buscar_variable(&nombre)?;
                     self.stack.push(val.clone());
+                    self.ip += 1;
                 }
 
                 Opcode::Store(nombre) => {
                     let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Store".to_string()))?;
                     self.asignar_variable(&nombre, val)?;
+                    self.ip += 1;
                 }
 
                 Opcode::Declare(nombre, _mutable) => {
@@ -410,6 +412,7 @@ impl ForjaVM {
                     let idx = self.variables[ambito].len();
                     self.nombre_a_indice[ambito].insert(nombre, idx);
                     self.variables[ambito].push(val);
+                    self.ip += 1;
                 }
 
                 // === LoadIdx/StoreIdx/DeclareIdx — ACCESO DIRECTO O(1) ===
@@ -421,18 +424,21 @@ impl ForjaVM {
                     } else {
                         self.stack.push(ValorVM::Nulo);
                     }
+                    self.ip += 1;
                 }
                 Opcode::StoreIdx(idx) => {
                     let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("StoreIdx".to_string()))?;
                     let ambito = self.ambito_actual();
                     self.asegurar_indice(ambito, idx);
                     self.variables[ambito][idx] = val;
+                    self.ip += 1;
                 }
                 Opcode::DeclareIdx(idx, _mutable) => {
                     let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DeclareIdx".to_string()))?;
                     let ambito = self.ambito_actual();
                     self.asegurar_indice(ambito, idx);
                     self.variables[ambito][idx] = val;
+                    self.ip += 1;
                 }
 
                 // === Opcodes fusionados — acceso directo O(1) ===
@@ -440,40 +446,47 @@ impl ForjaVM {
                     let ambito = self.ambito_actual();
                     self.asegurar_indice(ambito, idx);
                     self.variables[ambito][idx] = get_small_int_vm(n);
+                    self.ip += 1;
                 }
                 Opcode::DeclareBooleanoOp(idx, b) => {
                     let ambito = self.ambito_actual();
                     self.asegurar_indice(ambito, idx);
                     self.variables[ambito][idx] = ValorVM::Booleano(b);
+                    self.ip += 1;
                 }
                 Opcode::StoreEnteroOp(idx, n) => {
                     let ambito = self.ambito_actual();
                     self.asegurar_indice(ambito, idx);
                     self.variables[ambito][idx] = get_small_int_vm(n);
+                    self.ip += 1;
                 }
 
                 Opcode::Add => {
                     let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
                     self.stack.push(a.sumar(&b)?);
+                    self.ip += 1;
                 }
 
                 Opcode::Sub => {
                     let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Sub".to_string()))?;
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Sub".to_string()))?;
                     self.stack.push(a.restar(&b)?);
+                    self.ip += 1;
                 }
 
                 Opcode::Mul => {
                     let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Mul".to_string()))?;
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Mul".to_string()))?;
                     self.stack.push(a.multiplicar(&b)?);
+                    self.ip += 1;
                 }
 
                 Opcode::Div => {
                     let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Div".to_string()))?;
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Div".to_string()))?;
                     self.stack.push(a.dividir(&b)?);
+                    self.ip += 1;
                 }
 
                 Opcode::Igual => {
@@ -481,6 +494,7 @@ impl ForjaVM {
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Igual".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp == 0));
+                    self.ip += 1;
                 }
 
                 Opcode::Diferente => {
@@ -488,6 +502,7 @@ impl ForjaVM {
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Diferente".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp != 0));
+                    self.ip += 1;
                 }
 
                 Opcode::Menor => {
@@ -495,6 +510,7 @@ impl ForjaVM {
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Menor".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp == -1));
+                    self.ip += 1;
                 }
 
                 Opcode::Mayor => {
@@ -502,6 +518,7 @@ impl ForjaVM {
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Mayor".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp == 1));
+                    self.ip += 1;
                 }
 
                 Opcode::MenorIgual => {
@@ -509,6 +526,7 @@ impl ForjaVM {
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorIgual".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp != 1));
+                    self.ip += 1;
                 }
 
                 Opcode::MayorIgual => {
@@ -516,23 +534,27 @@ impl ForjaVM {
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorIgual".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp != -1));
+                    self.ip += 1;
                 }
 
                 Opcode::Y => {
                     let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Y".to_string()))?;
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Y".to_string()))?;
                     self.stack.push(ValorVM::Booleano(a.es_verdadero() && b.es_verdadero()));
+                    self.ip += 1;
                 }
 
                 Opcode::O => {
                     let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("O".to_string()))?;
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("O".to_string()))?;
                     self.stack.push(ValorVM::Booleano(a.es_verdadero() || b.es_verdadero()));
+                    self.ip += 1;
                 }
 
                 Opcode::No => {
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("No".to_string()))?;
                     self.stack.push(ValorVM::Booleano(!a.es_verdadero()));
+                    self.ip += 1;
                 }
 
                 Opcode::Jump(target) => {
@@ -543,19 +565,22 @@ impl ForjaVM {
                     let cond = self.stack.pop().ok_or(ErrorVM::StackUnderflow("JumpSiFalso".to_string()))?;
                     if !cond.es_verdadero() {
                         self.ip = target;
+                    } else {
+                        self.ip += 1;
                     }
                 }
 
                 Opcode::Label(_) => {
-                    // Los labels se resuelven en la precarga
+                    self.ip += 1;
                 }
 
                 Opcode::FunctionDef(_, _) => {
-                    // FunctionDef se salta (ya se registró en cargar_bytecode)
+                    self.ip += 1;
                 }
 
                 Opcode::Call(nombre, nargs) => {
                     // Buscar la función por nombre
+                    let call_ip = self.ip;
                     if let Some(&label) = self.funciones.get(&nombre) {
                         // Crear nuevo ámbito
                         let ambito = self.variables.len();
@@ -563,7 +588,7 @@ impl ForjaVM {
                         self.nombre_a_indice.push(HashMap::new());
 
                         let frame = Frame {
-                            ip_retorno: self.ip,
+                            ip_retorno: call_ip + 1,
                             nombre: nombre.clone(),
                             ambito,
                         };
@@ -618,6 +643,7 @@ impl ForjaVM {
                     let texto = val.mostrar();
                     println!("{}", texto);
                     self.output.push(texto);
+                    self.ip += 1;
                 }
 
                 Opcode::NewObject(clase) => {
@@ -627,12 +653,15 @@ impl ForjaVM {
                         campos: HashMap::new(),
                     };
                     self.stack.push(ValorVM::Objeto(ObjetoRef(Rc::new(RefCell::new(obj)))));
+                    self.ip += 1;
                 }
 
                 Opcode::CallMethod(metodo, nargs) => {
                     // Check for builtin string methods FIRST
+                    let call_ip = self.ip;
                     if let Some(builtin) = resolver_builtin(&metodo) {
                         self.ejecutar_builtin(builtin, nargs)?;
+                        self.ip += 1;
                     } else {
                         // Pop args, pop objeto, buscar {clase}.{metodo} y llamar
                         let mut args = Vec::new();
@@ -649,7 +678,7 @@ impl ForjaVM {
                                 self.variables.push(Vec::new());
                                 self.nombre_a_indice.push(HashMap::new());
 
-                                let frame = Frame { ip_retorno: self.ip, nombre: func_name.clone(), ambito };
+                                let frame = Frame { ip_retorno: call_ip + 1, nombre: func_name.clone(), ambito };
                                 self.call_stack.push(frame);
 
                                 let param_names: Vec<String> = self.bytecode.iter()
@@ -690,6 +719,7 @@ impl ForjaVM {
                     } else {
                         return Err(ErrorVM::TipoIncompatible("SetField: se esperaba un objeto".to_string()));
                     }
+                    self.ip += 1;
                 }
 
                 Opcode::GetField(campo) => {
@@ -705,6 +735,7 @@ impl ForjaVM {
                     } else {
                         return Err(ErrorVM::TipoIncompatible("GetField: se esperaba un objeto".to_string()));
                     }
+                    self.ip += 1;
                 }
 
                 Opcode::ArrayNew(n) => {
@@ -716,6 +747,7 @@ impl ForjaVM {
                     }
                     elementos.reverse();
                     self.stack.push(ValorVM::Arreglo(elementos));
+                    self.ip += 1;
                 }
 
                 Opcode::ArrayGet => {
@@ -739,6 +771,7 @@ impl ForjaVM {
                         _ => return Err(ErrorVM::TipoIncompatible(
                             format!("IndexGet: no soportado"))),
                     }
+                    self.ip += 1;
                 }
 
                 Opcode::ArraySet => {
@@ -760,6 +793,7 @@ impl ForjaVM {
                         _ => return Err(ErrorVM::TipoIncompatible(
                             "ArraySet: se esperaba arreglo[entero]".to_string())),
                     }
+                    self.ip += 1;
                 }
 
                 Opcode::ArrayLen => {
@@ -772,6 +806,7 @@ impl ForjaVM {
                         _ => return Err(ErrorVM::TipoIncompatible(
                             "ArrayLen: se esperaba arreglo".to_string())),
                     }
+                    self.ip += 1;
                 }
 
                 Opcode::MapNew(n) => {
@@ -786,6 +821,7 @@ impl ForjaVM {
                         }
                     }
                     self.stack.push(ValorVM::Mapa(mapa));
+                    self.ip += 1;
                 }
 
                 Opcode::MapGet => {
@@ -800,6 +836,7 @@ impl ForjaVM {
                         }
                         _ => return Err(ErrorVM::TipoIncompatible("MapGet".to_string())),
                     }
+                    self.ip += 1;
                 }
 
                 Opcode::MapSet => {
@@ -816,6 +853,7 @@ impl ForjaVM {
                         }
                         _ => return Err(ErrorVM::TipoIncompatible("MapSet".to_string())),
                     }
+                    self.ip += 1;
                 }
 
                 Opcode::ReadLine => {
@@ -827,6 +865,7 @@ impl ForjaVM {
                     } else {
                         self.stack.push(ValorVM::Texto(String::new()));
                     }
+                    self.ip += 1;
                 }
 
                 Opcode::Halt => break,
