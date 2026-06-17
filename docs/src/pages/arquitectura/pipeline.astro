@@ -5,7 +5,7 @@ import Layout from '../../layouts/Layout.astro';
 <Layout title="Pipeline de compilación — Forja">
   <h1>Pipeline de compilación</h1>
 
-  <p>Forja tiene un pipeline de <strong>5 fases</strong> que transforma código fuente <code>.fa</code> en código Rust o bytecode ejecutable. Dependiendo del comando que uses, se activan diferentes rutas.</p>
+  <p>Forja tiene un pipeline de <strong>8+ fases</strong> que transforma código fuente <code>.fa</code> en código Rust, bytecode ejecutable (para 4 VMs), assembly nativo, o ejecutables autónomos.</p>
 
   <div class="code-block-wrapper">
     <div class="code-header"><span>🔀 Flujo completo</span></div>
@@ -13,33 +13,50 @@ import Layout from '../../layouts/Layout.astro';
 │  Source.fa │
 └─────┬──────┘
       ▼
-┌────────────┐   <span class="co">FASE 1: Lexer</span>
-│   Lexer    │   <span class="co">Texto → Tokens</span>
-│  tokenize  │   <span class="co">Keywords, símbolos, literales</span>
+┌────────────┐   FASE 1: Lexer
+│   Lexer    │   Texto → Tokens
 └─────┬──────┘
       ▼
-┌────────────┐   <span class="co">FASE 2-3: Parser</span>
-│   Parser   │   <span class="co">Tokens → AST</span>
-│   parse()  │   <span class="co">Recursive descent + precedencia</span>
+┌────────────┐   FASE 2-3: Parser
+│   Parser   │   Tokens → AST (Recursive Descent)
 └─────┬──────┘
       ▼
-┌──────────────┐ <span class="co">FASE 4: Semántica</span>
-│  Type Checker│ <span class="co">Verificación de tipos</span>
-│  Borrow      │ <span class="co">Borrow Checker</span>
-│  Checker     │ <span class="co">Ownership, mutabilidad, scoping</span>
-└─────┬──────┘
+┌──────────────┐ FASE 4: Semántica
+│ Type Checker │ Verificación de tipos
+│ Borrow       │ Ownership, mutabilidad, scoping
+│ Checker      │
+└─────┬───────┘
+      ▼
+┌──────────────┐ FASE 4c: Optimización
+│  Optimizer   │ Constant folding + Dead Code Elimination
+└─────┬───────┘
       ▼
      ══╦══
    ┌───║───┐
-   ▼       ▼
-┌────────┐ ┌──────────┐ <span class="co">FASE 5</span>
-│ Rust   │ │ Bytecode │
-│ .rs    │ │ .fbc     │
-└────────┘ └────┬─────┘
-                ▼
-          ┌──────────┐
-          │ VM / JIT │
-          └──────────┘</code></pre>
+   ▼       ▼                  ▼               ▼
+┌────────┐ ┌────────────┐ ┌──────────┐ ┌──────────────┐
+│ Rust   │ │ Bytecode   │ │ Assembly │ │ Formatter /  │
+│ .rs    │ │ Gen + Uops │ │ .s (ASM) │ │ Diagrama     │
+└────────┘ └─────┬──────┘ └────┬─────┘ └──────────────┘
+                 ▼             ▼
+           ┌──────────┐  ┌──────────┐
+           │ 4 VMs    │  │ gcc -O2 │
+           │ vm / opt │  │ .exe    │
+           │ jit/fast │  └──────────┘
+           │          │
+           │ JIT Eng. │
+           │Cranelift │
+           │+ fallback│
+           └──────────┘
+                 │
+           ┌─────▼──────┐
+           │ AOT + Self │ → .exe autónomo
+           │    Run     │
+           └────────────┘
+                 │
+           ┌─────▼──────┐
+           │ WASM (web) │ → Playground navegador
+           └────────────┘</code></pre>
   </div>
 
   <h2>Rutas según el comando</h2>
@@ -47,77 +64,80 @@ import Layout from '../../layouts/Layout.astro';
   <table>
     <tr><th>Comando</th><th>Pipeline</th></tr>
     <tr><td><code>forja archivo.fa</code></td><td>Lexer → Parser → Type Checker → Borrow Checker → <strong>Transpilador</strong> → .rs</td></tr>
-    <tr><td><code>forja run archivo.fa</code></td><td>Lexer → Parser → Type Checker → <strong>Bytecode → VM</strong> → Output</td></tr>
-    <tr><td><code>forja repl</code></td><td>Por línea: Lexer → Parser → <strong>Bytecode → VM</strong> (variables persisten)</td></tr>
-    <tr><td><code>forja build archivo.fa</code></td><td>Lexer → Parser → Type Checker → <strong>Bytecode → AOT</strong> → .exe</td></tr>
+    <tr><td><code>forja run archivo.fa</code></td><td>Lexer → Parser → Type Checker → Optimizer → Bytecode → Uops → <strong>ForjaFast v5</strong> → Output</td></tr>
+    <tr><td><code>forja build-asm archivo.fa</code></td><td>Lexer → Parser → <strong>compiler_asm</strong> → .s → gcc -O2 → .exe</td></tr>
+    <tr><td><code>forja build archivo.fa</code></td><td>Lexer → Parser → Type Checker → Bytecode → <strong>AOT + Selfrun</strong> → .exe</td></tr>
+    <tr><td><code>forja repl</code></td><td>Por línea: Lexer → Parser → Bytecode → ForjaFast (variables persisten)</td></tr>
+    <tr><td><code>forja fmt archivo.fa</code></td><td>Lexer → Parser → <strong>Formatter</strong> → código formateado</td></tr>
+    <tr><td><code>forja diagrama archivo.fa</code></td><td>Lexer → Parser → <strong>DiagramGenerator</strong> → HTML interactivo</td></tr>
   </table>
 
   <h2>Fases del pipeline</h2>
 
   <table>
-    <tr><th>Fase</th><th>Módulo</th><th>Entrada</th><th>Salida</th></tr>
-    <tr><td>1. Lexer</td><td><code>lexer.rs</code></td><td>Código fuente .fa</td><td>Vec&#60;Token&#62;</td></tr>
-    <tr><td>2-3. Parser</td><td><code>parser.rs</code></td><td>Vec&#60;Token&#62;</td><td>Programa (AST)</td></tr>
-    <tr><td>4a. Type Checker</td><td><code>semantics.rs</code></td><td>Programa (AST)</td><td>AST verificado</td></tr>
-    <tr><td>4b. Borrow Checker</td><td><code>semantics.rs</code></td><td>Programa (AST)</td><td>AST verificado</td></tr>
-    <tr><td>5a. Transpilador</td><td><code>transpiler.rs</code></td><td>Programa (AST)</td><td>Código Rust</td></tr>
-    <tr><td>5b. Bytecode Gen</td><td><code>bytecode.rs</code></td><td>Programa (AST)</td><td>Vec&#60;Opcode&#62;</td></tr>
-    <tr><td>6. Ejecución</td><td><code>vm.rs</code></td><td>Vec&#60;Opcode&#62;</td><td>Output</td></tr>
+    <tr><th>Fase</th><th>Módulo(s)</th><th>Entrada</th><th>Salida</th></tr>
+    <tr><td>1. Lexer</td><td><code>lexer.rs</code></td><td>Código fuente .fa</td><td><code>Vec<Token></code></td></tr>
+    <tr><td>2-3. Parser</td><td><code>parser.rs</code></td><td><code>Vec<Token></code></td><td><code>Programa</code> (AST)</td></tr>
+    <tr><td>4a. Type Checker</td><td><code>semantics.rs</code></td><td><code>Programa</code> (AST)</td><td>AST verificado</td></tr>
+    <tr><td>4b. Borrow Checker</td><td><code>semantics.rs</code></td><td><code>Programa</code> (AST)</td><td>AST verificado</td></tr>
+    <tr><td>4c. Optimizer</td><td><code>optimizer.rs</code></td><td><code>Programa</code> (AST)</td><td>AST optimizado (fold + DCE)</td></tr>
+    <tr><td>5a. Transpilador</td><td><code>transpiler.rs</code></td><td><code>Programa</code> (AST)</td><td>Código Rust (.rs)</td></tr>
+    <tr><td>5b. Bytecode Gen</td><td><code>bytecode.rs</code></td><td><code>Programa</code> (AST)</td><td><code>Vec<Opcode></code></td></tr>
+    <tr><td>5c. Uops (Expansión)</td><td><code>uops.rs</code></td><td><code>Vec<Opcode></code></td><td><code>Vec<Uop></code> (micro-opcodes)</td></tr>
+    <tr><td>5d. ASM Native</td><td><code>compiler_asm.rs</code></td><td><code>Programa</code> (AST)</td><td>Assembly .s (x86-64 / ARM64)</td></tr>
+    <tr><td>6a. VM (4 versiones)</td><td><code>vm.rs</code>, <code>vm_opt.rs</code>, <code>vm_jit.rs</code>, <code>vm_fast.rs</code></td><td><code>Vec<Opcode></code></td><td>Output</td></tr>
+    <tr><td>6b. JIT Engine</td><td><code>jit_engine.rs</code> + <code>jit.rs</code></td><td><code>Vec<Opcode></code></td><td>Código máquina + ejecución</td></tr>
+    <tr><td>7. AOT + Selfrun</td><td><code>aot.rs</code> + <code>selfrun.rs</code></td><td>Bytecode .fbc</td><td>.exe autónomo</td></tr>
   </table>
 
-  <h2>Los 18 módulos del proyecto</h2>
+  <h2>Los 26+ módulos del proyecto</h2>
 
   <div class="feature-grid">
-    <div class="feature-card"><span class="icon">🎯</span><h4>main.rs</h4><p>CLI — punto de entrada</p></div>
-    <div class="feature-card"><span class="icon">📚</span><h4>lib.rs</h4><p>API pública del compilador</p></div>
-    <div class="feature-card"><span class="icon">🔤</span><h4>token.rs</h4><p>Definición de tokens</p></div>
+    <div class="feature-card"><span class="icon">🎯</span><h4>main.rs</h4><p>CLI — 15+ comandos, punto de entrada (833 líneas)</p></div>
+    <div class="feature-card"><span class="icon">📚</span><h4>lib.rs</h4><p>API pública: compilar(), ejecutar(), ejecutar_jit()</p></div>
+    <div class="feature-card"><span class="icon">🔤</span><h4>token.rs</h4><p>Definición de tokens del lenguaje</p></div>
     <div class="feature-card"><span class="icon">📖</span><h4>lexer.rs</h4><p>Tokenizador (texto → tokens)</p></div>
-    <div class="feature-card"><span class="icon">🌳</span><h4>ast.rs</h4><p>AST definitions</p></div>
-    <div class="feature-card"><span class="icon">🔧</span><h4>parser.rs</h4><p>Parsing recursivo descendente</p></div>
-    <div class="feature-card"><span class="icon">🚫</span><h4>error.rs</h4><p>Sistema de errores + JSON</p></div>
+    <div class="feature-card"><span class="icon">🌳</span><h4>ast.rs</h4><p>AST definitions (nodos del árbol)</p></div>
+    <div class="feature-card"><span class="icon">🔧</span><h4>parser.rs</h4><p>Parsing recursivo descendente con precedencia</p></div>
+    <div class="feature-card"><span class="icon">🚫</span><h4>error.rs</h4><p>Sistema de errores educativo + salida JSON</p></div>
     <div class="feature-card"><span class="icon">🔍</span><h4>semantics.rs</h4><p>Type Checker + Borrow Checker</p></div>
-    <div class="feature-card"><span class="icon">🦀</span><h4>transpiler.rs</h4><p>Forja → Rust</p></div>
-    <div class="feature-card"><span class="icon">💾</span><h4>bytecode.rs</h4><p>Generación de bytecode</p></div>
-    <div class="feature-card"><span class="icon">⚙️</span><h4>vm.rs</h4><p>Máquina Virtual stack-based</p></div>
-    <div class="feature-card"><span class="icon">⚡</span><h4>jit.rs</h4><p>JIT con Cranelift</p></div>
-    <div class="feature-card"><span class="icon">💬</span><h4>repl.rs</h4><p>REPL interactivo</p></div>
-    <div class="feature-card"><span class="icon">📦</span><h4>aot.rs</h4><p>Compilador AOT</p></div>
+    <div class="feature-card"><span class="icon">🦀</span><h4>transpiler.rs</h4><p>Forja → Rust (código compilable)</p></div>
+    <div class="feature-card"><span class="icon">⚡</span><h4>compiler_asm.rs</h4><p>Forja → Assembly (2393 líneas, multi-arquitectura)</p></div>
+    <div class="feature-card"><span class="icon">💾</span><h4>bytecode.rs</h4><p>Generación y serialización de bytecode (1206 líneas)</p></div>
+    <div class="feature-card"><span class="icon">🔬</span><h4>uops.rs</h4><p>Micro-opcodes: expansión y optimización (463 líneas)</p></div>
+    <div class="feature-card"><span class="icon">⚙️</span><h4>vm.rs (v1)</h4><p>VM stack-based original (2038 líneas)</p></div>
+    <div class="feature-card"><span class="icon">⚡</span><h4>vm_opt.rs (v3)</h4><p>VM optimizada con índices numéricos (1091 líneas)</p></div>
+    <div class="feature-card"><span class="icon">⚡</span><h4>vm_jit.rs (v3 DT)</h4><p>VM Direct Threading, u8 planos (645 líneas)</p></div>
+    <div class="feature-card"><span class="icon">🚀</span><h4>vm_fast.rs (v5)</h4><p>VM ultra rápida, stack caching, producción (1454 líneas)</p></div>
+    <div class="feature-card"><span class="icon">🔥</span><h4>jit.rs</h4><p>JIT con Cranelift → código máquina nativo</p></div>
+    <div class="feature-card"><span class="icon">🔀</span><h4>jit_engine.rs</h4><p>Orquestador JIT con fallback a ForjaFast</p></div>
+    <div class="feature-card"><span class="icon">📐</span><h4>optimizer.rs</h4><p>Constant folding + Dead Code Elimination</p></div>
+    <div class="feature-card"><span class="icon">🎨</span><h4>formatter.rs</h4><p>Formateador de código Forja</p></div>
+    <div class="feature-card"><span class="icon">📊</span><h4>diagrama.rs</h4><p>Generador de diagramas HTML del AST</p></div>
+    <div class="feature-card"><span class="icon">💬</span><h4>repl.rs</h4><p>REPL interactivo con rustyline</p></div>
+    <div class="feature-card"><span class="icon">📦</span><h4>aot.rs</h4><p>Compilador AOT (.exe autónomo)</p></div>
     <div class="feature-card"><span class="icon">🏃</span><h4>selfrun.rs</h4><p>Bytecode embed + auto-ejecución</p></div>
-    <div class="feature-card"><span class="icon">🧩</span><h4>module.rs</h4><p>Resolvedor de módulos</p></div>
-    <div class="feature-card"><span class="icon">⚡</span><h4>optimizer.rs</h4><p>Optimizador de AST</p></div>
-    <div class="feature-card"><span class="icon">🎨</span><h4>formatter.rs</h4><p>Formateador de código</p></div>
+    <div class="feature-card"><span class="icon">🧩</span><h4>module.rs</h4><p>Resolvedor de módulos (+ seguridad anti path traversal)</p></div>
+    <div class="feature-card"><span class="icon">📋</span><h4>prelude.rs</h4><p>Prelude del lenguaje</p></div>
+    <div class="feature-card"><span class="icon">🌐</span><h4>forja-wasm</h4><p>Bindings WASM para el playground web</p></div>
   </div>
 
   <h2>API pública (lib.rs)</h2>
 
-  <p>Estas son las funciones principales que expone la biblioteca:</p>
+  <p>Estas son las funciones principales que expone la biblioteca para usar Forja desde Rust:</p>
 
   <div class="code-block-wrapper">
-    <div class="code-header"><span>📄 API de compilación</span></div>
-    <pre><code><span class="co">/// Compila .fa → código Rust</span>
-<span class="kw">pub fn</span> compilar(source: &str) -> Result&#60;String, Vec&#60;ErrorForja&#62;&#62; &lbrace;
-    <span class="kw">let mut</span> lexer = lexer::Lexer::new(source);
-    <span class="kw">let</span> tokens = lexer.tokenize()?;
-    <span class="kw">let mut</span> parser = parser::Parser::new(tokens);
-    <span class="kw">let</span> programa = parser.parse()?;
-    <span class="kw">let mut</span> type_checker = semantics::TypeChecker::new();
-    type_checker.analizar(&programa)?;
-    <span class="kw">let mut</span> checker = semantics::BorrowChecker::new();
-    checker.analizar(&programa)?;
-    <span class="kw">let mut</span> transpiler = transpiler::Transpiler::new();
-    <span class="kw">let</span> rust_code = transpiler.transpilar(&programa)?;
-    Ok(rust_code)
-&rbrace;
+    <div class="code-header"><span>📄 API de compilación y ejecución</span></div>
+    <pre><code><span class="co">/// Compila .fa → código Rust (pipeline completo con Optimizer)</span>
+<span class="kw">pub fn</span> compilar(source: &str) -> Result<String, Vec<ErrorForja>>;
 
-<span class="co">/// Ejecuta .fa en la VM</span>
-<span class="kw">pub fn</span> ejecutar(source: &str) -> Result&#60;Vec&#60;String&#62;, String&#62; &lbrace;
-    <span class="co">// ... lexer + parser (igual) ...</span>
-    <span class="kw">let mut</span> gen = BytecodeGenerator::new();
-    <span class="kw">let</span> bytecode = gen.generar(&programa)?;
-    <span class="kw">let mut</span> vm = ForjaVM::new();
-    vm.cargar_bytecode(bytecode);
-    vm.ejecutar()?;
-    Ok(vm.obtener_output().to_vec())
-&rbrace;</code></pre>
+<span class="co">/// Compila y ejecuta código Forja en ForjaFast v5 (VM producción)</span>
+<span class="kw">pub fn</span> ejecutar(source: &str) -> Result<Vec<String>, String>;
+
+<span class="co">/// Compila y ejecuta con JIT (Cranelift), fallback a ForjaFast</span>
+<span class="kw">pub fn</span> ejecutar_jit(source: &str) -> Result<Vec<String>, String>;</code></pre>
   </div>
+
+  <p>La función <code>compilar()</code> ejecuta: Lexer → Parser → Type Checker → Borrow Checker → Optimizer → DCE → Transpilador.<br>
+  La función <code>ejecutar()</code> ejecuta: Lexer → Parser → Type Checker → Optimizer → DCE → Bytecode Generator → optimizar_indices → fusionar_opcodes → ForjaFast v5.</p>
 </Layout>

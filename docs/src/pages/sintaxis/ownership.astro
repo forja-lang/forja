@@ -5,7 +5,7 @@ import Layout from '../../layouts/Layout.astro';
 <Layout title="Ownership y préstamos — Forja">
   <h1>Ownership y préstamos</h1>
 
-  <p>Forja incorpora los conceptos de <strong>ownership</strong> (propiedad) y <strong>préstamos</strong> (borrowing) de Rust, adaptados al español. Este sistema previene errores de memoria <strong>sin necesidad de un garbage collector</strong>.</p>
+  <p>Forja incorpora los conceptos de <strong>ownership</strong> (propiedad) y <strong>préstamos</strong> (borrowing) de Rust, adaptados al español. Este sistema previene errores de memoria <strong>sin necesidad de un garbage collector</strong>, verificando las reglas en tiempo de compilación.</p>
 
   <div class="info">🔥 <strong>Idea central:</strong> Cada valor tiene un <strong>único dueño</strong>. Cuando asignás una variable a otra, la propiedad se transfiere (move). Si solo querés prestarla, usá <code>&</code>.</div>
 
@@ -46,7 +46,7 @@ contador = contador + 1   <span class="co">// ✅ OK: es mutable</span>
 
   <h2>Parámetro <code>prestado</code></h2>
 
-  <p>Indica que un parámetro de función se recibe por referencia, no por valor. Así la variable original no se mueve:</p>
+  <p>Indica que un parámetro de función se recibe por referencia, no por valor. Así la variable original no se mueve (no pierde ownership):</p>
 
   <div class="code-block-wrapper">
     <div class="code-header"><span>📥 Referencia en parámetro</span></div>
@@ -59,16 +59,43 @@ mostrar(dato)                          <span class="co">// presta dato a la func
 <span class="fn">escribir</span>(<span class="st">"Dato sigue disponible: "</span> + dato)  <span class="co">// ✅ sigue vivo</span></code></pre>
   </div>
 
+  <div class="info">💡 <strong>Sin <code>prestado</code>: </strong> Si el parámetro no lleva <code>prestado</code>, el valor se <strong>mueve</strong> a la función y la variable original ya no se puede usar.</div>
+
   <h2>Errores que previene el Borrow Checker</h2>
 
   <table>
     <tr><th>Error</th><th>Qué detecta</th></tr>
     <tr><td>Variable no declarada</td><td>Usar una variable antes de crearla</td></tr>
-    <tr><td>Modificar inmutable</td><td>Asignar a una <code>constante</code></td></tr>
+    <tr><td>Modificar inmutable</td><td>Asignar a una <code>constante</code> o variable no-mut</td></tr>
     <tr><td>Variable movida</td><td>Usar variable después de transferir su ownership</td></tr>
     <tr><td>Préstamo inválido</td><td>Prestar una variable que ya fue movida</td></tr>
     <tr><td>Modificar con préstamos activos</td><td>Escribir en variable que tiene referencias activas</td></tr>
+    <tr><td>Ambigüedad de ámbitos</td><td>Variables que se solapan en scopes anidados</td></tr>
   </table>
+
+  <h2>Ejemplo completo</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 examples/ownership.fa</span></div>
+    <pre><code><span class="co">// Mutabilidad</span>
+<span class="kw">variable</span> contador = 0
+contador = contador + 1
+<span class="fn">escribir</span>(<span class="st">"Contador: "</span> + contador)
+
+<span class="co">// Referencias y préstamos</span>
+<span class="kw">variable</span> x = 42
+<span class="kw">variable</span> ref = &x
+<span class="fn">escribir</span>(<span class="st">"Valor de x: "</span> + x)
+
+<span class="co">// Función con parámetro prestado</span>
+<span class="kw">funcion</span> mostrar(<span class="kw">prestado</span> valor) &lbrace;
+    <span class="fn">escribir</span>(<span class="st">"El valor es: "</span> + valor)
+&rbrace;
+
+<span class="kw">variable</span> dato = 100
+mostrar(dato)
+<span class="fn">escribir</span>(<span class="st">"Dato sigue disponible: "</span> + dato)</code></pre>
+  </div>
 
   <h2>Equivalencia con Rust</h2>
 
@@ -81,5 +108,5 @@ mostrar(dato)                          <span class="co">// presta dato a la func
     <tr><td><code>prestado param</code></td><td><code>param: &Tipo</code></td></tr>
   </table>
 
-  <div class="warning">⚠️ <strong>Estado actual:</strong> El Borrow Checker de Forja está operativo para verificar declaración de variables, mutabilidad y ámbitos. El tracking completo de movimientos (move) para tipos no-Copy está en desarrollo.</div>
+  <div class="warning">⚠️ <strong>Estado actual:</strong> El Borrow Checker de Forja está operativo para verificar declaración de variables, mutabilidad y ámbitos. El tracking completo de movimientos (move) para tipos no-Copy está en desarrollo activo.</div>
 </Layout>
