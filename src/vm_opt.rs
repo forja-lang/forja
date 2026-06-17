@@ -76,12 +76,13 @@ pub struct ForjaVMOpt {
     stack: Vec<ValorVMOpt>,
     call_stack: Vec<FrameOpt>,
 
-    // Variables: Vec<ValorVMOpt> por ámbito — acceso O(1) por índice numérico
-    // optimizar_indices() asigna índices globales, usamos Vec por ámbito
-    variables: Vec<Vec<ValorVMOpt>>,
+    // Variables: Vec plano como ForjaFast — acceso O(1) por índice
+    // En Call se crea un nuevo ámbito (push/pop de vars) para que cada
+    // función tenga su propio espacio de índices.
+    vars: Vec<ValorVMOpt>,
 
-    // Mapa nombre→índice por ámbito (compatibilidad con Load/Store por nombre)
-    nombre_a_indice: Vec<HashMap<String, usize>>,
+    // Mapa nombre→índice para compatibilidad con Load/Store por nombre
+    nombre_a_indice: HashMap<String, usize>,
 
     funciones: HashMap<String, FuncInfo>,
     bytecode: Vec<Opcode>,
@@ -97,7 +98,8 @@ pub struct ForjaVMOpt {
 
 struct FrameOpt {
     ip_retorno: usize,
-    ambito: usize,
+    vars_previas: Vec<ValorVMOpt>,
+    nombre_a_indice_previo: HashMap<String, usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -126,8 +128,8 @@ impl ForjaVMOpt {
     pub fn new() -> Self {
         ForjaVMOpt {
             ip: 0, stack: Vec::with_capacity(256), call_stack: Vec::with_capacity(64),
-            variables: vec![Vec::with_capacity(16)],
-            nombre_a_indice: vec![HashMap::with_capacity(16)],
+            vars: Vec::with_capacity(16),
+            nombre_a_indice: HashMap::with_capacity(16),
             funciones: HashMap::new(), bytecode: Vec::new(),
             output: Vec::with_capacity(64),
             max_instrucciones: 100_000_000, instrucciones_ejecutadas: 0,
@@ -184,8 +186,8 @@ impl ForjaVMOpt {
         self.ip = 0;
         self.stack.clear();
         self.call_stack.clear();
-        self.variables = vec![Vec::with_capacity(16)];
-        self.nombre_a_indice = vec![HashMap::with_capacity(16)];
+        self.vars.clear();
+        self.nombre_a_indice.clear();
         self.output.clear();
         self.funciones.clear();
         self.bytecode.clear();
@@ -196,17 +198,11 @@ impl ForjaVMOpt {
     }
     #[inline(always)] fn push(&mut self, v: ValorVMOpt) { self.stack.push(v); }
 
-    /// Obtiene el ámbito actual
+    /// Asegura que vars tenga al menos `idx + 1` elementos
     #[inline(always)]
-    fn ambito_actual(&self) -> usize {
-        self.call_stack.last().map(|f| f.ambito).unwrap_or(0)
-    }
-
-    /// Asegura que el Vec del ámbito tenga al menos `idx + 1` elementos
-    #[inline(always)]
-    fn asegurar_indice(&mut self, ambito: usize, idx: usize) {
-        if idx >= self.variables[ambito].len() {
-            self.variables[ambito].resize(idx + 1, ValorVMOpt::Nulo);
+    fn asegurar_indice(&mut self, idx: usize) {
+        if idx >= self.vars.len() {
+            self.vars.resize(idx + 1, ValorVMOpt::Nulo);
         }
     }
 
@@ -254,19 +250,17 @@ impl ForjaVMOpt {
                 }
                 Opcode::Declare(nombre, _) => {
                     let v = self.pop()?;
-                    let ambito = self.ambito_actual();
-                    let idx = self.variables[ambito].len();
-                    self.nombre_a_indice[ambito].insert(nombre, idx);
-                    self.variables[ambito].push(v);
+                    let idx = self.vars.len();
+                    self.nombre_a_indice.insert(nombre, idx);
+                    self.vars.push(v);
                     self.ip += 1;
                 }
 
                 // === LoadIdx/StoreIdx/DeclareIdx — ACCESO DIRECTO O(1) ===
                 // Sin format!() ni HashMap — acceso directo por índice
                 Opcode::LoadIdx(idx) => {
-                    let ambito = self.ambito_actual();
-                    if idx < self.variables[ambito].len() {
-                        self.stack.push(self.variables[ambito][idx].clone());
+                    if idx < self.vars.len() {
+                        self.stack.push(self.vars[idx].clone());
                     } else {
                         self.stack.push(ValorVMOpt::Nulo);
                     }
@@ -274,36 +268,31 @@ impl ForjaVMOpt {
                 }
                 Opcode::StoreIdx(idx) => {
                     let v = self.pop()?;
-                    let ambito = self.ambito_actual();
-                    self.asegurar_indice(ambito, idx);
-                    self.variables[ambito][idx] = v;
+                    self.asegurar_indice(idx);
+                    self.vars[idx] = v;
                     self.ip += 1;
                 }
                 Opcode::DeclareIdx(idx, _) => {
                     let v = self.pop()?;
-                    let ambito = self.ambito_actual();
-                    self.asegurar_indice(ambito, idx);
-                    self.variables[ambito][idx] = v;
+                    self.asegurar_indice(idx);
+                    self.vars[idx] = v;
                     self.ip += 1;
                 }
 
                 // === Opcodes fusionados — acceso directo O(1) ===
                 Opcode::DeclareEnteroOp(idx, n) => {
-                    let ambito = self.ambito_actual();
-                    self.asegurar_indice(ambito, idx);
-                    self.variables[ambito][idx] = get_small_int_opt(n);
+                    self.asegurar_indice(idx);
+                    self.vars[idx] = get_small_int_opt(n);
                     self.ip += 1;
                 }
                 Opcode::DeclareBooleanoOp(idx, b) => {
-                    let ambito = self.ambito_actual();
-                    self.asegurar_indice(ambito, idx);
-                    self.variables[ambito][idx] = ValorVMOpt::Booleano(b);
+                    self.asegurar_indice(idx);
+                    self.vars[idx] = ValorVMOpt::Booleano(b);
                     self.ip += 1;
                 }
                 Opcode::StoreEnteroOp(idx, n) => {
-                    let ambito = self.ambito_actual();
-                    self.asegurar_indice(ambito, idx);
-                    self.variables[ambito][idx] = get_small_int_opt(n);
+                    self.asegurar_indice(idx);
+                    self.vars[idx] = get_small_int_opt(n);
                     self.ip += 1;
                 }
 
@@ -565,9 +554,8 @@ impl ForjaVMOpt {
                     self.ip += 1;
                 }
                 Opcode::LoadIdxEntero(idx) => {
-                    let ambito = self.ambito_actual();
-                    if idx < self.variables[ambito].len() {
-                        let v = &self.variables[ambito][idx];
+                    if idx < self.vars.len() {
+                        let v = &self.vars[idx];
                         match v {
                             ValorVMOpt::Entero(_) => self.stack.push(v.clone()),
                             _ => {
@@ -581,9 +569,8 @@ impl ForjaVMOpt {
                     self.ip += 1;
                 }
                 Opcode::LoadIdxFloat(idx) => {
-                    let ambito = self.ambito_actual();
-                    if idx < self.variables[ambito].len() {
-                        let v = &self.variables[ambito][idx];
+                    if idx < self.vars.len() {
+                        let v = &self.vars[idx];
                         match v {
                             ValorVMOpt::Decimal(_) => self.stack.push(v.clone()),
                             _ => {
@@ -598,32 +585,30 @@ impl ForjaVMOpt {
                 }
                 Opcode::StoreIdxEntero(idx) => {
                     let v = self.pop()?;
-                    let ambito = self.ambito_actual();
                     match &v {
                         ValorVMOpt::Entero(_) => {
-                            self.asegurar_indice(ambito, idx);
-                            self.variables[ambito][idx] = v;
+                            self.asegurar_indice(idx);
+                            self.vars[idx] = v;
                         }
                         _ => {
                             self.bytecode[self.ip] = Opcode::StoreIdx(idx);
-                            self.asegurar_indice(ambito, idx);
-                            self.variables[ambito][idx] = v;
+                            self.asegurar_indice(idx);
+                            self.vars[idx] = v;
                         }
                     }
                     self.ip += 1;
                 }
                 Opcode::StoreIdxFloat(idx) => {
                     let v = self.pop()?;
-                    let ambito = self.ambito_actual();
                     match &v {
                         ValorVMOpt::Decimal(_) => {
-                            self.asegurar_indice(ambito, idx);
-                            self.variables[ambito][idx] = v;
+                            self.asegurar_indice(idx);
+                            self.vars[idx] = v;
                         }
                         _ => {
                             self.bytecode[self.ip] = Opcode::StoreIdx(idx);
-                            self.asegurar_indice(ambito, idx);
-                            self.variables[ambito][idx] = v;
+                            self.asegurar_indice(idx);
+                            self.vars[idx] = v;
                         }
                     }
                     self.ip += 1;
@@ -648,34 +633,44 @@ impl ForjaVMOpt {
                 Opcode::Call(nombre, nargs) => {
                     let call_ip = self.ip;
                     if let Some(func) = self.funciones.get(&nombre).cloned() {
-                        // Crear nuevo ámbito
-                        let ambito = self.variables.len();
-                        self.variables.push(Vec::with_capacity(func.param_names.len()));
-                        self.nombre_a_indice.push(HashMap::with_capacity(func.param_names.len()));
-
-                        self.call_stack.push(FrameOpt { ip_retorno: call_ip + 1, ambito });
+                        // Guardar vars y nombre_a_indice actuales
+                        let prev_vars = std::mem::take(&mut self.vars);
+                        let prev_nombre_a_indice = std::mem::take(&mut self.nombre_a_indice);
 
                         let mut args: Vec<ValorVMOpt> = Vec::with_capacity(nargs);
                         for _ in 0..nargs { args.push(self.pop()?); }
                         args.reverse();
+
+                        // Crear nuevo vars para la función
+                        let mut new_vars = Vec::with_capacity(func.param_names.len().max(nargs));
 
                         // Asignar parámetros por índice O(1)
                         for (i, name) in func.param_names.iter().enumerate() {
                             let val = if i < args.len() {
                                 std::mem::replace(&mut args[i], ValorVMOpt::Nulo)
                             } else { ValorVMOpt::Nulo };
-                            self.nombre_a_indice[ambito].insert(name.clone(), i);
-                            self.asegurar_indice(ambito, i);
-                            self.variables[ambito][i] = val;
+                            self.nombre_a_indice.insert(name.clone(), i);
+                            if i < new_vars.len() {
+                                new_vars[i] = val;
+                            } else {
+                                new_vars.push(val);
+                            }
                         }
+
+                        self.call_stack.push(FrameOpt {
+                            ip_retorno: call_ip + 1,
+                            vars_previas: prev_vars,
+                            nombre_a_indice_previo: prev_nombre_a_indice,
+                        });
+                        self.vars = new_vars;
                         self.ip = func.ip;
                     } else { return Err(ErrorVMOpt::FuncionNoDefinida(nombre)); }
                 }
                 Opcode::Return => {
-                    if let Some(_frame) = self.call_stack.pop() {
-                        self.variables.pop();
-                        self.nombre_a_indice.pop();
-                        self.ip = _frame.ip_retorno;
+                    if let Some(frame) = self.call_stack.pop() {
+                        self.vars = frame.vars_previas;
+                        self.nombre_a_indice = frame.nombre_a_indice_previo;
+                        self.ip = frame.ip_retorno;
                     } else { break; }
                 }
 
@@ -707,18 +702,21 @@ impl ForjaVMOpt {
                         let clase = obj_ref.0.borrow().clase.clone();
                         let fn_name = format!("{}.{}", clase, metodo);
                         if let Some(func) = self.funciones.get(&fn_name).cloned() {
-                            let ambito = self.variables.len();
-                            self.variables.push(Vec::with_capacity(func.param_names.len()));
-                            self.nombre_a_indice.push(HashMap::with_capacity(func.param_names.len()));
-
-                            self.call_stack.push(FrameOpt { ip_retorno: call_ip + 1, ambito });
+                            let prev_vars = std::mem::take(&mut self.vars);
+                            let prev_nombre_a_indice = std::mem::take(&mut self.nombre_a_indice);
                             let mut all = vec![ValorVMOpt::Objeto(obj_ref)]; all.extend(args);
+                            let mut new_vars = Vec::with_capacity(func.param_names.len().max(all.len()));
                             for (i, name) in func.param_names.iter().enumerate() {
                                 let val = if i < all.len() { std::mem::replace(&mut all[i], ValorVMOpt::Nulo) } else { ValorVMOpt::Nulo };
-                                self.nombre_a_indice[ambito].insert(name.clone(), i);
-                                self.asegurar_indice(ambito, i);
-                                self.variables[ambito][i] = val;
+                                self.nombre_a_indice.insert(name.clone(), i);
+                                if i < new_vars.len() { new_vars[i] = val; } else { new_vars.push(val); }
                             }
+                            self.call_stack.push(FrameOpt {
+                                ip_retorno: call_ip + 1,
+                                vars_previas: prev_vars,
+                                nombre_a_indice_previo: prev_nombre_a_indice,
+                            });
+                            self.vars = new_vars;
                             self.ip = func.ip;
                         } else { return Err(ErrorVMOpt::FuncionNoDefinida(fn_name)); }
                     } else { return Err(ErrorVMOpt::TipoIncompatible("CallMethod".into())); }
@@ -740,25 +738,21 @@ impl ForjaVMOpt {
     pub fn obtener_output(&self) -> &[String] { &self.output }
     pub fn obtener_output_string(&self) -> String { self.output.join("\n") }
 
-    /// Búsqueda de variable por nombre (compatibilidad — O(n) sobre scopes, O(1) dentro de cada scope)
+    /// Búsqueda de variable por nombre — O(1) con HashMap
     fn buscar_variable(&self, nombre: &str) -> Result<&ValorVMOpt, ErrorVMOpt> {
-        for (ambito_idx, nombre_map) in self.nombre_a_indice.iter().enumerate().rev() {
-            if let Some(&idx) = nombre_map.get(nombre) {
-                if let Some(val) = self.variables.get(ambito_idx).and_then(|v| v.get(idx)) {
-                    return Ok(val);
-                }
+        if let Some(&idx) = self.nombre_a_indice.get(nombre) {
+            if let Some(val) = self.vars.get(idx) {
+                return Ok(val);
             }
         }
         Err(ErrorVMOpt::VariableNoDeclarada(nombre.to_string()))
     }
 
     fn asignar_variable(&mut self, nombre: &str, val: ValorVMOpt) -> Result<(), ErrorVMOpt> {
-        for (ambito_idx, nombre_map) in self.nombre_a_indice.iter().enumerate().rev() {
-            if let Some(&idx) = nombre_map.get(nombre) {
-                if let Some(slot) = self.variables.get_mut(ambito_idx).and_then(|v| v.get_mut(idx)) {
-                    *slot = val;
-                    return Ok(());
-                }
+        if let Some(&idx) = self.nombre_a_indice.get(nombre) {
+            if let Some(slot) = self.vars.get_mut(idx) {
+                *slot = val;
+                return Ok(());
             }
         }
         Err(ErrorVMOpt::VariableNoDeclarada(nombre.to_string()))
@@ -814,9 +808,8 @@ impl ForjaVMOpt {
                 }
 
                 Uop::LoadIdx(idx) => {
-                    let ambito = self.ambito_actual();
-                    if idx < self.variables[ambito].len() {
-                        self.push(self.variables[ambito][idx].clone());
+                    if idx < self.vars.len() {
+                        self.push(self.vars[idx].clone());
                     } else {
                         self.push(ValorVMOpt::Nulo);
                     }
@@ -824,27 +817,23 @@ impl ForjaVMOpt {
                 }
                 Uop::StoreIdx(idx) => {
                     let val = self.pop()?;
-                    let ambito = self.ambito_actual();
-                    self.asegurar_indice(ambito, idx);
-                    self.variables[ambito][idx] = val;
+                    self.asegurar_indice(idx);
+                    self.vars[idx] = val;
                     self.ip += 1;
                 }
                 Uop::DeclareVar(idx) => {
-                    let ambito = self.ambito_actual();
-                    self.asegurar_indice(ambito, idx);
+                    self.asegurar_indice(idx);
                     self.ip += 1;
                 }
                 Uop::StorePop(idx) => {
                     let val = self.pop()?;
-                    let ambito = self.ambito_actual();
-                    self.asegurar_indice(ambito, idx);
-                    self.variables[ambito][idx] = val;
+                    self.asegurar_indice(idx);
+                    self.vars[idx] = val;
                     self.ip += 1;
                 }
                 Uop::LoadPush(idx) => {
-                    let ambito = self.ambito_actual();
-                    let val = if idx < self.variables[ambito].len() {
-                        self.variables[ambito][idx].clone()
+                    let val = if idx < self.vars.len() {
+                        self.vars[idx].clone()
                     } else {
                         ValorVMOpt::Nulo
                     };
@@ -853,16 +842,14 @@ impl ForjaVMOpt {
                 }
                 Uop::DeclareInit(idx) => {
                     let val = self.pop()?;
-                    let ambito = self.ambito_actual();
-                    self.asegurar_indice(ambito, idx);
-                    self.variables[ambito][idx] = val;
+                    self.asegurar_indice(idx);
+                    self.vars[idx] = val;
                     self.ip += 1;
                 }
                 Uop::IncrVar(idx) => {
-                    let ambito = self.ambito_actual();
-                    if idx < self.variables[ambito].len() {
-                        if let ValorVMOpt::Entero(ref n) = self.variables[ambito][idx] {
-                            self.variables[ambito][idx] = get_small_int_opt(n.wrapping_add(1));
+                    if idx < self.vars.len() {
+                        if let ValorVMOpt::Entero(ref n) = self.vars[idx] {
+                            self.vars[idx] = get_small_int_opt(n.wrapping_add(1));
                         } else {
                             return Err(ErrorVMOpt::TipoIncompatible("IncrVar".into()));
                         }
@@ -870,10 +857,9 @@ impl ForjaVMOpt {
                     self.ip += 1;
                 }
                 Uop::AddAssign(idx, n) => {
-                    let ambito = self.ambito_actual();
-                    if idx < self.variables[ambito].len() {
-                        if let ValorVMOpt::Entero(ref v) = self.variables[ambito][idx] {
-                            self.variables[ambito][idx] = get_small_int_opt(v.wrapping_add(n));
+                    if idx < self.vars.len() {
+                        if let ValorVMOpt::Entero(ref v) = self.vars[idx] {
+                            self.vars[idx] = get_small_int_opt(v.wrapping_add(n));
                         } else {
                             return Err(ErrorVMOpt::TipoIncompatible("AddAssign".into()));
                         }
@@ -881,10 +867,9 @@ impl ForjaVMOpt {
                     self.ip += 1;
                 }
                 Uop::SubAssign(idx, n) => {
-                    let ambito = self.ambito_actual();
-                    if idx < self.variables[ambito].len() {
-                        if let ValorVMOpt::Entero(ref v) = self.variables[ambito][idx] {
-                            self.variables[ambito][idx] = get_small_int_opt(v.wrapping_sub(n));
+                    if idx < self.vars.len() {
+                        if let ValorVMOpt::Entero(ref v) = self.vars[idx] {
+                            self.vars[idx] = get_small_int_opt(v.wrapping_sub(n));
                         } else {
                             return Err(ErrorVMOpt::TipoIncompatible("SubAssign".into()));
                         }
@@ -894,9 +879,8 @@ impl ForjaVMOpt {
                 Uop::PrepCall(_) => { self.ip += 1; }
                 Uop::ResolveMethod(_) => { self.ip += 1; }
                 Uop::LoadSelf => {
-                    let ambito = self.ambito_actual();
-                    let val = if !self.variables[ambito].is_empty() {
-                        self.variables[ambito][0].clone()
+                    let val = if !self.vars.is_empty() {
+                        self.vars[0].clone()
                     } else {
                         ValorVMOpt::Nulo
                     };
@@ -977,28 +961,28 @@ impl ForjaVMOpt {
                 Uop::Call(nombre, nargs) => {
                     if let Some(func) = self.funciones.get(&nombre).cloned() {
                         let next_ip = self.ip + 1;
-                        let ambito_actual = self.ambito_actual();
+                        let prev_vars = std::mem::take(&mut self.vars);
+                        let prev_nombre_a_indice = std::mem::take(&mut self.nombre_a_indice);
                         let mut args: Vec<ValorVMOpt> = Vec::with_capacity(nargs);
                         for _ in 0..nargs { args.push(self.pop()?); }
                         args.reverse();
-                        let nuevo_ambito = self.variables.len();
-                        self.variables.push(Vec::new());
-                        self.nombre_a_indice.push(HashMap::new());
-                        for (i, arg) in args.into_iter().enumerate() {
-                            if i < self.variables[nuevo_ambito].len() {
-                                self.variables[nuevo_ambito][i] = arg;
-                            } else {
-                                self.variables[nuevo_ambito].push(arg);
-                            }
+                        let mut new_vars = Vec::with_capacity(nargs);
+                        for arg in args {
+                            new_vars.push(arg);
                         }
-                        self.call_stack.push(FrameOpt { ip_retorno: next_ip, ambito: ambito_actual });
+                        self.call_stack.push(FrameOpt {
+                            ip_retorno: next_ip,
+                            vars_previas: prev_vars,
+                            nombre_a_indice_previo: prev_nombre_a_indice,
+                        });
+                        self.vars = new_vars;
                         self.ip = func.ip;
                     } else { return Err(ErrorVMOpt::FuncionNoDefinida(nombre)); }
                 }
                 Uop::Return => {
                     if let Some(frame) = self.call_stack.pop() {
-                        self.variables.truncate(frame.ambito + 1);
-                        self.nombre_a_indice.truncate(frame.ambito + 1);
+                        self.vars = frame.vars_previas;
+                        self.nombre_a_indice = frame.nombre_a_indice_previo;
                         self.ip = frame.ip_retorno;
                     } else { break; }
                 }
@@ -1036,17 +1020,18 @@ impl ForjaVMOpt {
                         let c = o.0.borrow().clase.clone();
                         let fn_name = format!("{}.{}", c, m);
                         if let Some(func) = self.funciones.get(&fn_name).cloned() {
-                            let ambito_actual = self.ambito_actual();
-                            let nuevo_ambito = self.variables.len();
-                            self.variables.push(Vec::new());
-                            self.nombre_a_indice.push(HashMap::new());
+                            let prev_vars = std::mem::take(&mut self.vars);
+                            let prev_nombre_a_indice = std::mem::take(&mut self.nombre_a_indice);
                             let mut all = vec![ValorVMOpt::Objeto(o)];
                             all.extend(args);
-                            for (i, a) in all.into_iter().enumerate() {
-                                if i < self.variables[nuevo_ambito].len() { self.variables[nuevo_ambito][i] = a; }
-                                else { self.variables[nuevo_ambito].push(a); }
-                            }
-                            self.call_stack.push(FrameOpt { ip_retorno: self.ip + 1, ambito: ambito_actual });
+                            let mut new_vars = Vec::with_capacity(all.len());
+                            for a in all { new_vars.push(a); }
+                            self.call_stack.push(FrameOpt {
+                                ip_retorno: self.ip + 1,
+                                vars_previas: prev_vars,
+                                nombre_a_indice_previo: prev_nombre_a_indice,
+                            });
+                            self.vars = new_vars;
                             self.ip = func.ip;
                         } else { return Err(ErrorVMOpt::FuncionNoDefinida(fn_name)); }
                     } else { return Err(ErrorVMOpt::TipoIncompatible("CallMethod".into())); }

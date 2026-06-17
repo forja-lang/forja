@@ -2,22 +2,55 @@
 import Layout from '../layouts/Layout.astro';
 ---
 
-<Layout title="Forja — Lenguaje de programación en español" description="Forja (fa) es un lenguaje educativo en español que transpila a Rust y ejecuta en su propia VM con JIT">
+<Layout title="Forja — Lenguaje de programación en español" description="Forja (fa) es un lenguaje educativo en español con VM propia, JIT, compilador ASM multi-arquitectura y playground WASM">
 
   <div class="hero">
     <h1>Forja</h1>
-    <div class="subtitle">Un lenguaje de programación en <strong>español</strong> que transpila a <strong>Rust</strong> y ejecuta en <strong>VM</strong> con <strong>JIT</strong></div>
+    <div class="subtitle">Un lenguaje de programación en <strong>español</strong> con <strong>VM propia</strong>, <strong>JIT</strong>, <strong>compilador ASM</strong> (x86-64 / ARM64) y <strong>playground WASM</strong></div>
     <div class="badge-row">
-      <span class="badge dot">⎔ Bytecode + JIT</span>
+      <span class="badge dot">⎔ 4 generaciones de VM</span>
       <span class="badge">🦀 Rust backend</span>
       <span class="badge">⚡ Assembly nativo</span>
       <span class="badge">🎯 Educativo</span>
       <span class="badge">📦 Ejecutable único</span>
+      <span class="badge">🌐 WASM</span>
       <span class="badge">🇪🇸 100% español</span>
+      <span class="badge">🔧 Uops</span>
+      <span class="badge">📐 Optimizador</span>
     </div>
   </div>
 
-  <div class="info">🔥 <strong>Filosofía:</strong> Aprender conceptos modernos de sistemas (ownership, mutabilidad, borrowing) sin la complejidad sintáctica de Rust, y en tu idioma.</div>
+  <div class="info">🔥 <strong>Filosofía:</strong> Aprender conceptos modernos de sistemas (ownership, mutabilidad, borrowing, POO, pattern matching) sin la complejidad sintáctica de Rust, y en tu idioma. Todo en un compilador escrito en Rust puro.</div>
+
+  <h2>Stack tecnológico</h2>
+
+  <table>
+    <thead>
+      <tr><th>Componente</th><th>Tecnología</th><th>Archivo(s)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Lenguaje</strong></td><td>Rust (edition 2021)</td><td><code>src/main.rs</code>, <code>src/lib.rs</code></td></tr>
+      <tr><td><strong>CLI</strong></td><td>15+ comandos en español/inglés</td><td><code>src/main.rs</code> (833 líneas)</td></tr>
+      <tr><td><strong>Lexer + Parser</strong></td><td>Recursive Descent</td><td><code>src/lexer.rs</code>, <code>src/parser.rs</code></td></tr>
+      <tr><td><strong>Semántica</strong></td><td>Type Checker + Borrow Checker</td><td><code>src/semantics.rs</code></td></tr>
+      <tr><td><strong>Bytecode</strong></td><td>40+ opcodes stack-based</td><td><code>src/bytecode.rs</code> (1206 líneas)</td></tr>
+      <tr><td><strong>Micro-opcodes</strong></td><td>Expansión + optimización de opcodes</td><td><code>src/uops.rs</code> (463 líneas)</td></tr>
+      <tr><td><strong>VM v1</strong></td><td>Stack-based original</td><td><code>src/vm.rs</code> (2038 líneas)</td></tr>
+      <tr><td><strong>VM v3 Opt</strong></td><td>Índices numéricos, buffer de output</td><td><code>src/vm_opt.rs</code> (1091 líneas)</td></tr>
+      <tr><td><strong>VM v3 DT</strong></td><td>Direct Threading (u8 planos)</td><td><code>src/vm_jit.rs</code> (645 líneas)</td></tr>
+      <tr><td><strong>VM v5 Fast</strong></td><td>Stack caching, variables O(1), producción</td><td><code>src/vm_fast.rs</code> (1454 líneas)</td></tr>
+      <tr><td><strong>JIT</strong></td><td>Cranelift → código máquina nativo</td><td><code>src/jit.rs</code>, <code>src/jit_engine.rs</code></td></tr>
+      <tr><td><strong>Compilador ASM</strong></td><td>x86-64 Win/Linux, ARM64 + gcc -O2</td><td><code>src/compiler_asm.rs</code> (2393 líneas)</td></tr>
+      <tr><td><strong>Compilador AOT</strong></td><td>.exe autónomo con bytecode incrustado</td><td><code>src/aot.rs</code>, <code>src/selfrun.rs</code></td></tr>
+      <tr><td><strong>Optimizador</strong></td><td>Constant folding + Dead Code Elimination</td><td><code>src/optimizer.rs</code></td></tr>
+      <tr><td><strong>Módulos</strong></td><td>Importación con seguridad anti path traversal</td><td><code>src/module.rs</code></td></tr>
+      <tr><td><strong>WASM</strong></td><td>wasm-bindgen → playground en navegador</td><td><code>crates/forja-wasm/</code></td></tr>
+      <tr><td><strong>REPL</strong></td><td>rustyline, variables persistentes</td><td><code>src/repl.rs</code></td></tr>
+      <tr><td><strong>Formatter</strong></td><td>Formateo automático de código</td><td><code>src/formatter.rs</code></td></tr>
+      <tr><td><strong>Diagrama</strong></td><td>HTML interactivo del AST</td><td><code>src/diagrama.rs</code></td></tr>
+      <tr><td><strong>Extensión VSCode</strong></td><td>TextMate grammar + snippets</td><td><code>vscode/forja-syntax/</code></td></tr>
+    </tbody>
+  </table>
 
   <h2>Hola, Mundo</h2>
 
@@ -39,38 +72,58 @@ import Layout from '../layouts/Layout.astro';
     </div>
     <div class="feature-card">
       <span class="icon">🦀</span>
-      <h4>Transpila a Rust</h4>
-      <p>Genera código Rust válido y compilable. Aprendés Rust indirectamente mientras escribís Forja.</p>
+      <h4>Escrito en Rust</h4>
+      <p>26+ módulos de Rust puro. Sin dependencias externas para el núcleo del compilador (ni serde, ni JSON, ni runtime pesado).</p>
     </div>
     <div class="feature-card">
       <span class="icon">⎔</span>
-      <h4>VM + JIT</h4>
-      <p>Ejecutá código directamente sin compilar a Rust. El JIT con Cranelift acelera los hot paths.</p>
+      <h4>4 generaciones de VM</h4>
+      <p>Desde la VM original hasta la v5 con stack caching y acceso O(1) a variables. Cada versión es una lección de optimización.</p>
+    </div>
+    <div class="feature-card">
+      <span class="icon">⚡</span>
+      <h4>JIT + ASM nativo</h4>
+      <p>JIT con Cranelift para hot paths, y compilador a assembly x86-64/ARM64 con gcc -O2 para velocidad nativa (~30x más rápido que Python).</p>
     </div>
     <div class="feature-card">
       <span class="icon">📦</span>
       <h4>Ejecutable único</h4>
-      <p>Generá un .exe autónomo con la VM + bytecode. Funciona en cualquier PC sin dependencias.</p>
+      <p>Generá un .exe autónomo con la VM + bytecode incrustado. Funciona en cualquier PC sin dependencias. Tecnología selfrun.</p>
     </div>
     <div class="feature-card">
       <span class="icon">🔍</span>
       <h4>Borrow Checker</h4>
-      <p>Análisis de ownership y préstamos al estilo Rust, con mensajes de error educativos en español.</p>
+      <p>Análisis de ownership y préstamos al estilo Rust, con mensajes de error educativos en español con sugerencias.</p>
     </div>
     <div class="feature-card">
       <span class="icon">💬</span>
       <h4>REPL interactivo</h4>
-      <p>Probá código línea por línea con feedback inmediato. Las variables persisten entre líneas.</p>
+      <p>Probá código línea por línea con feedback inmediato. Las variables persisten entre líneas. Ideal para aprender.</p>
     </div>
     <div class="feature-card">
       <span class="icon">🧱</span>
-      <h4>POO nativa</h4>
-      <p>Clases, constructores, métodos, herencia de campos. Todo con sintaxis en español.</p>
+      <h4>POO nativa + Pattern Matching</h4>
+      <p>Clases, constructores, métodos, herencia de campos. Y también <code>coincidir</code>/<code>caso</code> con tipos algebraicos (<code>tipo</code>).</p>
+    </div>
+    <div class="feature-card">
+      <span class="icon">🌐</span>
+      <h4>Playground WASM</h4>
+      <p>Compilador y VM compilados a WebAssembly. Ejecutá Forja directamente en el navegador sin instalar nada.</p>
     </div>
     <div class="feature-card">
       <span class="icon">🔧</span>
-      <h4>Sin dependencias externas</h4>
-      <p>La VM y el bytecode usan solo Rust std. Sin serde, sin runtime pesado, sin scripts.</p>
+      <h4>Micro-opcodes (Uops)</h4>
+      <p>Sistema de expansión de opcodes compuestos a micro-operaciones. Permite optimizaciones como fusión de opcodes y eliminación de push/pop redundantes.</p>
+    </div>
+    <div class="feature-card">
+      <span class="icon">📐</span>
+      <h4>Optimizador de AST</h4>
+      <p>Constant folding en tiempo de compilación y eliminación de código muerto (DCE). Código más eficiente sin esfuerzo.</p>
+    </div>
+    <div class="feature-card">
+      <span class="icon">📂</span>
+      <h4>Sistema de módulos</h4>
+      <p>Organizá tu código en archivos separados con <code>importar</code>. Resolvedor con protección contra path traversal.</p>
     </div>
   </div>
 
@@ -80,9 +133,9 @@ import Layout from '../layouts/Layout.astro';
 
   <div class="code-block-wrapper">
     <div class="code-header"><span>🔥 forja/ejemplo.fa</span><span>🦀 rust/ejemplo.rs</span></div>
-    <pre><code><span class="co">// &#8212;&#8212;&#8212; Forja &#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212; // &#8212;&#8212;&#8212; Rust &#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;&#8212;</span>
+    <pre><code><span class="co">// ——————— Forja ——————————————————————— // ——————— Rust —————————————————————</span>
 <span class="kw">funcion</span> factorial(n) &lbrace;                    <span class="co">// fn factorial(n: i64) -> i64 &lbrace;</span>
-    <span class="kw">si</span> (n &#60;= 1) &lbrace;                           <span class="co">//     if n &#60;= 1 &lbrace;</span>
+    <span class="kw">si</span> (n <= 1) &lbrace;                           <span class="co">//     if n <= 1 &lbrace;</span>
         <span class="kw">retornar</span> 1                               <span class="co">//         return 1</span>
     &rbrace;                                         <span class="co">//     &rbrace;</span>
     <span class="kw">retornar</span> n * factorial(n - 1)                <span class="co">//     n * factorial(n - 1)</span>
@@ -98,34 +151,38 @@ import Layout from '../layouts/Layout.astro';
 
   <div class="code-block-wrapper">
     <div class="code-header"><span>⚡ Modos de ejecución</span></div>
-    <pre><code><span class="co"># Assembly nativo (MÁS RÁPIDO ⚡)</span>
+    <pre><code><span class="co"># Assembly nativo (MÁS RÁPIDO ⚡) — x86-64 o ARM64</span>
 forja build-asm ejemplo.fa -o programa
 
 <span class="co"># Transpilar a Rust</span>
 forja transpile ejemplo.fa -o programa.rs
 
-<span class="co"># Ejecutar en VM (sin compilar)</span>
+<span class="co"># Ejecutar en VM (4 versiones disponibles)</span>
 forja run ejemplo.fa
 
 <span class="co"># Modo interactivo</span>
 forja repl
 
 <span class="co"># Ejecutable autónomo (VM + bytecode)</span>
-forja build ejemplo.fa -o programa.exe</code></pre>
+forja build ejemplo.fa -o programa.exe
+
+<span class="co"># En el navegador (WASM)</span>
+<span class="co"># Abrí la página de Playground</span></code></pre>
   </div>
 
   <details>
     <summary><strong>📊 Comparación de velocidad entre modos</strong></summary>
     <table>
       <thead>
-        <tr><th>Modo</th><th>fib(30)</th><th>buche 100k</th><th>vs Python</th></tr>
+        <tr><th>Modo</th><th>fib(30)</th><th>Bucle 100k</th><th>vs Python</th></tr>
       </thead>
       <tbody>
         <tr><td><code>build-asm</code> (gcc -O2)</td><td>0.02 μs</td><td>~0.002 μs</td><td><strong>30x más rápido</strong></td></tr>
         <tr><td><code>transpile</code> (Rust nativo)</td><td>0.02 μs</td><td>~0.002 μs</td><td><strong>30x más rápido</strong></td></tr>
         <tr><td>Python (CPython 3.11)</td><td>0.60 μs</td><td>390 μs</td><td>— referencia</td></tr>
-        <tr><td><code>run</code> (VM Original)</td><td>37 μs</td><td>32,229 μs</td><td>62x más lento</td></tr>
-        <tr><td><code>run</code> (VM JIT)</td><td>28 μs</td><td>26,778 μs</td><td>47x más lento</td></tr>
+        <tr><td><code>run</code> (VM v1 Original)</td><td>37 μs</td><td>32,229 μs</td><td>62x más lento</td></tr>
+        <tr><td><code>run</code> (VM v3 Direct Threading)</td><td>28 μs</td><td>26,778 μs</td><td>47x más lento</td></tr>
+        <tr><td><code>run</code> (VM v5 Fast — stack caching)</td><td>—</td><td>—</td><td>— (en benchmarks)</td></tr>
       </tbody>
     </table>
   </details>
@@ -148,7 +205,7 @@ forja build ejemplo.fa -o programa.exe</code></pre>
 &rbrace;
 
 <span class="co">// Bucles</span>
-<span class="kw">para</span> (<span class="kw">variable</span> i = 0; i &#60; 5; i = i + 1) &lbrace;
+<span class="kw">para</span> (<span class="kw">variable</span> i = 0; i < 5; i = i + 1) &lbrace;
     <span class="fn">escribir</span>(<span class="st">"Iteración "</span> + i)
 &rbrace;
 
@@ -170,37 +227,118 @@ forja build ejemplo.fa -o programa.exe</code></pre>
 &rbrace;
 
 <span class="kw">variable</span> p = <span class="kw">nuevo</span> Persona(<span class="st">"Ana"</span>)
-p.saludar()</code></pre>
+p.saludar()
+
+<span class="co">// Pattern matching</span>
+<span class="kw">coincidir</span> (dia) &lbrace;
+    <span class="kw">caso</span> 1 &lbrace; <span class="fn">escribir</span>(<span class="st">"Lunes"</span>) &rbrace;
+    <span class="kw">caso</span> 2 &lbrace; <span class="fn">escribir</span>(<span class="st">"Martes"</span>) &rbrace;
+    <span class="kw">caso</span> _ &lbrace; <span class="fn">escribir</span>(<span class="st">"Otro"</span>) &rbrace;
+&rbrace;
+
+<span class="co">// Tipos algebraicos (enums)</span>
+<span class="kw">tipo</span> Resultado = Exito(Entero) | Error(Texto)
+
+<span class="co">// Arreglos y mapas</span>
+<span class="kw">variable</span> arr = [1, 2, 3]
+<span class="kw">variable</span> m = {<span class="st">"nombre"</span>: <span class="st">"Ana"</span>, <span class="st">"edad"</span>: 30}</code></pre>
   </div>
 
   <h2>Pipeline de compilación</h2>
 
-  <p>Forja transforma tu código a través de 5 fases, pudiendo generar Rust o bytecode para la VM:</p>
+  <p>Forja transforma tu código a través de 5+ fases, pudiendo generar Rust, bytecode (para 4 VMs), assembly nativo, o ejecutarse en el navegador via WASM:</p>
 
   <div class="code-block-wrapper">
-    <div class="code-header"><span>🔀 Arquitectura</span></div>
-    <pre><code>┌─────────┐   ┌───────┐   ┌─────┐   ┌──────────────┐   ┌─────────────┐
-    │ Source  │ → │ Lexer │ → │Parser│ → │Borrow Checker│ → │ Transpiler  │ → Rust .rs
-    │  .fa    │   │       │   │     │   │  (semántica)  │   │             │
-    └─────────┘   └───────┘   └─────┘   └──────────────┘   └─────────────┘
-                                      ═══════════════════════════════════
-                                      ‖  o también:                      ‖
-                                      ═══════════════════════════════════
-                                ┌──────────────────┐
-                                │ Compilador ASM   │ → .s → gcc -O2 → .exe (⚡ nativo)
-                                │ (compiler_asm)   │
-                                └──────────────────┘
-                                ┌──────────────┐   ┌───────────┐   ┌──────────┐
-                                │ Bytecode Gen │ → │  VM / JIT  │ → │ Output   │
-                                │  (bytecode)  │   │  (vm/jit)  │   │          │
-                                └──────────────┘   └───────────┘   └──────────┘
-                                          │
-                                          ▼
-                                ┌──────────────────┐
-                                │ AOT Compiler      │ → .exe autónomo
-                                │ (aot + selfrun)   │
-                                └──────────────────┘</code></pre>
+    <div class="code-header"><span>🔀 Arquitectura completa</span></div>
+    <pre><code>┌─────────┐   ┌───────┐   ┌─────┐   ┌──────────────┐   ┌──────────┐   ┌─────────────┐
+│ Source  │ → │ Lexer │ → │Parser│ → │Type + Borrow │ → │Optimizer │ → │ Transpiler  │ → Rust .rs
+│  .fa    │   │       │   │     │   │   Checker    │   │(fold+DCE) │   │             │
+└─────────┘   └───────┘   └─────┘   └──────────────┘   └──────────┘   └─────────────┘
+                                              ════════════════════════════════════════
+                                              ‖  Rutas alternativas:                  ‖
+                                              ════════════════════════════════════════
+                                        ┌──────────────────┐
+                                        │ Compilador ASM   │ → .s → gcc -O2 → .exe (⚡ nativo)
+                                        │ (compiler_asm)   │    x86-64 / ARM64
+                                        └──────────────────┘
+                                        ┌──────────────┐   ┌──────────────────────┐
+                                        │ Bytecode Gen │ → │ 4 VMs disponibles:   │
+                                        │  (bytecode)  │   │   vm (v1 original)   │
+                                        │       ↓      │   │   vm_opt (v3 índices)│
+                                        │    Uops      │   │   vm_jit (v3 DT)     │
+                                        │ (expansión)  │   │   vm_fast (v5 prod)  │
+                                        └──────┬───────┘   │                      │
+                                               │           │ JIT (Cranelift)       │
+                                               │           │ + fallback a VM fast │
+                                               │           └──────────────────────┘
+                                               │
+                                         ┌─────▼──────┐
+                                         │ AOT + Self │ → .exe autónomo
+                                         │    Run     │
+                                         └────────────┘
+                                        ┌──────────────────┐
+                                        │ WASM (navegador) │ → Playground web
+                                        └──────────────────┘</code></pre>
   </div>
 
-  <div class="tip"><strong>🔧 ¿Listo para empezar?</strong> Andá a <a href="/instalacion">Instalación</a> para compilar Forja, o directamente a <a href="/uso">Uso</a> para ver los comandos disponibles.</div>
+  <h2>Arquitectura de ejecución</h2>
+
+  <p>Forja tiene <strong>4 estrategias de ejecución</strong> ordenadas por velocidad:</p>
+
+  <table>
+    <thead>
+      <tr><th>#</th><th>Estrategia</th><th>Módulo</th><th>Velocidad</th><th>Descripción</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td><strong>Assembly nativo</strong></td><td><code>compiler_asm.rs</code></td><td>⚡⚡⚡⚡⚡</td><td>Forja → .s + gcc -O2. Velocidad C/Rust. Multi-arquitectura.</td></tr>
+      <tr><td>2</td><td><strong>Transpilación a Rust</strong></td><td><code>transpiler.rs</code></td><td>⚡⚡⚡⚡⚡</td><td>Forja → .rs + rustc. Código compilado nativo.</td></tr>
+      <tr><td>3</td><td><strong>JIT (Cranelift)</strong></td><td><code>jit_engine.rs</code></td><td>⚡⚡⚡</td><td>Compila hot paths a código máquina en runtime. Fallback a VM fast.</td></tr>
+      <tr><td>4</td><td><strong>VM interpretada</strong></td><td><code>vm_fast.rs</code></td><td>⚡⚡</td><td>VM v5 ultra rápida con stack caching y variables O(1).</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Documentación</h2>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <span class="icon">📖</span>
+      <h4><a href="/instalacion">Instalación</a></h4>
+      <p>Compilá Forja desde el código fuente. Solo necesitás Rust.</p>
+    </div>
+    <div class="feature-card">
+      <span class="icon">⚡</span>
+      <h4><a href="/uso">Uso (CLI)</a></h4>
+      <p>Todos los comandos: run, build, build-asm, transpile, repl, fmt, y más.</p>
+    </div>
+    <div class="feature-card">
+      <span class="icon">📝</span>
+      <h4><a href="/ejemplos">Ejemplos</a></h4>
+      <p>15 ejemplos comentados, desde hola mundo hasta juegos completos.</p>
+    </div>
+    <div class="feature-card">
+      <span class="icon">🔧</span>
+      <h4><a href="/sintaxis/variables">Sintaxis</a></h4>
+      <p>Referencia completa del lenguaje: tipos, funciones, clases, módulos.</p>
+    </div>
+    <div class="feature-card">
+      <span class="icon">🏗️</span>
+      <h4><a href="/arquitectura/pipeline">Arquitectura</a></h4>
+      <p>Pipeline, VM, bytecode, JIT, compilador ASM, WASM, y más.</p>
+    </div>
+    <div class="feature-card">
+      <span class="icon">🚫</span>
+      <h4><a href="/errores">Errores</a></h4>
+      <p>Sistema de errores educativo con sugerencias en español.</p>
+    </div>
+    <div class="feature-card">
+      <span class="icon">🔄</span>
+      <h4><a href="/roadmap">Roadmap</a></h4>
+      <p>Estado del proyecto y próximos pasos.</p>
+    </div>
+    <div class="feature-card">
+      <span class="icon">🎮</span>
+      <h4><a href="/playground">Playground</a></h4>
+      <p>Probá Forja en el navegador con WASM. Sin instalación.</p>
+    </div>
+  </div>
 </Layout>

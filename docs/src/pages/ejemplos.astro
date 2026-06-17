@@ -210,18 +210,206 @@ mostrar(dato)
 <span class="fn">escribir</span>(p.nombre)</code></pre>
   </div>
 
-  <h2>Probarlos todos</h2>
-
-  <p>Ejecutá todos los ejemplos de una sola vez para explorar las capacidades de Forja:</p>
+  <h2>11. Arreglos</h2>
 
   <div class="code-block-wrapper">
-    <div class="code-header"><span>⚡ Batch de ejemplos</span></div>
-    <pre><code>forja run examples/hola_mundo.fa
-forja run examples/variables.fa
-forja run examples/funciones.fa
-forja run examples/condicionales.fa
-forja run examples/bucles.fa
-forja run examples/clases.fa
+    <div class="code-header"><span>📄 examples/08_arrays.fa</span></div>
+    <pre><code><span class="kw">variable</span> numeros = [10, 20, 30, 40, 50]
+<span class="fn">escribir</span>(<span class="st">"Primer elemento: "</span> + numeros[0])
+<span class="fn">escribir</span>(<span class="st">"Cantidad: "</span> + numeros.length())
+
+<span class="co">// Modificar elementos</span>
+numeros[2] = 99
+<span class="fn">escribir</span>(<span class="st">"Elemento modificado: "</span> + numeros[2])</code></pre>
+  </div>
+
+  <h2>12. Strings</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 examples/09_strings.fa</span></div>
+    <pre><code><span class="co">// Concatenación</span>
+<span class="kw">variable</span> saludo = <span class="st">"Hola"</span>
+<span class="kw">variable</span> nombre = <span class="st">"Mundo"</span>
+<span class="fn">escribir</span>(saludo + <span class="st">", "</span> + nombre + <span class="st">"!"</span>)
+
+<span class="co">// Strings con números</span>
+<span class="kw">variable</span> edad = 25
+<span class="fn">escribir</span>(<span class="st">"Tengo "</span> + edad + <span class="st">" años"</span>)</code></pre>
+  </div>
+
+  <h2>13. Mapas (diccionarios)</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 examples/11_mapas.fa</span></div>
+    <pre><code><span class="kw">variable</span> persona = {<span class="st">"nombre"</span>: <span class="st">"Ana"</span>, <span class="st">"edad"</span>: 30}
+
+<span class="fn">escribir</span>(<span class="st">"Nombre: "</span> + persona[<span class="st">"nombre"</span>])
+<span class="fn">escribir</span>(<span class="st">"Edad: "</span> + persona[<span class="st">"edad"</span>])
+
+<span class="co">// Modificar valores</span>
+persona[<span class="st">"edad"</span>] = 31
+<span class="fn">escribir</span>(<span class="st">"Nueva edad: "</span> + persona[<span class="st">"edad"</span>])</code></pre>
+  </div>
+
+  <h2>14. Entrada de usuario</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 examples/12_input.fa</span></div>
+    <pre><code><span class="fn">escribir</span>(<span class="st">"¿Cómo te llamás?"</span>)
+<span class="kw">variable</span> nombre = <span class="fn">leer</span>()
+<span class="fn">escribir</span>(<span class="st">"Hola, "</span> + nombre + <span class="st">"!"</span>)</code></pre>
+  </div>
+
+  <h2>15. Pattern Matching (coincidir / caso)</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 Pattern matching</span></div>
+    <pre><code><span class="co">// Coincidir con valores concretos</span>
+<span class="kw">variable</span> dia = 3
+
+<span class="kw">coincidir</span> (dia) &lbrace;
+    <span class="kw">caso</span> 1 &lbrace; <span class="fn">escribir</span>(<span class="st">"Lunes"</span>) &rbrace;
+    <span class="kw">caso</span> 2 &lbrace; <span class="fn">escribir</span>(<span class="st">"Martes"</span>) &rbrace;
+    <span class="kw">caso</span> 3 &lbrace; <span class="fn">escribir</span>(<span class="st">"Miércoles"</span>) &rbrace;
+    <span class="kw">caso</span> _ &lbrace; <span class="fn">escribir</span>(<span class="st">"Otro día"</span>) &rbrace;
+&rbrace;
+<span class="co">// → Miércoles</span></code></pre>
+  </div>
+
+  <h2>16. Tipos algebraicos (enums)</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 Tipos algebraicos</span></div>
+    <pre><code><span class="kw">tipo</span> Resultado = Exito(Entero) | Error(Texto)
+
+<span class="kw">funcion</span> dividir(a, b) &lbrace;
+    <span class="kw">si</span> (b == 0) &lbrace;
+        <span class="kw">retornar</span> Error(<span class="st">"No se puede dividir por cero"</span>)
+    &rbrace; <span class="kw">sino</span> &lbrace;
+        <span class="kw">retornar</span> Exito(a / b)
+    &rbrace;
+&rbrace;
+
+<span class="kw">variable</span> res = dividir(10, 2)
+
+<span class="kw">coincidir</span> (res) &lbrace;
+    <span class="kw">caso</span> Exito(valor) &lbrace;
+        <span class="fn">escribir</span>(<span class="st">"Resultado: "</span> + valor)
+    &rbrace;
+    <span class="kw">caso</span> Error(msg) &lbrace;
+        <span class="fn">escribir</span>(<span class="st">"Error: "</span> + msg)
+    &rbrace;
+&rbrace;
+<span class="co">// → Resultado: 5</span></code></pre>
+  </div>
+
+  <h2>17. Módulos (importar)</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 main.fa</span></div>
+    <pre><code><span class="kw">importar</span> <span class="st">"modulos/matematica"</span>
+
+<span class="fn">escribir</span>(sumar(5, 3))
+<span class="fn">escribir</span>(restar(10, 4))</code></pre>
+  </div>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 modulos/matematica.fa</span></div>
+    <pre><code><span class="kw">funcion</span> sumar(a, b) &lbrace;
+    <span class="kw">retornar</span> a + b
+&rbrace;
+
+<span class="kw">funcion</span> restar(a, b) &lbrace;
+    <span class="kw">retornar</span> a - b
+&rbrace;</code></pre>
+  </div>
+
+  <h2>18. Juego: Adivina el número</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 examples/14_adivina.fa</span></div>
+    <pre><code><span class="co">// Juego completo: adiviná el número secreto</span>
+<span class="fn">escribir</span>(<span class="st">"🎯 Adiviná el número (1-100)"</span>)
+
+<span class="kw">variable</span> secreto = 42
+<span class="kw">variable</span> intento = 0
+<span class="kw">variable</span> adivinado = falso
+
+<span class="kw">mientras</span> (!adivinado) &lbrace;
+    <span class="fn">escribir</span>(<span class="st">"Tu intento: "</span>)
+    <span class="kw">variable</span> guess = <span class="fn">leer</span>()
+    intento = intento + 1
+
+    <span class="kw">si</span> (guess < secreto) &lbrace;
+        <span class="fn">escribir</span>(<span class="st">"📈 Más alto"</span>)
+    &rbrace; <span class="kw">sino</span> <span class="kw">si</span> (guess > secreto) &lbrace;
+        <span class="fn">escribir</span>(<span class="st">"📉 Más bajo"</span>)
+    &rbrace; <span class="kw">sino</span> &lbrace;
+        <span class="fn">escribir</span>(<span class="st">"🎉 Correcto! Lo lograste en "</span> + intento + <span class="st">" intentos"</span>)
+        adivinado = verdadero
+    &rbrace;
+&rbrace;</code></pre>
+  </div>
+
+  <h2>19. Calculadora interactiva</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 examples/15_calculadora.fa</span></div>
+    <pre><code><span class="co">// Calculadora simple con operaciones básicas</span>
+<span class="kw">funcion</span> calcular(a, b, operacion) &lbrace;
+    <span class="kw">coincidir</span> (operacion) &lbrace;
+        <span class="kw">caso</span> <span class="st">"+"</span> &lbrace; <span class="kw">retornar</span> a + b &rbrace;
+        <span class="kw">caso</span> <span class="st">"-"</span> &lbrace; <span class="kw">retornar</span> a - b &rbrace;
+        <span class="kw">caso</span> <span class="st">"*"</span> &lbrace; <span class="kw">retornar</span> a * b &rbrace;
+        <span class="kw">caso</span> <span class="st">"/"</span> &lbrace;
+            <span class="kw">si</span> (b == 0) &lbrace;
+                <span class="fn">escribir</span>(<span class="st">"Error: división por cero"</span>)
+                <span class="kw">retornar</span> 0
+            &rbrace;
+            <span class="kw">retornar</span> a / b
+        &rbrace;
+        <span class="kw">caso</span> _ &lbrace;
+            <span class="fn">escribir</span>(<span class="st">"Operación no válida"</span>)
+            <span class="kw">retornar</span> 0
+        &rbrace;
+    &rbrace;
+&rbrace;
+
+<span class="kw">variable</span> resultado = calcular(10, 5, <span class="st">"+"</span>)
+<span class="fn">escribir</span>(<span class="st">"10 + 5 = "</span> + resultado)
+
+resultado = calcular(10, 5, <span class="st">"*"</span>)
+<span class="fn">escribir</span>(<span class="st">"10 * 5 = "</span> + resultado)</code></pre>
+  </div>
+
+  <h2>Probarlos todos</h2>
+
+  <p>Todos los ejemplos están disponibles en la carpeta <code>examples/</code>. Ejecutalos con:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>⚡ Lista completa de ejemplos</span></div>
+    <pre><code><span class="co"># Básicos (01-06)</span>
+forja run examples/01_hola.fa
+forja run examples/02_variables.fa
+forja run examples/03_tipos.fa
+forja run examples/04_operaciones.fa
+forja run examples/05_condicionales.fa
+forja run examples/06_bucles.fa
+
+<span class="co"># Intermedios (07-13)</span>
+forja run examples/07_funciones.fa
+forja run examples/08_arrays.fa
+forja run examples/09_strings.fa
+forja run examples/10_clases.fa
+forja run examples/11_mapas.fa
+forja run examples/12_input.fa
+forja run examples/13_errores.fa
+
+<span class="co"># Avanzados (14-15)</span>
+forja run examples/14_adivina.fa
+forja run examples/15_calculadora.fa
+
+<span class="co"># Conceptos</span>
 forja run examples/ownership.fa
 forja run examples/poo_simple.fa
 forja run examples/poo_test.fa</code></pre>
