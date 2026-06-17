@@ -119,7 +119,7 @@ forja build-asm programa.fa --target x86_64-linux -o programa</code></pre>
 
   <h2>Código fuente</h2>
 
-  <p>El compilador está en <a href="https://github.com/forja-lang/forja/blob/main/src/compiler_asm.rs" target="_blank"><code>src/compiler_asm.rs</code></a> (~1500 líneas).</p>
+  <p>El compilador está en <a href="https://github.com/forja-lang/forja/blob/main/src/compiler_asm.rs" target="_blank"><code>src/compiler_asm.rs</code></a> (~2393 líneas). Es el módulo más grande del proyecto.</p>
 
   <details>
     <summary>Ver estructura del código</summary>
@@ -128,7 +128,22 @@ forja build-asm programa.fa --target x86_64-linux -o programa</code></pre>
       <li><strong>CompilerAsm</strong> — Genera el assembly visitando el AST</li>
       <li><strong>compilar_declaracion()</strong> — Compila variables, si/mientras/para, funciones, retorno</li>
       <li><strong>compilar_expresion_asm()</strong> — Compila expresiones, literales, operaciones, llamadas</li>
-      <li><strong>generar_runtime_funciones()</strong> — Genera las funciones auxiliares de print</li>
+      <li><strong>generar_runtime_funciones()</strong> — Genera las funciones auxiliares de print (forja_print_int, forja_print_str, forja_print_float, forja_print_bool, forja_print_newline)</li>
+      <li><strong>Detección automática</strong> — Usa cfg!() para detectar la plataforma actual y elegir la sintaxis assembly correcta</li>
+      <li><strong>Cross-compilación</strong> — El flag --target permite override manual</li>
     </ul>
   </details>
+
+  <h2>Llamadas a printf desde assembly</h2>
+
+  <p>Las funciones runtime generan código assembly que llama a <code>printf</code> de la libc. Cada arquitectura tiene su propia convención:</p>
+
+  <table>
+    <tr><th>Arquitectura</th><th>Paso de args a printf</th></tr>
+    <tr><td><strong>x86-64 Windows</strong></td><td>RCX (fmt), RDX (valor), con 32 bytes de shadow space</td></tr>
+    <tr><td><strong>x86-64 Linux</strong></td><td>RDI (fmt), RSI (valor), sin shadow space</td></tr>
+    <tr><td><strong>ARM64</strong></td><td>X0 (fmt), X1 (valor), stp/x30 para frame pointer</td></tr>
+  </table>
+
+  <div class="info">💡 El assembly generado incluye automáticamente las funciones runtime. No necesitás ninguna biblioteca adicional más allá de la libc (que ya viene con gcc).</div>
 </Layout>
