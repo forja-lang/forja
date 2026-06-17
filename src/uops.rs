@@ -93,7 +93,8 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         // Variables por índice
         Opcode::LoadIdx(idx) => Uop::LoadIdx(*idx),
         Opcode::StoreIdx(idx) => Uop::StoreIdx(*idx),
-        Opcode::DeclareIdx(idx, _) => Uop::DeclareVar(*idx),
+        // DeclareIdx hace POP del stack (el valor a asignar), igual que Declare
+        Opcode::DeclareIdx(idx, _) => Uop::DeclareInit(*idx),
 
         // Opcodes compuestos (que se expandirán)
         Opcode::DeclareEnteroOp(idx, _n) => {
