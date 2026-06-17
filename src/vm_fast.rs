@@ -11,23 +11,28 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::sync::LazyLock;
 use crate::bytecode::Opcode;
 
-// Small Integer Cache [-5, 256] — evita construir el enum repetidamente
-static SMALL_INT_CACHE_FAST: LazyLock<[ValorFast; 262]> = LazyLock::new(|| {
-    let mut cache = [ValorFast::Entero(0); 262];
-    for i in 0..262 {
-        cache[i] = ValorFast::Entero(i as i64 - 5);
-    }
-    cache
-});
+// Small Integer Cache [-5, 256] — thread_local! porque ValorFast no es Send/Sync
+use std::cell::OnceCell;
+thread_local! {
+    static SMALL_INT_CACHE_FAST: OnceCell<[ValorFast; 262]> = OnceCell::new();
+}
 
 /// Devuelve ValorFast::Entero(n) usando la Small Integer Cache si n está en [-5, 256]
 #[inline(always)]
 pub fn get_small_int_fast(n: i64) -> ValorFast {
     if n >= -5 && n <= 256 {
-        SMALL_INT_CACHE_FAST[(n + 5) as usize].clone()
+        SMALL_INT_CACHE_FAST.with(|cell| {
+            let cache = cell.get_or_init(|| {
+                let mut cache: [ValorFast; 262] = std::array::from_fn(|_| ValorFast::Entero(0));
+                for i in 0..262 {
+                    cache[i] = ValorFast::Entero(i as i64 - 5);
+                }
+                cache
+            });
+            cache[(n + 5) as usize].clone()
+        })
     } else {
         ValorFast::Entero(n)
     }

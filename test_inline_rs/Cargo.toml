@@ -1,9 +1,0 @@
-[package]
-name = "test_inline"
-version = "0.1.0"
-edition = "2021"
-
-# Exportado por Forja (fa) desde test_inline.fa (podés ejecutar directo con 'forja ejecutar')
-# https://github.com/forja-lang/forja
-
-[dependencies]

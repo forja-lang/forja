@@ -5,7 +5,6 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::sync::LazyLock;
 
 const OP_PUSH_ENTERO: u8 = 0;  const OP_PUSH_DECIMAL: u8 = 1;
 const OP_PUSH_TEXTO: u8 = 2;   const OP_PUSH_BOOL: u8 = 3;
@@ -30,20 +29,26 @@ const OP_ARRAY_LEN: u8 = 38;   const OP_MAP_NEW: u8 = 39;
 const OP_MAP_GET: u8 = 40;     const OP_MAP_SET: u8 = 41;
 const OP_HALT: u8 = 42;
 
-// Small Integer Cache [-5, 256] — evita construir el enum repetidamente
-static SMALL_INT_CACHE_DT: LazyLock<[ValorDT; 262]> = LazyLock::new(|| {
-    let mut cache = [ValorDT::Entero(0); 262];
-    for i in 0..262 {
-        cache[i] = ValorDT::Entero(i as i64 - 5);
-    }
-    cache
-});
+// Small Integer Cache [-5, 256] — thread_local! porque ValorDT no es Send/Sync
+use std::cell::OnceCell;
+thread_local! {
+    static SMALL_INT_CACHE_DT: OnceCell<[ValorDT; 262]> = OnceCell::new();
+}
 
 /// Devuelve ValorDT::Entero(n) usando la Small Integer Cache si n está en [-5, 256]
 #[inline(always)]
 pub fn get_small_int_dt(n: i64) -> ValorDT {
     if n >= -5 && n <= 256 {
-        SMALL_INT_CACHE_DT[(n + 5) as usize].clone()
+        SMALL_INT_CACHE_DT.with(|cell| {
+            let cache = cell.get_or_init(|| {
+                let mut cache: [ValorDT; 262] = std::array::from_fn(|_| ValorDT::Entero(0));
+                for i in 0..262 {
+                    cache[i] = ValorDT::Entero(i as i64 - 5);
+                }
+                cache
+            });
+            cache[(n + 5) as usize].clone()
+        })
     } else {
         ValorDT::Entero(n)
     }
