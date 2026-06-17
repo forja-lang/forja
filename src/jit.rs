@@ -189,6 +189,23 @@ impl NativeJIT {
                 Opcode::JumpSiFalso(l) => { if sd >= 1 { c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x85, 0xc0]); c.jcc(0x04, *l); sd -= 1; } else { return Err("JZ underflow".into()); } }
                 Opcode::Label(l) => { c.label(*l); }
 
+                // Opcodes especializados — mismo handler que sus versiones genéricas
+                Opcode::AddInt | Opcode::AddFloat => { if sd >= 2 { c.binop(&[0x48, 0x01, 0xc8]); sd -= 1; } else { return Err("Add underflow".into()); } }
+                Opcode::SubInt | Opcode::SubFloat => { if sd >= 2 { c.binop(&[0x48, 0x29, 0xc8]); sd -= 1; } else { return Err("Sub underflow".into()); } }
+                Opcode::MulInt | Opcode::MulFloat => { if sd >= 2 { c.binop(&[0x48, 0x0f, 0xaf, 0xc1]); sd -= 1; } else { return Err("Mul underflow".into()); } }
+                Opcode::DivInt | Opcode::DivFloat => {
+                    if sd >= 2 {
+                        c.pop_r(1); c.pop_r(0); c.cqo();
+                        c.bytes.extend_from_slice(&[0x48, 0xf7, 0xf9]); // idiv rcx
+                        c.push_r(0); sd -= 1;
+                    } else { return Err("Div underflow".into()); }
+                }
+                Opcode::IgualInt => { if sd >= 2 { c.pop_r(1); c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x39, 0xc8]); c.cmp_result(0x94); sd -= 1; } else { return Err("Cmp underflow".into()); } }
+                Opcode::MenorInt => { if sd >= 2 { c.pop_r(1); c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x39, 0xc8]); c.cmp_result(0x9c); sd -= 1; } else { return Err("Cmp underflow".into()); } }
+                Opcode::MayorInt => { if sd >= 2 { c.pop_r(1); c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x39, 0xc8]); c.cmp_result(0x9f); sd -= 1; } else { return Err("Cmp underflow".into()); } }
+                Opcode::LoadIdxEntero(idx) | Opcode::LoadIdxFloat(idx) => { c.load_var(*idx); c.push_r(0); sd += 1; }
+                Opcode::StoreIdxEntero(idx) | Opcode::StoreIdxFloat(idx) => { if sd >= 1 { c.pop_r(0); c.store_var(*idx); sd -= 1; } else { return Err("Store underflow".into()); } }
+
                 Opcode::Halt => { break; }
 
                 _ => { return Err(format!("non-JIT {:?}", op)); }

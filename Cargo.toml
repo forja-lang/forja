@@ -42,5 +42,9 @@ path = "benchmarks/bench_jit.rs"
 name = "bench-jit-100k"
 path = "benchmarks/bench_jit_100k.rs"
 
+[[bin]]
+name = "bench-cpython-opt"
+path = "benchmarks/bench_cpython_opt.rs"
+
 [profile.release]
 opt-level = 2

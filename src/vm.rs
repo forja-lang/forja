@@ -3,6 +3,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::io::Write;
 use crate::bytecode::Opcode;
+use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops, tiene_opcodes_compuestos};
 
 /// Un objeto en la VM (instancia de clase) con referencia compartida
 #[derive(Debug, Clone)]
@@ -252,6 +253,9 @@ pub struct ForjaVM {
     string_pool: StringPool,
     #[allow(dead_code)]
     inline_cache: HashMap<String, usize>,
+    /// Sistema de especialización adaptativa (PEP 659)
+    contador_especializacion: Vec<u8>,
+    umbral_especializacion: u8,
 }
 
 struct Frame {
@@ -278,6 +282,8 @@ impl ForjaVM {
             instrucciones_ejecutadas: 0,
             string_pool: StringPool::new(),
             inline_cache: HashMap::new(),
+            contador_especializacion: Vec::new(),
+            umbral_especializacion: 3,
         }
     }
 
@@ -288,6 +294,7 @@ impl ForjaVM {
     /// Carga bytecode y precalcula las posiciones de labels y funciones
     pub fn cargar_bytecode(&mut self, bytecode: Vec<Opcode>) {
         self.bytecode = bytecode;
+        self.contador_especializacion = vec![0u8; self.bytecode.len()];
         self.funciones.clear();
 
         // Primera pasada: indexar labels y funciones
@@ -331,6 +338,7 @@ impl ForjaVM {
         self.stack.clear();
         self.call_stack.clear();
         self.output.clear(); // V-11: limpiar output entre ejecuciones
+        self.contador_especializacion.iter_mut().for_each(|c| *c = 0);
         // No reseteamos variables (persisten entre líneas en REPL)
     }
 
@@ -360,6 +368,11 @@ impl ForjaVM {
 
     /// Ejecuta el bytecode cargado
     pub fn ejecutar(&mut self) -> Result<(), ErrorVM> {
+        // Decidir automáticamente si usar uops basado en la presencia de opcodes compuestos
+        if tiene_opcodes_compuestos(&self.bytecode) {
+            return self.ejecutar_uops();
+        }
+
         loop {
             if self.ip >= self.bytecode.len() {
                 break;
@@ -462,6 +475,26 @@ impl ForjaVM {
                 }
 
                 Opcode::Add => {
+                    let ip = self.ip;
+                    // Especialización adaptativa
+                    if self.stack.len() >= 2 {
+                        let a = &self.stack[self.stack.len() - 1];
+                        let b = &self.stack[self.stack.len() - 2];
+                        let ta = Self::tipo_tag_valor(a);
+                        let tb = Self::tipo_tag_valor(b);
+                        if ta != 0 && tb != 0 && ta == tb && (ta == 1 || ta == 2) {
+                            self.contador_especializacion[ip] = self.contador_especializacion[ip].saturating_add(1);
+                            if self.contador_especializacion[ip] >= self.umbral_especializacion {
+                                self.bytecode[ip] = match ta {
+                                    1 => Opcode::AddInt,
+                                    2 => Opcode::AddFloat,
+                                    _ => Opcode::Add,
+                                };
+                            }
+                        } else {
+                            self.contador_especializacion[ip] = 0;
+                        }
+                    }
                     let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
                     self.stack.push(a.sumar(&b)?);
@@ -469,6 +502,25 @@ impl ForjaVM {
                 }
 
                 Opcode::Sub => {
+                    let ip = self.ip;
+                    if self.stack.len() >= 2 {
+                        let a = &self.stack[self.stack.len() - 1];
+                        let b = &self.stack[self.stack.len() - 2];
+                        let ta = Self::tipo_tag_valor(a);
+                        let tb = Self::tipo_tag_valor(b);
+                        if ta != 0 && tb != 0 && ta == tb && (ta == 1 || ta == 2) {
+                            self.contador_especializacion[ip] = self.contador_especializacion[ip].saturating_add(1);
+                            if self.contador_especializacion[ip] >= self.umbral_especializacion {
+                                self.bytecode[ip] = match ta {
+                                    1 => Opcode::SubInt,
+                                    2 => Opcode::SubFloat,
+                                    _ => Opcode::Sub,
+                                };
+                            }
+                        } else {
+                            self.contador_especializacion[ip] = 0;
+                        }
+                    }
                     let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Sub".to_string()))?;
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Sub".to_string()))?;
                     self.stack.push(a.restar(&b)?);
@@ -476,6 +528,25 @@ impl ForjaVM {
                 }
 
                 Opcode::Mul => {
+                    let ip = self.ip;
+                    if self.stack.len() >= 2 {
+                        let a = &self.stack[self.stack.len() - 1];
+                        let b = &self.stack[self.stack.len() - 2];
+                        let ta = Self::tipo_tag_valor(a);
+                        let tb = Self::tipo_tag_valor(b);
+                        if ta != 0 && tb != 0 && ta == tb && (ta == 1 || ta == 2) {
+                            self.contador_especializacion[ip] = self.contador_especializacion[ip].saturating_add(1);
+                            if self.contador_especializacion[ip] >= self.umbral_especializacion {
+                                self.bytecode[ip] = match ta {
+                                    1 => Opcode::MulInt,
+                                    2 => Opcode::MulFloat,
+                                    _ => Opcode::Mul,
+                                };
+                            }
+                        } else {
+                            self.contador_especializacion[ip] = 0;
+                        }
+                    }
                     let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Mul".to_string()))?;
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Mul".to_string()))?;
                     self.stack.push(a.multiplicar(&b)?);
@@ -483,9 +554,297 @@ impl ForjaVM {
                 }
 
                 Opcode::Div => {
+                    let ip = self.ip;
+                    if self.stack.len() >= 2 {
+                        let a = &self.stack[self.stack.len() - 1];
+                        let b = &self.stack[self.stack.len() - 2];
+                        let ta = Self::tipo_tag_valor(a);
+                        let tb = Self::tipo_tag_valor(b);
+                        if ta != 0 && tb != 0 && ta == tb && (ta == 1 || ta == 2) {
+                            self.contador_especializacion[ip] = self.contador_especializacion[ip].saturating_add(1);
+                            if self.contador_especializacion[ip] >= self.umbral_especializacion {
+                                self.bytecode[ip] = match ta {
+                                    1 => Opcode::DivInt,
+                                    2 => Opcode::DivFloat,
+                                    _ => Opcode::Div,
+                                };
+                            }
+                        } else {
+                            self.contador_especializacion[ip] = 0;
+                        }
+                    }
                     let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Div".to_string()))?;
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Div".to_string()))?;
                     self.stack.push(a.dividir(&b)?);
+                    self.ip += 1;
+                }
+
+                // === HANDLERS ESPECIALIZADOS (PEP 659) ===
+                Opcode::AddInt => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
+                    match (&a, &b) {
+                        (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
+                            self.stack.push(ValorVM::Entero(av.wrapping_add(*bv)));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Add;
+                            self.stack.push(a);
+                            self.stack.push(b);
+                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
+                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
+                            self.stack.push(a2.sumar(&b2)?);
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::AddFloat => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
+                    match (&a, &b) {
+                        (ValorVM::Decimal(av), ValorVM::Decimal(bv)) => {
+                            self.stack.push(ValorVM::Decimal(av + bv));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Add;
+                            self.stack.push(a);
+                            self.stack.push(b);
+                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
+                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
+                            self.stack.push(a2.sumar(&b2)?);
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::SubInt => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
+                    match (&a, &b) {
+                        (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
+                            self.stack.push(ValorVM::Entero(av.wrapping_sub(*bv)));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Sub;
+                            self.stack.push(a);
+                            self.stack.push(b);
+                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
+                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
+                            self.stack.push(a2.restar(&b2)?);
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::SubFloat => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
+                    match (&a, &b) {
+                        (ValorVM::Decimal(av), ValorVM::Decimal(bv)) => {
+                            self.stack.push(ValorVM::Decimal(av - bv));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Sub;
+                            self.stack.push(a);
+                            self.stack.push(b);
+                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
+                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
+                            self.stack.push(a2.restar(&b2)?);
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::MulInt => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
+                    match (&a, &b) {
+                        (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
+                            self.stack.push(ValorVM::Entero(av.wrapping_mul(*bv)));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Mul;
+                            self.stack.push(a);
+                            self.stack.push(b);
+                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
+                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
+                            self.stack.push(a2.multiplicar(&b2)?);
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::MulFloat => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
+                    match (&a, &b) {
+                        (ValorVM::Decimal(av), ValorVM::Decimal(bv)) => {
+                            self.stack.push(ValorVM::Decimal(av * bv));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Mul;
+                            self.stack.push(a);
+                            self.stack.push(b);
+                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
+                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
+                            self.stack.push(a2.multiplicar(&b2)?);
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::DivInt => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
+                    match (&a, &b) {
+                        (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
+                            if *bv == 0 { return Err(ErrorVM::DivisionPorCero); }
+                            self.stack.push(ValorVM::Entero(av.wrapping_div(*bv)));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Div;
+                            self.stack.push(a);
+                            self.stack.push(b);
+                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
+                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
+                            self.stack.push(a2.dividir(&b2)?);
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::DivFloat => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
+                    match (&a, &b) {
+                        (ValorVM::Decimal(av), ValorVM::Decimal(bv)) => {
+                            if *bv == 0.0 { return Err(ErrorVM::DivisionPorCero); }
+                            self.stack.push(ValorVM::Decimal(av / bv));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Div;
+                            self.stack.push(a);
+                            self.stack.push(b);
+                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
+                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
+                            self.stack.push(a2.dividir(&b2)?);
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::IgualInt => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualInt".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualInt".to_string()))?;
+                    match (&a, &b) {
+                        (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
+                            self.stack.push(ValorVM::Booleano(av == bv));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Igual;
+                            self.stack.push(a);
+                            self.stack.push(b);
+                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualInt".to_string()))?;
+                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualInt".to_string()))?;
+                            let cmp = a2.comparar(&b2)?;
+                            self.stack.push(ValorVM::Booleano(cmp == 0));
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::MenorInt => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorInt".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorInt".to_string()))?;
+                    match (&a, &b) {
+                        (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
+                            self.stack.push(ValorVM::Booleano(av < bv));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Menor;
+                            self.stack.push(a);
+                            self.stack.push(b);
+                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorInt".to_string()))?;
+                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorInt".to_string()))?;
+                            let cmp = a2.comparar(&b2)?;
+                            self.stack.push(ValorVM::Booleano(cmp == -1));
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::MayorInt => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorInt".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorInt".to_string()))?;
+                    match (&a, &b) {
+                        (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
+                            self.stack.push(ValorVM::Booleano(av > bv));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Mayor;
+                            self.stack.push(a);
+                            self.stack.push(b);
+                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorInt".to_string()))?;
+                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorInt".to_string()))?;
+                            let cmp = a2.comparar(&b2)?;
+                            self.stack.push(ValorVM::Booleano(cmp == 1));
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::LoadIdxEntero(idx) => {
+                    let ambito = self.ambito_actual();
+                    if idx < self.variables[ambito].len() {
+                        let v = &self.variables[ambito][idx];
+                        match v {
+                            ValorVM::Entero(_) => self.stack.push(v.clone()),
+                            _ => {
+                                self.bytecode[self.ip] = Opcode::LoadIdx(idx);
+                                self.stack.push(v.clone());
+                            }
+                        }
+                    } else {
+                        self.stack.push(ValorVM::Nulo);
+                    }
+                    self.ip += 1;
+                }
+                Opcode::LoadIdxFloat(idx) => {
+                    let ambito = self.ambito_actual();
+                    if idx < self.variables[ambito].len() {
+                        let v = &self.variables[ambito][idx];
+                        match v {
+                            ValorVM::Decimal(_) => self.stack.push(v.clone()),
+                            _ => {
+                                self.bytecode[self.ip] = Opcode::LoadIdx(idx);
+                                self.stack.push(v.clone());
+                            }
+                        }
+                    } else {
+                        self.stack.push(ValorVM::Nulo);
+                    }
+                    self.ip += 1;
+                }
+                Opcode::StoreIdxEntero(idx) => {
+                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("StoreIdxEntero".to_string()))?;
+                    let ambito = self.ambito_actual();
+                    match &val {
+                        ValorVM::Entero(_) => {
+                            self.asegurar_indice(ambito, idx);
+                            self.variables[ambito][idx] = val;
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::StoreIdx(idx);
+                            self.asegurar_indice(ambito, idx);
+                            self.variables[ambito][idx] = val;
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::StoreIdxFloat(idx) => {
+                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("StoreIdxFloat".to_string()))?;
+                    let ambito = self.ambito_actual();
+                    match &val {
+                        ValorVM::Decimal(_) => {
+                            self.asegurar_indice(ambito, idx);
+                            self.variables[ambito][idx] = val;
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::StoreIdx(idx);
+                            self.asegurar_indice(ambito, idx);
+                            self.variables[ambito][idx] = val;
+                        }
+                    }
                     self.ip += 1;
                 }
 
@@ -932,6 +1291,553 @@ impl ForjaVM {
             }
         }
         Err(ErrorVM::VariableNoDeclarada(nombre.to_string()))
+    }
+
+    /// Tag de tipo para especialización adaptativa
+    /// Nulo=0, Otros=5, Entero=1, Decimal=2, Texto=3, Booleano=4
+    #[inline(always)]
+    fn tipo_tag_valor(v: &ValorVM) -> u8 {
+        match v {
+            ValorVM::Nulo => 0,
+            ValorVM::Entero(_) => 1,
+            ValorVM::Decimal(_) => 2,
+            ValorVM::Texto(_) => 3,
+            ValorVM::Booleano(_) => 4,
+            _ => 5,
+        }
+    }
+
+    /// Ejecuta usando uops expandidos (micro-opcodes)
+    /// Expande opcodes compuestos en secuencias de uops,
+    /// optimiza patrones comunes, y ejecuta usando el pipeline de uops
+    pub fn ejecutar_uops(&mut self) -> Result<(), ErrorVM> {
+        // 1. Expandir bytecode a uops
+        let mut uops = expandir_a_uops(&self.bytecode);
+
+        // 2. Re-mapear saltos de posiciones bytecode a posiciones uops
+        remapear_saltos_uops(&mut uops, &self.bytecode);
+
+        // 3. Optimizar uops (fusionar patrones comunes)
+        uops = optimizar_uops(&uops);
+
+        let len = uops.len();
+        self.ip = 0;
+
+        loop {
+            if self.ip >= len { break; }
+            if self.instrucciones_ejecutadas > self.max_instrucciones {
+                return Err(ErrorVM::LimiteDeEjecucion);
+            }
+            self.instrucciones_ejecutadas += 1;
+
+            if self.stack.len() > self.max_stack {
+                let err = ErrorVM::StackOverflow("Límite de pila alcanzado".to_string());
+                self.reset();
+                return Err(err);
+            }
+
+            let uop = uops[self.ip].clone();
+
+            match uop {
+                // === STACK OPERATIONS ===
+                Uop::PushEntero(n) => { self.stack.push(get_small_int_vm(n)); self.ip += 1; }
+                Uop::PushDecimal(d) => { self.stack.push(ValorVM::Decimal(d)); self.ip += 1; }
+                Uop::PushTexto(s) => { self.stack.push(ValorVM::Texto(s.to_string())); self.ip += 1; }
+                Uop::PushBooleano(b) => { self.stack.push(ValorVM::Booleano(b)); self.ip += 1; }
+                Uop::PushNulo => { self.stack.push(ValorVM::Nulo); self.ip += 1; }
+                Uop::Pop => { self.stack.pop().ok_or(ErrorVM::StackUnderflow("Pop".to_string()))?; self.ip += 1; }
+                Uop::Dup => {
+                    let v = self.stack.last().ok_or(ErrorVM::StackUnderflow("Dup".to_string()))?.clone();
+                    self.stack.push(v);
+                    self.ip += 1;
+                }
+
+                // === VARIABLE OPERATIONS (ámbito) ===
+                Uop::LoadIdx(idx) => {
+                    let ambito = self.ambito_actual();
+                    if idx < self.variables[ambito].len() {
+                        self.stack.push(self.variables[ambito][idx].clone());
+                    } else {
+                        self.stack.push(ValorVM::Nulo);
+                    }
+                    self.ip += 1;
+                }
+                Uop::StoreIdx(idx) => {
+                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("StoreIdx".to_string()))?;
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = val;
+                    self.ip += 1;
+                }
+                Uop::DeclareVar(idx) => {
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.ip += 1;
+                }
+
+                // === MICRO-OP FUSIONADOS ===
+                Uop::StorePop(idx) => {
+                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("StorePop".to_string()))?;
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = val;
+                    self.ip += 1;
+                }
+                Uop::LoadPush(idx) => {
+                    let ambito = self.ambito_actual();
+                    let val = if idx < self.variables[ambito].len() {
+                        self.variables[ambito][idx].clone()
+                    } else {
+                        ValorVM::Nulo
+                    };
+                    self.stack.push(val);
+                    self.ip += 1;
+                }
+                Uop::DeclareInit(idx) => {
+                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DeclareInit".to_string()))?;
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = val;
+                    self.ip += 1;
+                }
+
+                // === UOP OPTIMIZADOS ===
+                Uop::IncrVar(idx) => {
+                    let ambito = self.ambito_actual();
+                    if idx < self.variables[ambito].len() {
+                        if let ValorVM::Entero(ref n) = self.variables[ambito][idx] {
+                            self.variables[ambito][idx] = get_small_int_vm(n.wrapping_add(1));
+                        } else {
+                            return Err(ErrorVM::TipoIncompatible("IncrVar".to_string()));
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Uop::AddAssign(idx, n) => {
+                    let ambito = self.ambito_actual();
+                    if idx < self.variables[ambito].len() {
+                        if let ValorVM::Entero(ref v) = self.variables[ambito][idx] {
+                            self.variables[ambito][idx] = get_small_int_vm(v.wrapping_add(n));
+                        } else {
+                            return Err(ErrorVM::TipoIncompatible("AddAssign".to_string()));
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Uop::SubAssign(idx, n) => {
+                    let ambito = self.ambito_actual();
+                    if idx < self.variables[ambito].len() {
+                        if let ValorVM::Entero(ref v) = self.variables[ambito][idx] {
+                            self.variables[ambito][idx] = get_small_int_vm(v.wrapping_sub(n));
+                        } else {
+                            return Err(ErrorVM::TipoIncompatible("SubAssign".to_string()));
+                        }
+                    }
+                    self.ip += 1;
+                }
+
+                // === PREP CALL / RESOLVE METHOD / LOAD SELF ===
+                Uop::PrepCall(_nargs) => { self.ip += 1; }
+                Uop::ResolveMethod(_name) => { self.ip += 1; }
+                Uop::LoadSelf => {
+                    let ambito = self.ambito_actual();
+                    let val = if !self.variables[ambito].is_empty() {
+                        self.variables[ambito][0].clone()
+                    } else {
+                        ValorVM::Nulo
+                    };
+                    self.stack.push(val);
+                    self.ip += 1;
+                }
+
+                // === ARITHMETIC ===
+                Uop::Add => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
+                    self.stack.push(a.sumar(&b)?);
+                    self.ip += 1;
+                }
+                Uop::Sub => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Sub".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Sub".to_string()))?;
+                    self.stack.push(a.restar(&b)?);
+                    self.ip += 1;
+                }
+                Uop::Mul => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Mul".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Mul".to_string()))?;
+                    self.stack.push(a.multiplicar(&b)?);
+                    self.ip += 1;
+                }
+                Uop::Div => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Div".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Div".to_string()))?;
+                    self.stack.push(a.dividir(&b)?);
+                    self.ip += 1;
+                }
+                Uop::AddInt => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
+                    if let (ValorVM::Entero(av), ValorVM::Entero(bv)) = (&a, &b) {
+                        self.stack.push(ValorVM::Entero(av.wrapping_add(*bv)));
+                    } else {
+                        return Err(ErrorVM::TipoIncompatible("AddInt".to_string()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::AddFloat => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
+                    if let (ValorVM::Decimal(av), ValorVM::Decimal(bv)) = (&a, &b) {
+                        self.stack.push(ValorVM::Decimal(av + bv));
+                    } else {
+                        return Err(ErrorVM::TipoIncompatible("AddFloat".to_string()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::SubInt => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
+                    if let (ValorVM::Entero(av), ValorVM::Entero(bv)) = (&a, &b) {
+                        self.stack.push(ValorVM::Entero(av.wrapping_sub(*bv)));
+                    } else {
+                        return Err(ErrorVM::TipoIncompatible("SubInt".to_string()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::SubFloat => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
+                    if let (ValorVM::Decimal(av), ValorVM::Decimal(bv)) = (&a, &b) {
+                        self.stack.push(ValorVM::Decimal(av - bv));
+                    } else {
+                        return Err(ErrorVM::TipoIncompatible("SubFloat".to_string()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::MulInt => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
+                    if let (ValorVM::Entero(av), ValorVM::Entero(bv)) = (&a, &b) {
+                        self.stack.push(ValorVM::Entero(av.wrapping_mul(*bv)));
+                    } else {
+                        return Err(ErrorVM::TipoIncompatible("MulInt".to_string()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::MulFloat => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
+                    if let (ValorVM::Decimal(av), ValorVM::Decimal(bv)) = (&a, &b) {
+                        self.stack.push(ValorVM::Decimal(av * bv));
+                    } else {
+                        return Err(ErrorVM::TipoIncompatible("MulFloat".to_string()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::DivInt => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
+                    if let (ValorVM::Entero(av), ValorVM::Entero(bv)) = (&a, &b) {
+                        if *bv == 0 { return Err(ErrorVM::DivisionPorCero); }
+                        self.stack.push(ValorVM::Entero(av.wrapping_div(*bv)));
+                    } else {
+                        return Err(ErrorVM::TipoIncompatible("DivInt".to_string()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::DivFloat => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
+                    if let (ValorVM::Decimal(av), ValorVM::Decimal(bv)) = (&a, &b) {
+                        if *bv == 0.0 { return Err(ErrorVM::DivisionPorCero); }
+                        self.stack.push(ValorVM::Decimal(av / bv));
+                    } else {
+                        return Err(ErrorVM::TipoIncompatible("DivFloat".to_string()));
+                    }
+                    self.ip += 1;
+                }
+
+                // === COMPARACIONES ===
+                Uop::Igual => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("==".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("==".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(a.comparar(&b).map(|c| c == 0).unwrap_or(false)));
+                    self.ip += 1;
+                }
+                Uop::Diferente => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("!=".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("!=".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(a.comparar(&b).map(|c| c != 0).unwrap_or(true)));
+                    self.ip += 1;
+                }
+                Uop::Menor => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("<".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("<".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(a.comparar(&b).map(|c| c < 0).unwrap_or(false)));
+                    self.ip += 1;
+                }
+                Uop::Mayor => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow(">".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow(">".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(a.comparar(&b).map(|c| c > 0).unwrap_or(false)));
+                    self.ip += 1;
+                }
+                Uop::MenorIgual => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("<=".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("<=".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(a.comparar(&b).map(|c| c <= 0).unwrap_or(false)));
+                    self.ip += 1;
+                }
+                Uop::MayorIgual => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow(">=".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow(">=".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(a.comparar(&b).map(|c| c >= 0).unwrap_or(false)));
+                    self.ip += 1;
+                }
+                Uop::Y => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Y".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Y".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(a.es_verdadero() && b.es_verdadero()));
+                    self.ip += 1;
+                }
+                Uop::O => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("O".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("O".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(a.es_verdadero() || b.es_verdadero()));
+                    self.ip += 1;
+                }
+                Uop::No => {
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("No".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(!a.es_verdadero()));
+                    self.ip += 1;
+                }
+
+                // === CONTROL FLOW ===
+                Uop::Jump(target) => { self.ip = target; }
+                Uop::JumpSiFalso(target) => {
+                    let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("JumpSiFalso".to_string()))?;
+                    if !v.es_verdadero() { self.ip = target; }
+                    else { self.ip += 1; }
+                }
+                Uop::Label(_) => { self.ip += 1; }
+                Uop::Halt => break,
+
+                // === FUNCTIONS ===
+                Uop::FunctionDef(_, _) => { self.ip += 1; }
+                Uop::Call(nombre, nargs) => {
+                    if let Some(&func_ip) = self.funciones.get(&nombre) {
+                        let mut args: Vec<ValorVM> = Vec::with_capacity(nargs);
+                        for _ in 0..nargs {
+                            args.push(self.stack.pop().ok_or(ErrorVM::StackUnderflow("Call".to_string()))?);
+                        }
+                        args.reverse();
+                        let ambito_actual = self.ambito_actual();
+                        let nuevo_ambito = self.variables.len();
+                        self.variables.push(Vec::new());
+                        self.nombre_a_indice.push(HashMap::new());
+
+                        // Asignar args a variables por índice
+                        for (i, arg) in args.into_iter().enumerate() {
+                            if i < self.variables[nuevo_ambito].len() {
+                                self.variables[nuevo_ambito][i] = arg;
+                            } else {
+                                self.variables[nuevo_ambito].push(arg);
+                            }
+                        }
+
+                        self.call_stack.push(Frame {
+                            ip_retorno: self.ip + 1,
+                            nombre: nombre,
+                            ambito: ambito_actual,
+                        });
+                        self.ip = func_ip;
+                    } else {
+                        return Err(ErrorVM::FuncionNoDefinida(nombre));
+                    }
+                }
+                Uop::Return => {
+                    if let Some(frame) = self.call_stack.pop() {
+                        self.variables.truncate(frame.ambito + 1);
+                        self.nombre_a_indice.truncate(frame.ambito + 1);
+                        self.ip = frame.ip_retorno;
+                    } else { break; }
+                }
+
+                // === I/O ===
+                Uop::Print => {
+                    let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Print".to_string()))?;
+                    self.output.push(v.mostrar());
+                    self.ip += 1;
+                }
+                Uop::ReadLine => {
+                    let mut input = String::new();
+                    print!("> ");
+                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                    if std::io::stdin().read_line(&mut input).is_ok() {
+                        self.stack.push(ValorVM::Texto(input.trim().to_string()));
+                    } else {
+                        self.stack.push(ValorVM::Texto(String::new()));
+                    }
+                    self.ip += 1;
+                }
+
+                // === OBJECT OPERATIONS ===
+                Uop::NewObject(c) => {
+                    self.stack.push(ValorVM::Objeto(ObjetoRef(Rc::new(RefCell::new(ObjetoVM {
+                        clase: c, campos: HashMap::new(),
+                    })))));
+                    self.ip += 1;
+                }
+                Uop::SetField(c) => {
+                    if let ValorVM::Objeto(o) = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SetField".to_string()))? {
+                        let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SetField".to_string()))?;
+                        o.0.borrow_mut().campos.insert(c, v);
+                    } else {
+                        return Err(ErrorVM::TipoIncompatible("SetField: se esperaba Objeto".to_string()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::GetField(c) => {
+                    if let ValorVM::Objeto(o) = self.stack.pop().ok_or(ErrorVM::StackUnderflow("GetField".to_string()))? {
+                        let b = o.0.borrow();
+                        self.stack.push(b.campos.get(&c).cloned().unwrap_or(ValorVM::Nulo));
+                    } else {
+                        return Err(ErrorVM::TipoIncompatible("GetField: se esperaba Objeto".to_string()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::CallMethod(m, nargs) => {
+                    if let Some(builtin) = resolver_builtin(&m) {
+                        self.ejecutar_builtin(builtin, nargs)?;
+                        self.ip += 1;
+                        continue;
+                    }
+                    let mut args: Vec<ValorVM> = Vec::with_capacity(nargs);
+                    for _ in 0..nargs {
+                        args.push(self.stack.pop().ok_or(ErrorVM::StackUnderflow("CallMethod".to_string()))?);
+                    }
+                    args.reverse();
+                    let obj = self.stack.pop().ok_or(ErrorVM::StackUnderflow("CallMethod".to_string()))?;
+                    if let ValorVM::Objeto(o) = obj {
+                        let clase = o.0.borrow().clase.clone();
+                        let fn_name = format!("{}.{}", clase, m);
+                        if let Some(&func_ip) = self.funciones.get(&fn_name) {
+                            let ambito_actual = self.ambito_actual();
+                            let nuevo_ambito = self.variables.len();
+                            self.variables.push(Vec::new());
+                            self.nombre_a_indice.push(HashMap::new());
+                            // self como primer argumento
+                            let mut all = vec![ValorVM::Objeto(o)];
+                            all.extend(args);
+                            for (i, arg) in all.into_iter().enumerate() {
+                                if i < self.variables[nuevo_ambito].len() {
+                                    self.variables[nuevo_ambito][i] = arg;
+                                } else {
+                                    self.variables[nuevo_ambito].push(arg);
+                                }
+                            }
+                            self.call_stack.push(Frame {
+                                ip_retorno: self.ip + 1,
+                                nombre: fn_name,
+                                ambito: ambito_actual,
+                            });
+                            self.ip = func_ip;
+                        } else {
+                            return Err(ErrorVM::FuncionNoDefinida(fn_name));
+                        }
+                    } else {
+                        return Err(ErrorVM::TipoIncompatible("CallMethod: se esperaba Objeto".to_string()));
+                    }
+                }
+
+                // === ARRAY / MAP OPERATIONS ===
+                Uop::ArrayNew(n) => {
+                    let mut e = Vec::with_capacity(n);
+                    for _ in 0..n {
+                        e.push(self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArrayNew".to_string()))?);
+                    }
+                    e.reverse();
+                    self.stack.push(ValorVM::Arreglo(e));
+                    self.ip += 1;
+                }
+                Uop::ArrayGet => {
+                    let i = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArrayGet".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArrayGet".to_string()))?;
+                    match (&a, &i) {
+                        (ValorVM::Arreglo(e), ValorVM::Entero(i)) => {
+                            if *i >= 0 && (*i as usize) < e.len() {
+                                self.stack.push(e[*i as usize].clone());
+                            } else {
+                                return Err(ErrorVM::StackUnderflow("ArrayGet: índice fuera de rango".to_string()));
+                            }
+                        }
+                        _ => return Err(ErrorVM::TipoIncompatible("ArrayGet: se esperaba Arreglo[Entero]".to_string())),
+                    }
+                    self.ip += 1;
+                }
+                Uop::ArraySet => {
+                    let i = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArraySet".to_string()))?;
+                    let mut a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArraySet".to_string()))?;
+                    let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArraySet".to_string()))?;
+                    if let (ValorVM::Arreglo(ref mut e), ValorVM::Entero(i)) = (&mut a, &i) {
+                        if *i >= 0 && (*i as usize) < e.len() {
+                            e[*i as usize] = v;
+                            self.stack.push(a);
+                        } else {
+                            return Err(ErrorVM::StackUnderflow("ArraySet: índice fuera de rango".to_string()));
+                        }
+                    } else {
+                        return Err(ErrorVM::TipoIncompatible("ArraySet: se esperaba Arreglo[Entero]".to_string()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::ArrayLen => {
+                    if let ValorVM::Arreglo(e) = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArrayLen".to_string()))? {
+                        self.stack.push(get_small_int_vm(e.len() as i64));
+                    } else {
+                        return Err(ErrorVM::TipoIncompatible("ArrayLen: se esperaba Arreglo".to_string()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::MapNew(n) => {
+                    let mut m = HashMap::with_capacity(n);
+                    for _ in 0..n {
+                        let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MapNew".to_string()))?;
+                        let k = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MapNew".to_string()))?;
+                        if let ValorVM::Texto(k) = k {
+                            m.insert(k, v);
+                        }
+                    }
+                    self.stack.push(ValorVM::Mapa(m));
+                    self.ip += 1;
+                }
+                Uop::MapGet => {
+                    let k = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MapGet".to_string()))?;
+                    let m = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MapGet".to_string()))?;
+                    match (&m, &k) {
+                        (ValorVM::Mapa(m), ValorVM::Texto(k)) => {
+                            self.stack.push(m.get(k).cloned().unwrap_or(ValorVM::Nulo));
+                        }
+                        _ => return Err(ErrorVM::TipoIncompatible("MapGet: se esperaba Mapa[Texto]".to_string())),
+                    }
+                    self.ip += 1;
+                }
+                Uop::MapSet => {
+                    let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MapSet".to_string()))?;
+                    let k = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MapSet".to_string()))?;
+                    let mut m = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MapSet".to_string()))?;
+                    if let (ValorVM::Mapa(ref mut mm), ValorVM::Texto(k)) = (&mut m, k) {
+                        mm.insert(k, v);
+                        self.stack.push(m);
+                    } else {
+                        return Err(ErrorVM::TipoIncompatible("MapSet: se esperaba Mapa[Texto]".to_string()));
+                    }
+                    self.ip += 1;
+                }
+            }
+        }
+        Ok(())
     }
 }
 

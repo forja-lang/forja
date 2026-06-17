@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::bytecode::Opcode;
+use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops, tiene_opcodes_compuestos};
 
 // Small Integer Cache [-5, 256] — thread_local! porque ValorVMOpt no es Send/Sync
 use std::cell::OnceCell;
@@ -88,6 +89,10 @@ pub struct ForjaVMOpt {
 
     max_instrucciones: usize,
     instrucciones_ejecutadas: usize,
+
+    // Sistema de especialización adaptativa (PEP 659)
+    contador_especializacion: Vec<u8>,
+    umbral_especializacion: u8,
 }
 
 struct FrameOpt {
@@ -126,6 +131,8 @@ impl ForjaVMOpt {
             funciones: HashMap::new(), bytecode: Vec::new(),
             output: Vec::with_capacity(64),
             max_instrucciones: 100_000_000, instrucciones_ejecutadas: 0,
+            contador_especializacion: Vec::new(),
+            umbral_especializacion: 3,
         }
     }
 
@@ -134,6 +141,7 @@ impl ForjaVMOpt {
     }
 
     pub fn cargar_bytecode(&mut self, bytecode: Vec<Opcode>) {
+        self.contador_especializacion = vec![0u8; bytecode.len()];
         self.funciones.clear();
 
         // Primera pasada: indexar labels y funciones
@@ -203,6 +211,11 @@ impl ForjaVMOpt {
     }
 
     pub fn ejecutar(&mut self) -> Result<(), ErrorVMOpt> {
+        // Decidir automáticamente si usar uops basado en la presencia de opcodes compuestos
+        if tiene_opcodes_compuestos(&self.bytecode) {
+            return self.ejecutar_uops();
+        }
+
         let len = self.bytecode.len();
 
         loop {
@@ -294,10 +307,327 @@ impl ForjaVMOpt {
                     self.ip += 1;
                 }
 
-                Opcode::Add => { let (b,a)=(self.pop()?,self.pop()?);match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x+y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x+y)),(ValorVMOpt::Entero(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(*x as f64+y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Decimal(x+*y as f64)),(ValorVMOpt::Texto(t),v)=>self.push(ValorVMOpt::Texto(Rc::from(format!("{}{}",t,v.mostrar()).as_str()))),_=>return Err(ErrorVMOpt::TipoIncompatible("suma".into()))} self.ip += 1; }
-                Opcode::Sub => { let (b,a)=(self.pop()?,self.pop()?);match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x-y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x-y)),_=>return Err(ErrorVMOpt::TipoIncompatible("resta".into()))} self.ip += 1; }
-                Opcode::Mul => { let (b,a)=(self.pop()?,self.pop()?);match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x*y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x*y)),_=>return Err(ErrorVMOpt::TipoIncompatible("mul".into()))} self.ip += 1; }
-                Opcode::Div => { let (b,a)=(self.pop()?,self.pop()?);match(&a,&b){(_,ValorVMOpt::Entero(0))|(_,ValorVMOpt::Decimal(0.0))=>return Err(ErrorVMOpt::DivisionPorCero),(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x/y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x/y)),_=>return Err(ErrorVMOpt::TipoIncompatible("div".into()))} self.ip += 1; }
+                Opcode::Add => {
+                    let ip = self.ip;
+                    if self.stack.len() >= 2 {
+                        let a = &self.stack[self.stack.len() - 1];
+                        let b = &self.stack[self.stack.len() - 2];
+                        let ta = Self::tipo_tag_opt(a);
+                        let tb = Self::tipo_tag_opt(b);
+                        if ta != 0 && tb != 0 && ta == tb && (ta == 1 || ta == 2) {
+                            self.contador_especializacion[ip] = self.contador_especializacion[ip].saturating_add(1);
+                            if self.contador_especializacion[ip] >= self.umbral_especializacion {
+                                self.bytecode[ip] = match ta {
+                                    1 => Opcode::AddInt,
+                                    2 => Opcode::AddFloat,
+                                    _ => Opcode::Add,
+                                };
+                            }
+                        } else {
+                            self.contador_especializacion[ip] = 0;
+                        }
+                    }
+                    let (b,a)=(self.pop()?,self.pop()?);match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x+y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x+y)),(ValorVMOpt::Entero(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(*x as f64+y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Decimal(x+*y as f64)),(ValorVMOpt::Texto(t),v)=>self.push(ValorVMOpt::Texto(Rc::from(format!("{}{}",t,v.mostrar()).as_str()))),_=>return Err(ErrorVMOpt::TipoIncompatible("suma".into()))} self.ip += 1;
+                }
+                Opcode::Sub => {
+                    let ip = self.ip;
+                    if self.stack.len() >= 2 {
+                        let a = &self.stack[self.stack.len() - 1];
+                        let b = &self.stack[self.stack.len() - 2];
+                        let ta = Self::tipo_tag_opt(a);
+                        let tb = Self::tipo_tag_opt(b);
+                        if ta != 0 && tb != 0 && ta == tb && (ta == 1 || ta == 2) {
+                            self.contador_especializacion[ip] = self.contador_especializacion[ip].saturating_add(1);
+                            if self.contador_especializacion[ip] >= self.umbral_especializacion {
+                                self.bytecode[ip] = match ta {
+                                    1 => Opcode::SubInt,
+                                    2 => Opcode::SubFloat,
+                                    _ => Opcode::Sub,
+                                };
+                            }
+                        } else {
+                            self.contador_especializacion[ip] = 0;
+                        }
+                    }
+                    let (b,a)=(self.pop()?,self.pop()?);match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x-y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x-y)),_=>return Err(ErrorVMOpt::TipoIncompatible("resta".into()))} self.ip += 1;
+                }
+                Opcode::Mul => {
+                    let ip = self.ip;
+                    if self.stack.len() >= 2 {
+                        let a = &self.stack[self.stack.len() - 1];
+                        let b = &self.stack[self.stack.len() - 2];
+                        let ta = Self::tipo_tag_opt(a);
+                        let tb = Self::tipo_tag_opt(b);
+                        if ta != 0 && tb != 0 && ta == tb && (ta == 1 || ta == 2) {
+                            self.contador_especializacion[ip] = self.contador_especializacion[ip].saturating_add(1);
+                            if self.contador_especializacion[ip] >= self.umbral_especializacion {
+                                self.bytecode[ip] = match ta {
+                                    1 => Opcode::MulInt,
+                                    2 => Opcode::MulFloat,
+                                    _ => Opcode::Mul,
+                                };
+                            }
+                        } else {
+                            self.contador_especializacion[ip] = 0;
+                        }
+                    }
+                    let (b,a)=(self.pop()?,self.pop()?);match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x*y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x*y)),_=>return Err(ErrorVMOpt::TipoIncompatible("mul".into()))} self.ip += 1;
+                }
+                Opcode::Div => {
+                    let ip = self.ip;
+                    if self.stack.len() >= 2 {
+                        let a = &self.stack[self.stack.len() - 1];
+                        let b = &self.stack[self.stack.len() - 2];
+                        let ta = Self::tipo_tag_opt(a);
+                        let tb = Self::tipo_tag_opt(b);
+                        if ta != 0 && tb != 0 && ta == tb && (ta == 1 || ta == 2) {
+                            self.contador_especializacion[ip] = self.contador_especializacion[ip].saturating_add(1);
+                            if self.contador_especializacion[ip] >= self.umbral_especializacion {
+                                self.bytecode[ip] = match ta {
+                                    1 => Opcode::DivInt,
+                                    2 => Opcode::DivFloat,
+                                    _ => Opcode::Div,
+                                };
+                            }
+                        } else {
+                            self.contador_especializacion[ip] = 0;
+                        }
+                    }
+                    let (b,a)=(self.pop()?,self.pop()?);match(&a,&b){(_,ValorVMOpt::Entero(0))|(_,ValorVMOpt::Decimal(0.0))=>return Err(ErrorVMOpt::DivisionPorCero),(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x/y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x/y)),_=>return Err(ErrorVMOpt::TipoIncompatible("div".into()))} self.ip += 1;
+                }
+
+                // === HANDLERS ESPECIALIZADOS (PEP 659) ===
+                Opcode::AddInt => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorVMOpt::Entero(av), ValorVMOpt::Entero(bv)) => {
+                            self.push(ValorVMOpt::Entero(av.wrapping_add(*bv)));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Add;
+                            self.push(a); self.push(b);
+                            let (b2,a2)=(self.pop()?,self.pop()?);match(&a2,&b2){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x+y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x+y)),(ValorVMOpt::Entero(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(*x as f64+y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Decimal(x+*y as f64)),(ValorVMOpt::Texto(t),v)=>self.push(ValorVMOpt::Texto(Rc::from(format!("{}{}",t,v.mostrar()).as_str()))),_=>return Err(ErrorVMOpt::TipoIncompatible("suma".into()))}
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::AddFloat => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorVMOpt::Decimal(av), ValorVMOpt::Decimal(bv)) => {
+                            self.push(ValorVMOpt::Decimal(av + bv));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Add;
+                            self.push(a); self.push(b);
+                            let (b2,a2)=(self.pop()?,self.pop()?);match(&a2,&b2){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x+y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x+y)),(ValorVMOpt::Entero(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(*x as f64+y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Decimal(x+*y as f64)),(ValorVMOpt::Texto(t),v)=>self.push(ValorVMOpt::Texto(Rc::from(format!("{}{}",t,v.mostrar()).as_str()))),_=>return Err(ErrorVMOpt::TipoIncompatible("suma".into()))}
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::SubInt => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorVMOpt::Entero(av), ValorVMOpt::Entero(bv)) => {
+                            self.push(ValorVMOpt::Entero(av.wrapping_sub(*bv)));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Sub;
+                            self.push(a); self.push(b);
+                            let (b2,a2)=(self.pop()?,self.pop()?);match(&a2,&b2){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x-y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x-y)),_=>return Err(ErrorVMOpt::TipoIncompatible("resta".into()))}
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::SubFloat => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorVMOpt::Decimal(av), ValorVMOpt::Decimal(bv)) => {
+                            self.push(ValorVMOpt::Decimal(av - bv));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Sub;
+                            self.push(a); self.push(b);
+                            let (b2,a2)=(self.pop()?,self.pop()?);match(&a2,&b2){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x-y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x-y)),_=>return Err(ErrorVMOpt::TipoIncompatible("resta".into()))}
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::MulInt => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorVMOpt::Entero(av), ValorVMOpt::Entero(bv)) => {
+                            self.push(ValorVMOpt::Entero(av.wrapping_mul(*bv)));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Mul;
+                            self.push(a); self.push(b);
+                            let (b2,a2)=(self.pop()?,self.pop()?);match(&a2,&b2){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x*y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x*y)),_=>return Err(ErrorVMOpt::TipoIncompatible("mul".into()))}
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::MulFloat => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorVMOpt::Decimal(av), ValorVMOpt::Decimal(bv)) => {
+                            self.push(ValorVMOpt::Decimal(av * bv));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Mul;
+                            self.push(a); self.push(b);
+                            let (b2,a2)=(self.pop()?,self.pop()?);match(&a2,&b2){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x*y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x*y)),_=>return Err(ErrorVMOpt::TipoIncompatible("mul".into()))}
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::DivInt => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorVMOpt::Entero(av), ValorVMOpt::Entero(bv)) => {
+                            if *bv == 0 { return Err(ErrorVMOpt::DivisionPorCero); }
+                            self.push(ValorVMOpt::Entero(av.wrapping_div(*bv)));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Div;
+                            self.push(a); self.push(b);
+                            let (b2,a2)=(self.pop()?,self.pop()?);match(&a2,&b2){(_,ValorVMOpt::Entero(0))|(_,ValorVMOpt::Decimal(0.0))=>return Err(ErrorVMOpt::DivisionPorCero),(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x/y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x/y)),_=>return Err(ErrorVMOpt::TipoIncompatible("div".into()))}
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::DivFloat => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorVMOpt::Decimal(av), ValorVMOpt::Decimal(bv)) => {
+                            if *bv == 0.0 { return Err(ErrorVMOpt::DivisionPorCero); }
+                            self.push(ValorVMOpt::Decimal(av / bv));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Div;
+                            self.push(a); self.push(b);
+                            let (b2,a2)=(self.pop()?,self.pop()?);match(&a2,&b2){(_,ValorVMOpt::Entero(0))|(_,ValorVMOpt::Decimal(0.0))=>return Err(ErrorVMOpt::DivisionPorCero),(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>self.push(ValorVMOpt::Entero(x/y)),(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>self.push(ValorVMOpt::Decimal(x/y)),_=>return Err(ErrorVMOpt::TipoIncompatible("div".into()))}
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::IgualInt => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorVMOpt::Entero(av), ValorVMOpt::Entero(bv)) => {
+                            self.push(ValorVMOpt::Booleano(av == bv));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Igual;
+                            self.push(a); self.push(b);
+                            let (b2,a2)=(self.pop()?,self.pop()?);self.push(ValorVMOpt::Booleano(match(&a2,&b2){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>x==y,(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>x==y,(ValorVMOpt::Texto(x),ValorVMOpt::Texto(y))=>x==y,(ValorVMOpt::Booleano(x),ValorVMOpt::Booleano(y))=>x==y,_=>return Err(ErrorVMOpt::TipoIncompatible("==".into()))}));
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::MenorInt => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorVMOpt::Entero(av), ValorVMOpt::Entero(bv)) => {
+                            self.push(ValorVMOpt::Booleano(av < bv));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Menor;
+                            self.push(a); self.push(b);
+                            let (b2,a2)=(self.pop()?,self.pop()?);self.push(ValorVMOpt::Booleano(match(&a2,&b2){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>x<y,(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>x<y,_=>return Err(ErrorVMOpt::TipoIncompatible("<".into()))}));
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::MayorInt => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorVMOpt::Entero(av), ValorVMOpt::Entero(bv)) => {
+                            self.push(ValorVMOpt::Booleano(av > bv));
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::Mayor;
+                            self.push(a); self.push(b);
+                            let (b2,a2)=(self.pop()?,self.pop()?);self.push(ValorVMOpt::Booleano(match(&a2,&b2){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>x>y,(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>x>y,_=>return Err(ErrorVMOpt::TipoIncompatible(">".into()))}));
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::LoadIdxEntero(idx) => {
+                    let ambito = self.ambito_actual();
+                    if idx < self.variables[ambito].len() {
+                        let v = &self.variables[ambito][idx];
+                        match v {
+                            ValorVMOpt::Entero(_) => self.stack.push(v.clone()),
+                            _ => {
+                                self.bytecode[self.ip] = Opcode::LoadIdx(idx);
+                                self.stack.push(v.clone());
+                            }
+                        }
+                    } else {
+                        self.stack.push(ValorVMOpt::Nulo);
+                    }
+                    self.ip += 1;
+                }
+                Opcode::LoadIdxFloat(idx) => {
+                    let ambito = self.ambito_actual();
+                    if idx < self.variables[ambito].len() {
+                        let v = &self.variables[ambito][idx];
+                        match v {
+                            ValorVMOpt::Decimal(_) => self.stack.push(v.clone()),
+                            _ => {
+                                self.bytecode[self.ip] = Opcode::LoadIdx(idx);
+                                self.stack.push(v.clone());
+                            }
+                        }
+                    } else {
+                        self.stack.push(ValorVMOpt::Nulo);
+                    }
+                    self.ip += 1;
+                }
+                Opcode::StoreIdxEntero(idx) => {
+                    let v = self.pop()?;
+                    let ambito = self.ambito_actual();
+                    match &v {
+                        ValorVMOpt::Entero(_) => {
+                            self.asegurar_indice(ambito, idx);
+                            self.variables[ambito][idx] = v;
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::StoreIdx(idx);
+                            self.asegurar_indice(ambito, idx);
+                            self.variables[ambito][idx] = v;
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::StoreIdxFloat(idx) => {
+                    let v = self.pop()?;
+                    let ambito = self.ambito_actual();
+                    match &v {
+                        ValorVMOpt::Decimal(_) => {
+                            self.asegurar_indice(ambito, idx);
+                            self.variables[ambito][idx] = v;
+                        }
+                        _ => {
+                            self.bytecode[self.ip] = Opcode::StoreIdx(idx);
+                            self.asegurar_indice(ambito, idx);
+                            self.variables[ambito][idx] = v;
+                        }
+                    }
+                    self.ip += 1;
+                }
 
                 Opcode::Igual => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorVMOpt::Booleano(match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>x==y,(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>x==y,(ValorVMOpt::Texto(x),ValorVMOpt::Texto(y))=>x==y,(ValorVMOpt::Booleano(x),ValorVMOpt::Booleano(y))=>x==y,_=>return Err(ErrorVMOpt::TipoIncompatible("==".into()))}));self.ip+=1;}
                 Opcode::Diferente => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorVMOpt::Booleano(match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>x!=y,(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>x!=y,_=>return Err(ErrorVMOpt::TipoIncompatible("!=".into()))}));self.ip+=1;}
@@ -432,6 +762,307 @@ impl ForjaVMOpt {
             }
         }
         Err(ErrorVMOpt::VariableNoDeclarada(nombre.to_string()))
+    }
+
+    /// Tag de tipo para especialización adaptativa
+    #[inline(always)]
+    fn tipo_tag_opt(v: &ValorVMOpt) -> u8 {
+        match v {
+            ValorVMOpt::Nulo => 0,
+            ValorVMOpt::Entero(_) => 1,
+            ValorVMOpt::Decimal(_) => 2,
+            ValorVMOpt::Texto(_) => 3,
+            ValorVMOpt::Booleano(_) => 4,
+            _ => 5,
+        }
+    }
+
+    /// Ejecuta usando uops expandidos (micro-opcodes)
+    pub fn ejecutar_uops(&mut self) -> Result<(), ErrorVMOpt> {
+        // 1. Expandir bytecode a uops
+        let mut uops = expandir_a_uops(&self.bytecode);
+
+        // 2. Re-mapear saltos
+        remapear_saltos_uops(&mut uops, &self.bytecode);
+
+        // 3. Optimizar uops
+        uops = optimizar_uops(&uops);
+
+        let len = uops.len();
+        self.ip = 0;
+
+        loop {
+            if self.ip >= len { break; }
+            if self.instrucciones_ejecutadas > self.max_instrucciones {
+                return Err(ErrorVMOpt::LimiteDeEjecucion);
+            }
+            self.instrucciones_ejecutadas += 1;
+
+            let uop = uops[self.ip].clone();
+
+            match uop {
+                Uop::PushEntero(n) => { self.push(get_small_int_opt(n)); self.ip += 1; }
+                Uop::PushDecimal(d) => { self.push(ValorVMOpt::Decimal(d)); self.ip += 1; }
+                Uop::PushTexto(s) => { self.push(ValorVMOpt::Texto(s)); self.ip += 1; }
+                Uop::PushBooleano(b) => { self.push(ValorVMOpt::Booleano(b)); self.ip += 1; }
+                Uop::PushNulo => { self.push(ValorVMOpt::Nulo); self.ip += 1; }
+                Uop::Pop => { self.pop()?; self.ip += 1; }
+                Uop::Dup => {
+                    let v = self.stack.last().ok_or(ErrorVMOpt::StackUnderflow("Dup".into()))?.clone();
+                    self.push(v);
+                    self.ip += 1;
+                }
+
+                Uop::LoadIdx(idx) => {
+                    let ambito = self.ambito_actual();
+                    if idx < self.variables[ambito].len() {
+                        self.push(self.variables[ambito][idx].clone());
+                    } else {
+                        self.push(ValorVMOpt::Nulo);
+                    }
+                    self.ip += 1;
+                }
+                Uop::StoreIdx(idx) => {
+                    let val = self.pop()?;
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = val;
+                    self.ip += 1;
+                }
+                Uop::DeclareVar(idx) => {
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.ip += 1;
+                }
+                Uop::StorePop(idx) => {
+                    let val = self.pop()?;
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = val;
+                    self.ip += 1;
+                }
+                Uop::LoadPush(idx) => {
+                    let ambito = self.ambito_actual();
+                    let val = if idx < self.variables[ambito].len() {
+                        self.variables[ambito][idx].clone()
+                    } else {
+                        ValorVMOpt::Nulo
+                    };
+                    self.push(val);
+                    self.ip += 1;
+                }
+                Uop::DeclareInit(idx) => {
+                    let val = self.pop()?;
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = val;
+                    self.ip += 1;
+                }
+                Uop::IncrVar(idx) => {
+                    let ambito = self.ambito_actual();
+                    if idx < self.variables[ambito].len() {
+                        if let ValorVMOpt::Entero(ref n) = self.variables[ambito][idx] {
+                            self.variables[ambito][idx] = get_small_int_opt(n.wrapping_add(1));
+                        } else {
+                            return Err(ErrorVMOpt::TipoIncompatible("IncrVar".into()));
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Uop::AddAssign(idx, n) => {
+                    let ambito = self.ambito_actual();
+                    if idx < self.variables[ambito].len() {
+                        if let ValorVMOpt::Entero(ref v) = self.variables[ambito][idx] {
+                            self.variables[ambito][idx] = get_small_int_opt(v.wrapping_add(n));
+                        } else {
+                            return Err(ErrorVMOpt::TipoIncompatible("AddAssign".into()));
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Uop::SubAssign(idx, n) => {
+                    let ambito = self.ambito_actual();
+                    if idx < self.variables[ambito].len() {
+                        if let ValorVMOpt::Entero(ref v) = self.variables[ambito][idx] {
+                            self.variables[ambito][idx] = get_small_int_opt(v.wrapping_sub(n));
+                        } else {
+                            return Err(ErrorVMOpt::TipoIncompatible("SubAssign".into()));
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Uop::PrepCall(_) => { self.ip += 1; }
+                Uop::ResolveMethod(_) => { self.ip += 1; }
+                Uop::LoadSelf => {
+                    let ambito = self.ambito_actual();
+                    let val = if !self.variables[ambito].is_empty() {
+                        self.variables[ambito][0].clone()
+                    } else {
+                        ValorVMOpt::Nulo
+                    };
+                    self.push(val);
+                    self.ip += 1;
+                }
+
+                // ARITHMETIC inline (como vm_fast)
+                Uop::Add => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorVMOpt::Entero(x), ValorVMOpt::Entero(y)) => self.push(get_small_int_opt(x + y)),
+                        (ValorVMOpt::Decimal(x), ValorVMOpt::Decimal(y)) => self.push(ValorVMOpt::Decimal(x + y)),
+                        (ValorVMOpt::Entero(x), ValorVMOpt::Decimal(y)) => self.push(ValorVMOpt::Decimal(*x as f64 + y)),
+                        (ValorVMOpt::Decimal(x), ValorVMOpt::Entero(y)) => self.push(ValorVMOpt::Decimal(x + *y as f64)),
+                        (ValorVMOpt::Texto(t), v) => self.push(ValorVMOpt::Texto(Rc::from(format!("{}{}", t, v.mostrar()).as_str()))),
+                        _ => return Err(ErrorVMOpt::TipoIncompatible("+".into())),
+                    }
+                    self.ip += 1;
+                }
+                Uop::Sub => {
+                    let b = self.pop()?; let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorVMOpt::Entero(x), ValorVMOpt::Entero(y)) => self.push(get_small_int_opt(x - y)),
+                        (ValorVMOpt::Decimal(x), ValorVMOpt::Decimal(y)) => self.push(ValorVMOpt::Decimal(x - y)),
+                        _ => return Err(ErrorVMOpt::TipoIncompatible("-".into())),
+                    }
+                    self.ip += 1;
+                }
+                Uop::Mul => {
+                    let b = self.pop()?; let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorVMOpt::Entero(x), ValorVMOpt::Entero(y)) => self.push(get_small_int_opt(x * y)),
+                        (ValorVMOpt::Decimal(x), ValorVMOpt::Decimal(y)) => self.push(ValorVMOpt::Decimal(x * y)),
+                        _ => return Err(ErrorVMOpt::TipoIncompatible("*".into())),
+                    }
+                    self.ip += 1;
+                }
+                Uop::Div => {
+                    let b = self.pop()?; let a = self.pop()?;
+                    match (&a, &b) {
+                        (_, ValorVMOpt::Entero(0)) | (_, ValorVMOpt::Decimal(0.0)) => return Err(ErrorVMOpt::DivisionPorCero),
+                        (ValorVMOpt::Entero(x), ValorVMOpt::Entero(y)) => self.push(get_small_int_opt(x / y)),
+                        (ValorVMOpt::Decimal(x), ValorVMOpt::Decimal(y)) => self.push(ValorVMOpt::Decimal(x / y)),
+                        _ => return Err(ErrorVMOpt::TipoIncompatible("/".into())),
+                    }
+                    self.ip += 1;
+                }
+                Uop::AddInt => { let b=self.pop()?;let a=self.pop()?;if let(ValorVMOpt::Entero(av),ValorVMOpt::Entero(bv))=(&a,&b){self.push(get_small_int_opt(av.wrapping_add(*bv)))}else{return Err(ErrorVMOpt::TipoIncompatible("AddInt".into()))}self.ip+=1;}
+                Uop::AddFloat => { let b=self.pop()?;let a=self.pop()?;if let(ValorVMOpt::Decimal(av),ValorVMOpt::Decimal(bv))=(&a,&b){self.push(ValorVMOpt::Decimal(av+bv))}else{return Err(ErrorVMOpt::TipoIncompatible("AddFloat".into()))}self.ip+=1;}
+                Uop::SubInt => { let b=self.pop()?;let a=self.pop()?;if let(ValorVMOpt::Entero(av),ValorVMOpt::Entero(bv))=(&a,&b){self.push(get_small_int_opt(av.wrapping_sub(*bv)))}else{return Err(ErrorVMOpt::TipoIncompatible("SubInt".into()))}self.ip+=1;}
+                Uop::SubFloat => { let b=self.pop()?;let a=self.pop()?;if let(ValorVMOpt::Decimal(av),ValorVMOpt::Decimal(bv))=(&a,&b){self.push(ValorVMOpt::Decimal(av-bv))}else{return Err(ErrorVMOpt::TipoIncompatible("SubFloat".into()))}self.ip+=1;}
+                Uop::MulInt => { let b=self.pop()?;let a=self.pop()?;if let(ValorVMOpt::Entero(av),ValorVMOpt::Entero(bv))=(&a,&b){self.push(get_small_int_opt(av.wrapping_mul(*bv)))}else{return Err(ErrorVMOpt::TipoIncompatible("MulInt".into()))}self.ip+=1;}
+                Uop::MulFloat => { let b=self.pop()?;let a=self.pop()?;if let(ValorVMOpt::Decimal(av),ValorVMOpt::Decimal(bv))=(&a,&b){self.push(ValorVMOpt::Decimal(av*bv))}else{return Err(ErrorVMOpt::TipoIncompatible("MulFloat".into()))}self.ip+=1;}
+                Uop::DivInt => { let b=self.pop()?;let a=self.pop()?;if let(ValorVMOpt::Entero(av),ValorVMOpt::Entero(bv))=(&a,&b){if*bv==0{return Err(ErrorVMOpt::DivisionPorCero)}self.push(get_small_int_opt(av.wrapping_div(*bv)))}else{return Err(ErrorVMOpt::TipoIncompatible("DivInt".into()))}self.ip+=1;}
+                Uop::DivFloat => { let b=self.pop()?;let a=self.pop()?;if let(ValorVMOpt::Decimal(av),ValorVMOpt::Decimal(bv))=(&a,&b){if*bv==0.0{return Err(ErrorVMOpt::DivisionPorCero)}self.push(ValorVMOpt::Decimal(av/bv))}else{return Err(ErrorVMOpt::TipoIncompatible("DivFloat".into()))}self.ip+=1;}
+
+                // COMPARACIONES
+                Uop::Igual=>{let(b,a)=(self.pop()?,self.pop()?);self.push(ValorVMOpt::Booleano(match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>x==y,(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>x==y,(ValorVMOpt::Texto(x),ValorVMOpt::Texto(y))=>x==y,(ValorVMOpt::Booleano(x),ValorVMOpt::Booleano(y))=>x==y,_=>return Err(ErrorVMOpt::TipoIncompatible("==".into()))}));self.ip+=1;}
+                Uop::Diferente=>{let(b,a)=(self.pop()?,self.pop()?);self.push(ValorVMOpt::Booleano(match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>x!=y,(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>x!=y,_=>return Err(ErrorVMOpt::TipoIncompatible("!=".into()))}));self.ip+=1;}
+                Uop::Menor=>{let(b,a)=(self.pop()?,self.pop()?);self.push(ValorVMOpt::Booleano(match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>x<y,(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>x<y,_=>return Err(ErrorVMOpt::TipoIncompatible("<".into()))}));self.ip+=1;}
+                Uop::Mayor=>{let(b,a)=(self.pop()?,self.pop()?);self.push(ValorVMOpt::Booleano(match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>x>y,(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>x>y,_=>return Err(ErrorVMOpt::TipoIncompatible(">".into()))}));self.ip+=1;}
+                Uop::MenorIgual=>{let(b,a)=(self.pop()?,self.pop()?);self.push(ValorVMOpt::Booleano(match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>x<=y,(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>x<=y,_=>return Err(ErrorVMOpt::TipoIncompatible("<=".into()))}));self.ip+=1;}
+                Uop::MayorIgual=>{let(b,a)=(self.pop()?,self.pop()?);self.push(ValorVMOpt::Booleano(match(&a,&b){(ValorVMOpt::Entero(x),ValorVMOpt::Entero(y))=>x>=y,(ValorVMOpt::Decimal(x),ValorVMOpt::Decimal(y))=>x>=y,_=>return Err(ErrorVMOpt::TipoIncompatible(">=".into()))}));self.ip+=1;}
+                Uop::Y=>{let b=self.pop()?;let a=self.pop()?;self.push(ValorVMOpt::Booleano(a.es_verdadero()&&b.es_verdadero()));self.ip+=1;}
+                Uop::O=>{let b=self.pop()?;let a=self.pop()?;self.push(ValorVMOpt::Booleano(a.es_verdadero()||b.es_verdadero()));self.ip+=1;}
+                Uop::No=>{let a=self.pop()?;self.push(ValorVMOpt::Booleano(!a.es_verdadero()));self.ip+=1;}
+
+                // CONTROL FLOW
+                Uop::Jump(target) => { self.ip = target; }
+                Uop::JumpSiFalso(target) => { if !self.pop()?.es_verdadero() { self.ip = target; } else { self.ip += 1; } }
+                Uop::Label(_) => { self.ip += 1; }
+                Uop::Halt => break,
+
+                // FUNCTIONS
+                Uop::FunctionDef(_, _) => { self.ip += 1; }
+                Uop::Call(nombre, nargs) => {
+                    if let Some(func) = self.funciones.get(&nombre).cloned() {
+                        let next_ip = self.ip + 1;
+                        let ambito_actual = self.ambito_actual();
+                        let mut args: Vec<ValorVMOpt> = Vec::with_capacity(nargs);
+                        for _ in 0..nargs { args.push(self.pop()?); }
+                        args.reverse();
+                        let nuevo_ambito = self.variables.len();
+                        self.variables.push(Vec::new());
+                        self.nombre_a_indice.push(HashMap::new());
+                        for (i, arg) in args.into_iter().enumerate() {
+                            if i < self.variables[nuevo_ambito].len() {
+                                self.variables[nuevo_ambito][i] = arg;
+                            } else {
+                                self.variables[nuevo_ambito].push(arg);
+                            }
+                        }
+                        self.call_stack.push(FrameOpt { ip_retorno: next_ip, ambito: ambito_actual });
+                        self.ip = func.ip;
+                    } else { return Err(ErrorVMOpt::FuncionNoDefinida(nombre)); }
+                }
+                Uop::Return => {
+                    if let Some(frame) = self.call_stack.pop() {
+                        self.variables.truncate(frame.ambito + 1);
+                        self.nombre_a_indice.truncate(frame.ambito + 1);
+                        self.ip = frame.ip_retorno;
+                    } else { break; }
+                }
+
+                // I/O
+                Uop::Print => { let v = self.pop()?; self.output.push(v.mostrar()); self.ip += 1; }
+                Uop::ReadLine => {
+                    let mut i = String::new(); print!("> "); let _ = std::io::Write::flush(&mut std::io::stdout());
+                    if std::io::stdin().read_line(&mut i).is_ok() { self.push(ValorVMOpt::Texto(Rc::from(i.trim()))); }
+                    else { self.push(ValorVMOpt::Texto(Rc::from(""))); }
+                    self.ip += 1;
+                }
+
+                // OBJECTS
+                Uop::NewObject(c) => {
+                    self.push(ValorVMOpt::Objeto(ObjetoRefOpt(Rc::new(RefCell::new(ObjetoVMOpt { clase: c, campos: HashMap::new() })))));
+                    self.ip += 1;
+                }
+                Uop::SetField(c) => {
+                    if let ValorVMOpt::Objeto(o) = self.pop()? { let v = self.pop()?; o.0.borrow_mut().campos.insert(c, v); }
+                    else { return Err(ErrorVMOpt::TipoIncompatible("SetField".into())); }
+                    self.ip += 1;
+                }
+                Uop::GetField(c) => {
+                    if let ValorVMOpt::Objeto(o) = self.pop()? { let b = o.0.borrow(); self.push(b.campos.get(&c).cloned().unwrap_or(ValorVMOpt::Nulo)); }
+                    else { return Err(ErrorVMOpt::TipoIncompatible("GetField".into())); }
+                    self.ip += 1;
+                }
+                Uop::CallMethod(m, nargs) => {
+                    if let Some(b) = resolver_builtin_opt(&m) { self.ejecutar_builtin_opt(b, nargs)?; self.ip += 1; continue; }
+                    let mut args: Vec<ValorVMOpt> = Vec::with_capacity(nargs);
+                    for _ in 0..nargs { args.push(self.pop()?); }
+                    args.reverse();
+                    if let ValorVMOpt::Objeto(o) = self.pop()? {
+                        let c = o.0.borrow().clase.clone();
+                        let fn_name = format!("{}.{}", c, m);
+                        if let Some(func) = self.funciones.get(&fn_name).cloned() {
+                            let ambito_actual = self.ambito_actual();
+                            let nuevo_ambito = self.variables.len();
+                            self.variables.push(Vec::new());
+                            self.nombre_a_indice.push(HashMap::new());
+                            let mut all = vec![ValorVMOpt::Objeto(o)];
+                            all.extend(args);
+                            for (i, a) in all.into_iter().enumerate() {
+                                if i < self.variables[nuevo_ambito].len() { self.variables[nuevo_ambito][i] = a; }
+                                else { self.variables[nuevo_ambito].push(a); }
+                            }
+                            self.call_stack.push(FrameOpt { ip_retorno: self.ip + 1, ambito: ambito_actual });
+                            self.ip = func.ip;
+                        } else { return Err(ErrorVMOpt::FuncionNoDefinida(fn_name)); }
+                    } else { return Err(ErrorVMOpt::TipoIncompatible("CallMethod".into())); }
+                }
+
+                // ARRAY/MAP
+                Uop::ArrayNew(n)=>{let mut e=Vec::with_capacity(n);for _ in 0..n{e.push(self.pop()?);}e.reverse();self.push(ValorVMOpt::Arreglo(e));self.ip+=1;}
+                Uop::ArrayGet=>{let i=self.pop()?;let a=self.pop()?;match(&a,&i){(ValorVMOpt::Arreglo(e),ValorVMOpt::Entero(i))=>if*i>=0&&(*i as usize)<e.len(){self.push(e[*i as usize].clone())}else{return Err(ErrorVMOpt::TipoIncompatible("[]".into()))},_=>return Err(ErrorVMOpt::TipoIncompatible("[]".into()))}self.ip+=1;}
+                Uop::ArraySet=>{let i=self.pop()?;let mut a=self.pop()?;let v=self.pop()?;if let(ValorVMOpt::Arreglo(ref mut e),ValorVMOpt::Entero(i))=(&mut a,&i){if*i>=0&&(*i as usize)<e.len(){e[*i as usize]=v;self.push(a)}else{return Err(ErrorVMOpt::TipoIncompatible("[]=".into()))}}else{return Err(ErrorVMOpt::TipoIncompatible("[]=".into()))}self.ip+=1;}
+                Uop::ArrayLen=>{if let ValorVMOpt::Arreglo(e)=self.pop()?{self.push(get_small_int_opt(e.len() as i64))}else{return Err(ErrorVMOpt::TipoIncompatible("len".into()))}self.ip+=1;}
+                Uop::MapNew(n)=>{let mut m=HashMap::with_capacity(n);for _ in 0..n{let v=self.pop()?;if let ValorVMOpt::Texto(k)=self.pop()?{m.insert(k.to_string(),v);}}self.push(ValorVMOpt::Mapa(m));self.ip+=1;}
+                Uop::MapGet=>{let k=self.pop()?;let m=self.pop()?;match(&m,&k){(ValorVMOpt::Mapa(m),ValorVMOpt::Texto(k))=>self.push(m.get(k.as_ref()).cloned().unwrap_or(ValorVMOpt::Nulo)),_=>return Err(ErrorVMOpt::TipoIncompatible("map[]".into()))}self.ip+=1;}
+                Uop::MapSet=>{let v=self.pop()?;let k=self.pop()?;let mut m=self.pop()?;if let(ValorVMOpt::Mapa(ref mut mm),ValorVMOpt::Texto(k))=(&mut m,k){mm.insert(k.to_string(),v);self.push(m)}else{return Err(ErrorVMOpt::TipoIncompatible("map[]=".into()))}self.ip+=1;}
+            }
+        }
+        Ok(())
     }
 }
 

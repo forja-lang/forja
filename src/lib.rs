@@ -10,6 +10,7 @@ pub mod semantics;
 pub mod transpiler;
 pub mod compiler_asm;
 pub mod bytecode;
+pub mod uops;
 pub mod vm;
 pub mod vm_opt;
 pub mod vm_jit;
