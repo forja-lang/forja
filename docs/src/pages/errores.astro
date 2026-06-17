@@ -1,5 +1,5 @@
 ---
-import Layout from '../../layouts/Layout.astro';
+import Layout from '../layouts/Layout.astro';
 ---
 
 <Layout title="Sistema de errores — Forja">
@@ -133,15 +133,15 @@ import Layout from '../../layouts/Layout.astro';
 
   <p>Cuando usás Forja como biblioteca desde Rust, las funciones devuelven <code>Result</code> con tipos de error específicos:</p>
 
-  <div class="code-block-wrapper">
+<div class="code-block-wrapper">
     <div class="code-header"><span>📚 API pública</span></div>
     <pre><code><span class="co">// Devuelve errores del pipeline completo</span>
-<span class="kw">pub fn</span> compilar(source: &str) -> Result<String, Vec<ErrorForja>>;
+<span class="kw">pub fn</span> compilar(source: &str) -&gt; Result&lt;String, Vec&lt;ErrorForja&gt;&gt;;
 
 <span class="co">// Devuelve error como String simple</span>
-<span class="kw">pub fn</span> ejecutar(source: &str) -> Result<Vec<String>, String>;
+<span class="kw">pub fn</span> ejecutar(source: &str) -&gt; Result&lt;Vec&lt;String&gt;, String&gt;;
 
 <span class="co">// JIT con fallback a VM</span>
-<span class="kw">pub fn</span> ejecutar_jit(source: &str) -> Result<Vec<String>, String>;</code></pre>
-  </div>
+<span class="kw">pub fn</span> ejecutar_jit(source: &str) -&gt; Result&lt;Vec&lt;String&gt;, String&gt;;</code></pre>
+</div>
 </Layout>
