@@ -50,5 +50,9 @@ path = "benchmarks/bench_cpython_opt.rs"
 name = "bench-vs-python"
 path = "benchmarks/bench_vs_python.rs"
 
+[[bin]]
+name = "bench-rust-native"
+path = "benchmarks/bench_rust_native.rs"
+
 [profile.release]
 opt-level = 2
