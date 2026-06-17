@@ -93,8 +93,12 @@ impl ForjaVMOpt {
             variables: vec![Vec::with_capacity(16)],
             funciones: HashMap::new(), bytecode: Vec::new(),
             output: Vec::with_capacity(64),
-            max_instrucciones: 1_000_000, instrucciones_ejecutadas: 0,
+            max_instrucciones: 100_000_000, instrucciones_ejecutadas: 0,
         }
+    }
+
+    pub fn set_max_instrucciones(&mut self, n: usize) {
+        self.max_instrucciones = n;
     }
 
     pub fn cargar_bytecode(&mut self, bytecode: Vec<Opcode>) {

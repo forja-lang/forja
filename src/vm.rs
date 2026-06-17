@@ -243,11 +243,15 @@ impl ForjaVM {
             bytecode: Vec::new(),
             output: Vec::new(),
             max_stack: 10000,
-            max_instrucciones: 1000000,
+            max_instrucciones: 100_000_000,
             instrucciones_ejecutadas: 0,
             string_pool: StringPool::new(),
             inline_cache: HashMap::new(),
         }
+    }
+
+    pub fn set_max_instrucciones(&mut self, n: usize) {
+        self.max_instrucciones = n;
     }
 
     /// Carga bytecode y precalcula las posiciones de labels y funciones
