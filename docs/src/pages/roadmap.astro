@@ -5,32 +5,49 @@ import Layout from '../layouts/Layout.astro';
 <Layout title="Roadmap — Forja">
   <h1>Roadmap</h1>
 
-  <p>El desarrollo de Forja está organizado en <strong>4 grandes pilares</strong>, implementados en orden de dependencia. Cada pilar representa un avance significativo en las capacidades del lenguaje.</p>
+  <p>El desarrollo de Forja está organizado en <strong>10 hitos</strong> que representan la evolución del compilador, desde un transpilador simple hasta un sistema completo con 4 VMs, JIT, compilador ASM multi-arquitectura, y playground WASM.</p>
 
-  <div class="feature-grid">
-    <div class="feature-card" style="border-color: rgba(16,185,129,0.3)">
-      <span class="icon">✅</span>
-      <h4>D: Funciones en VM</h4>
-      <p>Call/Return, FunctionDef, ámbitos anidados — <strong>Completado</strong></p>
-    </div>
-    <div class="feature-card" style="border-color: rgba(16,185,129,0.3)">
-      <span class="icon">✅</span>
-      <h4>C: POO en VM</h4>
-      <p>NewObject, SetField, GetField, CallMethod — <strong>Completado</strong></p>
-    </div>
-    <div class="feature-card" style="border-color: rgba(245,158,11,0.3)">
-      <span class="icon">🔄</span>
-      <h4>A: Runtime Stub</h4>
-      <p>Ejecutable único con bytecode incrustado — <strong>En progreso</strong></p>
-    </div>
-    <div class="feature-card" style="border-color: rgba(99,102,241,0.3)">
-      <span class="icon">🔄</span>
-      <h4>B: JIT Cranelift</h4>
-      <p>Compilación a código máquina nativo — <strong>Prototipo funcional</strong></p>
-    </div>
-  </div>
+  <div class="info">🔥 <strong>Estado actual:</strong> Forja v0.1.0 — 26+ módulos, ~10,000+ líneas de Rust, 4 generaciones de VM, 3 backends de ejecución (transpile, VM, ASM).</div>
 
-  <h2>✅ D: Funciones en VM</h2>
+  <h2>✅ Hito A: Runtime Stub — Ejecutable autónomo</h2>
+
+  <p>Generar un único <code>.exe</code> que contenga la VM + bytecode incrustado. ¡Un solo archivo que funciona en cualquier PC!</p>
+
+  <table>
+    <tr><th>Componente</th><th>Estado</th></tr>
+    <tr><td><code>AOTCompiler</code> — genera .exe con bytecode</td><td>✅ Completado</td></tr>
+    <tr><td><code>selfrun</code> — detección de bytecode incrustado</td><td>✅ Completado</td></tr>
+    <tr><td>Formato binario .fbc (serialización/deserialización)</td><td>✅ Completado</td></tr>
+    <tr><td>Comando <code>forja build</code> listo</td><td>✅ Completado</td></tr>
+  </table>
+
+  <h2>✅ Hito B: JIT con Cranelift</h2>
+
+  <p>Compilar bytecode a código máquina nativo para acelerar hot paths. Rendimiento 10-50x superior a la VM interpretada.</p>
+
+  <table>
+    <tr><th>Componente</th><th>Estado</th></tr>
+    <tr><td><code>jit.rs</code> — compilación de opcodes básicos con Cranelift</td><td>✅ Prototipo funcional</td></tr>
+    <tr><td>Aritmética y variables en JIT</td><td>✅ Implementado</td></tr>
+    <tr><td><code>jit_engine.rs</code> — orquestador con fallback a ForjaFast</td><td>✅ Implementado</td></tr>
+    <tr><td><code>es_jiteable()</code> — detección de bloques JIT-compilables</td><td>✅ Implementado</td></tr>
+    <tr><td>Modo híbrido VM + JIT (profiler de hot paths)</td><td>⏳ Pendiente</td></tr>
+    <tr><td>POO y funciones en JIT</td><td>⏳ Pendiente</td></tr>
+  </table>
+
+  <h2>✅ Hito C: POO en VM</h2>
+
+  <p>Clases, constructores, métodos, <code>nuevo</code>, <code>este</code>, y dispatch en runtime. Programación orientada a objetos completamente en español.</p>
+
+  <table>
+    <tr><th>Componente</th><th>Estado</th></tr>
+    <tr><td><code>NewObject</code>, <code>SetField</code>, <code>GetField</code> opcodes</td><td>✅ Completado</td></tr>
+    <tr><td><code>CallMethod</code> con dispatch en runtime</td><td>✅ Completado</td></tr>
+    <tr><td>Objetos con <code>Rc<RefCell></code></td><td>✅ Completado</td></tr>
+    <tr><td>Constructor → método <code>nuevo</code> en bytecode</td><td>✅ Completado</td></tr>
+  </table>
+
+  <h2>✅ Hito D: Funciones en VM</h2>
 
   <p>Soporte completo para llamadas a funciones con argumentos, retorno y ámbitos anidados dentro de la VM.</p>
 
@@ -39,58 +56,116 @@ import Layout from '../layouts/Layout.astro';
     <tr><td><code>Call</code> / <code>Return</code> opcodes</td><td>✅ Completado</td></tr>
     <tr><td><code>FunctionDef</code> en bytecode</td><td>✅ Completado</td></tr>
     <tr><td>Registro de funciones en VM</td><td>✅ Completado</td></tr>
-    <tr><td>Paso de argumentos y ámbitos</td><td>✅ Completado</td></tr>
+    <tr><td>Paso de argumentos y ámbitos anidados</td><td>✅ Completado</td></tr>
   </table>
 
-  <h2>✅ C: POO en VM</h2>
+  <h2>✅ Hito E: Optimizaciones de AST</h2>
 
-  <p>Clases, constructores, métodos, <code>nuevo</code>, <code>este</code>, y dispatch en runtime. ¡Programación orientada a objetos completamente en español!</p>
+  <p>Transformaciones en tiempo de compilación para mejorar el rendimiento sin cambiar el significado del programa.</p>
 
   <table>
     <tr><th>Componente</th><th>Estado</th></tr>
-    <tr><td><code>NewObject</code>, <code>SetField</code>, <code>GetField</code></td><td>✅ Completado</td></tr>
-    <tr><td><code>CallMethod</code> con dispatch en runtime</td><td>✅ Completado</td></tr>
-    <tr><td>Objetos con <code>Rc&#x3C;RefCell&#x3E;</code></td><td>✅ Completado</td></tr>
-    <tr><td>Constructor → método "nuevo"</td><td>✅ Completado</td></tr>
+    <tr><td><code>Optimizer</code> — constant folding (plegado de constantes)</td><td>✅ Completado</td></tr>
+    <tr><td><code>DeadCodeEliminator</code> — DCE</td><td>✅ Completado</td></tr>
+    <tr><td>Integración en pipeline de <code>lib.rs</code></td><td>✅ Completado</td></tr>
+    <tr><td>Inline de funciones</td><td>⏳ Pendiente</td></tr>
+    <tr><td>Eliminación de sub-expresiones comunes</td><td>⏳ Pendiente</td></tr>
+    <tr><td>Optimización de bucles (desenrollado)</td><td>⏳ Pendiente</td></tr>
   </table>
 
-  <h2>🔄 A: Runtime Stub (En progreso)</h2>
+  <h2>✅ Hito F: 4 Generaciones de VM</h2>
 
-  <p>Generar un único <code>.exe</code> autónomo que contenga la VM + bytecode incrustado. ¡Un solo archivo que funciona en cualquier PC!</p>
+  <p>Evolución desde una VM simple hasta un motor ultra rápido con stack caching y acceso O(1) a variables. Cada versión es una lección de optimización.</p>
+
+  <table>
+    <tr><th>VM</th><th>Archivo</th><th>Líneas</th><th>Innovación</th></tr>
+    <tr><td><strong>v1 — Original</strong></td><td><code>src/vm.rs</code></td><td>2038</td><td>VM stack-based funcional, variables por nombre (HashMap)</td></tr>
+    <tr><td><strong>v3 — Optimizada</strong></td><td><code>src/vm_opt.rs</code></td><td>1091</td><td>Índices numéricos, buffer de output, sin println! en cada opcode</td></tr>
+    <tr><td><strong>v3 — Direct Threading</strong></td><td><code>src/vm_jit.rs</code></td><td>645</td><td>Opcodes como u8 planos, arrays paralelos para operandos</td></tr>
+    <tr><td><strong>v5 — Ultra Fast</strong></td><td><code>src/vm_fast.rs</code></td><td>1454</td><td>Stack caching (top-of-stack register), variables globales O(1), scope_start por frame</td></tr>
+  </table>
+
+  <div class="info">💡 <strong>ForjaFast v5</strong> es la VM de producción. Las otras se mantienen como referencia educativa y para benchmarks.</div>
+
+  <h2>✅ Hito G: Uops y fusión de opcodes</h2>
+
+  <p>Sistema de micro-opcodes para expandir, optimizar y fusionar el bytecode antes de ejecutarlo.</p>
 
   <table>
     <tr><th>Componente</th><th>Estado</th></tr>
-    <tr><td>Bytecode append al final del .exe</td><td>✅ Completado</td></tr>
-    <tr><td>Self-run: detección de bytecode</td><td>✅ Completado</td></tr>
-    <tr><td>Comando <code>forja build</code></td><td>✅ Completado</td></tr>
-    <tr><td>Stub precompilado separado</td><td>⏳ Pendiente</td></tr>
+    <tr><td><code>Uop</code> enum con micro-operaciones</td><td>✅ Completado</td></tr>
+    <tr><td><code>expandir_a_uops()</code> — expansión de opcodes compuestos</td><td>✅ Completado</td></tr>
+    <tr><td><code>optimizar_uops()</code> — IncrVar, AddAssign, SubAssign</td><td>✅ Completado</td></tr>
+    <tr><td><code>remapear_saltos_uops()</code> — resolución de labels</td><td>✅ Completado</td></tr>
+    <tr><td><code>fusionar_opcodes()</code> — opcodes fusionados (DeclareEnteroOp, etc.)</td><td>✅ Completado</td></tr>
+    <tr><td><code>optimizar_indices()</code> — índices globales únicos</td><td>✅ Completado</td></tr>
+    <tr><td><code>tiene_opcodes_compuestos()</code> — detección de opcodes expandibles</td><td>✅ Completado</td></tr>
   </table>
 
-  <h2>🔄 B: JIT con Cranelift (Prototipo)</h2>
+  <h2>✅ Hito H: Compilador ASM multi-arquitectura</h2>
 
-  <p>Compilar bytecode a código máquina nativo para acelerar hot paths. Ofrece rendimiento 10-50x superior a la VM interpretada.</p>
+  <p>Compilar Forja directamente a assembly nativo para x86-64 y ARM64, con detección automática de plataforma y compilación cruzada.</p>
 
   <table>
     <tr><th>Componente</th><th>Estado</th></tr>
-    <tr><td>Compilación de opcodes básicos</td><td>✅ Prototipo funcional</td></tr>
-    <tr><td>Aritmética y variables en JIT</td><td>✅ Implementado</td></tr>
-    <tr><td>Modo híbrido VM + JIT</td><td>⏳ Pendiente</td></tr>
-    <tr><td>Profiler de hot paths</td><td>⏳ Pendiente</td></tr>
-    <tr><td>POO y funciones en JIT</td><td>⏳ Pendiente</td></tr>
+    <tr><td>x86-64 Windows (Microsoft x64 calling convention)</td><td>✅ Completado</td></tr>
+    <tr><td>x86-64 Linux (System V AMD64)</td><td>✅ Completado</td></tr>
+    <tr><td>ARM64 AArch64</td><td>✅ Completado</td></tr>
+    <tr><td>Detección automática con <code>cfg!()</code></td><td>✅ Completado</td></tr>
+    <tr><td>Flag <code>--target</code> para compilación cruzada</td><td>✅ Completado</td></tr>
+    <tr><td>Runtime assembly (print_int, print_str, etc.)</td><td>✅ Completado</td></tr>
+    <tr><td>Integración con gcc -O2</td><td>✅ Completado</td></tr>
+    <tr><td>POO en assembly (objetos, métodos)</td><td>⏳ Pendiente</td></tr>
   </table>
 
-  <h2>🧩 Features futuras</h2>
+  <h2>✅ Hito I: WASM Playground</h2>
 
-  <p>Más allá de los 4 pilares, hay un mundo de posibilidades:</p>
+  <p>Compilar el núcleo de Forja a WebAssembly para ejecutarlo en el navegador.</p>
+
+  <table>
+    <tr><th>Componente</th><th>Estado</th></tr>
+    <tr><td>Crate <code>forja-wasm</code> con wasm-bindgen</td><td>✅ Completado</td></tr>
+    <tr><td><code>forja_ejecutar()</code> — ejecutar código en VM via WASM</td><td>✅ Completado</td></tr>
+    <tr><td><code>forja_compilar()</code> — transpilar a Rust via WASM</td><td>✅ Completado</td></tr>
+    <tr><td><code>forja_tokenizar()</code> — tokenizar y devolver JSON</td><td>✅ Completado</td></tr>
+    <tr><td>Playground HTML + JS con editor en vivo</td><td>✅ Completado</td></tr>
+    <tr><td>Ejemplos rápidos (Hola Mundo, Variables, Fibonacci, etc.)</td><td>✅ Completado</td></tr>
+  </table>
+
+  <h2>✅ Hito J: Módulos e imports</h2>
+
+  <p>Sistema de módulos para organizar el código en múltiples archivos.</p>
+
+  <table>
+    <tr><th>Componente</th><th>Estado</th></tr>
+    <tr><td><code>ModuleResolver</code> — resolución de módulos</td><td>✅ Completado</td></tr>
+    <tr><td>Seguridad anti path traversal</td><td>✅ Completado</td></tr>
+    <tr><td>Cache de módulos ya resueltos</td><td>✅ Completado</td></tr>
+    <tr><td>Imports anidados</td><td>✅ Completado</td></tr>
+  </table>
+
+  <h2>✅ Hito K: Extensión VS Code</h2>
+
+  <table>
+    <tr><th>Componente</th><th>Estado</th></tr>
+    <tr><td>TextMate grammar (syntaxes/forja.tmLanguage.json)</td><td>✅ Completado</td></tr>
+    <tr><td>Language configuration (comentarios, brackets)</td><td>✅ Completado</td></tr>
+    <tr><td>Resaltado de sintaxis para .fa</td><td>✅ Completado</td></tr>
+  </table>
+
+  <h2>🧩 Features planeadas</h2>
 
   <div class="feature-grid">
-    <div class="feature-card"><span class="icon">🧩</span><h4>Módulos</h4><p>Importar otros archivos .fa</p></div>
-    <div class="feature-card"><span class="icon">📊</span><h4>Más tipos</h4><p>Tuplas, enums, arreglos fijos</p></div>
-    <div class="feature-card"><span class="icon">🗄️</span><h4>BD integrada</h4><p>Soporte completo para <code>BD()</code></p></div>
-    <div class="feature-card"><span class="icon">🖥️</span><h4>LSP</h4><p>Servidor de lenguaje para IDEs</p></div>
-    <div class="feature-card"><span class="icon">🔬</span><h4>Inferencia de tipos</h4><p>Tracking completo de no-Copy</p></div>
-    <div class="feature-card"><span class="icon">🎮</span><h4>Más ejemplos</h4><p>Algoritmos, estructuras, juegos</p></div>
+    <div class="feature-card"><span class="icon">🗄️</span><h4>LSP Server</h4><p>Servidor de lenguaje para completado, diagnósticos y navegación en IDEs</p></div>
+    <div class="feature-card"><span class="icon">📊</span><h4>Tuplas y enums nativos</h4><p>Soporte completo en runtime para tipos compuestos</p></div>
+    <div class="feature-card"><span class="icon">🖥️</span><h4>BD integrada</h4><p>Soporte completo para <code>BD()</code> con consultas</p></div>
+    <div class="feature-card"><span class="icon">🔬</span><b>Inferencia de tipos completa</b><p>Tracking completo de tipos no-Copy a través de funciones</p></div>
+    <div class="feature-card"><span class="icon">⚡</span><h4>JIT híbrido completo</h4><p>Profiler de hot paths + compilación automática + POO/funciones en JIT</p></div>
+    <div class="feature-card"><span class="icon">🎮</span><h4>Más ejemplos</h4><p>Algoritmos, estructuras de datos, juegos, aplicaciones</p></div>
+    <div class="feature-card"><span class="icon">🔧</span><h4>Optimizaciones avanzadas</h4><p>Inline de funciones, eliminación de sub-expresiones comunes, desenrollado de bucles</p></div>
+    <div class="feature-card"><span class="icon">🌐</span><h4>Más targets ASM</h4><p>RISC-V, WASM nativo, GPU compute</p></div>
+    <div class="feature-card"><span class="icon">📦</span><h4>Package manager</h4><p>Sistema de paquetes para compartir código Forja</p></div>
   </div>
 
-  <div class="tip"><strong>🔥 ¿Querés contribuir?</strong> Forja es código abierto. Si te interesa alguna de estas features, ¡podés empezar a implementarla! Mirá el <a href="/arquitectura/pipeline">pipeline</a> para entender la base.</div>
+  <div class="tip"><strong>🔥 ¿Querés contribuir?</strong> Forja es código abierto (source-available). Si te interesa alguna de estas features, ¡podés empezar a implementarla! Mirá la <a href="/arquitectura/pipeline">arquitectura</a> para entender la base.</div>
 </Layout>

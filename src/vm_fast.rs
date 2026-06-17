@@ -73,7 +73,9 @@ pub struct ForjaFast {
     call_stack: Vec<FrmFast>,
 
     // Variables: Vec plano con acceso O(1) por índice
-    // Los índices son globales — cada variable única tiene un slot fijo
+    // Los índices son GLOBALES — cada variable única tiene un slot fijo.
+    // En Call se crea un nuevo ámbito (push/pop de vars) para que cada
+    // función tenga su propio espacio de indices locales (0, 1, 2...).
     vars: Vec<ValorFast>,
 
     // Stack caching — top-of-stack en registros virtuales
@@ -91,6 +93,8 @@ pub struct ForjaFast {
     umbral_especializacion: u8,        // típicamente 2-5
 
     funciones: HashMap<String, FuncFast>,
+    /// Nombres de parámetros por función (necesario para mapear args en Call)
+    func_params: HashMap<String, Vec<String>>,
     bytecode: Vec<Opcode>,
     pub output: Vec<String>,
 
@@ -98,12 +102,12 @@ pub struct ForjaFast {
     ejecutadas: usize,
 }
 
-// Guarda el tamaño anterior de vars + los valores de argumentos sobrescritos
-// para restaurarlos al Return. Evita clonar todo el vector en cada llamada.
+// Guarda el estado previo de vars para restaurarlo al Return.
+// En Call se crea un nuevo ámbito: se guarda todo el vars actual,
+// se asigna uno nuevo para la función, y en Return se restaura.
 struct FrmFast {
     ip_ret: usize,
-    vars_prev_len: usize,
-    saved_args: Vec<ValorFast>,  // valores previos de vars[0..nargs] antes de la llamada
+    vars_previas: Vec<ValorFast>,  // vars completo antes de la llamada
 }
 
 #[derive(Debug, Clone)]
@@ -127,7 +131,7 @@ impl ForjaFast {
             cache_add_type: None, cache_sub_type: None, cache_mul_type: None, cache_div_type: None,
             contador_especializacion: Vec::new(),
             umbral_especializacion: 3,
-            funciones: HashMap::new(), bytecode: Vec::new(), output: Vec::new(),
+            funciones: HashMap::new(), func_params: HashMap::new(), bytecode: Vec::new(), output: Vec::new(),
             max_inst: 100_000_000, ejecutadas: 0,
         }
     }
@@ -140,13 +144,15 @@ impl ForjaFast {
         self.bytecode = bc;
         self.contador_especializacion = vec![0u8; self.bytecode.len()];
         self.funciones.clear();
+        self.func_params.clear();
 
         // Primera pasada: indexar labels y funciones
         let mut label_positions: HashMap<usize, usize> = HashMap::new();
         for (i, op) in self.bytecode.iter().enumerate() {
             match op {
-                Opcode::FunctionDef(n, _) => {
+                Opcode::FunctionDef(n, params) => {
                     self.funciones.insert(n.clone(), FuncFast { ip: i + 1 });
+                    self.func_params.insert(n.clone(), params.clone());
                 }
                 Opcode::Label(l) => {
                     label_positions.insert(*l, i);
@@ -834,6 +840,7 @@ impl ForjaFast {
 
                         if is_tail {
                             // Tail call: reemplazar args en el scope actual, sin guardar frame
+                            // Los args se ponen en índices locales 0, 1, 2...
                             let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
                             for _ in 0..nargs { args.push(self.pop()?); }
                             args.reverse();
@@ -846,37 +853,33 @@ impl ForjaFast {
                             self.ip = func.ip;
                             // El Return que seguía se saltea porque ip apunta directo al cuerpo
                         } else {
-                            // Normal call: guardar valores previos de vars[0..nargs]
-                            let vars_prev_len = self.vars.len();
-                            let mut saved_args: Vec<ValorFast> = Vec::with_capacity(nargs);
-                            for i in 0..nargs {
-                                saved_args.push(if i < self.vars.len() { self.vars[i].clone() } else { ValorFast::Nulo });
-                            }
-                            self.call_stack.push(FrmFast { ip_ret: next_ip, vars_prev_len, saved_args });
+                            // Normal call: crear nuevo ámbito de variables
+                            // Guardar vars actual completo para restaurarlo en Return
+                            let prev_vars = std::mem::take(&mut self.vars);
 
                             let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
                             for _ in 0..nargs { args.push(self.pop()?); }
                             args.reverse();
 
-                            if self.vars.len() < nargs { self.vars.resize(nargs, ValorFast::Nulo); }
-                            for (i, arg) in args.into_iter().enumerate() {
-                                self.vars[i] = arg;
+                            // Crear nuevo vars con args en índices locales (0, 1, 2...)
+                            // optimizar_indices() asigna índices empezando desde 0 para
+                            // los parámetros de la primera función en el bytecode.
+                            let num_params = self.func_params.get(&nombre).map_or(0, |p| p.len());
+                            let mut new_vars = Vec::with_capacity(nargs.max(num_params));
+                            for arg in args {
+                                new_vars.push(arg);
                             }
 
+                            self.call_stack.push(FrmFast { ip_ret: next_ip, vars_previas: prev_vars });
+                            self.vars = new_vars;
                             self.ip = func.ip;
                         }
                     } else { return Err(ErrFast::FnNoDef(nombre)); }
                 }
                 Opcode::Return => {
                     if let Some(frame) = self.call_stack.pop() {
-                        // Restaurar vars al tamaño anterior a la llamada
-                        self.vars.truncate(frame.vars_prev_len);
-                        // Restaurar valores de vars[0..nargs] que fueron sobrescritos
-                        for (i, val) in frame.saved_args.into_iter().enumerate() {
-                            if i < self.vars.len() {
-                                self.vars[i] = val;
-                            }
-                        }
+                        // Restaurar vars previo (el ámbito de la función que llamó)
+                        self.vars = frame.vars_previas;
                         self.ip = frame.ip_ret;
                     } else { break; }
                 }
@@ -896,7 +899,7 @@ impl ForjaFast {
                     if let Some(b)=resolver_builtin_fast(&m){self.exec_builtin(b,nargs)?;self.ip+=1;continue;}
                     let mut args:Vec<ValorFast>=Vec::with_capacity(nargs);for _ in 0..nargs{args.push(self.pop()?);}args.reverse();
                     if let ValorFast::Objeto(o)=self.pop()?{let c=o.0.borrow().clase.clone();let fn_name=format!("{}.{}",c,m);
-                    if let Some(func)=self.funciones.get(&fn_name).cloned(){let vars_prev_len=self.vars.len();let mut all=vec![ValorFast::Objeto(o)];all.extend(args);let n=all.len();let mut saved_args:Vec<ValorFast>=Vec::with_capacity(n);for i in 0..n{saved_args.push(if i<self.vars.len(){self.vars[i].clone()}else{ValorFast::Nulo});}self.call_stack.push(FrmFast{ip_ret:self.ip+1,vars_prev_len,saved_args});if self.vars.len()<n{self.vars.resize(n,ValorFast::Nulo);}for(i,a)in all.into_iter().enumerate(){self.vars[i]=a;}self.ip=func.ip;}
+                    if let Some(func)=self.funciones.get(&fn_name).cloned(){let prev_vars=std::mem::take(&mut self.vars);let mut all=vec![ValorFast::Objeto(o)];all.extend(args);self.call_stack.push(FrmFast{ip_ret:self.ip+1,vars_previas:prev_vars});self.vars=all;self.ip=func.ip;}
                     else{return Err(ErrFast::FnNoDef(fn_name));}}else{return Err(ErrFast::TipoInv("CallMethod".into()));}
                 }
 
@@ -925,6 +928,29 @@ impl ForjaFast {
 
         // 3. Optimizar uops (fusionar patrones comunes)
         uops = optimizar_uops(&uops);
+
+        // 4. Re-mapear IPs de funciones: de posiciones bytecode a posiciones uops
+        //    La expansión cambia las posiciones de FunctionDef, pero self.funciones
+        //    todavía apunta a las IPs del bytecode original.
+        let mut nuevas_funciones = HashMap::new();
+        for (nombre, func) in self.funciones.iter() {
+            // Buscar FunctionDef en uops por nombre para obtener nueva posición
+            let mut encontrada = false;
+            for (i, uop) in uops.iter().enumerate() {
+                if let Uop::FunctionDef(n, _) = uop {
+                    if n == nombre {
+                        nuevas_funciones.insert(nombre.clone(), FuncFast { ip: i + 1 });
+                        encontrada = true;
+                        break;
+                    }
+                }
+            }
+            if !encontrada {
+                // Mantener IP original como fallback (no debería ocurrir)
+                nuevas_funciones.insert(nombre.clone(), FuncFast { ip: func.ip });
+            }
+        }
+        self.funciones = nuevas_funciones;
 
         let len = uops.len();
         self.ip = 0;
@@ -1264,32 +1290,26 @@ impl ForjaFast {
                             }
                             self.ip = func.ip;
                         } else {
-                            let vars_prev_len = self.vars.len();
-                            let mut saved_args: Vec<ValorFast> = Vec::with_capacity(nargs);
-                            for i in 0..nargs {
-                                saved_args.push(if i < self.vars.len() { self.vars[i].clone() } else { ValorFast::Nulo });
-                            }
-                            self.call_stack.push(FrmFast { ip_ret: next_ip, vars_prev_len, saved_args });
+                            let prev_vars = std::mem::take(&mut self.vars);
 
                             let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
                             for _ in 0..nargs { args.push(self.pop()?); }
                             args.reverse();
-                            if self.vars.len() < nargs { self.vars.resize(nargs, ValorFast::Nulo); }
-                            for (i, arg) in args.into_iter().enumerate() {
-                                self.vars[i] = arg;
+
+                            let mut new_vars = Vec::with_capacity(nargs);
+                            for arg in args {
+                                new_vars.push(arg);
                             }
+
+                            self.call_stack.push(FrmFast { ip_ret: next_ip, vars_previas: prev_vars });
+                            self.vars = new_vars;
                             self.ip = func.ip;
                         }
                     } else { return Err(ErrFast::FnNoDef(nombre)); }
                 }
                 Uop::Return => {
                     if let Some(frame) = self.call_stack.pop() {
-                        self.vars.truncate(frame.vars_prev_len);
-                        for (i, val) in frame.saved_args.into_iter().enumerate() {
-                            if i < self.vars.len() {
-                                self.vars[i] = val;
-                            }
-                        }
+                        self.vars = frame.vars_previas;
                         self.ip = frame.ip_ret;
                     } else { break; }
                 }
@@ -1332,15 +1352,11 @@ impl ForjaFast {
                         let c = o.0.borrow().clase.clone();
                         let fn_name = format!("{}.{}", c, m);
                         if let Some(func) = self.funciones.get(&fn_name).cloned() {
-                            let vars_prev_len = self.vars.len();
+                            let prev_vars = std::mem::take(&mut self.vars);
                             let mut all = vec![ValorFast::Objeto(o)];
                             all.extend(args);
-                            let n = all.len();
-                            let mut saved_args: Vec<ValorFast> = Vec::with_capacity(n);
-                            for i in 0..n { saved_args.push(if i < self.vars.len() { self.vars[i].clone() } else { ValorFast::Nulo }); }
-                            self.call_stack.push(FrmFast { ip_ret: self.ip + 1, vars_prev_len, saved_args });
-                            if self.vars.len() < n { self.vars.resize(n, ValorFast::Nulo); }
-                            for (i, a) in all.into_iter().enumerate() { self.vars[i] = a; }
+                            self.call_stack.push(FrmFast { ip_ret: self.ip + 1, vars_previas: prev_vars });
+                            self.vars = all;
                             self.ip = func.ip;
                         } else { return Err(ErrFast::FnNoDef(fn_name)); }
                     } else { return Err(ErrFast::TipoInv("CallMethod".into())); }

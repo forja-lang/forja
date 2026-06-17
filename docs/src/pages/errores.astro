@@ -86,9 +86,62 @@ import Layout from '../layouts/Layout.astro';
   <table>
     <tr><th>Error</th><th>Causa</th></tr>
     <tr><td><code>StackUnderflow</code></td><td>Pop en pila vacía (error interno de la VM)</td></tr>
+    <tr><td><code>StackOverflow</code></td><td>Límite de pila excedido (ej: recursión infinita)</td></tr>
     <tr><td><code>VariableNoDeclarada</code></td><td>Variable no encontrada en ningún ámbito</td></tr>
+    <tr><td><code>IndiceFueraRango</code></td><td>Índice de arreglo fuera de los límites válidos</td></tr>
+    <tr><td><code>ClaveNoEncontrada</code></td><td>Clave de mapa que no existe en el diccionario</td></tr>
     <tr><td><code>TipoIncompatible</code></td><td>Operación entre tipos no soportada</td></tr>
     <tr><td><code>DivisionPorCero</code></td><td>División por cero en ejecución</td></tr>
     <tr><td><code>FuncionNoDefinida</code></td><td>Llamada a función inexistente</td></tr>
+    <tr><td><code>ErrorSerializacion</code></td><td>Error al serializar/deserializar bytecode .fbc</td></tr>
+    <tr><td><code>ErrorAOT</code></td><td>Error al generar ejecutable autónomo (AOT)</td></tr>
+    <tr><td><code>ErrorDeModulo</code></td><td>Error al resolver módulo importado o path traversal detectado</td></tr>
+    <tr><td><code>InstruccionInvalida</code></td><td>Opcode desconocido en el bytecode (versión incompatible)</td></tr>
   </table>
+
+  <h2>Errores de compilación AOT</h2>
+
+  <p>Al generar ejecutables autónomos con <code>forja build</code>, pueden ocurrir errores específicos:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📦 Error AOT</span></div>
+    <pre><code>[ErrorAOT] Error leyendo 'entrada.fa': The system cannot find the file specified.
+  💡 Sugerencia: Verificá que la ruta del archivo .fa sea correcta.</code></pre>
+  </div>
+
+  <h2>Errores de módulos</h2>
+
+  <p>Al usar <code>importar</code>, el resolvedor de módulos valida la seguridad de las rutas:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📂 Error de módulo</span></div>
+    <pre><code>[ErrorSemantico] línea 1, columna 0: Intento de path traversal detectado
+  💡 Sugerencia: Las rutas de módulo no pueden contener '..' ni rutas absolutas.</code></pre>
+  </div>
+
+  <h2>Errores de serialización .fbc</h2>
+
+  <p>El formato binario .fbc incluye validación de integridad:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>💾 Error de serialización</span></div>
+    <pre><code>[ErrorSerializacion] Magic number inválido: se esperaba 'FBC\0'.
+  💡 Sugerencia: El archivo no es un bytecode Forja válido o está corrupto.</code></pre>
+  </div>
+
+  <h2>Errores de la API (lib.rs)</h2>
+
+  <p>Cuando usás Forja como biblioteca desde Rust, las funciones devuelven <code>Result</code> con tipos de error específicos:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📚 API pública</span></div>
+    <pre><code><span class="co">// Devuelve errores del pipeline completo</span>
+<span class="kw">pub fn</span> compilar(source: &str) -> Result<String, Vec<ErrorForja>>
+
+<span class="co">// Devuelve error como String simple</span>
+<span class="kw">pub fn</span> ejecutar(source: &str) -> Result<Vec<String>, String>
+
+<span class="co">// JIT con fallback a VM</span>
+<span class="kw">pub fn</span> ejecutar_jit(source: &str) -> Result<Vec<String>, String></code></pre>
+  </div>
 </Layout>
