@@ -85,8 +85,12 @@ impl ForjaFast {
             vars: Vec::with_capacity(64),
             tos: None, tos2: None,
             funciones: HashMap::new(), bytecode: Vec::new(), output: Vec::new(),
-            max_inst: 10_000_000, ejecutadas: 0,
+            max_inst: 100_000_000, ejecutadas: 0,
         }
+    }
+
+    pub fn set_max_inst(&mut self, n: usize) {
+        self.max_inst = n;
     }
 
     pub fn cargar_bytecode(&mut self, bc: Vec<Opcode>) {
