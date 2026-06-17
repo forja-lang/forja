@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::bytecode::Opcode;
+use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops, tiene_opcodes_compuestos};
 
 // Small Integer Cache [-5, 256] — thread_local! porque ValorFast no es Send/Sync
 use std::cell::OnceCell;
@@ -211,6 +212,12 @@ impl ForjaFast {
     }
 
     pub fn ejecutar(&mut self) -> Result<(), ErrFast> {
+        // Decidir automáticamente si usar uops basado en la presencia de opcodes compuestos
+        if tiene_opcodes_compuestos(&self.bytecode) {
+            // Expandir y ejecutar como uops si hay opcodes compuestos
+            return self.ejecutar_uops();
+        }
+
         let len = self.bytecode.len();
 
         loop {
@@ -901,6 +908,515 @@ impl ForjaFast {
                 Opcode::MapGet=>{let k=self.pop()?;let m=self.pop()?;match(&m,&k){(ValorFast::Mapa(m),ValorFast::Texto(k))=>self.push(m.get(k.as_ref()).cloned().unwrap_or(ValorFast::Nulo)),_=>return Err(ErrFast::TipoInv("map[]".into()))}self.ip+=1;}
                 Opcode::MapSet=>{let v=self.pop()?;let k=self.pop()?;let mut m=self.pop()?;if let(ValorFast::Mapa(ref mut mm),ValorFast::Texto(k))=(&mut m,k){mm.insert(k.to_string(),v);self.push(m)}else{return Err(ErrFast::TipoInv("map[]=".into()))}self.ip+=1;}
                 Opcode::Halt=>break,
+            }
+        }
+        Ok(())
+    }
+
+    /// Ejecuta usando uops expandidos (micro-opcodes)
+    /// Expande opcodes compuestos en secuencias de uops,
+    /// optimiza patrones comunes, y ejecuta usando el pipeline de uops
+    pub fn ejecutar_uops(&mut self) -> Result<(), ErrFast> {
+        // 1. Expandir bytecode a uops
+        let mut uops = expandir_a_uops(&self.bytecode);
+
+        // 2. Re-mapear saltos de posiciones bytecode a posiciones uops
+        remapear_saltos_uops(&mut uops, &self.bytecode);
+
+        // 3. Optimizar uops (fusionar patrones comunes)
+        uops = optimizar_uops(&uops);
+
+        let len = uops.len();
+        self.ip = 0;
+
+        loop {
+            if self.ip >= len { break; }
+            if self.ejecutadas > self.max_inst { return Err(ErrFast::Limite); }
+            self.ejecutadas += 1;
+
+            // Clonar para permitir mutación de self
+            let uop = uops[self.ip].clone();
+
+            match uop {
+                // === STACK OPERATIONS ===
+                Uop::PushEntero(n) => { self.push(get_small_int_fast(n)); self.ip += 1; }
+                Uop::PushDecimal(d) => { self.push(ValorFast::Decimal(d)); self.ip += 1; }
+                Uop::PushTexto(s) => { self.push(ValorFast::Texto(s)); self.ip += 1; }
+                Uop::PushBooleano(b) => { self.push(ValorFast::Booleano(b)); self.ip += 1; }
+                Uop::PushNulo => { self.push(ValorFast::Nulo); self.ip += 1; }
+                Uop::Pop => { self.pop()?; self.ip += 1; }
+                Uop::Dup => {
+                    let v = self.peek().ok_or(ErrFast::StackUnder("Dup".into()))?.clone();
+                    self.push(v);
+                    self.ip += 1;
+                }
+
+                // === VARIABLE OPERATIONS ===
+                Uop::LoadIdx(idx) => {
+                    if idx < self.vars.len() {
+                        self.push(self.vars[idx].clone());
+                    } else {
+                        self.push(ValorFast::Nulo);
+                    }
+                    self.ip += 1;
+                }
+                Uop::StoreIdx(idx) => {
+                    let val = self.pop()?;
+                    if idx >= self.vars.len() { self.vars.resize(idx + 1, ValorFast::Nulo); }
+                    self.vars[idx] = val;
+                    self.ip += 1;
+                }
+                Uop::DeclareVar(idx) => {
+                    // Solo asegurar espacio, no pop
+                    if idx >= self.vars.len() { self.vars.resize(idx + 1, ValorFast::Nulo); }
+                    self.ip += 1;
+                }
+
+                // === MICRO-OP FUSIONADOS (StorePop, LoadPush, DeclareInit) ===
+                Uop::StorePop(idx) => {
+                    // POP de stack + STORE en vars[idx] — fusionado
+                    let val = self.pop()?;
+                    if idx >= self.vars.len() { self.vars.resize(idx + 1, ValorFast::Nulo); }
+                    self.vars[idx] = val;
+                    self.ip += 1;
+                }
+                Uop::LoadPush(idx) => {
+                    // LOAD + PUSH fusionado
+                    let val = if idx < self.vars.len() {
+                        self.vars[idx].clone()
+                    } else {
+                        ValorFast::Nulo
+                    };
+                    self.push(val);
+                    self.ip += 1;
+                }
+                Uop::DeclareInit(idx) => {
+                    // Inicializar variable y asignar en un solo paso
+                    let val = self.pop()?;
+                    if idx >= self.vars.len() { self.vars.resize(idx + 1, ValorFast::Nulo); }
+                    self.vars[idx] = val;
+                    self.ip += 1;
+                }
+
+                // === UOP OPTIMIZADOS (IncrVar, AddAssign, SubAssign) ===
+                Uop::IncrVar(idx) => {
+                    if idx < self.vars.len() {
+                        if let ValorFast::Entero(ref n) = self.vars[idx] {
+                            self.vars[idx] = get_small_int_fast(n.wrapping_add(1));
+                        } else {
+                            return Err(ErrFast::TipoInv("IncrVar".into()));
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Uop::AddAssign(idx, n) => {
+                    if idx < self.vars.len() {
+                        if let ValorFast::Entero(ref v) = self.vars[idx] {
+                            self.vars[idx] = get_small_int_fast(v.wrapping_add(n));
+                        } else {
+                            return Err(ErrFast::TipoInv("AddAssign".into()));
+                        }
+                    }
+                    self.ip += 1;
+                }
+                Uop::SubAssign(idx, n) => {
+                    if idx < self.vars.len() {
+                        if let ValorFast::Entero(ref v) = self.vars[idx] {
+                            self.vars[idx] = get_small_int_fast(v.wrapping_sub(n));
+                        } else {
+                            return Err(ErrFast::TipoInv("SubAssign".into()));
+                        }
+                    }
+                    self.ip += 1;
+                }
+
+                // === PREP CALL / RESOLVE METHOD / LOAD SELF ===
+                Uop::PrepCall(_nargs) => {
+                    // Preparar argumentos para llamada
+                    // En la implementación actual, los args ya están en el stack
+                    // este uop es un marcador para futuras optimizaciones
+                    self.ip += 1;
+                }
+                Uop::ResolveMethod(_name) => {
+                    // Resolver método en objeto — similar a CallMethod
+                    // Por ahora, es un marcador
+                    self.ip += 1;
+                }
+                Uop::LoadSelf => {
+                    // Cargar self en el tope del stack
+                    // En el modelo actual, self es vars[0]
+                    let val = if !self.vars.is_empty() {
+                        self.vars[0].clone()
+                    } else {
+                        ValorFast::Nulo
+                    };
+                    self.push(val);
+                    self.ip += 1;
+                }
+
+                // === ARITHMETIC ===
+                Uop::Add => {
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    match (&a, &b) {
+                        (ValorFast::Entero(x), ValorFast::Entero(y)) => self.push(get_small_int_fast(x + y)),
+                        (ValorFast::Decimal(x), ValorFast::Decimal(y)) => self.push(ValorFast::Decimal(x + y)),
+                        (ValorFast::Entero(x), ValorFast::Decimal(y)) => self.push(ValorFast::Decimal(*x as f64 + y)),
+                        (ValorFast::Decimal(x), ValorFast::Entero(y)) => self.push(ValorFast::Decimal(x + *y as f64)),
+                        (ValorFast::Texto(t), v) => self.push(ValorFast::Texto(Rc::from(format!("{}{}", t, v.mostrar()).as_str()))),
+                        _ => return Err(ErrFast::TipoInv("+".into())),
+                    }
+                    self.ip += 1;
+                }
+                Uop::Sub => {
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    match (&a, &b) {
+                        (ValorFast::Entero(x), ValorFast::Entero(y)) => self.push(get_small_int_fast(x - y)),
+                        (ValorFast::Decimal(x), ValorFast::Decimal(y)) => self.push(ValorFast::Decimal(x - y)),
+                        _ => return Err(ErrFast::TipoInv("-".into())),
+                    }
+                    self.ip += 1;
+                }
+                Uop::Mul => {
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    match (&a, &b) {
+                        (ValorFast::Entero(x), ValorFast::Entero(y)) => self.push(get_small_int_fast(x * y)),
+                        (ValorFast::Decimal(x), ValorFast::Decimal(y)) => self.push(ValorFast::Decimal(x * y)),
+                        _ => return Err(ErrFast::TipoInv("*".into())),
+                    }
+                    self.ip += 1;
+                }
+                Uop::Div => {
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    match (&a, &b) {
+                        (_, ValorFast::Entero(0)) | (_, ValorFast::Decimal(0.0)) => return Err(ErrFast::DivCero),
+                        (ValorFast::Entero(x), ValorFast::Entero(y)) => self.push(get_small_int_fast(x / y)),
+                        (ValorFast::Decimal(x), ValorFast::Decimal(y)) => self.push(ValorFast::Decimal(x / y)),
+                        _ => return Err(ErrFast::TipoInv("/".into())),
+                    }
+                    self.ip += 1;
+                }
+                Uop::AddInt => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    if let (ValorFast::Entero(av), ValorFast::Entero(bv)) = (&a, &b) {
+                        self.push(get_small_int_fast(av.wrapping_add(*bv)));
+                    } else {
+                        return Err(ErrFast::TipoInv("AddInt".into()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::AddFloat => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    if let (ValorFast::Decimal(av), ValorFast::Decimal(bv)) = (&a, &b) {
+                        self.push(ValorFast::Decimal(av + bv));
+                    } else {
+                        return Err(ErrFast::TipoInv("AddFloat".into()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::SubInt => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    if let (ValorFast::Entero(av), ValorFast::Entero(bv)) = (&a, &b) {
+                        self.push(get_small_int_fast(av.wrapping_sub(*bv)));
+                    } else {
+                        return Err(ErrFast::TipoInv("SubInt".into()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::SubFloat => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    if let (ValorFast::Decimal(av), ValorFast::Decimal(bv)) = (&a, &b) {
+                        self.push(ValorFast::Decimal(av - bv));
+                    } else {
+                        return Err(ErrFast::TipoInv("SubFloat".into()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::MulInt => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    if let (ValorFast::Entero(av), ValorFast::Entero(bv)) = (&a, &b) {
+                        self.push(get_small_int_fast(av.wrapping_mul(*bv)));
+                    } else {
+                        return Err(ErrFast::TipoInv("MulInt".into()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::MulFloat => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    if let (ValorFast::Decimal(av), ValorFast::Decimal(bv)) = (&a, &b) {
+                        self.push(ValorFast::Decimal(av * bv));
+                    } else {
+                        return Err(ErrFast::TipoInv("MulFloat".into()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::DivInt => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    if let (ValorFast::Entero(av), ValorFast::Entero(bv)) = (&a, &b) {
+                        if *bv == 0 { return Err(ErrFast::DivCero); }
+                        self.push(get_small_int_fast(av.wrapping_div(*bv)));
+                    } else {
+                        return Err(ErrFast::TipoInv("DivInt".into()));
+                    }
+                    self.ip += 1;
+                }
+                Uop::DivFloat => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    if let (ValorFast::Decimal(av), ValorFast::Decimal(bv)) = (&a, &b) {
+                        if *bv == 0.0 { return Err(ErrFast::DivCero); }
+                        self.push(ValorFast::Decimal(av / bv));
+                    } else {
+                        return Err(ErrFast::TipoInv("DivFloat".into()));
+                    }
+                    self.ip += 1;
+                }
+
+                // === COMPARACIONES ===
+                Uop::Igual => {
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    self.push(ValorFast::Booleano(match (&a, &b) {
+                        (ValorFast::Entero(x), ValorFast::Entero(y)) => x == y,
+                        (ValorFast::Decimal(x), ValorFast::Decimal(y)) => x == y,
+                        (ValorFast::Texto(x), ValorFast::Texto(y)) => x == y,
+                        (ValorFast::Booleano(x), ValorFast::Booleano(y)) => x == y,
+                        _ => return Err(ErrFast::TipoInv("==".into())),
+                    }));
+                    self.ip += 1;
+                }
+                Uop::Diferente => {
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    self.push(ValorFast::Booleano(match (&a, &b) {
+                        (ValorFast::Entero(x), ValorFast::Entero(y)) => x != y,
+                        (ValorFast::Decimal(x), ValorFast::Decimal(y)) => x != y,
+                        _ => return Err(ErrFast::TipoInv("!=".into())),
+                    }));
+                    self.ip += 1;
+                }
+                Uop::Menor => {
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    self.push(ValorFast::Booleano(match (&a, &b) {
+                        (ValorFast::Entero(x), ValorFast::Entero(y)) => x < y,
+                        (ValorFast::Decimal(x), ValorFast::Decimal(y)) => x < y,
+                        _ => return Err(ErrFast::TipoInv("<".into())),
+                    }));
+                    self.ip += 1;
+                }
+                Uop::Mayor => {
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    self.push(ValorFast::Booleano(match (&a, &b) {
+                        (ValorFast::Entero(x), ValorFast::Entero(y)) => x > y,
+                        (ValorFast::Decimal(x), ValorFast::Decimal(y)) => x > y,
+                        _ => return Err(ErrFast::TipoInv(">".into())),
+                    }));
+                    self.ip += 1;
+                }
+                Uop::MenorIgual => {
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    self.push(ValorFast::Booleano(match (&a, &b) {
+                        (ValorFast::Entero(x), ValorFast::Entero(y)) => x <= y,
+                        (ValorFast::Decimal(x), ValorFast::Decimal(y)) => x <= y,
+                        _ => return Err(ErrFast::TipoInv("<=".into())),
+                    }));
+                    self.ip += 1;
+                }
+                Uop::MayorIgual => {
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    self.push(ValorFast::Booleano(match (&a, &b) {
+                        (ValorFast::Entero(x), ValorFast::Entero(y)) => x >= y,
+                        (ValorFast::Decimal(x), ValorFast::Decimal(y)) => x >= y,
+                        _ => return Err(ErrFast::TipoInv(">=".into())),
+                    }));
+                    self.ip += 1;
+                }
+                Uop::Y => { let b = self.pop()?; let a = self.pop()?; self.push(ValorFast::Booleano(a.es_verdadero() && b.es_verdadero())); self.ip += 1; }
+                Uop::O => { let b = self.pop()?; let a = self.pop()?; self.push(ValorFast::Booleano(a.es_verdadero() || b.es_verdadero())); self.ip += 1; }
+                Uop::No => { let a = self.pop()?; self.push(ValorFast::Booleano(!a.es_verdadero())); self.ip += 1; }
+
+                // === CONTROL FLOW ===
+                Uop::Jump(target) => { self.ip = target; }
+                Uop::JumpSiFalso(target) => {
+                    if !self.pop()?.es_verdadero() { self.ip = target; }
+                    else { self.ip += 1; }
+                }
+                Uop::Label(_) => { self.ip += 1; }
+                Uop::Halt => break,
+
+                // === FUNCTIONS ===
+                Uop::Call(nombre, nargs) => {
+                    if let Some(func) = self.funciones.get(&nombre).cloned() {
+                        let next_ip = self.ip + 1;
+                        let is_tail = next_ip < len && matches!(uops.get(next_ip), Some(Uop::Return));
+
+                        if is_tail {
+                            let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                            for _ in 0..nargs { args.push(self.pop()?); }
+                            args.reverse();
+                            if self.vars.len() < nargs { self.vars.resize(nargs, ValorFast::Nulo); }
+                            for (i, arg) in args.into_iter().enumerate() {
+                                self.vars[i] = arg;
+                            }
+                            self.ip = func.ip;
+                        } else {
+                            let vars_prev_len = self.vars.len();
+                            let mut saved_args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                            for i in 0..nargs {
+                                saved_args.push(if i < self.vars.len() { self.vars[i].clone() } else { ValorFast::Nulo });
+                            }
+                            self.call_stack.push(FrmFast { ip_ret: next_ip, vars_prev_len, saved_args });
+
+                            let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                            for _ in 0..nargs { args.push(self.pop()?); }
+                            args.reverse();
+                            if self.vars.len() < nargs { self.vars.resize(nargs, ValorFast::Nulo); }
+                            for (i, arg) in args.into_iter().enumerate() {
+                                self.vars[i] = arg;
+                            }
+                            self.ip = func.ip;
+                        }
+                    } else { return Err(ErrFast::FnNoDef(nombre)); }
+                }
+                Uop::Return => {
+                    if let Some(frame) = self.call_stack.pop() {
+                        self.vars.truncate(frame.vars_prev_len);
+                        for (i, val) in frame.saved_args.into_iter().enumerate() {
+                            if i < self.vars.len() {
+                                self.vars[i] = val;
+                            }
+                        }
+                        self.ip = frame.ip_ret;
+                    } else { break; }
+                }
+                Uop::FunctionDef(_, _) => { self.ip += 1; }
+
+                // === I/O ===
+                Uop::Print => { let v = self.pop()?; self.output.push(v.mostrar()); self.ip += 1; }
+                Uop::ReadLine => {
+                    let mut i = String::new(); print!("> "); let _ = std::io::Write::flush(&mut std::io::stdout());
+                    if std::io::stdin().read_line(&mut i).is_ok() { self.push(ValorFast::Texto(Rc::from(i.trim()))); }
+                    else { self.push(ValorFast::Texto(Rc::from(""))); }
+                    self.ip += 1;
+                }
+
+                // === OBJECT OPERATIONS ===
+                Uop::NewObject(c) => {
+                    self.push(ValorFast::Objeto(ObjFast(Rc::new(RefCell::new(ObjVal { clase: c, campos: HashMap::new() })))));
+                    self.ip += 1;
+                }
+                Uop::SetField(c) => {
+                    if let ValorFast::Objeto(o) = self.pop()? {
+                        let v = self.pop()?;
+                        o.0.borrow_mut().campos.insert(c, v);
+                    } else { return Err(ErrFast::TipoInv("SetField".into())); }
+                    self.ip += 1;
+                }
+                Uop::GetField(c) => {
+                    if let ValorFast::Objeto(o) = self.pop()? {
+                        let b = o.0.borrow();
+                        self.push(b.campos.get(&c).cloned().unwrap_or(ValorFast::Nulo));
+                    } else { return Err(ErrFast::TipoInv("GetField".into())); }
+                    self.ip += 1;
+                }
+                Uop::CallMethod(m, nargs) => {
+                    if let Some(b) = resolver_builtin_fast(&m) { self.exec_builtin(b, nargs)?; self.ip += 1; continue; }
+                    let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                    for _ in 0..nargs { args.push(self.pop()?); }
+                    args.reverse();
+                    if let ValorFast::Objeto(o) = self.pop()? {
+                        let c = o.0.borrow().clase.clone();
+                        let fn_name = format!("{}.{}", c, m);
+                        if let Some(func) = self.funciones.get(&fn_name).cloned() {
+                            let vars_prev_len = self.vars.len();
+                            let mut all = vec![ValorFast::Objeto(o)];
+                            all.extend(args);
+                            let n = all.len();
+                            let mut saved_args: Vec<ValorFast> = Vec::with_capacity(n);
+                            for i in 0..n { saved_args.push(if i < self.vars.len() { self.vars[i].clone() } else { ValorFast::Nulo }); }
+                            self.call_stack.push(FrmFast { ip_ret: self.ip + 1, vars_prev_len, saved_args });
+                            if self.vars.len() < n { self.vars.resize(n, ValorFast::Nulo); }
+                            for (i, a) in all.into_iter().enumerate() { self.vars[i] = a; }
+                            self.ip = func.ip;
+                        } else { return Err(ErrFast::FnNoDef(fn_name)); }
+                    } else { return Err(ErrFast::TipoInv("CallMethod".into())); }
+                }
+
+                // === ARRAY / MAP OPERATIONS ===
+                Uop::ArrayNew(n) => {
+                    let mut e = Vec::with_capacity(n);
+                    for _ in 0..n { e.push(self.pop()?); }
+                    e.reverse();
+                    self.push(ValorFast::Arreglo(e));
+                    self.ip += 1;
+                }
+                Uop::ArrayGet => {
+                    let i = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &i) {
+                        (ValorFast::Arreglo(e), ValorFast::Entero(i)) => {
+                            if *i >= 0 && (*i as usize) < e.len() {
+                                self.push(e[*i as usize].clone());
+                            } else { return Err(ErrFast::IdxOut(format!("[{}]", i))); }
+                        }
+                        _ => return Err(ErrFast::TipoInv("[]".into())),
+                    }
+                    self.ip += 1;
+                }
+                Uop::ArraySet => {
+                    let i = self.pop()?;
+                    let mut a = self.pop()?;
+                    let v = self.pop()?;
+                    if let (ValorFast::Arreglo(ref mut e), ValorFast::Entero(i)) = (&mut a, &i) {
+                        if *i >= 0 && (*i as usize) < e.len() {
+                            e[*i as usize] = v;
+                            self.push(a);
+                        } else { return Err(ErrFast::IdxOut("set".into())); }
+                    } else { return Err(ErrFast::TipoInv("[]=".into())); }
+                    self.ip += 1;
+                }
+                Uop::ArrayLen => {
+                    if let ValorFast::Arreglo(e) = self.pop()? {
+                        self.push(get_small_int_fast(e.len() as i64));
+                    } else { return Err(ErrFast::TipoInv("len".into())); }
+                    self.ip += 1;
+                }
+                Uop::MapNew(n) => {
+                    let mut m = HashMap::with_capacity(n);
+                    for _ in 0..n {
+                        let v = self.pop()?;
+                        if let ValorFast::Texto(k) = self.pop()? {
+                            m.insert(k.to_string(), v);
+                        }
+                    }
+                    self.push(ValorFast::Mapa(m));
+                    self.ip += 1;
+                }
+                Uop::MapGet => {
+                    let k = self.pop()?;
+                    let m = self.pop()?;
+                    match (&m, &k) {
+                        (ValorFast::Mapa(m), ValorFast::Texto(k)) => {
+                            self.push(m.get(k.as_ref()).cloned().unwrap_or(ValorFast::Nulo));
+                        }
+                        _ => return Err(ErrFast::TipoInv("map[]".into())),
+                    }
+                    self.ip += 1;
+                }
+                Uop::MapSet => {
+                    let v = self.pop()?;
+                    let k = self.pop()?;
+                    let mut m = self.pop()?;
+                    if let (ValorFast::Mapa(ref mut mm), ValorFast::Texto(k)) = (&mut m, k) {
+                        mm.insert(k.to_string(), v);
+                        self.push(m);
+                    } else { return Err(ErrFast::TipoInv("map[]=".into())); }
+                    self.ip += 1;
+                }
             }
         }
         Ok(())

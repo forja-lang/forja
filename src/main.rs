@@ -7,6 +7,7 @@ mod semantics;
 mod transpiler;
 mod compiler_asm;
 mod bytecode;
+mod uops;
 mod vm;
 mod repl;
 mod aot;
