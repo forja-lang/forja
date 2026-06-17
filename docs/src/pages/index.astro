@@ -135,7 +135,7 @@ import Layout from '../layouts/Layout.astro';
     <div class="code-header"><span>🔥 forja/ejemplo.fa</span><span>🦀 rust/ejemplo.rs</span></div>
     <pre><code><span class="co">// ——————— Forja ——————————————————————— // ——————— Rust —————————————————————</span>
 <span class="kw">funcion</span> factorial(n) &lbrace;                    <span class="co">// fn factorial(n: i64) -> i64 &lbrace;</span>
-    <span class="kw">si</span> (n <= 1) &lbrace;                           <span class="co">//     if n <= 1 &lbrace;</span>
+    <span class="kw">si</span> (n &lt;= 1) &lbrace;                           <span class="co">//     if n &lt;= 1 &lbrace;</span>
         <span class="kw">retornar</span> 1                               <span class="co">//         return 1</span>
     &rbrace;                                         <span class="co">//     &rbrace;</span>
     <span class="kw">retornar</span> n * factorial(n - 1)                <span class="co">//     n * factorial(n - 1)</span>
@@ -205,7 +205,7 @@ forja build ejemplo.fa -o programa.exe
 &rbrace;
 
 <span class="co">// Bucles</span>
-<span class="kw">para</span> (<span class="kw">variable</span> i = 0; i < 5; i = i + 1) &lbrace;
+<span class="kw">para</span> (<span class="kw">variable</span> i = 0; i &lt; 5; i = i + 1) &lbrace;
     <span class="fn">escribir</span>(<span class="st">"Iteración "</span> + i)
 &rbrace;
 
@@ -241,7 +241,7 @@ p.saludar()
 
 <span class="co">// Arreglos y mapas</span>
 <span class="kw">variable</span> arr = [1, 2, 3]
-<span class="kw">variable</span> m = {<span class="st">"nombre"</span>: <span class="st">"Ana"</span>, <span class="st">"edad"</span>: 30}</code></pre>
+<span class="kw">variable</span> m = <span class="st">"nombre"</span>: <span class="st">"Ana"</span>, <span class="st">"edad"</span>: 30</code></pre>
   </div>
 
   <h2>Pipeline de compilación</h2>
@@ -250,13 +250,13 @@ p.saludar()
 
   <div class="code-block-wrapper">
     <div class="code-header"><span>🔀 Arquitectura completa</span></div>
-    <pre><code>┌─────────┐   ┌───────┐   ┌─────┐   ┌──────────────┐   ┌──────────┐   ┌─────────────┐
+    <pre><code is:raw>┌─────────┐   ┌───────┐   ┌─────┐   ┌──────────────┐   ┌──────────┐   ┌─────────────┐
 │ Source  │ → │ Lexer │ → │Parser│ → │Type + Borrow │ → │Optimizer │ → │ Transpiler  │ → Rust .rs
 │  .fa    │   │       │   │     │   │   Checker    │   │(fold+DCE) │   │             │
 └─────────┘   └───────┘   └─────┘   └──────────────┘   └──────────┘   └─────────────┘
-                                              ════════════════════════════════════════
-                                              ‖  Rutas alternativas:                  ‖
-                                              ════════════════════════════════════════
+                                               ════════════════════════════════════════
+                                               ‖  Rutas alternativas:                  ‖
+                                               ════════════════════════════════════════
                                         ┌──────────────────┐
                                         │ Compilador ASM   │ → .s → gcc -O2 → .exe (⚡ nativo)
                                         │ (compiler_asm)   │    x86-64 / ARM64
@@ -268,7 +268,7 @@ p.saludar()
                                         │    Uops      │   │   vm_jit (v3 DT)     │
                                         │ (expansión)  │   │   vm_fast (v5 prod)  │
                                         └──────┬───────┘   │                      │
-                                               │           │ JIT (Cranelift)       │
+                                               │           │ JIT (Cranelift)      │
                                                │           │ + fallback a VM fast │
                                                │           └──────────────────────┘
                                                │
@@ -280,7 +280,6 @@ p.saludar()
                                         │ WASM (navegador) │ → Playground web
                                         └──────────────────┘</code></pre>
   </div>
-
   <h2>Arquitectura de ejecución</h2>
 
   <p>Forja tiene <strong>4 estrategias de ejecución</strong> ordenadas por velocidad:</p>
