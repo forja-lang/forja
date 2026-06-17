@@ -7,7 +7,27 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::sync::LazyLock;
 use crate::bytecode::Opcode;
+
+// Small Integer Cache [-5, 256] — evita construir el enum repetidamente
+static SMALL_INT_CACHE_OPT: LazyLock<[ValorVMOpt; 262]> = LazyLock::new(|| {
+    let mut cache = [ValorVMOpt::Entero(0); 262];
+    for i in 0..262 {
+        cache[i] = ValorVMOpt::Entero(i as i64 - 5);
+    }
+    cache
+});
+
+/// Devuelve ValorVMOpt::Entero(n) usando la Small Integer Cache si n está en [-5, 256]
+#[inline(always)]
+pub fn get_small_int_opt(n: i64) -> ValorVMOpt {
+    if n >= -5 && n <= 256 {
+        SMALL_INT_CACHE_OPT[(n + 5) as usize].clone()
+    } else {
+        ValorVMOpt::Entero(n)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum ValorVMOpt {
@@ -182,7 +202,7 @@ impl ForjaVMOpt {
             self.ip += 1;
 
             match op {
-                Opcode::PushEntero(n) => self.stack.push(ValorVMOpt::Entero(n)),
+                Opcode::PushEntero(n) => self.stack.push(get_small_int_opt(n)),
                 Opcode::PushDecimal(d) => self.stack.push(ValorVMOpt::Decimal(d)),
                 Opcode::PushTexto(s) => self.stack.push(ValorVMOpt::Texto(Rc::from(s.as_str()))),
                 Opcode::PushBooleano(b) => self.stack.push(ValorVMOpt::Booleano(b)),
@@ -202,7 +222,7 @@ impl ForjaVMOpt {
                 // === Opcodes fusionados ===
                 Opcode::DeclareEnteroOp(idx, n) => {
                     let nombre = format!("%idx_{}", idx);
-                    self.declarar_variable(&nombre, ValorVMOpt::Entero(n));
+                    self.declarar_variable(&nombre, get_small_int_opt(n));
                 }
                 Opcode::DeclareBooleanoOp(idx, b) => {
                     let nombre = format!("%idx_{}", idx);
@@ -211,9 +231,9 @@ impl ForjaVMOpt {
                 Opcode::StoreEnteroOp(idx, n) => {
                     let nombre = format!("%idx_{}", idx);
                     if self.buscar_pos(&nombre).is_some() {
-                        self.asignar_variable(&nombre, ValorVMOpt::Entero(n))?;
+                        self.asignar_variable(&nombre, get_small_int_opt(n))?;
                     } else {
-                        self.declarar_variable(&nombre, ValorVMOpt::Entero(n));
+                        self.declarar_variable(&nombre, get_small_int_opt(n));
                     }
                 }
 
@@ -306,7 +326,7 @@ impl ForjaVMOpt {
                 Opcode::ArrayNew(n) => { let mut e = Vec::with_capacity(n); for _ in 0..n { e.push(self.pop()?); } e.reverse(); self.stack.push(ValorVMOpt::Arreglo(e)); }
                 Opcode::ArrayGet => { let i=self.pop()?;let a=self.pop()?;match(&a,&i){(ValorVMOpt::Arreglo(e),ValorVMOpt::Entero(i))=>if *i>=0&&(*i as usize)<e.len(){self.stack.push(e[*i as usize].clone())}else{return Err(ErrorVMOpt::IndiceFueraRango(format!("[{}]",i)))},_=>return Err(ErrorVMOpt::TipoIncompatible("ArrayGet".into()))}}
                 Opcode::ArraySet => { let i=self.pop()?;let mut a=self.pop()?;let v=self.pop()?;if let(ValorVMOpt::Arreglo(ref mut e),ValorVMOpt::Entero(i))=(&mut a,&i){if *i>=0&&(*i as usize)<e.len(){e[*i as usize]=v;self.stack.push(a)}else{return Err(ErrorVMOpt::IndiceFueraRango("set".into()))}}else{return Err(ErrorVMOpt::TipoIncompatible("ArraySet".into()))}}
-                Opcode::ArrayLen => { if let ValorVMOpt::Arreglo(e)=self.pop()?{self.stack.push(ValorVMOpt::Entero(e.len() as i64))}else{return Err(ErrorVMOpt::TipoIncompatible("ArrayLen".into()))} }
+                Opcode::ArrayLen => { if let ValorVMOpt::Arreglo(e)=self.pop()?{self.stack.push(get_small_int_opt(e.len() as i64))}else{return Err(ErrorVMOpt::TipoIncompatible("ArrayLen".into()))} }
                 Opcode::MapNew(n) => { let mut m = HashMap::with_capacity(n); for _ in 0..n { let v = self.pop()?; if let ValorVMOpt::Texto(k) = self.pop()? { m.insert(k.to_string(), v); } } self.stack.push(ValorVMOpt::Mapa(m)); }
                 Opcode::MapGet => { let k=self.pop()?;let m=self.pop()?;match(&m,&k){(ValorVMOpt::Mapa(m),ValorVMOpt::Texto(k))=>self.stack.push(m.get(k.as_ref()).cloned().unwrap_or(ValorVMOpt::Nulo)),_=>return Err(ErrorVMOpt::TipoIncompatible("MapGet".into()))}}
                 Opcode::MapSet => { let v=self.pop()?;let k=self.pop()?;let mut m=self.pop()?;if let(ValorVMOpt::Mapa(ref mut mm),ValorVMOpt::Texto(k))=(&mut m,k){mm.insert(k.to_string(),v);self.stack.push(m)}else{return Err(ErrorVMOpt::TipoIncompatible("MapSet".into()))}}
@@ -331,7 +351,7 @@ fn resolver_builtin_opt(metodo: &str) -> Option<BuiltinMethodOpt> {
 impl ForjaVMOpt {
     fn ejecutar_builtin_opt(&mut self, b: BuiltinMethodOpt, _n: usize) -> Result<(), ErrorVMOpt> {
         match b {
-            BuiltinMethodOpt::Length => { match self.pop()? { ValorVMOpt::Texto(s) => self.push(ValorVMOpt::Entero(s.len() as i64)), _ => return Err(ErrorVMOpt::TipoIncompatible("length".into())) } }
+            BuiltinMethodOpt::Length => { match self.pop()? { ValorVMOpt::Texto(s) => self.push(get_small_int_opt(s.len() as i64)), _ => return Err(ErrorVMOpt::TipoIncompatible("length".into())) } }
             BuiltinMethodOpt::ToUpper => { match self.pop()? { ValorVMOpt::Texto(s) => self.push(ValorVMOpt::Texto(Rc::from(s.to_uppercase().as_str()))), _ => return Err(ErrorVMOpt::TipoIncompatible("to_upper".into())) } }
             BuiltinMethodOpt::ToLower => { match self.pop()? { ValorVMOpt::Texto(s) => self.push(ValorVMOpt::Texto(Rc::from(s.to_lowercase().as_str()))), _ => return Err(ErrorVMOpt::TipoIncompatible("to_lower".into())) } }
             BuiltinMethodOpt::Contains => { let sub = self.pop()?; match (self.pop()?, sub) { (ValorVMOpt::Texto(s), ValorVMOpt::Texto(sub)) => self.push(ValorVMOpt::Booleano(s.contains(sub.as_ref()))), _ => return Err(ErrorVMOpt::TipoIncompatible("contains".into())) } }

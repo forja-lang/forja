@@ -11,7 +11,27 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::sync::LazyLock;
 use crate::bytecode::Opcode;
+
+// Small Integer Cache [-5, 256] — evita construir el enum repetidamente
+static SMALL_INT_CACHE_FAST: LazyLock<[ValorFast; 262]> = LazyLock::new(|| {
+    let mut cache = [ValorFast::Entero(0); 262];
+    for i in 0..262 {
+        cache[i] = ValorFast::Entero(i as i64 - 5);
+    }
+    cache
+});
+
+/// Devuelve ValorFast::Entero(n) usando la Small Integer Cache si n está en [-5, 256]
+#[inline(always)]
+pub fn get_small_int_fast(n: i64) -> ValorFast {
+    if n >= -5 && n <= 256 {
+        SMALL_INT_CACHE_FAST[(n + 5) as usize].clone()
+    } else {
+        ValorFast::Entero(n)
+    }
+}
 
 #[derive(Clone)]
 pub enum ValorFast {
@@ -195,7 +215,7 @@ impl ForjaFast {
             self.ip += 1;
 
             match op {
-                Opcode::PushEntero(n) => self.push(ValorFast::Entero(*n)),
+                Opcode::PushEntero(n) => self.push(get_small_int_fast(*n)),
                 Opcode::PushDecimal(d) => self.push(ValorFast::Decimal(*d)),
                 Opcode::PushTexto(s) => self.push(ValorFast::Texto(Rc::from(s.as_str()))),
                 Opcode::PushBooleano(b) => self.push(ValorFast::Booleano(*b)),
@@ -225,7 +245,7 @@ impl ForjaFast {
                 // === OPCODES FUSIONADOS (sin push/pop — asignación directa) ===
                 Opcode::DeclareEnteroOp(idx, n) => {
                     if *idx >= self.vars.len() { self.vars.resize(*idx + 1, ValorFast::Nulo); }
-                    self.vars[*idx] = ValorFast::Entero(*n);
+                    self.vars[*idx] = get_small_int_fast(*n);
                 }
                 Opcode::DeclareBooleanoOp(idx, b) => {
                     if *idx >= self.vars.len() { self.vars.resize(*idx + 1, ValorFast::Nulo); }
@@ -233,7 +253,7 @@ impl ForjaFast {
                 }
                 Opcode::StoreEnteroOp(idx, n) => {
                     if *idx >= self.vars.len() { self.vars.resize(*idx + 1, ValorFast::Nulo); }
-                    self.vars[*idx] = ValorFast::Entero(*n);
+                    self.vars[*idx] = get_small_int_fast(*n);
                 }
 
                 // === VARIABLES POR NOMBRE (fallback) ===
@@ -458,7 +478,7 @@ impl ForjaFast {
                 Opcode::ArrayNew(n)=>{let mut e=Vec::with_capacity(*n);for _ in 0..*n{e.push(self.pop()?);}e.reverse();self.push(ValorFast::Arreglo(e));}
                 Opcode::ArrayGet=>{let i=self.pop()?;let a=self.pop()?;match(&a,&i){(ValorFast::Arreglo(e),ValorFast::Entero(i))=>if*i>=0&&(*i as usize)<e.len(){self.push(e[*i as usize].clone())}else{return Err(ErrFast::IdxOut(format!("[{}]",i)))},_=>return Err(ErrFast::TipoInv("[]".into()))}}
                 Opcode::ArraySet=>{let i=self.pop()?;let mut a=self.pop()?;let v=self.pop()?;if let(ValorFast::Arreglo(ref mut e),ValorFast::Entero(i))=(&mut a,&i){if*i>=0&&(*i as usize)<e.len(){e[*i as usize]=v;self.push(a)}else{return Err(ErrFast::IdxOut("set".into()))}}else{return Err(ErrFast::TipoInv("[]=".into()))}}
-                Opcode::ArrayLen=>{if let ValorFast::Arreglo(e)=self.pop()?{self.push(ValorFast::Entero(e.len() as i64))}else{return Err(ErrFast::TipoInv("len".into()))}}
+                Opcode::ArrayLen=>{if let ValorFast::Arreglo(e)=self.pop()?{self.push(get_small_int_fast(e.len() as i64))}else{return Err(ErrFast::TipoInv("len".into()))}}
                 Opcode::MapNew(n)=>{let mut m=HashMap::with_capacity(*n);for _ in 0..*n{let v=self.pop()?;if let ValorFast::Texto(k)=self.pop()?{m.insert(k.to_string(),v);}}self.push(ValorFast::Mapa(m));}
                 Opcode::MapGet=>{let k=self.pop()?;let m=self.pop()?;match(&m,&k){(ValorFast::Mapa(m),ValorFast::Texto(k))=>self.push(m.get(k.as_ref()).cloned().unwrap_or(ValorFast::Nulo)),_=>return Err(ErrFast::TipoInv("map[]".into()))}}
                 Opcode::MapSet=>{let v=self.pop()?;let k=self.pop()?;let mut m=self.pop()?;if let(ValorFast::Mapa(ref mut mm),ValorFast::Texto(k))=(&mut m,k){mm.insert(k.to_string(),v);self.push(m)}else{return Err(ErrFast::TipoInv("map[]=".into()))}}
@@ -478,7 +498,7 @@ fn resolver_builtin_fast(m: &str) -> Option<BuiltinFast> {
 impl ForjaFast {
     fn exec_builtin(&mut self, b: BuiltinFast, _n: usize) -> Result<(), ErrFast> {
         match b {
-            BuiltinFast::Len=>{match self.pop()?{ValorFast::Texto(s)=>self.push(ValorFast::Entero(s.len() as i64)),_=>return Err(ErrFast::TipoInv("len".into()))}}
+            BuiltinFast::Len=>{match self.pop()?{ValorFast::Texto(s)=>self.push(get_small_int_fast(s.len() as i64)),_=>return Err(ErrFast::TipoInv("len".into()))}}
             BuiltinFast::Upper=>{match self.pop()?{ValorFast::Texto(s)=>self.push(ValorFast::Texto(Rc::from(s.to_uppercase().as_str()))),_=>return Err(ErrFast::TipoInv("upper".into()))}}
             BuiltinFast::Lower=>{match self.pop()?{ValorFast::Texto(s)=>self.push(ValorFast::Texto(Rc::from(s.to_lowercase().as_str()))),_=>return Err(ErrFast::TipoInv("lower".into()))}}
             BuiltinFast::Contains=>{let sub=self.pop()?;match(self.pop()?,sub){(ValorFast::Texto(s),ValorFast::Texto(sub))=>self.push(ValorFast::Booleano(s.contains(sub.as_ref()))),_=>return Err(ErrFast::TipoInv("contains".into()))}}
