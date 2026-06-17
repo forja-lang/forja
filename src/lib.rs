@@ -119,7 +119,7 @@ pub fn ejecutar(source: &str) -> Result<Vec<String>, String> {
 /// Compila y ejecuta código Forja usando JIT nativo (con fallback a VM)
 #[cfg(not(target_arch = "wasm32"))]
 pub fn ejecutar_jit(source: &str) -> Result<Vec<String>, String> {
-    use bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
+    use bytecode::BytecodeGenerator;
 
     // FASE 1: Lexer
     let mut lexer = lexer::Lexer::new(source);

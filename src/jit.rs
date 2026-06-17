@@ -19,12 +19,17 @@ mod mem {
         unsafe {
             let p = VirtualAlloc(std::ptr::null(), size, MEM_COMMIT | MEM_RESERVE, PAGE_RW);
             if p.is_null() { return Err("VirtualAlloc failed".into()); }
+            Ok(p)
+        }
+    }
+    /// Cambia la protección a PAGE_EXEC_READ después de escribir el código
+    pub fn make_exec(p: *mut u8, size: usize) -> Result<(), String> {
+        unsafe {
             let mut old = 0u32;
             if VirtualProtect(p, size, PAGE_EXEC_READ, &mut old) == 0 {
-                VirtualFree(p, 0, MEM_REL);
                 return Err("VirtualProtect failed".into());
             }
-            Ok(p)
+            Ok(())
         }
     }
     pub fn free_exec(p: *mut u8, _: usize) { unsafe { VirtualFree(p, 0, MEM_REL); } }
@@ -33,6 +38,7 @@ mod mem {
 #[cfg(not(target_os = "windows"))]
 mod mem {
     pub fn alloc_exec(_: usize) -> Result<*mut u8, String> { Err("no JIT".into()) }
+    pub fn make_exec(_: *mut u8, _: usize) -> Result<(), String> { Err("no JIT".into()) }
     pub fn free_exec(_: *mut u8, _: usize) {}
 }
 
@@ -122,7 +128,9 @@ impl NativeJIT {
         // mov rbx, rcx (vars ptr)
         c.bytes.extend_from_slice(&[0x48, 0x89, 0xcb]);
         // mov r14, rdx (output ptr)
-        c.bytes.extend_from_slice(&[0x4c, 0x89, 0xd6]);
+        // 0x49 = REX.W=1, REX.B=1 (extends rm=R14)
+        // 0x89 = mov r/m64, r64  →  reg=src(RDX), rm=dst(R14)
+        c.bytes.extend_from_slice(&[0x49, 0x89, 0xd6]);
 
         let mut sd = 0usize;
 
@@ -178,7 +186,7 @@ impl NativeJIT {
                 Opcode::StoreEnteroOp(idx, n) => { c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(*n); c.store_var(*idx); }
 
                 Opcode::Jump(l) => { c.jmp(*l); }
-                Opcode::JumpSiFalso(l) => { if sd >= 1 { c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x85, 0xc0]); c.jcc(0x84, *l); sd -= 1; } else { return Err("JZ underflow".into()); } }
+                Opcode::JumpSiFalso(l) => { if sd >= 1 { c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x85, 0xc0]); c.jcc(0x04, *l); sd -= 1; } else { return Err("JZ underflow".into()); } }
                 Opcode::Label(l) => { c.label(*l); }
 
                 Opcode::Halt => { break; }
@@ -194,8 +202,12 @@ impl NativeJIT {
 
         let code = c.finish();
         let size = code.len();
+        // 1. Alocar memoria RW
         let ptr = mem::alloc_exec(size)?;
+        // 2. Copiar código a la memoria (aún RW)
         unsafe { std::ptr::copy_nonoverlapping(code.as_ptr(), ptr, size); }
+        // 3. Cambiar protección a RX (ejecutable + lectura, no escritura)
+        mem::make_exec(ptr, size)?;
         self.compiled.insert(name.to_string(), CompiledCode { ptr, size });
         Ok(ptr)
     }

@@ -317,58 +317,15 @@ fn cmd_run(args: &[String]) {
         }
     };
 
-    // FASE 1: Lexer
-    let mut lexer = lexer::Lexer::new(&source);
-    let tokens = match lexer.tokenize() {
-        Ok(t) => t,
-        Err(errors) => {
-            for err in errors {
-                eprintln!("{}", err.mostrar_con_contexto(&source));
+    // FASE 1-5 + ejecución usando la pipeline completa de la librería
+    // Esto aplica lexer, parser, optimizador, type checker, dead code elimination,
+    // bytecode generation, optimización de índices, fusión de opcodes y ejecución en VM
+    match forja::ejecutar(&source) {
+        Ok(output) => {
+            for line in output {
+                println!("{}", line);
             }
-            process::exit(1);
         }
-    };
-
-    // FASE 2-3: Parser
-    let mut parser = parser::Parser::new(tokens);
-    let programa = match parser.parse() {
-        Ok(p) => p,
-        Err(errors) => {
-            for err in errors {
-                eprintln!("{}", err.mostrar_con_contexto(&source));
-            }
-            process::exit(1);
-        }
-    };
-
-    // FASE 4: Optimizador
-    let mut optimizer = optimizer::Optimizer::new();
-    let programa = optimizer.optimizar(&programa);
-
-    // FASE 5: Type Checker
-    let mut type_checker = semantics::TypeChecker::new();
-    if let Err(errors) = type_checker.analizar(&programa) {
-        for err in errors {
-            eprintln!("{}", err.mostrar_con_contexto(&source));
-        }
-        process::exit(1);
-    }
-
-    // Generar bytecode
-    let mut gen = bytecode::BytecodeGenerator::new();
-    let opcodes = match gen.generar(&programa) {
-        Ok(o) => o,
-        Err(_) => {
-            eprintln!("Error generando bytecode");
-            process::exit(1);
-        }
-    };
-
-    // Ejecutar en VM
-    let mut forja_vm = vm::ForjaVM::new();
-    forja_vm.cargar_bytecode(opcodes);
-    match forja_vm.ejecutar() {
-        Ok(()) => {}
         Err(e) => {
             eprintln!("Error en ejecución: {}", e);
             process::exit(1);
@@ -731,7 +688,7 @@ fn cmd_build_asm(args: &[String]) {
         process::exit(1);
     }
 
-    let mut input_path = &args[0];
+    let input_path = &args[0];
     let mut target_str: Option<String> = None;
     let mut output_path: Option<String> = None;
 

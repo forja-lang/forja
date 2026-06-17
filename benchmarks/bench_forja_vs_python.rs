@@ -128,7 +128,7 @@ fn mostrar(nombre: &str, us: f64) {
 // Benchmarks con Forja VM (original)
 // ============================================================
 
-fn forja_vm_bench(name: &str, source: &str, iters: usize) -> f64 {
+fn forja_vm_bench(_name: &str, source: &str, iters: usize) -> f64 {
     // Compilar una vez
     let mut gen = forja::bytecode::BytecodeGenerator::new();
     let mut lexer = forja::lexer::Lexer::new(source);
@@ -153,7 +153,7 @@ fn forja_vm_bench(name: &str, source: &str, iters: usize) -> f64 {
 // Benchmarks con Forja VM OPTIMIZADA
 // ============================================================
 
-fn forja_vm_opt_bench(name: &str, source: &str, iters: usize) -> f64 {
+fn forja_vm_opt_bench(_name: &str, source: &str, iters: usize) -> f64 {
     let mut gen = forja::bytecode::BytecodeGenerator::new();
     let mut lexer = forja::lexer::Lexer::new(source);
     let tokens = lexer.tokenize().unwrap();

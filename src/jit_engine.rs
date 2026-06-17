@@ -4,7 +4,6 @@
 
 use crate::bytecode::{self, Opcode};
 use crate::vm_fast::ForjaFast;
-use std::collections::HashMap;
 
 /// Decide si un bloque de bytecode es JIT-compilable por NativeJIT actual
 /// Solo opcodes que NativeJIT::compile() soporta realmente (NO Call/Return/Print/FunctionDef)

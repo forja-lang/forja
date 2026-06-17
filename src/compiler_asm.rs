@@ -47,13 +47,6 @@ impl TargetArch {
         }
     }
 
-    fn comment_char(&self) -> &str {
-        match self {
-            TargetArch::AArch64 => "//",
-            _ => "//",
-        }
-    }
-
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().replace("-", "_").as_str() {
             "x86_64_windows" | "x86_64-windows" | "win64" | "windows" => Some(TargetArch::X86_64Windows),
@@ -1169,8 +1162,8 @@ impl CompilerAsm {
 
     fn generar_runtime_funciones(&mut self) {
         let a = self.arch;
-        let fp = a.fp_reg();
-        let sp = a.sp_reg();
+        let _fp = a.fp_reg();
+        let _sp = a.sp_reg();
         let ret = a.ret_reg();
         let tmp = a.tmp_reg();
         let ss = a.shadow_space();
@@ -1638,7 +1631,7 @@ impl CompilerAsm {
 
             Expresion::AccesoMiembro { objeto, miembro } => {
                 let _ = self.compilar_expresion_asm(objeto);
-                let co = self.buscar_campo_offset(objeto, miembro);
+                let _co = self.buscar_campo_offset(objeto, miembro);
                 ret.to_string()
             }
 
@@ -1663,7 +1656,7 @@ impl CompilerAsm {
                 let count = elementos.len();
                 self.emit_line(&a.mov_reg_imm(tmp, (count * 8) as i64));
                 self.emit_line(&a.call("malloc"));
-                for (i, elem) in elementos.iter().enumerate() {
+                for (_i, elem) in elementos.iter().enumerate() {
                     self.emit_line(&a.push_reg(ret));
                     self.compilar_expresion_asm(elem);
                     self.emit_line(&a.pop_reg(tmp));
@@ -2150,7 +2143,7 @@ impl CompilerAsm {
 
     fn compilar_escribir(&mut self, argumentos: &[Expresion]) {
         let a = self.arch;
-        let ret = a.ret_reg();
+        let _ret = a.ret_reg();
 
         if argumentos.is_empty() {
             self.gen_write_newline();
@@ -2276,7 +2269,7 @@ impl CompilerAsm {
             }
 
             // ── Binaria (comparaciones, operaciones aritméticas) ──
-            Expresion::Binaria { izquierda, operador, derecha } => {
+            Expresion::Binaria { .. } => {
                 // Evaluar la expresión y escribir el resultado como entero
                 self.compilar_expresion_asm(expr);
                 self.gen_write_int_value(ret);
