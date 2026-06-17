@@ -123,8 +123,8 @@ impl Lexer {
     /// Identifica si una palabra es keyword o identificador
     fn identificar_keyword(&self, palabra: &str) -> TokenKind {
         match palabra {
-            "variable" => TokenKind::Variable,
-            "constante" => TokenKind::Constante,
+            "variable" | "var" => TokenKind::Variable,
+            "constante" | "const" => TokenKind::Constante,
             "mut" => TokenKind::Mut,
             "si" => TokenKind::Si,
             "sino" => TokenKind::Sino,

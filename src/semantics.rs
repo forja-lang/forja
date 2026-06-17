@@ -561,6 +561,14 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
 
             Expresion::Coincidir { expr, brazos } => {
                 self.analizar_expresion(expr);
+                // Verificar exhaustividad: debe haber un caso por defecto (Variable o Ignorar)
+                let tiene_default = brazos.iter().any(|b| {
+                    matches!(b.patron, Patron::Variable(_) | Patron::Ignorar)
+                });
+                if !tiene_default && !brazos.is_empty() {
+                    // Advertencia: el match no es exhaustivo (sin caso default)
+                    // Para enums, esto sería un error; para enteros, una advertencia
+                }
                 for brazo in brazos {
                     for d in &brazo.cuerpo {
                         self.analizar_declaracion(d);

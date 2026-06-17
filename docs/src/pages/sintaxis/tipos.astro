@@ -5,7 +5,9 @@ import Layout from '../../layouts/Layout.astro';
 <Layout title="Tipos de datos — Forja">
   <h1>Tipos de datos</h1>
 
-  <p>Forja es <strong>tipado estáticamente</strong> con inferencia de tipos. No necesitás declarar el tipo siempre, pero podés hacerlo si querés.</p>
+  <p>Forja es <strong>tipado estáticamente</strong> con inferencia de tipos. No necesitás declarar el tipo siempre, pero podés hacerlo si querés mayor claridad.</p>
+
+  <h2>Tabla de tipos</h2>
 
   <table>
     <tr><th>Tipo Forja</th><th>Tipo Rust</th><th>Descripción</th><th>Ejemplo</th></tr>
@@ -14,38 +16,57 @@ import Layout from '../../layouts/Layout.astro';
     <tr><td><code><span class="ty">Texto</span></code></td><td><code>String</code></td><td>Cadena UTF-8</td><td><code>"Hola"</code></td></tr>
     <tr><td><code><span class="ty">Booleano</span></code></td><td><code>bool</code></td><td>Valor lógico</td><td><code>verdadero</code>, <code>falso</code></td></tr>
     <tr><td><code>nulo</code></td><td><code>()</code></td><td>Valor nulo / unit</td><td><code>nulo</code></td></tr>
-    <tr><td><code>[T]</code></td><td><code>Vec&lt;T&gt;</code></td><td>Arreglo dinámico</td><td><code>[1, 2, 3]</code></td></tr>
+    <tr><td><code>[T]</code></td><td><code>Vec&#x3C;T&#x3E;</code></td><td>Arreglo dinámico</td><td><code>[1, 2, 3]</code></td></tr>
   </table>
 
-  <h2>Booleanos</h2>
-  <p>En lugar de <code>true</code>/<code>false</code>, Forja usa español:</p>
+  <h2>Booleanos en español</h2>
 
-  <pre><code><span class="kw">variable</span> activo = <span class="kw">verdadero</span>
+  <p>En lugar de <code>true</code> / <code>false</code>, Forja usa palabras en español:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🔘 Valores booleanos</span></div>
+    <pre><code><span class="kw">variable</span> activo = <span class="kw">verdadero</span>
 <span class="kw">variable</span> inactivo = <span class="kw">falso</span>
 <span class="kw">variable</span> es_mayor = edad >= 18  <span class="co">// resultado: verdadero o falso</span></code></pre>
+  </div>
 
-  <h2>Literales</h2>
+  <h2>Literales numéricos</h2>
 
-  <div class="code-header">🔢 Numéricos</div>
-  <pre><code><span class="kw">variable</span> entero = 42       <span class="co">// Entero (i64)</span>
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🔢 Números</span></div>
+    <pre><code><span class="kw">variable</span> entero = 42       <span class="co">// Entero (i64)</span>
 <span class="kw">variable</span> decimal = 3.14    <span class="co">// Decimal (f64)</span>
 <span class="kw">variable</span> negativo = -10    <span class="co">// Entero negativo</span></code></pre>
+  </div>
 
-  <div class="code-header">📝 Texto</div>
-  <pre><code><span class="kw">variable</span> saludo = <span class="st">"Hola mundo"</span>
+  <h2>Literales de texto</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📝 Strings</span></div>
+    <pre><code><span class="kw">variable</span> saludo = <span class="st">"Hola mundo"</span>
 
 <span class="co">// Caracteres de escape</span>
 <span class="kw">variable</span> multilinea = <span class="st">"Línea 1\nLínea 2"</span>
 <span class="kw">variable</span> tabulado = <span class="st">"Col1\tCol2"</span></code></pre>
+  </div>
 
-  <div class="code-header">📦 Arreglos</div>
-  <pre><code><span class="kw">variable</span> numeros = [1, 2, 3, 4, 5]
+  <h2>Arreglos</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📦 Colecciones</span></div>
+    <pre><code><span class="kw">variable</span> numeros = [1, 2, 3, 4, 5]
 <span class="kw">variable</span> nombres = [<span class="st">"Ana"</span>, <span class="st">"Juan"</span>, <span class="st">"Pedro"</span>]</code></pre>
+  </div>
 
   <h2>Anotaciones explícitas</h2>
 
-  <pre><code><span class="kw">variable</span> nombre: <span class="ty">Texto</span> = <span class="st">"Ana"</span>
+  <p>Cuando querés ser específico con los tipos:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📝 Tipado explícito</span></div>
+    <pre><code><span class="kw">variable</span> nombre: <span class="ty">Texto</span> = <span class="st">"Ana"</span>
 <span class="kw">variable</span> edad: <span class="ty">Entero</span> = 25
 <span class="kw">variable</span> altura: <span class="ty">Decimal</span> = 1.75
 <span class="kw">constante</span> activo: <span class="ty">Booleano</span> = verdadero</code></pre>
+  </div>
 </Layout>

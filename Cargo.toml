@@ -10,5 +10,29 @@ rustyline = "14"
 # Sin dependencias externas - solo std de Rust
 # El JSON se genera manualmente en error.rs
 
+[[bin]]
+name = "bench-fa"
+path = "benchmarks/bench_fa.rs"
+
+[[bin]]
+name = "bench-vm"
+path = "benchmarks/bench_vm.rs"
+
+[[bin]]
+name = "bench-compare"
+path = "benchmarks/bench_forja_vs_python.rs"
+
+[[bin]]
+name = "bench-vms"
+path = "benchmarks/bench_vms.rs"
+
+[[bin]]
+name = "bench-clean"
+path = "benchmarks/bench_clean.rs"
+
+[[bin]]
+name = "bench-completo"
+path = "benchmarks/bench_completo.rs"
+
 [profile.release]
 opt-level = 2

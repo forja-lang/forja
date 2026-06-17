@@ -1,0 +1,42 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Entrada de usuario (leer) — Forja">
+  <h1>Entrada de usuario: <code>leer</code></h1>
+
+  <p>Forja permite leer datos ingresados por el usuario con la función <code><span class="fn">leer</span></code>.</p>
+
+  <div class="info">💡 <strong>Filosofía:</strong> <code>leer()</code> es la forma más simple de hacer que tu programa interactúe con el usuario. Siempre devuelve <code>Texto</code>.</div>
+
+  <h2>Sintaxis</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📖 Leer entrada</span></div>
+    <pre><code><span class="kw">variable</span> nombre = <span class="fn">leer</span>()</code></pre>
+  </div>
+
+  <p>El programa espera hasta que el usuario escriba algo y presione Enter. El resultado siempre es un <code>Texto</code>.</p>
+
+  <h2>Ejemplo completo</h2>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>💬 Conversación simple</span></div>
+    <pre><code><span class="fn">escribir</span>(<span class="st">"¿Cómo te llamás?"</span>)
+<span class="kw">variable</span> nombre = <span class="fn">leer</span>()
+<span class="fn">escribir</span>(<span class="st">"¡Hola, "</span> + nombre + <span class="st">"!"</span>)
+
+<span class="fn">escribir</span>(<span class="st">"¿Cuántos años tenés?"</span>)
+<span class="kw">variable</span> edad_texto = <span class="fn">leer</span>()
+<span class="co">// edad_texto es Texto, no Entero</span></code></pre>
+  </div>
+
+  <div class="warning">⚠️ <strong>Nota:</strong> <code>leer()</code> siempre devuelve <code>Texto</code>. Si necesitás un número, usá la conversión automática de la VM o parseá manualmente.</div>
+
+  <h2>Equivalencia con Rust</h2>
+
+  <table>
+    <tr><th>Forja</th><th>Rust</th></tr>
+    <tr><td><code>variable x = leer()</code></td><td><code>let mut x = String::new(); std::io::stdin().read_line(&mut x);</code></td></tr>
+  </table>
+</Layout>

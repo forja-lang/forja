@@ -3,22 +3,29 @@ import Layout from '../../layouts/Layout.astro';
 ---
 
 <Layout title="Compilador AOT — Forja">
-  <h1>Compilador AOT</h1>
+  <h1>Compilador AOT (Ahead-of-Time)</h1>
 
   <p><strong>Archivo:</strong> <code>src/aot.rs</code></p>
 
   <p>Genera un <strong>ejecutable autónomo</strong> (<code>.exe</code>) que contiene la VM + bytecode incrustado. Funciona en cualquier PC <strong>sin Rust, sin scripts, sin dependencias</strong>.</p>
 
+  <div class="info">🔥 <strong>Magia:</strong> El ejecutable generado se <strong>lee a sí mismo</strong> al inicio. El módulo <code>selfrun.rs</code> busca el magic <code>"FBC\0"</code> al final del archivo, extrae el bytecode y lo ejecuta en la VM. ¡Un solo archivo que es compilador y runtime a la vez!</div>
+
   <h2>¿Cómo funciona?</h2>
 
-  <pre><code>1. Compila .fa → bytecode (igual que forja run)
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🔨 Proceso de build</span></div>
+    <pre><code>1. Compila .fa → bytecode (igual que forja run)
 2. Lee el propio forja.exe como stub
 3. Concatena: [stub] + [bytecode] + [size:u32] + [magic:"FBC\0"]
 4. El .exe resultante se auto-ejecuta al abrirlo</code></pre>
+  </div>
 
   <h2>Estructura del ejecutable</h2>
 
-  <pre><code>┌──────────────────────────────────┐
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📦 Layout del .exe generado</span></div>
+    <pre><code>┌──────────────────────────────────┐
 │  forja.exe (stub)                │  ← el compilador mismo
 │  (contiene la VM completa)       │
 ├──────────────────────────────────┤
@@ -27,21 +34,28 @@ import Layout from '../../layouts/Layout.astro';
 │  Tamaño: u32 LE (4 bytes)        │
 │  Magic: "FBC\0" (4 bytes)        │  ← footer
 └──────────────────────────────────┘</code></pre>
+  </div>
 
   <h2>Uso</h2>
 
-  <div class="code-header">📦 Ejemplo</div>
-  <pre><code>forja build examples/hola_mundo.fa -o hola.exe
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📦 Ejemplo de build</span></div>
+    <pre><code>forja build examples/hola_mundo.fa -o hola.exe
 <span class="co">// → ✅ Ejecutable generado: hola.exe (1234 bytes)</span>
 
 <span class="co">// Ahora cualquiera puede ejecutarlo, sin Rust:</span>
 ./hola.exe
-<span class="co">// → Hola, mundo desde Forja!</span></code></pre>
+<span class="co">// → ¡Hola, mundo desde Forja!</span></code></pre>
+  </div>
 
   <h2>Implementación</h2>
 
-  <pre><code><span class="kw">impl</span> AOTCompiler &lbrace;
-    <span class="kw">fn</span> generar_ejecutable(bytecode: &[u8], salida: &str) -> Result&lt;(), String&gt; &lbrace;
+  <p>El código es sorprendentemente simple. Solo <strong>~30 líneas</strong> para generar un ejecutable funcional:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 AOTCompiler</span></div>
+    <pre><code><span class="kw">impl</span> AOTCompiler &lbrace;
+    <span class="kw">fn</span> generar_ejecutable(bytecode: &[u8], salida: &str) -> Result&#60;(), String&#62; &lbrace;
         <span class="co">// Leer el propio .exe como stub</span>
         <span class="kw">let</span> self_path = std::env::current_exe()?;
         <span class="kw">let</span> stub = fs::read(&self_path)?;
@@ -57,6 +71,7 @@ import Layout from '../../layouts/Layout.astro';
         Ok(())
     &rbrace;
 &rbrace;</code></pre>
+  </div>
 
-  <div class="tip"><strong>🔧 Innovación:</strong> El ejecutable generado se <strong>lee a sí mismo</strong> al inicio. El módulo <code>selfrun.rs</code> busca el magic <code>"FBC\0"</code> al final del archivo, extrae el bytecode y lo ejecuta en la VM. ¡Un solo archivo que es compilador y runtime a la vez!</div>
+  <div class="tip"><strong>🔧 Innovación:</strong> Este sistema usa solo <code>std::fs</code> y <code>std::env</code>. No necesita scripts batch, ni runtimes, ni intérpretes externos. ¡Un solo .exe que funciona en cualquier PC con Windows!</div>
 </Layout>

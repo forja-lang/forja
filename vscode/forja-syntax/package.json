@@ -1,0 +1,27 @@
+{
+  "name": "forja-syntax",
+  "displayName": "Forja Language",
+  "description": "Soporte de sintaxis para el lenguaje Forja (.fa)",
+  "version": "0.1.0",
+  "publisher": "forja-lang",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "forja",
+      "aliases": ["Forja", "forja", "fa"],
+      "extensions": [".fa"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "forja",
+      "scopeName": "source.forja",
+      "path": "./syntaxes/forja.tmLanguage.json"
+    }]
+  }
+}

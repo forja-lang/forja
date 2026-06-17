@@ -34,14 +34,14 @@ impl Transpiler {
         }
     }
 
-    /// Transpila un programa Forja a código Rust
+    /// Exporta un programa Forja a código Rust (opcional, Forja ya ejecuta directo con VM)
     pub fn transpilar(&mut self, programa: &Programa) -> Result<String, Vec<ErrorForja>> {
         // Primera pasada: recolectar clases
         self.recolectar_clases(&programa.declaraciones);
 
         // Segunda pasada: generar código
-        self.emit_line("// Código generado por Forja (fa) → Rust");
-        self.emit_line("// https://github.com/forja-lang/forja");
+        self.emit_line("// Código exportado desde Forja (fa) — https://github.com/forja-lang/forja");
+        self.emit_line("// Podés ejecutarlo directo con 'forja ejecutar' sin necesidad de compilar Rust");
         self.emit_line("");
 
         // Detectar si hay función main o clases para generar el fn main()
@@ -339,31 +339,190 @@ impl Transpiler {
         }
     }
 
+    /// Infiere el tipo Rust de un parámetro, analizando cómo se usa en el cuerpo de la función.
+    /// Si tiene anotación explícita de tipo, la usa. Si no, infiere por contexto.
     fn inferir_tipo_parametro(&self, param: &Parametro) -> String {
         if let Some(ref tipo) = param.tipo {
-            match tipo {
+            return match tipo {
                 Tipo::Entero => "i64".to_string(),
                 Tipo::Decimal => "f64".to_string(),
                 Tipo::Texto => {
-                    if param.prestado {
-                        "&str".to_string()
-                    } else {
-                        "String".to_string()
-                    }
+                    if param.prestado { "&str".to_string() } else { "String".to_string() }
                 }
                 Tipo::Booleano => "bool".to_string(),
                 Tipo::Nulo => "()".to_string(),
                 Tipo::Clase(nombre) => nombre.clone(),
                 Tipo::Arreglo(_) => "Vec<...>".to_string(),
                 Tipo::Funcion(_, _) => "fn".to_string(),
+            };
+        }
+
+        if param.prestado {
+            return "&str".to_string();
+        }
+
+        // Si no hay tipo explícito, usar i64 por defecto (es el caso más común
+        // en programas educativos: parámetros numéricos sin anotación)
+        "i64".to_string()
+    }
+
+    /// Escanea el cuerpo de una función para inferir tipos de parámetros no anotados.
+    /// Retorna un mapa: nombre_del_parametro -> tipo_rust_inferido
+    /// Infiere el tipo de retorno de una función analizando su cuerpo.
+    /// Retorna Some(Tipo) si encuentra una declaración `retornar` con valor.
+    fn inferir_tipo_retorno(&self, cuerpo: &[Declaracion]) -> Option<Tipo> {
+        for decl in cuerpo {
+            if let Declaracion::Retornar { valor: Some(val) } = decl {
+                // Inferir tipo del valor retornado
+                let tipo = match val {
+                    Expresion::LiteralNumero(_) => Some(Tipo::Entero),
+                    Expresion::LiteralDecimal(_) => Some(Tipo::Decimal),
+                    Expresion::LiteralTexto(_) => Some(Tipo::Texto),
+                    Expresion::LiteralBooleano(_) => Some(Tipo::Booleano),
+                    Expresion::LiteralNulo => Some(Tipo::Nulo),
+                    Expresion::Identificador(nombre) => {
+                        // Buscar si la variable tiene tipo conocido
+                        match nombre.as_str() {
+                            "verdadero" | "falso" => Some(Tipo::Booleano),
+                            _ => Some(Tipo::Entero), // asumir Entero por defecto
+                        }
+                    }
+                    Expresion::Binaria { izquierda, .. } => {
+                        // Inferir del lado izquierdo de la operación
+                        if let Expresion::LiteralDecimal(_) = izquierda.as_ref() {
+                            Some(Tipo::Decimal)
+                        } else {
+                            Some(Tipo::Entero)
+                        }
+                    }
+                    _ => Some(Tipo::Entero), // default
+                };
+                return tipo;
             }
-        } else {
-            // Inferir por defecto
-            if param.prestado {
-                "&str".to_string()
-            } else {
-                "String".to_string()
+            // Buscar recursivamente en bloques
+            if let Declaracion::Si { bloque_verdadero, bloque_falso, .. } = decl {
+                if let Some(t) = self.inferir_tipo_retorno(bloque_verdadero) { return Some(t); }
+                if let Some(bf) = bloque_falso {
+                    if let Some(t) = self.inferir_tipo_retorno(bf) { return Some(t); }
+                }
             }
+            if let Declaracion::Mientras { bloque, .. } = decl {
+                if let Some(t) = self.inferir_tipo_retorno(bloque) { return Some(t); }
+            }
+        }
+        None
+    }
+
+    /// Escanea el cuerpo de una función para inferir tipos de parámetros no anotados.
+    /// Retorna un mapa: nombre_del_parametro -> tipo_rust_inferido
+    fn inferir_tipos_desde_cuerpo(&self, cuerpo: &[Declaracion], params: &[Parametro]) -> std::collections::HashMap<String, String> {
+        let mut tipos: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+        // Inicializar con i64 por defecto para parámetros sin tipo
+        for p in params {
+            if p.tipo.is_none() && !tipos.contains_key(&p.nombre) {
+                tipos.insert(p.nombre.clone(), "i64".to_string());
+            }
+        }
+
+        for decl in cuerpo {
+            self.analizar_declaracion_para_tipos(decl, &mut tipos);
+        }
+
+        tipos
+    }
+
+    fn analizar_declaracion_para_tipos(&self, decl: &Declaracion, tipos: &mut std::collections::HashMap<String, String>) {
+        match decl {
+            Declaracion::Variable { valor: Some(val), .. } => {
+                self.analizar_expr_para_tipos(val, tipos);
+            }
+            Declaracion::Asignacion { valor, .. } => {
+                self.analizar_expr_para_tipos(valor, tipos);
+            }
+            Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+                self.analizar_expr_para_tipos(condicion, tipos);
+                for d in bloque_verdadero { self.analizar_declaracion_para_tipos(d, tipos); }
+                if let Some(bf) = bloque_falso {
+                    for d in bf { self.analizar_declaracion_para_tipos(d, tipos); }
+                }
+            }
+            Declaracion::Mientras { condicion, bloque } => {
+                self.analizar_expr_para_tipos(condicion, tipos);
+                for d in bloque { self.analizar_declaracion_para_tipos(d, tipos); }
+            }
+            Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
+                if let Some(init) = inicializacion { self.analizar_declaracion_para_tipos(init, tipos); }
+                if let Some(cond) = condicion { self.analizar_expr_para_tipos(cond, tipos); }
+                if let Some(inc) = incremento { self.analizar_declaracion_para_tipos(inc, tipos); }
+                for d in bloque { self.analizar_declaracion_para_tipos(d, tipos); }
+            }
+            Declaracion::Repetir { cantidad, bloque } => {
+                self.analizar_expr_para_tipos(cantidad, tipos);
+                for d in bloque { self.analizar_declaracion_para_tipos(d, tipos); }
+            }
+            Declaracion::Retornar { valor: Some(val) } => {
+                self.analizar_expr_para_tipos(val, tipos);
+            }
+            Declaracion::Expresion(expr) => {
+                self.analizar_expr_para_tipos(expr, tipos);
+            }
+            Declaracion::LlamadaFuncion { argumentos, .. } => {
+                for arg in argumentos { self.analizar_expr_para_tipos(arg, tipos); }
+            }
+            _ => {}
+        }
+    }
+
+    fn analizar_expr_para_tipos(&self, expr: &Expresion, tipos: &mut std::collections::HashMap<String, String>) {
+        match expr {
+            Expresion::Identificador(nombre) => {
+                // Si el parámetro se usa con literales numéricos, es Entero
+                if !tipos.contains_key(nombre) {
+                    tipos.insert(nombre.clone(), "i64".to_string());
+                }
+            }
+            Expresion::Binaria { izquierda, derecha, operador } => {
+                use Operador::*;
+                match operador {
+                    Suma => {
+                        // Si alguno es Texto, el otro se convierte
+                        if let Expresion::LiteralTexto(_) = izquierda.as_ref() {
+                            self.asignar_tipo_si_parametro(izquierda, tipos, "String");
+                            self.asignar_tipo_si_parametro(derecha, tipos, "String");
+                        } else if let Expresion::LiteralTexto(_) = derecha.as_ref() {
+                            self.asignar_tipo_si_parametro(izquierda, tipos, "String");
+                            self.asignar_tipo_si_parametro(derecha, tipos, "String");
+                        } else {
+                            self.analizar_expr_para_tipos(izquierda, tipos);
+                            self.analizar_expr_para_tipos(derecha, tipos);
+                        }
+                    }
+                    _ => {
+                        self.analizar_expr_para_tipos(izquierda, tipos);
+                        self.analizar_expr_para_tipos(derecha, tipos);
+                    }
+                }
+            }
+            Expresion::LiteralNumero(_) => {}
+            Expresion::LiteralDecimal(_) => {}
+            Expresion::LiteralTexto(_) => {}
+            Expresion::LiteralBooleano(_) => {}
+            Expresion::Unaria { expr: e, .. } => self.analizar_expr_para_tipos(e, tipos),
+            Expresion::LlamadaFuncion { argumentos, .. } => {
+                for arg in argumentos { self.analizar_expr_para_tipos(arg, tipos); }
+            }
+            Expresion::Arreglo(elementos) => {
+                for e in elementos { self.analizar_expr_para_tipos(e, tipos); }
+            }
+            Expresion::Grupo(expr) => self.analizar_expr_para_tipos(expr, tipos),
+            _ => {}
+        }
+    }
+
+    fn asignar_tipo_si_parametro(&self, expr: &Expresion, tipos: &mut std::collections::HashMap<String, String>, tipo: &str) {
+        if let Expresion::Identificador(nombre) = expr {
+            tipos.insert(nombre.clone(), tipo.to_string());
         }
     }
 
@@ -412,6 +571,12 @@ impl Transpiler {
             }
 
             Declaracion::Funcion { nombre, parametros, tipo_retorno, cuerpo } => {
+                // Inferir tipos de parámetros desde el cuerpo de la función
+                let tipos_inferidos = self.inferir_tipos_desde_cuerpo(cuerpo, parametros);
+
+                // Inferir tipo de retorno desde el cuerpo si no está anotado
+                let inferred_ret = tipo_retorno.clone().or_else(|| self.inferir_tipo_retorno(cuerpo));
+
                 let params: Vec<String> = parametros
                     .iter()
                     .map(|p| {
@@ -424,12 +589,20 @@ impl Transpiler {
                         }
                         s.push_str(&p.nombre);
                         s.push_str(": ");
-                        s.push_str(&self.inferir_tipo_parametro(p));
+                        // Usar tipo inferido si no tiene anotación explícita
+                        let tipo = if p.tipo.is_some() {
+                            self.inferir_tipo_parametro(p)
+                        } else {
+                            tipos_inferidos.get(&p.nombre)
+                                .cloned()
+                                .unwrap_or_else(|| "i64".to_string())
+                        };
+                        s.push_str(&tipo);
                         s
                     })
                     .collect();
 
-                let ret_str = if let Some(tipo) = tipo_retorno {
+                let ret_str = if let Some(ref tipo) = inferred_ret {
                     format!(" -> {}", self.tipo_a_rust(tipo))
                 } else {
                     String::new()

@@ -7,11 +7,13 @@ import Layout from '../../layouts/Layout.astro';
 
   <p><strong>Archivo:</strong> <code>src/bytecode.rs</code></p>
 
-  <p>Genera <strong>bytecode stack-based</strong> a partir del AST. Es el paso intermedio para la VM y el compilador AOT.</p>
+  <p>Genera <strong>bytecode stack-based</strong> a partir del AST. Es el paso intermedio para la VM y el compilador AOT. Piensa en él como un "código de máquina" simplificado para la VM de Forja.</p>
 
-  <div class="info">💡 <strong>Stack-based:</strong> Todas las operaciones trabajan sobre una pila. <code>2 + 3</code> → <code>PushEntero(2) + PushEntero(3) + Add</code></div>
+  <div class="info">💡 <strong>Stack-based:</strong> Todas las operaciones trabajan sobre una pila. <code>2 + 3</code> se convierte en <code>PushEntero(2) → PushEntero(3) → Add</code>.</div>
 
   <h2>Opcodes</h2>
+
+  <p>Estos son todos los opcodes que entiende la VM de Forja:</p>
 
   <table>
     <tr><th>Categoría</th><th>Opcodes</th><th>Byte</th></tr>
@@ -28,18 +30,24 @@ import Layout from '../../layouts/Layout.astro';
 
   <h2>Ejemplo de generación</h2>
 
-  <div class="code-header">📄 Código Forja</div>
-  <pre><code><span class="kw">variable</span> x = 2 + 3
-<span class="fn">escribir</span>(x)</code></pre>
+  <p>Mirá cómo se traduce <code>variable x = 2 + 3; escribir(x)</code> a bytecode:</p>
 
-  <div class="code-header">💾 Bytecode generado</div>
-  <pre><code>PushEntero(2)        <span class="co">// stack: [2]</span>
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 Código Forja</span></div>
+    <pre><code><span class="kw">variable</span> x = 2 + 3
+<span class="fn">escribir</span>(x)</code></pre>
+  </div>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>💾 Bytecode generado</span></div>
+    <pre><code>PushEntero(2)        <span class="co">// stack: [2]</span>
 PushEntero(3)        <span class="co">// stack: [2, 3]</span>
 Add                  <span class="co">// stack: [5]</span>
 Declare("x", true)   <span class="co">// x = 5, stack: []</span>
 Load("x")            <span class="co">// stack: [5]</span>
 Print                <span class="co">// imprime 5</span>
 Halt                 <span class="co">// fin</span></code></pre>
+  </div>
 
   <h2>Clases en bytecode</h2>
 
@@ -52,7 +60,11 @@ Halt                 <span class="co">// fin</span></code></pre>
 
   <h2>Serialización .fbc</h2>
 
-  <pre><code>┌─────────────────────────────────────┐
+  <p>El bytecode se serializa a un formato binario eficiente:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📦 Formato del archivo .fbc</span></div>
+    <pre><code>┌─────────────────────────────────────┐
 │ Magic: "FBC\0"       (4 bytes)     │
 │ Version: u32 LE      (4 bytes)     │
 │ String Pool Count    (4 bytes)     │
@@ -60,8 +72,7 @@ Halt                 <span class="co">// fin</span></code></pre>
 │ Opcodes Count        (4 bytes)     │
 │ Opcodes: [byte + payload...]       │
 └─────────────────────────────────────┘</code></pre>
+  </div>
 
-  <p>Cada opcode se guarda como 1 byte (tipo) + payload según tipo (enteros 8 bytes, strings como índice al pool de 4 bytes, etc.)</p>
-
-  <div class="tip"><strong>🔧 String Pool:</strong> Los strings (nombres de variables, funciones) se almacenan una sola vez en un pool y se referencian por índice. Ahorra espacio y acelera la serialización.</div>
+  <div class="tip"><strong>🔧 String Pool:</strong> Los strings (nombres de variables, funciones) se almacenan una sola vez en un pool y se referencian por índice. ¡Ahorra espacio y acelera la serialización!</div>
 </Layout>

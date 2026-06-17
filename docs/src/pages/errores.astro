@@ -5,130 +5,87 @@ import Layout from '../layouts/Layout.astro';
 <Layout title="Sistema de errores — Forja">
   <h1>Sistema de errores</h1>
 
-  <p>Forja tiene un sistema de errores pensado para <strong>educar</strong>, no solo para informar. Cada error incluye una <strong>sugerencia</strong> en español para ayudar a resolverlo.</p>
+  <p>Forja tiene un sistema de errores pensado para <strong>educar</strong>, no solo para informar. Cada error incluye una <strong>sugerencia</strong> en español para ayudarte a resolverlo sin tener que buscar en Stack Overflow.</p>
+
+  <div class="info">💡 <strong>Filosofía:</strong> Los errores no son barreras, son oportunidades de aprendizaje. Cada mensaje te dice exactamente qué pasó y cómo solucionarlo.</div>
 
   <h2>Tipos de error</h2>
 
+  <p>Los errores se clasifican según la fase del pipeline donde ocurren:</p>
+
   <table>
-    <tr><th>Tipo</th><th>Fase</th><th>Significado</th></tr>
-    <tr><td><code>ErrorLexico</code></td><td>Lexer</td><td>Caracteres no reconocidos, strings sin cerrar</td></tr>
-    <tr><td><code>ErrorSintactico</code></td><td>Parser</td><td>Tokens mal ubicados, falta de paréntesis/llaves</td></tr>
-    <tr><td><code>ErrorDePropiedad</code></td><td>Semántica</td><td>Violaciones de ownership y mutabilidad</td></tr>
-    <tr><td><code>ErrorSemantico</code></td><td>Semántica</td><td>Variables no declaradas, redeclaraciones</td></tr>
+    <tr><th>Tipo</th><th>Fase</th><th>Significado</th><th>Ejemplo</th></tr>
+    <tr><td><code><span class="kw">ErrorLexico</span></code></td><td>Lexer</td><td>Caracteres no reconocidos, strings sin cerrar</td><td><code>"hola</code> (falta comilla)</td></tr>
+    <tr><td><code><span class="kw">ErrorSintactico</span></code></td><td>Parser</td><td>Tokens mal ubicados, falta de paréntesis/llaves</td><td><code>funcion foo</code> sin <code>&lbrace;</code></td></tr>
+    <tr><td><code><span class="kw">ErrorDePropiedad</span></code></td><td>Semántica</td><td>Violaciones de ownership y mutabilidad</td><td>Modificar una <code>constante</code></td></tr>
+    <tr><td><code><span class="kw">ErrorSemantico</span></code></td><td>Semántica</td><td>Variables no declaradas, redeclaraciones</td><td>Usar <code>x</code> sin declararlo</td></tr>
   </table>
 
   <h2>Formato de error</h2>
 
-  <pre><code>[<span class="kw">ErrorDePropiedad</span>] línea 14, columna 10: No se puede modificar 'x' porque es inmutable.
+  <p>Cada error sigue este formato claro y consistente:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>💬 Ejemplo de error</span></div>
+    <pre><code>[<span class="kw">ErrorDePropiedad</span>] línea 14, columna 10: No se puede modificar 'x' porque es inmutable.
   💡 <strong>Sugerencia:</strong> Usá 'variable mut' para declarar una variable mutable.</code></pre>
+  </div>
 
-  <h2>Ejemplos</h2>
+  <h2>Ejemplos por categoría</h2>
 
-  <div class="code-header">🔤 Error léxico</div>
-  <pre><code>[ErrorLexico] línea 1, columna 10: Cadena de texto sin cerrar
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🔤 Error léxico</span></div>
+    <pre><code>[ErrorLexico] línea 1, columna 10: Cadena de texto sin cerrar
   💡 Sugerencia: Agregá una comilla doble " al final del texto.</code></pre>
+  </div>
 
-  <div class="code-header">🔧 Error sintáctico</div>
-  <pre><code>[ErrorSintactico] línea 3, columna 5: Se esperaba '&lbrace;' para el cuerpo de la función.
-  💡 Sugerencia: Usá '-> Tipo' después de los parámetros.</code></pre>
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🔧 Error sintáctico</span></div>
+    <pre><code>[ErrorSintactico] línea 3, columna 5: Se esperaba '&lbrace;' para el cuerpo de la función.
+  💡 Sugerencia: Usá '-> Tipo' después de los parámetros para indicar el tipo de retorno.</code></pre>
+  </div>
 
-  <div class="code-header">🔒 Error de propiedad</div>
-  <pre><code>[ErrorDePropiedad] línea 2, columna 0: No se puede modificar 'x' porque es inmutable.
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🔒 Error de propiedad</span></div>
+    <pre><code>[ErrorDePropiedad] línea 2, columna 0: No se puede modificar 'x' porque es inmutable.
   💡 Sugerencia: Usá 'variable mut' para declarar una variable mutable.</code></pre>
+  </div>
 
-  <div class="code-header">📋 Error semántico</div>
-  <pre><code>[ErrorSemantico] línea 5, columna 0: La variable 'contador' no está declarada.
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📋 Error semántico</span></div>
+    <pre><code>[ErrorSemantico] línea 5, columna 0: La variable 'contador' no está declarada.
   💡 Sugerencia: Declará la variable antes de usarla con 'variable nombre = valor'.</code></pre>
+  </div>
 
   <h2>Salida JSON</h2>
-  <p>Con el flag <code>--json-errors</code>, los errores se emiten como JSON estructurado, ideal para IDEs:</p>
 
-  <pre><code>
-        import Layout from '../layouts/Layout.astro';
----
+  <p>Con el flag <code>--json-errors</code>, los errores se emiten como JSON estructurado. Ideal para integración con IDEs o herramientas externas:</p>
 
-<Layout title="Sistema de errores — Forja">
-  <h1>Sistema de errores</h1>
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🔧 JSON output</span></div>
+    <pre><code>forja transpile examples/clases.fa --json-errors</code></pre>
+  </div>
 
-  <p>Forja tiene un sistema de errores pensado para <strong>educar</strong>, no solo para informar. Cada error incluye una <strong>sugerencia</strong> en español para ayudar a resolverlo.</p>
-
-  <h2>Tipos de error</h2>
-
-  <table>
-    <tr><th>Tipo</th><th>Fase</th><th>Significado</th></tr>
-    <tr><td><code>ErrorLexico</code></td><td>Lexer</td><td>Caracteres no reconocidos, strings sin cerrar</td></tr>
-    <tr><td><code>ErrorSintactico</code></td><td>Parser</td><td>Tokens mal ubicados, falta de paréntesis/llaves</td></tr>
-    <tr><td><code>ErrorDePropiedad</code></td><td>Semántica</td><td>Violaciones de ownership y mutabilidad</td></tr>
-    <tr><td><code>ErrorSemantico</code></td><td>Semántica</td><td>Variables no declaradas, redeclaraciones</td></tr>
-  </table>
-
-  <h2>Formato de error</h2>
-
-  <pre><code>[<span class="kw">ErrorDePropiedad</span>] línea 14, columna 10: No se puede modificar 'x' porque es inmutable.
-  💡 <strong>Sugerencia:</strong> Usá 'variable mut' para declarar una variable mutable.</code></pre>
-
-  <h2>Ejemplos</h2>
-
-  <div class="code-header">🔤 Error léxico</div>
-  <pre><code>[ErrorLexico] línea 1, columna 10: Cadena de texto sin cerrar
-  💡 Sugerencia: Agregá una comilla doble " al final del texto.</code></pre>
-
-  <div class="code-header">🔧 Error sintáctico</div>
-  <pre><code>[ErrorSintactico] línea 3, columna 5: Se esperaba '&lbrace;' para el cuerpo de la función.
-  💡 Sugerencia: Usá '-> Tipo' después de los parámetros.</code></pre>
-
-  <div class="code-header">🔒 Error de propiedad</div>
-  <pre><code>[ErrorDePropiedad] línea 2, columna 0: No se puede modificar 'x' porque es inmutable.
-  💡 Sugerencia: Usá 'variable mut' para declarar una variable mutable.</code></pre>
-
-  <div class="code-header">📋 Error semántico</div>
-  <pre><code>[ErrorSemantico] línea 5, columna 0: La variable 'contador' no está declarada.
-  💡 Sugerencia: Declará la variable antes de usarla con 'variable nombre = valor'.</code></pre>
-
-  <h2>Salida JSON</h2>
-  <p>Con el flag <code>--json-errors</code>, los errores se emiten como JSON estructurado, ideal para IDEs:</p>
-
-  <pre><code>forja transpile examples/clases.fa --json-errors</code></pre>
-
-  <pre><code>&lbrace;
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📦 Ejemplo de respuesta JSON</span></div>
+    <pre><code>&lbrace;
   "error": "ErrorDePropiedad",
   "linea": 14,
   "columna": 10,
   "mensaje": "La variable 'config' ya fue movida y no puede ser utilizada de nuevo.",
   "sugerencia": "Si solo querías leer sus datos, intentá pasarla como un préstamo usando '&config'."
 &rbrace;</code></pre>
+  </div>
 
-  <div class="tip"><strong>🔧 Sin dependencias:</strong> El JSON se genera manualmente (sin serde) para mantener cero dependencias externas.</div>
-
-  <h2>Errores en runtime (VM)</h2>
-
-  <table>
-    <tr><th>Error</th><th>Causa</th></tr>
-    <tr><td><code>StackUnderflow</code></td><td>Pop en pila vacía (error interno)</td></tr>
-    <tr><td><code>VariableNoDeclarada</code></td><td>Variable no encontrada en ningún ámbito</td></tr>
-    <tr><td><code>TipoIncompatible</code></td><td>Operación entre tipos no soportada</td></tr>
-    <tr><td><code>DivisionPorCero</code></td><td>División por cero en ejecución</td></tr>
-    <tr><td><code>FuncionNoDefinida</code></td><td>Llamada a función inexistente</td></tr>
-  </table>
-</Layout>
-.Value -replace '\&lbrace;', '&lbrace;' -replace '\&rbrace;', '&rbrace;'
-    </code></pre>
-
-  <pre><code>&lbrace;
-  "error": "ErrorDePropiedad",
-  "linea": 14,
-  "columna": 10,
-  "mensaje": "La variable 'config' ya fue movida y no puede ser utilizada de nuevo.",
-  "sugerencia": "Si solo querías leer sus datos, intentá pasarla como un préstamo usando '&config'."
-&rbrace;</code></pre>
-
-  <div class="tip"><strong>🔧 Sin dependencias:</strong> El JSON se genera manualmente (sin serde) para mantener cero dependencias externas.</div>
+  <div class="tip"><strong>🔧 Sin dependencias:</strong> El JSON se genera manualmente (sin serde) para mantener cero dependencias externas. ¡Todo es Rust puro!</div>
 
   <h2>Errores en runtime (VM)</h2>
 
+  <p>Cuando ejecutás código en la VM, también pueden ocurrir errores en tiempo de ejecución:</p>
+
   <table>
     <tr><th>Error</th><th>Causa</th></tr>
-    <tr><td><code>StackUnderflow</code></td><td>Pop en pila vacía (error interno)</td></tr>
+    <tr><td><code>StackUnderflow</code></td><td>Pop en pila vacía (error interno de la VM)</td></tr>
     <tr><td><code>VariableNoDeclarada</code></td><td>Variable no encontrada en ningún ámbito</td></tr>
     <tr><td><code>TipoIncompatible</code></td><td>Operación entre tipos no soportada</td></tr>
     <tr><td><code>DivisionPorCero</code></td><td>División por cero en ejecución</td></tr>

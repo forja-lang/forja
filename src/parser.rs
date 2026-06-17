@@ -978,17 +978,41 @@ impl Parser {
         Ok(Expresion::Arreglo(elementos))
     }
 
-    /// Mapa literal: {"clave": valor, ...}
+    /// Mapa literal: {"clave": valor, ...} o {clave = valor, ...} (estilo Lua)
     fn parse_mapa(&mut self) -> Result<Expresion, ErrorForja> {
         self.avanzar(); // consume '{'
         let mut pares = Vec::new();
 
         if !self.coincide(TokenKind::LlaveCerrar) {
             loop {
-                let clave = self.parse_expresion()?;
-                self.esperar(TokenKind::DosPuntos, "Se esperaba ':' después de la clave del mapa.")?;
-                let valor = self.parse_expresion()?;
-                pares.push((clave, valor));
+                // Soporte para {clave = valor} (estilo Lua)
+                // Detectamos si es Identificador seguido de '='
+                let es_lua_style = matches!(self.peek().kind, TokenKind::Identificador(_))
+                    && {
+                        let saved = self.pos;
+                        self.avanzar();
+                        let es_igual = self.coincide(TokenKind::Igual);
+                        self.pos = saved; // restaurar
+                        es_igual
+                    };
+
+                if es_lua_style {
+                    // {clave = valor} — clave se convierte a string
+                    self.avanzar(); // consumir identificador
+                    let nombre = if let TokenKind::Identificador(n) = &self.tokens[self.pos - 1].kind {
+                        n.clone()
+                    } else { String::new() };
+                    self.avanzar(); // consumir '='
+                    let valor = self.parse_expresion()?;
+                    pares.push((Expresion::LiteralTexto(nombre), valor));
+                } else {
+                    // Sintaxis normal: {"clave": valor} o {expresion: valor}
+                    let clave = self.parse_expresion()?;
+                    self.esperar(TokenKind::DosPuntos, "Se esperaba ':' o '=' después de la clave del mapa.")?;
+                    let valor = self.parse_expresion()?;
+                    pares.push((clave, valor));
+                }
+
                 if self.coincide(TokenKind::Coma) {
                     self.avanzar();
                 } else {

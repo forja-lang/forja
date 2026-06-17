@@ -8,20 +8,37 @@ pub mod parser;
 pub mod error;
 pub mod semantics;
 pub mod transpiler;
+pub mod compiler_asm;
 pub mod bytecode;
 pub mod vm;
+pub mod vm_opt;
+pub mod vm_jit;
+pub mod vm_fast;
+
+// Módulos que dependen del sistema de archivos o del SO
+// (no compilables a WASM)
+#[cfg(not(target_arch = "wasm32"))]
 pub mod repl;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod aot;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod selfrun;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod jit;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod module;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod prelude;
+
+// Módulos puramente algorítmicos (compatibles con WASM)
+// Diagrama genera HTML, formatter y optimizer son puro AST
+pub mod diagrama;
 pub mod optimizer;
 pub mod formatter;
 
 use error::ErrorForja;
 
-/// Compila un archivo .fa completo y devuelve el código Rust generado
+/// Compila un archivo .fa completo y devuelve el código Rust exportado (opcional)
 pub fn compilar(source: &str) -> Result<String, Vec<ErrorForja>> {
     // FASE 1: Lexer
     let mut lexer = lexer::Lexer::new(source);
@@ -39,7 +56,11 @@ pub fn compilar(source: &str) -> Result<String, Vec<ErrorForja>> {
     let mut checker = semantics::BorrowChecker::new();
     checker.analizar(&programa)?;
 
-    // FASE 6: Transpilador
+    // FASE 6: Optimizador (constant folding, dead code elimination)
+    let mut optimizer = optimizer::Optimizer::new();
+    let programa = optimizer.optimizar(&programa);
+
+    // FASE 7: Transpilador
     let mut transpiler = transpiler::Transpiler::new();
     let rust_code = transpiler.transpilar(&programa)?;
 
@@ -62,6 +83,10 @@ pub fn ejecutar(source: &str) -> Result<Vec<String>, String> {
     // FASE 4: Type Checker
     let mut type_checker = semantics::TypeChecker::new();
     type_checker.analizar(&programa).map_err(|e| format!("{}", e[0]))?;
+
+    // FASE 5: Optimizador
+    let mut optimizer = optimizer::Optimizer::new();
+    let programa = optimizer.optimizar(&programa);
 
     // Generar bytecode
     let mut gen = BytecodeGenerator::new();

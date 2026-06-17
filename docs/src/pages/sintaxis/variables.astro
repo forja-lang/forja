@@ -7,46 +7,70 @@ import Layout from '../../layouts/Layout.astro';
 
   <p>Forja distingue entre <strong>variables</strong> (mutables, se pueden reasignar) y <strong>constantes</strong> (inmutables, no se pueden modificar). Esto refleja el sistema de mutabilidad de Rust pero con palabras en español.</p>
 
-  <div class="info">💡 <strong>Regla de oro:</strong> <code><span class="kw">variable</span></code> = <code>let mut</code> en Rust. <code><span class="kw">constante</span></code> = <code>let</code> en Rust.</div>
+  <div class="info">🔥 <strong>Regla de oro:</strong> <code><span class="kw">variable</span></code> = <code>let mut</code> en Rust. <code><span class="kw">constante</span></code> = <code>let</code> en Rust.</div>
 
   <h2><code>variable</code> — Mutable</h2>
 
-  <div class="code-header">📝 Se puede reasignar</div>
-  <pre><code><span class="kw">variable</span> nombre = <span class="st">"Gaucho"</span>
+  <p>Las variables se pueden reasignar cuantas veces quieras:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📝 Reasignación permitida</span></div>
+    <pre><code><span class="kw">variable</span> nombre = <span class="st">"Gaucho"</span>
 <span class="kw">variable</span> edad = 30
 
 <span class="co">// ✅ Reasignación permitida</span>
 edad = 31
 nombre = <span class="st">"Otro nombre"</span></code></pre>
+  </div>
 
   <h2><code>constante</code> — Inmutable</h2>
 
-  <div class="code-header">📝 No se puede reasignar</div>
-  <pre><code><span class="kw">constante</span> altura = 1.85
+  <p>Las constantes no pueden modificarse después de su declaración:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📝 No se puede reasignar</span></div>
+    <pre><code><span class="kw">constante</span> altura = 1.85
 <span class="kw">constante</span> pais = <span class="st">"Argentina"</span>
 
 <span class="co">// ❌ Error: No se puede modificar una constante</span>
 <span class="co">// altura = 2.0  → ErrorDePropiedad</span></code></pre>
+  </div>
 
   <h2>Con tipo explícito</h2>
 
-  <pre><code><span class="kw">variable</span> nombre: <span class="ty">Texto</span> = <span class="st">"Gaucho"</span>
+  <p>Podés declarar el tipo después del nombre con <code>: Tipo</code>:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📝 Tipado explícito</span></div>
+    <pre><code><span class="kw">variable</span> nombre: <span class="ty">Texto</span> = <span class="st">"Gaucho"</span>
 <span class="kw">variable</span> edad: <span class="ty">Entero</span> = 30
 <span class="kw">variable</span> altura: <span class="ty">Decimal</span> = 1.85
 <span class="kw">constante</span> activo: <span class="ty">Booleano</span> = verdadero</code></pre>
+  </div>
 
   <h2>Sin valor inicial</h2>
 
-  <pre><code><span class="kw">variable</span> mensaje: <span class="ty">Texto</span> = <span class="st">""</span>
+  <p>Podés declarar una variable sin asignarle valor, aunque necesitás especificar el tipo:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📝 Declaración sin inicialización</span></div>
+    <pre><code><span class="kw">variable</span> mensaje: <span class="ty">Texto</span> = <span class="st">""</span>
 <span class="kw">variable</span> contador = 0</code></pre>
+  </div>
 
   <h2>Inferencia de tipos</h2>
+
   <p>Si no se especifica el tipo, Forja lo infiere automáticamente del valor asignado:</p>
 
-  <pre><code><span class="kw">variable</span> ciudad = <span class="st">"Buenos Aires"</span>   <span class="co">// inferido → Texto</span>
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🤖 Inferencia automática</span></div>
+    <pre><code><span class="kw">variable</span> ciudad = <span class="st">"Buenos Aires"</span>   <span class="co">// inferido → Texto</span>
 <span class="kw">variable</span> edad = 25                  <span class="co">// inferido → Entero</span></code></pre>
+  </div>
 
   <h2>Equivalencia con Rust</h2>
+
+  <p>Esta tabla te muestra cómo se traduce cada declaración de Forja a Rust:</p>
 
   <table>
     <tr><th>Forja</th><th>Rust generado</th></tr>

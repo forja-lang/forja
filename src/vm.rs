@@ -361,6 +361,51 @@ impl ForjaVM {
                     ambito.insert(nombre, val);
                 }
 
+                // LoadIdx/StoreIdx/DeclareIdx — convertir a nombre temporal (para compatibilidad)
+                Opcode::LoadIdx(idx) => {
+                    let nombre = format!("%idx_{}", idx);
+                    let val = self.buscar_variable(&nombre)?;
+                    self.stack.push(val.clone());
+                }
+                Opcode::StoreIdx(idx) => {
+                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("StoreIdx".to_string()))?;
+                    let nombre = format!("%idx_{}", idx);
+                    self.asignar_variable(&nombre, val)?;
+                }
+                Opcode::DeclareIdx(idx, _mutable) => {
+                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DeclareIdx".to_string()))?;
+                    let nombre = format!("%idx_{}", idx);
+                    let ambito = self.variables.last_mut().unwrap();
+                    ambito.insert(nombre, val);
+                }
+
+                // === Opcodes fusionados ===
+                Opcode::DeclareEnteroOp(idx, n) => {
+                    let nombre = format!("%idx_{}", idx);
+                    let ambito = self.variables.last_mut().unwrap();
+                    ambito.insert(nombre, ValorVM::Entero(n));
+                }
+                Opcode::DeclareBooleanoOp(idx, b) => {
+                    let nombre = format!("%idx_{}", idx);
+                    let ambito = self.variables.last_mut().unwrap();
+                    ambito.insert(nombre, ValorVM::Booleano(b));
+                }
+                Opcode::StoreEnteroOp(idx, n) => {
+                    let nombre = format!("%idx_{}", idx);
+                    let mut encontrada = false;
+                    for ambito in self.variables.iter_mut().rev() {
+                        if let Some(slot) = ambito.get_mut(&nombre) {
+                            *slot = ValorVM::Entero(n);
+                            encontrada = true;
+                            break;
+                        }
+                    }
+                    if !encontrada {
+                        let ambito = self.variables.last_mut().unwrap();
+                        ambito.insert(nombre, ValorVM::Entero(n));
+                    }
+                }
+
                 Opcode::Add => {
                     let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;

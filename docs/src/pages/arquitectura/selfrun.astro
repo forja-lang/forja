@@ -9,21 +9,30 @@ import Layout from '../../layouts/Layout.astro';
 
   <p>El módulo que permite que <code>forja.exe</code> funcione como <strong>runtime autónomo</strong> cuando tiene bytecode incrustado al final del archivo.</p>
 
-  <div class="info">💡 <strong>Idea brillante:</strong> Un solo binario (forja.exe) funciona como compilador <strong>y</strong> como runtime. Cuando genera un ejecutable con <code>forja build</code>, se copia a sí mismo y le agrega el bytecode al final.</div>
+  <div class="info">🔥 <strong>Idea brillante:</strong> Un solo binario (forja.exe) funciona como compilador <strong>y</strong> como runtime. Cuando genera un ejecutable con <code>forja build</code>, se copia a sí mismo y le agrega el bytecode al final.</div>
 
   <h2>¿Qué hace <code>try_selfrun()</code>?</h2>
 
-  <pre><code>1. Abrir el propio .exe como archivo
+  <p>Al iniciarse, <code>forja.exe</code> ejecuta esta función que detecta si tiene bytecode incrustado:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🔍 Algoritmo de detección</span></div>
+    <pre><code>1. Abrir el propio .exe como archivo
 2. Leer los últimos 8 bytes
 3. Verificar si contienen el magic "FBC\0"
 4. Si sí → leer el tamaño del bytecode (u32)
 5. Leer el bytecode desde el archivo
 6. Deserializar y ejecutar en la VM
 7. Si no hay magic → funcionar como CLI normal</code></pre>
+  </div>
 
   <h2>Código</h2>
 
-  <pre><code><span class="kw">pub fn</span> try_selfrun() -> Option&lt;()&gt; &lbrace;
+  <p>La implementación es sorprendentemente compacta:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 selfrun.rs</span></div>
+    <pre><code><span class="kw">pub fn</span> try_selfrun() -> Option&#x3C;()> &lbrace;
     <span class="kw">let</span> exe_path = std::env::current_exe().ok()?;
     <span class="kw">let mut</span> file = fs::File::open(&exe_path).ok()?;
     <span class="kw">let</span> file_len = file.metadata().ok()?.len();
@@ -53,23 +62,31 @@ import Layout from '../../layouts/Layout.astro';
 
     Some(())
 &rbrace;</code></pre>
+  </div>
 
   <h2>Integración con main()</h2>
 
-  <pre><code><span class="kw">fn</span> main() &lbrace;
+  <p>El <code>main()</code> primero intenta self-run, y si no hay bytecode, funciona como CLI:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 main.rs</span></div>
+    <pre><code><span class="kw">fn</span> main() &lbrace;
     <span class="co">// Intentar self-run primero</span>
     <span class="kw">if</span> selfrun::try_selfrun().is_some() &lbrace;
         <span class="kw">return</span>;  <span class="co">// el bytecode se ejecutó, salir</span>
     &rbrace;
 
     <span class="co">// No hay bytecode: funcionar como CLI</span>
-    <span class="kw">let</span> args: Vec&lt;String&gt; = env::args().collect();
+    <span class="kw">let</span> args: Vec&#x3C;String&#x3E; = env::args().collect();
     <span class="co">// ... manejar comandos ...</span>
 &rbrace;</code></pre>
+  </div>
 
   <h2>Formato del ejecutable generado</h2>
 
-  <pre><code>┌─────────────────────────────────────┐
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📦 Estructura final</span></div>
+    <pre><code>┌─────────────────────────────────────┐
 │  forja.exe                           │
 │  (código del compilador + VM)       │
 ├─────────────────────────────────────┤
@@ -78,6 +95,7 @@ import Layout from '../../layouts/Layout.astro';
 ├─────────────────────────────────────┤
 │  [tamaño: u32 LE] + ["FBC\0"]       │  ← 8 bytes de footer
 └─────────────────────────────────────┘</code></pre>
+  </div>
 
   <div class="tip"><strong>🔧 0 dependencias:</strong> Este sistema usa solo <code>std::fs</code>, <code>std::env</code>. No necesita scripts batch, ni runtimes, ni intérpretes externos. Un solo .exe que funciona en cualquier PC con Windows.</div>
 </Layout>

@@ -5,24 +5,30 @@ import Layout from '../layouts/Layout.astro';
 <Layout title="Uso (CLI) — Forja">
   <h1>Uso del CLI</h1>
 
-  <p>Forja tiene 4 modos de ejecución. Cada uno cubre un caso de uso distinto.</p>
+  <p>Forja tiene <strong>5 modos de ejecución</strong>. Cada uno cubre un caso de uso distinto, desde transpilar a Rust hasta generar ejecutables autónomos.</p>
 
-  <div class="code-header">📋 Ayuda completa</div>
-  <pre><code>Forja (fa) — Lenguaje educativo que compila a Rust y ejecuta en VM
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📋 Ayuda completa</span></div>
+    <pre><code>Forja (fa) — Lenguaje educativo que compila a Rust y ejecuta en VM
 
 USO:
-  forja &lt;archivo.fa&gt; [-o &lt;salida.rs&gt;]     Transpilar a Rust
-  forja run &lt;archivo.fa&gt;                    Ejecutar en VM
+  forja &#x3C;archivo.fa&#x3E; [-o &#x3C;salida.rs&#x3E;]     Transpilar a Rust
+  forja run &#x3C;archivo.fa&#x3E;                    Ejecutar en VM
   forja repl                                Modo interactivo
-  forja build &lt;archivo.fa&gt; -o &lt;salida&gt;      Generar ejecutable
-  forja transpile &lt;archivo.fa&gt; [-o &lt;rs&gt;]   Transpilar a Rust
+  forja build &#x3C;archivo.fa&#x3E; -o &#x3C;salida&#x3E;      Generar ejecutable
+  forja transpile &#x3C;archivo.fa&#x3E; [-o &#x3C;rs&#x3E;]   Transpilar a Rust
   forja --help                              Mostrar ayuda</code></pre>
+  </div>
 
   <h2><code>transpile</code> — Forja → Rust</h2>
-  <p>Genera código <strong>Rust compilable</strong> desde un archivo <code>.fa</code>. Ideal si querés llevar tu programa a producción con Rust.</p>
 
-  <div class="code-header">📄 Ejemplos</div>
-  <pre><code><span class="co"># Genera hola_mundo.rs automáticamente</span>
+  <p>Genera código <strong>Rust compilable</strong> desde un archivo <code>.fa</code>. Ideal si querés llevar tu programa a producción con Rust o aprender cómo se traduce cada concepto.</p>
+
+  <div class="info">💡 <strong>¿Sabías que…?</strong> El código Rust generado es perfectamente compilable con <code>rustc</code>. Podés usarlo como puente para aprender Rust progresivamente.</div>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📄 Ejemplos de transpilación</span></div>
+    <pre><code><span class="co"># Genera hola_mundo.rs automáticamente</span>
 forja examples/hola_mundo.fa
 
 <span class="co"># Con salida personalizada</span>
@@ -33,23 +39,29 @@ forja transpile examples/clases.fa --json-errors
 
 <span class="co"># Atajo: pasar solo el .fa también transpila</span>
 forja examples/hola_mundo.fa</code></pre>
+  </div>
 
   <h2><code>run</code> — Ejecutar en VM</h2>
-  <p>Compila y ejecuta el <strong>bytecode</strong> directamente en la VM. No necesitás Rust instalado para ejecutar.</p>
 
-  <div class="code-header">⚡ Ejemplos</div>
-  <pre><code>forja run examples/hola_mundo.fa
-<span class="co">// → Hola, mundo desde Forja!</span>
+  <p>Compila y ejecuta el <strong>bytecode</strong> directamente en la Máquina Virtual. No necesitás Rust instalado para ejecutar programas.</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>⚡ Ejemplos de ejecución</span></div>
+    <pre><code>forja run examples/hola_mundo.fa
+<span class="co">// → ¡Hola, mundo desde Forja!</span>
 
 forja run examples/clases.fa
 <span class="co">// → Hola, soy Ana y tengo 20 años</span>
 <span class="co">// → Es mayor de edad</span></code></pre>
+  </div>
 
   <h2><code>repl</code> — Modo interactivo</h2>
-  <p>Intérprete línea por línea. Ideal para <strong>aprender</strong> y <strong>experimentar</strong>.</p>
 
-  <div class="code-header">💬 Sesión de ejemplo</div>
-  <pre><code>$ forja repl
+  <p>Intérprete línea por línea. Ideal para <strong>aprender</strong>, <strong>experimentar</strong> y <strong>debuggear</strong> algoritmos sin crear archivos.</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>💬 Sesión de ejemplo</span></div>
+    <pre><code>$ forja repl
 🔨 Forja v0.1.0 — Escribí 'salir' para terminar
 
 > <span class="kw">variable</span> x = 5
@@ -61,22 +73,83 @@ forja run examples/clases.fa
 Hola Gaucho
 > salir
 👋 ¡Hasta luego!</code></pre>
+  </div>
 
   <h2><code>build</code> — Ejecutable autónomo</h2>
-  <p>Genera un <code>.exe</code> que contiene la VM + bytecode. Funciona en <strong>cualquier PC</strong> sin Rust ni nada instalado.</p>
 
-  <div class="code-header">📦 Ejemplo</div>
-  <pre><code>forja build examples/hola_mundo.fa -o hola.exe
+  <p>Genera un <code>.exe</code> que contiene la VM + bytecode incrustado. Funciona en <strong>cualquier PC</strong> sin Rust, sin scripts, sin dependencias.</p>
+
+  <div class="tip"><strong>🔧 ¿Cómo funciona?</strong> Forja se copia a sí mismo y le agrega el bytecode al final del .exe. Al ejecutarlo, detecta el bytecode y lo corre en la VM. ¡Un solo archivo que es compilador y runtime a la vez!</div>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>📦 Ejemplo de build</span></div>
+    <pre><code>forja build examples/hola_mundo.fa -o hola.exe
 <span class="co">// → ✅ Ejecutable generado: hola.exe (1234 bytes)</span>
 
-<span class="co">// Ahora cualquiera puede ejecutarlo:</span>
+<span class="co">// Ahora cualquiera puede ejecutarlo, sin Rust:</span>
 ./hola.exe
-<span class="co">// → Hola, mundo desde Forja!</span></code></pre>
+<span class="co">// → ¡Hola, mundo desde Forja!</span></code></pre>
+  </div>
+
+  <h2><code>build-asm</code> — Assembly nativo (el más rápido)</h2>
+
+  <p>Genera código <strong>assembly x86-64 o ARM64</strong> directamente desde tu <code>.fa</code> y lo compila con <code>gcc -O2</code>. Es la forma <strong>más rápida</strong> de ejecutar Forja — velocidad nativa, igual que C o Rust.</p>
+
+  <div class="info">⚡ <strong>Rendimiento:</strong> El assembly nativo es ~<strong>1,750x más rápido</strong> que la VM de Forja, y ~<strong>30x más rápido</strong> que Python.</div>
+
+  <details>
+    <summary><strong>🔧 ¿Cómo se compara con otros modos?</strong></summary>
+    <table>
+      <thead>
+        <tr><th>Modo</th><th>Velocidad (fib(30))</th><th>vs Python</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>build-asm</code> (gcc -O2)</td><td>0.02 μs</td><td><strong>30x más rápido</strong></td></tr>
+        <tr><td><code>transpile</code> (Rust)</td><td>0.02 μs</td><td><strong>30x más rápido</strong></td></tr>
+        <tr><td>Python (CPython 3.11)</td><td>0.60 μs</td><td>— referencia</td></tr>
+        <tr><td><code>run</code> (VM)</td><td>37 μs</td><td>62x más lento</td></tr>
+      </tbody>
+    </table>
+  </details>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🛠️ Ejemplos de build-asm</span></div>
+    <pre><code><span class="co"># Mínimo: genera hola.exe automáticamente (target = plataforma actual)</span>
+forja build-asm examples/hola_mundo.fa
+
+<span class="co"># Con nombre de salida personalizado</span>
+forja build-asm examples/hola_mundo.fa -o programa.exe
+
+<span class="co"># Especificar arquitectura destino</span>
+forja build-asm examples/hola_mundo.fa --target arm64 -o programa
+
+<span class="co"># El assembly generado se puede compilar manualmente</span>
+forja build-asm examples/hola_mundo.fa --target x86_64-linux -o prog
+gcc -O2 -o prog prog.s</code></pre>
+  </div>
+
+  <details>
+    <summary><strong>🎯 Targets disponibles</strong></summary>
+    <table>
+      <thead>
+        <tr><th>Flag</th><th>Arquitectura</th><th>Convención</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><em>(ninguno)</em></td><td>Detección automática</td><td>Según SO y CPU</td></tr>
+        <tr><td><code>--target x86_64-windows</code></td><td>x86-64</td><td>Microsoft x64 (RCX, RDX, R8, R9)</td></tr>
+        <tr><td><code>--target x86_64-linux</code></td><td>x86-64</td><td>System V (RDI, RSI, RDX, RCX)</td></tr>
+        <tr><td><code>--target arm64</code></td><td>ARM64 AArch64</td><td>X0..X7, stp/ldp, cbz</td></tr>
+      </tbody>
+    </table>
+  </details>
 
   <h2>Compilar el Rust generado</h2>
-  <p>Si usaste <code>transpile</code>, el archivo <code>.rs</code> se compila con Rust:</p>
 
-  <div class="code-header">🦀 Rust</div>
-  <pre><code>rustc examples/hola_mundo.rs
+  <p>Si usaste <code>transpile</code>, el archivo <code>.rs</code> generado se compila con Rust de forma estándar:</p>
+
+  <div class="code-block-wrapper">
+    <div class="code-header"><span>🦀 Compilar con rustc</span></div>
+    <pre><code>rustc examples/hola_mundo.rs
 ./hola_mundo</code></pre>
+  </div>
 </Layout>

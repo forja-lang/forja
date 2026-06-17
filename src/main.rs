@@ -5,16 +5,21 @@ mod ast;
 mod error;
 mod semantics;
 mod transpiler;
+mod compiler_asm;
 mod bytecode;
 mod vm;
 mod repl;
 mod aot;
 mod selfrun;
+mod diagrama;
+mod optimizer;
+mod formatter;
 
 use std::env;
 use std::fs;
 use std::path::Path;
 use std::process;
+use ast::Declaracion;
 
 fn main() {
     // Intentar self-run (modo ejecutable autónomo con bytecode incrustado)
@@ -36,8 +41,14 @@ fn main() {
         "run" | "ejecutar" | "correr" => cmd_run(&args[2..]),
         // REPL interactivo
         "repl" => cmd_repl(),
+        // Generar diagrama HTML
+        "diagrama" | "grafico" | "diagram" => cmd_diagrama(&args[2..]),
         // Compilar a ejecutable autónomo
         "build" | "compilar" | "construir" => cmd_build(&args[2..]),
+        // Formatear código
+        "fmt" | "format" | "formatear" => cmd_fmt(&args[2..]),
+        // Compilar a assembly nativo
+        "build-asm" | "compilar-asm" | "asm" => cmd_build_asm(&args[2..]),
         // Transpilar a Rust
         "transpile" | "t" | "transpilar" | "transpilador" => cmd_transpile(&args[2..]),
         // Crear nuevo proyecto
@@ -46,8 +57,12 @@ fn main() {
         "init" | "iniciar" => cmd_init(),
         // Tutorial interactivo
         "learn" | "aprender" => cmd_learn(),
+        // Colorear código Forja en la terminal
+        "highlight" | "color" | "colorear" => cmd_highlight(&args[2..]),
         // Listar palabras clave del lenguaje
         "keywords" | "palabras" | "lista" => cmd_keywords(),
+        // Doc: generar documentación desde el AST
+        "doc" | "documentar" => cmd_doc(&args[2..]),
         // Explicar concepto
         "explain" | "explicar" => {
             if args.len() > 2 { cmd_explain(&args[2]); }
@@ -72,6 +87,67 @@ fn main() {
     }
 }
 
+/// forja highlight|color|colorear <archivo.fa> — Muestra el código con colores ANSI
+fn cmd_highlight(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Uso: forja highlight|color|colorear <archivo.fa>");
+        return;
+    }
+    let path = &args[0];
+    let source = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("Error al leer '{}': {}", path, e); return; }
+    };
+
+    // Paleta ANSI Forja (coincide con VS Code y docs)
+    use error::color;
+    let kw = |s: &str| format!("{}{}{}", color::AMARILLO, s, color::RESET);
+    let ty = |s: &str| format!("{}{}{}", color::CYAN, s, color::RESET);
+    let fn_ = |s: &str| format!("{}{}{}", color::VERDE, s, color::RESET);
+    let _st = |s: &str| format!("{}{}{}", "\x1b[93m", s, color::RESET); // bright yellow
+    let co = |s: &str| format!("{}{}{}", color::GRIS, s, color::RESET);
+    let _nu = |s: &str| format!("{}{}{}", color::AZUL, s, color::RESET);
+    let _op = |s: &str| format!("{}{}{}", color::MAGENTA, s, color::RESET);
+
+    for line in source.lines() {
+        let mut colored = line.to_string();
+
+        // Comentarios (primero, para no colorear adentro)
+        if let Some(pos) = colored.find("//") {
+            let before = &colored[..pos];
+            let comment = &colored[pos..];
+            colored = format!("{}{}", before, co(comment));
+        }
+
+        // Keywords
+        let keywords = ["importar", "variable", "var", "constante", "const", "mut", "si", "sino",
+            "mientras", "para", "repetir", "funcion", "retornar", "clase",
+            "constructor", "nuevo", "este", "prestado", "coincidir", "caso", "tipo",
+            "verdadero", "falso", "nulo"];
+        for k in &keywords {
+            colored = colored.replace(&format!("{} ", k), &format!("{} ", kw(k)));
+            colored = colored.replace(&format!("{})", k), &format!("{})", kw(k)));
+            colored = colored.replace(&format!("{}\n", k), &format!("{}\n", kw(k)));
+        }
+
+        // Tipos
+        let tipos = ["Entero", "Decimal", "Texto", "Booleano", "Nulo"];
+        for t in &tipos {
+            colored = colored.replace(t, &ty(t));
+        }
+
+        // Funciones builtin
+        colored = colored.replace("escribir", &fn_("escribir"));
+        colored = colored.replace("leer", &fn_("leer"));
+
+        // Strings (reemplazar después de comillas)
+        // Números
+        // (simplificado para terminal)
+
+        println!("{}", colored);
+    }
+}
+
 /// forja keywords|palabras|lista — Lista todas las palabras clave del lenguaje
 fn cmd_keywords() {
     println!("📚 Palabras clave de Forja\n");
@@ -80,8 +156,8 @@ fn cmd_keywords() {
     let kws = [
         ("escribir",    "Muestra mensajes en pantalla"),
         ("leer",        "Lee entrada del usuario"),
-        ("variable",    "Declara una variable (mutable)"),
-        ("constante",   "Declara una constante (inmutable)"),
+        ("variable/var","Declara una variable (mutable)"),
+        ("constante/const","Declara una constante (inmutable)"),
         ("mut",         "Modificador de mutabilidad"),
         ("si",          "Condicional (if / else)"),
         ("sino",        "Bloque alternativo del si"),
@@ -127,8 +203,8 @@ fn cmd_explain(codigo: &str) {
     let explicacion = match codigo {
         "escribir" | "escribir()" => "📖 'escribir()' muestra algo en pantalla.\n   Ej: escribir(\"Hola\") → muestra: Hola\n   Podés mostrar números, texto, o resultados de operaciones.",
         "leer" | "leer()" => "📖 'leer()' pide al usuario que escriba algo.\n   Ej: variable nombre = leer()\n   El programa espera hasta que el usuario escriba y presione Enter.",
-        "variable" => "📖 'variable' crea un lugar para guardar datos.\n   Ej: variable x = 5  → guarda el número 5 en 'x'\n   Después podés cambiar su valor: x = 10",
-        "constante" => "📖 'constante' es como variable, pero no podés cambiar su valor.\n   Ej: constante nombre = \"Ana\"\n   nombre = \"Pedro\"  → Error! No se puede modificar.",
+        "variable" | "var" => "📖 'variable' (o 'var') crea un lugar para guardar datos.\n   Ej: variable x = 5  → guarda el número 5 en 'x'\n   Después podés cambiar su valor: x = 10",
+        "constante" | "const" => "📖 'constante' (o 'const') es como variable, pero no podés cambiar su valor.\n   Ej: const nombre = \"Ana\"\n   nombre = \"Pedro\"  → Error! No se puede modificar.",
         "si" => "📖 'si' ejecuta código solo si se cumple una condición.\n   Ej: si (edad >= 18) { escribir(\"Mayor\") }",
         "funcion" => "📖 'funcion' agrupa código para reutilizarlo.\n   Ej: funcion suma(a, b) { retornar a + b }",
         "mientras" => "📖 'mientras' repite código mientras una condición sea verdadera.\n   Ej: mientras (x < 5) { x = x + 1 }",
@@ -142,7 +218,7 @@ fn cmd_explain(codigo: &str) {
 
 fn cmd_help(tema: &str) {
     let ayuda = match tema {
-        "variable" | "variables" => "📖 variable / constante — Declarar variables\n\n  variable nombre = valor    (mutable)\n  constante nombre = valor  (inmutable)\n\n  Ejemplo:\n    variable x = 5\n    constante nombre = \"Ana\"\n    x = 10  // ok, mutable\n",
+        "variable" | "variables" | "var" => "📖 variable / var / constante / const — Declarar variables\n\n  variable nombre = valor    (mutable, alias 'var')\n  constante nombre = valor  (inmutable, alias 'const')\n\n  Ejemplo:\n    var x = 5\n    const nombre = \"Ana\"\n    x = 10  // ok, mutable\n",
         "escribir" => "📖 escribir — Mostrar mensajes\n\n  escribir(expresión)\n\n  Muestra cualquier valor en pantalla.\n  Podés mostrar texto, números, variables, o resultados.\n\n  Ejemplo:\n    escribir(\"Hola mundo\")\n    escribir(3 + 4)\n    escribir(\"La suma es: \" + resultado)\n",
         "leer" => "📖 leer — Leer entrada del usuario\n\n  variable entrada = leer()\n\n  Pide al usuario que escriba algo y lo guarda como texto.\n  El programa espera hasta que el usuario presione Enter.\n\n  Ejemplo:\n    escribir(\"¿Cómo te llamás?\")\n    variable nombre = leer()\n    escribir(\"Hola, \" + nombre + \"!\")\n",
         "si" | "sino" => "📖 si / sino — Condicional\n\n  si (condición) { ... } sino { ... }\n\n  La condición debe ser booleana.\n  El bloque 'sino' es opcional.\n\n  Ejemplo:\n    si (edad >= 18) {\n        escribir(\"Mayor\")\n    } sino {\n        escribir(\"Menor\")\n    }\n",
@@ -198,12 +274,15 @@ fn cmd_init() {
 }
 
 fn mostrar_ayuda() {
-    println!("🔨 Forja (fa) — Lenguaje educativo que compila a Rust\n");
+    println!("🔨 Forja (fa) — Lenguaje educativo con VM propia\n");
     println!("COMANDOS:");
     println!("  ejecutar <archivo>         Ejecutar .fa en la VM");
     println!("  repl                       Modo interactivo");
+    println!("  diagrama <archivo>         Generar diagrama HTML del código");
     println!("  compilar <archivo>         Generar .exe autónomo");
-    println!("  transpilar <archivo>       Convertir .fa a código Rust");
+    println!("  compilar-asm <archivo>     Compilar a assembly nativo [--target <arch>] [-o <salida>]");
+    println!("  formatear <archivo>         Formatear código .fa");
+    println!("  transpilar <archivo>       Exportar a proyecto Rust (opcional)");
     println!("  nuevo <nombre>             Crear nuevo proyecto");
     println!("  iniciar                    Inicializar proyecto aquí");
     println!("  aprender                   Tutorial interactivo");
@@ -211,10 +290,13 @@ fn mostrar_ayuda() {
     println!("  explicar <palabra>         Explicar un concepto");
     println!("  ayuda [tema]               Mostrar esta ayuda\n");
     println!("Los comandos también aceptan su nombre en inglés:");
-    println!("  run, build, transpile, new, init, learn, keywords, explain, help\n");
+    println!("  run, build, transpile, build-asm, asm, new, init, learn, keywords, explain, help\n");
     println!("EJEMPLOS:");
     println!("  forja ejecutar examples/hola_mundo.fa");
     println!("  forja compilar examples/hola_mundo.fa -o programa.exe");
+    println!("  forja compilar-asm examples/hola_mundo.fa");
+    println!("  forja compilar-asm examples/hola_mundo.fa --target arm64 -o programa");
+    println!("  forja formatear examples/hola_mundo.fa");
     println!("  forja palabras");
     println!("  forja explicar variable\n");
 }
@@ -259,7 +341,11 @@ fn cmd_run(args: &[String]) {
         }
     };
 
-    // FASE 3.5: Type Checker
+    // FASE 4: Optimizador
+    let mut optimizer = optimizer::Optimizer::new();
+    let programa = optimizer.optimizar(&programa);
+
+    // FASE 5: Type Checker
     let mut type_checker = semantics::TypeChecker::new();
     if let Err(errors) = type_checker.analizar(&programa) {
         for err in errors {
@@ -286,6 +372,99 @@ fn cmd_run(args: &[String]) {
         Err(e) => {
             eprintln!("Error en ejecución: {}", e);
             process::exit(1);
+        }
+    }
+}
+
+/// forja fmt|formatear|format <archivo.fa>
+fn cmd_fmt(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Uso: forja fmt|formatear|format <archivo.fa>");
+        process::exit(1);
+    }
+    let path = &args[0];
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("Error al leer '{}': {}", path, e); process::exit(1); }
+    };
+    let mut lexer = lexer::Lexer::new(&source);
+    let tokens = match lexer.tokenize() {
+        Ok(t) => t,
+        Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
+    };
+    let mut parser = parser::Parser::new(tokens);
+    let programa = match parser.parse() {
+        Ok(p) => p,
+        Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
+    };
+    let mut fmt = formatter::Formatter::new();
+    let output = fmt.formatear(&programa);
+    if args.contains(&"--check".to_string()) {
+        // Modo check: verificar que el archivo ya está formateado
+        if output == source {
+            println!("✅ El archivo está correctamente formateado");
+        } else {
+            eprintln!("❌ El archivo necesita formateo. Ejecutá 'forja fmt {}'", path);
+            process::exit(1);
+        }
+    } else if args.len() > 1 && args[1] == "-o" && args.len() > 2 {
+        let out_path = &args[2];
+        match fs::write(out_path, &output) {
+            Ok(_) => println!("✅ Código formateado: {}", out_path),
+            Err(e) => eprintln!("Error escribiendo '{}': {}", out_path, e),
+        }
+    } else {
+        // Sobrescribir el archivo original
+        match fs::write(path, &output) {
+            Ok(_) => println!("✅ Código formateado: {}", path),
+            Err(e) => eprintln!("Error escribiendo '{}': {}", path, e),
+        }
+    }
+}
+
+/// forja doc|documentar <archivo.fa> — Genera documentación desde el AST
+fn cmd_doc(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Uso: forja doc|documentar <archivo.fa>");
+        process::exit(1);
+    }
+    let path = &args[0];
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("Error al leer '{}': {}", path, e); process::exit(1); }
+    };
+    let mut lexer = lexer::Lexer::new(&source);
+    let tokens = match lexer.tokenize() {
+        Ok(t) => t,
+        Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
+    };
+    let mut parser = parser::Parser::new(tokens);
+    let programa = match parser.parse() {
+        Ok(p) => p,
+        Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
+    };
+
+    println!("📖 Documentación generada desde AST\n");
+    for decl in &programa.declaraciones {
+        match decl {
+            Declaracion::Funcion { nombre, parametros, .. } => {
+                let params: Vec<&str> = parametros.iter().map(|p| p.nombre.as_str()).collect();
+                println!("  función `{}`({})", nombre, params.join(", "));
+            }
+            Declaracion::Clase { nombre, campos, metodos } => {
+                println!("  clase `{}`", nombre);
+                for c in campos {
+                    println!("    · campo: {}", c.nombre);
+                }
+                for m in metodos {
+                    println!("    · método: {}()", m.nombre);
+                }
+            }
+            Declaracion::Variable { mutable, nombre, .. } => {
+                let kw = if *mutable { "variable" } else { "constante" };
+                println!("  {} `{}`", kw, nombre);
+            }
+            _ => {}
         }
     }
 }
@@ -325,10 +504,10 @@ fn cmd_build(args: &[String]) {
     }
 }
 
-/// forja transpile <archivo.fa> [-o <salida.rs>]  (funcionalidad original)
-fn cmd_transpile(args: &[String]) {
+/// forja diagrama|grafico <archivo.fa> [-o <salida.html>]
+fn cmd_diagrama(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja transpile|transpilar <archivo.fa> [-o <salida.rs>]");
+        eprintln!("Uso: forja diagrama|grafico <archivo.fa> [-o <salida.html>]");
         process::exit(1);
     }
 
@@ -337,7 +516,60 @@ fn cmd_transpile(args: &[String]) {
         args.get(2).cloned()
     } else {
         let input = Path::new(input_path);
-        Some(input.with_extension("rs").to_string_lossy().to_string())
+        Some(input.with_extension("html").to_string_lossy().to_string())
+    };
+
+    let source = match fs::read_to_string(input_path) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("Error al leer '{}': {}", input_path, e); process::exit(1); }
+    };
+
+    // Lexer
+    let mut lexer = lexer::Lexer::new(&source);
+    let tokens = match lexer.tokenize() {
+        Ok(t) => t,
+        Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
+    };
+
+    // Parser
+    let mut parser = parser::Parser::new(tokens);
+    let programa = match parser.parse() {
+        Ok(p) => p,
+        Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
+    };
+
+    // Generar diagrama HTML
+    let mut gen = diagrama::DiagramGenerator::new();
+    let html = gen.generar(&programa);
+
+    if let Some(out) = output_path {
+        match fs::write(&out, &html) {
+            Ok(_) => println!("✅ Diagrama generado: {}", out),
+            Err(e) => { eprintln!("Error al escribir '{}': {}", out, e); process::exit(1); }
+        }
+    } else {
+        println!("{}", html);
+    }
+}
+
+/// forja transpile|transpilar <archivo.fa>
+/// Exporta a un proyecto Cargo (Rust) y lo compila. Opcional: Forja ya ejecuta directo con VM.
+fn cmd_transpile(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Uso: forja transpile|transpilar <archivo.fa> [-o <directorio>]");
+        process::exit(1);
+    }
+
+    let input_path = &args[0];
+    let input_stem = Path::new(input_path).file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("proyecto");
+
+    // Directorio de salida
+    let project_dir = if args.len() > 1 && args[1] == "-o" {
+        args.get(2).cloned().unwrap_or_else(|| format!("{}_rs", input_stem))
+    } else {
+        format!("{}_rs", input_stem)
     };
     let json_errors = args.contains(&"--json-errors".to_string());
 
@@ -355,11 +587,8 @@ fn cmd_transpile(args: &[String]) {
         Ok(t) => t,
         Err(errors) => {
             for err in errors {
-                if json_errors {
-                    eprintln!("{}", err.to_json());
-                } else {
-                    eprintln!("{}", err);
-                }
+                if json_errors { eprintln!("{}", err.to_json()); }
+                else { eprintln!("{}", err); }
             }
             process::exit(1);
         }
@@ -371,11 +600,8 @@ fn cmd_transpile(args: &[String]) {
         Ok(p) => p,
         Err(errors) => {
             for err in errors {
-                if json_errors {
-                    eprintln!("{}", err.to_json());
-                } else {
-                    eprintln!("{}", err);
-                }
+                if json_errors { eprintln!("{}", err.to_json()); }
+                else { eprintln!("{}", err); }
             }
             process::exit(1);
         }
@@ -385,11 +611,8 @@ fn cmd_transpile(args: &[String]) {
     let mut checker = semantics::BorrowChecker::new();
     if let Err(errors) = checker.analizar(&programa) {
         for err in errors {
-            if json_errors {
-                eprintln!("{}", err.to_json());
-            } else {
-                eprintln!("{}", err);
-            }
+            if json_errors { eprintln!("{}", err.to_json()); }
+            else { eprintln!("{}", err); }
         }
         process::exit(1);
     }
@@ -400,26 +623,252 @@ fn cmd_transpile(args: &[String]) {
         Ok(code) => code,
         Err(errors) => {
             for err in errors {
-                if json_errors {
-                    eprintln!("{}", err.to_json());
-                } else {
-                    eprintln!("{}", err);
-                }
+                if json_errors { eprintln!("{}", err.to_json()); }
+                else { eprintln!("{}", err); }
             }
             process::exit(1);
         }
     };
 
-    // Escribir salida
-    if let Some(out) = output_path {
-        match fs::write(&out, &rust_code) {
-            Ok(_) => println!("✅ Código Rust generado: {}", out),
-            Err(e) => {
-                eprintln!("Error al escribir '{}': {}", out, e);
+    // Crear proyecto Cargo
+    let src_dir = Path::new(&project_dir).join("src");
+    if let Err(e) = fs::create_dir_all(&src_dir) {
+        eprintln!("Error creando directorio '{}': {}", project_dir, e);
+        process::exit(1);
+    }
+
+    // Escribir Cargo.toml
+    let cargo_toml = format!(
+        r#"[package]
+name = "{}"
+version = "0.1.0"
+edition = "2021"
+
+# Exportado por Forja (fa) desde {} (podés ejecutar directo con 'forja ejecutar')
+# https://github.com/forja-lang/forja
+
+[dependencies]
+"#,
+        input_stem.replace('-', "_").replace(' ', "_"),
+        Path::new(input_path).file_name().and_then(|s| s.to_str()).unwrap_or(input_path)
+    );
+
+    if let Err(e) = fs::write(Path::new(&project_dir).join("Cargo.toml"), &cargo_toml) {
+        eprintln!("Error escribiendo Cargo.toml: {}", e);
+        process::exit(1);
+    }
+
+    // Escribir src/main.rs
+    let rs_path = src_dir.join("main.rs");
+    if let Err(e) = fs::write(&rs_path, &rust_code) {
+        eprintln!("Error escribiendo '{}': {}", rs_path.display(), e);
+        process::exit(1);
+    }
+
+    println!("✅ Proyecto Rust exportado: {}\\", project_dir);
+    println!("   {}\\Cargo.toml", project_dir);
+    println!("   {}\\src\\main.rs", project_dir);
+    println!();
+    println!("📦 Compilando con cargo...");
+
+    // Compilar automáticamente con cargo
+    let try_build = |args: &[&str]| -> Result<(), ()> {
+        let result = std::process::Command::new("cargo")
+            .args(args)
+            .current_dir(&project_dir)
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .status();
+        match result {
+            Ok(s) if s.success() => Ok(()),
+            _ => Err(())
+        }
+    };
+
+    // Intentar release primero, si falla probar debug
+    let build_ok = try_build(&["build", "--release"])
+        .or_else(|_| {
+            eprintln!("⚠️  Compilación release falló, intentando debug...");
+            try_build(&["build"])
+        });
+
+    match build_ok {
+        Ok(()) => {
+            let build_dir = "release"; // siempre usamos release
+            let exe_name = if cfg!(target_os = "windows") {
+                format!("{}.exe", input_stem.replace('-', "_").replace(' ', "_"))
+            } else {
+                input_stem.replace('-', "_").replace(' ', "_")
+            };
+            println!();
+            println!("🚀 Ejecutable: .\\{}\\target\\{}\\{}", project_dir, build_dir, exe_name);
+        }
+        Err(_) => {
+            eprintln!();
+            eprintln!("⚠️  No se pudo compilar con cargo.");
+            eprintln!("   El código Rust se generó en: {}", rs_path.display());
+            eprintln!();
+            eprintln!("   Posibles soluciones:");
+            eprintln!("   1. Asegurate de tener Rust instalado: rustup show");
+            eprintln!("   2. Si usás el toolchain GNU (mingw), cambiá a MSVC:");
+            eprintln!("      rustup default stable-msvc");
+            eprintln!("   3. Compilá manualmente:");
+            eprintln!("      cd {}", project_dir);
+            eprintln!("      cargo build --release");
+        }
+    }
+}
+
+/// forja build-asm|compilar-asm|asm <archivo.fa> [--target <arch>] [-o <salida>]
+/// Compila Forja a assembly nativo (x86-64, ARM64) usando gcc
+///
+/// --target:  x86_64-windows, x86_64-linux, arm64 (default: plataforma actual)
+/// -o:       archivo de salida (default: nombre del .fa con extensión del SO)
+fn cmd_build_asm(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Uso: forja build-asm|compilar-asm|asm <archivo.fa> [--target <arch>] [-o <salida>]");
+        eprintln!("  --target: x86_64-windows | x86_64-linux | arm64  (default: plataforma actual)");
+        process::exit(1);
+    }
+
+    let mut input_path = &args[0];
+    let mut target_str: Option<String> = None;
+    let mut output_path: Option<String> = None;
+
+    // Parsear argumentos
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--target" | "-t" => {
+                i += 1;
+                if i < args.len() {
+                    target_str = Some(args[i].clone());
+                } else {
+                    eprintln!("Error: --target requiere un valor (x86_64-windows, x86_64-linux, arm64)");
+                    process::exit(1);
+                }
+            }
+            "-o" | "--output" => {
+                i += 1;
+                if i < args.len() {
+                    output_path = Some(args[i].clone());
+                } else {
+                    eprintln!("Error: -o requiere un valor");
+                    process::exit(1);
+                }
+            }
+            _ => {
+                eprintln!("Argumento desconocido: '{}'", args[i]);
+                process::exit(1);
+            }
+        }
+        i += 1;
+    }
+
+    let source = match fs::read_to_string(input_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error al leer '{}': {}", input_path, e);
+            process::exit(1);
+        }
+    };
+
+    // Determinar target
+    let target = if let Some(ref ts) = target_str {
+        match compiler_asm::TargetArch::from_str(ts) {
+            Some(t) => t,
+            None => {
+                eprintln!("Error: target '{}' no soportado. Usá: x86_64-windows, x86_64-linux, arm64", ts);
                 process::exit(1);
             }
         }
     } else {
-        println!("{}", rust_code);
+        compiler_asm::TargetArch::detect()
+    };
+
+    // Determinar output
+    let input_stem = Path::new(input_path).file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output");
+
+    let output_path = output_path.unwrap_or_else(|| {
+        let ext = if cfg!(target_os = "windows") { "exe" } else { "" };
+        format!("{}.{}", input_stem, ext)
+    });
+
+    // FASE 1: Lexer
+    let mut lexer = lexer::Lexer::new(&source);
+    let tokens = match lexer.tokenize() {
+        Ok(t) => t,
+        Err(errors) => {
+            for err in errors {
+                eprintln!("{}", err.mostrar_con_contexto(&source));
+            }
+            process::exit(1);
+        }
+    };
+
+    // FASE 2: Parser
+    let mut parser = parser::Parser::new(tokens);
+    let programa = match parser.parse() {
+        Ok(p) => p,
+        Err(errors) => {
+            for err in errors {
+                eprintln!("{}", err.mostrar_con_contexto(&source));
+            }
+            process::exit(1);
+        }
+    };
+
+    // FASE 3: Generar assembly
+    let asm_code = match compiler_asm::compilar_a_asm_con_target(&programa, target) {
+        Ok(code) => code,
+        Err(errors) => {
+            for err in errors {
+                eprintln!("{}", err);
+            }
+            process::exit(1);
+        }
+    };
+
+    // Escribir archivo .s
+    let asm_path = Path::new(&output_path).with_extension("s");
+    match fs::write(&asm_path, &asm_code) {
+        Ok(_) => println!("✅ Assembly generado: {} (target: {})", asm_path.display(), target.name()),
+        Err(e) => {
+            eprintln!("Error escribiendo '{}': {}", asm_path.display(), e);
+            process::exit(1);
+        }
+    }
+
+    // Compilar con gcc
+    println!("📦 Compilando con gcc -O2...");
+    let gcc_result = std::process::Command::new("gcc")
+        .args(&[
+            "-O2",
+            "-o",
+            &output_path,
+            asm_path.to_str().unwrap(),
+        ])
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status();
+
+    match gcc_result {
+        Ok(status) if status.success() => {
+            println!("🚀 Ejecutable nativo: {}", output_path);
+        }
+        Ok(_) => {
+            eprintln!("⚠️  gcc falló. El assembly quedó en: {}", asm_path.display());
+            eprintln!("   Compilá manualmente:");
+            eprintln!("   gcc -O2 -o {} {}", output_path, asm_path.display());
+        }
+        Err(e) => {
+            eprintln!("⚠️  No se pudo ejecutar gcc: {}", e);
+            eprintln!("   El assembly quedó en: {}", asm_path.display());
+            eprintln!("   Instalá MinGW o MSYS2 con gcc para compilar.");
+            eprintln!("   Compilá manualmente:");
+            eprintln!("   gcc -O2 -o {} {}", output_path, asm_path.display());
+        }
     }
 }

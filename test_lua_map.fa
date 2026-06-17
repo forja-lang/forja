@@ -1,0 +1,3 @@
+variable m = {nombre = "Ana", edad = 30}  
+escribir(m["nombre"])  
+escribir(m["edad"])  
