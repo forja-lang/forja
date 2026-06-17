@@ -154,15 +154,42 @@ forja repl
 
 ---
 
-## 🚀 Comparativa de Rendimiento
+## ⚡ Rendimiento
 
-| Modo | fib(30) | Bucle 100k | vs Python |
-|------|---------|------------|-----------|
-| `build-asm` (gcc -O2) | 0.02 μs | ~0.002 μs | **30x más rápido** |
-| `transpile` (Rust nativo) | 0.02 μs | ~0.002 μs | **30x más rápido** |
-| Python (CPython 3.11) | 0.60 μs | 390 μs | — referencia |
-| `run` (VM Original) | 37 μs | 32,229 μs | 62x más lento |
-| `run` (VM JIT Direct Threading) | 28 μs | 26,778 μs | 47x más lento |
+### a) 5 Optimizaciones CPython Implementadas
+
+| # | Optimización | Inspirada en | Estado | Archivos clave |
+|---|---|---|---|---|
+| 1 | Small Integer Cache [-5, 256] | CPython | ✅ | `src/vm.rs`, `vm_fast.rs`, `vm_opt.rs`, `vm_jit.rs` |
+| 2 | Fast Locals O(1) | CPython LOAD_FAST/STORE_FAST | ✅ | `src/vm.rs`, `vm_opt.rs` |
+| 3 | Direct Threading (auto-incremento IP) | CPython computed gotos | ✅ | `src/vm.rs`, `vm_fast.rs`, `vm_opt.rs`, `vm_jit.rs` |
+| 4 | Intérprete Adaptativo (PEP 659) | CPython 3.11+ | ✅ | `src/bytecode.rs` (17 opcodes especializados) |
+| 5 | Uops / Inlining micro-opcodes | CPython 3.12+ | ✅ | `src/uops.rs` (50+ variantes) |
+
+### b) Rendimiento interno: ForjaVM vs ForjaFast
+
+| Benchmark | ForjaVM | **ForjaFast** 🏆 | Speedup |
+|---|---|---|---|
+| Suma enteros 100k | 55,914μs | **12,963μs** | **4.31x** |
+| Suma floats 100k | 53,602μs | **12,766μs** | **4.20x** |
+| Suma simple 50k | 26,126μs | **6,639μs** | **3.94x** |
+| Strings 1k | 828μs | **336μs** | **2.46x** |
+| Bucle suma 50k | 26,914μs | **6,182μs** | **4.35x** |
+
+### c) Comparativa: CPython vs Forja JIT
+
+| Test | CPython | **Forja JIT** 🏆 | JIT vs Py |
+|---|---|---|---|
+| suma_bucle(1M) | 30.55ms | **2.06ms** | **14.83x** ⚡ |
+| suma_bucle(10M) | 548.66ms | **21.54ms** | **25.47x** ⚡ |
+| nested_bucle(1000) | 7.82ms | **0.27ms** | **28.96x** ⚡ |
+| nested_bucle(5000) | 39.54ms | **1.20ms** | **32.95x** ⚡ |
+
+### d) Tests
+
+- **125 tests**: 80 unit + 31 integration + 4 module + 10 uops
+- `cargo test` → 125 passed, 0 failed
+- `cargo build` → 0 errors
 
 ---
 

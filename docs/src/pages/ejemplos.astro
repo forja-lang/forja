@@ -241,8 +241,7 @@ numeros[2] = 99
 
   <div class="code-block-wrapper">
     <div class="code-header"><span>📄 examples/11_mapas.fa</span></div>
-    <pre><code><span class="kw">variable</span> persona = {<span class="st">"nombre"</span>: <span class="st">"Ana"</span>, <span class="st">"edad"</span>: 30}
-
+<pre><code><span class="kw">variable</span> persona = &lbrace;<span class="st">"nombre"</span>: <span class="st">"Ana"</span>, <span class="st">"edad"</span>: 30&rbrace;</code></pre>
 <span class="fn">escribir</span>(<span class="st">"Nombre: "</span> + persona[<span class="st">"nombre"</span>])
 <span class="fn">escribir</span>(<span class="st">"Edad: "</span> + persona[<span class="st">"edad"</span>])
 
@@ -340,9 +339,9 @@ persona[<span class="st">"edad"</span>] = 31
     <span class="kw">variable</span> guess = <span class="fn">leer</span>()
     intento = intento + 1
 
-    <span class="kw">si</span> (guess < secreto) &lbrace;
+    <span class="kw">si</span> (guess &lt; secreto) &lbrace;
         <span class="fn">escribir</span>(<span class="st">"📈 Más alto"</span>)
-    &rbrace; <span class="kw">sino</span> <span class="kw">si</span> (guess > secreto) &lbrace;
+    &rbrace; <span class="kw">sino</span> <span class="kw">si</span> (guess &gt; secreto) &lbrace;
         <span class="fn">escribir</span>(<span class="st">"📉 Más bajo"</span>)
     &rbrace; <span class="kw">sino</span> &lbrace;
         <span class="fn">escribir</span>(<span class="st">"🎉 Correcto! Lo lograste en "</span> + intento + <span class="st">" intentos"</span>)
