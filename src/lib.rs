@@ -69,7 +69,7 @@ pub fn compilar(source: &str) -> Result<String, Vec<ErrorForja>> {
 
 /// Compila y ejecuta código Forja en la VM
 pub fn ejecutar(source: &str) -> Result<Vec<String>, String> {
-    use bytecode::BytecodeGenerator;
+    use bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
     use vm::ForjaVM;
 
     // FASE 1: Lexer
@@ -91,6 +91,10 @@ pub fn ejecutar(source: &str) -> Result<Vec<String>, String> {
     // Generar bytecode
     let mut gen = BytecodeGenerator::new();
     let bytecode = gen.generar(&programa).map_err(|_| "Error generando bytecode".to_string())?;
+
+    // Optimizar bytecode: indices globales + fusion de opcodes
+    let bytecode = optimizar_indices(&bytecode);
+    let bytecode = fusionar_opcodes(&bytecode);
 
     // Ejecutar en VM
     let mut vm = ForjaVM::new();

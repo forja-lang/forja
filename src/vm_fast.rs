@@ -54,6 +54,12 @@ pub struct ForjaFast {
     tos: Option<ValorFast>,   // Top of Stack cache
     tos2: Option<ValorFast>,  // Second value cache
 
+    // Type cache for arithmetic operations
+    cache_add_type: Option<(u8, u8)>,  // (type_of_a, type_of_b) para Add
+    cache_sub_type: Option<(u8, u8)>,
+    cache_mul_type: Option<(u8, u8)>,
+    cache_div_type: Option<(u8, u8)>,
+
     funciones: HashMap<String, FuncFast>,
     bytecode: Vec<Opcode>,
     pub output: Vec<String>,
@@ -84,6 +90,7 @@ impl ForjaFast {
             ip: 0, stack: Vec::with_capacity(256), call_stack: Vec::with_capacity(64),
             vars: Vec::with_capacity(64),
             tos: None, tos2: None,
+            cache_add_type: None, cache_sub_type: None, cache_mul_type: None, cache_div_type: None,
             funciones: HashMap::new(), bytecode: Vec::new(), output: Vec::new(),
             max_inst: 100_000_000, ejecutadas: 0,
         }
@@ -123,7 +130,18 @@ impl ForjaFast {
         }
     }
 
-    pub fn reset(&mut self) { self.ip=0;self.stack.clear();self.call_stack.clear();self.output.clear();self.vars.clear();self.tos=None;self.tos2=None; }
+    pub fn reset(&mut self) { self.ip=0;self.stack.clear();self.call_stack.clear();self.output.clear();self.vars.clear();self.tos=None;self.tos2=None;self.cache_add_type=None;self.cache_sub_type=None;self.cache_mul_type=None;self.cache_div_type=None; }
+
+    #[inline(always)]
+    fn type_tag(v: &ValorFast) -> u8 {
+        match v {
+            ValorFast::Entero(_) => 0,
+            ValorFast::Decimal(_) => 1,
+            ValorFast::Texto(_) => 2,
+            ValorFast::Booleano(_) => 3,
+            _ => 4,
+        }
+    }
 
     #[inline(always)]
     fn peek(&self) -> Option<&ValorFast> {
@@ -163,61 +181,181 @@ impl ForjaFast {
             if self.ejecutadas > self.max_inst { return Err(ErrFast::Limite); }
             self.ejecutadas += 1;
 
-            let op = self.bytecode[self.ip].clone();
+            let op = &self.bytecode[self.ip];
             self.ip += 1;
 
             match op {
-                Opcode::PushEntero(n) => self.push(ValorFast::Entero(n)),
-                Opcode::PushDecimal(d) => self.push(ValorFast::Decimal(d)),
+                Opcode::PushEntero(n) => self.push(ValorFast::Entero(*n)),
+                Opcode::PushDecimal(d) => self.push(ValorFast::Decimal(*d)),
                 Opcode::PushTexto(s) => self.push(ValorFast::Texto(Rc::from(s.as_str()))),
-                Opcode::PushBooleano(b) => self.push(ValorFast::Booleano(b)),
+                Opcode::PushBooleano(b) => self.push(ValorFast::Booleano(*b)),
                 Opcode::PushNulo => self.push(ValorFast::Nulo),
                 Opcode::Pop => { self.pop()?; }
                 Opcode::Dup => { let v = self.peek().ok_or(ErrFast::StackUnder("Dup".into()))?.clone(); self.push(v); }
 
                 // === VARIABLES POR ÍNDICE (O(1) — acceso directo a Vec) ===
                 Opcode::LoadIdx(idx) => {
-                    if idx < self.vars.len() {
-                        self.push(self.vars[idx].clone());
+                    if *idx < self.vars.len() {
+                        self.push(self.vars[*idx].clone());
                     } else {
                         self.push(ValorFast::Nulo);
                     }
                 }
                 Opcode::StoreIdx(idx) => {
                     let val = self.pop()?;
-                    if idx >= self.vars.len() { self.vars.resize(idx + 1, ValorFast::Nulo); }
-                    self.vars[idx] = val;
+                    if *idx >= self.vars.len() { self.vars.resize(*idx + 1, ValorFast::Nulo); }
+                    self.vars[*idx] = val;
                 }
                 Opcode::DeclareIdx(idx, _) => {
                     let val = self.pop()?;
-                    if idx >= self.vars.len() { self.vars.resize(idx + 1, ValorFast::Nulo); }
-                    self.vars[idx] = val;
+                    if *idx >= self.vars.len() { self.vars.resize(*idx + 1, ValorFast::Nulo); }
+                    self.vars[*idx] = val;
                 }
 
                 // === OPCODES FUSIONADOS (sin push/pop — asignación directa) ===
                 Opcode::DeclareEnteroOp(idx, n) => {
-                    if idx >= self.vars.len() { self.vars.resize(idx + 1, ValorFast::Nulo); }
-                    self.vars[idx] = ValorFast::Entero(n);
+                    if *idx >= self.vars.len() { self.vars.resize(*idx + 1, ValorFast::Nulo); }
+                    self.vars[*idx] = ValorFast::Entero(*n);
                 }
                 Opcode::DeclareBooleanoOp(idx, b) => {
-                    if idx >= self.vars.len() { self.vars.resize(idx + 1, ValorFast::Nulo); }
-                    self.vars[idx] = ValorFast::Booleano(b);
+                    if *idx >= self.vars.len() { self.vars.resize(*idx + 1, ValorFast::Nulo); }
+                    self.vars[*idx] = ValorFast::Booleano(*b);
                 }
                 Opcode::StoreEnteroOp(idx, n) => {
-                    if idx >= self.vars.len() { self.vars.resize(idx + 1, ValorFast::Nulo); }
-                    self.vars[idx] = ValorFast::Entero(n);
+                    if *idx >= self.vars.len() { self.vars.resize(*idx + 1, ValorFast::Nulo); }
+                    self.vars[*idx] = ValorFast::Entero(*n);
                 }
 
                 // === VARIABLES POR NOMBRE (fallback) ===
-                Opcode::Load(n) => { return Err(ErrFast::VarNoDecl(n)); }
-                Opcode::Store(n) => { return Err(ErrFast::VarNoDecl(n)); }
-                Opcode::Declare(n, _) => { return Err(ErrFast::VarNoDecl(n)); }
+                Opcode::Load(n) => { return Err(ErrFast::VarNoDecl(n.clone())); }
+                Opcode::Store(n) => { return Err(ErrFast::VarNoDecl(n.clone())); }
+                Opcode::Declare(n, _) => { return Err(ErrFast::VarNoDecl(n.clone())); }
 
                 // === ARITMÉTICA ===
-                Opcode::Add => { let(b,a)=(self.pop()?,self.pop()?);match(&a,&b){(ValorFast::Entero(x),ValorFast::Entero(y))=>self.push(ValorFast::Entero(x+y)),(ValorFast::Decimal(x),ValorFast::Decimal(y))=>self.push(ValorFast::Decimal(x+y)),(ValorFast::Entero(x),ValorFast::Decimal(y))=>self.push(ValorFast::Decimal(*x as f64+y)),(ValorFast::Decimal(x),ValorFast::Entero(y))=>self.push(ValorFast::Decimal(x+*y as f64)),(ValorFast::Texto(t),v)=>self.push(ValorFast::Texto(Rc::from(format!("{}{}",t,v.mostrar()).as_str()))),_=>return Err(ErrFast::TipoInv("+".into()))}}
-                Opcode::Sub => { let(b,a)=(self.pop()?,self.pop()?);match(&a,&b){(ValorFast::Entero(x),ValorFast::Entero(y))=>self.push(ValorFast::Entero(x-y)),(ValorFast::Decimal(x),ValorFast::Decimal(y))=>self.push(ValorFast::Decimal(x-y)),_=>return Err(ErrFast::TipoInv("-".into()))}}
-                Opcode::Mul => { let(b,a)=(self.pop()?,self.pop()?);match(&a,&b){(ValorFast::Entero(x),ValorFast::Entero(y))=>self.push(ValorFast::Entero(x*y)),(ValorFast::Decimal(x),ValorFast::Decimal(y))=>self.push(ValorFast::Decimal(x*y)),_=>return Err(ErrFast::TipoInv("*".into()))}}
-                Opcode::Div => { let(b,a)=(self.pop()?,self.pop()?);match(&a,&b){(_,ValorFast::Entero(0))|(_,ValorFast::Decimal(0.0))=>return Err(ErrFast::DivCero),(ValorFast::Entero(x),ValorFast::Entero(y))=>self.push(ValorFast::Entero(x/y)),(ValorFast::Decimal(x),ValorFast::Decimal(y))=>self.push(ValorFast::Decimal(x/y)),_=>return Err(ErrFast::TipoInv("/".into()))}}
+                Opcode::Add => {
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    let ta = Self::type_tag(&a);
+                    let tb = Self::type_tag(&b);
+                    if self.cache_add_type == Some((ta, tb)) {
+                        match ta {
+                            0 => {
+                                if let (ValorFast::Entero(x), ValorFast::Entero(y)) = (&a, &b) {
+                                    self.push(ValorFast::Entero(x + y));
+                                    continue;
+                                }
+                            }
+                            1 => {
+                                if let (ValorFast::Decimal(x), ValorFast::Decimal(y)) = (&a, &b) {
+                                    self.push(ValorFast::Decimal(x + y));
+                                    continue;
+                                }
+                            }
+                            2 => {
+                                if let (ValorFast::Texto(x), ValorFast::Texto(y)) = (&a, &b) {
+                                    self.push(ValorFast::Texto(Rc::from(format!("{}{}", x, y).as_str())));
+                                    continue;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    self.cache_add_type = Some((ta, tb));
+                    match (&a, &b) {
+                        (ValorFast::Entero(x), ValorFast::Entero(y)) => self.push(ValorFast::Entero(x + y)),
+                        (ValorFast::Decimal(x), ValorFast::Decimal(y)) => self.push(ValorFast::Decimal(x + y)),
+                        (ValorFast::Entero(x), ValorFast::Decimal(y)) => self.push(ValorFast::Decimal(*x as f64 + y)),
+                        (ValorFast::Decimal(x), ValorFast::Entero(y)) => self.push(ValorFast::Decimal(x + *y as f64)),
+                        (ValorFast::Texto(t), v) => self.push(ValorFast::Texto(Rc::from(format!("{}{}", t, v.mostrar()).as_str()))),
+                        _ => return Err(ErrFast::TipoInv("+".into())),
+                    }
+                }
+                Opcode::Sub => {
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    let ta = Self::type_tag(&a);
+                    let tb = Self::type_tag(&b);
+                    if self.cache_sub_type == Some((ta, tb)) {
+                        match ta {
+                            0 => {
+                                if let (ValorFast::Entero(x), ValorFast::Entero(y)) = (&a, &b) {
+                                    self.push(ValorFast::Entero(x - y));
+                                    continue;
+                                }
+                            }
+                            1 => {
+                                if let (ValorFast::Decimal(x), ValorFast::Decimal(y)) = (&a, &b) {
+                                    self.push(ValorFast::Decimal(x - y));
+                                    continue;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    self.cache_sub_type = Some((ta, tb));
+                    match (&a, &b) {
+                        (ValorFast::Entero(x), ValorFast::Entero(y)) => self.push(ValorFast::Entero(x - y)),
+                        (ValorFast::Decimal(x), ValorFast::Decimal(y)) => self.push(ValorFast::Decimal(x - y)),
+                        _ => return Err(ErrFast::TipoInv("-".into())),
+                    }
+                }
+                Opcode::Mul => {
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    let ta = Self::type_tag(&a);
+                    let tb = Self::type_tag(&b);
+                    if self.cache_mul_type == Some((ta, tb)) {
+                        match ta {
+                            0 => {
+                                if let (ValorFast::Entero(x), ValorFast::Entero(y)) = (&a, &b) {
+                                    self.push(ValorFast::Entero(x * y));
+                                    continue;
+                                }
+                            }
+                            1 => {
+                                if let (ValorFast::Decimal(x), ValorFast::Decimal(y)) = (&a, &b) {
+                                    self.push(ValorFast::Decimal(x * y));
+                                    continue;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    self.cache_mul_type = Some((ta, tb));
+                    match (&a, &b) {
+                        (ValorFast::Entero(x), ValorFast::Entero(y)) => self.push(ValorFast::Entero(x * y)),
+                        (ValorFast::Decimal(x), ValorFast::Decimal(y)) => self.push(ValorFast::Decimal(x * y)),
+                        _ => return Err(ErrFast::TipoInv("*".into())),
+                    }
+                }
+                Opcode::Div => {
+                    let (b, a) = (self.pop()?, self.pop()?);
+                    let ta = Self::type_tag(&a);
+                    let tb = Self::type_tag(&b);
+                    if self.cache_div_type == Some((ta, tb)) {
+                        match ta {
+                            0 => {
+                                if let (ValorFast::Entero(x), ValorFast::Entero(y)) = (&a, &b) {
+                                    if *y == 0 { return Err(ErrFast::DivCero); }
+                                    self.push(ValorFast::Entero(x / y));
+                                    continue;
+                                }
+                            }
+                            1 => {
+                                if let (ValorFast::Decimal(x), ValorFast::Decimal(y)) = (&a, &b) {
+                                    if *y == 0.0 { return Err(ErrFast::DivCero); }
+                                    self.push(ValorFast::Decimal(x / y));
+                                    continue;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    self.cache_div_type = Some((ta, tb));
+                    match (&a, &b) {
+                        (_, ValorFast::Entero(0)) | (_, ValorFast::Decimal(0.0)) => return Err(ErrFast::DivCero),
+                        (ValorFast::Entero(x), ValorFast::Entero(y)) => self.push(ValorFast::Entero(x / y)),
+                        (ValorFast::Decimal(x), ValorFast::Decimal(y)) => self.push(ValorFast::Decimal(x / y)),
+                        _ => return Err(ErrFast::TipoInv("/".into())),
+                    }
+                }
                 Opcode::Igual=>{let(b,a)=(self.pop()?,self.pop()?);self.push(ValorFast::Booleano(match(&a,&b){(ValorFast::Entero(x),ValorFast::Entero(y))=>x==y,(ValorFast::Decimal(x),ValorFast::Decimal(y))=>x==y,(ValorFast::Texto(x),ValorFast::Texto(y))=>x==y,(ValorFast::Booleano(x),ValorFast::Booleano(y))=>x==y,_=>return Err(ErrFast::TipoInv("==".into()))}))}
                 Opcode::Diferente=>{let(b,a)=(self.pop()?,self.pop()?);self.push(ValorFast::Booleano(match(&a,&b){(ValorFast::Entero(x),ValorFast::Entero(y))=>x!=y,(ValorFast::Decimal(x),ValorFast::Decimal(y))=>x!=y,_=>return Err(ErrFast::TipoInv("!=".into()))}))}
                 Opcode::Menor=>{let(b,a)=(self.pop()?,self.pop()?);self.push(ValorFast::Booleano(match(&a,&b){(ValorFast::Entero(x),ValorFast::Entero(y))=>x<y,(ValorFast::Decimal(x),ValorFast::Decimal(y))=>x<y,_=>return Err(ErrFast::TipoInv("<".into()))}))}
@@ -228,13 +366,13 @@ impl ForjaFast {
                 Opcode::O=>{let b=self.pop()?;let a=self.pop()?;self.push(ValorFast::Booleano(a.es_verdadero()||b.es_verdadero()))}
                 Opcode::No=>{let a=self.pop()?;self.push(ValorFast::Booleano(!a.es_verdadero()))}
 
-                Opcode::Jump(target) => { self.ip = target; }
-                Opcode::JumpSiFalso(target) => { if !self.pop()?.es_verdadero() { self.ip = target; } }
+                Opcode::Jump(target) => { self.ip = *target; }
+                Opcode::JumpSiFalso(target) => { if !self.pop()?.es_verdadero() { self.ip = *target; } }
                 Opcode::Label(_) => {}
                 Opcode::FunctionDef(_, _) => {}
 
                 Opcode::Call(nombre, nargs) => {
-                    if let Some(func) = self.funciones.get(&nombre).cloned() {
+                    if let Some(func) = self.funciones.get(nombre).cloned() {
                         // Tail Call Elimination: si el próximo opcode es Return,
                         // no creamos un nuevo frame — reemplazamos args en el scope actual
                         let is_tail = self.ip < len && matches!(self.bytecode.get(self.ip), Some(Opcode::Return));
@@ -244,12 +382,12 @@ impl ForjaFast {
                             let saved = self.call_stack.last().map(|f| f.saved_vars.clone()).unwrap_or_default();
                             self.vars = saved;
 
-                            let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
-                            for _ in 0..nargs { args.push(self.pop()?); }
+                            let mut args: Vec<ValorFast> = Vec::with_capacity(*nargs);
+                            for _ in 0..*nargs { args.push(self.pop()?); }
                             args.reverse();
 
                             // Escribir args en índices 0..nargs
-                            if self.vars.len() < nargs { self.vars.resize(nargs, ValorFast::Nulo); }
+                            if self.vars.len() < *nargs { self.vars.resize(*nargs, ValorFast::Nulo); }
                             for (i, arg) in args.into_iter().enumerate() {
                                 self.vars[i] = arg;
                             }
@@ -261,18 +399,18 @@ impl ForjaFast {
                             let saved_vars = self.vars.clone();
                             self.call_stack.push(FrmFast { ip_ret: self.ip, saved_vars });
 
-                            let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
-                            for _ in 0..nargs { args.push(self.pop()?); }
+                            let mut args: Vec<ValorFast> = Vec::with_capacity(*nargs);
+                            for _ in 0..*nargs { args.push(self.pop()?); }
                             args.reverse();
 
-                            if self.vars.len() < nargs { self.vars.resize(nargs, ValorFast::Nulo); }
+                            if self.vars.len() < *nargs { self.vars.resize(*nargs, ValorFast::Nulo); }
                             for (i, arg) in args.into_iter().enumerate() {
                                 self.vars[i] = arg;
                             }
 
                             self.ip = func.ip;
                         }
-                    } else { return Err(ErrFast::FnNoDef(nombre)); }
+                    } else { return Err(ErrFast::FnNoDef(nombre.clone())); }
                 }
                 Opcode::Return => {
                     if let Some(frame) = self.call_stack.pop() {
@@ -289,22 +427,22 @@ impl ForjaFast {
                     else { self.push(ValorFast::Texto(Rc::from(""))); }
                 }
 
-                Opcode::NewObject(c) => { self.push(ValorFast::Objeto(ObjFast(Rc::new(RefCell::new(ObjVal{clase:c,campos:HashMap::new()}))))); }
-                Opcode::SetField(c) => { if let ValorFast::Objeto(o)=self.pop()?{let v=self.pop()?;o.0.borrow_mut().campos.insert(c,v);}else{return Err(ErrFast::TipoInv("SetField".into()));} }
-                Opcode::GetField(c) => { if let ValorFast::Objeto(o)=self.pop()?{let b=o.0.borrow();self.push(b.campos.get(&c).cloned().unwrap_or(ValorFast::Nulo));}else{return Err(ErrFast::TipoInv("GetField".into()));} }
+                Opcode::NewObject(c) => { self.push(ValorFast::Objeto(ObjFast(Rc::new(RefCell::new(ObjVal{clase:c.clone(),campos:HashMap::new()}))))); }
+                Opcode::SetField(c) => { if let ValorFast::Objeto(o)=self.pop()?{let v=self.pop()?;o.0.borrow_mut().campos.insert(c.clone(),v);}else{return Err(ErrFast::TipoInv("SetField".into()));} }
+                Opcode::GetField(c) => { if let ValorFast::Objeto(o)=self.pop()?{let b=o.0.borrow();self.push(b.campos.get(c).cloned().unwrap_or(ValorFast::Nulo));}else{return Err(ErrFast::TipoInv("GetField".into()));} }
                 Opcode::CallMethod(m,nargs) => {
-                    if let Some(b)=resolver_builtin_fast(&m){self.exec_builtin(b,nargs)?;continue;}
-                    let mut args:Vec<ValorFast>=Vec::with_capacity(nargs);for _ in 0..nargs{args.push(self.pop()?);}args.reverse();
+                    if let Some(b)=resolver_builtin_fast(m){self.exec_builtin(b,*nargs)?;continue;}
+                    let mut args:Vec<ValorFast>=Vec::with_capacity(*nargs);for _ in 0..*nargs{args.push(self.pop()?);}args.reverse();
                     if let ValorFast::Objeto(o)=self.pop()?{let c=o.0.borrow().clase.clone();let fn_name=format!("{}.{}",c,m);
                     if let Some(func)=self.funciones.get(&fn_name).cloned(){let saved_vars=self.vars.clone();self.call_stack.push(FrmFast{ip_ret:self.ip,saved_vars});let mut all=vec![ValorFast::Objeto(o)];all.extend(args);let n=all.len();if self.vars.len()<n{self.vars.resize(n,ValorFast::Nulo);}for(i,a)in all.into_iter().enumerate(){self.vars[i]=a;}self.ip=func.ip;}
                     else{return Err(ErrFast::FnNoDef(fn_name));}}else{return Err(ErrFast::TipoInv("CallMethod".into()));}
                 }
 
-                Opcode::ArrayNew(n)=>{let mut e=Vec::with_capacity(n);for _ in 0..n{e.push(self.pop()?);}e.reverse();self.push(ValorFast::Arreglo(e));}
+                Opcode::ArrayNew(n)=>{let mut e=Vec::with_capacity(*n);for _ in 0..*n{e.push(self.pop()?);}e.reverse();self.push(ValorFast::Arreglo(e));}
                 Opcode::ArrayGet=>{let i=self.pop()?;let a=self.pop()?;match(&a,&i){(ValorFast::Arreglo(e),ValorFast::Entero(i))=>if*i>=0&&(*i as usize)<e.len(){self.push(e[*i as usize].clone())}else{return Err(ErrFast::IdxOut(format!("[{}]",i)))},_=>return Err(ErrFast::TipoInv("[]".into()))}}
                 Opcode::ArraySet=>{let i=self.pop()?;let mut a=self.pop()?;let v=self.pop()?;if let(ValorFast::Arreglo(ref mut e),ValorFast::Entero(i))=(&mut a,&i){if*i>=0&&(*i as usize)<e.len(){e[*i as usize]=v;self.push(a)}else{return Err(ErrFast::IdxOut("set".into()))}}else{return Err(ErrFast::TipoInv("[]=".into()))}}
                 Opcode::ArrayLen=>{if let ValorFast::Arreglo(e)=self.pop()?{self.push(ValorFast::Entero(e.len() as i64))}else{return Err(ErrFast::TipoInv("len".into()))}}
-                Opcode::MapNew(n)=>{let mut m=HashMap::with_capacity(n);for _ in 0..n{let v=self.pop()?;if let ValorFast::Texto(k)=self.pop()?{m.insert(k.to_string(),v);}}self.push(ValorFast::Mapa(m));}
+                Opcode::MapNew(n)=>{let mut m=HashMap::with_capacity(*n);for _ in 0..*n{let v=self.pop()?;if let ValorFast::Texto(k)=self.pop()?{m.insert(k.to_string(),v);}}self.push(ValorFast::Mapa(m));}
                 Opcode::MapGet=>{let k=self.pop()?;let m=self.pop()?;match(&m,&k){(ValorFast::Mapa(m),ValorFast::Texto(k))=>self.push(m.get(k.as_ref()).cloned().unwrap_or(ValorFast::Nulo)),_=>return Err(ErrFast::TipoInv("map[]".into()))}}
                 Opcode::MapSet=>{let v=self.pop()?;let k=self.pop()?;let mut m=self.pop()?;if let(ValorFast::Mapa(ref mut mm),ValorFast::Texto(k))=(&mut m,k){mm.insert(k.to_string(),v);self.push(m)}else{return Err(ErrFast::TipoInv("map[]=".into()))}}
                 Opcode::Halt=>break,
