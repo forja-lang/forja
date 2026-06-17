@@ -28,6 +28,13 @@ const OP_ARRAY_GET: u8 = 36;   const OP_ARRAY_SET: u8 = 37;
 const OP_ARRAY_LEN: u8 = 38;   const OP_MAP_NEW: u8 = 39;
 const OP_MAP_GET: u8 = 40;     const OP_MAP_SET: u8 = 41;
 const OP_HALT: u8 = 42;
+// Opcodes especializados (runtime-only, map to generic equivalents at compile time)
+const OP_ADD_INT: u8 = 100;    const OP_ADD_FLOAT: u8 = 101;
+const OP_SUB_INT: u8 = 102;    const OP_SUB_FLOAT: u8 = 103;
+const OP_MUL_INT: u8 = 104;    const OP_MUL_FLOAT: u8 = 105;
+const OP_DIV_INT: u8 = 106;    const OP_DIV_FLOAT: u8 = 107;
+const OP_IGUAL_INT: u8 = 108;  const OP_MENOR_INT: u8 = 109;
+const OP_MAYOR_INT: u8 = 110;
 
 // Small Integer Cache [-5, 256] — thread_local! porque ValorDT no es Send/Sync
 use std::cell::OnceCell;
@@ -168,6 +175,22 @@ pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
             crate::bytecode::Opcode::Sub => { bc.code.push(OP_SUB); }
             crate::bytecode::Opcode::Mul => { bc.code.push(OP_MUL); }
             crate::bytecode::Opcode::Div => { bc.code.push(OP_DIV); }
+            // Opcodes especializados (runtime-only) → mapear a genéricos en compilación
+            crate::bytecode::Opcode::AddInt | crate::bytecode::Opcode::AddFloat => { bc.code.push(OP_ADD); }
+            crate::bytecode::Opcode::SubInt | crate::bytecode::Opcode::SubFloat => { bc.code.push(OP_SUB); }
+            crate::bytecode::Opcode::MulInt | crate::bytecode::Opcode::MulFloat => { bc.code.push(OP_MUL); }
+            crate::bytecode::Opcode::DivInt | crate::bytecode::Opcode::DivFloat => { bc.code.push(OP_DIV); }
+            crate::bytecode::Opcode::IgualInt => { bc.code.push(OP_IGUAL); }
+            crate::bytecode::Opcode::MenorInt => { bc.code.push(OP_MENOR); }
+            crate::bytecode::Opcode::MayorInt => { bc.code.push(OP_MAYOR); }
+            crate::bytecode::Opcode::LoadIdxEntero(idx) | crate::bytecode::Opcode::LoadIdxFloat(idx) => {
+                bc.code.push(OP_LOAD);
+                bc.str_ops.push(format!("%idx_{}", idx));
+            }
+            crate::bytecode::Opcode::StoreIdxEntero(idx) | crate::bytecode::Opcode::StoreIdxFloat(idx) => {
+                bc.code.push(OP_STORE);
+                bc.str_ops.push(format!("%idx_{}", idx));
+            }
             crate::bytecode::Opcode::Igual => { bc.code.push(OP_IGUAL); }
             crate::bytecode::Opcode::Diferente => { bc.code.push(OP_DIF); }
             crate::bytecode::Opcode::Menor => { bc.code.push(OP_MENOR); }
@@ -534,6 +557,34 @@ impl ForjaDT {
                 OP_MAP_NEW => { let n=self.ri() as usize;let mut m=HashMap::with_capacity(n);for _ in 0..n{let v=self.pop()?;if let ValorDT::Texto(k)=self.pop()?{m.insert(k.to_string(),v);}}self.push(ValorDT::Mapa(m)); self.ip += 1; }
                 OP_MAP_GET => { let k=self.pop()?;let m=self.pop()?;match(&m,&k){(ValorDT::Mapa(m),ValorDT::Texto(k))=>self.push(m.get(k.as_ref()).cloned().unwrap_or(ValorDT::Nulo)),_=>return Err(ErrorDT::TipoIncompatible("MapGet".into()))} self.ip += 1; }
                 OP_MAP_SET => { let v=self.pop()?;let k=self.pop()?;let mut map=self.pop()?;if let(ValorDT::Mapa(ref mut m),ValorDT::Texto(k))=(&mut map,k){m.insert(k.to_string(),v);self.push(map)}else{return Err(ErrorDT::TipoIncompatible("MapSet".into()))} self.ip += 1; }
+                // Opcodes especializados (PEP 659) — misma lógica que genéricos
+                OP_ADD_INT | OP_ADD_FLOAT => { let (b,a)=(self.pop()?,self.pop()?); match (&a,&b) {
+                    (ValorDT::Entero(x),ValorDT::Entero(y))=>self.push(ValorDT::Entero(x+y)),
+                    (ValorDT::Decimal(x),ValorDT::Decimal(y))=>self.push(ValorDT::Decimal(x+y)),
+                    (ValorDT::Entero(x),ValorDT::Decimal(y))=>self.push(ValorDT::Decimal(*x as f64+y)),
+                    (ValorDT::Decimal(x),ValorDT::Entero(y))=>self.push(ValorDT::Decimal(x+*y as f64)),
+                    (ValorDT::Texto(t),v)=>self.push(ValorDT::Texto(Rc::from(format!("{}{}",t,v.mostrar()).as_str()))),
+                    _=>return Err(ErrorDT::TipoIncompatible("suma".into()))}
+                self.ip += 1; }
+                OP_SUB_INT | OP_SUB_FLOAT => { let (b,a)=(self.pop()?,self.pop()?); match (&a,&b) {
+                    (ValorDT::Entero(x),ValorDT::Entero(y))=>self.push(ValorDT::Entero(x-y)),
+                    (ValorDT::Decimal(x),ValorDT::Decimal(y))=>self.push(ValorDT::Decimal(x-y)),
+                    _=>return Err(ErrorDT::TipoIncompatible("resta".into()))}
+                self.ip += 1; }
+                OP_MUL_INT | OP_MUL_FLOAT => { let (b,a)=(self.pop()?,self.pop()?); match (&a,&b) {
+                    (ValorDT::Entero(x),ValorDT::Entero(y))=>self.push(ValorDT::Entero(x*y)),
+                    (ValorDT::Decimal(x),ValorDT::Decimal(y))=>self.push(ValorDT::Decimal(x*y)),
+                    _=>return Err(ErrorDT::TipoIncompatible("mul".into()))}
+                self.ip += 1; }
+                OP_DIV_INT | OP_DIV_FLOAT => { let (b,a)=(self.pop()?,self.pop()?); match (&a,&b) {
+                    (_,ValorDT::Entero(0))|(_,ValorDT::Decimal(0.0))=>return Err(ErrorDT::DivisionPorCero),
+                    (ValorDT::Entero(x),ValorDT::Entero(y))=>self.push(ValorDT::Entero(x/y)),
+                    (ValorDT::Decimal(x),ValorDT::Decimal(y))=>self.push(ValorDT::Decimal(x/y)),
+                    _=>return Err(ErrorDT::TipoIncompatible("div".into()))}
+                self.ip += 1; }
+                OP_IGUAL_INT => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x==y,_=>return Err(ErrorDT::TipoIncompatible("==".into()))})); self.ip += 1; }
+                OP_MENOR_INT => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x<y,_=>return Err(ErrorDT::TipoIncompatible("<".into()))})); self.ip += 1; }
+                OP_MAYOR_INT => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x>y,_=>return Err(ErrorDT::TipoIncompatible(">".into()))})); self.ip += 1; }
                 OP_HALT => break,
                 _ => break,
             }

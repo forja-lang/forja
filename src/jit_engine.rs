@@ -13,11 +13,18 @@ pub fn es_jiteable(opcodes: &[Opcode]) -> bool {
             Opcode::PushEntero(_) | Opcode::PushBooleano(_) |
             Opcode::Pop | Opcode::Dup |
             Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Div |
+            Opcode::AddInt | Opcode::AddFloat |
+            Opcode::SubInt | Opcode::SubFloat |
+            Opcode::MulInt | Opcode::MulFloat |
+            Opcode::DivInt | Opcode::DivFloat |
+            Opcode::IgualInt | Opcode::MenorInt | Opcode::MayorInt |
             Opcode::Igual | Opcode::Diferente |
             Opcode::Menor | Opcode::Mayor |
             Opcode::MenorIgual | Opcode::MayorIgual |
             Opcode::Y | Opcode::O | Opcode::No |
             Opcode::LoadIdx(_) | Opcode::StoreIdx(_) | Opcode::DeclareIdx(_, _) |
+            Opcode::LoadIdxEntero(_) | Opcode::LoadIdxFloat(_) |
+            Opcode::StoreIdxEntero(_) | Opcode::StoreIdxFloat(_) |
             Opcode::DeclareEnteroOp(_, _) | Opcode::DeclareBooleanoOp(_, _) |
             Opcode::StoreEnteroOp(_, _) |
             Opcode::Jump(_) | Opcode::JumpSiFalso(_) | Opcode::Label(_) |
