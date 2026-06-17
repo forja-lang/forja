@@ -68,9 +68,13 @@ pub struct ForjaFast {
     ejecutadas: usize,
 }
 
-// Guarda el estado completo de vars para restaurarlo al Return
-// Necesario para recursión: cada llamada guarda su propio contexto
-struct FrmFast { ip_ret: usize, saved_vars: Vec<ValorFast> }
+// Guarda el tamaño anterior de vars + los valores de argumentos sobrescritos
+// para restaurarlos al Return. Evita clonar todo el vector en cada llamada.
+struct FrmFast {
+    ip_ret: usize,
+    vars_prev_len: usize,
+    saved_args: Vec<ValorFast>,  // valores previos de vars[0..nargs] antes de la llamada
+}
 
 #[derive(Debug, Clone)]
 pub enum ErrFast {
@@ -181,7 +185,13 @@ impl ForjaFast {
             if self.ejecutadas > self.max_inst { return Err(ErrFast::Limite); }
             self.ejecutadas += 1;
 
-            let op = &self.bytecode[self.ip];
+            // Usamos raw pointer para evitar el clone() del Opcode completo
+            // sin mantener un borrow inmutable de self.bytecode que impediría
+            // llamar a métodos &mut self como pop()/push()
+            let op = unsafe {
+                let ptr = self.bytecode.as_ptr().add(self.ip);
+                &*ptr
+            };
             self.ip += 1;
 
             match op {
@@ -378,15 +388,11 @@ impl ForjaFast {
                         let is_tail = self.ip < len && matches!(self.bytecode.get(self.ip), Some(Opcode::Return));
 
                         if is_tail {
-                            // Tail call: reemplazar args en el scope actual
-                            let saved = self.call_stack.last().map(|f| f.saved_vars.clone()).unwrap_or_default();
-                            self.vars = saved;
-
+                            // Tail call: reemplazar args en el scope actual, sin guardar frame
                             let mut args: Vec<ValorFast> = Vec::with_capacity(*nargs);
                             for _ in 0..*nargs { args.push(self.pop()?); }
                             args.reverse();
 
-                            // Escribir args en índices 0..nargs
                             if self.vars.len() < *nargs { self.vars.resize(*nargs, ValorFast::Nulo); }
                             for (i, arg) in args.into_iter().enumerate() {
                                 self.vars[i] = arg;
@@ -395,9 +401,14 @@ impl ForjaFast {
                             self.ip = func.ip;
                             // El Return que seguía se saltea porque ip apunta directo al cuerpo
                         } else {
-                            // Normal call: guardar vars completo y escribir args en índices 0..nargs
-                            let saved_vars = self.vars.clone();
-                            self.call_stack.push(FrmFast { ip_ret: self.ip, saved_vars });
+                            // Normal call: guardar valores previos de vars[0..nargs]
+                            // antes de sobrescribirlos (para restaurarlos en Return)
+                            let vars_prev_len = self.vars.len();
+                            let mut saved_args: Vec<ValorFast> = Vec::with_capacity(*nargs);
+                            for i in 0..*nargs {
+                                saved_args.push(if i < self.vars.len() { self.vars[i].clone() } else { ValorFast::Nulo });
+                            }
+                            self.call_stack.push(FrmFast { ip_ret: self.ip, vars_prev_len, saved_args });
 
                             let mut args: Vec<ValorFast> = Vec::with_capacity(*nargs);
                             for _ in 0..*nargs { args.push(self.pop()?); }
@@ -414,8 +425,14 @@ impl ForjaFast {
                 }
                 Opcode::Return => {
                     if let Some(frame) = self.call_stack.pop() {
-                        // Restaurar vars al estado anterior a la llamada
-                        self.vars = frame.saved_vars;
+                        // Restaurar vars al tamaño anterior a la llamada
+                        self.vars.truncate(frame.vars_prev_len);
+                        // Restaurar valores de vars[0..nargs] que fueron sobrescritos
+                        for (i, val) in frame.saved_args.into_iter().enumerate() {
+                            if i < self.vars.len() {
+                                self.vars[i] = val;
+                            }
+                        }
                         self.ip = frame.ip_ret;
                     } else { break; }
                 }
@@ -434,7 +451,7 @@ impl ForjaFast {
                     if let Some(b)=resolver_builtin_fast(m){self.exec_builtin(b,*nargs)?;continue;}
                     let mut args:Vec<ValorFast>=Vec::with_capacity(*nargs);for _ in 0..*nargs{args.push(self.pop()?);}args.reverse();
                     if let ValorFast::Objeto(o)=self.pop()?{let c=o.0.borrow().clase.clone();let fn_name=format!("{}.{}",c,m);
-                    if let Some(func)=self.funciones.get(&fn_name).cloned(){let saved_vars=self.vars.clone();self.call_stack.push(FrmFast{ip_ret:self.ip,saved_vars});let mut all=vec![ValorFast::Objeto(o)];all.extend(args);let n=all.len();if self.vars.len()<n{self.vars.resize(n,ValorFast::Nulo);}for(i,a)in all.into_iter().enumerate(){self.vars[i]=a;}self.ip=func.ip;}
+                    if let Some(func)=self.funciones.get(&fn_name).cloned(){let vars_prev_len=self.vars.len();let mut all=vec![ValorFast::Objeto(o)];all.extend(args);let n=all.len();let mut saved_args:Vec<ValorFast>=Vec::with_capacity(n);for i in 0..n{saved_args.push(if i<self.vars.len(){self.vars[i].clone()}else{ValorFast::Nulo});}self.call_stack.push(FrmFast{ip_ret:self.ip,vars_prev_len,saved_args});if self.vars.len()<n{self.vars.resize(n,ValorFast::Nulo);}for(i,a)in all.into_iter().enumerate(){self.vars[i]=a;}self.ip=func.ip;}
                     else{return Err(ErrFast::FnNoDef(fn_name));}}else{return Err(ErrFast::TipoInv("CallMethod".into()));}
                 }
 

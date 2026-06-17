@@ -36,6 +36,10 @@ pub mod diagrama;
 pub mod optimizer;
 pub mod formatter;
 
+// JIT Engine (orquestador con fallback)
+#[cfg(not(target_arch = "wasm32"))]
+pub mod jit_engine;
+
 use error::ErrorForja;
 
 /// Compila un archivo .fa completo y devuelve el código Rust exportado (opcional)
@@ -59,6 +63,10 @@ pub fn compilar(source: &str) -> Result<String, Vec<ErrorForja>> {
     // FASE 6: Optimizador (constant folding, dead code elimination)
     let mut optimizer = optimizer::Optimizer::new();
     let programa = optimizer.optimizar(&programa);
+
+    // FASE 6b: Dead Code Elimination
+    let mut dce = optimizer::DeadCodeEliminator::new();
+    let programa = dce.eliminar(&programa);
 
     // FASE 7: Transpilador
     let mut transpiler = transpiler::Transpiler::new();
@@ -88,6 +96,10 @@ pub fn ejecutar(source: &str) -> Result<Vec<String>, String> {
     let mut optimizer = optimizer::Optimizer::new();
     let programa = optimizer.optimizar(&programa);
 
+    // FASE 5b: Dead Code Elimination
+    let mut dce = optimizer::DeadCodeEliminator::new();
+    let programa = dce.eliminar(&programa);
+
     // Generar bytecode
     let mut gen = BytecodeGenerator::new();
     let bytecode = gen.generar(&programa).map_err(|_| "Error generando bytecode".to_string())?;
@@ -102,4 +114,38 @@ pub fn ejecutar(source: &str) -> Result<Vec<String>, String> {
     vm.ejecutar().map_err(|e| format!("{}", e))?;
 
     Ok(vm.obtener_output().to_vec())
+}
+
+/// Compila y ejecuta código Forja usando JIT nativo (con fallback a VM)
+#[cfg(not(target_arch = "wasm32"))]
+pub fn ejecutar_jit(source: &str) -> Result<Vec<String>, String> {
+    use bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
+
+    // FASE 1: Lexer
+    let mut lexer = lexer::Lexer::new(source);
+    let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
+
+    // FASE 2-3: Parser
+    let mut parser = parser::Parser::new(tokens);
+    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+
+    // FASE 4: Type Checker
+    let mut type_checker = semantics::TypeChecker::new();
+    type_checker.analizar(&programa).map_err(|e| format!("{}", e[0]))?;
+
+    // FASE 5: Optimizador
+    let mut optimizer = optimizer::Optimizer::new();
+    let programa = optimizer.optimizar(&programa);
+
+    // FASE 5b: Dead Code Elimination
+    let mut dce = optimizer::DeadCodeEliminator::new();
+    let programa = dce.eliminar(&programa);
+
+    // Generar bytecode
+    let mut gen = BytecodeGenerator::new();
+    let bytecode = gen.generar(&programa).map_err(|_| "Error generando bytecode".to_string())?;
+
+    // Ejecutar con JIT Orchestrator
+    let mut jit = jit_engine::JitOrchestrator::new();
+    jit.ejecutar(&bytecode)
 }
