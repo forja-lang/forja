@@ -1013,10 +1013,11 @@ impl CompilerAsm {
         // Runtime funciones
         self.generar_runtime_funciones();
 
-        // Recolectar nombres de funciones
+        // Recolectar nombres de funciones y sus declaraciones
         for decl in &programa.declaraciones {
             if let Declaracion::Funcion { nombre, .. } = decl {
                 self.funciones.push(nombre.clone());
+                self.funciones_declaraciones.insert(nombre.clone(), decl.clone());
             }
         }
 
@@ -1335,10 +1336,35 @@ impl CompilerAsm {
                 let stack_previo = self.stack_offset;
                 self.stack_offset = 0;
 
+                // --- Estimar tamaño del stack frame ---
+                let mut frame_estimate = a.shadow_space(); // shadow space mínimo en Windows
+                // Parámetros
+                for param in parametros {
+                    let tipo_asm = self.tipo_parametro_a_asm(param);
+                    frame_estimate += self.tipo_asm_size(&tipo_asm);
+                }
+                // Variables locales (pre-scan)
+                for d in cuerpo.iter() {
+                    if let Declaracion::Variable { tipo, valor, .. } = d {
+                        let tipo_inferido = tipo.clone().or_else(|| {
+                            valor.as_ref().and_then(|v| self.inferir_tipo_de_expr(v))
+                        });
+                        let tipo_asm = self.tipo_forja_a_asm(&tipo_inferido);
+                        frame_estimate += self.tipo_asm_size(&tipo_asm);
+                    }
+                }
+                // Alinear a 16 bytes, mínimo 32 para shadow space en Windows
+                let frame_size = std::cmp::max(
+                    ((frame_estimate + 15) / 16) * 16,
+                    if a.shadow_space() > 0 { 32 } else { 16 },
+                );
+
                 self.emit_line(&format!("{}:", nombre));
                 for line in &a.push_fp_lr() { self.emit_line(line); }
                 self.emit_line(&a.set_fp_from_sp());
-                self.emit_line(&a.sub_sp(128));
+                if frame_size > 0 {
+                    self.emit_line(&a.sub_sp(frame_size));
+                }
 
                 let arg_regs = a.arg_regs();
                 for (i, param) in parametros.iter().enumerate() {
@@ -1710,6 +1736,13 @@ impl CompilerAsm {
             return;
         }
 
+        // Verificar si la función es candidata a inline
+        if self.es_candidata_inline_por_nombre(nombre) {
+            self.emit_line(&format!("    // inline {}", nombre));
+            self.inline_funcion(nombre, argumentos);
+            return;
+        }
+
         let arg_regs = a.arg_regs();
         let n_args = argumentos.len().min(arg_regs.len());
 
@@ -1744,6 +1777,375 @@ impl CompilerAsm {
         // Limpiar stack
         let cleanup = ss + (extra as i32) * 8;
         if cleanup > 0 { self.emit_line(&a.add_sp(cleanup)); }
+    }
+
+    /// Determina si una función es candidata a inlining.
+    /// Criterios:
+    ///   - ≤ 5 declaraciones en el cuerpo
+    ///   - Sin recursión (no se llama a sí misma)
+    ///   - Sin closures ni pattern matching complejo
+    fn es_candidata_inline_por_nombre(&self, nombre: &str) -> bool {
+        if let Some(decl) = self.funciones_declaraciones.get(nombre) {
+            self.es_candidata_inline(decl)
+        } else {
+            false
+        }
+    }
+
+    fn es_candidata_inline(&self, decl: &Declaracion) -> bool {
+        match decl {
+            Declaracion::Funcion { nombre, cuerpo, .. } => {
+                // 1. ≤ 5 declaraciones en el cuerpo
+                if cuerpo.len() > 5 {
+                    return false;
+                }
+
+                // 2. Sin recursión (no llamarse a sí misma)
+                if self.tiene_auto_llamada(cuerpo, nombre) {
+                    return false;
+                }
+
+                // 3. Sin closures ni pattern matching complejo
+                if self.tiene_constructos_complejos(cuerpo) {
+                    return false;
+                }
+
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Verifica si un conjunto de declaraciones contiene una auto-llamada (recursión directa)
+    fn tiene_auto_llamada(&self, cuerpo: &[Declaracion], nombre: &str) -> bool {
+        for decl in cuerpo {
+            match decl {
+                Declaracion::Retornar { valor: Some(expr) } => {
+                    if self.expr_llama_a(expr, nombre) {
+                        return true;
+                    }
+                }
+                Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+                    if self.expr_llama_a(condicion, nombre) {
+                        return true;
+                    }
+                    if self.tiene_auto_llamada(bloque_verdadero, nombre) {
+                        return true;
+                    }
+                    if let Some(bf) = bloque_falso {
+                        if self.tiene_auto_llamada(bf, nombre) {
+                            return true;
+                        }
+                    }
+                }
+                Declaracion::Mientras { condicion, bloque } => {
+                    if self.expr_llama_a(condicion, nombre) {
+                        return true;
+                    }
+                    if self.tiene_auto_llamada(bloque, nombre) {
+                        return true;
+                    }
+                }
+                Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
+                    if let Some(init) = inicializacion {
+                        if self.tiene_auto_llamada(&[init.as_ref().clone()], nombre) {
+                            return true;
+                        }
+                    }
+                    if let Some(cond) = condicion {
+                        if self.expr_llama_a(cond, nombre) {
+                            return true;
+                        }
+                    }
+                    if let Some(inc) = incremento {
+                        if self.tiene_auto_llamada(&[inc.as_ref().clone()], nombre) {
+                            return true;
+                        }
+                    }
+                    if self.tiene_auto_llamada(bloque, nombre) {
+                        return true;
+                    }
+                }
+                Declaracion::Repetir { cantidad, bloque } => {
+                    if self.expr_llama_a(cantidad, nombre) {
+                        return true;
+                    }
+                    if self.tiene_auto_llamada(bloque, nombre) {
+                        return true;
+                    }
+                }
+                Declaracion::LlamadaFuncion { nombre: fn_name, argumentos } => {
+                    if fn_name == nombre {
+                        return true;
+                    }
+                    for arg in argumentos {
+                        if self.expr_llama_a(arg, nombre) {
+                            return true;
+                        }
+                    }
+                }
+                Declaracion::Expresion(expr) => {
+                    if self.expr_llama_a(expr, nombre) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Verifica si una expresión contiene una llamada a una función por nombre
+    fn expr_llama_a(&self, expr: &Expresion, nombre: &str) -> bool {
+        match expr {
+            Expresion::LlamadaFuncion { nombre: fn_name, argumentos } => {
+                if fn_name == nombre {
+                    return true;
+                }
+                for arg in argumentos {
+                    if self.expr_llama_a(arg, nombre) {
+                        return true;
+                    }
+                }
+                false
+            }
+            Expresion::Binaria { izquierda, derecha, .. } => {
+                self.expr_llama_a(izquierda, nombre) || self.expr_llama_a(derecha, nombre)
+            }
+            Expresion::Unaria { expr: e, .. } => self.expr_llama_a(e, nombre),
+            Expresion::AccesoMiembro { objeto, .. } => self.expr_llama_a(objeto, nombre),
+            Expresion::Instanciacion { argumentos, .. } => {
+                for arg in argumentos {
+                    if self.expr_llama_a(arg, nombre) {
+                        return true;
+                    }
+                }
+                false
+            }
+            Expresion::Grupo(e) => self.expr_llama_a(e, nombre),
+            Expresion::Arreglo(elementos) => {
+                for elem in elementos {
+                    if self.expr_llama_a(elem, nombre) {
+                        return true;
+                    }
+                }
+                false
+            }
+            Expresion::Index { objeto, indice } => {
+                self.expr_llama_a(objeto, nombre) || self.expr_llama_a(indice, nombre)
+            }
+            Expresion::Referencia { expr: e, .. } => self.expr_llama_a(e, nombre),
+            Expresion::Coincidir { expr: e, brazos } => {
+                if self.expr_llama_a(e, nombre) {
+                    return true;
+                }
+                for brazo in brazos {
+                    for d in &brazo.cuerpo {
+                        if self.tiene_auto_llamada(&[d.clone()], nombre) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Verifica si hay closures o pattern matching complejo en las declaraciones
+    fn tiene_constructos_complejos(&self, cuerpo: &[Declaracion]) -> bool {
+        for decl in cuerpo {
+            match decl {
+                Declaracion::Retornar { valor: Some(expr) } => {
+                    if self.expr_tiene_constructos_complejos(expr) {
+                        return true;
+                    }
+                }
+                Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+                    if self.expr_tiene_constructos_complejos(condicion) {
+                        return true;
+                    }
+                    if self.tiene_constructos_complejos(bloque_verdadero) {
+                        return true;
+                    }
+                    if let Some(bf) = bloque_falso {
+                        if self.tiene_constructos_complejos(bf) {
+                            return true;
+                        }
+                    }
+                }
+                Declaracion::Mientras { condicion, bloque } => {
+                    if self.expr_tiene_constructos_complejos(condicion) {
+                        return true;
+                    }
+                    if self.tiene_constructos_complejos(bloque) {
+                        return true;
+                    }
+                }
+                Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
+                    if let Some(init) = inicializacion {
+                        if self.tiene_constructos_complejos(&[init.as_ref().clone()]) {
+                            return true;
+                        }
+                    }
+                    if let Some(cond) = condicion {
+                        if self.expr_tiene_constructos_complejos(cond) {
+                            return true;
+                        }
+                    }
+                    if let Some(inc) = incremento {
+                        if self.tiene_constructos_complejos(&[inc.as_ref().clone()]) {
+                            return true;
+                        }
+                    }
+                    if self.tiene_constructos_complejos(bloque) {
+                        return true;
+                    }
+                }
+                Declaracion::Repetir { cantidad, bloque } => {
+                    if self.expr_tiene_constructos_complejos(cantidad) {
+                        return true;
+                    }
+                    if self.tiene_constructos_complejos(bloque) {
+                        return true;
+                    }
+                }
+                Declaracion::Expresion(expr) => {
+                    if self.expr_tiene_constructos_complejos(expr) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn expr_tiene_constructos_complejos(&self, expr: &Expresion) -> bool {
+        match expr {
+            Expresion::Closure { .. } => true,
+            Expresion::Coincidir { brazos, .. } => {
+                // Pattern matching con constructores es complejo
+                for brazo in brazos {
+                    if matches!(brazo.patron, Patron::Constructor(_, _)) {
+                        return true;
+                    }
+                }
+                false
+            }
+            Expresion::Binaria { izquierda, derecha, .. } => {
+                self.expr_tiene_constructos_complejos(izquierda)
+                    || self.expr_tiene_constructos_complejos(derecha)
+            }
+            Expresion::Unaria { expr: e, .. } => self.expr_tiene_constructos_complejos(e),
+            Expresion::AccesoMiembro { objeto, .. } => self.expr_tiene_constructos_complejos(objeto),
+            Expresion::Instanciacion { argumentos, .. } => {
+                for arg in argumentos {
+                    if self.expr_tiene_constructos_complejos(arg) {
+                        return true;
+                    }
+                }
+                false
+            }
+            Expresion::Grupo(e) => self.expr_tiene_constructos_complejos(e),
+            Expresion::Arreglo(elementos) => {
+                for elem in elementos {
+                    if self.expr_tiene_constructos_complejos(elem) {
+                        return true;
+                    }
+                }
+                false
+            }
+            Expresion::Index { objeto, indice } => {
+                self.expr_tiene_constructos_complejos(objeto)
+                    || self.expr_tiene_constructos_complejos(indice)
+            }
+            Expresion::Referencia { expr: e, .. } => self.expr_tiene_constructos_complejos(e),
+            Expresion::LlamadaFuncion { argumentos, .. } => {
+                for arg in argumentos {
+                    if self.expr_tiene_constructos_complejos(arg) {
+                        return true;
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Genera el cuerpo inline de una función en el punto de llamada.
+    /// - Reemplaza referencias a parámetros con los valores de los argumentos
+    /// - No genera prólogo/epílogo
+    /// - Usa el stack del CALLER
+    fn inline_funcion(&mut self, nombre: &str, argumentos: &[Expresion]) {
+        let a = self.arch;
+        let fp = a.fp_reg();
+
+        // Obtener declaración de la función
+        let decl = match self.funciones_declaraciones.get(nombre) {
+            Some(d) => d.clone(),
+            None => {
+                self.emit_line(&format!("    // ERROR: función '{}' no encontrada para inline", nombre));
+                return;
+            }
+        };
+
+        if let Declaracion::Funcion { parametros, cuerpo, .. } = decl {
+            // Guardar estado del compilador (variables + stack_offset del caller)
+            // CLONAMOS (no tomamos) para que las variables del caller sigan accesibles
+            let vars_caller = self.variables.clone();
+            let stack_caller = self.stack_offset;  // ← guardar stack_offset antes del inline
+
+            // 1. Evaluar argumentos y guardarlos en el stack del caller
+            for (i, param) in parametros.iter().enumerate() {
+                let tipo_asm = self.tipo_parametro_a_asm(param);
+                let size = self.tipo_asm_size(&tipo_asm);
+                let alloc_size = if size > 4 { 8 } else { 4 };
+
+                if i < argumentos.len() {
+                    // Compilar la expresión del argumento → resultado en rax (ret)
+                    // Las variables del caller están accesibles porque clonamos arriba
+                    self.compilar_expresion_asm(&argumentos[i]);
+                } else {
+                    // Args faltantes → usar 0
+                    self.emit_line(&a.xor_reg_reg(a.ret_reg(), a.ret_reg()));
+                }
+
+                // Guardar en stack del caller
+                self.stack_offset -= alloc_size;
+                let oa = -self.stack_offset;
+                self.emit_line(&a.str_reg_mem(a.ret_reg(), fp, oa));
+                self.variables.insert(param.nombre.clone(), StackVar {
+                    offset: self.stack_offset,
+                    tipo: tipo_asm,
+                });
+            }
+
+            // 2. Compilar el cuerpo sin prólogo/epílogo
+            for decl_inline in &cuerpo {
+                match decl_inline {
+                    Declaracion::Retornar { valor: Some(expr) } => {
+                        // Compilar expresión de retorno → valor queda en ret (rax)
+                        self.compilar_expresion_asm(expr);
+                        // No generar epílogo (mov rsp, rbp; pop rbp; ret)
+                    }
+                    Declaracion::Retornar { valor: None } => {
+                        // retornar sin valor → rax = 0
+                        self.emit_line(&a.xor_reg_reg(a.ret_reg(), a.ret_reg()));
+                    }
+                    _ => {
+                        self.compilar_declaracion(decl_inline);
+                    }
+                }
+            }
+
+            // 3. Restaurar variables + stack_offset del caller
+            // El inline ya emitió las instrucciones con los offsets temporales,
+            // pero el caller necesita su stack_offset original para seguir
+            // asignando variables correctamente.
+            self.variables = vars_caller;
+            self.stack_offset = stack_caller;
+        }
     }
 
     fn compilar_escribir(&mut self, argumentos: &[Expresion]) {
