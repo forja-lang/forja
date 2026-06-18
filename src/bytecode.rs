@@ -1,7 +1,6 @@
 use std::rc::Rc;
 use crate::ast::*;
 use crate::error::ErrorForja;
-use crate::symbol_table::SymId;
 
 /// Builtins conocidos de Forja — usados por CallBuiltin para evitar hash lookup
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -160,10 +159,10 @@ pub enum Opcode {
     CallBuiltin(BuiltinKind, usize),  // (builtin_kind, nargs)
 
     /// Llamada a método con inline cache
-    /// El método_sym permite comparación O(1); el IC (clase_id, método_idx) se maneja
-    /// aparte en el vector ic_callmethod.
+    /// El method_sym_id es el valor interno de SymId (u32) para comparación O(1);
+    /// el IC (clase_id, método_idx) se maneja aparte en el vector ic_callmethod.
     /// Creado en quickening, no serializable.
-    CallMethodCached(SymId, usize),   // (método_sym, nargs)
+    CallMethodCached(u32, usize),   // (method_sym_id, nargs)
 }
 
 /// Generador de bytecode a partir del AST de Forja

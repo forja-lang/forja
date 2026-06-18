@@ -23,6 +23,7 @@ use std::rc::Rc;
 use crate::bytecode::{Opcode, BuiltinKind};
 use crate::symbol_table::{SymbolTable, SymId};
 use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops, tiene_opcodes_compuestos};
+use crate::class_descriptor::{Shape, ClassDescriptor};
 
 // Small Integer Cache [-5, 256] — thread_local! porque ValorFast es Copy (u64)
 use std::cell::OnceCell;
@@ -193,32 +194,13 @@ impl ValorFast {
 
 #[derive(Clone)]
 pub struct ObjVal {
-    pub clase: String,
-    pub campos_map: HashMap<String, usize>, // nombre → índice
-    pub campos_vec: Vec<ValorFast>,          // índice → valor
+    pub clase: SymId,                    // SymId de la clase (comparación O(1))
+    pub campos_vec: Vec<ValorFast>,      // índice → valor (shape compartido)
 }
 
 impl ObjVal {
-    pub fn new(clase: String) -> Self {
-        ObjVal { clase, campos_map: HashMap::new(), campos_vec: Vec::new() }
-    }
-
-    pub fn set_campo(&mut self, nombre: String, valor: ValorFast) {
-        if let Some(idx) = self.campos_map.get(&nombre) {
-            self.campos_vec[*idx] = valor;
-        } else {
-            let idx = self.campos_vec.len();
-            self.campos_map.insert(nombre, idx);
-            self.campos_vec.push(valor);
-        }
-    }
-
-    pub fn get_campo(&self, nombre: &str) -> Option<&ValorFast> {
-        self.campos_map.get(nombre).map(|idx| &self.campos_vec[*idx])
-    }
-
-    pub fn get_campo_mut(&mut self, nombre: &str) -> Option<&mut ValorFast> {
-        self.campos_map.get(nombre).map(|idx| &mut self.campos_vec[*idx])
+    pub fn new(clase: SymId) -> Self {
+        ObjVal { clase, campos_vec: Vec::new() }
     }
 }
 
@@ -255,6 +237,13 @@ pub struct ForjaFast {
     obj_marked: Vec<bool>,       // marcas GC para objetos
     str_marked: Vec<bool>,       // marcas GC para strings
     array_marked: Vec<bool>,     // marcas GC para arrays
+    // ─── Class Descriptors + Shape ─────────────────────────────────────────
+    /// Cache de descriptores de clase (clase SymId → ClassDescriptor)
+    class_descriptors: HashMap<SymId, ClassDescriptor>,
+    /// Shape de cada objeto (por índice en obj_heap)
+    /// obj_shapes[idx] = clase SymId del objeto en obj_heap[idx]
+    obj_shapes: Vec<SymId>,
+
     map_marked: Vec<bool>,       // marcas GC para mapas
     obj_free: Vec<u32>,          // free list objetos
     str_free: Vec<u32>,          // free list strings
@@ -359,7 +348,10 @@ impl ForjaFast {
             obj_heap: Vec::new(), str_heap: Vec::new(),
             array_heap: Vec::new(), map_heap: Vec::new(),
             obj_marked: Vec::new(), str_marked: Vec::new(),
-            array_marked: Vec::new(), map_marked: Vec::new(),
+            array_marked: Vec::new(),
+            class_descriptors: HashMap::new(),
+            obj_shapes: Vec::new(),
+            map_marked: Vec::new(),
             obj_free: Vec::new(), str_free: Vec::new(),
             array_free: Vec::new(), map_free: Vec::new(),
             gc_allocs_since_last: 0, gc_threshold: 1000,
@@ -529,6 +521,9 @@ impl ForjaFast {
         self.ic_setfield.iter_mut().for_each(|c| *c = None);
         self.ic_miss_count.iter_mut().for_each(|c| *c = 0);
         self.ic_callmethod.iter_mut().for_each(|c| *c = None);
+        // Clear class descriptors + shapes
+        self.class_descriptors.clear();
+        self.obj_shapes.clear();
         // Reset GC state
         self.obj_marked.clear();
         self.str_marked.clear();
@@ -554,13 +549,17 @@ impl ForjaFast {
             self.gc_collect();
             self.gc_allocs_since_last = 0;
         }
+        let clase = obj.clase;
         if let Some(idx) = self.obj_free.pop() {
             self.obj_heap[idx as usize] = obj;
+            self.obj_shapes[idx as usize] = clase;
             idx
         } else {
+            let idx = self.obj_heap.len() as u32;
             self.obj_heap.push(obj);
             self.obj_marked.push(false);
-            (self.obj_heap.len() - 1) as u32
+            self.obj_shapes.push(clase);
+            idx
         }
     }
 
@@ -651,7 +650,8 @@ impl ForjaFast {
         // Objetos no marcados → free list
         for i in 0..self.obj_heap.len() {
             if !self.obj_marked[i] {
-                self.obj_heap[i] = ObjVal::new(String::new());
+                self.obj_heap[i] = ObjVal::new(SymId(0));
+                self.obj_shapes[i] = SymId(0);
                 self.obj_free.push(i as u32);
             }
         }
@@ -757,6 +757,24 @@ impl ForjaFast {
         &mut self.map_heap[idx as usize]
     }
 
+    // ─── Resolución de métodos via MRO ──────────────────────────────────────
+
+    /// Busca un método `method_sym` en el MRO de la clase `clase_sym`.
+    /// Retorna el SymId de la función "Clase.metodo" si se encuentra, o None.
+    fn resolver_metodo_mro(&self, clase_sym: SymId, method_sym: SymId) -> Option<SymId> {
+        if let Some(desc) = self.class_descriptors.get(&clase_sym) {
+            // Buscar método en la clase y su MRO
+            for &clase_id in &desc.mro {
+                if let Some(ancestor) = self.class_descriptors.get(&clase_id) {
+                    if let Some(&func_sym) = ancestor.metodos.get(&method_sym) {
+                        return Some(func_sym);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     // ─── Mostrar valores (con acceso al heap) ────────────────────────────────
 
     fn mostrar_valor(&self, v: &ValorFast) -> String {
@@ -767,7 +785,8 @@ impl ForjaFast {
         if v.es_nulo() { return "nulo".to_string(); }
         if v.es_objeto() {
             let o = self.get_obj(v.indice_objeto());
-            return format!("<{}>", o.clase);
+            let nombre_clase = self.sym_table.get(o.clase);
+            return format!("<{}>", nombre_clase);
         }
         if v.es_arreglo() {
             let arr = self.get_arr(v.indice_arreglo());
@@ -1031,7 +1050,7 @@ impl ForjaFast {
                 // Reemplazar Call(nombre, nargs) por CallDirect o CallBuiltin
                 // cuando sea posible, eliminando el hash lookup.
                 Opcode::Call(nombre, nargs) => {
-                    let sym = self.sym_table.intern_rc(nombre);
+                    let sym = self.sym_table.intern_rc(&nombre);
                     // Buscar por índice en self.funciones (posición en HashMap)
                     if let Some(func_idx) = self.funciones.iter().position(|(k, _)| *k == sym) {
                         self.bytecode[i] = Opcode::CallDirect(func_idx, nargs);
@@ -1059,11 +1078,11 @@ impl ForjaFast {
                 }
 
                 // ── CALLMETHOD → CallMethodCached (con SymId) ─────────────────
-                // Convertir el método a SymId para comparaciones O(1) en runtime.
+                // Convertir el método a SymId (como u32) para comparaciones O(1) en runtime.
                 // El inline cache (clase_id, método_idx) se maneja en ic_callmethod.
                 Opcode::CallMethod(m, nargs) => {
-                    let method_sym = self.sym_table.intern_rc(m);
-                    self.bytecode[i] = Opcode::CallMethodCached(method_sym, nargs);
+                    let method_sym = self.sym_table.intern_rc(&m);
+                    self.bytecode[i] = Opcode::CallMethodCached(method_sym.0, nargs);
                 }
 
                 _ => {}
@@ -1827,6 +1846,157 @@ impl ForjaFast {
                         return Err(ErrFast::FnNoDef(name_str));
                     }
                 }
+
+                // ─── CALLDIRECT (Fase 2b) — llama por índice de función, sin HashMap lookup ───
+                Opcode::CallDirect(func_idx, nargs) => {
+                    // Obtener la función del HashMap por su posición en el iterador
+                    let func_entry: Option<(SymId, FuncFast)> = self.funciones.iter()
+                        .enumerate()
+                        .filter(|(i, _)| *i == func_idx)
+                        .map(|(_, (k, v))| (*k, v.clone()))
+                        .next();
+                    if let Some((_, func)) = func_entry {
+                        let next_ip = self.ip + 1;
+                        let is_tail = next_ip < len && matches!(self.bytecode.get(next_ip), Some(Opcode::Return));
+
+                        if is_tail {
+                            self.flush_stack();
+                            let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                            for _ in 0..nargs { args.push(self.pop_valor()?); }
+                            args.reverse();
+                            self.flat_vars.truncate(self.base_ptr);
+                            self.flat_vars.resize(self.base_ptr + nargs, ValorFast::nulo());
+                            for (i, arg) in args.into_iter().enumerate() {
+                                self.flat_vars[self.base_ptr + i] = arg;
+                            }
+                            self.ip = func.ip;
+                        } else {
+                            self.flush_stack();
+                            if self.frame_count >= 64 {
+                                return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
+                            }
+                            let num_vars_actual = self.flat_vars.len() - self.base_ptr;
+                            self.frame_buffer[self.frame_count] = FrmFast {
+                                ip_ret: next_ip,
+                                base_ptr_previo: self.base_ptr,
+                                num_vars: num_vars_actual,
+                            };
+                            self.frame_count += 1;
+                            self.base_ptr = self.flat_vars.len();
+                            let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                            for _ in 0..nargs { args.push(self.pop_valor()?); }
+                            args.reverse();
+                            let vars_size = func.vars_size.max(nargs);
+                            self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
+                            for (i, arg) in args.into_iter().enumerate() {
+                                self.flat_vars[self.base_ptr + i] = arg;
+                            }
+                            self.ip = func.ip;
+                        }
+                    } else {
+                        return Err(ErrFast::FnNoDef(format!("func_idx={}", func_idx)));
+                    }
+                }
+
+                // ─── CALLBUILTIN (Fase 2b) — builtin directo, sin lookup ───
+                Opcode::CallBuiltin(kind, nargs) => {
+                    match kind {
+                        BuiltinKind::Escribir => {
+                            for _ in 0..nargs {
+                                let v = self.pop_valor()?;
+                                self.output.push(self.mostrar_valor(&v));
+                            }
+                        }
+                        BuiltinKind::Longitud | BuiltinKind::Len => {
+                            if nargs != 1 { return Err(ErrFast::TipoInv("len necesita 1 argumento".into())); }
+                            let v = self.pop_valor()?;
+                            if v.es_texto() {
+                                let s = self.get_str(v.indice_texto());
+                                self.push_valor(get_small_int_fast(s.len() as i64));
+                            } else if v.es_arreglo() {
+                                let arr = self.get_arr(v.indice_arreglo());
+                                self.push_valor(get_small_int_fast(arr.len() as i64));
+                            } else {
+                                return Err(ErrFast::TipoInv("len requiere texto o arreglo".into()));
+                            }
+                        }
+                        BuiltinKind::Tipo => {
+                            if nargs != 1 { return Err(ErrFast::TipoInv("tipo necesita 1 argumento".into())); }
+                            let v = self.pop_valor()?;
+                            let tipo_str = v.tipo_str();
+                            let idx = self.alloc_str(Rc::from(tipo_str));
+                            self.push_valor(ValorFast::texto(idx));
+                        }
+                        BuiltinKind::ATexto => {
+                            if nargs != 1 { return Err(ErrFast::TipoInv("a_texto necesita 1 argumento".into())); }
+                            let v = self.pop_valor()?;
+                            let s = self.mostrar_valor(&v);
+                            let idx = self.alloc_str(Rc::from(s.as_str()));
+                            self.push_valor(ValorFast::texto(idx));
+                        }
+                        BuiltinKind::EsNumero => {
+                            if nargs != 1 { return Err(ErrFast::TipoInv("es_numero necesita 1 argumento".into())); }
+                            let v = self.pop_valor()?;
+                            self.push_valor(ValorFast::booleano(v.es_entero() || v.es_flotante()));
+                        }
+                        BuiltinKind::EsTexto => {
+                            if nargs != 1 { return Err(ErrFast::TipoInv("es_texto necesita 1 argumento".into())); }
+                            let v = self.pop_valor()?;
+                            self.push_valor(ValorFast::booleano(v.es_texto()));
+                        }
+                        BuiltinKind::Empujar => {
+                            if nargs != 2 { return Err(ErrFast::TipoInv("empujar necesita 2 argumentos".into())); }
+                            let val = self.pop_valor()?;
+                            let arr_val = self.pop_valor()?;
+                            if arr_val.es_arreglo() {
+                                let arr_idx = arr_val.indice_arreglo();
+                                self.get_arr_mut(arr_idx).push(val);
+                                self.push_valor(arr_val);
+                            } else {
+                                return Err(ErrFast::TipoInv("empujar requiere arreglo".into()));
+                            }
+                        }
+                        BuiltinKind::Obtener => {
+                            if nargs != 2 { return Err(ErrFast::TipoInv("obtener necesita 2 argumentos".into())); }
+                            let idx_val = self.pop_valor()?;
+                            let arr_val = self.pop_valor()?;
+                            if arr_val.es_arreglo() && idx_val.es_entero() {
+                                let arr = self.get_arr(arr_val.indice_arreglo());
+                                let i = idx_val.a_entero();
+                                if i >= 0 && (i as usize) < arr.len() {
+                                    self.push_valor(arr[i as usize]);
+                                } else {
+                                    self.push_valor(ValorFast::nulo());
+                                }
+                            } else {
+                                return Err(ErrFast::TipoInv("obtener requiere arreglo y entero".into()));
+                            }
+                        }
+                        BuiltinKind::Remover => {
+                            if nargs != 2 { return Err(ErrFast::TipoInv("remover necesita 2 argumentos".into())); }
+                            let idx_val = self.pop_valor()?;
+                            let arr_val = self.pop_valor()?;
+                            if arr_val.es_arreglo() && idx_val.es_entero() {
+                                let arr_idx = arr_val.indice_arreglo();
+                                let i = idx_val.a_entero();
+                                let arr = self.get_arr_mut(arr_idx);
+                                if i >= 0 && (i as usize) < arr.len() {
+                                    arr.remove(i as usize);
+                                }
+                                self.push_valor(arr_val);
+                            } else {
+                                return Err(ErrFast::TipoInv("remover requiere arreglo y entero".into()));
+                            }
+                        }
+                        BuiltinKind::Nuevo => {
+                            if nargs < 1 { return Err(ErrFast::TipoInv("nuevo necesita al menos 1 argumento".into())); }
+                            let self_val = self.pop_valor()?;
+                            self.push_valor(self_val);
+                        }
+                    }
+                    self.ip += 1;
+                }
+
                 Opcode::Return => {
                     if self.frame_count == 0 { break; }
                     self.frame_count -= 1;
@@ -1852,7 +2022,20 @@ impl ForjaFast {
                 }
 
                 Opcode::NewObject(c) => {
-                    let idx = self.alloc_obj(ObjVal::new(c.to_string()));
+                    let clase_sym = self.sym_table.intern(c.as_ref());
+                    // Crear o reusar ClassDescriptor
+                    if !self.class_descriptors.contains_key(&clase_sym) {
+                        let shape = Shape::new();
+                        let desc = ClassDescriptor {
+                            nombre: clase_sym,
+                            shape,
+                            mro: vec![clase_sym],
+                            metodos: HashMap::new(),
+                        };
+                        self.class_descriptors.insert(clase_sym, desc);
+                    }
+                    let obj = ObjVal::new(clase_sym);
+                    let idx = self.alloc_obj(obj);
                     self.push_valor(ValorFast::objeto(idx));
                     self.ip += 1;
                 }
@@ -1860,22 +2043,22 @@ impl ForjaFast {
                     // peek del objeto (depth 1), valor en tope (depth 0)
                     let obj_val = *self.peek_valor(1);
                     if obj_val.es_objeto() {
+                        let field_sym = self.sym_table.intern(c.as_ref());
                         // Intentar inline cache
                         let cache = &self.ic_setfield[self.ip].clone();
                         if let Some((clase_cache, idx_cache)) = cache {
-                            // Extraer datos en bloque para liberar el borrow de self.get_obj()
-                            let (clase_str, campos_len) = {
-                                let obj = self.get_obj(obj_val.indice_objeto());
-                                (obj.clase.clone(), obj.campos_vec.len())
-                            };
-                            let obj_clase_id = self.sym_table.intern(&clase_str);
-                            if obj_clase_id == *clase_cache && *idx_cache < campos_len {
-                                // Cache HIT! Acceso directo por índice
-                                let v = self.pop_valor()?; // valor
-                                let _ = self.pop_valor()?; // objeto
-                                self.get_obj_mut(obj_val.indice_objeto()).campos_vec[*idx_cache] = v;
-                                self.ip += 1;
-                                continue;
+                            let obj_idx = obj_val.indice_objeto();
+                            let clase_actual = self.obj_shapes[obj_idx as usize];
+                            if clase_actual == *clase_cache {
+                                let campos_len = self.get_obj(obj_idx).campos_vec.len();
+                                if *idx_cache < campos_len {
+                                    // Cache HIT! Acceso directo por índice
+                                    let v = self.pop_valor()?; // valor
+                                    let _ = self.pop_valor()?; // objeto
+                                    self.get_obj_mut(obj_idx).campos_vec[*idx_cache] = v;
+                                    self.ip += 1;
+                                    continue;
+                                }
                             }
                             // Cache miss
                             self.ic_miss_count[self.ip] = self.ic_miss_count[self.ip].saturating_add(1);
@@ -1884,21 +2067,39 @@ impl ForjaFast {
                                 self.ic_miss_count[self.ip] = 0;
                             }
                         }
-                        // Fallback: búsqueda normal
+                        // Fallback: búsqueda con Shape
                         let v = self.pop_valor()?;
                         let obj = self.pop_valor()?;
                         let idx = obj.indice_objeto();
-                        let nombre_campo = c.to_string();
-                        self.get_obj_mut(idx).set_campo(nombre_campo.clone(), v);
-                        // Actualizar cache si el objeto tiene clase
-                        let (clase_str, found_idx) = {
-                            let obj_ref = self.get_obj(idx);
-                            (obj_ref.clase.clone(), obj_ref.campos_map.get(nombre_campo.as_str()).copied())
-                        };
-                        if !clase_str.is_empty() {
-                            if let Some(idx_campo) = found_idx {
-                                let obj_clase_id = self.sym_table.intern(&clase_str);
-                                self.ic_setfield[self.ip] = Some((obj_clase_id, idx_campo));
+                        let clase_sym = self.obj_shapes[idx as usize];
+                        if let Some(desc) = self.class_descriptors.get(&clase_sym) {
+                            let shape_idx = desc.shape.get_idx(field_sym);
+                            if let Some(sidx) = shape_idx {
+                                // Campo conocido en el shape — asignar directamente
+                                if sidx < self.obj_heap[idx as usize].campos_vec.len() {
+                                    self.obj_heap[idx as usize].campos_vec[sidx] = v;
+                                } else {
+                                    self.obj_heap[idx as usize].campos_vec.push(v);
+                                }
+                                // Actualizar cache
+                                self.ic_setfield[self.ip] = Some((clase_sym, sidx));
+                            } else {
+                                // Campo nuevo — expandir shape y asignar
+                                let desc_mut = self.class_descriptors.get_mut(&clase_sym).unwrap();
+                                let sidx = desc_mut.shape.add_campo(field_sym);
+                                if sidx < self.obj_heap[idx as usize].campos_vec.len() {
+                                    self.obj_heap[idx as usize].campos_vec[sidx] = v;
+                                } else {
+                                    self.obj_heap[idx as usize].campos_vec.push(v);
+                                }
+                                self.ic_setfield[self.ip] = Some((clase_sym, sidx));
+                            }
+                        } else {
+                            // Sin descriptor — expandir vectores directamente
+                            if (field_sym.0 as usize) < self.obj_heap[idx as usize].campos_vec.len() {
+                                self.obj_heap[idx as usize].campos_vec[field_sym.0 as usize] = v;
+                            } else {
+                                self.obj_heap[idx as usize].campos_vec.push(v);
                             }
                         }
                     } else { return Err(ErrFast::TipoInv("SetField".into())); }
@@ -1907,21 +2108,22 @@ impl ForjaFast {
                 Opcode::GetField(c) => {
                     let obj_val = *self.peek_valor(0);
                     if obj_val.es_objeto() {
+                        let field_sym = self.sym_table.intern(c.as_ref());
                         // Intentar inline cache
                         let cache = &self.ic_getfield[self.ip].clone();
                         if let Some((clase_cache, idx_cache)) = cache {
-                            // Extraer datos en bloque para liberar el borrow de self.get_obj()
-                            let (clase_str, campos_len, valor) = {
-                                let obj = self.get_obj(obj_val.indice_objeto());
-                                (obj.clase.clone(), obj.campos_vec.len(), obj.campos_vec[*idx_cache])
-                            };
-                            let obj_clase_id = self.sym_table.intern(&clase_str);
-                            if obj_clase_id == *clase_cache && *idx_cache < campos_len {
-                                // Cache HIT! Acceso directo por índice, reemplazar tope
-                                self.pop_valor()?; // pop del objeto
-                                self.push_valor(valor);
-                                self.ip += 1;
-                                continue;
+                            let obj_idx = obj_val.indice_objeto();
+                            let clase_sym = self.obj_shapes[obj_idx as usize];
+                            if clase_sym == *clase_cache {
+                                let campos_len = self.get_obj(obj_idx).campos_vec.len();
+                                if *idx_cache < campos_len {
+                                    // Cache HIT! Acceso directo por índice
+                                    let valor = self.get_obj(obj_idx).campos_vec[*idx_cache];
+                                    self.pop_valor()?; // pop del objeto
+                                    self.push_valor(valor);
+                                    self.ip += 1;
+                                    continue;
+                                }
                             }
                             // Cache miss
                             self.ic_miss_count[self.ip] = self.ic_miss_count[self.ip].saturating_add(1);
@@ -1930,22 +2132,28 @@ impl ForjaFast {
                                 self.ic_miss_count[self.ip] = 0;
                             }
                         }
-                        // Fallback: búsqueda normal
+                        // Fallback: búsqueda con Shape
                         let obj = self.pop_valor()?;
                         let idx = obj.indice_objeto();
-                        let b = self.get_obj(idx);
-                        let nombre_campo = c.as_ref();
-                        let valor = b.get_campo(nombre_campo).copied().unwrap_or(ValorFast::nulo());
-                        // Clonar datos del cache antes de push_valor (evita borrow conflict)
-                        let clase_obj = b.clase.clone();
-                        let idx_cache = b.campos_map.get(nombre_campo).copied();
-                        let _ = b;
+                        let clase_sym = self.obj_shapes[idx as usize];
+                        let valor = if let Some(desc) = self.class_descriptors.get(&clase_sym) {
+                            if let Some(sidx) = desc.shape.get_idx(field_sym) {
+                                if sidx < self.obj_heap[idx as usize].campos_vec.len() {
+                                    self.obj_heap[idx as usize].campos_vec[sidx]
+                                } else {
+                                    ValorFast::nulo()
+                                }
+                            } else {
+                                ValorFast::nulo()
+                            }
+                        } else {
+                            ValorFast::nulo()
+                        };
                         self.push_valor(valor);
-                        // Actualizar cache si el objeto tiene clase
-                        if !clase_obj.is_empty() {
-                            if let Some(idx_campo) = idx_cache {
-                                let obj_clase_id = self.sym_table.intern(&clase_obj);
-                                self.ic_getfield[self.ip] = Some((obj_clase_id, idx_campo));
+                        // Actualizar cache
+                        if let Some(desc) = self.class_descriptors.get(&clase_sym) {
+                            if let Some(sidx) = desc.shape.get_idx(field_sym) {
+                                self.ic_getfield[self.ip] = Some((clase_sym, sidx));
                             }
                         }
                     } else { return Err(ErrFast::TipoInv("GetField".into())); }
@@ -1958,7 +2166,30 @@ impl ForjaFast {
                     let obj = self.pop_valor()?;
                     if obj.es_objeto() {
                         let idx = obj.indice_objeto();
-                        let c = self.get_obj(idx).clase.clone();
+                        let clase_sym = self.obj_shapes[idx as usize];
+                        let method_sym = self.sym_table.intern(m.as_ref());
+                        // Buscar método via MRO
+                        let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
+                        if let Some(fn_sym) = fn_sym {
+                            if let Some(func)=self.funciones.get(&fn_sym).cloned(){
+                                if self.frame_count >= 64 {
+                                    return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
+                                }
+                                let num_vars_actual=self.flat_vars.len()-self.base_ptr;
+                                self.frame_buffer[self.frame_count]=FrmFast{ip_ret:self.ip+1,base_ptr_previo:self.base_ptr,num_vars:num_vars_actual};
+                                self.frame_count+=1;
+                                self.base_ptr=self.flat_vars.len();
+                                let total_vars=1+nargs;
+                                let vars_size=func.vars_size.max(total_vars);
+                                self.flat_vars.resize(self.base_ptr+vars_size,ValorFast::nulo());
+                                self.flat_vars[self.base_ptr]=ValorFast::objeto(idx);
+                                for(i,arg) in args.into_iter().enumerate(){self.flat_vars[self.base_ptr+1+i]=arg;}
+                                self.ip=func.ip;
+                                continue;
+                            }
+                        }
+                        // Fallback: búsqueda por nombre "Clase.metodo" (compatibilidad)
+                        let c = self.sym_table.get(clase_sym);
                         let fn_name=format!("{}.{}",c,m);
                         let fn_sym = self.sym_table.intern(&fn_name);
                         if let Some(func)=self.funciones.get(&fn_sym).cloned(){
@@ -1977,6 +2208,141 @@ impl ForjaFast {
                             self.ip=func.ip;
                         }else{return Err(ErrFast::FnNoDef(fn_name));}
                     }else{return Err(ErrFast::TipoInv("CallMethod".into()));}
+                }
+
+                // ─── CALLMETHODCACHED (Fase 2b) — método con SymId e inline cache ───
+                Opcode::CallMethodCached(method_sym_id, nargs) => {
+                    // Intentar inline cache primero
+                    let cache = &self.ic_callmethod[self.ip].clone();
+                    if let Some((clase_id_cache, func_idx_cache)) = cache {
+                        let func: Option<FuncFast> = self.funciones.iter()
+                            .enumerate()
+                            .filter(|(i, _)| *i == *func_idx_cache)
+                            .map(|(_, (_, v))| v.clone())
+                            .next();
+                        if let Some(func) = func {
+                            // Cache candidate — verificar flush_stack
+                            self.flush_stack();
+                            let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                            for _ in 0..nargs { args.push(self.pop_valor()?); }
+                            args.reverse();
+                            let obj = self.pop_valor()?;
+                            if obj.es_objeto() {
+                                let obj_idx = obj.indice_objeto();
+                                let clase_id = self.obj_shapes[obj_idx as usize];
+                                if clase_id == *clase_id_cache {
+                                    // Cache HIT! Llamada directa sin resolver clase otra vez
+                                    if self.frame_count >= 64 {
+                                        return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
+                                    }
+                                    let num_vars_actual = self.flat_vars.len() - self.base_ptr;
+                                    self.frame_buffer[self.frame_count] = FrmFast {
+                                        ip_ret: self.ip + 1,
+                                        base_ptr_previo: self.base_ptr,
+                                        num_vars: num_vars_actual,
+                                    };
+                                    self.frame_count += 1;
+                                    self.base_ptr = self.flat_vars.len();
+                                    let total_vars = 1 + nargs;
+                                    let vars_size = func.vars_size.max(total_vars);
+                                    self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
+                                    self.flat_vars[self.base_ptr] = ValorFast::objeto(obj_idx);
+                                    for (i, arg) in args.into_iter().enumerate() {
+                                        self.flat_vars[self.base_ptr + 1 + i] = arg;
+                                    }
+                                    self.ip = func.ip;
+                                    continue;
+                                }
+                            }
+                            // Cache miss: reponer stack y caer al fallback
+                            self.push_valor(obj);
+                            for arg in args.into_iter().rev() {
+                                self.push_valor(arg);
+                            }
+                            self.ic_miss_count[self.ip] = self.ic_miss_count[self.ip].saturating_add(1);
+                            if self.ic_miss_count[self.ip] >= 3 {
+                                self.ic_callmethod[self.ip] = None;
+                                self.ic_miss_count[self.ip] = 0;
+                            }
+                        }
+                    }
+                    // Fallback: resolver el método por nombre con MRO
+                    self.flush_stack();
+                    let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                    for _ in 0..nargs { args.push(self.pop_valor()?); }
+                    args.reverse();
+                    let obj = self.pop_valor()?;
+                    if obj.es_objeto() {
+                        let idx = obj.indice_objeto();
+                        let clase_sym = self.obj_shapes[idx as usize];
+                        let method_sym = SymId(method_sym_id);
+                        // Buscar método via MRO
+                        let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
+                        if let Some(fn_sym) = fn_sym {
+                            if let Some(func) = self.funciones.get(&fn_sym).cloned() {
+                                if self.frame_count >= 64 {
+                                    return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
+                                }
+                                let num_vars_actual = self.flat_vars.len() - self.base_ptr;
+                                self.frame_buffer[self.frame_count] = FrmFast {
+                                    ip_ret: self.ip + 1,
+                                    base_ptr_previo: self.base_ptr,
+                                    num_vars: num_vars_actual,
+                                };
+                                self.frame_count += 1;
+                                self.base_ptr = self.flat_vars.len();
+                                let total_vars = 1 + nargs;
+                                let vars_size = func.vars_size.max(total_vars);
+                                self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
+                                self.flat_vars[self.base_ptr] = ValorFast::objeto(idx);
+                                for (i, arg) in args.into_iter().enumerate() {
+                                    self.flat_vars[self.base_ptr + 1 + i] = arg;
+                                }
+                                // Actualizar inline cache
+                                let func_idx = self.funciones.iter()
+                                    .position(|(k, _)| *k == fn_sym)
+                                    .unwrap_or(0);
+                                self.ic_callmethod[self.ip] = Some((clase_sym, func_idx));
+                                self.ip = func.ip;
+                                continue;
+                            }
+                        }
+                        // Fallback: búsqueda por nombre "Clase.metodo"
+                        let c = self.sym_table.get(clase_sym);
+                        let method_name = self.sym_table.get(method_sym);
+                        let fn_name = format!("{}.{}", c, method_name);
+                        let fn_sym = self.sym_table.intern(&fn_name);
+                        if let Some(func) = self.funciones.get(&fn_sym).cloned() {
+                            if self.frame_count >= 64 {
+                                return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
+                            }
+                            let num_vars_actual = self.flat_vars.len() - self.base_ptr;
+                            self.frame_buffer[self.frame_count] = FrmFast {
+                                ip_ret: self.ip + 1,
+                                base_ptr_previo: self.base_ptr,
+                                num_vars: num_vars_actual,
+                            };
+                            self.frame_count += 1;
+                            self.base_ptr = self.flat_vars.len();
+                            let total_vars = 1 + nargs;
+                            let vars_size = func.vars_size.max(total_vars);
+                            self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
+                            self.flat_vars[self.base_ptr] = ValorFast::objeto(idx);
+                            for (i, arg) in args.into_iter().enumerate() {
+                                self.flat_vars[self.base_ptr + 1 + i] = arg;
+                            }
+                            // Actualizar inline cache
+                            let func_idx = self.funciones.iter()
+                                .position(|(k, _)| *k == fn_sym)
+                                .unwrap_or(0);
+                            self.ic_callmethod[self.ip] = Some((clase_sym, func_idx));
+                            self.ip = func.ip;
+                        } else {
+                            return Err(ErrFast::FnNoDef(fn_name));
+                        }
+                    } else {
+                        return Err(ErrFast::TipoInv("CallMethodCached".into()));
+                    }
                 }
 
                 Opcode::ArrayNew(n)=>{
@@ -2642,29 +3008,42 @@ impl ForjaFast {
 
                 // === OBJECT OPERATIONS ===
                 Uop::NewObject(c) => {
-                    let idx = self.alloc_obj(ObjVal::new(c));
+                    let clase_sym = self.sym_table.intern(&c);
+                    // Crear o reusar ClassDescriptor
+                    if !self.class_descriptors.contains_key(&clase_sym) {
+                        let shape = Shape::new();
+                        let desc = ClassDescriptor {
+                            nombre: clase_sym,
+                            shape,
+                            mro: vec![clase_sym],
+                            metodos: HashMap::new(),
+                        };
+                        self.class_descriptors.insert(clase_sym, desc);
+                    }
+                    let obj = ObjVal::new(clase_sym);
+                    let idx = self.alloc_obj(obj);
                     self.push_valor(ValorFast::objeto(idx));
                     self.ip += 1;
                 }
                 Uop::SetField(c) => {
                     let obj_val = *self.peek_valor(1);
                     if obj_val.es_objeto() {
+                        let field_sym = self.sym_table.intern(&c);
                         // Intentar inline cache
                         let cache = &self.ic_setfield[self.ip].clone();
                         if let Some((clase_cache, idx_cache)) = cache {
-                            // Extraer datos en bloque para liberar el borrow de self.get_obj()
-                            let (clase_str, campos_len) = {
-                                let obj = self.get_obj(obj_val.indice_objeto());
-                                (obj.clase.clone(), obj.campos_vec.len())
-                            };
-                            let obj_clase_id = self.sym_table.intern(&clase_str);
-                            if obj_clase_id == *clase_cache && *idx_cache < campos_len {
-                                // Cache HIT! Acceso directo por índice
-                                let v = self.pop_valor()?;
-                                let _ = self.pop_valor()?;
-                                self.get_obj_mut(obj_val.indice_objeto()).campos_vec[*idx_cache] = v;
-                                self.ip += 1;
-                                continue;
+                            let obj_idx = obj_val.indice_objeto();
+                            let clase_actual = self.obj_shapes[obj_idx as usize];
+                            if clase_actual == *clase_cache {
+                                let campos_len = self.get_obj(obj_idx).campos_vec.len();
+                                if *idx_cache < campos_len {
+                                    // Cache HIT! Acceso directo por índice
+                                    let v = self.pop_valor()?;
+                                    let _ = self.pop_valor()?;
+                                    self.get_obj_mut(obj_idx).campos_vec[*idx_cache] = v;
+                                    self.ip += 1;
+                                    continue;
+                                }
                             }
                             // Cache miss
                             self.ic_miss_count[self.ip] = self.ic_miss_count[self.ip].saturating_add(1);
@@ -2673,19 +3052,35 @@ impl ForjaFast {
                                 self.ic_miss_count[self.ip] = 0;
                             }
                         }
-                        // Fallback: búsqueda normal
+                        // Fallback: búsqueda con Shape
                         let v = self.pop_valor()?;
                         let obj = self.pop_valor()?;
                         let idx = obj.indice_objeto();
-                        self.get_obj_mut(idx).set_campo(c.clone(), v);
-                        let (clase_str, found_idx) = {
-                            let obj_ref = self.get_obj(idx);
-                            (obj_ref.clase.clone(), obj_ref.campos_map.get(c.as_str()).copied())
-                        };
-                        if !clase_str.is_empty() {
-                            if let Some(idx_campo) = found_idx {
-                                let obj_clase_id = self.sym_table.intern(&clase_str);
-                                self.ic_setfield[self.ip] = Some((obj_clase_id, idx_campo));
+                        let clase_sym = self.obj_shapes[idx as usize];
+                        if let Some(desc) = self.class_descriptors.get(&clase_sym) {
+                            let shape_idx = desc.shape.get_idx(field_sym);
+                            if let Some(sidx) = shape_idx {
+                                if sidx < self.obj_heap[idx as usize].campos_vec.len() {
+                                    self.obj_heap[idx as usize].campos_vec[sidx] = v;
+                                } else {
+                                    self.obj_heap[idx as usize].campos_vec.push(v);
+                                }
+                                self.ic_setfield[self.ip] = Some((clase_sym, sidx));
+                            } else {
+                                let desc_mut = self.class_descriptors.get_mut(&clase_sym).unwrap();
+                                let sidx = desc_mut.shape.add_campo(field_sym);
+                                if sidx < self.obj_heap[idx as usize].campos_vec.len() {
+                                    self.obj_heap[idx as usize].campos_vec[sidx] = v;
+                                } else {
+                                    self.obj_heap[idx as usize].campos_vec.push(v);
+                                }
+                                self.ic_setfield[self.ip] = Some((clase_sym, sidx));
+                            }
+                        } else {
+                            if (field_sym.0 as usize) < self.obj_heap[idx as usize].campos_vec.len() {
+                                self.obj_heap[idx as usize].campos_vec[field_sym.0 as usize] = v;
+                            } else {
+                                self.obj_heap[idx as usize].campos_vec.push(v);
                             }
                         }
                     } else { return Err(ErrFast::TipoInv("SetField".into())); }
@@ -2694,21 +3089,22 @@ impl ForjaFast {
                 Uop::GetField(c) => {
                     let obj_val = *self.peek_valor(0);
                     if obj_val.es_objeto() {
+                        let field_sym = self.sym_table.intern(&c);
                         // Intentar inline cache
                         let cache = &self.ic_getfield[self.ip].clone();
                         if let Some((clase_cache, idx_cache)) = cache {
-                            // Extraer datos en bloque para liberar el borrow de self.get_obj()
-                            let (clase_str, campos_len, valor) = {
-                                let obj = self.get_obj(obj_val.indice_objeto());
-                                (obj.clase.clone(), obj.campos_vec.len(), obj.campos_vec[*idx_cache])
-                            };
-                            let obj_clase_id = self.sym_table.intern(&clase_str);
-                            if obj_clase_id == *clase_cache && *idx_cache < campos_len {
-                                // Cache HIT! Acceso directo por índice
-                                self.pop_valor()?;
-                                self.push_valor(valor);
-                                self.ip += 1;
-                                continue;
+                            let obj_idx = obj_val.indice_objeto();
+                            let clase_sym = self.obj_shapes[obj_idx as usize];
+                            if clase_sym == *clase_cache {
+                                let campos_len = self.get_obj(obj_idx).campos_vec.len();
+                                if *idx_cache < campos_len {
+                                    // Cache HIT! Acceso directo por índice
+                                    let valor = self.get_obj(obj_idx).campos_vec[*idx_cache];
+                                    self.pop_valor()?;
+                                    self.push_valor(valor);
+                                    self.ip += 1;
+                                    continue;
+                                }
                             }
                             // Cache miss
                             self.ic_miss_count[self.ip] = self.ic_miss_count[self.ip].saturating_add(1);
@@ -2717,20 +3113,27 @@ impl ForjaFast {
                                 self.ic_miss_count[self.ip] = 0;
                             }
                         }
-                        // Fallback: búsqueda normal
+                        // Fallback: búsqueda con Shape
                         let obj = self.pop_valor()?;
                         let idx = obj.indice_objeto();
-                        let b = self.get_obj(idx);
-                        let valor = b.get_campo(c.as_str()).copied().unwrap_or(ValorFast::nulo());
-                        // Clonar datos del cache antes de push_valor (evita borrow conflict)
-                        let clase_obj = b.clase.clone();
-                        let idx_cache = b.campos_map.get(c.as_str()).copied();
-                        let _ = b;
+                        let clase_sym = self.obj_shapes[idx as usize];
+                        let valor = if let Some(desc) = self.class_descriptors.get(&clase_sym) {
+                            if let Some(sidx) = desc.shape.get_idx(field_sym) {
+                                if sidx < self.obj_heap[idx as usize].campos_vec.len() {
+                                    self.obj_heap[idx as usize].campos_vec[sidx]
+                                } else {
+                                    ValorFast::nulo()
+                                }
+                            } else {
+                                ValorFast::nulo()
+                            }
+                        } else {
+                            ValorFast::nulo()
+                        };
                         self.push_valor(valor);
-                        if !clase_obj.is_empty() {
-                            if let Some(idx_campo) = idx_cache {
-                                let obj_clase_id = self.sym_table.intern(&clase_obj);
-                                self.ic_getfield[self.ip] = Some((obj_clase_id, idx_campo));
+                        if let Some(desc) = self.class_descriptors.get(&clase_sym) {
+                            if let Some(sidx) = desc.shape.get_idx(field_sym) {
+                                self.ic_getfield[self.ip] = Some((clase_sym, sidx));
                             }
                         }
                     } else { return Err(ErrFast::TipoInv("GetField".into())); }
@@ -2745,7 +3148,32 @@ impl ForjaFast {
                     let obj = self.pop_valor()?;
                     if obj.es_objeto() {
                         let idx = obj.indice_objeto();
-                        let c = self.get_obj(idx).clase.clone();
+                        let clase_sym = self.obj_shapes[idx as usize];
+                        let method_sym = self.sym_table.intern(&m);
+                        // Buscar método via MRO
+                        let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
+                        if let Some(fn_sym) = fn_sym {
+                            if let Some(func) = self.funciones.get(&fn_sym).cloned() {
+                                if self.frame_count >= 64 {
+                                    return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
+                                }
+                                let num_vars_actual = self.flat_vars.len() - self.base_ptr;
+                                self.frame_buffer[self.frame_count] = FrmFast { ip_ret: self.ip + 1, base_ptr_previo: self.base_ptr, num_vars: num_vars_actual };
+                                self.frame_count += 1;
+                                self.base_ptr = self.flat_vars.len();
+                                let total_vars = 1 + nargs;
+                                let vars_size = func.vars_size.max(total_vars);
+                                self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
+                                self.flat_vars[self.base_ptr] = ValorFast::objeto(idx);
+                                for (i, arg) in args.into_iter().enumerate() {
+                                    self.flat_vars[self.base_ptr + 1 + i] = arg;
+                                }
+                                self.ip = func.ip;
+                                continue;
+                            }
+                        }
+                        // Fallback: búsqueda por nombre "Clase.metodo"
+                        let c = self.sym_table.get(clase_sym);
                         let fn_name = format!("{}.{}", c, m);
                         let fn_sym = self.sym_table.intern(&fn_name);
                         if let Some(func) = self.funciones.get(&fn_sym).cloned() {
