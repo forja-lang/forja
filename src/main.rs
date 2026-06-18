@@ -1,3 +1,7 @@
+// Forja CLI — algunas advertencias son intencionales (código de API expuesto)
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 mod lexer;
 mod token;
 mod parser;
@@ -9,6 +13,10 @@ mod compiler_asm;
 mod bytecode;
 mod uops;
 mod vm;
+mod vm_opt;
+mod vm_fast;
+mod symbol_table;
+mod class_descriptor;
 mod repl;
 mod aot;
 mod selfrun;
@@ -31,17 +39,29 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        mostrar_ayuda();
-        process::exit(1);
+        // Doble click o sin argumentos → abrir REPL interactivo con ForjaFast 🏆
+        let mut repl = repl::REPL::new("fast");
+        repl.iniciar();
+        return;
     }
 
     let comando = &args[1];
 
     match comando.as_str() {
+        // Benchmark / medición
+        "medir" | "bench" | "medicion" | "benchmark" => cmd_bench(&args[2..]),
         // Ejecutar en VM
         "run" | "ejecutar" | "correr" => cmd_run(&args[2..]),
-        // REPL interactivo
-        "repl" => cmd_repl(),
+        // REPL interactivo (con --vm opcional: fast|vm|opt|jit)
+        "repl" | "interactivo" => {
+            if args.len() >= 4 && args[2] == "--vm" {
+                let mut repl = repl::REPL::new(&args[3]);
+                repl.iniciar();
+            } else {
+                let mut repl = repl::REPL::new("fast");
+                repl.iniciar();
+            }
+        }
         // Generar diagrama HTML
         "diagrama" | "grafico" | "diagram" => cmd_diagrama(&args[2..]),
         // Compilar a ejecutable autónomo
@@ -75,11 +95,9 @@ fn main() {
             else { mostrar_ayuda(); }
         }
         _ => {
-            // Si el primer argumento es un archivo .fa, asumimos transpile
+            // Si el primer argumento es un archivo .fa, ejecutar directo en ForjaFast
             if comando.ends_with(".fa") {
-                let mut new_args = vec![comando.clone()];
-                new_args.extend_from_slice(&args[2..]);
-                cmd_transpile(&new_args);
+                cmd_run(&args[1..]);
             } else {
                 eprintln!("Comando desconocido: '{}'. Probá 'forja ayuda'", comando);
                 process::exit(1);
@@ -260,7 +278,7 @@ fn cmd_new(args: &[String]) {
         process::exit(1);
     });
     // Archivo de configuración
-    let config = format!("{{ \"nombre\": \"{}\", \"version\": \"0.1.0\" }}\n", name);
+    let config = format!("{{ \"nombre\": \"{}\", \"version\": \"0.2.0\" }}\n", name);
     std::fs::write(dir.join("forja.json"), &config).unwrap_or_else(|e| {
         eprintln!("Error escribiendo forja.json: {}", e);
         process::exit(1);
@@ -302,14 +320,168 @@ fn mostrar_ayuda() {
     println!("  forja explicar variable\n");
 }
 
-/// forja run <archivo.fa>
-fn cmd_run(args: &[String]) {
+/// forja medir|bench|medicion|benchmark <archivo.fa> [--iters N]
+/// Mide tiempos de todas las VMs: creación, carga, ejecución (cold + hot)
+fn cmd_bench(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa>");
+        eprintln!("Uso: forja medir|bench|medicion|benchmark <archivo.fa> [--iters N] [--vm fast|vm|opt|jit|todas]");
         process::exit(1);
     }
 
-    let path = &args[0];
+    let mut path = &args[0];
+    let mut iters = 100;
+    // Buscar --iters en cualquier posición
+    if let Some(pos) = args.iter().position(|a| a == "--iters") {
+        if pos + 1 < args.len() {
+            iters = args[pos + 1].parse().unwrap_or(100);
+            if pos == 0 { path = &args[2]; }
+        }
+    }
+
+    // Buscar --vm (VM específica o "todas" por defecto)
+    let mut vm_selected = "todas";
+    if let Some(pos) = args.iter().position(|a| a == "--vm") {
+        if pos + 1 < args.len() {
+            vm_selected = &args[pos + 1];
+        }
+    }
+
+    let source = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("Error al leer '{}': {}", path, e); process::exit(1); }
+    };
+
+    let bytecode = match forja::compilar_pipeline(&source) {
+        Ok(bc) => bc,
+        Err(e) => { eprintln!("Error de compilación: {}", e); process::exit(1); }
+    };
+
+    println!();
+    println!("{}", "=".repeat(55));
+    println!("  🔬 Forja — Benchmark de VMs ({} iteraciones)", iters);
+    println!("  📄 {}", path);
+    println!("  📊 {} opcodes en bytecode", bytecode.len());
+    println!("{}", "=".repeat(55));
+    println!();
+
+    struct VMMedicion {
+        nombre: &'static str,
+        crear_ns: f64,
+        cargar_ns: f64,
+        cold_ns: f64,
+        hot_ns: f64,
+    }
+
+    let mut resultados: Vec<VMMedicion> = Vec::new();
+
+    macro_rules! medir_vm {
+        ($nombre:expr, $vm:expr) => {{
+            let t0 = std::time::Instant::now();
+            let mut vm = $vm;
+            let crear = t0.elapsed().as_secs_f64() * 1_000_000_000.0;
+
+            let t1 = std::time::Instant::now();
+            vm.cargar_bytecode(bytecode.clone());
+            let cargar = t1.elapsed().as_secs_f64() * 1_000_000_000.0;
+
+            let t2 = std::time::Instant::now();
+            let _ = vm.ejecutar();
+            let cold = t2.elapsed().as_secs_f64() * 1_000_000_000.0;
+
+            vm.reset();
+            let t3 = std::time::Instant::now();
+            for _ in 0..iters { let _ = vm.ejecutar(); }
+            let hot = t3.elapsed().as_secs_f64() * 1_000_000_000.0 / iters as f64;
+
+            resultados.push(VMMedicion { nombre: $nombre, crear_ns: crear, cargar_ns: cargar, cold_ns: cold, hot_ns: hot });
+        }};
+    }
+
+    let todas = vm_selected == "todas";
+    if todas || vm_selected == "vm" {
+        medir_vm!("VM Original", forja::vm::ForjaVM::new());
+    }
+    if todas || vm_selected == "opt" {
+        medir_vm!("VM Opt", forja::vm_opt::ForjaVMOpt::new());
+    }
+    if todas || vm_selected == "fast" {
+        medir_vm!("ForjaFast 🏆", forja::vm_fast::ForjaFast::new());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if todas || vm_selected == "jit" {
+        // JIT bench: medir usando JitOrchestrator
+        let nombre = "Forja JIT ⚡";
+        let t0 = std::time::Instant::now();
+        let mut jit = forja::jit_engine::JitOrchestrator::new();
+        let crear = t0.elapsed().as_secs_f64() * 1_000_000_000.0;
+
+        let t1 = std::time::Instant::now();
+        let _ = jit.ejecutar(&bytecode);
+        let cold = t1.elapsed().as_secs_f64() * 1_000_000_000.0;
+
+        let t3 = std::time::Instant::now();
+        for _ in 0..iters { let _ = jit.ejecutar(&bytecode); }
+        let hot = t3.elapsed().as_secs_f64() * 1_000_000_000.0 / iters as f64;
+
+        resultados.push(VMMedicion { nombre, crear_ns: crear, cargar_ns: 0.0, cold_ns: cold, hot_ns: hot });
+    }
+
+    // Tabla de resultados
+    println!("  {:<20} {:>10} {:>10} {:>10} {:>10}", "VM", "Crear(ns)", "Cargar(ns)", "Cold(ns)", "Hot(ns)");
+    println!("  {}", "─".repeat(60));
+
+    let baseline = resultados[0].hot_ns;
+    for r in &resultados {
+        let ratio = baseline / r.hot_ns;
+        let star = if ratio >= 5.0 { " ⚡⚡" } else if ratio >= 2.0 { " ⚡" } else if ratio >= 1.1 { " ✓" } else { "" };
+        let cargar_s = format!("{:.0}", r.cargar_ns);
+        println!("  {:<20} {:>10.0} {:>10} {:>10.0} {:>10.0}{}", r.nombre, r.crear_ns, cargar_s, r.cold_ns, r.hot_ns, star);
+    }
+
+    // Speedups
+    println!();
+    println!("  🔥 Speedup hot vs Original:");
+    for r in &resultados {
+        if r.nombre != "VM Original" {
+            println!("    {:<20} {:.2}x", r.nombre, baseline / r.hot_ns);
+        }
+    }
+
+    // Hot/Cold ratio
+    if resultados.len() > 1 {
+        println!();
+        println!("  🌡️  Cold→Hot ratio (quickening benefit):");
+        for r in &resultados {
+            let ratio = r.cold_ns / r.hot_ns;
+            println!("    {:<20} {:.1}x", r.nombre, ratio);
+        }
+    }
+    println!();
+}
+
+/// forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|vmopt]
+/// Ejecuta un archivo .fa en la VM seleccionada (default: ForjaFast)
+fn cmd_run(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|vmopt]");
+        process::exit(1);
+    }
+
+    let mut vm_mode = "fast";
+    let path: &String;
+
+    if args.len() >= 3 && args[0] == "--vm" {
+        vm_mode = &args[1];
+        path = &args[2];
+    } else if args.len() >= 1 && args[0].ends_with(".fa") {
+        path = &args[0];
+        if args.len() >= 3 && args[1] == "--vm" {
+            vm_mode = &args[2];
+        }
+    } else {
+        path = &args[0];
+    }
+
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -318,10 +490,14 @@ fn cmd_run(args: &[String]) {
         }
     };
 
-    // FASE 1-5 + ejecución usando la pipeline completa de la librería
-    // Esto aplica lexer, parser, optimizador, type checker, dead code elimination,
-    // bytecode generation, optimización de índices, fusión de opcodes y ejecución en VM
-    match forja::ejecutar(&source) {
+    let result = match vm_mode {
+        "fast" => forja::ejecutar(&source),
+        "opt" => forja::ejecutar_vmopt(&source),
+        "jit" => forja::ejecutar_jit(&source),
+        _ => forja::ejecutar_vm(&source),  // Default: VM original
+    };
+
+    match result {
         Ok(output) => {
             for line in output {
                 println!("{}", line);
@@ -427,9 +603,9 @@ fn cmd_doc(args: &[String]) {
     }
 }
 
-/// forja repl
+/// forja repl (default: ForjaFast)
 fn cmd_repl() {
-    let mut repl = repl::REPL::new();
+    let mut repl = repl::REPL::new("fast");
     repl.iniciar();
 }
 
@@ -599,7 +775,7 @@ fn cmd_transpile(args: &[String]) {
     let cargo_toml = format!(
         r#"[package]
 name = "{}"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 # Exportado por Forja (fa) desde {} (podés ejecutar directo con 'forja ejecutar')

@@ -173,7 +173,7 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::StoreIdxFloat(idx) => Uop::StoreIdx(*idx),
 
         // Superinstructions (Fase 1a) — se expanden a su forma atómica base
-        Opcode::LoadIdx2(a, b) => {
+        Opcode::LoadIdx2(a, _b) => {
             // Se expandirá en expandir_a_uops, fallback: LoadIdx
             Uop::LoadIdx(*a)
         }

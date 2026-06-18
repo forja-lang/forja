@@ -108,11 +108,13 @@
 
 | Comando (español) | Inglés | Descripción |
 |-------------------|--------|-------------|
-| `forja <archivo.fa>` | `forja <file.fa>` | Transpila a Rust (default) |
-| `forja ejecutar <archivo>` | `forja run <file>` | Ejecuta en VM |
+| `forja <archivo.fa>` | `forja <file.fa>` | **Ejecuta directo en ForjaFast** 🏆 (default) |
+| `forja ejecutar <archivo> [--vm fast\|vm\|opt\|jit]` | `forja run <file> [--vm fast\|vm\|opt\|jit]` | Ejecuta en VM seleccionada (`vm`=Original 🛡️ default, `fast`=ForjaFast 🏆, `opt`=Optimizada, `jit`=JIT) |
+| `forja transpilar <archivo>` | `forja transpile <file>` | Exporta a proyecto Rust |
 | `forja compilar <archivo>` | `forja build <file>` | Genera .exe autónomo (VM + bytecode) |
 | `forja compilar-asm <archivo>` | `forja build-asm <file>` | Compila a assembly nativo (⚡más rápido) |
-| `forja repl` | — | Modo interactivo |
+| `forja medir <archivo> [--iters N] [--vm fast\|vm\|opt\|jit\|todas]` | `forja bench <file> [--iters N] [--vm fast\|vm\|opt\|jit\|all]` | Benchmark: crea, carga, ejecuta (cold+hot) en VM(s) seleccionada(s) |
+| `forja interactivo [--vm fast\|vm\|opt\|jit]` | `forja repl [--vm fast\|vm\|opt\|jit]` | Modo interactivo (REPL) con VM seleccionada |
 | `forja formatear <archivo>` | `forja fmt <file>` | Formatea código Forja |
 | `forja diagrama <archivo>` | `forja diagram <file>` | Genera diagrama HTML del AST |
 | `forja colorear <archivo>` | `forja highlight <file>` | Muestra código con colores ANSI |
@@ -125,11 +127,11 @@
 | `forja documentar <archivo>` | `forja doc <file>` | Genera documentación desde AST |
 
 ```bash
+# 🏆 Ejecutar directo en ForjaFast (VM ultra rápida — default)
+forja examples/hola_mundo.fa
+
 # Assembly nativo (el más rápido)
 forja build-asm examples/hola_mundo.fa -o programa.exe
-
-# Ejecutar en VM
-forja run examples/hola_mundo.fa
 
 # Transpilar a Rust
 forja transpile examples/hola_mundo.fa -o programa.rs
@@ -319,8 +321,10 @@ cargo build --release
 
 ## 📚 Documentación
 
-La documentación completa del lenguaje está disponible en el sitio web:
+### 📖 Guía Rápida
+- [📕 Instrucciones del lenguaje](instrucciones.md) — **22 palabras clave** con ejemplos de código: variables, funciones, clases, condicionales, bucles, POO, pattern matching, tipos algebraicos, y más
 
+### 🌐 Sitio Web
 - [Guía de uso](docs/src/pages/uso.astro) — Todos los comandos del CLI
 - [Sintaxis](docs/src/pages/sintaxis/) — Variables, tipos, funciones, clases, módulos
 - [Arquitectura](docs/src/pages/arquitectura/) — Pipeline, VM, bytecode, JIT, ASM, WASM
