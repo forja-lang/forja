@@ -135,7 +135,7 @@ impl Lexer {
             "constructor" => TokenKind::Constructor,
             "este" => TokenKind::Este,
             "nuevo" => TokenKind::Nuevo,
-            "funcion" => TokenKind::Funcion,
+            "funcion" | "fun" => TokenKind::Funcion,
             "prestado" => TokenKind::Prestado,
             "escribir" => TokenKind::Escribir,
             "leer" => TokenKind::Leer,
