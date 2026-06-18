@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::bytecode::Opcode;
-use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops, tiene_opcodes_compuestos};
+use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops};
 
 // Small Integer Cache [-5, 256] — thread_local! porque ValorVMOpt no es Send/Sync
 use std::cell::OnceCell;

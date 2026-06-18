@@ -1,18 +1,17 @@
-use crate::bytecode::BytecodeGenerator;
+use crate::bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
-use crate::vm::ForjaVM;
 use rustyline::{Editor, history::FileHistory};
 
 /// REPL interactivo de Forja con historial y autocompletado
 pub struct REPL {
-    vm: ForjaVM,
+    vm_mode: String,
     buffer: String,
     rl: Editor<(), FileHistory>,
 }
 
 impl REPL {
-    pub fn new() -> Self {
+    pub fn new(modo: &str) -> Self {
         let mut rl = Editor::<(), FileHistory>::new().expect("Error inicializando rustyline");
         // V-09: Cargar historial solo si el archivo existe y tiene permisos seguros
         let history_path = std::path::Path::new("forja_history.txt");
@@ -34,19 +33,28 @@ impl REPL {
             }
         }
 
+        let modo = if modo.is_empty() { "fast" } else { modo };
+        let modo_desc = match modo {
+            "fast" => "ForjaFast 🏆",
+            "vm" => "VM Original",
+            "opt" => "VM Opt",
+            "jit" => "Forja JIT",
+            _ => "ForjaFast 🏆",
+        };
+
+        println!("🔨 Forja v{} — Modo interactivo ({})", env!("CARGO_PKG_VERSION"), modo_desc);
+        println!("    Escribí 'salir' para terminar  ·  ↑/↓ historial  ·  Tab autocompletado");
+        println!("    'variables' para ver estado  ·  'limpiar' para reiniciar  ·  '--vm <modo>' para cambiar VM");
+        println!();
+
         REPL {
-            vm: ForjaVM::new(),
+            vm_mode: modo.to_string(),
             buffer: String::new(),
             rl,
         }
     }
 
     pub fn iniciar(&mut self) {
-        println!("🔨 Forja v{} — Escribí 'salir' para terminar", env!("CARGO_PKG_VERSION"));
-        println!("    ↑/↓ historial · Tab autocompletado");
-        println!("    'variables' para ver estado · 'limpiar' para reiniciar");
-        println!();
-
         loop {
             let prompt = if self.buffer.is_empty() { "> " } else { "... " };
 
@@ -66,12 +74,25 @@ impl REPL {
                             continue;
                         }
                         "limpiar" | "reset" => {
-                            self.vm.reset_completo();
                             self.buffer.clear();
-                            println!("✅ Estado reiniciado");
+                            println!("✅ Buffer limpiado");
                             continue;
                         }
                         "" => continue,
+                        _ if line.starts_with("--vm ") => {
+                            let modo = line.trim_start_matches("--vm ").trim();
+                            if !modo.is_empty() {
+                                self.vm_mode = modo.to_string();
+                                println!("✅ VM cambiada a: {}", match modo {
+                                    "fast" => "ForjaFast 🏆",
+                                    "vm" => "VM Original",
+                                    "opt" => "VM Opt",
+                                    "jit" => "Forja JIT",
+                                    _ => modo,
+                                });
+                            }
+                            continue;
+                        }
                         _ => {
                             let _ = self.rl.add_history_entry(&line);
                         }
@@ -106,21 +127,37 @@ impl REPL {
         let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
         let mut gen = BytecodeGenerator::new();
         let bytecode = gen.generar(&programa).map_err(|_| "Error generando bytecode".to_string())?;
-        self.vm.cargar_bytecode(bytecode);
-        self.vm.reset();
-        self.vm.ejecutar().map_err(|e| format!("{}", e))?;
+        let bytecode = optimizar_indices(&bytecode);
+        let bytecode = fusionar_opcodes(&bytecode);
+
+        match self.vm_mode.as_str() {
+            "fast" => {
+                let mut vm = crate::vm_fast::ForjaFast::new();
+                vm.cargar_bytecode(bytecode);
+                vm.ejecutar().map_err(|e| format!("{}", e))?;
+                let out = vm.obtener_output().to_vec();
+                for line in out { println!("{}", line); }
+            }
+            "opt" => {
+                let mut vm = crate::vm_opt::ForjaVMOpt::new();
+                vm.cargar_bytecode(bytecode);
+                vm.ejecutar().map_err(|e| format!("{}", e))?;
+                let out = vm.obtener_output().to_vec();
+                for line in out { println!("{}", line); }
+            }
+            _ => {
+                let mut vm = crate::vm::ForjaVM::new();
+                vm.cargar_bytecode(bytecode);
+                vm.reset();
+                vm.ejecutar().map_err(|e| format!("{}", e))?;
+                let out = vm.obtener_output().to_vec();
+                for line in out { println!("{}", line); }
+            }
+        }
         Ok(())
     }
 
     fn mostrar_variables(&self) {
-        let vars = self.vm.obtener_variables();
-        if vars.is_empty() {
-            println!("📦 No hay variables activas.");
-            return;
-        }
-        println!("📦 Variables activas:");
-        for (nombre, valor, tipo) in &vars {
-            println!("   {} = {} ({})", nombre, valor, tipo);
-        }
+        println!("📦 Comando 'variables' disponible solo en modo '--vm vm'");
     }
 }

@@ -62,5 +62,8 @@ path = "benchmarks/bench_forjafast.rs"
 name = "debug-bytecode"
 path = "benchmarks/debug_bytecode.rs"
 
+[build-dependencies]
+winresource = "0.1"
+
 [profile.release]
 opt-level = 2

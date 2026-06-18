@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use crate::bytecode::{Opcode, BuiltinKind};
 use crate::symbol_table::{SymbolTable, SymId};
-use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops, tiene_opcodes_compuestos};
+use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops};
 use crate::class_descriptor::{Shape, ClassDescriptor};
 
 // Small Integer Cache [-5, 256] — thread_local! porque ValorFast es Copy (u64)
@@ -67,6 +67,7 @@ impl ValorFast {
     // ─── Constantes de formato ────────────────────────────────────────────────
     const QNAN: u64 = 0x7FF8000000000000;
     const TAG_MASK: u64 = 0x0007000000000000;  // bits 48-50
+    #[allow(dead_code)]
     const PAYLOAD_MASK: u64 = 0x0000FFFFFFFFFFFF; // bits 0-47
 
     // Tags (bits 48-50)
@@ -309,6 +310,7 @@ pub struct ForjaFast {
 struct FrmFast {
     ip_ret: usize,
     base_ptr_previo: usize,
+    #[allow(dead_code)]
     num_vars: usize,
 }
 
