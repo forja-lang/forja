@@ -1,5 +1,23 @@
+use std::rc::Rc;
 use crate::ast::*;
 use crate::error::ErrorForja;
+use crate::symbol_table::SymId;
+
+/// Builtins conocidos de Forja — usados por CallBuiltin para evitar hash lookup
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BuiltinKind {
+    Escribir,
+    Longitud,
+    Len,
+    Tipo,
+    ATexto,
+    EsNumero,
+    EsTexto,
+    Empujar,
+    Obtener,
+    Remover,
+    Nuevo,
+}
 
 /// Opcodes de la máquina virtual Forja (stack-based)
 #[derive(Debug, Clone, PartialEq)]
@@ -7,16 +25,16 @@ pub enum Opcode {
     // === Gestión de pila ===
     PushEntero(i64),
     PushDecimal(f64),
-    PushTexto(String),
+    PushTexto(Rc<str>),
     PushBooleano(bool),
     PushNulo,
     Pop,
     Dup,
 
     // === Variables (búsqueda por nombre — original) ===
-    Load(String),
-    Store(String),
-    Declare(String, bool), // (nombre, mutable)
+    Load(Rc<str>),
+    Store(Rc<str>),
+    Declare(Rc<str>, bool), // (nombre, mutable)
 
     // === Variables (acceso por índice — ultra rápido) ===
     LoadIdx(usize),
@@ -75,15 +93,15 @@ pub enum Opcode {
     Halt,
 
     // === Funciones ===
-    FunctionDef(String, Vec<String>), // (nombre, parámetros)
-    Call(String, usize),
+    FunctionDef(Rc<str>, Vec<Rc<str>>), // (nombre, parámetros)
+    Call(Rc<str>, usize),
     Return,
 
     // === POO ===
-    NewObject(String),                // crear instancia de clase
-    SetField(String),                 // este.campo = pop()
-    GetField(String),                 // push(este.campo)
-    CallMethod(String, usize),        // obj.metodo(args) - resuelve clase en runtime
+    NewObject(Rc<str>),                // crear instancia de clase
+    SetField(Rc<str>),                 // este.campo = pop()
+    GetField(Rc<str>),                 // push(este.campo)
+    CallMethod(Rc<str>, usize),        // obj.metodo(args) - resuelve clase en runtime
 
     // === Arrays ===
     ArrayNew(usize),                  // crear array con N elementos (pop N de la pila)
@@ -99,6 +117,53 @@ pub enum Opcode {
     // === I/O ===
     Print,
     ReadLine,
+
+    // === SUPERINSTRUCTIONS (Fase 1a — fusiones de pares de opcodes) ===
+
+    /// LoadIdx(idx) + PushEntero(n) + Add → fusionado: carga var + suma entero constante
+    LoadAddInt(usize, i64),
+
+    /// LoadIdx(a) + LoadIdx(b) → carga dos variables sin dispatch intermedio
+    LoadIdx2(usize, usize),
+
+    /// LoadIdx(src) + StoreIdx(dst) → carga src y guarda en dst
+    LoadStoreIdx(usize, usize),
+
+    /// AddInt + StoreIdx(idx) → suma y guarda
+    AddStoreIdx(usize),
+
+    /// SubInt + StoreIdx(idx) → resta y guarda
+    SubStoreIdx(usize),
+
+    /// MulInt + StoreIdx(idx) → multiplica y guarda
+    MulStoreIdx(usize),
+
+    /// PushEntero(n) + AddInt → push entero + add (el otro operando está en tos)
+    PushAddInt(i64),
+
+    /// LoadIdx(idx) + JumpSiFalso(target) → carga condicional y salta
+    LoadJumpSiFalso(usize, usize),
+
+    /// LoadIdx(idx) + Jump(target) → goto calculado
+    LoadJump(usize, usize),
+
+    /// Dup + AddInt → duplica y suma
+    DupAddInt,
+
+    // === CALL ESPECIALIZADOS (quickening) ===
+    /// Llamada directa por índice de función (sin hash lookup)
+    /// Creado en quickening, no serializable.
+    CallDirect(usize, usize),    // (función_index, nargs)
+
+    /// Llamada a built-in conocido (sin hash lookup por nombre)
+    /// Creado en quickening, no serializable.
+    CallBuiltin(BuiltinKind, usize),  // (builtin_kind, nargs)
+
+    /// Llamada a método con inline cache
+    /// El método_sym permite comparación O(1); el IC (clase_id, método_idx) se maneja
+    /// aparte en el vector ic_callmethod.
+    /// Creado en quickening, no serializable.
+    CallMethodCached(SymId, usize),   // (método_sym, nargs)
 }
 
 /// Generador de bytecode a partir del AST de Forja
@@ -201,34 +266,34 @@ impl BytecodeGenerator {
                 } else {
                     self.emitir(Opcode::PushNulo);
                 }
-                self.emitir(Opcode::Declare(nombre.clone(), *mutable));
+                self.emitir(Opcode::Declare(Rc::from(nombre.as_str()), *mutable));
             }
 
             Declaracion::Asignacion { nombre, valor } => {
                 self.generar_expresion(valor);
-                self.emitir(Opcode::Store(nombre.clone()));
+                self.emitir(Opcode::Store(Rc::from(nombre.as_str())));
             }
 
             Declaracion::AsignacionMiembro { objeto, miembro, valor } => {
                 // Generar el valor primero, luego el objeto, luego SetField
                 self.generar_expresion(valor);
                 self.generar_expresion(objeto);
-                self.emitir(Opcode::SetField(miembro.clone()));
+                self.emitir(Opcode::SetField(Rc::from(miembro.as_str())));
             }
 
             Declaracion::AsignacionIndex { nombre, indice, valor } => {
                 // arr[i] = val → push val, push Load(arr), push indice, ArraySet, Store(arr)
                 self.generar_expresion(valor);
-                self.emitir(Opcode::Load(nombre.clone()));
+                self.emitir(Opcode::Load(Rc::from(nombre.as_str())));
                 self.generar_expresion(indice);
                 self.emitir(Opcode::ArraySet);
-                self.emitir(Opcode::Store(nombre.clone()));
+                self.emitir(Opcode::Store(Rc::from(nombre.as_str())));
             }
 
             Declaracion::Funcion { nombre, parametros, cuerpo, .. } => {
                 // Emitir FunctionDef con nombres de parámetros
-                let param_names: Vec<String> = parametros.iter().map(|p| p.nombre.clone()).collect();
-                self.emitir(Opcode::FunctionDef(nombre.clone(), param_names));
+                let param_names: Vec<Rc<str>> = parametros.iter().map(|p| Rc::from(p.nombre.as_str())).collect();
+                self.emitir(Opcode::FunctionDef(Rc::from(nombre.as_str()), param_names));
                 self.generar_declaraciones(cuerpo);
                 // Al final de la función, hacemos return implícito
                 self.emitir(Opcode::Return);
@@ -289,7 +354,7 @@ impl BytecodeGenerator {
 
                             self.emitir(Opcode::Label(label_inicio));
                             // Load var, load limit, check <
-                            self.emitir(Opcode::Load(var_name.clone()));
+                            self.emitir(Opcode::Load(Rc::from(var_name.as_str())));
                             self.generar_expresion(derecha);
                             self.emitir(Opcode::Menor);
                             self.emitir(Opcode::JumpSiFalso(label_fin));
@@ -334,25 +399,25 @@ impl BytecodeGenerator {
             Declaracion::Repetir { cantidad, bloque } => {
                 // repetir(N) { ... } → for _ in 0..N { ... }
                 // Variable temporal para contador
-                let var_contador = "__repetir_counter".to_string();
+                let var_contador = Rc::from("__repetir_counter");
                 let label_inicio = self.nueva_label();
                 let label_fin = self.nueva_label();
 
                 self.emitir(Opcode::PushEntero(0));
-                self.emitir(Opcode::Declare(var_contador.clone(), true));
+                self.emitir(Opcode::Declare(Rc::clone(&var_contador), true));
 
                 self.emitir(Opcode::Label(label_inicio));
-                self.emitir(Opcode::Load(var_contador.clone()));
+                self.emitir(Opcode::Load(Rc::clone(&var_contador)));
                 self.generar_expresion(cantidad);
                 self.emitir(Opcode::Menor);
                 self.emitir(Opcode::JumpSiFalso(label_fin));
 
                 self.generar_declaraciones(bloque);
 
-                self.emitir(Opcode::Load(var_contador.clone()));
+                self.emitir(Opcode::Load(Rc::clone(&var_contador)));
                 self.emitir(Opcode::PushEntero(1));
                 self.emitir(Opcode::Add);
-                self.emitir(Opcode::Store(var_contador.clone()));
+                self.emitir(Opcode::Store(Rc::clone(&var_contador)));
 
                 self.emitir(Opcode::Jump(label_inicio));
                 self.emitir(Opcode::Label(label_fin));
@@ -369,8 +434,8 @@ impl BytecodeGenerator {
                 } else if nombre.contains('.') {
                     // Método: objeto.metodo(args) → load objeto, push args, CallMethod
                     let parts: Vec<&str> = nombre.splitn(2, '.').collect();
-                    let obj_name = parts[0].to_string();
-                    let method_name = parts[1].to_string();
+                    let obj_name = Rc::from(parts[0]);
+                    let method_name = Rc::from(parts[1]);
                     self.emitir(Opcode::Load(obj_name));
                     for arg in argumentos {
                         self.generar_expresion(arg);
@@ -380,7 +445,7 @@ impl BytecodeGenerator {
                     for arg in argumentos {
                         self.generar_expresion(arg);
                     }
-                    self.emitir(Opcode::Call(nombre.clone(), argumentos.len()));
+                    self.emitir(Opcode::Call(Rc::from(nombre.as_str()), argumentos.len()));
                 }
             }
 
@@ -410,7 +475,7 @@ impl BytecodeGenerator {
         match expr {
             Expresion::LiteralNumero(n) => self.emitir(Opcode::PushEntero(*n)),
             Expresion::LiteralDecimal(d) => self.emitir(Opcode::PushDecimal(*d)),
-            Expresion::LiteralTexto(s) => self.emitir(Opcode::PushTexto(s.clone())),
+            Expresion::LiteralTexto(s) => self.emitir(Opcode::PushTexto(Rc::from(s.as_str()))),
             Expresion::LiteralBooleano(b) => self.emitir(Opcode::PushBooleano(*b)),
             Expresion::LiteralNulo => self.emitir(Opcode::PushNulo),
 
@@ -419,7 +484,7 @@ impl BytecodeGenerator {
                 match nombre.as_str() {
                     "verdadero" => self.emitir(Opcode::PushBooleano(true)),
                     "falso" => self.emitir(Opcode::PushBooleano(false)),
-                    _ => self.emitir(Opcode::Load(nombre.clone())),
+                    _ => self.emitir(Opcode::Load(Rc::from(nombre.as_str()))),
                 }
             }
 
@@ -466,15 +531,15 @@ impl BytecodeGenerator {
                 } else if nombre.contains('.') {
                     // Método: objeto.metodo(args) → push objeto, push args, CallMethod
                     let parts: Vec<&str> = nombre.splitn(2, '.').collect();
-                    let obj_name = parts[0].to_string();
-                    let method_name = parts[1].to_string();
+                    let obj_name = parts[0];
+                    let method_name = Rc::from(parts[1]);
                     // Si el objeto es un literal, lo generamos como expresión
                     if obj_name.starts_with('"') {
                         // Es un literal string: "texto".metodo()
                         let texto = obj_name.trim_matches('"');
-                        self.emitir(Opcode::PushTexto(texto.to_string()));
+                        self.emitir(Opcode::PushTexto(Rc::from(texto)));
                     } else {
-                        self.emitir(Opcode::Load(obj_name));
+                        self.emitir(Opcode::Load(Rc::from(obj_name)));
                     }
                     for arg in argumentos {
                         self.generar_expresion(arg);
@@ -484,18 +549,18 @@ impl BytecodeGenerator {
                     for arg in argumentos {
                         self.generar_expresion(arg);
                     }
-                    self.emitir(Opcode::Call(nombre.clone(), argumentos.len()));
+                    self.emitir(Opcode::Call(Rc::from(nombre.as_str()), argumentos.len()));
                 }
             }
 
             Expresion::AccesoMiembro { objeto, miembro } => {
                 self.generar_expresion(objeto);
-                self.emitir(Opcode::GetField(miembro.clone()));
+                self.emitir(Opcode::GetField(Rc::from(miembro.as_str())));
             }
 
             Expresion::Instanciacion { clase, argumentos } => {
                 // Crear objeto
-                self.emitir(Opcode::NewObject(clase.clone()));
+                self.emitir(Opcode::NewObject(Rc::from(clase.as_str())));
                 // Si hay argumentos, llamar constructor con self + args
                 if !argumentos.is_empty() {
                     self.emitir(Opcode::Dup);
@@ -503,7 +568,7 @@ impl BytecodeGenerator {
                         self.generar_expresion(arg);
                     }
                     self.emitir(Opcode::Call(
-                        format!("{}.nuevo", clase),
+                        Rc::from(format!("{}.nuevo", clase).as_str()),
                         argumentos.len() + 1,
                     ));
                 }
@@ -534,9 +599,9 @@ impl BytecodeGenerator {
 
             Expresion::Closure { parametros, cuerpo } => {
                 // TODO: implementar bytecode para closures
-                let nombre = format!("__closure_{}", self.label_counter);
+                let nombre = Rc::from(format!("__closure_{}", self.label_counter).as_str());
                 self.label_counter += 1;
-                let param_names: Vec<String> = parametros.iter().map(|p| p.nombre.clone()).collect();
+                let param_names: Vec<Rc<str>> = parametros.iter().map(|p| Rc::from(p.nombre.as_str())).collect();
                 self.emitir(Opcode::FunctionDef(nombre, param_names));
                 for d in cuerpo {
                     self.generar_declaracion(d);
@@ -592,10 +657,11 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             Opcode::PushTexto(s) | Opcode::Load(s) | Opcode::Store(s) | Opcode::Declare(s, _)
             | Opcode::Call(s, _) | Opcode::FunctionDef(s, _) | Opcode::NewObject(s)
             | Opcode::SetField(s) | Opcode::GetField(s) | Opcode::CallMethod(s, _) => {
-                if !string_indices.contains_key(s) {
+                let s_str: &str = s.as_ref();
+                if !string_indices.contains_key(s_str) {
                     let idx = string_pool.len() as u32;
-                    string_indices.insert(s.clone(), idx);
-                    string_pool.push(s.clone());
+                    string_indices.insert(s_str.to_string(), idx);
+                    string_pool.push(s_str.to_string());
                 }
             }
             _ => {}
@@ -618,11 +684,11 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             Opcode::PushEntero(n) => bytes.extend_from_slice(&n.to_le_bytes()),
             Opcode::PushDecimal(d) => bytes.extend_from_slice(&d.to_le_bytes()),
             Opcode::PushTexto(s) | Opcode::Load(s) | Opcode::Store(s) => {
-                let idx = string_indices.get(s).unwrap_or(&0);
+                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
             }
             Opcode::Declare(s, mutable) => {
-                let idx = string_indices.get(s).unwrap_or(&0);
+                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
                 bytes.push(if *mutable { 1 } else { 0 });
             }
@@ -631,27 +697,27 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
                 bytes.extend_from_slice(&(*target as u32).to_le_bytes());
             }
             Opcode::FunctionDef(s, params) => {
-                let idx = string_indices.get(s).unwrap_or(&0);
+                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
                 bytes.extend_from_slice(&(params.len() as u32).to_le_bytes());
                 for p in params {
-                    let p_bytes = p.as_bytes();
+                    let p_bytes = p.as_ref().as_bytes();
                     bytes.extend_from_slice(&(p_bytes.len() as u32).to_le_bytes());
                     bytes.extend_from_slice(p_bytes);
                 }
             }
             Opcode::Call(s, n) => {
-                let idx = string_indices.get(s).unwrap_or(&0);
+                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
                 bytes.extend_from_slice(&(*n as u32).to_le_bytes());
             }
             Opcode::CallMethod(s, n) => {
-                let idx = string_indices.get(s).unwrap_or(&0);
+                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
                 bytes.extend_from_slice(&(*n as u32).to_le_bytes());
             }
             Opcode::NewObject(s) | Opcode::SetField(s) | Opcode::GetField(s) => {
-                let idx = string_indices.get(s).unwrap_or(&0);
+                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
             }
             Opcode::DeclareEnteroOp(idx, n) => {
@@ -738,14 +804,14 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
     match byte {
         0 => Some(Opcode::PushEntero(0)),
         1 => Some(Opcode::PushDecimal(0.0)),
-        2 => Some(Opcode::PushTexto(String::new())),
+        2 => Some(Opcode::PushTexto(Rc::from(""))),
         3 => Some(Opcode::PushBooleano(false)),
         4 => Some(Opcode::PushNulo),
         5 => Some(Opcode::Pop),
         6 => Some(Opcode::Dup),
-        10 => Some(Opcode::Load(String::new())),
-        11 => Some(Opcode::Store(String::new())),
-        12 => Some(Opcode::Declare(String::new(), false)),
+        10 => Some(Opcode::Load(Rc::from(""))),
+        11 => Some(Opcode::Store(Rc::from(""))),
+        12 => Some(Opcode::Declare(Rc::from(""), false)),
         13 => Some(Opcode::LoadIdx(0)),
         14 => Some(Opcode::StoreIdx(0)),
         15 => Some(Opcode::DeclareIdx(0, false)),
@@ -769,13 +835,13 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         51 => Some(Opcode::JumpSiFalso(0)),
         52 => Some(Opcode::Label(0)),
         53 => Some(Opcode::Halt),
-        55 => Some(Opcode::FunctionDef(String::new(), Vec::new())),
-        60 => Some(Opcode::Call(String::new(), 0)),
+        55 => Some(Opcode::FunctionDef(Rc::from(""), Vec::new())),
+        60 => Some(Opcode::Call(Rc::from(""), 0)),
         61 => Some(Opcode::Return),
-        62 => Some(Opcode::NewObject(String::new())),
-        63 => Some(Opcode::SetField(String::new())),
-        64 => Some(Opcode::GetField(String::new())),
-        65 => Some(Opcode::CallMethod(String::new(), 0)),
+        62 => Some(Opcode::NewObject(Rc::from(""))),
+        63 => Some(Opcode::SetField(Rc::from(""))),
+        64 => Some(Opcode::GetField(Rc::from(""))),
+        65 => Some(Opcode::CallMethod(Rc::from(""), 0)),
         80 => Some(Opcode::ArrayNew(0)),
         81 => Some(Opcode::ArrayGet),
         82 => Some(Opcode::ArraySet),
@@ -797,9 +863,9 @@ const MAX_STRING_LENGTH: usize = 65536;
 
 /// Helper seguro para obtener un string del pool por índice.
 /// Retorna None si el índice está fuera de rango (seguridad contra datos corruptos).
-fn string_pool_get(pool: &[String], idx: usize) -> Option<String> {
+fn string_pool_get(pool: &[String], idx: usize) -> Option<Rc<str>> {
     if idx < pool.len() {
-        Some(pool[idx].clone())
+        Some(Rc::from(pool[idx].as_str()))
     } else {
         None
     }
@@ -977,7 +1043,7 @@ if version >= 2 {
                     if pos + p_len > data.len() { return None; }
                     let p = String::from_utf8(data[pos..pos+p_len].to_vec()).ok()?;
                     pos += p_len;
-                    params.push(p);
+                    params.push(Rc::from(p.as_str()));
                 }
                 opcodes.push(Opcode::FunctionDef(name, params));
             }
@@ -1044,19 +1110,19 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
     for op in bytecode {
         match op {
             Opcode::Load(name) => {
-                let idx = *var_indices.entry(name.clone()).or_insert_with(|| {
+                let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
                     let i = next_idx; next_idx += 1; i
                 });
                 result.push(Opcode::LoadIdx(idx));
             }
             Opcode::Store(name) => {
-                let idx = *var_indices.entry(name.clone()).or_insert_with(|| {
+                let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
                     let i = next_idx; next_idx += 1; i
                 });
                 result.push(Opcode::StoreIdx(idx));
             }
             Opcode::Declare(name, mutable) => {
-                let idx = *var_indices.entry(name.clone()).or_insert_with(|| {
+                let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
                     let i = next_idx; next_idx += 1; i
                 });
                 result.push(Opcode::DeclareIdx(idx, *mutable));
@@ -1065,7 +1131,7 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
             Opcode::FunctionDef(_name, params) => {
                 // Asignar índices a los parámetros
                 for p in params {
-                    var_indices.entry(p.clone()).or_insert_with(|| {
+                    var_indices.entry(p.to_string()).or_insert_with(|| {
                         let i = next_idx; next_idx += 1; i
                     });
                 }
@@ -1088,13 +1154,40 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
 /// - PushEntero(n) + DeclareIdx(idx) → DeclareEnteroOp(idx, n)
 /// - PushBooleano(b) + DeclareIdx(idx) → DeclareBooleanoOp(idx, b)
 /// - PushEntero(n) + StoreIdx(idx) → StoreEnteroOp(idx, n)
+///
+/// # Superinstructions (Fase 1a)
+/// - LoadIdx(a) + LoadIdx(b) → LoadIdx2(a, b)
+/// - LoadIdx(a) + StoreIdx(b) → LoadStoreIdx(a, b)
+/// - LoadIdx(a) + PushEntero(n) + Add/AddInt → LoadAddInt(a, n)
+/// - AddInt + StoreIdx(idx) → AddStoreIdx(idx)
+/// - SubInt + StoreIdx(idx) → SubStoreIdx(idx)
+/// - MulInt + StoreIdx(idx) → MulStoreIdx(idx)
+/// - PushEntero(n) + AddInt → PushAddInt(n)
+/// - Dup + AddInt → DupAddInt
+/// - LoadIdx(idx) + JumpSiFalso(target) → LoadJumpSiFalso(idx, target)
+/// - LoadIdx(idx) + Jump(target) → LoadJump(idx, target)
 pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
     let mut result = Vec::with_capacity(bc.len());
     let mut i = 0;
 
     while i < bc.len() {
         if i + 1 < bc.len() {
+            // Intentar fusión de 3 opcodes primero (LoadIdx + PushEntero + Add/AddInt)
+            if i + 2 < bc.len() {
+                match (&bc[i], &bc[i + 1], &bc[i + 2]) {
+                    (Opcode::LoadIdx(a), Opcode::PushEntero(n), Opcode::Add)
+                    | (Opcode::LoadIdx(a), Opcode::PushEntero(n), Opcode::AddInt) => {
+                        result.push(Opcode::LoadAddInt(*a, *n));
+                        i += 3;
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+
+            // Fusiones de 2 opcodes
             match (&bc[i], &bc[i + 1]) {
+                // Existentes
                 (Opcode::PushEntero(n), Opcode::DeclareIdx(idx, _)) => {
                     result.push(Opcode::DeclareEnteroOp(*idx, *n));
                     i += 2;
@@ -1107,6 +1200,60 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
                 }
                 (Opcode::PushEntero(n), Opcode::StoreIdx(idx)) => {
                     result.push(Opcode::StoreEnteroOp(*idx, *n));
+                    i += 2;
+                    continue;
+                }
+                // Nuevas: LoadIdx(a) + LoadIdx(b) → LoadIdx2(a, b)
+                (Opcode::LoadIdx(a), Opcode::LoadIdx(b)) => {
+                    result.push(Opcode::LoadIdx2(*a, *b));
+                    i += 2;
+                    continue;
+                }
+                // LoadIdx(a) + StoreIdx(b) → LoadStoreIdx(a, b)
+                (Opcode::LoadIdx(a), Opcode::StoreIdx(b)) => {
+                    result.push(Opcode::LoadStoreIdx(*a, *b));
+                    i += 2;
+                    continue;
+                }
+                // AddInt + StoreIdx(idx) → AddStoreIdx(idx)
+                (Opcode::AddInt, Opcode::StoreIdx(idx)) => {
+                    result.push(Opcode::AddStoreIdx(*idx));
+                    i += 2;
+                    continue;
+                }
+                // SubInt + StoreIdx(idx) → SubStoreIdx(idx)
+                (Opcode::SubInt, Opcode::StoreIdx(idx)) => {
+                    result.push(Opcode::SubStoreIdx(*idx));
+                    i += 2;
+                    continue;
+                }
+                // MulInt + StoreIdx(idx) → MulStoreIdx(idx)
+                (Opcode::MulInt, Opcode::StoreIdx(idx)) => {
+                    result.push(Opcode::MulStoreIdx(*idx));
+                    i += 2;
+                    continue;
+                }
+                // PushEntero(n) + AddInt → PushAddInt(n)
+                (Opcode::PushEntero(n), Opcode::AddInt) => {
+                    result.push(Opcode::PushAddInt(*n));
+                    i += 2;
+                    continue;
+                }
+                // Dup + AddInt → DupAddInt
+                (Opcode::Dup, Opcode::AddInt) => {
+                    result.push(Opcode::DupAddInt);
+                    i += 2;
+                    continue;
+                }
+                // LoadIdx(idx) + JumpSiFalso(target) → LoadJumpSiFalso(idx, target)
+                (Opcode::LoadIdx(idx), Opcode::JumpSiFalso(target)) => {
+                    result.push(Opcode::LoadJumpSiFalso(*idx, *target));
+                    i += 2;
+                    continue;
+                }
+                // LoadIdx(idx) + Jump(target) → LoadJump(idx, target)
+                (Opcode::LoadIdx(idx), Opcode::Jump(target)) => {
+                    result.push(Opcode::LoadJump(*idx, *target));
                     i += 2;
                     continue;
                 }
@@ -1139,7 +1286,7 @@ mod tests {
     fn test_bytecode_variable() {
         let bc = generar_bytecode("variable x = 5").unwrap();
         assert_eq!(bc[0], Opcode::PushEntero(5));
-        assert_eq!(bc[1], Opcode::Declare("x".to_string(), true));
+        assert_eq!(bc[1], Opcode::Declare(Rc::from("x"), true));
         assert_eq!(bc[2], Opcode::Halt);
     }
 
@@ -1147,7 +1294,7 @@ mod tests {
     fn test_bytecode_constante() {
         let bc = generar_bytecode("constante x = 10").unwrap();
         assert_eq!(bc[0], Opcode::PushEntero(10));
-        assert_eq!(bc[1], Opcode::Declare("x".to_string(), false));
+        assert_eq!(bc[1], Opcode::Declare(Rc::from("x"), false));
         assert_eq!(bc[2], Opcode::Halt);
     }
 
@@ -1157,14 +1304,14 @@ mod tests {
         assert_eq!(bc[0], Opcode::PushEntero(2));
         assert_eq!(bc[1], Opcode::PushEntero(3));
         assert_eq!(bc[2], Opcode::Add);
-        assert_eq!(bc[3], Opcode::Declare("x".to_string(), true));
+        assert_eq!(bc[3], Opcode::Declare(Rc::from("x"), true));
         assert_eq!(bc[4], Opcode::Halt);
     }
 
     #[test]
     fn test_bytecode_escribir() {
         let bc = generar_bytecode("escribir(\"Hola\")").unwrap();
-        assert_eq!(bc[0], Opcode::PushTexto("Hola".to_string()));
+        assert_eq!(bc[0], Opcode::PushTexto(Rc::from("Hola")));
         assert_eq!(bc[1], Opcode::Print);
         assert_eq!(bc[2], Opcode::Halt);
     }
@@ -1195,7 +1342,7 @@ mod tests {
     fn test_serializacion() {
         let bc = vec![
             Opcode::PushEntero(42),
-            Opcode::Declare("x".to_string(), true),
+            Opcode::Declare(Rc::from("x"), true),
             Opcode::Halt,
         ];
         let serializado = serializar_bytecode(&bc);

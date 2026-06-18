@@ -307,8 +307,8 @@ impl ForjaVM {
                 }
                 Opcode::FunctionDef(nombre, params) => {
                     // La función empieza EN la siguiente instrucción
-                    self.funciones.insert(nombre.clone(), i + 1);
-                    func_params.insert(nombre.clone(), params.clone());
+                    self.funciones.insert(nombre.to_string(), i + 1);
+                    func_params.insert(nombre.to_string(), params.iter().map(|s| s.to_string()).collect());
                 }
                 _ => {}
             }
@@ -395,7 +395,7 @@ impl ForjaVM {
             match opcode {
                 Opcode::PushEntero(n) => { self.stack.push(get_small_int_vm(n)); self.ip += 1; }
                 Opcode::PushDecimal(d) => { self.stack.push(ValorVM::Decimal(d)); self.ip += 1; }
-                Opcode::PushTexto(s) => { self.stack.push(ValorVM::Texto(s)); self.ip += 1; }
+                Opcode::PushTexto(s) => { self.stack.push(ValorVM::Texto(s.to_string())); self.ip += 1; }
                 Opcode::PushBooleano(b) => { self.stack.push(ValorVM::Booleano(b)); self.ip += 1; }
                 Opcode::PushNulo => { self.stack.push(ValorVM::Nulo); self.ip += 1; }
 
@@ -408,14 +408,14 @@ impl ForjaVM {
 
                 // Load/Store/Declare por nombre (compatibilidad — resuelve nombre→índice)
                 Opcode::Load(nombre) => {
-                    let val = self.buscar_variable(&nombre)?;
+                    let val = self.buscar_variable(nombre.as_ref())?;
                     self.stack.push(val.clone());
                     self.ip += 1;
                 }
 
                 Opcode::Store(nombre) => {
                     let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Store".to_string()))?;
-                    self.asignar_variable(&nombre, val)?;
+                    self.asignar_variable(nombre.as_ref(), val)?;
                     self.ip += 1;
                 }
 
@@ -423,7 +423,7 @@ impl ForjaVM {
                     let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Declare".to_string()))?;
                     let ambito = self.ambito_actual();
                     let idx = self.variables[ambito].len();
-                    self.nombre_a_indice[ambito].insert(nombre, idx);
+                    self.nombre_a_indice[ambito].insert(nombre.to_string(), idx);
                     self.variables[ambito].push(val);
                     self.ip += 1;
                 }
@@ -940,7 +940,7 @@ impl ForjaVM {
                 Opcode::Call(nombre, nargs) => {
                     // Buscar la función por nombre
                     let call_ip = self.ip;
-                    if let Some(&label) = self.funciones.get(&nombre) {
+                    if let Some(&label) = self.funciones.get(nombre.as_ref()) {
                         // Crear nuevo ámbito
                         let ambito = self.variables.len();
                         self.variables.push(Vec::new());
@@ -948,7 +948,7 @@ impl ForjaVM {
 
                         let frame = Frame {
                             ip_retorno: call_ip + 1,
-                            nombre: nombre.clone(),
+                            nombre: nombre.to_string(),
                             ambito,
                         };
                         self.call_stack.push(frame);
@@ -957,7 +957,7 @@ impl ForjaVM {
                         let param_names: Vec<String> = self.bytecode.iter()
                             .find_map(|op| {
                                 if let Opcode::FunctionDef(n, params) = op {
-                                    if n == &nombre { Some(params.clone()) } else { None }
+                                    if n.as_ref() == nombre.as_ref() { Some(params.iter().map(|s| s.to_string()).collect()) } else { None }
                                 } else { None }
                             })
                             .unwrap_or_default();
@@ -981,7 +981,7 @@ impl ForjaVM {
 
                         self.ip = label;
                     } else {
-                        return Err(ErrorVM::FuncionNoDefinida(nombre));
+                        return Err(ErrorVM::FuncionNoDefinida(nombre.to_string()));
                     }
                 }
 
@@ -1008,7 +1008,7 @@ impl ForjaVM {
                 Opcode::NewObject(clase) => {
                     // Crear nuevo objeto con campos vacíos
                     let obj = ObjetoVM {
-                        clase: clase.clone(),
+                        clase: clase.to_string(),
                         campos: HashMap::new(),
                     };
                     self.stack.push(ValorVM::Objeto(ObjetoRef(Rc::new(RefCell::new(obj)))));
@@ -1018,7 +1018,7 @@ impl ForjaVM {
                 Opcode::CallMethod(metodo, nargs) => {
                     // Check for builtin string methods FIRST
                     let call_ip = self.ip;
-                    if let Some(builtin) = resolver_builtin(&metodo) {
+                    if let Some(builtin) = resolver_builtin(metodo.as_ref()) {
                         self.ejecutar_builtin(builtin, nargs)?;
                         self.ip += 1;
                     } else {
@@ -1043,7 +1043,7 @@ impl ForjaVM {
                                 let param_names: Vec<String> = self.bytecode.iter()
                                     .find_map(|op| {
                                         if let Opcode::FunctionDef(n, params) = op {
-                                            if n == &func_name { Some(params.clone()) } else { None }
+                                            if n.as_ref() == func_name.as_str() { Some(params.iter().map(|s| s.to_string()).collect()) } else { None }
                                         } else { None }
                                     })
                                     .unwrap_or_default();
@@ -1073,7 +1073,7 @@ impl ForjaVM {
                     let obj_val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SetField obj".to_string()))?;
                     let valor = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SetField val".to_string()))?;
                     if let ValorVM::Objeto(obj_ref) = obj_val {
-                        obj_ref.0.borrow_mut().campos.insert(campo.clone(), valor);
+                        obj_ref.0.borrow_mut().campos.insert(campo.to_string(), valor);
                         // Objeto modificado in-place, no need to push back
                     } else {
                         return Err(ErrorVM::TipoIncompatible("SetField: se esperaba un objeto".to_string()));
@@ -1086,7 +1086,7 @@ impl ForjaVM {
                     let obj_val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("GetField".to_string()))?;
                     if let ValorVM::Objeto(obj_ref) = obj_val {
                         let obj = obj_ref.0.borrow();
-                        if let Some(val) = obj.campos.get(&campo) {
+                        if let Some(val) = obj.campos.get(campo.as_ref()) {
                             self.stack.push(val.clone());
                         } else {
                             self.stack.push(ValorVM::Nulo);
@@ -1228,6 +1228,8 @@ impl ForjaVM {
                 }
 
                 Opcode::Halt => break,
+                // Superinstructions (Fase 1a) — no implementadas en VM estándar
+                _ => return Err(ErrorVM::TipoIncompatible(format!("Opcode no soportado en VM estándar: {:?}", opcode))),
             }
         }
         Ok(())
