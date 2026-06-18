@@ -44,7 +44,10 @@ pub fn es_jiteable(opcodes: &[Opcode]) -> bool {
             Opcode::LoadStoreIdx(_, _) | Opcode::AddStoreIdx(_) |
             Opcode::SubStoreIdx(_) | Opcode::MulStoreIdx(_) |
             Opcode::PushAddInt(_) | Opcode::LoadJumpSiFalso(_, _) |
-            Opcode::LoadJump(_, _) | Opcode::DupAddInt => return false,
+            Opcode::LoadJump(_, _) | Opcode::DupAddInt |
+            // Call especializados (Fase 2b) — solo existen en vm_fast post-quickening
+            Opcode::CallDirect(_, _) | Opcode::CallBuiltin(_, _) |
+            Opcode::CallMethodCached(_, _) => return false,
         }
     }
     true
