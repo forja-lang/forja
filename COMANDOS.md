@@ -110,7 +110,7 @@ Intérprete línea por línea. Las variables persisten entre líneas.
 
 ```bash
 forja repl
-# 🔨 Forja v0.1.0 — Escribí 'salir' para terminar
+# 🔨 Forja v0.2.0 — Escribí 'salir' para terminar
 # > variable x = 5
 # > x = x + 10
 # > escribir(x)
