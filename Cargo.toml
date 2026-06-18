@@ -54,5 +54,13 @@ path = "benchmarks/bench_vs_python.rs"
 name = "bench-rust-native"
 path = "benchmarks/bench_rust_native.rs"
 
+[[bin]]
+name = "bench-forjafast"
+path = "benchmarks/bench_forjafast.rs"
+
+[[bin]]
+name = "debug-bytecode"
+path = "benchmarks/debug_bytecode.rs"
+
 [profile.release]
 opt-level = 2

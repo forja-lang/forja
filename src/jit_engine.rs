@@ -38,7 +38,13 @@ pub fn es_jiteable(opcodes: &[Opcode]) -> bool {
             Opcode::CallMethod(_, _) |
             Opcode::ArrayNew(_) | Opcode::ArrayGet | Opcode::ArraySet | Opcode::ArrayLen |
             Opcode::MapNew(_) | Opcode::MapGet | Opcode::MapSet |
-            Opcode::ReadLine => return false,
+            Opcode::ReadLine |
+            // Superinstructions (Fase 1a) — no JITeables en NativeJIT
+            Opcode::LoadAddInt(_, _) | Opcode::LoadIdx2(_, _) |
+            Opcode::LoadStoreIdx(_, _) | Opcode::AddStoreIdx(_) |
+            Opcode::SubStoreIdx(_) | Opcode::MulStoreIdx(_) |
+            Opcode::PushAddInt(_) | Opcode::LoadJumpSiFalso(_, _) |
+            Opcode::LoadJump(_, _) | Opcode::DupAddInt => return false,
         }
     }
     true

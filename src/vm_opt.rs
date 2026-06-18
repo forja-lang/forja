@@ -69,7 +69,7 @@ pub struct ObjetoRefOpt(pub Rc<RefCell<ObjetoVMOpt>>);
 impl PartialEq for ObjetoRefOpt { fn eq(&self, other: &Self) -> bool { Rc::ptr_eq(&self.0, &other.0) } }
 
 #[derive(Clone)]
-struct FuncInfo { ip: usize, param_names: Vec<String> }
+struct FuncInfo { ip: usize, param_names: Vec<Rc<str>> }
 
 pub struct ForjaVMOpt {
     ip: usize,
@@ -152,7 +152,7 @@ impl ForjaVMOpt {
             match op {
                 Opcode::Label(label) => { label_positions.insert(*label, i); }
                 Opcode::FunctionDef(nombre, params) => {
-                    self.funciones.insert(nombre.clone(), FuncInfo { ip: i + 1, param_names: params.clone() });
+                    self.funciones.insert(nombre.to_string(), FuncInfo { ip: i + 1, param_names: params.clone() });
                 }
                 _ => {}
             }
@@ -226,7 +226,7 @@ impl ForjaVMOpt {
             match op {
                 Opcode::PushEntero(n) => { self.stack.push(get_small_int_opt(n)); self.ip += 1; }
                 Opcode::PushDecimal(d) => { self.stack.push(ValorVMOpt::Decimal(d)); self.ip += 1; }
-                Opcode::PushTexto(s) => { self.stack.push(ValorVMOpt::Texto(Rc::from(s.as_str()))); self.ip += 1; }
+                Opcode::PushTexto(s) => { self.stack.push(ValorVMOpt::Texto(s)); self.ip += 1; }
                 Opcode::PushBooleano(b) => { self.stack.push(ValorVMOpt::Booleano(b)); self.ip += 1; }
                 Opcode::PushNulo => { self.stack.push(ValorVMOpt::Nulo); self.ip += 1; }
                 Opcode::Pop => { self.pop()?; self.ip += 1; }
@@ -238,19 +238,19 @@ impl ForjaVMOpt {
 
                 // Load/Store/Declare por nombre (compatibilidad)
                 Opcode::Load(nombre) => {
-                    let v = self.buscar_variable(&nombre)?.clone();
+                    let v = self.buscar_variable(nombre.as_ref())?.clone();
                     self.stack.push(v);
                     self.ip += 1;
                 }
                 Opcode::Store(nombre) => {
                     let v = self.pop()?;
-                    self.asignar_variable(&nombre, v)?;
+                    self.asignar_variable(nombre.as_ref(), v)?;
                     self.ip += 1;
                 }
                 Opcode::Declare(nombre, _) => {
                     let v = self.pop()?;
                     let idx = self.vars.len();
-                    self.nombre_a_indice.insert(nombre, idx);
+                    self.nombre_a_indice.insert(nombre.to_string(), idx);
                     self.vars.push(v);
                     self.ip += 1;
                 }
@@ -631,7 +631,7 @@ impl ForjaVMOpt {
                 // Call optimizado: push/pop de Vec<ValorVMOpt>, sin HashMap allocation
                 Opcode::Call(nombre, nargs) => {
                     let call_ip = self.ip;
-                    if let Some(func) = self.funciones.get(&nombre).cloned() {
+                    if let Some(func) = self.funciones.get(nombre.as_ref()).cloned() {
                         // Guardar vars y nombre_a_indice actuales
                         let prev_vars = std::mem::take(&mut self.vars);
                         let prev_nombre_a_indice = std::mem::take(&mut self.nombre_a_indice);
@@ -648,7 +648,7 @@ impl ForjaVMOpt {
                             let val = if i < args.len() {
                                 std::mem::replace(&mut args[i], ValorVMOpt::Nulo)
                             } else { ValorVMOpt::Nulo };
-                            self.nombre_a_indice.insert(name.clone(), i);
+                            self.nombre_a_indice.insert(name.to_string(), i);
                             if i < new_vars.len() {
                                 new_vars[i] = val;
                             } else {
@@ -663,7 +663,7 @@ impl ForjaVMOpt {
                         });
                         self.vars = new_vars;
                         self.ip = func.ip;
-                    } else { return Err(ErrorVMOpt::FuncionNoDefinida(nombre)); }
+                    } else { return Err(ErrorVMOpt::FuncionNoDefinida(nombre.to_string())); }
                 }
                 Opcode::Return => {
                     if let Some(frame) = self.call_stack.pop() {
@@ -689,12 +689,12 @@ impl ForjaVMOpt {
                     self.ip += 1;
                 }
 
-                Opcode::NewObject(clase) => { self.stack.push(ValorVMOpt::Objeto(ObjetoRefOpt(Rc::new(RefCell::new(ObjetoVMOpt { clase, campos: HashMap::new() }))))); self.ip += 1; }
-                Opcode::SetField(campo) => { if let ValorVMOpt::Objeto(obj) = self.pop()? { let v = self.pop()?; obj.0.borrow_mut().campos.insert(campo, v); } else { return Err(ErrorVMOpt::TipoIncompatible("SetField".into())); } self.ip += 1; }
-                Opcode::GetField(campo) => { if let ValorVMOpt::Objeto(obj) = self.pop()? { let o = obj.0.borrow(); self.stack.push(o.campos.get(&campo).cloned().unwrap_or(ValorVMOpt::Nulo)); } else { return Err(ErrorVMOpt::TipoIncompatible("GetField".into())); } self.ip += 1; }
+                Opcode::NewObject(clase) => { self.stack.push(ValorVMOpt::Objeto(ObjetoRefOpt(Rc::new(RefCell::new(ObjetoVMOpt { clase: clase.to_string(), campos: HashMap::new() }))))); self.ip += 1; }
+                Opcode::SetField(campo) => { if let ValorVMOpt::Objeto(obj) = self.pop()? { let v = self.pop()?; obj.0.borrow_mut().campos.insert(campo.to_string(), v); } else { return Err(ErrorVMOpt::TipoIncompatible("SetField".into())); } self.ip += 1; }
+                Opcode::GetField(campo) => { if let ValorVMOpt::Objeto(obj) = self.pop()? { let o = obj.0.borrow(); self.stack.push(o.campos.get(campo.as_ref()).cloned().unwrap_or(ValorVMOpt::Nulo)); } else { return Err(ErrorVMOpt::TipoIncompatible("GetField".into())); } self.ip += 1; }
                 Opcode::CallMethod(metodo, nargs) => {
                     let call_ip = self.ip;
-                    if let Some(builtin) = resolver_builtin_opt(&metodo) { self.ejecutar_builtin_opt(builtin, nargs)?; self.ip += 1; continue; }
+                    if let Some(builtin) = resolver_builtin_opt(metodo.as_ref()) { self.ejecutar_builtin_opt(builtin, nargs)?; self.ip += 1; continue; }
                     let mut args: Vec<ValorVMOpt> = Vec::with_capacity(nargs);
                     for _ in 0..nargs { args.push(self.pop()?); } args.reverse();
                     if let ValorVMOpt::Objeto(obj_ref) = self.pop()? {
@@ -707,7 +707,7 @@ impl ForjaVMOpt {
                             let mut new_vars = Vec::with_capacity(func.param_names.len().max(all.len()));
                             for (i, name) in func.param_names.iter().enumerate() {
                                 let val = if i < all.len() { std::mem::replace(&mut all[i], ValorVMOpt::Nulo) } else { ValorVMOpt::Nulo };
-                                self.nombre_a_indice.insert(name.clone(), i);
+                                self.nombre_a_indice.insert(name.to_string(), i);
                                 if i < new_vars.len() { new_vars[i] = val; } else { new_vars.push(val); }
                             }
                             self.call_stack.push(FrameOpt {
@@ -729,6 +729,8 @@ impl ForjaVMOpt {
                 Opcode::MapGet => { let k=self.pop()?;let m=self.pop()?;match(&m,&k){(ValorVMOpt::Mapa(m),ValorVMOpt::Texto(k))=>self.stack.push(m.get(k.as_ref()).cloned().unwrap_or(ValorVMOpt::Nulo)),_=>return Err(ErrorVMOpt::TipoIncompatible("MapGet".into()))} self.ip += 1; }
                 Opcode::MapSet => { let v=self.pop()?;let k=self.pop()?;let mut m=self.pop()?;if let(ValorVMOpt::Mapa(ref mut mm),ValorVMOpt::Texto(k))=(&mut m,k){mm.insert(k.to_string(),v);self.stack.push(m)}else{return Err(ErrorVMOpt::TipoIncompatible("MapSet".into()))} self.ip += 1; }
                 Opcode::Halt => break,
+                // Superinstructions (Fase 1a) — no implementadas en VM Opt
+                _ => return Err(ErrorVMOpt::TipoIncompatible(format!("Opcode no soportado en VM Opt: {:?}", op))),
             }
         }
         Ok(())
