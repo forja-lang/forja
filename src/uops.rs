@@ -209,6 +209,14 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::Load(_) => Uop::LoadIdx(0),      // fallback
         Opcode::Store(_) => Uop::StoreIdx(0),     // fallback
         Opcode::Declare(_, _) => Uop::DeclareVar(0), // fallback
+
+        // Call especializados (Fase 2b) — solo existen en vm_fast.rs post-quickening,
+        // nunca en bytecode original. Se mapean a su equivalente Call/CallMethod genérico.
+        Opcode::CallDirect(idx, nargs) => Uop::Call(format!("%direct_{}", idx), *nargs),
+        Opcode::CallBuiltin(kind, nargs) => Uop::Call(format!("%builtin_{:?}", kind), *nargs),
+        Opcode::CallMethodCached(method_sym_id, nargs) => {
+            Uop::CallMethod(format!("%cached_{}", method_sym_id), *nargs)
+        }
     }
 }
 
