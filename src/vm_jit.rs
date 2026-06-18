@@ -144,14 +144,14 @@ pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
         match op {
             crate::bytecode::Opcode::PushEntero(n) => { bc.code.push(OP_PUSH_ENTERO); bc.int_ops.push(*n); }
             crate::bytecode::Opcode::PushDecimal(d) => { bc.code.push(OP_PUSH_DECIMAL); bc.float_ops.push(*d); }
-            crate::bytecode::Opcode::PushTexto(s) => { bc.code.push(OP_PUSH_TEXTO); bc.str_ops.push(s.clone()); }
+            crate::bytecode::Opcode::PushTexto(s) => { bc.code.push(OP_PUSH_TEXTO); bc.str_ops.push(s.to_string()); }
             crate::bytecode::Opcode::PushBooleano(b) => { bc.code.push(OP_PUSH_BOOL); bc.int_ops.push(if *b { 1 } else { 0 }); }
             crate::bytecode::Opcode::PushNulo => { bc.code.push(OP_PUSH_NULO); }
             crate::bytecode::Opcode::Pop => { bc.code.push(OP_POP); }
             crate::bytecode::Opcode::Dup => { bc.code.push(OP_DUP); }
-            crate::bytecode::Opcode::Load(n) => { bc.code.push(OP_LOAD); bc.str_ops.push(n.clone()); }
-            crate::bytecode::Opcode::Store(n) => { bc.code.push(OP_STORE); bc.str_ops.push(n.clone()); }
-            crate::bytecode::Opcode::Declare(n, _) => { bc.code.push(OP_DECLARE); bc.str_ops.push(n.clone()); }
+            crate::bytecode::Opcode::Load(n) => { bc.code.push(OP_LOAD); bc.str_ops.push(n.to_string()); }
+            crate::bytecode::Opcode::Store(n) => { bc.code.push(OP_STORE); bc.str_ops.push(n.to_string()); }
+            crate::bytecode::Opcode::Declare(n, _) => { bc.code.push(OP_DECLARE); bc.str_ops.push(n.to_string()); }
             // LoadIdx/StoreIdx/DeclareIdx: acceso por índice — convertir a nombre-based con un nombre dummy
             // porque el DT VM usa str_ops para nombres. Estos opcodes vienen de optimizar_indices()
             // y no deberían aparecer en el flujo normal del DT VM.
@@ -206,26 +206,28 @@ pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
             crate::bytecode::Opcode::FunctionDef(n, p) => {
                 let pos = bc.code.len();
                 bc.code.push(OP_FN_DEF);
-                bc.fn_positions.insert(n.clone(), (pos + 1, p.clone())); // +1 porque fn empieza DESPUÉS
-                bc.str_ops.push(n.clone());
-                bc.str_list_ops.push(p.clone());
+                let n_str = n.to_string();
+                let p_str: Vec<String> = p.iter().map(|s| s.to_string()).collect();
+                bc.fn_positions.insert(n_str.clone(), (pos + 1, p_str.clone())); // +1 porque fn empieza DESPUÉS
+                bc.str_ops.push(n_str.clone());
+                bc.str_list_ops.push(p_str.clone());
                 // fn_str_start apunta al PRIMER str_ops del cuerpo (después del nombre de la función)
-                bc.fn_str_start.insert(n.clone(), bc.str_ops.len());
-                bc.fn_strl_start.insert(n.clone(), bc.str_list_ops.len());
+                bc.fn_str_start.insert(n_str.clone(), bc.str_ops.len());
+                bc.fn_strl_start.insert(n_str.clone(), bc.str_list_ops.len());
             }
             crate::bytecode::Opcode::Call(n, a) => {
                 let call_ip = bc.code.len();
                 bc.code.push(OP_CALL);
-                bc.call_names.insert(call_ip, n.clone());
+                bc.call_names.insert(call_ip, n.to_string());
                 bc.int_ops.push(*a as i64);
             }
             crate::bytecode::Opcode::Return => { bc.code.push(OP_RETURN); }
             crate::bytecode::Opcode::Print => { bc.code.push(OP_PRINT); }
             crate::bytecode::Opcode::ReadLine => { bc.code.push(OP_READ); }
-            crate::bytecode::Opcode::NewObject(c) => { bc.code.push(OP_NEW_OBJ); bc.str_ops.push(c.clone()); }
-            crate::bytecode::Opcode::SetField(c) => { bc.code.push(OP_SET_FIELD); bc.str_ops.push(c.clone()); }
-            crate::bytecode::Opcode::GetField(c) => { bc.code.push(OP_GET_FIELD); bc.str_ops.push(c.clone()); }
-            crate::bytecode::Opcode::CallMethod(m, a) => { bc.code.push(OP_CALL_METHOD); bc.str_ops.push(m.clone()); bc.int_ops.push(*a as i64); }
+            crate::bytecode::Opcode::NewObject(c) => { bc.code.push(OP_NEW_OBJ); bc.str_ops.push(c.to_string()); }
+            crate::bytecode::Opcode::SetField(c) => { bc.code.push(OP_SET_FIELD); bc.str_ops.push(c.to_string()); }
+            crate::bytecode::Opcode::GetField(c) => { bc.code.push(OP_GET_FIELD); bc.str_ops.push(c.to_string()); }
+            crate::bytecode::Opcode::CallMethod(m, a) => { bc.code.push(OP_CALL_METHOD); bc.str_ops.push(m.to_string()); bc.int_ops.push(*a as i64); }
             crate::bytecode::Opcode::ArrayNew(n) => { bc.code.push(OP_ARRAY_NEW); bc.int_ops.push(*n as i64); }
             crate::bytecode::Opcode::ArrayGet => { bc.code.push(OP_ARRAY_GET); }
             crate::bytecode::Opcode::ArraySet => { bc.code.push(OP_ARRAY_SET); }
@@ -234,6 +236,8 @@ pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
             crate::bytecode::Opcode::MapGet => { bc.code.push(OP_MAP_GET); }
             crate::bytecode::Opcode::MapSet => { bc.code.push(OP_MAP_SET); }
             crate::bytecode::Opcode::Halt => { bc.code.push(OP_HALT); }
+            // Superinstructions (Fase 1a) — no implementadas en JIT clásico
+            _ => {}
         }
     }
 

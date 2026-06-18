@@ -84,7 +84,7 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         // Stack
         Opcode::PushEntero(n) => Uop::PushEntero(*n),
         Opcode::PushDecimal(d) => Uop::PushDecimal(*d),
-        Opcode::PushTexto(s) => Uop::PushTexto(Rc::from(s.as_str())),
+        Opcode::PushTexto(s) => Uop::PushTexto(Rc::clone(s)),
         Opcode::PushBooleano(b) => Uop::PushBooleano(*b),
         Opcode::PushNulo => Uop::PushNulo,
         Opcode::Pop => Uop::Pop,
@@ -129,15 +129,15 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::Halt => Uop::Halt,
 
         // Funciones
-        Opcode::Call(n, a) => Uop::Call(n.clone(), *a),
+        Opcode::Call(n, a) => Uop::Call(n.to_string(), *a),
         Opcode::Return => Uop::Return,
-        Opcode::FunctionDef(n, p) => Uop::FunctionDef(n.clone(), p.clone()),
+        Opcode::FunctionDef(n, p) => Uop::FunctionDef(n.to_string(), p.iter().map(|s| s.to_string()).collect()),
 
         // Objetos
-        Opcode::NewObject(c) => Uop::NewObject(c.clone()),
-        Opcode::SetField(c) => Uop::SetField(c.clone()),
-        Opcode::GetField(c) => Uop::GetField(c.clone()),
-        Opcode::CallMethod(m, n) => Uop::CallMethod(m.clone(), *n),
+        Opcode::NewObject(c) => Uop::NewObject(c.to_string()),
+        Opcode::SetField(c) => Uop::SetField(c.to_string()),
+        Opcode::GetField(c) => Uop::GetField(c.to_string()),
+        Opcode::CallMethod(m, n) => Uop::CallMethod(m.to_string(), *n),
 
         // Arrays & Maps
         Opcode::ArrayNew(n) => Uop::ArrayNew(*n),
@@ -172,6 +172,39 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::StoreIdxEntero(idx) => Uop::StoreIdx(*idx),
         Opcode::StoreIdxFloat(idx) => Uop::StoreIdx(*idx),
 
+        // Superinstructions (Fase 1a) — se expanden a su forma atómica base
+        Opcode::LoadIdx2(a, b) => {
+            // Se expandirá en expandir_a_uops, fallback: LoadIdx
+            Uop::LoadIdx(*a)
+        }
+        Opcode::LoadStoreIdx(src, _dst) => {
+            Uop::LoadIdx(*src)
+        }
+        Opcode::LoadAddInt(idx, _n) => {
+            Uop::LoadIdx(*idx)
+        }
+        Opcode::AddStoreIdx(_idx) => {
+            Uop::AddInt
+        }
+        Opcode::SubStoreIdx(_idx) => {
+            Uop::SubInt
+        }
+        Opcode::MulStoreIdx(_idx) => {
+            Uop::MulInt
+        }
+        Opcode::PushAddInt(_n) => {
+            Uop::PushEntero(0) // marcador
+        }
+        Opcode::LoadJumpSiFalso(idx, _target) => {
+            Uop::LoadIdx(*idx)
+        }
+        Opcode::LoadJump(idx, _target) => {
+            Uop::LoadIdx(*idx)
+        }
+        Opcode::DupAddInt => {
+            Uop::Dup
+        }
+
         // Opcodes por nombre (ya reemplazados por índices)
         Opcode::Load(_) => Uop::LoadIdx(0),      // fallback
         Opcode::Store(_) => Uop::StoreIdx(0),     // fallback
@@ -201,6 +234,61 @@ pub fn expandir_a_uops(bytecode: &[Opcode]) -> Vec<Uop> {
                 uops.push(Uop::PushBooleano(*b));
                 uops.push(Uop::StorePop(*idx));
             }
+
+            // === SUPERINSTRUCTIONS (Fase 1a) — expansión a uops ===
+
+            // LoadIdx2(a,b) → LoadIdx(a), LoadIdx(b)
+            Opcode::LoadIdx2(a, b) => {
+                uops.push(Uop::LoadIdx(*a));
+                uops.push(Uop::LoadIdx(*b));
+            }
+            // LoadStoreIdx(src, dst) → LoadIdx(src), StoreIdx(dst)
+            Opcode::LoadStoreIdx(src, dst) => {
+                uops.push(Uop::LoadIdx(*src));
+                uops.push(Uop::StoreIdx(*dst));
+            }
+            // LoadAddInt(idx, n) → LoadIdx(idx), PushEntero(n), AddInt
+            Opcode::LoadAddInt(idx, n) => {
+                uops.push(Uop::LoadIdx(*idx));
+                uops.push(Uop::PushEntero(*n));
+                uops.push(Uop::AddInt);
+            }
+            // AddStoreIdx(idx) → AddInt, StoreIdx(idx)
+            Opcode::AddStoreIdx(idx) => {
+                uops.push(Uop::AddInt);
+                uops.push(Uop::StoreIdx(*idx));
+            }
+            // SubStoreIdx(idx) → SubInt, StoreIdx(idx)
+            Opcode::SubStoreIdx(idx) => {
+                uops.push(Uop::SubInt);
+                uops.push(Uop::StoreIdx(*idx));
+            }
+            // MulStoreIdx(idx) → MulInt, StoreIdx(idx)
+            Opcode::MulStoreIdx(idx) => {
+                uops.push(Uop::MulInt);
+                uops.push(Uop::StoreIdx(*idx));
+            }
+            // PushAddInt(n) → PushEntero(n), AddInt
+            Opcode::PushAddInt(n) => {
+                uops.push(Uop::PushEntero(*n));
+                uops.push(Uop::AddInt);
+            }
+            // LoadJumpSiFalso(idx, target) → LoadIdx(idx), JumpSiFalso(target)
+            Opcode::LoadJumpSiFalso(idx, target) => {
+                uops.push(Uop::LoadIdx(*idx));
+                uops.push(Uop::JumpSiFalso(*target));
+            }
+            // LoadJump(idx, target) → LoadIdx(idx), Jump(target)
+            Opcode::LoadJump(idx, target) => {
+                uops.push(Uop::LoadIdx(*idx));
+                uops.push(Uop::Jump(*target));
+            }
+            // DupAddInt → Dup, AddInt
+            Opcode::DupAddInt => {
+                uops.push(Uop::Dup);
+                uops.push(Uop::AddInt);
+            }
+
             // Opcodes que ya son atómicos: pasar directo
             _ => uops.push(opcode_to_uop(op)),
         }
@@ -303,6 +391,17 @@ fn construir_mapeo_posiciones(bytecode: &[Opcode]) -> Vec<usize> {
             Opcode::DeclareEnteroOp(_, _) => 3,
             Opcode::StoreEnteroOp(_, _) => 2,
             Opcode::DeclareBooleanoOp(_, _) => 3,
+            // Superinstructions (Fase 1a)
+            Opcode::LoadIdx2(_, _)
+                | Opcode::LoadStoreIdx(_, _)
+                | Opcode::AddStoreIdx(_)
+                | Opcode::SubStoreIdx(_)
+                | Opcode::MulStoreIdx(_)
+                | Opcode::PushAddInt(_)
+                | Opcode::LoadJumpSiFalso(_, _)
+                | Opcode::LoadJump(_, _)
+                | Opcode::DupAddInt => 2,
+            Opcode::LoadAddInt(_, _) => 3,
             _ => 1,
         };
         uop_idx += expansion_len;
@@ -336,6 +435,17 @@ pub fn tiene_opcodes_compuestos(bytecode: &[Opcode]) -> bool {
             Opcode::DeclareEnteroOp(_, _)
                 | Opcode::StoreEnteroOp(_, _)
                 | Opcode::DeclareBooleanoOp(_, _)
+                // Superinstructions (Fase 1a) — también se expanden
+                | Opcode::LoadIdx2(_, _)
+                | Opcode::LoadStoreIdx(_, _)
+                | Opcode::LoadAddInt(_, _)
+                | Opcode::AddStoreIdx(_)
+                | Opcode::SubStoreIdx(_)
+                | Opcode::MulStoreIdx(_)
+                | Opcode::PushAddInt(_)
+                | Opcode::LoadJumpSiFalso(_, _)
+                | Opcode::LoadJump(_, _)
+                | Opcode::DupAddInt
         )
     })
 }
