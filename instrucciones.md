@@ -6,17 +6,17 @@
 
 ## Índice de Palabras Clave
 
-| # | Palabra | Tipo | Propósito |
-|---|---------|:----:|-----------|
-| 1 | [`variable`](#1-variable) | Declaración | Variable mutable |
-| 2 | [`constante`](#2-constante) | Declaración | Variable inmutable |
+| # | Palabra | Alias | Tipo | Propósito |
+|---|---------|:----:|:----:|-----------|
+| 1 | [`variable`](#1-variable) | `var` | Declaración | Variable mutable |
+| 2 | [`constante`](#2-constante) | `const` | Declaración | Variable inmutable |
 | 3 | [`escribir`](#3-escribir) | Builtin | Mostrar en pantalla |
 | 4 | [`leer`](#4-leer) | Builtin | Leer entrada del usuario |
 | 5 | [`si` / `sino`](#5-si--sino) | Control | Condicionales |
 | 6 | [`mientras`](#6-mientras) | Control | Bucle while |
 | 7 | [`para`](#7-para) | Control | Bucle for |
 | 8 | [`repetir`](#8-repetir) | Control | Bucle de repetición fija |
-| 9 | [`funcion`](#9-funcion) | Declaración | Definir función |
+| 9 | [`funcion`](#9-funcion) | `fun` | Declaración | Definir función |
 | 10 | [`retornar`](#10-retornar) | Control | Devolver valor |
 | 11 | [`clase`](#11-clase) | Declaración | Definir clase |
 | 12 | [`constructor`](#12-constructor) | Declaración | Inicializador de clase |
@@ -33,9 +33,11 @@
 
 ---
 
-## 1. `variable`
+## 1. `variable` / `var`
 
 Declara una variable **mutable** (se puede reasignar). Es como `let mut` en Rust.
+
+> **Alias**: podés usar `var` en lugar de `variable`.
 
 ```
 variable nombre = "Ana"
@@ -54,9 +56,11 @@ mientras (contador < 5) {
 
 ---
 
-## 2. `constante`
+## 2. `constante` / `const`
 
 Declara una variable **inmutable** (no se puede reasignar). Es como `let` en Rust.
+
+> **Alias**: podés usar `const` en lugar de `constante`.
 
 ```
 constante pais = "Argentina"
@@ -203,9 +207,11 @@ escribir(suma)  // 10
 
 ---
 
-## 9. `funcion`
+## 9. `funcion` / `fun`
 
 Define una función reutilizable. Puede recibir parámetros y devolver un valor con `retornar`.
+
+> **Alias**: también podés escribir `fun` en lugar de `funcion`.
 
 ```
 funcion saludar(nombre) {
