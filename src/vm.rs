@@ -1634,7 +1634,6 @@ impl ForjaVM {
                             args.push(self.stack.pop().ok_or(ErrorVM::StackUnderflow("Call".to_string()))?);
                         }
                         args.reverse();
-                        let ambito_actual = self.ambito_actual();
                         let nuevo_ambito = self.variables.len();
                         self.variables.push(Vec::new());
                         self.nombre_a_indice.push(HashMap::new());
@@ -1648,10 +1647,11 @@ impl ForjaVM {
                             }
                         }
 
+                        // CORRECCIÓN: usar nuevo_ambito (callee) en lugar de ambito_actual (caller)
                         self.call_stack.push(Frame {
                             ip_retorno: self.ip + 1,
                             nombre: nombre,
-                            ambito: ambito_actual,
+                            ambito: nuevo_ambito,
                         });
                         self.ip = func_ip;
                     } else {
