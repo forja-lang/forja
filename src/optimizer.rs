@@ -183,8 +183,22 @@ impl DeadCodeEliminator {
     fn recolectar_usos(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
             match decl {
+                Declaracion::Variable { valor, .. } => {
+                    if let Some(val) = valor {
+                        self.recolectar_en_expresion(val);
+                    }
+                }
                 Declaracion::Asignacion { nombre, valor } => {
                     self.variables_usadas.insert(nombre.clone());
+                    self.recolectar_en_expresion(valor);
+                }
+                Declaracion::AsignacionMiembro { objeto, valor, .. } => {
+                    self.recolectar_en_expresion(objeto);
+                    self.recolectar_en_expresion(valor);
+                }
+                Declaracion::AsignacionIndex { nombre, indice, valor } => {
+                    self.variables_usadas.insert(nombre.clone());
+                    self.recolectar_en_expresion(indice);
                     self.recolectar_en_expresion(valor);
                 }
                 Declaracion::LlamadaFuncion { nombre, argumentos } => {
@@ -192,6 +206,14 @@ impl DeadCodeEliminator {
                     for arg in argumentos { self.recolectar_en_expresion(arg); }
                 }
                 Declaracion::Expresion(expr) => self.recolectar_en_expresion(expr),
+                Declaracion::AccesoMiembro { objeto, .. } => {
+                    self.recolectar_en_expresion(objeto);
+                }
+                Declaracion::Retornar { valor } => {
+                    if let Some(val) = valor {
+                        self.recolectar_en_expresion(val);
+                    }
+                }
                 Declaracion::Enum { .. } | Declaracion::Importar(_) => {}
                 Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
                     self.recolectar_en_expresion(condicion);
@@ -202,8 +224,28 @@ impl DeadCodeEliminator {
                     self.recolectar_en_expresion(condicion);
                     self.recolectar_usos(bloque);
                 }
+                Declaracion::Repetir { cantidad, bloque } => {
+                    self.recolectar_en_expresion(cantidad);
+                    self.recolectar_usos(bloque);
+                }
+                Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
+                    if let Some(init) = inicializacion {
+                        self.recolectar_usos(&[init.as_ref().clone()]);
+                    }
+                    if let Some(cond) = condicion {
+                        self.recolectar_en_expresion(cond);
+                    }
+                    if let Some(inc) = incremento {
+                        self.recolectar_usos(&[inc.as_ref().clone()]);
+                    }
+                    self.recolectar_usos(bloque);
+                }
                 Declaracion::Funcion { nombre: _, cuerpo, .. } => self.recolectar_usos(cuerpo),
-                _ => {}
+                Declaracion::Clase { metodos, .. } => {
+                    for m in metodos {
+                        self.recolectar_usos(&m.cuerpo);
+                    }
+                }
             }
         }
     }
