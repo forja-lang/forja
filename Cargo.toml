@@ -3,62 +3,62 @@ name = "forja"
 version = "0.2.0"
 edition = "2021"
 description = "Forja (fa)"
-authors = ["Forja Team"]
+authors = ["lococoi"]
 
 [dependencies]
 rustyline = "14"
 # Sin dependencias externas - solo std de Rust
 # El JSON se genera manualmente en error.rs
 
-[[bin]]
+[[bench]]
 name = "bench-fa"
 path = "benchmarks/bench_fa.rs"
 
-[[bin]]
+[[bench]]
 name = "bench-vm"
 path = "benchmarks/bench_vm.rs"
 
-[[bin]]
+[[bench]]
 name = "bench-compare"
 path = "benchmarks/bench_forja_vs_python.rs"
 
-[[bin]]
+[[bench]]
 name = "bench-vms"
 path = "benchmarks/bench_vms.rs"
 
-[[bin]]
+[[bench]]
 name = "bench-clean"
 path = "benchmarks/bench_clean.rs"
 
-[[bin]]
+[[bench]]
 name = "bench-completo"
 path = "benchmarks/bench_completo.rs"
 
-[[bin]]
+[[bench]]
 name = "bench-jit"
 path = "benchmarks/bench_jit.rs"
 
-[[bin]]
+[[bench]]
 name = "bench-jit-100k"
 path = "benchmarks/bench_jit_100k.rs"
 
-[[bin]]
+[[bench]]
 name = "bench-cpython-opt"
 path = "benchmarks/bench_cpython_opt.rs"
 
-[[bin]]
+[[bench]]
 name = "bench-vs-python"
 path = "benchmarks/bench_vs_python.rs"
 
-[[bin]]
+[[bench]]
 name = "bench-rust-native"
 path = "benchmarks/bench_rust_native.rs"
 
-[[bin]]
+[[bench]]
 name = "bench-forjafast"
 path = "benchmarks/bench_forjafast.rs"
 
-[[bin]]
+[[bench]]
 name = "debug-bytecode"
 path = "benchmarks/debug_bytecode.rs"
 
