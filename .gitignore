@@ -4,3 +4,4 @@ scripts/
 target/
 test_inline_rs/
 tests/
+.vscode/
