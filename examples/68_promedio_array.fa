@@ -1,0 +1,8 @@
+// 🎓 Lección 68: Elementos de array
+
+variable arr = [10, 20, 30, 40, 50]
+escribir(arr[0])
+escribir(arr[1])
+escribir(arr[2])
+escribir(arr[3])
+escribir(arr[4])

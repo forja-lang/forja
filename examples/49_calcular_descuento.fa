@@ -1,0 +1,16 @@
+// 🎓 Lección 49: Calculadora de descuentos
+// Calculamos precio final después de descuento
+
+funcion calcularDescuento(precio: Entero, porcentaje: Entero) {
+    variable descuento = precio * porcentaje / 100
+    variable precioFinal = precio - descuento
+    escribir("Precio original: $" + precio)
+    escribir("Descuento: " + porcentaje + "% (-$" + descuento + ")")
+    escribir("Precio final: $" + precioFinal)
+}
+
+calcularDescuento(1000, 25)
+escribir("---")
+calcularDescuento(500, 10)
+escribir("---")
+calcularDescuento(2000, 50)

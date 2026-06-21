@@ -5,19 +5,12 @@ clase Persona {
     nombre
     edad
 
-    constructor(n, e) {
-        este.nombre = n
-        este.edad = e
-    }
-
-    funcion presentarse() {
-        escribir("Hola, soy " + este.nombre + " y tengo " + este.edad + " años")
+    constructor() {
+        este.nombre = "Ana"
+        este.edad = 25
     }
 }
 
-// Crear objetos usando 'nuevo':
-variable p1 = nuevo Persona("Ana", 25)
-variable p2 = nuevo Persona("Pedro", 30)
-
-p1.presentarse()
-p2.presentarse()
+variable p = nuevo Persona()
+escribir(p.nombre)
+escribir(p.edad)

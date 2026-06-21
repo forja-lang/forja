@@ -1,0 +1,15 @@
+// 🎓 Lección 40: Sucesión de Fibonacci
+// Versión simplificada sin funciones
+
+variable a = 0
+variable b = 1
+variable terminos = 10
+
+escribir("Fibonacci (" + terminos + " términos):")
+
+para (variable i = 0; i < terminos; i = i + 1) {
+    escribir(a)
+    variable temp = a + b
+    a = b
+    b = temp
+}

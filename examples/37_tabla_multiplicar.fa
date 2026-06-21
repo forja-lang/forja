@@ -1,0 +1,13 @@
+// 🎓 Lección 37: Tabla de multiplicar
+// Generamos la tabla del 7
+
+variable n = 7
+escribir("Tabla del " + n + ":")
+escribir("================")
+
+variable i = 1
+mientras (i <= 10) {
+    variable r = n * i
+    escribir("" + n + " x " + i + " = " + r)
+    i = i + 1
+}

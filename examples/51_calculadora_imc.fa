@@ -1,0 +1,27 @@
+// 🎓 Lección 51: Calculadora de IMC
+// Índice de Masa Corporal: peso / (altura * altura)
+
+funcion calcularIMC(peso: Entero, altura: Entero) {
+    variable alturaM = altura / 100
+    variable imc = peso / (alturaM * alturaM)
+    escribir("Peso: " + peso + " kg, Altura: " + altura + " cm")
+    escribir("IMC: " + imc)
+    
+    si (imc < 18) {
+        escribir("Categoría: Bajo peso")
+    } sino {
+        si (imc < 25) {
+            escribir("Categoría: Normal")
+        } sino {
+            si (imc < 30) {
+                escribir("Categoría: Sobrepeso")
+            } sino {
+                escribir("Categoría: Obesidad")
+            }
+        }
+    }
+}
+
+calcularIMC(70, 175)
+escribir("")
+calcularIMC(90, 180)

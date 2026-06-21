@@ -1,0 +1,15 @@
+// 🎓 Lección 41: Comparación de textos
+// Comparamos textos para ver si son iguales
+
+funcion compararTextos(t1: Texto, t2: Texto) {
+    si (t1 == t2) {
+        escribir("'" + t1 + "' es igual a '" + t2 + "'")
+    } sino {
+        escribir("'" + t1 + "' es diferente de '" + t2 + "'")
+    }
+}
+
+compararTextos("Hola", "Hola")
+compararTextos("Hola", "hola")
+compararTextos("neuquen", "neuquen")
+compararTextos("radar", "radar")

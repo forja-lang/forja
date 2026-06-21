@@ -1,0 +1,21 @@
+// 🎓 Lección 66: Verificar elementos en array
+
+variable nums = [10, 25, 8, 42, 17]
+escribir(nums[0])
+escribir(nums[1])
+escribir(nums[2])
+escribir(nums[3])
+escribir(nums[4])
+
+// Verificar con variable explícita
+variable resultado = 10
+si (resultado == 42) {
+    escribir("nums[0] es 42")
+} sino {
+    escribir("nums[0] NO es 42")
+}
+
+resultado = 42
+si (resultado == 42) {
+    escribir("El número 42 se encontró")
+}

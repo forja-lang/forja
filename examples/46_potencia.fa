@@ -1,0 +1,24 @@
+// 🎓 Lección 46: Potencia (exponenciación)
+// Calculamos potencias con multiplicación repetida
+
+variable b = 2
+variable e = 3
+variable r = 1
+variable i = 0
+
+mientras (i < e) {
+    r = r * b
+    i = i + 1
+}
+escribir("" + b + " ^ " + e + " = " + r)
+
+// 5^4 = 625
+b = 5
+e = 4
+r = 1
+i = 0
+mientras (i < e) {
+    r = r * b
+    i = i + 1
+}
+escribir("" + b + " ^ " + e + " = " + r)

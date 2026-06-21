@@ -1,0 +1,28 @@
+// 🎓 Lección 53: Contador con while
+// Diferentes formas de contar
+
+// Contar de 1 a 5
+variable i = 1
+mientras (i <= 5) {
+    escribir("Número: " + i)
+    i = i + 1
+}
+
+escribir("")
+
+// Contar pares hasta 10
+variable par = 0
+mientras (par <= 10) {
+    escribir("Par: " + par)
+    par = par + 2
+}
+
+escribir("")
+
+// Contar hacia atrás
+variable regresivo = 5
+mientras (regresivo > 0) {
+    escribir(regresivo)
+    regresivo = regresivo - 1
+}
+escribir("🚀 Despegue!")

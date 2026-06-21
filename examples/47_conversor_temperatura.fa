@@ -1,0 +1,14 @@
+// 🎓 Lección 47: Conversor de temperaturas
+// Celsius a Fahrenheit: (°C × 9/5) + 32
+
+variable celsius = 0
+variable fahr = (celsius * 9 / 5) + 32
+escribir("" + celsius + "°C = " + fahr + "°F")
+
+celsius = 100
+fahr = (celsius * 9 / 5) + 32
+escribir("" + celsius + "°C = " + fahr + "°F")
+
+celsius = 30
+fahr = (celsius * 9 / 5) + 32
+escribir("" + celsius + "°C = " + fahr + "°F")
