@@ -1,0 +1,25 @@
+// 🎓 Lección 21: Pares e impares
+// Determinamos si un número es par o impar sin usar %
+
+variable numeros = [10, 11, 12, 13, 14, 15]
+para (variable i = 0; i < 6; i = i + 1) {
+    variable num = numeros[i]
+    variable mitad = num / 2
+    variable resto = num - (mitad * 2)
+    si (resto == 0) {
+        escribir("Par: " + num)
+    } sino {
+        escribir("Impar: " + num)
+    }
+}
+
+// Divisibilidad por 3
+escribir("")
+escribir("Divisibles por 3:")
+para (variable i = 1; i <= 15; i = i + 1) {
+    variable tercio = i / 3
+    variable resto3 = i - (tercio * 3)
+    si (resto3 == 0) {
+        escribir("" + i)
+    }
+}

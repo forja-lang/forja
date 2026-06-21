@@ -1,0 +1,26 @@
+// 🎓 Lección 27: Strings - largo y comparación
+// Trabajamos con texto sin usar métodos
+
+variable texto = "Programar en Forja"
+variable largoTexto = 19  // longitud conocida
+escribir("Texto: " + texto)
+escribir("Largo (conocido): " + largoTexto)
+
+// Comparar textos
+variable a = "Hola"
+variable b = "HOLA"
+variable c = "Hola"
+
+escribir("¿a == b? " + (a == b))
+escribir("¿a == c? " + (a == c))
+
+// Concatenación
+variable saludo = "Hola"
+variable nombre = "Ana"
+variable mensaje = saludo + ", " + nombre + "!"
+escribir(mensaje)
+
+// Texto con números
+variable edad = 25
+escribir("Edad: " + edad)
+escribir("Texto + número: " + saludo + " " + edad)

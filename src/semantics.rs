@@ -602,8 +602,8 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
 pub struct TypeChecker {
     tabla: TablaSimbolos,
     errores: Vec<ErrorForja>,
-    /// Mapa de función -> (tipos_param, tipo_retorno)
-    funciones: std::collections::HashMap<String, (Vec<Tipo>, Option<Tipo>)>,
+    /// Mapa de función -> (tipos_param (None si no tiene tipo explícito), tipo_retorno)
+    funciones: std::collections::HashMap<String, (Vec<Option<Tipo>>, Option<Tipo>)>,
 }
 
 #[allow(dead_code)]
@@ -633,8 +633,10 @@ impl TypeChecker {
     fn recolectar_funciones(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
             if let Declaracion::Funcion { nombre, parametros, tipo_retorno, .. } = decl {
-                let tipos_param: Vec<Tipo> = parametros.iter()
-                    .filter_map(|p| p.tipo.clone())
+                // Guardamos los tipos explícitos de parámetros, pero contamos todos
+                // los parámetros (aunque no tengan tipo explícito)
+                let tipos_param: Vec<Option<Tipo>> = parametros.iter()
+                    .map(|p| p.tipo.clone())
                     .collect();
                 self.funciones.insert(nombre.clone(), (tipos_param, tipo_retorno.clone()));
             }

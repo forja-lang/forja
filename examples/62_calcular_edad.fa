@@ -1,0 +1,11 @@
+// 🎓 Lección 62: Calcular año de nacimiento
+
+funcion calcularAnioNacimiento(edad: Entero, anioActual: Entero) {
+    variable anioNac = anioActual - edad
+    escribir("Si tenés " + edad + " años en " + anioActual)
+    escribir("Naciste en el año " + anioNac)
+}
+
+calcularAnioNacimiento(25, 2026)
+calcularAnioNacimiento(30, 2026)
+calcularAnioNacimiento(10, 2026)

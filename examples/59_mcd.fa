@@ -1,0 +1,20 @@
+// 🎓 Lección 59: Máximo Común Divisor (MCD)
+// Algoritmo de Euclides
+
+funcion mcd(a: Entero, b: Entero) {
+    variable x = a
+    variable y = b
+    
+    mientras (y > 0) {
+        variable temp = y
+        variable resto = x - ((x / y) * y)
+        y = resto
+        x = temp
+    }
+    
+    escribir("MCD(" + a + ", " + b + ") = " + x)
+}
+
+mcd(12, 8)    // = 4
+mcd(54, 24)   // = 6
+mcd(100, 35)  // = 5

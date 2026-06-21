@@ -2365,6 +2365,11 @@ impl ForjaFast {
                         if ii >= 0 && (ii as usize) < arr.len() {
                             self.push_valor(arr[ii as usize]);
                         } else { return Err(ErrFast::IdxOut(format!("[{}]", ii))); }
+                    } else if a.es_mapa() && i.es_texto() {
+                        let map_idx = a.indice_mapa();
+                        let map = self.get_map(map_idx);
+                        let ks = self.get_str(i.indice_texto());
+                        self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
                     } else { return Err(ErrFast::TipoInv("[]".into())); }
                     self.ip+=1;
                 }
@@ -2380,6 +2385,12 @@ impl ForjaFast {
                             arr[ii as usize] = v;
                             self.push_valor(a);
                         } else { return Err(ErrFast::IdxOut("set".into())); }
+                    } else if a.es_mapa() && i.es_texto() {
+                        let map_idx = a.indice_mapa();
+                        let ks = self.get_str(i.indice_texto()).to_string();
+                        let map = self.get_map_mut(map_idx);
+                        map.insert(ks, v);
+                        self.push_valor(a);
                     } else { return Err(ErrFast::TipoInv("[]=".into())); }
                     self.ip+=1;
                 }
@@ -3216,6 +3227,11 @@ impl ForjaFast {
                         if ii >= 0 && (ii as usize) < arr.len() {
                             self.push_valor(arr[ii as usize]);
                         } else { return Err(ErrFast::IdxOut(format!("[{}]", ii))); }
+                    } else if a.es_mapa() && i.es_texto() {
+                        let map_idx = a.indice_mapa();
+                        let map = self.get_map(map_idx);
+                        let ks = self.get_str(i.indice_texto());
+                        self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
                     } else { return Err(ErrFast::TipoInv("[]".into())); }
                     self.ip += 1;
                 }
@@ -3231,6 +3247,12 @@ impl ForjaFast {
                             arr[ii as usize] = v;
                             self.push_valor(a);
                         } else { return Err(ErrFast::IdxOut("set".into())); }
+                    } else if a.es_mapa() && i.es_texto() {
+                        let map_idx = a.indice_mapa();
+                        let ks = self.get_str(i.indice_texto()).to_string();
+                        let map = self.get_map_mut(map_idx);
+                        map.insert(ks, v);
+                        self.push_valor(a);
                     } else { return Err(ErrFast::TipoInv("[]=".into())); }
                     self.ip += 1;
                 }
