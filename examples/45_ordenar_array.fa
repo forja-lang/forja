@@ -1,0 +1,14 @@
+// 🎓 Lección 45: Comparar números en array
+
+variable numeros = [64, 34, 25, 12, 22]
+escribir("Array original: " + numeros)
+escribir("Primer elemento: " + numeros[0])
+escribir("Último elemento: " + numeros[4])
+
+// Encontrar el mayor
+variable mayor = numeros[0]
+si (numeros[1] > mayor) { mayor = numeros[1] }
+si (numeros[2] > mayor) { mayor = numeros[2] }
+si (numeros[3] > mayor) { mayor = numeros[3] }
+si (numeros[4] > mayor) { mayor = numeros[4] }
+escribir("El mayor es: " + mayor)

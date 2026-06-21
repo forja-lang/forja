@@ -1,0 +1,31 @@
+// 🎓 Lección 50: Juego de adivinar (mejorado)
+// Sin usar leer(), simulamos con valores fijos
+
+funcion jugar(intento: Entero, secreto: Entero) {
+    si (intento == secreto) {
+        escribir("🎉 ¡Adivinaste! El número era " + secreto)
+    } sino {
+        si (intento < secreto) {
+            escribir("El número es mayor que " + intento)
+        } sino {
+            escribir("El número es menor que " + intento)
+        }
+    }
+}
+
+variable secreto = 42
+
+escribir("🔮 Juego: Adiviná el número!")
+escribir("(Simulado - probamos varios valores)")
+
+escribir("")
+escribir("Intento 1:")
+jugar(30, secreto)
+
+escribir("")
+escribir("Intento 2:")
+jugar(50, secreto)
+
+escribir("")
+escribir("Intento 3:")
+jugar(42, secreto)

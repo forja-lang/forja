@@ -1,0 +1,20 @@
+// 🎓 Lección 30: Múltiples parámetros en funciones
+// Las funciones pueden tener varios parámetros con tipos
+
+funcion mostrarDatos(nombre: Texto, edad: Entero, ciudad: Texto) {
+    escribir("Nombre: " + nombre)
+    escribir("Edad: " + edad)
+    escribir("Ciudad: " + ciudad)
+}
+
+funcion despedir(nombre: Texto) {
+    escribir("Chau " + nombre + "!")
+}
+
+// Llamar funciones
+mostrarDatos("Ana", 25, "Buenos Aires")
+escribir("---")
+mostrarDatos("Pedro", 30, "Córdoba")
+escribir("---")
+despedir("Ana")
+despedir("Pedro")

@@ -1,0 +1,15 @@
+// 🎓 Lección 31: Clases con constructor sin parámetros
+
+clase Producto {
+    nombre
+    precio
+
+    constructor() {
+        este.nombre = "Producto Genérico"
+        este.precio = 100
+    }
+}
+
+variable p = nuevo Producto()
+escribir(p.nombre)
+escribir(p.precio)

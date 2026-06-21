@@ -1,0 +1,19 @@
+// 🎓 Lección 33: Múltiples objetos con constructor
+
+clase Cancion {
+    titulo
+    artista
+
+    constructor() {
+        este.titulo = "Desconocido"
+        este.artista = "Anónimo"
+    }
+}
+
+variable c1 = nuevo Cancion()
+variable c2 = nuevo Cancion()
+variable c3 = nuevo Cancion()
+
+escribir(c1.titulo)
+escribir(c2.titulo)
+escribir(c3.titulo)

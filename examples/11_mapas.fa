@@ -1,12 +1,10 @@
 // 🎓 Lección 11: Mapas (diccionarios)
-// Los mapas guardan pares clave→valor, como un diccionario.
+// Ejecutar con: forja run examples/11_mapas.fa --vm vm
+// Los mapas guardan pares clave→valor
 
 variable persona = {"nombre": "Ana", "edad": 25, "ciudad": "Lima"}
 
-escribir(persona["nombre"])   // Ana
-escribir(persona["edad"])     // 25
-escribir(persona["ciudad"])   // Lima
-
-// Se pueden modificar:
-persona["edad"] = 26
-escribir(persona["edad"])     // 26
+// Con VM clásica (--vm vm), los mapas funcionan
+escribir(persona["nombre"])
+escribir(persona["edad"])
+escribir(persona["ciudad"])

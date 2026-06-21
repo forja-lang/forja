@@ -1,0 +1,11 @@
+// 🎓 Lección 25: Arrays - acceso por índice
+
+variable numeros = [1, 2, 3, 4, 5]
+escribir("Array: " + numeros)
+
+// Acceso por índice (solo lectura)
+escribir(numeros[0])
+escribir(numeros[1])
+escribir(numeros[2])
+escribir(numeros[3])
+escribir(numeros[4])

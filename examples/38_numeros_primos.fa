@@ -1,0 +1,25 @@
+// 🎓 Lección 38: Detectar números primos
+// Verificamos si varios números son primos
+
+variable nums = [2, 3, 4, 5, 6, 7, 8, 9, 10]
+para (variable idx = 0; idx < 9; idx = idx + 1) {
+    variable n = nums[idx]
+    variable i = 2
+    variable primo = verdadero
+    
+    mientras (i < n) {
+        variable resto = n - ((n / i) * i)
+        si (resto == 0) {
+            primo = falso
+        }
+        i = i + 1
+    }
+    
+    si (primo && n >= 2) {
+        escribir("Primo: " + n)
+    } sino {
+        si (n >= 2) {
+            escribir("No primo: " + n)
+        }
+    }
+}

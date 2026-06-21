@@ -1,0 +1,10 @@
+// 🎓 Lección 34: Mapas avanzados
+// Ejecutar con: forja run examples/34_mapas_avanzados.fa --vm vm
+
+variable usuario = {"nombre": "Ana", "edad": 25, "email": "ana@email.com"}
+escribir(usuario["nombre"])
+escribir(usuario["edad"])
+escribir(usuario["email"])
+
+variable config = {"idioma": "es", "volumen": 80}
+escribir(config["idioma"])

@@ -1,0 +1,33 @@
+// 🎓 Lección 54: Clasificador de edades
+
+funcion clasificarEdad(edad: Entero) {
+    escribir("Edad: " + edad)
+    
+    si (edad < 0) {
+        escribir("Edad inválida")
+    } sino {
+        si (edad < 12) {
+            escribir("Categoría: Niño")
+        } sino {
+            si (edad < 18) {
+                escribir("Categoría: Adolescente")
+            } sino {
+                si (edad < 30) {
+                    escribir("Categoría: Joven")
+                } sino {
+                    si (edad < 60) {
+                        escribir("Categoría: Adulto")
+                    } sino {
+                        escribir("Categoría: Adulto mayor")
+                    }
+                }
+            }
+        }
+    }
+}
+
+clasificarEdad(8)
+clasificarEdad(15)
+clasificarEdad(25)
+clasificarEdad(45)
+clasificarEdad(70)

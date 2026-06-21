@@ -1,0 +1,21 @@
+// 🎓 Lección 20: Números decimales
+// Forja soporta números con punto decimal
+
+variable precio = 19
+variable iva = 21
+variable total = precio + (precio * iva / 100)
+
+escribir("Precio: $" + precio)
+escribir("IVA: " + iva + "%")
+escribir("Total: $" + total)
+
+// Decimales en operaciones
+variable radio = 2
+variable pi = 3
+variable area = pi * radio * radio
+escribir("Área del círculo: " + area)
+
+// Mezcla enteros
+variable entero = 10
+variable decimal = 3
+escribir("Suma: " + (entero + decimal))

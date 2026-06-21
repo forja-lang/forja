@@ -1,0 +1,15 @@
+// 🎓 Lección 63: Encontrar múltiplos
+// Buscamos múltiplos de un número
+
+funcion encontrarMultiplos(numero: Entero, limite: Entero) {
+    escribir("Múltiplos de " + numero + " hasta " + limite + ":")
+    variable i = numero
+    mientras (i <= limite) {
+        escribir("  " + i)
+        i = i + numero
+    }
+}
+
+encontrarMultiplos(3, 30)
+escribir("")
+encontrarMultiplos(7, 70)

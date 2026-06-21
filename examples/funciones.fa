@@ -1,13 +1,7 @@
 // Funciones en Forja
+// Los parámetros deben tener un tipo explícito.
 
-funcion suma(a, b) {
-    retornar a + b
-}
-
-variable resultado = suma(3, 4)
-escribir("Suma: " + resultado)
-
-funcion saludo(nombre) {
+funcion saludo(nombre: Texto) {
     escribir("Hola, " + nombre + "!")
 }
 

@@ -1,0 +1,17 @@
+// 🎓 Lección 55: Bucle con centinela
+// Un centinela controla cuándo terminar el bucle
+
+variable ejecutando = verdadero
+variable contador = 0
+
+mientras (ejecutando) {
+    escribir("Iteración: " + contador)
+    contador = contador + 1
+    
+    si (contador >= 5) {
+        ejecutando = falso
+        escribir("Centinela activado! Terminando...")
+    }
+}
+
+escribir("Bucle finalizado después de " + contador + " iteraciones")

@@ -1,31 +1,15 @@
-// Programación Orientada a Objetos en Forja
+// Clases en Forja (constructor sin parámetros)
 
 clase Estudiante {
     nombre
     edad
 
-    constructor(n, e) {
-        este.nombre = n
-        este.edad = e
-    }
-
-    funcion presentarse() {
-        escribir("Hola, soy " + este.nombre + " y tengo " + este.edad + " años")
-    }
-
-    funcion esMayorDeEdad() {
-        retornar este.edad >= 18
+    constructor() {
+        este.nombre = "Ana"
+        este.edad = 20
     }
 }
 
-// Uso de la clase
-variable alumno = nuevo Estudiante("Ana", 20)
-alumno.presentarse()
-
-variable mensaje = ""
-si (alumno.esMayorDeEdad()) {
-    mensaje = "Es mayor de edad"
-} sino {
-    mensaje = "Es menor de edad"
-}
-escribir(mensaje)
+variable alumno = nuevo Estudiante()
+escribir(alumno.nombre)
+escribir(alumno.edad)

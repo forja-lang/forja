@@ -1,0 +1,30 @@
+// 🎓 Lección 52: Piedra, Papel o Tijera
+// Versión simplificada sin leer()
+
+funcion jugar(jugador: Texto, computadora: Texto) {
+    escribir("Jugador: " + jugador + " vs Computadora: " + computadora)
+    
+    si (jugador == computadora) {
+        escribir("🤝 Empate!")
+    } sino {
+        si (jugador == "piedra" && computadora == "tijera") {
+            escribir("🏆 Ganaste!")
+        } sino {
+            si (jugador == "papel" && computadora == "piedra") {
+                escribir("🏆 Ganaste!")
+            } sino {
+                si (jugador == "tijera" && computadora == "papel") {
+                    escribir("🏆 Ganaste!")
+                } sino {
+                    escribir("💻 Perdiste!")
+                }
+            }
+        }
+    }
+}
+
+jugar("piedra", "tijera")
+escribir("")
+jugar("papel", "tijera")
+escribir("")
+jugar("tijera", "tijera")

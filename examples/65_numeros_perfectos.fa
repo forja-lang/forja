@@ -1,0 +1,22 @@
+// 🎓 Lección 65: Divisores de un número
+
+variable n = 6
+variable suma = 0
+variable i = 1
+
+escribir("Divisores de " + n + ":")
+mientras (i < n) {
+    variable resto = n - ((n / i) * i)
+    si (resto == 0) {
+        escribir("" + i)
+        suma = suma + i
+    }
+    i = i + 1
+}
+escribir("Suma: " + suma)
+
+si (suma == n) {
+    escribir("" + n + " es perfecto!")
+} sino {
+    escribir("" + n + " no es perfecto")
+}

@@ -1,0 +1,12 @@
+// 🎓 Lección 56: Arrays con strings (solo lectura)
+
+variable nombres = ["Ana", "Pedro", "María", "Juan", "Laura"]
+
+escribir("Lista de nombres:")
+para (variable i = 0; i < 5; i = i + 1) {
+    escribir("  " + (i + 1) + ". " + nombres[i])
+}
+
+escribir("Primer nombre: " + nombres[0])
+escribir("Último nombre: " + nombres[4])
+escribir("Array completo: " + nombres)
