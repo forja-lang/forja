@@ -5,3 +5,4 @@ target/
 test_inline_rs/
 tests/
 .vscode/
+docs/
