@@ -27,6 +27,9 @@ pub fn es_jiteable(opcodes: &[Opcode]) -> bool {
             Opcode::StoreIdxEntero(_) | Opcode::StoreIdxFloat(_) |
             Opcode::DeclareEnteroOp(_, _) | Opcode::DeclareBooleanoOp(_, _) |
             Opcode::StoreEnteroOp(_, _) |
+            Opcode::DeclareFloatOp(_, _) | Opcode::StoreFloatOp(_, _) |
+            Opcode::LoadAddFloat(_, _) |
+            Opcode::AddStoreFloat(_) | Opcode::SubStoreFloat(_) | Opcode::MulStoreFloat(_) |
             Opcode::Jump(_) | Opcode::JumpSiFalso(_) | Opcode::Label(_) |
             Opcode::Halt => {}
             // NO JITeables (no implementados en NativeJIT::compile)

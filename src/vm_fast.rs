@@ -378,7 +378,7 @@ impl ForjaFast {
             sym_remover: SymId(0),
             sym_nuevo: SymId(0),
             funciones: HashMap::new(), func_params: HashMap::new(), bytecode: Vec::new(), output: Vec::new(),
-            max_inst: 100_000_000, ejecutadas: 0,
+            max_inst: 100_000_000_000, ejecutadas: 0,
         };
         vm.init_symbols();
         vm
@@ -444,14 +444,15 @@ impl ForjaFast {
                             Opcode::LoadIdx(idx) | Opcode::StoreIdx(idx) | Opcode::DeclareIdx(idx, _) => {
                                 if *idx + 1 > max_idx { max_idx = *idx + 1; }
                             }
-                            Opcode::DeclareEnteroOp(idx, _) | Opcode::DeclareBooleanoOp(idx, _) | Opcode::StoreEnteroOp(idx, _) => {
+                            Opcode::DeclareEnteroOp(idx, _) | Opcode::DeclareBooleanoOp(idx, _) | Opcode::StoreEnteroOp(idx, _)
+                                | Opcode::DeclareFloatOp(idx, _) | Opcode::StoreFloatOp(idx, _) => {
                                 if *idx + 1 > max_idx { max_idx = *idx + 1; }
                             }
                             Opcode::LoadIdxEntero(idx) | Opcode::LoadIdxFloat(idx) | Opcode::StoreIdxEntero(idx) | Opcode::StoreIdxFloat(idx) => {
                                 if *idx + 1 > max_idx { max_idx = *idx + 1; }
                             }
                             // Superinstructions (Fase 1a) con índices
-                            Opcode::LoadAddInt(idx, _) => {
+                            Opcode::LoadAddInt(idx, _) | Opcode::LoadAddFloat(idx, _) => {
                                 if *idx + 1 > max_idx { max_idx = *idx + 1; }
                             }
                             Opcode::LoadIdx2(a, b) => {
@@ -462,7 +463,8 @@ impl ForjaFast {
                                 if *a + 1 > max_idx { max_idx = *a + 1; }
                                 if *b + 1 > max_idx { max_idx = *b + 1; }
                             }
-                            Opcode::AddStoreIdx(idx) | Opcode::SubStoreIdx(idx) | Opcode::MulStoreIdx(idx) => {
+                            Opcode::AddStoreIdx(idx) | Opcode::SubStoreIdx(idx) | Opcode::MulStoreIdx(idx)
+                                | Opcode::AddStoreFloat(idx) | Opcode::SubStoreFloat(idx) | Opcode::MulStoreFloat(idx) => {
                                 if *idx + 1 > max_idx { max_idx = *idx + 1; }
                             }
                             Opcode::LoadJumpSiFalso(idx, _) | Opcode::LoadJump(idx, _) => {
@@ -898,8 +900,11 @@ impl ForjaFast {
                 Opcode::LoadIdx(i) | Opcode::StoreIdx(i) | Opcode::DeclareIdx(i, _) => Some(*i),
                 Opcode::LoadIdxEntero(i) | Opcode::LoadIdxFloat(i) => Some(*i),
                 Opcode::StoreIdxEntero(i) | Opcode::StoreIdxFloat(i) => Some(*i),
-                Opcode::DeclareEnteroOp(i, _) | Opcode::DeclareBooleanoOp(i, _) | Opcode::StoreEnteroOp(i, _) => Some(*i),
-                Opcode::LoadAddInt(i, _) | Opcode::AddStoreIdx(i) | Opcode::SubStoreIdx(i) | Opcode::MulStoreIdx(i) => Some(*i),
+                Opcode::DeclareEnteroOp(i, _) | Opcode::DeclareBooleanoOp(i, _) | Opcode::StoreEnteroOp(i, _)
+                    | Opcode::DeclareFloatOp(i, _) | Opcode::StoreFloatOp(i, _) => Some(*i),
+                Opcode::LoadAddInt(i, _) | Opcode::LoadAddFloat(i, _)
+                    | Opcode::AddStoreIdx(i) | Opcode::SubStoreIdx(i) | Opcode::MulStoreIdx(i)
+                    | Opcode::AddStoreFloat(i) | Opcode::SubStoreFloat(i) | Opcode::MulStoreFloat(i) => Some(*i),
                 Opcode::LoadIdx2(a, _) | Opcode::LoadStoreIdx(a, _) => Some(*a),
                 Opcode::LoadJumpSiFalso(i, _) | Opcode::LoadJump(i, _) => Some(*i),
                 _ => None,
@@ -921,6 +926,11 @@ impl ForjaFast {
                 Opcode::DeclareBooleanoOp(idx, _) => {
                     if idx < tipos_var.len() {
                         tipos_var[idx] = Some(TipoInferido::Booleano);
+                    }
+                }
+                Opcode::DeclareFloatOp(idx, _) | Opcode::StoreFloatOp(idx, _) => {
+                    if idx < tipos_var.len() {
+                        tipos_var[idx] = Some(TipoInferido::Flotante);
                     }
                 }
 
@@ -951,7 +961,9 @@ impl ForjaFast {
                                 Opcode::PushEntero(_) | Opcode::LoadIdxEntero(_)
                                     | Opcode::StoreEnteroOp(_, _) => Some(TipoInferido::Entero),
                                 Opcode::PushDecimal(_) | Opcode::LoadIdxFloat(_)
-                                    | Opcode::StoreIdxFloat(_) => Some(TipoInferido::Flotante),
+                                    | Opcode::StoreIdxFloat(_)
+                                    | Opcode::DeclareFloatOp(_, _) | Opcode::StoreFloatOp(_, _)
+                                    | Opcode::AddStoreFloat(_) | Opcode::SubStoreFloat(_) | Opcode::MulStoreFloat(_) => Some(TipoInferido::Flotante),
                                 Opcode::PushBooleano(_) | Opcode::DeclareBooleanoOp(_, _) => Some(TipoInferido::Booleano),
                                 Opcode::PushTexto(_) => Some(TipoInferido::Texto),
                                 _ => None,
@@ -973,7 +985,8 @@ impl ForjaFast {
                             match &self.bytecode[i - 1] {
                                 Opcode::PushEntero(_) | Opcode::LoadIdxEntero(_)
                                     | Opcode::StoreEnteroOp(_, _) => Some(TipoInferido::Entero),
-                                Opcode::PushDecimal(_) | Opcode::LoadIdxFloat(_) => Some(TipoInferido::Flotante),
+                                Opcode::PushDecimal(_) | Opcode::LoadIdxFloat(_)
+                                    | Opcode::DeclareFloatOp(_, _) | Opcode::StoreFloatOp(_, _) => Some(TipoInferido::Flotante),
                                 Opcode::PushBooleano(_) | Opcode::DeclareBooleanoOp(_, _) => Some(TipoInferido::Booleano),
                                 Opcode::PushTexto(_) => Some(TipoInferido::Texto),
                                 _ => None,
@@ -1117,7 +1130,11 @@ impl ForjaFast {
                     tipos[operandos_encontrados] = TipoInferido::Flotante;
                     operandos_encontrados += 1;
                 }
-                Opcode::LoadIdxFloat(_) => {
+                Opcode::LoadIdxFloat(_) | Opcode::LoadAddFloat(_, _) => {
+                    tipos[operandos_encontrados] = TipoInferido::Flotante;
+                    operandos_encontrados += 1;
+                }
+                Opcode::DeclareFloatOp(_, _) | Opcode::StoreFloatOp(_, _) => {
                     tipos[operandos_encontrados] = TipoInferido::Flotante;
                     operandos_encontrados += 1;
                 }
@@ -1496,6 +1513,7 @@ impl ForjaFast {
                     if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_flotante()));
                     } else {
+                        // Des-especializar
                         self.bytecode[self.ip] = Opcode::Add;
                         self.push_valor(a);
                         self.push_valor(b);
@@ -1632,6 +1650,88 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
+
+                // === SUPERINSTRUCTIONS FLOAT (Opcode path) ===
+                Opcode::DeclareFloatOp(idx, d) => {
+                    let actual = self.base_ptr + idx;
+                    if actual >= self.flat_vars.len() { self.flat_vars.resize(actual + 1, ValorFast::nulo()); }
+                    self.flat_vars[actual] = ValorFast::flotante(d);
+                    self.ip += 1;
+                }
+                Opcode::StoreFloatOp(idx, d) => {
+                    let actual = self.base_ptr + idx;
+                    if actual >= self.flat_vars.len() { self.flat_vars.resize(actual + 1, ValorFast::nulo()); }
+                    self.flat_vars[actual] = ValorFast::flotante(d);
+                    self.ip += 1;
+                }
+                Opcode::LoadAddFloat(idx, d) => {
+                    let actual = self.base_ptr + idx;
+                    let val = if actual < self.flat_vars.len() {
+                        self.flat_vars[actual]
+                    } else {
+                        ValorFast::nulo()
+                    };
+                    if val.es_flotante() {
+                        self.push_valor(ValorFast::flotante(val.a_flotante() + d));
+                    } else {
+                        // Fallback: push y add genérico
+                        self.push_valor(val);
+                        self.push_valor(ValorFast::flotante(d));
+                        let (b, a) = (self.pop_valor()?, self.pop_valor()?);
+                        if a.es_entero() && b.es_entero() {
+                            self.push_valor(get_small_int_fast(a.a_entero() as i64 + b.a_entero() as i64));
+                        } else if a.es_flotante() && b.es_flotante() {
+                            self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_flotante()));
+                        } else { return Err(ErrFast::TipoInv("LoadAddFloat".into())); }
+                    }
+                    self.ip += 1;
+                }
+                Opcode::AddStoreFloat(idx) => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    if a.es_flotante() && b.es_flotante() {
+                        let actual = self.base_ptr + idx;
+                        if actual >= self.flat_vars.len() { self.flat_vars.resize(actual + 1, ValorFast::nulo()); }
+                        self.flat_vars[actual] = ValorFast::flotante(a.a_flotante() + b.a_flotante());
+                    } else {
+                        self.bytecode[self.ip] = Opcode::StoreIdx(idx);
+                        self.push_valor(a);
+                        self.push_valor(b);
+                        self.push_valor(ValorFast::flotante(0.0)); // placeholder
+                    }
+                    self.ip += 1;
+                }
+                Opcode::SubStoreFloat(idx) => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    if a.es_flotante() && b.es_flotante() {
+                        let actual = self.base_ptr + idx;
+                        if actual >= self.flat_vars.len() { self.flat_vars.resize(actual + 1, ValorFast::nulo()); }
+                        self.flat_vars[actual] = ValorFast::flotante(a.a_flotante() - b.a_flotante());
+                    } else {
+                        self.bytecode[self.ip] = Opcode::StoreIdx(idx);
+                        self.push_valor(a);
+                        self.push_valor(b);
+                        self.push_valor(ValorFast::flotante(0.0));
+                    }
+                    self.ip += 1;
+                }
+                Opcode::MulStoreFloat(idx) => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    if a.es_flotante() && b.es_flotante() {
+                        let actual = self.base_ptr + idx;
+                        if actual >= self.flat_vars.len() { self.flat_vars.resize(actual + 1, ValorFast::nulo()); }
+                        self.flat_vars[actual] = ValorFast::flotante(a.a_flotante() * b.a_flotante());
+                    } else {
+                        self.bytecode[self.ip] = Opcode::StoreIdx(idx);
+                        self.push_valor(a);
+                        self.push_valor(b);
+                        self.push_valor(ValorFast::flotante(0.0));
+                    }
+                    self.ip += 1;
+                }
+
                 Opcode::IgualInt => {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
@@ -1706,12 +1806,12 @@ impl ForjaFast {
                 Opcode::LoadIdxFloat(idx) => {
                     let actual = self.base_ptr + idx;
                     if actual < self.flat_vars.len() {
-                        let v = &self.flat_vars[actual];
+                        let v = self.flat_vars[actual];
                         if v.es_flotante() {
-                            self.push_valor(*v);
+                            self.push_valor(v);
                         } else {
                             let _ = std::mem::replace(&mut self.bytecode[self.ip], Opcode::LoadIdx(idx));
-                            self.push_valor(*v);
+                            self.push_valor(v);
                         }
                     } else {
                         self.push_valor(ValorFast::nulo());
@@ -2042,21 +2142,21 @@ impl ForjaFast {
                     self.ip += 1;
                 }
                 Opcode::SetField(c) => {
-                    // Stack: [valor][objeto] con objeto en tope (depth 0)
-                    let obj_val = *self.peek_valor(0);
+                    // peek del objeto (depth 1), valor en tope (depth 0)
+                    let obj_val = *self.peek_valor(1);
                     if obj_val.es_objeto() {
                         let field_sym = self.sym_table.intern(c.as_ref());
-                        let obj_idx = obj_val.indice_objeto();
                         // Intentar inline cache
                         let cache = &self.ic_setfield[self.ip].clone();
                         if let Some((clase_cache, idx_cache)) = cache {
+                            let obj_idx = obj_val.indice_objeto();
                             let clase_actual = self.obj_shapes[obj_idx as usize];
                             if clase_actual == *clase_cache {
                                 let campos_len = self.get_obj(obj_idx).campos_vec.len();
                                 if *idx_cache < campos_len {
                                     // Cache HIT! Acceso directo por índice
-                                    let _ = self.pop_valor()?; // objeto
                                     let v = self.pop_valor()?; // valor
+                                    let _ = self.pop_valor()?; // objeto
                                     self.get_obj_mut(obj_idx).campos_vec[*idx_cache] = v;
                                     self.ip += 1;
                                     continue;
@@ -2070,33 +2170,38 @@ impl ForjaFast {
                             }
                         }
                         // Fallback: búsqueda con Shape
-                        let _ = self.pop_valor()?; // pop objeto (top)
-                        let v = self.pop_valor()?;   // pop valor
-                        let clase_sym = self.obj_shapes[obj_idx as usize];
+                        let v = self.pop_valor()?;
+                        let obj = self.pop_valor()?;
+                        let idx = obj.indice_objeto();
+                        let clase_sym = self.obj_shapes[idx as usize];
                         if let Some(desc) = self.class_descriptors.get(&clase_sym) {
                             let shape_idx = desc.shape.get_idx(field_sym);
                             if let Some(sidx) = shape_idx {
-                                if sidx < self.obj_heap[obj_idx as usize].campos_vec.len() {
-                                    self.obj_heap[obj_idx as usize].campos_vec[sidx] = v;
+                                // Campo conocido en el shape — asignar directamente
+                                if sidx < self.obj_heap[idx as usize].campos_vec.len() {
+                                    self.obj_heap[idx as usize].campos_vec[sidx] = v;
                                 } else {
-                                    self.obj_heap[obj_idx as usize].campos_vec.push(v);
+                                    self.obj_heap[idx as usize].campos_vec.push(v);
                                 }
+                                // Actualizar cache
                                 self.ic_setfield[self.ip] = Some((clase_sym, sidx));
                             } else {
+                                // Campo nuevo — expandir shape y asignar
                                 let desc_mut = self.class_descriptors.get_mut(&clase_sym).unwrap();
                                 let sidx = desc_mut.shape.add_campo(field_sym);
-                                if sidx < self.obj_heap[obj_idx as usize].campos_vec.len() {
-                                    self.obj_heap[obj_idx as usize].campos_vec[sidx] = v;
+                                if sidx < self.obj_heap[idx as usize].campos_vec.len() {
+                                    self.obj_heap[idx as usize].campos_vec[sidx] = v;
                                 } else {
-                                    self.obj_heap[obj_idx as usize].campos_vec.push(v);
+                                    self.obj_heap[idx as usize].campos_vec.push(v);
                                 }
                                 self.ic_setfield[self.ip] = Some((clase_sym, sidx));
                             }
                         } else {
-                            if (field_sym.0 as usize) < self.obj_heap[obj_idx as usize].campos_vec.len() {
-                                self.obj_heap[obj_idx as usize].campos_vec[field_sym.0 as usize] = v;
+                            // Sin descriptor — expandir vectores directamente
+                            if (field_sym.0 as usize) < self.obj_heap[idx as usize].campos_vec.len() {
+                                self.obj_heap[idx as usize].campos_vec[field_sym.0 as usize] = v;
                             } else {
-                                self.obj_heap[obj_idx as usize].campos_vec.push(v);
+                                self.obj_heap[idx as usize].campos_vec.push(v);
                             }
                         }
                     } else { return Err(ErrFast::TipoInv("SetField".into())); }
@@ -3034,21 +3139,20 @@ impl ForjaFast {
                     self.ip += 1;
                 }
                 Uop::SetField(c) => {
-                    // Stack: [valor][objeto] con objeto en tope (depth 0)
-                    let obj_val = *self.peek_valor(0);
+                    let obj_val = *self.peek_valor(1);
                     if obj_val.es_objeto() {
                         let field_sym = self.sym_table.intern(&c);
-                        let obj_idx = obj_val.indice_objeto();
                         // Intentar inline cache
                         let cache = &self.ic_setfield[self.ip].clone();
                         if let Some((clase_cache, idx_cache)) = cache {
+                            let obj_idx = obj_val.indice_objeto();
                             let clase_actual = self.obj_shapes[obj_idx as usize];
                             if clase_actual == *clase_cache {
                                 let campos_len = self.get_obj(obj_idx).campos_vec.len();
                                 if *idx_cache < campos_len {
                                     // Cache HIT! Acceso directo por índice
-                                    let _ = self.pop_valor()?;
                                     let v = self.pop_valor()?;
+                                    let _ = self.pop_valor()?;
                                     self.get_obj_mut(obj_idx).campos_vec[*idx_cache] = v;
                                     self.ip += 1;
                                     continue;
@@ -3061,34 +3165,35 @@ impl ForjaFast {
                                 self.ic_miss_count[self.ip] = 0;
                             }
                         }
-                        // Fallback: búsqueda con Shape
-                        let _ = self.pop_valor()?; // objeto (top)
-                        let v = self.pop_valor()?; // valor
-                        let clase_sym = self.obj_shapes[obj_idx as usize];
+                        // Fallback
+                        let v = self.pop_valor()?;
+                        let obj = self.pop_valor()?;
+                        let idx = obj.indice_objeto();
+                        let clase_sym = self.obj_shapes[idx as usize];
                         if let Some(desc) = self.class_descriptors.get(&clase_sym) {
                             let shape_idx = desc.shape.get_idx(field_sym);
                             if let Some(sidx) = shape_idx {
-                                if sidx < self.obj_heap[obj_idx as usize].campos_vec.len() {
-                                    self.obj_heap[obj_idx as usize].campos_vec[sidx] = v;
+                                if sidx < self.obj_heap[idx as usize].campos_vec.len() {
+                                    self.obj_heap[idx as usize].campos_vec[sidx] = v;
                                 } else {
-                                    self.obj_heap[obj_idx as usize].campos_vec.push(v);
+                                    self.obj_heap[idx as usize].campos_vec.push(v);
                                 }
                                 self.ic_setfield[self.ip] = Some((clase_sym, sidx));
                             } else {
                                 let desc_mut = self.class_descriptors.get_mut(&clase_sym).unwrap();
                                 let sidx = desc_mut.shape.add_campo(field_sym);
-                                if sidx < self.obj_heap[obj_idx as usize].campos_vec.len() {
-                                    self.obj_heap[obj_idx as usize].campos_vec[sidx] = v;
+                                if sidx < self.obj_heap[idx as usize].campos_vec.len() {
+                                    self.obj_heap[idx as usize].campos_vec[sidx] = v;
                                 } else {
-                                    self.obj_heap[obj_idx as usize].campos_vec.push(v);
+                                    self.obj_heap[idx as usize].campos_vec.push(v);
                                 }
                                 self.ic_setfield[self.ip] = Some((clase_sym, sidx));
                             }
                         } else {
-                            if (field_sym.0 as usize) < self.obj_heap[obj_idx as usize].campos_vec.len() {
-                                self.obj_heap[obj_idx as usize].campos_vec[field_sym.0 as usize] = v;
+                            if (field_sym.0 as usize) < self.obj_heap[idx as usize].campos_vec.len() {
+                                self.obj_heap[idx as usize].campos_vec[field_sym.0 as usize] = v;
                             } else {
-                                self.obj_heap[obj_idx as usize].campos_vec.push(v);
+                                self.obj_heap[idx as usize].campos_vec.push(v);
                             }
                         }
                     } else { return Err(ErrFast::TipoInv("SetField".into())); }
