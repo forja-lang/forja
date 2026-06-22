@@ -1,5 +1,25 @@
 /// JIT compilador x86-64 nativo para Forja
 use crate::bytecode::Opcode;
+use crate::vm_fast::ValorFast;
+
+/// Convierte un ValorFast a String para output (igual que ForjaFast::mostrar_valor)
+pub fn valor_a_texto(v: ValorFast) -> String {
+    if v.es_entero() { return v.a_entero().to_string(); }
+    if v.es_flotante() { return v.a_flotante().to_string(); }
+    if v.es_booleano() { return (if v.a_booleano() { "verdadero" } else { "falso" }).to_string(); }
+    if v.es_nulo() { return "nulo".to_string(); }
+    // Para otros tipos (objeto, texto, array, mapa) mostrar tag + payload hex
+    format!("<{}:{:016X}>", "obj", v.to_bits())
+}
+
+/// Helper extern "C" para Print desde código JIT nativo.
+/// Recibe output ptr (r14) y valor a imprimir, formatea y agrega al Vec.
+/// Versión simplificada que usa enteros solamente para debug.
+#[no_mangle]
+pub extern "C" fn jit_print_output(output: &mut Vec<String>, val: i64) {
+    // Por ahora solo con enteros
+    output.push(val.to_string());
+}
 use std::collections::HashMap;
 
 #[cfg(target_os = "windows")]
@@ -61,6 +81,14 @@ impl CodeBuf {
     pub fn push_rsp(&mut self) { self.bytes.extend_from_slice(&[0xff, 0x34, 0x24]); }
     pub fn ret(&mut self) { self.u8(0xc3); }
     pub fn cqo(&mut self) { self.bytes.extend_from_slice(&[0x48, 0x99]); }
+    pub fn pop_rdx(&mut self) { self.u8(0x5a); }
+
+    // Call absoluto: mov rax, addr; call rax
+    pub fn call_abs(&mut self, addr: usize) {
+        self.bytes.extend_from_slice(&[0x48, 0xb8]); // mov rax, imm64
+        self.bytes.extend_from_slice(&addr.to_le_bytes());
+        self.bytes.extend_from_slice(&[0xff, 0xd0]); // call rax
+    }
 
     // pop rcx, pop rax, op, push rax
     pub fn binop(&mut self, op: &[u8]) { self.pop_r(1); self.pop_r(0); self.bytes.extend_from_slice(op); self.push_r(0); }
@@ -68,6 +96,20 @@ impl CodeBuf {
     // setcc al; movzx rax,al; push rax
     // NOTA: los flags DEBEN estar pre-seteados por cmp o test antes de llamar esto
     pub fn cmp_result(&mut self, setcc: u8) {
+        self.bytes.extend_from_slice(&[0x0f, setcc, 0xc0]); // setcc al
+        self.bytes.extend_from_slice(&[0x48, 0x0f, 0xb6, 0xc0]); // movzx rax,al
+        self.push_r(0);
+    }
+
+    // SSE2 float comparison: comisd xmm1,xmm0; setcc al; movzx rax,al; push rax
+    // Lee: xmm0=[rsp] (b=TOS), xmm1=[rsp+8] (a). Pop 2, push 1.
+    // setcc usa condiciones unsigned (comisd setea CF/ZF/PF como unsigned):
+    //   sete(0x94) setne(0x95) setb(0x92) seta(0x97) setbe(0x96) setae(0x93)
+    pub fn cmp_float(&mut self, setcc: u8) {
+        self.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
+        self.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8]
+        self.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16 (pop 2)
+        self.bytes.extend_from_slice(&[0x66, 0x0f, 0x2f, 0xc8]); // comisd xmm1,xmm0
         self.bytes.extend_from_slice(&[0x0f, setcc, 0xc0]); // setcc al
         self.bytes.extend_from_slice(&[0x48, 0x0f, 0xb6, 0xc0]); // movzx rax,al
         self.push_r(0);
@@ -201,50 +243,62 @@ impl NativeJIT {
                     } else { return Err("Div underflow".into()); }
                 }
                 // Opcodes float — usan SSE2 (XMM registers)
+                // Stack: [rsp]=b (TOS), [rsp+8]=a. Pop 2, push 1.
+                // Para Add/Mul: xmm1=a, xmm0=b → a+b, a*b (conmutativo, OK usar xmm0)
+                // Para Sub: xmm1=a, xmm0=b → a-b = subsd xmm1,xmm0
+                // Para Div: xmm1=a, xmm0=b → a/b = divsd xmm1,xmm0
                 Opcode::AddFloat => {
                     if sd >= 2 {
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
-                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x0c, 0x24]); // movsd xmm1,[rsp]
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0xc1]); // addsd xmm0,xmm1
-                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp] (b)
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8] (a)
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16 (pop 2)
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0xc1]); // addsd xmm0,xmm1 (b+a)
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8 (push 1)
                         c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
                         sd -= 1;
                     } else { return Err("Add underflow".into()); }
                 }
                 Opcode::SubFloat => {
                     if sd >= 2 {
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
-                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x0c, 0x24]); // movsd xmm1,[rsp]
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5c, 0xc1]); // subsd xmm0,xmm1
-                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp] (b)
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8] (a)
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16 (pop 2)
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5c, 0xc8]); // subsd xmm1,xmm0 (a-b)
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8 (push 1)
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x0c, 0x24]); // movsd [rsp],xmm1
                         sd -= 1;
                     } else { return Err("Sub underflow".into()); }
                 }
                 Opcode::MulFloat => {
                     if sd >= 2 {
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
-                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x0c, 0x24]); // movsd xmm1,[rsp]
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x59, 0xc1]); // mulsd xmm0,xmm1
-                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp] (b)
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8] (a)
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16 (pop 2)
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x59, 0xc1]); // mulsd xmm0,xmm1 (b*a)
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8 (push 1)
                         c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
                         sd -= 1;
                     } else { return Err("Mul underflow".into()); }
                 }
                 Opcode::DivFloat => {
                     if sd >= 2 {
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
-                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x0c, 0x24]); // movsd xmm1,[rsp]
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5e, 0xc1]); // divsd xmm0,xmm1
-                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp] (b)
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8] (a)
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16 (pop 2)
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5e, 0xc8]); // divsd xmm1,xmm0 (a/b)
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8 (push 1)
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x0c, 0x24]); // movsd [rsp],xmm1
                         sd -= 1;
                     } else { return Err("Div underflow".into()); }
                 }
+                // SSE2 float comparisons: comisd setea CF/ZF/PF, usamos condiciones unsigned
+                // setcc: sete(0x94) setne(0x95) setb(0x92) seta(0x97) setbe(0x96) setae(0x93)
+                Opcode::IgualFloat => { if sd >= 2 { c.cmp_float(0x94); sd -= 1; } else { return Err("Cmp underflow".into()); } }
+                Opcode::DiferenteFloat => { if sd >= 2 { c.cmp_float(0x95); sd -= 1; } else { return Err("Cmp underflow".into()); } }
+                Opcode::MenorFloat => { if sd >= 2 { c.cmp_float(0x92); sd -= 1; } else { return Err("Cmp underflow".into()); } }
+                Opcode::MayorFloat => { if sd >= 2 { c.cmp_float(0x97); sd -= 1; } else { return Err("Cmp underflow".into()); } }
+                Opcode::MenorIgualFloat => { if sd >= 2 { c.cmp_float(0x96); sd -= 1; } else { return Err("Cmp underflow".into()); } }
+                Opcode::MayorIgualFloat => { if sd >= 2 { c.cmp_float(0x93); sd -= 1; } else { return Err("Cmp underflow".into()); } }
                 Opcode::IgualInt => { if sd >= 2 { c.pop_r(1); c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x39, 0xc8]); c.cmp_result(0x94); sd -= 1; } else { return Err("Cmp underflow".into()); } }
                 Opcode::MenorInt => { if sd >= 2 { c.pop_r(1); c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x39, 0xc8]); c.cmp_result(0x9c); sd -= 1; } else { return Err("Cmp underflow".into()); } }
                 Opcode::MayorInt => { if sd >= 2 { c.pop_r(1); c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x39, 0xc8]); c.cmp_result(0x9f); sd -= 1; } else { return Err("Cmp underflow".into()); } }
@@ -261,13 +315,13 @@ impl NativeJIT {
                     c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(f64::to_bits(*d) as i64);
                     c.push_r(0); sd += 1;
                     // AddFloat (pops 2, pushes 1) → sd back to +1
-                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
-                    c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
-                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x0c, 0x24]); // movsd xmm1,[rsp]
-                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0xc1]); // addsd xmm0,xmm1
-                    c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
+                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp] (n)
+                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8] (vars[idx])
+                    c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16 (pop 2)
+                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0xc1]); // addsd xmm0,xmm1 (n+vars[idx])
+                    c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8 (push 1)
                     c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
-                    sd -= 1; // net: +1(push) +1(push) -1(pop2) +1(push1) = +1 → but we started +1 from load
+                    sd -= 1; // net: +1(push) +1(push) -1(pop2) +1(push1) = +1
                 }
                 Opcode::AddStoreFloat(idx) => {
                     if sd >= 1 {
@@ -306,7 +360,128 @@ impl NativeJIT {
                     } else { return Err("MulStore underflow".into()); }
                 }
 
+                Opcode::Print => {
+                    // No-op: no modifica el stack.
+                    // El valor TOS se deja para que el epílogo lo devuelva.
+                    // (No se checkea sd porque Print no pope ni pushea)
+                }
                 Opcode::Halt => { break; }
+
+                // === Superinstructions y opcodes ignorados ===
+                Opcode::FunctionDef(_, _) | Opcode::Return => {
+                    // No-op: estructura del programa, no cómputo
+                }
+                Opcode::PushDecimal(d) => {
+                    // push f64 bits (raw IEEE 754)
+                    c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(f64::to_bits(*d) as i64);
+                    c.push_r(0);
+                    sd += 1;
+                }
+                Opcode::PushNulo => {
+                    // push 0 (null representation)
+                    c.bytes.extend_from_slice(&[0x48, 0x31, 0xc0]); // xor rax,rax
+                    c.push_r(0);
+                    sd += 1;
+                }
+                Opcode::LoadIdx2(a, b) => {
+                    // push vars[a]; push vars[b]
+                    c.load_var(*a); c.push_r(0);
+                    c.load_var(*b); c.push_r(0);
+                    sd += 2;
+                }
+                Opcode::LoadStoreIdx(src, dst) => {
+                    // vars[dst] = vars[src] (no stack change)
+                    c.load_var(*src);
+                    c.store_var(*dst);
+                }
+                Opcode::LoadAddInt(idx, n) => {
+                    // push vars[idx] + n
+                    // No necesita checkeo de sd: push/pop son de valores recién pusheados
+                    c.load_var(*idx); c.push_r(0);    // push vars[idx]
+                    c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(*n);
+                    c.push_r(0);                        // push n
+                    // AddInt: pop rcx(n), pop rax(vars[idx]), rax += rcx, push rax
+                    c.pop_r(1); c.pop_r(0);
+                    c.bytes.extend_from_slice(&[0x48, 0x01, 0xc8]); // add rax,rcx
+                    c.push_r(0);
+                    sd += 1; // net: +1(push vars) +1(push n) -1(AddInt) = +1
+                }
+                Opcode::AddStoreIdx(idx) => {
+                    // pop b; pop a; vars[idx] = a + b
+                    if sd >= 2 {
+                        c.pop_r(0); // pop TOS (b) → rax
+                        c.pop_r(1); // pop next (a) → rcx
+                        c.bytes.extend_from_slice(&[0x48, 0x01, 0xc8]); // add rax,rcx → rax = a+b
+                        c.store_var(*idx);
+                        sd -= 2;
+                    } else {
+                        return Err("AddStoreIdx underflow".into());
+                    }
+                }
+                Opcode::SubStoreIdx(idx) => {
+                    // pop b; pop a; vars[idx] = a - b
+                    if sd >= 2 {
+                        c.pop_r(0); // pop TOS (b) → rax
+                        c.pop_r(1); // pop next (a) → rcx
+                        c.bytes.extend_from_slice(&[0x48, 0x29, 0xc8]); // sub rax,rcx → rax = a-b
+                        c.store_var(*idx);
+                        sd -= 2;
+                    } else {
+                        return Err("SubStoreIdx underflow".into());
+                    }
+                }
+                Opcode::MulStoreIdx(idx) => {
+                    // pop b; pop a; vars[idx] = a * b
+                    if sd >= 2 {
+                        c.pop_r(0); // pop TOS (b) → rax
+                        c.pop_r(1); // pop next (a) → rcx
+                        c.bytes.extend_from_slice(&[0x48, 0x0f, 0xaf, 0xc1]); // imul rax,rcx → rax = a*b
+                        c.store_var(*idx);
+                        sd -= 2;
+                    } else {
+                        return Err("MulStoreIdx underflow".into());
+                    }
+                }
+                Opcode::PushAddInt(n) => {
+                    // push n; AddInt (stack was [a], becomes [a+n])
+                    c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(*n);
+                    c.push_r(0); // push n
+                    if sd >= 1 {
+                        c.pop_r(1); c.pop_r(0);
+                        c.bytes.extend_from_slice(&[0x48, 0x01, 0xc8]); // add rax,rcx
+                        c.push_r(0);
+                        // sd: +1(push n) -1(AddInt) = 0 → net unchanged
+                    } else {
+                        return Err("PushAddInt underflow".into());
+                    }
+                }
+                Opcode::LoadJumpSiFalso(idx, target) => {
+                    // load_var(idx); test; jz target
+                    // no stack change (not pushing, just testing)
+                    c.load_var(*idx);
+                    c.bytes.extend_from_slice(&[0x48, 0x85, 0xc0]); // test rax,rax
+                    c.jcc(0x04, *target); // jz (je) target
+                }
+                Opcode::LoadJump(idx, target) => {
+                    // load_var(idx); push; jmp target
+                    c.load_var(*idx);
+                    c.push_r(0);
+                    sd += 1;
+                    c.jmp(*target);
+                }
+                Opcode::DupAddInt => {
+                    // dup (push [rsp]); AddInt
+                    if sd >= 1 {
+                        c.push_rsp(); // dup
+                        // AddInt
+                        c.pop_r(1); c.pop_r(0);
+                        c.bytes.extend_from_slice(&[0x48, 0x01, 0xc8]); // add rax,rcx
+                        c.push_r(0);
+                        // sd: +1(dup) -1(AddInt) = 0 → net unchanged
+                    } else {
+                        return Err("DupAddInt underflow".into());
+                    }
+                }
 
                 _ => { return Err(format!("non-JIT {:?}", op)); }
             }
