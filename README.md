@@ -94,7 +94,7 @@
 | **JIT Engine** | [`src/jit_engine.rs`](src/jit_engine.rs) | Orquestador JIT con fallback a VM |
 | **Optimizador** | [`src/optimizer.rs`](src/optimizer.rs) | Constant folding + Dead Code Elimination |
 | **Formatter** | [`src/formatter.rs`](src/formatter.rs) | Formateador de código Forja |
-| **Diagrama** | [`src/diagrama.rs`](src/diagrama.rs) | Generador de diagramas HTML del AST |
+| **diagram** | [`src/diagram.rs`](src/diagram.rs) | Generador de diagrams HTML del AST |
 | **REPL** | [`src/repl.rs`](src/repl.rs) | Intérprete interactivo línea por línea |
 | **AOT** | [`src/aot.rs`](src/aot.rs) | Compilador AOT (.exe autónomo con VM) |
 | **Selfrun** | [`src/selfrun.rs`](src/selfrun.rs) | Detección de bytecode incrustado en .exe |
@@ -116,7 +116,7 @@
 | `forja medir <archivo> [--iters N] [--vm fast\|vm\|opt\|jit\|todas]` | `forja bench <file> [--iters N] [--vm fast\|vm\|opt\|jit\|all]` | Benchmark: crea, carga, ejecuta (cold+hot) en VM(s) seleccionada(s) |
 | `forja interactivo [--vm fast\|vm\|opt\|jit]` | `forja repl [--vm fast\|vm\|opt\|jit]` | Modo interactivo (REPL) con VM seleccionada |
 | `forja formatear <archivo>` | `forja fmt <file>` | Formatea código Forja |
-| `forja diagrama <archivo>` | `forja diagram <file>` | Genera diagrama HTML del AST |
+| `forja diagram <archivo>` | `forja diagram <file>` | Genera diagram HTML del AST |
 | `forja colorear <archivo>` | `forja highlight <file>` | Muestra código con colores ANSI |
 | `forja nuevo <nombre>` | `forja new <name>` | Crea nuevo proyecto |
 | `forja iniciar` | `forja init` | Inicializa proyecto aquí |
