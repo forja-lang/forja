@@ -6,7 +6,7 @@
 # Debug
 cargo build
 
-# Release (recomendado)
+# Release (recomendado para benchmarks y uso diario)
 cargo build --release
 
 # En Windows con LLVM MinGW
@@ -33,58 +33,62 @@ cargo test -- vm
 
 ## Comandos del CLI
 
-### `forja <archivo.fa>` — Transpilar a Rust (default)
+Siempre usar `cargo run --release --bin forja -- <comando>` para ejecución optimizada.
 
-Si el primer argumento termina en `.fa`, transpila automáticamente:
+### `forja <archivo.fa>` — Ejecutar en ForjaFast (default)
 
-```bash
-# Genera <nombre>.rs automáticamente
-forja examples/hola_mundo.fa
-
-# Con salida personalizada
-forja transpile examples/hola_mundo.fa -o salida.rs
-
-# Errores en JSON (ideal para IDEs)
-forja transpile examples/complejo.fa --json-errors
-```
-
-### `forja ejecutar|run|correr <archivo>` — Ejecutar en VM
-
-Compila y ejecuta el bytecode en la Máquina Virtual. No necesitás Rust.
+Si el primer argumento termina en `.fa`, ejecuta automáticamente en **ForjaFast** 🏆:
 
 ```bash
-forja run examples/hola_mundo.fa
-forja ejecutar examples/clases.fa
-forja correr examples/funciones.fa
+cargo run --release --bin forja -- examples/hola_mundo.fa
+cargo run --release --bin forja -- examples/fib.fa
 ```
 
-### `forja compilar|build|construir <archivo> -o <salida>` — Ejecutable autónomo
+### `forja run|ejecutar|correr <archivo> [--vm fast|vm|jit] [--asm]`
+
+Compila y ejecuta en la VM seleccionada. No necesitás Rust.
+
+```bash
+# ForjaFast (default) — 🏆 recomendado
+cargo run --release --bin forja -- run examples/hola_mundo.fa
+
+# VM Original
+cargo run --release --bin forja -- run examples/clases.fa --vm vm
+
+# VM JIT (Direct Threading)
+cargo run --release --bin forja -- run examples/funciones.fa --vm jit
+
+# Assembly nativo (⚡ más rápido, requiere gcc)
+cargo run --release --bin forja -- run examples/hola_mundo.fa --asm
+```
+
+### `forja build|compilar|construir <archivo> -o <salida>` — Ejecutable autónomo
 
 Genera un `.exe` que contiene la VM + bytecode incrustado.
 
 ```bash
-forja build examples/hola_mundo.fa -o hola.exe
+cargo run --release --bin forja -- build examples/hola_mundo.fa -o hola.exe
 # ✅ Ejecutable generado: hola.exe (1234 bytes)
 ./hola.exe
 # → ¡Hola, mundo desde Forja!
 ```
 
-### `forja compilar-asm|build-asm|asm <archivo> [--target <arch>] [-o <salida>]` — Assembly nativo (⚡ más rápido)
+### `forja build-asm|compilar-asm|asm <archivo> [--target <arch>] [-o <salida>]` — Assembly nativo (⚡ más rápido)
 
 Compila directamente a assembly x86-64 o ARM64 + `gcc -O2`. Velocidad nativa.
 
 ```bash
 # Mínimo: detecta plataforma actual automáticamente
-forja build-asm examples/hola_mundo.fa
+cargo run --release --bin forja -- build-asm examples/hola_mundo.fa
 
 # Con nombre de salida
-forja build-asm examples/hola_mundo.fa -o programa.exe
+cargo run --release --bin forja -- build-asm examples/hola_mundo.fa -o programa.exe
 
 # Especificar arquitectura destino
-forja build-asm examples/hola_mundo.fa --target arm64 -o programa
+cargo run --release --bin forja -- build-asm examples/hola_mundo.fa --target arm64 -o programa
 
 # Compilar manualmente el .s generado
-forja build-asm examples/hola_mundo.fa --target x86_64-linux -o prog
+cargo run --release --bin forja -- build-asm examples/hola_mundo.fa --target x86_64-linux -o prog
 gcc -O2 -o prog prog.s
 ```
 
@@ -97,19 +101,19 @@ Targets disponibles:
 | `--target x86_64-linux` | x86-64 | System V (RDI, RSI, RDX, RCX) |
 | `--target arm64` | ARM64 AArch64 | X0..X7, stp/ldp, cbz |
 
-### `forja transpile|t|transpilar|transpilador <archivo> [-o <salida>]` — Transpilar a Rust explícitamente
+### `forja transpile|t|transpilar|transpilador <archivo> [-o <salida>]` — Transpilar a Rust
 
 ```bash
-forja transpile examples/hola_mundo.fa
-forja t examples/clases.fa -o salida.rs
+cargo run --release --bin forja -- transpile examples/hola_mundo.fa
+cargo run --release --bin forja -- t examples/clases.fa -o salida.rs
 ```
 
-### `forja repl` — Modo interactivo
+### `forja repl|interactivo [--vm fast|vm|jit]` — Modo interactivo
 
 Intérprete línea por línea. Las variables persisten entre líneas.
 
 ```bash
-forja repl
+cargo run --release --bin forja -- repl
 # 🔨 Forja v0.3.0 — Escribí 'salir' para terminar
 # > variable x = 5
 # > x = x + 10
@@ -119,27 +123,52 @@ forja repl
 # 👋 ¡Hasta luego!
 ```
 
-### `forja diagram|grafico|diagram <archivo>` — Generar diagram HTML
+Seleccionar VM para el REPL:
+```bash
+cargo run --release --bin forja -- repl --vm fast  # ForjaFast 🏆 (default)
+cargo run --release --bin forja -- repl --vm vm    # VM Original
+cargo run --release --bin forja -- repl --vm jit   # VM JIT (Direct Threading)
+```
+
+### `forja medir|bench|medicion|benchmark <archivo> [--iters N] [--vm fast|vm|jit|todas] [--asm]`
+
+Mide tiempos de ejecución: cold (primera ejecución) + hot (promedio de N iteraciones).
+
+```bash
+# Medir en ForjaFast (default)
+cargo run --release --bin forja -- medir examples/hola_mundo.fa --iters 100
+
+# Medir en todas las VMs
+cargo run --release --bin forja -- medir benchmarks/speed_comparison.fa --iters 50 --vm todas
+
+# Medir solo en VM Original
+cargo run --release --bin forja -- medir examples/fib.fa --iters 100 --vm vm
+
+# Medir en ASM nativo (requiere gcc)
+cargo run --release --bin forja -- medir benchmarks/speed_comparison.fa --asm --iters 10
+```
+
+### `forja diagrama|grafico|diagram <archivo>` — Generar diagrama HTML
 
 Genera un HTML interactivo con el árbol AST del código:
 
 ```bash
-forja diagram examples/hola_mundo.fa
+cargo run --release --bin forja -- diagrama examples/hola_mundo.fa
 # Genera: examples/hola_mundo.html
 ```
 
-### `forja formatear|fmt|format <archivo>` — Formatear código
+### `forja fmt|formatear|format <archivo>` — Formatear código
 
 Aplica formato consistente al código Forja (indentación 4 espacios):
 
 ```bash
-forja fmt examples/desorden.fa
+cargo run --release --bin forja -- fmt examples/desorden.fa
 ```
 
-### `forja nuevo|new|crear <nombre>` — Crear nuevo proyecto
+### `forja new|nuevo|crear <nombre>` — Crear nuevo proyecto
 
 ```bash
-forja nuevo mi_programa
+cargo run --release --bin forja -- nuevo mi_programa
 # ✅ Proyecto 'mi_programa' creado
 # cd mi_programa && forja run main.fa
 
@@ -150,34 +179,34 @@ forja nuevo mi_programa
 #     modulos/
 ```
 
-### `forja iniciar|init` — Inicializar proyecto en directorio actual
+### `forja init|iniciar` — Inicializar proyecto en directorio actual
 
 ```bash
-forja init
+cargo run --release --bin forja -- init
 # Crea main.fa, forja.json y modulos/ en el directorio actual
 ```
 
-### `forja aprender|learn` — Tutorial interactivo
+### `forja learn|aprender` — Tutorial interactivo
 
 ```bash
-forja learn
+cargo run --release --bin forja -- learn
 # 🎓 Forja — Aprendé a programar
 # Lección 1: Mostrar mensajes
 # ...
 ```
 
-### `forja explicar|explain <palabra>` — Explicar un concepto
+### `forja explain|explicar <palabra>` — Explicar un concepto
 
 ```bash
-forja explicar escribir
-forja explain funcion
-forja explicar clase
+cargo run --release --bin forja -- explicar escribir
+cargo run --release --bin forja -- explain funcion
+cargo run --release --bin forja -- explicar clase
 ```
 
-### `forja palabras|keywords|lista` — Listar palabras clave
+### `forja keywords|palabras|lista` — Listar palabras clave
 
 ```bash
-forja keywords
+cargo run --release --bin forja -- keywords
 # 📚 Palabras clave de Forja
 #
 #   PALABRA         QUÉ HACE
@@ -187,25 +216,25 @@ forja keywords
 #   ...
 ```
 
-### `forja colorear|highlight|color <archivo>` — Colorear código en terminal
+### `forja highlight|color|colorear <archivo>` — Colorear código en terminal
 
 ```bash
-forja highlight examples/hola_mundo.fa
+cargo run --release --bin forja -- highlight examples/hola_mundo.fa
 # Muestra el código con resaltado de sintaxis ANSI
 ```
 
-### `forja documentar|doc <archivo>` — Generar documentación desde AST
+### `forja doc|documentar <archivo>` — Generar documentación desde AST
 
 ```bash
-forja doc examples/clases.fa
+cargo run --release --bin forja -- doc examples/clases.fa
 ```
 
-### `forja ayuda|help|--help|-h [tema]` — Ayuda
+### `forja help|ayuda|--help|-h [tema]` — Ayuda
 
 ```bash
-forja ayuda
-forja help si
-forja --help
+cargo run --release --bin forja -- ayuda
+cargo run --release --bin forja -- help si
+cargo run --release --bin forja -- --help
 ```
 
 ---
@@ -214,30 +243,75 @@ forja --help
 
 ```bash
 # Básicos
-forja run examples/01_hola.fa
-forja run examples/02_variables.fa
-forja run examples/03_tipos.fa
-forja run examples/04_operaciones.fa
-forja run examples/05_condicionales.fa
-forja run examples/06_bucles.fa
-forja run examples/07_funciones.fa
-forja run examples/08_arrays.fa
-forja run examples/09_strings.fa
+cargo run --release --bin forja -- run examples/01_hola.fa
+cargo run --release --bin forja -- run examples/02_variables.fa
+cargo run --release --bin forja -- run examples/03_tipos.fa
+cargo run --release --bin forja -- run examples/04_operaciones.fa
+cargo run --release --bin forja -- run examples/05_condicionales.fa
+cargo run --release --bin forja -- run examples/06_bucles.fa
+cargo run --release --bin forja -- run examples/07_funciones.fa
+cargo run --release --bin forja -- run examples/08_arrays.fa
+cargo run --release --bin forja -- run examples/09_strings.fa
 
 # Intermedios
-forja run examples/10_clases.fa         # POO completa
-forja run examples/11_mapas.fa          # Diccionarios
-forja run examples/12_input.fa          # Entrada de usuario
-forja run examples/13_errores.fa        # Manejo de errores
+cargo run --release --bin forja -- run examples/10_clases.fa         # POO completa
+cargo run --release --bin forja -- run examples/11_mapas.fa          # Diccionarios
+cargo run --release --bin forja -- run examples/12_input.fa          # Entrada de usuario
+cargo run --release --bin forja -- run examples/13_errores.fa        # Manejo de errores
 
 # Avanzados
-forja run examples/14_adivina.fa        # Juego: adivina el número
-forja run examples/15_calculadora.fa    # Calculadora interactiva
+cargo run --release --bin forja -- run examples/14_adivina.fa        # Juego: adivina el número
+cargo run --release --bin forja -- run examples/15_calculadora.fa    # Calculadora interactiva
 
 # Conceptos
-forja run examples/ownership.fa         # Ownership y préstamos
-forja run examples/poo_simple.fa        # POO sin constructor
-forja run examples/poo_test.fa          # Tests de POO
+cargo run --release --bin forja -- run examples/ownership.fa         # Ownership y préstamos
+cargo run --release --bin forja -- run examples/poo_simple.fa        # POO sin constructor
+cargo run --release --bin forja -- run examples/poo_test.fa          # Tests de POO
+```
+
+---
+
+## Benchmarks
+
+### Benchmarks integrados (cargo bench bins)
+
+Los benchmarks se ejecutan como bins independientes con `cargo run --release --bin <nombre>`:
+
+```bash
+# JIT Nativo vs ForjaFast vs Rust
+cargo run --release --bin bench-jit
+
+# JIT Nativo 100k iteraciones (vs ForjaFast, Python, Rust)
+cargo run --release --bin bench-jit-100k
+
+# VM Original vs JIT(DT)
+cargo run --release --bin bench-vms
+
+# Todas las VMs (cold + hot, completo)
+cargo run --release --bin bench-forjafast
+
+# Rust nativo (baseline con black_box)
+cargo run --release --bin bench-rust-native
+
+# ForjaFast vs Python
+cargo run --release --bin bench-clean
+
+# Completo: Forja vs Rust vs Python vs Go
+cargo run --release --bin bench-completo
+
+# Optimizaciones CPython-style en todas las VMs
+cargo run --release --bin bench-cpython-opt
+
+# Forja vs Python (comparativa detallada)
+cargo run --release --bin bench-vs-python
+```
+
+### Benchmarks con ASM nativo
+
+```bash
+# Medir un .fa compilado a ASM nativo (requiere gcc)
+cargo run --release --bin forja -- medir benchmarks/leibniz_10m.fa --asm --iters 5
+cargo run --release --bin forja -- medir benchmarks/speed_comparison.fa --asm --iters 10
 ```
 
 ---
@@ -246,7 +320,7 @@ forja run examples/poo_test.fa          # Tests de POO
 
 ```bash
 # Ejecutar proyecto con imports desde el directorio raíz
-forja run main.fa
+cargo run --release --bin forja -- run main.fa
 
 # El módulo 'importar "modulos/matematica"' busca:
 #   ./modulos/matematica.fa
@@ -260,21 +334,6 @@ forja run main.fa
 
 ```bash
 # Si usaste transpile, el .rs se compila con rustc
-rustc examples/hola_mundo.rs
+rustc -O examples/hola_mundo.rs
 ./hola_mundo
-```
-
----
-
-## Benchmarks
-
-```bash
-cargo run --release --bin bench-fa           # Benchmark Forja vs Rust
-cargo run --release --bin bench-vm           # Benchmark VM
-cargo run --release --bin bench-compare      # Forja vs Python
-cargo run --release --bin bench-vms          # Comparar las 4 VMs
-cargo run --release --bin bench-jit          # Benchmark JIT
-cargo run --release --bin bench-jit-100k     # JIT con 100k iteraciones
-cargo run --release --bin bench-completo     # Benchmark completo
-cargo run --release --bin bench-cpython-opt  # Forja optimizado vs CPython
 ```

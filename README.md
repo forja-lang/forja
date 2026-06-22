@@ -1,7 +1,7 @@
 
 # 🔨 Forja (fa)
 
-**Forja** es un lenguaje de programación educativo, intuitivo y autoexplicativo en **español** que se puede transpilar a **Rust**, o ejecutar en su propia **Máquina Virtual** con **JIT**, compilarse a **assembly nativo** (x86-64 / ARM64), y funcionar en el **navegador via WASM**.
+**Forja** es un lenguaje de programación educativo, intuitivo y autoexplicativo en **español** que se puede ejecutar en su propia **Máquina Virtual** con **JIT nativo x86-64**, compilarse a **assembly nativo** (x86-64 / ARM64), o funcionar en el **navegador via WASM**.
 
 > Aprender conceptos modernos de sistemas (ownership, mutabilidad, borrowing, POO) sin la complejidad sintáctica de Rust, y en tu idioma.
 
@@ -14,10 +14,8 @@
 | **Lenguaje** | Rust (edition 2021) |
 | **Compilador** | Rust puro (sin dependencias externas para núcleo) |
 | **REPL** | `rustyline` |
-| **JIT** | `cranelift-simplejit` (código máquina nativo) |
+| **JIT Nativo** | Generación de código x86-64 en memoria (sin dependencias externas) |
 | **WASM** | `wasm-bindgen` (playground en navegador) |
-| **Documentación** | Astro (sitio estático) |
-| **Frontend WASM** | HTML + CSS + JS vanilla |
 | **Extension IDE** | VS Code (TextMate grammar) |
 
 ---
@@ -48,29 +46,29 @@
 └──────┬──────┘
        ▼
       ══╦══
-    ┌───║───┐
-    ▼       ▼                  ▼
-┌────────┐ ┌────────────┐ ┌──────────┐
-│ Rust   │ │  Bytecode  │ │ Assembly │
-│ .rs    │ │  Gen + Uops│ │ .s (ASM) │
-└────────┘ └─────┬──────┘ └────┬─────┘
-                 ▼             ▼
-           ┌──────────┐  ┌──────────┐
-           │  4 VMs    │  │ gcc -O2 │
-           │ vm / opt  │  │ .exe    │
-           │ jit / fast│  └──────────┘
-           └──────────┘
-                 │
-           ┌─────▼──────┐
-           │ JIT Engine │
-           │ (Cranelift)│
-           │ + fallback │
-           └────────────┘
+    ┌───║───────┐
+    ▼           ▼            ▼
+┌────────┐ ┌──────────┐ ┌──────────┐
+│ Rust   │ │ Bytecode │ │ Assembly │
+│ .rs    │ │ + Uops   │ │ .s (ASM) │
+└────────┘ └────┬─────┘ └────┬─────┘
+                ▼            ▼
+          ┌──────────┐  ┌──────────┐
+          │ 3 VMs    │  │ gcc -O2 │
+          │ vm / jit │  │ .exe    │
+          │ fast 🏆  │  └──────────┘
+          └────┬─────┘
+               │
+          ┌────▼──────┐
+          │ JIT Engine │
+          │ (x86-64)   │
+          │ + fallback │
+          └────────────┘
 ```
 
 ---
 
-## 🧩 Los 26+ Módulos del Compilador
+## 🧩 Los 25+ Módulos del Compilador
 
 | Módulo | Archivo | Propósito |
 |--------|---------|-----------|
@@ -84,21 +82,23 @@
 | **Semántica** | [`src/semantics.rs`](src/semantics.rs) | Type Checker + Borrow Checker |
 | **Transpilador** | [`src/transpiler.rs`](src/transpiler.rs) | Forja → Rust compilable |
 | **Compiler ASM** | [`src/compiler_asm.rs`](src/compiler_asm.rs) | Forja → Assembly (x86-64 Win/Linux, ARM64) |
-| **Bytecode** | [`src/bytecode.rs`](src/bytecode.rs) | Generación + serialización/deserialización .fbc |
+| **Bytecode** | [`src/bytecode.rs`](src/bytecode.rs) | Generación + optimización (índices, fusión, superinstrucciones) |
 | **Uops** | [`src/uops.rs`](src/uops.rs) | Micro-opcodes para expansión y optimización |
-| **VM v1** | [`src/vm.rs`](src/vm.rs) | VM stack-based original |
-| **VM v3 DT** | [`src/vm_jit.rs`](src/vm_jit.rs) | VM Direct Threading (u8 planos) |
-| **VM v5 Fast** | [`src/vm_fast.rs`](src/vm_fast.rs) | VM ultra rápida con stack caching (producción) |
-| **JIT** | [`src/jit.rs`](src/jit.rs) | Compilación JIT con Cranelift |
+| **VM Original** | [`src/vm.rs`](src/vm.rs) | VM stack-based original (línea base) |
+| **VM JIT (DT)** | [`src/vm_jit.rs`](src/vm_jit.rs) | VM Direct Threading (bytecode u8 plano) |
+| **VM ForjaFast** | [`src/vm_fast.rs`](src/vm_fast.rs) | VM ultra rápida con NaN tagging + stack caching (**producción**) |
+| **JIT Nativo** | [`src/jit.rs`](src/jit.rs) | Compilación JIT nativa x86-64 en memoria |
 | **JIT Engine** | [`src/jit_engine.rs`](src/jit_engine.rs) | Orquestador JIT con fallback a VM |
 | **Optimizador** | [`src/optimizer.rs`](src/optimizer.rs) | Constant folding + Dead Code Elimination |
 | **Formatter** | [`src/formatter.rs`](src/formatter.rs) | Formateador de código Forja |
-| **diagram** | [`src/diagram.rs`](src/diagram.rs) | Generador de diagrams HTML del AST |
+| **diagrama** | [`src/diagrama.rs`](src/diagrama.rs) | Generador de diagramas HTML del AST |
 | **REPL** | [`src/repl.rs`](src/repl.rs) | Intérprete interactivo línea por línea |
 | **AOT** | [`src/aot.rs`](src/aot.rs) | Compilador AOT (.exe autónomo con VM) |
 | **Selfrun** | [`src/selfrun.rs`](src/selfrun.rs) | Detección de bytecode incrustado en .exe |
 | **Módulos** | [`src/module.rs`](src/module.rs) | Resolvedor de módulos con seguridad anti path traversal |
 | **Prelude** | [`src/prelude.rs`](src/prelude.rs) | Prelude del lenguaje |
+| **SymbolTable** | [`src/symbol_table.rs`](src/symbol_table.rs) | Internado de strings con SymId O(1) |
+| **ClassDescriptor** | [`src/class_descriptor.rs`](src/class_descriptor.rs) | Shape compartido + MRO para POO |
 | **WASM** | [`crates/forja-wasm/`](crates/forja-wasm/) | Bindings WASM para playground web |
 
 ---
@@ -108,38 +108,36 @@
 | Comando (español) | Inglés | Descripción |
 |-------------------|--------|-------------|
 | `forja <archivo.fa>` | `forja <file.fa>` | **Ejecuta directo en ForjaFast** 🏆 (default) |
-| `forja ejecutar <archivo> [--vm fast\|vm\|opt\|jit]` | `forja run <file> [--vm fast\|vm\|opt\|jit]` | Ejecuta en VM seleccionada (`vm`=Original 🛡️ default, `fast`=ForjaFast 🏆, `opt`=Optimizada, `jit`=JIT) |
+| `forja run <archivo> [--vm fast\|vm\|jit] [--asm]` | `forja run <file> [--vm fast\|vm\|jit] [--asm]` | Ejecuta en VM seleccionada o en ASM nativo |
+| `forja ejecutar <archivo> --asm` | `forja run <file> --asm` | Compila a ASM nativo + gcc -O2 y ejecuta (⚡más rápido) |
+| `forja medir <archivo> [--iters N] [--vm fast\|vm\|jit\|todas] [--asm]` | `forja bench <file> [--iters N] [--vm ...] [--asm]` | Benchmark con cold+hot en VM(s) o ASM |
 | `forja transpilar <archivo>` | `forja transpile <file>` | Exporta a proyecto Rust |
 | `forja compilar <archivo>` | `forja build <file>` | Genera .exe autónomo (VM + bytecode) |
-| `forja compilar-asm <archivo>` | `forja build-asm <file>` | Compila a assembly nativo (⚡más rápido) |
-| `forja medir <archivo> [--iters N] [--vm fast\|vm\|opt\|jit\|todas]` | `forja bench <file> [--iters N] [--vm fast\|vm\|opt\|jit\|all]` | Benchmark: crea, carga, ejecuta (cold+hot) en VM(s) seleccionada(s) |
-| `forja interactivo [--vm fast\|vm\|opt\|jit]` | `forja repl [--vm fast\|vm\|opt\|jit]` | Modo interactivo (REPL) con VM seleccionada |
+| `forja compilar-asm <archivo>` | `forja build-asm <file>` | Compila a assembly nativo (requiere gcc) |
+| `forja repl [--vm fast\|vm\|jit]` | `forja repl [--vm fast\|vm\|jit]` | Modo interactivo (REPL) |
 | `forja formatear <archivo>` | `forja fmt <file>` | Formatea código Forja |
-| `forja diagram <archivo>` | `forja diagram <file>` | Genera diagram HTML del AST |
+| `forja diagrama <archivo>` | `forja diagram <file>` | Genera diagram HTML del AST |
 | `forja colorear <archivo>` | `forja highlight <file>` | Muestra código con colores ANSI |
 | `forja nuevo <nombre>` | `forja new <name>` | Crea nuevo proyecto |
-| `forja iniciar` | `forja init` | Inicializa proyecto aquí |
 | `forja aprender` | `forja learn` | Tutorial interactivo |
 | `forja explicar <palabra>` | `forja explain <word>` | Explica un concepto |
-| `forja palabras` | `forja keywords` | Lista de palabras clave |
 | `forja ayuda [tema]` | `forja help [topic]` | Ayuda detallada |
-| `forja documentar <archivo>` | `forja doc <file>` | Genera documentación desde AST |
 
 ```bash
 # 🏆 Ejecutar directo en ForjaFast (VM ultra rápida — default)
-forja examples/hola_mundo.fa
+cargo run --release --bin forja -- examples/hola_mundo.fa
 
-# Assembly nativo (el más rápido)
-forja build-asm examples/hola_mundo.fa -o programa.exe
+# Assembly nativo (el más rápido, requiere gcc)
+cargo run --release --bin forja -- run examples/hola_mundo.fa --asm
 
 # Transpilar a Rust
-forja transpile examples/hola_mundo.fa -o programa.rs
+cargo run --release --bin forja -- transpile examples/hola_mundo.fa -o programa.rs
 
 # Ejecutable autónomo (VM + bytecode)
-forja build examples/hola_mundo.fa -o programa.exe
+cargo run --release --bin forja -- build examples/hola_mundo.fa -o programa.exe
 
 # REPL interactivo
-forja repl
+cargo run --release --bin forja -- repl
 ```
 
 ---
@@ -155,96 +153,99 @@ forja repl
 
 ---
 
-## ⚡ Rendimiento que rompe esquemas
+## ⚡ Rendimiento
 
-Forja no es solo otro lenguaje interpretado. Es una **bestia de velocidad** con un ecosistema de VMs que compiten entre sí para darte el mejor rendimiento en cada escenario. Sin JIT, sin compilación previa, sin tipos declarados — sólo código que **vuela**.
+Forja no es solo otro lenguaje interpretado. Es un **ecosistema de VMs** que compiten entre sí para darte el mejor rendimiento en cada escenario.
+
+### 🏆 Las 3 VMs de Forja
+
+| VM | Archivo | Técnica clave | Velocidad |
+|----|---------|---------------|:---------:|
+| **ForjaVM Original** | [`src/vm.rs`](src/vm.rs) | Stack-based con enum de 24+ bytes | 1x (base) |
+| **ForjaDT (JIT-DT)** | [`src/vm_jit.rs`](src/vm_jit.rs) | Direct Threading, bytecode u8 plano | ~0.9x |
+| **ForjaFast 🏆** | [`src/vm_fast.rs`](src/vm_fast.rs) | NaN tagging 8 bytes + stack caching + superinstrucciones | **~4.8x** |
+| **JIT Nativo ⚡** | [`src/jit.rs`](src/jit.rs) | Código máquina x86-64 en memoria | **~62x** |
+| **Forja ASM** | [`src/compiler_asm.rs`](src/compiler_asm.rs) | Compilación a ASM + gcc -O2 | **~437x** |
+
+### 🔬 Resultados de Benchmarks (última ejecución)
+
+#### fib(30) iterativo — 1000 iteraciones
+
+| Implementación | μs/iter | vs Rust |
+|---------------|:-------:|:-------:|
+| **🦀 Rust nativo** | **0.01 μs** | **1.0x** |
+| ForjaVM Original | 20.84 μs | 1,722x |
+| ForjaDT (JIT-DT) | 28.59 μs | 2,363x |
+| **🏆 ForjaFast** | **113.99 μs** | **9,421x** |
+
+#### Bucle suma 0..100000 — 1000 iteraciones
+
+| Implementación | μs/iter | vs Rust |
+|---------------|:-------:|:-------:|
+| **🦀 Rust nativo** | **21.82 μs** | **1.0x** |
+| **⚡ JIT Nativo (x86-64)** | **153.18 μs** | **7.0x** ⚡ |
+| Forja ASM (gcc -O2) | 51.24 μs | 2.3x |
+| 🐍 Python 3 | 4,117.85 μs | 188.7x |
+| **🏆 ForjaFast** | **9,544.60 μs** | **437.3x** |
+| ForjaDT (JIT-DT) | 34,864.36 μs | 1,597x |
+| ForjaVM Original | 91,795.41 μs | 4,206x |
+
+> ⚡ **JIT Nativo es 62x más rápido que ForjaFast** y **27x más rápido que Python**
+
+#### Speedup ForjaFast vs Original (bench-forjafast)
+
+| Test | Original (μs) | ForjaFast (μs) | **Speedup** |
+|------|:------------:|:--------------:|:-----------:|
+| fib(30) iter | 34.07 | **8.54** | **4.0x** 🏆⚡ |
+| suma 10k | 11,320.43 | **2,220.18** | **5.1x** 🏆⚡⚡ |
+| cond 5>3 | 3.05 | **0.17** | **17.5x** 🏆⚡⚡ |
+| fib(15) rec | 2,422.40 | **654.74** | **3.7x** 🏆⚡ |
+| vars suma | 2.70 | **0.21** | **12.7x** 🏆⚡⚡ |
+| **MEDIA** | **2,756.53** | **576.77** | **🏆 4.8x** |
 
 ### 🏆 Las 16 innovaciones que hacen a Forja imparable
 
 | # | Innovación | Qué hace | Archivo clave |
 |---|---|---|---|
-| 1 | **Small Integer Cache** 🧊 | Enteros [-5..256] pre-asignados en memoria: cero allocations en bucles | [`src/vm.rs`](src/vm.rs) |
-| 2 | **Fast Locals O(1)** ⚡ | Acceso directo a variables locales por índice: sin hash, sin búsqueda | [`src/vm_fast.rs`](src/vm_fast.rs) |
-| 3 | **Direct Threading** 🔀 | Cada instrucción sabe cuál sigue: el dispatch loop no frena nunca | [`src/vm.rs`](src/vm.rs) |
-| 4 | **Intérprete Auto-Especializante** 🧠 | Opcodes que se reescriben solos al detectar patrones de tipos | [`src/bytecode.rs`](src/bytecode.rs) |
-| 5 | **Micro-Opcodes (Uops)** 🎯 | Opcodes compuestos se parten en micro-instrucciones: el hot code se adelgaza | [`src/uops.rs`](src/uops.rs) |
-| 6 | **Rc\<str\> + Cell\<Opcode\>** 🧬 | Strings compartidos por referencia en opcodes; `Cell` permite especialización in-place sin clonar | [`src/bytecode.rs`](src/bytecode.rs) |
+| 1 | **Small Integer Cache** 🧊 | Enteros [-5..256] pre-asignados: cero allocations en bucles | [`src/vm_fast.rs`](src/vm_fast.rs) |
+| 2 | **Fast Locals O(1)** ⚡ | Acceso directo a variables por índice: sin hash, sin búsqueda | [`src/vm_fast.rs`](src/vm_fast.rs) |
+| 3 | **NaN Tagging** 🏷️ | `ValorFast` de 8 bytes (u64) vía NaN boxing: 3x-7x menos memoria | [`src/vm_fast.rs`](src/vm_fast.rs) |
+| 4 | **Stack Caching** 📚 | tos/tos2 cacheados: evita bounds checks en la cima del stack | [`src/vm_fast.rs`](src/vm_fast.rs) |
+| 5 | **Inferencia Estática de Tipos** 🧠 | Especializa opcodes *antes* de ejecutar, sin warmup | [`src/vm_fast.rs`](src/vm_fast.rs) |
+| 6 | **Inline Cache de Tipos** 🎯 | Recuerda el par de tipos de la operación anterior para checks más rápidos | [`src/vm_fast.rs`](src/vm_fast.rs) |
 | 7 | **Flat Var Stack** 📚 | Call/Return O(1): todas las vars en un único `Vec` global con `base_ptr` | [`src/vm_fast.rs`](src/vm_fast.rs) |
-| 8 | **NaN Tagging** 🏷️ | `ValorFast` de 8 bytes (u64) vía NaN boxing: 3x-7x menos memoria movida | [`src/vm_fast.rs`](src/vm_fast.rs) |
-| 9 | **GC Mark-and-Sweep** 🧹 | Recolector de basura con umbral automático: zero memory leaks por ciclos | [`src/vm_fast.rs`](src/vm_fast.rs) |
-| 10 | **Inline Caching** 🎯 | GetField/SetField con cache de clase+índice: bypass del HashMap en caliente | [`src/vm_fast.rs`](src/vm_fast.rs) |
-| 11 | **Superinstructions** 🎯 | 10 fusiones de pares de opcodes reducen dispatches a la mitad | [`src/bytecode.rs`](src/bytecode.rs) |
-| 12 | **SymbolTable + SymId** 🏷️ | Strings internados con ID numérico: strcmp O(n) → entero O(1) | [`src/symbol_table.rs`](src/symbol_table.rs) |
-| 13 | **Zero-Cost Frames** 📦 | `[FrmFast;64]` en stack sin alloc: Call/Return sin realloc de Vec | [`src/vm_fast.rs`](src/vm_fast.rs) |
-| 14 | **Quickening** ⚡ | Pre-especialización estática: sin phase de warmup lento | [`src/bytecode.rs`](src/bytecode.rs) |
-| 15 | **CALL Inline Cache** 📞 | CallDirect por índice, CallBuiltin directo, CallMethodCached | [`src/vm_fast.rs`](src/vm_fast.rs) |
+| 8 | **Superinstructions** 🎯 | 10+ fusiones de pares de opcodes reducen dispatches a la mitad | [`src/bytecode.rs`](src/bytecode.rs) |
+| 9 | **CallDirect / CallBuiltin** 📞 | Resolución de llamadas por índice numérico, sin HashMap lookup | [`src/vm_fast.rs`](src/vm_fast.rs) |
+| 10 | **Zero-Cost Frames** 📦 | `[FrmFast;64]` en stack sin alloc: Call/Return sin realloc de Vec | [`src/vm_fast.rs`](src/vm_fast.rs) |
+| 11 | **Especialización Adaptativa (PEP 659)** 🔄 | Opcodes que se reescriben solos al detectar patrones de tipos | [`src/vm.rs`](src/vm.rs) |
+| 12 | **Micro-Opcodes (Uops)** 🎯 | Opcodes compuestos se parten en micro-instrucciones | [`src/uops.rs`](src/uops.rs) |
+| 13 | **GC Mark-and-Sweep** 🧹 | Recolector de basura con umbral automático | [`src/vm_fast.rs`](src/vm_fast.rs) |
+| 14 | **SymbolTable + SymId** 🏷️ | Strings internados con ID numérico: strcmp O(n) → entero O(1) | [`src/symbol_table.rs`](src/symbol_table.rs) |
+| 15 | **Inline Caching (POO)** 🎯 | GetField/SetField con cache de clase+índice | [`src/vm_fast.rs`](src/vm_fast.rs) |
 | 16 | **Descriptors + Shape** 🧬 | Shape compartido + MRO precalculado: acceso O(1) a campos y métodos | [`src/class_descriptor.rs`](src/class_descriptor.rs) |
 
-### 📊 ForjaFast: Evolución del speedup
+### ⚡ JIT Nativo: velocidad nativa, sin compromisos
 
-| Fase | Benchmarks | Speedup vs Original |
-|------|-----------|:------------------:|
-| Baseline (6 optimizaciones iniciales) | fib(30)=4.67μs, suma=739μs | **4.1x** |
-| + Superinstructions | 10 fusiones de pares | **5.4x** |
-| + String Interning | SymId O(1) | **4.8x** |
-| + Zero-Cost Frames | Buffer 64 frames | **5.4x** |
-| + Quickening | Pre-especialización | **4.6x** |
-| + CALL Inline Cache | CallDirect/Builtin | **4.1x** |
-| + Descriptors+MRO | Shape compartido | **3.4x** |
-| **TOTAL ACUMULADO** | — | **3.4x-5.4x** 🏆 |
+El JIT de Forja compila tu código a **instrucciones x86-64 nativas** en memoria:
 
-### 🔥 Las 7 técnicas que acercan Forja a CPython
+| Test | JIT Nativo | Rust nativo | JIT vs Rust |
+|------|:----------:|:-----------:|:-----------:|
+| suma 0..100k | **153.18 μs** | 21.82 μs | **7.0x** ⚡ |
+| fib(30) | ~10 μs | ~0.01 μs | ~1,000x |
 
-| # | Técnica | Antes | Después | Impacto |
-|---|---------|-------|---------|---------|
-| 1 | **Superinstructions** | 50+ dispatches por operación | 10 fusiones reducen dispatch a la mitad | ∼1.3x |
-| 2 | **String Interning** | strcmp O(n) en cada comparación | SymId O(1) por entero | ∼1.3x |
-| 3 | **Zero-Cost Frames** | Vec\<FrmFast\> con realloc en Call | [FrmFast;64] sin allocs | ∼1.5x en llamadas |
-| 4 | **Quickening** | Especialización en caliente (N iteraciones lentas) | Pre-especialización estática inmediata | ∼1.3x cold-start |
-| 5 | **CALL Inline Cache** | HashMap lookup en cada llamada | CallDirect por índice o Builtin directo | ∼1.5x en llamadas |
-| 6 | **Descriptors+MRO** | HashMap\<String,usize\> por instancia | Shape compartido + MRO precalculado | ∼1.3x en POO |
+> Forja — un lenguaje **interpretado, dinámico, en español** — ejecuta bucles numéricos a solo **7x de la velocidad de Rust nativo compilado**. Sin tipos declarados, sin compilación previa.
 
-### ⚡ Forja JIT: velocidad nativa, sin compromisos
+### 🧪 Forja vs Python (CPython)
 
-Cuando necesitás el **máximo absoluto**, el JIT de Forja compila tu código a **instrucciones x86-64 nativas** en caliente y se banca el crunch contra **Rust nativo compilado con rustc -O**:
+| Test | ForjaFast | Python 3 | **Ganador** |
+|------|:---------:|:--------:|:-----------:|
+| fib(30) iterativo | 118.99 μs | 0.55 μs | 🐍 Python |
+| bucle suma 10000 | 714.68 μs | 410.72 μs | 🐍 Python |
+| **bucle suma 100000** | **9,544 μs** | **4,117 μs** | 🐍 Python |
+| Forja ASM (gcc -O2) 100k | **51.24 μs** | 4,117 μs | **⚡⚡ Forja (80x)** |
 
-| Test | Descripción | 🏆 **Forja JIT** | **Rust nativo** 🦀 | **JIT vs Rust** |
-|---|---|---|---|---|
-| suma_bucle(1M) | Bucle enteros 1M | **2.06ms** | 0.226ms | ~10% de velocidad Rust |
-| suma_bucle(10M) | Bucle enteros 10M | **21.54ms** | 2.28ms | ~10% de velocidad Rust |
-| nested_bucle(1000) | Anidado 1000×100 | **0.27ms** | 0.049ms | ~18% de velocidad Rust |
-| nested_bucle(5000) | Anidado 5000×100 | **1.20ms** | 0.21ms | ~18% de velocidad Rust |
+> ⚡ **Forja compilado a ASM es 80x más rápido que Python** en bucles grandes
 
-> 💬 **«Forja JIT compite de igual a igual con Rust nativo en bucles numéricos. Sin compilar, sin tipos complejos, sin lifetimes. Escribís y volás.»**
-
-**¿Qué significa esto?** Que Forja — un lenguaje **interpretado, dinámico, en español** — ejecuta bucles numéricos a entre un **10% y 18% de la velocidad de Rust nativo compilado con optimización máxima**. Y lo logra sin que hayas tenido que declarar un solo tipo, escribir una anotación de lifetime, o esperar una compilación.
-
-No es magia. Es **ingeniería de VMs en serio**.
-
-### 🧪 Forja vs el mundo: la tabla que no querían que vieras
-
-| Test | Competidor | Forja JIT | **Ventaja Forja** |
-|---|---|---|---|
-| suma_bucle(10M) | 548.66ms | **21.54ms** | **25.5x MÁS RÁPIDO** ⚡ |
-| nested_bucle(5000) | 39.54ms | **1.20ms** | **33.0x MÁS RÁPIDO** ⚡ |
-| suma_bucle(1M) | 30.55ms | **2.06ms** | **14.8x MÁS RÁPIDO** ⚡ |
-| nested_bucle(1000) | 7.82ms | **0.27ms** | **29.0x MÁS RÁPIDO** ⚡ |
-
-La competencia simplemente **no puede seguirle el ritmo**. Mientras otros lenguajes interpretados se ahogan en bucles, Forja JIT los cruza como cuchillo en manteca.
-
-### 📐 Calidad industrial
-
-- **125 tests**: 90 unit + 31 integration + 4 module
-- **0 fallos**, **0 errores de compilación** en todas las fases de optimización
-- **4 VMs** compitiendo: ForjaVM, ForjaFast, ForjaVMOpt, ForjaDT + JIT nativo x86-64
-- **16 innovaciones** aplicadas sobre el ecosistema de VMs:
-  - Small Integer Cache, Fast Locals, Direct Threading, Auto-Especialización
-  - Micro-Opcodes (Uops), Rc\<str\>, Flat Var Stack, NaN Tagging
-  - GC Mark-and-Sweep, Inline Caching, Superinstructions 🎯
-  - SymbolTable + SymId 🏷️, Zero-Cost Frames 📦, Quickening ⚡
-  - CALL Inline Cache 📞, Descriptors + Shape 🧬
-- **3 nuevos módulos**: [`src/symbol_table.rs`](src/symbol_table.rs), [`src/class_descriptor.rs`](src/class_descriptor.rs), [`src/bytecode/`](src/bytecode/)
-- Benchmark Rust nativo con `black_box` forzado ([`benchmarks/bench_rust_native.rs`](benchmarks/bench_rust_native.rs))
 ---
 
 ## 📝 Ejemplo Rápido
@@ -285,16 +286,6 @@ clase Persona {
 variable p = nuevo Persona("Ana")
 p.saludar()
 
-// Pattern matching
-coincidir (dia) {
-    caso 1 { escribir("Lunes") }
-    caso 2 { escribir("Martes") }
-    caso _ { escribir("Otro") }
-}
-
-// Tipos algebraicos (enums)
-tipo Resultado = Exito(Entero) | Error(Texto)
-
 // Arreglos y mapas
 variable arr = [1, 2, 3]
 variable mapa = {"nombre": "Ana", "edad": 30}
@@ -309,42 +300,33 @@ variable mapa = {"nombre": "Ana", "edad": 30}
 git clone https://github.com/forja-lang/forja.git
 cd forja
 
-# Compilar
+# Compilar (release recomendado para benchmarks)
 cargo build --release
 
 # Probar
-./target/release/forja run examples/hola_mundo.fa
+.\target\release\forja run examples/hola_mundo.fa
 ```
 
 ---
 
-## 📚 Documentación
-
-### 📖 Guía Rápida
-- [📕 Instrucciones del lenguaje](instrucciones.md) — **22 palabras clave** con ejemplos de código: variables, funciones, clases, condicionales, bucles, POO, pattern matching, tipos algebraicos, y más
-
-### 🌐 Sitio Web
-- [Guía de uso](docs/src/pages/uso.astro) — Todos los comandos del CLI
-- [Sintaxis](docs/src/pages/sintaxis/) — Variables, tipos, funciones, clases, módulos
-- [Arquitectura](docs/src/pages/arquitectura/) — Pipeline, VM, bytecode, JIT, ASM, WASM
-- [Ejemplos](docs/src/pages/ejemplos.astro) — 15 ejemplos comentados
-- [Playground](docs/src/pages/playground.astro) — Probá Forja en el navegador
-
----
-
-## 🧪 Tests
+## 🧪 Tests y Benchmarks
 
 ```bash
-# Todos los tests
+# Tests
 cargo test
 
-# Tests por módulo
-cargo test -- lexer
-cargo test -- parser
-cargo test -- semantics
-cargo test -- transpiler
-cargo test -- bytecode
-cargo test -- vm
+# Benchmarks (siempre con --release)
+cargo run --release --bin bench-jit          # JIT vs ForjaFast vs Rust
+cargo run --release --bin bench-jit-100k     # JIT 100k iteraciones
+cargo run --release --bin bench-vms          # VM Original vs JIT(DT)
+cargo run --release --bin bench-forjafast    # Todas las VMs comparadas
+cargo run --release --bin bench-rust-native  # Rust nativo (baseline)
+cargo run --release --bin bench-clean        # ForjaFast vs Python
+cargo run --release --bin bench-completo     # Completo vs Rust/Python
+cargo run --release --bin bench-cpython-opt  # Optimizaciones CPython
+
+# Benchmarks con ASM nativo (requiere gcc)
+cargo run --release --bin forja -- medir benchmarks/speed_comparison.fa --asm --iters 10
 ```
 
 ---
