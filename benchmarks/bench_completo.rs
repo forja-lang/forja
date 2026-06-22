@@ -2,7 +2,7 @@
 // Ejecutar: cargo run --release --bin bench-completo
 //
 // Mide:
-//   Forja VM Original, VM Opt, VM JIT, ASM nativo (gcc -O2), Rust nativo
+//   Forja VM Original, VM JIT, ASM nativo (gcc -O2), Rust nativo
 //   Python (CPython), Go (si está instalado)
 
 use std::time::Instant;
@@ -23,7 +23,6 @@ fn main() {
     println!("───────────────────────────────────────────────────────────");
 
     let t_forja_vm = forja_vm_bench(FIB_FA, iters);
-    let t_forja_opt = forja_vm_opt_bench(FIB_FA, iters);
     let t_forja_jit = forja_vm_jit_bench(FIB_FA, iters);
     let t_forja_asm = forja_asm_bench(FIB_FA_SRC, iters);
     let t_rust = rust_fib_bench(iters);
@@ -39,7 +38,6 @@ fn main() {
     println!("───────────────────────────────────────────────────────────");
 
     let t_forja_vm2 = forja_vm_bench(SUMA_10K_FA, iters);
-    let t_forja_opt2 = forja_vm_opt_bench(SUMA_10K_FA, iters);
     let t_forja_jit2 = forja_vm_jit_bench(SUMA_10K_FA, iters);
     let t_forja_asm2 = forja_asm_bench(SUMA_FA_SRC, iters);
     let t_rust2 = rust_sum_100k_bench(iters);
@@ -58,7 +56,6 @@ fn main() {
     println!("  {:<28} {:>10} {:>10}", "Implementacion", "us/iter", "vs Python");
     println!("  {:─<28} {:─>10} {:─>10}", "", "", "");
     print_row("Forja VM Original", t_forja_vm, t_python);
-    print_row("Forja VM Opt", t_forja_opt, t_python);
     print_row("Forja VM JIT (DT)", t_forja_jit, t_python);
     print_row("Forja ASM (gcc -O2)", t_forja_asm, t_python);
     print_row("Rust nativo", t_rust, t_python);
@@ -70,7 +67,6 @@ fn main() {
     println!("  {:<28} {:>10} {:>10}", "Implementacion", "us/iter", "vs Python");
     println!("  {:─<28} {:─>10} {:─>10}", "", "", "");
     print_row("Forja VM Original", t_forja_vm2, t_python2);
-    print_row("Forja VM Opt", t_forja_opt2, t_python2);
     print_row("Forja VM JIT (DT)", t_forja_jit2, t_python2);
     print_row("Forja ASM (gcc -O2)", t_forja_asm2, t_python2);
     print_row("Rust nativo (100k)", t_rust2, t_python2);
@@ -101,22 +97,6 @@ fn forja_vm_bench(source: &str, iters: usize) -> f64 {
     let inicio = Instant::now();
     for _ in 0..iters {
         let mut vm = forja::vm::ForjaVM::new();
-        vm.cargar_bytecode(bc.clone());
-        let _ = vm.ejecutar();
-    }
-    inicio.elapsed().as_secs_f64() * 1_000_000.0 / iters as f64
-}
-
-fn forja_vm_opt_bench(source: &str, iters: usize) -> f64 {
-    let mut gen = forja::bytecode::BytecodeGenerator::new();
-    let mut lexer = forja::lexer::Lexer::new(source);
-    let tokens = lexer.tokenize().unwrap();
-    let mut parser = forja::parser::Parser::new(tokens);
-    let prog = parser.parse().unwrap();
-    let bc = gen.generar(&prog).unwrap();
-    let inicio = Instant::now();
-    for _ in 0..iters {
-        let mut vm = forja::vm_opt::ForjaVMOpt::new();
         vm.cargar_bytecode(bc.clone());
         let _ = vm.ejecutar();
     }

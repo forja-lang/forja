@@ -29,13 +29,13 @@ Soporte de sintaxis para el lenguaje de programación **Forja** (archivos `.fa`)
 ### Desde VSIX (recomendado)
 
 1. En VS Code: `Ctrl+Shift+P` → "Extensions: Install from VSIX..."
-2. Seleccioná `vscode/forja-syntax/forja-syntax-0.2.0.vsix`
+2. Seleccioná `vscode/forja-syntax/forja-syntax-0.3.0.vsix`
 3. Abrí un archivo `.fa` — la sintaxis se colorea automáticamente
 
 ### Desde terminal
 
 ```bash
-code --install-extension vscode/forja-syntax/forja-syntax-0.2.0.vsix
+code --install-extension vscode/forja-syntax/forja-syntax-0.3.0.vsix
 ```
 
 ### Manual

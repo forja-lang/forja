@@ -1,4 +1,4 @@
-// Forja VM Optimizada vs Python vs Rust Nativo
+// Forja VM vs Python vs Rust Nativo
 // Ejecuta 1000 iteraciones, compara los 3
 //
 // cargo run --release --bin bench-compare
@@ -7,7 +7,7 @@ use std::time::Instant;
 
 fn main() {
     println!("═══════════════════════════════════════════════════════════");
-    println!("  🔥 Forja VM Opt vs Python vs Rust — 1000 iters");
+    println!("  🔥 Forja VM vs Python vs Rust — 1000 iters");
     println!("═══════════════════════════════════════════════════════════");
     println!("  Objetivo: Forja VM < Python (mitad de tiempo)");
     println!();
@@ -33,14 +33,9 @@ fn main() {
     // Forja VM (original)
     let t_forja_old = forja_vm_bench("fib30.fa", FIB_30_FA, iters);
 
-    // Forja VM Optimizada
-    let t_forja_opt = forja_vm_opt_bench("fib30.fa", FIB_30_FA, iters);
-
     mostrar("Rust nativo", t_rust);
     mostrar("Forja VM (original)", t_forja_old);
-    mostrar("Forja VM (OPTIMIZADA)", t_forja_opt);
-    println!("  → Speedup vs original:  {:.2}x", t_forja_old / t_forja_opt);
-    println!("  → vs Rust nativo:       {:.2}x", t_forja_opt / t_rust);
+    println!("  → vs Rust nativo:       {:.2}x", t_forja_old / t_rust);
 
     // ============================================================
     // TEST 2: Bucle 100000 (suma intensiva)
@@ -60,12 +55,9 @@ fn main() {
     let t_rust = duracion(iters, inicio.elapsed());
 
     let t_forja_old = forja_vm_bench("suma.fa", SUMA_FA, iters);
-    let t_forja_opt = forja_vm_opt_bench("suma.fa", SUMA_FA, iters);
 
     mostrar("Rust nativo", t_rust);
     mostrar("Forja VM (original)", t_forja_old);
-    mostrar("Forja VM (OPTIMIZADA)", t_forja_opt);
-    println!("  → Speedup vs original:  {:.2}x", t_forja_old / t_forja_opt);
 
     // ============================================================
     // TEST 3: Llamadas a función (recursión)
@@ -84,12 +76,9 @@ fn main() {
     let t_rust = duracion(iters, inicio.elapsed());
 
     let t_forja_old = forja_vm_bench("fib_rec.fa", FIB_REC_FA, iters);
-    let t_forja_opt = forja_vm_opt_bench("fib_rec.fa", FIB_REC_FA, iters);
 
     mostrar("Rust nativo", t_rust);
     mostrar("Forja VM (original)", t_forja_old);
-    mostrar("Forja VM (OPTIMIZADA)", t_forja_opt);
-    println!("  → Speedup vs original:  {:.2}x", t_forja_old / t_forja_opt);
 
     // ============================================================
     // RESUMEN
@@ -150,28 +139,8 @@ fn forja_vm_bench(_name: &str, source: &str, iters: usize) -> f64 {
 }
 
 // ============================================================
-// Benchmarks con Forja VM OPTIMIZADA
+// Benchmarks con Forja VM
 // ============================================================
-
-fn forja_vm_opt_bench(_name: &str, source: &str, iters: usize) -> f64 {
-    let mut gen = forja::bytecode::BytecodeGenerator::new();
-    let mut lexer = forja::lexer::Lexer::new(source);
-    let tokens = lexer.tokenize().unwrap();
-    let mut parser = forja::parser::Parser::new(tokens);
-    let prog = parser.parse().unwrap();
-    let bc = gen.generar(&prog).unwrap();
-
-    let inicio = Instant::now();
-    for i in 0..iters {
-        let mut vm = forja::vm_opt::ForjaVMOpt::new();
-        vm.cargar_bytecode(bc.clone());
-        vm.ejecutar().unwrap();
-        if i == 0 {
-            let _ = vm.obtener_output().to_vec();
-        }
-    }
-    duracion(iters, inicio.elapsed())
-}
 
 // ============================================================
 // Rust nativo (baseline)

@@ -7,7 +7,6 @@ use forja::bytecode::{BytecodeGenerator, Opcode};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
 use forja::vm::ForjaVM;
-use forja::vm_opt::ForjaVMOpt;
 use forja::vm_jit::{ForjaDT, BytecodeDT, compilar_bytecode};
 use forja::vm_fast::ForjaFast;
 
@@ -101,35 +100,6 @@ fn medir_cold_original(bc: &[Opcode]) -> f64 {
 
 fn medir_hot_original(bc: &[Opcode]) -> f64 {
     let mut vm = ForjaVM::new();
-    vm.set_max_instrucciones(1_000_000_000);
-    vm.cargar_bytecode(bc.to_vec());
-    with_silent_stdout(|| {
-        for _ in 0..WARMUP_ITERS {
-            vm.reset();
-            vm.ejecutar().unwrap();
-        }
-        let inicio = Instant::now();
-        for _ in 0..HOT_ITERS {
-            vm.reset();
-            vm.ejecutar().unwrap();
-        }
-        inicio.elapsed().as_secs_f64() * 1_000_000.0 / HOT_ITERS as f64
-    })
-}
-
-fn medir_cold_opt(bc: &[Opcode]) -> f64 {
-    let mut vm = ForjaVMOpt::new();
-    vm.set_max_instrucciones(1_000_000_000);
-    vm.cargar_bytecode(bc.to_vec());
-    with_silent_stdout(|| {
-        let inicio = Instant::now();
-        vm.ejecutar().unwrap();
-        inicio.elapsed().as_secs_f64() * 1_000_000.0
-    })
-}
-
-fn medir_hot_opt(bc: &[Opcode]) -> f64 {
-    let mut vm = ForjaVMOpt::new();
     vm.set_max_instrucciones(1_000_000_000);
     vm.cargar_bytecode(bc.to_vec());
     with_silent_stdout(|| {
@@ -386,11 +356,6 @@ fn main() {
         let hot_orig  = medir_hot_original(&bcs[test_idx]);
         print_fila("ForjaVM (Original)", cold_orig, hot_orig, hot_orig, rust_us, false);
 
-        // Opt
-        let cold_opt = medir_cold_opt(&bcs[test_idx]);
-        let hot_opt  = medir_hot_opt(&bcs[test_idx]);
-        print_fila("ForjaVMOpt", cold_opt, hot_opt, hot_orig, rust_us, false);
-
         // JIT — usa bytecode raw (no optimizado) porque no soporta %idx_N con funciones
         let cold_jit = medir_cold_jit(&bcs_raw[test_idx]);
         let hot_jit  = medir_hot_jit(&bcs_raw[test_idx], &bcs_jit[test_idx]);
@@ -405,9 +370,8 @@ fn main() {
 
         // Mostrar speedups
         let fast_vs_orig = if hot_orig > 0.0  { hot_orig / hot_fast } else { 0.0 };
-        let fast_vs_opt  = if hot_opt > 0.0   { hot_opt / hot_fast } else { 0.0 };
         let fast_vs_jit  = if hot_jit > 0.0   { hot_jit / hot_fast } else { 0.0 };
-        println!("  🏆 ForjaFast vs Original: {:.2}x · vs Opt: {:.2}x · vs JIT: {:.2}x", fast_vs_orig, fast_vs_opt, fast_vs_jit);
+        println!("  🏆 ForjaFast vs Original: {:.2}x · vs JIT: {:.2}x", fast_vs_orig, fast_vs_jit);
 
         if hot_fast > 0.0 {
             let cold_hot_ratio = cold_fast / hot_fast;
@@ -425,13 +389,11 @@ fn main() {
     print_separador();
 
     let mut res_orig: Vec<f64> = Vec::new();
-    let mut res_opt: Vec<f64>  = Vec::new();
     let mut res_jit: Vec<f64>  = Vec::new();
     let mut res_fast: Vec<f64> = Vec::new();
 
     for i in 0..tests.len() {
         res_orig.push(medir_hot_original(&bcs[i]));
-        res_opt.push(medir_hot_opt(&bcs[i]));
         res_jit.push(medir_hot_jit(&bcs_raw[i], &bcs_jit[i]));
         res_fast.push(medir_hot_fast(&bcs[i]));
     }
@@ -440,30 +402,26 @@ fn main() {
 
     for i in 0..tests.len() {
         let b = res_orig[i];
-        let opt_r = if b > 0.0 { b / res_opt[i] } else { 0.0 };
         let jit_r = if b > 0.0 { b / res_jit[i] } else { 0.0 };
         let fast_r = if b > 0.0 { b / res_fast[i] } else { 0.0 };
-        println!("  {:<22} {:>11.2}μs {:>7.2}x {:>7.2}x {:>9.2}x{}",
-            nombres_cortos[i], b, opt_r, jit_r, fast_r,
+        println!("  {:<22} {:>11.2}μs {:>7.2}x {:>9.2}x{}",
+            nombres_cortos[i], b, jit_r, fast_r,
             if fast_r >= 5.0 { " 🏆⚡⚡" } else if fast_r >= 3.0 { " 🏆⚡" } else if fast_r >= 2.0 { " 🏆" } else { "" });
     }
 
     print_separador();
     let avg_orig = res_orig.iter().sum::<f64>() / res_orig.len() as f64;
-    let avg_opt  = res_opt.iter().sum::<f64>() / res_opt.len() as f64;
     let avg_jit  = res_jit.iter().sum::<f64>() / res_jit.len() as f64;
     let avg_fast = res_fast.iter().sum::<f64>() / res_fast.len() as f64;
-    let avg_or   = if avg_orig > 0.0 { avg_orig / avg_opt } else { 0.0 };
     let avg_jr   = if avg_orig > 0.0 { avg_orig / avg_jit } else { 0.0 };
     let avg_fr   = if avg_orig > 0.0 { avg_orig / avg_fast } else { 0.0 };
 
-    println!("  {:<22} {:>11.2}μs {:>7.2}x {:>7.2}x {:>9.2}x 🏆",
-        "MEDIA", avg_orig, avg_or, avg_jr, avg_fr);
+    println!("  {:<22} {:>11.2}μs {:>7.2}x {:>9.2}x 🏆",
+        "MEDIA", avg_orig, avg_jr, avg_fr);
     println!();
 
     if avg_fast > 0.0 {
         println!("  🏆 ForjaFast es {:.1}x más rápido que Original (hot)", avg_fr);
-        println!("  🏆 ForjaFast es {:.1}x más rápido que Opt", avg_orig / avg_fast);
         println!("  🏆 ForjaFast es {:.1}x más rápido que JIT (DT)", avg_orig / avg_fast);
     }
 
