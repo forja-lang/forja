@@ -37,8 +37,8 @@ pub mod module;
 pub mod prelude;
 
 // Módulos puramente algorítmicos (compatibles con WASM)
-// Diagrama genera HTML, formatter y optimizer son puro AST
-pub mod diagrama;
+// diagram genera HTML, formatter y optimizer son puro AST
+pub mod diagram;
 pub mod optimizer;
 pub mod formatter;
 

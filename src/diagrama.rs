@@ -1,4 +1,4 @@
-/// Generador de diagramas HTML - forja diagrama|grafico <archivo.fa>
+/// Generador de diagrams HTML - forja diagram|grafico <archivo.fa>
 use crate::ast::*;
 
 pub struct DiagramGenerator {
@@ -17,7 +17,7 @@ impl DiagramGenerator {
 
         let h = format!(r#"<!DOCTYPE html>
 <html lang='es'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>
-<title>Diagrama Forja</title>
+<title>diagram Forja</title>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#c9d1d9;padding:20px}}
@@ -73,7 +73,7 @@ button.a{{background:#1f6feb;border-color:#1f6feb}}
 
 @media print{{body{{background:#fff;color:#000;padding:0}}.hd{{display:none}}.v{{border:none;padding:10px;background:#fff}}.t ul{{padding-left:14px}}.t .n{{border-color:#ccc!important}}.t .hd{{display:block!important}}.t .cl .arw{{transform:none}}.fw .ar,.fw .jl{{background:#999!important}}.fw .ar::after{{border-top-color:#999!important}}.fw .bx{{border-color:#333!important}}@page{{margin:1cm}}}}
 </style></head><body>
-<div class='hd'><h1>Diagrama Forja</h1><span class='stats'>{n} declaraciones</span>
+<div class='hd'><h1>diagram Forja</h1><span class='stats'>{n} declaraciones</span>
 <button id='ba' class='a' onclick="v('a')">Arbol</button>
 <button id='bf' onclick="v('f')">Flujo</button>
 <button onclick="ex()">Expandir</button><button onclick="co()">Colapsar</button><button onclick="window.print()">PDF</button></div>

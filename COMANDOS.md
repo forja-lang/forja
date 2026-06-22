@@ -119,12 +119,12 @@ forja repl
 # 👋 ¡Hasta luego!
 ```
 
-### `forja diagrama|grafico|diagram <archivo>` — Generar diagrama HTML
+### `forja diagram|grafico|diagram <archivo>` — Generar diagram HTML
 
 Genera un HTML interactivo con el árbol AST del código:
 
 ```bash
-forja diagrama examples/hola_mundo.fa
+forja diagram examples/hola_mundo.fa
 # Genera: examples/hola_mundo.html
 ```
 

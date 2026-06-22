@@ -21,7 +21,7 @@ mod class_descriptor;
 mod repl;
 mod aot;
 mod selfrun;
-mod diagrama;
+mod diagram;
 mod optimizer;
 mod formatter;
 
@@ -63,8 +63,8 @@ fn main() {
                 repl.iniciar();
             }
         }
-        // Generar diagrama HTML
-        "diagrama" | "grafico" | "diagram" => cmd_diagrama(&args[2..]),
+        // Generar diagram HTML
+        "diagram" | "grafico" | "diagram" => cmd_diagram(&args[2..]),
         // Compilar a ejecutable autónomo
         "build" | "compilar" | "construir" => cmd_build(&args[2..]),
         // Formatear código
@@ -298,7 +298,7 @@ fn mostrar_ayuda() {
     println!("COMANDOS:");
     println!("  ejecutar <archivo>         Ejecutar .fa en la VM");
     println!("  repl                       Modo interactivo");
-    println!("  diagrama <archivo>         Generar diagrama HTML del código");
+    println!("  diagram <archivo>         Generar diagram HTML del código");
     println!("  compilar <archivo>         Generar .exe autónomo");
     println!("  compilar-asm <archivo>     Compilar a assembly nativo [--target <arch>] [-o <salida>]");
     println!("  formatear <archivo>         Formatear código .fa");
@@ -644,10 +644,10 @@ fn cmd_build(args: &[String]) {
     }
 }
 
-/// forja diagrama|grafico <archivo.fa> [-o <salida.html>]
-fn cmd_diagrama(args: &[String]) {
+/// forja diagram|grafico <archivo.fa> [-o <salida.html>]
+fn cmd_diagram(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja diagrama|grafico <archivo.fa> [-o <salida.html>]");
+        eprintln!("Uso: forja diagram|grafico <archivo.fa> [-o <salida.html>]");
         process::exit(1);
     }
 
@@ -678,13 +678,13 @@ fn cmd_diagrama(args: &[String]) {
         Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
     };
 
-    // Generar diagrama HTML
-    let mut gen = diagrama::DiagramGenerator::new();
+    // Generar diagram HTML
+    let mut gen = diagram::DiagramGenerator::new();
     let html = gen.generar(&programa);
 
     if let Some(out) = output_path {
         match fs::write(&out, &html) {
-            Ok(_) => println!("✅ Diagrama generado: {}", out),
+            Ok(_) => println!("✅ diagram generado: {}", out),
             Err(e) => { eprintln!("Error al escribir '{}': {}", out, e); process::exit(1); }
         }
     } else {
