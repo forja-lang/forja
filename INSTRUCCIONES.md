@@ -635,4 +635,4 @@ escribir("Suma 1..100: " + suma)                // 5050
 
 ---
 
-> 📌 **Para ejecutar**: `forja run instrucciones.md` o `cargo run -- run instrucciones.fa`
+> 📌 **Para ejecutar**: `cargo run --release --bin forja -- run instrucciones.fa`
