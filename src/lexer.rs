@@ -294,6 +294,7 @@ impl Lexer {
             '+' => { self.advance(); TokenKind::Mas }
             '-' => { self.advance(); TokenKind::Menos }
             '*' => { self.advance(); TokenKind::Por }
+            '%' => { self.advance(); TokenKind::Porcentaje }
             '/' => {
                 // Si es // es comentario, pero skip_comentarios ya lo maneja
                 // Aquí llegamos si es un / como operador

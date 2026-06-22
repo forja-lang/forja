@@ -221,6 +221,9 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::LoadAddFloat(idx, _d) => {
             Uop::LoadIdx(*idx) // marcador
         }
+        Opcode::XorSign(idx) => {
+            Uop::LoadIdx(*idx) // marcador, se expande en expandir_a_uops
+        }
         Opcode::AddStoreFloat(_idx) => {
             Uop::AddFloat
         }
@@ -230,6 +233,18 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::MulStoreFloat(_idx) => {
             Uop::MulFloat
         }
+
+        // AVX2 packed SIMD opcodes (JIT-only, pasan como no-op en uops)
+        Opcode::AddPacked(_, _, _, _)
+        | Opcode::SubPacked(_, _, _, _)
+        | Opcode::MulPacked(_, _, _, _)
+        | Opcode::DivPacked(_, _, _, _) => Uop::AddInt, // placeholder JIT-only
+
+        // Fase A: Modulo2(src) → en uops se expande como atómico
+        Opcode::Modulo2(_) => Uop::AddInt, // placeholder JIT-only
+
+        // Fase B: AVX2 SoA opcodes (JIT-only)
+        Opcode::ReduceAdd(_, _) | Opcode::LoadAddPacked(_, _, _) => Uop::AddInt, // placeholder JIT-only
 
         // Opcodes por nombre (ya reemplazados por índices)
         Opcode::Load(_) => Uop::LoadIdx(0),      // fallback
@@ -243,6 +258,17 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::CallMethodCached(method_sym_id, nargs) => {
             Uop::CallMethod(format!("%cached_{}", method_sym_id), *nargs)
         }
+
+        // Fase 3a: Stack Bypass — placeholder JIT-only
+        Opcode::DivFloatDirect(_, _, _)
+        | Opcode::MulFloatDirect(_, _, _)
+        | Opcode::AddFloatDirect(_, _, _)
+        | Opcode::SubFloatDirect(_, _, _)
+        // Fase 3b: Super-fusión — placeholder JIT-only
+        | Opcode::FusedDivAdd(_, _, _)
+        | Opcode::FusedDivSub(_, _, _)
+        | Opcode::FusedDivAddConst(_, _, _)
+        | Opcode::FusedDivSubConst(_, _, _) => Uop::AddFloat,
     }
 }
 
@@ -356,6 +382,89 @@ pub fn expandir_a_uops(bytecode: &[Opcode]) -> Vec<Uop> {
             Opcode::MulStoreFloat(idx) => {
                 uops.push(Uop::MulFloat);
                 uops.push(Uop::StoreIdx(*idx));
+            }
+
+            // XorSign(idx) → LoadIdx(idx), PushFloat(0.0) [via bits], XOR sign, StoreIdx(idx)
+            // En uops no podemos representar XOR directamente, así que expandimos a la operación equivalente
+            // que los optimizadores posteriores pueden manejar.
+            Opcode::XorSign(idx) => {
+                // Representación: PushDecimal(0.0), LoadIdx(idx), SubFloat, StoreIdx(idx)
+                uops.push(Uop::PushDecimal(0.0));
+                uops.push(Uop::LoadIdx(*idx));
+                uops.push(Uop::SubFloat);
+                uops.push(Uop::StoreIdx(*idx));
+            }
+
+            // AVX2 packed opcodes: expandir a operaciones escalares (fallback VM)
+            Opcode::AddPacked(d1, s1, d2, s2) => {
+                // vars[d1..d1+3] += vars[s1..s1+3]; vars[d2..d2+3] += vars[s2..s2+3]
+                for i in 0..4 {
+                    uops.push(Uop::LoadIdx(*d1 + i));
+                    uops.push(Uop::LoadIdx(*s1 + i));
+                    uops.push(Uop::AddFloat);
+                    uops.push(Uop::StoreIdx(*d1 + i));
+                }
+                for i in 0..4 {
+                    uops.push(Uop::LoadIdx(*d2 + i));
+                    uops.push(Uop::LoadIdx(*s2 + i));
+                    uops.push(Uop::AddFloat);
+                    uops.push(Uop::StoreIdx(*d2 + i));
+                }
+            }
+            Opcode::SubPacked(d1, s1, d2, s2) => {
+                for i in 0..4 {
+                    uops.push(Uop::LoadIdx(*d1 + i));
+                    uops.push(Uop::LoadIdx(*s1 + i));
+                    uops.push(Uop::SubFloat);
+                    uops.push(Uop::StoreIdx(*d1 + i));
+                }
+                for i in 0..4 {
+                    uops.push(Uop::LoadIdx(*d2 + i));
+                    uops.push(Uop::LoadIdx(*s2 + i));
+                    uops.push(Uop::SubFloat);
+                    uops.push(Uop::StoreIdx(*d2 + i));
+                }
+            }
+            Opcode::MulPacked(d1, s1, d2, s2) => {
+                for i in 0..4 {
+                    uops.push(Uop::LoadIdx(*d1 + i));
+                    uops.push(Uop::LoadIdx(*s1 + i));
+                    uops.push(Uop::MulFloat);
+                    uops.push(Uop::StoreIdx(*d1 + i));
+                }
+                for i in 0..4 {
+                    uops.push(Uop::LoadIdx(*d2 + i));
+                    uops.push(Uop::LoadIdx(*s2 + i));
+                    uops.push(Uop::MulFloat);
+                    uops.push(Uop::StoreIdx(*d2 + i));
+                }
+            }
+            Opcode::DivPacked(d1, s1, d2, s2) => {
+                for i in 0..4 {
+                    uops.push(Uop::LoadIdx(*d1 + i));
+                    uops.push(Uop::LoadIdx(*s1 + i));
+                    uops.push(Uop::DivFloat);
+                    uops.push(Uop::StoreIdx(*d1 + i));
+                }
+                for i in 0..4 {
+                    uops.push(Uop::LoadIdx(*d2 + i));
+                    uops.push(Uop::LoadIdx(*s2 + i));
+                    uops.push(Uop::DivFloat);
+                    uops.push(Uop::StoreIdx(*d2 + i));
+                }
+            }
+
+            // Fase A: Modulo2(src) → push(vars[src] & 1)
+            Opcode::Modulo2(src) => {
+                // En uops expandimos a: LoadIdx(src), PushEntero(1), And (aproximado como Add)
+                uops.push(Uop::LoadIdx(*src));
+                uops.push(Uop::PushEntero(1));
+                uops.push(Uop::Add); // placeholder, VM handler lo maneja directo
+            }
+
+            // Fase B: ReduceAdd / LoadAddPacked (JIT-only, placeholder en uops)
+            Opcode::ReduceAdd(_, _) | Opcode::LoadAddPacked(_, _, _) => {
+                uops.push(Uop::AddInt); // placeholder
             }
 
             // Opcodes que ya son atómicos: pasar directo
@@ -478,6 +587,16 @@ fn construir_mapeo_posiciones(bytecode: &[Opcode]) -> Vec<usize> {
             Opcode::LoadAddInt(_, _)
                 | Opcode::DeclareFloatOp(_, _)
                 | Opcode::LoadAddFloat(_, _) => 3,
+            Opcode::XorSign(_) => 4,
+            // AVX2 packed: expande a 32 uops (4 iter × 4 uops/iter × 2 pares)
+            Opcode::AddPacked(_, _, _, _)
+            | Opcode::SubPacked(_, _, _, _)
+            | Opcode::MulPacked(_, _, _, _)
+            | Opcode::DivPacked(_, _, _, _) => 32,
+            // Fase A: Modulo2 expande a 3 uops
+            Opcode::Modulo2(_) => 3,
+            // Fase B: JIT-only, 1 uop placeholder
+            Opcode::ReduceAdd(_, _) | Opcode::LoadAddPacked(_, _, _) => 1,
             _ => 1,
         };
         uop_idx += expansion_len;
@@ -523,12 +642,23 @@ pub fn tiene_opcodes_compuestos(bytecode: &[Opcode]) -> bool {
                 | Opcode::LoadJump(_, _)
                 | Opcode::DupAddInt
                 // Float superinstructions
+                | Opcode::XorSign(_)
                 | Opcode::DeclareFloatOp(_, _)
                 | Opcode::StoreFloatOp(_, _)
                 | Opcode::LoadAddFloat(_, _)
                 | Opcode::AddStoreFloat(_)
                 | Opcode::SubStoreFloat(_)
                 | Opcode::MulStoreFloat(_)
+                // AVX2 packed opcodes (se expanden en uops)
+                | Opcode::AddPacked(_, _, _, _)
+                | Opcode::SubPacked(_, _, _, _)
+                | Opcode::MulPacked(_, _, _, _)
+                | Opcode::DivPacked(_, _, _, _)
+                // Fase A: Modulo2 se expande en uops
+                | Opcode::Modulo2(_)
+                // Fase B: AVX2 SoA opcodes
+                | Opcode::ReduceAdd(_, _)
+                | Opcode::LoadAddPacked(_, _, _)
         )
     })
 }

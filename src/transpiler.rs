@@ -843,6 +843,7 @@ impl Transpiler {
                     Operador::Resta => " - ",
                     Operador::Multiplicacion => " * ",
                     Operador::Division => " / ",
+                    Operador::Modulo => " % ",
                     Operador::Mayor => " > ",
                     Operador::Menor => " < ",
                     Operador::MayorIgual => " >= ",

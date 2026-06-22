@@ -1,0 +1,25 @@
+// ⚡ SpeedComparison.fa
+// Réplica del algoritmo SpeedComparison de PSeInt
+// Fibonacci con 1,000,000 de iteraciones
+//
+// Para medir el tiempo de ejecución, usar:
+//   forja medir benchmarks/speed_comparison.fa
+//
+// O también se puede ejecutar directamente:
+//   forja ejecutar benchmarks/speed_comparison.fa
+
+constante ITERACIONES = 1000000
+
+escribir("Iniciando benchmark de Fibonacci (1M iteraciones)...")
+
+variable a = 0
+variable b = 1
+variable temporal = 0
+
+para (variable i = 0; i < ITERACIONES; i = i + 1) {
+    temporal = a + b
+    a = b
+    b = temporal
+}
+
+escribir("Resultado: " + a)

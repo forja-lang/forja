@@ -99,6 +99,8 @@ pub enum TokenKind {
     Por,
     /// `/` - división
     Dividido,
+    /// `%` - módulo
+    Porcentaje,
 
     // === Operadores relacionales ===
     /// `>` - mayor que
@@ -187,6 +189,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Menos => write!(f, "-"),
             TokenKind::Por => write!(f, "*"),
             TokenKind::Dividido => write!(f, "/"),
+            TokenKind::Porcentaje => write!(f, "%"),
             TokenKind::Mayor => write!(f, ">"),
             TokenKind::Menor => write!(f, "<"),
             TokenKind::MayorIgual => write!(f, ">="),

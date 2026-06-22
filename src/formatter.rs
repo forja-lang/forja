@@ -105,6 +105,7 @@ impl Formatter {
                 let op = match operador {
                     Operador::Suma => " + ", Operador::Resta => " - ",
                     Operador::Multiplicacion => " * ", Operador::Division => " / ",
+                    Operador::Modulo => " % ",
                     Operador::Mayor => " > ", Operador::Menor => " < ",
                     Operador::MayorIgual => " >= ", Operador::MenorIgual => " <= ",
                     Operador::IgualIgual => " == ", Operador::Diferente => " != ",
