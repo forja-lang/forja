@@ -267,7 +267,8 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
             Expresion::Binaria { izquierda, operador, derecha } => {
                 let op = match operador {
                     Operador::Suma => "+", Operador::Resta => "-", Operador::Multiplicacion => "*",
-                    Operador::Division => "/", Operador::Mayor => ">", Operador::Menor => "<",
+                    Operador::Division => "/", Operador::Modulo => "%",
+                    Operador::Mayor => ">", Operador::Menor => "<",
                     Operador::MayorIgual => ">=", Operador::MenorIgual => "<=",
                     Operador::IgualIgual => "==", Operador::Diferente => "!=",
                     Operador::Y => "&&", Operador::O => "||",

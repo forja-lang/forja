@@ -13,6 +13,7 @@ mod compiler_asm;
 mod bytecode;
 mod uops;
 mod vm;
+mod fprofiler;
 mod vm_opt;
 mod vm_fast;
 mod symbol_table;
@@ -405,7 +406,12 @@ fn cmd_bench(args: &[String]) {
         medir_vm!("VM Opt", forja::vm_opt::ForjaVMOpt::new());
     }
     if todas || vm_selected == "fast" {
+        // Activar profiling de f64
+        forja::fprofiler::PROFILER_ENABLED.store(1, std::sync::atomic::Ordering::Relaxed);
+        forja::fprofiler::PROFILER_DATA.reset();
         medir_vm!("ForjaFast 🏆", forja::vm_fast::ForjaFast::new());
+        forja::fprofiler::print_profiler_report();
+        forja::fprofiler::PROFILER_ENABLED.store(0, std::sync::atomic::Ordering::Relaxed);
     }
     #[cfg(not(target_arch = "wasm32"))]
     if todas || vm_selected == "jit" {

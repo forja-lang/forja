@@ -8,6 +8,7 @@ pub enum Operador {
     Resta,
     Multiplicacion,
     Division,
+    Modulo,
     // Relacionales
     Mayor,
     Menor,
