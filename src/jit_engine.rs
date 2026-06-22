@@ -86,7 +86,7 @@ impl JitOrchestrator {
 
             // Si JIT falló, ejecutar con ForjaFast usando bytecode optimizado
             self.fallback.reset();
-            self.fallback.set_max_inst(100_000_000);
+            self.fallback.set_max_inst(100_000_000_000);
             self.fallback.cargar_bytecode(bc_fusion);
             self.fallback.ejecutar().map_err(|e| format!("{}", e))?;
             Ok(self.fallback.obtener_output().to_vec())
