@@ -9,3 +9,4 @@ docs/
 $null
 benchmarks/**/*.html
 benchmarks/**/*.o
+.cargo/

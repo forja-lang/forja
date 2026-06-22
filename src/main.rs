@@ -63,7 +63,7 @@ fn main() {
             }
         }
         // Generar diagram HTML
-        "diagram" | "grafico" | "diagram" => cmd_diagram(&args[2..]),
+        "diagrama" | "grafico" | "diagram" => cmd_diagram(&args[2..]),
         // Compilar a ejecutable autónomo
         "build" | "compilar" | "construir" => cmd_build(&args[2..]),
         // Formatear código
@@ -324,32 +324,77 @@ fn mostrar_ayuda() {
 /// Mide tiempos de todas las VMs: creación, carga, ejecución (cold + hot)
 fn cmd_bench(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja medir|bench|medicion|benchmark <archivo.fa> [--iters N] [--vm fast|vm|jit|todas]");
+        eprintln!("Uso: forja medir|bench|medicion|benchmark <archivo.fa> [--iters N] [--vm fast|vm|jit|todas] [--asm]");
         process::exit(1);
     }
 
     let mut path = &args[0];
     let mut iters = 100;
-    // Buscar --iters en cualquier posición
-    if let Some(pos) = args.iter().position(|a| a == "--iters") {
-        if pos + 1 < args.len() {
-            iters = args[pos + 1].parse().unwrap_or(100);
-            if pos == 0 { path = &args[2]; }
-        }
-    }
-
-    // Buscar --vm (VM específica o "todas" por defecto)
+    let mut asm_mode = false;
     let mut vm_selected = "todas";
-    if let Some(pos) = args.iter().position(|a| a == "--vm") {
-        if pos + 1 < args.len() {
-            vm_selected = &args[pos + 1];
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--iters" => {
+                i += 1;
+                if i < args.len() { iters = args[i].parse().unwrap_or(100); }
+                if i == 0 && i + 1 < args.len() { path = &args[i + 1]; }
+            }
+            "--vm" => {
+                i += 1;
+                if i < args.len() { vm_selected = &args[i]; }
+            }
+            "--asm" => asm_mode = true,
+            _ => {
+                if args[i].ends_with(".fa") || !args[i].starts_with("--") {
+                    path = &args[i];
+                }
+            }
         }
+        i += 1;
     }
 
     let source = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => { eprintln!("Error al leer '{}': {}", path, e); process::exit(1); }
     };
+
+    if asm_mode {
+        // Benchmark en modo ASM: compilar y medir tiempo del binario nativo
+        println!();
+        println!("{}", "=".repeat(55));
+        println!("  🔬 Forja — Benchmark ASM Nativo ({} iteraciones)", iters);
+        println!("  📄 {}", path);
+        println!("{}", "=".repeat(55));
+        println!();
+
+        let t0 = std::time::Instant::now();
+        match ejecutar_asm(&source, path) {
+            Ok(output) => {
+                let compile_us = t0.elapsed().as_secs_f64() * 1_000_000.0;
+                println!("  Compilación ASM + gcc -O2: {:.2} μs", compile_us);
+
+                // Medir ejecución en caliente (re-ejecutando el binario)
+                let t1 = std::time::Instant::now();
+                let mut hot_ns_total = 0.0;
+                for _ in 0..iters {
+                    let t_hot = std::time::Instant::now();
+                    let _ = ejecutar_asm(&source, path);
+                    hot_ns_total += t_hot.elapsed().as_secs_f64() * 1_000_000_000.0;
+                }
+                let hot_ns = hot_ns_total / iters as f64;
+                println!("  Hot ({} iters): {:.2} ns/iter = {:.2} μs", iters, hot_ns, hot_ns / 1000.0);
+                println!();
+                println!("  Output del programa:");
+                for line in output { println!("    {}", line); }
+            }
+            Err(e) => {
+                eprintln!("Error en ASM: {}", e);
+                process::exit(1);
+            }
+        }
+        return;
+    }
 
     let bytecode = match forja::compilar_pipeline(&source) {
         Ok(bc) => bc,
@@ -463,22 +508,34 @@ fn cmd_bench(args: &[String]) {
 
 /// forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|vmopt]
 /// Ejecuta un archivo .fa en la VM seleccionada (default: ForjaFast)
+/// --vm fast|vm|jit : selecciona la VM (default: fast)
+/// --asm            : compila a ASM nativo y ejecuta (requiere gcc)
 fn cmd_run(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|vmopt]");
+        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm]");
         process::exit(1);
     }
 
     let mut vm_mode = "fast";
+    let mut asm_mode = false;
     let path: &String;
 
     if args.len() >= 3 && args[0] == "--vm" {
         vm_mode = &args[1];
         path = &args[2];
+    } else if args.len() >= 3 && args[0] == "--asm" {
+        asm_mode = true;
+        path = &args[1];
     } else if args.len() >= 1 && args[0].ends_with(".fa") {
         path = &args[0];
-        if args.len() >= 3 && args[1] == "--vm" {
-            vm_mode = &args[2];
+        let mut i = 1;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--vm" => { i += 1; if i < args.len() { vm_mode = &args[i]; } }
+                "--asm" => asm_mode = true,
+                _ => {}
+            }
+            i += 1;
         }
     } else {
         path = &args[0];
@@ -491,6 +548,16 @@ fn cmd_run(args: &[String]) {
             process::exit(1);
         }
     };
+
+    if asm_mode {
+        // Compilar a ASM nativo y ejecutar
+        let result = ejecutar_asm(&source, path);
+        match result {
+            Ok(output) => { for line in output { println!("{}", line); } }
+            Err(e) => { eprintln!("Error en ejecución ASM: {}", e); process::exit(1); }
+        }
+        return;
+    }
 
     let result = match vm_mode {
         "fast" => forja::ejecutar(&source),
@@ -509,6 +576,66 @@ fn cmd_run(args: &[String]) {
             process::exit(1);
         }
     }
+}
+
+/// Compila un programa Forja a ASM nativo, lo ensambla con gcc -O2 y lo ejecuta.
+/// Devuelve las líneas de output del programa.
+fn ejecutar_asm(source: &str, input_path: &str) -> Result<Vec<String>, String> {
+    use std::process::Command;
+
+    // 1. Parsear y compilar a ASM
+    use forja::compiler_asm::{self, TargetArch};
+    use forja::lexer::Lexer;
+    use forja::parser::Parser;
+
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
+    let mut parser = Parser::new(tokens);
+    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+    let asm_code = compiler_asm::compilar_a_asm(&programa)
+        .map_err(|e| format!("Error de compilación ASM: {:?}", e))?;
+
+    // 2. Escribir ASM a archivo temporal
+    let stem = Path::new(input_path).file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output");
+    let asm_path = format!("{}_asm.s", stem);
+    let exe_path = if cfg!(target_os = "windows") {
+        format!("{}_asm.exe", stem)
+    } else {
+        format!("{}_asm", stem)
+    };
+
+    std::fs::write(&asm_path, &asm_code)
+        .map_err(|e| format!("Error escribiendo ASM: {}", e))?;
+
+    // 3. Compilar con gcc -O2
+    let output = Command::new("gcc")
+        .args(&["-O2", "-o", &exe_path, &asm_path])
+        .output()
+        .map_err(|e| format!("Error ejecutando gcc: {}. ¿Está instalado?", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let _ = std::fs::remove_file(&asm_path);
+        return Err(format!("gcc falló:\n{}", stderr));
+    }
+
+    // 4. Ejecutar binario
+    let run_output = Command::new(if cfg!(target_os = "windows") {
+        if exe_path.starts_with(".\\") { exe_path.clone() } else { format!(".\\{}", exe_path) }
+    } else {
+        format!("./{}", exe_path)
+    })
+    .output()
+    .map_err(|e| format!("Error ejecutando binario: {}", e))?;
+
+    // 5. Limpiar archivos temporales
+    let _ = std::fs::remove_file(&asm_path);
+    let _ = std::fs::remove_file(&exe_path);
+
+    let stdout = String::from_utf8_lossy(&run_output.stdout);
+    Ok(stdout.lines().map(|s| s.to_string()).collect())
 }
 
 /// forja fmt|formatear|format <archivo.fa>
@@ -642,7 +769,7 @@ fn cmd_build(args: &[String]) {
 /// forja diagram|grafico <archivo.fa> [-o <salida.html>]
 fn cmd_diagram(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja diagram|grafico <archivo.fa> [-o <salida.html>]");
+        eprintln!("Uso: forja diagrama|diagram|grafico <archivo.fa> [-o <salida.html>]");
         process::exit(1);
     }
 
@@ -679,7 +806,7 @@ fn cmd_diagram(args: &[String]) {
 
     if let Some(out) = output_path {
         match fs::write(&out, &html) {
-            Ok(_) => println!("✅ diagram generado: {}", out),
+            Ok(_) => println!("✅ diagrama generado: {}", out),
             Err(e) => { eprintln!("Error al escribir '{}': {}", out, e); process::exit(1); }
         }
     } else {
