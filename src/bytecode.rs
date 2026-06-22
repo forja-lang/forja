@@ -1386,48 +1386,68 @@ if version >= 2 {
 }
 
 /// Optimiza bytecode reemplazando Load/Store/Declare(String) por LoadIdx/StoreIdx/DeclareIdx(usize)
-/// Asigna un índice único a cada nombre de variable para acceso directo en Vec
+/// Asigna índices por ámbito: cada función tiene su propio contador desde 0.
+/// Esto es necesario para que ForjaFast (flat var stack con base_ptr) funcione correctamente
+/// con llamadas a funciones: los parámetros siempre empiezan en índice 0 dentro de cada función.
 pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
     use std::collections::HashMap;
-    let mut var_indices: HashMap<String, usize> = HashMap::new();
-    let mut next_idx: usize = 0;
+
+    // Primera pasada: detectar posiciones de FunctionDef para saber los ámbitos
+    let mut func_starts: Vec<usize> = Vec::new(); // índices donde comienza cada FunctionDef
+    for (i, op) in bytecode.iter().enumerate() {
+        if matches!(op, Opcode::FunctionDef(_, _)) {
+            func_starts.push(i);
+        }
+    }
+    func_starts.push(bytecode.len()); // centinela: "fin del último ámbito"
+
     let mut result: Vec<Opcode> = Vec::with_capacity(bytecode.len());
 
-    for op in bytecode {
-        match op {
-            Opcode::Load(name) => {
-                let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
-                    let i = next_idx; next_idx += 1; i
-                });
-                result.push(Opcode::LoadIdx(idx));
-            }
-            Opcode::Store(name) => {
-                let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
-                    let i = next_idx; next_idx += 1; i
-                });
-                result.push(Opcode::StoreIdx(idx));
-            }
-            Opcode::Declare(name, mutable) => {
-                let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
-                    let i = next_idx; next_idx += 1; i
-                });
-                result.push(Opcode::DeclareIdx(idx, *mutable));
-            }
-            // Para Call/FunctionDef necesitamos mapear los nombres de parámetros también
-            Opcode::FunctionDef(_name, params) => {
-                // Asignar índices a los parámetros
-                for p in params {
-                    var_indices.entry(p.to_string()).or_insert_with(|| {
+    // Procesar cada ámbito por separado
+    let mut scope_start = 0;
+    for &scope_end in &func_starts {
+        // Este ámbito abarca bytecode[scope_start..scope_end]
+        let mut var_indices: HashMap<String, usize> = HashMap::new();
+        let mut next_idx: usize = 0;
+
+        for i in scope_start..scope_end {
+            let op = &bytecode[i];
+            match op {
+                Opcode::FunctionDef(_name, params) => {
+                    // Los parámetros de la función empiezan en índice 0 de este ámbito
+                    for p in params {
+                        var_indices.entry(p.to_string()).or_insert_with(|| {
+                            let idx = next_idx; next_idx += 1; idx
+                        });
+                    }
+                    result.push(op.clone());
+                }
+                Opcode::Load(name) => {
+                    let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
                         let i = next_idx; next_idx += 1; i
                     });
+                    result.push(Opcode::LoadIdx(idx));
                 }
-                result.push(op.clone());
+                Opcode::Store(name) => {
+                    let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
+                        let i = next_idx; next_idx += 1; i
+                    });
+                    result.push(Opcode::StoreIdx(idx));
+                }
+                Opcode::Declare(name, mutable) => {
+                    let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
+                        let i = next_idx; next_idx += 1; i
+                    });
+                    result.push(Opcode::DeclareIdx(idx, *mutable));
+                }
+                Opcode::Call(_, _) => {
+                    result.push(op.clone());
+                }
+                _ => { result.push(op.clone()); }
             }
-            Opcode::Call(_, _) => {
-                result.push(op.clone());
-            }
-            _ => { result.push(op.clone()); }
         }
+
+        scope_start = scope_end; // pasar al siguiente ámbito
     }
 
     result
