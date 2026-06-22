@@ -37,7 +37,6 @@ impl REPL {
         let modo_desc = match modo {
             "fast" => "ForjaFast 🏆",
             "vm" => "VM Original",
-            "opt" => "VM Opt",
             "jit" => "Forja JIT",
             _ => "ForjaFast 🏆",
         };
@@ -86,7 +85,6 @@ impl REPL {
                                 println!("✅ VM cambiada a: {}", match modo {
                                     "fast" => "ForjaFast 🏆",
                                     "vm" => "VM Original",
-                                    "opt" => "VM Opt",
                                     "jit" => "Forja JIT",
                                     _ => modo,
                                 });
@@ -133,13 +131,6 @@ impl REPL {
         match self.vm_mode.as_str() {
             "fast" => {
                 let mut vm = crate::vm_fast::ForjaFast::new();
-                vm.cargar_bytecode(bytecode);
-                vm.ejecutar().map_err(|e| format!("{}", e))?;
-                let out = vm.obtener_output().to_vec();
-                for line in out { println!("{}", line); }
-            }
-            "opt" => {
-                let mut vm = crate::vm_opt::ForjaVMOpt::new();
                 vm.cargar_bytecode(bytecode);
                 vm.ejecutar().map_err(|e| format!("{}", e))?;
                 let out = vm.obtener_output().to_vec();

@@ -15,7 +15,6 @@ pub mod bytecode;
 pub mod uops;
 pub mod fprofiler;
 pub mod vm;
-pub mod vm_opt;
 pub mod vm_jit;
 pub mod vm_fast;
 pub mod symbol_table;
@@ -37,8 +36,8 @@ pub mod module;
 pub mod prelude;
 
 // Módulos puramente algorítmicos (compatibles con WASM)
-// diagram genera HTML, formatter y optimizer son puro AST
-pub mod diagram;
+// diagrama genera HTML, formatter y optimizer son puro AST
+pub mod diagrama;
 pub mod optimizer;
 pub mod formatter;
 
@@ -130,16 +129,6 @@ pub fn ejecutar_vm(source: &str) -> Result<Vec<String>, String> {
     use vm::ForjaVM;
     let bytecode = compilar_pipeline(source)?;
     let mut vm = ForjaVM::new();
-    vm.cargar_bytecode(bytecode);
-    vm.ejecutar().map_err(|e| format!("{}", e))?;
-    Ok(vm.obtener_output().to_vec())
-}
-
-/// Compila y ejecuta código Forja en la VM optimizada (vm_opt)
-pub fn ejecutar_vmopt(source: &str) -> Result<Vec<String>, String> {
-    use vm_opt::ForjaVMOpt;
-    let bytecode = compilar_pipeline(source)?;
-    let mut vm = ForjaVMOpt::new();
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
     Ok(vm.obtener_output().to_vec())
