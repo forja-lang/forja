@@ -65,6 +65,12 @@ pub enum Opcode {
     IgualInt,
     MenorInt,
     MayorInt,
+    IgualFloat,
+    DiferenteFloat,
+    MenorFloat,
+    MayorFloat,
+    MenorIgualFloat,
+    MayorIgualFloat,
 
     // === Opcodes de carga/guardado especializados por tipo ===
     LoadIdxEntero(usize),    // La variable en idx siempre es entero
