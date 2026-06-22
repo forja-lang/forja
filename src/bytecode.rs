@@ -167,8 +167,59 @@ pub enum Opcode {
     /// MulFloat + StoreIdx → multiplica float y guarda
     MulStoreFloat(usize),
 
+    /// XorSign(idx): x = -x vía XOR del sign bit (0.0 - x → flip sign bit)
+    XorSign(usize),
+
     /// LoadIdx(idx) + PushDecimal(d) + AddFloat → fusion: carga float + suma constante
     LoadAddFloat(usize, f64),
+
+    // === FASE A: Branchless Modulo2 ===
+    /// Modulo2(src): push(vars[src] & 1) (branchless modulo 2)
+    /// Para enteros: i % 2 → i & 1 (siempre branchless)
+    Modulo2(usize),
+
+    // === AVX2 PACKED SIMD opcodes (for loop unrolling with AVX2) ===
+    /// Packed Add: vars[i1..i1+3] += vars[i2..i2+3]; vars[i3..i3+3] += vars[i4..i4+3]
+    /// Emite: vmovapd ymm0,[rbx+i1*8]; vaddpd ymm0,[rbx+i2*8]; vmovapd [rbx+i1*8],ymm0
+    ///        vmovapd ymm1,[rbx+i3*8]; vaddpd ymm1,[rbx+i4*8]; vmovapd [rbx+i3*8],ymm1
+    AddPacked(usize, usize, usize, usize),
+    /// Packed Sub: vars[i1..i1+3] -= vars[i2..i2+3]; vars[i3..i3+3] -= vars[i4..i4+3]
+    SubPacked(usize, usize, usize, usize),
+    /// Packed Mul: vars[i1..i1+3] *= vars[i2..i2+3]; vars[i3..i3+3] *= vars[i4..i4+3]
+    MulPacked(usize, usize, usize, usize),
+    /// Packed Div: vars[i1..i1+3] /= vars[i2..i2+3]; vars[i3..i3+3] /= vars[i4..i4+3]
+    DivPacked(usize, usize, usize, usize),
+
+    // === FASE 3a: Stack Bypass — operaciones float directas sobre flat_vars ===
+    /// DivFloatDirect(dst, src1, src2): vars[dst] = vars[src1] / vars[src2]
+    /// Sin push/pop del stack — operación directa sobre flat_vars.
+    DivFloatDirect(usize, usize, usize),
+    /// MulFloatDirect(dst, src1, src2): vars[dst] = vars[src1] * vars[src2]
+    MulFloatDirect(usize, usize, usize),
+    /// AddFloatDirect(dst, src1, src2): vars[dst] = vars[src1] + vars[src2]
+    AddFloatDirect(usize, usize, usize),
+    /// SubFloatDirect(dst, src1, src2): vars[dst] = vars[src1] - vars[src2]
+    SubFloatDirect(usize, usize, usize),
+
+    // === FASE 3b: Super-fusión FusedDivAdd/FusedDivSub ===
+    /// FusedDivAdd(dst, num_src, div_src): vars[dst] += vars[num_src] / vars[div_src]
+    /// Sin stack. num_src debe contener el valor constante (1.0 normalmente).
+    FusedDivAdd(usize, usize, usize),
+    /// FusedDivSub(dst, num_src, div_src): vars[dst] -= vars[num_src] / vars[div_src]
+    FusedDivSub(usize, usize, usize),
+    /// FusedDivAddConst(dst, num, div_src): vars[dst] += num / vars[div_src]
+    /// Versión con constante inline — no necesita variable temporal.
+    FusedDivAddConst(usize, f64, usize),
+    /// FusedDivSubConst(dst, num, div_src): vars[dst] -= num / vars[div_src]
+    FusedDivSubConst(usize, f64, usize),
+
+    // === FASE B: AVX2 SoA optimizado ===
+    /// ReduceAdd(dst, src): suma horizontal de 4 doubles en vars[src..src+3] → vars[dst]
+    /// Usa vhaddpd + vpermilpd en AVX2, fallback SSE2.
+    ReduceAdd(usize, usize),
+    /// LoadAddPacked(dst, src1, src2): vars[dst..dst+3] = vars[src1..src1+3] + vars[src2..src2+3]
+    /// Carga y suma 4 doubles en paralelo, store en dst.
+    LoadAddPacked(usize, usize, usize),
 
     // === CALL ESPECIALIZADOS (quickening) ===
     /// Llamada directa por índice de función (sin hash lookup)
@@ -509,23 +560,39 @@ impl BytecodeGenerator {
             }
 
             Expresion::Binaria { izquierda, operador, derecha } => {
-                self.generar_expresion(izquierda);
-                self.generar_expresion(derecha);
-                let op = match operador {
-                    Operador::Suma => Opcode::Add,
-                    Operador::Resta => Opcode::Sub,
-                    Operador::Multiplicacion => Opcode::Mul,
-                    Operador::Division => Opcode::Div,
-                    Operador::Mayor => Opcode::Mayor,
-                    Operador::Menor => Opcode::Menor,
-                    Operador::MayorIgual => Opcode::MayorIgual,
-                    Operador::MenorIgual => Opcode::MenorIgual,
-                    Operador::IgualIgual => Opcode::Igual,
-                    Operador::Diferente => Opcode::Diferente,
-                    Operador::Y => Opcode::Y,
-                    Operador::O => Opcode::O,
-                };
-                self.emitir(op);
+                match operador {
+                    Operador::Modulo => {
+                        // a % b = a - (a/b)*b
+                        // Generamos: a, a, b, Div, b, Mul, Sub (stack atómico)
+                        self.generar_expresion(izquierda);
+                        self.generar_expresion(izquierda);
+                        self.generar_expresion(derecha);
+                        self.emitir(Opcode::Div);
+                        self.generar_expresion(derecha);
+                        self.emitir(Opcode::Mul);
+                        self.emitir(Opcode::Sub);
+                    }
+                    _ => {
+                        self.generar_expresion(izquierda);
+                        self.generar_expresion(derecha);
+                        let op = match operador {
+                            Operador::Suma => Opcode::Add,
+                            Operador::Resta => Opcode::Sub,
+                            Operador::Multiplicacion => Opcode::Mul,
+                            Operador::Division => Opcode::Div,
+                            Operador::Mayor => Opcode::Mayor,
+                            Operador::Menor => Opcode::Menor,
+                            Operador::MayorIgual => Opcode::MayorIgual,
+                            Operador::MenorIgual => Opcode::MenorIgual,
+                            Operador::IgualIgual => Opcode::Igual,
+                            Operador::Diferente => Opcode::Diferente,
+                            Operador::Y => Opcode::Y,
+                            Operador::O => Opcode::O,
+                            _ => unreachable!(),
+                        };
+                        self.emitir(op);
+                    }
+                }
             }
 
             Expresion::Unaria { operador, expr: e } => {
@@ -765,8 +832,49 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
                 bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
                 bytes.extend_from_slice(&d.to_le_bytes());
             }
+            Opcode::XorSign(idx) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            }
             Opcode::AddStoreFloat(idx) | Opcode::SubStoreFloat(idx) | Opcode::MulStoreFloat(idx) => {
                 bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            }
+            // Fase A: Modulo2(src)
+            Opcode::Modulo2(src) => {
+                bytes.extend_from_slice(&(*src as u32).to_le_bytes());
+            }
+            // Fase B: ReduceAdd(dst, src) — 2 × u32
+            Opcode::ReduceAdd(dst, src) => {
+                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*src as u32).to_le_bytes());
+            }
+            // Fase B: LoadAddPacked(dst, src1, src2) — 3 × u32
+            Opcode::LoadAddPacked(dst, src1, src2) => {
+                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*src1 as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*src2 as u32).to_le_bytes());
+            }
+            // Fase 3a: Stack Bypass — 3 × u32 (dst, src1, src2)
+            Opcode::DivFloatDirect(dst, src1, src2)
+            | Opcode::MulFloatDirect(dst, src1, src2)
+            | Opcode::AddFloatDirect(dst, src1, src2)
+            | Opcode::SubFloatDirect(dst, src1, src2) => {
+                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*src1 as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*src2 as u32).to_le_bytes());
+            }
+            // Fase 3b: Super-fusión — 3 × u32 (dst, num_src, div_src)
+            Opcode::FusedDivAdd(dst, num_src, div_src)
+            | Opcode::FusedDivSub(dst, num_src, div_src) => {
+                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*num_src as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*div_src as u32).to_le_bytes());
+            }
+            // Fase 3b Const: f64 + usize + usize → 8 + 4 + 4 = 16 bytes
+            Opcode::FusedDivAddConst(dst, num, div_src)
+            | Opcode::FusedDivSubConst(dst, num, div_src) => {
+                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+                bytes.extend_from_slice(&num.to_le_bytes());
+                bytes.extend_from_slice(&(*div_src as u32).to_le_bytes());
             }
             _ => {} // Opcodes sin payload
         }
@@ -834,8 +942,22 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::AddStoreFloat(_) => 26,
         Opcode::SubStoreFloat(_) => 27,
         Opcode::MulStoreFloat(_) => 28,
+        Opcode::XorSign(_) => 29,
+        Opcode::Modulo2(_) => 93,
+        Opcode::ReduceAdd(_, _) => 94,
+        Opcode::LoadAddPacked(_, _, _) => 95,
         Opcode::Print => 70,
         Opcode::ReadLine => 71,
+        // Fase 3a: Stack Bypass float opcodes
+        Opcode::DivFloatDirect(_, _, _) => 96,
+        Opcode::MulFloatDirect(_, _, _) => 97,
+        Opcode::AddFloatDirect(_, _, _) => 98,
+        Opcode::SubFloatDirect(_, _, _) => 99,
+        // Fase 3b: Super-fusión
+        Opcode::FusedDivAdd(_, _, _) => 100,
+        Opcode::FusedDivSub(_, _, _) => 101,
+        Opcode::FusedDivAddConst(_, _, _) => 102,
+        Opcode::FusedDivSubConst(_, _, _) => 103,
         // Opcodes especializados (runtime-only, no serializables)
         _ => 255,
     }
@@ -870,6 +992,7 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         26 => Some(Opcode::AddStoreFloat(0)),
         27 => Some(Opcode::SubStoreFloat(0)),
         28 => Some(Opcode::MulStoreFloat(0)),
+        29 => Some(Opcode::XorSign(0)),
         30 => Some(Opcode::Igual),
         31 => Some(Opcode::Diferente),
         32 => Some(Opcode::Menor),
@@ -897,6 +1020,9 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         90 => Some(Opcode::MapNew(0)),
         91 => Some(Opcode::MapGet),
         92 => Some(Opcode::MapSet),
+        93 => Some(Opcode::Modulo2(0)),
+        94 => Some(Opcode::ReduceAdd(0, 0)),
+        95 => Some(Opcode::LoadAddPacked(0, 0, 0)),
         70 => Some(Opcode::Print),
         71 => Some(Opcode::ReadLine),
         _ => None,
@@ -1101,6 +1227,36 @@ if version >= 2 {
                     _ => Opcode::MulStoreFloat(idx),
                 });
             }
+            29 => { // XorSign
+                if pos + 4 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                opcodes.push(Opcode::XorSign(idx));
+            }
+            93 => { // Modulo2(src)
+                if pos + 4 > data.len() { return None; }
+                let src = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                opcodes.push(Opcode::Modulo2(src));
+            }
+            94 => { // ReduceAdd(dst, src)
+                if pos + 8 > data.len() { return None; }
+                let dst = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let src = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                opcodes.push(Opcode::ReduceAdd(dst, src));
+            }
+            95 => { // LoadAddPacked(dst, src1, src2)
+                if pos + 12 > data.len() { return None; }
+                let dst = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let src1 = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let src2 = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                opcodes.push(Opcode::LoadAddPacked(dst, src1, src2));
+            }
             50 | 51 | 52 => { // Jump | JumpSiFalso | Label
                 if pos + 4 > data.len() { return None; }
                 let target = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
@@ -1171,6 +1327,51 @@ if version >= 2 {
                     62 => Opcode::NewObject(s),
                     63 => Opcode::SetField(s),
                     _ => Opcode::GetField(s),
+                });
+            }
+            // Fase 3a: Stack Bypass — 3 × u32 (dst, src1, src2)
+            96 | 97 | 98 | 99 => {
+                if pos + 12 > data.len() { return None; }
+                let dst = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let src1 = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let src2 = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                opcodes.push(match byte {
+                    96 => Opcode::DivFloatDirect(dst, src1, src2),
+                    97 => Opcode::MulFloatDirect(dst, src1, src2),
+                    98 => Opcode::AddFloatDirect(dst, src1, src2),
+                    _ => Opcode::SubFloatDirect(dst, src1, src2),
+                });
+            }
+            // Fase 3b: Super-fusión FusedDivAdd/FusedDivSub — 3 × u32 (dst, num_src, div_src)
+            100 | 101 => {
+                if pos + 12 > data.len() { return None; }
+                let dst = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let num_src = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let div_src = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                opcodes.push(match byte {
+                    100 => Opcode::FusedDivAdd(dst, num_src, div_src),
+                    _ => Opcode::FusedDivSub(dst, num_src, div_src),
+                });
+            }
+            // Fase 3b Const: f64 + u32 + u32 = 16 bytes
+            102 | 103 => {
+                if pos + 16 > data.len() { return None; }
+                let dst = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let num = f64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
+                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+                pos += 8;
+                let div_src = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                opcodes.push(match byte {
+                    102 => Opcode::FusedDivAddConst(dst, num, div_src),
+                    _ => Opcode::FusedDivSubConst(dst, num, div_src),
                 });
             }
             _ => {
@@ -1256,6 +1457,26 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
     let mut i = 0;
 
     while i < bc.len() {
+        // Fase A: detectar patrón i%2 → Modulo2(i) (7-op pattern)
+        if i + 6 < bc.len() {
+            // Patrón: LoadIdx(a), LoadIdx(a), PushEntero(2), Div/DivInt, PushEntero(2), Mul/MulInt, Sub/SubInt
+            if let (Opcode::LoadIdx(a1), Opcode::LoadIdx(a2), Opcode::PushEntero(n1), _, Opcode::PushEntero(n2), _, _) =
+                (&bc[i], &bc[i+1], &bc[i+2], &bc[i+3], &bc[i+4], &bc[i+5], &bc[i+6])
+            {
+                if a1 == a2 && *n1 == 2 && *n2 == 2 {
+                    match (&bc[i+3], &bc[i+5], &bc[i+6]) {
+                        (Opcode::Div | Opcode::DivInt, Opcode::Mul | Opcode::MulInt, Opcode::Sub | Opcode::SubInt) => {
+                            // Reemplazar 7 ops con Modulo2(a)
+                            result.push(Opcode::Modulo2(*a1));
+                            i += 7;
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
         if i + 1 < bc.len() {
             // Intentar fusión de 3 opcodes primero
             if i + 2 < bc.len() {
@@ -1386,6 +1607,92 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
         i += 1;
     }
 
+    result
+}
+
+/// Fase 3a: Detectar patrones para Stack Bypass Direct opcodes
+/// Convierte secuencias de opcodes float mediadas por stack en operaciones directas.
+///
+/// Patrones detectados (después de fusionar_opcodes y quickening):
+/// - LoadIdxFloat(a) + LoadIdxFloat(b) + DivFloat + StoreIdxFloat(dst) → DivFloatDirect(dst, a, b)
+/// - LoadIdxFloat(a) + LoadIdxFloat(b) + AddFloat + StoreIdxFloat(dst) → AddFloatDirect(dst, a, b)
+/// - LoadIdxFloat(a) + LoadIdxFloat(b) + SubFloat + StoreIdxFloat(dst) → SubFloatDirect(dst, a, b)
+/// - LoadIdxFloat(a) + LoadIdxFloat(b) + MulFloat + StoreIdxFloat(dst) → MulFloatDirect(dst, a, b)
+pub fn fusionar_direct_float_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
+    let mut result = Vec::with_capacity(bc.len());
+    let mut i = 0;
+    while i < bc.len() {
+        // Patrón de 4 opcodes: LoadIdxFloat(a) + LoadIdxFloat(b) + (Div|Add|Sub|Mul)Float + StoreIdxFloat(dst)
+        if i + 3 < bc.len() {
+            if let (
+                Opcode::LoadIdxFloat(a),
+                Opcode::LoadIdxFloat(b),
+                arith_op,
+                Opcode::StoreIdxFloat(dst),
+            ) = (&bc[i], &bc[i+1], &bc[i+2], &bc[i+3])
+            {
+                match arith_op {
+                    Opcode::DivFloat => {
+                        result.push(Opcode::DivFloatDirect(*dst, *a, *b));
+                        i += 4;
+                        continue;
+                    }
+                    Opcode::AddFloat => {
+                        result.push(Opcode::AddFloatDirect(*dst, *a, *b));
+                        i += 4;
+                        continue;
+                    }
+                    Opcode::SubFloat => {
+                        result.push(Opcode::SubFloatDirect(*dst, *a, *b));
+                        i += 4;
+                        continue;
+                    }
+                    Opcode::MulFloat => {
+                        result.push(Opcode::MulFloatDirect(*dst, *a, *b));
+                        i += 4;
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Patrón de 6 opcodes (Fase 3b): LoadIdxFloat(dst) + PushDecimal(num) + LoadIdxFloat(div) + DivFloat + AddFloat/SubFloat + StoreIdx|StoreIdxFloat(dst)
+        // → FusedDivAddConst(dst, num, div) o FusedDivSubConst(dst, num, div)
+        // StoreIdx (no Float) es común porque quickening no especializa StoreIdx
+        if i + 5 < bc.len() {
+            let store_is_float = matches!(&bc[i+5], Opcode::StoreIdxFloat(b) | Opcode::StoreIdx(b));
+            let store_idx = match &bc[i+5] {
+                Opcode::StoreIdxFloat(b) | Opcode::StoreIdx(b) => *b,
+                _ => usize::MAX,
+            };
+            if let (
+                Opcode::LoadIdxFloat(dst_a),
+                Opcode::PushDecimal(num_val),
+                Opcode::LoadIdxFloat(div_b),
+                arith1 @ (Opcode::DivFloat | Opcode::AddFloat | Opcode::SubFloat | Opcode::MulFloat),
+                arith2 @ (Opcode::AddFloat | Opcode::SubFloat),
+                _,
+            ) = (&bc[i], &bc[i+1], &bc[i+2], &bc[i+3], &bc[i+4], &bc[i+5])
+            {
+                let is_div = matches!(arith1, Opcode::DivFloat);
+                let is_add = matches!(arith2, Opcode::AddFloat);
+                let is_sub = matches!(arith2, Opcode::SubFloat);
+                if *dst_a == store_idx && store_is_float && is_div && (is_add || is_sub) {
+                    if is_add {
+                        result.push(Opcode::FusedDivAddConst(*dst_a, *num_val, *div_b));
+                    } else {
+                        result.push(Opcode::FusedDivSubConst(*dst_a, *num_val, *div_b));
+                    }
+                    i += 6;
+                    continue;
+                }
+            }
+        }
+
+        result.push(bc[i].clone());
+        i += 1;
+    }
     result
 }
 

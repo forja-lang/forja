@@ -1,4 +1,22 @@
 /// JIT compilador x86-64 nativo para Forja
+/// Soporta AVX2 cuando está disponible, con fallback a SSE2.
+
+/// Detectar soporte AVX2 en tiempo de compilación (check CPUID)
+#[cfg(target_arch = "x86_64")]
+pub fn has_avx2() -> bool {
+    #[cfg(target_feature = "avx2")]
+    {
+        true // habilitado en compilación
+    }
+    #[cfg(not(target_feature = "avx2"))]
+    {
+        // Runtime detection via is_x86_feature_detected
+        is_x86_feature_detected!("avx2")
+    }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+pub fn has_avx2() -> bool { false }
 use crate::bytecode::Opcode;
 use crate::vm_fast::ValorFast;
 
@@ -149,6 +167,174 @@ impl CodeBuf {
         }
     }
     pub fn finish(&mut self) -> Vec<u8> { self.resolve(); std::mem::take(&mut self.bytes) }
+
+    // === AVX2 helpers (VEX.256.66.0F encoded instructions) ===
+    // VEX 2-byte prefix: C5 FD  (R=1, W=0, vvvv=1111, L=1, pp=66)
+
+    /// Emite: vmovupd ymm0, [rbx + idx*8]  (usa vmovupd en vez de vmovapd para evitar req. de alineación)
+    fn vmovapd_load_ymm0(&mut self, idx: usize) {
+        let d = (idx as i32) * 8;
+        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x10]); // vmovupd
+        if d >= -128 && d <= 127 {
+            self.bytes.extend_from_slice(&[0x43, d as u8]);
+        } else {
+            self.bytes.push(0x83);
+            self.i32(d);
+        }
+    }
+    /// Emite: vmovupd [rbx + idx*8], ymm0
+    fn vmovapd_store_ymm0(&mut self, idx: usize) {
+        let d = (idx as i32) * 8;
+        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x11]); // vmovupd
+        if d >= -128 && d <= 127 {
+            self.bytes.extend_from_slice(&[0x43, d as u8]);
+        } else {
+            self.bytes.push(0x83);
+            self.i32(d);
+        }
+    }
+    /// Emite: vmovupd ymm1, [rbx + idx*8]
+    fn vmovapd_load_ymm1(&mut self, idx: usize) {
+        let d = (idx as i32) * 8;
+        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x10]); // vmovupd
+        if d >= -128 && d <= 127 {
+            self.bytes.extend_from_slice(&[0x4b, d as u8]);
+        } else {
+            self.bytes.push(0x8b);
+            self.i32(d);
+        }
+    }
+    /// Emite: vmovupd [rbx + idx*8], ymm1
+    fn vmovapd_store_ymm1(&mut self, idx: usize) {
+        let d = (idx as i32) * 8;
+        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x11]); // vmovupd
+        if d >= -128 && d <= 127 {
+            self.bytes.extend_from_slice(&[0x4b, d as u8]);
+        } else {
+            self.bytes.push(0x8b);
+            self.i32(d);
+        }
+    }
+
+    /// Emite: vaddpd ymm0, ymm0, [rbx + idx*8]  → ymm0 += [rbx+idx*8]
+    fn vaddpd_ymm0_from(&mut self, idx: usize) {
+        let d = (idx as i32) * 8;
+        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x58]);
+        if d >= -128 && d <= 127 {
+            self.bytes.extend_from_slice(&[0x43, d as u8]);
+        } else {
+            self.bytes.push(0x83);
+            self.i32(d);
+        }
+    }
+    /// Emite: vsubpd ymm0, ymm0, [rbx + idx*8]  → ymm0 -= [rbx+idx*8]
+    fn vsubpd_ymm0_from(&mut self, idx: usize) {
+        let d = (idx as i32) * 8;
+        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x5c]);
+        if d >= -128 && d <= 127 {
+            self.bytes.extend_from_slice(&[0x43, d as u8]);
+        } else {
+            self.bytes.push(0x83);
+            self.i32(d);
+        }
+    }
+    /// Emite: vmulpd ymm0, ymm0, [rbx + idx*8]  → ymm0 *= [rbx+idx*8]
+    fn vmulpd_ymm0_from(&mut self, idx: usize) {
+        let d = (idx as i32) * 8;
+        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x59]);
+        if d >= -128 && d <= 127 {
+            self.bytes.extend_from_slice(&[0x43, d as u8]);
+        } else {
+            self.bytes.push(0x83);
+            self.i32(d);
+        }
+    }
+    /// Emite: vdivpd ymm0, ymm0, [rbx + idx*8]  → ymm0 /= [rbx+idx*8]
+    fn vdivpd_ymm0_from(&mut self, idx: usize) {
+        let d = (idx as i32) * 8;
+        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x5e]);
+        if d >= -128 && d <= 127 {
+            self.bytes.extend_from_slice(&[0x43, d as u8]);
+        } else {
+            self.bytes.push(0x83);
+            self.i32(d);
+        }
+    }
+    /// Emite: vaddpd ymm1, ymm1, [rbx + idx*8]  → ymm1 += [rbx+idx*8]
+    fn vaddpd_ymm1_from(&mut self, idx: usize) {
+        let d = (idx as i32) * 8;
+        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x58]);
+        if d >= -128 && d <= 127 {
+            self.bytes.extend_from_slice(&[0x4b, d as u8]);
+        } else {
+            self.bytes.push(0x8b);
+            self.i32(d);
+        }
+    }
+    /// Emite: vsubpd ymm1, ymm1, [rbx + idx*8]  → ymm1 -= [rbx+idx*8]
+    fn vsubpd_ymm1_from(&mut self, idx: usize) {
+        let d = (idx as i32) * 8;
+        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x5c]);
+        if d >= -128 && d <= 127 {
+            self.bytes.extend_from_slice(&[0x4b, d as u8]);
+        } else {
+            self.bytes.push(0x8b);
+            self.i32(d);
+        }
+    }
+    /// Emite: vmulpd ymm1, ymm1, [rbx + idx*8]  → ymm1 *= [rbx+idx*8]
+    fn vmulpd_ymm1_from(&mut self, idx: usize) {
+        let d = (idx as i32) * 8;
+        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x59]);
+        if d >= -128 && d <= 127 {
+            self.bytes.extend_from_slice(&[0x4b, d as u8]);
+        } else {
+            self.bytes.push(0x8b);
+            self.i32(d);
+        }
+    }
+    /// Emite: vdivpd ymm1, ymm1, [rbx + idx*8]  → ymm1 /= [rbx+idx*8]
+    fn vdivpd_ymm1_from(&mut self, idx: usize) {
+        let d = (idx as i32) * 8;
+        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x5e]);
+        if d >= -128 && d <= 127 {
+            self.bytes.extend_from_slice(&[0x4b, d as u8]);
+        } else {
+            self.bytes.push(0x8b);
+            self.i32(d);
+        }
+    }
+
+    // === SSE2 scalar fallback para packed ops ===
+    // Expande vars[dst..dst+3] = vars[dst..dst+3] op vars[src..src+3]
+    // como 4 scalares SSE2: movsd + op + movsd
+    fn packed_sse2_binop(&mut self, dst: usize, src: usize, opcode: u8) {
+        for k in 0..4 {
+            let d = (dst + k) as i32 * 8;
+            let s = (src + k) as i32 * 8;
+            // movsd xmm0, [rbx+d*8]
+            if d >= -128 && d <= 127 {
+                self.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x43, d as u8]);
+            } else {
+                self.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x83]);
+                self.i32(d);
+            }
+            // op xmm0, [rbx+s*8]  (addsd/subsd/mulsd/divsd según opcode)
+            if s >= -128 && s <= 127 {
+                self.bytes.extend_from_slice(&[0xf2, 0x0f, opcode, 0x43, s as u8]);
+            } else {
+                self.bytes.extend_from_slice(&[0xf2, 0x0f, opcode, 0x83]);
+                self.i32(s);
+            }
+            // movsd [rbx+d*8], xmm0
+            if d >= -128 && d <= 127 {
+                self.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x43, d as u8]);
+            } else {
+                self.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x83]);
+                self.i32(d);
+            }
+        }
+    }
 }
 
 pub struct NativeJIT {
@@ -170,13 +356,18 @@ impl NativeJIT {
         // mov rbx, rcx (vars ptr)
         c.bytes.extend_from_slice(&[0x48, 0x89, 0xcb]);
         // mov r14, rdx (output ptr)
-        // 0x49 = REX.W=1, REX.B=1 (extends rm=R14)
-        // 0x89 = mov r/m64, r64  →  reg=src(RDX), rm=dst(R14)
         c.bytes.extend_from_slice(&[0x49, 0x89, 0xd6]);
 
         let mut sd = 0usize;
+        let mut xmm0_valid = false; // xmm0 cache: si true, xmm0 == [rsp] (TOS float)
 
-        for op in ops {
+        let mut i = 0;
+        while i < ops.len() {
+            let op = &ops[i];
+            // Capturar xmm0_valid ANTES de que el op actual lo invalide
+            let was_xmm0 = xmm0_valid;
+            xmm0_valid = false; // la mayoria de ops invalidan el cache; los float ops lo re-setearan
+
             match op {
                 Opcode::PushEntero(n) => {
                     let v = *n;
@@ -231,7 +422,7 @@ impl NativeJIT {
                 Opcode::JumpSiFalso(l) => { if sd >= 1 { c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x85, 0xc0]); c.jcc(0x04, *l); sd -= 1; } else { return Err("JZ underflow".into()); } }
                 Opcode::Label(l) => { c.label(*l); }
 
-                // Opcodes enteros — usan registros enteros
+                // Opcodes enteros -- usan registros enteros
                 Opcode::AddInt => { if sd >= 2 { c.binop(&[0x48, 0x01, 0xc8]); sd -= 1; } else { return Err("Add underflow".into()); } }
                 Opcode::SubInt => { if sd >= 2 { c.binop(&[0x48, 0x29, 0xc8]); sd -= 1; } else { return Err("Sub underflow".into()); } }
                 Opcode::MulInt => { if sd >= 2 { c.binop(&[0x48, 0x0f, 0xaf, 0xc1]); sd -= 1; } else { return Err("Mul underflow".into()); } }
@@ -242,57 +433,86 @@ impl NativeJIT {
                         c.push_r(0); sd -= 1;
                     } else { return Err("Div underflow".into()); }
                 }
-                // Opcodes float — usan SSE2 (XMM registers)
-                // Stack: [rsp]=b (TOS), [rsp+8]=a. Pop 2, push 1.
-                // Para Add/Mul: xmm1=a, xmm0=b → a+b, a*b (conmutativo, OK usar xmm0)
-                // Para Sub: xmm1=a, xmm0=b → a-b = subsd xmm1,xmm0
-                // Para Div: xmm1=a, xmm0=b → a/b = divsd xmm1,xmm0
+                // === OPT 1: XMM0 register cache ===
+                // AddFloat/MulFloat: resultado en xmm0 (conmutativo)
+                // SubFloat/DivFloat: ahora resultado en xmm0 (antes xmm1)
+                // Si was_xmm0=true, xmm0 ya tiene [rsp], ahorramos un load
                 Opcode::AddFloat => {
                     if sd >= 2 {
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp] (b)
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8] (a)
+                        if was_xmm0 {
+                            // xmm0 ya tiene [rsp] (b), solo cargamos a en xmm1
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8]
+                        } else {
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8]
+                        }
                         c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16 (pop 2)
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0xc1]); // addsd xmm0,xmm1 (b+a)
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0xc1]); // addsd xmm0,xmm1
                         c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8 (push 1)
                         c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                        xmm0_valid = true;
                         sd -= 1;
                     } else { return Err("Add underflow".into()); }
                 }
                 Opcode::SubFloat => {
                     if sd >= 2 {
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp] (b)
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8] (a)
-                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16 (pop 2)
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5c, 0xc8]); // subsd xmm1,xmm0 (a-b)
+                        if was_xmm0 {
+                            // xmm0=[rsp]=b, cargamos a en xmm1: xmm1-xmm0
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8] (a)
+                            c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5c, 0xc8]); // subsd xmm1,xmm0 (a-b)
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0xc1]); // movsd xmm0,xmm1 (result->xmm0)
+                        } else {
+                            // Cargar a->xmm0, b->xmm1, hacer xmm0-xmm1 (resultado en xmm0)
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x44, 0x24, 0x08]); // movsd xmm0,[rsp+8] (a)
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x0c, 0x24]); // movsd xmm1,[rsp] (b)
+                            c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5c, 0xc1]); // subsd xmm0,xmm1 (a-b)
+                        }
                         c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8 (push 1)
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x0c, 0x24]); // movsd [rsp],xmm1
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                        xmm0_valid = true;
                         sd -= 1;
                     } else { return Err("Sub underflow".into()); }
                 }
                 Opcode::MulFloat => {
                     if sd >= 2 {
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp] (b)
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8] (a)
+                        if was_xmm0 {
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8]
+                        } else {
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8]
+                        }
                         c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16 (pop 2)
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x59, 0xc1]); // mulsd xmm0,xmm1 (b*a)
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x59, 0xc1]); // mulsd xmm0,xmm1
                         c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8 (push 1)
                         c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                        xmm0_valid = true;
                         sd -= 1;
                     } else { return Err("Mul underflow".into()); }
                 }
                 Opcode::DivFloat => {
                     if sd >= 2 {
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp] (b)
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8] (a)
-                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16 (pop 2)
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5e, 0xc8]); // divsd xmm1,xmm0 (a/b)
+                        if was_xmm0 {
+                            // xmm0=[rsp]=b, cargamos a en xmm1: xmm1/xmm0
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8] (a)
+                            c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5e, 0xc8]); // divsd xmm1,xmm0 (a/b)
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0xc1]); // movsd xmm0,xmm1 (result->xmm0)
+                        } else {
+                            // Cargar a->xmm0, b->xmm1, hacer xmm0/xmm1 (resultado en xmm0)
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x44, 0x24, 0x08]); // movsd xmm0,[rsp+8] (a)
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x0c, 0x24]); // movsd xmm1,[rsp] (b)
+                            c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5e, 0xc1]); // divsd xmm0,xmm1 (a/b)
+                        }
                         c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8 (push 1)
-                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x0c, 0x24]); // movsd [rsp],xmm1
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                        xmm0_valid = true;
                         sd -= 1;
                     } else { return Err("Div underflow".into()); }
                 }
-                // SSE2 float comparisons: comisd setea CF/ZF/PF, usamos condiciones unsigned
-                // setcc: sete(0x94) setne(0x95) setb(0x92) seta(0x97) setbe(0x96) setae(0x93)
+                // SSE2 float comparisons: comisd setea CF/ZF/PF
                 Opcode::IgualFloat => { if sd >= 2 { c.cmp_float(0x94); sd -= 1; } else { return Err("Cmp underflow".into()); } }
                 Opcode::DiferenteFloat => { if sd >= 2 { c.cmp_float(0x95); sd -= 1; } else { return Err("Cmp underflow".into()); } }
                 Opcode::MenorFloat => { if sd >= 2 { c.cmp_float(0x92); sd -= 1; } else { return Err("Cmp underflow".into()); } }
@@ -302,10 +522,188 @@ impl NativeJIT {
                 Opcode::IgualInt => { if sd >= 2 { c.pop_r(1); c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x39, 0xc8]); c.cmp_result(0x94); sd -= 1; } else { return Err("Cmp underflow".into()); } }
                 Opcode::MenorInt => { if sd >= 2 { c.pop_r(1); c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x39, 0xc8]); c.cmp_result(0x9c); sd -= 1; } else { return Err("Cmp underflow".into()); } }
                 Opcode::MayorInt => { if sd >= 2 { c.pop_r(1); c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x39, 0xc8]); c.cmp_result(0x9f); sd -= 1; } else { return Err("Cmp underflow".into()); } }
-                Opcode::LoadIdxEntero(idx) | Opcode::LoadIdxFloat(idx) => { c.load_var(*idx); c.push_r(0); sd += 1; }
-                Opcode::StoreIdxEntero(idx) | Opcode::StoreIdxFloat(idx) => { if sd >= 1 { c.pop_r(0); c.store_var(*idx); sd -= 1; } else { return Err("Store underflow".into()); } }
 
-                // Float superinstructions — se expanden inline
+                // === OPT 2: Fuse LoadIdxFloat + float arithmetic op ===
+                // === OPT 3: Fuse increment pattern (i = i + 1.0) ===
+                Opcode::LoadIdxEntero(idx) | Opcode::LoadIdxFloat(idx) => {
+                    // OPT 3: Detectar patron LoadIdxFloat + PushDecimal(1.0) + AddFloat + StoreIdxFloat (mismo idx)
+                    if matches!(op, Opcode::LoadIdxFloat(_)) {
+                        if let (Some(next1), Some(next2), Some(next3)) = (ops.get(i + 1), ops.get(i + 2), ops.get(i + 3)) {
+                            if matches!(next1, Opcode::PushDecimal(d) if (d - 1.0).abs() < f64::EPSILON)
+                                && matches!(next2, Opcode::AddFloat)
+                                && matches!(next3, Opcode::StoreIdxFloat(idx2) if idx2 == idx)
+                            {
+                                // FUSION: movsd xmm0,[rbx+idx*8]; addsd xmm0,1.0; movsd [rbx+idx*8],xmm0
+                                let d = (*idx as i32) * 8;
+                                if d >= -128 && d <= 127 {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x43, d as u8]); // movsd xmm0,[rbx+idx*8]
+                                } else {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x83]);
+                                    c.i32(d);
+                                }
+                                // Cargar 1.0 en xmm1 via rax
+                                c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(f64::to_bits(1.0) as i64); // mov rax,1.0
+                                c.bytes.extend_from_slice(&[0x66, 0x48, 0x0f, 0x6e, 0xc8]); // movq xmm1,rax
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0xc1]); // addsd xmm0,xmm1
+                                if d >= -128 && d <= 127 {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x43, d as u8]); // movsd [rbx+idx*8],xmm0
+                                } else {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x83]);
+                                    c.i32(d);
+                                }
+                                // xmm0 tiene el resultado pero NO en [rsp], por lo tanto no valido cache
+                                i += 4; // saltar los 4 ops
+                                continue;
+                            }
+                        }
+                    }
+                    // OPT 2: Fuse LoadIdxFloat + AddFloat/SubFloat/MulFloat/DivFloat
+                    if let Some(next) = ops.get(i + 1) {
+                        let d = (*idx as i32) * 8;
+                        match next {
+                            Opcode::AddFloat if sd >= 1 => {
+                                if !was_xmm0 {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp] (TOS)
+                                }
+                                // movsd xmm1,[rbx+idx*8]
+                                if d >= -128 && d <= 127 {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4b, d as u8]);
+                                } else {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x8b]);
+                                    c.i32(d);
+                                }
+                                c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8 (pop TOS)
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0xc1]); // addsd xmm0,xmm1 (TOS + vars[idx])
+                                c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                                xmm0_valid = true;
+                                i += 2;
+                                continue;
+                            }
+                            Opcode::SubFloat if sd >= 1 => {
+                                if was_xmm0 {
+                                    // xmm0=[rsp]=b=TOS, cargar a=vars[idx] en xmm1, hacer xmm1-xmm0
+                                    if d >= -128 && d <= 127 {
+                                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4b, d as u8]); // movsd xmm1,[rbx+idx*8]
+                                    } else {
+                                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x8b]);
+                                        c.i32(d);
+                                    }
+                                    c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5c, 0xc8]); // subsd xmm1,xmm0 (a-b)
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0xc1]); // movsd xmm0,xmm1
+                                } else {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp] (b=TOS)
+                                    if d >= -128 && d <= 127 {
+                                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4b, d as u8]); // movsd xmm1,[rbx+idx*8] (a)
+                                    } else {
+                                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x8b]);
+                                        c.i32(d);
+                                    }
+                                    c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5c, 0xc8]); // subsd xmm1,xmm0 (a-b)
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0xc1]); // movsd xmm0,xmm1
+                                }
+                                c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                                xmm0_valid = true;
+                                i += 2;
+                                continue;
+                            }
+                            Opcode::MulFloat if sd >= 1 => {
+                                if !was_xmm0 {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]);
+                                }
+                                if d >= -128 && d <= 127 {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4b, d as u8]);
+                                } else {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x8b]);
+                                    c.i32(d);
+                                }
+                                c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]);
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x59, 0xc1]); // mulsd xmm0,xmm1
+                                c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]);
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]);
+                                xmm0_valid = true;
+                                i += 2;
+                                continue;
+                            }
+                            Opcode::DivFloat if sd >= 1 => {
+                                if was_xmm0 {
+                                    if d >= -128 && d <= 127 {
+                                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4b, d as u8]);
+                                    } else {
+                                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x8b]);
+                                        c.i32(d);
+                                    }
+                                    c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]);
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5e, 0xc8]); // divsd xmm1,xmm0
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0xc1]);
+                                } else {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]);
+                                    if d >= -128 && d <= 127 {
+                                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4b, d as u8]);
+                                    } else {
+                                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x8b]);
+                                        c.i32(d);
+                                    }
+                                    c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]);
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5e, 0xc8]); // divsd xmm1,xmm0
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0xc1]);
+                                }
+                                c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]);
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]);
+                                xmm0_valid = true;
+                                i += 2;
+                                continue;
+                            }
+                            _ => {} // no fusion, fall through to normal path
+                        }
+                    }
+                    // Normal (sin fusion) — LoadIdxFloat via XMM para evitar forwarding stall
+                    // movsd xmm0,[rbx+idx*8]; sub rsp,8; movsd [rsp],xmm0
+                    let d = (*idx as i32) * 8;
+                    if d >= -128 && d <= 127 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x43, d as u8]); // movsd xmm0,[rbx+idx*8]
+                    } else {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x83]);
+                        c.i32(d);
+                    }
+                    c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
+                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                    xmm0_valid = true;
+                    sd += 1;
+                }
+                // OPT 1: StoreIdxFloat con xmm0_valid evita pop rax intermedio
+                Opcode::StoreIdxEntero(idx) | Opcode::StoreIdxFloat(idx) => {
+                    if sd >= 1 {
+                        if was_xmm0 && matches!(op, Opcode::StoreIdxFloat(_)) {
+                            // movsd [rbx+idx*8], xmm0; add rsp,8
+                            let d = (*idx as i32) * 8;
+                            if d >= -128 && d <= 127 {
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x43, d as u8]);
+                            } else {
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x83]);
+                                c.i32(d);
+                            }
+                            c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8 (pop TOS)
+                        } else {
+                            // StoreIdxFloat via XMM: movsd xmm0,[rsp]; add rsp,8; movsd [rbx+idx*8],xmm0
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
+                            c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
+                            let d = (*idx as i32) * 8;
+                            if d >= -128 && d <= 127 {
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x43, d as u8]); // movsd [rbx+idx*8],xmm0
+                            } else {
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x83]);
+                                c.i32(d);
+                            }
+                        }
+                        sd -= 1;
+                    } else { return Err("Store underflow".into()); }
+                }
+
+                // Float superinstructions -- se expanden inline
                 Opcode::DeclareFloatOp(idx, d) | Opcode::StoreFloatOp(idx, d) => {
                     c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(f64::to_bits(*d) as i64);
                     c.store_var(*idx);
@@ -314,7 +712,7 @@ impl NativeJIT {
                     c.load_var(*idx); c.push_r(0); sd += 1;
                     c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(f64::to_bits(*d) as i64);
                     c.push_r(0); sd += 1;
-                    // AddFloat (pops 2, pushes 1) → sd back to +1
+                    // AddFloat (pops 2, pushes 1) -> sd back to +1
                     c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp] (n)
                     c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4c, 0x24, 0x08]); // movsd xmm1,[rsp+8] (vars[idx])
                     c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x10]); // add rsp,16 (pop 2)
@@ -360,21 +758,46 @@ impl NativeJIT {
                     } else { return Err("MulStore underflow".into()); }
                 }
 
+                Opcode::XorSign(idx) => {
+                    // x = -x via XOR sign bit: movsd xmm0,[rbx+idx*8]; xorpd xmm0,sign_mask; movsd [rbx+idx*8],xmm0
+                    let d = (*idx as i32) * 8;
+                    if d >= -128 && d <= 127 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x43, d as u8]); // movsd xmm0,[rbx+idx*8]
+                    } else {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x83]);
+                        c.i32(d);
+                    }
+                    // Cargar sign mask (0x8000000000000000) en xmm1 via rax
+                    c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(i64::MIN); // mov rax, 0x8000000000000000
+                    c.bytes.extend_from_slice(&[0x66, 0x48, 0x0f, 0x6e, 0xc8]); // movq xmm1,rax
+                    c.bytes.extend_from_slice(&[0x66, 0x0f, 0x57, 0xc1]); // xorpd xmm0,xmm1 (flip sign bit)
+                    if d >= -128 && d <= 127 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x43, d as u8]); // movsd [rbx+idx*8],xmm0
+                    } else {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x83]);
+                        c.i32(d);
+                    }
+                    // No stack change; xmm0 tiene el resultado pero no en [rsp]
+                }
+
                 Opcode::Print => {
                     // No-op: no modifica el stack.
-                    // El valor TOS se deja para que el epílogo lo devuelva.
+                    // El valor TOS se deja para que el epilogo lo devuelva.
                     // (No se checkea sd porque Print no pope ni pushea)
                 }
                 Opcode::Halt => { break; }
 
                 // === Superinstructions y opcodes ignorados ===
                 Opcode::FunctionDef(_, _) | Opcode::Return => {
-                    // No-op: estructura del programa, no cómputo
+                    // No-op: estructura del programa, no computo
                 }
                 Opcode::PushDecimal(d) => {
-                    // push f64 bits (raw IEEE 754)
-                    c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(f64::to_bits(*d) as i64);
-                    c.push_r(0);
+                    // Push f64 via XMM domain para evitar forwarding stall con AddFloat/DivFloat etc.
+                    // mov rax, bits; movq xmm0, rax; sub rsp, 8; movsd [rsp], xmm0
+                    c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(f64::to_bits(*d) as i64); // mov rax,imm64
+                    c.bytes.extend_from_slice(&[0x66, 0x48, 0x0f, 0x6e, 0xc0]); // movq xmm0,rax
+                    c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
+                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
                     sd += 1;
                 }
                 Opcode::PushNulo => {
@@ -396,7 +819,7 @@ impl NativeJIT {
                 }
                 Opcode::LoadAddInt(idx, n) => {
                     // push vars[idx] + n
-                    // No necesita checkeo de sd: push/pop son de valores recién pusheados
+                    // No necesita checkeo de sd: push/pop son de valores recien pusheados
                     c.load_var(*idx); c.push_r(0);    // push vars[idx]
                     c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(*n);
                     c.push_r(0);                        // push n
@@ -409,9 +832,9 @@ impl NativeJIT {
                 Opcode::AddStoreIdx(idx) => {
                     // pop b; pop a; vars[idx] = a + b
                     if sd >= 2 {
-                        c.pop_r(0); // pop TOS (b) → rax
-                        c.pop_r(1); // pop next (a) → rcx
-                        c.bytes.extend_from_slice(&[0x48, 0x01, 0xc8]); // add rax,rcx → rax = a+b
+                        c.pop_r(0); // pop TOS (b) -> rax
+                        c.pop_r(1); // pop next (a) -> rcx
+                        c.bytes.extend_from_slice(&[0x48, 0x01, 0xc8]); // add rax,rcx -> rax = a+b
                         c.store_var(*idx);
                         sd -= 2;
                     } else {
@@ -421,9 +844,9 @@ impl NativeJIT {
                 Opcode::SubStoreIdx(idx) => {
                     // pop b; pop a; vars[idx] = a - b
                     if sd >= 2 {
-                        c.pop_r(0); // pop TOS (b) → rax
-                        c.pop_r(1); // pop next (a) → rcx
-                        c.bytes.extend_from_slice(&[0x48, 0x29, 0xc8]); // sub rax,rcx → rax = a-b
+                        c.pop_r(0); // pop TOS (b) -> rax
+                        c.pop_r(1); // pop next (a) -> rcx
+                        c.bytes.extend_from_slice(&[0x48, 0x29, 0xc8]); // sub rax,rcx -> rax = a-b
                         c.store_var(*idx);
                         sd -= 2;
                     } else {
@@ -433,9 +856,9 @@ impl NativeJIT {
                 Opcode::MulStoreIdx(idx) => {
                     // pop b; pop a; vars[idx] = a * b
                     if sd >= 2 {
-                        c.pop_r(0); // pop TOS (b) → rax
-                        c.pop_r(1); // pop next (a) → rcx
-                        c.bytes.extend_from_slice(&[0x48, 0x0f, 0xaf, 0xc1]); // imul rax,rcx → rax = a*b
+                        c.pop_r(0); // pop TOS (b) -> rax
+                        c.pop_r(1); // pop next (a) -> rcx
+                        c.bytes.extend_from_slice(&[0x48, 0x0f, 0xaf, 0xc1]); // imul rax,rcx -> rax = a*b
                         c.store_var(*idx);
                         sd -= 2;
                     } else {
@@ -450,7 +873,7 @@ impl NativeJIT {
                         c.pop_r(1); c.pop_r(0);
                         c.bytes.extend_from_slice(&[0x48, 0x01, 0xc8]); // add rax,rcx
                         c.push_r(0);
-                        // sd: +1(push n) -1(AddInt) = 0 → net unchanged
+                        // sd: +1(push n) -1(AddInt) = 0 -> net unchanged
                     } else {
                         return Err("PushAddInt underflow".into());
                     }
@@ -477,14 +900,229 @@ impl NativeJIT {
                         c.pop_r(1); c.pop_r(0);
                         c.bytes.extend_from_slice(&[0x48, 0x01, 0xc8]); // add rax,rcx
                         c.push_r(0);
-                        // sd: +1(dup) -1(AddInt) = 0 → net unchanged
+                        // sd: +1(dup) -1(AddInt) = 0 -> net unchanged
                     } else {
                         return Err("DupAddInt underflow".into());
                     }
                 }
 
+                // === PACKED SIMD opcodes (AVX2 o SSE2 fallback) ===
+                // AddPacked(dst1, src1, dst2, src2):
+                //   Con AVX2: ymm0 = [rbx+dst1*8]; ymm0 += [rbx+src1*8]; [rbx+dst1*8] = ymm0
+                //             ymm1 = [rbx+dst2*8]; ymm1 += [rbx+src2*8]; [rbx+dst2*8] = ymm1
+                //   Fallback SSE2: 8 scalares addsd (4 para cada grupo)
+                Opcode::AddPacked(d1, s1, d2, s2) => {
+                    if has_avx2() {
+                        c.vmovapd_load_ymm0(*d1);
+                        c.vaddpd_ymm0_from(*s1);
+                        c.vmovapd_store_ymm0(*d1);
+                        c.vmovapd_load_ymm1(*d2);
+                        c.vaddpd_ymm1_from(*s2);
+                        c.vmovapd_store_ymm1(*d2);
+                    } else {
+                        c.packed_sse2_binop(*d1, *s1, 0x58); // addsd
+                        c.packed_sse2_binop(*d2, *s2, 0x58);
+                    }
+                    // No stack change; packed ops operan directamente sobre variables
+                }
+                Opcode::SubPacked(d1, s1, d2, s2) => {
+                    if has_avx2() {
+                        c.vmovapd_load_ymm0(*d1);
+                        c.vsubpd_ymm0_from(*s1);
+                        c.vmovapd_store_ymm0(*d1);
+                        c.vmovapd_load_ymm1(*d2);
+                        c.vsubpd_ymm1_from(*s2);
+                        c.vmovapd_store_ymm1(*d2);
+                    } else {
+                        c.packed_sse2_binop(*d1, *s1, 0x5c); // subsd
+                        c.packed_sse2_binop(*d2, *s2, 0x5c);
+                    }
+                }
+                Opcode::MulPacked(d1, s1, d2, s2) => {
+                    if has_avx2() {
+                        c.vmovapd_load_ymm0(*d1);
+                        c.vmulpd_ymm0_from(*s1);
+                        c.vmovapd_store_ymm0(*d1);
+                        c.vmovapd_load_ymm1(*d2);
+                        c.vmulpd_ymm1_from(*s2);
+                        c.vmovapd_store_ymm1(*d2);
+                    } else {
+                        c.packed_sse2_binop(*d1, *s1, 0x59); // mulsd
+                        c.packed_sse2_binop(*d2, *s2, 0x59);
+                    }
+                }
+                Opcode::DivPacked(d1, s1, d2, s2) => {
+                    if has_avx2() {
+                        c.vmovapd_load_ymm0(*d1);
+                        c.vdivpd_ymm0_from(*s1);
+                        c.vmovapd_store_ymm0(*d1);
+                        c.vmovapd_load_ymm1(*d2);
+                        c.vdivpd_ymm1_from(*s2);
+                        c.vmovapd_store_ymm1(*d2);
+                    } else {
+                        c.packed_sse2_binop(*d1, *s1, 0x5e); // divsd
+                        c.packed_sse2_binop(*d2, *s2, 0x5e);
+                    }
+                }
+
+                // === FASE B: ReduceAdd(dst, src) — AVX2 horizontal add ===
+                Opcode::ReduceAdd(dst, src) => {
+                    // Sumar 4 doubles en vars[src..src+3] → vars[dst]
+                    // Usar SSE2: movsd xmm0,[rbx+src*8]; addsd xmm0,[rbx+(src+1)*8];
+                    //           addsd xmm0,[rbx+(src+2)*8]; addsd xmm0,[rbx+(src+3)*8]
+                    //           movsd [rbx+dst*8],xmm0
+                    if has_avx2() {
+                        // AVX2: vhaddpd + vpermilpd
+                        // vmovapd ymm0, [rbx+src*8]
+                        c.vmovapd_load_ymm0(*src);
+                        // vhaddpd ymm0, ymm0, ymm0  (C5 FD 7C C0)
+                        c.bytes.extend_from_slice(&[0xc5, 0xfd, 0x7c, 0xc0]);
+                        // vpermilpd ymm0, ymm0, 0b11  (C4 E3 FD 0D C0 03)
+                        c.bytes.extend_from_slice(&[0xc4, 0xe3, 0xfd, 0x0d, 0xc0, 0x03]);
+                        // movsd [rbx+dst*8], xmm0 (lower 64 bits of ymm0)
+                        let d = (*dst as i32) * 8;
+                        if d >= -128 && d <= 127 {
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x43, d as u8]);
+                        } else {
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x83]);
+                            c.i32(d);
+                        }
+                    } else {
+                        // SSE2 fallback: suma escalar de 4 doubles
+                        for k in 0..4 {
+                            let d_src = (*src + k) as i32 * 8;
+                            if d_src >= -128 && d_src <= 127 {
+                                if k == 0 {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x43, d_src as u8]); // movsd xmm0,[rbx+src*8]
+                                } else {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4b, d_src as u8]); // movsd xmm1,[rbx+(src+k)*8]
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0xc1]); // addsd xmm0,xmm1
+                                }
+                            } else {
+                                if k == 0 {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x83]);
+                                    c.i32(d_src);
+                                } else {
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x8b]);
+                                    c.i32(d_src);
+                                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0xc1]); // addsd xmm0,xmm1
+                                }
+                            }
+                        }
+                        let d = (*dst as i32) * 8;
+                        if d >= -128 && d <= 127 {
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x43, d as u8]);
+                        } else {
+                            c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x83]);
+                            c.i32(d);
+                        }
+                    }
+                }
+                // === FASE B: LoadAddPacked(dst, src1, src2) — Cargar y sumar 4 doubles ===
+                Opcode::LoadAddPacked(dst, src1, src2) => {
+                    // vars[dst..dst+3] = vars[src1..src1+3] + vars[src2..src2+3]
+                    if has_avx2() {
+                        // vmovapd ymm0, [rbx+src1*8]
+                        c.vmovapd_load_ymm0(*src1);
+                        // vaddpd ymm0, ymm0, [rbx+src2*8]
+                        c.vaddpd_ymm0_from(*src2);
+                        // vmovapd [rbx+dst*8], ymm0
+                        c.vmovapd_store_ymm0(*dst);
+                    } else {
+                        // SSE2 fallback: 4 scalares addsd
+                        c.packed_sse2_binop(*dst, *src1, 0x58); // addsd
+                        // But sse2_binop does in-place ops, we need src1+src2→dst
+                        // Overwrite: load src1, add src2, store to dst
+                        for k in 0..4 {
+                            let d1 = (*src1 + k) as i32 * 8;
+                            let d2 = (*src2 + k) as i32 * 8;
+                            let dd = (*dst + k) as i32 * 8;
+                            // movsd xmm0,[rbx+d1]
+                            if d1 >= -128 && d1 <= 127 {
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x43, d1 as u8]);
+                            } else {
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x83]);
+                                c.i32(d1);
+                            }
+                            // addsd xmm0,[rbx+d2]
+                            if d2 >= -128 && d2 <= 127 {
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0x43, d2 as u8]);
+                            } else {
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0x83]);
+                                c.i32(d2);
+                            }
+                            // movsd [rbx+dd],xmm0
+                            if dd >= -128 && dd <= 127 {
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x43, dd as u8]);
+                            } else {
+                                c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x83]);
+                                c.i32(dd);
+                            }
+                        }
+                    }
+                }
+
+                // === FASE A: Modulo2 branchless — push(vars[src] & 1)
+                Opcode::Modulo2(src) => {
+                    // mov rax,[rbx+src*8]; and rax,1; push rax
+                    c.load_var(*src);
+                    c.bytes.extend_from_slice(&[0x48, 0x83, 0xe0, 0x01]); // and rax,1
+                    c.push_r(0);
+                    sd += 1;
+                }
+
+                // === FASE 3b: FusedDivAddConst — vars[dst] += num / vars[div_src] ===
+                Opcode::FusedDivAddConst(dst, num, div_src) => {
+                    // movsd xmm0, [rbx+dst*8]     (dst actual)
+                    // movsd xmm1, [rbx+div_src*8]  (divisor)
+                    // mov rax, bits(num)
+                    // movq xmm2, rax               (numerador constante)
+                    // divsd xmm2, xmm1             (num / div)
+                    // addsd xmm0, xmm2              (dst + result)
+                    // movsd [rbx+dst*8], xmm0       (guardar)
+                    let dd = (*dst as i32) * 8;
+                    let dv = (*div_src as i32) * 8;
+                    // movsd xmm0,[rbx+dst*8]
+                    if dd >= -128 && dd <= 127 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x43, dd as u8]);
+                    } else { c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x83]); c.i32(dd); }
+                    // movsd xmm1,[rbx+div_src*8]
+                    if dv >= -128 && dv <= 127 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4b, dv as u8]);
+                    } else { c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x8b]); c.i32(dv); }
+                    // mov rax, bits(num); movq xmm2, rax
+                    c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(f64::to_bits(*num) as i64);
+                    c.bytes.extend_from_slice(&[0x66, 0x48, 0x0f, 0x6e, 0xd0]); // movq xmm2,rax
+                    // divsd xmm2,xmm1; addsd xmm0,xmm2
+                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5e, 0xd1]); // divsd xmm2,xmm1
+                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0xc2]); // addsd xmm0,xmm2
+                    // movsd [rbx+dst*8],xmm0
+                    if dd >= -128 && dd <= 127 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x43, dd as u8]);
+                    } else { c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x83]); c.i32(dd); }
+                    // No stack change
+                }
+                Opcode::FusedDivSubConst(dst, num, div_src) => {
+                    let dd = (*dst as i32) * 8;
+                    let dv = (*div_src as i32) * 8;
+                    if dd >= -128 && dd <= 127 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x43, dd as u8]);
+                    } else { c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x83]); c.i32(dd); }
+                    if dv >= -128 && dv <= 127 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x4b, dv as u8]);
+                    } else { c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x8b]); c.i32(dv); }
+                    c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(f64::to_bits(*num) as i64);
+                    c.bytes.extend_from_slice(&[0x66, 0x48, 0x0f, 0x6e, 0xd0]); // movq xmm2,rax
+                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5e, 0xd1]); // divsd xmm2,xmm1
+                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5c, 0xc2]); // subsd xmm0,xmm2
+                    if dd >= -128 && dd <= 127 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x43, dd as u8]);
+                    } else { c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x83]); c.i32(dd); }
+                }
+
                 _ => { return Err(format!("non-JIT {:?}", op)); }
             }
+            i += 1;
         }
 
         // epilogue
@@ -496,9 +1134,9 @@ impl NativeJIT {
         let size = code.len();
         // 1. Alocar memoria RW
         let ptr = mem::alloc_exec(size)?;
-        // 2. Copiar código a la memoria (aún RW)
+        // 2. Copiar codigo a la memoria (aun RW)
         unsafe { std::ptr::copy_nonoverlapping(code.as_ptr(), ptr, size); }
-        // 3. Cambiar protección a RX (ejecutable + lectura, no escritura)
+        // 3. Cambiar proteccion a RX (ejecutable + lectura, no escritura)
         mem::make_exec(ptr, size)?;
         self.compiled.insert(name.to_string(), CompiledCode { ptr, size });
         Ok(ptr)

@@ -632,13 +632,16 @@ impl Parser {
         Ok(expr)
     }
 
-    /// Expresiones multiplicativas: *, /
+    /// Expresiones multiplicativas: *, /, %
     fn parse_expresion_multiplicativa(&mut self) -> Result<Expresion, ErrorForja> {
         let mut expr = self.parse_expresion_unaria()?;
-        while self.coincide(TokenKind::Por) || self.coincide(TokenKind::Dividido) {
+        while self.coincide(TokenKind::Por) || self.coincide(TokenKind::Dividido) || self.coincide(TokenKind::Porcentaje) {
             let operador = if self.coincide(TokenKind::Por) {
                 self.avanzar();
                 Operador::Multiplicacion
+            } else if self.coincide(TokenKind::Porcentaje) {
+                self.avanzar();
+                Operador::Modulo
             } else {
                 self.avanzar();
                 Operador::Division

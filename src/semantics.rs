@@ -919,7 +919,7 @@ impl TypeChecker {
                     }
                 }
             }
-            Operador::Resta | Operador::Multiplicacion | Operador::Division => {
+            Operador::Resta | Operador::Multiplicacion | Operador::Division | Operador::Modulo => {
                 match (&t_izq, &t_der) {
                     (Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Tipo::Entero),
                     (Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Tipo::Decimal),
