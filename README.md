@@ -87,7 +87,6 @@
 | **Bytecode** | [`src/bytecode.rs`](src/bytecode.rs) | Generación + serialización/deserialización .fbc |
 | **Uops** | [`src/uops.rs`](src/uops.rs) | Micro-opcodes para expansión y optimización |
 | **VM v1** | [`src/vm.rs`](src/vm.rs) | VM stack-based original |
-| **VM v3 Opt** | [`src/vm_opt.rs`](src/vm_opt.rs) | VM optimizada con índices numéricos |
 | **VM v3 DT** | [`src/vm_jit.rs`](src/vm_jit.rs) | VM Direct Threading (u8 planos) |
 | **VM v5 Fast** | [`src/vm_fast.rs`](src/vm_fast.rs) | VM ultra rápida con stack caching (producción) |
 | **JIT** | [`src/jit.rs`](src/jit.rs) | Compilación JIT con Cranelift |

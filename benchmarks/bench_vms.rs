@@ -1,11 +1,11 @@
-// Comparativa: VM original vs vm_opt vs vm_jit (direct threading)
+// Comparativa: VM original vs vm_jit (direct threading) vs ForjaFast
 // cargo run --release --bin bench-vms
 
 use std::time::Instant;
 
 fn main() {
     println!("═══════════════════════════════════════════════════");
-    println!("  🔥 Forja VM: Original vs Opt vs JIT (DT)");
+    println!("  🔥 Forja VM: Original vs JIT (DT) vs ForjaFast");
     println!("  1000 iteraciones, SIN output (eval pura)");
     println!("═══════════════════════════════════════════════════");
     println!();
@@ -37,11 +37,9 @@ variable r = fib(30)
     println!("───────────────────────────────────────────────");
 
     let t1 = medir(iters, || { let mut v = forja::vm::ForjaVM::new(); v.cargar_bytecode(bc.clone()); v.ejecutar().unwrap(); });
-    let t2 = medir(iters, || { let mut v = forja::vm_opt::ForjaVMOpt::new(); v.cargar_bytecode(bc.clone()); v.ejecutar().unwrap(); });
     let t3 = medir(iters, || { let mut v = forja::vm_jit::ForjaDT::new(); v.cargar_bytecode(forja::vm_jit::compilar_bytecode(&bc)); v.ejecutar().unwrap(); });
 
     print_row("VM Original", t1, t1);
-    print_row("VM Opt (var-index)", t2, t1);
     print_row("VM JIT (Direct Threading)", t3, t1);
 
     // ===== TEST 2: Bucle =====
@@ -54,11 +52,9 @@ variable r = fib(30)
     println!("───────────────────────────────────────────────");
 
     let t1 = medir(iters, || { let mut v = forja::vm::ForjaVM::new(); v.cargar_bytecode(bc2.clone()); v.ejecutar().unwrap(); });
-    let t2 = medir(iters, || { let mut v = forja::vm_opt::ForjaVMOpt::new(); v.cargar_bytecode(bc2.clone()); v.ejecutar().unwrap(); });
     let t3 = medir(iters, || { let mut v = forja::vm_jit::ForjaDT::new(); v.cargar_bytecode(forja::vm_jit::compilar_bytecode(&bc2)); v.ejecutar().unwrap(); });
 
     print_row("VM Original", t1, t1);
-    print_row("VM Opt", t2, t1);
     print_row("VM JIT (DT)", t3, t1);
 
     // ===== Python reference =====

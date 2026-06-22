@@ -10,7 +10,6 @@
 // VMs comparadas:
 //   - ForjaVM   (original, línea base)
 //   - ForjaFast (vm_fast - SIC + Fast Locals + Stack Cache + PEP 659 + Uops)
-//   - ForjaVMOpt (vm_opt - SIC + Fast Locals + PEP 659 + Uops)
 //   - ForjaDT   (vm_jit - Direct Threading + SIC)
 //
 // USO: cargo run --release --bin bench-cpython-opt
@@ -33,18 +32,6 @@ fn medir_vm(source: &str, iters: usize) -> f64 {
     let inicio = Instant::now();
     for _ in 0..iters {
         let mut vm = forja::vm::ForjaVM::new();
-        vm.set_max_instrucciones(200_000_000);
-        vm.cargar_bytecode(bc.clone());
-        vm.ejecutar().unwrap();
-    }
-    inicio.elapsed().as_secs_f64() * 1_000_000.0 / iters as f64
-}
-
-fn medir_vm_opt(source: &str, iters: usize) -> f64 {
-    let bc = compilar_raw(source);
-    let inicio = Instant::now();
-    for _ in 0..iters {
-        let mut vm = forja::vm_opt::ForjaVMOpt::new();
         vm.set_max_instrucciones(200_000_000);
         vm.cargar_bytecode(bc.clone());
         vm.ejecutar().unwrap();
@@ -170,7 +157,7 @@ fn main() {
     println!("  🔥 BENCHMARK CPYTHON OPTIMIZATIONS — Forja VM");
     println!("══════════════════════════════════════════════════════════════════");
     println!();
-    println!("  VMs:   ForjaVM (base) | ForjaFast | ForjaVMOpt | ForjaDT");
+    println!("  VMs:   ForjaVM (base) | ForjaFast | ForjaDT");
     println!("  Iters: {}", ITERS);
     println!();
 
@@ -186,7 +173,6 @@ fn main() {
                 Err(ref e) if e.starts_with("N/A") => f64::INFINITY,
                 Err(e) => { eprintln!("  ⚠ ForjaFast: {}", e); f64::INFINITY }
             };
-            let opt = medir_vm_opt($src, $iters);
             let dt = medir_vm_dt($src, $iters);
             print_vm("ForjaVM", vm, vm);
             if fast.is_infinite() {
@@ -194,9 +180,8 @@ fn main() {
             } else {
                 print_vm("ForjaFast", fast, vm);
             }
-            print_vm("ForjaVMOpt", opt, vm);
             print_vm("ForjaDT", dt, vm);
-            (vm, fast, opt, dt)
+            (vm, fast, dt)
         }};
     }
 
@@ -214,13 +199,11 @@ fn main() {
     println!("───────────────────────────────────────────────────────────");
     let d_vm = medir_vm(FUNC_CALL_50K_FA, ITERS);
     let d_fast = f64::INFINITY;
-    let d_opt = medir_vm_opt(FUNC_CALL_50K_FA, ITERS);
     let d_dt = medir_vm_dt(FUNC_CALL_50K_FA, ITERS);
     print_vm("ForjaVM", d_vm, d_vm);
     println!("  {:<30} {:>12}", "ForjaFast", "N/A");
-    print_vm("ForjaVMOpt", d_opt, d_vm);
     print_vm("ForjaDT", d_dt, d_vm);
-    let d = (d_vm, d_fast, d_opt, d_dt);
+    let d = (d_vm, d_fast, d_dt);
 
     println!();
     println!("───────────────────────────────────────────────────────────");
@@ -228,13 +211,11 @@ fn main() {
     println!("───────────────────────────────────────────────────────────");
     let f_vm = medir_vm(FIB_30_FA, ITERS);
     let f_fast = f64::INFINITY;
-    let f_opt = medir_vm_opt(FIB_30_FA, ITERS);
     let f_dt = medir_vm_dt(FIB_30_FA, ITERS);
     print_vm("ForjaVM", f_vm, f_vm);
     println!("  {:<30} {:>12}", "ForjaFast", "N/A");
-    print_vm("ForjaVMOpt", f_opt, f_vm);
     print_vm("ForjaDT", f_dt, f_vm);
-    let f = (f_vm, f_fast, f_opt, f_dt);
+    let f = (f_vm, f_fast, f_dt);
 
     // ═══ TABLA RESUMEN ══════════════════════════════════
     println!();
@@ -242,25 +223,25 @@ fn main() {
     println!("  📊 TABLA RESUMEN — us/iter");
     println!("══════════════════════════════════════════════════════════════════");
     println!();
-    println!("  {:<35} {:>12} {:>12} {:>12} {:>12}",
-        "Benchmark", "ForjaVM", "ForjaFast", "ForjaVMOpt", "ForjaDT");
-    println!("  {:─<35} {:─>12} {:─>12} {:─>12} {:─>12}", "", "", "", "", "");
+    println!("  {:<35} {:>12} {:>12} {:>12}",
+        "Benchmark", "ForjaVM", "ForjaFast", "ForjaDT");
+    println!("  {:─<35} {:─>12} {:─>12}", "", "", "");
 
-    let rows: [(&str, f64, f64, f64, f64); 7] = [
-        ("A) Suma enteros 100k", a.0, a.1, a.2, a.3),
-        ("B) Suma floats 100k", b.0, b.1, b.2, b.3),
-        ("C) Suma simple 50k",  c.0, c.1, c.2, c.3),
-        ("D) Llamadas fn 50k",  d.0, d.1, d.2, d.3),
-        ("E) Strings 1k",       e.0, e.1, e.2, e.3),
-        ("F) Fibonacci(30)",    f.0, f.1, f.2, f.3),
-        ("G) Bucle suma 50k",   g.0, g.1, g.2, g.3),
+    let rows: [(&str, f64, f64, f64); 7] = [
+        ("A) Suma enteros 100k", a.0, a.1, a.2),
+        ("B) Suma floats 100k", b.0, b.1, b.2),
+        ("C) Suma simple 50k",  c.0, c.1, c.2),
+        ("D) Llamadas fn 50k",  d.0, d.1, d.2),
+        ("E) Strings 1k",       e.0, e.1, e.2),
+        ("F) Fibonacci(30)",    f.0, f.1, f.2),
+        ("G) Bucle suma 50k",   g.0, g.1, g.2),
     ];
 
-    for &(name, vm, fast, opt, dt) in &rows {
+    for &(name, vm, fast, dt) in &rows {
         let fast_s = if fast.is_infinite() { "     N/A".to_string() }
                      else { format!("{:>10.2}us", fast) };
-        println!("  {:<35} {:>10.2}us {:>12} {:>10.2}us {:>10.2}us",
-            name, vm, fast_s, opt, dt);
+        println!("  {:<35} {:>10.2}us {:>12} {:>10.2}us",
+            name, vm, fast_s, dt);
     }
 
     // ═══ SPEEDUPS ═══════════════════════════════════════
@@ -269,30 +250,29 @@ fn main() {
     println!("  📊 SPEEDUP vs ForjaVM (linea base) — mas alto = mejor");
     println!("══════════════════════════════════════════════════════════════════");
     println!();
-    println!("  {:<35} {:>12} {:>12} {:>12}",
-        "Benchmark", "ForjaFast", "ForjaVMOpt", "ForjaDT");
-    println!("  {:─<35} {:─>12} {:─>12} {:─>12}", "", "", "", "");
+    println!("  {:<35} {:>12} {:>12}",
+        "Benchmark", "ForjaFast", "ForjaDT");
+    println!("  {:─<35} {:─>12} {:─>12}", "", "", "");
 
-    for &(name, vm, fast, opt, dt) in &rows {
+    for &(name, vm, fast, dt) in &rows {
         let sf = if vm > 0.0 && !fast.is_infinite() && fast > 0.0 { vm / fast } else { 0.0 };
-        let so = if vm > 0.0 && opt > 0.0 { vm / opt } else { 0.0 };
         let sd = if vm > 0.0 && dt > 0.0 { vm / dt } else { 0.0 };
         let fast_s = if fast.is_infinite() { "     N/A".to_string() }
                      else { format!("{:>10.2}x", sf) };
-        println!("  {:<35} {:>12} {:>10.2}x {:>10.2}x",
-            name, fast_s, so, sd);
+        println!("  {:<35} {:>12} {:>10.2}x",
+            name, fast_s, sd);
     }
 
     println!();
     println!("══════════════════════════════════════════════════════════════════");
     println!("  🏆 GANADOR: ForjaFast ({:.1}x-{:.1}x mas rapido que ForjaVM)",
         rows.iter()
-            .filter(|(_, _, f, _, _)| !f.is_infinite() && *f > 0.0)
-            .map(|(_, vm, fast, _, _)| vm / fast)
+            .filter(|(_, _, f, _)| !f.is_infinite() && *f > 0.0)
+            .map(|(_, vm, fast, _)| vm / fast)
             .fold(999.0_f64, |a, b| a.min(b)),
         rows.iter()
-            .filter(|(_, _, f, _, _)| !f.is_infinite() && *f > 0.0)
-            .map(|(_, vm, fast, _, _)| vm / fast)
+            .filter(|(_, _, f, _)| !f.is_infinite() && *f > 0.0)
+            .map(|(_, vm, fast, _)| vm / fast)
             .fold(0.0_f64, |a, b| a.max(b))
     );
     println!("══════════════════════════════════════════════════════════════════");

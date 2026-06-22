@@ -2,7 +2,7 @@
   "name": "forja-syntax",
   "displayName": "Forja Language",
   "description": "Soporte de sintaxis para el lenguaje Forja (.fa)",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "forja-lang",
   "license": "MIT",
   "engines": {

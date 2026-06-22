@@ -14,14 +14,13 @@ mod bytecode;
 mod uops;
 mod vm;
 mod fprofiler;
-mod vm_opt;
 mod vm_fast;
 mod symbol_table;
 mod class_descriptor;
 mod repl;
 mod aot;
 mod selfrun;
-mod diagram;
+mod diagrama;
 mod optimizer;
 mod formatter;
 
@@ -279,7 +278,7 @@ fn cmd_new(args: &[String]) {
         process::exit(1);
     });
     // Archivo de configuración
-    let config = format!("{{ \"nombre\": \"{}\", \"version\": \"0.2.0\" }}\n", name);
+    let config = format!("{{ \"nombre\": \"{}\", \"version\": \"0.3.0\" }}\n", name);
     std::fs::write(dir.join("forja.json"), &config).unwrap_or_else(|e| {
         eprintln!("Error escribiendo forja.json: {}", e);
         process::exit(1);
@@ -325,7 +324,7 @@ fn mostrar_ayuda() {
 /// Mide tiempos de todas las VMs: creación, carga, ejecución (cold + hot)
 fn cmd_bench(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja medir|bench|medicion|benchmark <archivo.fa> [--iters N] [--vm fast|vm|opt|jit|todas]");
+        eprintln!("Uso: forja medir|bench|medicion|benchmark <archivo.fa> [--iters N] [--vm fast|vm|jit|todas]");
         process::exit(1);
     }
 
@@ -401,9 +400,6 @@ fn cmd_bench(args: &[String]) {
     let todas = vm_selected == "todas";
     if todas || vm_selected == "vm" {
         medir_vm!("VM Original", forja::vm::ForjaVM::new());
-    }
-    if todas || vm_selected == "opt" {
-        medir_vm!("VM Opt", forja::vm_opt::ForjaVMOpt::new());
     }
     if todas || vm_selected == "fast" {
         // Activar profiling de f64
@@ -498,7 +494,6 @@ fn cmd_run(args: &[String]) {
 
     let result = match vm_mode {
         "fast" => forja::ejecutar(&source),
-        "opt" => forja::ejecutar_vmopt(&source),
         "jit" => forja::ejecutar_jit(&source),
         _ => forja::ejecutar_vm(&source),  // Default: VM original
     };
@@ -679,7 +674,7 @@ fn cmd_diagram(args: &[String]) {
     };
 
     // Generar diagram HTML
-    let mut gen = diagram::DiagramGenerator::new();
+    let mut gen = diagrama::DiagramGenerator::new();
     let html = gen.generar(&programa);
 
     if let Some(out) = output_path {
@@ -781,7 +776,7 @@ fn cmd_transpile(args: &[String]) {
     let cargo_toml = format!(
         r#"[package]
 name = "{}"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 # Exportado por Forja (fa) desde {} (podés ejecutar directo con 'forja ejecutar')
