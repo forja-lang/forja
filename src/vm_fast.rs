@@ -394,7 +394,7 @@ impl ForjaFast {
             sym_remover: SymId(0),
             sym_nuevo: SymId(0),
             funciones: HashMap::new(), func_params: HashMap::new(), bytecode: Vec::new(), output: Vec::new(),
-            max_inst: 100_000_000_000, ejecutadas: 0, fast_math: false,
+            max_inst: usize::MAX, ejecutadas: 0, fast_math: false,
         };
         vm.init_symbols();
         vm
