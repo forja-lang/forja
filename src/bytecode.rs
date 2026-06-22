@@ -149,6 +149,21 @@ pub enum Opcode {
     /// Dup + AddInt → duplica y suma
     DupAddInt,
 
+    // === SUPERINSTRUCTIONS FLOAT (nuevas) ===
+    /// PushDecimal(f64) + DeclareIdx → declara variable float con valor
+    DeclareFloatOp(usize, f64),
+    /// PushDecimal(f64) + StoreIdx → asigna constante float
+    StoreFloatOp(usize, f64),
+    /// AddFloat + StoreIdx → suma float y guarda
+    AddStoreFloat(usize),
+    /// SubFloat + StoreIdx → resta float y guarda
+    SubStoreFloat(usize),
+    /// MulFloat + StoreIdx → multiplica float y guarda
+    MulStoreFloat(usize),
+
+    /// LoadIdx(idx) + PushDecimal(d) + AddFloat → fusion: carga float + suma constante
+    LoadAddFloat(usize, f64),
+
     // === CALL ESPECIALIZADOS (quickening) ===
     /// Llamada directa por índice de función (sin hash lookup)
     /// Creado en quickening, no serializable.
@@ -731,6 +746,22 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
                 bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
                 bytes.extend_from_slice(&n.to_le_bytes());
             }
+            // Nuevos opcodes float
+            Opcode::DeclareFloatOp(idx, d) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&d.to_le_bytes());
+            }
+            Opcode::StoreFloatOp(idx, d) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&d.to_le_bytes());
+            }
+            Opcode::LoadAddFloat(idx, d) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&d.to_le_bytes());
+            }
+            Opcode::AddStoreFloat(idx) | Opcode::SubStoreFloat(idx) | Opcode::MulStoreFloat(idx) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            }
             _ => {} // Opcodes sin payload
         }
     }
@@ -760,6 +791,7 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::DeclareEnteroOp(_, _) => 16,
         Opcode::DeclareBooleanoOp(_, _) => 17,
         Opcode::StoreEnteroOp(_, _) => 18,
+        Opcode::DeclareFloatOp(_, _) => 19,
         Opcode::Add => 20,
         Opcode::Sub => 21,
         Opcode::Mul => 22,
@@ -791,6 +823,11 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::MapNew(_) => 90,
         Opcode::MapGet => 91,
         Opcode::MapSet => 92,
+        Opcode::StoreFloatOp(_, _) => 24,
+        Opcode::LoadAddFloat(_, _) => 25,
+        Opcode::AddStoreFloat(_) => 26,
+        Opcode::SubStoreFloat(_) => 27,
+        Opcode::MulStoreFloat(_) => 28,
         Opcode::Print => 70,
         Opcode::ReadLine => 71,
         // Opcodes especializados (runtime-only, no serializables)
@@ -817,10 +854,16 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         16 => Some(Opcode::DeclareEnteroOp(0, 0)),
         17 => Some(Opcode::DeclareBooleanoOp(0, false)),
         18 => Some(Opcode::StoreEnteroOp(0, 0)),
+        19 => Some(Opcode::DeclareFloatOp(0, 0.0)),
         20 => Some(Opcode::Add),
         21 => Some(Opcode::Sub),
         22 => Some(Opcode::Mul),
         23 => Some(Opcode::Div),
+        24 => Some(Opcode::StoreFloatOp(0, 0.0)),
+        25 => Some(Opcode::LoadAddFloat(0, 0.0)),
+        26 => Some(Opcode::AddStoreFloat(0)),
+        27 => Some(Opcode::SubStoreFloat(0)),
+        28 => Some(Opcode::MulStoreFloat(0)),
         30 => Some(Opcode::Igual),
         31 => Some(Opcode::Diferente),
         32 => Some(Opcode::Menor),
@@ -1015,6 +1058,43 @@ if version >= 2 {
                 pos += 8;
                 opcodes.push(Opcode::StoreEnteroOp(idx, n));
             }
+            19 => { // DeclareFloatOp
+                if pos + 12 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let d = f64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
+                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+                pos += 8;
+                opcodes.push(Opcode::DeclareFloatOp(idx, d));
+            }
+            24 => { // StoreFloatOp
+                if pos + 12 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let d = f64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
+                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+                pos += 8;
+                opcodes.push(Opcode::StoreFloatOp(idx, d));
+            }
+            25 => { // LoadAddFloat
+                if pos + 12 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let d = f64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
+                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+                pos += 8;
+                opcodes.push(Opcode::LoadAddFloat(idx, d));
+            }
+            26 | 27 | 28 => { // AddStoreFloat | SubStoreFloat | MulStoreFloat
+                if pos + 4 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                opcodes.push(match byte {
+                    26 => Opcode::AddStoreFloat(idx),
+                    27 => Opcode::SubStoreFloat(idx),
+                    _ => Opcode::MulStoreFloat(idx),
+                });
+            }
             50 | 51 | 52 => { // Jump | JumpSiFalso | Label
                 if pos + 4 > data.len() { return None; }
                 let target = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
@@ -1171,12 +1251,19 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
 
     while i < bc.len() {
         if i + 1 < bc.len() {
-            // Intentar fusión de 3 opcodes primero (LoadIdx + PushEntero + Add/AddInt)
+            // Intentar fusión de 3 opcodes primero
             if i + 2 < bc.len() {
                 match (&bc[i], &bc[i + 1], &bc[i + 2]) {
                     (Opcode::LoadIdx(a), Opcode::PushEntero(n), Opcode::Add)
                     | (Opcode::LoadIdx(a), Opcode::PushEntero(n), Opcode::AddInt) => {
                         result.push(Opcode::LoadAddInt(*a, *n));
+                        i += 3;
+                        continue;
+                    }
+                    // LoadIdx(idx) + PushDecimal(d) + Add/AddFloat → LoadAddFloat(idx, d)
+                    (Opcode::LoadIdx(a), Opcode::PushDecimal(d), Opcode::Add)
+                    | (Opcode::LoadIdx(a), Opcode::PushDecimal(d), Opcode::AddFloat) => {
+                        result.push(Opcode::LoadAddFloat(*a, *d));
                         i += 3;
                         continue;
                     }
@@ -1253,6 +1340,36 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
                 // LoadIdx(idx) + Jump(target) → LoadJump(idx, target)
                 (Opcode::LoadIdx(idx), Opcode::Jump(target)) => {
                     result.push(Opcode::LoadJump(*idx, *target));
+                    i += 2;
+                    continue;
+                }
+                // Nuevas: PushDecimal(d) + DeclareIdx(idx, _) → DeclareFloatOp(idx, d)
+                (Opcode::PushDecimal(d), Opcode::DeclareIdx(idx, _)) => {
+                    result.push(Opcode::DeclareFloatOp(*idx, *d));
+                    i += 2;
+                    continue;
+                }
+                // PushDecimal(d) + StoreIdx(idx) → StoreFloatOp(idx, d)
+                (Opcode::PushDecimal(d), Opcode::StoreIdx(idx)) => {
+                    result.push(Opcode::StoreFloatOp(*idx, *d));
+                    i += 2;
+                    continue;
+                }
+                // AddFloat + StoreIdx(idx) → AddStoreFloat(idx)
+                (Opcode::AddFloat, Opcode::StoreIdx(idx)) => {
+                    result.push(Opcode::AddStoreFloat(*idx));
+                    i += 2;
+                    continue;
+                }
+                // SubFloat + StoreIdx(idx) → SubStoreFloat(idx)
+                (Opcode::SubFloat, Opcode::StoreIdx(idx)) => {
+                    result.push(Opcode::SubStoreFloat(*idx));
+                    i += 2;
+                    continue;
+                }
+                // MulFloat + StoreIdx(idx) → MulStoreFloat(idx)
+                (Opcode::MulFloat, Opcode::StoreIdx(idx)) => {
+                    result.push(Opcode::MulStoreFloat(*idx));
                     i += 2;
                     continue;
                 }

@@ -1,9 +1,0 @@
-// Test: constructor con parámetros que asigna campos
-clase Persona {
-    nombre
-    constructor(n) {
-        este.nombre = n
-    }
-}
-variable p = nuevo Persona("Ana")
-escribir(p.nombre)

@@ -205,6 +205,26 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
             Uop::Dup
         }
 
+        // Nuevos opcodes float
+        Opcode::DeclareFloatOp(idx, _d) => {
+            Uop::DeclareInit(*idx) // marcador, se expande en expandir_a_uops
+        }
+        Opcode::StoreFloatOp(idx, _d) => {
+            Uop::StorePop(*idx) // marcador, se expande en expandir_a_uops
+        }
+        Opcode::LoadAddFloat(idx, _d) => {
+            Uop::LoadIdx(*idx) // marcador
+        }
+        Opcode::AddStoreFloat(_idx) => {
+            Uop::AddFloat
+        }
+        Opcode::SubStoreFloat(_idx) => {
+            Uop::SubFloat
+        }
+        Opcode::MulStoreFloat(_idx) => {
+            Uop::MulFloat
+        }
+
         // Opcodes por nombre (ya reemplazados por índices)
         Opcode::Load(_) => Uop::LoadIdx(0),      // fallback
         Opcode::Store(_) => Uop::StoreIdx(0),     // fallback
@@ -295,6 +315,41 @@ pub fn expandir_a_uops(bytecode: &[Opcode]) -> Vec<Uop> {
             Opcode::DupAddInt => {
                 uops.push(Uop::Dup);
                 uops.push(Uop::AddInt);
+            }
+
+            // === SUPERINSTRUCTIONS FLOAT — expansión a uops ===
+
+            // DeclareFloatOp(idx, d) → DeclareVar(idx), PushDecimal(d), StorePop(idx)
+            Opcode::DeclareFloatOp(idx, d) => {
+                uops.push(Uop::DeclareVar(*idx));
+                uops.push(Uop::PushDecimal(*d));
+                uops.push(Uop::StorePop(*idx));
+            }
+            // StoreFloatOp(idx, d) → PushDecimal(d), StorePop(idx)
+            Opcode::StoreFloatOp(idx, d) => {
+                uops.push(Uop::PushDecimal(*d));
+                uops.push(Uop::StorePop(*idx));
+            }
+            // LoadAddFloat(idx, d) → LoadIdx(idx), PushDecimal(d), AddFloat
+            Opcode::LoadAddFloat(idx, d) => {
+                uops.push(Uop::LoadIdx(*idx));
+                uops.push(Uop::PushDecimal(*d));
+                uops.push(Uop::AddFloat);
+            }
+            // AddStoreFloat(idx) → AddFloat, StoreIdx(idx)
+            Opcode::AddStoreFloat(idx) => {
+                uops.push(Uop::AddFloat);
+                uops.push(Uop::StoreIdx(*idx));
+            }
+            // SubStoreFloat(idx) → SubFloat, StoreIdx(idx)
+            Opcode::SubStoreFloat(idx) => {
+                uops.push(Uop::SubFloat);
+                uops.push(Uop::StoreIdx(*idx));
+            }
+            // MulStoreFloat(idx) → MulFloat, StoreIdx(idx)
+            Opcode::MulStoreFloat(idx) => {
+                uops.push(Uop::MulFloat);
+                uops.push(Uop::StoreIdx(*idx));
             }
 
             // Opcodes que ya son atómicos: pasar directo
@@ -408,8 +463,15 @@ fn construir_mapeo_posiciones(bytecode: &[Opcode]) -> Vec<usize> {
                 | Opcode::PushAddInt(_)
                 | Opcode::LoadJumpSiFalso(_, _)
                 | Opcode::LoadJump(_, _)
-                | Opcode::DupAddInt => 2,
-            Opcode::LoadAddInt(_, _) => 3,
+                | Opcode::DupAddInt
+                // Float superinstructions (2-op)
+                | Opcode::AddStoreFloat(_)
+                | Opcode::SubStoreFloat(_)
+                | Opcode::MulStoreFloat(_)
+                | Opcode::StoreFloatOp(_, _) => 2,
+            Opcode::LoadAddInt(_, _)
+                | Opcode::DeclareFloatOp(_, _)
+                | Opcode::LoadAddFloat(_, _) => 3,
             _ => 1,
         };
         uop_idx += expansion_len;
@@ -454,6 +516,13 @@ pub fn tiene_opcodes_compuestos(bytecode: &[Opcode]) -> bool {
                 | Opcode::LoadJumpSiFalso(_, _)
                 | Opcode::LoadJump(_, _)
                 | Opcode::DupAddInt
+                // Float superinstructions
+                | Opcode::DeclareFloatOp(_, _)
+                | Opcode::StoreFloatOp(_, _)
+                | Opcode::LoadAddFloat(_, _)
+                | Opcode::AddStoreFloat(_)
+                | Opcode::SubStoreFloat(_)
+                | Opcode::MulStoreFloat(_)
         )
     })
 }

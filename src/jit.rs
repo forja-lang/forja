@@ -189,15 +189,60 @@ impl NativeJIT {
                 Opcode::JumpSiFalso(l) => { if sd >= 1 { c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x85, 0xc0]); c.jcc(0x04, *l); sd -= 1; } else { return Err("JZ underflow".into()); } }
                 Opcode::Label(l) => { c.label(*l); }
 
-                // Opcodes especializados — mismo handler que sus versiones genéricas
-                Opcode::AddInt | Opcode::AddFloat => { if sd >= 2 { c.binop(&[0x48, 0x01, 0xc8]); sd -= 1; } else { return Err("Add underflow".into()); } }
-                Opcode::SubInt | Opcode::SubFloat => { if sd >= 2 { c.binop(&[0x48, 0x29, 0xc8]); sd -= 1; } else { return Err("Sub underflow".into()); } }
-                Opcode::MulInt | Opcode::MulFloat => { if sd >= 2 { c.binop(&[0x48, 0x0f, 0xaf, 0xc1]); sd -= 1; } else { return Err("Mul underflow".into()); } }
-                Opcode::DivInt | Opcode::DivFloat => {
+                // Opcodes enteros — usan registros enteros
+                Opcode::AddInt => { if sd >= 2 { c.binop(&[0x48, 0x01, 0xc8]); sd -= 1; } else { return Err("Add underflow".into()); } }
+                Opcode::SubInt => { if sd >= 2 { c.binop(&[0x48, 0x29, 0xc8]); sd -= 1; } else { return Err("Sub underflow".into()); } }
+                Opcode::MulInt => { if sd >= 2 { c.binop(&[0x48, 0x0f, 0xaf, 0xc1]); sd -= 1; } else { return Err("Mul underflow".into()); } }
+                Opcode::DivInt => {
                     if sd >= 2 {
                         c.pop_r(1); c.pop_r(0); c.cqo();
                         c.bytes.extend_from_slice(&[0x48, 0xf7, 0xf9]); // idiv rcx
                         c.push_r(0); sd -= 1;
+                    } else { return Err("Div underflow".into()); }
+                }
+                // Opcodes float — usan SSE2 (XMM registers)
+                Opcode::AddFloat => {
+                    if sd >= 2 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x0c, 0x24]); // movsd xmm1,[rsp]
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0xc1]); // addsd xmm0,xmm1
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                        sd -= 1;
+                    } else { return Err("Add underflow".into()); }
+                }
+                Opcode::SubFloat => {
+                    if sd >= 2 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x0c, 0x24]); // movsd xmm1,[rsp]
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5c, 0xc1]); // subsd xmm0,xmm1
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                        sd -= 1;
+                    } else { return Err("Sub underflow".into()); }
+                }
+                Opcode::MulFloat => {
+                    if sd >= 2 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x0c, 0x24]); // movsd xmm1,[rsp]
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x59, 0xc1]); // mulsd xmm0,xmm1
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                        sd -= 1;
+                    } else { return Err("Mul underflow".into()); }
+                }
+                Opcode::DivFloat => {
+                    if sd >= 2 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x0c, 0x24]); // movsd xmm1,[rsp]
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x5e, 0xc1]); // divsd xmm0,xmm1
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                        sd -= 1;
                     } else { return Err("Div underflow".into()); }
                 }
                 Opcode::IgualInt => { if sd >= 2 { c.pop_r(1); c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x39, 0xc8]); c.cmp_result(0x94); sd -= 1; } else { return Err("Cmp underflow".into()); } }
@@ -205,6 +250,61 @@ impl NativeJIT {
                 Opcode::MayorInt => { if sd >= 2 { c.pop_r(1); c.pop_r(0); c.bytes.extend_from_slice(&[0x48, 0x39, 0xc8]); c.cmp_result(0x9f); sd -= 1; } else { return Err("Cmp underflow".into()); } }
                 Opcode::LoadIdxEntero(idx) | Opcode::LoadIdxFloat(idx) => { c.load_var(*idx); c.push_r(0); sd += 1; }
                 Opcode::StoreIdxEntero(idx) | Opcode::StoreIdxFloat(idx) => { if sd >= 1 { c.pop_r(0); c.store_var(*idx); sd -= 1; } else { return Err("Store underflow".into()); } }
+
+                // Float superinstructions — se expanden inline
+                Opcode::DeclareFloatOp(idx, d) | Opcode::StoreFloatOp(idx, d) => {
+                    c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(f64::to_bits(*d) as i64);
+                    c.store_var(*idx);
+                }
+                Opcode::LoadAddFloat(idx, d) => {
+                    c.load_var(*idx); c.push_r(0); sd += 1;
+                    c.bytes.extend_from_slice(&[0x48, 0xb8]); c.i64(f64::to_bits(*d) as i64);
+                    c.push_r(0); sd += 1;
+                    // AddFloat (pops 2, pushes 1) → sd back to +1
+                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
+                    c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
+                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x0c, 0x24]); // movsd xmm1,[rsp]
+                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x58, 0xc1]); // addsd xmm0,xmm1
+                    c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
+                    c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                    sd -= 1; // net: +1(push) +1(push) -1(pop2) +1(push1) = +1 → but we started +1 from load
+                }
+                Opcode::AddStoreFloat(idx) => {
+                    if sd >= 1 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
+                        let d = (*idx as i32) * 8;
+                        let disp = if d >= -128 && d <= 127 { vec![0xf2, 0x0f, 0x58, 0x43, d as u8] } else { let mut v = vec![0xf2, 0x0f, 0x58, 0x83]; v.extend_from_slice(&d.to_le_bytes()); v };
+                        c.bytes.extend_from_slice(&disp); // addsd xmm0,[rbx+idx*8]
+                        let disp2 = if d >= -128 && d <= 127 { vec![0xf2, 0x0f, 0x11, 0x43, d as u8] } else { let mut v = vec![0xf2, 0x0f, 0x11, 0x83]; v.extend_from_slice(&d.to_le_bytes()); v };
+                        c.bytes.extend_from_slice(&disp2); // movsd [rbx+idx*8],xmm0
+                        sd -= 1;
+                    } else { return Err("AddStore underflow".into()); }
+                }
+                Opcode::SubStoreFloat(idx) => {
+                    if sd >= 1 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
+                        let d = (*idx as i32) * 8;
+                        let disp = if d >= -128 && d <= 127 { vec![0xf2, 0x0f, 0x5c, 0x43, d as u8] } else { let mut v = vec![0xf2, 0x0f, 0x5c, 0x83]; v.extend_from_slice(&d.to_le_bytes()); v };
+                        c.bytes.extend_from_slice(&disp); // subsd xmm0,[rbx+idx*8]
+                        let disp2 = if d >= -128 && d <= 127 { vec![0xf2, 0x0f, 0x11, 0x43, d as u8] } else { let mut v = vec![0xf2, 0x0f, 0x11, 0x83]; v.extend_from_slice(&d.to_le_bytes()); v };
+                        c.bytes.extend_from_slice(&disp2); // movsd [rbx+idx*8],xmm0
+                        sd -= 1;
+                    } else { return Err("SubStore underflow".into()); }
+                }
+                Opcode::MulStoreFloat(idx) => {
+                    if sd >= 1 {
+                        c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x04, 0x24]); // movsd xmm0,[rsp]
+                        c.bytes.extend_from_slice(&[0x48, 0x83, 0xc4, 0x08]); // add rsp,8
+                        let d = (*idx as i32) * 8;
+                        let disp = if d >= -128 && d <= 127 { vec![0xf2, 0x0f, 0x59, 0x43, d as u8] } else { let mut v = vec![0xf2, 0x0f, 0x59, 0x83]; v.extend_from_slice(&d.to_le_bytes()); v };
+                        c.bytes.extend_from_slice(&disp); // mulsd xmm0,[rbx+idx*8]
+                        let disp2 = if d >= -128 && d <= 127 { vec![0xf2, 0x0f, 0x11, 0x43, d as u8] } else { let mut v = vec![0xf2, 0x0f, 0x11, 0x83]; v.extend_from_slice(&d.to_le_bytes()); v };
+                        c.bytes.extend_from_slice(&disp2); // movsd [rbx+idx*8],xmm0
+                        sd -= 1;
+                    } else { return Err("MulStore underflow".into()); }
+                }
 
                 Opcode::Halt => { break; }
 
