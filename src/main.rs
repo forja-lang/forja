@@ -23,12 +23,16 @@ mod selfrun;
 mod diagrama;
 mod optimizer;
 mod formatter;
+mod package_config;
+mod package_resolver;
 
 use std::env;
 use std::fs;
 use std::path::Path;
 use std::process;
 use ast::Declaracion;
+use package_config::ForjaConfig;
+use package_resolver::PackageResolver;
 
 fn main() {
     // Intentar self-run (modo ejecutable autónomo con bytecode incrustado)
@@ -76,6 +80,10 @@ fn main() {
         "new" | "nuevo" | "crear" => cmd_new(&args[2..]),
         // Inicializar proyecto en directorio actual
         "init" | "iniciar" => cmd_init(),
+        // Gestión de dependencias
+        "add" | "agregar" | "añadir" => cmd_add(),
+        "remove" | "remover" | "eliminar" => cmd_remove(),
+        "install" | "instalar" => cmd_install(),
         // Tutorial interactivo
         "learn" | "aprender" => cmd_learn(),
         // Colorear código Forja en la terminal
@@ -277,14 +285,122 @@ fn cmd_new(args: &[String]) {
         eprintln!("Error escribiendo main.fa: {}", e);
         process::exit(1);
     });
-    // Archivo de configuración
-    let config = format!("{{ \"nombre\": \"{}\", \"version\": \"0.3.0\" }}\n", name);
-    std::fs::write(dir.join("forja.json"), &config).unwrap_or_else(|e| {
+    // Archivo de configuración completo con ForjaConfig
+    let config = ForjaConfig::new(name, "0.1.0");
+    if let Err(e) = config.save(&dir.join("forja.json")) {
         eprintln!("Error escribiendo forja.json: {}", e);
         process::exit(1);
-    });
+    }
     println!("✅ Proyecto '{}' creado", name);
     println!("   cd {} && forja run main.fa", name);
+}
+
+/// forja add|agregar|añadir <paquete> [version]
+fn cmd_add() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 3 {
+        eprintln!("Uso: forja add|agregar|añadir <paquete> [version]");
+        return;
+    }
+    let nombre = &args[2];
+    let version = args.get(3).map(|s| s.as_str()).unwrap_or("latest");
+
+    let config_path = Path::new("forja.json");
+    let mut config = if config_path.exists() {
+        ForjaConfig::load(config_path).unwrap_or_else(|_| ForjaConfig::new("app", "0.1.0"))
+    } else {
+        ForjaConfig::new("app", "0.1.0")
+    };
+
+    config.dependencias.insert(nombre.to_string(), version.to_string());
+    if let Err(e) = config.save(config_path) {
+        eprintln!("Error guardando forja.json: {}", e);
+        return;
+    }
+    println!("✅ Dependencia '{}@{}' añadida", nombre, version);
+}
+
+/// forja remove|remover|eliminar <paquete>
+fn cmd_remove() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 3 {
+        eprintln!("Uso: forja remove|remover|eliminar <paquete>");
+        return;
+    }
+    let nombre = &args[2];
+
+    let config_path = Path::new("forja.json");
+    if !config_path.exists() {
+        eprintln!("No se encontró forja.json en el directorio actual");
+        return;
+    }
+
+    let mut config = match ForjaConfig::load(config_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{}", e);
+            return;
+        }
+    };
+
+    if config.dependencias.remove(nombre).is_none() && config.dev_dependencias.remove(nombre).is_none() {
+        eprintln!("⚠️ La dependencia '{}' no está en forja.json", nombre);
+        return;
+    }
+
+    if let Err(e) = config.save(config_path) {
+        eprintln!("Error guardando forja.json: {}", e);
+        return;
+    }
+    println!("✅ Dependencia '{}' eliminada", nombre);
+}
+
+/// forja install|instalar
+fn cmd_install() {
+    let config_path = Path::new("forja.json");
+    if !config_path.exists() {
+        eprintln!("No se encontró forja.json en el directorio actual");
+        eprintln!("Usá 'forja new <nombre>' o 'forja init' para crear un proyecto");
+        return;
+    }
+
+    let config = match ForjaConfig::load(config_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{}", e);
+            return;
+        }
+    };
+
+    if config.dependencias.is_empty() && config.dev_dependencias.is_empty() {
+        println!("📦 No hay dependencias que instalar");
+        return;
+    }
+
+    let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+    let mut resolver = PackageResolver::new(&project_dir);
+
+    println!("📦 Instalando dependencias...");
+    for (nombre, version) in &config.dependencias {
+        print!("   {}@{} ... ", nombre, version);
+        match resolver.instalar_dependencia(nombre, version) {
+            Ok(_) => println!("✅"),
+            Err(e) => println!("❌ {}", e),
+        }
+    }
+
+    if !config.dev_dependencias.is_empty() {
+        println!("📦 Instalando dev-dependencias...");
+        for (nombre, version) in &config.dev_dependencias {
+            print!("   {}@{} ... ", nombre, version);
+            match resolver.instalar_dependencia(nombre, version) {
+                Ok(_) => println!("✅"),
+                Err(e) => println!("❌ {}", e),
+            }
+        }
+    }
+
+    println!("✅ Instalación completada");
 }
 
 /// forja init
@@ -304,12 +420,15 @@ fn mostrar_ayuda() {
     println!("  transpilar <archivo>       Exportar a proyecto Rust (opcional)");
     println!("  nuevo <nombre>             Crear nuevo proyecto");
     println!("  iniciar                    Inicializar proyecto aquí");
+    println!("  add <paquete> [version]    Añadir dependencia");
+    println!("  remove <paquete>           Eliminar dependencia");
+    println!("  install                    Instalar todas las dependencias");
     println!("  aprender                   Tutorial interactivo");
     println!("  palabras                   Lista de palabras clave");
     println!("  explicar <palabra>         Explicar un concepto");
     println!("  ayuda [tema]               Mostrar esta ayuda\n");
     println!("Los comandos también aceptan su nombre en inglés:");
-    println!("  run, build, transpile, build-asm, asm, new, init, learn, keywords, explain, help\n");
+    println!("  run, build, transpile, build-asm, asm, new, init, add, remove, install, learn, keywords, explain, help\n");
     println!("EJEMPLOS:");
     println!("  forja ejecutar examples/hola_mundo.fa");
     println!("  forja compilar examples/hola_mundo.fa -o programa.exe");

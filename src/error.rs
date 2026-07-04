@@ -31,6 +31,7 @@ pub enum ErrorTipo {
     ErrorDePropiedad,
     ErrorDeTipo,
     ErrorSemantico,
+    ErrorInterno,
 }
 
 impl fmt::Display for ErrorTipo {
@@ -41,6 +42,7 @@ impl fmt::Display for ErrorTipo {
             ErrorTipo::ErrorDePropiedad => write!(f, "ErrorDePropiedad"),
             ErrorTipo::ErrorDeTipo => write!(f, "ErrorDeTipo"),
             ErrorTipo::ErrorSemantico => write!(f, "ErrorSemantico"),
+            ErrorTipo::ErrorInterno => write!(f, "ErrorInterno"),
         }
     }
 }
@@ -129,6 +131,7 @@ pub fn emoji_para(tipo: &ErrorTipo) -> &'static str {
         ErrorTipo::ErrorDeTipo => "🔤",
         ErrorTipo::ErrorDePropiedad => "🏷️",
         ErrorTipo::ErrorSemantico => "🧠",
+        ErrorTipo::ErrorInterno => "⚙️",
     }
 }
 
@@ -140,6 +143,7 @@ pub fn categoria_educativa(tipo: &ErrorTipo) -> &'static str {
         ErrorTipo::ErrorDeTipo => "Tipos de datos",
         ErrorTipo::ErrorDePropiedad => "Pertenencia",
         ErrorTipo::ErrorSemantico => "Significado",
+        ErrorTipo::ErrorInterno => "Interno",
     }
 }
 
