@@ -11,6 +11,7 @@ pub mod error;
 pub mod semantics;
 pub mod transpiler;
 pub mod compiler_asm;
+pub mod compiler_llvm;
 pub mod bytecode;
 pub mod uops;
 pub mod fprofiler;
@@ -34,6 +35,11 @@ pub mod jit;
 pub mod module;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod prelude;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod package_resolver;
+
+// package_config usa serde/serde_json, compatible con WASM
+pub mod package_config;
 
 // Módulos puramente algorítmicos (compatibles con WASM)
 // diagrama genera HTML, formatter y optimizer son puro AST
@@ -140,4 +146,46 @@ pub fn ejecutar_jit(source: &str) -> Result<Vec<String>, String> {
     let bytecode = compilar_pipeline(source)?;
     let mut jit = jit_engine::JitOrchestrator::new();
     jit.ejecutar(&bytecode)
+}
+
+/// Compila código Forja a LLVM IR usando el backend generador de texto LLVM
+pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
+    // FASE 1: Lexer
+    let mut lexer = lexer::Lexer::new(codigo);
+    let tokens = lexer.tokenize()?;
+
+    // FASE 2-3: Parser
+    let mut parser = parser::Parser::new(tokens);
+    let programa = parser.parse()?;
+
+    // FASE 4: Type Checker
+    let mut type_checker = semantics::TypeChecker::new();
+    type_checker.analizar(&programa)?;
+
+    // FASE 5: Borrow Checker
+    let mut checker = semantics::BorrowChecker::new();
+    checker.analizar(&programa)?;
+
+    // FASE 6: Optimizador (constant folding)
+    let mut optimizer = optimizer::Optimizer::new();
+    let programa = optimizer.optimizar(&programa);
+
+    // FASE 6b: Dead Code Elimination
+    let mut dce = optimizer::DeadCodeEliminator::new();
+    let programa = dce.eliminar(&programa);
+
+    // FASE 7: Backend LLVM (generación de texto IR)
+    let mut backend = compiler_llvm::LlvmBackend::new("", "forja_module");
+    backend
+        .compile(&programa.declaraciones)
+        .map_err(|e| vec![error::ErrorForja::new(
+            error::ErrorTipo::ErrorInterno,
+            0,
+            0,
+            &format!("Error en backend LLVM: {}", e),
+            "Revisa que el código Forja sea compatible con el backend LLVM",
+        )])?;
+
+    let ir = backend.emit_ir();
+    Ok(ir)
 }

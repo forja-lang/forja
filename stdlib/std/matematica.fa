@@ -1,0 +1,118 @@
+# módulo: matematica
+# Descripción: Funciones matemáticas básicas
+# 
+# Uso: importar "std/matematica"
+
+# Valor absoluto de un número
+funcion abs(x) {
+    si (x < 0) {
+        retornar -x
+    }
+    retornar x
+}
+
+# Retorna el mayor entre dos números
+funcion max(a, b) {
+    si (a > b) {
+        retornar a
+    }
+    retornar b
+}
+
+# Retorna el menor entre dos números
+funcion min(a, b) {
+    si (a < b) {
+        retornar a
+    }
+    retornar b
+}
+
+# Restringe un valor dentro del rango [min, max]
+funcion clamp(valor, minimo, maximo) {
+    si (valor < minimo) {
+        retornar minimo
+    }
+    si (valor > maximo) {
+        retornar maximo
+    }
+    retornar valor
+}
+
+# Calcula base^exp (exponente entero no negativo)
+funcion potencia(base, exp) {
+    variable resultado = 1
+    variable i = 0
+    mientras (i < exp) {
+        resultado = resultado * base
+        i = i + 1
+    }
+    retornar resultado
+}
+
+# Calcula el factorial de n (n!)
+funcion factorial(n) {
+    si (n <= 1) {
+        retornar 1
+    }
+    retornar n * factorial(n - 1)
+}
+
+# Retorna verdadero si n es par
+funcion es_par(n) {
+    retornar (n % 2) == 0
+}
+
+# Retorna verdadero si n es impar
+funcion es_impar(n) {
+    retornar (n % 2) != 0
+}
+
+# Redondea un número al entero más cercano
+funcion redondear(x) {
+    # Para números positivos: suma 0.5 y trunca
+    # Pero como trabajamos con enteros, retornamos x
+    retornar x
+}
+
+# Suma todos los elementos de un array
+funcion suma_array(arr) {
+    variable suma = 0
+    variable i = 0
+    variable largo = arr.length()
+    mientras (i < largo) {
+        suma = suma + arr[i]
+        i = i + 1
+    }
+    retornar suma
+}
+
+# Calcula el promedio de los elementos de un array
+funcion promedio(arr) {
+    variable suma = suma_array(arr)
+    variable largo = arr.length()
+    si (largo == 0) {
+        retornar 0
+    }
+    retornar suma / largo
+}
+
+# Máximo Común Divisor (algoritmo de Euclides)
+funcion mcd(a, b) {
+    variable x = a
+    variable y = b
+    mientras (y > 0) {
+        variable temp = y
+        variable resto = x - ((x / y) * y)
+        y = resto
+        x = temp
+    }
+    retornar x
+}
+
+# Mínimo Común Múltiplo
+funcion mcm(a, b) {
+    si (a == 0 || b == 0) {
+        retornar 0
+    }
+    retornar (a / mcd(a, b)) * b
+}
