@@ -1,0 +1,66 @@
+// Benchmark Forja AOT — transpilado a Rust + rustc -O
+// Para mantener la medición precisa, este archivo NO imprime nada
+// (la medición se hace desde el runner externo)
+
+funcion fib_iterativo(n) {
+    si (n <= 1) {
+        retornar n
+    }
+    variable a = 0
+    variable b = 1
+    variable i = 2
+    mientras (i <= n) {
+        variable temp = a + b
+        a = b
+        b = temp
+        i = i + 1
+    }
+    retornar b
+}
+
+funcion suma_bucle(n) {
+    variable total = 0
+    variable i = 0
+    mientras (i < n) {
+        total = total + i
+        i = i + 1
+    }
+    retornar total
+}
+
+funcion llamadas_funcion(n) {
+    variable total = 0
+    variable i = 0
+    mientras (i < n) {
+        total = total + i
+        i = i + 1
+    }
+    retornar total
+}
+
+funcion bucle_anidado(n) {
+    variable total = 0
+    variable i = 0
+    mientras (i < n) {
+        variable j = 0
+        mientras (j < 100) {
+            total = total + (i * j)
+            j = j + 1
+        }
+        i = i + 1
+    }
+    retornar total
+}
+
+// Tests
+variable r1 = fib_iterativo(40)
+escribir("FIB:" + r1)
+
+variable r2 = suma_bucle(10000000)
+escribir("SUMA:" + r2)
+
+variable r3 = llamadas_funcion(1000000)
+escribir("CALLS:" + r3)
+
+variable r4 = bucle_anidado(1000)
+escribir("NESTED:" + r4)
