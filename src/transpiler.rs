@@ -2,6 +2,54 @@ use crate::ast::*;
 use crate::error::ErrorForja;
 use std::collections::HashMap;
 
+/// Analiza si una variable es realmente mutable (se reasigna) dentro de un conjunto de declaraciones.
+/// Busca declaraciones `Asignacion` o `AsignacionIndex` que modifiquen la variable,
+/// respetando límites de ámbito (no cruza fronteras de función).
+fn es_variable_mutable(nombre: &str, declaraciones: &[Declaracion], _ambito_actual: usize) -> bool {
+    for decl in declaraciones {
+        match decl {
+            Declaracion::Asignacion { nombre: var, .. } if var == nombre => return true,
+            Declaracion::AsignacionIndex { nombre: var, .. } if var == nombre => return true,
+            // Buscar en ámbitos anidados (bloques si, mientras, para, repetir)
+            Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
+                if es_variable_mutable(nombre, bloque_verdadero, _ambito_actual + 1) {
+                    return true;
+                }
+                if let Some(bf) = bloque_falso {
+                    if es_variable_mutable(nombre, bf, _ambito_actual + 1) {
+                        return true;
+                    }
+                }
+            }
+            Declaracion::Mientras { bloque, .. } => {
+                if es_variable_mutable(nombre, bloque, _ambito_actual + 1) {
+                    return true;
+                }
+            }
+            Declaracion::Para { bloque, incremento, .. } => {
+                // El incremento del bucle `para` también es una asignación
+                if let Some(inc) = incremento {
+                    if es_variable_mutable(nombre, &[inc.as_ref().clone()], _ambito_actual + 1) {
+                        return true;
+                    }
+                }
+                if es_variable_mutable(nombre, bloque, _ambito_actual + 1) {
+                    return true;
+                }
+            }
+            Declaracion::Repetir { bloque, .. } => {
+                if es_variable_mutable(nombre, bloque, _ambito_actual + 1) {
+                    return true;
+                }
+            }
+            // No cruzar fronteras de función: las funciones tienen su propio ámbito
+            Declaracion::Funcion { .. } => {}
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Generador de código Rust a partir del AST de Forja
 pub struct Transpiler {
     output: String,
@@ -12,6 +60,8 @@ pub struct Transpiler {
     temp_counter: usize,
     /// Clases declaradas (para generar impls)
     clases: HashMap<String, ClaseInfo>,
+    /// Declaraciones globales del programa (para análisis de mutabilidad)
+    declaraciones_globales: Vec<Declaracion>,
 }
 
 struct ClaseInfo {
@@ -23,6 +73,39 @@ struct ClaseInfo {
     tipos_campos: HashMap<String, String>,
 }
 
+/// Determina si una expresión hija necesita paréntesis según el operador padre.
+/// Las reglas de precedencia (de menor a mayor) son:
+///   Nivel 1: O (or lógico)
+///   Nivel 2: Y (and lógico)
+///   Nivel 3: Igual, Distinto
+///   Nivel 4: Mayor, Menor, MayorIgual, MenorIgual
+///   Nivel 5: Suma, Resta
+///   Nivel 6: Multiplicacion, Division, Modulo
+///   Nivel 7: Unario/primario
+fn necesita_parentesis(expr: &Expresion, op_padre: &Operador) -> bool {
+    let prec_hijo = match expr {
+        Expresion::Binaria { operador, .. } => match operador {
+            Operador::O => 1,
+            Operador::Y => 2,
+            Operador::IgualIgual | Operador::Diferente => 3,
+            Operador::Mayor | Operador::Menor | Operador::MayorIgual | Operador::MenorIgual => 4,
+            Operador::Suma | Operador::Resta => 5,
+            Operador::Multiplicacion | Operador::Division | Operador::Modulo => 6,
+        },
+        _ => 7, // Unario/primario: máxima precedencia
+    };
+    let prec_padre = match op_padre {
+        Operador::O => 1,
+        Operador::Y => 2,
+        Operador::IgualIgual | Operador::Diferente => 3,
+        Operador::Mayor | Operador::Menor | Operador::MayorIgual | Operador::MenorIgual => 4,
+        Operador::Suma | Operador::Resta => 5,
+        Operador::Multiplicacion | Operador::Division | Operador::Modulo => 6,
+    };
+    // El hijo necesita paréntesis si tiene menor precedencia que el padre
+    prec_hijo < prec_padre
+}
+
 impl Transpiler {
     pub fn new() -> Self {
         Transpiler {
@@ -31,11 +114,15 @@ impl Transpiler {
             errors: Vec::new(),
             temp_counter: 0,
             clases: HashMap::new(),
+            declaraciones_globales: Vec::new(),
         }
     }
 
     /// Exporta un programa Forja a código Rust (opcional, Forja ya ejecuta directo con VM)
     pub fn transpilar(&mut self, programa: &Programa) -> Result<String, Vec<ErrorForja>> {
+        // Almacenar declaraciones globales para análisis de mutabilidad
+        self.declaraciones_globales = programa.declaraciones.clone();
+
         // Primera pasada: recolectar clases
         self.recolectar_clases(&programa.declaraciones);
 
@@ -533,7 +620,13 @@ impl Transpiler {
     fn transpilar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
             Declaracion::Variable { mutable, nombre, tipo, valor } => {
-                let mut decl_str = if *mutable {
+                // Analizar si la variable es realmente mutable (se reasigna en el código)
+                let realmente_mutable = *mutable && es_variable_mutable(
+                    nombre,
+                    &self.declaraciones_globales,
+                    0,
+                );
+                let mut decl_str = if realmente_mutable {
                     format!("let mut {}", nombre)
                 } else {
                     format!("let {}", nombre)
@@ -611,9 +704,17 @@ impl Transpiler {
                 self.emit_line(&format!("fn {}({}){} {{", nombre, params.join(", "), ret_str));
                 self.indent();
 
+                // Guardar contexto actual y poner el cuerpo de la función como ámbito de búsqueda
+                // para que las variables locales también sean analizadas por es_variable_mutable
+                let declaraciones_previas = std::mem::take(&mut self.declaraciones_globales);
+                self.declaraciones_globales = cuerpo.clone();
+
                 for d in cuerpo {
                     self.transpilar_declaracion(d);
                 }
+
+                // Restaurar contexto anterior
+                self.declaraciones_globales = declaraciones_previas;
 
                 self.dedent();
                 self.emit_line("}");
@@ -836,8 +937,22 @@ impl Transpiler {
             }
 
             Expresion::Binaria { izquierda, operador, derecha } => {
-                let izq = self.transpilar_expresion(izquierda);
-                let der = self.transpilar_expresion(derecha);
+                // Detectar concatenación String + número:
+                // "texto" + 42  o  42 + "texto"  →  format!("{}{}", string, numero)
+                if let Operador::Suma = operador {
+                    let es_texto_izq = matches!(izquierda.as_ref(), Expresion::LiteralTexto(_));
+                    let es_texto_der = matches!(derecha.as_ref(), Expresion::LiteralTexto(_));
+                    let es_num_izq = matches!(izquierda.as_ref(), Expresion::LiteralNumero(_) | Expresion::LiteralDecimal(_));
+                    let es_num_der = matches!(derecha.as_ref(), Expresion::LiteralNumero(_) | Expresion::LiteralDecimal(_));
+
+                    if (es_texto_izq && es_num_der) || (es_num_izq && es_texto_der) {
+                        let izq = self.transpilar_expresion(izquierda);
+                        let der = self.transpilar_expresion(derecha);
+                        return format!("format!(\"{{}}{{}}\", {}, {})", izq, der);
+                    }
+                }
+                let izq_str = self.transpilar_expresion(izquierda);
+                let der_str = self.transpilar_expresion(derecha);
                 let op_str = match operador {
                     Operador::Suma => " + ",
                     Operador::Resta => " - ",
@@ -853,7 +968,18 @@ impl Transpiler {
                     Operador::Y => " && ",
                     Operador::O => " || ",
                 };
-                format!("({}{}{})", izq, op_str, der)
+                // Solo añadir paréntesis donde sea necesario por precedencia
+                let izq_final = if necesita_parentesis(izquierda, &operador) {
+                    format!("({})", izq_str)
+                } else {
+                    izq_str
+                };
+                let der_final = if necesita_parentesis(derecha, &operador) {
+                    format!("({})", der_str)
+                } else {
+                    der_str
+                };
+                format!("{}{}{}", izq_final, op_str, der_final)
             }
 
             Expresion::Unaria { operador, expr: e } => {
@@ -1022,8 +1148,9 @@ mod tests {
     #[test]
     fn test_transpilar_variable() {
         let result = transpilar_source("variable x = 5").unwrap();
-        // 'variable' es mutable -> let mut
-        assert!(result.contains("let mut x = 5;"));
+        // 'variable' sin reasignación -> let (sin mut innecesario)
+        assert!(result.contains("let x = 5;"));
+        assert!(!result.contains("let mut x = 5;"));
     }
 
     #[test]
@@ -1098,6 +1225,42 @@ mod tests {
         let source = "variable x = 5\nescribir(x)";
         let result = transpilar_source(source).unwrap();
         assert!(result.contains("fn main()"));
+        // x no se reasigna, solo se lee -> let sin mut
+        assert!(result.contains("let x = 5;"));
+        assert!(!result.contains("let mut x = 5;"));
+    }
+
+    #[test]
+    fn test_transpilar_variable_con_reasignacion() {
+        let source = "variable x = 5\nx = 10";
+        let result = transpilar_source(source).unwrap();
+        // x se reasigna -> debe ser let mut
         assert!(result.contains("let mut x = 5;"));
+    }
+
+    #[test]
+    fn test_transpilar_variable_reasignada_en_si() {
+        let source = "variable x = 5\nsi (verdadero) { x = 10 }";
+        let result = transpilar_source(source).unwrap();
+        // x se reasigna dentro de un bloque si -> debe ser let mut
+        assert!(result.contains("let mut x = 5;"));
+    }
+
+    #[test]
+    fn test_transpilar_variable_reasignada_en_mientras() {
+        let source = "variable x = 0\nmientras (x < 10) { x = x + 1 }";
+        let result = transpilar_source(source).unwrap();
+        // x se reasigna dentro del bucle -> debe ser let mut
+        assert!(result.contains("let mut x = 0;"));
+    }
+
+    #[test]
+    fn test_transpilar_variable_sin_uso() {
+        let source = "variable x = 5\nvariable y = 10";
+        let result = transpilar_source(source).unwrap();
+        // Ninguna se reasigna -> let sin mut
+        assert!(result.contains("let x = 5;"));
+        assert!(result.contains("let y = 10;"));
+        assert!(!result.contains("let mut"));
     }
 }

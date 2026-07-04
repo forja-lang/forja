@@ -1,0 +1,51 @@
+// Benchmark Raven — AOT nativo via Cranelift
+
+fun fib_iterative(n: Int) -> Int {
+    if n <= 1 {
+        return n
+    }
+    let a = 0
+    let b = 1
+    let i = 2
+    while i <= n {
+        let temp = a + b
+        a = b
+        b = temp
+        i = i + 1
+    }
+    return b
+}
+
+fun sum_loop(n: Int) -> Int {
+    let total = 0
+    let i = 0
+    while i < n {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+
+fun nested_loop(n: Int) -> Int {
+    let total = 0
+    let i = 0
+    while i < n {
+        let j = 0
+        while j < 100 {
+            total = total + (i * j)
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return total
+}
+
+fun main() {
+    let r1 = fib_iterative(40)
+
+    let r2 = sum_loop(10000000)
+
+    let r3 = sum_loop(1000000)
+
+    let r4 = nested_loop(1000)
+}
