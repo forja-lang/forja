@@ -1,0 +1,45 @@
+# módulo: io
+# Descripción: Funciones de entrada/salida
+
+funcion imprimir(mensaje) {
+    escribir(mensaje + "\n")
+}
+
+funcion imprimir_sin_salto(mensaje) {
+    escribir(mensaje)
+}
+
+funcion imprimir_varios(arr) {
+    variable i = 0
+    mientras (i < longitud(arr)) {
+        escribir(arr[i] + "\n")
+        i = i + 1
+    }
+}
+
+funcion imprimir_linea() {
+    escribir("\n")
+}
+
+funcion pedir_texto(mensaje) {
+    escribir(mensaje)
+    retornar leer()
+}
+
+funcion pedir_numero(mensaje) {
+    escribir(mensaje)
+    variable entrada = leer()
+    retornar a_numero(entrada)
+}
+
+funcion mostrar_error(mensaje) {
+    escribir("[ERROR] " + mensaje + "\n")
+}
+
+funcion mostrar_advertencia(mensaje) {
+    escribir("[AVISO] " + mensaje + "\n")
+}
+
+funcion mostrar_info(mensaje) {
+    escribir("[INFO] " + mensaje + "\n")
+}
