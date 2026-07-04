@@ -386,10 +386,34 @@ impl TargetArch {
         }
     }
 
+    /// Convert x86-64 64-bit register name to its low 8-bit form (Intel syntax).
+    /// "rax" -> "al", "rbx" -> "bl", etc. For non-standard names, appends 'l'.
+    fn to_8bit_reg(reg: &str) -> String {
+        match reg {
+            "rax" | "eax" => "al".to_string(),
+            "rbx" | "ebx" => "bl".to_string(),
+            "rcx" | "ecx" => "cl".to_string(),
+            "rdx" | "edx" => "dl".to_string(),
+            "rsi" | "esi" => "sil".to_string(),
+            "rdi" | "edi" => "dil".to_string(),
+            "rbp" | "ebp" => "bpl".to_string(),
+            "rsp" | "esp" => "spl".to_string(),
+            "r8"  | "r8d"  => "r8b".to_string(),
+            "r9"  | "r9d"  => "r9b".to_string(),
+            "r10" | "r10d" => "r10b".to_string(),
+            "r11" | "r11d" => "r11b".to_string(),
+            "r12" | "r12d" => "r12b".to_string(),
+            "r13" | "r13d" => "r13b".to_string(),
+            "r14" | "r14d" => "r14b".to_string(),
+            "r15" | "r15d" => "r15b".to_string(),
+            other => format!("{}l", other),
+        }
+    }
+
     fn set_g(&self, dst: &str) -> String {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
-                format!("    setg {}l", dst)
+                format!("    setg {}", Self::to_8bit_reg(dst))
             }
             TargetArch::AArch64 => {
                 "    cset x0, gt".to_string()
@@ -400,7 +424,7 @@ impl TargetArch {
     fn set_l(&self, dst: &str) -> String {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
-                format!("    setl {}l", dst)
+                format!("    setl {}", Self::to_8bit_reg(dst))
             }
             TargetArch::AArch64 => {
                 "    cset x0, lt".to_string()
@@ -411,7 +435,7 @@ impl TargetArch {
     fn set_ge(&self, dst: &str) -> String {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
-                format!("    setge {}l", dst)
+                format!("    setge {}", Self::to_8bit_reg(dst))
             }
             TargetArch::AArch64 => {
                 "    cset x0, ge".to_string()
@@ -422,7 +446,7 @@ impl TargetArch {
     fn set_le(&self, dst: &str) -> String {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
-                format!("    setle {}l", dst)
+                format!("    setle {}", Self::to_8bit_reg(dst))
             }
             TargetArch::AArch64 => {
                 "    cset x0, le".to_string()
@@ -433,7 +457,7 @@ impl TargetArch {
     fn set_e(&self, dst: &str) -> String {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
-                format!("    sete {}l", dst)
+                format!("    sete {}", Self::to_8bit_reg(dst))
             }
             TargetArch::AArch64 => {
                 "    cset x0, eq".to_string()
@@ -444,7 +468,7 @@ impl TargetArch {
     fn set_ne(&self, dst: &str) -> String {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
-                format!("    setne {}l", dst)
+                format!("    setne {}", Self::to_8bit_reg(dst))
             }
             TargetArch::AArch64 => {
                 "    cset x0, ne".to_string()
@@ -455,7 +479,14 @@ impl TargetArch {
     fn movzx(&self, dst: &str, src: &str) -> String {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
-                format!("    movzx {}, {}", dst, src)
+                // movzx requires the source to be 8-bit or 16-bit.
+                // If dst == src, the source is the result of a setcc, so use the 8-bit name.
+                let src8 = if dst == src {
+                    Self::to_8bit_reg(src)
+                } else {
+                    src.to_string()
+                };
+                format!("    movzx {}, {}", dst, src8)
             }
             TargetArch::AArch64 => {
                 format!("    and {}, {}, #0xff", dst, src)
@@ -694,9 +725,12 @@ pub struct CompilerAsm {
     label_counter: usize,
     funcion_actual: Option<String>,
     // Register allocator
-    reg_pool: Vec<bool>,        // true = allocated
-    reg_names: Vec<&'static str>, // register names
-    reg_saved: Vec<String>,     // saved register values for spilling
+    reg_pool: Vec<bool>,            // true = allocated
+    reg_names: Vec<&'static str>,   // register names
+    reg_saved: Vec<String>,         // saved register values for spilling
+    // Persistent variable → register mapping (Linear Scan)
+    var_reg_map: HashMap<String, &'static str>,  // variable -> registro calle-saved
+    reg_var_map: HashMap<&'static str, String>,   // registro -> variable
 }
 
 impl CompilerAsm {
@@ -717,6 +751,8 @@ impl CompilerAsm {
             reg_pool,
             reg_names,
             reg_saved: Vec::new(),
+            var_reg_map: HashMap::new(),
+            reg_var_map: HashMap::new(),
         }
     }
 
@@ -726,7 +762,8 @@ impl CompilerAsm {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
                 // Callee-saved en x86-64: RBX, RBP, R12, R13, R14, R15
                 // RBP lo usamos como frame pointer, así que excluimos
-                let names = vec!["rbx", "r12", "r13", "r14", "r15"];
+                // RBX excluido porque gen_itoa() lo usa como divisor (mov rbx, 10)
+                let names = vec!["r12", "r13", "r14", "r15"];
                 let pool = vec![false; names.len()];
                 (names, pool)
             }
@@ -764,6 +801,29 @@ impl CompilerAsm {
     fn free_all_regs(&mut self) {
         for i in 0..self.reg_pool.len() {
             self.reg_pool[i] = false;
+        }
+    }
+
+    /// Aloca un registro del pool para una variable Forja de forma persistente.
+    /// Retorna `Some(reg)` si hay registro disponible, `None` si hay que usar stack.
+    fn alloc_var_reg(&mut self, nombre: &str) -> Option<&'static str> {
+        for i in 0..self.reg_pool.len() {
+            if !self.reg_pool[i] {
+                self.reg_pool[i] = true;
+                let reg = self.reg_names[i];
+                self.var_reg_map.insert(nombre.to_string(), reg);
+                self.reg_var_map.insert(reg, nombre.to_string());
+                return Some(reg);
+            }
+        }
+        None
+    }
+
+    /// Libera el registro asociado a una variable (si lo tiene).
+    fn free_var_reg(&mut self, nombre: &str) {
+        if let Some(reg) = self.var_reg_map.remove(nombre) {
+            self.reg_var_map.remove(reg);
+            self.free_reg(reg);
         }
     }
 
@@ -957,6 +1017,8 @@ impl CompilerAsm {
             reg_pool,
             reg_names,
             reg_saved: Vec::new(),
+            var_reg_map: HashMap::new(),
+            reg_var_map: HashMap::new(),
         }
     }
 
@@ -1031,7 +1093,13 @@ impl CompilerAsm {
         });
 
         if !tiene_main {
+            let regs = self.reg_names.clone();
             self.emit_line("main:");
+            // 1) Guardar registros calle-saved ANTES que rbp
+            for reg in &regs {
+                self.emit_line(&self.arch.push_reg(reg));
+            }
+            // 2) Frame pointer
             for line in &self.arch.push_fp_lr() { self.emit_line(line); }
             self.emit_line(&self.arch.set_fp_from_sp());
             self.emit_line(&self.arch.sub_sp(64));
@@ -1047,6 +1115,10 @@ impl CompilerAsm {
             self.emit_line(&self.arch.mov_reg_imm(self.arch.ret_reg_32(), 0));
             self.emit_line(&self.arch.mov_sp_fp());
             for line in &self.arch.pop_fp_lr() { self.emit_line(line); }
+            // Restaurar registros calle-saved (orden inverso)
+            for reg in regs.iter().rev() {
+                self.emit_line(&self.arch.pop_reg(reg));
+            }
             self.emit_line(&self.arch.ret());
         }
 
@@ -1264,25 +1336,58 @@ impl CompilerAsm {
                 });
                 let tipo_asm = self.tipo_forja_a_asm(&tipo_inferido);
                 let size = self.tipo_asm_size(&tipo_asm);
-                self.stack_offset -= size;
-                self.stack_offset = self.stack_offset / size * size - size;
-                self.variables.insert(nombre.clone(), StackVar {
-                    offset: self.stack_offset,
-                    tipo: tipo_asm.clone(),
-                });
 
-                if let Some(val) = valor {
-                    let _ = self.compilar_expresion_asm(val);
-                    let oa = -self.stack_offset;
-                    match tipo_asm {
-                        TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) => {
-                            self.emit_line(&a.str_reg_mem(ret, fp, oa));
+                // Intentar asignar un registro calle-saved persistente
+                // (solo para tipos enteros, punteros y booleanos; los decimales van a stack)
+                let puede_tener_registro = matches!(tipo_asm, TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) | TipoAsm::Booleano);
+                let reg_asignado = if puede_tener_registro {
+                    self.alloc_var_reg(nombre)
+                } else {
+                    None
+                };
+
+                if let Some(reg) = reg_asignado {
+                    // ─── Variable en registro ───
+                    // De todas formas creamos un StackVar con offset 0 para que
+                    // get() no falle, pero no se usa para memoria.
+                    self.variables.insert(nombre.clone(), StackVar {
+                        offset: 0,
+                        tipo: tipo_asm.clone(),
+                    });
+                    if let Some(val) = valor {
+                        let _ = self.compilar_expresion_asm(val);
+                        // ret (rax/x0) tiene el valor -> mover al registro asignado
+                        match tipo_asm {
+                            TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) => {
+                                self.emit_line(&a.mov_reg_reg(reg, ret));
+                            }
+                            TipoAsm::Booleano => {
+                                self.emit_line(&a.mov_reg_reg(reg, a.ret_reg_32()));
+                            }
+                            _ => {}
                         }
-                        TipoAsm::Decimal => {
-                            self.emit_line(&a.movsd_mem_fp(fp, oa, a.float_reg()));
-                        }
-                        TipoAsm::Booleano => {
-                            self.emit_line(&a.str_reg_mem(a.ret_reg_32(), fp, oa));
+                    }
+                } else {
+                    // ─── Variable en stack (sin registro disponible o tipo decimal) ───
+                    self.stack_offset -= size;
+                    self.stack_offset = self.stack_offset / size * size - size;
+                    self.variables.insert(nombre.clone(), StackVar {
+                        offset: self.stack_offset,
+                        tipo: tipo_asm.clone(),
+                    });
+                    if let Some(val) = valor {
+                        let _ = self.compilar_expresion_asm(val);
+                        let oa = -self.stack_offset;
+                        match tipo_asm {
+                            TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) => {
+                                self.emit_line(&a.str_reg_mem(ret, fp, oa));
+                            }
+                            TipoAsm::Decimal => {
+                                self.emit_line(&a.movsd_mem_fp(fp, oa, a.float_reg()));
+                            }
+                            TipoAsm::Booleano => {
+                                self.emit_line(&a.str_reg_mem(a.ret_reg_32(), fp, oa));
+                            }
                         }
                     }
                 }
@@ -1290,7 +1395,22 @@ impl CompilerAsm {
 
             Declaracion::Asignacion { nombre, valor } => {
                 let _ = self.compilar_expresion_asm(valor);
-                if let Some(var) = self.variables.get(nombre) {
+                // ¿La variable destino está en un registro?
+                if let Some(&reg) = self.var_reg_map.get(nombre) {
+                    // Variable en registro → mover resultado de ret (rax/x0) al registro
+                    if let Some(var) = self.variables.get(nombre) {
+                        match var.tipo {
+                            TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) => {
+                                self.emit_line(&a.mov_reg_reg(reg, ret));
+                            }
+                            TipoAsm::Booleano => {
+                                self.emit_line(&a.mov_reg_reg(reg, a.ret_reg_32()));
+                            }
+                            _ => {}
+                        }
+                    }
+                } else if let Some(var) = self.variables.get(nombre) {
+                    // Variable en stack
                     let oa = -var.offset;
                     match var.tipo {
                         TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) => {
@@ -1316,17 +1436,25 @@ impl CompilerAsm {
             Declaracion::AsignacionIndex { nombre, indice, valor } => {
                 let _idx = self.compilar_expresion_asm(indice);
                 let _val = self.compilar_expresion_asm(valor);
-                if let Some(var) = self.variables.get(nombre) {
+                // Cargar el puntero del array (desde registro o stack)
+                if let Some(&reg) = self.var_reg_map.get(nombre) {
+                    // Array en registro calle-saved
+                    self.emit_line(&a.mov_reg_reg(tmp, reg));
+                } else if let Some(var) = self.variables.get(nombre) {
                     let oa = -var.offset;
                     self.emit_line(&a.ldr_reg_mem(tmp, fp, oa));
-                    self.emit_line(&a.str_mem_index(tmp, ret, 8, a.tmp2_reg()));
+                } else {
+                    return;
                 }
+                self.emit_line(&a.str_mem_index(tmp, ret, 8, a.tmp2_reg()));
             }
 
             Declaracion::Funcion { nombre, parametros, tipo_retorno: _, cuerpo } => {
                 self.funcion_actual = Some(nombre.clone());
                 let vars_previas = std::mem::take(&mut self.variables);
                 let stack_previo = self.stack_offset;
+                let var_reg_map_previo = std::mem::take(&mut self.var_reg_map);
+                let reg_var_map_previo = std::mem::take(&mut self.reg_var_map);
                 self.stack_offset = 0;
 
                 // --- Estimar tamaño del stack frame ---
@@ -1336,14 +1464,20 @@ impl CompilerAsm {
                     let tipo_asm = self.tipo_parametro_a_asm(param);
                     frame_estimate += self.tipo_asm_size(&tipo_asm);
                 }
-                // Variables locales (pre-scan)
+                // Variables locales (pre-scan) — solo las que NO entren en registros
                 for d in cuerpo.iter() {
                     if let Declaracion::Variable { tipo, valor, .. } = d {
                         let tipo_inferido = tipo.clone().or_else(|| {
                             valor.as_ref().and_then(|v| self.inferir_tipo_de_expr(v))
                         });
                         let tipo_asm = self.tipo_forja_a_asm(&tipo_inferido);
-                        frame_estimate += self.tipo_asm_size(&tipo_asm);
+                        // Si es tipo decimal siempre va a stack
+                        if let TipoAsm::Decimal = tipo_asm {
+                            frame_estimate += self.tipo_asm_size(&tipo_asm);
+                        } else {
+                            // Entero/texto/bool: podría ir a registro, estimamos que sí
+                            frame_estimate += self.tipo_asm_size(&tipo_asm);
+                        }
                     }
                 }
                 // Alinear a 16 bytes, mínimo 32 para shadow space en Windows
@@ -1352,37 +1486,80 @@ impl CompilerAsm {
                     if a.shadow_space() > 0 { 32 } else { 16 },
                 );
 
+                // ── Prólogo ──
+                let regs = self.reg_names.clone();
                 self.emit_line(&format!("{}:", nombre));
+                // 1) Guardar registros calle-saved (deben ir ANTES de push rbp
+                //    para poder restaurarlos con pop tras mov rsp, rbp)
+                for reg in &regs {
+                    self.emit_line(&a.push_reg(reg));
+                }
+                // 2) Frame pointer
                 for line in &a.push_fp_lr() { self.emit_line(line); }
                 self.emit_line(&a.set_fp_from_sp());
+                // 3) Variables locales
                 if frame_size > 0 {
                     self.emit_line(&a.sub_sp(frame_size));
                 }
 
+                // ── Parámetros ──
                 let arg_regs = a.arg_regs();
                 for (i, param) in parametros.iter().enumerate() {
                     let tipo_asm = self.tipo_parametro_a_asm(param);
                     let size = self.tipo_asm_size(&tipo_asm);
-                    self.stack_offset -= if size > 4 { 8 } else { 4 };
-                    let oa = -self.stack_offset;
-                    self.variables.insert(param.nombre.clone(), StackVar {
-                        offset: self.stack_offset, tipo: tipo_asm,
-                    });
-                    if i < arg_regs.len() {
-                        self.emit_line(&a.str_reg_mem(arg_regs[i], fp, oa));
+                    // Intentar asignar registro para el parámetro
+                    let puede_tener_registro = matches!(tipo_asm, TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) | TipoAsm::Booleano);
+                    let param_reg = if puede_tener_registro {
+                        self.alloc_var_reg(&param.nombre)
+                    } else {
+                        None
+                    };
+
+                    if let Some(reg) = param_reg {
+                        // Parámetro en registro calle-saved
+                        self.variables.insert(param.nombre.clone(), StackVar {
+                            offset: 0, tipo: tipo_asm,
+                        });
+                        if i < arg_regs.len() {
+                            // Mover del registro de argumento al calle-saved
+                            self.emit_line(&a.mov_reg_reg(reg, arg_regs[i]));
+                        }
+                    } else {
+                        // Parámetro en stack
+                        self.stack_offset -= if size > 4 { 8 } else { 4 };
+                        let oa = -self.stack_offset;
+                        self.variables.insert(param.nombre.clone(), StackVar {
+                            offset: self.stack_offset, tipo: tipo_asm,
+                        });
+                        if i < arg_regs.len() {
+                            self.emit_line(&a.str_reg_mem(arg_regs[i], fp, oa));
+                        }
                     }
                 }
                 self.emit_line("");
 
+                // ── Cuerpo ──
                 for d in cuerpo { self.compilar_declaracion(d); }
 
+                // ── Epílogo ──
                 self.emit_line("");
+                // Liberar todos los registros de variables de esta función
+                let nombres_var: Vec<String> = self.var_reg_map.keys().cloned().collect();
+                for v in nombres_var {
+                    self.free_var_reg(&v);
+                }
                 self.emit_line(&a.mov_sp_fp());
                 for line in &a.pop_fp_lr() { self.emit_line(line); }
+                // Restaurar registros calle-saved (orden inverso)
+                for reg in regs.iter().rev() {
+                    self.emit_line(&a.pop_reg(reg));
+                }
                 self.emit_line(&a.ret());
 
                 self.variables = vars_previas;
                 self.stack_offset = stack_previo;
+                self.var_reg_map = var_reg_map_previo;
+                self.reg_var_map = reg_var_map_previo;
                 self.funcion_actual = None;
             }
 
@@ -1464,8 +1641,13 @@ impl CompilerAsm {
                 if let Some(val) = valor {
                     self.compilar_expresion_asm(val);
                 }
+                let regs = self.reg_names.clone();
                 self.emit_line(&a.mov_sp_fp());
                 for line in &a.pop_fp_lr() { self.emit_line(line); }
+                // Restaurar registros calle-saved (orden inverso al push en prólogo)
+                for reg in regs.iter().rev() {
+                    self.emit_line(&a.pop_reg(reg));
+                }
                 self.emit_line(&a.ret());
             }
 
@@ -1525,7 +1707,23 @@ impl CompilerAsm {
                     self.emit_line(&a.mov_reg_imm(a.ret_reg_32(), 1));
                 } else if nombre == "falso" || nombre == "nulo" {
                     self.emit_line(&a.xor_reg_reg(ret, ret));
+                } else if let Some(&reg) = self.var_reg_map.get(nombre) {
+                    // Variable en registro → mover a ret (rax/x0)
+                    if let Some(var) = self.variables.get(nombre) {
+                        match var.tipo {
+                            TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) => {
+                                self.emit_line(&a.mov_reg_reg(ret, reg));
+                            }
+                            TipoAsm::Booleano => {
+                                self.emit_line(&a.mov_reg_reg(a.ret_reg_32(), reg));
+                            }
+                            _ => {
+                                self.emit_line(&a.mov_reg_reg(ret, reg));
+                            }
+                        }
+                    }
                 } else if let Some(var) = self.variables.get(nombre) {
+                    // Variable en stack → load desde memoria
                     let oa = -var.offset;
                     match var.tipo {
                         TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) => {
@@ -2209,12 +2407,19 @@ impl CompilerAsm {
                     return;
                 }
 
+                // ¿La variable está en un registro calle-saved?
+                let reg_opt = self.var_reg_map.get(nombre).copied();
+
                 if let Some(var) = self.variables.get(nombre) {
                     match var.tipo {
                         TipoAsm::Texto => {
-                            // Cargar puntero a string del stack + strlen inline + syscall write
-                            let oa = -var.offset;
-                            self.emit_line(&a.ldr_reg_mem(ret, a.fp_reg(), oa));
+                            // Cargar puntero a string (desde registro o stack) + strlen inline + syscall write
+                            if let Some(reg) = reg_opt {
+                                self.emit_line(&a.mov_reg_reg(ret, reg));
+                            } else {
+                                let oa = -var.offset;
+                                self.emit_line(&a.ldr_reg_mem(ret, a.fp_reg(), oa));
+                            }
                             let lp_strlen = self.nueva_etiqueta("strlen_loop");
                             let lp_strlen_end = self.nueva_etiqueta("strlen_done");
                             match a {
@@ -2251,9 +2456,13 @@ impl CompilerAsm {
                             }
                         }
                         TipoAsm::Entero | TipoAsm::Clase(_) => {
-                            // Entero: cargar valor, itoa inline + syscall write
-                            let oa = -var.offset;
-                            self.emit_line(&a.ldr_reg_mem(ret, a.fp_reg(), oa));
+                            // Entero: cargar valor (desde registro o stack), itoa inline + syscall write
+                            if let Some(reg) = reg_opt {
+                                self.emit_line(&a.mov_reg_reg(ret, reg));
+                            } else {
+                                let oa = -var.offset;
+                                self.emit_line(&a.ldr_reg_mem(ret, a.fp_reg(), oa));
+                            }
                             self.gen_write_int_value(ret);
                         }
                         TipoAsm::Decimal => {
@@ -2264,8 +2473,12 @@ impl CompilerAsm {
                             self.emit_line(&a.call("forja_print_float"));
                         }
                         TipoAsm::Booleano => {
-                            let oa = -var.offset;
-                            self.emit_line(&a.ldr_reg_mem(a.ret_reg_32(), a.fp_reg(), oa));
+                            if let Some(reg) = reg_opt {
+                                self.emit_line(&a.mov_reg_reg(a.ret_reg_32(), reg));
+                            } else {
+                                let oa = -var.offset;
+                                self.emit_line(&a.ldr_reg_mem(a.ret_reg_32(), a.fp_reg(), oa));
+                            }
                             self.emit_line(&a.test_reg(ret));
                             let lp_true = self.nueva_etiqueta("bool_true");
                             let lp_end = self.nueva_etiqueta("bool_end");

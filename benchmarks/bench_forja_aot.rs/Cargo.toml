@@ -1,0 +1,9 @@
+[package]
+name = "bench_forja_aot"
+version = "0.3.0"
+edition = "2021"
+
+# Exportado por Forja (fa) desde bench_forja_aot.fa (podés ejecutar directo con 'forja ejecutar')
+# https://github.com/forja-lang/forja
+
+[dependencies]

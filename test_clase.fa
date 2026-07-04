@@ -1,0 +1,8 @@
+clase P {
+    nombre
+    constructor(n) {
+        este.nombre = n
+    }
+}
+variable p = nuevo P("Ana")
+escribir(p.nombre)
