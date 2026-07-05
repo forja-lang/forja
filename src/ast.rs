@@ -34,6 +34,20 @@ pub enum Tipo {
     Arreglo(Box<Tipo>),  // arreglo de algún tipo
     #[allow(dead_code)]
     Funcion(Vec<Tipo>, Box<Tipo>),  // (tipos_parametros, tipo_retorno)
+    /// Resultado con Ok/Error (Result<T, E>)
+    Resultado(Box<Tipo>, Box<Tipo>),
+    /// Valor opcional (Option<T>)
+    Opcion(Box<Tipo>),
+    /// Un trait usado como tipo (polimorfismo)
+    TraitObjeto(String),
+    /// Parámetro de tipo genérico (referencia a T, U, etc.)
+    Parametro(String),
+}
+
+/// Parámetro de tipo genérico (T, U, etc.)
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParametroTipo {
+    pub nombre: String,
 }
 
 /// Parámetro de función
@@ -51,6 +65,13 @@ pub struct VariableClase {
     pub nombre: String,
     #[allow(dead_code)]
     pub tipo: Option<Tipo>,
+}
+
+/// Atributo/anotación (@derive, @test, etc.)
+#[derive(Debug, Clone)]
+pub struct Atributo {
+    pub nombre: String,
+    pub argumentos: Vec<String>,
 }
 
 /// Variante de un enum
@@ -78,10 +99,30 @@ pub struct Metodo {
     pub cuerpo: Vec<Declaracion>,
 }
 
+/// Firma de método en un trait (sin cuerpo)
+#[derive(Debug, Clone)]
+pub struct FirmaMetodo {
+    pub nombre: String,
+    pub parametros: Vec<Parametro>,
+    pub tipo_retorno: Option<Tipo>,
+}
+
 /// Brazo de pattern matching: caso Patron -> { cuerpo }
 #[derive(Debug, Clone)]
 pub struct BrazoMatch {
     pub patron: Patron,
+    pub cuerpo: Vec<Declaracion>,
+}
+
+/// Brazo de la construcción seleccionar
+#[derive(Debug, Clone)]
+pub struct BrazoSeleccionar {
+    /// Si es Some, es un caso de recepción: (variable, nombre_canal)
+    /// Si es None, es default/tiempo
+    pub recepcion: Option<(String, String)>,
+    /// Duración en ms (0 = default/inmediato)
+    pub timeout_ms: u64,
+    /// Cuerpo del brazo
     pub cuerpo: Vec<Declaracion>,
 }
 
@@ -154,6 +195,18 @@ pub enum Expresion {
     },
     /// Expresión agrupada (ej: (a + b) * c)
     Grupo(Box<Expresion>),
+    /// Hilo ligero (ej: hilo { ... })
+    Hilo {
+        cuerpo: Vec<Declaracion>,
+    },
+    /// Crear canal de comunicación (ej: canal())
+    CanalNuevo,
+    /// Operador de propagación de errores (expr?)
+    Try(Box<Expresion>),
+    /// Seleccionar entre múltiples canales
+    Seleccionar {
+        brazos: Vec<BrazoSeleccionar>,
+    },
 }
 
 /// Declaraciones del lenguaje
@@ -186,15 +239,22 @@ pub enum Declaracion {
     /// Definición de función (ej: funcion saludar(n) { ... })
     Funcion {
         nombre: String,
+        parametros_tipo: Vec<ParametroTipo>,  // Parámetros genéricos <T, U>
         parametros: Vec<Parametro>,
         tipo_retorno: Option<Tipo>,
         cuerpo: Vec<Declaracion>,
+        externa: bool,                    // si es función externa (FFI)
+        enlace_nombre: Option<String>,    // nombre real en C (ej: "printf")
+        atributos: Vec<Atributo>,         // atributos/anotaciones
+        doc: Option<String>,              // doc comment (///)
     },
     /// Definición de clase (ej: clase Persona { ... })
     Clase {
         nombre: String,
+        parametros_tipo: Vec<ParametroTipo>,  // Parámetros genéricos <T, U>
         campos: Vec<VariableClase>,
         metodos: Vec<Metodo>,
+        atributos: Vec<Atributo>,         // atributos/anotaciones
     },
     /// Condicional si/sino
     Si {
@@ -241,9 +301,34 @@ pub enum Declaracion {
     Enum {
         nombre: String,
         variantes: Vec<Variante>,
+        atributos: Vec<Atributo>,         // atributos/anotaciones
+    },
+    /// Asignación múltiple (ej: variable tx, rx = canal())
+    AsignacionMultiple {
+        variables: Vec<String>,
+        mutable: bool,
+        valor: Box<Expresion>,
+    },
+    /// Definición de trait (interfaz)
+    Trait {
+        nombre: String,
+        metodos: Vec<FirmaMetodo>,
+    },
+    /// Implementación de trait para una clase
+    Implementacion {
+        trait_nombre: String,
+        clase_nombre: String,
+        metodos: Vec<Metodo>,
     },
     /// Expresión usada como statement (ej: x + 1)
     Expresion(Expresion),
+}
+
+impl Declaracion {
+    /// Verifica si esta declaración es una función externa (FFI)
+    pub fn es_externa(&self) -> bool {
+        matches!(self, Declaracion::Funcion { externa: true, .. })
+    }
 }
 
 /// Programa completo (raíz del AST)

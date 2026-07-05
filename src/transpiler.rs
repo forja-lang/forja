@@ -58,10 +58,14 @@ pub struct Transpiler {
     errors: Vec<ErrorForja>,
     /// Conteo de variables temporales para el bucle `para`
     temp_counter: usize,
+    /// Si es true, no genera el fn main() automático
+    pub saltar_main: bool,
     /// Clases declaradas (para generar impls)
     clases: HashMap<String, ClaseInfo>,
     /// Declaraciones globales del programa (para análisis de mutabilidad)
     declaraciones_globales: Vec<Declaracion>,
+    /// Nombres de funciones externas (FFI)
+    funciones_externas: Vec<String>,
 }
 
 struct ClaseInfo {
@@ -115,6 +119,8 @@ impl Transpiler {
             temp_counter: 0,
             clases: HashMap::new(),
             declaraciones_globales: Vec::new(),
+            funciones_externas: Vec::new(),
+            saltar_main: false,
         }
     }
 
@@ -131,6 +137,46 @@ impl Transpiler {
         self.emit_line("// Podés ejecutarlo directo con 'forja ejecutar' sin necesidad de compilar Rust");
         self.emit_line("");
 
+        // Detectar si hay concurrencia para añadir imports
+        let tiene_concurrencia = self.detectar_concurrencia(&programa.declaraciones);
+        if tiene_concurrencia {
+            self.emit_line("use std::thread;");
+            self.emit_line("use std::sync::mpsc;");
+            self.emit_line("");
+        }
+
+        // Recolectar funciones externas
+        self.funciones_externas = programa.declaraciones.iter()
+            .filter(|d| matches!(d, Declaracion::Funcion { externa: true, .. }))
+            .filter_map(|d| {
+                if let Declaracion::Funcion { nombre, .. } = d {
+                    Some(nombre.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Generar bloque extern "C" para funciones externas
+        if !self.funciones_externas.is_empty() {
+            self.emit_line("extern \"C\" {");
+            self.indent();
+            for decl in &programa.declaraciones {
+                if let Declaracion::Funcion { nombre, parametros, tipo_retorno, externa: true, .. } = decl {
+                    let params_str: Vec<String> = parametros.iter()
+                        .map(|p| format!("{}: {}", p.nombre, self.tipo_a_rust(p.tipo.as_ref().unwrap_or(&Tipo::Entero))))
+                        .collect();
+                    let ret = tipo_retorno.as_ref()
+                        .map(|t| self.tipo_a_rust(t))
+                        .unwrap_or_else(|| "()".to_string());
+                    self.emit_line(&format!("fn {}({}) -> {};", nombre, params_str.join(", "), ret));
+                }
+            }
+            self.dedent();
+            self.emit_line("}");
+            self.emit_line("");
+        }
+
         // Detectar si hay función main o clases para generar el fn main()
         let tiene_main = programa.declaraciones.iter().any(|d| {
             matches!(d, Declaracion::Funcion { nombre, .. } if nombre == "main")
@@ -140,9 +186,10 @@ impl Transpiler {
         // Generar clases como struct + impl
         self.generar_clases(&programa.declaraciones);
 
-        // Generar funciones globales
+        // Generar funciones globales (saltar externas, ya declaradas en extern "C")
         for decl in &programa.declaraciones {
             match decl {
+                Declaracion::Funcion { externa: true, .. } => {} // ya declaradas en extern "C"
                 Declaracion::Funcion { .. } => {
                     self.transpilar_declaracion(decl);
                     self.emit_line("");
@@ -151,8 +198,19 @@ impl Transpiler {
             }
         }
 
+        // Generar traits e implementaciones después de las funciones
+        for decl in &programa.declaraciones {
+            match decl {
+                Declaracion::Trait { .. } | Declaracion::Implementacion { .. } => {
+                    self.transpilar_declaracion(decl);
+                    self.emit_line("");
+                }
+                _ => {}
+            }
+        }
+
         // Si no hay fn main explícita, generar main con el código global
-        if !tiene_main {
+        if !tiene_main && !self.saltar_main {
             self.emit_line("fn main() {");
             self.indent();
 
@@ -172,9 +230,67 @@ impl Transpiler {
         Ok(self.output.clone())
     }
 
+    fn es_funcion_externa(&self, nombre: &str) -> bool {
+        self.funciones_externas.contains(&nombre.to_string())
+    }
+
+    /// Detecta si el programa usa concurrencia (hilo, canal, enviar, recibir, unir, seleccionar)
+    fn detectar_concurrencia(&self, declaraciones: &[Declaracion]) -> bool {
+        for decl in declaraciones {
+            match decl {
+                Declaracion::Expresion(Expresion::Seleccionar { .. }) => return true,
+                Declaracion::Expresion(Expresion::Hilo { .. }) => return true,
+                Declaracion::Expresion(Expresion::CanalNuevo) => return true,
+                Declaracion::Variable { valor: Some(val), .. } => {
+                    if self.expr_tiene_concurrencia(val) { return true; }
+                }
+                Declaracion::AsignacionMultiple { valor, .. } => {
+                    if self.expr_tiene_concurrencia(valor) { return true; }
+                }
+                Declaracion::LlamadaFuncion { nombre, .. } => {
+                    if nombre.contains("enviar") || nombre.contains("recibir") || nombre.contains("unir") {
+                        return true;
+                    }
+                }
+                Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
+                    if self.detectar_concurrencia(bloque_verdadero) { return true; }
+                    if let Some(bf) = bloque_falso {
+                        if self.detectar_concurrencia(bf) { return true; }
+                    }
+                }
+                Declaracion::Mientras { bloque, .. } => {
+                    if self.detectar_concurrencia(bloque) { return true; }
+                }
+                Declaracion::Para { bloque, .. } => {
+                    if self.detectar_concurrencia(bloque) { return true; }
+                }
+                Declaracion::Repetir { bloque, .. } => {
+                    if self.detectar_concurrencia(bloque) { return true; }
+                }
+                Declaracion::Funcion { cuerpo, .. } => {
+                    if self.detectar_concurrencia(cuerpo) { return true; }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn expr_tiene_concurrencia(&self, expr: &Expresion) -> bool {
+        match expr {
+            Expresion::Seleccionar { .. } => true,
+            Expresion::Hilo { .. } => true,
+            Expresion::CanalNuevo => true,
+            Expresion::LlamadaFuncion { nombre, .. } => {
+                nombre.contains("enviar") || nombre.contains("recibir") || nombre.contains("unir")
+            }
+            _ => false,
+        }
+    }
+
     fn recolectar_clases(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
-            if let Declaracion::Clase { nombre, campos, metodos } = decl {
+            if let Declaracion::Clase { nombre, campos, metodos, .. } = decl {
                 let mut tipos_campos: HashMap<String, String> = HashMap::new();
 
                 // Escanear constructores para inferir tipos de campos
@@ -243,6 +359,10 @@ impl Transpiler {
                                 Tipo::Clase(n) => n.clone(),
                                 Tipo::Arreglo(t) => format!("Vec<{}>", self.tipo_a_rust(t)),
                                 Tipo::Funcion(_, _) => "fn".to_string(),
+                                Tipo::Resultado(_, _) => "Result<...>".to_string(),
+                                Tipo::Opcion(_) => "Option<...>".to_string(),
+                                Tipo::TraitObjeto(n) => format!("Box<dyn {}>", n),
+                                Tipo::Parametro(n) => n.clone(),
                             };
                         }
                     }
@@ -264,10 +384,23 @@ impl Transpiler {
 
     fn generar_clases(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
-            if let Declaracion::Clase { nombre, campos, metodos } = decl {
+            if let Declaracion::Clase { nombre, parametros_tipo, campos, metodos, atributos } = decl {
+                // Generar parámetros genéricos si existen
+                let gen_params_str = if parametros_tipo.is_empty() {
+                    String::new()
+                } else {
+                    let gen_names: Vec<String> = parametros_tipo.iter()
+                        .map(|p| p.nombre.clone())
+                        .collect();
+                    format!("<{}>", gen_names.join(", "))
+                };
+
+                // Generar #[derive(...)] desde @derive(Mostrar, Igual, ...)
+                self.emit_derive_from_atributos(atributos);
+
                 // Generar struct
                 self.emit_line(&format!("#[derive(Debug)]"));
-                self.emit_line(&format!("struct {} {{", nombre));
+                self.emit_line(&format!("struct {}{} {{", nombre, gen_params_str));
                 self.indent();
 
                 for campo in campos {
@@ -284,8 +417,16 @@ impl Transpiler {
                 self.emit_line("}");
                 self.emit_line("");
 
-                // Generar impl
-                self.emit_line(&format!("impl {} {{", nombre));
+                // Generar impl con genéricos
+                if parametros_tipo.is_empty() {
+                    self.emit_line(&format!("impl {} {{", nombre));
+                } else {
+                    let gen_names: Vec<String> = parametros_tipo.iter()
+                        .map(|p| p.nombre.clone())
+                        .collect();
+                    let gen_params = format!("<{}>", gen_names.join(", "));
+                    self.emit_line(&format!("impl{} {}{} {{", gen_params, nombre, gen_params));
+                }
                 self.indent();
 
                 for metodo in metodos {
@@ -441,6 +582,10 @@ impl Transpiler {
                 Tipo::Clase(nombre) => nombre.clone(),
                 Tipo::Arreglo(_) => "Vec<...>".to_string(),
                 Tipo::Funcion(_, _) => "fn".to_string(),
+                Tipo::Resultado(_, _) => "Result<...>".to_string(),
+                Tipo::Opcion(_) => "Option<...>".to_string(),
+                Tipo::TraitObjeto(nombre) => format!("Box<dyn {}>", nombre),
+                Tipo::Parametro(nombre) => nombre.clone(),
             };
         }
 
@@ -663,12 +808,32 @@ impl Transpiler {
                 self.emit_line(&format!("{}[{}] = {};", nombre, idx_str, val_str));
             }
 
-            Declaracion::Funcion { nombre, parametros, tipo_retorno, cuerpo } => {
+            Declaracion::Funcion { nombre, parametros_tipo, parametros, tipo_retorno, cuerpo, externa: _, enlace_nombre: _, atributos, doc } => {
+                // Emitir doc comment si existe
+                if let Some(doc_text) = doc {
+                    for line in doc_text.lines() {
+                        self.emit_line(&format!("/// {}", line));
+                    }
+                }
+                // Emitir #[test] si la función tiene @test
+                if atributos.iter().any(|a| a.nombre == "test") {
+                    self.emit_line("#[test]");
+                }
                 // Inferir tipos de parámetros desde el cuerpo de la función
                 let tipos_inferidos = self.inferir_tipos_desde_cuerpo(cuerpo, parametros);
 
                 // Inferir tipo de retorno desde el cuerpo si no está anotado
                 let inferred_ret = tipo_retorno.clone().or_else(|| self.inferir_tipo_retorno(cuerpo));
+
+                // Generar parámetros de tipo genérico <T, U> si existen
+                let gen_params_str = if parametros_tipo.is_empty() {
+                    String::new()
+                } else {
+                    let gen_names: Vec<String> = parametros_tipo.iter()
+                        .map(|p| p.nombre.clone())
+                        .collect();
+                    format!("<{}> ", gen_names.join(", "))
+                };
 
                 let params: Vec<String> = parametros
                     .iter()
@@ -701,7 +866,7 @@ impl Transpiler {
                     String::new()
                 };
 
-                self.emit_line(&format!("fn {}({}){} {{", nombre, params.join(", "), ret_str));
+                self.emit_line(&format!("fn {}{}({}){} {{", nombre, gen_params_str, params.join(", "), ret_str));
                 self.indent();
 
                 // Guardar contexto actual y poner el cuerpo de la función como ámbito de búsqueda
@@ -720,6 +885,42 @@ impl Transpiler {
                 self.emit_line("}");
             }
 
+            Declaracion::Trait { nombre, metodos } => {
+                self.emit_line(&format!("trait {} {{", nombre));
+                self.indent();
+                for metodo in metodos {
+                    let params: Vec<String> = metodo.parametros.iter().map(|p| {
+                        let mut s = String::new();
+                        if p.prestado { s.push_str("&"); }
+                        if p.mutable { s.push_str("mut "); }
+                        s.push_str(&p.nombre);
+                        s.push_str(": ");
+                        s.push_str(&self.inferir_tipo_parametro(p));
+                        s
+                    }).collect();
+                    let ret = match &metodo.tipo_retorno {
+                        Some(t) => format!(" -> {}", self.tipo_a_rust(t)),
+                        None => String::new(),
+                    };
+                    self.emit_line(&format!("fn {}({}){};", metodo.nombre, params.join(", "), ret));
+                }
+                self.dedent();
+                self.emit_line("}");
+                self.emit_line("");
+            }
+
+            Declaracion::Implementacion { trait_nombre, clase_nombre, metodos } => {
+                self.emit_line(&format!("impl {} for {} {{", trait_nombre, clase_nombre));
+                self.indent();
+                for metodo in metodos {
+                    self.generar_metodo(metodo, clase_nombre);
+                    self.emit_line("");
+                }
+                self.dedent();
+                self.emit_line("}");
+                self.emit_line("");
+            }
+
             Declaracion::Clase { .. } => {
                 // Las clases ya se generaron antes
             }
@@ -728,7 +929,9 @@ impl Transpiler {
                 self.emit_line(&format!("// importar \"{}\"", ruta));
             }
 
-            Declaracion::Enum { nombre, variantes } => {
+            Declaracion::Enum { nombre, variantes, atributos } => {
+                // Generar #[derive(...)] desde @derive(Mostrar, Igual, ...)
+                self.emit_derive_from_atributos(atributos);
                 let vars: Vec<String> = variantes.iter().map(|v| {
                     let tipos: Vec<String> = v.tipos.iter().map(|t| self.tipo_a_rust(t)).collect();
                     if tipos.is_empty() {
@@ -868,6 +1071,33 @@ impl Transpiler {
                     // BD("sqlite:memoria") -> rusqlite::Connection::open_in_memory()
                     self.emit_line("// TODO: Implementar conexión BD");
                     self.emit_line("// usar rusqlite::Connection::open_in_memory()");
+                } else if self.es_funcion_externa(nombre) {
+                    let args: Vec<String> = argumentos
+                        .iter()
+                        .map(|a| self.transpilar_expresion(a))
+                        .collect();
+                    self.emit_line(&format!("unsafe {{ {}({}); }}", nombre, args.join(", ")));
+                } else if nombre.ends_with(".enviar") {
+                    let obj = nombre.trim_end_matches(".enviar");
+                    let args: Vec<String> = argumentos
+                        .iter()
+                        .map(|a| self.transpilar_expresion(a))
+                        .collect();
+                    self.emit_line(&format!("{}.send({}).unwrap();", obj, args.join(", ")));
+                } else if nombre.ends_with(".recibir") {
+                    let obj = nombre.trim_end_matches(".recibir");
+                    self.emit_line(&format!("{}.recv().unwrap();", obj));
+                } else if nombre.ends_with(".unir") {
+                    let obj = nombre.trim_end_matches(".unir");
+                    self.emit_line(&format!("{}.join().unwrap();", obj));
+                } else if nombre == "asegurar" || nombre.ends_with(".asegurar") {
+                    let args: Vec<String> = argumentos
+                        .iter()
+                        .map(|a| self.transpilar_expresion(a))
+                        .collect();
+                    if args.len() >= 1 {
+                        self.emit_line(&format!("assert!({}, \"Aserción falló\");", args[0]));
+                    }
                 } else {
                     let args: Vec<String> = argumentos
                         .iter()
@@ -888,6 +1118,15 @@ impl Transpiler {
                     self.emit_line(&format!("return {};", val_str));
                 } else {
                     self.emit_line("return;");
+                }
+            }
+
+            Declaracion::AsignacionMultiple { variables, mutable, valor } => {
+                let valor_str = self.transpilar_expresion(valor);
+                if *mutable {
+                    self.emit_line(&format!("let mut ({}) = {};", variables.join(", "), valor_str));
+                } else {
+                    self.emit_line(&format!("let ({}) = {};", variables.join(", "), valor_str));
                 }
             }
 
@@ -997,6 +1236,23 @@ impl Transpiler {
                     format!("println!(\"{}\", {})", "{}", args.join(", "))
                 } else if nombre == "BD" {
                     "// BD()".to_string()
+                } else if self.es_funcion_externa(nombre) {
+                    format!("unsafe {{ {}({}) }}", nombre, args.join(", "))
+                } else if nombre.ends_with(".enviar") {
+                    let obj = nombre.trim_end_matches(".enviar");
+                    format!("{}.send({}).unwrap()", obj, args.join(", "))
+                } else if nombre.ends_with(".recibir") {
+                    let obj = nombre.trim_end_matches(".recibir");
+                    format!("{}.recv().unwrap()", obj)
+                } else if nombre.ends_with(".unir") {
+                    let obj = nombre.trim_end_matches(".unir");
+                    format!("{}.join().unwrap()", obj)
+                } else if nombre == "asegurar" || nombre.ends_with(".asegurar") {
+                    if !args.is_empty() {
+                        format!("assert!({}, \"Aserción falló\")", args[0])
+                    } else {
+                        format!("assert!(false, \"asegurar() sin argumentos\")")
+                    }
                 } else {
                     format!("{}({})", nombre, args.join(", "))
                 }
@@ -1068,6 +1324,64 @@ impl Transpiler {
                 let _ = cuerpo;
                 format!("|{}| {{}}", params.join(", "))
             }
+
+            Expresion::Hilo { cuerpo } => {
+                // Generar: thread::spawn(move || { ... })
+                let mut body_parts = Vec::new();
+                let prev_decls = std::mem::take(&mut self.declaraciones_globales);
+                self.declaraciones_globales = cuerpo.clone();
+                let prev_output = std::mem::take(&mut self.output);
+                let prev_indent = self.indent_level;
+
+                for d in cuerpo {
+                    self.transpilar_declaracion(d);
+                }
+
+                body_parts.push(self.output.clone());
+                self.output = prev_output;
+                self.indent_level = prev_indent;
+                self.declaraciones_globales = prev_decls;
+
+                let body = body_parts.join("").trim().to_string();
+                format!("thread::spawn(move || {{\n{}    \n}})", body)
+            }
+
+            Expresion::Try(expr) => {
+                let inner = self.transpilar_expresion(expr);
+                format!("{}.into()?", inner)
+            }
+            Expresion::CanalNuevo => {
+                "mpsc::channel()".to_string()
+            }
+            Expresion::Seleccionar { brazos } => {
+                // Transpilar a crossbeam::select! macro
+                // Usamos un enfoque similar a Hilo: guardar/restaurar output state
+                let mut arms = Vec::new();
+                for brazo in brazos {
+                    let prev_output = std::mem::take(&mut self.output);
+                    let prev_indent = self.indent_level;
+
+                    for d in &brazo.cuerpo {
+                        self.transpilar_declaracion(d);
+                    }
+
+                    let cuerpo_str = self.output.trim().to_string();
+                    self.output = prev_output;
+                    self.indent_level = prev_indent;
+
+                    if let Some((var, canal)) = &brazo.recepcion {
+                        // caso valor = rx.recibir() { ... }
+                        arms.push(format!("    recv({}) -> {} => {{\n        {}\n    }},", canal, var, cuerpo_str));
+                    } else if brazo.timeout_ms > 0 {
+                        // tiempo ms { ... } -> default con Duration
+                        arms.push(format!("    default(std::time::Duration::from_millis({})) => {{\n        {}\n    }},", brazo.timeout_ms, cuerpo_str));
+                    } else {
+                        // otro { ... } -> default (sin timeout)
+                        arms.push(format!("    default => {{\n        {}\n    }},", cuerpo_str));
+                    }
+                }
+                format!("crossbeam::select!{{\n{}\n}}", arms.join("\n"))
+            }
         }
     }
 
@@ -1095,12 +1409,38 @@ impl Transpiler {
                 let p: Vec<String> = params.iter().map(|t| self.tipo_a_rust(t)).collect();
                 format!("fn({}) -> {}", p.join(", "), self.tipo_a_rust(ret))
             }
+            Tipo::Resultado(ok, err) => format!("Result<{}, {}>", self.tipo_a_rust(ok), self.tipo_a_rust(err)),
+            Tipo::Opcion(inner) => format!("Option<{}>", self.tipo_a_rust(inner)),
+            Tipo::TraitObjeto(nombre) => format!("Box<dyn {}>", nombre),
+            Tipo::Parametro(nombre) => nombre.clone(),
         }
     }
 
     // ============================================================
     // Helpers de salida
     // ============================================================
+
+    /// Emite #[derive(...)] a partir de atributos @derive(Mostrar, Igual, ...)
+    fn emit_derive_from_atributos(&mut self, atributos: &[Atributo]) {
+        if let Some(derive_attr) = atributos.iter().find(|a| a.nombre == "derive") {
+            let traits: Vec<&String> = derive_attr.argumentos.iter().filter(|a| {
+                matches!(a.as_str(), "Mostrar" | "Igual" | "Debug" | "Clone" | "Copiar")
+            }).collect();
+            if !traits.is_empty() {
+                let rust_traits: Vec<String> = traits.iter().map(|t| {
+                    match t.as_str() {
+                        "Mostrar" => "Display".to_string(),
+                        "Igual" => "PartialEq".to_string(),
+                        "Debug" => "Debug".to_string(),
+                        "Clone" => "Clone".to_string(),
+                        "Copiar" => "Copy".to_string(),
+                        _ => t.to_string(),
+                    }
+                }).collect();
+                self.emit_line(&format!("#[derive({})]", rust_traits.join(", ")));
+            }
+        }
+    }
 
     #[allow(dead_code)]
     fn emit(&mut self, texto: &str) {

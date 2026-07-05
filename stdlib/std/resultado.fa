@@ -1,0 +1,28 @@
+// Tipo Resultado<T, E> con variantes Ok y Error
+// Tipo Opcion<T> con variantes Some y None
+//
+// Estos tipos son predefinidos del lenguaje (built-in).
+// El compilador los reconoce directamente y los mapea a Result<T,E> y Option<T> de Rust.
+//
+// Esta biblioteca es documentación/referencia de la sintaxis.
+// Las funciones constructoras están disponibles globalmente.
+
+// Construye un Resultado Ok con el valor dado
+funcion Ok(valor) -> Resultado<Entero, Texto> {
+    retornar Ok(valor)  // construido por el compilador
+}
+
+// Construye un Resultado Error con el mensaje dado
+funcion Error(mensaje) -> Resultado<Entero, Texto> {
+    retornar Error(mensaje)  // construido por el compilador
+}
+
+// Construye un Opcion Some con el valor dado
+funcion Some(valor) -> Opcion<Entero> {
+    retornar Some(valor)  // construido por el compilador
+}
+
+// Representa la ausencia de valor en Opcion
+funcion None() -> Opcion<Entero> {
+    retornar None  // construido por el compilador
+}

@@ -277,6 +277,8 @@ pub struct BorrowChecker {
     errores: Vec<ErrorForja>,
     #[allow(dead_code)]
     contador_temporal: usize,
+    /// Mapa: nombre_del_tipo → [variante1, variante2, ...]
+    variantes_enum: HashMap<String, Vec<String>>,
 }
 
 impl BorrowChecker {
@@ -285,6 +287,7 @@ impl BorrowChecker {
             tabla: TablaSimbolos::new(),
             errores: Vec::new(),
             contador_temporal: 0,
+            variantes_enum: HashMap::new(),
         }
     }
 
@@ -311,6 +314,7 @@ impl BorrowChecker {
             None => true, // Si no sabemos el tipo, asumimos Copy (seguro)
             Some(Tipo::Entero) | Some(Tipo::Decimal) | Some(Tipo::Booleano) | Some(Tipo::Nulo) => true,
             Some(Tipo::Texto) | Some(Tipo::Clase(_)) | Some(Tipo::Arreglo(_)) | Some(Tipo::Funcion(_, _)) => false,
+            Some(Tipo::Resultado(_, _)) | Some(Tipo::Opcion(_)) | Some(Tipo::TraitObjeto(_)) | Some(Tipo::Parametro(_)) => false,
         }
     }
 
@@ -403,7 +407,17 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
                 self.tabla.salir_ambito();
             }
 
-            Declaracion::Funcion { nombre: _, parametros, cuerpo, .. } => {
+            Declaracion::Funcion { nombre: _, parametros, cuerpo, atributos, .. } => {
+                // Validar @test: funciones con @test no deben tener parámetros
+                if atributos.iter().any(|a| a.nombre == "test") && !parametros.is_empty() {
+                    self.errores.push(ErrorForja::new(
+                        ErrorTipo::ErrorSemantico,
+                        0,
+                        0,
+                        "Funciones con @test no deben tener parámetros",
+                        "Los tests unitarios no reciben parámetros. Eliminá los parámetros de la función.",
+                    ));
+                }
                 self.tabla.entrar_ambito();
                 for param in parametros {
                     let tipo_param = param.tipo.clone();
@@ -413,7 +427,7 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
                 self.tabla.salir_ambito();
             }
 
-            Declaracion::Clase { nombre: _, campos: _, metodos } => {
+            Declaracion::Clase { metodos, .. } => {
                 for metodo in metodos {
                     self.tabla.entrar_ambito();
                     // En métodos de clase, 'self' está disponible
@@ -445,11 +459,23 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
                 }
             }
 
+            Declaracion::Trait { .. } => {}
+            Declaracion::Implementacion { .. } => {}
+
             Declaracion::Importar(_) => {}
-            Declaracion::Enum { .. } => {}
+            Declaracion::Enum { nombre, variantes, .. } => {
+                let var_names: Vec<String> = variantes.iter().map(|v| v.nombre.clone()).collect();
+                self.variantes_enum.insert(nombre.clone(), var_names);
+            }
 
             Declaracion::Expresion(expr) => {
                 self.analizar_expresion(expr);
+            }
+            Declaracion::AsignacionMultiple { variables, valor, .. } => {
+                for var in variables {
+                    let _ = self.tabla.declarar(var, false, 0, 0, None);
+                }
+                self.analizar_expresion(valor);
             }
         }
     }
@@ -560,18 +586,62 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
             }
 
             Expresion::Coincidir { expr, brazos } => {
-                self.analizar_expresion(expr);
-                // Verificar exhaustividad: debe haber un caso por defecto (Variable o Ignorar)
-                let tiene_default = brazos.iter().any(|b| {
-                    matches!(b.patron, Patron::Variable(_) | Patron::Ignorar)
-                });
-                if !tiene_default && !brazos.is_empty() {
-                    // Advertencia: el match no es exhaustivo (sin caso default)
-                    // Para enums, esto sería un error; para enteros, una advertencia
-                }
+                let tipo_expr = self.analizar_expresion(expr);
                 for brazo in brazos {
                     for d in &brazo.cuerpo {
                         self.analizar_declaracion(d);
+                    }
+                }
+                // Verificar exhaustividad
+                if let Some(Tipo::Clase(nombre_enum)) = &tipo_expr {
+                    if let Some(variantes) = self.variantes_enum.get(nombre_enum) {
+                        let mut cubiertas: Vec<bool> = variantes.iter().map(|_| false).collect();
+                        for brazo in brazos {
+                            match &brazo.patron {
+                                Patron::Constructor(nombre, _) => {
+                                    if let Some(pos) = variantes.iter().position(|v| v == nombre) {
+                                        cubiertas[pos] = true;
+                                    }
+                                }
+                                Patron::Ignorar => {
+                                    cubiertas.iter_mut().for_each(|c| *c = true);
+                                }
+                                Patron::Variable(_) => {
+                                    cubiertas.iter_mut().for_each(|c| *c = true);
+                                }
+                                _ => {}
+                            }
+                        }
+                        let no_cubiertas: Vec<String> = variantes.iter()
+                            .enumerate()
+                            .filter(|(i, _)| !cubiertas[*i])
+                            .map(|(_, v)| v.clone())
+                            .collect();
+                        if !no_cubiertas.is_empty() {
+                            self.errores.push(ErrorForja::new(
+                                ErrorTipo::ErrorSemantico,
+                                0, 0,
+                                &format!(
+                                    "Match no exhaustivo: faltan las variantes: {}",
+                                    no_cubiertas.join(", ")
+                                ),
+                                "Agregá un brazo para cada variante del enum, o usá '_' para cubrir el resto.",
+                            ));
+                        }
+                    }
+                }
+                // Verificar brazos inalcanzables
+                if brazos.len() > 1 {
+                    for (i, brazo) in brazos[..brazos.len()-1].iter().enumerate() {
+                        if matches!(brazo.patron, Patron::Ignorar) || matches!(brazo.patron, Patron::Variable(_)) {
+                            self.errores.push(ErrorForja::new(
+                                ErrorTipo::ErrorSemantico,
+                                0, 0,
+                                &format!("Brazo inalcanzable después del patrón comodín en posición {}", i),
+                                "Mové el patrón comodín al final del match.",
+                            ));
+                            break;
+                        }
                     }
                 }
                 None
@@ -588,6 +658,34 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
                 self.tabla.salir_ambito();
                 None
             }
+            Expresion::Hilo { cuerpo } => {
+                self.tabla.entrar_ambito();
+                for d in cuerpo {
+                    self.analizar_declaracion(d);
+                }
+                self.tabla.salir_ambito();
+                None
+            }
+            Expresion::Seleccionar { brazos } => {
+                for brazo in brazos {
+                    // Cada brazo tiene su propio ámbito
+                    self.tabla.entrar_ambito();
+                    // Si el brazo tiene recepción, declarar la variable local
+                    if let Some((var, _canal)) = &brazo.recepcion {
+                        let _ = self.tabla.declarar(var, false, 0, 0, None);
+                    }
+                    for d in &brazo.cuerpo {
+                        self.analizar_declaracion(d);
+                    }
+                    self.tabla.salir_ambito();
+                }
+                None
+            }
+            Expresion::CanalNuevo => None,
+            Expresion::Try(expr) => {
+                self.analizar_expresion(expr);
+                None
+            }
         }
     }
 }
@@ -598,26 +696,38 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
 
 /// Type Checker para Forja: infiere tipos de todas las expresiones
 /// y verifica compatibilidad en operaciones binarias, llamadas, etc.
-#[allow(dead_code)]
 pub struct TypeChecker {
     tabla: TablaSimbolos,
     errores: Vec<ErrorForja>,
-    /// Mapa de función -> (tipos_param (None si no tiene tipo explícito), tipo_retorno)
-    funciones: std::collections::HashMap<String, (Vec<Option<Tipo>>, Option<Tipo>)>,
+    /// Mapa de función -> (tipos_param (None si no tiene tipo explícito), tipo_retorno, parametros_tipo)
+    funciones: std::collections::HashMap<String, (Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>,
+    /// Tipos inferidos para cada variable (nombre -> tipo)
+    tipos: HashMap<String, Tipo>,
+    /// Definiciones de traits: nombre -> lista de firmas de métodos
+    traits: std::collections::HashMap<String, Vec<FirmaMetodo>>,
+    /// Parámetros de tipo inferidos durante la llamada a función genérica
+    tipos_param_genericos: std::collections::HashMap<String, Tipo>,
+    /// Mapa: nombre_del_tipo → [variante1, variante2, ...]
+    variantes_enum: HashMap<String, Vec<String>>,
 }
 
-#[allow(dead_code)]
 impl TypeChecker {
     pub fn new() -> Self {
         TypeChecker {
             tabla: TablaSimbolos::new(),
             errores: Vec::new(),
             funciones: std::collections::HashMap::new(),
+            tipos: HashMap::new(),
+            traits: std::collections::HashMap::new(),
+            tipos_param_genericos: std::collections::HashMap::new(),
+            variantes_enum: HashMap::new(),
         }
     }
 
     /// Analiza el AST completo: infiere tipos y verifica compatibilidad
     pub fn analizar(&mut self, programa: &Programa) -> Result<(), Vec<ErrorForja>> {
+        // Pasada 0: recolectar definiciones de traits
+        self.recolectar_traits(&programa.declaraciones);
         // Pasada 1: recolectar firmas de funciones
         self.recolectar_funciones(&programa.declaraciones);
         // Pasada 2: inferir tipos en declaraciones
@@ -630,15 +740,30 @@ impl TypeChecker {
         }
     }
 
+    /// Retorna el mapa de nombres de variables a sus tipos inferidos
+    pub fn obtener_tipos_inferidos(&self) -> HashMap<String, Tipo> {
+        self.tipos.clone()
+    }
+
     fn recolectar_funciones(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
-            if let Declaracion::Funcion { nombre, parametros, tipo_retorno, .. } = decl {
+            if let Declaracion::Funcion { nombre, parametros, tipo_retorno, parametros_tipo, .. } = decl {
                 // Guardamos los tipos explícitos de parámetros, pero contamos todos
                 // los parámetros (aunque no tengan tipo explícito)
                 let tipos_param: Vec<Option<Tipo>> = parametros.iter()
                     .map(|p| p.tipo.clone())
                     .collect();
-                self.funciones.insert(nombre.clone(), (tipos_param, tipo_retorno.clone()));
+                self.funciones.insert(nombre.clone(), (tipos_param, tipo_retorno.clone(), parametros_tipo.clone()));
+            }
+        }
+    }
+
+    fn recolectar_traits(&mut self, declaraciones: &[Declaracion]) {
+        for decl in declaraciones {
+            if let Declaracion::Trait { nombre, metodos } = decl {
+                self.traits.insert(nombre.clone(), metodos.clone());
+                // Registrar el trait como tipo conocido
+                self.tipos.insert(nombre.clone(), Tipo::TraitObjeto(nombre.clone()));
             }
         }
     }
@@ -657,6 +782,9 @@ impl TypeChecker {
                 } else {
                     None
                 };
+                if let Some(ref tipo) = tipo_inferido {
+                    self.tipos.insert(nombre.clone(), tipo.clone());
+                }
                 let _ = self.tabla.declarar(nombre, *mutable, 0, 0, tipo_inferido);
             }
 
@@ -713,8 +841,10 @@ impl TypeChecker {
                 self.tabla.salir_ambito();
             }
 
-            Declaracion::Funcion { nombre: _, parametros, cuerpo, .. } => {
+            Declaracion::Funcion { nombre: _, parametros_tipo, parametros, cuerpo, .. } => {
                 self.tabla.entrar_ambito();
+                // Los parámetros de tipo no se declaran en la tabla de variables,
+                // se manejan durante la inferencia de tipos
                 for param in parametros {
                     let _ = self.tabla.declarar(&param.nombre, param.mutable, 0, 0, param.tipo.clone());
                 }
@@ -722,7 +852,7 @@ impl TypeChecker {
                 self.tabla.salir_ambito();
             }
 
-            Declaracion::Clase { nombre: _, campos: _, metodos } => {
+            Declaracion::Clase { metodos, .. } => {
                 for metodo in metodos {
                     self.tabla.entrar_ambito();
                     let _ = self.tabla.declarar("self", false, 0, 0, None);
@@ -751,15 +881,53 @@ impl TypeChecker {
                 }
             }
 
+            Declaracion::Trait { .. } => {
+                // Los traits ya se recolectaron en recolectar_traits
+            }
+
+            Declaracion::Implementacion { trait_nombre, clase_nombre, metodos } => {
+                // Verificar que el trait existe
+                if let Some(firmas) = self.traits.get(trait_nombre) {
+                    // Verificar que todos los métodos del trait están implementados
+                    for firma in firmas {
+                        let implementado = metodos.iter().any(|m| m.nombre == firma.nombre);
+                        if !implementado {
+                            self.errores.push(ErrorForja::new(
+                                ErrorTipo::ErrorSemantico, 0, 0,
+                                &format!("El trait '{}' requiere el método '{}' que no está implementado en '{}'.",
+                                    trait_nombre, firma.nombre, clase_nombre),
+                                &format!("Implementá el método '{}' en la clase '{}'.", firma.nombre, clase_nombre),
+                            ));
+                        }
+                    }
+                } else {
+                    self.errores.push(ErrorForja::new(
+                        ErrorTipo::ErrorSemantico, 0, 0,
+                        &format!("El trait '{}' no está definido.", trait_nombre),
+                        "Definí el trait antes de usarlo con 'trait Nombre { ... }'.",
+                    ));
+                }
+                // Analizar los métodos de la implementación
+                for metodo in metodos {
+                    self.tabla.entrar_ambito();
+                    for param in &metodo.parametros {
+                        let _ = self.tabla.declarar(&param.nombre, param.mutable, 0, 0, param.tipo.clone());
+                    }
+                    self.analizar_declaraciones(&metodo.cuerpo);
+                    self.tabla.salir_ambito();
+                }
+            }
+
             Declaracion::Importar(_) => {}
-            Declaracion::Enum { .. } => {}
+            Declaracion::Enum { nombre, variantes, .. } => {
+                let var_names: Vec<String> = variantes.iter().map(|v| v.nombre.clone()).collect();
+                self.variantes_enum.insert(nombre.clone(), var_names);
+            }
 
             Declaracion::LlamadaFuncion { nombre, argumentos } => {
-                for arg in argumentos {
-                    self.inferir_tipo(arg);
-                }
+                let tipos_args: Vec<Option<Tipo>> = argumentos.iter().map(|arg| self.inferir_tipo(arg)).collect();
                 // Verificar cantidad de argumentos si conocemos la función
-                if let Some((ref params, _)) = self.funciones.get(nombre) {
+                if let Some((ref params, _, ref params_tipo)) = self.funciones.get(nombre) {
                     if argumentos.len() != params.len() {
                         self.errores.push(ErrorForja::new(
                             ErrorTipo::ErrorDeTipo, 0, 0,
@@ -767,6 +935,24 @@ impl TypeChecker {
                                 nombre, params.len(), argumentos.len()),
                             "Revisá la cantidad de argumentos.",
                         ));
+                    }
+                    // Inferir parámetros de tipo desde los argumentos
+                    if !params_tipo.is_empty() {
+                        // Mapa: nombre_param_tipo -> tipo concreto inferido
+                        let mut inferidos: std::collections::HashMap<String, Tipo> = std::collections::HashMap::new();
+                        for (i, param_tipo) in params_tipo.iter().enumerate() {
+                            if i < params.len() {
+                                if let Some(ref param_decl) = params[i] {
+                                    if let Tipo::Parametro(ref pnombre) = param_decl {
+                                        if let Some(ref arg_tipo) = tipos_args.get(i).and_then(|t| t.clone()) {
+                                            inferidos.insert(pnombre.clone(), arg_tipo.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Almacenar los tipos inferidos para usarlos en inferir_tipo
+                        self.tipos_param_genericos = inferidos;
                     }
                 }
             }
@@ -822,11 +1008,28 @@ impl TypeChecker {
             }
 
             Expresion::LlamadaFuncion { nombre, argumentos } => {
-                for arg in argumentos {
-                    self.inferir_tipo(arg);
-                }
+                let tipos_args: Vec<Option<Tipo>> = argumentos.iter().map(|arg| self.inferir_tipo(arg)).collect();
                 // Determinar tipo de retorno si conocemos la función
-                if let Some((_, ref retorno)) = self.funciones.get(nombre) {
+                if let Some((ref params, ref retorno, ref params_tipo)) = self.funciones.get(nombre).cloned() {
+                    // Inferir parámetros de tipo desde los argumentos
+                    if !params_tipo.is_empty() && argumentos.len() == params.len() {
+                        let mut inferidos: std::collections::HashMap<String, Tipo> = std::collections::HashMap::new();
+                        for (i, param_decl) in params.iter().enumerate() {
+                            if i < argumentos.len() {
+                                if let Some(ref p_tipo) = param_decl {
+                                    if let Tipo::Parametro(ref pnombre) = p_tipo {
+                                        if let Some(ref arg_tipo) = tipos_args.get(i).and_then(|t| t.clone()) {
+                                            inferidos.insert(pnombre.clone(), arg_tipo.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Sustituir parámetros de tipo en el tipo de retorno
+                        if let Some(ref ret) = retorno {
+                            return Some(self.sustituir_parametros_tipo(ret, &inferidos));
+                        }
+                    }
                     retorno.clone()
                 } else {
                     // escribir() no tiene tipo de retorno
@@ -843,7 +1046,12 @@ impl TypeChecker {
                 for arg in argumentos {
                     self.inferir_tipo(arg);
                 }
-                Some(Tipo::Clase(clase.clone()))
+                // Si el nombre es un trait, devolver TraitObjeto
+                if self.traits.contains_key(clase) {
+                    Some(Tipo::TraitObjeto(clase.clone()))
+                } else {
+                    Some(Tipo::Clase(clase.clone()))
+                }
             }
 
             Expresion::Referencia { expr: e, .. } => {
@@ -881,10 +1089,62 @@ impl TypeChecker {
             }
 
             Expresion::Coincidir { expr, brazos } => {
-                self.inferir_tipo(expr);
+                let tipo_expr = self.inferir_tipo(expr);
                 for brazo in brazos {
                     for d in &brazo.cuerpo {
                         self.analizar_declaracion(d);
+                    }
+                }
+                // Verificar exhaustividad
+                if let Some(Tipo::Clase(nombre_enum)) = &tipo_expr {
+                    if let Some(variantes) = self.variantes_enum.get(nombre_enum) {
+                        let mut cubiertas: Vec<bool> = variantes.iter().map(|_| false).collect();
+                        for brazo in brazos {
+                            match &brazo.patron {
+                                Patron::Constructor(nombre, _) => {
+                                    if let Some(pos) = variantes.iter().position(|v| v == nombre) {
+                                        cubiertas[pos] = true;
+                                    }
+                                }
+                                Patron::Ignorar => {
+                                    cubiertas.iter_mut().for_each(|c| *c = true);
+                                }
+                                Patron::Variable(_) => {
+                                    cubiertas.iter_mut().for_each(|c| *c = true);
+                                }
+                                _ => {}
+                            }
+                        }
+                        let no_cubiertas: Vec<String> = variantes.iter()
+                            .enumerate()
+                            .filter(|(i, _)| !cubiertas[*i])
+                            .map(|(_, v)| v.clone())
+                            .collect();
+                        if !no_cubiertas.is_empty() {
+                            self.errores.push(ErrorForja::new(
+                                ErrorTipo::ErrorDeTipo,
+                                0, 0,
+                                &format!(
+                                    "Match no exhaustivo: faltan las variantes: {}",
+                                    no_cubiertas.join(", ")
+                                ),
+                                "Agregá un brazo para cada variante del enum, o usá '_' para cubrir el resto.",
+                            ));
+                        }
+                    }
+                }
+                // Verificar brazos inalcanzables
+                if brazos.len() > 1 {
+                    for (i, brazo) in brazos[..brazos.len()-1].iter().enumerate() {
+                        if matches!(brazo.patron, Patron::Ignorar) || matches!(brazo.patron, Patron::Variable(_)) {
+                            self.errores.push(ErrorForja::new(
+                                ErrorTipo::ErrorDeTipo,
+                                0, 0,
+                                &format!("Brazo inalcanzable después del patrón comodín en posición {}", i),
+                                "Mové el patrón comodín al final del match.",
+                            ));
+                            break;
+                        }
                     }
                 }
                 None
@@ -901,6 +1161,67 @@ impl TypeChecker {
                 self.tabla.salir_ambito();
                 None
             }
+            Expresion::Hilo { cuerpo } => {
+                self.tabla.entrar_ambito();
+                for d in cuerpo {
+                    self.analizar_declaracion(d);
+                }
+                self.tabla.salir_ambito();
+                None
+            }
+            Expresion::CanalNuevo => None,
+            Expresion::Try(expr) => {
+                let tipo_expr = self.inferir_tipo(expr);
+                match tipo_expr {
+                    Some(Tipo::Resultado(ok_tipo, _)) => Some(*ok_tipo),
+                    Some(Tipo::Opcion(inner_tipo)) => Some(*inner_tipo),
+                    _ => {
+                        self.error_tipo("El operador ? solo se puede usar en expresiones de tipo Resultado u Opcion");
+                        None
+                    }
+                }
+            }
+            Expresion::Seleccionar { brazos } => {
+                for brazo in brazos {
+                    self.tabla.entrar_ambito();
+                    if let Some((var, _canal)) = &brazo.recepcion {
+                        let _ = self.tabla.declarar(var, false, 0, 0, None);
+                    }
+                    for d in &brazo.cuerpo {
+                        self.analizar_declaracion(d);
+                    }
+                    self.tabla.salir_ambito();
+                }
+                None
+            }
+        }
+    }
+
+    /// Sustituye parámetros de tipo (T, U) por tipos concretos en un tipo
+    fn sustituir_parametros_tipo(&self, tipo: &Tipo, inferidos: &std::collections::HashMap<String, Tipo>) -> Tipo {
+        match tipo {
+            Tipo::Parametro(nombre) => {
+                inferidos.get(nombre).cloned().unwrap_or_else(|| Tipo::Parametro(nombre.clone()))
+            }
+            Tipo::Arreglo(inner) => {
+                Tipo::Arreglo(Box::new(self.sustituir_parametros_tipo(inner, inferidos)))
+            }
+            Tipo::Resultado(ok, err) => {
+                Tipo::Resultado(
+                    Box::new(self.sustituir_parametros_tipo(ok, inferidos)),
+                    Box::new(self.sustituir_parametros_tipo(err, inferidos)),
+                )
+            }
+            Tipo::Opcion(inner) => {
+                Tipo::Opcion(Box::new(self.sustituir_parametros_tipo(inner, inferidos)))
+            }
+            Tipo::Funcion(params, ret) => {
+                let nuevos_params: Vec<Tipo> = params.iter()
+                    .map(|p| self.sustituir_parametros_tipo(p, inferidos))
+                    .collect();
+                Tipo::Funcion(nuevos_params, Box::new(self.sustituir_parametros_tipo(ret, inferidos)))
+            }
+            other => other.clone(),
         }
     }
 
@@ -955,6 +1276,20 @@ impl TypeChecker {
             ErrorTipo::ErrorDeTipo, 0, 0, msg,
             "Revisá los tipos de las expresiones.",
         ));
+    }
+}
+
+/// Función pública: infiere los tipos de todo un programa
+/// y retorna un HashMap<String, Tipo> con los tipos de cada variable.
+pub fn inferir_tipos_programa(declaraciones: &[Declaracion]) -> Result<HashMap<String, Tipo>, Vec<ErrorForja>> {
+    use crate::ast::Programa;
+    let mut type_checker = TypeChecker::new();
+    let programa = Programa {
+        declaraciones: declaraciones.to_vec(),
+    };
+    match type_checker.analizar(&programa) {
+        Ok(()) => Ok(type_checker.obtener_tipos_inferidos()),
+        Err(e) => Err(e),
     }
 }
 

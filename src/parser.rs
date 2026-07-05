@@ -44,15 +44,61 @@ impl Parser {
     // Parsing de declaraciones
     // ============================================================
 
+    /// Parsea atributos/anotaciones (@derive(Eq), @test, etc.)
+    fn parse_atributos(&mut self) -> Vec<Atributo> {
+        let mut atributos = Vec::new();
+        while self.coincide(TokenKind::Arroba) {
+            self.avanzar(); // consume @
+            if let TokenKind::Identificador(nombre) = self.peek().kind.clone() {
+                self.avanzar(); // consume nombre del atributo
+                let argumentos = if self.coincide(TokenKind::ParenAbrir) {
+                    self.avanzar(); // consume (
+                    let mut args = Vec::new();
+                    loop {
+                        if let TokenKind::Identificador(arg) = self.peek().kind.clone() {
+                            args.push(arg);
+                            self.avanzar();
+                        } else {
+                            break;
+                        }
+                        if self.coincide(TokenKind::Coma) {
+                            self.avanzar();
+                        } else {
+                            break;
+                        }
+                    }
+                    let _ = self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de argumentos de atributo");
+                    args
+                } else {
+                    Vec::new()
+                };
+                atributos.push(Atributo { nombre, argumentos });
+            } else {
+                break;
+            }
+        }
+        atributos
+    }
+
     /// Parsea una declaración. Retorna None si es EOF.
     fn parse_declaracion(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
         if self.es_eof() {
             return Ok(None);
         }
 
-        match self.peek().kind {
+        // Recolectar doc comments consecutivos (///) antes de la declaración
+        let doc_comment = self.recolectar_doc_comments();
+
+        // Recolectar atributos antes de parsear la declaración
+        let atributos = self.parse_atributos();
+
+        let mut decl = match self.peek().kind {
             TokenKind::Variable | TokenKind::Constante => self.parse_variable_decl(),
             TokenKind::Funcion => self.parse_funcion(),
+            TokenKind::Externo => {
+                self.avanzar(); // consumir 'externo'
+                self.parse_funcion_externa()
+            }
             TokenKind::Clase => self.parse_clase(),
             TokenKind::Si => self.parse_si(),
             TokenKind::Mientras => self.parse_mientras(),
@@ -60,13 +106,44 @@ impl Parser {
             TokenKind::Repetir => self.parse_repetir(),
             TokenKind::Retornar => self.parse_retornar(),
             TokenKind::Importar => self.parse_importar(),
+            TokenKind::Hilo => self.parse_hilo(),
+            TokenKind::Canal => self.parse_canal(),
+            TokenKind::Seleccionar => self.parse_seleccionar(),
+            TokenKind::Trait => self.parse_trait(),
+            TokenKind::Implementa => self.parse_implementacion(),
             TokenKind::LlaveCerrar => Ok(None), // fin de bloque
             _ => self.parse_statement_expresion(),
+        };
+
+        // Asignar atributos a las declaraciones que los soportan
+        if !atributos.is_empty() {
+            if let Ok(Some(ref mut d)) = decl {
+                match d {
+                    Declaracion::Clase { atributos: ref mut a, .. }
+                    | Declaracion::Funcion { atributos: ref mut a, .. }
+                    | Declaracion::Enum { atributos: ref mut a, .. } => {
+                        *a = atributos;
+                    }
+                    _ => {}
+                }
+            }
         }
+
+        // Asignar doc comment a la declaración (solo para Funcion por ahora)
+        if let Some(doc_text) = doc_comment {
+            if let Ok(Some(ref mut d)) = decl {
+                if let Declaracion::Funcion { ref mut doc, .. } = d {
+                    *doc = Some(doc_text);
+                }
+            }
+        }
+
+        decl
     }
 
     /// variable <nombre> [: <tipo>] [= <expr>]   → mutable
     /// constante <nombre> [: <tipo>] [= <expr>]  → inmutable
+    /// variable a, b = <expr>                     → asignación múltiple
     fn parse_variable_decl(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
         // Determinar si es mutable según el keyword
         let mutable = self.coincide(TokenKind::Variable);
@@ -79,6 +156,23 @@ impl Parser {
                 "Se esperaba un nombre de constante después de 'constante'."
             }
         )?;
+
+        // Detectar asignación múltiple: variable a, b = expr
+        if self.coincide(TokenKind::Coma) {
+            let mut variables = vec![nombre];
+            while self.coincide(TokenKind::Coma) {
+                self.avanzar(); // consumir ','
+                let var = self.esperar_identificador("Se esperaba un nombre de variable.")?;
+                variables.push(var);
+            }
+            self.esperar(TokenKind::Igual, "Se esperaba '=' después de las variables.")?;
+            let valor = self.parse_expresion()?;
+            return Ok(Some(Declaracion::AsignacionMultiple {
+                variables,
+                mutable,
+                valor: Box::new(valor),
+            }));
+        }
 
         // Tipo opcional
         let tipo = if self.coincide(TokenKind::DosPuntos) {
@@ -109,6 +203,10 @@ impl Parser {
         self.avanzar(); // consume 'funcion'
 
         let nombre = self.esperar_identificador("Se esperaba el nombre de la función.")?;
+
+        // Parsear parámetros de tipo genérico <T, U> si existen
+        let parametros_tipo = self.parse_parametros_tipo()?;
+
         self.esperar(TokenKind::ParenAbrir, "Se esperaba '(' después del nombre de la función.")?;
         let parametros = self.parse_parametros()?;
         self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de los parámetros.")?;
@@ -139,17 +237,76 @@ impl Parser {
 
         Ok(Some(Declaracion::Funcion {
             nombre,
+            parametros_tipo,
             parametros,
             tipo_retorno,
             cuerpo,
+            externa: false,
+            enlace_nombre: None,
+            atributos: vec![],
+            doc: None,
         }))
     }
 
-    /// clase <nombre> { <campos> <metodos> }
+    /// externo funcion <nombre>(<parametros>) [-> <Tipo>] ;
+    fn parse_funcion_externa(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
+        // Esperar 'funcion'
+        self.esperar(TokenKind::Funcion, "Se esperaba 'funcion' después de 'externo'.")?;
+        let nombre = self.esperar_identificador("Se esperaba el nombre de la función externa.")?;
+
+        // Parsear params como función normal
+        self.esperar(TokenKind::ParenAbrir, "Se esperaba '(' después del nombre de la función externa.")?;
+        let parametros = self.parse_parametros()?;
+        self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de los parámetros.")?;
+
+        // Tipo de retorno opcional
+        let tipo_retorno = if self.coincide(TokenKind::Menos) {
+            let col = self.columna_actual();
+            self.avanzar();
+            if self.coincide(TokenKind::Mayor) {
+                self.avanzar();
+                Some(self.parse_tipo()?)
+            } else {
+                return Err(ErrorForja::new(
+                    ErrorTipo::ErrorSintactico,
+                    self.linea_actual(),
+                    col,
+                    "Se esperaba '->' para el tipo de retorno.",
+                    "Usá '-> Tipo' para indicar el tipo de retorno de la función externa.",
+                ));
+            }
+        } else {
+            None
+        };
+
+        // El enlace_nombre es el mismo nombre de la función (simplificación)
+        let enlace_nombre = Some(nombre.clone());
+
+        // Función externa termina con ; NO con {}
+        self.esperar(TokenKind::PuntoComa, "Se esperaba ';' al final de la declaración externa.")?;
+
+        Ok(Some(Declaracion::Funcion {
+            nombre,
+            parametros_tipo: vec![], // funciones externas no tienen genéricos
+            parametros,
+            tipo_retorno,
+            cuerpo: vec![], // sin cuerpo
+            externa: true,
+            enlace_nombre,
+            atributos: vec![],
+            doc: None,
+        }))
+    }
+
+    /// clase <nombre> [<T>] { <campos> <metodos> }
     fn parse_clase(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
         self.avanzar(); // consume 'clase'
 
         let nombre = self.esperar_identificador("Se esperaba el nombre de la clase.")?;
+
+        // Parsear parámetros de tipo genérico <T, U> si existen
+        let parametros_tipo = self.parse_parametros_tipo()?;
+
         self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' para el cuerpo de la clase.")?;
 
         let mut campos = Vec::new();
@@ -168,9 +325,92 @@ impl Parser {
 
         Ok(Some(Declaracion::Clase {
             nombre,
+            parametros_tipo,
             campos,
             metodos,
+            atributos: vec![],
         }))
+    }
+
+    /// trait <nombre> { funcion nombre(params) [-> Tipo] ... }
+    fn parse_trait(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
+        self.avanzar(); // consume 'trait'
+
+        let nombre = self.esperar_identificador("Se esperaba el nombre del trait.")?;
+        self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' para iniciar cuerpo del trait.")?;
+
+        let mut metodos = Vec::new();
+        while !self.coincide(TokenKind::LlaveCerrar) && !self.es_eof() {
+            // Cada método en trait: funcion nombre(params) [-> Tipo]
+            if self.coincide(TokenKind::Funcion) {
+                self.avanzar(); // consume 'funcion'
+                let nombre_metodo = self.esperar_identificador("Se esperaba nombre del método en trait.")?;
+                self.esperar(TokenKind::ParenAbrir, "Se esperaba '(' después del nombre del método.")?;
+                let parametros = self.parse_parametros()?;
+                self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de los parámetros.")?;
+
+                let tipo_retorno = if self.coincide(TokenKind::Menos) {
+                    let col = self.columna_actual();
+                    self.avanzar();
+                    if self.coincide(TokenKind::Mayor) {
+                        self.avanzar();
+                        Some(self.parse_tipo()?)
+                    } else {
+                        return Err(ErrorForja::new(
+                            ErrorTipo::ErrorSintactico,
+                            self.linea_actual(),
+                            col,
+                            "Se esperaba '->' para el tipo de retorno.",
+                            "Usá '-> Tipo' después de los parámetros.",
+                        ));
+                    }
+                } else {
+                    None
+                };
+
+                metodos.push(FirmaMetodo { nombre: nombre_metodo, parametros, tipo_retorno });
+            }
+            // Si no es 'funcion', avanzar para evitar bucle infinito
+            if !self.coincide(TokenKind::Funcion) && !self.coincide(TokenKind::LlaveCerrar) {
+                self.avanzar();
+            }
+        }
+        self.esperar(TokenKind::LlaveCerrar, "Se esperaba '}' para cerrar el trait.")?;
+        Ok(Some(Declaracion::Trait { nombre, metodos }))
+    }
+
+    /// implementa <trait> para <clase> { funcion nombre(params) { ... } ... }
+    fn parse_implementacion(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
+        self.avanzar(); // consume 'implementa'
+        let trait_nombre = self.esperar_identificador("Se esperaba nombre del trait.")?;
+
+        // consumir 'para'
+        if !self.coincide(TokenKind::Para) {
+            return Err(ErrorForja::new(
+                ErrorTipo::ErrorSintactico,
+                self.linea_actual(),
+                self.columna_actual(),
+                "Se esperaba 'para' después del nombre del trait.",
+                "Usá: implementa Trait para Clase { ... }",
+            ));
+        }
+        self.avanzar(); // consume 'para'
+
+        let clase_nombre = self.esperar_identificador("Se esperaba nombre de la clase.")?;
+        self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' para el cuerpo de la implementación.")?;
+
+        let mut metodos = Vec::new();
+        while !self.coincide(TokenKind::LlaveCerrar) && !self.es_eof() {
+            if self.coincide(TokenKind::Funcion) {
+                metodos.push(self.parse_metodo_en_clase()?);
+            }
+            // Si no es 'funcion', avanzar para evitar bucle infinito
+            if !self.coincide(TokenKind::Funcion) && !self.coincide(TokenKind::LlaveCerrar) {
+                self.avanzar();
+            }
+        }
+        self.esperar(TokenKind::LlaveCerrar, "Se esperaba '}' para cerrar la implementación.")?;
+        Ok(Some(Declaracion::Implementacion { trait_nombre, clase_nombre, metodos }))
     }
 
     /// Parsea un campo dentro de una clase: <nombre> [= <expr>]
@@ -255,6 +495,26 @@ impl Parser {
         }
 
         Ok(parametros)
+    }
+
+    /// Parsea parámetros de tipo genérico: <T, U, V>
+    /// Retorna vacío si no hay <>
+    fn parse_parametros_tipo(&mut self) -> Result<Vec<ParametroTipo>, ErrorForja> {
+        let mut params = Vec::new();
+        if self.coincide(TokenKind::Menor) {
+            self.avanzar(); // consume <
+            loop {
+                let nombre = self.esperar_identificador("Se esperaba nombre de parámetro de tipo")?;
+                params.push(ParametroTipo { nombre });
+                if self.coincide(TokenKind::Coma) {
+                    self.avanzar();
+                } else {
+                    break;
+                }
+            }
+            self.esperar(TokenKind::Mayor, "Se esperaba > para cerrar parámetros de tipo")?;
+        }
+        Ok(params)
     }
 
     /// si (<cond>) { <bloque> } [ sino { <bloque> } ]
@@ -404,6 +664,83 @@ impl Parser {
         };
         self.avanzar();
         Ok(Some(Declaracion::Importar(ruta)))
+    }
+
+    /// hilo { <cuerpo> }  → como declaración
+    fn parse_hilo(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
+        self.avanzar(); // consumir 'hilo'
+        self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' después de 'hilo'.")?;
+        let cuerpo = self.parse_bloque()?;
+        // parse_bloque ya consume '}'
+        Ok(Some(Declaracion::Expresion(Expresion::Hilo { cuerpo })))
+    }
+
+    /// canal()  → como declaración
+    fn parse_canal(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
+        self.avanzar(); // consumir 'canal'
+        self.esperar(TokenKind::ParenAbrir, "Se esperaba '(' después de 'canal'.")?;
+        self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de '('.")?;
+        Ok(Some(Declaracion::Expresion(Expresion::CanalNuevo)))
+    }
+
+    /// seleccionar { caso valor = canal.recibir() { ... } tiempo ms { ... } otro { ... } }
+    fn parse_seleccionar(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
+        self.avanzar(); // consume 'seleccionar'
+        self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' después de 'seleccionar'.")?;
+
+        let mut brazos = Vec::new();
+        while !self.coincide(TokenKind::LlaveCerrar) && !self.es_eof() {
+            if self.coincide(TokenKind::Caso) {
+                self.avanzar(); // consume 'caso'
+                // caso variable = canal.recibir() { ... }
+                let var_nombre = self.esperar_identificador("Se esperaba nombre de variable después de 'caso'.")?;
+                self.esperar(TokenKind::Igual, "Se esperaba '=' después del nombre de variable.")?;
+
+                // Parsear canal.recibir() como expresión
+                let canal_expr = self.parse_expresion_primaria()?;
+                let nombre_canal = extraer_nombre_canal(&canal_expr);
+
+                self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' para el cuerpo del caso.")?;
+                let cuerpo = self.parse_bloque()?;
+                brazos.push(BrazoSeleccionar {
+                    recepcion: Some((var_nombre, nombre_canal)),
+                    timeout_ms: 0,
+                    cuerpo,
+                });
+            } else if self.coincide(TokenKind::Tiempo) {
+                self.avanzar(); // consume 'tiempo'
+                // tiempo milisegundos { ... }
+                let tiempo_expr = self.parse_expresion_primaria()?;
+                let timeout_ms = extraer_numero(&tiempo_expr);
+                self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' después del timeout.")?;
+                let cuerpo = self.parse_bloque()?;
+                brazos.push(BrazoSeleccionar {
+                    recepcion: None,
+                    timeout_ms,
+                    cuerpo,
+                });
+            } else if self.coincide(TokenKind::Otro) {
+                self.avanzar(); // consume 'otro'
+                self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' después de 'otro'.")?;
+                let cuerpo = self.parse_bloque()?;
+                brazos.push(BrazoSeleccionar {
+                    recepcion: None,
+                    timeout_ms: 0,
+                    cuerpo,
+                });
+            } else {
+                // Token inesperado dentro de seleccionar
+                return Err(ErrorForja::new(
+                    crate::error::ErrorTipo::ErrorSintactico,
+                    self.linea_actual(),
+                    self.columna_actual(),
+                    &format!("Se esperaba 'caso', 'tiempo' u 'otro' dentro de 'seleccionar', pero se encontró: {}", self.peek().kind),
+                    "Usá: seleccionar { caso var = canal.recibir() { ... } tiempo 1000 { ... } otro { ... } }",
+                ));
+            }
+        }
+        self.esperar(TokenKind::LlaveCerrar, "Se esperaba '}' para cerrar 'seleccionar'.")?;
+        Ok(Some(Declaracion::Expresion(Expresion::Seleccionar { brazos })))
     }
 
     /// Parsea un statement que comienza con una expresión
@@ -728,6 +1065,10 @@ impl Parser {
             if let TokenKind::Texto(ref s) = self.peek().kind {
                 let s = s.clone();
                 self.avanzar();
+                // Verificar si este Texto es parte de una interpolación
+                if self.hay_interpolacion() {
+                    return self.parse_string_interpolado(s);
+                }
                 return Ok(Expresion::LiteralTexto(s));
             }
         }
@@ -826,6 +1167,22 @@ impl Parser {
             });
         }
 
+        // hilo { ... } como expresión
+        if self.coincide(TokenKind::Hilo) {
+            self.avanzar();
+            self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' después de 'hilo'.")?;
+            let cuerpo = self.parse_bloque()?;
+            return Ok(Expresion::Hilo { cuerpo });
+        }
+
+        // canal() como expresión
+        if self.coincide(TokenKind::Canal) {
+            self.avanzar();
+            self.esperar(TokenKind::ParenAbrir, "Se esperaba '(' después de 'canal'.")?;
+            self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de '('.")?;
+            return Ok(Expresion::CanalNuevo);
+        }
+
         Err(ErrorForja::new(
             ErrorTipo::ErrorSintactico,
             self.linea_actual(),
@@ -835,25 +1192,93 @@ impl Parser {
         ))
     }
 
-    /// Parsea postfijo: .miembro, .metodo(), (args), [índice]
-    fn parse_postfijo(&mut self, expr: Expresion) -> Result<Expresion, ErrorForja> {
-        if self.coincide(TokenKind::Punto) {
-            return self.parse_acceso_miembro(expr);
+    /// Verifica si el token actual es el inicio de una expresión interpolada.
+    /// Solo incluimos tokens que NUNCA pueden seguir legalmente a un string
+    /// literal en código Forja normal (ej: Identificador, Numero, ParenAbrir).
+    /// Keywords como Escribir, Leer, Nuevo, etc. NO se incluyen porque pueden
+    /// iniciar una nueva declaración después de un string literal.
+    fn hay_interpolacion(&self) -> bool {
+        if self.es_eof() {
+            return false;
         }
-        if self.coincide(TokenKind::ParenAbrir) {
-            self.avanzar();
-            let argumentos = self.parse_argumentos()?;
-            self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de los argumentos.")?;
-            if let Expresion::Identificador(nombre) = expr {
-                return Ok(Expresion::LlamadaFuncion { nombre, argumentos });
+        match &self.peek().kind {
+            TokenKind::Identificador(_)
+            | TokenKind::Numero(_)
+            | TokenKind::Decimal(_)
+            | TokenKind::ParenAbrir
+            | TokenKind::Menos
+            | TokenKind::No
+            | TokenKind::Verdadero
+            | TokenKind::Falso
+            | TokenKind::Nulo => true,
+            _ => false,
+        }
+    }
+
+    /// Parsea un string interpolado, construyendo una cadena de concatenaciones binarias
+    /// "Hola ${nombre}" → Suma(LiteralTexto("Hola "), Identificador("nombre"))
+    fn parse_string_interpolado(&mut self, primer_fragmento: String) -> Result<Expresion, ErrorForja> {
+        let mut expr = Expresion::LiteralTexto(primer_fragmento);
+
+        loop {
+            // Parsear la expresión interpolada (con postfijo: .miembro, (args), [índice])
+            let expr_interp = self.parse_expresion_primaria()?;
+            expr = Expresion::Binaria {
+                izquierda: Box::new(expr),
+                operador: Operador::Suma,
+                derecha: Box::new(expr_interp),
+            };
+
+            // Si el siguiente token es otro Texto, concatenarlo también
+            if self.coincide(TokenKind::Texto(String::new())) {
+                if let TokenKind::Texto(ref s) = self.peek().kind {
+                    let s = s.clone();
+                    self.avanzar();
+                    expr = Expresion::Binaria {
+                        izquierda: Box::new(expr),
+                        operador: Operador::Suma,
+                        derecha: Box::new(Expresion::LiteralTexto(s)),
+                    };
+                }
+                // Si después del Texto hay más interpolación, continuar.
+                // Si no, hemos terminado.
+                if !self.hay_interpolacion() {
+                    break;
+                }
+            } else {
+                break;
             }
-            return Ok(Expresion::LlamadaFuncion {
-                nombre: "anon".to_string(),
-                argumentos,
-            });
         }
-        if self.coincide(TokenKind::CorcheteAbrir) {
-            return self.parse_index(expr);
+
+        Ok(expr)
+    }
+
+    /// Parsea postfijo: .miembro, .metodo(), (args), [índice], ? (Try)
+    fn parse_postfijo(&mut self, expr: Expresion) -> Result<Expresion, ErrorForja> {
+        let mut expr = expr;
+        loop {
+            if self.coincide(TokenKind::Punto) {
+                expr = self.parse_acceso_miembro(expr)?;
+            } else if self.coincide(TokenKind::ParenAbrir) {
+                self.avanzar();
+                let argumentos = self.parse_argumentos()?;
+                self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de los argumentos.")?;
+                if let Expresion::Identificador(nombre) = expr {
+                    expr = Expresion::LlamadaFuncion { nombre, argumentos };
+                } else {
+                    expr = Expresion::LlamadaFuncion {
+                        nombre: "anon".to_string(),
+                        argumentos,
+                    };
+                }
+            } else if self.coincide(TokenKind::CorcheteAbrir) {
+                expr = self.parse_index(expr)?;
+            } else if self.coincide(TokenKind::Interrogacion) {
+                self.avanzar(); // consumir ?
+                expr = Expresion::Try(Box::new(expr));
+            } else {
+                break;
+            }
         }
         Ok(expr)
     }
@@ -1057,21 +1482,80 @@ impl Parser {
             TokenKind::TipoTexto => { self.avanzar(); Ok(Tipo::Texto) }
             TokenKind::TipoBooleano => { self.avanzar(); Ok(Tipo::Booleano) }
             TokenKind::Identificador(s) => {
-                let tipo = match s.as_str() {
-                    "Entero" => Tipo::Entero,
-                    "Decimal" => Tipo::Decimal,
-                    "Texto" => Tipo::Texto,
-                    "Booleano" => Tipo::Booleano,
-                    _ => Tipo::Clase(s.clone()),
-                };
+                let nombre = s.clone();
                 self.avanzar();
-                Ok(tipo)
+
+                // Verificar si es un parámetro de tipo genérico (una letra mayúscula: T, U, V, E, K)
+                let es_parametro_tipo = nombre.len() == 1
+                    && nombre.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false);
+
+                // Verificar si sigue < para tipos genéricos: Nombre<T> o Nombre<T, E>
+                if self.coincide(TokenKind::Menor) {
+                    self.avanzar(); // consumir <
+                    let tipo_params = self.parse_lista_tipos()?;
+                    self.esperar(TokenKind::Mayor, "Se esperaba '>' para cerrar el tipo genérico.")?;
+
+                    match nombre.as_str() {
+                        "Resultado" if tipo_params.len() == 2 => {
+                            Ok(Tipo::Resultado(
+                                Box::new(tipo_params[0].clone()),
+                                Box::new(tipo_params[1].clone()),
+                            ))
+                        }
+                        "Opcion" if tipo_params.len() == 1 => {
+                            Ok(Tipo::Opcion(Box::new(tipo_params[0].clone())))
+                        }
+                        _ => {
+                            // Si el nombre es un parámetro de tipo (T, U, etc.) y tiene params, es un error
+                            if es_parametro_tipo {
+                                Err(ErrorForja::new(
+                                    ErrorTipo::ErrorSintactico,
+                                    self.linea_actual(),
+                                    self.columna_actual(),
+                                    &format!("El parámetro de tipo '{}' no puede tener parámetros genéricos", nombre),
+                                    "Usá el nombre del parámetro directamente.",
+                                ))
+                            } else {
+                                Err(ErrorForja::new(
+                                    ErrorTipo::ErrorSintactico,
+                                    self.linea_actual(),
+                                    self.columna_actual(),
+                                    &format!("Tipo genérico '{}' desconocido o número incorrecto de parámetros", nombre),
+                                    "Usá Resultado<T, E> o Opcion<T>.",
+                                ))
+                            }
+                        }
+                    }
+                } else if es_parametro_tipo {
+                    // Es un parámetro de tipo genérico (T, U, V, etc.)
+                    Ok(Tipo::Parametro(nombre))
+                } else {
+                    let tipo = match nombre.as_str() {
+                        "Entero" => Tipo::Entero,
+                        "Decimal" => Tipo::Decimal,
+                        "Texto" => Tipo::Texto,
+                        "Booleano" => Tipo::Booleano,
+                        _ => Tipo::Clase(nombre),
+                    };
+                    Ok(tipo)
+                }
             }
             _ => {
                 self.avanzar();
                 Ok(Tipo::Clase("auto".to_string()))
             }
         }
+    }
+
+    /// Parsea una lista de tipos separados por coma (para genéricos: <T, E>)
+    fn parse_lista_tipos(&mut self) -> Result<Vec<Tipo>, ErrorForja> {
+        let mut tipos = Vec::new();
+        tipos.push(self.parse_tipo()?);
+        while self.coincide(TokenKind::Coma) {
+            self.avanzar();
+            tipos.push(self.parse_tipo()?);
+        }
+        Ok(tipos)
     }
 
     // ============================================================
@@ -1125,6 +1609,24 @@ impl Parser {
         }
     }
 
+    /// Recolecta todos los doc comments (///) consecutivos y los concatena
+    fn recolectar_doc_comments(&mut self) -> Option<String> {
+        let mut partes = Vec::new();
+        while self.coincide(TokenKind::DocComment(String::new())) {
+            if let TokenKind::DocComment(ref doc) = self.peek().kind {
+                partes.push(doc.clone());
+                self.avanzar();
+            } else {
+                break;
+            }
+        }
+        if partes.is_empty() {
+            None
+        } else {
+            Some(partes.join("\n"))
+        }
+    }
+
     /// Verifica si el token actual es de cierto tipo
     fn coincide(&self, kind: TokenKind) -> bool {
         if self.pos >= self.tokens.len() {
@@ -1174,10 +1676,19 @@ impl Parser {
         }
     }
 
-    /// Espera un identificador y devuelve su nombre
+    /// Espera un identificador y devuelve su nombre.
+    /// También acepta ciertas palabras clave que pueden usarse como nombres de método (enviar, recibir, unir, etc.)
     fn esperar_identificador(&mut self, mensaje: &str) -> Result<String, ErrorForja> {
         let nombre = match &self.peek().kind {
             TokenKind::Identificador(name) => name.clone(),
+            // Palabras clave que pueden usarse como identificadores (métodos como .enviar(), .recibir(), .unir())
+            TokenKind::Enviar => "enviar".to_string(),
+            TokenKind::Recibir => "recibir".to_string(),
+            TokenKind::Unir => "unir".to_string(),
+            TokenKind::Escribir => "escribir".to_string(),
+            TokenKind::Leer => "leer".to_string(),
+            TokenKind::Tipo => "tipo".to_string(),
+            TokenKind::Trait => "trait".to_string(),
             _ => return Err(ErrorForja::new(
                 ErrorTipo::ErrorSintactico,
                 self.linea_actual(),
@@ -1219,6 +1730,30 @@ impl Parser {
                 | TokenKind::No
                 | TokenKind::Amp
         )
+    }
+}
+
+// ============================================================
+// Funciones auxiliares para parse_seleccionar
+// ============================================================
+
+/// Extrae el nombre del canal de una expresión como "rx1.recibir()"
+fn extraer_nombre_canal(expr: &Expresion) -> String {
+    // De "rx1.recibir()" extraer "rx1"
+    if let Expresion::LlamadaFuncion { nombre, .. } = expr {
+        if let Some(dot_pos) = nombre.find('.') {
+            return nombre[..dot_pos].to_string();
+        }
+    }
+    String::new()
+}
+
+/// Extrae un número entero de una expresión literal
+fn extraer_numero(expr: &Expresion) -> u64 {
+    if let Expresion::LiteralNumero(n) = expr {
+        *n as u64
+    } else {
+        0
     }
 }
 

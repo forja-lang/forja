@@ -10,9 +10,12 @@ authors = ["lococoi"]
 # El JSON se genera manualmente en error.rs
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+crossbeam = { version = "0.8", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rustyline = "14"
+tower-lsp = "0.20"
+tokio = { version = "1", features = ["full"] }
 
 [[bench]]
 name = "bench-fa"
@@ -65,6 +68,10 @@ path = "benchmarks/bench_forjafast.rs"
 [[bench]]
 name = "debug-bytecode"
 path = "benchmarks/debug_bytecode.rs"
+
+[[bin]]
+name = "forja-lsp"
+path = "src/bin/forja_lsp.rs"
 
 [target.'cfg(not(target_arch = "wasm32"))'.build-dependencies]
 winresource = "0.1"

@@ -47,6 +47,9 @@ pub enum Uop {
     // === I/O ===
     Print, ReadLine,
 
+    // === Propagación de errores ===
+    Try,
+
     // === Comparison/Lógica ===
     Igual, Diferente, Menor, Mayor, MenorIgual, MayorIgual,
     Y, O, No,
@@ -233,6 +236,9 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::MulStoreFloat(_idx) => {
             Uop::MulFloat
         }
+
+        // Propagación de errores
+        Opcode::Try => Uop::Try,
 
         // AVX2 packed SIMD opcodes (JIT-only, pasan como no-op en uops)
         Opcode::AddPacked(_, _, _, _)

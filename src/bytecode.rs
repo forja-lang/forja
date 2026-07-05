@@ -97,6 +97,9 @@ pub enum Opcode {
     Label(usize),
     Halt,
 
+    // === Propagación de errores ===
+    Try,
+
     // === Funciones ===
     FunctionDef(Rc<str>, Vec<Rc<str>>), // (nombre, parámetros)
     Call(Rc<str>, usize),
@@ -242,6 +245,8 @@ pub struct BytecodeGenerator {
     pub opcodes: Vec<Opcode>,
     label_counter: usize,
     errores: Vec<ErrorForja>,
+    /// Tipos inferidos por el TypeChecker (compile-time type information)
+    tipos_inferidos: Option<std::collections::HashMap<String, Tipo>>,
 }
 
 impl BytecodeGenerator {
@@ -250,6 +255,116 @@ impl BytecodeGenerator {
             opcodes: Vec::new(),
             label_counter: 0,
             errores: Vec::new(),
+            tipos_inferidos: None,
+        }
+    }
+
+    /// Establece los tipos inferidos para usar en especialización de opcodes
+    pub fn set_tipos_inferidos(&mut self, tipos: std::collections::HashMap<String, Tipo>) {
+        self.tipos_inferidos = Some(tipos);
+    }
+
+    /// Dada una expresión, intenta inferir su tipo usando la información
+    /// del TypeChecker (para variables) o el tipo literal directo.
+    fn inferir_tipo_expresion(&self, expr: &Expresion) -> Option<Tipo> {
+        match expr {
+            Expresion::LiteralNumero(_) => Some(Tipo::Entero),
+            Expresion::LiteralDecimal(_) => Some(Tipo::Decimal),
+            Expresion::LiteralTexto(_) => Some(Tipo::Texto),
+            Expresion::LiteralBooleano(_) => Some(Tipo::Booleano),
+            Expresion::Identificador(nombre) => {
+                // Keywords booleanos
+                match nombre.as_str() {
+                    "verdadero" | "falso" => Some(Tipo::Booleano),
+                    _ => self.tipos_inferidos.as_ref()?.get(nombre).cloned(),
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Emite el opcode binario correspondiente, especializando por tipo
+    /// cuando la información de tipos está disponible (compile-time).
+    fn emitir_op_binaria(&mut self, op: &Operador, izquierda: &Expresion, derecha: &Expresion) {
+        // Para módulo, siempre usamos la descomposición genérica (no hay ModInt/ModFloat)
+        if let Operador::Modulo = op {
+            // a % b = a - (a/b)*b
+            self.generar_expresion(izquierda);
+            self.generar_expresion(izquierda);
+            self.generar_expresion(derecha);
+            self.emitir(Opcode::Div);
+            self.generar_expresion(derecha);
+            self.emitir(Opcode::Mul);
+            self.emitir(Opcode::Sub);
+            return;
+        }
+
+        // Intentar inferir tipos para especialización en compile-time
+        let tipo_izq = self.inferir_tipo_expresion(izquierda);
+        let tipo_der = self.inferir_tipo_expresion(derecha);
+
+        let especializado = match (op, tipo_izq, tipo_der) {
+            // Aritméticas: Entero-Entero
+            (Operador::Suma, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::AddInt),
+            (Operador::Resta, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::SubInt),
+            (Operador::Multiplicacion, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::MulInt),
+            (Operador::Division, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::DivInt),
+            // Aritméticas: Decimal-Decimal
+            (Operador::Suma, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::AddFloat),
+            (Operador::Resta, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::SubFloat),
+            (Operador::Multiplicacion, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MulFloat),
+            (Operador::Division, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::DivFloat),
+            // Aritméticas: mixto Entero-Decimal → Decimal
+            (Operador::Suma, Some(Tipo::Entero), Some(Tipo::Decimal))
+            | (Operador::Suma, Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Opcode::AddFloat),
+            (Operador::Resta, Some(Tipo::Entero), Some(Tipo::Decimal))
+            | (Operador::Resta, Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Opcode::SubFloat),
+            (Operador::Multiplicacion, Some(Tipo::Entero), Some(Tipo::Decimal))
+            | (Operador::Multiplicacion, Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Opcode::MulFloat),
+            (Operador::Division, Some(Tipo::Entero), Some(Tipo::Decimal))
+            | (Operador::Division, Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Opcode::DivFloat),
+            // Comparaciones: Entero-Entero
+            (Operador::IgualIgual, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::IgualInt),
+            (Operador::Menor, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::MenorInt),
+            (Operador::Mayor, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::MayorInt),
+            // Comparaciones: Decimal-Decimal
+            (Operador::IgualIgual, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::IgualFloat),
+            (Operador::Diferente, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::DiferenteFloat),
+            (Operador::Menor, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MenorFloat),
+            (Operador::Mayor, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MayorFloat),
+            (Operador::MenorIgual, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MenorIgualFloat),
+            (Operador::MayorIgual, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MayorIgualFloat),
+            // Sin información de tipos → usar genérico
+            _ => None,
+        };
+
+        match especializado {
+            Some(op_especializado) => {
+                self.generar_expresion(izquierda);
+                self.generar_expresion(derecha);
+                self.emitir(op_especializado);
+            }
+            None => {
+                // Fallback: emitir opcode genérico
+                self.generar_expresion(izquierda);
+                self.generar_expresion(derecha);
+                let op = match op {
+                    Operador::Suma => Opcode::Add,
+                    Operador::Resta => Opcode::Sub,
+                    Operador::Multiplicacion => Opcode::Mul,
+                    Operador::Division => Opcode::Div,
+                    Operador::Mayor => Opcode::Mayor,
+                    Operador::Menor => Opcode::Menor,
+                    Operador::MayorIgual => Opcode::MayorIgual,
+                    Operador::MenorIgual => Opcode::MenorIgual,
+                    Operador::IgualIgual => Opcode::Igual,
+                    Operador::Diferente => Opcode::Diferente,
+                    Operador::Y => Opcode::Y,
+                    Operador::O => Opcode::O,
+                    _ => unreachable!(),
+                };
+                self.emitir(op);
+            }
         }
     }
 
@@ -287,6 +402,7 @@ impl BytecodeGenerator {
                         }).collect();
                         let func_decl = Declaracion::Funcion {
                             nombre: format!("{}.{}", nombre, metodo.nombre),
+                            parametros_tipo: vec![],
                             parametros: {
                                 let mut p = vec![crate::ast::Parametro {
                                     nombre: "self".to_string(), prestado: false, mutable: false, tipo: None
@@ -296,6 +412,10 @@ impl BytecodeGenerator {
                             },
                             tipo_retorno: None,
                             cuerpo: metodo.cuerpo.clone(),
+                            externa: false,
+                            enlace_nombre: None,
+                            atributos: vec![],
+                            doc: None,
                         };
                         nuevas_funciones.push(func_decl);
                     }
@@ -370,8 +490,16 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::Return);
             }
 
-            Declaracion::Clase { nombre: _, campos: _, metodos: _ } => {
+            Declaracion::Clase { .. } => {
                 // Los métodos de clase se generan como funciones aparte
+            }
+
+            Declaracion::Trait { .. } => {
+                // Los traits son verificados en análisis semántico, ignorados en bytecode
+            }
+
+            Declaracion::Implementacion { .. } => {
+                // Las implementaciones generan funciones para cada método
             }
 
             Declaracion::Importar(_) => {}
@@ -539,6 +667,14 @@ impl BytecodeGenerator {
                 // (solo si no es una llamada a función que ya manejamos)
                 self.emitir(Opcode::Pop);
             }
+
+            Declaracion::AsignacionMultiple { variables, valor, .. } => {
+                // Bytecode: evaluar valor, luego asignar a cada variable
+                self.generar_expresion(valor);
+                for _ in variables {
+                    self.emitir(Opcode::Pop); // descartar valores extra
+                }
+            }
         }
     }
 
@@ -560,39 +696,7 @@ impl BytecodeGenerator {
             }
 
             Expresion::Binaria { izquierda, operador, derecha } => {
-                match operador {
-                    Operador::Modulo => {
-                        // a % b = a - (a/b)*b
-                        // Generamos: a, a, b, Div, b, Mul, Sub (stack atómico)
-                        self.generar_expresion(izquierda);
-                        self.generar_expresion(izquierda);
-                        self.generar_expresion(derecha);
-                        self.emitir(Opcode::Div);
-                        self.generar_expresion(derecha);
-                        self.emitir(Opcode::Mul);
-                        self.emitir(Opcode::Sub);
-                    }
-                    _ => {
-                        self.generar_expresion(izquierda);
-                        self.generar_expresion(derecha);
-                        let op = match operador {
-                            Operador::Suma => Opcode::Add,
-                            Operador::Resta => Opcode::Sub,
-                            Operador::Multiplicacion => Opcode::Mul,
-                            Operador::Division => Opcode::Div,
-                            Operador::Mayor => Opcode::Mayor,
-                            Operador::Menor => Opcode::Menor,
-                            Operador::MayorIgual => Opcode::MayorIgual,
-                            Operador::MenorIgual => Opcode::MenorIgual,
-                            Operador::IgualIgual => Opcode::Igual,
-                            Operador::Diferente => Opcode::Diferente,
-                            Operador::Y => Opcode::Y,
-                            Operador::O => Opcode::O,
-                            _ => unreachable!(),
-                        };
-                        self.emitir(op);
-                    }
-                }
+                self.emitir_op_binaria(operador, izquierda, derecha);
             }
 
             Expresion::Unaria { operador, expr: e } => {
@@ -654,12 +758,16 @@ impl BytecodeGenerator {
                     for arg in argumentos {
                         self.generar_expresion(arg);
                     }
-                    self.emitir(Opcode::Call(
-                        Rc::from(format!("{}.nuevo", clase).as_str()),
-                        argumentos.len() + 1,
-                    ));
+                    self.emitir(Opcode::Call(Rc::from("nuevo"), argumentos.len()));
                 }
+                self.emitir(Opcode::Pop); // pop objeto
             }
+
+            Expresion::Try(expr) => {
+                self.generar_expresion(expr);
+                self.emitir(Opcode::Try);
+            }
+
 
             Expresion::Referencia { expr: e, .. } => {
                 self.generar_expresion(e);
@@ -705,6 +813,27 @@ impl BytecodeGenerator {
 
             Expresion::Grupo(expr) => {
                 self.generar_expresion(expr);
+            }
+
+            Expresion::Hilo { cuerpo } => {
+                // Concurrencia no implementada en bytecode VM
+                for d in cuerpo {
+                    self.generar_declaracion(d);
+                }
+            }
+
+            Expresion::CanalNuevo => {
+                // Concurrencia no implementada en bytecode VM
+                self.emitir(Opcode::PushNulo);
+            }
+            Expresion::Seleccionar { brazos } => {
+                // No implementado en bytecode VM - ejecutar todos los cuerpos secuencialmente
+                for brazo in brazos {
+                    for d in &brazo.cuerpo {
+                        self.generar_declaracion(d);
+                    }
+                }
+                self.emitir(Opcode::PushNulo);
             }
         }
     }
@@ -1752,7 +1881,8 @@ mod tests {
         let bc = generar_bytecode("variable x = 2 + 3").unwrap();
         assert_eq!(bc[0], Opcode::PushEntero(2));
         assert_eq!(bc[1], Opcode::PushEntero(3));
-        assert_eq!(bc[2], Opcode::Add);
+        // Ahora se emite AddInt porque ambos literales se infieren como Entero
+        assert_eq!(bc[2], Opcode::AddInt);
         assert_eq!(bc[3], Opcode::Declare(Rc::from("x"), true));
         assert_eq!(bc[4], Opcode::Halt);
     }
@@ -1797,5 +1927,99 @@ mod tests {
         let serializado = serializar_bytecode(&bc);
         assert!(serializado.len() > 8);
         assert_eq!(&serializado[0..4], b"FBC\0");
+    }
+
+    // ============================================================
+    // Tests de especialización de opcodes en compile-time
+    // ============================================================
+
+    /// Helper que usa el pipeline completo (con TypeChecker + tipos inferidos)
+    fn generar_bytecode_con_tipos(source: &str) -> Result<Vec<Opcode>, String> {
+        use crate::lexer::Lexer;
+        use crate::parser::Parser;
+        use crate::semantics::TypeChecker;
+
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
+        let mut parser = Parser::new(tokens);
+        let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+
+        let mut type_checker = TypeChecker::new();
+        type_checker.analizar(&programa).map_err(|e| format!("{}", e[0]))?;
+        let tipos_inferidos = type_checker.obtener_tipos_inferidos();
+
+        let mut gen = BytecodeGenerator::new();
+        gen.set_tipos_inferidos(tipos_inferidos);
+        gen.generar(&programa).map_err(|_| "Error generando bytecode".to_string())
+    }
+
+    #[test]
+    fn test_especializacion_entero_suma() {
+        // 5 + 3 debe emitir AddInt (ambos operandos son LiteralNumero → Entero)
+        let bc = generar_bytecode_con_tipos("variable x = 5 + 3").unwrap();
+        assert!(
+            bc.iter().any(|i| matches!(i, Opcode::AddInt)),
+            "Se esperaba AddInt en las instrucciones, pero se encontraron: {:?}",
+            bc
+        );
+    }
+
+    #[test]
+    fn test_especializacion_decimal_suma() {
+        // 2.5 + 3.7 debe emitir AddFloat (ambos operandos son LiteralDecimal → Decimal)
+        let bc = generar_bytecode_con_tipos("variable x = 2.5 + 3.7").unwrap();
+        assert!(
+            bc.iter().any(|i| matches!(i, Opcode::AddFloat)),
+            "Se esperaba AddFloat en las instrucciones, pero se encontraron: {:?}",
+            bc
+        );
+    }
+
+    #[test]
+    fn test_especializacion_entero_multiplicacion() {
+        // 4 * 2 debe emitir MulInt
+        let bc = generar_bytecode_con_tipos("variable x = 4 * 2").unwrap();
+        assert!(
+            bc.iter().any(|i| matches!(i, Opcode::MulInt)),
+            "Se esperaba MulInt en las instrucciones, pero se encontraron: {:?}",
+            bc
+        );
+    }
+
+    #[test]
+    fn test_especializacion_entero_comparacion() {
+        // 5 < 3 debe emitir MenorInt
+        let bc = generar_bytecode_con_tipos("variable x = 5 < 3").unwrap();
+        assert!(
+            bc.iter().any(|i| matches!(i, Opcode::MenorInt)),
+            "Se esperaba MenorInt en las instrucciones, pero se encontraron: {:?}",
+            bc
+        );
+    }
+
+    #[test]
+    fn test_especializacion_con_variable() {
+        // variable x = 5; variable y = x + 3 → x es Entero, 3 es Entero → AddInt
+        let bc = generar_bytecode_con_tipos("variable x = 5\nvariable y = x + 3").unwrap();
+        assert!(
+            bc.iter().any(|i| matches!(i, Opcode::AddInt)),
+            "Se esperaba AddInt (variable + literal), pero se encontraron: {:?}",
+            bc
+        );
+    }
+
+    #[test]
+    fn test_fallback_generico_variables_sin_tipo() {
+        // Sin type inference para variables (solo literales tienen tipo conocido),
+        // el generador debe emitir opcodes genéricos para operaciones entre variables.
+        // Nota: los literales SIEMPRE se especializan (AddInt para 5 + 3).
+        // El fallback genérico solo se usa cuando NO se puede inferir el tipo.
+        let bc = generar_bytecode("variable x = \"hola\" + 5").unwrap();
+        // "hola" es Texto, 5 es Entero → tipos diferentes → fallback a Add genérico
+        assert!(
+            bc.iter().any(|i| matches!(i, Opcode::Add)),
+            "Se esperaba Add genérico (tipos incompatibles), pero se encontraron: {:?}",
+            bc
+        );
     }
 }

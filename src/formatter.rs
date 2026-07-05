@@ -85,6 +85,35 @@ impl Formatter {
                     self.push("retornar\n");
                 }
             }
+            Declaracion::Trait { nombre, metodos } => {
+                self.push(&format!("trait {} {{\n", nombre));
+                self.indent += 1;
+                for metodo in metodos {
+                    let params: Vec<String> = metodo.parametros.iter().map(|p| p.nombre.clone()).collect();
+                    let ret = if let Some(ref t) = metodo.tipo_retorno {
+                        format!(" -> {:?}", t)
+                    } else {
+                        String::new()
+                    };
+                    self.push(&format!("funcion {}({}){}\n", metodo.nombre, params.join(", "), ret));
+                }
+                self.indent -= 1;
+                self.push(&format!("{}}}\n", self.indent_str()));
+            }
+            Declaracion::Implementacion { trait_nombre, clase_nombre, metodos } => {
+                self.push(&format!("implementa {} para {} {{\n", trait_nombre, clase_nombre));
+                self.indent += 1;
+                for metodo in metodos {
+                    let params: Vec<String> = metodo.parametros.iter().map(|p| p.nombre.clone()).collect();
+                    self.push(&format!("funcion {}({}) {{\n", metodo.nombre, params.join(", ")));
+                    self.indent += 1;
+                    for d in &metodo.cuerpo { self.formatear_declaracion(d); }
+                    self.indent -= 1;
+                    self.push(&format!("{}}}\n", self.indent_str()));
+                }
+                self.indent -= 1;
+                self.push(&format!("{}}}\n", self.indent_str()));
+            }
             _ => {}
         }
     }
@@ -125,6 +154,24 @@ impl Formatter {
                 format!("[{}]", elems.join(", "))
             }
             Expresion::Grupo(expr) => format!("({})", self.expresion_a_string(expr)),
+            Expresion::Seleccionar { brazos } => {
+                let mut out = String::from("seleccionar {\n");
+                for brazo in brazos {
+                    if let Some((var, canal)) = &brazo.recepcion {
+                        out.push_str(&format!("    caso {} = {}.recibir() {{\n", var, canal));
+                    } else if brazo.timeout_ms > 0 {
+                        out.push_str(&format!("    tiempo {} {{\n", brazo.timeout_ms));
+                    } else {
+                        out.push_str("    otro {\n");
+                    }
+                    for d in &brazo.cuerpo {
+                        out.push_str(&format!("        {:?}\n", d));
+                    }
+                    out.push_str("    }\n");
+                }
+                out.push_str("}");
+                out
+            }
             _ => "?".to_string(),
         }
     }

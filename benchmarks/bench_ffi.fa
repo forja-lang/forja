@@ -1,0 +1,13 @@
+// Benchmark FFI — Mide rendimiento de llamadas a funciones externas
+importar "std/io"
+
+// Llamada FFI a función del sistema
+externa funcion strlen(s: Texto) -> Entero
+externa funcion abs(n: Entero) -> Entero
+
+variable inicio = tiempo_actual()
+para i = 1 mientras i <= 100000 {
+    variable x = abs(-i)
+}
+variable fin = tiempo_actual()
+escribir("100000 llamadas FFI a abs(): " + (fin - inicio) + "ms")

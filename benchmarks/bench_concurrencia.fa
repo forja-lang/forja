@@ -1,0 +1,37 @@
+// Benchmark de Concurrencia — Mide speedup con hilos/canales
+importar "std/io"
+
+funcion trabajo_pesado(n) {
+    variable suma = 0
+    para i = 1 mientras i <= n {
+        suma = suma + i * i
+    }
+    retornar suma
+}
+
+// Sin concurrencia (secuencial)
+variable inicio = tiempo_actual()
+variable r1 = trabajo_pesado(1000000)
+variable r2 = trabajo_pesado(1000000)
+variable r3 = trabajo_pesado(1000000)
+variable fin = tiempo_actual()
+escribir("Secuencial: " + (fin - inicio) + "ms")
+
+// Con concurrencia (3 hilos)
+inicio = tiempo_actual()
+variable t1, r1 = canal()
+variable t2, r2 = canal()
+variable t3, r3 = canal()
+
+variable h1 = hilo { t1.enviar(trabajo_pesado(1000000)) }
+variable h2 = hilo { t2.enviar(trabajo_pesado(1000000)) }
+variable h3 = hilo { t3.enviar(trabajo_pesado(1000000)) }
+
+variable resultado1 = r1.recibir()
+variable resultado2 = r2.recibir()
+variable resultado3 = r3.recibir()
+h1.unir()
+h2.unir()
+h3.unir()
+fin = tiempo_actual()
+escribir("Con 3 hilos: " + (fin - inicio) + "ms")

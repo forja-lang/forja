@@ -1,16 +1,22 @@
 {
   "name": "forja-syntax",
   "displayName": "Forja Language",
-  "description": "Soporte de sintaxis para el lenguaje Forja (.fa)",
-  "version": "0.3.0",
+  "description": "Soporte para el lenguaje Forja — sintaxis, LSP, formateo y diagnósticos",
+  "version": "0.4.0",
   "publisher": "forja-lang",
   "license": "MIT",
   "engines": {
-    "vscode": "^1.70.0"
+    "vscode": "^1.60.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Formatters",
+    "Linters"
   ],
+  "activationEvents": [
+    "onLanguage:forja"
+  ],
+  "main": "./out/extension.js",
   "contributes": {
     "languages": [{
       "id": "forja",
@@ -22,6 +28,21 @@
       "language": "forja",
       "scopeName": "source.forja",
       "path": "./syntaxes/forja.tmLanguage.json"
+    }],
+    "commands": [{
+      "command": "forja.run",
+      "title": "Forja: Ejecutar archivo"
     }]
+  },
+  "scripts": {
+    "compile": "tsc -p ./tsconfig.json",
+    "watch": "tsc -watch -p ./tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.60.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^8.0.0"
   }
 }

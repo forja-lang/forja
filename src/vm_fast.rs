@@ -2178,6 +2178,7 @@ impl ForjaFast {
                             shape,
                             mro: vec![clase_sym],
                             metodos: HashMap::new(),
+                            traits: Vec::new(),
                         };
                         self.class_descriptors.insert(clase_sym, desc);
                     }
@@ -2810,6 +2811,10 @@ impl ForjaFast {
                 Opcode::ReduceAdd(_, _) | Opcode::LoadAddPacked(_, _, _) => {
                     self.ip += 1;
                 }
+                // Propagación de errores (no implementado)
+                Opcode::Try => {
+                    return Err(ErrFast::TipoInv("? no implementado en VM rápida".into()));
+                }
             }
             // Aplicar patch de especialización/des-especialización diferido
             if let Some(op) = patch_op {
@@ -3255,6 +3260,7 @@ impl ForjaFast {
                             shape,
                             mro: vec![clase_sym],
                             metodos: HashMap::new(),
+                            traits: Vec::new(),
                         };
                         self.class_descriptors.insert(clase_sym, desc);
                     }
@@ -3522,6 +3528,10 @@ impl ForjaFast {
                         self.push_valor(m);
                     } else { return Err(ErrFast::TipoInv("map[]=".into())); }
                     self.ip += 1;
+                }
+                // Propagación de errores (no implementado)
+                Uop::Try => {
+                    return Err(ErrFast::TipoInv("? (Try) no implementado en VM rápida".into()));
                 }
             }
         }

@@ -1,0 +1,15 @@
+// Test de seleccionar con canales
+variable tx1, rx1 = canal()
+variable h1 = hilo {
+    tx1.enviar(42)
+}
+variable dato = rx1.recibir()
+seleccionar {
+    caso valor = rx1.recibir() {
+        escribir("recibido")
+    }
+    otro {
+        escribir("sin datos")
+    }
+}
+escribir(dato)
