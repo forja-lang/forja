@@ -216,6 +216,7 @@ pub enum ErrorVM {
     LabelNoEncontrada(usize),
     FuncionNoDefinida(String),
     LimiteDeEjecucion,
+    ErrorPropagado(ValorVM),
 }
 
 impl std::fmt::Display for ErrorVM {
@@ -230,6 +231,7 @@ impl std::fmt::Display for ErrorVM {
             ErrorVM::FuncionNoDefinida(fn_name) => write!(f, "Función '{}' no definida", fn_name),
             ErrorVM::StackOverflow(msg) => write!(f, "Desbordamiento de pila: {}", msg),
             ErrorVM::LimiteDeEjecucion => write!(f, "Límite de instrucciones alcanzado (1,000,000)"),
+            ErrorVM::ErrorPropagado(_) => write!(f, "Error propagado con el operador ?"),
         }
     }
 }
@@ -1227,6 +1229,40 @@ impl ForjaVM {
                     self.ip += 1;
                 }
 
+                Opcode::Try => {
+                    let valor = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Try".to_string()))?;
+                    let es_error = match &valor {
+                        ValorVM::Objeto(obj) => {
+                            let obj_ref = obj.0.borrow();
+                            let mut result = false;
+                            if let Some(tipo) = obj_ref.campos.get("tipo") {
+                                if let ValorVM::Texto(s) = tipo {
+                                    if s == "error" || s == "none" {
+                                        result = true;
+                                    }
+                                }
+                            }
+                            result
+                        }
+                        _ => return Err(ErrorVM::TipoIncompatible(
+                                "Se esperaba Resultado/Opcion para el operador ?".into(),
+                            )),
+                    };
+                    if es_error {
+                        return Err(ErrorVM::ErrorPropagado(valor));
+                    }
+                    // Extraer valor interno
+                    if let ValorVM::Objeto(obj) = &valor {
+                        let obj_ref = obj.0.borrow();
+                        if let Some(valor_interno) = obj_ref.campos.get("valor") {
+                            self.stack.push(valor_interno.clone());
+                        } else {
+                            self.stack.push(ValorVM::Nulo);
+                        }
+                    }
+                    self.ip += 1;
+                }
+
                 Opcode::Halt => break,
                 // Superinstructions (Fase 1a) — no implementadas en VM estándar
                 _ => return Err(ErrorVM::TipoIncompatible(format!("Opcode no soportado en VM estándar: {:?}", opcode))),
@@ -1612,6 +1648,41 @@ impl ForjaVM {
                 Uop::No => {
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("No".to_string()))?;
                     self.stack.push(ValorVM::Booleano(!a.es_verdadero()));
+                    self.ip += 1;
+                }
+
+                // === PROPAGACIÓN DE ERRORES ===
+                Uop::Try => {
+                    let valor = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Try".to_string()))?;
+                    let es_error = match &valor {
+                        ValorVM::Objeto(obj) => {
+                            let obj_ref = obj.0.borrow();
+                            let mut result = false;
+                            if let Some(tipo) = obj_ref.campos.get("tipo") {
+                                if let ValorVM::Texto(s) = tipo {
+                                    if s == "error" || s == "none" {
+                                        result = true;
+                                    }
+                                }
+                            }
+                            result
+                        }
+                        _ => return Err(ErrorVM::TipoIncompatible(
+                                "Se esperaba Resultado/Opcion para el operador ?".into(),
+                            )),
+                    };
+                    if es_error {
+                        return Err(ErrorVM::ErrorPropagado(valor));
+                    }
+                    // Extraer valor interno
+                    if let ValorVM::Objeto(obj) = &valor {
+                        let obj_ref = obj.0.borrow();
+                        if let Some(valor_interno) = obj_ref.campos.get("valor") {
+                            self.stack.push(valor_interno.clone());
+                        } else {
+                            self.stack.push(ValorVM::Nulo);
+                        }
+                    }
                     self.ip += 1;
                 }
 

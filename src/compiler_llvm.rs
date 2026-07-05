@@ -50,9 +50,13 @@ impl LlvmBackend {
     // ── API pública ──
     pub fn compile(&mut self, decls: &[Declaracion]) -> Result<(), String> {
         for d in decls {
-            if let Declaracion::Funcion { nombre, parametros, .. } = d {
+            if let Declaracion::Funcion { nombre, parametros, externa, .. } = d {
                 let ps: Vec<String> = (0..parametros.len()).map(|i| format!("i64 %p{}", i)).collect();
-                raw!(self.out, "declare i64 @{}({})", nombre, ps.join(", "));
+                if *externa {
+                    raw!(self.out, "declare i64 @{}({})", nombre, ps.join(", "));
+                } else {
+                    raw!(self.out, "declare i64 @{}({})", nombre, ps.join(", "));
+                }
                 self.funcs.push(nombre.clone());
             }
         }
@@ -104,10 +108,17 @@ impl LlvmBackend {
                 let i = self.expr(indice)?; let v = self.expr(valor)?;
                 line!(self.out, "; assign {}[{}] = {}", nombre, i, v);
             }
-            Declaracion::Funcion { nombre, parametros, cuerpo, .. } => {
-                self.funcion(nombre, parametros, cuerpo)?;
+            Declaracion::Funcion { nombre, parametros, cuerpo, externa, .. } => {
+                if *externa {
+                    // Función externa: ya declarada en el primer pase, no definir
+                    // Solo registrar que existe
+                } else {
+                    self.funcion(nombre, parametros, cuerpo)?;
+                }
             }
             Declaracion::Clase { .. } => {}
+            Declaracion::Trait { .. } => {}
+            Declaracion::Implementacion { .. } => {}
             Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
                 self.si(condicion, bloque_verdadero, bloque_falso.as_deref())?;
             }
@@ -123,6 +134,7 @@ impl LlvmBackend {
             }
             Declaracion::Importar(_) | Declaracion::Enum { .. } => {}
             Declaracion::Expresion(expr) => { self.expr(expr)?; }
+            Declaracion::AsignacionMultiple { valor, .. } => { self.expr(valor)?; }
         }
         Ok(())
     }
@@ -381,6 +393,28 @@ impl LlvmBackend {
                 Ok(v)
             }
             Expresion::Closure { .. } => Ok("0".into()),
+            Expresion::Hilo { .. } => {
+                // Concurrencia no implementada en LLVM
+                Ok("0".into())
+            }
+            Expresion::CanalNuevo => {
+                // Concurrencia no implementada en LLVM
+                Ok("0".into())
+            }
+            Expresion::Seleccionar { brazos } => {
+                // No implementado en LLVM
+                for brazo in brazos {
+                    for d in &brazo.cuerpo {
+                        self.decl(d)?;
+                    }
+                }
+                Ok("0".into())
+            }
+            Expresion::Try(expr) => {
+                let _expr_str = self.expr(expr)?;
+                // ? no implementado en LLVM aún
+                Ok("0".into())
+            }
         }
     }
 

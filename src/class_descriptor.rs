@@ -38,4 +38,5 @@ pub struct ClassDescriptor {
     pub shape: Shape,
     pub mro: Vec<SymId>,    // Orden de resolución: [clase, padre, ...]
     pub metodos: HashMap<SymId, SymId>,  // nombre_método → nombre_función (SymId de "Clase.metodo")
+    pub traits: Vec<SymId>,              // NUEVO: traits que implementa esta clase
 }

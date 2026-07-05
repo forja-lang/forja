@@ -1,0 +1,9 @@
+@test
+funcion test_pasa() {
+    asegurar(1 + 1 == 2)
+}
+
+@test
+funcion test_falla() {
+    asegurar(1 + 1 == 3)
+}

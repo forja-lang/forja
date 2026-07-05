@@ -10,3 +10,6 @@ $null
 benchmarks/**/*.html
 benchmarks/**/*.o
 .cargo/
+.roo/
+COMPARACION_FORJA_VS_RAVEN.md
+/*test

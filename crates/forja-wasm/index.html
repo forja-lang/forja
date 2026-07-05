@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forja Playground</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        header {
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        header h1 { font-size: 20px; color: #58a6ff; }
+        header h1 span { color: #f0883e; }
+        .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        select, button {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #c9d1d9;
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-family: inherit;
+        }
+        select:hover, button:hover { background: #30363d; }
+        button.primary { background: #238636; border-color: #2ea043; }
+        button.primary:hover { background: #2ea043; }
+        button.danger { background: #da3633; border-color: #f85149; }
+        button.danger:hover { background: #f85149; }
+        main { 
+            display: flex; 
+            flex: 1;
+            gap: 0;
+            min-height: 0;
+        }
+        .editor-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #30363d;
+            min-width: 0;
+        }
+        .editor-header {
+            padding: 8px 16px;
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #8b949e;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .editor-header .line-count {
+            text-transform: none;
+            font-size: 11px;
+            opacity: 0.7;
+        }
+        .editor-wrapper {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        .editor-wrapper textarea {
+            width: 100%;
+            height: 100%;
+            background: #0d1117;
+            color: #c9d1d9;
+            border: none;
+            padding: 16px;
+            font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            resize: none;
+            outline: none;
+            tab-size: 4;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .editor-wrapper textarea:focus {
+            box-shadow: inset 0 0 0 1px #58a6ff;
+        }
+        .output-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        .output-header {
+            padding: 8px 16px;
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #8b949e;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .output-content {
+            flex: 1;
+            padding: 16px;
+            font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .output-content.error { color: #f85149; }
+        .output-content.success { color: #7ee787; }
+        .output-content.info { color: #8b949e; font-style: italic; }
+        .status-bar {
+            background: #161b22;
+            border-top: 1px solid #30363d;
+            padding: 6px 16px;
+            font-size: 12px;
+            color: #8b949e;
+            display: flex;
+            justify-content: space-between;
+        }
+        .status-bar .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #3fb950;
+            display: inline-block;
+        }
+        .status-dot.busy { background: #d29922; animation: pulse 1s infinite; }
+        .status-dot.error { background: #f85149; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .toast {
+            position: fixed;
+            bottom: 60px;
+            right: 20px;
+            background: #238636;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s ease;
+            pointer-events: none;
+            z-index: 100;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .toast.error {
+            background: #da3633;
+        }
+        @media (max-width: 768px) {
+            main { flex-direction: column; }
+            .editor-panel { 
+                border-right: none; 
+                border-bottom: 1px solid #30363d; 
+                height: 50vh; 
+            }
+            header h1 { font-size: 16px; }
+            .toolbar { width: 100%; justify-content: flex-start; }
+        }
+        @media (max-width: 480px) {
+            header { padding: 8px 12px; }
+            .toolbar select { max-width: 140px; }
+            .editor-wrapper textarea { font-size: 12px; padding: 10px; }
+            .output-content { font-size: 12px; padding: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>✦ <span>Forja</span> Playground</h1>
+        <div class="toolbar">
+            <select id="ejemplos">
+                <option value="">— Cargar ejemplo —</option>
+            </select>
+            <button id="btn-ejecutar" class="primary">▶ Ejecutar</button>
+            <button id="btn-compartir">🔗 Compartir</button>
+            <button id="btn-limpiar">🗑 Limpiar</button>
+        </div>
+    </header>
+    <main>
+        <div class="editor-panel">
+            <div class="editor-header">
+                <span>📝 Editor</span>
+                <span class="line-count" id="line-count">Líneas: 1</span>
+            </div>
+            <div class="editor-wrapper">
+                <textarea id="editor" spellcheck="false" placeholder="Escribí tu código Forja aquí...">importar "std/io"
+
+escribir("¡Hola, Forja!")</textarea>
+            </div>
+        </div>
+        <div class="output-panel">
+            <div class="output-header">
+                <span>📋 Salida</span>
+                <span id="output-status"></span>
+            </div>
+            <div class="output-content info" id="output">// Haz clic en ▶ Ejecutar para compilar
+// o presioná Ctrl+Enter</div>
+        </div>
+    </main>
+    <div class="status-bar">
+        <div class="status-indicator">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status">Listo</span>
+        </div>
+        <span id="version">v0.1.0</span>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <!-- WASM module -->
+    <script type="module">
+        import init, { compilar, forja_ejecutar, obtener_ejemplos, decodificar_url, codificar_url, version, forja_tokenizar } from './pkg/forja_wasm.js';
+
+        // --- DOM refs ---
+        const editor = document.getElementById('editor');
+        const output = document.getElementById('output');
+        const statusEl = document.getElementById('status');
+        const statusDot = document.getElementById('status-dot');
+        const versionEl = document.getElementById('version');
+        const ejemplosSelect = document.getElementById('ejemplos');
+        const lineCount = document.getElementById('line-count');
+        const outputStatus = document.getElementById('output-status');
+        const toast = document.getElementById('toast');
+
+        let toastTimeout = null;
+
+        function showToast(msg, isError = false) {
+            toast.textContent = msg;
+            toast.className = 'toast' + (isError ? ' error' : '');
+            toast.classList.add('show');
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => toast.classList.remove('show'), 2500);
+        }
+
+        function setStatus(text, type = 'ready') {
+            statusEl.textContent = text;
+            statusDot.className = 'status-dot';
+            if (type === 'busy') statusDot.classList.add('busy');
+            else if (type === 'error') statusDot.classList.add('error');
+        }
+
+        function updateLineCount() {
+            const lines = editor.value.split('\n').length;
+            lineCount.textContent = `Líneas: ${lines}`;
+        }
+
+        // --- Inicialización ---
+        async function init() {
+            try {
+                await init();
+
+                // Versión
+                try {
+                    const v = version();
+                    versionEl.textContent = 'v' + v;
+                } catch(e) {
+                    versionEl.textContent = 'v0.1.0';
+                }
+
+                // Cargar ejemplos
+                try {
+                    const ejemplosData = JSON.parse(obtener_ejemplos());
+                    ejemplosData.forEach(([nombre, codigo]) => {
+                        const option = document.createElement('option');
+                        option.value = codigo;
+                        option.textContent = nombre;
+                        ejemplosSelect.appendChild(option);
+                    });
+                } catch(e) {
+                    console.error('Error cargando ejemplos:', e);
+                }
+
+                // Cargar código desde URL
+                const params = new URLSearchParams(window.location.search);
+                const codigoParam = params.get('c');
+                if (codigoParam) {
+                    try {
+                        const decoded = decodificar_url(codigoParam);
+                        if (decoded) {
+                            editor.value = decoded;
+                            updateLineCount();
+                            setStatus('Código cargado desde URL');
+                            showToast('📎 Código cargado desde la URL');
+                        }
+                    } catch(e) {
+                        console.error('Error decodificando URL:', e);
+                    }
+                }
+
+                // --- Event Listeners ---
+
+                // Ejecutar
+                document.getElementById('btn-ejecutar').addEventListener('click', ejecutar);
+
+                // Ctrl+Enter
+                editor.addEventListener('keydown', (e) => {
+                    if (e.ctrlKey && e.key === 'Enter') {
+                        e.preventDefault();
+                        ejecutar();
+                    }
+                });
+
+                // Actualizar contador de líneas
+                editor.addEventListener('input', updateLineCount);
+
+                // Selector de ejemplos
+                ejemplosSelect.addEventListener('change', (e) => {
+                    if (e.target.value) {
+                        editor.value = e.target.value;
+                        updateLineCount();
+                        output.textContent = '// ✅ Ejemplo cargado. Hacé clic en ▶ Ejecutar';
+                        output.className = 'output-content info';
+                        outputStatus.textContent = '';
+                        setStatus(`Ejemplo "${e.target.options[e.target.selectedIndex].text}" cargado`);
+                    }
+                });
+
+                // Compartir
+                document.getElementById('btn-compartir').addEventListener('click', compartir);
+
+                // Limpiar
+                document.getElementById('btn-limpiar').addEventListener('click', () => {
+                    editor.value = '';
+                    updateLineCount();
+                    output.textContent = '// Editor limpiado';
+                    output.className = 'output-content info';
+                    outputStatus.textContent = '';
+                    setStatus('Editor limpiado');
+                });
+
+                // F5 para ejecutar
+                editor.addEventListener('keydown', (e) => {
+                    if (e.key === 'F5') {
+                        e.preventDefault();
+                        ejecutar();
+                    }
+                });
+
+                setStatus('Listo');
+                updateLineCount();
+
+            } catch(e) {
+                console.error('Error de inicialización:', e);
+                output.textContent = '// ❌ Error al cargar el módulo WASM\n// Asegurate de haber ejecutado wasm-pack build\n\n' + e;
+                output.className = 'output-content error';
+                setStatus('Error de inicialización', 'error');
+            }
+        }
+
+        // --- Ejecutar ---
+        async function ejecutar() {
+            const codigo = editor.value;
+
+            if (!codigo.trim()) {
+                output.textContent = '// ⚠️ El código está vacío\n// Escribí algún código Forja para compilar';
+                output.className = 'output-content error';
+                outputStatus.textContent = '';
+                return;
+            }
+
+            setStatus('Compilando...', 'busy');
+            outputStatus.textContent = '⏳';
+            output.textContent = '// Compilando...\n';
+
+            try {
+                // Compilar a Rust y mostrar resultado
+                const resultado = compilar(codigo);
+
+                if (resultado.startsWith('Error:')) {
+                    output.textContent = '// ❌ Error de compilación\n\n' + resultado;
+                    output.className = 'output-content error';
+                    outputStatus.textContent = '❌';
+                    setStatus('Error de compilación', 'error');
+                    return;
+                }
+
+                // También ejecutar en la VM para mostrar output
+                try {
+                    const ejecucion = await forja_ejecutar(codigo);
+                    output.textContent = '// ✅ Compilación exitosa\n\n' + resultado;
+                    output.className = 'output-content success';
+                    outputStatus.textContent = '✅';
+                    setStatus('Compilado exitosamente');
+
+                    // Si hay output de ejecución, mostrarlo también
+                    if (ejecucion && ejecucion.trim()) {
+                        output.textContent += '\n\n// --- Ejecución ---\n' + ejecucion;
+                    }
+                } catch (execError) {
+                    // Compilación OK pero ejecución falló
+                    output.textContent = '// ✅ Compilación exitosa (ejecución no disponible)\n\n' + resultado;
+                    output.className = 'output-content success';
+                    outputStatus.textContent = '✅';
+                    setStatus('Compilado (sin ejecución)');
+                }
+
+            } catch (e) {
+                output.textContent = '// ❌ Error\n\n' + e;
+                output.className = 'output-content error';
+                outputStatus.textContent = '❌';
+                setStatus('Error', 'error');
+            }
+        }
+
+        // --- Compartir ---
+        function compartir() {
+            const codigo = editor.value;
+            if (!codigo.trim()) {
+                showToast('⚠️ No hay código para compartir', true);
+                return;
+            }
+
+            try {
+                const encoded = codificar_url(codigo);
+                const url = window.location.origin + window.location.pathname + '?c=' + encoded;
+
+                // Copiar al portapapeles
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(url).then(() => {
+                        showToast('✅ URL copiada al portapapeles');
+                        setStatus('URL copiada al portapapeles');
+                    }).catch(() => {
+                        fallbackCopiar(url);
+                    });
+                } else {
+                    fallbackCopiar(url);
+                }
+            } catch(e) {
+                showToast('❌ Error al generar URL: ' + e, true);
+            }
+        }
+
+        function fallbackCopiar(url) {
+            // Fallback: seleccionar y mostrar la URL
+            const tempInput = document.createElement('input');
+            tempInput.value = url;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+            showToast('✅ URL copiada al portapapeles');
+            setStatus('URL copiada al portapapeles');
+        }
+
+        // --- Arrancar ---
+        init().catch(e => {
+            console.error('Fatal:', e);
+            output.textContent = '// ❌ Error fatal al inicializar\n\n' + e;
+            output.className = 'output-content error';
+        });
+    </script>
+</body>
+</html>

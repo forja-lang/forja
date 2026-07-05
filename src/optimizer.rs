@@ -246,6 +246,15 @@ impl DeadCodeEliminator {
                         self.recolectar_usos(&m.cuerpo);
                     }
                 }
+                Declaracion::Trait { .. } => {}
+                Declaracion::Implementacion { metodos, .. } => {
+                    for m in metodos {
+                        self.recolectar_usos(&m.cuerpo);
+                    }
+                }
+                Declaracion::AsignacionMultiple { valor, .. } => {
+                    self.recolectar_en_expresion(valor);
+                }
             }
         }
     }

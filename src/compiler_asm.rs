@@ -1137,7 +1137,7 @@ impl CompilerAsm {
 
     fn recolectar_clases(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
-            if let Declaracion::Clase { nombre, campos, metodos } = decl {
+            if let Declaracion::Clase { nombre, campos, metodos, .. } = decl {
                 let mut campos_info = Vec::new();
                 let mut size = 0i32;
                 for campo in campos {
@@ -1186,6 +1186,10 @@ impl CompilerAsm {
             Some(Tipo::Nulo) => TipoAsm::Entero,
             Some(Tipo::Arreglo(_)) => TipoAsm::Texto,
             Some(Tipo::Funcion(_, _)) => TipoAsm::Texto,
+            Some(Tipo::Resultado(_, _)) => TipoAsm::Texto,
+            Some(Tipo::Opcion(_)) => TipoAsm::Texto,
+            Some(Tipo::TraitObjeto(n)) => TipoAsm::Clase(n.clone()),
+            Some(Tipo::Parametro(_)) => TipoAsm::Texto, // genérico → tratar como texto
         }
     }
 
@@ -1449,7 +1453,20 @@ impl CompilerAsm {
                 self.emit_line(&a.str_mem_index(tmp, ret, 8, a.tmp2_reg()));
             }
 
-            Declaracion::Funcion { nombre, parametros, tipo_retorno: _, cuerpo } => {
+            Declaracion::Funcion { nombre, parametros, cuerpo, externa, .. } => {
+                // Si es función externa, solo emitir directiva .extern y saltar definición
+                if *externa {
+                    self.emit_line(&self.arch.extern_directive(nombre));
+                    // También declararla como .globl para que el linker la vea
+                    self.emit_line(&self.arch.globl_directive(nombre));
+                    self.emit_line(&format!("{}:", nombre));
+                    // No generar prólogo, epílogo, ni stack frame
+                    // El linker resuelve el símbolo en tiempo de enlace
+                    self.emit_line(&format!("    // función externa '{}' - resuelta por el linker", nombre));
+                    self.emit_line(&self.arch.ret());
+                    self.emit_line("");
+                    return;
+                }
                 self.funcion_actual = Some(nombre.clone());
                 let vars_previas = std::mem::take(&mut self.variables);
                 let stack_previo = self.stack_offset;
@@ -1564,6 +1581,8 @@ impl CompilerAsm {
             }
 
             Declaracion::Clase { .. } => {}
+            Declaracion::Trait { .. } => {}
+            Declaracion::Implementacion { .. } => {}
 
             Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
                 let lelse = self.nueva_etiqueta("else");
@@ -1655,6 +1674,14 @@ impl CompilerAsm {
 
             Declaracion::Expresion(expr) => {
                 self.compilar_expresion_asm(expr);
+            }
+
+            Declaracion::AsignacionMultiple { variables, valor, .. } => {
+                // SIMD/ASM backend: no implementar concurrencia
+                for var in variables {
+                    let _ = var;
+                }
+                self.compilar_expresion_asm(valor);
             }
         }
     }
@@ -1930,6 +1957,36 @@ impl CompilerAsm {
             Expresion::Referencia { expr: e, mutable: _ } => {
                 self.compilar_expresion_asm(e);
                 ret.to_string()
+            }
+
+            Expresion::Hilo { cuerpo } => {
+                // Concurrencia no implementada en ASM
+                self.emit_line("    // hilo { ... } no implementado en ASM");
+                for d in cuerpo {
+                    self.compilar_declaracion(d);
+                }
+                format!("{}", 0)
+            }
+
+            Expresion::CanalNuevo => {
+                // Concurrencia no implementada en ASM
+                self.emit_line("    // canal() no implementado en ASM");
+                String::new()
+            }
+            Expresion::Seleccionar { brazos } => {
+                // No implementado en ASM - compilar cuerpos secuencialmente
+                self.emit_line("    // seleccionar no implementado en ASM");
+                for brazo in brazos {
+                    for d in &brazo.cuerpo {
+                        self.compilar_declaracion(d);
+                    }
+                }
+                String::new()
+            }
+            Expresion::Try(expr) => {
+                let expr_str = self.compilar_expresion_asm(expr);
+                self.emit_line(&format!("    // ? en ASM no implementado: {}?", expr_str));
+                String::new()
             }
         }
     }

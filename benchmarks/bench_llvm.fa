@@ -1,0 +1,33 @@
+// Benchmark LLVM Backend — Mide rendimiento de transpilación vs LLVM vs ASM
+importar "std/io"
+
+funcion fibonacci(n) {
+    si (n <= 1) { retornar n }
+    retornar fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+funcion calcular_primos(limite) {
+    variable suma = 0
+    para i = 2 mientras i <= limite {
+        variable es_primo = verdadero
+        para j = 2 mientras j * j <= i {
+            si (i % j == 0) {
+                es_primo = falso
+                break
+            }
+        }
+        si (es_primo) { suma = suma + i }
+    }
+    retornar suma
+}
+
+// Medir tiempos
+variable inicio = tiempo_actual()
+variable fib = fibonacci(35)
+variable fin = tiempo_actual()
+escribir("Fibonacci(35): " + fib + " en " + (fin - inicio) + "ms")
+
+inicio = tiempo_actual()
+variable primos = calcular_primos(100000)
+fin = tiempo_actual()
+escribir("Suma primos hasta 100000: " + primos + " en " + (fin - inicio) + "ms")

@@ -53,6 +53,30 @@ pub enum TokenKind {
     Coincidir,
     /// `caso` - brazo de pattern matching
     Caso,
+    /// `externo` / `externa` - función externa (FFI)
+    Externo,
+    /// `hilo` - lanzar un hilo ligero
+    Hilo,
+    /// `canal` - crear un canal de comunicación
+    Canal,
+    /// `enviar` - enviar dato a un canal
+    Enviar,
+    /// `recibir` - recibir dato de un canal
+    Recibir,
+    /// `unir` - esperar a que un hilo termine
+    Unir,
+    /// `trait` - definición de trait (interfaz)
+    Trait,
+    /// `implementa` - implementación de trait para una clase
+    Implementa,
+    /// `donde` - cláusula where/donde (reservado para futuro)
+    Donde,
+    /// `seleccionar` - selección entre múltiples canales (select)
+    Seleccionar,
+    /// `tiempo` - rama de timeout en seleccionar
+    Tiempo,
+    /// `otro` - rama default en seleccionar
+    Otro,
 
     // === Tipos de datos ===
     /// `Texto` - tipo string
@@ -65,6 +89,8 @@ pub enum TokenKind {
     TipoBooleano,
 
     // === Símbolos ===
+    /// `@` - arroba para atributos/anotaciones
+    Arroba,
     /// `&` - referencia (préstamo)
     Amp,
     /// `{` - llave abrir
@@ -87,6 +113,8 @@ pub enum TokenKind {
     DosPuntos,
     /// `;` - punto y coma
     PuntoComa,
+    /// `?` - operador de propagación de errores
+    Interrogacion,
     /// `=` - asignación
     Igual,
 
@@ -135,6 +163,8 @@ pub enum TokenKind {
     Texto(String),
 
     // === Especiales ===
+    /// Comentario de documentación (///)
+    DocComment(String),
     /// Fin de archivo
     EOF,
     /// Token inválido
@@ -169,10 +199,23 @@ impl fmt::Display for TokenKind {
             TokenKind::Tipo => write!(f, "tipo"),
             TokenKind::Coincidir => write!(f, "coincidir"),
             TokenKind::Caso => write!(f, "caso"),
+            TokenKind::Externo => write!(f, "externo"),
+            TokenKind::Hilo => write!(f, "hilo"),
+            TokenKind::Canal => write!(f, "canal"),
+            TokenKind::Enviar => write!(f, "enviar"),
+            TokenKind::Recibir => write!(f, "recibir"),
+            TokenKind::Unir => write!(f, "unir"),
+            TokenKind::Trait => write!(f, "trait"),
+            TokenKind::Implementa => write!(f, "implementa"),
+            TokenKind::Donde => write!(f, "donde"),
+            TokenKind::Seleccionar => write!(f, "seleccionar"),
+            TokenKind::Tiempo => write!(f, "tiempo"),
+            TokenKind::Otro => write!(f, "otro"),
             TokenKind::TipoTexto => write!(f, "Texto"),
             TokenKind::TipoEntero => write!(f, "Entero"),
             TokenKind::TipoDecimal => write!(f, "Decimal"),
             TokenKind::TipoBooleano => write!(f, "Booleano"),
+            TokenKind::Arroba => write!(f, "@"),
             TokenKind::Amp => write!(f, "&"),
             TokenKind::LlaveAbrir => write!(f, "{{"),
             TokenKind::LlaveCerrar => write!(f, "}}"),
@@ -184,6 +227,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Punto => write!(f, "."),
             TokenKind::DosPuntos => write!(f, ":"),
             TokenKind::PuntoComa => write!(f, ";"),
+            TokenKind::Interrogacion => write!(f, "?"),
             TokenKind::Igual => write!(f, "="),
             TokenKind::Mas => write!(f, "+"),
             TokenKind::Menos => write!(f, "-"),
@@ -203,6 +247,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Numero(n) => write!(f, "numero({})", n),
             TokenKind::Decimal(d) => write!(f, "decimal({})", d),
             TokenKind::Texto(s) => write!(f, "texto(\"{}\")", s),
+            TokenKind::DocComment(s) => write!(f, "///{}", s),
             TokenKind::EOF => write!(f, "EOF"),
             TokenKind::Error(c) => write!(f, "error('{}')", c),
         }

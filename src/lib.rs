@@ -86,6 +86,39 @@ pub fn compilar(source: &str) -> Result<String, Vec<ErrorForja>> {
     Ok(rust_code)
 }
 
+/// Compila código Forja y devuelve tanto las declaraciones del AST como el código Rust transpilado
+pub fn compilar_con_ast(source: &str) -> Result<(Vec<ast::Declaracion>, String), Vec<ErrorForja>> {
+    // FASE 1: Lexer
+    let mut lexer = lexer::Lexer::new(source);
+    let tokens = lexer.tokenize()?;
+
+    // FASE 2-3: Parser
+    let mut parser = parser::Parser::new(tokens);
+    let programa = parser.parse()?;
+
+    // FASE 4: Type Checker
+    let mut type_checker = semantics::TypeChecker::new();
+    type_checker.analizar(&programa)?;
+
+    // FASE 5: Borrow Checker
+    let mut checker = semantics::BorrowChecker::new();
+    checker.analizar(&programa)?;
+
+    // FASE 6: Optimizador (constant folding, dead code elimination)
+    let mut optimizer = optimizer::Optimizer::new();
+    let programa = optimizer.optimizar(&programa);
+
+    // FASE 6b: Dead Code Elimination
+    let mut dce = optimizer::DeadCodeEliminator::new();
+    let programa = dce.eliminar(&programa);
+
+    // FASE 7: Transpilador
+    let mut transpiler = transpiler::Transpiler::new();
+    let rust_code = transpiler.transpilar(&programa)?;
+
+    Ok((programa.declaraciones, rust_code))
+}
+
 pub fn compilar_pipeline(source: &str) -> Result<Vec<bytecode::Opcode>, String> {
     use bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
 
@@ -97,9 +130,10 @@ pub fn compilar_pipeline(source: &str) -> Result<Vec<bytecode::Opcode>, String> 
     let mut parser = parser::Parser::new(tokens);
     let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
-    // FASE 4: Type Checker
+    // FASE 4: Type Checker + Type Inference
     let mut type_checker = semantics::TypeChecker::new();
     type_checker.analizar(&programa).map_err(|e| format!("{}", e[0]))?;
+    let tipos_inferidos = type_checker.obtener_tipos_inferidos();
 
     // FASE 5: Optimizador
     let mut optimizer = optimizer::Optimizer::new();
@@ -109,11 +143,12 @@ pub fn compilar_pipeline(source: &str) -> Result<Vec<bytecode::Opcode>, String> 
     let mut dce = optimizer::DeadCodeEliminator::new();
     let programa = dce.eliminar(&programa);
 
-    // Generar bytecode
+    // FASE 6: Generar bytecode con especialización por tipos
     let mut gen = BytecodeGenerator::new();
+    gen.set_tipos_inferidos(tipos_inferidos);
     let bytecode = gen.generar(&programa).map_err(|_| "Error generando bytecode".to_string())?;
 
-    // Optimizar bytecode: indices globales + fusion de opcodes
+    // FASE 7: Optimizar bytecode: indices globales + fusion de opcodes
     let bytecode = optimizar_indices(&bytecode);
     let bytecode = fusionar_opcodes(&bytecode);
 
@@ -188,4 +223,23 @@ pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
 
     let ir = backend.emit_ir();
     Ok(ir)
+}
+
+/// Formatea código Forja usando el formatter interno
+/// Devuelve el código formateado, o el original si hay errores de sintaxis
+pub fn formatear(codigo: &str) -> String {
+    let mut lexer = lexer::Lexer::new(codigo);
+    let tokens = match lexer.tokenize() {
+        Ok(t) => t,
+        Err(_) => return codigo.to_string(),
+    };
+
+    let mut parser = parser::Parser::new(tokens);
+    let programa = match parser.parse() {
+        Ok(p) => p,
+        Err(_) => return codigo.to_string(),
+    };
+
+    let mut f = formatter::Formatter::new();
+    f.formatear(&programa)
 }

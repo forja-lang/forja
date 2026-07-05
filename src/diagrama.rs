@@ -137,7 +137,7 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
             Declaracion::Asignacion { nombre, valor } => self.bx(&format!("<span class='tg'>ASIGNACION</span>{nombre} = {}", self.ec(valor)), "ac"),
             Declaracion::AsignacionMiembro { objeto, miembro, valor } => self.bx(&format!("<span class='tg'>ASIGNACION</span>{}.{miembro} = {}", self.ec(objeto), self.ec(valor)), "ac"),
             Declaracion::AsignacionIndex { nombre, indice, valor } => self.bx(&format!("<span class='tg'>ASIGNACION</span>{nombre}[{}] = {}", self.ec(indice), self.ec(valor)), "ac"),
-            Declaracion::Funcion { nombre, parametros, tipo_retorno, cuerpo } => {
+            Declaracion::Funcion { nombre, parametros, tipo_retorno, cuerpo, .. } => {
                 let ps: Vec<String> = parametros.iter().map(|p| p.nombre.clone()).collect();
                 let ret = tipo_retorno.as_ref().map(|t| format!("->{}", self.ts(t))).unwrap_or_default();
                 self.bx(&format!("<span class='tg'>FUNCION</span>{nombre}({}){ret}", ps.join(",")), "fc");
@@ -181,11 +181,20 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
                 else { self.bx("<span class='tg'>RETORNAR</span>", "rc"); }
             }
             Declaracion::Importar(r) => self.bx(&format!("<span class='tg'>IMPORTAR</span>\"{r}\""), "ioc"),
-            Declaracion::Enum { nombre, variantes } => {
+            Declaracion::Enum { nombre, variantes, .. } => {
                 let vars: Vec<String> = variantes.iter().map(|v| v.nombre.clone()).collect();
                 self.bx(&format!("<span class='tg'>TIPO</span>{nombre} = {}", vars.join(" | ")), "cc");
             }
+            Declaracion::Trait { nombre, metodos } => {
+                let mnames: Vec<String> = metodos.iter().map(|m| m.nombre.clone()).collect();
+                self.bx(&format!("<span class='tg'>TRAIT</span>{nombre} ({})", mnames.join(", ")), "cc");
+            }
+            Declaracion::Implementacion { trait_nombre, clase_nombre, metodos } => {
+                let mnames: Vec<String> = metodos.iter().map(|m| m.nombre.clone()).collect();
+                self.bx(&format!("<span class='tg'>IMPLEMENTA</span>{} para {} ({})", trait_nombre, clase_nombre, mnames.join(", ")), "cc");
+            }
             Declaracion::Expresion(expr) => self.bx(&format!("<span class='tg'>EXPRESION</span>{}", self.ec(expr)), "ne"),
+            Declaracion::AsignacionMultiple { variables, valor, .. } => self.bx(&format!("<span class='tg'>ASIGNACION_MULTIPLE</span>{} = {}", variables.join(", "), self.ec(valor)), "ac"),
         }
     }
 
@@ -213,7 +222,7 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
             Declaracion::Asignacion { nombre, valor } => { let _ = self.no(&format!("asignar {nombre} = {}", self.ec(valor)), "a", "asignar", false); self.cli(); }
             Declaracion::AsignacionMiembro { objeto, miembro, valor } => { self.no(&format!("asignar {}.{miembro} = {}", self.ec(objeto), self.ec(valor)), "a", "asignar", false); self.cli(); }
             Declaracion::AsignacionIndex { nombre, indice, valor } => { self.no(&format!("asignar {nombre}[{}] = {}", self.ec(indice), self.ec(valor)), "a", "asignar", false); self.cli(); }
-            Declaracion::Funcion { nombre, parametros, tipo_retorno, cuerpo } => {
+            Declaracion::Funcion { nombre, parametros, tipo_retorno, cuerpo, .. } => {
                 let ps: Vec<String> = parametros.iter().map(|p| { let mut s = p.nombre.clone(); if p.prestado { s = format!("&{s}"); } if let Some(ref t) = p.tipo { s = format!("{s}:{}", self.ts(t)); } s }).collect();
                 let ret = tipo_retorno.as_ref().map(|t| format!("->{}", self.ts(t))).unwrap_or_default();
                 let id = self.no(&format!("<b>funcion</b> {nombre}({}){ret}", ps.join(",")), "f", "funcion", !cuerpo.is_empty());
@@ -252,8 +261,29 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
             Declaracion::AccesoMiembro { objeto, miembro } => { self.no(&format!("acceso {}.{miembro}", self.ec(objeto)), "e", "acceso", false); self.cli(); }
             Declaracion::Retornar { valor } => { if let Some(v) = valor { self.no(&format!("retornar {}", self.ec(v)), "r", "retorno", false); } else { self.no("retornar", "r", "retorno", false); } self.cli(); }
             Declaracion::Importar(r) => { self.no(&format!("importar \"{r}\""), "i", "importar", false); self.cli(); }
-            Declaracion::Enum { nombre, variantes } => { let vars: Vec<String> = variantes.iter().map(|v| v.nombre.clone()).collect(); self.no(&format!("tipo {nombre} = {}", vars.join(" | ")), "c", "enum", false); self.cli(); }
+            Declaracion::Enum { nombre, variantes, .. } => { let vars: Vec<String> = variantes.iter().map(|v| v.nombre.clone()).collect(); self.no(&format!("tipo {nombre} = {}", vars.join(" | ")), "c", "enum", false); self.cli(); }
+            Declaracion::Trait { nombre, metodos } => {
+                let mnames: Vec<String> = metodos.iter().map(|m| m.nombre.clone()).collect();
+                self.no(&format!("<b>trait</b> {nombre} ({})", mnames.join(", ")), "c", "trait", false);
+                self.cli();
+            }
+            Declaracion::Implementacion { trait_nombre, clase_nombre, metodos } => {
+                let mnames: Vec<String> = metodos.iter().map(|m| m.nombre.clone()).collect();
+                let id = self.no(&format!("<b>implementa</b> {trait_nombre} para {clase_nombre}"), "c", "implementacion", !metodos.is_empty());
+                if !metodos.is_empty() {
+                    self.ah(id);
+                    for m in metodos {
+                        let ps: Vec<String> = m.parametros.iter().map(|p| p.nombre.clone()).collect();
+                        let mid = self.no(&format!("<b>metodo</b> {}({})", m.nombre, ps.join(",")), "f", "metodo", !m.cuerpo.is_empty());
+                        if !m.cuerpo.is_empty() { self.ah(mid); for d in &m.cuerpo { self.gd1(d); } self.ch(); }
+                        self.cli();
+                    }
+                    self.ch();
+                }
+                self.cli();
+            }
             Declaracion::Expresion(expr) => { self.no(&format!("expresion {}", self.ec(expr)), "e", "expresion", false); self.cli(); }
+            Declaracion::AsignacionMultiple { variables, valor, .. } => { self.no(&format!("asignacion multiple {} = {}", variables.join(", "), self.ec(valor)), "a", "asignar", false); self.cli(); }
         }
     }
 
@@ -284,8 +314,24 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
             Expresion::Mapa(pares) => { let entries: Vec<String> = pares.iter().map(|(k, v)| format!("{}:{}", self.ec(k), self.ec(v))).collect(); format!("{{{}}}", entries.join(",")) }
             Expresion::Grupo(ex) => format!("({})", self.ec(ex)),
             Expresion::Coincidir { .. } => "coincidir...".to_string(), Expresion::Closure { .. } => "closure...".to_string(),
+            Expresion::Hilo { .. } => "hilo{...}".to_string(), Expresion::CanalNuevo => "canal()".to_string(),
+            Expresion::Seleccionar { brazos } => {
+                let mut out = String::from("seleccionar{");
+                for brazo in brazos {
+                    if let Some((var, canal)) = &brazo.recepcion {
+                        out.push_str(&format!("caso {var}={canal}.recibir()|"));
+                    } else if brazo.timeout_ms > 0 {
+                        out.push_str(&format!("tiempo {}|", brazo.timeout_ms));
+                    } else {
+                        out.push_str("otro|");
+                    }
+                }
+                out.push_str("}");
+                out
+            }
+            Expresion::Try(expr) => format!("{}?", self.ec(expr)),
         }
     }
     fn dc(&self, d: &Declaracion) -> String { match d { Declaracion::Variable { nombre, valor, .. } => { if let Some(v) = valor { format!("{nombre}={}", self.ec(v)) } else { nombre.clone() } } Declaracion::Asignacion { nombre, valor } => format!("{nombre}={}", self.ec(valor)), _ => "?".to_string() } }
-    fn ts(&self, t: &Tipo) -> String { match t { Tipo::Entero => "Entero".to_string(), Tipo::Decimal => "Decimal".to_string(), Tipo::Texto => "Texto".to_string(), Tipo::Booleano => "Booleano".to_string(), Tipo::Nulo => "Nulo".to_string(), Tipo::Clase(n) => n.clone(), Tipo::Arreglo(t) => format!("[{}]", self.ts(t)), Tipo::Funcion(params, ret) => { let p: Vec<String> = params.iter().map(|t| self.ts(t)).collect(); format!("({})->{}", p.join(","), self.ts(ret)) } } }
+    fn ts(&self, t: &Tipo) -> String { match t { Tipo::Entero => "Entero".to_string(), Tipo::Decimal => "Decimal".to_string(), Tipo::Texto => "Texto".to_string(), Tipo::Booleano => "Booleano".to_string(), Tipo::Nulo => "Nulo".to_string(), Tipo::Clase(n) => n.clone(), Tipo::Arreglo(t) => format!("[{}]", self.ts(t)), Tipo::Funcion(params, ret) => { let p: Vec<String> = params.iter().map(|t| self.ts(t)).collect(); format!("({})->{}", p.join(","), self.ts(ret)) }, Tipo::Resultado(ok, err) => format!("Resultado<{},{}>", self.ts(ok), self.ts(err)), Tipo::Opcion(inner) => format!("Opcion<{}>", self.ts(inner)), Tipo::TraitObjeto(n) => format!("Trait<{}>", n), Tipo::Parametro(n) => format!("Parametro<{}>", n) } }
 }

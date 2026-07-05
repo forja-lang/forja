@@ -1,0 +1,30 @@
+// Ejemplo: Genéricos (Polimorfismo Paramétrico) en Forja
+// FASE 4.4
+
+// Función genérica identidad
+funcion identidad<T>(valor: T) -> T {
+    retornar valor
+}
+
+variable x = identidad(42)       // T = Entero, x es Entero
+escribir(x)
+
+variable y = identidad("hola")   // T = Texto, y es Texto
+escribir(y)
+
+// Clase genérica Caja (métodos sin -> Tipo - limitación del parser actual)
+clase Caja<T> {
+    contenido
+    constructor(valor: T) {
+        este.contenido = valor
+    }
+    funcion obtener() {
+        retornar este.contenido
+    }
+}
+
+variable caja = nuevo Caja(42)
+escribir(caja.obtener())
+
+variable caja_texto = nuevo Caja("mundo")
+escribir(caja_texto.obtener())

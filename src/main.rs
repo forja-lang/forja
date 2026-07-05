@@ -31,6 +31,7 @@ use std::fs;
 use std::path::Path;
 use std::process;
 use ast::Declaracion;
+use error::color;
 use package_config::ForjaConfig;
 use package_resolver::PackageResolver;
 
@@ -92,6 +93,8 @@ fn main() {
         "keywords" | "palabras" | "lista" => cmd_keywords(),
         // Doc: generar documentación desde el AST
         "doc" | "documentar" => cmd_doc(&args[2..]),
+        // Test: ejecutar tests
+        "test" | "tests" | "probar" => cmd_test(&args[2..]),
         // Explicar concepto
         "explain" | "explicar" => {
             if args.len() > 2 { cmd_explain(&args[2]); }
@@ -412,6 +415,7 @@ fn mostrar_ayuda() {
     println!("🔨 Forja (fa) — Lenguaje educativo con VM propia\n");
     println!("COMANDOS:");
     println!("  ejecutar <archivo>         Ejecutar .fa en la VM");
+    println!("  test [archivo]            Ejecutar tests (funciones con @test)");
     println!("  repl                       Modo interactivo");
     println!("  diagram <archivo>         Generar diagram HTML del código");
     println!("  compilar <archivo>         Generar .exe autónomo");
@@ -428,13 +432,15 @@ fn mostrar_ayuda() {
     println!("  explicar <palabra>         Explicar un concepto");
     println!("  ayuda [tema]               Mostrar esta ayuda\n");
     println!("Los comandos también aceptan su nombre en inglés:");
-    println!("  run, build, transpile, build-asm, asm, new, init, add, remove, install, learn, keywords, explain, help\n");
+    println!("  run, build, transpile, build-asm, asm, new, init, add, remove, install, learn, keywords, explain, help, test\n");
     println!("EJEMPLOS:");
     println!("  forja ejecutar examples/hola_mundo.fa");
     println!("  forja compilar examples/hola_mundo.fa -o programa.exe");
     println!("  forja compilar-asm examples/hola_mundo.fa");
     println!("  forja compilar-asm examples/hola_mundo.fa --target arm64 -o programa");
     println!("  forja formatear examples/hola_mundo.fa");
+    println!("  forja test examples/mis_pruebas.fa");
+    println!("  forja test                  (ejecuta todos los .fa en examples/)");
     println!("  forja palabras");
     println!("  forja explicar variable\n");
 }
@@ -803,13 +809,20 @@ fn cmd_fmt(args: &[String]) {
     }
 }
 
-/// forja doc|documentar <archivo.fa> — Genera documentación desde el AST
+/// forja doc|documentar <archivo.fa> — Genera documentación HTML desde el AST
 fn cmd_doc(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja doc|documentar <archivo.fa>");
+        eprintln!("Uso: forja doc|documentar <archivo.fa> [-o <salida.html>]");
         process::exit(1);
     }
     let path = &args[0];
+    let output_path = if args.len() > 1 && args[1] == "-o" {
+        args.get(2).cloned()
+    } else {
+        let input = std::path::Path::new(path);
+        Some(input.with_extension("html").to_string_lossy().to_string())
+    };
+
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => { eprintln!("Error al leer '{}': {}", path, e); process::exit(1); }
@@ -825,29 +838,94 @@ fn cmd_doc(args: &[String]) {
         Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
     };
 
-    println!("📖 Documentación generada desde AST\n");
-    for decl in &programa.declaraciones {
+    let html = generar_doc_html(&programa.declaraciones);
+
+    if let Some(out) = output_path {
+        match fs::write(&out, &html) {
+            Ok(_) => println!("✅ Documentación generada: {}", out),
+            Err(e) => { eprintln!("Error al escribir '{}': {}", out, e); process::exit(1); }
+        }
+    } else {
+        println!("{}", html);
+    }
+}
+
+/// Genera HTML de documentación desde las declaraciones del AST
+fn generar_doc_html(declaraciones: &[Declaracion]) -> String {
+    let mut html = String::from(
+        "<!DOCTYPE html>\n<html lang=\"es\">\n<head>\n\
+         <meta charset=\"UTF-8\">\n\
+         <title>Documentación Forja</title>\n\
+         <style>\n\
+         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; \
+                max-width: 900px; margin: 0 auto; padding: 20px; background: #0d1117; color: #c9d1d9; }\n\
+         h1 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 10px; }\n\
+         h2 { color: #58a6ff; margin-top: 30px; }\n\
+         .doc-block { background: #161b22; border: 1px solid #30363d; \
+                      border-radius: 8px; padding: 16px; margin: 16px 0; }\n\
+         .doc-block h3 { color: #7ee787; margin: 0 0 8px 0; }\n\
+         .doc-block .doc-text { color: #8b949e; margin: 8px 0; white-space: pre-wrap; }\n\
+         .doc-block .meta { color: #484f58; font-size: 0.9em; }\n\
+         .tag { display: inline-block; background: #1f6feb22; color: #58a6ff; \
+                padding: 2px 8px; border-radius: 4px; font-size: 0.8em; margin-right: 6px; }\n\
+         .tag-fn { background: #23863622; color: #7ee787; }\n\
+         .tag-class { background: #9e6a0322; color: #d29922; }\n\
+         .tag-var { background: #1f6feb22; color: #58a6ff; }\n\
+         footer { margin-top: 40px; color: #484f58; font-size: 0.8em; text-align: center; }\n\
+         </style>\n</head>\n<body>\n\
+         <h1>📖 Documentación Forja</h1>\n"
+    );
+
+    for decl in declaraciones {
         match decl {
-            Declaracion::Funcion { nombre, parametros, .. } => {
+            Declaracion::Funcion { nombre, parametros, doc, .. } => {
                 let params: Vec<&str> = parametros.iter().map(|p| p.nombre.as_str()).collect();
-                println!("  función `{}`({})", nombre, params.join(", "));
+                html.push_str("<div class='doc-block'>");
+                html.push_str(&format!(
+                    "<span class='tag tag-fn'>función</span> <h3>{}({})</h3>",
+                    nombre,
+                    params.join(", ")
+                ));
+                if let Some(doc_text) = doc {
+                    html.push_str(&format!(
+                        "<div class='doc-text'>{}</div>",
+                        doc_text.replace('\n', "<br>").replace("&", "&").replace("<", "<").replace(">", ">")
+                    ));
+                } else {
+                    html.push_str("<div class='meta'>Sin documentación</div>");
+                }
+                html.push_str("</div>\n");
             }
-            Declaracion::Clase { nombre, campos, metodos } => {
-                println!("  clase `{}`", nombre);
+            Declaracion::Clase { nombre, campos, metodos, .. } => {
+                html.push_str("<div class='doc-block'>");
+                html.push_str(&format!(
+                    "<span class='tag tag-class'>clase</span> <h3>{}</h3>",
+                    nombre
+                ));
+                html.push_str("<div class='doc-text'>");
                 for c in campos {
-                    println!("    · campo: {}", c.nombre);
+                    html.push_str(&format!("  · campo: {}<br>", c.nombre));
                 }
                 for m in metodos {
-                    println!("    · método: {}()", m.nombre);
+                    html.push_str(&format!("  · método: {}()<br>", m.nombre));
                 }
+                html.push_str("</div></div>\n");
             }
             Declaracion::Variable { mutable, nombre, .. } => {
                 let kw = if *mutable { "variable" } else { "constante" };
-                println!("  {} `{}`", kw, nombre);
+                html.push_str("<div class='doc-block'>");
+                html.push_str(&format!(
+                    "<span class='tag tag-var'>{}</span> <h3>{}</h3>",
+                    kw, nombre
+                ));
+                html.push_str("</div>\n");
             }
             _ => {}
         }
     }
+
+    html.push_str("<footer>Generado por Forja (fa)</footer>\n</body>\n</html>");
+    html
 }
 
 /// forja repl (default: ForjaFast)
@@ -1251,5 +1329,223 @@ fn cmd_build_asm(args: &[String]) {
             eprintln!("   Compilá manualmente:");
             eprintln!("   gcc -O2 -o {} {}", output_path, asm_path.display());
         }
+    }
+}
+
+/// forja test [archivo.fa] — Ejecuta tests (funciones marcadas con @test)
+/// Si no se especifica archivo, busca todos los .fa en examples/
+fn cmd_test(args: &[String]) {
+    let archivos: Vec<String> = if args.is_empty() {
+        // Buscar todos los .fa en examples/
+        let dir = Path::new("examples");
+        if dir.is_dir() {
+            match std::fs::read_dir(dir) {
+                Ok(entries) => entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.path().extension().map(|ext| ext == "fa").unwrap_or(false))
+                    .map(|e| e.path().to_string_lossy().to_string())
+                    .collect(),
+                Err(_) => {
+                    eprintln!("No se pudo leer el directorio examples/");
+                    process::exit(1);
+                }
+            }
+        } else {
+            eprintln!("No se encontró el directorio examples/");
+            process::exit(1);
+        }
+    } else {
+        vec![args[0].clone()]
+    };
+
+    if let Err(e) = cmd_test_ejecutar(archivos) {
+        eprintln!("{}", e);
+        process::exit(1);
+    }
+}
+
+fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
+    let mut total_pasados = 0;
+    let mut total_fallidos = 0;
+    let inicio = std::time::Instant::now();
+
+    for archivo in &archivos {
+        let codigo = std::fs::read_to_string(archivo)
+            .map_err(|e| format!("Error al leer '{}': {}", archivo, e))?;
+
+        // FASE 1: Lexer (inline como los demás cmd_*)
+        let mut lexer = lexer::Lexer::new(&codigo);
+        let tokens = match lexer.tokenize() {
+            Ok(t) => t,
+            Err(errors) => {
+                for err in &errors {
+                    eprintln!("{}", err);
+                }
+                total_fallidos += 1;
+                continue;
+            }
+        };
+
+        // FASE 2-3: Parser
+        let mut parser = parser::Parser::new(tokens);
+        let programa = match parser.parse() {
+            Ok(p) => p,
+            Err(errors) => {
+                for err in &errors {
+                    eprintln!("{}", err);
+                }
+                total_fallidos += 1;
+                continue;
+            }
+        };
+
+        // FASE 4: Type Checker
+        let mut type_checker = semantics::TypeChecker::new();
+        if let Err(errors) = type_checker.analizar(&programa) {
+            for err in &errors {
+                eprintln!("{}", err);
+            }
+            total_fallidos += 1;
+            continue;
+        }
+
+        // FASE 5: Borrow Checker
+        let mut checker = semantics::BorrowChecker::new();
+        if let Err(errors) = checker.analizar(&programa) {
+            for err in &errors {
+                eprintln!("{}", err);
+            }
+            total_fallidos += 1;
+            continue;
+        }
+
+        // FASE 6: Transpilador a Rust (sin fn main automático para tests)
+        let mut transpiler = transpiler::Transpiler::new();
+        transpiler.saltar_main = true;
+        let rust_code = match transpiler.transpilar(&programa) {
+            Ok(code) => code,
+            Err(errors) => {
+                for err in &errors {
+                    eprintln!("{}", err);
+                }
+                total_fallidos += 1;
+                continue;
+            }
+        };
+
+        // Recolectar funciones con @test
+        let tests: Vec<&Declaracion> = programa.declaraciones.iter()
+            .filter(|d| {
+                if let Declaracion::Funcion { atributos, .. } = d {
+                    atributos.iter().any(|a| a.nombre == "test")
+                } else { false }
+            })
+            .collect();
+
+        if tests.is_empty() {
+            println!("  ⚠️  No se encontraron funciones con @test en {}", archivo);
+            continue;
+        }
+
+        println!("\n🔬 Ejecutando tests en {} ...", archivo);
+        for test in &tests {
+            if let Declaracion::Funcion { nombre, .. } = test {
+                print!("  🧪 {} ... ", nombre);
+                // Forzar flush para ver el progreso
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
+
+                match ejecutar_test(test, &rust_code) {
+                    Ok(()) => {
+                        println!("{}✅ ok{}", color::VERDE, color::RESET);
+                        total_pasados += 1;
+                    }
+                    Err(msg) => {
+                        println!("{}❌ FAILED{}", color::ROJO, color::RESET);
+                        println!("    {}", msg);
+                        total_fallidos += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    let duracion = inicio.elapsed();
+    let total = total_pasados + total_fallidos;
+    println!("\n{}", "=".repeat(50));
+    println!("  📊 Resultados: {} pasados, {} fallidos (de {} totales)",
+        total_pasados, total_fallidos, total);
+    println!("  ⏱  Tiempo total: {:?}", duracion);
+    println!("{}", "=".repeat(50));
+
+    if total_fallidos > 0 {
+        Err("Algunos tests fallaron".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+/// Ejecuta un test individual transpilando a Rust, compilando con rustc y ejecutando
+fn ejecutar_test(test_fn: &Declaracion, rust_code: &str) -> Result<(), String> {
+    let nombre = if let Declaracion::Funcion { nombre, .. } = test_fn {
+        nombre.clone()
+    } else {
+        return Err("No es una función".to_string());
+    };
+
+    // Quitar #[test] porque rustc sin --test no reconoce funciones marcadas
+    let rust_clean = rust_code.lines()
+        .filter(|line| line.trim() != "#[test]")
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // El transpilador no genera fn main() (saltar_main = true),
+    // así que añadimos uno que llame a la función de test.
+    let test_program = format!(
+        "{}\nfn main() {{\n    {}();\n}}\n",
+        rust_clean, nombre
+    );
+
+    // Escribir a archivo temporal y compilar con rustc
+    let tmp_dir = std::env::temp_dir().join("forja_test");
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Error creando dir temp: {}", e))?;
+    let rs_file = tmp_dir.join("test.rs");
+    std::fs::write(&rs_file, &test_program).map_err(|e| format!("Error escribiendo test.rs: {}", e))?;
+
+    // Compilar con rustc
+    let output = std::process::Command::new("rustc")
+        .arg(&rs_file)
+        .arg("-o")
+        .arg(tmp_dir.join("test.exe"))
+        .output()
+        .map_err(|e| format!("Error al ejecutar rustc: {}. ¿Está instalado?", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Error de compilación:\n{}", stderr));
+    }
+
+    // Ejecutar el binario de test
+    let output = std::process::Command::new(tmp_dir.join("test.exe"))
+        .output()
+        .map_err(|e| format!("Error al ejecutar test: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut msg = String::new();
+        if !stdout.is_empty() {
+            msg.push_str(&stdout);
+        }
+        if !stderr.is_empty() {
+            if !msg.is_empty() { msg.push('\n'); }
+            msg.push_str(&stderr);
+        }
+        if msg.is_empty() {
+            msg = "Test falló (código de salida no cero)".to_string();
+        }
+        Err(msg)
     }
 }
