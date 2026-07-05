@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────
+# Ejemplo 70: Concurrencia con hilos y canales
+# ─────────────────────────────────────────────
+# Este ejemplo muestra cómo usar:
+#   - canal() para crear un canal de comunicación
+#   - hilo { ... } para lanzar un hilo ligero
+#   - .enviar() para enviar datos a un canal
+#   - .recibir() para recibir datos de un canal
+#   - .unir() para esperar a que un hilo termine
+
+importar "std/io"
+
+escribir("=== Ejemplo de Concurrencia ===\n")
+escribir("Creando canal y lanzando hilo...\n")
+
+# Crear canal: retorna (tx, rx)
+variable tx, rx = canal()
+
+# Lanzar un hilo que envía un dato
+variable h = hilo {
+    escribir("  Hilo: enviando dato 42...\n")
+    tx.enviar(42)
+    escribir("  Hilo: dato enviado!\n")
+    retornar 99
+}
+
+# En el hilo principal, recibir el dato
+escribir("Main: esperando recibir dato...\n")
+variable dato = rx.recibir()
+escribir("Main: recibido: " + dato + "\n")
+
+# Esperar a que el hilo termine y obtener su resultado
+escribir("Main: esperando que el hilo termine...\n")
+variable resultado = h.unir()
+escribir("Main: el hilo terminó con resultado: " + resultado + "\n")
+
+escribir("=== Fin del ejemplo ===\n")

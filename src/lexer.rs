@@ -7,6 +7,8 @@ pub struct Lexer {
     pos: usize,
     linea: usize,
     columna: usize,
+    /// Buffer de tokens pendientes para interpolación de strings
+    tokens_pendientes: Vec<Token>,
 }
 
 impl Lexer {
@@ -16,6 +18,7 @@ impl Lexer {
             pos: 0,
             linea: 1,
             columna: 1,
+            tokens_pendientes: Vec::new(),
         }
     }
 
@@ -83,11 +86,16 @@ impl Lexer {
     }
 
     /// Omite comentarios de línea (//) y bloque (/* */)
+    /// NOTA: No omite /// (doc comments), los deja para next_token()
     fn skip_comentarios(&mut self) {
         loop {
             if self.current() == Some('/') {
                 let next = self.source.get(self.pos + 1).copied();
                 if next == Some('/') {
+                    // Si es /// (tres barras), es un doc comment — no omitir
+                    if self.source.get(self.pos + 2).copied() == Some('/') {
+                        break;
+                    }
                     // Comentario de línea: skip hasta \n o EOF
                     while let Some(ch) = self.current() {
                         if ch == '\n' {
@@ -148,6 +156,18 @@ impl Lexer {
             "tipo" => TokenKind::Tipo,
             "coincidir" => TokenKind::Coincidir,
             "caso" => TokenKind::Caso,
+            "externo" | "externa" => TokenKind::Externo,
+            "hilo" => TokenKind::Hilo,
+            "canal" => TokenKind::Canal,
+            "enviar" => TokenKind::Enviar,
+            "recibir" => TokenKind::Recibir,
+            "unir" => TokenKind::Unir,
+            "trait" => TokenKind::Trait,
+            "implementa" => TokenKind::Implementa,
+            "donde" => TokenKind::Donde,
+            "seleccionar" => TokenKind::Seleccionar,
+            "tiempo" => TokenKind::Tiempo,
+            "otro" => TokenKind::Otro,
             // Tipos de datos
             "Texto" => TokenKind::TipoTexto,
             "Entero" => TokenKind::TipoEntero,
@@ -210,24 +230,40 @@ impl Lexer {
         }
     }
 
-    /// Lee un string entre comillas dobles
+    /// Lee un string entre comillas dobles, manejando interpolación ${}
     fn leer_texto(&mut self) -> Result<TokenKind, ErrorForja> {
         let mut s = String::new();
         let (start_line, start_col) = (self.linea, self.columna);
         self.advance(); // consume la comilla inicial "
 
+        // Para interpolación: guardamos el primer fragmento para devolverlo,
+        // y encolamos el resto (fragmentos intermedios + tokens de expresión)
+        // en tokens_pendientes.
+        let mut primer_fragmento: Option<String> = None;
+
         loop {
-            match self.advance() {
-                Some('"') => break,
+            match self.current() {
+                Some('"') => {
+                    self.advance(); // consume la comilla final "
+                    break;
+                }
                 Some('\\') => {
-                    // Caracter de escape
-                    match self.advance() {
-                        Some('n') => s.push('\n'),
-                        Some('t') => s.push('\t'),
-                        Some('\\') => s.push('\\'),
-                        Some('"') => s.push('"'),
-                        Some('r') => s.push('\r'),
-                        Some(c) => s.push(c),
+                    self.advance(); // consume \
+                    match self.current() {
+                        Some('n') => { self.advance(); s.push('\n'); }
+                        Some('t') => { self.advance(); s.push('\t'); }
+                        Some('\\') => { self.advance(); s.push('\\'); }
+                        Some('"') => { self.advance(); s.push('"'); }
+                        Some('r') => { self.advance(); s.push('\r'); }
+                        Some('$') => {
+                            // \${  →  $ literal (escape de interpolación)
+                            self.advance(); // consume $
+                            s.push('$');
+                        }
+                        Some(c) => {
+                            s.push(c);
+                            self.advance();
+                        }
                         None => {
                             return Err(ErrorForja::new(
                                 ErrorTipo::ErrorLexico,
@@ -239,7 +275,52 @@ impl Lexer {
                         }
                     }
                 }
-                Some(c) => s.push(c),
+                Some('$') => {
+                    // Verificar si es ${ (interpolación) o $$ ($ literal)
+                    let siguiente = self.source.get(self.pos + 1).copied();
+                    if siguiente == Some('{') {
+                        // === INTERPOLACIÓN ===
+                        let (linea_act, col_act) = (self.linea, self.columna);
+
+                        // Guardar el texto acumulado hasta ahora
+                        let texto_actual = std::mem::take(&mut s);
+
+                        if primer_fragmento.is_none() {
+                            // Primer fragmento: se devuelve como resultado de leer_texto
+                            primer_fragmento = Some(texto_actual);
+                        } else {
+                            // Fragmento intermedio: va a tokens_pendientes
+                            self.tokens_pendientes.push(Token::new(
+                                TokenKind::Texto(texto_actual),
+                                linea_act,
+                                col_act,
+                            ));
+                        }
+
+                        // Avanzar sobre ${
+                        self.advance(); // consume $
+                        self.advance(); // consume {
+
+                        // Escanear la expresión dentro de ${...}
+                        self.escanear_expresion_interpolada()?;
+
+                        // Continuar escaneando el resto del string
+                        continue;
+                    } else if siguiente == Some('$') {
+                        // $$ → $ literal
+                        // Solo consumimos el primer $; el segundo se procesará
+                        // en la siguiente iteración (puede ser ${ para interpolación)
+                        self.advance(); // consume el primer $
+                        s.push('$');
+                    } else {
+                        self.advance();
+                        s.push('$');
+                    }
+                }
+                Some(c) => {
+                    s.push(c);
+                    self.advance();
+                }
                 None => {
                     return Err(ErrorForja::new(
                         ErrorTipo::ErrorLexico,
@@ -252,7 +333,225 @@ impl Lexer {
             }
         }
 
-        Ok(TokenKind::Texto(s))
+        if let Some(primero) = primer_fragmento {
+            // Hubo interpolación: el último fragmento (s) va a tokens_pendientes
+            let (linea_act, col_act) = (self.linea, self.columna);
+            self.tokens_pendientes.push(Token::new(
+                TokenKind::Texto(s),
+                linea_act,
+                col_act,
+            ));
+            // Devolvemos el primer fragmento
+            Ok(TokenKind::Texto(primero))
+        } else {
+            // No hubo interpolación: comportamiento normal
+            Ok(TokenKind::Texto(s))
+        }
+    }
+
+    /// Escanea los tokens de una expresión dentro de ${...} y los agrega a tokens_pendientes
+    fn escanear_expresion_interpolada(&mut self) -> Result<(), ErrorForja> {
+        let mut paren_depth: i32 = 0;
+        let mut bracket_depth: i32 = 0;
+
+        loop {
+            // Omitir whitespace
+            self.skip_whitespace();
+
+            match self.current() {
+                None => {
+                    return Err(ErrorForja::new(
+                        ErrorTipo::ErrorLexico,
+                        self.linea,
+                        self.columna,
+                        "Interpolación sin cerrar",
+                        "Agregá '}' para cerrar la expresión interpolada ${.",
+                    ));
+                }
+                Some('}') => {
+                    if paren_depth == 0 && bracket_depth == 0 {
+                        self.advance(); // consume }
+                        return Ok(());
+                    }
+                    // Si hay paréntesis o corchetes abiertos, este } probablemente
+                    // no es el cierre de la interpolación, sino parte de la expresión.
+                    // En Forja no hay bloques dentro de expresiones, así que esto
+                    // no debería ocurrir, pero lo manejamos por seguridad.
+                    return Err(ErrorForja::new(
+                        ErrorTipo::ErrorLexico,
+                        self.linea,
+                        self.columna,
+                        "} inesperado dentro de la expresión interpolada",
+                        "Revisá que los paréntesis y corchetes estén balanceados.",
+                    ));
+                }
+                Some('(') => {
+                    paren_depth += 1;
+                    self.advance();
+                    self.tokens_pendientes
+                        .push(Token::new(TokenKind::ParenAbrir, self.linea, self.columna));
+                }
+                Some(')') => {
+                    paren_depth -= 1;
+                    self.advance();
+                    self.tokens_pendientes
+                        .push(Token::new(TokenKind::ParenCerrar, self.linea, self.columna));
+                }
+                Some('[') => {
+                    bracket_depth += 1;
+                    self.advance();
+                    self.tokens_pendientes
+                        .push(Token::new(TokenKind::CorcheteAbrir, self.linea, self.columna));
+                }
+                Some(']') => {
+                    bracket_depth -= 1;
+                    self.advance();
+                    self.tokens_pendientes
+                        .push(Token::new(TokenKind::CorcheteCerrar, self.linea, self.columna));
+                }
+                Some('+') => {
+                    self.advance();
+                    self.tokens_pendientes
+                        .push(Token::new(TokenKind::Mas, self.linea, self.columna));
+                }
+                Some('-') => {
+                    self.advance();
+                    self.tokens_pendientes
+                        .push(Token::new(TokenKind::Menos, self.linea, self.columna));
+                }
+                Some('*') => {
+                    self.advance();
+                    self.tokens_pendientes
+                        .push(Token::new(TokenKind::Por, self.linea, self.columna));
+                }
+                Some('%') => {
+                    self.advance();
+                    self.tokens_pendientes
+                        .push(Token::new(TokenKind::Porcentaje, self.linea, self.columna));
+                }
+                Some('/') => {
+                    self.advance();
+                    self.tokens_pendientes
+                        .push(Token::new(TokenKind::Dividido, self.linea, self.columna));
+                }
+                Some('.') => {
+                    self.advance();
+                    self.tokens_pendientes
+                        .push(Token::new(TokenKind::Punto, self.linea, self.columna));
+                }
+                Some(',') => {
+                    self.advance();
+                    self.tokens_pendientes
+                        .push(Token::new(TokenKind::Coma, self.linea, self.columna));
+                }
+                Some('=') => {
+                    self.advance();
+                    if self.current() == Some('=') {
+                        self.advance();
+                        self.tokens_pendientes
+                            .push(Token::new(TokenKind::IgualIgual, self.linea, self.columna));
+                    } else {
+                        self.tokens_pendientes
+                            .push(Token::new(TokenKind::Igual, self.linea, self.columna));
+                    }
+                }
+                Some('!') => {
+                    self.advance();
+                    if self.current() == Some('=') {
+                        self.advance();
+                        self.tokens_pendientes
+                            .push(Token::new(TokenKind::Diferente, self.linea, self.columna));
+                    } else {
+                        self.tokens_pendientes
+                            .push(Token::new(TokenKind::No, self.linea, self.columna));
+                    }
+                }
+                Some('>') => {
+                    self.advance();
+                    if self.current() == Some('=') {
+                        self.advance();
+                        self.tokens_pendientes
+                            .push(Token::new(TokenKind::MayorIgual, self.linea, self.columna));
+                    } else {
+                        self.tokens_pendientes
+                            .push(Token::new(TokenKind::Mayor, self.linea, self.columna));
+                    }
+                }
+                Some('<') => {
+                    self.advance();
+                    if self.current() == Some('=') {
+                        self.advance();
+                        self.tokens_pendientes
+                            .push(Token::new(TokenKind::MenorIgual, self.linea, self.columna));
+                    } else {
+                        self.tokens_pendientes
+                            .push(Token::new(TokenKind::Menor, self.linea, self.columna));
+                    }
+                }
+                Some('&') => {
+                    self.advance();
+                    if self.current() == Some('&') {
+                        self.advance();
+                        self.tokens_pendientes
+                            .push(Token::new(TokenKind::Y, self.linea, self.columna));
+                    } else {
+                        self.tokens_pendientes
+                            .push(Token::new(TokenKind::Amp, self.linea, self.columna));
+                    }
+                }
+                Some('|') => {
+                    self.advance();
+                    if self.current() == Some('|') {
+                        self.advance();
+                        self.tokens_pendientes
+                            .push(Token::new(TokenKind::O, self.linea, self.columna));
+                    } else {
+                        return Err(ErrorForja::new(
+                            ErrorTipo::ErrorLexico,
+                            self.linea,
+                            self.columna,
+                            "Carácter '|' inesperado dentro de interpolación. ¿Quizás quisiste escribir '||'?",
+                            "Usá '||' para el operador O lógico.",
+                        ));
+                    }
+                }
+                Some(':') => {
+                    self.advance();
+                    self.tokens_pendientes
+                        .push(Token::new(TokenKind::DosPuntos, self.linea, self.columna));
+                }
+                Some('"') => {
+                    // String literal anidado dentro de interpolación
+                    let kind = self.leer_texto()?;
+                    self.tokens_pendientes
+                        .push(Token::new(kind, self.linea, self.columna));
+                }
+                _ => {
+                    let ch = self.current().unwrap();
+                    if ch.is_ascii_digit() {
+                        let kind = self.leer_numero();
+                        self.tokens_pendientes
+                            .push(Token::new(kind, self.linea, self.columna));
+                    } else if ch.is_alphabetic() || ch == '_' {
+                        let kind = self.leer_identificador_o_keyword();
+                        self.tokens_pendientes
+                            .push(Token::new(kind, self.linea, self.columna));
+                    } else {
+                        // Carácter desconocido, avanzar
+                        return Err(ErrorForja::new(
+                            ErrorTipo::ErrorLexico,
+                            self.linea,
+                            self.columna,
+                            &format!(
+                                "Carácter no reconocido dentro de interpolación: '{}'",
+                                ch
+                            ),
+                            "Revisá que la expresión dentro de ${} sea válida.",
+                        ));
+                    }
+                }
+            }
+        }
     }
 
     /// Procesa el símbolo & (ampersand) o && (Y lógico)
@@ -268,6 +567,11 @@ impl Lexer {
 
     /// Genera el siguiente token
     fn next_token(&mut self) -> Result<Option<Token>, ErrorForja> {
+        // Verificar si hay tokens pendientes de interpolación
+        if !self.tokens_pendientes.is_empty() {
+            return Ok(Some(self.tokens_pendientes.remove(0)));
+        }
+
         let (linea, columna) = (self.linea, self.columna);
         let ch = match self.current() {
             Some(c) => c,
@@ -296,6 +600,20 @@ impl Lexer {
             '*' => { self.advance(); TokenKind::Por }
             '%' => { self.advance(); TokenKind::Porcentaje }
             '/' => {
+                // Detectar doc comment: ///
+                if self.source.get(self.pos + 1) == Some(&'/') && self.source.get(self.pos + 2) == Some(&'/') {
+                    self.advance(); // consume primer /
+                    self.advance(); // consume segundo /
+                    self.advance(); // consume tercer /
+                    // Leer contenido del doc comment hasta nueva línea
+                    let mut doc = String::new();
+                    while let Some(ch) = self.current() {
+                        if ch == '\n' || ch == '\r' { break; }
+                        self.advance();
+                        doc.push(ch);
+                    }
+                    return Ok(Some(Token::new(TokenKind::DocComment(doc.trim().to_string()), linea, columna)));
+                }
                 // Si es // es comentario, pero skip_comentarios ya lo maneja
                 // Aquí llegamos si es un / como operador
                 self.advance();
@@ -353,6 +671,18 @@ impl Lexer {
                         "Usá '||' para el operador O lógico.",
                     ));
                 }
+            }
+
+            // Arroba para atributos @derive, @test, etc.
+            '@' => {
+                self.advance();
+                TokenKind::Arroba
+            }
+
+            // Operador de propagación de errores ?
+            '?' => {
+                self.advance();
+                TokenKind::Interrogacion
             }
 
             // Números
@@ -516,5 +846,134 @@ mod tests {
         let mut lexer = Lexer::new(source);
         let result = lexer.tokenize();
         assert!(result.is_err());
+    }
+
+    // =====================================================
+    // Tests de String Interpolation ${}
+    // =====================================================
+
+    #[test]
+    fn test_string_interpolacion_simple() {
+        let source = r#"escribir("Hola ${nombre}")"#;
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::Escribir);
+        assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
+        assert_eq!(tokens[2].kind, TokenKind::Texto("Hola ".to_string()));
+        assert_eq!(tokens[3].kind, TokenKind::Identificador("nombre".to_string()));
+        assert_eq!(tokens[4].kind, TokenKind::Texto("".to_string()));
+        assert_eq!(tokens[5].kind, TokenKind::ParenCerrar);
+        assert_eq!(tokens[6].kind, TokenKind::EOF);
+    }
+
+    #[test]
+    fn test_string_interpolacion_multiple() {
+        let source = r#"escribir("Hola ${nombre}, edad ${edad}")"#;
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::Escribir);
+        assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
+        assert_eq!(tokens[2].kind, TokenKind::Texto("Hola ".to_string()));
+        assert_eq!(tokens[3].kind, TokenKind::Identificador("nombre".to_string()));
+        assert_eq!(tokens[4].kind, TokenKind::Texto(", edad ".to_string()));
+        assert_eq!(tokens[5].kind, TokenKind::Identificador("edad".to_string()));
+        assert_eq!(tokens[6].kind, TokenKind::Texto("".to_string()));
+        assert_eq!(tokens[7].kind, TokenKind::ParenCerrar);
+    }
+
+    #[test]
+    fn test_string_sin_interpolacion() {
+        let source = r#"escribir("Hola mundo")"#;
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::Escribir);
+        assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
+        assert_eq!(tokens[2].kind, TokenKind::Texto("Hola mundo".to_string()));
+        assert_eq!(tokens[3].kind, TokenKind::ParenCerrar);
+    }
+
+    #[test]
+    fn test_string_interpolacion_escapada() {
+        let source = r#"escribir("Hola \${nombre}")"#;
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        // \${ debe tratarse como literal ${, sin interpolar
+        assert_eq!(tokens[0].kind, TokenKind::Escribir);
+        assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
+        assert_eq!(tokens[2].kind, TokenKind::Texto("Hola ${nombre}".to_string()));
+        assert_eq!(tokens[3].kind, TokenKind::ParenCerrar);
+    }
+
+    #[test]
+    fn test_string_interpolacion_doble_dolar() {
+        let source = r#"escribir("$${nombre}")"#;
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        // $$ debe producir $ literal, y luego ${nombre} es interpolación
+        assert_eq!(tokens[0].kind, TokenKind::Escribir);
+        assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
+        assert_eq!(tokens[2].kind, TokenKind::Texto("$".to_string()));
+        assert_eq!(tokens[3].kind, TokenKind::Identificador("nombre".to_string()));
+        assert_eq!(tokens[4].kind, TokenKind::Texto("".to_string()));
+        assert_eq!(tokens[5].kind, TokenKind::ParenCerrar);
+    }
+
+    #[test]
+    fn test_string_interpolacion_con_expresion() {
+        let source = r#"escribir("Resultado: ${a + b}")"#;
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::Escribir);
+        assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
+        assert_eq!(tokens[2].kind, TokenKind::Texto("Resultado: ".to_string()));
+        assert_eq!(tokens[3].kind, TokenKind::Identificador("a".to_string()));
+        assert_eq!(tokens[4].kind, TokenKind::Mas);
+        assert_eq!(tokens[5].kind, TokenKind::Identificador("b".to_string()));
+        assert_eq!(tokens[6].kind, TokenKind::Texto("".to_string()));
+        assert_eq!(tokens[7].kind, TokenKind::ParenCerrar);
+    }
+
+    #[test]
+    fn test_string_interpolacion_con_acceso_miembro() {
+        let source = r#"escribir("${persona.nombre}")"#;
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::Escribir);
+        assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
+        assert_eq!(tokens[2].kind, TokenKind::Texto("".to_string()));
+        assert_eq!(tokens[3].kind, TokenKind::Identificador("persona".to_string()));
+        assert_eq!(tokens[4].kind, TokenKind::Punto);
+        assert_eq!(tokens[5].kind, TokenKind::Identificador("nombre".to_string()));
+        assert_eq!(tokens[6].kind, TokenKind::Texto("".to_string()));
+        assert_eq!(tokens[7].kind, TokenKind::ParenCerrar);
+    }
+
+    #[test]
+    fn test_string_interpolacion_con_funcion() {
+        let source = r#"escribir("${saludar(nombre)}")"#;
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::Escribir);
+        assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
+        assert_eq!(tokens[2].kind, TokenKind::Texto("".to_string()));
+        assert_eq!(tokens[3].kind, TokenKind::Identificador("saludar".to_string()));
+        assert_eq!(tokens[4].kind, TokenKind::ParenAbrir);
+        assert_eq!(tokens[5].kind, TokenKind::Identificador("nombre".to_string()));
+        assert_eq!(tokens[6].kind, TokenKind::ParenCerrar);
+        assert_eq!(tokens[7].kind, TokenKind::Texto("".to_string()));
+        assert_eq!(tokens[8].kind, TokenKind::ParenCerrar);
+    }
+
+    #[test]
+    fn test_string_interpolacion_vacia() {
+        let source = r#"escribir("${x}")"#;
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::Escribir);
+        assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
+        assert_eq!(tokens[2].kind, TokenKind::Texto("".to_string()));
+        assert_eq!(tokens[3].kind, TokenKind::Identificador("x".to_string()));
+        assert_eq!(tokens[4].kind, TokenKind::Texto("".to_string()));
+        assert_eq!(tokens[5].kind, TokenKind::ParenCerrar);
     }
 }

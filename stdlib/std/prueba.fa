@@ -1,0 +1,17 @@
+/// Asegura que una condición sea verdadera
+/// Si es falsa, detiene la ejecución del test con un error
+/// Uso: asegurar(condicion)
+/// Ejemplo: asegurar(suma(2, 2) == 4)
+funcion asegurar(condicion) {
+    si (no condicion) {
+        retornar error_assertion("La aserción falló")
+    }
+}
+
+/// Función interna para reportar error de aserción
+funcion error_assertion(mensaje) {
+    // En la transpilación a Rust, esto se convierte en panic!
+    // En VM, lanza una excepción que detiene el test
+    escribir("❌ " + mensaje)
+    retornar falso
+}

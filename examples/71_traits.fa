@@ -1,0 +1,28 @@
+// Test: Traits en Forja
+// Definir un trait
+trait Volador {
+    funcion volar()
+    funcion aterrizar() -> Texto
+}
+
+// Implementar el trait para una clase
+clase Pajaro {
+    nombre
+}
+
+implementa Volador para Pajaro {
+    funcion volar() {
+        escribir("Volando...")
+    }
+    funcion aterrizar() {
+        retornar "Aterrizó exitosamente"
+    }
+}
+
+// Probar
+funcion main() {
+    variable p = nuevo Pajaro()
+    p.volar()
+    variable mensaje = p.aterrizar()
+    escribir(mensaje)
+}

@@ -1,0 +1,21 @@
+// Benchmark: Fibonacci en Forja
+// Calcula Fibonacci(40) de forma iterativa
+
+funcion fibonacci(n) {
+    si (n <= 1) {
+        retornar n
+    }
+    variable a = 0
+    variable b = 1
+    variable i = 2
+    mientras (i <= n) {
+        variable temp = a + b
+        a = b
+        b = temp
+        i = i + 1
+    }
+    retornar b
+}
+
+variable resultado = fibonacci(40)
+escribir(resultado)
