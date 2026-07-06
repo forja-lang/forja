@@ -14,7 +14,7 @@ benchmarks/**/*.o
 /COMPARACION_FORJA_VS_RAVEN.md
 test_resultados.txt
 tests/
-*.md
+plans/*.md
 /*.fa
 *.ps1
 *.exe
@@ -26,3 +26,4 @@ tests/
 *test*
 *tests*
 .forja_gui_cache/
+vscode/forja-syntax/*.md
