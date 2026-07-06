@@ -47,8 +47,8 @@ pub enum Tipo {
     Resultado(Box<Tipo>, Box<Tipo>),
     /// Valor opcional (Option<T>)
     Opcion(Box<Tipo>),
-    /// Un trait usado como tipo (polimorfismo)
-    TraitObjeto(String),
+    /// Un rasgo usado como tipo (polimorfismo)
+    RasgoObjeto(String),
     /// Parámetro de tipo genérico (referencia a T, U, etc.)
     Parametro(String),
 }
@@ -109,7 +109,7 @@ pub struct Metodo {
     pub cuerpo: Vec<Declaracion>,
 }
 
-/// Firma de método en un trait (sin cuerpo)
+/// Firma de método en un rasgo (sin cuerpo)
 #[derive(Debug, Clone)]
 pub struct FirmaMetodo {
     pub nombre: String,
@@ -343,14 +343,14 @@ pub enum Declaracion {
         mutable: bool,
         valor: Box<Expresion>,
     },
-    /// Definición de trait (interfaz)
-    Trait {
+    /// Definición de rasgo (interfaz)
+    Rasgo {
         nombre: String,
         metodos: Vec<FirmaMetodo>,
     },
-    /// Implementación de trait para una clase
+    /// Implementación de rasgo para una clase
     Implementacion {
-        trait_nombre: String,
+        rasgo_nombre: String,
         clase_nombre: String,
         metodos: Vec<Metodo>,
     },

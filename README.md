@@ -12,7 +12,7 @@
 
 **Forja** es un lenguaje de programación educativo, intuitivo y autoexplicativo en **español** que se puede ejecutar en su propia **Máquina Virtual** con **JIT nativo x86-64**, compilarse a **assembly nativo** (x86-64 / ARM64), a **LLVM IR**, o funcionar en el **navegador via WASM**.
 
-> 🎯 Aprender conceptos modernos de sistemas (ownership, mutabilidad, borrowing, POO, traits, genéricos, concurrencia) sin la complejidad sintáctica de Rust, y en tu idioma.
+> 🎯 Aprender conceptos modernos de sistemas (ownership, mutabilidad, borrowing, POO, rasgos, genéricos, concurrencia) sin la complejidad sintáctica de Rust, y en tu idioma.
 
 ---
 
@@ -24,7 +24,7 @@ Forja ha evolucionado con poderosas nuevas características que lo llevan al sig
 |---------|:------:|---------|
 | **String Interpolation** 🎯 | ✅ Estable | `"Hola ${nombre}, tienes ${edad} años"` |
 | **Result/Option + `?`** 📦 | ✅ Estable | `Resultado<Entero, Texto>` / `Opcion<Entero>` / `valor?` |
-| **Traits / Interfaces** 🧬 | ✅ Estable | `trait Volador { funcion volar() }` |
+| **Traits / Interfaces** 🧬 | ✅ Estable | `rasgo Volador { funcion volar() }` |
 | **Genéricos** 🔄 | ✅ Estable | `funcion identidad<T>(valor: T) -> T` |
 | **Match exhaustivo** 🎲 | ✅ Estable | Cobertura de casos verificada en compilación |
 | **Select sobre canales** 📡 | ✅ Estable | `seleccionar { caso ... }` |
@@ -222,8 +222,8 @@ cargo run --release --bin forja -- repl
 ```fa
 importar "std/io"
 
-// ─── Traits e Implementaciones ───
-trait Volador {
+// ─── Rasgos e Implementaciones ───
+rasgo Volador {
     funcion volar() -> Texto
     funcion aterrizar()
 }
@@ -323,7 +323,7 @@ funcion main() {
     variable caja = nuevo Caja(42)
     escribir("Genéricos: ${x}, ${y}, ${caja.obtener()}")
 
-    // Traits
+    // Rasgos
     variable p = nuevo Pajaro("Tweety")
     escribir(p.volar())
     p.aterrizar()
@@ -447,7 +447,7 @@ El JIT de Forja compila tu código a **instrucciones x86-64 nativas** en memoria
 | 15 | **Inline Caching (POO)** 🎯 | GetField/SetField con cache de clase+índice | [`src/vm_fast.rs`](src/vm_fast.rs) |
 | 16 | **Descriptors + Shape** 🧬 | Shape compartido + MRO precalculado: acceso O(1) a campos y métodos | [`src/class_descriptor.rs`](src/class_descriptor.rs) |
 | 17 | **Result/Option + `?`** 📦 | Tipos `Resultado<T,E>` y `Opcion<T>` con operador de propagación | [`stdlib/std/resultado.fa`](stdlib/std/resultado.fa) |
-| 18 | **Traits + Genéricos** 🧬 | Polimorfismo paramétrico con `<T>` e interfaces con `trait`/`implementa` | [`src/semantics.rs`](src/semantics.rs) |
+| 18 | **Rasgos + Genéricos** 🧬 | Polimorfismo paramétrico con `<T>` e interfaces con `rasgo`/`implementa` | [`src/semantics.rs`](src/semantics.rs) |
 | 19 | **Match Exhaustivo** 🎲 | Coincidencia de patrones con verificación de cobertura total | [`src/parser.rs`](src/parser.rs) |
 | 20 | **Testing Framework** 🧪 | `@test` + `asegurar()` para tests integrados en el lenguaje | [`stdlib/std/prueba.fa`](stdlib/std/prueba.fa) |
 | 21 | **LLVM Backend** 🚀 | Generación de LLVM IR como texto para compilación nativa | [`src/compiler_llvm.rs`](src/compiler_llvm.rs) |
@@ -468,7 +468,7 @@ Raven fue la inspiración original de Forja. Aquí la comparativa actualizada co
 | **String Interpolation** | ❌ | ✅ `"Hola ${nombre}"` |
 | **Result/Option** | ❌ | ✅ `Resultado<T,E>` / `Opcion<T>` |
 | **Operador `?`** | ❌ | ✅ Propagación de errores |
-| **Traits / Interfaces** | ❌ | ✅ `trait` + `implementa` |
+| **Rasgos / Interfaces** | ❌ | ✅ `rasgo` + `implementa` |
 | **Genéricos** | ❌ | ✅ `funcion foo<T>(x: T) -> T` |
 | **Match exhaustivo** | ❌ | ✅ `coincidir { caso ... }` |
 | **Select sobre canales** | ❌ | ✅ `seleccionar { caso ... }` |
@@ -691,7 +691,7 @@ Forja incluye **200 ejemplos progresivos** que cubren desde lo más básico hast
 #### Features Nuevas (71-74)
 | # | Archivo | Concepto |
 |---|---------|----------|
-| 71 | [`71_traits.fa`](examples/71_traits.fa) | Traits |
+| 71 | [`71_rasgos.fa`](examples/71_rasgos.fa) | Rasgos |
 | 72 | [`72_genericos.fa`](examples/72_genericos.fa) | Genéricos |
 | 73 | [`73_atributos.fa`](examples/73_atributos.fa) | Atributos |
 | 73b| [`73_seleccionar.fa`](examples/73_seleccionar.fa) | Select sobre canales |

@@ -65,9 +65,9 @@ pub enum TokenKind {
     Recibir,
     /// `unir` - esperar a que un hilo termine
     Unir,
-    /// `trait` - definición de trait (interfaz)
-    Trait,
-    /// `implementa` - implementación de trait para una clase
+    /// `rasgo` - definición de rasgo (interfaz)
+    Rasgo,
+    /// `implementa` - implementación de rasgo para una clase
     Implementa,
     /// `donde` - cláusula where/donde (reservado para futuro)
     Donde,
@@ -209,7 +209,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Enviar => write!(f, "enviar"),
             TokenKind::Recibir => write!(f, "recibir"),
             TokenKind::Unir => write!(f, "unir"),
-            TokenKind::Trait => write!(f, "trait"),
+            TokenKind::Rasgo => write!(f, "rasgo"),
             TokenKind::Implementa => write!(f, "implementa"),
             TokenKind::Donde => write!(f, "donde"),
             TokenKind::Seleccionar => write!(f, "seleccionar"),

@@ -1,13 +1,13 @@
-/// Métodos con implementación por defecto en traits
+/// Métodos con implementación por defecto en rasgos
 /// Conceptos: método default, herencia de implementación, override
 /// Nivel: avanzado
 
 importar "std/io"
 
-// Los traits pueden tener métodos con implementación por defecto
+// Los rasgos pueden tener métodos con implementación por defecto
 // Las clases pueden usarlos directamente o sobreescribirlos
 
-trait Saludador {
+rasgo Saludador {
     // Método sin implementación (debe implementarlo la clase)
     funcion obtener_nombre() -> Texto
     

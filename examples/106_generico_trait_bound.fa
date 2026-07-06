@@ -1,13 +1,13 @@
-/// Genéricos con trait bounds (restricciones)
-/// Conceptos: trait bound, restricción de tipo, don't care
+/// Genéricos con rasgo bounds (restricciones)
+/// Conceptos: rasgo bound, restricción de tipo, don't care
 /// Nivel: avanzado
 
 importar "std/io"
 
 // Podemos restringir qué tipos pueden usarse con una función
-// genérica usando trait bounds
+// genérica usando rasgo bounds
 
-trait Mostrable {
+rasgo Mostrable {
     funcion mostrar() -> Texto
 }
 
@@ -47,7 +47,7 @@ funcion imprimir_lista<T>(lista) {
 }
 
 funcion main() {
-    escribir("=== Genéricos con Trait Bounds ===\n")
+    escribir("=== Genéricos con Rasgo Bounds ===\n")
     
     variable p1 = nuevo Persona()
     p1.nombre = "Ana"

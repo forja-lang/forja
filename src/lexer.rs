@@ -163,7 +163,7 @@ impl Lexer {
             "enviar" => TokenKind::Enviar,
             "recibir" => TokenKind::Recibir,
             "unir" => TokenKind::Unir,
-            "trait" => TokenKind::Trait,
+            "rasgo" => TokenKind::Rasgo,
             "implementa" => TokenKind::Implementa,
             "donde" => TokenKind::Donde,
             "seleccionar" => TokenKind::Seleccionar,

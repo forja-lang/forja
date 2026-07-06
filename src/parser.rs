@@ -124,7 +124,7 @@ impl Parser {
             TokenKind::Hilo => self.parse_hilo(),
             TokenKind::Canal => self.parse_canal(),
             TokenKind::Seleccionar => self.parse_seleccionar(),
-            TokenKind::Trait => self.parse_trait(),
+            TokenKind::Rasgo => self.parse_rasgo(),
             TokenKind::Tipo => {
                 // 'tipo' puede ser inicio de declaración de enum O nombre de variable
                 // (ej: tipo = "PALABRA_CLAVE" como asignación).
@@ -418,34 +418,34 @@ impl Parser {
         }))
     }
 
-    /// trait <nombre> [<T>] [: TraitPadre] { funcion nombre(params) [-> Tipo] ... }
-    fn parse_trait(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
-        self.avanzar(); // consume 'trait'
+    /// rasgo <nombre> [<T>] [: RasgoPadre] { funcion nombre(params) [-> Tipo] ... }
+    fn parse_rasgo(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
+        self.avanzar(); // consume 'rasgo'
 
-        let nombre = self.esperar_identificador("Se esperaba el nombre del trait.")?;
+        let nombre = self.esperar_identificador("Se esperaba el nombre del rasgo.")?;
 
-        // Parámetros de tipo genérico opcionales: trait Nombre<T>
+        // Parámetros de tipo genérico opcionales: rasgo Nombre<T>
         let _parametros_tipo = if self.coincide(TokenKind::Menor) {
             self.parse_parametros_tipo()?
         } else {
             Vec::new()
         };
 
-        // Herencia opcional: trait Hijo : Padre
+        // Herencia opcional: rasgo Hijo : Padre
         if self.coincide(TokenKind::DosPuntos) {
             self.avanzar(); // consume ':'
-            let _padre = self.esperar_identificador("Se esperaba nombre del trait padre.")?;
-            // Por ahora solo ignoramos el trait padre (soporte futuro)
+            let _padre = self.esperar_identificador("Se esperaba nombre del rasgo padre.")?;
+            // Por ahora solo ignoramos el rasgo padre (soporte futuro)
         }
 
-        self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' para iniciar cuerpo del trait.")?;
+        self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' para iniciar cuerpo del rasgo.")?;
 
         let mut metodos = Vec::new();
         while !self.coincide(TokenKind::LlaveCerrar) && !self.es_eof() {
-            // Cada método en trait: funcion nombre(params) [-> Tipo]
+            // Cada método en rasgo: funcion nombre(params) [-> Tipo]
             if self.coincide(TokenKind::Funcion) {
                 self.avanzar(); // consume 'funcion'
-                let nombre_metodo = self.esperar_identificador("Se esperaba nombre del método en trait.")?;
+                let nombre_metodo = self.esperar_identificador("Se esperaba nombre del método en rasgo.")?;
                 self.esperar(TokenKind::ParenAbrir, "Se esperaba '(' después del nombre del método.")?;
                 let parametros = self.parse_parametros()?;
                 self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de los parámetros.")?;
@@ -491,8 +491,8 @@ impl Parser {
                 self.avanzar();
             }
         }
-        self.esperar(TokenKind::LlaveCerrar, "Se esperaba '}' para cerrar el trait.")?;
-        Ok(Some(Declaracion::Trait { nombre, metodos }))
+        self.esperar(TokenKind::LlaveCerrar, "Se esperaba '}' para cerrar el rasgo.")?;
+        Ok(Some(Declaracion::Rasgo { nombre, metodos }))
     }
 
     /// tipo <nombre> = Variante1 | Variante2(Tipo, Tipo) | Variante3
@@ -535,12 +535,12 @@ impl Parser {
         Ok(Some(Declaracion::Enum { nombre, variantes, atributos: vec![] }))
     }
 
-    /// implementa <trait>[<T>] para <clase> { funcion nombre(params) [-> Tipo] { ... } ... }
+    /// implementa <rasgo>[<T>] para <clase> { funcion nombre(params) [-> Tipo] { ... } ... }
     fn parse_implementacion(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
         self.avanzar(); // consume 'implementa'
-        let trait_nombre = self.esperar_identificador("Se esperaba nombre del trait.")?;
+        let rasgo_nombre = self.esperar_identificador("Se esperaba nombre del rasgo.")?;
 
-        // Parámetros de tipo genérico opcionales en el trait: implementa Comparador<Entero> para ...
+        // Parámetros de tipo genérico opcionales en el rasgo: implementa Comparador<Entero> para ...
         if self.coincide(TokenKind::Menor) {
             self.parse_parametros_tipo()?; // consumir <Entero> o similares
         }
@@ -551,8 +551,8 @@ impl Parser {
                 ErrorTipo::ErrorSintactico,
                 self.linea_actual(),
                 self.columna_actual(),
-                "Se esperaba 'para' después del nombre del trait.",
-                "Usá: implementa Trait para Clase { ... }",
+                "Se esperaba 'para' después del nombre del rasgo.",
+                "Usá: implementa Rasgo para Clase { ... }",
             ));
         }
         self.avanzar(); // consume 'para'
@@ -571,7 +571,7 @@ impl Parser {
             }
         }
         self.esperar(TokenKind::LlaveCerrar, "Se esperaba '}' para cerrar la implementación.")?;
-        Ok(Some(Declaracion::Implementacion { trait_nombre, clase_nombre, metodos }))
+        Ok(Some(Declaracion::Implementacion { rasgo_nombre, clase_nombre, metodos }))
     }
 
     /// Parsea un campo dentro de una clase: <nombre> [= <expr>]
@@ -1706,7 +1706,7 @@ impl Parser {
             TokenKind::Tipo,
             TokenKind::Funcion,
             TokenKind::Clase,
-            TokenKind::Trait,
+            TokenKind::Rasgo,
             TokenKind::Externo,
             TokenKind::Prestado,
             TokenKind::Constructor,

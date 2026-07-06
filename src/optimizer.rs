@@ -245,7 +245,7 @@ impl DeadCodeEliminator {
                         self.recolectar_usos(&m.cuerpo);
                     }
                 }
-                Declaracion::Trait { .. } => {}
+                Declaracion::Rasgo { .. } => {}
                 Declaracion::Implementacion { metodos, .. } => {
                     for m in metodos {
                         self.recolectar_usos(&m.cuerpo);

@@ -82,6 +82,7 @@ enum Layout {
     Row(Vec<Layout>),
     ZStack(Vec<Layout>),
     Portal(Box<Layout>),
+    Container { child: Box<Layout>, max_width: f64 },
     Label { texto: String, es_variable: bool },
     VariableLabel { variable: String },
     Title(String),
@@ -281,6 +282,13 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                     argumentos.first().and_then(|a| expr_a_layout(a))
                         .map(|child| Layout::Portal(Box::new(child)))
                 }
+                "contenedor" | "container" | "caja" => {
+                    let child = argumentos.first().and_then(|a| expr_a_layout(a));
+                    let max_width = argumentos.get(1)
+                        .and_then(|a| match a { Expresion::LiteralNumero(n) => Some(*n as f64), _ => None })
+                        .unwrap_or(400.0);
+                    child.map(|c| Layout::Container { child: Box::new(c), max_width })
+                }
                 _ => None,
             }
         }
@@ -358,6 +366,10 @@ fn layout_a_view<'a>(
         Layout::Portal(child) => {
             let inner = layout_a_view(child, data, _prog);
             Box::new(view::portal(inner))
+        }
+        Layout::Container { child, max_width } => {
+            let inner = layout_a_view(child, data, _prog);
+            Box::new(view::sized_box(inner).width(Length::px(*max_width)))
         }
         Layout::Label { texto, es_variable } => {
             let txt = if *es_variable { data.leer(texto).to_string() } else { texto.clone() };
