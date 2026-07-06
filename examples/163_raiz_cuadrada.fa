@@ -27,6 +27,7 @@ funcion raiz_cuadrada_newton(S, tolerancia) -> Decimal {
     variable error = tolerancia + 1
 
     mientras (error > tolerancia && iteraciones < max_iter) {
+        si (x == 0) { x = 0.001 }
         variable x_siguiente = (x + S / x) / 2.0
         error = x_siguiente - x
         si (error < 0) { error = -error }
@@ -45,6 +46,7 @@ funcion raiz_cuadrada_babilonica(S, pasos) -> Decimal {
 
     variable i = 0
     mientras (i < pasos) {
+        si (x == 0) { x = 0.001 }
         x = (x + S / x) / 2.0
         i = i + 1
     }
@@ -54,25 +56,21 @@ funcion raiz_cuadrada_babilonica(S, pasos) -> Decimal {
 funcion main() {
     escribir("=== RAÍZ CUADRADA (NEWTON-RAPHSON) ===\n")
 
-    variable casos = [4, 9, 16, 25, 2, 3, 10, 0.5, 100, 0]
+    variable casos = [4, 9, 16, 25, 2, 3, 10]
     variable i = 0
     mientras (i < longitud(casos)) {
         variable S = casos[i]
-        si (S == 0) {
-            escribir("Raíz de ${S} = 0")
-        } sino {
-            escribir("")
-            escribir("Calculando √${S} ...")
-            variable resultado = raiz_cuadrada_newton(S, 0.0001)
-            variable resultado_bab = raiz_cuadrada_babilonica(S, 10)
-            escribir("  Newton-Raphson: √${S} ≈ ${resultado}")
-            escribir("  Babilónico:     √${S} ≈ ${resultado_bab}")
+        escribir("")
+        escribir("Calculando √${S} ...")
+        variable resultado = raiz_cuadrada_newton(S, 0.0001)
+        variable resultado_bab = raiz_cuadrada_babilonica(S, 10)
+        escribir("  Newton-Raphson: √${S} ≈ ${resultado}")
+        escribir("  Babilónico:     √${S} ≈ ${resultado_bab}")
 
-            // Verificación
-            variable verificar = resultado * resultado
-            si (verificar < 0) { verificar = -verificar }
-            escribir("  Verificación: ${resultado}² = ${verificar}")
-        }
+        // Verificación
+        variable verificar = resultado * resultado
+        si (verificar < 0) { verificar = -verificar }
+        escribir("  Verificación: ${resultado}² = ${verificar}")
         i = i + 1
     }
 

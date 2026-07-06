@@ -28,15 +28,18 @@ funcion aprox_pi_montecarlo(puntos) -> Decimal {
     variable i = 0
     mientras (i < puntos) {
         variable t = tiempo_actual() * (i + 1)
-        variable x = (t % 10000) / 10000.0
-        variable y = ((t * 7 + 13) % 10000) / 10000.0
+        variable x = ((t % 10000) + 10000) / 20000.0
+        variable y = (((t * 7 + 13) % 10000) + 10000) / 20000.0
         variable distancia = x * x + y * y
         si (distancia <= 1.0) {
             dentro = dentro + 1
         }
         i = i + 1
     }
-    retornar (4.0 * dentro) / puntos
+    si (puntos > 0) {
+        retornar (4.0 * dentro) / puntos
+    }
+    retornar 0.0
 }
 
 funcion main() {
@@ -44,7 +47,7 @@ funcion main() {
     escribir("Valor real de PI ≈ 3.1415926535...\n")
 
     escribir("--- Método 1: Serie de Leibniz ---")
-    variable terminos = [10, 100, 1000, 10000, 100000]
+    variable terminos = [10, 100, 1000]
     variable i = 0
     mientras (i < longitud(terminos)) {
         variable n = terminos[i]
@@ -57,7 +60,7 @@ funcion main() {
 
     escribir("")
     escribir("--- Método 2: Monte Carlo ---")
-    variable puntos = [100, 1000, 10000]
+    variable puntos = [100, 1000]
     variable j = 0
     mientras (j < longitud(puntos)) {
         variable n = puntos[j]
