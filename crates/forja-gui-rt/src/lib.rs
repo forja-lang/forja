@@ -13,5 +13,7 @@ pub use xilem::{
 };
 pub use xilem::winit::error::EventLoopError;
 pub use xilem::{Affine, Blob, Color, ImageBrush, ImageFormat, palette};
-pub use xilem::core::{lens, memoize};
+pub use xilem::core::{lens, memoize, map_message};
+pub use xilem::core::MessageResult;
 pub use xilem::masonry::properties::types::Length;
+pub use xilem::style::Style;
