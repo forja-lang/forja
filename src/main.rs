@@ -1027,11 +1027,15 @@ fn intentar_selfrun_gui() -> bool {
     }
 }
 
-/// forja build <archivo.fa> -o <salida>
+/// forja build|compilar|construir <archivo.fa> [-o <ejecutable>] [--debug|--console]
+/// Compila un archivo .fa a un ejecutable autónomo.
+/// Para programas GUI: incrusta el código fuente en una copia de forja.exe
+/// (usa el runtime nativo de Xilem ya compilado, sin dependencias externas).
+/// --debug, --console: mantener ventana de consola (ver errores)
 fn cmd_build(args: &[String]) {
     // Extraer input y output
-    let (input, output) = if args.len() >= 3 && args[0] == "-o" {
-        (args[1].clone(), args[2].clone())
+    let (input, output, debug_mode) = if args.len() >= 3 && args[0] == "-o" {
+        (args[1].clone(), args[2].clone(), args.iter().any(|a| a == "--debug" || a == "--console"))
     } else if !args.is_empty() && args[0].ends_with(".fa") {
         let input = args[0].clone();
         let output = if args.len() > 2 && args[1] == "-o" {
@@ -1039,9 +1043,10 @@ fn cmd_build(args: &[String]) {
         } else {
             Path::new(&input).with_extension("exe").to_string_lossy().to_string()
         };
-        (input, output)
+        let debug_mode = args.iter().any(|a| a == "--debug" || a == "--console");
+        (input, output, debug_mode)
     } else {
-        eprintln!("Uso: forja build|compilar|construir <archivo.fa> -o <ejecutable>");
+        eprintln!("Uso: forja build|compilar|construir <archivo.fa> [-o <ejecutable>] [--debug|--console]");
         process::exit(1);
     };
 
@@ -1057,7 +1062,10 @@ fn cmd_build(args: &[String]) {
     if source.contains("importar \"gui\"") || source.contains("importar 'gui'") {
         println!("🎨 Programa GUI detectado — generando ejecutable autónomo con GUI nativa");
         println!("   (incrusta el código fuente en forja.exe — 0 dependencias externas)");
-        if let Err(e) = compilar_gui_embebido(&output, &source) {
+        if debug_mode {
+            println!("   🐞 Modo debug: se mantendrá la ventana de consola");
+        }
+        if let Err(e) = compilar_gui_embebido(&output, &source, debug_mode) {
             eprintln!("❌ {}", e);
             process::exit(1);
         }
@@ -1077,22 +1085,30 @@ const FGC_MAGIC: &[u8; 4] = b"FGC\0";
 /// Genera un .exe autónomo con GUI nativa, incrustando el código fuente Forja
 /// al final de una copia de forja.exe (que ya contiene Xilem compilado).
 ///
-/// El .exe generado NO necesita compilar dependencias externas — usa el runtime
-/// nativo incluido en forja (requiere --features gui / --features all al compilar forja).
-fn compilar_gui_embebido(output_path: &str, source: &str) -> Result<(), String> {
-    // 1. Obtener la ruta del propio forja.exe (tiene Xilem compilado si se usó --features gui/all)
+/// Si `sin_consola` es true: modifica el header PE a subsistema WINDOWS (sin terminal).
+/// Si `sin_consola` es false: mantiene el subsistema CONSOLE original (con terminal).
+fn compilar_gui_embebido(output_path: &str, source: &str, sin_consola: bool) -> Result<(), String> {
+    // 1. Obtener la ruta del propio forja.exe
     let self_path = std::env::current_exe()
         .map_err(|e| format!("Error obteniendo ruta del ejecutable: {}", e))?;
 
-    // 2. Leer forja.exe (stub que contiene el runtime GUI si se compiló con --features gui/all)
-    let stub = fs::read(&self_path)
+    // 2. Leer forja.exe (stub)
+    let mut stub = fs::read(&self_path)
         .map_err(|e| format!("Error leyendo '{}': {}", self_path.display(), e))?;
 
-    // 3. Codificar el source a UTF-8
+    // 3. Si se solicita sin consola, cambiar subsistema PE: CONSOLE(3) → WINDOWS(2)
+    if sin_consola {
+        if let Err(e) = pe_cambiar_a_subsistema_windows(&mut stub) {
+            eprintln!("  ⚠️  No se pudo cambiar el subsistema: {}", e);
+            eprintln!("     El ejecutable mostrará una consola (usá --no-debug para ocultarla)");
+        }
+    }
+
+    // 4. Codificar el source a UTF-8
     let source_bytes = source.as_bytes();
     let src_size = source_bytes.len() as u32;
 
-    // 4. Escribir stub + source + footer
+    // 5. Escribir stub + source + footer
     let mut output = Vec::with_capacity(stub.len() + source_bytes.len() + 8);
     output.extend_from_slice(&stub);
     output.extend_from_slice(source_bytes);
@@ -1102,12 +1118,76 @@ fn compilar_gui_embebido(output_path: &str, source: &str) -> Result<(), String> 
     output.extend_from_slice(&size_bytes);
     output.extend_from_slice(FGC_MAGIC);
 
-    // 5. Escribir archivo de salida
+    // 6. Escribir archivo de salida
     fs::write(output_path, &output)
         .map_err(|e| format!("Error escribiendo '{}': {}", output_path, e))?;
 
     println!("  ✅ Ejecutable generado: {} ({} bytes)", output_path, output.len());
-    println!("  🪟 Contiene el runtime GUI nativo de Forja — 0 dependencias externas que compilar");
+    if sin_consola {
+        println!("  🪟 Sin consola: el .exe no mostrará ventana de terminal");
+    } else {
+        println!("  🐞 Con consola: el .exe mostrará ventana de terminal (útil para debug)");
+        println!("     Para ocultarla: forja compilar ... --no-debug");
+    }
+    Ok(())
+}
+
+/// Modifica el header PE de un ejecutable Windows para cambiar el subsistema
+/// de CONSOLE (3) a WINDOWS (2), evitando que se abra una ventana de consola.
+///
+/// Formato PE: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+fn pe_cambiar_a_subsistema_windows(exe: &mut [u8]) -> Result<(), String> {
+    if exe.len() < 64 {
+        return Err("Archivo demasiado corto para ser PE".to_string());
+    }
+
+    // El offset del signature PE está en el DOS header en offset 0x3C
+    let pe_sig_offset = u32::from_le_bytes([
+        exe[0x3C], exe[0x3D], exe[0x3E], exe[0x3F]
+    ]) as usize;
+
+    if pe_sig_offset + 4 >= exe.len() {
+        return Err("Offset PE signature inválido".to_string());
+    }
+
+    // Verificar signature "PE\0\0"
+    if &exe[pe_sig_offset..pe_sig_offset + 4] != b"PE\0\0" {
+        return Err("Signature PE no encontrada".to_string());
+    }
+
+    // Después del COFF header (20 bytes) viene el Optional header
+    let optional_header_offset = pe_sig_offset + 4 + 20;
+
+    if optional_header_offset + 70 >= exe.len() {
+        return Err("Archivo PE demasiado corto para optional header".to_string());
+    }
+
+    // El campo Subsystem está en el optional header en offset 68 (0x44)
+    // tanto para PE32 (magic 0x10B) como para PE32+ (magic 0x20B)
+    let _magic = u16::from_le_bytes([
+        exe[optional_header_offset],
+        exe[optional_header_offset + 1],
+    ]);
+
+    let subsystem_offset = optional_header_offset + 68;
+
+    if subsystem_offset + 2 > exe.len() {
+        return Err("Offset de subsistema fuera de rango".to_string());
+    }
+
+    let current_subsystem = u16::from_le_bytes([
+        exe[subsystem_offset],
+        exe[subsystem_offset + 1],
+    ]);
+
+    if current_subsystem == 2 {
+        return Ok(()); // Ya es WINDOWS_GUI
+    }
+
+    // Cambiar subsystem de 3 (CONSOLE) a 2 (WINDOWS GUI)
+    exe[subsystem_offset] = 2;
+    exe[subsystem_offset + 1] = 0;
+
     Ok(())
 }
 
