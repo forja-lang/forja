@@ -1,8 +1,3 @@
---- 102_generico_intercambiar.fa ---
-Error en ejecución: 📖 Gramática — línea 10: Se esperaba ')' para cerrar la expresión.
-  💡 Se esperaba un token específico.
-
-
 --- 103_generico_pila.fa ---
 Error en ejecución: 🔤 Tipos de datos — línea 0: No se puede asignar Texto a variable de tipo Arreglo(Nulo)
   💡 Usá el tipo correcto para la asignación.
@@ -37,16 +32,6 @@ Error en ejecución: Div/0
 
 --- 185_ffi_matematicas.fa ---
 Error en ejecución: Div/0
-
-
---- 189_benchmark_manual.fa ---
-Error en ejecución: 📖 Gramática — línea 77: Se esperaba el nombre de la función.
-  💡 Se esperaba un nombre (identificador).
-
-
---- 192_metaprogramacion.fa ---
-Error en ejecución: 📖 Gramática — línea 17: Se esperaba '=' después del nombre del tipo.
-  💡 Se esperaba un token específico.
 
 
 --- 195_recorrido_arbol.fa ---

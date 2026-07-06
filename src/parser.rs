@@ -125,7 +125,22 @@ impl Parser {
             TokenKind::Canal => self.parse_canal(),
             TokenKind::Seleccionar => self.parse_seleccionar(),
             TokenKind::Trait => self.parse_trait(),
-            TokenKind::Tipo => self.parse_enum(),
+            TokenKind::Tipo => {
+                // 'tipo' puede ser inicio de declaración de enum O nombre de variable
+                // (ej: tipo = "PALABRA_CLAVE" como asignación).
+                // Verificamos si el siguiente token es '=' para distinguir.
+                if self.pos + 1 < self.tokens.len() && self.tokens[self.pos + 1].kind == TokenKind::Igual {
+                    match self.parse_statement_expresion() {
+                        Ok(r) => Ok(r),
+                        Err(_) => {
+                            self.avanzar();
+                            return self.parse_declaracion();
+                        }
+                    }
+                } else {
+                    self.parse_enum()
+                }
+            }
             TokenKind::Implementa => self.parse_implementacion(),
             TokenKind::LlaveCerrar => Ok(None), // fin de bloque
             _ => {
@@ -1651,6 +1666,28 @@ impl Parser {
             TokenKind::Hilo,
             TokenKind::Canal,
             TokenKind::Tipo,
+            TokenKind::Funcion,
+            TokenKind::Clase,
+            TokenKind::Trait,
+            TokenKind::Externo,
+            TokenKind::Prestado,
+            TokenKind::Constructor,
+            TokenKind::Coincidir,
+            TokenKind::Repetir,
+            TokenKind::Mientras,
+            TokenKind::Variable,
+            TokenKind::Constante,
+            TokenKind::Nuevo,
+            TokenKind::Nulo,
+            TokenKind::Verdadero,
+            TokenKind::Falso,
+            TokenKind::Este,
+            TokenKind::Escribir,
+            TokenKind::Leer,
+            TokenKind::BD,
+            TokenKind::Enviar,
+            TokenKind::Recibir,
+            TokenKind::Unir,
         ];
         for kw in &soft_keywords {
             if self.coincide(kw.clone()) {
