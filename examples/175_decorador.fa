@@ -1,5 +1,5 @@
-/// Patrón Decorator con Traits
-/// Conceptos: decorator, traits, composición, responsabilidades dinámicas
+/// Patrón Decorator con Rasgos
+/// Conceptos: decorator, rasgos, composición, responsabilidades dinámicas
 /// Nivel: avanzado
 
 importar "std/io"
@@ -7,7 +7,7 @@ importar "std/io"
 // El patrón Decorator permite añadir funcionalidades a objetos
 // de forma dinámica, envolviéndolos en otros objetos decoradores.
 
-trait Notificador {
+rasgo Notificador {
     funcion enviar(mensaje)
 }
 

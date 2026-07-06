@@ -1,5 +1,5 @@
-/// Patrón Adapter con Traits
-/// Conceptos: adapter, traits, compatibilidad, interfaces, wrappers
+/// Patrón Adapter con Rasgos
+/// Conceptos: adapter, rasgos, compatibilidad, interfaces, wrappers
 /// Nivel: avanzado
 
 importar "std/io"
@@ -21,7 +21,7 @@ clase SistemaTemperaturaFahrenheit {
 }
 
 // Interfaz moderna que queremos usar
-trait SistemaTemperatura {
+rasgo SistemaTemperatura {
     funcion obtener_temperatura_c() -> Entero
     funcion configurar_temp_c(temp_c)
     funcion obtener_unidad() -> Texto
@@ -68,7 +68,7 @@ clase SistemaLongitudPulgadas {
     }
 }
 
-trait SistemaLongitud {
+rasgo SistemaLongitud {
     funcion obtener_longitud_cm() -> Entero
     funcion obtener_unidad_long() -> Texto
 }

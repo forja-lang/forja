@@ -230,10 +230,10 @@ impl Transpiler {
             }
         }
 
-        // Generar traits e implementaciones después de las funciones
+        // Generar rasgos e implementaciones después de las funciones
         for decl in &programa.declaraciones {
             match decl {
-                Declaracion::Trait { .. } | Declaracion::Implementacion { .. } => {
+                Declaracion::Rasgo { .. } | Declaracion::Implementacion { .. } => {
                     self.transpilar_declaracion(decl);
                     self.emit_line("");
                 }
@@ -787,7 +787,7 @@ impl Transpiler {
                                 Tipo::Funcion(_, _) => "fn".to_string(),
                                 Tipo::Resultado(_, _) => "Result<...>".to_string(),
                                 Tipo::Opcion(_) => "Option<...>".to_string(),
-                                Tipo::TraitObjeto(n) => format!("Box<dyn {}>", n),
+                                Tipo::RasgoObjeto(n) => format!("Box<dyn {}>", n),
                                 Tipo::Parametro(n) => n.clone(),
                             };
                         }
@@ -1014,7 +1014,7 @@ impl Transpiler {
                 Tipo::Funcion(_, _) => "fn".to_string(),
                 Tipo::Resultado(_, _) => "Result<...>".to_string(),
                 Tipo::Opcion(_) => "Option<...>".to_string(),
-                Tipo::TraitObjeto(nombre) => format!("Box<dyn {}>", nombre),
+                Tipo::RasgoObjeto(nombre) => format!("Box<dyn {}>", nombre),
                 Tipo::Parametro(nombre) => nombre.clone(),
             };
         }
@@ -1315,7 +1315,7 @@ impl Transpiler {
                 self.emit_line("}");
             }
 
-            Declaracion::Trait { nombre, metodos } => {
+            Declaracion::Rasgo { nombre, metodos } => {
                 self.emit_line(&format!("trait {} {{", nombre));
                 self.indent();
                 for metodo in metodos {
@@ -1339,8 +1339,8 @@ impl Transpiler {
                 self.emit_line("");
             }
 
-            Declaracion::Implementacion { trait_nombre, clase_nombre, metodos } => {
-                self.emit_line(&format!("impl {} for {} {{", trait_nombre, clase_nombre));
+            Declaracion::Implementacion { rasgo_nombre, clase_nombre, metodos } => {
+                self.emit_line(&format!("impl {} for {} {{", rasgo_nombre, clase_nombre));
                 self.indent();
                 for metodo in metodos {
                     self.generar_metodo(metodo, clase_nombre);
@@ -1886,7 +1886,7 @@ impl Transpiler {
             }
             Tipo::Resultado(ok, err) => format!("Result<{}, {}>", self.tipo_a_rust(ok), self.tipo_a_rust(err)),
             Tipo::Opcion(inner) => format!("Option<{}>", self.tipo_a_rust(inner)),
-            Tipo::TraitObjeto(nombre) => format!("Box<dyn {}>", nombre),
+            Tipo::RasgoObjeto(nombre) => format!("Box<dyn {}>", nombre),
             Tipo::Parametro(nombre) => nombre.clone(),
         }
     }
@@ -1898,11 +1898,11 @@ impl Transpiler {
     /// Emite #[derive(...)] a partir de atributos @derive(Mostrar, Igual, ...)
     fn emit_derive_from_atributos(&mut self, atributos: &[Atributo]) {
         if let Some(derive_attr) = atributos.iter().find(|a| a.nombre == "derive") {
-            let traits: Vec<&String> = derive_attr.argumentos.iter().filter(|a| {
+            let rasgos: Vec<&String> = derive_attr.argumentos.iter().filter(|a| {
                 matches!(a.as_str(), "Mostrar" | "Igual" | "Debug" | "Clone" | "Copiar")
             }).collect();
-            if !traits.is_empty() {
-                let rust_traits: Vec<String> = traits.iter().map(|t| {
+            if !rasgos.is_empty() {
+                let rust_traits: Vec<String> = rasgos.iter().map(|t| {
                     match t.as_str() {
                         "Mostrar" => "Display".to_string(),
                         "Igual" => "PartialEq".to_string(),

@@ -1,5 +1,5 @@
 /// Ejemplo Final: Todas las Features Combinadas
-/// Conceptos: integración, features combinadas, POO, traits, hilos, patrones, FP
+/// Conceptos: integración, features combinadas, POO, rasgos, hilos, patrones, FP
 /// Nivel: experto
 
 importar "std/io"
@@ -20,16 +20,16 @@ tipo Operacion = Sumar | Restar | Multiplicar | Dividir
 tipo ResultadoAnalisis = Exito(Entero, Texto) | Error(Texto)
 
 // ============================================================
-// 2. TRAIT (interfaz genérica)
+// 2. RASGO (interfaz genérica)
 // ============================================================
 
-trait Analizable {
+rasgo Analizable {
     funcion analizar() -> ResultadoAnalisis
     funcion nombre() -> Texto
 }
 
 // ============================================================
-// 3. CLASE con implementación de trait
+// 3. CLASE con implementación de rasgo
 // ============================================================
 
 clase AnalizadorDatos {
@@ -267,9 +267,9 @@ funcion main() {
         caso Dividir -> { escribir("  Operación: Dividir ➗") }
     }
 
-    // 2. Clases con traits
+    // 2. Clases con rasgos
     escribir("")
-    escribir("--- 2. Clases y Traits ---")
+    escribir("--- 2. Clases y Rasgos ---")
     variable datos1 = [5, 12, 8, 20, 3, 15, 7, 10]
     variable datos2 = [100, 200, 150, 300, 250]
 
@@ -338,7 +338,7 @@ funcion main() {
     escribir("  🎉 FORJA: LENGUAJE COMPLETO")
     escribir("  Features demostradas en este ejemplo:")
     escribir("  ✅ Constantes y tipos enum con datos")
-    escribir("  ✅ Clases, POO y traits")
+    escribir("  ✅ Clases, POO y rasgos")
     escribir("  ✅ Match y manejo de resultados")
     escribir("  ✅ Canales y concurrencia (hilos)")
     escribir("  ✅ Programación funcional (filtrar, transformar)")

@@ -1,15 +1,13 @@
 importar "gui"
 
-// ─── Callbacks ────────────────────────────────────────────────────
-
 funcion validar_login(usuario: Texto, contrasena: Texto) -> Texto {
     si (usuario == "") {
-        retornar "  El usuario es obligatorio"
+        retornar "El usuario es obligatorio"
     }
     si (contrasena == "") {
-        retornar "  La contrasena es obligatoria"
+        retornar "La contrasena es obligatoria"
     }
-    retornar "  Bienvenido, " + usuario + "!"
+    retornar "Bienvenido, " + usuario + "!"
 }
 
 funcion limpiar() -> Texto {
@@ -22,38 +20,43 @@ funcion main() {
     variable resultado = ""
 
     columna_centrada(
-        espacio(20),
+        contenedor(
+            columna(
+                espacio(20),
 
-        titulo("Iniciar Sesion"),
-        espacio(5),
-        etiqueta_color("Accede a tu cuenta", "gris"),
-        espacio(30),
+                titulo("Iniciar Sesion"),
+                espacio(5),
+                etiqueta_color("Accede a tu cuenta", "gris"),
+                espacio(25),
 
-        etiqueta("  Usuario"),
-        entrada_texto("usuario", "Ingresa tu usuario"),
-        espacio(12),
+                etiqueta("  Usuario"),
+                entrada_texto("usuario", "Ingresa tu usuario"),
+                espacio(12),
 
-        etiqueta("  Contrasena"),
-        entrada_texto("contrasena", "Ingresa tu contrasena"),
-        espacio(20),
+                etiqueta("  Contrasena"),
+                entrada_texto("contrasena", "Ingresa tu contrasena"),
+                espacio(20),
 
-        fila(
-            boton("  INICIAR SESION  ", &validar_login),
-            espacio(10),
-            boton("  LIMPIAR  ", &limpiar)
-        ),
-        espacio(15),
+                fila(
+                    boton("  INICIAR SESION  ", &validar_login),
+                    espacio(8),
+                    boton("  LIMPIAR  ", &limpiar)
+                ),
+                espacio(12),
 
-        etiqueta_color("Olvidaste tu contrasena?", "azul"),
-        espacio(25),
+                etiqueta_color("Olvidaste tu contrasena?", "azul"),
+                espacio(20),
 
-        separador(),
-        espacio(10),
-        etiqueta_color("Resultado:", "naranja"),
-        escribir(resultado),
+                separador(),
+                espacio(8),
+                etiqueta_color("Resultado:", "naranja"),
+                escribir(resultado),
 
-        espacio(30),
-        etiqueta_color("Forja GUI Nativa  -  Xilem 0.4", "plateado"),
-        espacio(20)
+                espacio(25),
+                etiqueta_color("Forja GUI Nativa - Xilem 0.4", "plateado"),
+                espacio(15)
+            ),
+            380
+        )
     )
 }

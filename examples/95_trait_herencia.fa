@@ -1,18 +1,18 @@
-/// Trait que extiende otro trait (herencia)
-/// Conceptos: herencia de traits, extends, jerarquía de interfaces
+/// Rasgo que extiende otro rasgo (herencia)
+/// Conceptos: herencia de rasgos, extends, jerarquía de interfaces
 /// Nivel: avanzado
 
 importar "std/io"
 
-// Un trait puede extender otro, heredando sus métodos
+// Un rasgo puede extender otro, heredando sus métodos
 
-trait Animal {
+rasgo Animal {
     funcion hacer_sonido() -> Texto
     funcion dormir() -> Texto
 }
 
 // Mascota extiende Animal (hereda hacer_sonido y dormir)
-trait Mascota : Animal {
+rasgo Mascota : Animal {
     funcion jugar() -> Texto
     funcion obtener_nombre() -> Texto
 }
@@ -67,7 +67,7 @@ implementa Mascota para Gato {
 }
 
 funcion main() {
-    escribir("=== Herencia de Traits ===\n")
+    escribir("=== Herencia de Rasgos ===\n")
     
     variable p = nuevo Perro()
     variable g = nuevo Gato()

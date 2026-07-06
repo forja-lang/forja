@@ -1,12 +1,12 @@
-/// Patrón Iterator vía trait
-/// Conceptos: iterador, trait Iterador, recorrer colecciones, abstracción
+/// Patrón Iterator vía rasgo
+/// Conceptos: iterador, rasgo Iterador, recorrer colecciones, abstracción
 /// Nivel: avanzado
 
 importar "std/io"
 
-// Implementación del patrón Iterator usando traits
+// Implementación del patrón Iterator usando rasgos
 
-trait Iterador<T> {
+rasgo Iterador<T> {
     funcion siguiente() -> Opcion<T>
     function tiene_siguiente() -> Booleano
 }

@@ -1,12 +1,12 @@
-/// Trait simple: definición e implementación básica
-/// Conceptos: trait, implementa, métodos de interfaz
+/// Rasgo simple: definición e implementación básica
+/// Conceptos: rasgo, implementa, métodos de interfaz
 /// Nivel: intermedio
 
 importar "std/io"
 
-// Un trait define un conjunto de métodos que una clase debe implementar
+// Un rasgo define un conjunto de métodos que una clase debe implementar
 
-trait Volador {
+rasgo Volador {
     funcion volar()
     funcion aterrizar() -> Texto
 }
@@ -46,7 +46,7 @@ implementa Volador para Avion {
 }
 
 funcion main() {
-    escribir("=== Trait Simple ===\n")
+    escribir("=== Rasgo Simple ===\n")
     
     variable p = nuevo Pajaro()
     p.nombre = "Loro"

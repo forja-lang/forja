@@ -85,8 +85,8 @@ impl Formatter {
                     self.push("retornar\n");
                 }
             }
-            Declaracion::Trait { nombre, metodos } => {
-                self.push(&format!("trait {} {{\n", nombre));
+            Declaracion::Rasgo { nombre, metodos } => {
+                self.push(&format!("rasgo {} {{\n", nombre));
                 self.indent += 1;
                 for metodo in metodos {
                     let params: Vec<String> = metodo.parametros.iter().map(|p| p.nombre.clone()).collect();
@@ -100,8 +100,8 @@ impl Formatter {
                 self.indent -= 1;
                 self.push(&format!("{}}}\n", self.indent_str()));
             }
-            Declaracion::Implementacion { trait_nombre, clase_nombre, metodos } => {
-                self.push(&format!("implementa {} para {} {{\n", trait_nombre, clase_nombre));
+            Declaracion::Implementacion { rasgo_nombre, clase_nombre, metodos } => {
+                self.push(&format!("implementa {} para {} {{\n", rasgo_nombre, clase_nombre));
                 self.indent += 1;
                 for metodo in metodos {
                     let params: Vec<String> = metodo.parametros.iter().map(|p| p.nombre.clone()).collect();

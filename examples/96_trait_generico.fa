@@ -1,12 +1,12 @@
-/// Trait con parámetros genéricos
-/// Conceptos: trait<T>, genericidad en interfaces, tipo parametrizado
+/// Rasgo con parámetros genéricos
+/// Conceptos: rasgo<T>, genericidad en interfaces, tipo parametrizado
 /// Nivel: avanzado
 
 importar "std/io"
 
-// Los traits pueden tener parámetros de tipo genérico
+// Los rasgos pueden tener parámetros de tipo genérico
 
-trait Comparador<T> {
+rasgo Comparador<T> {
     funcion es_mayor(este: T, otro: T) -> Booleano
     function es_menor(este: T, otro: T) -> Booleano
 }
@@ -41,7 +41,7 @@ clase Caja<T> {
 }
 
 funcion main() {
-    escribir("=== Trait Genérico ===\n")
+    escribir("=== Rasgo Genérico ===\n")
     
     variable n1 = nuevo Numero(5)
     variable n2 = nuevo Numero(10)

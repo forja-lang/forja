@@ -78,7 +78,7 @@
       "patterns": [
         {
           "name": "keyword.control.forja",
-          "match": "\\b(importar|variable|var|constante|const|mut|si|sino|mientras|para|repetir|funcion|fun|retornar|clase|constructor|nuevo|este|prestado|tipo|coincidir|caso|BD|externo|externa|hilo|canal|enviar|recibir|unir|trait|implementa|donde|seleccionar|tiempo|otro|no)\\b"
+          "match": "\\b(importar|variable|var|constante|const|mut|si|sino|mientras|para|repetir|funcion|fun|retornar|clase|constructor|nuevo|este|prestado|tipo|coincidir|caso|BD|externo|externa|hilo|canal|enviar|recibir|unir|rasgo|implementa|donde|seleccionar|tiempo|otro|no)\\b"
         }
       ]
     },

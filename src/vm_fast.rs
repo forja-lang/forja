@@ -2230,7 +2230,7 @@ impl ForjaFast {
                             shape,
                             mro: vec![clase_sym],
                             metodos: HashMap::new(),
-                            traits: Vec::new(),
+                            rasgos: Vec::new(),
                         };
                         self.class_descriptors.insert(clase_sym, desc);
                     }
@@ -3401,7 +3401,7 @@ impl ForjaFast {
                             shape,
                             mro: vec![clase_sym],
                             metodos: HashMap::new(),
-                            traits: Vec::new(),
+                            rasgos: Vec::new(),
                         };
                         self.class_descriptors.insert(clase_sym, desc);
                     }

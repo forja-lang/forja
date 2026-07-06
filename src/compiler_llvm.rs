@@ -117,7 +117,7 @@ impl LlvmBackend {
                 }
             }
             Declaracion::Clase { .. } => {}
-            Declaracion::Trait { .. } => {}
+            Declaracion::Rasgo { .. } => {}
             Declaracion::Implementacion { .. } => {}
             Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
                 self.si(condicion, bloque_verdadero, bloque_falso.as_deref())?;

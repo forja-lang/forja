@@ -1,12 +1,12 @@
-/// Usar trait como tipo (polimorfismo)
-/// Conceptos: trait como tipo de parámetro, polimorfismo, abstracción
+/// Usar rasgo como tipo (polimorfismo)
+/// Conceptos: rasgo como tipo de parámetro, polimorfismo, abstracción
 /// Nivel: avanzado
 
 importar "std/io"
 
-// Los traits pueden usarse como tipos para lograr polimorfismo
+// Los rasgos pueden usarse como tipos para lograr polimorfismo
 
-trait Sonido {
+rasgo Sonido {
     funcion hacer_sonido() -> Texto
 }
 
@@ -46,7 +46,7 @@ funcion presentar_animal(animal) {
 }
 
 funcion main() {
-    escribir("=== Polimorfismo con Traits ===\n")
+    escribir("=== Polimorfismo con Rasgos ===\n")
     
     variable perro = nuevo Perro()
     perro.nombre = "Rex"
@@ -63,7 +63,7 @@ funcion main() {
     presentar_animal(vaca)
     
     escribir("")
-    escribir("Todos implementan el trait Sonido")
+    escribir("Todos implementan el rasgo Sonido")
 }
 
 main()

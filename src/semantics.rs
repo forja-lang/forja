@@ -323,7 +323,7 @@ impl BorrowChecker {
             None => true, // Si no sabemos el tipo, asumimos Copy (seguro)
             Some(Tipo::Entero) | Some(Tipo::Decimal) | Some(Tipo::Booleano) | Some(Tipo::Nulo) => true,
             Some(Tipo::Texto) | Some(Tipo::Clase(_)) | Some(Tipo::Arreglo(_)) | Some(Tipo::Funcion(_, _)) => false,
-            Some(Tipo::Resultado(_, _)) | Some(Tipo::Opcion(_)) | Some(Tipo::TraitObjeto(_)) | Some(Tipo::Parametro(_)) => false,
+            Some(Tipo::Resultado(_, _)) | Some(Tipo::Opcion(_)) | Some(Tipo::RasgoObjeto(_)) | Some(Tipo::Parametro(_)) => false,
         }
     }
 
@@ -468,7 +468,7 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
                 }
             }
 
-            Declaracion::Trait { .. } => {}
+            Declaracion::Rasgo { .. } => {}
             Declaracion::Implementacion { .. } => {}
 
             Declaracion::Importar(_) => {}
@@ -740,8 +740,8 @@ pub struct TypeChecker {
     funciones: std::collections::HashMap<String, (Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>,
     /// Tipos inferidos para cada variable (nombre -> tipo)
     tipos: HashMap<String, Tipo>,
-    /// Definiciones de traits: nombre -> lista de firmas de métodos
-    traits: std::collections::HashMap<String, Vec<FirmaMetodo>>,
+    /// Definiciones de rasgos: nombre -> lista de firmas de métodos
+    rasgos: std::collections::HashMap<String, Vec<FirmaMetodo>>,
     /// Parámetros de tipo inferidos durante la llamada a función genérica
     tipos_param_genericos: std::collections::HashMap<String, Tipo>,
     /// Mapa: nombre_del_tipo → [variante1, variante2, ...]
@@ -755,7 +755,7 @@ impl TypeChecker {
             errores: Vec::new(),
             funciones: std::collections::HashMap::new(),
             tipos: HashMap::new(),
-            traits: std::collections::HashMap::new(),
+            rasgos: std::collections::HashMap::new(),
             tipos_param_genericos: std::collections::HashMap::new(),
             variantes_enum: HashMap::new(),
         }
@@ -763,8 +763,8 @@ impl TypeChecker {
 
     /// Analiza el AST completo: infiere tipos y verifica compatibilidad
     pub fn analizar(&mut self, programa: &Programa) -> Result<(), Vec<ErrorForja>> {
-        // Pasada 0: recolectar definiciones de traits
-        self.recolectar_traits(&programa.declaraciones);
+        // Pasada 0: recolectar definiciones de rasgos
+        self.recolectar_rasgos(&programa.declaraciones);
         // Pasada 1: recolectar firmas de funciones
         self.recolectar_funciones(&programa.declaraciones);
         // Pasada 2: inferir tipos en declaraciones
@@ -795,12 +795,12 @@ impl TypeChecker {
         }
     }
 
-    fn recolectar_traits(&mut self, declaraciones: &[Declaracion]) {
+    fn recolectar_rasgos(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
-            if let Declaracion::Trait { nombre, metodos } = decl {
-                self.traits.insert(nombre.clone(), metodos.clone());
-                // Registrar el trait como tipo conocido
-                self.tipos.insert(nombre.clone(), Tipo::TraitObjeto(nombre.clone()));
+            if let Declaracion::Rasgo { nombre, metodos } = decl {
+                self.rasgos.insert(nombre.clone(), metodos.clone());
+                // Registrar el rasgo como tipo conocido
+                self.tipos.insert(nombre.clone(), Tipo::RasgoObjeto(nombre.clone()));
             }
         }
     }
@@ -905,21 +905,21 @@ impl TypeChecker {
                 }
             }
 
-            Declaracion::Trait { .. } => {
-                // Los traits ya se recolectaron en recolectar_traits
+            Declaracion::Rasgo { .. } => {
+                // Los rasgos ya se recolectaron en recolectar_rasgos
             }
 
-            Declaracion::Implementacion { trait_nombre, clase_nombre, metodos } => {
-                // Verificar que el trait existe
-                if let Some(firmas) = self.traits.get(trait_nombre) {
-                    // Verificar que todos los métodos del trait están implementados
+            Declaracion::Implementacion { rasgo_nombre, clase_nombre, metodos } => {
+                // Verificar que el rasgo existe
+                if let Some(firmas) = self.rasgos.get(rasgo_nombre) {
+                    // Verificar que todos los métodos del rasgo están implementados
                     for firma in firmas {
                         let implementado = metodos.iter().any(|m| m.nombre == firma.nombre);
                         if !implementado {
                             self.errores.push(ErrorForja::new(
                                 ErrorTipo::ErrorSemantico, 0, 0,
-                                &format!("El trait '{}' requiere el método '{}' que no está implementado en '{}'.",
-                                    trait_nombre, firma.nombre, clase_nombre),
+                                &format!("El rasgo '{}' requiere el método '{}' que no está implementado en '{}'.",
+                                    rasgo_nombre, firma.nombre, clase_nombre),
                                 &format!("Implementá el método '{}' en la clase '{}'.", firma.nombre, clase_nombre),
                             ));
                         }
@@ -927,8 +927,8 @@ impl TypeChecker {
                 } else {
                     self.errores.push(ErrorForja::new(
                         ErrorTipo::ErrorSemantico, 0, 0,
-                        &format!("El trait '{}' no está definido.", trait_nombre),
-                        "Definí el trait antes de usarlo con 'trait Nombre { ... }'.",
+                        &format!("El rasgo '{}' no está definido.", rasgo_nombre),
+                        "Definí el rasgo antes de usarlo con 'rasgo Nombre { ... }'.",
                     ));
                 }
                 // Analizar los métodos de la implementación
@@ -1069,9 +1069,9 @@ impl TypeChecker {
                 for arg in argumentos {
                     self.inferir_tipo(arg);
                 }
-                // Si el nombre es un trait, devolver TraitObjeto
-                if self.traits.contains_key(clase) {
-                    Some(Tipo::TraitObjeto(clase.clone()))
+                // Si el nombre es un rasgo, devolver RasgoObjeto
+                if self.rasgos.contains_key(clase) {
+                    Some(Tipo::RasgoObjeto(clase.clone()))
                 } else {
                     Some(Tipo::Clase(clase.clone()))
                 }

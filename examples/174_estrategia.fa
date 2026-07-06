@@ -1,5 +1,5 @@
-/// Patrón Strategy con Traits
-/// Conceptos: strategy, traits, algoritmos intercambiables, composición
+/// Patrón Strategy con Rasgos
+/// Conceptos: strategy, rasgos, algoritmos intercambiables, composición
 /// Nivel: avanzado
 
 importar "std/io"
@@ -7,7 +7,7 @@ importar "std/io"
 // El patrón Strategy permite definir una familia de algoritmos,
 // encapsularlos y hacerlos intercambiables en tiempo de ejecución.
 
-trait EstrategiaOrdenamiento {
+rasgo EstrategiaOrdenamiento {
     funcion ordenar(arr)
 }
 
@@ -123,7 +123,7 @@ clase ContextoOrdenamiento {
 
 funcion main() {
     escribir("=== PATRÓN STRATEGY ===\n")
-    escribir("Algoritmos intercambiables mediante traits.\n")
+    escribir("Algoritmos intercambiables mediante rasgos.\n")
 
     variable contexto = nuevo ContextoOrdenamiento()
     variable datos = [64, 34, 25, 12, 22, 11, 90, 8]

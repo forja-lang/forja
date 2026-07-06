@@ -1,11 +1,11 @@
-// Test: Traits en Forja
-// Definir un trait
-trait Volador {
+// Test: Rasgos en Forja
+// Definir un rasgo
+rasgo Volador {
     funcion volar()
     funcion aterrizar() -> Texto
 }
 
-// Implementar el trait para una clase
+// Implementar el rasgo para una clase
 clase Pajaro {
     nombre
 }
