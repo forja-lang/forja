@@ -1832,6 +1832,18 @@ impl Parser {
 
     /// Parsea una llamada a función o acceso a miembro después de un identificador
     fn parse_llamada_o_acceso(&mut self, expr: Expresion) -> Result<Expresion, ErrorForja> {
+        // Saltar parámetros genéricos <Tipo> en llamadas a función: ninguno<Entero>()
+        // Verificar si < va seguido de un identificador tipo y >
+        if self.coincide(TokenKind::Menor) && self.pos + 3 < self.tokens.len() {
+            let puede_ser_generico = matches!(&self.tokens[self.pos + 1].kind, TokenKind::Identificador(_))
+                && matches!(&self.tokens[self.pos + 2].kind, TokenKind::Mayor);
+            if puede_ser_generico {
+                self.avanzar(); // consumir <
+                self.avanzar(); // consumir Tipo
+                self.avanzar(); // consumir >
+            }
+        }
+
         if self.coincide(TokenKind::ParenAbrir) {
             self.avanzar();
             let argumentos = self.parse_argumentos()?;
