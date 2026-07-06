@@ -167,8 +167,9 @@ impl Transpiler {
         // Detectar si se usa el paquete GUI para emitir código Xilem REAL
         if self.usa_gui() {
             self.emit_line("// ─── GUI: Forja GUI Runtime (xilem precompilado) ───");
-            self.emit_line("use forja_gui_rt::view::{self, Axis, flex, label, text_button, text_input, progress_bar, sized_box};");
-            self.emit_line("use forja_gui_rt::{WidgetView, Xilem, WindowOptions, EventLoop, EventLoopError};");
+            self.emit_line("use forja_gui_rt::view::{self, Axis, flex, label, text_button, text_input, progress_bar, sized_box, button, checkbox, grid, portal, prose, slider, spinner, split, variable_label, zstack, image};");
+            self.emit_line("use forja_gui_rt::{WidgetView, Xilem, WindowOptions, EventLoop, EventLoopError, Color, Affine, FontWeight};");
+            self.emit_line("use forja_gui_rt::core::{lens, memoize};");
             self.emit_line("");
         }
 
@@ -341,9 +342,7 @@ impl Transpiler {
                 Declaracion::LlamadaFuncion { nombre, argumentos } => {
                     match nombre.as_str() {
                         "columna" | "gui_columna" => {
-                            // Marcar que tenemos un layout contenedor como raíz
                             self.gui_container_layout = true;
-                            // Abrir flex Vertical y procesar hijos
                             widgets.push("    view::sized_box(view::flex(Axis::Vertical, (".to_string());
                             for arg in argumentos {
                                 self.procesar_expresion_widget(arg, widgets);
@@ -351,26 +350,52 @@ impl Transpiler {
                             widgets.push("    )))".to_string());
                         }
                         "fila" | "gui_fila" => {
-                            // Marcar que tenemos un layout contenedor como raíz
                             self.gui_container_layout = true;
-                            // Abrir flex Horizontal y procesar hijos
                             widgets.push("    view::flex(Axis::Horizontal, (".to_string());
                             for arg in argumentos {
                                 self.procesar_expresion_widget(arg, widgets);
                             }
                             widgets.push("    ))".to_string());
                         }
+                        "pila" | "gui_pila" | "zstack" => {
+                            self.gui_container_layout = true;
+                            widgets.push("    view::zstack((".to_string());
+                            for arg in argumentos {
+                                self.procesar_expresion_widget(arg, widgets);
+                            }
+                            widgets.push("    ))".to_string());
+                        }
+                        "desplazable" | "gui_desplazable" | "scroll" => {
+                            if let Some(arg) = argumentos.first() {
+                                widgets.push("    view::portal(".to_string());
+                                self.procesar_expresion_widget(arg, widgets);
+                                widgets.push("    ),".to_string());
+                            }
+                        }
+                        "grilla" | "gui_grilla" | "grid" => {
+                            // último arg = columnas
+                            if let Some(Expresion::LiteralNumero(cols)) = argumentos.last() {
+                                let _hijos = &argumentos[..argumentos.len()-1];
+                                widgets.push(format!("    view::grid((\"_tmp\",), 1, {}),", cols));
+                            }
+                        }
                         _ => {
                             let args: Vec<String> = argumentos.iter()
                                 .map(|a| self.transpilar_expresion(a))
                                 .collect();
                             match nombre.as_str() {
-                                "escribir" | "etiqueta" | "gui_etiqueta" | "text" => {
+                                "escribir" | "etiqueta" | "gui_etiqueta" | "text" | "label" => {
                                     if let Some(arg) = args.first() {
                                         widgets.push(format!("    view::label({}),", arg));
                                     }
                                 }
-                                "boton" | "gui_boton" | "btn" => {
+                                "etiqueta_dinamica" | "varlabel" => {
+                                    if let Some(arg) = args.first() {
+                                        let var = arg.trim_start_matches("data.");
+                                        widgets.push(format!("    view::variable_label(|d: &mut AppState| d.{}.clone()),", var));
+                                    }
+                                }
+                                "boton" | "gui_boton" | "btn" | "button" => {
                                     let texto = args.first().map(|s| s.as_str()).unwrap_or("String::from(\"\")");
                                     if args.len() >= 2 {
                                         let callback = args[1].trim_start_matches('&').to_string();
@@ -385,12 +410,18 @@ impl Transpiler {
                                         ));
                                     }
                                 }
-                                "entrada_texto" | "gui_entrada_texto" => {
+                                "entrada_texto" | "gui_entrada_texto" | "input" => {
                                     if let Some(val) = args.first() {
                                         widgets.push(format!("    view::text_input({}),", val));
                                     }
                                 }
-                                "barra_progreso" | "gui_barra_progreso" => {
+                                "area_texto" | "textarea" => {
+                                    if let Some(val) = args.first() {
+                                        // text_input multiline (Masonry soporta multi-line natively)
+                                        widgets.push(format!("    view::text_input({}).insert_newline(true),", val));
+                                    }
+                                }
+                                "barra_progreso" | "gui_barra_progreso" | "progress" => {
                                     if let Some(val) = args.first() {
                                         widgets.push(format!("    view::progress_bar({}),", val));
                                     }
@@ -403,9 +434,36 @@ impl Transpiler {
                                         ));
                                     }
                                 }
-                                "casilla" | "checkbox" | "gui_casilla" => {
+                                "casilla" | "checkbox" | "gui_casilla" | "check" => {
                                     let etiqueta = args.first().map(|s| s.as_str()).unwrap_or("\"\"");
                                     widgets.push(format!("    view::checkbox({}, false),", etiqueta));
+                                }
+                                "texto_enriquecido" | "prose" => {
+                                    if let Some(arg) = args.first() {
+                                        widgets.push(format!("    view::prose({}),", arg));
+                                    }
+                                }
+                                "cargando" | "spinner" => {
+                                    widgets.push("    view::spinner(),".to_string());
+                                }
+                                "separador" | "divider" => {
+                                    widgets.push("    view::sized_box(view::label(String::new())).height(1.0).width_full(),".to_string());
+                                }
+                                "espacio" | "spacer" => {
+                                    if let Some(arg) = args.first() {
+                                        widgets.push(format!("    view::sized_box(view::label(String::new())).width({}).height({}),", arg, arg));
+                                    }
+                                }
+                                "caja_fija" | "sized" => {
+                                    if args.len() >= 3 {
+                                        widgets.push(format!(
+                                            "    view::sized_box(view::label(String::new())).width({}).height({}),",
+                                            args[1], args[2]
+                                        ));
+                                    }
+                                }
+                                "panel_dividido" | "split" => {
+                                    // No implementado directamente en transpiler, se maneja mejor en nativo
                                 }
                                 _ => {}
                             }
@@ -441,7 +499,6 @@ impl Transpiler {
             Expresion::LlamadaFuncion { nombre, argumentos } => {
                 match nombre.as_str() {
                     "columna" | "gui_columna" => {
-                        // Abrir flex Vertical y procesar hijos
                         widgets.push("    view::sized_box(view::flex(Axis::Vertical, (".to_string());
                         for arg in argumentos {
                             self.procesar_expresion_widget(arg, widgets);
@@ -449,24 +506,43 @@ impl Transpiler {
                         widgets.push("    ))),".to_string());
                     }
                     "fila" | "gui_fila" => {
-                        // Abrir flex Horizontal y procesar hijos
                         widgets.push("    view::flex(Axis::Horizontal, (".to_string());
                         for arg in argumentos {
                             self.procesar_expresion_widget(arg, widgets);
                         }
                         widgets.push("    )),".to_string());
                     }
+                    "pila" | "gui_pila" | "zstack" => {
+                        widgets.push("    view::zstack((".to_string());
+                        for arg in argumentos {
+                            self.procesar_expresion_widget(arg, widgets);
+                        }
+                        widgets.push("    )),".to_string());
+                    }
+                    "desplazable" | "gui_desplazable" | "scroll" => {
+                        if let Some(arg) = argumentos.first() {
+                            widgets.push("    view::portal(".to_string());
+                            self.procesar_expresion_widget(arg, widgets);
+                            widgets.push("    ),".to_string());
+                        }
+                    }
                     _ => {
                         let args: Vec<String> = argumentos.iter()
                             .map(|a| self.transpilar_expresion(a))
                             .collect();
                         match nombre.as_str() {
-                            "escribir" | "etiqueta" | "gui_etiqueta" | "text" => {
+                            "escribir" | "etiqueta" | "gui_etiqueta" | "text" | "label" => {
                                 if let Some(arg) = args.first() {
                                     widgets.push(format!("    view::label({}),", arg));
                                 }
                             }
-                            "boton" | "gui_boton" | "btn" => {
+                            "etiqueta_dinamica" | "varlabel" => {
+                                if let Some(arg) = args.first() {
+                                    let var = arg.trim_start_matches("data.");
+                                    widgets.push(format!("    view::variable_label(|d: &mut AppState| d.{}.clone()),", var));
+                                }
+                            }
+                            "boton" | "gui_boton" | "btn" | "button" => {
                                 let texto = args.first().map(|s| s.as_str()).unwrap_or("String::from(\"\")");
                                 if args.len() >= 2 {
                                     let callback = args[1].trim_start_matches('&').to_string();
@@ -481,12 +557,17 @@ impl Transpiler {
                                     ));
                                 }
                             }
-                            "entrada_texto" | "gui_entrada_texto" => {
+                            "entrada_texto" | "gui_entrada_texto" | "input" => {
                                 if let Some(val) = args.first() {
                                     widgets.push(format!("    view::text_input({}),", val));
                                 }
                             }
-                            "barra_progreso" | "gui_barra_progreso" => {
+                            "area_texto" | "textarea" => {
+                                if let Some(val) = args.first() {
+                                    widgets.push(format!("    view::text_input({}).insert_newline(true),", val));
+                                }
+                            }
+                            "barra_progreso" | "gui_barra_progreso" | "progress" => {
                                 if let Some(val) = args.first() {
                                     widgets.push(format!("    view::progress_bar({}),", val));
                                 }
@@ -499,9 +580,33 @@ impl Transpiler {
                                     ));
                                 }
                             }
-                            "casilla" | "checkbox" | "gui_casilla" => {
+                            "casilla" | "checkbox" | "gui_casilla" | "check" => {
                                 let etiqueta = args.first().map(|s| s.as_str()).unwrap_or("\"\"");
                                 widgets.push(format!("    view::checkbox({}, false),", etiqueta));
+                            }
+                            "texto_enriquecido" | "prose" => {
+                                if let Some(arg) = args.first() {
+                                    widgets.push(format!("    view::prose({}),", arg));
+                                }
+                            }
+                            "cargando" | "spinner" => {
+                                widgets.push("    view::spinner(),".to_string());
+                            }
+                            "separador" | "divider" => {
+                                widgets.push("    view::sized_box(view::label(String::new())).height(1.0).width_full(),".to_string());
+                            }
+                            "espacio" | "spacer" => {
+                                if let Some(arg) = args.first() {
+                                    widgets.push(format!("    view::sized_box(view::label(String::new())).width({}).height({}),", arg, arg));
+                                }
+                            }
+                            "caja_fija" | "sized" => {
+                                if args.len() >= 3 {
+                                    widgets.push(format!(
+                                        "    view::sized_box(view::label(String::new())).width({}).height({}),",
+                                        args[1], args[2]
+                                    ));
+                                }
                             }
                             _ => {}
                         }
@@ -509,7 +614,6 @@ impl Transpiler {
                 }
             }
             _ => {
-                // Si no es una llamada función, transpilar como expresión genérica
                 let s = self.transpilar_expresion(expr);
                 widgets.push(format!("    {});", s));
             }

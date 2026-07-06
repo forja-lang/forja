@@ -2,9 +2,13 @@
   "name": "forja-syntax",
   "displayName": "Forja (fa)",
   "description": "Soporte para el lenguaje Forja — sintaxis, LSP, formateo y diagnósticos",
-  "version": "0.7.0",
+  "version": "0.2.0",
   "publisher": "lococoi",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lococoi/forja.git"
+  },
   "engines": {
     "vscode": "^1.60.0"
   },

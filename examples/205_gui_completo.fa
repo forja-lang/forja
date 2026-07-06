@@ -1,0 +1,114 @@
+// GUI Completa — Demo de todos los widgets Forja + Xilem
+//
+// Ejecutar: forja ejecutar --native examples/205_gui_completo.fa
+//            (requiere --features gui)
+//
+// O transpilar: forja transpilar examples/205_gui_completo.fa
+//               cd .forja_gui_cache && cargo run --release
+
+importar "gui"
+
+// Callbacks
+funcion al_saludar() {
+    escribir("¡Hola desde Forja GUI!")
+}
+
+funcion al_cambiar_color() {
+    escribir("Color cambiado")
+}
+
+funcion al_enviar() {
+    escribir("Formulario enviado!")
+}
+
+// Main con GUI completa
+funcion main() {
+    variable nombre = ""
+    variable mensaje = ""
+    variable volumen = 50
+    variable activo = verdadero
+    variable progreso = 0.75
+    variable resultado = ""
+    
+    columna(
+        // ─── Header ───
+        etiqueta("=================================="),
+        etiqueta("      FORJA GUI COMPLETA"),
+        etiqueta("=================================="),
+        espacio(10),
+        
+        // ─── Sección: Texto ───
+        etiqueta("📝 Widgets de Texto:"),
+        etiqueta("Texto estático normal"),
+        etiqueta_dinamica("mensaje"),
+        espacio(5),
+        
+        // ─── Sección: Input ───
+        etiqueta("✏️ Entrada de datos:"),
+        etiqueta("Nombre:"),
+        entrada_texto("nombre"),
+        etiqueta("Mensaje:"),
+        area_texto("mensaje"),
+        espacio(5),
+        
+        // ─── Sección: Datos ───
+        etiqueta("📊 Widgets de datos:"),
+        etiqueta("Volumen:"),
+        deslizante("volumen", 0, 100),
+        etiqueta("Progreso:"),
+        barra_progreso("progreso"),
+        etiqueta("Activo:"),
+        casilla("Activar", "activo"),
+        espacio(5),
+        
+        // ─── Sección: Presentación ───
+        etiqueta("🎨 Widgets de presentación:"),
+        texto_enriquecido("**Texto** en *Markdown*"),
+        separador(),
+        cargando(),
+        espacio(10),
+        
+        // ─── Botones ───
+        etiqueta("=================================="),
+        boton("🎯 Saludar", &al_saludar),
+        boton("📨 Enviar formulario", &al_enviar),
+        espacio(10),
+        
+        // ─── Layout anidado ───
+        etiqueta("📐 Layout anidado (fila dentro de columna):"),
+        fila(
+            etiqueta("[Izquierda]"),
+            espacio(20),
+            etiqueta("[Centro]"),
+            espacio(20),
+            etiqueta("[Derecha]")
+        ),
+        espacio(10),
+        
+        // ─── Layout en pila (ZStack) ───
+        etiqueta("📚 Pila (ZStack) — widgets superpuestos:"),
+        pila(
+            etiqueta("--- Fondo ---"),
+            etiqueta("  *** Encima ***")
+        ),
+        espacio(10),
+        
+        // ─── Desplazable ───
+        etiqueta("📜 Contenedor desplazable:"),
+        desplazable(
+            columna(
+                etiqueta("Línea 1"),
+                etiqueta("Línea 2"),
+                etiqueta("Línea 3"),
+                etiqueta("Línea 4"),
+                etiqueta("Línea 5")
+            )
+        ),
+        espacio(10),
+        
+        // ─── Footer ───
+        separador(),
+        etiqueta("Forja GUI v0.7 — Xilem 0.4"),
+        etiqueta("==================================")
+    )
+}

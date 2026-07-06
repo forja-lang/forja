@@ -495,6 +495,90 @@ Raven fue la inspiración original de Forja. Aquí la comparativa actualizada co
 
 ---
 
+---
+
+## 🖥️ API GUI Completa (Xilem 0.4)
+
+Forja incluye una **API gráfica nativa completa** basada en Xilem 0.4, accesible con `importar "gui"` y la feature `gui`.
+
+### Layouts (contenedores)
+
+| Función Forja | Widget Xilem | Descripción |
+|--------------|-------------|-------------|
+| `columna(hijos...)` | `flex(Axis::Vertical, ...)` | Contenedor vertical |
+| `fila(hijos...)` | `flex(Axis::Horizontal, ...)` | Contenedor horizontal |
+| `pila(hijos...)` | `zstack(...)` | Superposición en Z |
+| `desplazable(hijo)` | `portal(...)` | Contenedor con scroll |
+| `panel_dividido(a, b, dir)` | `split(...)` | Panel redimensionable |
+| `caja_fija(hijo, ancho, alto)` | `sized_box(...)` | Caja con tamaño fijo |
+
+### Widgets de texto
+
+| Función Forja | Widget Xilem | Descripción |
+|--------------|-------------|-------------|
+| `etiqueta(texto)` | `label(...)` | Texto estático |
+| `etiqueta_dinamica(variable)` | `variable_label(...)` | Texto que se actualiza automáticamente |
+| `texto_enriquecido(texto)` | `prose(...)` | Texto Markdown con formato |
+| `entrada_texto(variable)` | `text_input(...)` | Campo de texto simple |
+| `area_texto(variable)` | `text_input(..., multiline)` | Área de texto multilínea |
+
+### Widgets de datos
+
+| Función Forja | Widget Xilem | Descripción |
+|--------------|-------------|-------------|
+| `boton(texto, &callback)` | `text_button(...)` | Botón con callback |
+| `casilla(etiqueta, variable)` | `checkbox(...)` | Casilla de verificación |
+| `deslizante(variable, min, max)` | `slider(...)` | Control deslizante |
+| `barra_progreso(variable)` | `progress_bar(...)` | Barra de progreso |
+| `cargando()` | `spinner()` | Indicador de carga |
+
+### Widgets de presentación
+
+| Función Forja | Widget Xilem | Descripción |
+|--------------|-------------|-------------|
+| `separador()` | `sized_box(height:1)` | Línea separadora |
+| `espacio(tamaño)` | `sized_box(w:h)` | Espaciador |
+
+### Ejemplo completo
+
+```fa
+importar "gui"
+
+funcion al_saludar() {
+    escribir("¡Hola!")
+}
+
+funcion main() {
+    variable nombre = ""
+    variable volumen = 50
+    
+    columna(
+        etiqueta("🎯 Forja GUI"),
+        entrada_texto("nombre"),
+        deslizante("volumen", 0, 100),
+        casilla("Activo", "nombre"),
+        boton("Saludar", &al_saludar)
+    )
+}
+```
+
+### Ejecutar
+
+```bash
+# Native runner (AST directo a Xilem, sin compilar Rust)
+cargo run --features gui --bin forja -- run --native examples/205_gui_completo.fa
+
+# Transpilado a Rust (genera .exe autónomo)
+cargo run --features gui --bin forja -- transpile examples/205_gui_completo.fa
+cd .forja_gui_cache && cargo run --release
+
+# GUI Launcher directo
+cargo build --features gui
+.\target\debug\forja-gui.exe examples/205_gui_completo.fa
+```
+
+---
+
 ## 📖 Documentación y Referencia
 
 ### Generación de Documentación HTML
