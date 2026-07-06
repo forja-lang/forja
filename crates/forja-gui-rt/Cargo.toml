@@ -1,0 +1,8 @@
+[package]
+name = "forja-gui-rt"
+version = "0.1.0"
+edition = "2021"
+description = "Forja GUI Runtime — Pre-compila xilem para compilación rápida de apps GUI"
+
+[dependencies]
+xilem = "0.4"

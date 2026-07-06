@@ -40,18 +40,15 @@ impl TablaSimbolos {
     }
 
     fn entrar_ambito(&mut self) {
-        eprintln!("[DEBUG] entrar_ambito() — ámbitos ahora: {}", self.ambitos.len() + 1);
         self.ambitos.push(HashMap::new());
     }
 
     fn salir_ambito(&mut self) {
-        eprintln!("[DEBUG] salir_ambito() — ámbitos antes: {}", self.ambitos.len());
         self.ambitos.pop();
     }
 
     fn declarar(&mut self, nombre: &str, mutable: bool, linea: usize, columna: usize, tipo: Option<Tipo>) -> Result<(), ErrorForja> {
         let ambito_actual = self.ambitos.last_mut().unwrap();
-        eprintln!("[DEBUG] declarar('{}') — ámbito actual tiene {} claves: {:?}", nombre, ambito_actual.len(), ambito_actual.keys().collect::<Vec<_>>());
         if ambito_actual.contains_key(nombre) {
             return Err(ErrorForja::new(
                 ErrorTipo::ErrorSemantico,
@@ -76,9 +73,7 @@ impl TablaSimbolos {
     }
 
     fn obtener(&self, nombre: &str) -> Option<&InfoVariable> {
-        eprintln!("[DEBUG] obtener('{}') — ámbitos activos: {}", nombre, self.ambitos.len());
-        for (i, ambito) in self.ambitos.iter().rev().enumerate() {
-            eprintln!("[DEBUG]   ámbito[-{}] tiene claves: {:?}", i, ambito.keys().collect::<Vec<_>>());
+        for ambito in self.ambitos.iter().rev() {
             if let Some(info) = ambito.get(nombre) {
                 return Some(info);
             }
@@ -433,14 +428,11 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
                     ));
                 }
                 self.tabla.entrar_ambito();
-                eprintln!("[DEBUG] FUNCION: entro ámbito (ahora {} ámbitos)", self.tabla.ambitos.len());
                 for param in parametros {
                     let tipo_param = param.tipo.clone();
                     let _ = self.tabla.declarar(&param.nombre, param.mutable, 0, 0, tipo_param);
                 }
-                eprintln!("[DEBUG] FUNCION: procesando cuerpo con {} declaraciones", cuerpo.len());
                 self.analizar_declaraciones(cuerpo);
-                eprintln!("[DEBUG] FUNCION: salgo ámbito (quedan {} ámbitos)", self.tabla.ambitos.len() - 1);
                 self.tabla.salir_ambito();
             }
 

@@ -2,7 +2,7 @@
 # 🔨 Forja (fa)
 
 ![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange)
-![Version](https://img.shields.io/badge/version-0.3.0--beta-blue)
+![Version](https://img.shields.io/badge/version-0.7.0--beta-blue)
 ![License](https://img.shields.io/badge/license-Source--Available-green)
 ![Tests](https://img.shields.io/badge/tests-109%20passing-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)

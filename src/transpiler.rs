@@ -166,10 +166,9 @@ impl Transpiler {
 
         // Detectar si se usa el paquete GUI para emitir código Xilem REAL
         if self.usa_gui() {
-            self.emit_line("// ─── GUI: Xilem UI Framework ───");
-            self.emit_line("use xilem::view::{self, Axis, flex, label, text_button, text_input, progress_bar, sized_box};");
-            self.emit_line("use xilem::{WidgetView, Xilem, WindowOptions, EventLoop};");
-            self.emit_line("use xilem::palette::theme::{dark, light};");
+            self.emit_line("// ─── GUI: Forja GUI Runtime (xilem precompilado) ───");
+            self.emit_line("use forja_gui_rt::view::{self, Axis, flex, label, text_button, text_input, progress_bar, sized_box};");
+            self.emit_line("use forja_gui_rt::{WidgetView, Xilem, WindowOptions, EventLoop, EventLoopError};");
             self.emit_line("");
         }
 
@@ -298,7 +297,7 @@ impl Transpiler {
             self.emit_line("");
 
             // Emitir main() Xilem con tema oscuro (default en Windows)
-            self.emit_line("fn main() -> Result<(), xilem::winit::error::EventLoopError> {");
+            self.emit_line("fn main() -> Result<(), EventLoopError> {");
             self.emit_line("    // Modo oscuro: Xilem usa tema dark por defecto en Windows");
             self.emit_line("    Xilem::new_simple(");
             self.emit_line("        AppState::default(),");

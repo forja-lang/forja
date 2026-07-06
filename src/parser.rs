@@ -1524,9 +1524,12 @@ impl Parser {
         if self.coincide(TokenKind::Texto(String::new())) || self.coincide(TokenKind::Texto("".to_string())) {
             if let TokenKind::Texto(ref s) = self.peek().kind {
                 let s = s.clone();
+                let linea_texto = self.peek().linea;
                 self.avanzar();
                 // Verificar si este Texto es parte de una interpolación
-                if self.hay_interpolacion() {
+                // Solo si el siguiente token está en la MISMA línea (si está en otra línea,
+                // es una declaración separada, no interpolación).
+                if self.hay_interpolacion() && linea_texto == self.peek().linea {
                     return self.parse_string_interpolado(s);
                 }
                 return Ok(Expresion::LiteralTexto(s));
@@ -2143,19 +2146,8 @@ impl Parser {
         let mut declaraciones = Vec::new();
 
         while !self.coincide(TokenKind::LlaveCerrar) && !self.es_eof() {
-            let token_actual = self.peek().kind.to_string();
             match self.parse_declaracion() {
-                Ok(Some(decl)) => {
-                    let decl_tipo = std::mem::discriminant(&decl);
-                    eprintln!("[DEBUG PARSE] declaración parseada: tipo={:?}, token_actual='{}'", decl_tipo, token_actual);
-                    if let Declaracion::LlamadaFuncion { ref nombre, .. } = decl {
-                        eprintln!("[DEBUG PARSE]   -> LlamadaFuncion(nombre='{}')", nombre);
-                    }
-                    if let Declaracion::Variable { ref nombre, .. } = decl {
-                        eprintln!("[DEBUG PARSE]   -> Variable(nombre='{}')", nombre);
-                    }
-                    declaraciones.push(decl);
-                }
+                Ok(Some(decl)) => declaraciones.push(decl),
                 Ok(None) => break,
                 Err(err) => {
                     self.errores.push(err);
