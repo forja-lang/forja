@@ -27,3 +27,4 @@ plans/*.md
 *tests*
 .forja_gui_cache/
 vscode/forja-syntax/*.md
+vscode/forja-syntax/**/*.md
