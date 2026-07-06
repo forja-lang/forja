@@ -16,7 +16,7 @@ benchmarks/**/*.o
 test_resultados.txt
 tests/
 *.md
-*.fa
+/*.fa
 *.ps1
 *.exe
 !/README.md
