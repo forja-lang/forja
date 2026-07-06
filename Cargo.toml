@@ -23,7 +23,7 @@ tokio = { version = "1", features = ["full"] }
 [features]
 default = []
 gui = ["xilem"]
-crossbeam = ["crossbeam"]
+crossbeam = ["dep:crossbeam"]
 
 [[bench]]
 name = "bench-fa"
