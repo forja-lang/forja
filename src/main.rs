@@ -972,6 +972,61 @@ fn cmd_repl() {
     repl.iniciar();
 }
 
+/// Intenta ejecutar un programa GUI incrustado (magic "FGC\0").
+/// Se llama al inicio de main(), antes de procesar argumentos.
+fn intentar_selfrun_gui() -> bool {
+    let (data, magic) = match selfrun::leer_datos_incrustados() {
+        Some(d) => d,
+        None => return false,
+    };
+
+    if &magic != b"FGC\0" {
+        return false;
+    }
+
+    let source = match String::from_utf8(data) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+
+    // Verificar que realmente sea un programa GUI
+    if !source.contains("importar \"gui\"") && !source.contains("importar 'gui'") {
+        return false;
+    }
+
+    #[cfg(feature = "gui")]
+    {
+        // Parsear y ejecutar con GUI nativa (usando el runtime compilado en forja)
+        let mut lexer = forja::lexer::Lexer::new(&source);
+        let tokens = match lexer.tokenize() {
+            Ok(t) => t,
+            Err(_) => { eprintln!("❌ Error léxico en programa GUI incrustado"); return true; }
+        };
+        let mut parser = forja::parser::Parser::new(tokens);
+        let programa = match parser.parse() {
+            Ok(p) => p,
+            Err(_) => { eprintln!("❌ Error sintáctico en programa GUI incrustado"); return true; }
+        };
+        let mut checker = forja::semantics::BorrowChecker::new();
+        if checker.analizar(&programa).is_err() {
+            eprintln!("❌ Error semántico en programa GUI incrustado");
+            return true;
+        }
+        println!("  🪟 Iniciando GUI nativa (programa incrustado)...");
+        if forja::gui_nativa::build_and_run(&programa).is_err() {
+            eprintln!("❌ Error al ejecutar GUI nativa");
+        }
+        true
+    }
+
+    #[cfg(not(feature = "gui"))]
+    {
+        eprintln!("❌ Este ejecutable GUI requiere que forja se compile con --features gui");
+        eprintln!("   Recompilá con: cargo build --release --features all");
+        true // Devolvemos true para evitar que siga procesando argumentos
+    }
+}
+
 /// forja build <archivo.fa> -o <salida>
 fn cmd_build(args: &[String]) {
     // Extraer input y output
