@@ -93,6 +93,7 @@ winresource = "0.1"
 members = [
     "crates/forja-gui-rt",
 ]
+exclude = [".forja_gui_cache"]
 
 [profile.release]
 opt-level = 3

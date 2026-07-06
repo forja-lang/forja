@@ -1,7 +1,8 @@
 // Forja GUI Launcher
 // Ejecuta archivos .fa con interfaz gráfica nativa (xilem)
 // Compilar: cargo build --features gui
-// Usar:     cargo run --features gui --bin forja-gui -- <archivo.fa>
+// Usar:     forja-gui <archivo.fa>
+// También:  forja-gui correr|run|ejecutar <archivo.fa>  (compatible con CLI principal)
 
 use std::env;
 use std::fs;
@@ -12,14 +13,31 @@ fn main() {
 
     if args.len() < 2 {
         eprintln!("Uso: forja-gui <archivo.fa>");
+        eprintln!("  forja-gui correr|run|ejecutar <archivo.fa>");
         process::exit(1);
     }
 
-    let path = &args[1];
+    // Buscar el primer argumento que termina en .fa, ignorando subcomandos
+    let path = args.iter().skip(1).find(|a| a.ends_with(".fa")).map(|s| s.as_str());
+
+    let path = match path {
+        Some(p) => p,
+        None => {
+            // Si no hay .fa, el último argumento podría ser la ruta
+            let last = &args[args.len() - 1];
+            if last.starts_with('-') {
+                eprintln!("❌ No se especificó archivo .fa");
+                eprintln!("Uso: forja-gui <archivo.fa>");
+                process::exit(1);
+            }
+            last.as_str()
+        }
+    };
+
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Error al leer '{}': {}", path, e);
+            eprintln!("❌ Error al leer '{}': {}", path, e);
             process::exit(1);
         }
     };
