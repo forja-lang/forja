@@ -143,7 +143,7 @@ forja run examples/main.fa                    # ForjaFast por defecto
 forja run examples/main.fa --vm vm            # VM original
 forja run examples/main.fa --vm jit           # JIT nativo
 forja run examples/main.fa --asm              # Ensamblador nativo
-forja run examples/gui.fa --nativo            # GUI nativa
+forja run examples/gui.fa --native            # GUI nativa
 ```
 
 ### `forja build [OPCIONES] <archivo>`
@@ -157,7 +157,7 @@ Genera un ejecutable autónomo con VM y bytecode incrustados, o incrusta el cód
 
 ```
 forja build examples/main.fa -o programa.exe
-forja build examples/gui.fa -o app.exe --sin-depuracion
+forja build examples/gui.fa -o app.exe --no-debug
 ```
 
 ### `forja build-asm [OPCIONES] <archivo>`
