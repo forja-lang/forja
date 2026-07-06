@@ -1,0 +1,11 @@
+[package]
+name = "forja_202_login"
+version = "0.3.0"
+edition = "2021"
+
+# Exportado por Forja (fa) desde 202_login.fa (podés ejecutar directo con 'forja ejecutar')
+# https://github.com/lococoi/forja
+
+[dependencies]
+# GUI nativa con Xilem (framework UI reactivo con GPU)
+xilem = "0.4"

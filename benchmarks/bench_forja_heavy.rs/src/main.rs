@@ -1,4 +1,4 @@
-// Código exportado desde Forja (fa) — https://github.com/forja-lang/forja
+// Código exportado desde Forja (fa) — https://github.com/lococoi/forja
 // Podés ejecutarlo directo con 'forja ejecutar' sin necesidad de compilar Rust
 
 fn fib_iterativo(n: i64) -> i64 {

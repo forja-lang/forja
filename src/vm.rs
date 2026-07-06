@@ -697,8 +697,8 @@ impl ForjaVM {
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
                     match (&a, &b) {
                         (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
-                            if *bv == 0 { return Err(ErrorVM::DivisionPorCero); }
-                            self.stack.push(ValorVM::Entero(av.wrapping_div(*bv)));
+                            if *bv == 0 { self.stack.push(ValorVM::Nulo); }
+                            else { self.stack.push(ValorVM::Entero(av.wrapping_div(*bv))); }
                         }
                         _ => {
                             self.bytecode[self.ip] = Opcode::Div;
@@ -716,8 +716,8 @@ impl ForjaVM {
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
                     match (&a, &b) {
                         (ValorVM::Decimal(av), ValorVM::Decimal(bv)) => {
-                            if *bv == 0.0 { return Err(ErrorVM::DivisionPorCero); }
-                            self.stack.push(ValorVM::Decimal(av / bv));
+                            if *bv == 0.0 { self.stack.push(ValorVM::Nulo); }
+                            else { self.stack.push(ValorVM::Decimal(av / bv)); }
                         }
                         _ => {
                             self.bytecode[self.ip] = Opcode::Div;
@@ -1244,12 +1244,15 @@ impl ForjaVM {
 
                 Opcode::ReadLine => {
                     let mut input = String::new();
-                    print!("> ");
-                    let _ = std::io::stdout().flush();
                     if std::io::stdin().read_line(&mut input).is_ok() {
-                        self.stack.push(ValorVM::Texto(input.trim().to_string()));
+                        let trimmed = input.trim();
+                        if trimmed.is_empty() {
+                            self.stack.push(ValorVM::Nulo);
+                        } else {
+                            self.stack.push(ValorVM::Texto(trimmed.to_string()));
+                        }
                     } else {
-                        self.stack.push(ValorVM::Texto(String::new()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1605,8 +1608,8 @@ impl ForjaVM {
                     let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
                     if let (ValorVM::Entero(av), ValorVM::Entero(bv)) = (&a, &b) {
-                        if *bv == 0 { return Err(ErrorVM::DivisionPorCero); }
-                        self.stack.push(ValorVM::Entero(av.wrapping_div(*bv)));
+                        if *bv == 0 { self.stack.push(ValorVM::Nulo); }
+                        else { self.stack.push(ValorVM::Entero(av.wrapping_div(*bv))); }
                     } else {
                         self.stack.push(ValorVM::Nulo);
                     }
@@ -1616,8 +1619,8 @@ impl ForjaVM {
                     let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
                     if let (ValorVM::Decimal(av), ValorVM::Decimal(bv)) = (&a, &b) {
-                        if *bv == 0.0 { return Err(ErrorVM::DivisionPorCero); }
-                        self.stack.push(ValorVM::Decimal(av / bv));
+                        if *bv == 0.0 { self.stack.push(ValorVM::Nulo); }
+                        else { self.stack.push(ValorVM::Decimal(av / bv)); }
                     } else {
                         self.stack.push(ValorVM::Nulo);
                     }
@@ -1798,12 +1801,15 @@ impl ForjaVM {
                 }
                 Uop::ReadLine => {
                     let mut input = String::new();
-                    print!("> ");
-                    let _ = std::io::Write::flush(&mut std::io::stdout());
                     if std::io::stdin().read_line(&mut input).is_ok() {
-                        self.stack.push(ValorVM::Texto(input.trim().to_string()));
+                        let trimmed = input.trim();
+                        if trimmed.is_empty() {
+                            self.stack.push(ValorVM::Nulo);
+                        } else {
+                            self.stack.push(ValorVM::Texto(trimmed.to_string()));
+                        }
                     } else {
-                        self.stack.push(ValorVM::Texto(String::new()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1897,7 +1903,7 @@ impl ForjaVM {
                             if *i >= 0 && (*i as usize) < e.len() {
                                 self.stack.push(e[*i as usize].clone());
                             } else {
-                                return Err(ErrorVM::StackUnderflow("ArrayGet: índice fuera de rango".to_string()));
+                                self.stack.push(ValorVM::Nulo);
                             }
                         }
                         _ => self.stack.push(ValorVM::Nulo),
@@ -1913,7 +1919,7 @@ impl ForjaVM {
                             e[*i as usize] = v;
                             self.stack.push(a);
                         } else {
-                            return Err(ErrorVM::StackUnderflow("ArraySet: índice fuera de rango".to_string()));
+                            self.stack.push(ValorVM::Nulo);
                         }
                     } else {
                         self.stack.push(ValorVM::Nulo);

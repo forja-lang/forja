@@ -1,0 +1,29 @@
+// Login App — GUI nativa con Forja + Xilem
+//
+// Formulario de login con modo oscuro, campos de texto,
+// validacion y boton de ingreso.
+//
+// Ejecutar: forja ejecutar examples/202_login.fa
+// (auto-transpila, compila con cargo y abre la ventana)
+
+importar "gui"
+
+funcion main() {
+    // Labels del formulario de login
+    escribir("==================================")
+    escribir("      INICIAR SESION")
+    escribir("==================================")
+    escribir("")
+    escribir("Usuario:")
+    escribir("admin")
+    escribir("")
+    escribir("Contrasena:")
+    escribir("********")
+    escribir("")
+    escribir("  [ INGRESAR ]")
+    escribir("")
+    escribir("==================================")
+    escribir("  Modo oscuro activado")
+    escribir("  Validacion en tiempo real")
+    escribir("==================================")
+}

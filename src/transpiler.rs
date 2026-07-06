@@ -66,6 +66,10 @@ pub struct Transpiler {
     declaraciones_globales: Vec<Declaracion>,
     /// Nombres de funciones externas (FFI)
     funciones_externas: Vec<String>,
+    /// Variables detectadas para GUI AppState dinámico
+    gui_vars: Vec<(String, String)>,
+    /// Si es true, transpilar_expresion referencia campos como data.nombre
+    gui_mode: bool,
 }
 
 struct ClaseInfo {
@@ -120,8 +124,17 @@ impl Transpiler {
             clases: HashMap::new(),
             declaraciones_globales: Vec::new(),
             funciones_externas: Vec::new(),
+            gui_vars: Vec::new(),
+            gui_mode: false,
             saltar_main: false,
         }
+    }
+
+    /// Indica si el programa usa el paquete GUI
+    pub fn usa_gui(&self) -> bool {
+        self.declaraciones_globales.iter().any(|d| {
+            matches!(d, Declaracion::Importar(ruta) if ruta == "gui")
+        })
     }
 
     /// Exporta un programa Forja a código Rust (opcional, Forja ya ejecuta directo con VM)
@@ -133,7 +146,7 @@ impl Transpiler {
         self.recolectar_clases(&programa.declaraciones);
 
         // Segunda pasada: generar código
-        self.emit_line("// Código exportado desde Forja (fa) — https://github.com/forja-lang/forja");
+        self.emit_line("// Código exportado desde Forja (fa) — https://github.com/lococoi/forja");
         self.emit_line("// Podés ejecutarlo directo con 'forja ejecutar' sin necesidad de compilar Rust");
         self.emit_line("");
 
@@ -142,6 +155,15 @@ impl Transpiler {
         if tiene_concurrencia {
             self.emit_line("use std::thread;");
             self.emit_line("use std::sync::mpsc;");
+            self.emit_line("");
+        }
+
+        // Detectar si se usa el paquete GUI para emitir código Xilem REAL
+        if self.usa_gui() {
+            self.emit_line("// ─── GUI: Xilem UI Framework ───");
+            self.emit_line("use xilem::view::{self, Axis, flex, label, text_button, text_input, progress_bar, sized_box};");
+            self.emit_line("use xilem::{WidgetView, Xilem, WindowOptions, EventLoop};");
+            self.emit_line("use xilem::palette::theme::{dark, light};");
             self.emit_line("");
         }
 
@@ -186,10 +208,14 @@ impl Transpiler {
         // Generar clases como struct + impl
         self.generar_clases(&programa.declaraciones);
 
-        // Generar funciones globales (saltar externas, ya declaradas en extern "C")
+        // Generar funciones globales (saltar externas ya declaradas, y main si hay GUI)
         for decl in &programa.declaraciones {
             match decl {
                 Declaracion::Funcion { externa: true, .. } => {} // ya declaradas en extern "C"
+                Declaracion::Funcion { nombre, .. } if self.usa_gui() && nombre == "main" => {
+                    // Saltar main de Forja cuando hay GUI (Xilem genera su propio main)
+                    self.emit_line(&format!("// fn main() de Forja omitido (GUI usa Xilem)"));
+                }
                 Declaracion::Funcion { .. } => {
                     self.transpilar_declaracion(decl);
                     self.emit_line("");
@@ -209,7 +235,64 @@ impl Transpiler {
             }
         }
 
-        // Si no hay fn main explícita, generar main con el código global
+        // Si hay GUI: recolectar widgets recorriendo el AST recursivamente
+        if self.usa_gui() {
+            // Analizar variables para AppState dinámico
+            let mut gui_vars = self.analizar_variables_gui(&programa.declaraciones);
+            // Remover duplicados (mismo nombre, primer tipo se mantiene)
+            let mut seen = std::collections::HashSet::new();
+            gui_vars.retain(|(nombre, _)| seen.insert(nombre.clone()));
+            self.gui_vars = gui_vars;
+
+            // Generar AppState dinámico
+            self.emit_line("#[derive(Default)]");
+            self.emit_line("struct AppState {");
+            let gui_vars = self.gui_vars.clone();
+            if gui_vars.is_empty() {
+                self.emit_line("    _placeholder: (),");
+            } else {
+                for (nombre, tipo_rust) in &gui_vars {
+                    self.emit_line(&format!("    {}: {},", nombre, tipo_rust));
+                }
+            }
+            self.emit_line("}");
+            self.emit_line("");
+
+            // Activar gui_mode para que transpilar_expresion prefije con data.
+            self.gui_mode = true;
+
+            // Recolectar widgets recursivamente desde todo el AST
+            let mut widgets: Vec<String> = Vec::new();
+            self.recolectar_widgets(&programa.declaraciones, &mut widgets);
+
+            // Si no hay widgets, poner uno default
+            if widgets.is_empty() {
+                widgets.push("        view::label(String::from(\"Forja + Xilem GUI\")),".to_string());
+            }
+
+            // Emitir app_logic() con los widgets recolectados
+            self.emit_line("fn app_logic(data: &mut AppState) -> impl WidgetView<AppState> {");
+            self.emit_line("    view::flex(Axis::Vertical, (");
+            for w in &widgets {
+            self.emit_line(w);
+            }
+            self.emit_line("    ))");
+            self.emit_line("}");
+            self.emit_line("");
+
+            // Emitir main() Xilem
+            self.emit_line("fn main() -> Result<(), xilem::winit::error::EventLoopError> {");
+            self.emit_line("    Xilem::new_simple(");
+            self.emit_line("        AppState::default(),");
+            self.emit_line("        app_logic,");
+            self.emit_line("        WindowOptions::new(\"Forja GUI\".to_string()),");
+            self.emit_line("    ).run_in(EventLoop::with_user_event())");
+            self.emit_line("}");
+            self.gui_mode = false;
+            return Ok(self.output.clone());
+        }
+
+        // Si no hay GUI, generar main con código global
         if !tiene_main && !self.saltar_main {
             self.emit_line("fn main() {");
             self.indent();
@@ -232,6 +315,118 @@ impl Transpiler {
 
     fn es_funcion_externa(&self, nombre: &str) -> bool {
         self.funciones_externas.contains(&nombre.to_string())
+    }
+
+    /// Recolecta widgets Xilem recorriendo el AST recursivamente
+    fn recolectar_widgets(&mut self, declaraciones: &[Declaracion], widgets: &mut Vec<String>) {
+        for decl in declaraciones {
+            match decl {
+                Declaracion::LlamadaFuncion { nombre, argumentos } => {
+                    let args: Vec<String> = argumentos.iter()
+                        .map(|a| self.transpilar_expresion(a))
+                        .collect();
+                    match nombre.as_str() {
+                        "escribir" | "etiqueta" | "gui_etiqueta" | "text" => {
+                            if let Some(arg) = args.first() {
+                                widgets.push(format!("        view::label({}),", arg));
+                            }
+                        }
+                        "boton" | "gui_boton" | "btn" => {
+                            let texto = args.first().map(|s| s.as_str()).unwrap_or("String::from(\"\")");
+                            if args.len() >= 2 {
+                                // Segundo argumento: referencia a función Forja (ej: &al_saludar)
+                                let callback = args[1].trim_start_matches('&').to_string();
+                                widgets.push(format!(
+                                    "        view::text_button({}, |d: &mut AppState| {{ {}(); }}),",
+                                    texto, callback
+                                ));
+                            } else {
+                                // Sin callback: mostrar mensaje por consola
+                                widgets.push(format!(
+                                    "        view::text_button({}, |d: &mut AppState| {{ println!(\"Boton: {}\"); }}),",
+                                    texto, texto
+                                ));
+                            }
+                        }
+                        "entrada_texto" | "gui_entrada_texto" => {
+                            if let Some(val) = args.first() {
+                                widgets.push(format!("        view::text_input({}),", val));
+                            }
+                        }
+                        "barra_progreso" | "gui_barra_progreso" => {
+                            if let Some(val) = args.first() {
+                                widgets.push(format!("        view::progress_bar({}),", val));
+                            }
+                        }
+                        "deslizante" | "gui_deslizante" => {
+                            if args.len() >= 3 {
+                                widgets.push(format!("        // slider {}-{}: {}", args[1], args[2], args[0]));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Declaracion::Funcion { cuerpo, .. } => {
+                    self.recolectar_widgets(cuerpo, widgets);
+                }
+                Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
+                    self.recolectar_widgets(bloque_verdadero, widgets);
+                    if let Some(bf) = bloque_falso {
+                        self.recolectar_widgets(bf, widgets);
+                    }
+                }
+                Declaracion::Mientras { bloque, .. } => {
+                    self.recolectar_widgets(bloque, widgets);
+                }
+                Declaracion::Para { bloque, .. } => {
+                    self.recolectar_widgets(bloque, widgets);
+                }
+                Declaracion::Repetir { bloque, .. } => {
+                    self.recolectar_widgets(bloque, widgets);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Analiza recursivamente el AST y recolecta variables (nombre, tipo_rust) para
+    /// generar AppState dinámicamente en programas GUI.
+    fn analizar_variables_gui(&self, declaraciones: &[Declaracion]) -> Vec<(String, String)> {
+        let mut vars = Vec::new();
+        for decl in declaraciones {
+            match decl {
+                Declaracion::Variable { nombre, tipo, .. } => {
+                    let tipo_rust = match tipo {
+                        Some(Tipo::Entero) => "i32",
+                        Some(Tipo::Decimal) => "f64",
+                        Some(Tipo::Texto) => "String",
+                        Some(Tipo::Booleano) => "bool",
+                        _ => "String",
+                    };
+                    vars.push((nombre.clone(), tipo_rust.to_string()));
+                }
+                Declaracion::Funcion { cuerpo, .. } => {
+                    vars.extend(self.analizar_variables_gui(cuerpo));
+                }
+                Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
+                    vars.extend(self.analizar_variables_gui(bloque_verdadero));
+                    if let Some(bf) = bloque_falso {
+                        vars.extend(self.analizar_variables_gui(bf));
+                    }
+                }
+                Declaracion::Mientras { bloque, .. } => {
+                    vars.extend(self.analizar_variables_gui(bloque));
+                }
+                Declaracion::Para { bloque, .. } => {
+                    vars.extend(self.analizar_variables_gui(bloque));
+                }
+                Declaracion::Repetir { bloque, .. } => {
+                    vars.extend(self.analizar_variables_gui(bloque));
+                }
+                _ => {}
+            }
+        }
+        vars
     }
 
     /// Detecta si el programa usa concurrencia (hilo, canal, enviar, recibir, unir, seleccionar)
@@ -1071,6 +1266,14 @@ impl Transpiler {
                         .map(|a| self.transpilar_expresion(a))
                         .collect();
                     self.emit_line(&format!("println!(\"{}\", {});", "{}", args.join(", ")));
+                } else if nombre == "longitud" {
+                    let args: Vec<String> = argumentos
+                        .iter()
+                        .map(|a| self.transpilar_expresion(a))
+                        .collect();
+                    if args.len() == 1 {
+                        self.emit_line(&format!("{}.len();", args[0]));
+                    }
                 } else if nombre == "BD" {
                     // BD("sqlite:memoria") -> rusqlite::Connection::open_in_memory()
                     self.emit_line("// TODO: Implementar conexión BD");
@@ -1174,6 +1377,8 @@ impl Transpiler {
                     "true".to_string()
                 } else if nombre == "falso" {
                     "false".to_string()
+                } else if self.gui_mode && self.gui_vars.iter().any(|(v, _)| v == nombre) {
+                    format!("data.{}", nombre)
                 } else {
                     nombre.clone()
                 }
@@ -1244,6 +1449,12 @@ impl Transpiler {
                     format!("println!(\"{}\", {})", "{}", args.join(", "))
                 } else if nombre == "BD" {
                     "// BD()".to_string()
+                } else if nombre == "longitud" {
+                    if args.len() == 1 {
+                        format!("{}.len()", args[0])
+                    } else {
+                        "0usize".to_string()
+                    }
                 } else if self.es_funcion_externa(nombre) {
                     format!("unsafe {{ {}({}) }}", nombre, args.join(", "))
                 } else if nombre.ends_with(".enviar") {
@@ -1635,5 +1846,83 @@ mod tests {
         assert!(result.contains("let x = 5;"));
         assert!(result.contains("let y = 10;"));
         assert!(!result.contains("let mut"));
+    }
+
+    #[test]
+    fn test_gui_appstate_sin_variables() {
+        let source = "importar \"gui\"\nfuncion main() {\n    escribir(\"hola\")\n}";
+        let result = transpilar_source(source).unwrap();
+        assert!(result.contains("struct AppState {"));
+        assert!(result.contains("_placeholder: (),"));
+        assert!(result.contains("fn app_logic(data: &mut AppState)"));
+    }
+
+    #[test]
+    fn test_gui_appstate_con_variables() {
+        let source = "importar \"gui\"\nfuncion main() {\n    variable usuario = \"admin\"\n    variable contrasena = \"secreta\"\n    escribir(\"Usuario: \" + usuario)\n    escribir(\"Contrasena: \" + contrasena)\n}";
+        let result = transpilar_source(source).unwrap();
+        assert!(result.contains("struct AppState {"));
+        assert!(result.contains("    usuario: String,"));
+        assert!(result.contains("    contrasena: String,"));
+        assert!(!result.contains("_placeholder"));
+    }
+
+    #[test]
+    fn test_gui_appstate_con_tipos_mixtos() {
+        let source = "importar \"gui\"\nfuncion main() {\n    variable edad: Entero = 25\n    variable nombre: Texto = \"Ana\"\n    variable activo: Booleano = verdadero\n    escribir(nombre)\n    escribir(edad)\n}";
+        let result = transpilar_source(source).unwrap();
+        assert!(result.contains("    edad: i32,"));
+        assert!(result.contains("    nombre: String,"));
+        assert!(result.contains("    activo: bool,"));
+    }
+
+    #[test]
+    fn test_gui_appstate_variables_en_main_referencia_data() {
+        let source = "importar \"gui\"\nfuncion main() {\n    variable mensaje = \"Hola Mundo\"\n    escribir(mensaje)\n}";
+        let result = transpilar_source(source).unwrap();
+        // Dentro de app_logic, 'mensaje' debe referenciarse como data.mensaje
+        assert!(result.contains("data.mensaje"));
+    }
+
+    #[test]
+    fn test_gui_boton_con_callback() {
+        let source = "importar \"gui\"\nfuncion al_saludar() { escribir(\"Hola!\") }\nfuncion main() {\n    boton(\"Saludar\", &al_saludar)\n}";
+        let result = transpilar_source(source).unwrap();
+        // Debe generar text_button con callback que invoca al_saludar()
+        assert!(result.contains("al_saludar();"));
+        // No debe tener el hardcode d.contador
+        assert!(!result.contains("d.contador"));
+        // Debe mantener el texto del boton
+        assert!(result.contains("Saludar"));
+    }
+
+    #[test]
+    fn test_gui_boton_sin_callback() {
+        let source = "importar \"gui\"\nfuncion main() {\n    boton(\"Cerrar\")\n}";
+        let result = transpilar_source(source).unwrap();
+        // Debe generar println! como callback
+        assert!(result.contains("println!"));
+        assert!(result.contains("Cerrar"));
+        // No debe tener referencia a funcion
+        assert!(!result.contains("();"));
+    }
+
+    #[test]
+    fn test_gui_boton_con_callback_sin_referencia() {
+        // Prueba: boton("Texto", &fn) SIN espacio entre & y nombre
+        let source = "importar \"gui\"\nfuncion validar() { escribir(\"ok\") }\nfuncion main() {\n    boton(\"Validar\", &validar)\n}";
+        let result = transpilar_source(source).unwrap();
+        assert!(result.contains("validar();"));
+        assert!(!result.contains("d.contador"));
+    }
+
+    #[test]
+    fn test_gui_boton_y_etiqueta_mezclados() {
+        let source = "importar \"gui\"\nfuncion accion() {}\nfuncion main() {\n    etiqueta(\"Titulo\")\n    boton(\"Click\", &accion)\n    boton(\"Otro\")\n}";
+        let result = transpilar_source(source).unwrap();
+        // Debe tener 3 widgets generados
+        assert!(result.contains("label("));
+        assert!(result.contains("accion();"));
+        assert!(result.contains("println!"));
     }
 }

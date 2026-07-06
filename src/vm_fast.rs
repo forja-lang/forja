@@ -230,7 +230,7 @@ struct FuncFast { ip: usize, vars_size: usize }
 pub struct ForjaFast {
     ip: usize,
     stack: Vec<ValorFast>,
-    frame_buffer: [FrmFast; 1024],
+    frame_buffer: [FrmFast; 2048],
     frame_count: usize,
 
     // Flat Var Stack: un único Vec para TODAS las variables de todas las funciones.
@@ -359,7 +359,7 @@ impl ForjaFast {
     pub fn new() -> Self {
         let mut vm = ForjaFast {
             ip: 0, stack: Vec::with_capacity(256),
-            frame_buffer: [FrmFast { ip_ret: 0, base_ptr_previo: 0, num_vars: 0 }; 1024],
+            frame_buffer: [FrmFast { ip_ret: 0, base_ptr_previo: 0, num_vars: 0 }; 2048],
             frame_count: 0,
             flat_vars: Vec::with_capacity(128), base_ptr: 0,
             stack_top: [ValorFast::nulo(), ValorFast::nulo(), ValorFast::nulo(), ValorFast::nulo()],
@@ -1531,11 +1531,16 @@ impl ForjaFast {
                     let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                     let ta = Self::type_tag(&a);
                     let tb = Self::type_tag(&b);
+                    // Check division by zero: pushear Nulo en lugar de error
+                    if (b.es_entero() && b.a_entero() == 0) || (b.es_flotante() && b.a_flotante() == 0.0) {
+                        self.push_valor(ValorFast::nulo());
+                        self.ip += 1;
+                        continue;
+                    }
                     if self.cache_div_type == Some((ta, tb)) {
                         match ta {
                             0 => {
                                 if a.es_entero() && b.es_entero() {
-                                    if !self.fast_math && b.a_entero() == 0 { return Err(ErrFast::DivCero); }
                                     self.push_valor(get_small_int_fast(a.a_entero() as i64 / b.a_entero() as i64));
                                     self.ip += 1;
                                     continue;
@@ -1543,7 +1548,6 @@ impl ForjaFast {
                             }
                             1 => {
                                 if a.es_flotante() && b.es_flotante() {
-                                    if !self.fast_math && b.a_flotante() == 0.0 { return Err(ErrFast::DivCero); }
                                     self.push_valor(ValorFast::flotante(a.a_flotante() / b.a_flotante()));
                                     self.ip += 1;
                                     continue;
@@ -1553,20 +1557,6 @@ impl ForjaFast {
                         }
                     }
                     self.cache_div_type = Some((ta, tb));
-                    // Check division by zero: prefer float check (evita NaN tagging collision:
-                    // floats como 19.0 tienen bits que hacen a_entero() == 0)
-                    if !self.fast_math {
-                        let div_by_zero = if b.es_flotante() {
-                            b.a_flotante() == 0.0
-                        } else if b.es_entero() {
-                            b.a_entero() == 0
-                        } else {
-                            false
-                        };
-                        if div_by_zero {
-                            return Err(ErrFast::DivCero);
-                        }
-                    }
                     if a.es_entero() && b.es_entero() {
                         let result = a.a_entero() as i64;
                         let divisor = b.a_entero() as i64;
@@ -1669,7 +1659,7 @@ impl ForjaFast {
                 Opcode::DivInt => {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
-                    if b.a_entero() == 0 { return Err(ErrFast::DivCero); }
+                    if b.a_entero() == 0 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                     self.push_valor(get_small_int_fast(a.a_entero() as i64 / b.a_entero() as i64));
                     self.ip += 1;
                 }
@@ -1678,20 +1668,20 @@ impl ForjaFast {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
                     if a.es_flotante() && b.es_flotante() {
-                        if !self.fast_math && b.a_flotante() == 0.0 { return Err(ErrFast::DivCero); }
+                        if b.a_flotante() == 0.0 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                         self.push_valor(ValorFast::flotante(a.a_flotante() / b.a_flotante()));
                     } else if a.es_entero() && b.es_flotante() {
-                        if !self.fast_math && b.a_flotante() == 0.0 { return Err(ErrFast::DivCero); }
+                        if b.a_flotante() == 0.0 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                         self.push_valor(ValorFast::flotante(a.a_entero() as f64 / b.a_flotante()));
                     } else if a.es_flotante() && b.es_entero() {
-                        if b.a_entero() == 0 { return Err(ErrFast::DivCero); }
+                        if b.a_entero() == 0 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                         self.push_valor(ValorFast::flotante(a.a_flotante() / b.a_entero() as f64));
                     } else {
                         patch_op = Some(Opcode::Div);
                         self.push_valor(a); self.push_valor(b);
                         let (b2, a2) = (self.pop_valor()?, self.pop_valor()?);
-                        if !self.fast_math && ((b2.es_entero() && b2.a_entero() == 0) || (b2.es_flotante() && b2.a_flotante() == 0.0)) {
-                            return Err(ErrFast::DivCero);
+                        if (b2.es_entero() && b2.a_entero() == 0) || (b2.es_flotante() && b2.a_flotante() == 0.0) {
+                            self.push_valor(ValorFast::nulo()); self.ip += 1; continue;
                         }
                         if a2.es_entero() && b2.es_entero() { self.push_valor(get_small_int_fast(a2.a_entero() as i64 / b2.a_entero() as i64)); }
                         else if a2.es_flotante() && b2.es_flotante() { self.push_valor(ValorFast::flotante(a2.a_flotante() / b2.a_flotante())); }
@@ -1987,7 +1977,8 @@ impl ForjaFast {
 
                             // Normal call: extender flat_vars con nuevo ámbito (O(1))
                             // Guardar base_ptr actual y num_vars para restaurarlos en Return
-                            if self.frame_count >= 1024 {
+                            let max_frames = self.frame_buffer.len();
+                            if self.frame_count >= max_frames {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                             }
                             let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -2049,7 +2040,8 @@ impl ForjaFast {
                             self.ip = func.ip;
                         } else {
                             self.flush_stack();
-                            if self.frame_count >= 1024 {
+                            let max_frames = self.frame_buffer.len();
+                            if self.frame_count >= max_frames {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                             }
                             let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -2212,13 +2204,18 @@ impl ForjaFast {
                 }
                 Opcode::Print => { let v = self.pop_valor()?; self.output.push(self.mostrar_valor(&v)); self.ip += 1; }
                 Opcode::ReadLine => {
-                    let mut i = String::new(); print!("> "); let _ = std::io::Write::flush(&mut std::io::stdout());
+                    let mut i = String::new();
                     if std::io::stdin().read_line(&mut i).is_ok() {
-                        let idx = self.alloc_str(Rc::from(i.trim()));
-                        self.push_valor(ValorFast::texto(idx));
+                        let trimmed = i.trim();
+                        if trimmed.is_empty() {
+                            // EOF: push Nulo para que el programa pueda detectar fin de entrada
+                            self.push_valor(ValorFast::nulo());
+                        } else {
+                            let idx = self.alloc_str(Rc::from(trimmed));
+                            self.push_valor(ValorFast::texto(idx));
+                        }
                     } else {
-                        let idx = self.alloc_str(Rc::from(""));
-                        self.push_valor(ValorFast::texto(idx));
+                        self.push_valor(ValorFast::nulo());
                     }
                     self.ip += 1;
                 }
@@ -2375,7 +2372,8 @@ impl ForjaFast {
                         let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
                         if let Some(fn_sym) = fn_sym {
                             if let Some(func)=self.funciones.get(&fn_sym).cloned(){
-                                if self.frame_count >= 1024 {
+                                let max_frames = self.frame_buffer.len();
+                                if self.frame_count >= max_frames {
                                     return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                                 }
                                 let num_vars_actual=self.flat_vars.len()-self.base_ptr;
@@ -2396,7 +2394,8 @@ impl ForjaFast {
                         let fn_name=format!("{}.{}",c,m);
                         let fn_sym = self.sym_table.intern(&fn_name);
                         if let Some(func)=self.funciones.get(&fn_sym).cloned(){
-                            if self.frame_count >= 1024 {
+                            let max_frames = self.frame_buffer.len();
+                            if self.frame_count >= max_frames {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                             }
                             let num_vars_actual=self.flat_vars.len()-self.base_ptr;
@@ -2435,7 +2434,8 @@ impl ForjaFast {
                                 let clase_id = self.obj_shapes[obj_idx as usize];
                                 if clase_id == *clase_id_cache {
                                     // Cache HIT! Llamada directa sin resolver clase otra vez
-                                    if self.frame_count >= 1024 {
+                                    let max_frames = self.frame_buffer.len();
+                                    if self.frame_count >= max_frames {
                                         return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                                     }
                                     let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -2490,7 +2490,8 @@ impl ForjaFast {
                         let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
                         if let Some(fn_sym) = fn_sym {
                             if let Some(func) = self.funciones.get(&fn_sym).cloned() {
-                                if self.frame_count >= 1024 {
+                                let max_frames = self.frame_buffer.len();
+                                if self.frame_count >= max_frames {
                                     return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                                 }
                                 let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -2523,7 +2524,8 @@ impl ForjaFast {
                         let fn_name = format!("{}.{}", c, method_name);
                         let fn_sym = self.sym_table.intern(&fn_name);
                         if let Some(func) = self.funciones.get(&fn_sym).cloned() {
-                            if self.frame_count >= 1024 {
+                            let max_frames = self.frame_buffer.len();
+                            if self.frame_count >= max_frames {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                             }
                             let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -2573,7 +2575,7 @@ impl ForjaFast {
                         let ii = i.a_entero();
                         if ii >= 0 && (ii as usize) < arr.len() {
                             self.push_valor(arr[ii as usize]);
-                        } else { return Err(ErrFast::IdxOut(format!("[{}]", ii))); }
+                        } else { self.push_valor(ValorFast::nulo()); }
                     } else if a.es_mapa() && i.es_texto() {
                         let map_idx = a.indice_mapa();
                         let map = self.get_map(map_idx);
@@ -2593,7 +2595,7 @@ impl ForjaFast {
                         if ii >= 0 && (ii as usize) < arr.len() {
                             arr[ii as usize] = v;
                             self.push_valor(a);
-                        } else { return Err(ErrFast::IdxOut("set".into())); }
+                        } else { self.push_valor(ValorFast::nulo()); }
                     } else if a.es_mapa() && i.es_texto() {
                         let map_idx = a.indice_mapa();
                         let ks = self.get_str(i.indice_texto()).to_string();
@@ -3139,7 +3141,7 @@ impl ForjaFast {
                 Uop::Div => {
                     let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                     if (b.es_entero() && b.a_entero() == 0) || (b.es_flotante() && b.a_flotante() == 0.0) {
-                        return Err(ErrFast::DivCero);
+                        self.push_valor(ValorFast::nulo()); self.ip += 1; continue;
                     }
                     if a.es_entero() && b.es_entero() {
                         self.push_valor(get_small_int_fast(a.a_entero() as i64 / b.a_entero() as i64));
@@ -3200,7 +3202,7 @@ impl ForjaFast {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
                     if a.es_entero() && b.es_entero() {
-                        if b.a_entero() == 0 { return Err(ErrFast::DivCero); }
+                        if b.a_entero() == 0 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                         self.push_valor(get_small_int_fast(a.a_entero() as i64 / b.a_entero() as i64));
                     } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
@@ -3209,7 +3211,7 @@ impl ForjaFast {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
                     if a.es_flotante() && b.es_flotante() {
-                        if b.a_flotante() == 0.0 { return Err(ErrFast::DivCero); }
+                        if b.a_flotante() == 0.0 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                         self.push_valor(ValorFast::flotante(a.a_flotante() / b.a_flotante()));
                     } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
@@ -3305,7 +3307,8 @@ impl ForjaFast {
                             self.ip = func.ip;
                         } else {
                             self.flush_stack();
-                            if self.frame_count >= 1024 {
+                            let max_frames = self.frame_buffer.len();
+                            if self.frame_count >= max_frames {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                             }
                             let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -3536,7 +3539,8 @@ impl ForjaFast {
                         let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
                         if let Some(fn_sym) = fn_sym {
                             if let Some(func) = self.funciones.get(&fn_sym).cloned() {
-                                if self.frame_count >= 1024 {
+                                let max_frames = self.frame_buffer.len();
+                                if self.frame_count >= max_frames {
                                     return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                                 }
                                 let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -3559,7 +3563,8 @@ impl ForjaFast {
                         let fn_name = format!("{}.{}", c, m);
                         let fn_sym = self.sym_table.intern(&fn_name);
                         if let Some(func) = self.funciones.get(&fn_sym).cloned() {
-                            if self.frame_count >= 1024 {
+                            let max_frames = self.frame_buffer.len();
+                            if self.frame_count >= max_frames {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                             }
                             let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -3595,7 +3600,7 @@ impl ForjaFast {
                         let ii = i.a_entero();
                         if ii >= 0 && (ii as usize) < arr.len() {
                             self.push_valor(arr[ii as usize]);
-                        } else { return Err(ErrFast::IdxOut(format!("[{}]", ii))); }
+                        } else { self.push_valor(ValorFast::nulo()); }
                     } else if a.es_mapa() && i.es_texto() {
                         let map_idx = a.indice_mapa();
                         let map = self.get_map(map_idx);
@@ -3615,7 +3620,7 @@ impl ForjaFast {
                         if ii >= 0 && (ii as usize) < arr.len() {
                             arr[ii as usize] = v;
                             self.push_valor(a);
-                        } else { return Err(ErrFast::IdxOut("set".into())); }
+                        } else { self.push_valor(ValorFast::nulo()); }
                     } else if a.es_mapa() && i.es_texto() {
                         let map_idx = a.indice_mapa();
                         let ks = self.get_str(i.indice_texto()).to_string();

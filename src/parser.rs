@@ -1028,6 +1028,16 @@ impl Parser {
             return self.parse_post_identificador("self".to_string());
         }
 
+        // nuevo como nombre de variable si NO sigue un Identificador (nombre de clase)
+        if self.coincide(TokenKind::Nuevo) {
+            let es_instanciacion = self.pos + 1 < self.tokens.len()
+                && matches!(&self.tokens[self.pos + 1].kind, TokenKind::Identificador(_));
+            if !es_instanciacion {
+                self.avanzar();
+                return self.parse_post_identificador("nuevo".to_string());
+            }
+        }
+
         // Para todo lo demás, parsear como expresión primaria
         let expr = self.parse_expresion_primaria()?;
         Ok(Some(Declaracion::Expresion(expr)))
@@ -1612,7 +1622,14 @@ impl Parser {
         }
 
         if self.coincide(TokenKind::Nuevo) {
-            return self.parse_instanciacion();
+            // nuevo como nombre de variable si NO sigue un Identificador (nombre de clase)
+            let es_instanciacion = self.pos + 1 < self.tokens.len()
+                && matches!(&self.tokens[self.pos + 1].kind, TokenKind::Identificador(_));
+            if es_instanciacion {
+                return self.parse_instanciacion();
+            }
+            self.avanzar(); // consume 'nuevo' como identificador
+            return self.parse_llamada_o_acceso(Expresion::Identificador("nuevo".to_string()));
         }
 
         if self.coincide(TokenKind::Este) {

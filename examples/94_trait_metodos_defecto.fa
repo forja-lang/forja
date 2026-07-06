@@ -23,9 +23,7 @@ trait Saludador {
 
 clase Persona {
     nombre
-}
-
-implementa Saludador para Persona {
+    
     funcion obtener_nombre() -> Texto {
         retornar este.nombre
     }
@@ -39,14 +37,11 @@ implementa Saludador para Persona {
 
 clase Robot {
     codigo
-}
-
-implementa Saludador para Robot {
+    
     funcion obtener_nombre() -> Texto {
         retornar "Robot-${este.codigo}"
     }
     
-    // Sobreescribe el método default
     funcion saludar() {
         escribir("${este.obtener_nombre()}: SISTEMA INICIADO. Hola, humano.")
     }
