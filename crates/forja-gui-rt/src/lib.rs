@@ -6,7 +6,7 @@
 pub use xilem::view::{
     self, button, button_any_pointer, checkbox, flex, grid, image, indexed_stack, label,
     portal, progress_bar, prose, sized_box, slider, spinner, split, text_button, text_input,
-    variable_label, virtual_scroll, zstack, Axis, GridParams,
+    variable_label, virtual_scroll, zstack, Axis, GridParams, MainAxisAlignment, CrossAxisAlignment,
 };
 pub use xilem::{
     AnyWidgetView, EventLoop, FontWeight, TextAlign, WidgetView, WindowOptions, Xilem,
