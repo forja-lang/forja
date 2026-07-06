@@ -151,11 +151,10 @@ Forja ha evolucionado con poderosas nuevas características que lo llevan al sig
 | Comando (español) | Inglés | Descripción |
 |-------------------|--------|-------------|
 | `forja <archivo.fa>` | `forja <file.fa>` | **Ejecuta directo en ForjaFast** 🏆 (default) |
-| `forja run <archivo> [--vm fast\|vm\|jit] [--asm]` | `forja run <file> [--vm fast\|vm\|jit] [--asm]` | Ejecuta en VM seleccionada o en ASM nativo |
-| `forja ejecutar <archivo> --asm` | `forja run <file> --asm` | Compila a ASM nativo + gcc -O2 y ejecuta (⚡más rápido) |
-| `forja medir <archivo> [--iters N] [--vm fast\|vm\|jit\|todas] [--asm]` | `forja bench <file> [--iters N] [--vm ...] [--asm]` | Benchmark con cold+hot en VM(s) o ASM |
+| `forja run <archivo> [--vm fast\|vm\|jit] [--asm] [--native]` | `forja run <file> [--vm fast\|vm\|jit] [--asm] [--native]` | Ejecuta en VM, ASM nativo, o GUI nativa (`--native`) |
+| `forja medir <archivo> [--iters N] [--vm ...] [--asm]` | `forja bench <file> [...]` | Benchmark con cold+hot en VM(s) o ASM |
 | `forja transpilar <archivo>` | `forja transpile <file>` | Exporta a proyecto Rust |
-| `forja compilar <archivo>` | `forja build <file>` | Genera .exe autónomo (VM + bytecode) |
+| `forja compilar <archivo> [--no-debug]` | `forja build <file> [--no-debug]` | Genera .exe autónomo. Para GUI: incrusta en forja.exe (sin compilar nada). `--no-debug` oculta la consola |
 | `forja compilar-asm <archivo>` | `forja build-asm <file>` | Compila a assembly nativo (requiere gcc) |
 | `forja compilar-llvm <archivo>` | `forja build-llvm <file>` | Genera LLVM IR (requiere llc) |
 | `forja test <archivo>` | `forja test <file>` | Ejecuta tests con `@test` |
@@ -177,12 +176,15 @@ cargo run --release --bin forja -- examples/01_hola.fa
 # Assembly nativo (el más rápido, requiere gcc)
 cargo run --release --bin forja -- run examples/01_hola.fa --asm
 
-# GUI interactiva con Xilem (requiere feature gui)
-cargo run --features gui --bin forja -- run --native examples/204_login_final.fa
+# GUI nativa (requiere --features gui o --features all)
+cargo run --features all --bin forja -- run --native examples/211_login.fa
 
-# GUI Launcher directo (binario separado, feature gui)
-cargo build --features gui
-.\target\debug\forja-gui.exe examples/204_login_final.fa
+# GUI Launcher directo (binario separado)
+cargo build --features all
+.\target\release\forja-gui.exe examples/211_login.fa
+
+# Compilar programa GUI a .exe autónomo (sin dependencias externas)
+cargo run --features all --bin forja -- compilar examples/211_login.fa --no-debug
 
 # LLVM IR (requiere llc para generar binario)
 cargo run --release --bin forja -- build-llvm examples/01_hola.fa -o salida.ll
@@ -196,7 +198,7 @@ cargo run --release --bin forja -- doc examples/74_doc_comments.fa -o docs/
 # Transpilar a Rust
 cargo run --release --bin forja -- transpile examples/01_hola.fa -o programa.rs
 
-# Ejecutable autónomo (VM + bytecode)
+# Ejecutable autónomo (VM + bytecode, solo texto)
 cargo run --release --bin forja -- build examples/01_hola.fa -o programa.exe
 
 # REPL interactivo
@@ -560,20 +562,36 @@ funcion main() {
 }
 ```
 
-### Ejecutar
+### Ejecutar / Compilar
 
 ```bash
+# Requisito: compilar forja con --features all (incluye runtime GUI nativo)
+cargo build --release --features all
+
+# ── EJECUCIÓN ──────────────────────────────────────────
+
 # Native runner (AST directo a Xilem, sin compilar Rust)
-cargo run --features gui --bin forja -- run --native examples/205_gui_completo.fa
+.\target\release\forja.exe run --native examples/211_login.fa
 
-# Transpilado a Rust (genera .exe autónomo)
-cargo run --features gui --bin forja -- transpile examples/205_gui_completo.fa
-cd .forja_gui_cache && cargo run --release
+# GUI Launcher directo (binario separado)
+.\target\release\forja-gui.exe examples/211_login.fa
 
-# GUI Launcher directo
-cargo build --features gui
-.\target\debug\forja-gui.exe examples/205_gui_completo.fa
+# ── COMPILACIÓN A .EXE AUTÓNOMO ────────────────────────
+
+# Genera .exe con consola (útil para debug)
+.\target\release\forja.exe compilar examples/211_login.fa
+
+# Genera .exe SIN consola (no muestra ventana de terminal)
+.\target\release\forja.exe compilar examples/211_login.fa --no-debug
+
+# Cómo funciona: incrusta el código fuente .fa en una copia de
+# forja.exe + modifica el header PE (subsystem WINDOWS).
+# 0 dependencias externas, 0 compilaciones de Cargo.
+# Al ejecutar el .exe, forja detecta el código incrustado
+# (magic "FGC\0") y lo ejecuta con el runtime GUI nativo.
 ```
+
+> **Nota**: La primera compilación con `--features all` compila Xilem y ~250 dependencias (lento). Después de eso, `forja compilar` es instantáneo porque solo copia `forja.exe` e incrusta el código fuente.
 
 ---
 
