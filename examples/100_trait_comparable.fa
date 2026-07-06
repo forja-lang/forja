@@ -1,12 +1,12 @@
-/// Trait para ordenar objetos
+/// Rasgo para ordenar objetos
 /// Conceptos: Comparable, ordenamiento, comparación de objetos
 /// Nivel: avanzado
 
 importar "std/io"
 
-// Trait para comparar y ordenar objetos
+// Rasgo para comparar y ordenar objetos
 
-trait Comparable {
+rasgo Comparable {
     funcion comparar_con(otro) -> Entero
     // retorna: -1 si menor, 0 si igual, 1 si mayor
 }
@@ -74,7 +74,7 @@ funcion ordenar_lista(lista) {
 }
 
 funcion main() {
-    escribir("=== Trait Comparable ===\n")
+    escribir("=== Rasgo Comparable ===\n")
     
     // Ordenar personas por edad
     variable p1 = nuevo Persona()

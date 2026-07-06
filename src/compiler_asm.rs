@@ -1227,7 +1227,7 @@ impl CompilerAsm {
             Some(Tipo::Funcion(_, _)) => TipoAsm::Texto,
             Some(Tipo::Resultado(_, _)) => TipoAsm::Texto,
             Some(Tipo::Opcion(_)) => TipoAsm::Texto,
-            Some(Tipo::TraitObjeto(n)) => TipoAsm::Clase(n.clone()),
+            Some(Tipo::RasgoObjeto(n)) => TipoAsm::Clase(n.clone()),
             Some(Tipo::Parametro(_)) => TipoAsm::Texto, // genérico → tratar como texto
         }
     }
@@ -1638,7 +1638,7 @@ impl CompilerAsm {
             }
 
             Declaracion::Clase { .. } => {}
-            Declaracion::Trait { .. } => {}
+            Declaracion::Rasgo { .. } => {}
             Declaracion::Implementacion { .. } => {}
 
             Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {

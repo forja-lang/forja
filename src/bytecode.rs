@@ -457,7 +457,7 @@ impl BytecodeGenerator {
                     globales.push(decl);
                 }
                 Declaracion::Implementacion { clase_nombre, metodos, .. } => {
-                    // Registrar métodos de implementación de trait como "Clase.metodo"
+                    // Registrar métodos de implementación de rasgo como "Clase.metodo"
                     for metodo in metodos {
                         let params: Vec<crate::ast::Parametro> = metodo.parametros.iter().map(|p| {
                             crate::ast::Parametro {
@@ -606,8 +606,8 @@ impl BytecodeGenerator {
                 // Los métodos de clase se generan como funciones aparte
             }
 
-            Declaracion::Trait { .. } => {
-                // Los traits son verificados en análisis semántico, ignorados en bytecode
+            Declaracion::Rasgo { .. } => {
+                // Los rasgos son verificados en análisis semántico, ignorados en bytecode
             }
 
             Declaracion::Implementacion { .. } => {

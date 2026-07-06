@@ -1,20 +1,20 @@
-/// Implementar múltiples traits
-/// Conceptos: múltiples implementa, varios traits por clase
+/// Implementar múltiples rasgos
+/// Conceptos: múltiples implementa, varios rasgos por clase
 /// Nivel: intermedio
 
 importar "std/io"
 
-trait Volador {
+rasgo Volador {
     funcion volar()
     funcion aterrizar() -> Texto
 }
 
-trait Navegante {
+rasgo Navegante {
     funcion obtener_posicion() -> Texto
     function calcular_distancia(destino: Texto) -> Entero
 }
 
-trait Mantenible {
+rasgo Mantenible {
     funcion necesita_mantenimiento() -> Booleano
 }
 
@@ -53,7 +53,7 @@ implementa Mantenible para Avion {
 }
 
 funcion main() {
-    escribir("=== Múltiples Traits ===\n")
+    escribir("=== Múltiples Rasgos ===\n")
     
     variable a = nuevo Avion()
     a.modelo = "Airbus A380"

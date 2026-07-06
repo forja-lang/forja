@@ -65,8 +65,8 @@ funcion dividir(a: Entero, b: Entero) -> Resultado<Entero, Texto> {
 }
 variable resultado = dividir(10, 2)?
 escribir(resultado)"#),
-        ("Traits", r#"importar "std/io"
-trait Saludador {
+        ("Rasgos", r#"importar "std/io"
+rasgo Saludador {
     funcion saludar()
 }
 clase Persona {
