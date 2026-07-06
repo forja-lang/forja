@@ -117,21 +117,19 @@ impl REPL {
                     self.buffer.push('\n');
                     let source = self.buffer.clone();
 
-                    let completud = self.chequear_completud();
+                    if !self.chequear_completud() {
+                        // Faltan cerrar llaves { } — el usuario sigue escribiendo.
+                        // No compilamos porque el parseo de código incompleto
+                        // produce errores confusos ("falta }" cuando recién arrancó).
+                        continue;
+                    }
+
                     match self.compilar_y_ejecutar(&source) {
                         Ok(nuevo_source) => {
-                            // Solo acumulamos el source cuando compila OK
                             self.source_acumulado.push_str(&nuevo_source);
                             self.buffer.clear();
                         }
-                        Err(err) if !completud => {
-                            // Código incompleto (faltan llaves de cierre).
-                            // Mostramos el error para dar feedback, pero NO limpiamos
-                            // el buffer para que el usuario pueda seguir escribiendo.
-                            eprintln!("⚠️  {}", err);
-                        }
                         Err(err) => {
-                            // Código completo pero con error: mostramos y reiniciamos
                             eprintln!("❌ {}", err);
                             self.buffer.clear();
                         }
