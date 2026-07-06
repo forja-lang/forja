@@ -1,2 +1,0 @@
-variable x = 42
-escribir(x)
