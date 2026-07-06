@@ -109,8 +109,8 @@ Forja es un lenguaje de programación educativo con palabras clave en español, 
 | `<` | Menor que. |
 | `>=` | Mayor o igual que. |
 | `<=` | Menor o igual que. |
+| `\|\|` | OR lógico. |
 | `&&` | AND lógico. |
-| `||` | OR lógico. |
 | `!` | NOT lógico. |
 | `no` | Sintaxis alternativa para NOT lógico. |
 | `&` | Crea referencia (presta valor). |
