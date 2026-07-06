@@ -643,13 +643,15 @@ fn cmd_bench(args: &[String]) {
 /// --native         : usa GUI nativa (sin cargo, requiere --features gui)
 fn cmd_run(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native]");
+        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native] [--debug|--console|--no-debug]");
         process::exit(1);
     }
 
     let mut vm_mode = "fast";
     let mut asm_mode = false;
     let mut native_gui = false;
+    let mut debug_mode = false;
+    let mut no_debug = false;
     let mut path: &String = &args[0];
 
     // Escanear todos los args: flags + archivo .fa en cualquier orden
@@ -663,6 +665,8 @@ fn cmd_run(args: &[String]) {
             }
             "--asm" => asm_mode = true,
             "--native" => native_gui = true,
+            "--debug" | "--console" => debug_mode = true,
+            "--no-debug" => no_debug = true,
             _ => {
                 if arg.ends_with(".fa") {
                     path = &args[i];
@@ -674,6 +678,9 @@ fn cmd_run(args: &[String]) {
         }
         i += 1;
     }
+
+    // --no-debug suprime mensajes de build (--debug/--console tienen prioridad)
+    let quiet = no_debug && !debug_mode;
 
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
@@ -695,10 +702,10 @@ fn cmd_run(args: &[String]) {
     // Detectar si usa GUI
     if source.contains("importar \"gui\"") || source.contains("importar 'gui'") {
         if native_gui {
-            println!("🎨 GUI nativa (sin cargo)...");
+            if !quiet { println!("🎨 GUI nativa (sin cargo)..."); }
             #[cfg(feature = "gui")]
             {
-                let result = ejecutar_gui_nativa(&source, path);
+                let result = ejecutar_gui_nativa(&source, path, quiet);
                 match result {
                     Ok(output) => { for line in output { println!("{}", line); } }
                     Err(e) => { eprintln!("❌ Error en GUI nativa: {}", e); process::exit(1); }
@@ -712,8 +719,8 @@ fn cmd_run(args: &[String]) {
                 process::exit(1);
             }
         } else {
-            println!("🎨 Detectado paquete GUI — compilando con Xilem...");
-            let result = ejecutar_gui(&source, path);
+            if !quiet { println!("🎨 Detectado paquete GUI — compilando con Xilem..."); }
+            let result = ejecutar_gui(&source, path, quiet);
             match result {
                 Ok(output) => { for line in output { println!("{}", line); } }
                 Err(e) => { eprintln!("❌ Error en GUI: {}", e); process::exit(1); }
@@ -1850,7 +1857,7 @@ const GUI_CACHE_DIR: &str = ".forja_gui_cache";
 /// forja ejecutar con GUI: transpila a Xilem, compila con cargo y ejecuta la ventana
 /// Usa un directorio de caché fijo para que cargo compile incrementalmente:
 /// la primera vez compila xilem + wgpu (lento), las siguientes solo recompila main.rs (rápido).
-fn ejecutar_gui(source: &str, _input_path: &str) -> Result<Vec<String>, String> {
+fn ejecutar_gui(source: &str, _input_path: &str, quiet: bool) -> Result<Vec<String>, String> {
     use std::path::Path;
 
     let project_dir = GUI_CACHE_DIR;
@@ -1888,7 +1895,7 @@ forja-gui-rt = {{ path = "{}" }}
 "#, rt_path_str);
         std::fs::write(Path::new(&project_dir).join("Cargo.toml"), &cargo_toml)
             .map_err(|e| format!("Error escribiendo Cargo.toml: {}", e))?;
-        println!("  📦 Proyecto Cargo inicializado (runtime: forja-gui-rt)");
+        if !quiet { println!("  📦 Proyecto Cargo inicializado (runtime: forja-gui-rt)"); }
     }
 
     // 4. Escribir main.rs (siempre, para que cargo detecte cambios)
@@ -1900,7 +1907,7 @@ forja-gui-rt = {{ path = "{}" }}
     let cache_target = Path::new(&project_dir).join("target");
     let rt_built_marker = cache_target.join(".rt_compiled");
     if !rt_built_marker.exists() {
-        println!("  ⚙️  Pre-compilando runtime GUI (una vez)...");
+        if !quiet { println!("  ⚙️  Pre-compilando runtime GUI (una vez)..."); }
         let rt_path = std::env::current_dir()
             .map_err(|e| format!("Error obteniendo dir actual: {}", e))?
             .join("crates").join("forja-gui-rt");
@@ -1919,7 +1926,7 @@ forja-gui-rt = {{ path = "{}" }}
     }
 
     // 6. Compilar app con cargo (usa el target compartido, solo recompila main.rs)
-    println!("  🔨 Compilando app GUI...");
+    if !quiet { println!("  🔨 Compilando app GUI..."); }
     let build_result = std::process::Command::new("cargo")
         .args(&["build", "--release"])
         .current_dir(&project_dir)
@@ -1944,14 +1951,14 @@ forja-gui-rt = {{ path = "{}" }}
         exe_path = cache_target.join("debug").join(exe_name);
     }
 
-    println!("  🚀 Ejecutando...");
+    if !quiet { println!("  🚀 Ejecutando..."); }
     let run_output = std::process::Command::new(&exe_path)
         .output()
         .map_err(|e| format!("Error ejecutando GUI: {}", e))?;
 
-    // Mostrar stderr del binario hijo (útil para debug)
+    // Mostrar stderr del binario hijo (útil para debug, solo si no está en quiet)
     let stderr = String::from_utf8_lossy(&run_output.stderr);
-    if !stderr.trim().is_empty() {
+    if !quiet && !stderr.trim().is_empty() {
         eprintln!("  🪟 [stderr del hijo]:\n{}", stderr);
     }
 
@@ -1964,7 +1971,7 @@ forja-gui-rt = {{ path = "{}" }}
 
 /// forja ejecutar --native: GUI nativa sin cargo (usa xilem directo desde AST)
 #[cfg(feature = "gui")]
-fn ejecutar_gui_nativa(source: &str, _path: &str) -> Result<Vec<String>, String> {
+fn ejecutar_gui_nativa(source: &str, _path: &str, quiet: bool) -> Result<Vec<String>, String> {
     // 1. Parsear
     let mut lexer = forja::lexer::Lexer::new(source);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
@@ -1976,7 +1983,7 @@ fn ejecutar_gui_nativa(source: &str, _path: &str) -> Result<Vec<String>, String>
     checker.analizar(&programa).map_err(|e| format!("{:?}", e[0]))?;
 
     // 3. GUI nativa
-    println!("  🪟 Construyendo GUI nativa...");
+    if !quiet { println!("  🪟 Construyendo GUI nativa..."); }
     forja::gui_nativa::build_and_run(&programa)?;
 
     Ok(vec![])
