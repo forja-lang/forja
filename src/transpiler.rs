@@ -70,6 +70,8 @@ pub struct Transpiler {
     gui_vars: Vec<(String, String)>,
     /// Si es true, transpilar_expresion referencia campos como data.nombre
     gui_mode: bool,
+    /// Pila de cierres de layout (columna/fila anidados)
+    layout_stack: Vec<String>,
 }
 
 struct ClaseInfo {
@@ -127,6 +129,7 @@ impl Transpiler {
             gui_vars: Vec::new(),
             gui_mode: false,
             saltar_main: false,
+            layout_stack: Vec::new(),
         }
     }
 
