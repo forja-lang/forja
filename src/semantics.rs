@@ -40,15 +40,18 @@ impl TablaSimbolos {
     }
 
     fn entrar_ambito(&mut self) {
+        eprintln!("[DEBUG] entrar_ambito() — ámbitos ahora: {}", self.ambitos.len() + 1);
         self.ambitos.push(HashMap::new());
     }
 
     fn salir_ambito(&mut self) {
+        eprintln!("[DEBUG] salir_ambito() — ámbitos antes: {}", self.ambitos.len());
         self.ambitos.pop();
     }
 
     fn declarar(&mut self, nombre: &str, mutable: bool, linea: usize, columna: usize, tipo: Option<Tipo>) -> Result<(), ErrorForja> {
         let ambito_actual = self.ambitos.last_mut().unwrap();
+        eprintln!("[DEBUG] declarar('{}') — ámbito actual tiene {} claves: {:?}", nombre, ambito_actual.len(), ambito_actual.keys().collect::<Vec<_>>());
         if ambito_actual.contains_key(nombre) {
             return Err(ErrorForja::new(
                 ErrorTipo::ErrorSemantico,
@@ -73,7 +76,9 @@ impl TablaSimbolos {
     }
 
     fn obtener(&self, nombre: &str) -> Option<&InfoVariable> {
-        for ambito in self.ambitos.iter().rev() {
+        eprintln!("[DEBUG] obtener('{}') — ámbitos activos: {}", nombre, self.ambitos.len());
+        for (i, ambito) in self.ambitos.iter().rev().enumerate() {
+            eprintln!("[DEBUG]   ámbito[-{}] tiene claves: {:?}", i, ambito.keys().collect::<Vec<_>>());
             if let Some(info) = ambito.get(nombre) {
                 return Some(info);
             }
@@ -1412,6 +1417,51 @@ mod tests {
     fn test_funcion_parametros() {
         let result = analizar_source("funcion suma(a, b) { variable c = a + b }");
         assert!(result.is_ok());
+    }
+
+    // Tests para el bug de columna() con escribir(variable) dentro
+
+    #[test]
+    fn test_columna_escribir_literal() {
+        let source = "importar \"gui\"\nfuncion main() {\n    columna(escribir(\"texto\"))\n}";
+        let result = analizar_source(source);
+        assert!(result.is_ok(), "columna(escribir(\"texto\")) debería funcionar: {:?}", result);
+    }
+
+    #[test]
+    fn test_columna_escribir_variable() {
+        let source = "importar \"gui\"\nfuncion main() {\n    variable resultado = \"\"\n    columna(escribir(resultado))\n}";
+        let result = analizar_source(source);
+        assert!(result.is_ok(), "columna(escribir(variable)) debería funcionar: {:?}", result);
+    }
+
+    #[test]
+    fn test_columna_boton_referencia_funcion() {
+        let source = "importar \"gui\"\nfuncion validar(u: Texto, p: Texto) -> Texto { retornar \"ok\" }\nfuncion main() {\n    columna(escribir(\"texto\"), boton(\"Ingresar\", &validar))\n}";
+        let result = analizar_source(source);
+        assert!(result.is_ok(), "columna con boton(&fn) debería funcionar: {:?}", result);
+    }
+
+    #[test]
+    fn test_columna_escribir_variable_con_boton() {
+        let source = "importar \"gui\"\nfuncion validar(u: Texto, p: Texto) -> Texto { retornar \"ok\" }\nfuncion main() {\n    variable resultado = \"\"\n    columna(escribir(resultado), boton(\"Ingresar\", &validar))\n}";
+        let result = analizar_source(source);
+        assert!(result.is_ok(), "columna con escribir(variable) + boton(&fn) debería funcionar: {:?}", result);
+    }
+
+    #[test]
+    fn test_llamada_funcion_normal_con_variable() {
+        // Test que escribir(variable) funciona fuera de columna
+        let source = "importar \"gui\"\nfuncion main() {\n    variable resultado = \"\"\n    escribir(resultado)\n}";
+        let result = analizar_source(source);
+        assert!(result.is_ok(), "escribir(variable) fuera de columna debería funcionar: {:?}", result);
+    }
+
+    #[test]
+    fn test_columna_multiple_escribir_con_variable() {
+        let source = "importar \"gui\"\nfuncion main() {\n    variable resultado = \"\"\n    columna(\n        escribir(\"A\"),\n        escribir(resultado),\n        escribir(\"B\")\n    )\n}";
+        let result = analizar_source(source);
+        assert!(result.is_ok(), "columna con múltiples escribir, uno con variable, debería funcionar: {:?}", result);
     }
 }
 
