@@ -1,16 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════
-//  FORJA LOGIN
-//  Formulario de inicio de sesion con GUI nativa Xilem
-//  Demuestra: etiqueta_color(), titulo(), placeholder en inputs
-// ═══════════════════════════════════════════════════════════════════
-//
-//  Ejecutar (nativo):  forja ejecutar --native examples/211_login.fa
-//  Ejecutar (normal):  forja ejecutar examples/211_login.fa
-//
-//  Requiere: cargo build --features gui
-//
-// ═══════════════════════════════════════════════════════════════════
-
 importar "gui"
 
 // ─── Callbacks ────────────────────────────────────────────────────
@@ -29,67 +16,44 @@ funcion limpiar() -> Texto {
     retornar ""
 }
 
-// ─── Aplicacion principal ─────────────────────────────────────────
-
 funcion main() {
-    // ─── Variables de estado ─────────────────────────────────────
     variable usuario = ""
     variable contrasena = ""
     variable resultado = ""
 
-    // ─── Interfaz ────────────────────────────────────────────────
-    desplazable(
-        columna(
+    columna_centrada(
+        espacio(20),
 
-            // ═══════════════════════════════════════════════════════
-            //  HEADER
-            // ═══════════════════════════════════════════════════════
-            espacio(40),
+        titulo("Iniciar Sesion"),
+        espacio(5),
+        etiqueta_color("Accede a tu cuenta", "gris"),
+        espacio(30),
 
-            etiqueta("+----------------------------------------------------+"),
-            titulo("  Iniciar Sesion"),
-            etiqueta_color("  Accede a tu cuenta", "gris"),
-            etiqueta("+----------------------------------------------------+"),
-            espacio(35),
+        etiqueta("  Usuario"),
+        entrada_texto("usuario", "Ingresa tu usuario"),
+        espacio(12),
 
-            // ═══════════════════════════════════════════════════════
-            //  CAMPOS DEL FORMULARIO
-            // ═══════════════════════════════════════════════════════
-            etiqueta("  Usuario:"),
-            entrada_texto("usuario", "Ingresa tu usuario"),
-            espacio(15),
+        etiqueta("  Contrasena"),
+        entrada_texto("contrasena", "Ingresa tu contrasena"),
+        espacio(20),
 
-            etiqueta("  Contrasena:"),
-            entrada_texto("contrasena", "Ingresa tu contrasena"),
-            espacio(25),
-
-            // ═══════════════════════════════════════════════════════
-            //  BOTONES DE ACCION
-            // ═══════════════════════════════════════════════════════
-            fila(
-                boton("  INICIAR SESION  ", &validar_login),
-                espacio(15),
-                boton("  LIMPIAR  ", &limpiar)
-            ),
-            espacio(15),
-
-            etiqueta_color("> Olvidaste tu contrasena?", "azul"),
-            espacio(25),
-
-            // ═══════════════════════════════════════════════════════
-            //  RESULTADO
-            // ═══════════════════════════════════════════════════════
-            separador(),
+        fila(
+            boton("  INICIAR SESION  ", &validar_login),
             espacio(10),
+            boton("  LIMPIAR  ", &limpiar)
+        ),
+        espacio(15),
 
-            etiqueta_color("  Resultado:", "naranja"),
-            etiqueta("  +--------------------------------------------------+"),
-            escribir(resultado),
-            etiqueta("  +--------------------------------------------------+"),
+        etiqueta_color("Olvidaste tu contrasena?", "azul"),
+        espacio(25),
 
-            espacio(40),
-            etiqueta_color("  Forja GUI Nativa  -  Xilem 0.4", "plateado"),
-            espacio(20)
-        )
+        separador(),
+        espacio(10),
+        etiqueta_color("Resultado:", "naranja"),
+        escribir(resultado),
+
+        espacio(30),
+        etiqueta_color("Forja GUI Nativa  -  Xilem 0.4", "plateado"),
+        espacio(20)
     )
 }

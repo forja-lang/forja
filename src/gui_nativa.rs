@@ -78,6 +78,7 @@ impl Default for AppStateNativo {
 #[derive(Debug)]
 enum Layout {
     Column(Vec<Layout>),
+    CenteredColumn(Vec<Layout>),
     Row(Vec<Layout>),
     ZStack(Vec<Layout>),
     Portal(Box<Layout>),
@@ -271,6 +272,9 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                     Some(Layout::Spacer(tamano))
                 }
                 "columna" | "gui_columna" => Some(Layout::Column(procesar_args(argumentos))),
+                "columna_centrada" | "centered_column" | "center_col" => {
+                    Some(Layout::CenteredColumn(procesar_args(argumentos)))
+                }
                 "fila" | "gui_fila" => Some(Layout::Row(procesar_args(argumentos))),
                 "pila" | "gui_pila" | "zstack" => Some(Layout::ZStack(procesar_args(argumentos))),
                 "desplazable" | "gui_desplazable" | "scroll" => {
@@ -325,6 +329,17 @@ fn layout_a_view<'a>(
                 widgets.push(layout_a_view(h, data, _prog));
             }
             Box::new(view::flex(Axis::Vertical, (widgets,)))
+        }
+        Layout::CenteredColumn(hijos) => {
+            let mut widgets: Vec<Box<AnyWidgetView<AppStateNativo>>> = Vec::new();
+            for h in hijos {
+                widgets.push(layout_a_view(h, data, _prog));
+            }
+            Box::new(
+                view::flex(Axis::Vertical, (widgets,))
+                    .must_fill_major_axis(true)
+                    .main_axis_alignment(MainAxisAlignment::Center)
+            )
         }
         Layout::Row(hijos) => {
             let mut widgets: Vec<Box<AnyWidgetView<AppStateNativo>>> = Vec::new();
