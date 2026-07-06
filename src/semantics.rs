@@ -433,11 +433,14 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
                     ));
                 }
                 self.tabla.entrar_ambito();
+                eprintln!("[DEBUG] FUNCION: entro ámbito (ahora {} ámbitos)", self.tabla.ambitos.len());
                 for param in parametros {
                     let tipo_param = param.tipo.clone();
                     let _ = self.tabla.declarar(&param.nombre, param.mutable, 0, 0, tipo_param);
                 }
+                eprintln!("[DEBUG] FUNCION: procesando cuerpo con {} declaraciones", cuerpo.len());
                 self.analizar_declaraciones(cuerpo);
+                eprintln!("[DEBUG] FUNCION: salgo ámbito (quedan {} ámbitos)", self.tabla.ambitos.len() - 1);
                 self.tabla.salir_ambito();
             }
 
