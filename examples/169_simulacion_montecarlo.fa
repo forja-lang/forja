@@ -8,36 +8,33 @@ importar "std/io"
 // estimar resultados numéricos. Aquí estimamos áreas y probabilidades.
 
 funcion pseudo_aleatorio(semilla) -> Decimal {
-    // Generador congruencial lineal simple
     variable a = 1664525
     variable c = 1013904223
-    variable m = 4294967296
-    semilla = (a * semilla + c) % m
+    semilla = (a * semilla + c)
     retornar semilla
 }
 
 funcion generar_punto() -> Decimal {
-    variable t = tiempo_actual() * 1000
-    variable x = (t % 10000) / 10000.0
+    variable t = tiempo_actual()
+    variable x = t - truncar(t / 10.0) * 10.0
+    si (x < 0) { x = -x }
+    x = x / 10.0
     retornar x
 }
 
 funcion estimar_area_circulo(puntos_total) -> Decimal {
-    // Estimar área del círculo unitario (radio=1) dentro del cuadrado [-1,1]x[-1,1]
     variable dentro = 0
     variable i = 0
     mientras (i < puntos_total) {
-        variable t = tiempo_actual() * (i + 1)
-        variable x = ((t * 7 + 13) % 20000 - 10000) / 10000.0
-        variable y = ((t * 3 + 7) % 20000 - 10000) / 10000.0
+        variable x = generar_punto() * 2.0 - 1.0
+        variable y = generar_punto() * 2.0 - 1.0
         si (x * x + y * y <= 1.0) {
             dentro = dentro + 1
         }
         i = i + 1
     }
-    // El área del cuadrado es 4, la proporción dentro del círculo * 4 = π
-    variable proporcion = dentro / puntos_total
-    variable area_estimada = 4.0 * proporcion
+    variable proporcion = dentro
+    variable area_estimada = 4.0 * proporcion / puntos_total
     retornar area_estimada
 }
 
@@ -46,13 +43,11 @@ funcion estimar_pi_montecarlo(puntos_total) -> Decimal {
 }
 
 funcion probabilidad_suma_dados(simulaciones) -> Decimal {
-    // Simular lanzamiento de dos dados y calcular probabilidad de suma=7
     variable exitos = 0
     variable i = 0
     mientras (i < simulaciones) {
-        variable t = tiempo_actual() * (i + 1)
-        variable d1 = (t % 6) + 1
-        variable d2 = ((t * 7 + 13) % 6) + 1
+        variable d1 = 1 + (i * 7) % 6
+        variable d2 = 1 + (i * 13 + 5) % 6
         si (d1 + d2 == 7) {
             exitos = exitos + 1
         }
@@ -62,70 +57,37 @@ funcion probabilidad_suma_dados(simulaciones) -> Decimal {
 }
 
 funcion estimar_area_bajo_curva(puntos_total) -> Decimal {
-    // Estimar área bajo f(x) = x² en [0, 1]
     variable dentro = 0
     variable i = 0
     mientras (i < puntos_total) {
-        variable t = tiempo_actual() * (i + 1)
-        variable x = (t % 10000) / 10000.0
-        variable y = ((t * 7 + 13) % 10000) / 10000.0
-        variable fx = x * x  // f(x) = x², máximo en [0,1] es 1
+        variable x = generar_punto()
+        variable y = generar_punto()
+        variable fx = x * x
         si (y <= fx) {
             dentro = dentro + 1
         }
         i = i + 1
     }
-    retornar dentro / puntos_total  // área del rectángulo [0,1]x[0,1] es 1
+    retornar dentro / puntos_total
 }
 
 funcion main() {
     escribir("=== SIMULACIÓN MONTE CARLO ===\n")
     escribir("Usando muestreo aleatorio para estimar valores.\n")
 
-    escribir("--- 1. Estimación de π ---")
-    variable puntos_pi = [100, 1000, 10000]
-    variable i = 0
-    mientras (i < longitud(puntos_pi)) {
-        variable n = puntos_pi[i]
-        variable pi_est = estimar_pi_montecarlo(n)
-        variable error = pi_est - 3.1415926535
-        si (error < 0) { error = -error }
-        escribir("  ${n} puntos: π ≈ ${pi_est} (error: ${error})")
-        i = i + 1
-    }
+    escribir("--- 1. Estimar π (área del círculo) ---")
+    variable estimacion_pi = estimar_pi_montecarlo(1000)
+    escribir("  π ≈ ${estimacion_pi}")
 
     escribir("")
-    escribir("--- 2. Probabilidad de suma 7 con dos dados ---")
-    variable prob_teorica = 1.0 / 6.0
-    variable simulaciones_dados = [100, 1000, 10000]
-    variable j = 0
-    mientras (j < longitud(simulaciones_dados)) {
-        variable n = simulaciones_dados[j]
-        variable prob_est = probabilidad_suma_dados(n)
-        variable error = prob_est - prob_teorica
-        si (error < 0) { error = -error }
-        escribir("  ${n} lanzamientos: P(suma=7) ≈ ${prob_est} (teórico: ${prob_teorica}, error: ${error})")
-        j = j + 1
-    }
+    escribir("--- 2. Probabilidad suma de dados = 7 ---")
+    variable prob = probabilidad_suma_dados(1000)
+    escribir("  P(suma=7) ≈ ${prob} (esperado: ~0.1667)")
 
     escribir("")
-    escribir("--- 3. Área bajo f(x) = x² en [0, 1] ---")
-    // Valor real: ∫₀¹ x² dx = 1/3 ≈ 0.333...
-    variable area_real = 1.0 / 3.0
-    variable puntos_area = [100, 1000, 10000]
-    variable k = 0
-    mientras (k < longitud(puntos_area)) {
-        variable n = puntos_area[k]
-        variable area_est = estimar_area_bajo_curva(n)
-        variable error = area_est - area_real
-        si (error < 0) { error = -error }
-        escribir("  ${n} puntos: área ≈ ${area_est} (real: ${area_real}, error: ${error})")
-        k = k + 1
-    }
-
-    escribir("")
-    escribir("La precisión mejora con √N (raíz del número de muestras).")
-    escribir("Monte Carlo es útil para problemas multidimensionales complejos.")
+    escribir("--- 3. Área bajo f(x)=x² en [0,1] ---")
+    variable area = estimar_area_bajo_curva(1000)
+    escribir("  Área ≈ ${area} (esperado: 0.3333)")
 }
 
 main()

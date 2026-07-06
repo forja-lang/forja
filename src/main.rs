@@ -684,6 +684,17 @@ fn cmd_run(args: &[String]) {
         return;
     }
 
+    // Detectar si usa GUI → transpilar+compilar+ejecutar automáticamente
+    if source.contains("importar \"gui\"") || source.contains("importar 'gui'") {
+        println!("🎨 Detectado paquete GUI — compilando con Xilem...");
+        let result = ejecutar_gui(&source, path);
+        match result {
+            Ok(output) => { for line in output { println!("{}", line); } }
+            Err(e) => { eprintln!("❌ Error en GUI: {}", e); process::exit(1); }
+        }
+        return;
+    }
+
     let result = match vm_mode {
         "fast" => forja::ejecutar(&source),
         "jit" => forja::ejecutar_jit(&source),
@@ -1089,6 +1100,11 @@ fn cmd_transpile(args: &[String]) {
         }
     };
 
+    // Detectar si el programa usa GUI para incluir xilem como dependencia
+    let usa_gui = programa.declaraciones.iter().any(|d| {
+        matches!(d, ast::Declaracion::Importar(ruta) if ruta == "gui")
+    });
+
     // Crear proyecto Cargo
     let src_dir = Path::new(&project_dir).join("src");
     if let Err(e) = fs::create_dir_all(&src_dir) {
@@ -1096,21 +1112,37 @@ fn cmd_transpile(args: &[String]) {
         process::exit(1);
     }
 
+    // Sanitizar nombre: debe empezar con letra (regla de Cargo)
+    let mut nombre_crate = input_stem.replace('-', "_").replace(' ', "_");
+    if !nombre_crate.is_empty() {
+        let first = nombre_crate.chars().next().unwrap();
+        if first.is_ascii_digit() {
+            nombre_crate = format!("forja_{}", nombre_crate);
+        }
+    }
+
     // Escribir Cargo.toml
-    let cargo_toml = format!(
+    let mut cargo_toml = format!(
         r#"[package]
 name = "{}"
 version = "0.3.0"
 edition = "2021"
 
 # Exportado por Forja (fa) desde {} (podés ejecutar directo con 'forja ejecutar')
-# https://github.com/forja-lang/forja
+# https://github.com/lococoi/forja
 
 [dependencies]
 "#,
-        input_stem.replace('-', "_").replace(' ', "_"),
+        nombre_crate,
         Path::new(input_path).file_name().and_then(|s| s.to_str()).unwrap_or(input_path)
     );
+
+    if usa_gui {
+        cargo_toml.push_str(
+            "# GUI nativa con Xilem (framework UI reactivo con GPU)\n\
+             xilem = \"0.4\"\n"
+        );
+    }
 
     if let Err(e) = fs::write(Path::new(&project_dir).join("Cargo.toml"), &cargo_toml) {
         eprintln!("Error escribiendo Cargo.toml: {}", e);
@@ -1548,4 +1580,75 @@ fn ejecutar_test(test_fn: &Declaracion, rust_code: &str) -> Result<(), String> {
         }
         Err(msg)
     }
+}
+
+/// forja ejecutar con GUI: transpila a Xilem, compila con cargo y ejecuta la ventana
+fn ejecutar_gui(source: &str, input_path: &str) -> Result<Vec<String>, String> {
+    use std::path::Path;
+
+    // 1. Parsear y transpilar
+    let mut lexer = forja::lexer::Lexer::new(source);
+    let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
+    let mut parser = forja::parser::Parser::new(tokens);
+    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+
+    let mut transpiler = forja::transpiler::Transpiler::new();
+    let rust_code = transpiler.transpilar(&programa).map_err(|e| format!("{}", e[0]))?;
+
+    // 2. Crear proyecto temporal
+    let stem = Path::new(input_path).file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("forja_gui");
+    let project_dir = format!(".forja_gui_{}", stem);
+
+    let _ = std::fs::remove_dir_all(&project_dir);
+    let src_dir = Path::new(&project_dir).join("src");
+    std::fs::create_dir_all(&src_dir).map_err(|e| format!("Error creando dir: {}", e))?;
+
+    // 3. Escribir Cargo.toml
+    let cargo_toml = format!(
+        r#"[package]
+name = "forja_gui_{}"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+xilem = "0.4"
+"#,
+        stem.replace('-', "_").replace(' ', "_")
+    );
+    std::fs::write(Path::new(&project_dir).join("Cargo.toml"), &cargo_toml)
+        .map_err(|e| format!("Error escribiendo Cargo.toml: {}", e))?;
+
+    // 4. Escribir main.rs
+    let rs_path = src_dir.join("main.rs");
+    std::fs::write(&rs_path, &rust_code)
+        .map_err(|e| format!("Error escribiendo main.rs: {}", e))?;
+
+    // 5. Compilar con cargo
+    let output = std::process::Command::new("cargo")
+        .args(&["build", "--release"])
+        .current_dir(&project_dir)
+        .output()
+        .map_err(|e| format!("Error ejecutando cargo: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let _ = std::fs::remove_dir_all(project_dir);
+        return Err(format!("Error de compilación:\n{}", stderr));
+    }
+
+    // 6. Ejecutar binario
+    let exe_name = format!("forja_gui_{}.exe", stem.replace('-', "_").replace(' ', "_"));
+    let exe_path = Path::new(&project_dir).join("target").join("release").join(&exe_name);
+
+    let run_output = std::process::Command::new(&exe_path)
+        .output()
+        .map_err(|e| format!("Error ejecutando GUI: {}", e))?;
+
+    // 7. Limpiar
+    let _ = std::fs::remove_dir_all(project_dir);
+
+    let stdout = String::from_utf8_lossy(&run_output.stdout);
+    Ok(stdout.lines().map(|s| s.to_string()).collect())
 }

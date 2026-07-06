@@ -47,6 +47,7 @@ Forja ha evolucionado con poderosas nuevas características que lo llevan al sig
 | **Compilador** | Rust puro (sin dependencias externas para núcleo) |
 | **REPL** | `rustyline` |
 | **JIT Nativo** | Generación de código x86-64 en memoria (sin dependencias externas) |
+| **GUI Nativa (opcional)** | `xilem` — framework UI reactivo con GPU (Vello/wgpu) |
 | **WASM** | `wasm-bindgen` (playground en navegador) |
 | **LLVM Backend** | Generación de texto LLVM IR (sin bindings a libllvm) |
 | **Extension IDE** | VS Code (TextMate grammar) + LSP |
@@ -135,6 +136,7 @@ Forja ha evolucionado con poderosas nuevas características que lo llevan al sig
 | **Prelude** | [`src/prelude.rs`](src/prelude.rs) | Prelude del lenguaje |
 | **SymbolTable** | [`src/symbol_table.rs`](src/symbol_table.rs) | Internado de strings con SymId O(1) |
 | **ClassDescriptor** | [`src/class_descriptor.rs`](src/class_descriptor.rs) | Shape compartido + MRO para POO |
+| **GUI (opcional)** | [`src/gui.rs`](src/gui.rs) | Integración con Xilem (feature `gui`) |
 | **WASM** | [`crates/forja-wasm/`](crates/forja-wasm/) | Bindings WASM para playground web |
 | **LSP** | [`src/bin/forja_lsp.rs`](src/bin/forja_lsp.rs) | Servidor de lenguaje LSP para IDE |
 
@@ -154,6 +156,7 @@ Forja ha evolucionado con poderosas nuevas características que lo llevan al sig
 | `forja compilar-llvm <archivo>` | `forja build-llvm <file>` | Genera LLVM IR (requiere llc) |
 | `forja test <archivo>` | `forja test <file>` | Ejecuta tests con `@test` |
 | `forja doc <archivo>` | `forja doc <file>` | Genera documentación HTML desde `///` |
+| `forja gui [ejemplo]` 🆕 | `forja gui [example]` | GUI interactiva con Xilem (requiere `--features gui`) |
 | `forja repl [--vm fast\|vm\|jit]` | `forja repl [--vm fast\|vm\|jit]` | Modo interactivo (REPL) |
 | `forja formatear <archivo>` | `forja fmt <file>` | Formatea código Forja |
 | `forja diagrama <archivo>` | `forja diagram <file>` | Genera diagram HTML del AST |
@@ -169,6 +172,10 @@ cargo run --release --bin forja -- examples/hola_mundo.fa
 
 # Assembly nativo (el más rápido, requiere gcc)
 cargo run --release --bin forja -- run examples/hola_mundo.fa --asm
+
+# GUI interactiva con Xilem (requiere feature)
+cargo run --features gui --bin forja -- gui contador
+cargo run --features gui --bin forja -- gui hola
 
 # LLVM IR (requiere llc para generar binario)
 cargo run --release --bin forja -- build-llvm examples/hola_mundo.fa -o salida.ll
@@ -791,7 +798,7 @@ Explora todos los ejemplos en la carpeta [`examples/`](examples/).
 
 ```bash
 # Requisito: Rust (https://rustup.rs)
-git clone https://github.com/forja-lang/forja.git
+git clone https://github.com/lococoi/forja.git
 cd forja
 
 # Compilar (release recomendado para benchmarks)

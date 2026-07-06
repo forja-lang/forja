@@ -131,15 +131,6 @@ funcion main() {
     escribir("--- Fibonacci: Comparación de enfoques ---")
     variable n = 10
 
-    // Ingenuo (solo para n pequeños)
-    variable resultado_ing = fib_ingenua(n)
-    escribir("  Fib(${n}) - Ingenuo (recursivo): ${resultado_ing}")
-
-    // Memoización
-    variable fib_memo = nuevo FibonacciMemo()
-    variable resultado_memo = fib_memo.calcular(n)
-    escribir("  Fib(${n}) - Memoización (top-down): ${resultado_memo}")
-
     // Tabulación
     variable resultado_tab = fib_tabulacion(n)
     escribir("  Fib(${n}) - Tabulación (bottom-up): ${resultado_tab}")
@@ -150,8 +141,6 @@ funcion main() {
 
     escribir("")
     escribir("  Comparación de complejidad:")
-    escribir("    Ingenuo:     O(2ⁿ) tiempo, O(n) memoria")
-    escribir("    Memoización: O(n) tiempo, O(n) memoria")
     escribir("    Tabulación:  O(n) tiempo, O(n) memoria")
     escribir("    Optimizado:  O(n) tiempo, O(1) memoria")
 
