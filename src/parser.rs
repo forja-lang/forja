@@ -2159,6 +2159,14 @@ impl Parser {
         // Consume el } si existe
         if self.coincide(TokenKind::LlaveCerrar) {
             self.avanzar();
+        } else {
+            return Err(ErrorForja::new(
+                ErrorTipo::ErrorSintactico,
+                self.linea_actual(),
+                self.columna_actual(),
+                "Se esperaba '}' para cerrar el bloque.",
+                "Agregá '}' al final del bloque para cerrar la llave.",
+            ));
         }
 
         Ok(declaraciones)

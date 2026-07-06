@@ -882,7 +882,9 @@ impl BytecodeGenerator {
                     for arg in argumentos {
                         self.generar_expresion(arg);
                     }
-                    self.emitir(Opcode::Call(Rc::from("nuevo"), argumentos.len()));
+                    // Llamar a "Clase.nuevo" con nargs+1 (incluyendo self)
+                    let constructor = Rc::from(format!("{}.{}", clase, "nuevo"));
+                    self.emitir(Opcode::Call(constructor, argumentos.len() + 1));
                 }
                 // El objeto queda en el stack para ser asignado a una variable
             }

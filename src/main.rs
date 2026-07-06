@@ -1875,9 +1875,9 @@ fn ejecutar_gui(source: &str, _input_path: &str, quiet: bool) -> Result<Vec<Stri
     let src_dir = Path::new(&project_dir).join("src");
     std::fs::create_dir_all(&src_dir).map_err(|e| format!("Error creando dir: {}", e))?;
 
-    // 3. Crear Cargo.toml SOLO si no existe (persiste entre ejecuciones)
-    if !Path::new(&project_dir).join("Cargo.toml").exists() {
-        // Ruta absoluta a forja-gui-rt para que funcione desde cualquier CWD
+    // 3. Escribir Cargo.toml con la ruta absoluta a forja-gui-rt
+    //    (siempre se regenera para evitar inconsistencias si cambia la estructura)
+    {
         let current_dir = std::env::current_dir()
             .map_err(|e| format!("Error obteniendo directorio actual: {}", e))?;
         let rt_abs_path = current_dir.join("crates").join("forja-gui-rt");
