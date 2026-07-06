@@ -1,0 +1,37 @@
+# Módulo: gui
+# Descripción: API gráfica nativa con Xilem (framework UI reactivo)
+# Instalación: forja add gui && forja install
+# Uso: importar "gui"
+#
+# NOTA: Este paquete solo funciona al transpilar a Rust con cargo.
+#       La VM de Forja no renderiza ventanas nativas.
+# Dependencia Rust: xilem = "0.4"
+
+# ─── Widgets básicos ───
+
+# Crea una etiqueta de texto estático
+funcion etiqueta(texto: Texto) {
+    retornar text(texto)
+}
+
+# Crea un botón con texto
+funcion boton(texto: Texto) {
+    retornar btn(texto)
+}
+
+# Crea un contenedor vertical
+funcion columna(hijos) {
+    retornar col(hijos)
+}
+
+# Crea un contenedor horizontal
+funcion fila(hijos) {
+    retornar row(hijos)
+}
+
+# ─── Helpers ───
+
+funcion text(s: Texto) -> Texto { retornar s }
+funcion btn(s: Texto) -> Texto { retornar s }
+funcion col(s) { retornar s }
+funcion row(s) { retornar s }

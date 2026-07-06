@@ -435,7 +435,7 @@ impl ForjaDT {
                     _=>return Err(ErrorDT::TipoIncompatible("mul".into()))}
                 self.ip += 1; }
                 OP_DIV => { let (b,a)=(self.pop()?,self.pop()?); match (&a,&b) {
-                    (_,ValorDT::Entero(0))|(_,ValorDT::Decimal(0.0))=>return Err(ErrorDT::DivisionPorCero),
+                    (_,ValorDT::Entero(0))|(_,ValorDT::Decimal(0.0))=>self.push(ValorDT::Nulo),
                     (ValorDT::Entero(x),ValorDT::Entero(y))=>self.push(ValorDT::Entero(x/y)),
                     (ValorDT::Decimal(x),ValorDT::Decimal(y))=>self.push(ValorDT::Decimal(x/y)),
                     _=>return Err(ErrorDT::TipoIncompatible("div".into()))}
@@ -581,7 +581,7 @@ impl ForjaDT {
                     _=>return Err(ErrorDT::TipoIncompatible("mul".into()))}
                 self.ip += 1; }
                 OP_DIV_INT | OP_DIV_FLOAT => { let (b,a)=(self.pop()?,self.pop()?); match (&a,&b) {
-                    (_,ValorDT::Entero(0))|(_,ValorDT::Decimal(0.0))=>return Err(ErrorDT::DivisionPorCero),
+                    (_,ValorDT::Entero(0))|(_,ValorDT::Decimal(0.0))=>self.push(ValorDT::Nulo),
                     (ValorDT::Entero(x),ValorDT::Entero(y))=>self.push(ValorDT::Entero(x/y)),
                     (ValorDT::Decimal(x),ValorDT::Decimal(y))=>self.push(ValorDT::Decimal(x/y)),
                     _=>return Err(ErrorDT::TipoIncompatible("div".into()))}

@@ -1,0 +1,11 @@
+// Ejemplo de boton interactivo con Xilem
+// Ejecutar: forja ejecutar examples/203_boton_gui.fa
+
+importar "gui"
+
+funcion main() {
+    escribir("Bienvenido a la GUI interactiva")
+    escribir("Hace click en el boton de abajo")
+    boton("Saludar")
+    entrada_texto("Escribe algo aqui")
+}

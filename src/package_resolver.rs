@@ -65,7 +65,17 @@ impl PackageResolver {
         fs::create_dir_all(&pkg_dir)
             .map_err(|e| format!("Error creando directorio: {}", e))?;
 
-        // Simular descarga — en producción descargaría del registry
+        // Buscar paquete builtin en stdlib (ej: stdlib/gui/gui.fa)
+        let builtin_src = self.project_dir.join("stdlib").join(nombre).join(format!("{}.fa", nombre));
+        if builtin_src.exists() {
+            let dest = pkg_dir.join(format!("{}.fa", nombre));
+            fs::copy(&builtin_src, &dest)
+                .map_err(|e| format!("Error copiando paquete builtin '{}': {}", nombre, e))?;
+            self.installed.insert(nombre.to_string(), version.to_string());
+            return Ok(());
+        }
+
+        // Si no es builtin, simular descarga — en producción descargaría del registry
         self.installed.insert(nombre.to_string(), version.to_string());
         Ok(())
     }
