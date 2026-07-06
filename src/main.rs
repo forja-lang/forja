@@ -1717,6 +1717,12 @@ forja-gui-rt = {{ path = "{}" }}
         .output()
         .map_err(|e| format!("Error ejecutando GUI: {}", e))?;
 
+    // Mostrar stderr del binario hijo (útil para debug)
+    let stderr = String::from_utf8_lossy(&run_output.stderr);
+    if !stderr.trim().is_empty() {
+        eprintln!("  🪟 [stderr del hijo]:\n{}", stderr);
+    }
+
     // NOTA: NO eliminamos el directorio. Se reusa en la próxima ejecución
     // para compilación incremental. Para limpiar: borrar .forja_gui_cache/
 

@@ -160,7 +160,6 @@ Forja ha evolucionado con poderosas nuevas características que lo llevan al sig
 | `forja compilar-llvm <archivo>` | `forja build-llvm <file>` | Genera LLVM IR (requiere llc) |
 | `forja test <archivo>` | `forja test <file>` | Ejecuta tests con `@test` |
 | `forja doc <archivo>` | `forja doc <file>` | Genera documentación HTML desde `///` |
-| `forja gui [ejemplo]` 🆕 | `forja gui [example]` | GUI interactiva con Xilem (requiere `--features gui`) |
 | `forja-gui <archivo.fa>` | `forja-gui <file.fa>` | Launcher GUI directo (binario separado, feature `gui`) |
 | `forja repl [--vm fast\|vm\|jit]` | `forja repl [--vm fast\|vm\|jit]` | Modo interactivo (REPL) |
 | `forja formatear <archivo>` | `forja fmt <file>` | Formatea código Forja |
@@ -173,33 +172,32 @@ Forja ha evolucionado con poderosas nuevas características que lo llevan al sig
 
 ```bash
 # 🏆 Ejecutar directo en ForjaFast (VM ultra rápida — default)
-cargo run --release --bin forja -- examples/hola_mundo.fa
+cargo run --release --bin forja -- examples/01_hola.fa
 
 # Assembly nativo (el más rápido, requiere gcc)
-cargo run --release --bin forja -- run examples/hola_mundo.fa --asm
+cargo run --release --bin forja -- run examples/01_hola.fa --asm
 
 # GUI interactiva con Xilem (requiere feature gui)
-cargo run --features gui --bin forja -- gui contador
-cargo run --features gui --bin forja -- gui hola
+cargo run --features gui --bin forja -- run --native examples/204_login_final.fa
 
 # GUI Launcher directo (binario separado, feature gui)
 cargo build --features gui
 .\target\debug\forja-gui.exe examples/204_login_final.fa
 
 # LLVM IR (requiere llc para generar binario)
-cargo run --release --bin forja -- build-llvm examples/hola_mundo.fa -o salida.ll
+cargo run --release --bin forja -- build-llvm examples/01_hola.fa -o salida.ll
 
 # Ejecutar tests
-cargo run --release --bin forja -- test examples/prueba_tests.fa
+cargo run --release --bin forja -- test examples/tmp_test.fa
 
 # Generar documentación
 cargo run --release --bin forja -- doc examples/74_doc_comments.fa -o docs/
 
 # Transpilar a Rust
-cargo run --release --bin forja -- transpile examples/hola_mundo.fa -o programa.rs
+cargo run --release --bin forja -- transpile examples/01_hola.fa -o programa.rs
 
 # Ejecutable autónomo (VM + bytecode)
-cargo run --release --bin forja -- build examples/hola_mundo.fa -o programa.exe
+cargo run --release --bin forja -- build examples/01_hola.fa -o programa.exe
 
 # REPL interactivo
 cargo run --release --bin forja -- repl
@@ -264,11 +262,11 @@ funcion calcular() -> Resultado<Entero, Texto> {
 
 // ─── Match exhaustivo ───
 funcion describir(n) -> Texto {
-                    coincidir (n) {
-        caso 1 => "uno"
-        caso 2 => "dos"
-        caso 3 => "tres"
-        otro  => "muchos"
+    coincidir (n) {
+        caso 1 -> "uno"
+        caso 2 -> "dos"
+        caso 3 -> "tres"
+        otro  -> "muchos"
     }
 }
 
@@ -912,7 +910,7 @@ cargo build --release --features lsp
 dir target\release\forja*.exe
 
 # Probar
-.\target\release\forja run examples/hola_mundo.fa
+.\target\release\forja run examples/01_hola.fa
 ```
 
 ### 🎯 Features de Compilación
@@ -938,7 +936,7 @@ cargo build --release --features all
 cargo test
 
 # Tests del lenguaje (con @test)
-cargo run --release --bin forja -- test examples/prueba_tests.fa
+cargo run --release --bin forja -- test examples/tmp_test.fa
 
 # Ejecutar test específico
 cargo run --release --bin forja -- test examples/73_atributos.fa

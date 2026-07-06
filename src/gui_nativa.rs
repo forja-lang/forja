@@ -4,8 +4,10 @@
 use std::collections::HashMap;
 use crate::ast::*;
 use forja_gui_rt::*;
+use forja_gui_rt::{map_message, MessageResult};
 use forja_gui_rt::view::{self, Axis};
 use forja_gui_rt::Length;
+use forja_gui_rt::{FontWeight, palette};
 
 #[derive(Debug, Clone)]
 pub enum ValorGUI {
@@ -73,6 +75,7 @@ impl Default for AppStateNativo {
 
 // ─── Layout (representación intermedia) ───────────────────────────
 
+#[derive(Debug)]
 enum Layout {
     Column(Vec<Layout>),
     Row(Vec<Layout>),
@@ -80,8 +83,10 @@ enum Layout {
     Portal(Box<Layout>),
     Label { texto: String, es_variable: bool },
     VariableLabel { variable: String },
+    Title(String),
+    ColoredLabel { texto: String, color: String },
     Button { texto: String, callback: String },
-    TextInput { variable: String, multiline: bool },
+    TextInput { variable: String, multiline: bool, placeholder: String },
     ProgressBar { variable: String },
     Slider { variable: String, min: f64, max: f64 },
     Checkbox { variable: String },
@@ -93,19 +98,21 @@ enum Layout {
 
 // ─── AST → Layout ─────────────────────────────────────────────────
 
-/// Extrae el layout del AST
+/// Extrae el layout del AST (recursivo: soporta desplazable, pila, etc.)
 fn extraer_layout(decls: &[Declaracion]) -> Layout {
     for decl in decls {
         if let Declaracion::Funcion { nombre, cuerpo, .. } = decl {
             if nombre == "main" {
                 for d in cuerpo {
+                    // Convertir Declaracion::LlamadaFuncion → Expresion::LlamadaFuncion
+                    // para usar expr_a_layout que ya maneja todos los wrappers
                     if let Declaracion::LlamadaFuncion { nombre, argumentos } = d {
-                        match nombre.as_str() {
-                            "columna" | "gui_columna" =>
-                                return Layout::Column(procesar_args(argumentos)),
-                            "fila" | "gui_fila" =>
-                                return Layout::Row(procesar_args(argumentos)),
-                            _ => {}
+                        let expr = Expresion::LlamadaFuncion {
+                            nombre: nombre.clone(),
+                            argumentos: argumentos.clone(),
+                        };
+                        if let Some(layout) = expr_a_layout(&expr) {
+                            return layout;
                         }
                     }
                 }
@@ -133,6 +140,27 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                             _ => Some(Layout::Spacer(0.0)),
                         }
                     } else { Some(Layout::Spacer(0.0)) }
+                }
+                "etiqueta_titulo" | "titulo" | "title" => {
+                    let texto = argumentos.first()
+                        .map(|a| match a {
+                            Expresion::LiteralTexto(s) => s.clone(),
+                            _ => String::new(),
+                        }).unwrap_or_default();
+                    Some(Layout::Title(texto))
+                }
+                "etiqueta_color" | "texto_color" | "colored_label" => {
+                    let texto = argumentos.first()
+                        .map(|a| match a {
+                            Expresion::LiteralTexto(s) => s.clone(),
+                            _ => String::new(),
+                        }).unwrap_or_default();
+                    let color = argumentos.get(1)
+                        .map(|a| match a {
+                            Expresion::LiteralTexto(s) => s.clone(),
+                            _ => "defecto".to_string(),
+                        }).unwrap_or_else(|| "defecto".to_string());
+                    Some(Layout::ColoredLabel { texto, color })
                 }
                 "etiqueta_dinamica" | "varlabel" => {
                     let variable = argumentos.first()
@@ -162,7 +190,12 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                             Expresion::Identificador(s) => s.clone(),
                             _ => String::new(),
                         }).unwrap_or_default();
-                    Some(Layout::TextInput { variable, multiline: false })
+                    let placeholder = argumentos.get(1)
+                        .map(|a| match a {
+                            Expresion::LiteralTexto(s) => s.clone(),
+                            _ => String::new(),
+                        }).unwrap_or_default();
+                    Some(Layout::TextInput { variable, multiline: false, placeholder })
                 }
                 "area_texto" | "textarea" => {
                     let variable = argumentos.first()
@@ -171,7 +204,12 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                             Expresion::Identificador(s) => s.clone(),
                             _ => String::new(),
                         }).unwrap_or_default();
-                    Some(Layout::TextInput { variable, multiline: true })
+                    let placeholder = argumentos.get(1)
+                        .map(|a| match a {
+                            Expresion::LiteralTexto(s) => s.clone(),
+                            _ => String::new(),
+                        }).unwrap_or_default();
+                    Some(Layout::TextInput { variable, multiline: true, placeholder })
                 }
                 "barra_progreso" | "gui_barra_progreso" | "progress_bar" | "progress" => {
                     let variable = argumentos.first()
@@ -248,6 +286,30 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
     }
 }
 
+// ─── Colores ────────────────────────────────────────────────────────
+
+/// Parsea un nombre de color a `Color` de Vello
+fn color_desde_nombre(nombre: &str) -> forja_gui_rt::Color {
+    match nombre.to_lowercase().as_str() {
+        "rojo" | "red" => palette::css::RED,
+        "azul" | "blue" => palette::css::BLUE,
+        "verde" | "green" => palette::css::GREEN,
+        "blanco" | "white" => palette::css::WHITE,
+        "negro" | "black" => palette::css::BLACK,
+        "gris" | "gray" | "grey" => palette::css::GRAY,
+        "naranja" | "orange" => palette::css::ORANGE,
+        "morado" | "purple" => palette::css::PURPLE,
+        "amarillo" | "yellow" => palette::css::YELLOW,
+        "cian" | "cyan" => palette::css::CYAN,
+        "rosa" | "pink" => palette::css::PINK,
+        "azul_marino" | "navy" => palette::css::NAVY,
+        "plateado" | "silver" => palette::css::SILVER,
+        "marron" | "brown" => palette::css::BROWN,
+        "defecto" | "default" => palette::css::WHITE,
+        _ => palette::css::WHITE,
+    }
+}
+
 // ─── Layout → xilem widgets ───────────────────────────────────────
 
 /// Convierte Layout a xilem usando AnyWidgetView para type erasure
@@ -286,6 +348,20 @@ fn layout_a_view<'a>(
             let txt = if *es_variable { data.leer(texto).to_string() } else { texto.clone() };
             Box::new(view::label(txt))
         }
+        Layout::Title(texto) => {
+            Box::new(
+                view::label(texto.clone())
+                    .text_size(28.0)
+                    .weight(FontWeight::BOLD)
+            )
+        }
+        Layout::ColoredLabel { texto, color } => {
+            let c = color_desde_nombre(color);
+            Box::new(
+                view::label(texto.clone())
+                    .color(c)
+            )
+        }
         Layout::VariableLabel { variable } => {
             let txt = data.leer(variable).to_string();
             Box::new(view::variable_label(txt))
@@ -298,11 +374,25 @@ fn layout_a_view<'a>(
                 ejecutar_callback_y_actualizar(&cb, data, &prog);
             }))
         }
-        Layout::TextInput { variable, multiline: _ } => {
+        Layout::TextInput { variable, multiline: _, placeholder } => {
+            let p = placeholder.clone();
             let val = data.leer(variable).to_string();
             let var_name = variable.clone();
-            Box::new(view::text_input(val, move |data: &mut AppStateNativo, new_val: String| {
+            let mut ti = view::text_input(val, move |data: &mut AppStateNativo, new_val: String| {
                 data.escribir(&var_name, ValorGUI::Texto(new_val));
+            });
+            if !p.is_empty() {
+                ti = ti.placeholder(p);
+            }
+            // Envolver con map_message para EVITAR que el tecleo dispare
+            // la reconstruccion completa del arbol de vistas (Xilem rebuild).
+            // El callback YA actualizo el estado (data.escribir), pero al
+            // devolver Nop evitamos que el driver ejecute run_logic().
+            Box::new(map_message(ti, |_data: &mut AppStateNativo, result: MessageResult<()>| {
+                match result {
+                    MessageResult::Action(()) => MessageResult::Nop,
+                    other => other,
+                }
             }))
         }
         Layout::ProgressBar { variable } => {
@@ -315,7 +405,8 @@ fn layout_a_view<'a>(
             let val = data.leer(variable).to_f64();
             let mn = *min;
             let mx = *max;
-            Box::new(view::slider(val, mn, mx, move |data: &mut AppStateNativo, new_val: f64| {
+            // xilem 0.4 slider(min, max, value, callback)
+            Box::new(view::slider(mn, mx, val, move |data: &mut AppStateNativo, new_val: f64| {
                 data.escribir(&var_name, ValorGUI::Decimal(new_val));
             }))
         }
