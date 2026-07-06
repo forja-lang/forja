@@ -5,11 +5,14 @@ use std::collections::HashMap;
 use crate::ast::*;
 use forja_gui_rt::*;
 use forja_gui_rt::view::{self, Axis};
+use forja_gui_rt::Length;
 
 #[derive(Debug, Clone)]
 pub enum ValorGUI {
     Texto(String),
     Entero(i64),
+    Decimal(f64),
+    Booleano(bool),
     Nulo,
 }
 
@@ -18,7 +21,27 @@ impl ValorGUI {
         match self {
             ValorGUI::Texto(s) => s.clone(),
             ValorGUI::Entero(n) => n.to_string(),
+            ValorGUI::Decimal(f) => f.to_string(),
+            ValorGUI::Booleano(b) => if *b { "verdadero".to_string() } else { "falso".to_string() },
             ValorGUI::Nulo => "nulo".to_string(),
+        }
+    }
+
+    fn to_f64(&self) -> f64 {
+        match self {
+            ValorGUI::Entero(n) => *n as f64,
+            ValorGUI::Decimal(f) => *f,
+            ValorGUI::Texto(s) => s.parse().unwrap_or(0.0),
+            _ => 0.0,
+        }
+    }
+
+    fn to_bool(&self) -> bool {
+        match self {
+            ValorGUI::Booleano(b) => *b,
+            ValorGUI::Texto(s) => s == "verdadero" || s == "true",
+            ValorGUI::Entero(n) => *n != 0,
+            _ => false,
         }
     }
 }
@@ -53,13 +76,19 @@ impl Default for AppStateNativo {
 enum Layout {
     Column(Vec<Layout>),
     Row(Vec<Layout>),
+    ZStack(Vec<Layout>),
+    Portal(Box<Layout>),
     Label { texto: String, es_variable: bool },
+    VariableLabel { variable: String },
     Button { texto: String, callback: String },
-    TextInput { variable: String },
+    TextInput { variable: String, multiline: bool },
     ProgressBar { variable: String },
-    Slider { variable: String },
+    Slider { variable: String, min: f64, max: f64 },
     Checkbox { variable: String },
-    Spacer,
+    Prose(String),
+    Spinner,
+    Separator,
+    Spacer(f64),
 }
 
 // ─── AST → Layout ─────────────────────────────────────────────────
@@ -94,16 +123,25 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
     match expr {
         Expresion::LlamadaFuncion { nombre, argumentos } => {
             match nombre.as_str() {
-                "escribir" | "etiqueta" | "label" => {
+                "escribir" | "etiqueta" | "label" | "text" => {
                     if let Some(arg) = argumentos.first() {
                         match arg {
                             Expresion::Identificador(v) =>
                                 Some(Layout::Label { texto: v.clone(), es_variable: true }),
                             Expresion::LiteralTexto(s) =>
                                 Some(Layout::Label { texto: s.clone(), es_variable: false }),
-                            _ => Some(Layout::Spacer),
+                            _ => Some(Layout::Spacer(0.0)),
                         }
-                    } else { Some(Layout::Spacer) }
+                    } else { Some(Layout::Spacer(0.0)) }
+                }
+                "etiqueta_dinamica" | "varlabel" => {
+                    let variable = argumentos.first()
+                        .map(|a| match a {
+                            Expresion::Identificador(s) => s.clone(),
+                            Expresion::LiteralTexto(s) => s.clone(),
+                            _ => String::new(),
+                        }).unwrap_or_default();
+                    Some(Layout::VariableLabel { variable })
                 }
                 "boton" | "button" | "btn" => {
                     let texto = argumentos.first()
@@ -124,9 +162,18 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                             Expresion::Identificador(s) => s.clone(),
                             _ => String::new(),
                         }).unwrap_or_default();
-                    Some(Layout::TextInput { variable })
+                    Some(Layout::TextInput { variable, multiline: false })
                 }
-                "barra_progreso" | "gui_barra_progreso" | "progress_bar" => {
+                "area_texto" | "textarea" => {
+                    let variable = argumentos.first()
+                        .map(|a| match a {
+                            Expresion::LiteralTexto(s) => s.clone(),
+                            Expresion::Identificador(s) => s.clone(),
+                            _ => String::new(),
+                        }).unwrap_or_default();
+                    Some(Layout::TextInput { variable, multiline: true })
+                }
+                "barra_progreso" | "gui_barra_progreso" | "progress_bar" | "progress" => {
                     let variable = argumentos.first()
                         .map(|a| match a {
                             Expresion::LiteralTexto(s) => s.clone(),
@@ -142,19 +189,56 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                             Expresion::Identificador(s) => s.clone(),
                             _ => String::new(),
                         }).unwrap_or_default();
-                    Some(Layout::Slider { variable })
+                    let min = argumentos.get(1)
+                        .and_then(|a| match a { Expresion::LiteralNumero(n) => Some(*n as f64), _ => None })
+                        .unwrap_or(0.0);
+                    let max = argumentos.get(2)
+                        .and_then(|a| match a { Expresion::LiteralNumero(n) => Some(*n as f64), _ => None })
+                        .unwrap_or(100.0);
+                    Some(Layout::Slider { variable, min, max })
                 }
                 "casilla" | "gui_casilla" | "checkbox" | "check" => {
-                    let variable = argumentos.first()
+                    let variable = argumentos.get(1)
                         .map(|a| match a {
                             Expresion::LiteralTexto(s) => s.clone(),
                             Expresion::Identificador(s) => s.clone(),
                             _ => String::new(),
+                        }).or_else(|| {
+                            argumentos.first().map(|a| match a {
+                                Expresion::LiteralTexto(s) => s.clone(),
+                                Expresion::Identificador(s) => s.clone(),
+                                _ => String::new(),
+                            })
                         }).unwrap_or_default();
                     Some(Layout::Checkbox { variable })
                 }
+                "texto_enriquecido" | "prose" => {
+                    let texto = argumentos.first()
+                        .map(|a| match a {
+                            Expresion::LiteralTexto(s) => s.clone(),
+                            _ => String::new(),
+                        }).unwrap_or_default();
+                    Some(Layout::Prose(texto))
+                }
+                "cargando" | "spinner" => {
+                    Some(Layout::Spinner)
+                }
+                "separador" | "divider" => {
+                    Some(Layout::Separator)
+                }
+                "espacio" | "spacer" => {
+                    let tamano = argumentos.first()
+                        .and_then(|a| match a { Expresion::LiteralNumero(n) => Some(*n as f64), _ => None })
+                        .unwrap_or(10.0);
+                    Some(Layout::Spacer(tamano))
+                }
                 "columna" | "gui_columna" => Some(Layout::Column(procesar_args(argumentos))),
                 "fila" | "gui_fila" => Some(Layout::Row(procesar_args(argumentos))),
+                "pila" | "gui_pila" | "zstack" => Some(Layout::ZStack(procesar_args(argumentos))),
+                "desplazable" | "gui_desplazable" | "scroll" => {
+                    argumentos.first().and_then(|a| expr_a_layout(a))
+                        .map(|child| Layout::Portal(Box::new(child)))
+                }
                 _ => None,
             }
         }
@@ -187,9 +271,24 @@ fn layout_a_view<'a>(
             }
             Box::new(view::flex(Axis::Horizontal, (widgets,)))
         }
+        Layout::ZStack(hijos) => {
+            let mut widgets: Vec<Box<AnyWidgetView<AppStateNativo>>> = Vec::new();
+            for h in hijos {
+                widgets.push(layout_a_view(h, data, _prog));
+            }
+            Box::new(view::zstack((widgets,)))
+        }
+        Layout::Portal(child) => {
+            let inner = layout_a_view(child, data, _prog);
+            Box::new(view::portal(inner))
+        }
         Layout::Label { texto, es_variable } => {
             let txt = if *es_variable { data.leer(texto).to_string() } else { texto.clone() };
             Box::new(view::label(txt))
+        }
+        Layout::VariableLabel { variable } => {
+            let txt = data.leer(variable).to_string();
+            Box::new(view::variable_label(txt))
         }
         Layout::Button { texto, callback } => {
             let cb = callback.clone();
@@ -199,9 +298,10 @@ fn layout_a_view<'a>(
                 ejecutar_callback_y_actualizar(&cb, data, &prog);
             }))
         }
-        Layout::TextInput { variable } => {
+        Layout::TextInput { variable, multiline } => {
             let val = data.leer(variable).to_string();
             let var_name = variable.clone();
+            let ml = *multiline;
             Box::new(view::text_input(val, move |data: &mut AppStateNativo, new_val: String| {
                 data.escribir(&var_name, ValorGUI::Texto(new_val));
             }))
@@ -211,23 +311,36 @@ fn layout_a_view<'a>(
             let num: f64 = val.parse().unwrap_or(0.0);
             Box::new(view::progress_bar(Some(num)))
         }
-        Layout::Slider { variable } => {
+        Layout::Slider { variable, min, max } => {
             let var_name = variable.clone();
-            let val = data.leer(variable).to_string();
-            let num: f64 = val.parse().unwrap_or(0.0);
-            Box::new(view::slider(num, 0.0, 100.0, move |data: &mut AppStateNativo, new_val: f64| {
-                data.escribir(&var_name, ValorGUI::Entero(new_val as i64));
+            let val = data.leer(variable).to_f64();
+            let mn = *min;
+            let mx = *max;
+            Box::new(view::slider(val, mn, mx, move |data: &mut AppStateNativo, new_val: f64| {
+                data.escribir(&var_name, ValorGUI::Decimal(new_val));
             }))
         }
         Layout::Checkbox { variable } => {
             let var_name = variable.clone();
             let txt = variable.clone();
-            let checked = data.leer(variable).to_string() == "verdadero";
+            let checked = data.leer(variable).to_bool();
             Box::new(view::checkbox(txt, checked, move |data: &mut AppStateNativo, new_checked: bool| {
-                data.escribir(&var_name, ValorGUI::Texto(if new_checked { "verdadero".to_string() } else { "falso".to_string() }));
+                data.escribir(&var_name, ValorGUI::Booleano(new_checked));
             }))
         }
-        Layout::Spacer => Box::new(view::label("")),
+        Layout::Prose(texto) => {
+            Box::new(view::prose(texto.clone()))
+        }
+        Layout::Spinner => {
+            Box::new(view::spinner())
+        }
+        Layout::Separator => {
+            Box::new(view::sized_box(view::label(String::new())).height(Length::px(1.0)))
+        }
+        Layout::Spacer(tamano) => {
+            let t = *tamano;
+            Box::new(view::sized_box(view::label(String::new())).width(Length::px(t)).height(Length::px(t)))
+        }
     }
 }
 

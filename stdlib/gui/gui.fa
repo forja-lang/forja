@@ -1,5 +1,5 @@
 # Módulo: gui
-# Descripción: API gráfica nativa con Xilem (framework UI reactivo)
+# Descripción: API gráfica nativa completa con Xilem (framework UI reactivo)
 # Instalación: forja add gui && forja install
 # Uso: importar "gui"
 #
@@ -7,31 +7,134 @@
 #       La VM de Forja no renderiza ventanas nativas.
 # Dependencia Rust: xilem = "0.4"
 
-# ─── Widgets básicos ───
+# ─── Layout ───
 
-# Crea una etiqueta de texto estático
-funcion etiqueta(texto: Texto) {
-    retornar text(texto)
-}
-
-# Crea un botón con texto
-funcion boton(texto: Texto) {
-    retornar btn(texto)
-}
-
-# Crea un contenedor vertical
-funcion columna(hijos) {
+# Contenedor vertical (flex columna)
+funcion columna(hijos...) -> Layout {
     retornar col(hijos)
 }
 
-# Crea un contenedor horizontal
-funcion fila(hijos) {
+# Contenedor horizontal (flex fila)
+funcion fila(hijos...) -> Layout {
     retornar row(hijos)
 }
 
-# ─── Helpers ───
+# Contenedor en Z (superposición)
+funcion pila(hijos...) -> Layout {
+    retornar zstack(hijos)
+}
+
+# Panel con separador redimensionable
+# direccion: "horizontal" | "vertical"
+funcion panel_dividido(hijo1, hijo2, direccion: Texto) -> Layout {
+    retornar split(hijo1, hijo2, direccion)
+}
+
+# Contenedor con scroll
+funcion desplazable(hijo) -> Layout {
+    retornar scroll(hijo)
+}
+
+# Grid con posición
+funcion grilla(hijos..., filas: Entero, columnas: Entero) -> Layout {
+    retornar grid(hijos, filas, columnas)
+}
+
+# Caja con tamaño fijo
+funcion caja_fija(hijo, ancho: Decimal, alto: Decimal) -> Layout {
+    retornar sized(hijo, ancho, alto)
+}
+
+# ─── Widgets básicos ───
+
+# Etiqueta de texto estático
+funcion etiqueta(texto: Texto) -> Widget {
+    retornar label(texto)
+}
+
+# Etiqueta dinámica (se actualiza automáticamente cuando cambia la variable)
+funcion etiqueta_dinamica(variable: Texto) -> Widget {
+    retornar varlabel(variable)
+}
+
+# Botón de texto con callback
+funcion boton(texto: Texto, callback) -> Widget {
+    retornar btn(texto, callback)
+}
+
+# Botón con callback sin argumentos extra
+funcion boton_simple(texto: Texto, callback) -> Widget {
+    retornar btn(texto, callback)
+}
+
+# Entrada de texto
+funcion entrada_texto(variable: Texto) -> Widget {
+    retornar input(variable)
+}
+
+# Entrada de texto multilínea
+funcion area_texto(variable: Texto) -> Widget {
+    retornar textarea(variable)
+}
+
+# ─── Widgets de datos ───
+
+# Barra de progreso
+funcion barra_progreso(variable: Texto) -> Widget {
+    retornar progress(variable)
+}
+
+# Barra de progreso indeterminada (spinner de carga)
+funcion cargando() -> Widget {
+    retornar spinner()
+}
+
+# Deslizante (slider)
+funcion deslizante(variable: Texto, minimo: Decimal, maximo: Decimal) -> Widget {
+    retornar slider(variable, minimo, maximo)
+}
+
+# Casilla de verificación (checkbox)
+funcion casilla(etiqueta: Texto, variable: Texto) -> Widget {
+    retornar check(etiqueta, variable)
+}
+
+# ─── Widgets de presentación ───
+
+# Texto enriquecido (Markdown simple)
+funcion texto_enriquecido(texto: Texto) -> Widget {
+    retornar prose(texto)
+}
+
+# Separador visual
+funcion separador() -> Widget {
+    retornar divider()
+}
+
+# Espaciador
+funcion espacio(tamano: Decimal) -> Widget {
+    retornar spacer(tamano)
+}
+
+# ─── Helpers internos (mapean a transpiler Xilem) ───
 
 funcion text(s: Texto) -> Texto { retornar s }
-funcion btn(s: Texto) -> Texto { retornar s }
+funcion btn(s: Texto, cb) { retornar s }
 funcion col(s) { retornar s }
 funcion row(s) { retornar s }
+funcion zstack(s) { retornar s }
+funcion split(a, b, d: Texto) { retornar a }
+funcion scroll(h) { retornar h }
+funcion grid(h, f: Entero, c: Entero) { retornar h }
+funcion sized(h, w: Decimal, hh: Decimal) { retornar h }
+funcion label(s: Texto) -> Texto { retornar s }
+funcion varlabel(v: Texto) -> Texto { retornar v }
+funcion input(v: Texto) -> Texto { retornar v }
+funcion textarea(v: Texto) -> Texto { retornar v }
+funcion progress(v: Texto) -> Decimal { retornar 0.0 }
+funcion spinner() -> Texto { retornar "" }
+funcion slider(v: Texto, min: Decimal, max: Decimal) -> Decimal { retornar 0.0 }
+funcion check(l: Texto, v: Texto) -> Texto { retornar v }
+funcion prose(t: Texto) -> Texto { retornar t }
+funcion divider() -> Texto { retornar "" }
+funcion spacer(t: Decimal) -> Texto { retornar "" }
