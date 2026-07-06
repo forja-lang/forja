@@ -881,6 +881,7 @@ impl Parser {
                 // Dos sintaxis posibles:
                 //   caso canal -> variable -> { ... }  (estilo viejo)
                 //   caso variable = expr { ... }        (estilo nuevo, ej: caso valor = rx.recibir())
+                // También: caso tiempo(ms) -> { ... }  (timeout como caso)
                 let primero = self.esperar_identificador("Se esperaba nombre del canal o variable después de 'caso'.")?;
 
                 if self.coincide(TokenKind::Menos) {
@@ -904,6 +905,23 @@ impl Parser {
                     brazos.push(BrazoSeleccionar {
                         recepcion: Some((primero, expr)),
                         timeout_ms: 0,
+                        cuerpo,
+                    });
+                } else if primero == "tiempo" && self.coincide(TokenKind::ParenAbrir) {
+                    // Sintaxis: caso tiempo(ms) -> { ... }  (timeout como caso)
+                    self.avanzar(); // consume (
+                    let tiempo_expr = self.parse_expresion()?;
+                    self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después del tiempo.")?;
+                    let timeout_ms = extraer_numero(&tiempo_expr);
+                    // '->' opcional
+                    if self.coincide(TokenKind::Menos) {
+                        self.esperar_flecha()?;
+                    }
+                    self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' después del timeout.")?;
+                    let cuerpo = self.parse_bloque()?;
+                    brazos.push(BrazoSeleccionar {
+                        recepcion: None,
+                        timeout_ms,
                         cuerpo,
                     });
                 } else {
