@@ -1,0 +1,20 @@
+// GUI Nativa — Hola Mundo
+// Ejecutar: forja ejecutar --native examples/205_gui_hola.fa
+
+importar "gui"
+
+funcion main() {
+    columna(
+        escribir("=================================="),
+        escribir("        HOLA GUI NATIVA!"),
+        escribir("=================================="),
+        escribir(""),
+        escribir("Bienvenido a Forja GUI"),
+        escribir(""),
+        boton("Cerrar", &salir)
+    )
+}
+
+funcion salir() -> Texto {
+    retornar ""
+}

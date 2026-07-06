@@ -1,9 +1,9 @@
 {
   "name": "forja-syntax",
-  "displayName": "Forja Language",
+  "displayName": "Forja (fa)",
   "description": "Soporte para el lenguaje Forja — sintaxis, LSP, formateo y diagnósticos",
-  "version": "0.4.0",
-  "publisher": "forja-lang",
+  "version": "0.7.0",
+  "publisher": "lococoi",
   "license": "MIT",
   "engines": {
     "vscode": "^1.60.0"

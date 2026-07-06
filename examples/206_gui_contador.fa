@@ -1,0 +1,41 @@
+// GUI Nativa — Contador interactivo
+// Demuestra: boton con callback, variable de estado, label dinámico
+// Ejecutar: forja ejecutar --native examples/206_gui_contador.fa
+
+importar "gui"
+
+funcion main() {
+    variable cuenta = 0
+    variable resultado = ""
+    
+    columna(
+        escribir("==========================="),
+        escribir("        CONTADOR"),
+        escribir("==========================="),
+        escribir(""),
+        escribir("Presiona los botones para"),
+        escribir("incrementar o decrementar"),
+        escribir(""),
+        escribir(resultado),
+        escribir(""),
+        fila(
+            boton("-1", &decrementar),
+            boton("+1", &incrementar)
+        ),
+        escribir(""),
+        boton("Reset", &resetear),
+        escribir("===========================")
+    )
+}
+
+funcion incrementar() -> Texto {
+    retornar ""
+}
+
+funcion decrementar() -> Texto {
+    retornar ""
+}
+
+funcion resetear() -> Texto {
+    retornar ""
+}
