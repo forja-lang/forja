@@ -1,0 +1,136 @@
+/// Números Complejos con Clase
+/// Conceptos: clases, POO, números complejos, operaciones matemáticas
+/// Nivel: intermedio
+
+importar "std/io"
+
+// Implementación de números complejos usando una clase con
+// operaciones aritméticas: suma, resta, multiplicación, división,
+// módulo, conjugado y representación textual.
+
+clase Complejo {
+    real
+    imag
+
+    constructor() {
+        este.real = 0
+        este.imag = 0
+    }
+
+    funcion init(r, i) {
+        este.real = r
+        este.imag = i
+    }
+
+    funcion suma(otro) {
+        variable resultado = nuevo Complejo()
+        resultado.init(este.real + otro.real, este.imag + otro.imag)
+        retornar resultado
+    }
+
+    funcion resta(otro) {
+        variable resultado = nuevo Complejo()
+        resultado.init(este.real - otro.real, este.imag - otro.imag)
+        retornar resultado
+    }
+
+    funcion multiplicacion(otro) {
+        // (a + bi)(c + di) = (ac - bd) + (ad + bc)i
+        variable r = este.real * otro.real - este.imag * otro.imag
+        variable i = este.real * otro.imag + este.imag * otro.real
+        variable resultado = nuevo Complejo()
+        resultado.init(r, i)
+        retornar resultado
+    }
+
+    funcion division(otro) {
+        // (a + bi) / (c + di) = (a+bi)(c-di) / (c²+d²)
+        variable denom = otro.real * otro.real + otro.imag * otro.imag
+        si (denom == 0) {
+            retornar nulo  // División por cero
+        }
+        variable conjugado = nuevo Complejo()
+        conjugado.init(otro.real, -otro.imag)
+        variable num = este.multiplicacion(conjugado)
+        variable r = num.real / denom
+        variable i = num.imag / denom
+        variable resultado = nuevo Complejo()
+        resultado.init(r, i)
+        retornar resultado
+    }
+
+    funcion modulo() -> Decimal {
+        retornar raiz(este.real * este.real + este.imag * este.imag)
+    }
+
+    funcion conjugado() {
+        variable resultado = nuevo Complejo()
+        resultado.init(este.real, -este.imag)
+        retornar resultado
+    }
+
+    funcion a_texto() -> Texto {
+        si (este.imag >= 0) {
+            retornar "${este.real} + ${este.imag}i"
+        } sino {
+            retornar "${este.real} - ${(-este.imag)}i"
+        }
+    }
+}
+
+funcion raiz(S) -> Decimal {
+    si (S <= 0) { retornar 0 }
+    variable x = S
+    variable i = 0
+    mientras (i < 20) {
+        x = (x + S / x) / 2.0
+        i = i + 1
+    }
+    retornar x
+}
+
+funcion main() {
+    escribir("=== NÚMEROS COMPLEJOS ===\n")
+
+    variable a = nuevo Complejo()
+    a.init(3, 4)
+    variable b = nuevo Complejo()
+    b.init(1, -2)
+
+    escribir("  a = ${a.a_texto()}")
+    escribir("  b = ${b.a_texto()}")
+    escribir("")
+
+    variable suma = a.suma(b)
+    escribir("  a + b = ${suma.a_texto()}")
+
+    variable resta = a.resta(b)
+    escribir("  a - b = ${resta.a_texto()}")
+
+    variable mult = a.multiplicacion(b)
+    escribir("  a × b = ${mult.a_texto()}")
+
+    variable div = a.division(b)
+    si (div != nulo) {
+        escribir("  a ÷ b = ${div.a_texto()}")
+    } sino {
+        escribir("  a ÷ b = Error: división por cero")
+    }
+
+    escribir("")
+    escribir("  |a| = ${a.modulo()}")
+    escribir("  |b| = ${b.modulo()}")
+
+    variable conj_a = a.conjugado()
+    variable conj_b = b.conjugado()
+    escribir("  Conjugado de a = ${conj_a.a_texto()}")
+    escribir("  Conjugado de b = ${conj_b.a_texto()}")
+
+    escribir("")
+    escribir("Propiedades importantes:")
+    escribir("  • Un número complejo es z = a + bi, donde i² = -1")
+    escribir("  • El conjugado cambia el signo de la parte imaginaria")
+    escribir("  • El módulo es la distancia al origen: √(a² + b²)")
+}
+
+main()

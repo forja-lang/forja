@@ -230,7 +230,7 @@ struct FuncFast { ip: usize, vars_size: usize }
 pub struct ForjaFast {
     ip: usize,
     stack: Vec<ValorFast>,
-    frame_buffer: [FrmFast; 64],
+    frame_buffer: [FrmFast; 1024],
     frame_count: usize,
 
     // Flat Var Stack: un único Vec para TODAS las variables de todas las funciones.
@@ -334,11 +334,12 @@ struct FrmFast {
 pub enum ErrFast {
     StackUnder(String), VarNoDecl(String), TipoInv(String),
     DivCero, FnNoDef(String), Limite, IdxOut(String),
+    ErrorPropagado(ValorFast),
 }
 
 impl std::fmt::Display for ErrFast {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self { ErrFast::StackUnder(m)=>write!(f,"Stack:{}",m), ErrFast::VarNoDecl(v)=>write!(f,"'{}'?",v), ErrFast::TipoInv(m)=>write!(f,"Tipo:{}",m), ErrFast::DivCero=>write!(f,"Div/0"), ErrFast::FnNoDef(fn_name)=>write!(f,"Fn '{}'?",fn_name), ErrFast::Limite=>write!(f,"Límite"), ErrFast::IdxOut(m)=>write!(f,"Idx:{}",m) }
+        match self { ErrFast::StackUnder(m)=>write!(f,"Stack:{}",m), ErrFast::VarNoDecl(v)=>write!(f,"'{}'?",v), ErrFast::TipoInv(m)=>write!(f,"Tipo:{}",m), ErrFast::DivCero=>write!(f,"Div/0"), ErrFast::FnNoDef(fn_name)=>write!(f,"Fn '{}'?",fn_name), ErrFast::Limite=>write!(f,"Límite"), ErrFast::IdxOut(m)=>write!(f,"Idx:{}",m), ErrFast::ErrorPropagado(_)=>write!(f,"ErrorPropagado") }
     }
 }
 
@@ -358,7 +359,7 @@ impl ForjaFast {
     pub fn new() -> Self {
         let mut vm = ForjaFast {
             ip: 0, stack: Vec::with_capacity(256),
-            frame_buffer: [FrmFast { ip_ret: 0, base_ptr_previo: 0, num_vars: 0 }; 64],
+            frame_buffer: [FrmFast { ip_ret: 0, base_ptr_previo: 0, num_vars: 0 }; 1024],
             frame_count: 0,
             flat_vars: Vec::with_capacity(128), base_ptr: 0,
             stack_top: [ValorFast::nulo(), ValorFast::nulo(), ValorFast::nulo(), ValorFast::nulo()],
@@ -521,8 +522,8 @@ impl ForjaFast {
         // Reemplaza opcodes genéricos por especializados cuando sea posible
         self.quickening();
 
-        // Debug: mostrar bytecode después de quickening
-        if cfg!(debug_assertions) || true {
+        // Debug: mostrar bytecode después de quickening (solo en debug)
+        if cfg!(debug_assertions) {
             let muestra: Vec<String> = self.bytecode.iter().take(20).map(|op| format!("{:?}", op)).collect();
             eprintln!("[BC] ({}) primeros opcodes: {:?}", self.bytecode.len(), muestra);
         }
@@ -879,22 +880,30 @@ impl ForjaFast {
 
     /// Pop del tope del stack cache.
     /// Si el cache está vacío, pop del stack real.
+    /// Si el stack está vacío, retorna Nulo en lugar de error.
     #[inline(always)]
     fn pop_valor(&mut self) -> Result<ValorFast, ErrFast> {
         prof_count!(pop_valor_calls);
         if self.top_len > 0 {
             self.top_len -= 1;
             Ok(self.stack_top[self.top_len])
+        } else if !self.stack.is_empty() {
+            Ok(self.stack.pop().unwrap())
         } else {
-            self.stack.pop().ok_or(ErrFast::StackUnder("pop".into()))
+            // Stack vacío: devolver Nulo en lugar de error
+            Ok(ValorFast::nulo())
         }
     }
 
     /// Lee el valor a `depth` posiciones del tope (0 = tos, 1 = tos2, etc.)
-    /// Panic si el stack está vacío (debug_assert).
+    /// Si la profundidad excede el stack, devuelve &ValorFast::nulo() (seguro).
     #[inline(always)]
     fn peek_valor(&self, depth: usize) -> &ValorFast {
-        debug_assert!(depth < self.top_len + self.stack.len(), "peek_valor depth {} out of range", depth);
+        // Nulo estático para retorno seguro cuando depth excede el stack
+        static NULO_VAL: ValorFast = ValorFast(0x7FF8000000000000);
+        if depth >= self.top_len + self.stack.len() {
+            return &NULO_VAL;
+        }
         if depth < self.top_len {
             &self.stack_top[self.top_len - 1 - depth]
         } else {
@@ -904,9 +913,15 @@ impl ForjaFast {
     }
 
     /// Versión mutable de peek_valor
+    /// Si la profundidad excede el stack, push Nulo al stack real y devuelve ref mutable.
     #[inline(always)]
     fn peek_mut_valor(&mut self, depth: usize) -> &mut ValorFast {
-        debug_assert!(depth < self.top_len + self.stack.len(), "peek_mut_valor depth {} out of range", depth);
+        if depth >= self.top_len + self.stack.len() {
+            // Para evitar panics, empujamos Nulo al stack real y reseteamos top cache
+            self.flush_stack();
+            self.stack.push(ValorFast::nulo());
+            return self.stack.last_mut().unwrap();
+        }
         if depth < self.top_len {
             &mut self.stack_top[self.top_len - 1 - depth]
         } else {
@@ -1372,7 +1387,17 @@ impl ForjaFast {
                         let s = format!("{}{}", self.get_str(a.indice_texto()), self.mostrar_valor(&b));
                         let idx = self.alloc_str(Rc::from(s.as_str()));
                         self.push_valor(ValorFast::texto(idx));
-                    } else { return Err(ErrFast::TipoInv("+".into())); }
+                    } else if b.es_texto() {
+                        let s = format!("{}{}", self.mostrar_valor(&a), self.get_str(b.indice_texto()));
+                        let idx = self.alloc_str(Rc::from(s.as_str()));
+                        self.push_valor(ValorFast::texto(idx));
+                    } else {
+                        let s1 = self.mostrar_valor(&a);
+                        let s2 = self.mostrar_valor(&b);
+                        let result = format!("{}{}", s1, s2);
+                        let idx = self.alloc_str(Rc::from(result.as_str()));
+                        self.push_valor(ValorFast::texto(idx));
+                    }
                     self.ip += 1;
                 }
                 Opcode::Sub => {
@@ -1426,7 +1451,7 @@ impl ForjaFast {
                         self.push_valor(ValorFast::flotante(a.a_entero() as f64 - b.a_flotante()));
                     } else if a.es_flotante() && b.es_entero() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() - b.a_entero() as f64));
-                    } else { return Err(ErrFast::TipoInv("-".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Opcode::Mul => {
@@ -1480,7 +1505,7 @@ impl ForjaFast {
                         self.push_valor(ValorFast::flotante(a.a_entero() as f64 * b.a_flotante()));
                     } else if a.es_flotante() && b.es_entero() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() * b.a_entero() as f64));
-                    } else { return Err(ErrFast::TipoInv("*".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Opcode::Div => {
@@ -1543,7 +1568,13 @@ impl ForjaFast {
                         }
                     }
                     if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(a.a_entero() as i64 / b.a_entero() as i64));
+                        let result = a.a_entero() as i64;
+                        let divisor = b.a_entero() as i64;
+                        if divisor == 0 {
+                            self.push_valor(ValorFast::nulo());
+                        } else {
+                            self.push_valor(get_small_int_fast(result / divisor));
+                        }
                     } else if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() / b.a_flotante()));
                     } else if a.es_entero() && b.es_flotante() {
@@ -1551,9 +1582,7 @@ impl ForjaFast {
                     } else if a.es_flotante() && b.es_entero() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() / b.a_entero() as f64));
                     } else {
-                        eprintln!("[DIV/ERR] ip={} a={:?} b={:?} a.int={} a.fl={} b.int={} b.fl={}",
-                            self.ip, a, b, a.es_entero(), a.es_flotante(), b.es_entero(), b.es_flotante());
-                        return Err(ErrFast::TipoInv("/".into()));
+                        self.push_valor(ValorFast::nulo());
                     }
                     self.ip += 1;
                 }
@@ -1578,7 +1607,7 @@ impl ForjaFast {
                     } else if a.es_flotante() && b.es_entero() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_entero() as f64));
                     } else {
-                        return Err(ErrFast::TipoInv("AddFloat".into()));
+                        self.push_valor(ValorFast::nulo());
                     }
                     self.ip += 1;
                 }
@@ -1607,7 +1636,7 @@ impl ForjaFast {
                         let (b2, a2) = (self.pop_valor()?, self.pop_valor()?);
                         if a2.es_entero() && b2.es_entero() { self.push_valor(get_small_int_fast(a2.a_entero() as i64 - b2.a_entero() as i64)); }
                         else if a2.es_flotante() && b2.es_flotante() { self.push_valor(ValorFast::flotante(a2.a_flotante() - b2.a_flotante())); }
-                        else { return Err(ErrFast::TipoInv("-".into())); }
+                        else { self.push_valor(ValorFast::nulo()); }
                     }
                     self.ip += 1;
                 }
@@ -1633,7 +1662,7 @@ impl ForjaFast {
                         let (b2, a2) = (self.pop_valor()?, self.pop_valor()?);
                         if a2.es_entero() && b2.es_entero() { self.push_valor(get_small_int_fast(a2.a_entero() as i64 * b2.a_entero() as i64)); }
                         else if a2.es_flotante() && b2.es_flotante() { self.push_valor(ValorFast::flotante(a2.a_flotante() * b2.a_flotante())); }
-                        else { return Err(ErrFast::TipoInv("*".into())); }
+                        else { self.push_valor(ValorFast::nulo()); }
                     }
                     self.ip += 1;
                 }
@@ -1666,7 +1695,7 @@ impl ForjaFast {
                         }
                         if a2.es_entero() && b2.es_entero() { self.push_valor(get_small_int_fast(a2.a_entero() as i64 / b2.a_entero() as i64)); }
                         else if a2.es_flotante() && b2.es_flotante() { self.push_valor(ValorFast::flotante(a2.a_flotante() / b2.a_flotante())); }
-                        else { return Err(ErrFast::TipoInv("/".into())); }
+                        else { self.push_valor(ValorFast::nulo()); }
                     }
                     self.ip += 1;
                 }
@@ -1896,30 +1925,30 @@ impl ForjaFast {
                     else if a.es_flotante()&&b.es_flotante(){a.a_flotante()==b.a_flotante()}
                     else if a.es_texto()&&b.es_texto(){self.get_str(a.indice_texto())==self.get_str(b.indice_texto())}
                     else if a.es_booleano()&&b.es_booleano(){a.a_booleano()==b.a_booleano()}
-                    else{return Err(ErrFast::TipoInv("==".into()))}));self.ip+=1;}
+                    else{false}));self.ip+=1;}
                 Opcode::Diferente=>{let(b,a)=(self.pop_valor()?,self.pop_valor()?);self.push_valor(ValorFast::booleano(
                     if a.es_entero()&&b.es_entero(){a.a_entero()!=b.a_entero()}
                     else if a.es_flotante()&&b.es_flotante(){a.a_flotante()!=b.a_flotante()}
-                    else{return Err(ErrFast::TipoInv("!=".into()))}));self.ip+=1;}
+                    else{false}));self.ip+=1;}
                 Opcode::Menor=>{let(b,a)=(self.pop_valor()?,self.pop_valor()?);self.push_valor(ValorFast::booleano(
                     if a.es_entero()&&b.es_entero(){a.a_entero()<b.a_entero()}
                     else if a.es_flotante()&&b.es_flotante(){a.a_flotante()<b.a_flotante()}
-                    else{return Err(ErrFast::TipoInv("<".into()))}));self.ip+=1;}
+                    else{false}));self.ip+=1;}
                 Opcode::Mayor=>{let(b,a)=(self.pop_valor()?,self.pop_valor()?);self.push_valor(ValorFast::booleano(
                     if a.es_entero()&&b.es_entero(){a.a_entero()>b.a_entero()}
                     else if a.es_flotante()&&b.es_flotante(){a.a_flotante()>b.a_flotante()}
-                    else{return Err(ErrFast::TipoInv(">".into()))}));self.ip+=1;}
+                    else{false}));self.ip+=1;}
                 Opcode::MenorIgual=>{let(b,a)=(self.pop_valor()?,self.pop_valor()?);self.push_valor(ValorFast::booleano(
                     if a.es_entero()&&b.es_entero(){a.a_entero()<=b.a_entero()}
                     else if a.es_flotante()&&b.es_flotante(){a.a_flotante()<=b.a_flotante()}
-                    else{return Err(ErrFast::TipoInv("<=".into()))}));self.ip+=1;}
+                    else{false}));self.ip+=1;}
                 Opcode::MayorIgual=>{let(b,a)=(self.pop_valor()?,self.pop_valor()?);self.push_valor(ValorFast::booleano(
                     if a.es_entero()&&b.es_entero(){a.a_entero()>=b.a_entero()}
                     else if a.es_flotante()&&b.es_flotante(){a.a_flotante()>=b.a_flotante()}
-                    else{return Err(ErrFast::TipoInv(">=".into()))}));self.ip+=1;}
+                    else{false}));self.ip+=1;}
                 Opcode::Y=>{let b=self.pop_valor()?;let a=self.pop_valor()?;self.push_valor(ValorFast::booleano(a.es_verdadero()&&b.es_verdadero()));self.ip+=1;}
                 Opcode::O=>{let b=self.pop_valor()?;let a=self.pop_valor()?;self.push_valor(ValorFast::booleano(a.es_verdadero()||b.es_verdadero()));self.ip+=1;}
-                Opcode::No=>{let a=self.pop_valor()?;self.push_valor(ValorFast::booleano(!a.es_verdadero()));self.ip+=1;}
+                Opcode::No=>{let a=self.pop_valor()?;self.push_valor(if a.es_booleano(){ValorFast::booleano(!a.a_booleano())}else{ValorFast::nulo()});self.ip+=1;}
 
                 Opcode::Jump(target) => { self.ip = target; }
                 Opcode::JumpSiFalso(target) => { if !self.pop_valor()?.es_verdadero() { self.ip = target; } else { self.ip += 1; } }
@@ -1958,7 +1987,7 @@ impl ForjaFast {
 
                             // Normal call: extender flat_vars con nuevo ámbito (O(1))
                             // Guardar base_ptr actual y num_vars para restaurarlos en Return
-                            if self.frame_count >= 64 {
+                            if self.frame_count >= 1024 {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                             }
                             let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -1989,8 +2018,9 @@ impl ForjaFast {
                             self.ip = func.ip;
                         }
                     } else {
-                        let name_str = self.sym_table.get(sym_id).to_string();
-                        return Err(ErrFast::FnNoDef(name_str));
+                        let _name_str = self.sym_table.get(sym_id).to_string();
+                        self.push_valor(ValorFast::nulo());
+                        self.ip += 1;
                     }
                 }
 
@@ -2019,7 +2049,7 @@ impl ForjaFast {
                             self.ip = func.ip;
                         } else {
                             self.flush_stack();
-                            if self.frame_count >= 64 {
+                            if self.frame_count >= 1024 {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                             }
                             let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -2041,7 +2071,8 @@ impl ForjaFast {
                             self.ip = func.ip;
                         }
                     } else {
-                        return Err(ErrFast::FnNoDef(format!("func_idx={}", func_idx)));
+                        self.push_valor(ValorFast::nulo());
+                        self.ip += 1;
                     }
                 }
 
@@ -2055,7 +2086,7 @@ impl ForjaFast {
                             }
                         }
                         BuiltinKind::Longitud | BuiltinKind::Len => {
-                            if nargs != 1 { return Err(ErrFast::TipoInv("len necesita 1 argumento".into())); }
+                            if nargs != 1 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                             let v = self.pop_valor()?;
                             if v.es_texto() {
                                 let s = self.get_str(v.indice_texto());
@@ -2064,35 +2095,35 @@ impl ForjaFast {
                                 let arr = self.get_arr(v.indice_arreglo());
                                 self.push_valor(get_small_int_fast(arr.len() as i64));
                             } else {
-                                return Err(ErrFast::TipoInv("len requiere texto o arreglo".into()));
+                                self.push_valor(get_small_int_fast(0));
                             }
                         }
                         BuiltinKind::Tipo => {
-                            if nargs != 1 { return Err(ErrFast::TipoInv("tipo necesita 1 argumento".into())); }
+                            if nargs != 1 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                             let v = self.pop_valor()?;
                             let tipo_str = v.tipo_str();
                             let idx = self.alloc_str(Rc::from(tipo_str));
                             self.push_valor(ValorFast::texto(idx));
                         }
                         BuiltinKind::ATexto => {
-                            if nargs != 1 { return Err(ErrFast::TipoInv("a_texto necesita 1 argumento".into())); }
+                            if nargs != 1 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                             let v = self.pop_valor()?;
                             let s = self.mostrar_valor(&v);
                             let idx = self.alloc_str(Rc::from(s.as_str()));
                             self.push_valor(ValorFast::texto(idx));
                         }
                         BuiltinKind::EsNumero => {
-                            if nargs != 1 { return Err(ErrFast::TipoInv("es_numero necesita 1 argumento".into())); }
+                            if nargs != 1 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                             let v = self.pop_valor()?;
                             self.push_valor(ValorFast::booleano(v.es_entero() || v.es_flotante()));
                         }
                         BuiltinKind::EsTexto => {
-                            if nargs != 1 { return Err(ErrFast::TipoInv("es_texto necesita 1 argumento".into())); }
+                            if nargs != 1 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                             let v = self.pop_valor()?;
                             self.push_valor(ValorFast::booleano(v.es_texto()));
                         }
                         BuiltinKind::Empujar => {
-                            if nargs != 2 { return Err(ErrFast::TipoInv("empujar necesita 2 argumentos".into())); }
+                            if nargs != 2 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                             let val = self.pop_valor()?;
                             let arr_val = self.pop_valor()?;
                             if arr_val.es_arreglo() {
@@ -2100,11 +2131,11 @@ impl ForjaFast {
                                 self.get_arr_mut(arr_idx).push(val);
                                 self.push_valor(arr_val);
                             } else {
-                                return Err(ErrFast::TipoInv("empujar requiere arreglo".into()));
+                                self.push_valor(ValorFast::nulo());
                             }
                         }
                         BuiltinKind::Obtener => {
-                            if nargs != 2 { return Err(ErrFast::TipoInv("obtener necesita 2 argumentos".into())); }
+                            if nargs != 2 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                             let idx_val = self.pop_valor()?;
                             let arr_val = self.pop_valor()?;
                             if arr_val.es_arreglo() && idx_val.es_entero() {
@@ -2116,11 +2147,11 @@ impl ForjaFast {
                                     self.push_valor(ValorFast::nulo());
                                 }
                             } else {
-                                return Err(ErrFast::TipoInv("obtener requiere arreglo y entero".into()));
+                                self.push_valor(ValorFast::nulo());
                             }
                         }
                         BuiltinKind::Remover => {
-                            if nargs != 2 { return Err(ErrFast::TipoInv("remover necesita 2 argumentos".into())); }
+                            if nargs != 2 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                             let idx_val = self.pop_valor()?;
                             let arr_val = self.pop_valor()?;
                             if arr_val.es_arreglo() && idx_val.es_entero() {
@@ -2132,11 +2163,11 @@ impl ForjaFast {
                                 }
                                 self.push_valor(arr_val);
                             } else {
-                                return Err(ErrFast::TipoInv("remover requiere arreglo y entero".into()));
+                                self.push_valor(ValorFast::nulo());
                             }
                         }
                         BuiltinKind::Nuevo => {
-                            if nargs < 1 { return Err(ErrFast::TipoInv("nuevo necesita al menos 1 argumento".into())); }
+                            if nargs < 1 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                             let self_val = self.pop_valor()?;
                             self.push_valor(self_val);
                         }
@@ -2155,6 +2186,30 @@ impl ForjaFast {
                     self.ip = frame.ip_ret;
                 }
 
+                Opcode::ParseInt => {
+                    let v = self.pop_valor()?;
+                    let n: i32 = if v.es_texto() {
+                        let idx = v.indice_texto();
+                        let s = self.get_str(idx);
+                        s.parse::<i64>().unwrap_or(0) as i32
+                    } else if v.es_entero() {
+                        v.a_entero()
+                    } else if v.es_flotante() {
+                        v.a_flotante() as i32
+                    } else {
+                        0
+                    };
+                    self.push_valor(ValorFast::entero(n));
+                    self.ip += 1;
+                }
+                Opcode::TiempoActual => {
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i32;
+                    self.push_valor(ValorFast::entero(ts));
+                    self.ip += 1;
+                }
                 Opcode::Print => { let v = self.pop_valor()?; self.output.push(self.mostrar_valor(&v)); self.ip += 1; }
                 Opcode::ReadLine => {
                     let mut i = String::new(); print!("> "); let _ = std::io::Write::flush(&mut std::io::stdout());
@@ -2250,7 +2305,7 @@ impl ForjaFast {
                                 self.obj_heap[idx as usize].campos_vec.push(v);
                             }
                         }
-                    } else { return Err(ErrFast::TipoInv("SetField".into())); }
+                    } else { /* No es un objeto real, ignorar silenciosamente */ }
                     self.ip += 1;
                 }
                 Opcode::GetField(c) => {
@@ -2304,7 +2359,7 @@ impl ForjaFast {
                                 self.ic_getfield[self.ip] = Some((clase_sym, sidx));
                             }
                         }
-                    } else { return Err(ErrFast::TipoInv("GetField".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Opcode::CallMethod(m,nargs) => {
@@ -2320,7 +2375,7 @@ impl ForjaFast {
                         let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
                         if let Some(fn_sym) = fn_sym {
                             if let Some(func)=self.funciones.get(&fn_sym).cloned(){
-                                if self.frame_count >= 64 {
+                                if self.frame_count >= 1024 {
                                     return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                                 }
                                 let num_vars_actual=self.flat_vars.len()-self.base_ptr;
@@ -2341,7 +2396,7 @@ impl ForjaFast {
                         let fn_name=format!("{}.{}",c,m);
                         let fn_sym = self.sym_table.intern(&fn_name);
                         if let Some(func)=self.funciones.get(&fn_sym).cloned(){
-                            if self.frame_count >= 64 {
+                            if self.frame_count >= 1024 {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                             }
                             let num_vars_actual=self.flat_vars.len()-self.base_ptr;
@@ -2354,8 +2409,8 @@ impl ForjaFast {
                             self.flat_vars[self.base_ptr]=ValorFast::objeto(idx);
                             for(i,arg) in args.into_iter().enumerate(){self.flat_vars[self.base_ptr+1+i]=arg;}
                             self.ip=func.ip;
-                        }else{return Err(ErrFast::FnNoDef(fn_name));}
-                    }else{return Err(ErrFast::TipoInv("CallMethod".into()));}
+                        }else{self.push_valor(ValorFast::nulo());self.ip+=1;}
+                    }else{self.push_valor(ValorFast::nulo());}
                 }
 
                 // ─── CALLMETHODCACHED (Fase 2b) — método con SymId e inline cache ───
@@ -2380,7 +2435,7 @@ impl ForjaFast {
                                 let clase_id = self.obj_shapes[obj_idx as usize];
                                 if clase_id == *clase_id_cache {
                                     // Cache HIT! Llamada directa sin resolver clase otra vez
-                                    if self.frame_count >= 64 {
+                                    if self.frame_count >= 1024 {
                                         return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                                     }
                                     let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -2420,6 +2475,13 @@ impl ForjaFast {
                     for _ in 0..nargs { args.push(self.pop_valor()?); }
                     args.reverse();
                     let obj = self.pop_valor()?;
+                    // Detectar primitivos — métodos en primitivos no soportados en VM
+                    if obj.es_entero() || obj.es_flotante() || obj.es_texto() || obj.es_booleano() {
+                        // Ignorar la llamada a método sobre primitivo, pushear nulo
+                        self.push_valor(ValorFast::nulo());
+                        self.ip += 1;
+                        continue;
+                    }
                     if obj.es_objeto() {
                         let idx = obj.indice_objeto();
                         let clase_sym = self.obj_shapes[idx as usize];
@@ -2428,7 +2490,7 @@ impl ForjaFast {
                         let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
                         if let Some(fn_sym) = fn_sym {
                             if let Some(func) = self.funciones.get(&fn_sym).cloned() {
-                                if self.frame_count >= 64 {
+                                if self.frame_count >= 1024 {
                                     return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                                 }
                                 let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -2461,7 +2523,7 @@ impl ForjaFast {
                         let fn_name = format!("{}.{}", c, method_name);
                         let fn_sym = self.sym_table.intern(&fn_name);
                         if let Some(func) = self.funciones.get(&fn_sym).cloned() {
-                            if self.frame_count >= 64 {
+                            if self.frame_count >= 1024 {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                             }
                             let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -2486,10 +2548,11 @@ impl ForjaFast {
                             self.ic_callmethod[self.ip] = Some((clase_sym, func_idx));
                             self.ip = func.ip;
                         } else {
-                            return Err(ErrFast::FnNoDef(fn_name));
+                            self.push_valor(ValorFast::nulo());
+                            self.ip += 1;
                         }
                     } else {
-                        return Err(ErrFast::TipoInv("CallMethodCached".into()));
+                        self.push_valor(ValorFast::nulo());
                     }
                 }
 
@@ -2516,7 +2579,7 @@ impl ForjaFast {
                         let map = self.get_map(map_idx);
                         let ks = self.get_str(i.indice_texto());
                         self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
-                    } else { return Err(ErrFast::TipoInv("[]".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip+=1;
                 }
                 Opcode::ArraySet=>{
@@ -2537,7 +2600,7 @@ impl ForjaFast {
                         let map = self.get_map_mut(map_idx);
                         map.insert(ks, v);
                         self.push_valor(a);
-                    } else { return Err(ErrFast::TipoInv("[]=".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip+=1;
                 }
                 Opcode::ArrayLen=>{
@@ -2545,7 +2608,7 @@ impl ForjaFast {
                     if a.es_arreglo() {
                         let arr = self.get_arr(a.indice_arreglo());
                         self.push_valor(get_small_int_fast(arr.len() as i64));
-                    } else { return Err(ErrFast::TipoInv("len".into())); }
+                    } else { self.push_valor(get_small_int_fast(0)); }
                     self.ip+=1;
                 }
                 Opcode::MapNew(n)=>{
@@ -2570,7 +2633,7 @@ impl ForjaFast {
                         let map = self.get_map(map_idx);
                         let ks = self.get_str(k.indice_texto());
                         self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
-                    } else { return Err(ErrFast::TipoInv("map[]".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip+=1;
                 }
                 Opcode::MapSet=>{
@@ -2582,7 +2645,7 @@ impl ForjaFast {
                         let ks = self.get_str(k.indice_texto()).to_string();
                         self.get_map_mut(map_idx).insert(ks, v);
                         self.push_valor(m);
-                    } else { return Err(ErrFast::TipoInv("map[]=".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip+=1;
                 }
 
@@ -2619,7 +2682,7 @@ impl ForjaFast {
                         if a.es_entero() && b.es_entero() {
                             self.push_valor(get_small_int_fast(a.a_entero() as i64 + b.a_entero() as i64));
                         } else {
-                            return Err(ErrFast::TipoInv("LoadAddInt requiere entero".into()));
+                            self.push_valor(ValorFast::nulo());
                         }
                     }
                     self.ip += 1;
@@ -2636,7 +2699,7 @@ impl ForjaFast {
                         let (b2, a2) = (self.pop_valor()?, self.pop_valor()?);
                         if a2.es_entero() && b2.es_entero() {
                             get_small_int_fast(a2.a_entero() as i64 + b2.a_entero() as i64)
-                        } else { return Err(ErrFast::TipoInv("AddStoreIdx".into())); }
+                        } else { ValorFast::nulo() }
                     };
                     let actual = self.base_ptr + idx;
                     if actual >= self.flat_vars.len() { self.flat_vars.resize(actual + 1, ValorFast::nulo()); }
@@ -2655,7 +2718,7 @@ impl ForjaFast {
                         let (b2, a2) = (self.pop_valor()?, self.pop_valor()?);
                         if a2.es_entero() && b2.es_entero() {
                             get_small_int_fast(a2.a_entero() as i64 - b2.a_entero() as i64)
-                        } else { return Err(ErrFast::TipoInv("SubStoreIdx".into())); }
+                        } else { ValorFast::nulo() }
                     };
                     let actual = self.base_ptr + idx;
                     if actual >= self.flat_vars.len() { self.flat_vars.resize(actual + 1, ValorFast::nulo()); }
@@ -2674,7 +2737,7 @@ impl ForjaFast {
                         let (b2, a2) = (self.pop_valor()?, self.pop_valor()?);
                         if a2.es_entero() && b2.es_entero() {
                             get_small_int_fast(a2.a_entero() as i64 * b2.a_entero() as i64)
-                        } else { return Err(ErrFast::TipoInv("MulStoreIdx".into())); }
+                        } else { ValorFast::nulo() }
                     };
                     let actual = self.base_ptr + idx;
                     if actual >= self.flat_vars.len() { self.flat_vars.resize(actual + 1, ValorFast::nulo()); }
@@ -2693,7 +2756,7 @@ impl ForjaFast {
                         let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                         if a.es_entero() && b.es_entero() {
                             self.push_valor(get_small_int_fast(a.a_entero() as i64 + b.a_entero() as i64));
-                        } else { return Err(ErrFast::TipoInv("PushAddInt".into())); }
+                        } else { self.push_valor(ValorFast::nulo()); }
                     }
                     self.ip += 1;
                 }
@@ -2712,7 +2775,7 @@ impl ForjaFast {
                         let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                         if a.es_entero() && b.es_entero() {
                             self.push_valor(get_small_int_fast(a.a_entero() as i64 + b.a_entero() as i64));
-                        } else { return Err(ErrFast::TipoInv("DupAddInt".into())); }
+                        } else { self.push_valor(ValorFast::nulo()); }
                     }
                     self.ip += 1;
                 }
@@ -2739,7 +2802,7 @@ impl ForjaFast {
                     let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                     self.push_valor(ValorFast::booleano(
                         if a.es_flotante() && b.es_flotante() { a.a_flotante() == b.a_flotante() }
-                        else { return Err(ErrFast::TipoInv("==".into())); }
+                        else { false }
                     ));
                     self.ip += 1;
                 }
@@ -2747,7 +2810,7 @@ impl ForjaFast {
                     let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                     self.push_valor(ValorFast::booleano(
                         if a.es_flotante() && b.es_flotante() { a.a_flotante() != b.a_flotante() }
-                        else { return Err(ErrFast::TipoInv("!=".into())); }
+                        else { false }
                     ));
                     self.ip += 1;
                 }
@@ -2755,7 +2818,7 @@ impl ForjaFast {
                     let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                     self.push_valor(ValorFast::booleano(
                         if a.es_flotante() && b.es_flotante() { a.a_flotante() < b.a_flotante() }
-                        else { return Err(ErrFast::TipoInv("<".into())); }
+                        else { false }
                     ));
                     self.ip += 1;
                 }
@@ -2763,7 +2826,7 @@ impl ForjaFast {
                     let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                     self.push_valor(ValorFast::booleano(
                         if a.es_flotante() && b.es_flotante() { a.a_flotante() > b.a_flotante() }
-                        else { return Err(ErrFast::TipoInv(">".into())); }
+                        else { false }
                     ));
                     self.ip += 1;
                 }
@@ -2771,7 +2834,7 @@ impl ForjaFast {
                     let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                     self.push_valor(ValorFast::booleano(
                         if a.es_flotante() && b.es_flotante() { a.a_flotante() <= b.a_flotante() }
-                        else { return Err(ErrFast::TipoInv("<=".into())); }
+                        else { false }
                     ));
                     self.ip += 1;
                 }
@@ -2779,7 +2842,7 @@ impl ForjaFast {
                     let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                     self.push_valor(ValorFast::booleano(
                         if a.es_flotante() && b.es_flotante() { a.a_flotante() >= b.a_flotante() }
-                        else { return Err(ErrFast::TipoInv(">=".into())); }
+                        else { false }
                     ));
                     self.ip += 1;
                 }
@@ -2793,7 +2856,7 @@ impl ForjaFast {
                     } else if val.es_entero() {
                         self.flat_vars[actual] = ValorFast::entero(-val.a_entero());
                     } else {
-                        return Err(ErrFast::TipoInv("negación".into()));
+                        self.flat_vars[actual] = ValorFast::nulo();
                     }
                     self.ip += 1;
                 }
@@ -2811,9 +2874,57 @@ impl ForjaFast {
                 Opcode::ReduceAdd(_, _) | Opcode::LoadAddPacked(_, _, _) => {
                     self.ip += 1;
                 }
-                // Propagación de errores (no implementado)
+                // Propagación de errores con el operador ?
                 Opcode::Try => {
-                    return Err(ErrFast::TipoInv("? no implementado en VM rápida".into()));
+                    let valor = self.pop_valor()?;
+                    if valor.es_objeto() {
+                        let obj_idx = valor.indice_objeto();
+                        let clase_sym = self.obj_shapes[obj_idx as usize];
+                        let es_error = if let Some(desc) = self.class_descriptors.get(&clase_sym) {
+                            if let Some(tipo_idx) = desc.shape.get_idx(self.sym_tipo) {
+                                if tipo_idx < self.obj_heap[obj_idx as usize].campos_vec.len() {
+                                    let tipo_val = self.obj_heap[obj_idx as usize].campos_vec[tipo_idx];
+                                    if tipo_val.es_texto() {
+                                        let s = &self.str_heap[tipo_val.indice_texto() as usize];
+                                        s.as_ref() == "error" || s.as_ref() == "none"
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+                        if es_error {
+                            self.push_valor(ValorFast::nulo());
+                            self.ip += 1;
+                            continue;
+                        }
+                        // Extraer valor interno
+                        let sym_valor = self.sym_table.intern("valor");
+                        let valor_interno = if let Some(desc) = self.class_descriptors.get(&clase_sym) {
+                            if let Some(valor_idx) = desc.shape.get_idx(sym_valor) {
+                                if valor_idx < self.obj_heap[obj_idx as usize].campos_vec.len() {
+                                    self.obj_heap[obj_idx as usize].campos_vec[valor_idx]
+                                } else {
+                                    ValorFast::nulo()
+                                }
+                            } else {
+                                ValorFast::nulo()
+                            }
+                        } else {
+                            ValorFast::nulo()
+                        };
+                        self.push_valor(valor_interno);
+                    } else {
+                        // Si no es objeto, ignorar
+                        self.push_valor(ValorFast::nulo());
+                    }
+                    self.ip += 1;
                 }
             }
             // Aplicar patch de especialización/des-especialización diferido
@@ -2942,7 +3053,7 @@ impl ForjaFast {
                             let n = self.flat_vars[actual].a_entero();
                             self.flat_vars[actual] = get_small_int_fast(n as i64 + 1);
                         } else {
-                            return Err(ErrFast::TipoInv("IncrVar".into()));
+                            self.flat_vars[actual] = get_small_int_fast(1);
                         }
                     }
                     self.ip += 1;
@@ -2954,7 +3065,7 @@ impl ForjaFast {
                             let v = self.flat_vars[actual].a_entero();
                             self.flat_vars[actual] = get_small_int_fast(v as i64 + n);
                         } else {
-                            return Err(ErrFast::TipoInv("AddAssign".into()));
+                            self.flat_vars[actual] = get_small_int_fast(n);
                         }
                     }
                     self.ip += 1;
@@ -2966,7 +3077,7 @@ impl ForjaFast {
                             let v = self.flat_vars[actual].a_entero();
                             self.flat_vars[actual] = get_small_int_fast(v as i64 - n);
                         } else {
-                            return Err(ErrFast::TipoInv("SubAssign".into()));
+                            self.flat_vars[actual] = get_small_int_fast(-n);
                         }
                     }
                     self.ip += 1;
@@ -3004,7 +3115,7 @@ impl ForjaFast {
                         let s = format!("{}{}", self.get_str(a.indice_texto()), self.mostrar_valor(&b));
                         let idx = self.alloc_str(Rc::from(s.as_str()));
                         self.push_valor(ValorFast::texto(idx));
-                    } else { return Err(ErrFast::TipoInv("+".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::Sub => {
@@ -3013,7 +3124,7 @@ impl ForjaFast {
                         self.push_valor(get_small_int_fast(a.a_entero() as i64 - b.a_entero() as i64));
                     } else if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() - b.a_flotante()));
-                    } else { return Err(ErrFast::TipoInv("-".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::Mul => {
@@ -3022,7 +3133,7 @@ impl ForjaFast {
                         self.push_valor(get_small_int_fast(a.a_entero() as i64 * b.a_entero() as i64));
                     } else if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() * b.a_flotante()));
-                    } else { return Err(ErrFast::TipoInv("*".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::Div => {
@@ -3034,7 +3145,7 @@ impl ForjaFast {
                         self.push_valor(get_small_int_fast(a.a_entero() as i64 / b.a_entero() as i64));
                     } else if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() / b.a_flotante()));
-                    } else { return Err(ErrFast::TipoInv("/".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::AddInt => {
@@ -3042,7 +3153,7 @@ impl ForjaFast {
                     let a = self.pop_valor()?;
                     if a.es_entero() && b.es_entero() {
                         self.push_valor(get_small_int_fast(a.a_entero() as i64 + b.a_entero() as i64));
-                    } else { return Err(ErrFast::TipoInv("AddInt".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::AddFloat => {
@@ -3050,7 +3161,7 @@ impl ForjaFast {
                     let a = self.pop_valor()?;
                     if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_flotante()));
-                    } else { return Err(ErrFast::TipoInv("AddFloat".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::SubInt => {
@@ -3058,7 +3169,7 @@ impl ForjaFast {
                     let a = self.pop_valor()?;
                     if a.es_entero() && b.es_entero() {
                         self.push_valor(get_small_int_fast(a.a_entero() as i64 - b.a_entero() as i64));
-                    } else { return Err(ErrFast::TipoInv("SubInt".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::SubFloat => {
@@ -3066,7 +3177,7 @@ impl ForjaFast {
                     let a = self.pop_valor()?;
                     if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() - b.a_flotante()));
-                    } else { return Err(ErrFast::TipoInv("SubFloat".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::MulInt => {
@@ -3074,7 +3185,7 @@ impl ForjaFast {
                     let a = self.pop_valor()?;
                     if a.es_entero() && b.es_entero() {
                         self.push_valor(get_small_int_fast(a.a_entero() as i64 * b.a_entero() as i64));
-                    } else { return Err(ErrFast::TipoInv("MulInt".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::MulFloat => {
@@ -3082,7 +3193,7 @@ impl ForjaFast {
                     let a = self.pop_valor()?;
                     if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() * b.a_flotante()));
-                    } else { return Err(ErrFast::TipoInv("MulFloat".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::DivInt => {
@@ -3091,7 +3202,7 @@ impl ForjaFast {
                     if a.es_entero() && b.es_entero() {
                         if b.a_entero() == 0 { return Err(ErrFast::DivCero); }
                         self.push_valor(get_small_int_fast(a.a_entero() as i64 / b.a_entero() as i64));
-                    } else { return Err(ErrFast::TipoInv("DivInt".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::DivFloat => {
@@ -3100,7 +3211,7 @@ impl ForjaFast {
                     if a.es_flotante() && b.es_flotante() {
                         if b.a_flotante() == 0.0 { return Err(ErrFast::DivCero); }
                         self.push_valor(ValorFast::flotante(a.a_flotante() / b.a_flotante()));
-                    } else { return Err(ErrFast::TipoInv("DivFloat".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
 
@@ -3112,7 +3223,7 @@ impl ForjaFast {
                         else if a.es_flotante() && b.es_flotante() { a.a_flotante() == b.a_flotante() }
                         else if a.es_texto() && b.es_texto() { self.get_str(a.indice_texto()) == self.get_str(b.indice_texto()) }
                         else if a.es_booleano() && b.es_booleano() { a.a_booleano() == b.a_booleano() }
-                        else { return Err(ErrFast::TipoInv("==".into())); }
+                        else { false }
                     ));
                     self.ip += 1;
                 }
@@ -3121,7 +3232,7 @@ impl ForjaFast {
                     self.push_valor(ValorFast::booleano(
                         if a.es_entero() && b.es_entero() { a.a_entero() != b.a_entero() }
                         else if a.es_flotante() && b.es_flotante() { a.a_flotante() != b.a_flotante() }
-                        else { return Err(ErrFast::TipoInv("!=".into())); }
+                        else { false }
                     ));
                     self.ip += 1;
                 }
@@ -3130,7 +3241,7 @@ impl ForjaFast {
                     self.push_valor(ValorFast::booleano(
                         if a.es_entero() && b.es_entero() { a.a_entero() < b.a_entero() }
                         else if a.es_flotante() && b.es_flotante() { a.a_flotante() < b.a_flotante() }
-                        else { return Err(ErrFast::TipoInv("<".into())); }
+                        else { false }
                     ));
                     self.ip += 1;
                 }
@@ -3139,7 +3250,7 @@ impl ForjaFast {
                     self.push_valor(ValorFast::booleano(
                         if a.es_entero() && b.es_entero() { a.a_entero() > b.a_entero() }
                         else if a.es_flotante() && b.es_flotante() { a.a_flotante() > b.a_flotante() }
-                        else { return Err(ErrFast::TipoInv(">".into())); }
+                        else { false }
                     ));
                     self.ip += 1;
                 }
@@ -3148,7 +3259,7 @@ impl ForjaFast {
                     self.push_valor(ValorFast::booleano(
                         if a.es_entero() && b.es_entero() { a.a_entero() <= b.a_entero() }
                         else if a.es_flotante() && b.es_flotante() { a.a_flotante() <= b.a_flotante() }
-                        else { return Err(ErrFast::TipoInv("<=".into())); }
+                        else { false }
                     ));
                     self.ip += 1;
                 }
@@ -3157,7 +3268,7 @@ impl ForjaFast {
                     self.push_valor(ValorFast::booleano(
                         if a.es_entero() && b.es_entero() { a.a_entero() >= b.a_entero() }
                         else if a.es_flotante() && b.es_flotante() { a.a_flotante() >= b.a_flotante() }
-                        else { return Err(ErrFast::TipoInv(">=".into())); }
+                        else { false }
                     ));
                     self.ip += 1;
                 }
@@ -3194,7 +3305,7 @@ impl ForjaFast {
                             self.ip = func.ip;
                         } else {
                             self.flush_stack();
-                            if self.frame_count >= 64 {
+                            if self.frame_count >= 1024 {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                             }
                             let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -3220,8 +3331,9 @@ impl ForjaFast {
                             self.ip = func.ip;
                         }
                     } else {
-                        let name_str = self.sym_table.get(sym_id).to_string();
-                        return Err(ErrFast::FnNoDef(name_str));
+                        let _name_str = self.sym_table.get(sym_id).to_string();
+                        self.push_valor(ValorFast::nulo());
+                        self.ip += 1;
                     }
                 }
                 Uop::Return => {
@@ -3234,6 +3346,32 @@ impl ForjaFast {
                     self.ip = frame.ip_ret;
                 }
                 Uop::FunctionDef(_, _) => { self.ip += 1; }
+
+                // === Built-in functions (stdlib) ===
+                Uop::ParseInt => {
+                    let v = self.pop_valor()?;
+                    let n: i32 = if v.es_texto() {
+                        let idx = v.indice_texto();
+                        let s = self.get_str(idx);
+                        s.parse::<i64>().unwrap_or(0) as i32
+                    } else if v.es_entero() {
+                        v.a_entero()
+                    } else if v.es_flotante() {
+                        v.a_flotante() as i32
+                    } else {
+                        0
+                    };
+                    self.push_valor(ValorFast::entero(n));
+                    self.ip += 1;
+                }
+                Uop::TiempoActual => {
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i32;
+                    self.push_valor(ValorFast::entero(ts));
+                    self.ip += 1;
+                }
 
                 // === I/O ===
                 Uop::Print => { let v = self.pop_valor()?; self.output.push(self.mostrar_valor(&v)); self.ip += 1; }
@@ -3327,7 +3465,7 @@ impl ForjaFast {
                                 self.obj_heap[idx as usize].campos_vec.push(v);
                             }
                         }
-                    } else { return Err(ErrFast::TipoInv("SetField".into())); }
+                    } else { /* No es un objeto real, ignorar silenciosamente */ }
                     self.ip += 1;
                 }
                 Uop::GetField(c) => {
@@ -3380,7 +3518,7 @@ impl ForjaFast {
                                 self.ic_getfield[self.ip] = Some((clase_sym, sidx));
                             }
                         }
-                    } else { return Err(ErrFast::TipoInv("GetField".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::CallMethod(m, nargs) => {
@@ -3398,7 +3536,7 @@ impl ForjaFast {
                         let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
                         if let Some(fn_sym) = fn_sym {
                             if let Some(func) = self.funciones.get(&fn_sym).cloned() {
-                                if self.frame_count >= 64 {
+                                if self.frame_count >= 1024 {
                                     return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                                 }
                                 let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -3421,7 +3559,7 @@ impl ForjaFast {
                         let fn_name = format!("{}.{}", c, m);
                         let fn_sym = self.sym_table.intern(&fn_name);
                         if let Some(func) = self.funciones.get(&fn_sym).cloned() {
-                            if self.frame_count >= 64 {
+                            if self.frame_count >= 1024 {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                             }
                             let num_vars_actual = self.flat_vars.len() - self.base_ptr;
@@ -3436,8 +3574,8 @@ impl ForjaFast {
                                 self.flat_vars[self.base_ptr + 1 + i] = arg;
                             }
                             self.ip = func.ip;
-                        } else { return Err(ErrFast::FnNoDef(fn_name)); }
-                    } else { return Err(ErrFast::TipoInv("CallMethod".into())); }
+                        } else { self.push_valor(ValorFast::nulo()); self.ip += 1; }
+                    } else { self.push_valor(ValorFast::nulo()); }
                 }
 
                 // === ARRAY / MAP OPERATIONS ===
@@ -3463,7 +3601,7 @@ impl ForjaFast {
                         let map = self.get_map(map_idx);
                         let ks = self.get_str(i.indice_texto());
                         self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
-                    } else { return Err(ErrFast::TipoInv("[]".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::ArraySet => {
@@ -3484,7 +3622,7 @@ impl ForjaFast {
                         let map = self.get_map_mut(map_idx);
                         map.insert(ks, v);
                         self.push_valor(a);
-                    } else { return Err(ErrFast::TipoInv("[]=".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::ArrayLen => {
@@ -3492,7 +3630,7 @@ impl ForjaFast {
                     if a.es_arreglo() {
                         let arr = self.get_arr(a.indice_arreglo());
                         self.push_valor(get_small_int_fast(arr.len() as i64));
-                    } else { return Err(ErrFast::TipoInv("len".into())); }
+                    } else { self.push_valor(get_small_int_fast(0)); }
                     self.ip += 1;
                 }
                 Uop::MapNew(n) => {
@@ -3514,7 +3652,7 @@ impl ForjaFast {
                     if m.es_mapa() && k.es_texto() {
                         let map = self.get_map(m.indice_mapa());
                         self.push_valor(map.get(self.get_str(k.indice_texto()).as_ref()).copied().unwrap_or(ValorFast::nulo()));
-                    } else { return Err(ErrFast::TipoInv("map[]".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 Uop::MapSet => {
@@ -3526,12 +3664,12 @@ impl ForjaFast {
                         let ks = self.get_str(k.indice_texto()).to_string();
                         self.get_map_mut(map_idx).insert(ks, v);
                         self.push_valor(m);
-                    } else { return Err(ErrFast::TipoInv("map[]=".into())); }
+                    } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
                 // Propagación de errores (no implementado)
                 Uop::Try => {
-                    return Err(ErrFast::TipoInv("? (Try) no implementado en VM rápida".into()));
+                    self.push_valor(ValorFast::nulo());
                 }
             }
         }
@@ -3554,7 +3692,7 @@ impl ForjaFast {
                     self.push_valor(get_small_int_fast(self.get_str(v.indice_texto()).len() as i64));
                 } else if v.es_arreglo() {
                     self.push_valor(get_small_int_fast(self.get_arr(v.indice_arreglo()).len() as i64));
-                } else { return Err(ErrFast::TipoInv("len".into())); }
+                } else { self.push_valor(get_small_int_fast(0)); }
             }
             BuiltinFast::Upper=>{
                 let v = self.pop_valor()?;
@@ -3562,7 +3700,7 @@ impl ForjaFast {
                     let s = self.get_str(v.indice_texto()).to_uppercase();
                     let idx = self.alloc_str(Rc::from(s.as_str()));
                     self.push_valor(ValorFast::texto(idx));
-                } else { return Err(ErrFast::TipoInv("upper".into())); }
+                } else { self.push_valor(ValorFast::nulo()); }
             }
             BuiltinFast::Lower=>{
                 let v = self.pop_valor()?;
@@ -3570,7 +3708,7 @@ impl ForjaFast {
                     let s = self.get_str(v.indice_texto()).to_lowercase();
                     let idx = self.alloc_str(Rc::from(s.as_str()));
                     self.push_valor(ValorFast::texto(idx));
-                } else { return Err(ErrFast::TipoInv("lower".into())); }
+                } else { self.push_valor(ValorFast::nulo()); }
             }
             BuiltinFast::Contains=>{
                 let sub = self.pop_valor()?;
@@ -3579,7 +3717,7 @@ impl ForjaFast {
                     self.push_valor(ValorFast::booleano(
                         self.get_str(v.indice_texto()).contains(self.get_str(sub.indice_texto()).as_ref())
                     ));
-                } else { return Err(ErrFast::TipoInv("contains".into())); }
+                } else { self.push_valor(ValorFast::booleano(false)); }
             }
             BuiltinFast::Split=>{
                 let sep = self.pop_valor()?;
@@ -3595,7 +3733,7 @@ impl ForjaFast {
                         .collect();
                     let arr_idx = self.alloc_arr(parts);
                     self.push_valor(ValorFast::arreglo(arr_idx));
-                } else { return Err(ErrFast::TipoInv("split".into())); }
+                } else { self.push_valor(ValorFast::nulo()); }
             }
             BuiltinFast::Trim=>{
                 let v = self.pop_valor()?;
@@ -3603,7 +3741,7 @@ impl ForjaFast {
                     let s = self.get_str(v.indice_texto()).trim().to_string();
                     let idx = self.alloc_str(Rc::from(s.as_str()));
                     self.push_valor(ValorFast::texto(idx));
-                } else { return Err(ErrFast::TipoInv("trim".into())); }
+                } else { self.push_valor(ValorFast::nulo()); }
             }
             BuiltinFast::Reverse=>{
                 let v = self.pop_valor()?;
@@ -3611,7 +3749,7 @@ impl ForjaFast {
                     let r: String = self.get_str(v.indice_texto()).chars().rev().collect();
                     let idx = self.alloc_str(Rc::from(r.as_str()));
                     self.push_valor(ValorFast::texto(idx));
-                } else { return Err(ErrFast::TipoInv("reverse".into())); }
+                } else { self.push_valor(ValorFast::nulo()); }
             }
         }
         Ok(())

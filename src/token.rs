@@ -149,6 +149,8 @@ pub enum TokenKind {
     Y,
     /// `||` - O lógico
     O,
+    /// `|` - pipe separador de patrones en match
+    Pipe,
     /// `!` - NO lógico
     No,
 
@@ -161,6 +163,8 @@ pub enum TokenKind {
     Decimal(f64),
     /// Cadena de texto entre comillas dobles
     Texto(String),
+    /// Caracter literal entre comillas simples ('a')
+    Caracter(char),
 
     // === Especiales ===
     /// Comentario de documentación (///)
@@ -242,11 +246,13 @@ impl fmt::Display for TokenKind {
             TokenKind::Diferente => write!(f, "!="),
             TokenKind::Y => write!(f, "&&"),
             TokenKind::O => write!(f, "||"),
+            TokenKind::Pipe => write!(f, "|"),
             TokenKind::No => write!(f, "!"),
             TokenKind::Identificador(id) => write!(f, "identificador('{}')", id),
             TokenKind::Numero(n) => write!(f, "numero({})", n),
             TokenKind::Decimal(d) => write!(f, "decimal({})", d),
             TokenKind::Texto(s) => write!(f, "texto(\"{}\")", s),
+            TokenKind::Caracter(c) => write!(f, "'{}'", c),
             TokenKind::DocComment(s) => write!(f, "///{}", s),
             TokenKind::EOF => write!(f, "EOF"),
             TokenKind::Error(c) => write!(f, "error('{}')", c),

@@ -131,6 +131,7 @@ impl Lexer {
     /// Identifica si una palabra es keyword o identificador
     fn identificar_keyword(&self, palabra: &str) -> TokenKind {
         match palabra {
+            "no" => TokenKind::No,
             "variable" | "var" => TokenKind::Variable,
             "constante" | "const" => TokenKind::Constante,
             "mut" => TokenKind::Mut,
@@ -168,11 +169,14 @@ impl Lexer {
             "seleccionar" => TokenKind::Seleccionar,
             "tiempo" => TokenKind::Tiempo,
             "otro" => TokenKind::Otro,
-            // Tipos de datos
-            "Texto" => TokenKind::TipoTexto,
-            "Entero" => TokenKind::TipoEntero,
-            "Decimal" => TokenKind::TipoDecimal,
-            "Booleano" => TokenKind::TipoBooleano,
+            // Tipos de datos como soft keywords: son keywords solo en contexto de tipos,
+            // pero identificadores normales en otros contextos (expresiones, etc.)
+            // Entero, Decimal, Texto, Booleano → se devuelven como Identificador
+            // para que parse_tipo() los maneje por nombre en el parser.
+            "Texto" => TokenKind::Identificador("Texto".to_string()),
+            "Entero" => TokenKind::Identificador("Entero".to_string()),
+            "Decimal" => TokenKind::Identificador("Decimal".to_string()),
+            "Booleano" => TokenKind::Identificador("Booleano".to_string()),
             _ => TokenKind::Identificador(palabra.to_string()),
         }
     }
@@ -227,6 +231,81 @@ impl Lexer {
             TokenKind::Numero(val)
         } else {
             TokenKind::Error(num_str.chars().next().unwrap_or('?'))
+        }
+    }
+
+    /// Lee un caracter literal entre comillas simples: 'a', '\n', etc.
+    /// La comilla de apertura ' YA fue consumida por next_token().
+    fn leer_caracter(&mut self, linea: usize, columna: usize) -> Result<Option<Token>, ErrorForja> {
+        match self.advance() {
+            Some('\\') => {
+                // Secuencia de escape
+                match self.advance() {
+                    Some('n') => {
+                        self.advance(); // consumir comilla de cierre '
+                        Ok(Some(Token::new(TokenKind::Caracter('\n'), linea, columna)))
+                    }
+                    Some('t') => {
+                        self.advance();
+                        Ok(Some(Token::new(TokenKind::Caracter('\t'), linea, columna)))
+                    }
+                    Some('\\') => {
+                        self.advance();
+                        Ok(Some(Token::new(TokenKind::Caracter('\\'), linea, columna)))
+                    }
+                    Some('\'') => {
+                        // '\''  →  \ escapó la comilla, ahora viene la comilla de cierre
+                        if self.advance() == Some('\'') {
+                            Ok(Some(Token::new(TokenKind::Caracter('\''), linea, columna)))
+                        } else {
+                            Err(ErrorForja::new(
+                                ErrorTipo::ErrorLexico, linea, columna,
+                                "Caracter literal mal formado: falta comilla simple de cierre después de \\'",
+                                "Usá: '\\''",
+                            ))
+                        }
+                    }
+                    Some('r') => {
+                        self.advance();
+                        Ok(Some(Token::new(TokenKind::Caracter('\r'), linea, columna)))
+                    }
+                    Some(c) => Err(ErrorForja::new(
+                        ErrorTipo::ErrorLexico, linea, columna,
+                        &format!("Secuencia de escape desconocida: '\\{}'", c),
+                        "Usá una de: \\n, \\t, \\\\, \\', \\r",
+                    )),
+                    None => Err(ErrorForja::new(
+                        ErrorTipo::ErrorLexico, linea, columna,
+                        "Caracter literal sin cerrar después de \\",
+                        "Agregá la comilla simple de cierre, ej: '\\n'",
+                    )),
+                }
+            }
+            Some(c) => {
+                // Caracter simple: 'a', 'x', etc.
+                // Si el siguiente caracter es comilla de cierre, es un char literal
+                if self.current() == Some('\'') {
+                    self.advance(); // consumir '
+                    Ok(Some(Token::new(TokenKind::Caracter(c), linea, columna)))
+                } else {
+                    // Múltiples caracteres: 'texto' → convertir a string
+                    let mut s = String::new();
+                    s.push(c);
+                    loop {
+                        match self.advance() {
+                            Some('\'') => break, // comilla de cierre
+                            Some(ch) => s.push(ch),
+                            None => break, // EOF sin cierre
+                        }
+                    }
+                    Ok(Some(Token::new(TokenKind::Texto(s), linea, columna)))
+                }
+            }
+            None => Err(ErrorForja::new(
+                ErrorTipo::ErrorLexico, linea, columna,
+                "Caracter literal vacío (solo ' sin contenido)",
+                "Usá: 'a' para un caracter literal.",
+            )),
         }
     }
 
@@ -520,6 +599,39 @@ impl Lexer {
                     self.tokens_pendientes
                         .push(Token::new(TokenKind::DosPuntos, self.linea, self.columna));
                 }
+                Some('?') => {
+                    self.advance();
+                    self.tokens_pendientes
+                        .push(Token::new(TokenKind::Interrogacion, self.linea, self.columna));
+                }
+                Some('\'') => {
+                    // String entre comillas simples dentro de interpolación: 'texto'
+                    let (linea_act, col_act) = (self.linea, self.columna);
+                    self.advance(); // consumir comilla de apertura '
+                    let mut contenido = String::new();
+                    loop {
+                        match self.current() {
+                            Some('\'') => {
+                                self.advance(); // consumir comilla de cierre '
+                                break;
+                            }
+                            Some(ch) => {
+                                contenido.push(ch);
+                                self.advance();
+                            }
+                            None => {
+                                return Err(ErrorForja::new(
+                                    ErrorTipo::ErrorLexico, linea_act, col_act,
+                                    "String entre comillas simples sin cerrar",
+                                    "Agregá ' al final del texto.",
+                                ));
+                            }
+                        }
+                    }
+                    self.tokens_pendientes.push(
+                        Token::new(TokenKind::Texto(contenido), linea_act, col_act)
+                    );
+                }
                 Some('"') => {
                     // String literal anidado dentro de interpolación
                     let kind = self.leer_texto()?;
@@ -533,9 +645,21 @@ impl Lexer {
                         self.tokens_pendientes
                             .push(Token::new(kind, self.linea, self.columna));
                     } else if ch.is_alphabetic() || ch == '_' {
-                        let kind = self.leer_identificador_o_keyword();
+                        // Dentro de interpolación, todos los identificadores/keywords se tratan
+                        // como identificadores para que el parser pueda procesarlos como expresiones.
+                        // Si devolviéramos keywords (ej: TokenKind::Tipo, TokenKind::Funcion),
+                        // el parser los interpretaría como declaraciones en lugar de expresiones.
+                        let mut ident = String::new();
+                        while let Some(c) = self.current() {
+                            if c.is_alphanumeric() || c == '_' {
+                                ident.push(c);
+                                self.advance();
+                            } else {
+                                break;
+                            }
+                        }
                         self.tokens_pendientes
-                            .push(Token::new(kind, self.linea, self.columna));
+                            .push(Token::new(TokenKind::Identificador(ident), self.linea, self.columna));
                     } else {
                         // Carácter desconocido, avanzar
                         return Err(ErrorForja::new(
@@ -663,13 +787,7 @@ impl Lexer {
                     self.advance();
                     TokenKind::O
                 } else {
-                    return Err(ErrorForja::new(
-                        ErrorTipo::ErrorLexico,
-                        linea,
-                        columna,
-                        "Carácter '|' inesperado. ¿Quizás quisiste escribir '||'?",
-                        "Usá '||' para el operador O lógico.",
-                    ));
+                    TokenKind::Pipe
                 }
             }
 
@@ -685,13 +803,63 @@ impl Lexer {
                 TokenKind::Interrogacion
             }
 
+            // Comentario estilo Python/Raven: # hasta nueva línea
+            '#' => {
+                while let Some(c) = self.current() {
+                    if c == '\n' || c == '\r' { break; }
+                    self.advance();
+                }
+                // Consumir whitespace (incluye el salto de línea) y continuar
+                self.skip_whitespace();
+                return self.next_token();
+            }
+
             // Números
             _ if ch.is_ascii_digit() => self.leer_numero(),
 
             // Identificadores y keywords
             _ if ch.is_alphabetic() || ch == '_' => self.leer_identificador_o_keyword(),
 
-            // Texto (strings)
+            // Comilla simple: puede ser caracter literal 'a' o string 'hola'
+            '\'' => {
+                self.advance(); // consumir comilla de apertura '
+                // Verificar si es string de varios caracteres o caracter literal
+                // 'a' → 1 char, siguiente es '. 'hola' → múltiples chars
+                if self.current().map_or(true, |c| c == '\'') {
+                    // ' vacío o '' → tratar como caracter
+                    return self.leer_caracter(linea, columna);
+                }
+                // Intentar leer como string entre comillas simples
+                let saved_pos = self.pos;
+                let saved_linea = self.linea;
+                let saved_col = self.columna;
+                let mut content = String::new();
+                let mut is_multi = false;
+                while let Some(ch) = self.current() {
+                    if ch == '\'' {
+                        if !is_multi {
+                            // Solo un caracter -> es caracter literal
+                            self.pos = saved_pos;
+                            self.linea = saved_linea;
+                            self.columna = saved_col;
+                            return self.leer_caracter(linea, columna);
+                        }
+                        self.advance(); // consumir comilla de cierre '
+                        return Ok(Some(Token::new(TokenKind::Texto(content), linea, columna)));
+                    }
+                    if ch == '\n' || ch == '\r' { break; }
+                    content.push(ch);
+                    self.advance();
+                    is_multi = true;
+                }
+                // No se encontró cierre - restaurar y tratar como caracter
+                self.pos = saved_pos;
+                self.linea = saved_linea;
+                self.columna = saved_col;
+                return self.leer_caracter(linea, columna);
+            }
+
+            // Texto (strings) con comillas dobles
             '"' => {
                 return self.leer_texto().map(|kind| {
                     Some(Token::new(kind, linea, columna))

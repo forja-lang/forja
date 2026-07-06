@@ -1,0 +1,132 @@
+/// Patrón Decorator con Traits
+/// Conceptos: decorator, traits, composición, responsabilidades dinámicas
+/// Nivel: avanzado
+
+importar "std/io"
+
+// El patrón Decorator permite añadir funcionalidades a objetos
+// de forma dinámica, envolviéndolos en otros objetos decoradores.
+
+trait Notificador {
+    funcion enviar(mensaje)
+}
+
+clase NotificadorBase {
+    constructor() {}
+}
+
+implementa Notificador para NotificadorBase {
+    funcion enviar(mensaje) {
+        escribir("  📧 Enviando email: '${mensaje}'")
+    }
+}
+
+clase DecoradorNotificador {
+    // Clase base para decoradores
+    encapsulado
+
+    constructor() {
+        este.encapsulado = nulo
+    }
+
+    funcion init(notificador) {
+        este.encapsulado = notificador
+    }
+}
+
+clase DecoradorSMS {
+    encapsulado
+
+    constructor() {
+        este.encapsulado = nulo
+    }
+
+    funcion init(notificador) {
+        este.encapsulado = notificador
+    }
+}
+
+implementa Notificador para DecoradorSMS {
+    funcion enviar(mensaje) {
+        este.encapsulado.enviar(mensaje)
+        escribir("  📱 Enviando SMS: '${mensaje}'")
+    }
+}
+
+clase DecoradorSlack {
+    encapsulado
+
+    constructor() {
+        este.encapsulado = nulo
+    }
+
+    funcion init(notificador) {
+        este.encapsulado = notificador
+    }
+}
+
+implementa Notificador para DecoradorSlack {
+    funcion enviar(mensaje) {
+        este.encapsulado.enviar(mensaje)
+        escribir("  💬 Enviando Slack: '${mensaje}'")
+    }
+}
+
+clase DecoradorPush {
+    encapsulado
+
+    constructor() {
+        este.encapsulado = nulo
+    }
+
+    funcion init(notificador) {
+        este.encapsulado = notificador
+    }
+}
+
+implementa Notificador para DecoradorPush {
+    funcion enviar(mensaje) {
+        este.encapsulado.enviar(mensaje)
+        escribir("  🔔 Enviando notificación Push: '${mensaje}'")
+    }
+}
+
+funcion main() {
+    escribir("=== PATRÓN DECORATOR ===\n")
+    escribir("Añade responsabilidades dinámicamente.\n")
+
+    // Notificación solo por email
+    escribir("1. Notificación básica (solo email):")
+    variable notif_base = nuevo NotificadorBase()
+    notif_base.enviar("Hola mundo")
+
+    // Email + SMS
+    escribir("")
+    escribir("2. Email + SMS:")
+    variable decorador_sms = nuevo DecoradorSMS()
+    decorador_sms.init(notif_base)
+    decorador_sms.enviar("Promoción especial")
+
+    // Email + SMS + Slack
+    escribir("")
+    escribir("3. Email + SMS + Slack:")
+    variable decorador_slack = nuevo DecoradorSlack()
+    decorador_slack.init(decorador_sms)
+    decorador_slack.enviar("Reunión a las 15:00")
+
+    // Email + SMS + Slack + Push
+    escribir("")
+    escribir("4. Email + SMS + Slack + Push (máximo nivel):")
+    variable decorador_push = nuevo DecoradorPush()
+    decorador_push.init(decorador_slack)
+    decorador_push.enviar("⚠️ ALERTA: Sistema crítico")
+
+    escribir("")
+    escribir("Ventajas del Decorator:")
+    escribir("  • Las funcionalidades se añaden en tiempo de ejecución")
+    escribir("  • Evita una explosión de subclases para cada combinación")
+    escribir("  • Sigue el principio de responsabilidad única")
+    escribir("  • Los decoradores son intercambiables y reutilizables")
+}
+
+main()

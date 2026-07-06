@@ -1856,11 +1856,14 @@ impl CompilerAsm {
 
             Expresion::Unaria { operador, expr: e } => {
                 self.compilar_expresion_asm(e);
-                if operador == "!" {
-                    self.emit_line(&a.test_reg(ret));
-                    self.emit_line(&a.mov_reg_imm(a.ret_reg_32(), 0));
-                } else if operador == "-" {
-                    self.emit_line(&a.neg_reg(ret));
+                match operador {
+                    OperadorUnario::No => {
+                        self.emit_line(&a.test_reg(ret));
+                        self.emit_line(&a.mov_reg_imm(a.ret_reg_32(), 0));
+                    }
+                    OperadorUnario::Negar => {
+                        self.emit_line(&a.neg_reg(ret));
+                    }
                 }
                 ret.to_string()
             }
@@ -1987,6 +1990,36 @@ impl CompilerAsm {
                 let expr_str = self.compilar_expresion_asm(expr);
                 self.emit_line(&format!("    // ? en ASM no implementado: {}?", expr_str));
                 String::new()
+            }
+            Expresion::Asignacion { variable, valor } => {
+                self.compilar_expresion_asm(valor);
+                // Almacenar el valor (ya en ret) en la variable
+                if let Some(&reg) = self.var_reg_map.get(variable) {
+                    // Variable en registro calle-saved
+                    self.emit_line(&a.mov_reg_reg(reg, ret));
+                } else if let Some(var) = self.variables.get(variable) {
+                    // Variable en stack
+                    let oa = -var.offset;
+                    self.emit_line(&a.str_reg_mem(ret, fp, oa));
+                }
+                // El valor sigue en ret para ser usado como expresión
+                String::new()
+            }
+            Expresion::AsignacionCampo { objeto, campo: _, valor } => {
+                // No implementado completamente en ASM; compilar objeto y valor
+                self.compilar_expresion_asm(valor);
+                self.compilar_expresion_asm(objeto);
+                String::new()
+            }
+            Expresion::ArraySet { array, valor } => {
+                // No implementado completamente en ASM; compilar array y valor
+                self.compilar_expresion_asm(valor);
+                self.compilar_expresion_asm(array);
+                String::new()
+            }
+            Expresion::Ok(expr) | Expresion::Error(expr) | Expresion::Some(expr) => {
+                // No implementado en ASM - compilar la expresión interna
+                self.compilar_expresion_asm(expr)
             }
         }
     }

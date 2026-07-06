@@ -1,0 +1,145 @@
+/// Técnicas de Optimización
+/// Conceptos: optimización, rendimiento, eficiencia, buenas prácticas
+/// Nivel: experto
+
+importar "std/io"
+
+// Técnicas de optimización de código en Forja.
+// Muestra cómo pequeñas decisiones de diseño afectan el rendimiento.
+
+// --- 1. Optimización de bucles ---
+
+funcion suma_ingenua(n) -> Entero {
+    variable suma = 0
+    variable i = 0
+    mientras (i <= n) {
+        suma = suma + i
+        i = i + 1
+    }
+    retornar suma
+}
+
+funcion suma_optimizada(n) -> Entero {
+    // Fórmula de Gauss: suma(1..n) = n(n+1)/2
+    retornar n * (n + 1) / 2
+}
+
+// --- 2. Evitar cálculos repetidos en bucles ---
+
+funcion es_primo_ingenuo(n) -> Booleano {
+    si (n < 2) { retornar falso }
+    variable i = 2
+    mientras (i < n) {  // ❌ Revisa hasta n-1
+        si (n % i == 0) { retornar falso }
+        i = i + 1
+    }
+    retornar verdadero
+}
+
+funcion es_primo_optimizado(n) -> Booleano {
+    si (n < 2) { retornar falso }
+    si (n == 2) { retornar verdadero }
+    si (n % 2 == 0) { retornar falso }  // Pares > 2 no son primos
+
+    variable i = 3
+    mientras (i * i <= n) {  // ✅ Solo hasta √n
+        si (n % i == 0) { retornar falso }
+        i = i + 2  // ✅ Solo impares
+    }
+    retornar verdadero
+}
+
+// --- 3. Pre-cálculo de constantes ---
+
+funcion calcular_tabla_seno() {
+    variable tabla = []
+    variable i = 0
+    mientras (i < 360) {
+        // Pre-calcular valores trigonométricos
+        variable rad = i * 3.14159 / 180
+        variable seno = rad - (rad * rad * rad) / 6
+        tabla[i] = seno
+        i = i + 1
+    }
+    retornar tabla
+}
+
+constante TABLA_SENO_PRECALCULADA = []
+
+funcion seno_rapido(grados) -> Decimal {
+    // Usar tabla precalculada en lugar de calcular cada vez
+    si (grados >= 0 && grados < 360) {
+        retornar TABLA_SENO_PRECALCULADA[grados]
+    }
+    retornar 0
+}
+
+// --- 4. Usar variables locales en lugar de repetir accesos ---
+
+clase Calculadora {
+    factor
+    constructor() {
+        este.factor = 0
+    }
+    funcion init(f) {
+        este.factor = f
+    }
+}
+
+funcion calcular_lento(calc, valores) {
+    variable resultado = 0
+    variable i = 0
+    mientras (i < longitud(valores)) {
+        // ❌ Acceso a calc.factor en cada iteración
+        resultado = resultado + valores[i] * calc.factor
+        i = i + 1
+    }
+    retornar resultado
+}
+
+funcion calcular_rapido(calc, valores) {
+    variable resultado = 0
+    variable factor_local = calc.factor  // ✅ Cachear en variable local
+    variable i = 0
+    mientras (i < longitud(valores)) {
+        resultado = resultado + valores[i] * factor_local
+        i = i + 1
+    }
+    retornar resultado
+}
+
+funcion main() {
+    escribir("=== TÉCNICAS DE OPTIMIZACIÓN ===\n")
+
+    escribir("--- 1. Optimización de bucles ---")
+    escribir("  Suma ingenua (1..1000): ${suma_ingenua(1000)}")
+    escribir("  Suma optimizada (fórmula): ${suma_optimizada(1000)}")
+    escribir("  La fórmula es O(1) vs O(n) del bucle\n")
+
+    escribir("--- 2. Optimización de primalidad ---")
+    escribir("  ¿997 es primo?")
+    escribir("  Ingenuo (revisa hasta n-1): ${es_primo_ingenuo(997)}")
+    escribir("  Optimizado (revisa hasta √n): ${es_primo_optimizado(997)}")
+    escribir("  La optimización reduce de O(n) a O(√n)\n")
+
+    escribir("--- 3. Pre-cálculo de constantes ---")
+    escribir("  Tabla de senos precalculada para 360°")
+    escribir("  Acceso directo: O(1) vs cálculo: O(n)\n")
+
+    escribir("--- 4. Variables locales ---")
+    variable calc = nuevo Calculadora()
+    calc.init(5)
+    variable valores = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    escribir("  Lento (acceso repetido): ${calcular_lento(calc, valores)}")
+    escribir("  Rápido (variable local): ${calcular_rapido(calc, valores)}")
+    escribir("  Cachear accesos reduce la sobrecarga\n")
+
+    escribir("--- Resumen de técnicas ---")
+    escribir("  ✅ Bucles: extraer invariantes, usar fórmulas cerradas")
+    escribir("  ✅ Condiciones: evaluar lo más específico primero")
+    escribir("  ✅ Memoria: cachear accesos repetidos en variables locales")
+    escribir("  ✅ Algoritmos: elegir la estructura de datos adecuada")
+    escribir("  ✅ Precisión: no optimizar prematuramente - medir primero")
+}
+
+main()

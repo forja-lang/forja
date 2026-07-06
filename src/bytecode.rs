@@ -122,6 +122,10 @@ pub enum Opcode {
     MapGet,                           // pop clave, pop mapa, push valor
     MapSet,                           // pop valor, pop clave, push mapa actualizado
 
+    // === Built-in functions (stdlib) ===
+    ParseInt,        // pop string from stack, push i64
+    TiempoActual,    // push current unix timestamp (i64)
+
     // === I/O ===
     Print,
     ReadLine,
@@ -378,6 +382,37 @@ impl BytecodeGenerator {
         self.opcodes.push(opcode);
     }
 
+    /// Genera bytecode para funciones built-in de stdlib (pedir_numero, a_numero, tiempo_actual)
+    /// Retorna true si se manejó como built-in, false si debe tratarse como llamada normal.
+    fn generar_builtin(&mut self, nombre: &str, argumentos: &[Expresion]) -> bool {
+        match nombre {
+            "pedir_numero" => {
+                // pedir_numero(mensaje) → print(mensaje); readline; parseint
+                for arg in argumentos {
+                    self.generar_expresion(arg);
+                    self.emitir(Opcode::Print);
+                }
+                self.emitir(Opcode::ReadLine);
+                self.emitir(Opcode::ParseInt);
+                true
+            }
+            "a_numero" => {
+                // a_numero(texto) → parseint
+                for arg in argumentos {
+                    self.generar_expresion(arg);
+                }
+                self.emitir(Opcode::ParseInt);
+                true
+            }
+            "tiempo_actual" => {
+                // tiempo_actual() → push unix timestamp
+                self.emitir(Opcode::TiempoActual);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Genera bytecode a partir de un programa AST
     pub fn generar(&mut self, programa: &Programa) -> Result<Vec<Opcode>, Vec<ErrorForja>> {
         // Separa declaraciones en globales y funciones/métodos
@@ -410,7 +445,7 @@ impl BytecodeGenerator {
                                 p.extend(params);
                                 p
                             },
-                            tipo_retorno: None,
+                            tipo_retorno: metodo.tipo_retorno.clone(),
                             cuerpo: metodo.cuerpo.clone(),
                             externa: false,
                             enlace_nombre: None,
@@ -420,6 +455,38 @@ impl BytecodeGenerator {
                         nuevas_funciones.push(func_decl);
                     }
                     globales.push(decl);
+                }
+                Declaracion::Implementacion { clase_nombre, metodos, .. } => {
+                    // Registrar métodos de implementación de trait como "Clase.metodo"
+                    for metodo in metodos {
+                        let params: Vec<crate::ast::Parametro> = metodo.parametros.iter().map(|p| {
+                            crate::ast::Parametro {
+                                nombre: p.nombre.clone(),
+                                prestado: p.prestado,
+                                mutable: p.mutable,
+                                tipo: None,
+                            }
+                        }).collect();
+                        let func_decl = Declaracion::Funcion {
+                            nombre: format!("{}.{}", clase_nombre, metodo.nombre),
+                            parametros_tipo: vec![],
+                            parametros: {
+                                let mut p = vec![crate::ast::Parametro {
+                                    nombre: "self".to_string(), prestado: false, mutable: false, tipo: None
+                                }];
+                                p.extend(params);
+                                p
+                            },
+                            tipo_retorno: metodo.tipo_retorno.clone(),
+                            cuerpo: metodo.cuerpo.clone(),
+                            externa: false,
+                            enlace_nombre: None,
+                            atributos: vec![],
+                            doc: None,
+                        };
+                        nuevas_funciones.push(func_decl);
+                    }
+                    // No lo agregamos a globales porque se maneja solo con las funciones
                 }
                 _ => globales.push(decl),
             }
@@ -449,6 +516,34 @@ impl BytecodeGenerator {
         }
     }
 
+    /// Genera el cuerpo de un brazo de match, dejando SIEMPRE un valor en la pila.
+    /// - Si la última declaración es Expresion, genera la expresión sin Pop.
+    /// - Si es LlamadaFuncion u otra, genera la declaración y push nulo como valor del match.
+    /// - Si el cuerpo está vacío, push nulo.
+    fn generar_cuerpo_match(&mut self, cuerpo: &[Declaracion]) {
+        if cuerpo.is_empty() {
+            self.emitir(Opcode::PushNulo);
+            return;
+        }
+        // Procesar todas las declaraciones excepto la última normalmente
+        for decl in &cuerpo[..cuerpo.len() - 1] {
+            self.generar_declaracion(decl);
+        }
+        // Procesar la última declaración
+        match &cuerpo[cuerpo.len() - 1] {
+            Declaracion::Expresion(expr) => {
+                // Generar expresión SIN Pop - el valor es el resultado del match
+                self.generar_expresion(expr);
+            }
+            _ => {
+                // Cualquier otra declaración (ej. llamada a función, retornar):
+                // se genera normalmente y se push nulo como valor del match
+                self.generar_declaracion(&cuerpo[cuerpo.len() - 1]);
+                self.emitir(Opcode::PushNulo);
+            }
+        }
+    }
+
     fn generar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
             Declaracion::Variable { mutable, nombre, valor, .. } => {
@@ -474,11 +569,28 @@ impl BytecodeGenerator {
 
             Declaracion::AsignacionIndex { nombre, indice, valor } => {
                 // arr[i] = val → push val, push Load(arr), push indice, ArraySet, Store(arr)
-                self.generar_expresion(valor);
-                self.emitir(Opcode::Load(Rc::from(nombre.as_str())));
-                self.generar_expresion(indice);
-                self.emitir(Opcode::ArraySet);
-                self.emitir(Opcode::Store(Rc::from(nombre.as_str())));
+                // Si nombre contiene un punto (ej: "self.elementos"), es acceso a miembro
+                if let Some(dot_pos) = nombre.find('.') {
+                    let obj_nombre = &nombre[..dot_pos];
+                    let campo = &nombre[dot_pos+1..];
+                    // Generar: val, Load(obj), GetField(campo), indice, ArraySet, Load(obj), SetField(campo)
+                    // Stack: [..., val] → [..., val, obj] → [..., val, array] → [..., val, array, indice]
+                    // ArraySet: pops indice, array, val; set array[indice]=val; push modified_array
+                    // → [..., modified_array] → [..., modified_array, obj] → SetField pops obj, modified_array
+                    self.generar_expresion(valor);
+                    self.emitir(Opcode::Load(Rc::from(obj_nombre)));
+                    self.emitir(Opcode::GetField(Rc::from(campo)));
+                    self.generar_expresion(indice);
+                    self.emitir(Opcode::ArraySet);
+                    self.emitir(Opcode::Load(Rc::from(obj_nombre)));
+                    self.emitir(Opcode::SetField(Rc::from(campo)));
+                } else {
+                    self.generar_expresion(valor);
+                    self.emitir(Opcode::Load(Rc::from(nombre.as_str())));
+                    self.generar_expresion(indice);
+                    self.emitir(Opcode::ArraySet);
+                    self.emitir(Opcode::Store(Rc::from(nombre.as_str())));
+                }
             }
 
             Declaracion::Funcion { nombre, parametros, cuerpo, .. } => {
@@ -630,6 +742,8 @@ impl BytecodeGenerator {
                     }
                 } else if nombre == "BD" {
                     // No implementado
+                } else if self.generar_builtin(nombre, argumentos) {
+                    // Built-in function handled
                 } else if nombre.contains('.') {
                     // Método: objeto.metodo(args) → load objeto, push args, CallMethod
                     let parts: Vec<&str> = nombre.splitn(2, '.').collect();
@@ -668,11 +782,16 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::Pop);
             }
 
-            Declaracion::AsignacionMultiple { variables, valor, .. } => {
-                // Bytecode: evaluar valor, luego asignar a cada variable
+            Declaracion::AsignacionMultiple { variables, mutable, valor } => {
+                // Bytecode: evaluar valor, push Nulo para slots extra, luego declarar cada variable
                 self.generar_expresion(valor);
-                for _ in variables {
-                    self.emitir(Opcode::Pop); // descartar valores extra
+                // Push Nulo para cada variable adicional (el expr solo deja 1 valor)
+                for _ in 1..variables.len() {
+                    self.emitir(Opcode::PushNulo);
+                }
+                // Declarar cada variable en orden inverso (stack es LIFO)
+                for var in variables.iter().rev() {
+                    self.emitir(Opcode::Declare(Rc::from(var.as_str()), *mutable));
                 }
             }
         }
@@ -701,12 +820,15 @@ impl BytecodeGenerator {
 
             Expresion::Unaria { operador, expr: e } => {
                 self.generar_expresion(e);
-                if operador == "!" || operador == "No" {
-                    self.emitir(Opcode::No);
-                } else if operador == "-" {
-                    self.emitir(Opcode::PushEntero(0));
-                    // Swap: 0 - valor
-                    self.emitir(Opcode::Sub);
+                match operador {
+                    OperadorUnario::No => {
+                        self.emitir(Opcode::No);
+                    }
+                    OperadorUnario::Negar => {
+                        self.emitir(Opcode::PushEntero(0));
+                        // Swap: 0 - valor
+                        self.emitir(Opcode::Sub);
+                    }
                 }
             }
 
@@ -719,6 +841,8 @@ impl BytecodeGenerator {
                 } else if nombre == "leer" {
                     // leer() pide input al usuario y deja el resultado en la pila
                     self.emitir(Opcode::ReadLine);
+                } else if self.generar_builtin(nombre, argumentos) {
+                    // Built-in function handled
                 } else if nombre.contains('.') {
                     // Método: objeto.metodo(args) → push objeto, push args, CallMethod
                     let parts: Vec<&str> = nombre.splitn(2, '.').collect();
@@ -760,7 +884,7 @@ impl BytecodeGenerator {
                     }
                     self.emitir(Opcode::Call(Rc::from("nuevo"), argumentos.len()));
                 }
-                self.emitir(Opcode::Pop); // pop objeto
+                // El objeto queda en el stack para ser asignado a una variable
             }
 
             Expresion::Try(expr) => {
@@ -788,8 +912,44 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::MapNew(pares.len()));
             }
 
-            Expresion::Coincidir { expr, .. } => {
+            Expresion::Coincidir { expr, brazos } => {
                 self.generar_expresion(expr);
+                let label_end = self.nueva_label();
+                let num_brazos = brazos.len();
+                for (i, brazo) in brazos.iter().enumerate() {
+                    let es_ultimo = i == num_brazos - 1;
+                    match &brazo.patron {
+                        Patron::Literal(pat_expr) => {
+                            let label_next = self.nueva_label();
+                            self.emitir(Opcode::Dup);
+                            self.generar_expresion(pat_expr);
+                            self.emitir(Opcode::Igual);
+                            self.emitir(Opcode::JumpSiFalso(label_next));
+                            self.emitir(Opcode::Pop); // remover input de la pila
+                            // Ejecutar cuerpo dejando el último valor en la pila
+                            self.generar_cuerpo_match(&brazo.cuerpo);
+                            self.emitir(Opcode::Jump(label_end));
+                            self.emitir(Opcode::Label(label_next));
+                        }
+                        Patron::Ignorar | Patron::Variable(_) => {
+                            // Ignorar/Variable siempre matchean
+                            self.emitir(Opcode::Pop); // remover input de la pila
+                            self.generar_cuerpo_match(&brazo.cuerpo);
+                            if !es_ultimo {
+                                self.emitir(Opcode::Jump(label_end));
+                            }
+                        }
+                        Patron::Constructor(_, _) => {
+                            // Constructor: remover input y generar cuerpo
+                            self.emitir(Opcode::Pop); // remover input de la pila
+                            self.generar_cuerpo_match(&brazo.cuerpo);
+                            if !es_ultimo {
+                                self.emitir(Opcode::Jump(label_end));
+                            }
+                        }
+                    }
+                }
+                self.emitir(Opcode::Label(label_end));
             }
 
             Expresion::Closure { parametros, cuerpo } => {
@@ -820,10 +980,12 @@ impl BytecodeGenerator {
                 for d in cuerpo {
                     self.generar_declaracion(d);
                 }
+                // Hilo como expresión retorna Nulo
+                self.emitir(Opcode::PushNulo);
             }
 
             Expresion::CanalNuevo => {
-                // Concurrencia no implementada en bytecode VM
+                // Concurrencia no implementada en bytecode VM - retorna Nulo
                 self.emitir(Opcode::PushNulo);
             }
             Expresion::Seleccionar { brazos } => {
@@ -833,7 +995,66 @@ impl BytecodeGenerator {
                         self.generar_declaracion(d);
                     }
                 }
+                // Seleccionar como expresión retorna Nulo
                 self.emitir(Opcode::PushNulo);
+            }
+            Expresion::Asignacion { variable, valor } => {
+                // Generar valor, duplicar (para retornar como expresión), store en variable
+                self.generar_expresion(valor);
+                self.emitir(Opcode::Dup);
+                self.emitir(Opcode::Store(Rc::from(variable.as_str())));
+            }
+            Expresion::AsignacionCampo { objeto, campo, valor } => {
+                // obj.campo = valor → generar objeto, luego valor, luego SetField
+                // Duplicar valor para retornarlo como expresión
+                self.generar_expresion(valor);
+                self.emitir(Opcode::Dup);
+                self.generar_expresion(objeto);
+                self.emitir(Opcode::SetField(Rc::from(campo.as_str())));
+            }
+            Expresion::ArraySet { array, valor } => {
+                // arr[i] = val como expresión → push val, dup, push objeto, push índice, ArraySet, pop arr
+                self.generar_expresion(valor);
+                self.emitir(Opcode::Dup);
+                if let Expresion::Index { objeto, indice } = array.as_ref() {
+                    self.generar_expresion(objeto);
+                    self.generar_expresion(indice);
+                }
+                self.emitir(Opcode::ArraySet);
+                self.emitir(Opcode::Pop);
+            }
+            Expresion::Ok(expr) => {
+                // Crear objeto Resultado con campo tipo="ok" y campo valor=expr
+                // Dup el objeto para mantenerlo en stack después de SetField
+                self.emitir(Opcode::NewObject(Rc::from("Resultado")));
+                self.emitir(Opcode::Dup);
+                self.generar_expresion(expr);
+                self.emitir(Opcode::SetField(Rc::from("valor")));
+                self.emitir(Opcode::Dup);
+                self.emitir(Opcode::PushTexto(Rc::from("ok")));
+                self.emitir(Opcode::SetField(Rc::from("tipo")));
+            }
+            Expresion::Error(expr) => {
+                // Crear objeto Resultado con campo tipo="error" y campo valor=expr
+                // Dup el objeto para mantenerlo en stack después de SetField
+                self.emitir(Opcode::NewObject(Rc::from("Resultado")));
+                self.emitir(Opcode::Dup);
+                self.generar_expresion(expr);
+                self.emitir(Opcode::SetField(Rc::from("valor")));
+                self.emitir(Opcode::Dup);
+                self.emitir(Opcode::PushTexto(Rc::from("error")));
+                self.emitir(Opcode::SetField(Rc::from("tipo")));
+            }
+            Expresion::Some(expr) => {
+                // Crear objeto Opcion con campo tipo="some" y campo valor=expr
+                // Dup el objeto para mantenerlo en stack después de SetField
+                self.emitir(Opcode::NewObject(Rc::from("Opcion")));
+                self.emitir(Opcode::Dup);
+                self.generar_expresion(expr);
+                self.emitir(Opcode::SetField(Rc::from("valor")));
+                self.emitir(Opcode::Dup);
+                self.emitir(Opcode::PushTexto(Rc::from("some")));
+                self.emitir(Opcode::SetField(Rc::from("tipo")));
             }
         }
     }
@@ -1810,7 +2031,7 @@ pub fn fusionar_direct_float_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
         // → FusedDivAddConst(dst, num, div) o FusedDivSubConst(dst, num, div)
         // StoreIdx (no Float) es común porque quickening no especializa StoreIdx
         if i + 5 < bc.len() {
-            let store_is_float = matches!(&bc[i+5], Opcode::StoreIdxFloat(b) | Opcode::StoreIdx(b));
+            let store_is_float = matches!(&bc[i+5], Opcode::StoreIdxFloat(_b) | Opcode::StoreIdx(_b));
             let store_idx = match &bc[i+5] {
                 Opcode::StoreIdxFloat(b) | Opcode::StoreIdx(b) => *b,
                 _ => usize::MAX,

@@ -1,0 +1,90 @@
+/// Llamada a Función Externa (FFI)
+/// Conceptos: FFI, interfaz de función externa, interoperabilidad, C bindings
+/// Nivel: experto
+
+importar "std/io"
+
+// Forja permite llamar a funciones de bibliotecas externas (C, Rust, etc.)
+// mediante FFI (Foreign Function Interface). Esto permite reutilizar
+// bibliotecas existentes del sistema.
+
+// NOTA: Este ejemplo ilustra el CONCEPTO de FFI. La sintaxis exacta
+// puede variar según la implementación de Forja.
+
+// Declaración de funciones externas (biblioteca estándar de C)
+// Las funciones se importan desde bibliotecas compartidas del sistema.
+
+// En un sistema real, FFI se declararía así:
+// externa "kernel32" funcion GetTickCount() -> Entero
+// externa "msvcrt" funcion printf(formato, ...) -> Entero
+// externa "msvcrt" funcion rand() -> Entero
+
+// Para este ejemplo, simulamos las llamadas FFI con funciones internas
+// que demuestran el concepto.
+
+funcion llamada_ffi_simulada(nombre_funcion, args) {
+    escribir("  🔌 FFI: Llamando a '${nombre_funcion}' con argumentos: ${args}")
+    // En un caso real, aquí se ejecutaría el código nativo
+    escribir("  ✅ FFI: Llamada completada")
+    retornar 42  // Valor de retorno simulado
+}
+
+funcion obtener_tiempo_sistema() -> Entero {
+    // Simula GetTickCount() o time()
+    variable t = tiempo_actual()
+    escribir("  🕒 FFI: Obteniendo tiempo del sistema...")
+    retornar t
+}
+
+funcion generar_numero_aleatorio() -> Entero {
+    // Simula rand() de C
+    variable t = tiempo_actual()
+    variable r = (t * 1103515245 + 12345) % 32768
+    escribir("  🎲 FFI: Generando número aleatorio (rand())...")
+    retornar r
+}
+
+funcion escribir_consola(mensaje) {
+    // Simula printf() de C
+    escribir("  🖥️ FFI: printf('${mensaje}')")
+}
+
+funcion main() {
+    escribir("=== FFI (Foreign Function Interface) ===\n")
+    escribir("Las funciones externas permiten interactuar con el sistema.\n")
+
+    escribir("--- Llamadas FFI simuladas ---")
+
+    escribir("")
+    escribir("1. Obtener tiempo del sistema:")
+    variable tiempo = obtener_tiempo_sistema()
+    escribir("   Tiempo: ${tiempo} ms\n")
+
+    escribir("2. Generar número aleatorio:")
+    variable aleatorio = generar_numero_aleatorio()
+    escribir("   Aleatorio: ${aleatorio}\n")
+
+    escribir("3. Llamada a función simulada:")
+    variable resultado = llamada_ffi_simulada("calcular", [10, 20, 30])
+    escribir("   Resultado: ${resultado}\n")
+
+    escribir("4. Escritura por consola nativa:")
+    escribir_consola("Hola desde FFI!")
+
+    escribir("")
+    escribir("--- Casos de uso comunes de FFI ---")
+    escribir("  • Llamar a la API del sistema operativo (Win32, POSIX)")
+    escribir("  • Usar bibliotecas gráficas (OpenGL, DirectX, Vulkan)")
+    escribir("  • Procesamiento numérico (BLAS, LAPACK)")
+    escribir("  • Audio y multimedia (OpenAL, FFmpeg)")
+    escribir("  • Criptografía (OpenSSL, libsodium)")
+
+    escribir("")
+    escribir("⚠️  FFI conlleva riesgos:")
+    escribir("  • Puede causar crashes si se usan argumentos incorrectos")
+    escribir("  • No hay garantías de seguridad de tipos")
+    escribir("  • Depende de bibliotecas específicas del sistema")
+    escribir("  • Puede no ser portable entre diferentes SO")
+}
+
+main()

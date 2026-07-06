@@ -55,20 +55,19 @@ impl Optimizer {
             Expresion::Unaria { operador, expr: e } => {
                 let inner = self.optimizar_expresion(e);
                 if let Some(valor) = self.literal_a_valor(&inner) {
-                    match operador.as_str() {
-                        "!" => {
+                    match operador {
+                        OperadorUnario::No => {
                             if let Some(b) = valor.as_booleano() {
                                 self.cambios_realizados += 1;
                                 return Expresion::LiteralBooleano(!b);
                             }
                         }
-                        "-" => {
+                        OperadorUnario::Negar => {
                             if let Some(n) = valor.as_entero() {
                                 self.cambios_realizados += 1;
                                 return Expresion::LiteralNumero(-n);
                             }
                         }
-                        _ => {}
                     }
                 }
                 Expresion::Unaria { operador: operador.clone(), expr: Box::new(inner) }

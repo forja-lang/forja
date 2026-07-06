@@ -21,6 +21,15 @@ pub enum Operador {
     O,
 }
 
+/// Operador unario (prefijo)
+#[derive(Debug, Clone, PartialEq)]
+pub enum OperadorUnario {
+    /// Negación numérica (-expr)
+    Negar,
+    /// Negación lógica (!expr)
+    No,
+}
+
 /// Tipos de datos primitivos
 #[derive(Debug, Clone, PartialEq)]
 pub enum Tipo {
@@ -96,6 +105,7 @@ pub enum Patron {
 pub struct Metodo {
     pub nombre: String,
     pub parametros: Vec<Parametro>,
+    pub tipo_retorno: Option<Tipo>,
     pub cuerpo: Vec<Declaracion>,
 }
 
@@ -117,9 +127,10 @@ pub struct BrazoMatch {
 /// Brazo de la construcción seleccionar
 #[derive(Debug, Clone)]
 pub struct BrazoSeleccionar {
-    /// Si es Some, es un caso de recepción: (variable, nombre_canal)
+    /// Si es Some, es un caso de recepción: (variable, expresión_de_recepción)
+    /// La expresión puede ser un identificador (canal) o algo como rx.recibir()
     /// Si es None, es default/tiempo
-    pub recepcion: Option<(String, String)>,
+    pub recepcion: Option<(String, Expresion)>,
     /// Duración en ms (0 = default/inmediato)
     pub timeout_ms: u64,
     /// Cuerpo del brazo
@@ -149,7 +160,7 @@ pub enum Expresion {
     },
     /// Expresión unaria (ej: !condicion, -valor)
     Unaria {
-        operador: String, // "!" o "-"
+        operador: OperadorUnario,
         expr: Box<Expresion>,
     },
     /// Llamada a función (ej: escribir("hola"))
@@ -207,6 +218,29 @@ pub enum Expresion {
     Seleccionar {
         brazos: Vec<BrazoSeleccionar>,
     },
+    /// Asignación como expresión (ej: x = 5 retorna 5)
+    Asignacion {
+        variable: String,
+        valor: Box<Expresion>,
+    },
+    /// Asignación a campo de objeto como expresión (ej: obj.campo = valor)
+    AsignacionCampo {
+        objeto: Box<Expresion>,
+        campo: String,
+        valor: Box<Expresion>,
+    },
+    /// Asignación por índice como expresión (ej: arr[i] = valor)
+    /// Retorna el valor asignado
+    ArraySet {
+        array: Box<Expresion>,
+        valor: Box<Expresion>,
+    },
+    /// Construir valor Ok de Resultado (ej: Ok(42))
+    Ok(Box<Expresion>),
+    /// Construir valor Error de Resultado (ej: Error("falló"))
+    Error(Box<Expresion>),
+    /// Construir valor Some de Opcion (ej: Some(42))
+    Some(Box<Expresion>),
 }
 
 /// Declaraciones del lenguaje

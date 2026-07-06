@@ -1,0 +1,133 @@
+/// Conceptos de Gestión de Memoria
+/// Conceptos: memoria, heap, stack, recolección de basura, ciclo de vida
+/// Nivel: avanzado
+
+importar "std/io"
+
+// La gestión de memoria determina cómo se asignan y liberan los recursos.
+// Forja gestiona la memoria automáticamente, pero es importante
+// entender los conceptos subyacentes.
+
+clase BloqueMemoria {
+    id
+    tamano
+    datos
+
+    constructor() {
+        este.id = 0
+        este.tamano = 0
+        este.datos = []
+    }
+
+    funcion init(nuevo_id, tam) {
+        este.id = nuevo_id
+        este.tamano = tam
+
+        // Simular asignación de memoria (heap)
+        escribir("  📦 BLOQUE #${nuevo_id}: Asignados ${tam} bytes en HEAP")
+        variable i = 0
+        mientras (i < tam) {
+            este.datos[i] = 0
+            i = i + 1
+        }
+    }
+
+    funcion escribir_dato(posicion, valor) {
+        si (posicion >= 0 && posicion < este.tamano) {
+            este.datos[posicion] = valor
+            escribir("  ✏️  BLOQUE #${este.id}[${posicion}] = ${valor}")
+        } sino {
+            escribir("  ⚠️ ERROR: Desbordamiento de buffer en BLOQUE #${este.id}")
+        }
+    }
+
+    funcion leer_dato(posicion) -> Entero {
+        si (posicion >= 0 && posicion < este.tamano) {
+            retornar este.datos[posicion]
+        }
+        escribir("  ⚠️ ERROR: Acceso fuera de límites en BLOQUE #${este.id}")
+        retornar -1
+    }
+
+    funcion liberar() {
+        si (este.tamano > 0) {
+            escribir("  🗑️ BLOQUE #${este.id}: Liberados ${este.tamano} bytes del HEAP")
+            este.tamano = 0
+            este.datos = []
+        }
+    }
+}
+
+funcion demostrar_stack() {
+    escribir("--- STACK (pila) ---")
+    // Las variables locales viven en el stack
+    variable a = 10
+    variable b = 20
+    variable c = a + b
+    escribir("  Variables en stack: a=${a}, b=${b}, c=${c}")
+    escribir("  (se liberan automáticamente al salir de la función)")
+    retornar c
+}
+
+funcion demostrar_heap() {
+    escribir("--- HEAP (montículo) ---")
+    // Los objetos viven en el heap
+    variable bloques = []
+
+    variable i = 0
+    mientras (i < 3) {
+        variable bloque = nuevo BloqueMemoria()
+        bloque.init(i + 1, (i + 1) * 16)
+        bloques[i] = bloque
+        i = i + 1
+    }
+
+    escribir("")
+    escribir("Usando los bloques:")
+    bloques[0].escribir_dato(0, 42)
+    bloques[1].escribir_dato(8, 100)
+    bloques[2].escribir_dato(15, 255)
+
+    escribir("")
+    bloques[0].escribir_dato(50, 999)  // Error intencional
+
+    escribir("")
+    // Liberar explícitamente
+    variable j = 0
+    mientras (j < longitud(bloques)) {
+        bloques[j].liberar()
+        j = j + 1
+    }
+
+    retornar bloques
+}
+
+funcion main() {
+    escribir("=== GESTIÓN DE MEMORIA ===\n")
+
+    variable resultado = demostrar_stack()
+    escribir("  Resultado de función: ${resultado}\n")
+
+    variable bloques = demostrar_heap()
+
+    escribir("")
+    escribir("--- Stack vs Heap ---")
+    escribir("  STACK:")
+    escribir("    • Rápido, automático, tamaño fijo")
+    escribir("    • Variables locales y parámetros de función")
+    escribir("    • Liberación al salir del ámbito")
+    escribir("")
+    escribir("  HEAP:")
+    escribir("    • Más lento, tamaño dinámico")
+    escribir("    • Objetos creados con 'nuevo'")
+    escribir("    • Gestionado automáticamente (recolección de basura)")
+    escribir("")
+
+    escribir("--- Buenas prácticas ---")
+    escribir("  • Prefereir stack cuando sea posible (más rápido)")
+    escribir("  • Usar heap para objetos grandes o de larga vida")
+    escribir("  • Liberar recursos explícitamente cuando sea crítico")
+    escribir("  • Evitar referencias circulares que impidan la liberación")
+}
+
+main()
