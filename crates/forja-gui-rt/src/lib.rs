@@ -4,5 +4,5 @@
 
 // Re-exportar todo lo que necesita el código generado por Forja
 pub use xilem::view::{self, Axis, flex, label, text_button, text_input, progress_bar, sized_box};
-pub use xilem::{WidgetView, Xilem, WindowOptions, EventLoop};
+pub use xilem::{WidgetView, Xilem, WindowOptions, EventLoop, AnyWidgetView};
 pub use xilem::winit::error::EventLoopError;

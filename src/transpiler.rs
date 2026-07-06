@@ -348,7 +348,7 @@ impl Transpiler {
                             for arg in argumentos {
                                 self.procesar_expresion_widget(arg, widgets);
                             }
-                            widgets.push("    ))),".to_string());
+                            widgets.push("    )))".to_string());
                         }
                         "fila" | "gui_fila" => {
                             // Marcar que tenemos un layout contenedor como raíz
@@ -358,7 +358,7 @@ impl Transpiler {
                             for arg in argumentos {
                                 self.procesar_expresion_widget(arg, widgets);
                             }
-                            widgets.push("    )),".to_string());
+                            widgets.push("    ))".to_string());
                         }
                         _ => {
                             let args: Vec<String> = argumentos.iter()

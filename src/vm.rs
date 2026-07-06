@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::io::Write;
+//use std::io::Write;
 use crate::bytecode::Opcode;
 use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops, tiene_opcodes_compuestos};
 

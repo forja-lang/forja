@@ -631,39 +631,43 @@ fn cmd_bench(args: &[String]) {
     println!();
 }
 
-/// forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|vmopt]
+/// forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|vmopt] [--native]
 /// Ejecuta un archivo .fa en la VM seleccionada (default: ForjaFast)
 /// --vm fast|vm|jit : selecciona la VM (default: fast)
 /// --asm            : compila a ASM nativo y ejecuta (requiere gcc)
+/// --native         : usa GUI nativa (sin cargo, requiere --features gui)
 fn cmd_run(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm]");
+        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native]");
         process::exit(1);
     }
 
     let mut vm_mode = "fast";
     let mut asm_mode = false;
-    let path: &String;
+    let mut native_gui = false;
+    let mut path: &String = &args[0];
 
-    if args.len() >= 3 && args[0] == "--vm" {
-        vm_mode = &args[1];
-        path = &args[2];
-    } else if args.len() >= 3 && args[0] == "--asm" {
-        asm_mode = true;
-        path = &args[1];
-    } else if args.len() >= 1 && args[0].ends_with(".fa") {
-        path = &args[0];
-        let mut i = 1;
-        while i < args.len() {
-            match args[i].as_str() {
-                "--vm" => { i += 1; if i < args.len() { vm_mode = &args[i]; } }
-                "--asm" => asm_mode = true,
-                _ => {}
+    // Escanear todos los args: flags + archivo .fa en cualquier orden
+    let mut i = 0;
+    while i < args.len() {
+        let arg = args[i].as_str();
+        match arg {
+            "--vm" => {
+                i += 1;
+                if i < args.len() { vm_mode = &args[i]; }
             }
-            i += 1;
+            "--asm" => asm_mode = true,
+            "--native" => native_gui = true,
+            _ => {
+                if arg.ends_with(".fa") {
+                    path = &args[i];
+                } else if !arg.starts_with("--") && path == &args[0] {
+                    // Primer argumento que no es flag ni .fa → path
+                    path = &args[i];
+                }
+            }
         }
-    } else {
-        path = &args[0];
+        i += 1;
     }
 
     let source = match fs::read_to_string(path) {
@@ -675,7 +679,6 @@ fn cmd_run(args: &[String]) {
     };
 
     if asm_mode {
-        // Compilar a ASM nativo y ejecutar
         let result = ejecutar_asm(&source, path);
         match result {
             Ok(output) => { for line in output { println!("{}", line); } }
@@ -684,15 +687,34 @@ fn cmd_run(args: &[String]) {
         return;
     }
 
-    // Detectar si usa GUI → transpilar+compilar+ejecutar automáticamente
+    // Detectar si usa GUI
     if source.contains("importar \"gui\"") || source.contains("importar 'gui'") {
-        println!("🎨 Detectado paquete GUI — compilando con Xilem...");
-        let result = ejecutar_gui(&source, path);
-        match result {
-            Ok(output) => { for line in output { println!("{}", line); } }
-            Err(e) => { eprintln!("❌ Error en GUI: {}", e); process::exit(1); }
+        if native_gui {
+            println!("🎨 GUI nativa (sin cargo)...");
+            #[cfg(feature = "gui")]
+            {
+                let result = ejecutar_gui_nativa(&source, path);
+                match result {
+                    Ok(output) => { for line in output { println!("{}", line); } }
+                    Err(e) => { eprintln!("❌ Error en GUI nativa: {}", e); process::exit(1); }
+                }
+                return;
+            }
+            #[cfg(not(feature = "gui"))]
+            {
+                eprintln!("❌ La GUI nativa requiere compilar con --features gui");
+                eprintln!("   Ejecutá: cargo build --features gui");
+                process::exit(1);
+            }
+        } else {
+            println!("🎨 Detectado paquete GUI — compilando con Xilem...");
+            let result = ejecutar_gui(&source, path);
+            match result {
+                Ok(output) => { for line in output { println!("{}", line); } }
+                Err(e) => { eprintln!("❌ Error en GUI: {}", e); process::exit(1); }
+            }
+            return;
         }
-        return;
     }
 
     let result = match vm_mode {
@@ -1100,7 +1122,7 @@ fn cmd_transpile(args: &[String]) {
         }
     };
 
-    // Detectar si el programa usa GUI para incluir xilem como dependencia
+    // Detectar si el programa usa GUI para incluir forja-gui-rt como dependencia
     let usa_gui = programa.declaraciones.iter().any(|d| {
         matches!(d, ast::Declaracion::Importar(ruta) if ruta == "gui")
     });
@@ -1121,6 +1143,16 @@ fn cmd_transpile(args: &[String]) {
         }
     }
 
+    // Calcular ruta absoluta a forja-gui-rt si es GUI
+    let rt_dep = if usa_gui {
+        let current_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+        let abs_rt = current_dir.join("crates").join("forja-gui-rt");
+        let rt_path_str = abs_rt.to_string_lossy().replace('\\', "/");
+        Some(format!("forja-gui-rt = {{ path = \"{}\" }}", rt_path_str))
+    } else {
+        None
+    };
+
     // Escribir Cargo.toml
     let mut cargo_toml = format!(
         r#"[package]
@@ -1137,11 +1169,11 @@ edition = "2021"
         Path::new(input_path).file_name().and_then(|s| s.to_str()).unwrap_or(input_path)
     );
 
-    if usa_gui {
-        cargo_toml.push_str(
+    if let Some(ref dep) = rt_dep {
+        cargo_toml.push_str(&format!(
             "# GUI nativa con Xilem (framework UI reactivo con GPU)\n\
-             xilem = \"0.4\"\n"
-        );
+             {}\n", dep
+        ));
     }
 
     if let Err(e) = fs::write(Path::new(&project_dir).join("Cargo.toml"), &cargo_toml) {
@@ -1632,7 +1664,29 @@ forja-gui-rt = {{ path = "{}" }}
     std::fs::write(&rs_path, &rust_code)
         .map_err(|e| format!("Error escribiendo main.rs: {}", e))?;
 
-    // 5. Compilar con cargo (incremental: solo recompila si main.rs cambió)
+    // 5. Pre-compilar forja-gui-rt en el target del cache (si no está)
+    let cache_target = Path::new(&project_dir).join("target");
+    let rt_built_marker = cache_target.join(".rt_compiled");
+    if !rt_built_marker.exists() {
+        println!("  ⚙️  Pre-compilando runtime GUI (una vez)...");
+        let rt_path = std::env::current_dir()
+            .map_err(|e| format!("Error obteniendo dir actual: {}", e))?
+            .join("crates").join("forja-gui-rt");
+        let rt_result = std::process::Command::new("cargo")
+            .args(&["build", "--release"])
+            .current_dir(&rt_path)
+            .env("CARGO_TARGET_DIR", &cache_target)
+            .output()
+            .map_err(|e| format!("Error compilando runtime: {}", e))?;
+        if !rt_result.status.success() {
+            let stderr = String::from_utf8_lossy(&rt_result.stderr);
+            return Err(format!("Error compilando runtime GUI:\n{}", stderr));
+        }
+        std::fs::write(&rt_built_marker, "ok")
+            .map_err(|e| format!("Error escribiendo marcador: {}", e))?;
+    }
+
+    // 6. Compilar app con cargo (usa el target compartido, solo recompila main.rs)
     println!("  🔨 Compilando app GUI...");
     let build_result = std::process::Command::new("cargo")
         .args(&["build", "--release"])
@@ -1645,17 +1699,17 @@ forja-gui-rt = {{ path = "{}" }}
         return Err(format!("Error de compilación:\n{}", stderr));
     }
 
-    // 6. Ejecutar binario
+    // 7. Ejecutar binario
     let exe_name = if cfg!(target_os = "windows") {
         "forja_gui_app.exe"
     } else {
         "forja_gui_app"
     };
-    let mut exe_path = Path::new(&project_dir).join("target").join("release").join(exe_name);
+    let mut exe_path = cache_target.join("release").join(exe_name);
     
     // Fallback a debug si release no existe
     if !exe_path.exists() {
-        exe_path = Path::new(&project_dir).join("target").join("debug").join(exe_name);
+        exe_path = cache_target.join("debug").join(exe_name);
     }
 
     println!("  🚀 Ejecutando...");
@@ -1668,4 +1722,24 @@ forja-gui-rt = {{ path = "{}" }}
 
     let stdout = String::from_utf8_lossy(&run_output.stdout);
     Ok(stdout.lines().map(|s| s.to_string()).collect())
+}
+
+/// forja ejecutar --native: GUI nativa sin cargo (usa xilem directo desde AST)
+#[cfg(feature = "gui")]
+fn ejecutar_gui_nativa(source: &str, _path: &str) -> Result<Vec<String>, String> {
+    // 1. Parsear
+    let mut lexer = forja::lexer::Lexer::new(source);
+    let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
+    let mut parser = forja::parser::Parser::new(tokens);
+    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+
+    // 2. Análisis semántico
+    let mut checker = forja::semantics::BorrowChecker::new();
+    checker.analizar(&programa).map_err(|e| format!("{:?}", e[0]))?;
+
+    // 3. GUI nativa
+    println!("  🪟 Construyendo GUI nativa...");
+    forja::gui_nativa::build_and_run(&programa)?;
+
+    Ok(vec![])
 }

@@ -8,7 +8,9 @@
 //   - escribir() para labels y feedback
 //   - AppState con variables del codigo Forja
 //
-// Ejecutar: forja ejecutar examples/204_login_final.fa
+// Ejecutar (con cargo): forja ejecutar examples/204_login_final.fa
+// Ejecutar (nativa):    forja ejecutar --native examples/204_login_final.fa
+//                        (requiere --features gui)
 
 importar "gui"
 
