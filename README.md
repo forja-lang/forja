@@ -1,222 +1,222 @@
 # Forja (fa)
 
-Forja is an educational programming language with Spanish keywords, designed to teach systems programming concepts without the syntactic complexity of Rust. The language features a native x86-64 JIT, multiple VM implementations, and compilation targets including assembly and LLVM IR.
+Forja es un lenguaje de programación educativo con palabras clave en español, diseñado para enseñar conceptos de sistemas sin la complejidad sintáctica de Rust. El lenguaje incluye JIT nativo x86-64, múltiples implementaciones de VM y targets de compilación a ensamblador y LLVM IR.
 
-## Language Keywords
+## Palabras Clave del Lenguaje
 
-### Declarations
+### Declaraciones
 
-| Keyword | Alias | Description |
+| Palabra | Alias | Descripción |
 |---------|-------|-------------|
-| `variable` | `var` | Mutable variable binding. The binding may be reassigned. |
-| `constante` | `const` | Immutable constant binding. Cannot be reassigned. |
-| `funcion` | `fun` | Function definition. Creates a callable unit. |
-| `clase` | - | Class definition. Creates a type with fields and methods. |
-| `constructor` | - | Class initializer method. Called automatically on instantiation. |
-| `tipo` | - | Defines an algebraic data type (enum). |
+| `variable` | `var` | Declaración de variable mutable. Puede reasignarse. |
+| `constante` | `const` | Declaración de constante inmutable. No se puede reasignar. |
+| `funcion` | `fun` | Definición de función. Crea una unidad ejecutable. |
+| `clase` | - | Definición de clase. Crea un tipo con campos y métodos. |
+| `constructor` | - | Método inicializador de clase. Se ejecuta automáticamente al instanciar. |
+| `tipo` | - | Define un tipo algebraico (enum). |
 
-### Control Flow
+### Control de Flujo
 
-| Keyword | Alias | Description |
+| Palabra | Alias | Descripción |
 |---------|-------|-------------|
-| `si` | - | Conditional branch. Executes block if condition is truthy. |
-| `sino` | - | Alternative branch for `si`. |
-| `mientras` | - | While loop. Repeats while condition is truthy. |
-| `para` | - | For loop with initialization; condition; increment syntax. |
-| `repetir` | - | Fixed-count loop. Executes exactly N times. |
-| `retornar` | - | Return from function with optional value. |
-| `coincidir` | - | Pattern matching expression. |
-| `caso` | - | Pattern branch within `coincidir`. |
-| `otro` | `_` | Wildcard/default pattern in `coincidir`. |
+| `si` | - | Rama condicional. Ejecuta el bloque si la condición es verdadera. |
+| `sino` | - | Rama alternativa para `si`. |
+| `mientras` | - | Bucle while. Repite mientras la condición sea verdadera. |
+| `para` | - | Bucle for con sintaxis: inicialización; condición; incremento. |
+| `repetir` | - | Bucle de repetición fija. Ejecuta exactamente N veces. |
+| `retornar` | - | Retorna valor desde función. |
+| `coincidir` | - | Expresión de pattern matching. |
+| `caso` | - | Rama de patrón dentro de `coincidir`. |
+| `otro` | `_` | Patrón comodín/por defecto en `coincidir`. |
 
-### Object-Oriented Programming
+### Programación Orientada a Objetos
 
-| Keyword | Description |
+| Palabra | Descripción |
 |---------|-------------|
-| `nuevo` | Creates a new instance of a class. Invokes the constructor. |
-| `este` | Reference to the current object instance (equivalent to `self` or `this`). |
-| `importar` | Imports declarations from another module file. |
+| `nuevo` | Crea una instancia de clase. Invoca el constructor. |
+| `este` | Referencia al objeto actual (equivalente a `self`/`this`). |
+| `importar` | Importa declaraciones desde otro archivo de módulo. |
 
-### Types and Literals
+### Tipos y Literales
 
-| Keyword | Description |
+| Palabra | Descripción |
 |---------|-------------|
-| `Texto` | String type annotation. |
-| `Entero` | Integer (i64) type annotation. |
-| `Decimal` | Floating-point (f64) type annotation. |
-| `Booleano` | Boolean type annotation. |
-| `Nulo` | Null/missing value literal. |
-| `verdadero` | Boolean true literal. |
-| `falso` | Boolean false literal. |
+| `Texto` | Anotación de tipo string. |
+| `Entero` | Anotación de tipo entero (i64). |
+| `Decimal` | Anotación de tipo flotante (f64). |
+| `Booleano` | Anotación de tipo booleano. |
+| `Nulo` | Valor literal nulo/ausente. |
+| `verdadero` | Literal booleano verdadero. |
+| `falso` | Literal booleano falso. |
 
-### Concurrency
+### Concurrencia
 
-| Keyword | Description |
+| Palabra | Descripción |
 |---------|-------------|
-| `hilo` | Spawns a new thread. Returns a thread handle. |
-| `canal` | Creates a channel for thread communication. Returns (sender, receiver). |
-| `enviar` | Sends a value on a channel. |
-| `recibir` | Receives a value from a channel. |
-| `unir` | Joins a thread, waiting for completion. |
-| `seleccionar` | Selects over multiple channels (Go-style). |
-| `tiempo` | Timeout clause within `seleccionar`. |
+| `hilo` | Crea un nuevo hilo. Devuelve handle del hilo. |
+| `canal` | Crea canal de comunicación. Devuelve (emisor, receptor). |
+| `enviar` | Envía valor por canal. |
+| `recibir` | Recibe valor del canal. |
+| `unir` | Une el hilo, esperando su finalización. |
+| `seleccionar` | Select sobre múltiples canales (estilo Go). |
+| `tiempo` | Cláusula de timeout dentro de `seleccionar`. |
 
-### Traits and Generics
+### Rasgos y Genéricos
 
-| Keyword | Description |
+| Palabra | Descripción |
 |---------|-------------|
-| `rasgo` | Defines a trait (interface). |
-| `implementa` | Implements a trait for a class. |
-| `donde` | Trait bound constraint on generic parameters. |
+| `rasgo` | Define un trait (interfaz). |
+| `implementa` | Implementa un trait para una clase. |
+| `donde` | Restricción de bound de trait en parámetros genéricos. |
 
-### Error Handling
+### Manejo de Errores
 
-| Keyword | Alternative | Description |
+| Palabra | Alternativa | Descripción |
 |---------|-------------|-------------|
-| `Resultado` | - | Result<T, E> type for error handling. |
-| `Ok` | - | Success variant of Result. |
-| `Error` | - | Error variant of Result. |
-| `Opcion` | - | Option<T> type for optional values. |
-| `Some` | - | Some variant of Option. |
-| `Ninguno` | `Nulo` | None variant of Option. |
+| `Resultado` | - | Tipo Result<T, E> para manejo de errores. |
+| `Ok` | - | Variante de éxito de Result. |
+| `Error` | - | Variante de error de Result. |
+| `Opcion` | - | Tipo Option<T> para valores opcionales. |
+| `Some` | - | Variante Some de Option. |
+| `Ninguno` | `Nulo` | Variante None de Option. |
 
-### Attributes
+### Atributos
 
-| Attribute | Description |
-|-----------|-------------|
-| `@test` | Marks a function as a test. |
-| `@derive(T)` | Auto-implements trait T for a class. |
-
-### Builtins
-
-| Function | Description |
+| Atributo | Descripción |
 |----------|-------------|
-| `escribir(expr)` | Prints expression to stdout. |
-| `leer()` | Reads a line from stdin. Returns Texto. |
+| `@test` | Marca una función como test. |
+| `@derive(T)` | Auto-implementa trait T para una clase. |
 
-### Operators
+### Funciones Builtin
 
-| Operator | Description |
+| Función | Descripción |
+|---------|-------------|
+| `escribir(expr)` | Imprime expresión a stdout. |
+| `leer()` | Lee línea desde stdin. Devuelve Texto. |
+
+### Operadores
+
+| Operador | Descripción |
 |----------|-------------|
-| `+` | Addition or string concatenation. |
-| `-` | Subtraction. |
-| `*` | Multiplication. |
-| `/` | Division (integer division). |
-| `%` | Modulo (remainder). |
-| `==` | Equality comparison. |
-| `!=` | Inequality comparison. |
-| `>` | Greater than. |
-| `<` | Less than. |
-| `>=` | Greater than or equal. |
-| `<=` | Less than or equal. |
-| `&&` | Logical AND. |
-| `||` | Logical OR. |
-| `!` | Logical NOT. |
-| `no` | Alternative syntax for logical NOT. |
-| `&` | Creates a reference (borrows value). |
+| `+` | Suma o concatenación de strings. |
+| `-` | Resta. |
+| `*` | Multiplicación. |
+| `/` | División (entera). |
+| `%` | Módulo (resto). |
+| `==` | Comparación de igualdad. |
+| `!=` | Comparación de desigualdad. |
+| `>` | Mayor que. |
+| `<` | Menor que. |
+| `>=` | Mayor o igual que. |
+| `<=` | Menor o igual que. |
+| `&&` | AND lógico. |
+| `||` | OR lógico. |
+| `!` | NOT lógico. |
+| `no` | Sintaxis alternativa para NOT lógico. |
+| `&` | Crea referencia (presta valor). |
 
-## CLI Commands
+## Comandos de la CLI
 
-Commands are invoked via `cargo run --release --bin forja -- <command>`. Direct execution uses `forja <file.fa>` to run with ForjaFast VM.
+Los comandos se ejecutan mediante `cargo run --release --bin forja -- <comando>`. La ejecución directa usa `forja <archivo.fa>` para correr con ForjaFast VM.
 
-### `forja <file.fa>`
+### `forja <archivo.fa>`
 
-Execute a Forja source file directly on the ForjaFast VM (default execution engine).
+Ejecuta un archivo Forja directamente en la VM ForjaFast (motor por defecto).
 
 ```
 forja examples/01_hola.fa
 ```
 
-### `forja run [OPTIONS] <file>`
+### `forja run [OPCIONES] <archivo>`
 
-Execute on a specified VM or backend.
+Ejecuta en la VM o backend especificado.
 
-**Options:**
-- `--vm <vm>`: VM selection: `fast` (ForjaFast, default), `vm` (original VM), `jit` (native JIT)
-- `--asm`: Compile to native assembly via gcc (requires gcc installed)
-- `--native`: Run with native GUI (requires `--features gui`)
-- `--debug`, `--console`: Keep console window visible
-- `--no-debug`: Hide console window (Windows GUI subsystem)
-
-```
-forja run examples/main.fa                    # ForjaFast default
-forja run examples/main.fa --vm vm            # Original VM
-forja run examples/main.fa --vm jit           # Native JIT
-forja run examples/main.fa --asm              # Native assembly
-forja run examples/gui.fa --native            # Native GUI
-```
-
-### `forja build [OPTIONS] <file>`
-
-Generate a self-contained executable with embedded VM and bytecode, or embed GUI source for native GUI execution.
-
-**Options:**
-- `-o, --output <path>`: Output executable path
-- `--no-debug`: Hide console window (Windows)
-- `--debug`, `--console`: Keep console window visible (debug mode)
+**Opciones:**
+- `--vm <vm>`: Selección de VM: `fast` (ForjaFast, por defecto), `vm` (VM original), `jit` (JIT nativo)
+- `--asm`: Compila a ensamblador nativo vía gcc (requiere gcc)
+- `--native`: Ejecuta con GUI nativa (requiere `--features gui`)
+- `--debug`, `--console`: Mantiene visible la consola
+- `--no-debug`: Oculta la consola (subsistema GUI Windows)
 
 ```
-forja build examples/main.fa -o program.exe
-forja build examples/gui.fa -o app.exe --no-debug
+forja run examples/main.fa                    # ForjaFast por defecto
+forja run examples/main.fa --vm vm            # VM original
+forja run examples/main.fa --vm jit           # JIT nativo
+forja run examples/main.fa --asm              # Ensamblador nativo
+forja run examples/gui.fa --nativo            # GUI nativa
 ```
 
-### `forja build-asm [OPTIONS] <file>`
+### `forja build [OPCIONES] <archivo>`
 
-Compile to native assembly (x86-64 or ARM64). Generates `.s` file and calls gcc.
+Genera un ejecutable autónomo con VM y bytecode incrustados, o incrusta el código fuente para ejecución GUI nativa.
 
-**Options:**
-- `--target <arch>`: Target architecture. Options:
-  - `x86_64-windows`: Windows x64 calling convention
-  - `x86_64-linux`: System V calling convention
+**Opciones:**
+- `-o <ruta>`: Ruta del ejecutable de salida
+- `--no-debug`: Oculta la consola (Windows)
+- `--debug`, `--console`: Mantiene visible la consola (modo debug)
+
+```
+forja build examples/main.fa -o programa.exe
+forja build examples/gui.fa -o app.exe --sin-depuracion
+```
+
+### `forja build-asm [OPCIONES] <archivo>`
+
+Compila a ensamblador nativo (x86-64 o ARM64). Genera archivo `.s` y llama a gcc.
+
+**Opciones:**
+- `--target <arquitectura>`: Arquitectura objetivo:
+  - `x86_64-windows`: Convención de llamadas Windows x64
+  - `x86_64-linux`: Convención System V
   - `arm64`: ARM64 AArch64
-- `-o, --output <path>`: Output executable path
+- `-o <ruta>`: Ruta del ejecutable de salida
 
 ```
-forja build-asm examples/main.fa                     # Auto-detect platform
-forja build-asm examples/main.fa --target arm64      # ARM64 target
-forja build-asm examples/main.fa -o program          # Custom output name
+forja build-asm examples/main.fa                     # Auto-detecta plataforma
+forja build-asm examples/main.fa --target arm64      # Target ARM64
+forja build-asm examples/main.fa -o programa         # Nombre de salida personalizado
 ```
 
-### `forja build-llvm [OPTIONS] <file>`
+### `forja build-llvm [OPCIONES] <archivo>`
 
-Generate LLVM IR for compilation with `llc`.
+Genera LLVM IR para compilación con `llc`.
 
-**Options:**
-- `-o, --output <path>`: Output `.ll` file path
+**Opciones:**
+- `-o <ruta>`: Ruta del archivo `.ll` de salida
 
 ```
-forja build-llvm examples/main.fa -o output.ll
+forja build-llvm examples/main.fa -o salida.ll
 ```
 
-### `forja transpile [OPTIONS] <file>`
+### `forja transpile [OPCIONES] <archivo>`
 
-Transpile Forja source to equivalent Rust code. Creates a complete Cargo project.
+Transpila código Forja a código Rust equivalente. Crea un proyecto Cargo completo.
 
-**Options:**
-- `-o, --output <dir>`: Output directory name (default: `<name>_rs`)
+**Opciones:**
+- `-o <dir>`: Nombre del directorio de salida (por defecto: `<nombre>_rs`)
 
 ```
 forja transpile examples/main.fa
-forja transpile examples/main.fa -o my_project
+forja transpile examples/main.fa -o mi_proyecto
 ```
 
-### `forja test [file]`
+### `forja test [archivo]`
 
-Execute tests marked with `@test` annotation. Compiles each test to native code via rustc.
+Ejecuta tests marcados con anotación `@test`. Compila cada test a código nativo vía rustc.
 
 ```
 forja test examples/test.fa
-forja test                              # Run all tests in examples/
+forja test                              # Ejecuta todos los tests en examples/
 ```
 
-### `forja bench [OPTIONS] <file>`
+### `forja bench [OPCIONES] <archivo>`
 
-Benchmark execution with cold-run and hot-run measurements.
+Mide tiempos de ejecución con medición cold (primera ejecución) y hot (promedio de N iteraciones).
 
-**Options:**
-- `--iters <n>`: Number of iterations for hot-run average (default: 100)
-- `--vm <vm>`: VM to benchmark: `fast`, `vm`, `jit`, or `todas` (default: todas)
-- `--asm`: Benchmark native assembly instead of VMs
+**Opciones:**
+- `--iters <n>`: Número de iteraciones para promedio hot (por defecto: 100)
+- `--vm <vm>`: VM a medir: `fast`, `vm`, `jit`, o `todas` (por defecto: todas)
+- `--asm`: Mide ensamblador nativo en lugar de VMs
 
 ```
 forja bench examples/main.fa --iters 100
@@ -224,70 +224,70 @@ forja bench examples/main.fa --vm fast
 forja bench examples/main.fa --asm --iters 10
 ```
 
-### `forja repl [OPTIONS]`
+### `forja repl [OPCIONES]`
 
-Start interactive REPL mode with persistent state between lines.
+Inicia modo REPL interactivo con estado persistente entre líneas.
 
-**Options:**
-- `--vm <vm>`: VM to use: `fast` (default), `vm`, or `jit`
+**Opciones:**
+- `--vm <vm>`: VM a usar: `fast` (por defecto), `vm`, o `jit`
 
 ```
 forja repl
 forja repl --vm vm
 ```
 
-### `forja fmt <file>`
+### `forja fmt <archivo>`
 
-Format source code with consistent indentation (4 spaces).
+Formatea código fuente con indentación consistente (4 espacios).
 
 ```
 forja fmt examples/main.fa
 ```
 
-### `forja diagram <file>`
+### `forja diagram <archivo>`
 
-Generate HTML visualization of the AST.
+Genera visualización HTML del AST.
 
 ```
 forja diagram examples/main.fa
-forja diagram examples/main.fa -o diagram.html
+forja diagram examples/main.fa -o diagrama.html
 ```
 
-### `forja doc [OPTIONS] <file>`
+### `forja doc [OPCIONES] <archivo>`
 
-Generate HTML documentation from doc comments (`///`).
+Genera documentación HTML desde doc comments (`///`).
 
-**Options:**
-- `-o, --output <dir>`: Output directory
+**Opciones:**
+- `-o <dir>`: Directorio de salida
 
 ```
 forja doc examples/main.fa -o docs/
 ```
 
-### `forja highlight <file>`
+### `forja highlight <archivo>`
 
-Display source code with ANSI syntax highlighting in terminal.
+Muestra código fuente con resaltado de sintaxis ANSI en la terminal.
 
 ```
 forja highlight examples/main.fa
 ```
 
-### `forja new <name>`
+### `forja new <nombre>`
 
-Create a new project with standard structure.
+Crea un nuevo proyecto con estructura estándar.
 
 ```
-forja new my_project
+forja new mi_programa
 ```
 
-Creates:
-- `my_project/main.fa`
-- `my_project/forja.json`
-- `my_project/modulos/` directory
+Crea:
+- `mi_programa/main.fa`
+- `mi_programa/forja.json`
+- `mi_programa/modulos/`
 
 ### `forja init`
 
-Initialize a Forja project in the current directory.
+Inicializa un proyecto Forja en el directorio actual.
 
 ```
 forja init
@@ -295,15 +295,15 @@ forja init
 
 ### `forja learn`
 
-Start interactive tutorial.
+Inicia tutorial interactivo.
 
 ```
 forja learn
 ```
 
-### `forja explain <word>`
+### `forja explain <palabra>`
 
-Explain a keyword or concept.
+Explica una palabra clave o concepto.
 
 ```
 forja explain variable
@@ -313,68 +313,68 @@ forja explain rasgo
 
 ### `forja keywords`
 
-List all language keywords with brief descriptions.
+Lista todas las palabras clave del lenguaje.
 
 ```
 forja keywords
 ```
 
-## Technology Stack
+## Stack Tecnológico
 
-| Component | Technology |
-|-----------|------------|
-| Language | Rust (edition 2021) |
-| Compiler | Pure Rust (no external dependencies for core) |
+| Componente | Tecnología |
+|------------|------------|
+| Lenguaje | Rust (edition 2021) |
+| Compilador | Rust puro (sin dependencias externas para núcleo) |
 | REPL | rustyline |
-| JIT Engine | x86-64 machine code generation in memory |
-| GUI | xilem reactive UI framework (optional feature) |
+| JIT Nativo | Generación de código x86-64 en memoria |
+| GUI | Framework UI reactivo xilem (feature opcional) |
 | WASM | wasm-bindgen |
-| LLVM Backend | LLVM IR text generation (no libllvm bindings) |
+| LLVM Backend | Generación de texto LLVM IR (sin bindings a libllvm) |
 
-## Architecture
+## Arquitectura
 
-The compiler pipeline consists of:
+El pipeline de compilación consiste en:
 
-1. **Lexer** (`src/lexer.rs`): Tokenizes source text
-2. **Parser** (`src/parser.rs`): Recursive descent with precedence parsing
-3. **Type Checker** (`src/semantics.rs`): Validates types, ownership, traits, and generics
+1. **Lexer** (`src/lexer.rs`): Tokeniza texto fuente
+2. **Parser** (`src/parser.rs`): Parsing descendente recursivo con precedencia
+3. **Type Checker** (`src/semantics.rs`): Valida tipos, ownership, traits y genéricos
 4. **Optimizer** (`src/optimizer.rs`): Constant folding, dead code elimination
-5. **Multiple backends**: ForjaFast VM, native JIT, assembly, LLVM IR
+5. **Múltiples backends**: ForjaFast VM, JIT nativo, ensamblador, LLVM IR
 
-## VM Implementations
+## Implementaciones de VM
 
-| VM | File | Technique | Relative Performance |
-|----|------|-----------|---------------------|
-| ForjaVM Original | src/vm.rs | Stack-based with tagged enums | 1x (baseline) |
-| ForjaFast | src/vm_fast.rs | NaN tagging, stack caching, superinstructions | ~4.8x faster |
-| JIT Native | src/jit.rs | x86-64 machine code generation | ~62x faster |
-| Native ASM | src/compiler_asm.rs | gcc -O2 | ~437x faster |
-| LLVM | src/compiler_llvm.rs | llc -O2 | ~500x faster |
+| VM | Archivo | Técnica | Rendimiento Relativo |
+|----|---------|---------|---------------------|
+| ForjaVM Original | src/vm.rs | Stack-based con tagged enums | 1x (línea base) |
+| ForjaFast | src/vm_fast.rs | NaN tagging, stack caching, superinstrucciones | ~4.8x más rápido |
+| JIT Nativo | src/jit.rs | Generación de código máquina x86-64 | ~62x más rápido |
+| Ensamblador Nativo | src/compiler_asm.rs | gcc -O2 | ~437x más rápido |
+| LLVM | src/compiler_llvm.rs | llc -O2 | ~500x más rápido |
 
-## Language Features
+## Características del Lenguaje
 
-- **String interpolation**: `"Hola ${nombre}, tienes ${edad} años"`
-- **Result/Option with `?`**: Automatic error propagation
-- **Traits and implementations**: Interface-based polymorphism
-- **Generics**: Parametric polymorphism with `<T>` syntax
-- **Exhaustive pattern matching**: Compile-time coverage verification
-- **Concurrency**: Threads, channels, select with timeout
-- **Native JIT**: x86-64 code generation without external dependencies
-- **Multiple compilation targets**: Assembly, LLVM IR, self-contained executables
-- **WASM playground**: Browser-based execution
+- **Interpolación de strings**: `"Hola ${nombre}, tienes ${edad} años"`
+- **Result/Opcion con `?`**: Propagación automática de errores
+- **Rasgos e implementaciones**: Polimorfismo basado en interfaces
+- **Genéricos**: Polimorfismo paramétrico con sintaxis `<T>`
+- **Pattern matching exhaustivo**: Verificación de cobertura en tiempo de compilación
+- **Concurrencia**: Hilos, canales, select con timeout
+- **JIT nativo**: Generación de código x86-64 sin dependencias externas
+- **Múltiples targets de compilación**: Ensamblador, LLVM IR, ejecutables autónomos
+- **Playground WASM**: Ejecución en navegador
 
-## Installation
+## Instalación
 
 ```bash
 git clone https://github.com/lococoi/forja.git
 cd forja
 
-cargo build --release                 # Main binary only
-cargo build --release --features all  # All features (GUI, LSP)
-cargo build --release --features gui  # GUI support
-cargo build --release --features lsp  # LSP support
+cargo build --release                 # Binario principal únicamente
+cargo build --release --features all  # Todas las features (GUI, LSP)
+cargo build --release --features gui  # Soporte GUI
+cargo build --release --features lsp  # Soporte LSP
 ```
 
-## License
+## Licencia
 
-Source-Available License. See LICENSE.md for terms.
+Licencia Source-Available. Ver LICENSE.md para términos completos.
