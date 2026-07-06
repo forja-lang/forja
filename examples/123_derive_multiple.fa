@@ -1,5 +1,5 @@
 /// @derive(Mostrar, Igual, Debug) — múltiples derives
-/// Conceptos: @derive, múltiples traits, combinación de atributos
+/// Conceptos: @derive, múltiples rasgos, combinación de atributos
 /// Nivel: intermedio
 
 importar "std/io"

@@ -17,8 +17,3 @@ forja = { path = "../.." }
 
 [package.metadata]
 wasm-opt = false
-
-[profile.release]
-opt-level = "s"
-lto = true
-strip = true

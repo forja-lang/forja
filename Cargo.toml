@@ -92,6 +92,7 @@ winresource = "0.1"
 [workspace]
 members = [
     "crates/forja-gui-rt",
+    "crates/forja-wasm",
 ]
 exclude = [".forja_gui_cache"]
 
