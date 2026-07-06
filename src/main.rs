@@ -41,6 +41,11 @@ fn main() {
         return; // El bytecode se ejecutó, salir
     }
 
+    // Intentar self-run GUI (programa con GUI nativa incrustada)
+    if intentar_selfrun_gui() {
+        return; // La GUI nativa se ejecutó, salir
+    }
+
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
@@ -969,31 +974,86 @@ fn cmd_repl() {
 
 /// forja build <archivo.fa> -o <salida>
 fn cmd_build(args: &[String]) {
-    if args.len() < 3 || args[0] != "-o" {
-        // Buscar archivo .fa y opcional -o
-        let input = if !args.is_empty() && args[0].ends_with(".fa") {
-            args[0].clone()
-        } else {
-            eprintln!("Uso: forja build|compilar|construir <archivo.fa> -o <ejecutable>");
-            process::exit(1);
-        };
+    // Extraer input y output
+    let (input, output) = if args.len() >= 3 && args[0] == "-o" {
+        (args[1].clone(), args[2].clone())
+    } else if !args.is_empty() && args[0].ends_with(".fa") {
+        let input = args[0].clone();
         let output = if args.len() > 2 && args[1] == "-o" {
             args[2].clone()
         } else {
             Path::new(&input).with_extension("exe").to_string_lossy().to_string()
         };
-        if let Err(e) = aot::AOTCompiler::compilar(&input, &output) {
-            eprintln!("{}", e);
-            process::exit(1);
-        }
+        (input, output)
     } else {
-        let input = args[1].clone();
-        let output = args[3].clone();
-        if let Err(e) = aot::AOTCompiler::compilar(&input, &output) {
-            eprintln!("{}", e);
+        eprintln!("Uso: forja build|compilar|construir <archivo.fa> -o <ejecutable>");
+        process::exit(1);
+    };
+
+    let source = match fs::read_to_string(&input) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error al leer '{}': {}", input, e);
             process::exit(1);
         }
+    };
+
+    // Detectar si el programa usa GUI → embeber código fuente en copia de forja.exe
+    if source.contains("importar \"gui\"") || source.contains("importar 'gui'") {
+        println!("🎨 Programa GUI detectado — generando ejecutable autónomo con GUI nativa");
+        println!("   (incrusta el código fuente en forja.exe — 0 dependencias externas)");
+        if let Err(e) = compilar_gui_embebido(&output, &source) {
+            eprintln!("❌ {}", e);
+            process::exit(1);
+        }
+        return;
     }
+
+    // Programa sin GUI: AOT con bytecode (rápido, instantáneo)
+    if let Err(e) = aot::AOTCompiler::compilar(&input, &output) {
+        eprintln!("{}", e);
+        process::exit(1);
+    }
+}
+
+/// Magic para identificar código fuente GUI incrustado al final del .exe
+const FGC_MAGIC: &[u8; 4] = b"FGC\0";
+
+/// Genera un .exe autónomo con GUI nativa, incrustando el código fuente Forja
+/// al final de una copia de forja.exe (que ya contiene Xilem compilado).
+///
+/// El .exe generado NO necesita compilar dependencias externas — usa el runtime
+/// nativo incluido en forja (requiere --features gui / --features all al compilar forja).
+fn compilar_gui_embebido(output_path: &str, source: &str) -> Result<(), String> {
+    // 1. Obtener la ruta del propio forja.exe (tiene Xilem compilado si se usó --features gui/all)
+    let self_path = std::env::current_exe()
+        .map_err(|e| format!("Error obteniendo ruta del ejecutable: {}", e))?;
+
+    // 2. Leer forja.exe (stub que contiene el runtime GUI si se compiló con --features gui/all)
+    let stub = fs::read(&self_path)
+        .map_err(|e| format!("Error leyendo '{}': {}", self_path.display(), e))?;
+
+    // 3. Codificar el source a UTF-8
+    let source_bytes = source.as_bytes();
+    let src_size = source_bytes.len() as u32;
+
+    // 4. Escribir stub + source + footer
+    let mut output = Vec::with_capacity(stub.len() + source_bytes.len() + 8);
+    output.extend_from_slice(&stub);
+    output.extend_from_slice(source_bytes);
+
+    // Footer: [4 bytes: size u32 LE][4 bytes: magic "FGC\0"]
+    let size_bytes = src_size.to_le_bytes();
+    output.extend_from_slice(&size_bytes);
+    output.extend_from_slice(FGC_MAGIC);
+
+    // 5. Escribir archivo de salida
+    fs::write(output_path, &output)
+        .map_err(|e| format!("Error escribiendo '{}': {}", output_path, e))?;
+
+    println!("  ✅ Ejecutable generado: {} ({} bytes)", output_path, output.len());
+    println!("  🪟 Contiene el runtime GUI nativo de Forja — 0 dependencias externas que compilar");
+    Ok(())
 }
 
 /// forja diagram|grafico <archivo.fa> [-o <salida.html>]
@@ -1153,7 +1213,7 @@ fn cmd_transpile(args: &[String]) {
         None
     };
 
-    // Escribir Cargo.toml
+    // Escribir Cargo.toml (con [workspace] para ser autocontenido y no heredar el workspace de Forja)
     let mut cargo_toml = format!(
         r#"[package]
 name = "{}"
@@ -1162,6 +1222,8 @@ edition = "2021"
 
 # Exportado por Forja (fa) desde {} (podés ejecutar directo con 'forja ejecutar')
 # https://github.com/lococoi/forja
+
+[workspace]
 
 [dependencies]
 "#,
@@ -1650,6 +1712,8 @@ fn ejecutar_gui(source: &str, _input_path: &str) -> Result<Vec<String>, String> 
 name = "forja_gui_app"
 version = "0.1.0"
 edition = "2021"
+
+[workspace]
 
 [dependencies]
 forja-gui-rt = {{ path = "{}" }}
