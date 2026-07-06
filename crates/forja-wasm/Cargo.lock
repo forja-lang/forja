@@ -134,7 +134,7 @@ dependencies = [
 
 [[package]]
 name = "forja"
-version = "0.3.0"
+version = "0.7.0"
 dependencies = [
  "rustyline",
  "serde",
@@ -146,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "forja-wasm"
-version = "0.3.0"
+version = "0.7.0"
 dependencies = [
  "forja",
  "serde",

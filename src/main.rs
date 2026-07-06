@@ -1125,7 +1125,7 @@ fn cmd_transpile(args: &[String]) {
     let mut cargo_toml = format!(
         r#"[package]
 name = "{}"
-version = "0.3.0"
+version = "0.7.0"
 edition = "2021"
 
 # Exportado por Forja (fa) desde {} (podés ejecutar directo con 'forja ejecutar')
@@ -1582,11 +1582,18 @@ fn ejecutar_test(test_fn: &Declaracion, rust_code: &str) -> Result<(), String> {
     }
 }
 
+/// Directorio fijo para caché de proyectos GUI compilados
+const GUI_CACHE_DIR: &str = ".forja_gui_cache";
+
 /// forja ejecutar con GUI: transpila a Xilem, compila con cargo y ejecuta la ventana
-fn ejecutar_gui(source: &str, input_path: &str) -> Result<Vec<String>, String> {
+/// Usa un directorio de caché fijo para que cargo compile incrementalmente:
+/// la primera vez compila xilem + wgpu (lento), las siguientes solo recompila main.rs (rápido).
+fn ejecutar_gui(source: &str, _input_path: &str) -> Result<Vec<String>, String> {
     use std::path::Path;
 
-    // 1. Parsear y transpilar
+    let project_dir = GUI_CACHE_DIR;
+
+    // 1. Parsear y transpilar (siempre, es rápido: milisegundos)
     let mut lexer = forja::lexer::Lexer::new(source);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
     let mut parser = forja::parser::Parser::new(tokens);
@@ -1595,59 +1602,69 @@ fn ejecutar_gui(source: &str, input_path: &str) -> Result<Vec<String>, String> {
     let mut transpiler = forja::transpiler::Transpiler::new();
     let rust_code = transpiler.transpilar(&programa).map_err(|e| format!("{}", e[0]))?;
 
-    // 2. Crear proyecto temporal
-    let stem = Path::new(input_path).file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("forja_gui");
-    let project_dir = format!(".forja_gui_{}", stem);
-
-    let _ = std::fs::remove_dir_all(&project_dir);
+    // 2. Asegurar que existe el directorio del proyecto
     let src_dir = Path::new(&project_dir).join("src");
     std::fs::create_dir_all(&src_dir).map_err(|e| format!("Error creando dir: {}", e))?;
 
-    // 3. Escribir Cargo.toml
-    let cargo_toml = format!(
-        r#"[package]
-name = "forja_gui_{}"
+    // 3. Crear Cargo.toml SOLO si no existe (persiste entre ejecuciones)
+    if !Path::new(&project_dir).join("Cargo.toml").exists() {
+        // Ruta absoluta a forja-gui-rt para que funcione desde cualquier CWD
+        let current_dir = std::env::current_dir()
+            .map_err(|e| format!("Error obteniendo directorio actual: {}", e))?;
+        let rt_abs_path = current_dir.join("crates").join("forja-gui-rt");
+        let rt_path_str = rt_abs_path.to_string_lossy().replace('\\', "/");
+
+        let cargo_toml = format!(r#"[package]
+name = "forja_gui_app"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-xilem = "0.4"
-"#,
-        stem.replace('-', "_").replace(' ', "_")
-    );
-    std::fs::write(Path::new(&project_dir).join("Cargo.toml"), &cargo_toml)
-        .map_err(|e| format!("Error escribiendo Cargo.toml: {}", e))?;
+forja-gui-rt = {{ path = "{}" }}
+"#, rt_path_str);
+        std::fs::write(Path::new(&project_dir).join("Cargo.toml"), &cargo_toml)
+            .map_err(|e| format!("Error escribiendo Cargo.toml: {}", e))?;
+        println!("  📦 Proyecto Cargo inicializado (runtime: forja-gui-rt)");
+    }
 
-    // 4. Escribir main.rs
+    // 4. Escribir main.rs (siempre, para que cargo detecte cambios)
     let rs_path = src_dir.join("main.rs");
     std::fs::write(&rs_path, &rust_code)
         .map_err(|e| format!("Error escribiendo main.rs: {}", e))?;
 
-    // 5. Compilar con cargo
-    let output = std::process::Command::new("cargo")
+    // 5. Compilar con cargo (incremental: solo recompila si main.rs cambió)
+    println!("  🔨 Compilando app GUI...");
+    let build_result = std::process::Command::new("cargo")
         .args(&["build", "--release"])
         .current_dir(&project_dir)
         .output()
         .map_err(|e| format!("Error ejecutando cargo: {}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let _ = std::fs::remove_dir_all(project_dir);
+    if !build_result.status.success() {
+        let stderr = String::from_utf8_lossy(&build_result.stderr);
         return Err(format!("Error de compilación:\n{}", stderr));
     }
 
     // 6. Ejecutar binario
-    let exe_name = format!("forja_gui_{}.exe", stem.replace('-', "_").replace(' ', "_"));
-    let exe_path = Path::new(&project_dir).join("target").join("release").join(&exe_name);
+    let exe_name = if cfg!(target_os = "windows") {
+        "forja_gui_app.exe"
+    } else {
+        "forja_gui_app"
+    };
+    let mut exe_path = Path::new(&project_dir).join("target").join("release").join(exe_name);
+    
+    // Fallback a debug si release no existe
+    if !exe_path.exists() {
+        exe_path = Path::new(&project_dir).join("target").join("debug").join(exe_name);
+    }
 
+    println!("  🚀 Ejecutando...");
     let run_output = std::process::Command::new(&exe_path)
         .output()
         .map_err(|e| format!("Error ejecutando GUI: {}", e))?;
 
-    // 7. Limpiar
-    let _ = std::fs::remove_dir_all(project_dir);
+    // NOTA: NO eliminamos el directorio. Se reusa en la próxima ejecución
+    // para compilación incremental. Para limpiar: borrar .forja_gui_cache/
 
     let stdout = String::from_utf8_lossy(&run_output.stdout);
     Ok(stdout.lines().map(|s| s.to_string()).collect())
