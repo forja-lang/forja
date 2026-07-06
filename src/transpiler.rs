@@ -156,6 +156,12 @@ impl Transpiler {
         self.emit_line("// Podés ejecutarlo directo con 'forja ejecutar' sin necesidad de compilar Rust");
         self.emit_line("");
 
+        // En Windows, las apps GUI deben usar el subsistema "windows" para no mostrar consola
+        if self.usa_gui() {
+            self.emit_line("#![cfg_attr(target_os = \"windows\", windows_subsystem = \"windows\")]");
+            self.emit_line("");
+        }
+
         // Detectar si hay concurrencia para añadir imports
         let tiene_concurrencia = self.detectar_concurrencia(&programa.declaraciones);
         if tiene_concurrencia {

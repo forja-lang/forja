@@ -24,7 +24,7 @@ Forja ha evolucionado con poderosas nuevas características que lo llevan al sig
 |---------|:------:|---------|
 | **String Interpolation** 🎯 | ✅ Estable | `"Hola ${nombre}, tienes ${edad} años"` |
 | **Result/Option + `?`** 📦 | ✅ Estable | `Resultado<Entero, Texto>` / `Opcion<Entero>` / `valor?` |
-| **Traits / Interfaces** 🧬 | ✅ Estable | `rasgo Volador { funcion volar() }` |
+| **Rasgo / Interfaces** 🧬 | ✅ Estable | `rasgo Volador { funcion volar() }` |
 | **Genéricos** 🔄 | ✅ Estable | `funcion identidad<T>(valor: T) -> T` |
 | **Match exhaustivo** 🎲 | ✅ Estable | Cobertura de casos verificada en compilación |
 | **Select sobre canales** 📡 | ✅ Estable | `seleccionar { caso ... }` |
@@ -116,7 +116,7 @@ Forja ha evolucionado con poderosas nuevas características que lo llevan al sig
 | **AST** | [`src/ast.rs`](src/ast.rs) | Árbol de Sintaxis Abstracta |
 | **Parser** | [`src/parser.rs`](src/parser.rs) | Parsing descendente recursivo con precedencia |
 | **Error** | [`src/error.rs`](src/error.rs) | Sistema de errores educativo + salida JSON |
-| **Semántica** | [`src/semantics.rs`](src/semantics.rs) | Type Checker + Borrow Checker + Genéricos + Traits |
+| **Semántica** | [`src/semantics.rs`](src/semantics.rs) | Type Checker + Borrow Checker + Genéricos + rasgos |
 | **Transpilador** | [`src/transpiler.rs`](src/transpiler.rs) | Forja → Rust compilable |
 | **Compiler ASM** | [`src/compiler_asm.rs`](src/compiler_asm.rs) | Forja → Assembly (x86-64 Win/Linux, ARM64) |
 | **Compiler LLVM** | [`src/compiler_llvm.rs`](src/compiler_llvm.rs) | Forja → LLVM IR (x86-64) |
@@ -721,19 +721,19 @@ Forja incluye **200 ejemplos progresivos** que cubren desde lo más básico hast
 | 89 | [`89_resultado_personalizado.fa`](examples/89_resultado_personalizado.fa) | `Resultado` personalizado |
 | 90 | [`90_resultado_test.fa`](examples/90_resultado_test.fa) | Testing con `Resultado` |
 
-#### Traits/Interfaces (91-100)
+#### Rasgo/Interfaces (91-100)
 | # | Archivo | Concepto |
 |---|---------|----------|
-| 91 | [`91_trait_simple.fa`](examples/91_trait_simple.fa) | Trait simple |
-| 92 | [`92_trait_multiple.fa`](examples/92_trait_multiple.fa) | Trait múltiple |
-| 93 | [`93_trait_polimorfismo.fa`](examples/93_trait_polimorfismo.fa) | Polimorfismo con traits |
-| 94 | [`94_trait_metodos_defecto.fa`](examples/94_trait_metodos_defecto.fa) | Métodos por defecto |
-| 95 | [`95_trait_herencia.fa`](examples/95_trait_herencia.fa) | Herencia de traits |
-| 96 | [`96_trait_generico.fa`](examples/96_trait_generico.fa) | Trait genérico |
-| 97 | [`97_trait_display.fa`](examples/97_trait_display.fa) | Trait Mostrar (Display) |
-| 98 | [`98_trait_igualdad.fa`](examples/98_trait_igualdad.fa) | Trait Igualdad |
-| 99 | [`99_trait_iterador.fa`](examples/99_trait_iterador.fa) | Trait Iterador |
-| 100 | [`100_trait_comparable.fa`](examples/100_trait_comparable.fa) | Trait Comparable |
+| 91 | [`91_rasgo_simple.fa`](examples/91_rasgo_simple.fa) | rasgo simple |
+| 92 | [`92_rasgo_multiple.fa`](examples/92_rasgo_multiple.fa) | rasgo múltiple |
+| 93 | [`93_rasgo_polimorfismo.fa`](examples/93_rasgo_polimorfismo.fa) | Polimorfismo con rasgos |
+| 94 | [`94_rasgo_metodos_defecto.fa`](examples/94_rasgo_metodos_defecto.fa) | Métodos por defecto |
+| 95 | [`95_rasgo_herencia.fa`](examples/95_rasgo_herencia.fa) | Herencia de rasgos |
+| 96 | [`96_rasgo_generico.fa`](examples/96_rasgo_generico.fa) | rasgo genérico |
+| 97 | [`97_rasgo_display.fa`](examples/97_rasgo_display.fa) | rasgo Mostrar (Display) |
+| 98 | [`98_rasgo_igualdad.fa`](examples/98_rasgo_igualdad.fa) | rasgo Igualdad |
+| 99 | [`99_rasgo_iterador.fa`](examples/99_rasgo_iterador.fa) | rasgo Iterador |
+| 100 | [`100_rasgo_comparable.fa`](examples/100_rasgo_comparable.fa) | rasgo Comparable |
 
 #### Genéricos (101-110)
 | # | Archivo | Concepto |
@@ -743,7 +743,7 @@ Forja incluye **200 ejemplos progresivos** que cubren desde lo más básico hast
 | 103 | [`103_generico_pila.fa`](examples/103_generico_pila.fa) | Pila genérica |
 | 104 | [`104_generico_caja.fa`](examples/104_generico_caja.fa) | Caja genérica |
 | 105 | [`105_generico_par.fa`](examples/105_generico_par.fa) | Par genérico |
-| 106 | [`106_generico_trait_bound.fa`](examples/106_generico_trait_bound.fa) | Trait Bound genérico |
+| 106 | [`106_generico_rasgo_bound.fa`](examples/106_generico_rasgo_bound.fa) | rasgo Bound genérico |
 | 107 | [`107_generico_multiple.fa`](examples/107_generico_multiple.fa) | Múltiples genéricos |
 | 108 | [`108_generico_arbol.fa`](examples/108_generico_arbol.fa) | Árbol genérico |
 | 109 | [`109_generico_opcion.fa`](examples/109_generico_opcion.fa) | Opción genérica |
