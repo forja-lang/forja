@@ -72,6 +72,8 @@ pub struct Transpiler {
     gui_mode: bool,
     /// Pila de cierres de layout (columna/fila anidados)
     layout_stack: Vec<String>,
+    /// True si se usó columna/fila como layout contenedor (para no duplicar flex)
+    gui_container_layout: bool,
 }
 
 struct ClaseInfo {
@@ -130,6 +132,7 @@ impl Transpiler {
             gui_mode: false,
             saltar_main: false,
             layout_stack: Vec::new(),
+            gui_container_layout: false,
         }
     }
 
@@ -265,26 +268,38 @@ impl Transpiler {
             self.gui_mode = true;
 
             // Recolectar widgets recursivamente desde todo el AST
+            // Resetear estado de layout
+            self.gui_container_layout = false;
+
             let mut widgets: Vec<String> = Vec::new();
             self.recolectar_widgets(&programa.declaraciones, &mut widgets);
 
             // Si no hay widgets, poner uno default
             if widgets.is_empty() {
-                widgets.push("        view::label(String::from(\"Forja + Xilem GUI\")),".to_string());
+                widgets.push("    view::label(String::from(\"Forja + Xilem GUI\")),".to_string());
             }
 
             // Emitir app_logic() con los widgets recolectados
             self.emit_line("fn app_logic(data: &mut AppState) -> impl WidgetView<AppState> {");
-            self.emit_line("    view::flex(Axis::Vertical, (");
-            for w in &widgets {
-            self.emit_line(w);
+            if self.gui_container_layout {
+                // Si el layout principal ya es columna/fila, los widgets tienen indentación base
+                for w in &widgets {
+                    self.emit_line(w);
+                }
+            } else {
+                // Layout legacy: envolver en flex vertical con indentación extra
+                self.emit_line("    view::flex(Axis::Vertical, (");
+                for w in &widgets {
+                    self.emit_line(&format!("    {}", w));
+                }
+                self.emit_line("    ))");
             }
-            self.emit_line("    ))");
             self.emit_line("}");
             self.emit_line("");
 
-            // Emitir main() Xilem
+            // Emitir main() Xilem con tema oscuro (default en Windows)
             self.emit_line("fn main() -> Result<(), xilem::winit::error::EventLoopError> {");
+            self.emit_line("    // Modo oscuro: Xilem usa tema dark por defecto en Windows");
             self.emit_line("    Xilem::new_simple(");
             self.emit_line("        AppState::default(),");
             self.emit_line("        app_logic,");
@@ -325,48 +340,77 @@ impl Transpiler {
         for decl in declaraciones {
             match decl {
                 Declaracion::LlamadaFuncion { nombre, argumentos } => {
-                    let args: Vec<String> = argumentos.iter()
-                        .map(|a| self.transpilar_expresion(a))
-                        .collect();
                     match nombre.as_str() {
-                        "escribir" | "etiqueta" | "gui_etiqueta" | "text" => {
-                            if let Some(arg) = args.first() {
-                                widgets.push(format!("        view::label({}),", arg));
+                        "columna" | "gui_columna" => {
+                            // Marcar que tenemos un layout contenedor como raíz
+                            self.gui_container_layout = true;
+                            // Abrir flex Vertical y procesar hijos
+                            widgets.push("    view::sized_box(view::flex(Axis::Vertical, (".to_string());
+                            for arg in argumentos {
+                                self.procesar_expresion_widget(arg, widgets);
+                            }
+                            widgets.push("    ))),".to_string());
+                        }
+                        "fila" | "gui_fila" => {
+                            // Marcar que tenemos un layout contenedor como raíz
+                            self.gui_container_layout = true;
+                            // Abrir flex Horizontal y procesar hijos
+                            widgets.push("    view::flex(Axis::Horizontal, (".to_string());
+                            for arg in argumentos {
+                                self.procesar_expresion_widget(arg, widgets);
+                            }
+                            widgets.push("    )),".to_string());
+                        }
+                        _ => {
+                            let args: Vec<String> = argumentos.iter()
+                                .map(|a| self.transpilar_expresion(a))
+                                .collect();
+                            match nombre.as_str() {
+                                "escribir" | "etiqueta" | "gui_etiqueta" | "text" => {
+                                    if let Some(arg) = args.first() {
+                                        widgets.push(format!("    view::label({}),", arg));
+                                    }
+                                }
+                                "boton" | "gui_boton" | "btn" => {
+                                    let texto = args.first().map(|s| s.as_str()).unwrap_or("String::from(\"\")");
+                                    if args.len() >= 2 {
+                                        let callback = args[1].trim_start_matches('&').to_string();
+                                        widgets.push(format!(
+                                            "    view::text_button({}, |d: &mut AppState| {{ {}(); }}),",
+                                            texto, callback
+                                        ));
+                                    } else {
+                                        widgets.push(format!(
+                                            "    view::text_button({}, |d: &mut AppState| {{ println!(\"Boton: {}\"); }}),",
+                                            texto, texto
+                                        ));
+                                    }
+                                }
+                                "entrada_texto" | "gui_entrada_texto" => {
+                                    if let Some(val) = args.first() {
+                                        widgets.push(format!("    view::text_input({}),", val));
+                                    }
+                                }
+                                "barra_progreso" | "gui_barra_progreso" => {
+                                    if let Some(val) = args.first() {
+                                        widgets.push(format!("    view::progress_bar({}),", val));
+                                    }
+                                }
+                                "deslizante" | "gui_deslizante" | "slider" => {
+                                    if args.len() >= 3 {
+                                        widgets.push(format!(
+                                            "    view::slider({}, {}, {}, |d: &mut AppState| {{ }}),",
+                                            args[0], args[1], args[2]
+                                        ));
+                                    }
+                                }
+                                "casilla" | "checkbox" | "gui_casilla" => {
+                                    let etiqueta = args.first().map(|s| s.as_str()).unwrap_or("\"\"");
+                                    widgets.push(format!("    view::checkbox({}, false),", etiqueta));
+                                }
+                                _ => {}
                             }
                         }
-                        "boton" | "gui_boton" | "btn" => {
-                            let texto = args.first().map(|s| s.as_str()).unwrap_or("String::from(\"\")");
-                            if args.len() >= 2 {
-                                // Segundo argumento: referencia a función Forja (ej: &al_saludar)
-                                let callback = args[1].trim_start_matches('&').to_string();
-                                widgets.push(format!(
-                                    "        view::text_button({}, |d: &mut AppState| {{ {}(); }}),",
-                                    texto, callback
-                                ));
-                            } else {
-                                // Sin callback: mostrar mensaje por consola
-                                widgets.push(format!(
-                                    "        view::text_button({}, |d: &mut AppState| {{ println!(\"Boton: {}\"); }}),",
-                                    texto, texto
-                                ));
-                            }
-                        }
-                        "entrada_texto" | "gui_entrada_texto" => {
-                            if let Some(val) = args.first() {
-                                widgets.push(format!("        view::text_input({}),", val));
-                            }
-                        }
-                        "barra_progreso" | "gui_barra_progreso" => {
-                            if let Some(val) = args.first() {
-                                widgets.push(format!("        view::progress_bar({}),", val));
-                            }
-                        }
-                        "deslizante" | "gui_deslizante" => {
-                            if args.len() >= 3 {
-                                widgets.push(format!("        // slider {}-{}: {}", args[1], args[2], args[0]));
-                            }
-                        }
-                        _ => {}
                     }
                 }
                 Declaracion::Funcion { cuerpo, .. } => {
@@ -388,6 +432,87 @@ impl Transpiler {
                     self.recolectar_widgets(bloque, widgets);
                 }
                 _ => {}
+            }
+        }
+    }
+
+    /// Procesa una expresión que representa un widget, usada como argumento de columna/fila
+    fn procesar_expresion_widget(&mut self, expr: &Expresion, widgets: &mut Vec<String>) {
+        match expr {
+            Expresion::LlamadaFuncion { nombre, argumentos } => {
+                match nombre.as_str() {
+                    "columna" | "gui_columna" => {
+                        // Abrir flex Vertical y procesar hijos
+                        widgets.push("    view::sized_box(view::flex(Axis::Vertical, (".to_string());
+                        for arg in argumentos {
+                            self.procesar_expresion_widget(arg, widgets);
+                        }
+                        widgets.push("    ))),".to_string());
+                    }
+                    "fila" | "gui_fila" => {
+                        // Abrir flex Horizontal y procesar hijos
+                        widgets.push("    view::flex(Axis::Horizontal, (".to_string());
+                        for arg in argumentos {
+                            self.procesar_expresion_widget(arg, widgets);
+                        }
+                        widgets.push("    )),".to_string());
+                    }
+                    _ => {
+                        let args: Vec<String> = argumentos.iter()
+                            .map(|a| self.transpilar_expresion(a))
+                            .collect();
+                        match nombre.as_str() {
+                            "escribir" | "etiqueta" | "gui_etiqueta" | "text" => {
+                                if let Some(arg) = args.first() {
+                                    widgets.push(format!("    view::label({}),", arg));
+                                }
+                            }
+                            "boton" | "gui_boton" | "btn" => {
+                                let texto = args.first().map(|s| s.as_str()).unwrap_or("String::from(\"\")");
+                                if args.len() >= 2 {
+                                    let callback = args[1].trim_start_matches('&').to_string();
+                                    widgets.push(format!(
+                                        "    view::text_button({}, |d: &mut AppState| {{ {}(); }}),",
+                                        texto, callback
+                                    ));
+                                } else {
+                                    widgets.push(format!(
+                                        "    view::text_button({}, |d: &mut AppState| {{ println!(\"Boton: {}\"); }}),",
+                                        texto, texto
+                                    ));
+                                }
+                            }
+                            "entrada_texto" | "gui_entrada_texto" => {
+                                if let Some(val) = args.first() {
+                                    widgets.push(format!("    view::text_input({}),", val));
+                                }
+                            }
+                            "barra_progreso" | "gui_barra_progreso" => {
+                                if let Some(val) = args.first() {
+                                    widgets.push(format!("    view::progress_bar({}),", val));
+                                }
+                            }
+                            "deslizante" | "gui_deslizante" | "slider" => {
+                                if args.len() >= 3 {
+                                    widgets.push(format!(
+                                        "    view::slider({}, {}, {}, |d: &mut AppState| {{ }}),",
+                                        args[0], args[1], args[2]
+                                    ));
+                                }
+                            }
+                            "casilla" | "checkbox" | "gui_casilla" => {
+                                let etiqueta = args.first().map(|s| s.as_str()).unwrap_or("\"\"");
+                                widgets.push(format!("    view::checkbox({}, false),", etiqueta));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            _ => {
+                // Si no es una llamada función, transpilar como expresión genérica
+                let s = self.transpilar_expresion(expr);
+                widgets.push(format!("    {});", s));
             }
         }
     }
@@ -1927,5 +2052,98 @@ mod tests {
         assert!(result.contains("label("));
         assert!(result.contains("accion();"));
         assert!(result.contains("println!"));
+    }
+
+    #[test]
+    fn test_gui_columna_basica() {
+        let source = "importar \"gui\"\nfuncion main() {\n    columna(escribir(\"Arriba\"), boton(\"Click\"))\n}";
+        let result = transpilar_source(source).unwrap();
+        // Debe generar flex(Axis::Vertical, (...))
+        assert!(result.contains("flex(Axis::Vertical, ("));
+        assert!(result.contains("label("));
+        assert!(result.contains("text_button("));
+        // No debe tener el wrapper plano view::flex extra
+        assert!(!result.contains("view::flex(Axis::Vertical, (\n        view::flex(Axis::Vertical, ("));
+        // Debe tener cierre del flex
+        assert!(result.contains(")),"));
+    }
+
+    #[test]
+    fn test_gui_columna_fila_anidado() {
+        let source = "importar \"gui\"\nfuncion main() {\n    columna(escribir(\"Arriba\"), boton(\"Click\"), fila(escribir(\"Izq\"), escribir(\"Der\")))\n}";
+        let result = transpilar_source(source).unwrap();
+        // Debe generar flex vertical con label, boton, y flex horizontal anidado
+        assert!(result.contains("flex(Axis::Vertical, ("));
+        assert!(result.contains("flex(Axis::Horizontal, ("));
+        assert!(result.contains("label(String::from(\"Arriba\"))"));
+        assert!(result.contains("text_button(String::from(\"Click\")"));
+        assert!(result.contains("label(String::from(\"Izq\"))"));
+        assert!(result.contains("label(String::from(\"Der\"))"));
+        // Verificar orden: label, boton, flex horizontal
+        let pos_arriba = result.find("Arriba").unwrap();
+        let pos_click = result.find("Click").unwrap();
+        let pos_izq = result.find("Izq").unwrap();
+        assert!(pos_arriba < pos_click, "Arriba debe ir antes que Click");
+        assert!(pos_click < pos_izq, "Click debe ir antes que Izq");
+    }
+
+    #[test]
+    fn test_gui_fila_basica() {
+        let source = "importar \"gui\"\nfuncion main() {\n    fila(escribir(\"A\"), escribir(\"B\"))\n}";
+        let result = transpilar_source(source).unwrap();
+        // Debe generar flex horizontal
+        assert!(result.contains("flex(Axis::Horizontal, ("));
+        assert!(result.contains("label(String::from(\"A\"))"));
+        assert!(result.contains("label(String::from(\"B\"))"));
+    }
+
+    #[test]
+    fn test_gui_widgets_plano_sin_columna_siguen_funcionando() {
+        let source = "importar \"gui\"\nfuncion main() {\n    etiqueta(\"Titulo\")\n    boton(\"Click\")\n}";
+        let result = transpilar_source(source).unwrap();
+        // Sin columna/fila, debe seguir emitiendo el flex wrapper antiguo
+        assert!(result.contains("view::flex(Axis::Vertical, ("));
+        assert!(result.contains("label("));
+        assert!(result.contains("text_button("));
+    }
+
+    #[test]
+    fn test_gui_entrada_texto() {
+        let source = "importar \"gui\"\nfuncion main() {\n    entrada_texto(\"Nombre\")\n}";
+        let result = transpilar_source(source).unwrap();
+        assert!(result.contains("view::text_input("));
+        assert!(result.contains("Nombre"));
+    }
+
+    #[test]
+    fn test_gui_barra_progreso() {
+        let source = "importar \"gui\"\nfuncion main() {\n    barra_progreso(0.5)\n}";
+        let result = transpilar_source(source).unwrap();
+        assert!(result.contains("view::progress_bar(0.5"));
+    }
+
+    #[test]
+    fn test_gui_slider() {
+        let source = "importar \"gui\"\nfuncion main() {\n    deslizante(50, 0, 100)\n}";
+        let result = transpilar_source(source).unwrap();
+        assert!(result.contains("view::slider(50, 0, 100"));
+    }
+
+    #[test]
+    fn test_gui_checkbox() {
+        let source = "importar \"gui\"\nfuncion main() {\n    casilla(\"Aceptar terminos\")\n}";
+        let result = transpilar_source(source).unwrap();
+        assert!(result.contains("view::checkbox("));
+    }
+
+    #[test]
+    fn test_gui_todos_widgets_juntos() {
+        let source = "importar \"gui\"\nfuncion main() {\n    escribir(\"Config\")\n    entrada_texto(\"Nombre\")\n    barra_progreso(0.5)\n    casilla(\"Aceptar\")\n    deslizante(50, 0, 100)\n}";
+        let result = transpilar_source(source).unwrap();
+        assert!(result.contains("view::label("));
+        assert!(result.contains("view::text_input("));
+        assert!(result.contains("view::progress_bar(0.5"));
+        assert!(result.contains("view::checkbox("));
+        assert!(result.contains("view::slider(50, 0, 100"));
     }
 }

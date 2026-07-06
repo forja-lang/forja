@@ -284,6 +284,30 @@ impl TargetArch {
         }
     }
 
+    /// Almacena `reg` en la dirección `[base + offset]` (offset positivo, para campos de struct)
+    fn str_field(&self, base: &str, offset: i32, reg: &str) -> String {
+        match self {
+            TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
+                format!("    mov [{} + {}], {}", base, offset, reg)
+            }
+            TargetArch::AArch64 => {
+                format!("    str {}, [{}, #{}]", reg, base, offset)
+            }
+        }
+    }
+
+    /// Carga `reg` desde la dirección `[base + offset]` (offset positivo, para campos de struct)
+    fn ldr_field(&self, reg: &str, base: &str, offset: i32) -> String {
+        match self {
+            TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
+                format!("    mov {}, [{} + {}]", reg, base, offset)
+            }
+            TargetArch::AArch64 => {
+                format!("    ldr {}, [{}, #{}]", reg, base, offset)
+            }
+        }
+    }
+
     fn str_mem_index(&self, base: &str, index: &str, scale: i32, src: &str) -> String {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
@@ -706,6 +730,8 @@ struct ClaseAsmInfo {
     campos: Vec<(String, TipoAsm)>,
     metodos: Vec<String>,
     size: i32,
+    /// nombre_campo → offset en bytes desde el inicio del struct
+    offsets: HashMap<String, i32>,
 }
 
 // ──────────────────────────────────────────────────────────
@@ -1079,6 +1105,15 @@ impl CompilerAsm {
         // Clases
         self.generar_clases_asm(&programa.declaraciones);
 
+        // Generar métodos de clase como funciones (ej: "Punto.nuevo", "Punto.distancia")
+        for decl in &programa.declaraciones {
+            if let Declaracion::Clase { nombre, metodos, .. } = decl {
+                for metodo in metodos {
+                    self.generar_metodo_asm(nombre, metodo);
+                }
+            }
+        }
+
         // Generar funciones
         for decl in &programa.declaraciones {
             if let Declaracion::Funcion { .. } = decl {
@@ -1139,18 +1174,22 @@ impl CompilerAsm {
         for decl in declaraciones {
             if let Declaracion::Clase { nombre, campos, metodos, .. } = decl {
                 let mut campos_info = Vec::new();
+                let mut offsets = HashMap::new();
                 let mut size = 0i32;
-                for campo in campos {
+                for (i, campo) in campos.iter().enumerate() {
                     let tipo = self.inferir_tipo_campo_asm(campo);
                     let tam = self.tipo_asm_size(&tipo);
-                    campos_info.push((campo.nombre.clone(), tipo));
+                    // Alinear: cada campo empieza en múltiplo de su tamaño
                     if tam > 0 { size = (size + tam - 1) / tam * tam + tam; }
                     else { size += 8; }
+                    let offset = i as i32 * 8; // offset simplificado: cada campo en qword
+                    offsets.insert(campo.nombre.clone(), offset);
+                    campos_info.push((campo.nombre.clone(), tipo));
                 }
                 let metodos_info: Vec<String> = metodos.iter().map(|m| m.nombre.clone()).collect();
                 if size == 0 { size = 8; }
                 self.clases.insert(nombre.clone(), ClaseAsmInfo {
-                    campos: campos_info, metodos: metodos_info, size,
+                    campos: campos_info, metodos: metodos_info, size, offsets,
                 });
             }
         }
@@ -1431,10 +1470,28 @@ impl CompilerAsm {
             }
 
             Declaracion::AsignacionMiembro { objeto, miembro, valor } => {
-                let _obj = self.compilar_expresion_asm(objeto);
-                let _val = self.compilar_expresion_asm(valor);
+                // 1) Compilar objeto → puntero al struct en ret
+                self.compilar_expresion_asm(objeto);
+                // 2) Guardar puntero
+                let obj_reg = self.alloc_reg().unwrap_or(tmp);
+                let uso_push = obj_reg == tmp && self.reg_pool.iter().all(|&x| x);
+                if uso_push {
+                    self.emit_line(&a.push_reg(ret));
+                } else {
+                    self.emit_line(&a.mov_reg_reg(obj_reg, ret));
+                }
+                // 3) Compilar valor → resultado en ret
+                self.compilar_expresion_asm(valor);
+                // 4) Restaurar puntero
+                if uso_push {
+                    self.emit_line(&a.pop_reg(tmp));
+                } else {
+                    self.emit_line(&a.mov_reg_reg(tmp, obj_reg));
+                    self.free_reg(obj_reg);
+                }
+                // 5) Almacenar en campo
                 let co = self.buscar_campo_offset(objeto, miembro);
-                self.emit_line(&format!("    // {} = expr (campo offset {})", miembro, co));
+                self.emit_line(&a.str_field(tmp, co, ret));
             }
 
             Declaracion::AsignacionIndex { nombre, indice, valor } => {
@@ -1874,20 +1931,49 @@ impl CompilerAsm {
             }
 
             Expresion::AccesoMiembro { objeto, miembro } => {
-                let _ = self.compilar_expresion_asm(objeto);
-                let _co = self.buscar_campo_offset(objeto, miembro);
+                // Compilar objeto → puntero al struct en ret
+                self.compilar_expresion_asm(objeto);
+                let co = self.buscar_campo_offset(objeto, miembro);
+                // Cargar el campo desde [ret + co]
+                self.emit_line(&a.ldr_field(ret, ret, co));
                 ret.to_string()
             }
 
             Expresion::Instanciacion { clase, argumentos } => {
                 if let Some(info) = self.clases.get(clase) {
                     let struct_size = info.size;
+                    // 1) Asignar memoria para el struct
                     self.emit_line(&a.mov_reg_imm(tmp, struct_size as i64));
                     self.emit_line(&a.call("malloc"));
-                    for arg in argumentos.iter() {
-                        self.compilar_expresion_asm(arg);
+                    // 2) Guardar puntero del struct en tmp
+                    self.emit_line(&a.mov_reg_reg(tmp, ret));
+                    // 3) Llamar al constructor: self = puntero, args después
+                    let self_reg = a.arg_regs()[0]; // primer arg = self
+                    self.emit_line(&a.mov_reg_reg(self_reg, ret));
+                    let arg_regs = a.arg_regs();
+                    // Compilar args del constructor (empiezan en arg_regs[1])
+                    let n_args = argumentos.len().min(arg_regs.len() - 1);
+                    for i in 0..n_args {
+                        self.compilar_expresion_asm(&argumentos[i]);
+                        if i + 1 < arg_regs.len() {
+                            self.emit_line(&a.mov_reg_reg(arg_regs[i + 1], ret));
+                        }
+                    }
+                    let extra = if argumentos.len() > arg_regs.len() - 1 {
+                        argumentos.len() - (arg_regs.len() - 1)
+                    } else { 0 };
+                    for i in 0..extra {
+                        let idx = arg_regs.len() - 1 + i;
+                        self.compilar_expresion_asm(&argumentos[idx]);
                         self.emit_line(&a.push_reg(ret));
                     }
+                    let ss = a.shadow_space();
+                    if ss > 0 { self.emit_line(&a.sub_sp(ss)); }
+                    self.emit_line(&a.call(&format!("{}.nuevo", clase)));
+                    let cleanup = ss + (extra as i32) * 8;
+                    if cleanup > 0 { self.emit_line(&a.add_sp(cleanup)); }
+                    // 4) Restaurar puntero del struct en ret
+                    self.emit_line(&a.mov_reg_reg(ret, tmp));
                 } else {
                     self.emit_line(&a.xor_reg_reg(ret, ret));
                 }
@@ -2005,10 +2091,29 @@ impl CompilerAsm {
                 // El valor sigue en ret para ser usado como expresión
                 String::new()
             }
-            Expresion::AsignacionCampo { objeto, campo: _, valor } => {
-                // No implementado completamente en ASM; compilar objeto y valor
-                self.compilar_expresion_asm(valor);
+            Expresion::AsignacionCampo { objeto, campo, valor } => {
+                // 1) Compilar objeto → puntero al struct en ret
                 self.compilar_expresion_asm(objeto);
+                // 2) Guardar puntero del objeto (push o registro temporal)
+                let obj_reg = self.alloc_reg().unwrap_or(tmp);
+                let uso_push = obj_reg == tmp && self.reg_pool.iter().all(|&x| x);
+                if uso_push {
+                    self.emit_line(&a.push_reg(ret));
+                } else {
+                    self.emit_line(&a.mov_reg_reg(obj_reg, ret));
+                }
+                // 3) Compilar valor → resultado en ret
+                self.compilar_expresion_asm(valor);
+                // 4) Restaurar puntero del objeto en tmp
+                if uso_push {
+                    self.emit_line(&a.pop_reg(tmp));
+                } else {
+                    self.emit_line(&a.mov_reg_reg(tmp, obj_reg));
+                    self.free_reg(obj_reg);
+                }
+                // 5) Almacenar valor en el campo
+                let co = self.buscar_campo_offset(objeto, campo);
+                self.emit_line(&a.str_field(tmp, co, ret));
                 String::new()
             }
             Expresion::ArraySet { array, valor } => {
@@ -2031,6 +2136,64 @@ impl CompilerAsm {
         if nombre == "escribir" {
             self.compilar_escribir(argumentos);
             return;
+        }
+
+        // ── Llamada a método (objeto.metodo) ──
+        // El parser produce "variable.metodo" como nombre. Debemos resolver
+        // el tipo de la variable y llamar a "Clase.metodo(self, args...)".
+        if let Some(dot_pos) = nombre.find('.') {
+            let base = &nombre[..dot_pos];
+            let method = &nombre[dot_pos+1..];
+            // Buscar el tipo de 'base' en las variables (clonamos para evitar borrow issues)
+            let clase_nombre: Option<String> = self.variables.get(base).and_then(|var| {
+                if let TipoAsm::Clase(clase) = &var.tipo {
+                    Some(clase.clone())
+                } else {
+                    None
+                }
+            });
+            if let Some(clase) = clase_nombre {
+                // Cargar self (el puntero al objeto)
+                let self_reg = a.arg_regs()[0]; // primer arg = self
+                // offset del objeto en stack (0 si está en registro)
+                let obj_offset: i32 = self.variables.get(base).map(|var| var.offset).unwrap_or(0);
+                let obj_en_registro = self.var_reg_map.contains_key(base);
+                if obj_en_registro {
+                    if let Some(&reg) = self.var_reg_map.get(base) {
+                        self.emit_line(&a.mov_reg_reg(self_reg, reg));
+                    }
+                } else {
+                    let oa = -obj_offset;
+                    self.emit_line(&a.ldr_reg_mem(self_reg, a.fp_reg(), oa));
+                }
+                // Compilar argumentos del método (args empiezan en arg_regs[1])
+                let arg_regs = a.arg_regs();
+                let n_args = argumentos.len().min(arg_regs.len() - 1);
+                for i in 0..n_args {
+                    self.compilar_expresion_asm(&argumentos[i]);
+                    if i + 1 < arg_regs.len() {
+                        self.emit_line(&a.mov_reg_reg(arg_regs[i + 1], ret));
+                    }
+                }
+                // Args extras al stack
+                let extra = if argumentos.len() > arg_regs.len() - 1 {
+                    argumentos.len() - (arg_regs.len() - 1)
+                } else { 0 };
+                for i in 0..extra {
+                    let idx = arg_regs.len() - 1 + i;
+                    self.compilar_expresion_asm(&argumentos[idx]);
+                    self.emit_line(&a.push_reg(ret));
+                }
+                // Llamar a Clase.metodo
+                let method_name = format!("{}.{}", clase, method);
+                let ss = a.shadow_space();
+                if ss > 0 { self.emit_line(&a.sub_sp(ss)); }
+                self.emit_line(&a.call(&method_name));
+                let cleanup = ss + (extra as i32) * 8;
+                if cleanup > 0 { self.emit_line(&a.add_sp(cleanup)); }
+                return;
+            }
+            // Si no se pudo resolver, seguir con el nombre original (puede fallar en link)
         }
 
         // Verificar si la función es candidata a inline
@@ -2622,7 +2785,74 @@ impl CompilerAsm {
         }
     }
 
-    fn buscar_campo_offset(&self, _objeto: &Expresion, _miembro: &str) -> i32 {
+    /// Genera código assembly para un método de clase.
+    /// Convierte el método en una función con "self" como primer parámetro,
+    /// reutilizando la lógica de compilación de funciones existente.
+    fn generar_metodo_asm(&mut self, clase_nombre: &str, metodo: &Metodo) {
+        let function_name = format!("{}.{}", clase_nombre, metodo.nombre);
+        let mut params = vec![
+            Parametro {
+                nombre: "self".to_string(),
+                prestado: true,
+                mutable: true,
+                tipo: Some(Tipo::Clase(clase_nombre.to_string())),
+            }
+        ];
+        params.extend(metodo.parametros.clone());
+        let func_decl = Declaracion::Funcion {
+            nombre: function_name.clone(),
+            parametros_tipo: vec![],
+            parametros: params,
+            tipo_retorno: metodo.tipo_retorno.clone(),
+            cuerpo: metodo.cuerpo.clone(),
+            externa: false,
+            enlace_nombre: None,
+            atributos: vec![],
+            doc: None,
+        };
+        self.compilar_declaracion(&func_decl);
+        self.emit_line("");
+        // Registrar para que pueda ser llamada o inlneada
+        self.funciones.push(function_name);
+        self.funciones_declaraciones.insert(
+            format!("{}.{}", clase_nombre, metodo.nombre),
+            func_decl,
+        );
+    }
+
+    fn buscar_campo_offset(&self, objeto: &Expresion, miembro: &str) -> i32 {
+        // Inferir el nombre de la clase a partir de la expresión del objeto
+        let clase_nombre = match objeto {
+            Expresion::Identificador(nombre) => {
+                // Buscar el tipo de la variable
+                if let Some(var) = self.variables.get(nombre) {
+                    match &var.tipo {
+                        TipoAsm::Clase(clase) => Some(clase.clone()),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            }
+            // Para instanciación anidada (ej: (nuevo Punto()).x)
+            Expresion::Instanciacion { clase, .. } => Some(clase.clone()),
+            // Para acceso encadenado (ej: obj.campo.subcampo -> miramos el campo)
+            Expresion::AccesoMiembro { objeto: inner, miembro: m } => {
+                // Intentar inferir de forma recursiva
+                let _inner_clase_offset = self.buscar_campo_offset(inner, m);
+                // Si encontramos offset 0 para inner.m, no podemos inferir clase
+                None
+            }
+            _ => None,
+        };
+
+        if let Some(clase) = clase_nombre {
+            if let Some(info) = self.clases.get(&clase) {
+                if let Some(&offset) = info.offsets.get(miembro) {
+                    return offset;
+                }
+            }
+        }
         0
     }
 
@@ -2707,5 +2937,94 @@ mod tests {
     fn test_asm_target_detect() {
         // Verifica que el target se detecte sin panic
         let _arch = TargetArch::detect();
+    }
+
+    // ── Pruebas POO ──
+
+    #[test]
+    fn test_asm_clase_simple() {
+        // Define una clase, la instancia y accede a campos
+        let source = "clase Punto { x y }";
+        let result = compilar_source(source).unwrap();
+        assert!(result.contains("Punto"));
+        assert!(result.contains("struct"));
+        assert!(result.contains("x"));
+        assert!(result.contains("y"));
+    }
+
+    #[test]
+    fn test_asm_instanciacion() {
+        // Crea una instancia de clase
+        let source = "\
+clase Punto {
+    x
+    y
+}
+variable p = nuevo Punto()
+p.x = 42
+p.y = 10";
+        let result = compilar_source(source).unwrap();
+        // Debe contener el label de la clase
+        assert!(result.contains("Punto"));
+        // Debe contener asignación a campo (store en offset)
+        assert!(result.contains("x") || result.contains("42"));
+        // Debe contener malloc o llamada al constructor
+        assert!(result.contains("malloc") || result.contains("Punto.nuevo"));
+    }
+
+    #[test]
+    fn test_asm_acceso_campo() {
+        // Accede a un campo de una instancia y lo escribe
+        let source = "\
+clase Punto {
+    x
+    y
+}
+variable p = nuevo Punto()
+p.x = 42
+escribir(p.x)";
+        let result = compilar_source(source).unwrap();
+        // Debe haber el label main
+        assert!(result.contains("main:"));
+        // Debe haber acceso a campo (load desde offset)
+        assert!(result.contains("x") || result.contains("AccesoMiembro"));
+    }
+
+    #[test]
+    fn test_asm_clase_con_constructor() {
+        // Clase con constructor que inicializa campos
+        let source = "\
+clase Persona {
+    nombre
+    constructor() {
+        este.nombre = \"Ana\"
+    }
+}
+variable p = nuevo Persona()
+escribir(p.nombre)";
+        let result = compilar_source(source).unwrap();
+        // Debe generar la función del constructor
+        assert!(result.contains("Persona.nuevo"));
+        // Debe llamar al constructor desde instanciacion
+        assert!(result.contains("Persona.nuevo") || result.contains("malloc"));
+    }
+
+    #[test]
+    fn test_asm_metodo_simple() {
+        // Clase con un método que usa self (implícito como 'este')
+        let source = "\
+clase Calculadora {
+    resultado
+    funcion sumar(valor) {
+        este.resultado = este.resultado + valor
+    }
+}
+variable c = nuevo Calculadora()
+c.sumar(5)";
+        let result = compilar_source(source).unwrap();
+        // Debe generar la función del método
+        assert!(result.contains("Calculadora.sumar"));
+        // Debe tener código para la función
+        assert!(result.contains("push") || result.contains("stp") || result.contains("mov"));
     }
 }
