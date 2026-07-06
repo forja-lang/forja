@@ -2143,8 +2143,19 @@ impl Parser {
         let mut declaraciones = Vec::new();
 
         while !self.coincide(TokenKind::LlaveCerrar) && !self.es_eof() {
+            let token_actual = self.peek().kind.to_string();
             match self.parse_declaracion() {
-                Ok(Some(decl)) => declaraciones.push(decl),
+                Ok(Some(decl)) => {
+                    let decl_tipo = std::mem::discriminant(&decl);
+                    eprintln!("[DEBUG PARSE] declaración parseada: tipo={:?}, token_actual='{}'", decl_tipo, token_actual);
+                    if let Declaracion::LlamadaFuncion { ref nombre, .. } = decl {
+                        eprintln!("[DEBUG PARSE]   -> LlamadaFuncion(nombre='{}')", nombre);
+                    }
+                    if let Declaracion::Variable { ref nombre, .. } = decl {
+                        eprintln!("[DEBUG PARSE]   -> Variable(nombre='{}')", nombre);
+                    }
+                    declaraciones.push(decl);
+                }
                 Ok(None) => break,
                 Err(err) => {
                     self.errores.push(err);

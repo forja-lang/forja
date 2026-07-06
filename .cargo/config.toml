@@ -1,5 +1,0 @@
-# Configuración de cargo para Forja
-# Usa el linker de WinLibs (GCC real con libgcc)
-
-[target.x86_64-pc-windows-gnu]
-linker = "C:\\Users\\gaucho\\AppData\\Local\\Microsoft\\WinGet\\Packages\\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\\mingw64\\bin\\x86_64-w64-mingw32-gcc.exe"
