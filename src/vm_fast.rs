@@ -228,7 +228,7 @@ struct FuncFast { ip: usize, vars_size: usize }
 // ─── ForjaFast VM (con VM Heap) ────────────────────────────────────────────
 
 pub struct ForjaFast {
-    ip: usize,
+    pub ip: usize,
     stack: Vec<ValorFast>,
     frame_buffer: [FrmFast; 2048],
     frame_count: usize,
@@ -318,6 +318,7 @@ pub struct ForjaFast {
     max_inst: usize,
     ejecutadas: usize,
     fast_math: bool,
+    pub show_bytecode: bool,
 }
 
 // Flat Var Stack frame: guarda solo base_ptr_previo y num_vars (O(1)),
@@ -396,6 +397,7 @@ impl ForjaFast {
             sym_nuevo: SymId(0),
             funciones: HashMap::new(), func_params: HashMap::new(), bytecode: Vec::new(), output: Vec::new(),
             max_inst: usize::MAX, ejecutadas: 0, fast_math: false,
+            show_bytecode: false,
         };
         vm.init_symbols();
         vm
@@ -403,6 +405,19 @@ impl ForjaFast {
 
     pub fn set_max_inst(&mut self, n: usize) {
         self.max_inst = n;
+    }
+
+    /// Resetea el estado de ejecución (ip, stack, output) pero
+    /// CONSERVA flat_vars (variables globales) y funciones.
+    /// Útil para REPL: entre líneas queremos mantener las variables.
+    pub fn reset_ejecucion(&mut self) {
+        self.ip = 0;
+        self.stack.clear();
+        self.frame_count = 0;
+        self.base_ptr = 0;
+        self.top_len = 0;
+        self.output.clear();
+        self.ejecutadas = 0;
     }
 
     /// Inicializa SymId para builtins comunes — permite comparaciones O(1)
@@ -522,8 +537,8 @@ impl ForjaFast {
         // Reemplaza opcodes genéricos por especializados cuando sea posible
         self.quickening();
 
-        // Debug: mostrar bytecode después de quickening (solo en debug)
-        if cfg!(debug_assertions) {
+        // Debug: mostrar bytecode después de quickening (solo con --debug)
+        if self.show_bytecode {
             let muestra: Vec<String> = self.bytecode.iter().take(20).map(|op| format!("{:?}", op)).collect();
             eprintln!("[BC] ({}) primeros opcodes: {:?}", self.bytecode.len(), muestra);
         }
@@ -532,7 +547,7 @@ impl ForjaFast {
         let antes = self.bytecode.len();
         self.bytecode = bytecode::fusionar_direct_float_opcodes(&self.bytecode);
         let despues = self.bytecode.len();
-        if antes != despues {
+        if self.show_bytecode && antes != despues {
             eprintln!("[F3a] Direct fusion: {} → {} ({} menos)", antes, despues, antes - despues);
             let muestra: Vec<String> = self.bytecode.iter().take(25).map(|op| format!("{:?}", op)).collect();
             eprintln!("[BC post-fusion] {:?}", muestra);

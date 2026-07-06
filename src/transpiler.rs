@@ -175,7 +175,7 @@ impl Transpiler {
             self.emit_line("// ─── GUI: Forja GUI Runtime (xilem precompilado) ───");
             self.emit_line("use forja_gui_rt::view::{self, Axis, flex, label, text_button, text_input, progress_bar, sized_box, button, checkbox, grid, portal, prose, slider, spinner, split, variable_label, zstack, image};");
             self.emit_line("use forja_gui_rt::{WidgetView, Xilem, WindowOptions, EventLoop, EventLoopError, Color, Affine, FontWeight};");
-            self.emit_line("use forja_gui_rt::core::{lens, memoize};");
+            self.emit_line("use forja_gui_rt::{lens, memoize, map_message};");
             self.emit_line("");
         }
 
@@ -1622,15 +1622,14 @@ impl Transpiler {
             }
 
             Expresion::Binaria { izquierda, operador, derecha } => {
-                // Detectar concatenación String + número:
-                // "texto" + 42  o  42 + "texto"  →  format!("{}{}", string, numero)
+                // Detectar concatenación de strings:
+                // Si ALGÚN operando es un literal de texto, usamos format!("{}{}", ...)
+                // en vez de String + String (que no compila si el otro operando es String).
                 if let Operador::Suma = operador {
                     let es_texto_izq = matches!(izquierda.as_ref(), Expresion::LiteralTexto(_));
                     let es_texto_der = matches!(derecha.as_ref(), Expresion::LiteralTexto(_));
-                    let es_num_izq = matches!(izquierda.as_ref(), Expresion::LiteralNumero(_) | Expresion::LiteralDecimal(_));
-                    let es_num_der = matches!(derecha.as_ref(), Expresion::LiteralNumero(_) | Expresion::LiteralDecimal(_));
 
-                    if (es_texto_izq && es_num_der) || (es_num_izq && es_texto_der) {
+                    if es_texto_izq || es_texto_der {
                         let izq = self.transpilar_expresion(izquierda);
                         let der = self.transpilar_expresion(derecha);
                         return format!("format!(\"{{}}{{}}\", {}, {})", izq, der);

@@ -7,13 +7,17 @@ use rustyline::{Editor, history::FileHistory};
 pub struct REPL {
     vm_mode: String,
     buffer: String,
+    show_bytecode: bool,
+    /// Código fuente acumulado de todas las líneas que ya se
+    /// compilaron exitosamente. Se recompila completo en cada
+    /// ejecución para que variables, funciones y clases persistan.
+    source_acumulado: String,
     rl: Editor<(), FileHistory>,
 }
 
 impl REPL {
     pub fn new(modo: &str) -> Self {
         let mut rl = Editor::<(), FileHistory>::new().expect("Error inicializando rustyline");
-        // V-09: Cargar historial solo si el archivo existe y tiene permisos seguros
         let history_path = std::path::Path::new("forja_history.txt");
         if history_path.exists() {
             #[cfg(unix)]
@@ -21,7 +25,6 @@ impl REPL {
                 use std::os::unix::fs::PermissionsExt;
                 if let Ok(metadata) = history_path.metadata() {
                     let mode = metadata.permissions().mode();
-                    // Solo cargar si el archivo no es accesible por "others"
                     if mode & 0o004 == 0 {
                         let _ = rl.load_history("forja_history.txt");
                     }
@@ -49,6 +52,8 @@ impl REPL {
         REPL {
             vm_mode: modo.to_string(),
             buffer: String::new(),
+            show_bytecode: false,
+            source_acumulado: String::new(),
             rl,
         }
     }
@@ -74,7 +79,8 @@ impl REPL {
                         }
                         "limpiar" | "reset" => {
                             self.buffer.clear();
-                            println!("✅ Buffer limpiado");
+                            self.source_acumulado.clear();
+                            println!("✅ Todo reiniciado");
                             continue;
                         }
                         "" => continue,
@@ -82,6 +88,7 @@ impl REPL {
                             let modo = line.trim_start_matches("--vm ").trim();
                             if !modo.is_empty() {
                                 self.vm_mode = modo.to_string();
+                                self.source_acumulado.clear();
                                 println!("✅ VM cambiada a: {}", match modo {
                                     "fast" => "ForjaFast 🏆",
                                     "vm" => "VM Original",
@@ -89,6 +96,16 @@ impl REPL {
                                     _ => modo,
                                 });
                             }
+                            continue;
+                        }
+                        "--debug" | "--debug on" => {
+                            self.show_bytecode = true;
+                            println!("🔧 Modo debug activado — se mostrará el bytecode");
+                            continue;
+                        }
+                        "--debug off" => {
+                            self.show_bytecode = false;
+                            println!("🔧 Modo debug desactivado");
                             continue;
                         }
                         _ => {
@@ -100,11 +117,14 @@ impl REPL {
                     self.buffer.push('\n');
                     let source = self.buffer.clone();
 
+                    let completud = self.chequear_completud();
                     match self.compilar_y_ejecutar(&source) {
-                        Ok(()) => {
+                        Ok(nuevo_source) => {
+                            // Solo acumulamos el source cuando compila OK
+                            self.source_acumulado.push_str(&nuevo_source);
                             self.buffer.clear();
                         }
-                        Err(_) if !line.ends_with('}') && !line.ends_with(';') => {
+                        Err(_) if !completud => {
                             continue;
                         }
                         Err(err) => {
@@ -118,8 +138,18 @@ impl REPL {
         }
     }
 
-    fn compilar_y_ejecutar(&mut self, source: &str) -> Result<(), String> {
-        let mut lexer = Lexer::new(source);
+    /// Compila y ejecuta el código.
+    ///
+    /// Combina el código ya acumulado (`source_acumulado`) con el nuevo
+    /// código (`source`) y lo ejecuta en una VM nueva.
+    ///
+    /// Retorna Ok(nuevo_source) si compiló bien (solo el source nuevo,
+    /// no el acumulado), para que el llamador lo agregue al acumulado.
+    fn compilar_y_ejecutar(&mut self, source: &str) -> Result<String, String> {
+        // Compilar TODO: acumulado + nuevo
+        let full_source = format!("{}{}", self.source_acumulado, source);
+
+        let mut lexer = Lexer::new(&full_source);
         let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
@@ -131,6 +161,7 @@ impl REPL {
         match self.vm_mode.as_str() {
             "fast" => {
                 let mut vm = crate::vm_fast::ForjaFast::new();
+                vm.show_bytecode = self.show_bytecode;
                 vm.cargar_bytecode(bytecode);
                 vm.ejecutar().map_err(|e| format!("{}", e))?;
                 let out = vm.obtener_output().to_vec();
@@ -145,7 +176,13 @@ impl REPL {
                 for line in out { println!("{}", line); }
             }
         }
-        Ok(())
+        Ok(source.to_string())
+    }
+
+    fn chequear_completud(&self) -> bool {
+        let abiertos = self.buffer.matches('{').count();
+        let cerrados = self.buffer.matches('}').count();
+        abiertos <= cerrados
     }
 
     fn mostrar_variables(&self) {
