@@ -117,33 +117,21 @@ impl REPL {
                     self.buffer.push('\n');
                     let source = self.buffer.clone();
 
-                    // ── LOGS DE DEBUG ──
-                    eprintln!("[DEBUG] buffer={{");
-                    for (i, l) in self.buffer.lines().enumerate() {
-                        eprintln!("[DEBUG]   línea {}: {:?}", i + 1, l);
-                    }
-                    eprintln!("[DEBUG] }}");
-                    let abiertos = self.buffer.matches('{').count();
-                    let cerrados = self.buffer.matches('}').count();
-                    eprintln!("[DEBUG] abiertos={{}}={}, cerrados={{}}={}, completud={}",
-                        abiertos, cerrados, abiertos <= cerrados);
-                    eprintln!("[DEBUG] source_acumulado={:?}", self.source_acumulado);
-                    // ── FIN LOGS ──
-
                     let completud = self.chequear_completud();
                     match self.compilar_y_ejecutar(&source) {
                         Ok(nuevo_source) => {
                             // Solo acumulamos el source cuando compila OK
                             self.source_acumulado.push_str(&nuevo_source);
                             self.buffer.clear();
-                            eprintln!("[DEBUG] ✅ COMPILÓ OK, buffer limpiado");
                         }
-                        Err(_) if !completud => {
-                            eprintln!("[DEBUG] ⏳ incompleto (completud=false), sigo esperando input");
-                            continue;
+                        Err(err) if !completud => {
+                            // Código incompleto (faltan llaves de cierre).
+                            // Mostramos el error para dar feedback, pero NO limpiamos
+                            // el buffer para que el usuario pueda seguir escribiendo.
+                            eprintln!("⚠️  {}", err);
                         }
                         Err(err) => {
-                            eprintln!("[DEBUG] ❌ ERROR (completud=true), muestro error y limpio buffer");
+                            // Código completo pero con error: mostramos y reiniciamos
                             eprintln!("❌ {}", err);
                             self.buffer.clear();
                         }
@@ -198,7 +186,7 @@ impl REPL {
     fn chequear_completud(&self) -> bool {
         let abiertos = self.buffer.matches('{').count();
         let cerrados = self.buffer.matches('}').count();
-        abiertos <= cerrados
+        abiertos == cerrados
     }
 
     fn mostrar_variables(&self) {
