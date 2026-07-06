@@ -435,8 +435,10 @@ impl BytecodeGenerator {
                                 tipo: None,
                             }
                         }).collect();
+                        // Si el método no tiene nombre (constructor), usar "nuevo"
+                        let nombre_metodo = if metodo.nombre.is_empty() { "nuevo" } else { &metodo.nombre };
                         let func_decl = Declaracion::Funcion {
-                            nombre: format!("{}.{}", nombre, metodo.nombre),
+                            nombre: format!("{}.{}", nombre, nombre_metodo),
                             parametros_tipo: vec![],
                             parametros: {
                                 let mut p = vec![crate::ast::Parametro {
