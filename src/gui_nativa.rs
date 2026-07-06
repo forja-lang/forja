@@ -298,10 +298,9 @@ fn layout_a_view<'a>(
                 ejecutar_callback_y_actualizar(&cb, data, &prog);
             }))
         }
-        Layout::TextInput { variable, multiline } => {
+        Layout::TextInput { variable, multiline: _ } => {
             let val = data.leer(variable).to_string();
             let var_name = variable.clone();
-            let ml = *multiline;
             Box::new(view::text_input(val, move |data: &mut AppStateNativo, new_val: String| {
                 data.escribir(&var_name, ValorGUI::Texto(new_val));
             }))
