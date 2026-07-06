@@ -47,12 +47,13 @@ Forja ha evolucionado con poderosas nuevas características que lo llevan al sig
 | **Compilador** | Rust puro (sin dependencias externas para núcleo) |
 | **REPL** | `rustyline` |
 | **JIT Nativo** | Generación de código x86-64 en memoria (sin dependencias externas) |
-| **GUI Nativa (opcional)** | `xilem` — framework UI reactivo con GPU (Vello/wgpu) |
+| **GUI Nativa (opcional)** | `xilem` — framework UI reactivo con GPU (Vello/wgpu) (feature `gui`) |
 | **WASM** | `wasm-bindgen` (playground en navegador) |
 | **LLVM Backend** | Generación de texto LLVM IR (sin bindings a libllvm) |
 | **Extension IDE** | VS Code (TextMate grammar) + LSP |
 | **Testing** | Framework integrado con `@test` + `asegurar()` |
 | **CI/CD** | GitHub Actions (3 plataformas + releases automáticos) |
+| **Features** | `all` (todo), `gui` (GUI nativa), `lsp` (servidor LSP) |
 
 ---
 
@@ -136,9 +137,12 @@ Forja ha evolucionado con poderosas nuevas características que lo llevan al sig
 | **Prelude** | [`src/prelude.rs`](src/prelude.rs) | Prelude del lenguaje |
 | **SymbolTable** | [`src/symbol_table.rs`](src/symbol_table.rs) | Internado de strings con SymId O(1) |
 | **ClassDescriptor** | [`src/class_descriptor.rs`](src/class_descriptor.rs) | Shape compartido + MRO para POO |
-| **GUI (opcional)** | [`src/gui.rs`](src/gui.rs) | Integración con Xilem (feature `gui`) |
+| **GUI (opcional)** | [`src/gui_nativa.rs`](src/gui_nativa.rs) | Integración con Xilem (feature `gui`) |
 | **WASM** | [`crates/forja-wasm/`](crates/forja-wasm/) | Bindings WASM para playground web |
 | **LSP** | [`src/bin/forja_lsp.rs`](src/bin/forja_lsp.rs) | Servidor de lenguaje LSP para IDE |
+| **GUI Launcher** | [`src/bin/forja_gui.rs`](src/bin/forja_gui.rs) | Ejecuta archivos .fa con GUI nativa (feature `gui`) |
+
+| **Feature `all`** | [`Cargo.toml`](Cargo.toml) | `all = ["gui", "lsp", "crossbeam"]` activa todo |
 
 ---
 
@@ -157,6 +161,7 @@ Forja ha evolucionado con poderosas nuevas características que lo llevan al sig
 | `forja test <archivo>` | `forja test <file>` | Ejecuta tests con `@test` |
 | `forja doc <archivo>` | `forja doc <file>` | Genera documentación HTML desde `///` |
 | `forja gui [ejemplo]` 🆕 | `forja gui [example]` | GUI interactiva con Xilem (requiere `--features gui`) |
+| `forja-gui <archivo.fa>` | `forja-gui <file.fa>` | Launcher GUI directo (binario separado, feature `gui`) |
 | `forja repl [--vm fast\|vm\|jit]` | `forja repl [--vm fast\|vm\|jit]` | Modo interactivo (REPL) |
 | `forja formatear <archivo>` | `forja fmt <file>` | Formatea código Forja |
 | `forja diagrama <archivo>` | `forja diagram <file>` | Genera diagram HTML del AST |
@@ -173,9 +178,13 @@ cargo run --release --bin forja -- examples/hola_mundo.fa
 # Assembly nativo (el más rápido, requiere gcc)
 cargo run --release --bin forja -- run examples/hola_mundo.fa --asm
 
-# GUI interactiva con Xilem (requiere feature)
+# GUI interactiva con Xilem (requiere feature gui)
 cargo run --features gui --bin forja -- gui contador
 cargo run --features gui --bin forja -- gui hola
+
+# GUI Launcher directo (binario separado, feature gui)
+cargo build --features gui
+.\target\debug\forja-gui.exe examples/204_login_final.fa
 
 # LLVM IR (requiere llc para generar binario)
 cargo run --release --bin forja -- build-llvm examples/hola_mundo.fa -o salida.ll
@@ -478,7 +487,9 @@ Raven fue la inspiración original de Forja. Aquí la comparativa actualizada co
 | **Compilación ASM** | ✅ | ✅ x86-64 / ARM64 |
 | **AOT (.exe autónomo)** | ❌ | ✅ VM + bytecode incrustado |
 | **Formateador** | ❌ | ✅ `forja fmt` |
+| **GUI Launcher** | ❌ | ✅ `forja-gui` (binario separado) |
 | **LSP Server** | ❌ | ✅ `forja-lsp` |
+| **Feature `all`** | ❌ | ✅ `cargo build --features all` |
 | **200 ejemplos educativos** | ❌ | ✅ Desde hola mundo hasta temas avanzados |
 | **Benchmarks multi-target** | ❌ | ✅ VM / JIT / ASM / LLVM |
 
@@ -801,11 +812,37 @@ Explora todos los ejemplos en la carpeta [`examples/`](examples/).
 git clone https://github.com/lococoi/forja.git
 cd forja
 
-# Compilar (release recomendado para benchmarks)
+# Compilar solo el binario principal (sin features extra)
 cargo build --release
+
+# Compilar con todas las features (forja + forja-lsp + forja-gui)
+cargo build --release --features all
+
+# Compilar solo con GUI (forja + forja-gui)
+cargo build --release --features gui
+
+# Compilar solo con LSP (forja + forja-lsp)
+cargo build --release --features lsp
+
+# Ver los binarios generados
+dir target\release\forja*.exe
 
 # Probar
 .\target\release\forja run examples/hola_mundo.fa
+```
+
+### 🎯 Features de Compilación
+
+| Feature | Activa | Binarios generados |
+|---------|--------|-------------------|
+| *(ninguna)* | — | `forja.exe` |
+| `gui` | GUI nativa con Xilem | `forja.exe` + `forja-gui.exe` |
+| `lsp` | Servidor de lenguaje LSP | `forja.exe` + `forja-lsp.exe` |
+| `all` | Todo (gui + lsp + crossbeam) | `forja.exe` + `forja-gui.exe` + `forja-lsp.exe` |
+
+```bash
+# Ejemplo: compilar todo con un solo comando
+cargo build --release --features all
 ```
 
 ---
