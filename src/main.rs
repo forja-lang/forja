@@ -1033,22 +1033,53 @@ fn intentar_selfrun_gui() -> bool {
 /// (usa el runtime nativo de Xilem ya compilado, sin dependencias externas).
 /// --debug, --console: mantener ventana de consola (ver errores)
 fn cmd_build(args: &[String]) {
-    // Extraer input y output
-    let (input, output, debug_mode) = if args.len() >= 3 && args[0] == "-o" {
-        (args[1].clone(), args[2].clone(), args.iter().any(|a| a == "--debug" || a == "--console"))
-    } else if !args.is_empty() && args[0].ends_with(".fa") {
-        let input = args[0].clone();
-        let output = if args.len() > 2 && args[1] == "-o" {
-            args[2].clone()
-        } else {
-            Path::new(&input).with_extension("exe").to_string_lossy().to_string()
-        };
-        let debug_mode = args.iter().any(|a| a == "--debug" || a == "--console");
-        (input, output, debug_mode)
-    } else {
-        eprintln!("Uso: forja build|compilar|construir <archivo.fa> [-o <ejecutable>] [--debug|--console]");
-        process::exit(1);
+    // Escanear argumentos en cualquier orden (archivo .fa, -o, flags)
+    let mut input: Option<String> = None;
+    let mut output: Option<String> = None;
+    let mut debug_mode = false;  // --debug / --console: mantener consola visible
+    let mut no_debug = false;    // --no-debug: ocultar consola (modo release)
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-o" => {
+                i += 1;
+                if i < args.len() {
+                    output = Some(args[i].clone());
+                } else {
+                    eprintln!("Uso: forja build|compilar|construir <archivo.fa> [-o <ejecutable>] [--debug|--console|--no-debug]");
+                    process::exit(1);
+                }
+            }
+            "--debug" | "--console" => debug_mode = true,
+            "--no-debug" => no_debug = true,
+            _ => {
+                if args[i].ends_with(".fa") {
+                    input = Some(args[i].clone());
+                } else if !args[i].starts_with("--") && input.is_none() {
+                    // Primer argumento no-flag que no es .fa → tratarlo como input
+                    input = Some(args[i].clone());
+                }
+            }
+        }
+        i += 1;
+    }
+
+    let input = match input {
+        Some(path) => path,
+        None => {
+            eprintln!("Uso: forja build|compilar|construir <archivo.fa> [-o <ejecutable>] [--debug|--console|--no-debug]");
+            process::exit(1);
+        }
     };
+
+    let output = output.unwrap_or_else(|| {
+        Path::new(&input).with_extension("exe").to_string_lossy().to_string()
+    });
+
+    // sin_consola = true solo con --no-debug explícito
+    // --debug/--console tienen prioridad y mantienen la consola visible
+    let sin_consola = no_debug && !debug_mode;
 
     let source = match fs::read_to_string(&input) {
         Ok(s) => s,
@@ -1062,10 +1093,12 @@ fn cmd_build(args: &[String]) {
     if source.contains("importar \"gui\"") || source.contains("importar 'gui'") {
         println!("🎨 Programa GUI detectado — generando ejecutable autónomo con GUI nativa");
         println!("   (incrusta el código fuente en forja.exe — 0 dependencias externas)");
-        if debug_mode {
-            println!("   🐞 Modo debug: se mantendrá la ventana de consola");
+        if sin_consola {
+            println!("   🪟 Sin consola: el .exe no mostrará ventana de terminal (útil para distribución)");
+        } else {
+            println!("   🐞 Con consola: el .exe mostrará ventana de terminal (útil para debug)");
         }
-        if let Err(e) = compilar_gui_embebido(&output, &source, debug_mode) {
+        if let Err(e) = compilar_gui_embebido(&output, &source, sin_consola) {
             eprintln!("❌ {}", e);
             process::exit(1);
         }
