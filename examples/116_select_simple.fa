@@ -1,0 +1,45 @@
+/// Seleccionar entre 2 canales
+/// Conceptos: seleccionar, canal, concurrencia, comunicación entre hilos
+/// Nivel: intermedio
+
+importar "std/io"
+
+// seleccionar permite esperar en múltiples canales simultáneamente
+
+funcion main() {
+    escribir("=== Select simple entre 2 canales ===\n")
+
+    variable tx1, rx1 = canal()
+    variable tx2, rx2 = canal()
+
+    // Hilo que envía por el canal 1
+    variable h1 = hilo {
+        tx1.enviar("Mensaje desde canal 1")
+        retornar 0
+    }
+
+    // Hilo que envía por el canal 2
+    variable h2 = hilo {
+        tx2.enviar("Mensaje desde canal 2")
+        retornar 0
+    }
+
+    // Seleccionar el primer canal que tenga un mensaje
+    escribir("Esperando mensajes...\n")
+    seleccionar {
+        caso rx1 -> mensaje -> {
+            escribir("Recibido: ${mensaje}")
+        }
+        caso rx2 -> mensaje -> {
+            escribir("Recibido: ${mensaje}")
+        }
+    }
+
+    escribir("")
+    escribir("Select eligió el primer canal con datos disponibles.")
+
+    h1.unir()
+    h2.unir()
+}
+
+main()

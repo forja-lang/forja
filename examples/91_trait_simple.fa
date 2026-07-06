@@ -1,0 +1,63 @@
+/// Trait simple: definición e implementación básica
+/// Conceptos: trait, implementa, métodos de interfaz
+/// Nivel: intermedio
+
+importar "std/io"
+
+// Un trait define un conjunto de métodos que una clase debe implementar
+
+trait Volador {
+    funcion volar()
+    funcion aterrizar() -> Texto
+}
+
+clase Pajaro {
+    nombre
+    
+    constructor() {
+        este.nombre = "Sin nombre"
+    }
+}
+
+implementa Volador para Pajaro {
+    funcion volar() {
+        escribir("${este.nombre} está volando...")
+    }
+    funcion aterrizar() -> Texto {
+        retornar "${este.nombre} aterrizó exitosamente"
+    }
+}
+
+clase Avion {
+    modelo
+    
+    constructor() {
+        este.modelo = "Boeing 747"
+    }
+}
+
+implementa Volador para Avion {
+    funcion volar() {
+        escribir("${este.modelo} despegando...")
+    }
+    funcion aterrizar() -> Texto {
+        retornar "${este.modelo} aterrizó en pista 27"
+    }
+}
+
+funcion main() {
+    escribir("=== Trait Simple ===\n")
+    
+    variable p = nuevo Pajaro()
+    p.nombre = "Loro"
+    p.volar()
+    escribir(p.aterrizar())
+    
+    escribir("")
+    
+    variable a = nuevo Avion()
+    a.volar()
+    escribir(a.aterrizar())
+}
+
+main()

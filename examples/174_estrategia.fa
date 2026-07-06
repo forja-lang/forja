@@ -1,0 +1,165 @@
+/// Patrón Strategy con Traits
+/// Conceptos: strategy, traits, algoritmos intercambiables, composición
+/// Nivel: avanzado
+
+importar "std/io"
+
+// El patrón Strategy permite definir una familia de algoritmos,
+// encapsularlos y hacerlos intercambiables en tiempo de ejecución.
+
+trait EstrategiaOrdenamiento {
+    funcion ordenar(arr)
+}
+
+clase OrdenamientoBurbuja {
+    constructor() {}
+}
+
+implementa EstrategiaOrdenamiento para OrdenamientoBurbuja {
+    funcion ordenar(arr) {
+        variable n = longitud(arr)
+        variable i = 0
+        mientras (i < n) {
+            variable j = 0
+            mientras (j < n - i - 1) {
+                si (arr[j] > arr[j + 1]) {
+                    variable temp = arr[j]
+                    arr[j] = arr[j + 1]
+                    arr[j + 1] = temp
+                }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        retornar arr
+    }
+}
+
+clase OrdenamientoSeleccion {
+    constructor() {}
+}
+
+implementa EstrategiaOrdenamiento para OrdenamientoSeleccion {
+    funcion ordenar(arr) {
+        variable n = longitud(arr)
+        variable i = 0
+        mientras (i < n - 1) {
+            variable min_idx = i
+            variable j = i + 1
+            mientras (j < n) {
+                si (arr[j] < arr[min_idx]) {
+                    min_idx = j
+                }
+                j = j + 1
+            }
+            variable temp = arr[i]
+            arr[i] = arr[min_idx]
+            arr[min_idx] = temp
+            i = i + 1
+        }
+        retornar arr
+    }
+}
+
+clase OrdenamientoRapido {
+    constructor() {}
+}
+
+funcion particion(arr, bajo, alto) -> Entero {
+    variable pivote = arr[alto]
+    variable i = bajo - 1
+    variable j = bajo
+    mientras (j < alto) {
+        si (arr[j] <= pivote) {
+            i = i + 1
+            variable temp = arr[i]
+            arr[i] = arr[j]
+            arr[j] = temp
+        }
+        j = j + 1
+    }
+    variable temp = arr[i + 1]
+    arr[i + 1] = arr[alto]
+    arr[alto] = temp
+    retornar i + 1
+}
+
+funcion quicksort_rec(arr, bajo, alto) {
+    si (bajo < alto) {
+        variable pi = particion(arr, bajo, alto)
+        quicksort_rec(arr, bajo, pi - 1)
+        quicksort_rec(arr, pi + 1, alto)
+    }
+}
+
+implementa EstrategiaOrdenamiento para OrdenamientoRapido {
+    funcion ordenar(arr) {
+        quicksort_rec(arr, 0, longitud(arr) - 1)
+        retornar arr
+    }
+}
+
+clase ContextoOrdenamiento {
+    estrategia
+
+    constructor() {
+        este.estrategia = nulo
+    }
+
+    funcion set_estrategia(est) {
+        este.estrategia = est
+        escribir("  ⚙️ Estrategia cambiada")
+    }
+
+    funcion ejecutar_ordenamiento(arr) {
+        si (este.estrategia == nulo) {
+            escribir("  Error: No hay estrategia configurada.")
+            retornar arr
+        }
+        escribir("  Ordenando con estrategia actual...")
+        retornar este.estrategia.ordenar(arr)
+    }
+}
+
+funcion main() {
+    escribir("=== PATRÓN STRATEGY ===\n")
+    escribir("Algoritmos intercambiables mediante traits.\n")
+
+    variable contexto = nuevo ContextoOrdenamiento()
+    variable datos = [64, 34, 25, 12, 22, 11, 90, 8]
+
+    escribir("Array original: ${datos}")
+
+    // Usar Bubble Sort
+    escribir("")
+    escribir("1. Usando Bubble Sort:")
+    contexto.set_estrategia(nuevo OrdenamientoBurbuja())
+    variable datos1 = [64, 34, 25, 12, 22, 11, 90, 8]
+    variable resultado1 = contexto.ejecutar_ordenamiento(datos1)
+    escribir("  Resultado: ${resultado1}")
+
+    // Usar Selection Sort
+    escribir("")
+    escribir("2. Usando Selection Sort:")
+    contexto.set_estrategia(nuevo OrdenamientoSeleccion())
+    variable datos2 = [64, 34, 25, 12, 22, 11, 90, 8]
+    variable resultado2 = contexto.ejecutar_ordenamiento(datos2)
+    escribir("  Resultado: ${resultado2}")
+
+    // Usar Quick Sort
+    escribir("")
+    escribir("3. Usando Quick Sort:")
+    contexto.set_estrategia(nuevo OrdenamientoRapido())
+    variable datos3 = [64, 34, 25, 12, 22, 11, 90, 8]
+    variable resultado3 = contexto.ejecutar_ordenamiento(datos3)
+    escribir("  Resultado: ${resultado3}")
+
+    escribir("")
+    escribir("Ventajas del patrón Strategy:")
+    escribir("  • Los algoritmos son intercambiables en tiempo de ejecución")
+    escribir("  • Cada algoritmo está encapsulado en su propia clase")
+    escribir("  • Favorece la composición sobre la herencia")
+    escribir("  • Fácil de extender con nuevas estrategias")
+}
+
+main()

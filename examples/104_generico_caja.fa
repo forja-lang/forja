@@ -1,0 +1,58 @@
+/// Caja<T> con métodos
+/// Conceptos: clase genérica con métodos, getter/setter genérico
+/// Nivel: intermedio
+
+importar "std/io"
+
+// Caja que almacena un valor de cualquier tipo
+// y provee métodos para trabajar con él
+
+clase Caja<T> {
+    contenido
+    
+    constructor(valor: T) {
+        este.contenido = valor
+    }
+    
+    funcion obtener() -> T {
+        retornar este.contenido
+    }
+    
+    funcion establecer(nuevo_valor: T) {
+        este.contenido = nuevo_valor
+    }
+    
+    funcion transformar(funcion_transformar) {
+        este.contenido = funcion_transformar(este.contenido)
+    }
+}
+
+funcion main() {
+    escribir("=== Caja<T> con Métodos ===\n")
+    
+    // Caja de entero
+    variable caja_num = nuevo Caja(42)
+    escribir("Valor inicial: ${caja_num.obtener()}")
+    caja_num.establecer(100)
+    escribir("Después de establecer(100): ${caja_num.obtener()}")
+    
+    escribir("")
+    
+    // Caja de texto
+    variable caja_texto = nuevo Caja("Hola")
+    escribir("Texto inicial: ${caja_texto.obtener()}")
+    caja_texto.establecer("Mundo")
+    escribir("Después de establecer(\"Mundo\"): ${caja_texto.obtener()}")
+    
+    escribir("")
+    
+    // Caja de booleano
+    variable caja_bool = nuevo Caja(verdadero)
+    escribir("Booleano: ${caja_bool.obtener()}")
+    
+    // Caja de array
+    variable caja_arr = nuevo Caja([1, 2, 3])
+    escribir("Array: ${caja_arr.obtener()}")
+}
+
+main()

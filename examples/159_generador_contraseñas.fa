@@ -1,0 +1,168 @@
+/// Generador de Contraseñas Seguras
+/// Conceptos: aleatoriedad, strings, criterios de seguridad, validación
+/// Nivel: básico
+
+importar "std/io"
+
+// Generador de contraseñas seguras con criterios configurables:
+// longitud, inclusión de mayúsculas, minúsculas, números y símbolos.
+
+funcion generar_caracter_aleatorio(inicio, fin) -> Texto {
+    variable t = tiempo_actual()
+    variable rango = fin - inicio + 1
+    variable codigo = inicio + ((t * 7 + 13) % rango)
+    si (codigo > fin) {
+        codigo = inicio + (codigo % rango)
+    }
+    retornar caracter(codigo)
+}
+
+funcion mezclar_array(arr) {
+    variable n = longitud(arr)
+    variable i = 0
+    mientras (i < n) {
+        variable t = tiempo_actual() * (i + 1)
+        variable j = t % n
+        variable temp = arr[i]
+        arr[i] = arr[j]
+        arr[j] = temp
+        i = i + 1
+    }
+    retornar arr
+}
+
+funcion generar_contraseña(longitud_min, incluir_mayus, incluir_numeros, incluir_simbolos) -> Texto {
+    // Garantizar al menos un carácter de cada tipo seleccionado
+    variable caracteres = []
+    variable indice = 0
+
+    // Siempre incluir minúsculas
+    variable t = tiempo_actual()
+    variable i = 0
+    mientras (i < 5) {
+        caracteres[indice] = generar_caracter_aleatorio(97, 122)  // a-z
+        indice = indice + 1
+        i = i + 1
+    }
+
+    si (incluir_mayus) {
+        caracteres[indice] = generar_caracter_aleatorio(65, 90)  // A-Z
+        indice = indice + 1
+    }
+
+    si (incluir_numeros) {
+        caracteres[indice] = generar_caracter_aleatorio(48, 57)  // 0-9
+        indice = indice + 1
+    }
+
+    si (incluir_simbolos) {
+        variable simbolos = "!@#$%^&*()_+-=[]{}|;:,.<>?"
+        variable idx_sim = t % longitud(simbolos)
+        caracteres[indice] = simbolos[idx_sim]
+        indice = indice + 1
+    }
+
+    // Completar hasta la longitud deseada
+    mientras (indice < longitud_min) {
+        variable tipo = (t + indice * 3) % 4
+        si (tipo == 0) {
+            caracteres[indice] = generar_caracter_aleatorio(97, 122)
+        } sino {
+            si (tipo == 1 && incluir_mayus) {
+                caracteres[indice] = generar_caracter_aleatorio(65, 90)
+            } sino {
+                si (tipo == 2 && incluir_numeros) {
+                    caracteres[indice] = generar_caracter_aleatorio(48, 57)
+                } sino {
+                    si (tipo == 3 && incluir_simbolos) {
+                        variable simbolos2 = "!@#$%^&*()_+-=[]{}|;:,.<>?"
+                        variable idx2 = (t + indice) % longitud(simbolos2)
+                        caracteres[indice] = simbolos2[idx2]
+                    } sino {
+                        caracteres[indice] = generar_caracter_aleatorio(97, 122)
+                    }
+                }
+            }
+        }
+        indice = indice + 1
+    }
+
+    // Mezclar
+    caracteres = mezclar_array(caracteres)
+
+    // Construir string
+    variable contraseña = ""
+    variable j = 0
+    mientras (j < longitud(caracteres)) {
+        contraseña = contraseña + caracteres[j]
+        j = j + 1
+    }
+    retornar contraseña
+}
+
+funcion evaluar_fortaleza(contraseña) -> Texto {
+    variable puntaje = 0
+    variable largo = longitud(contraseña)
+
+    si (largo >= 8) { puntaje = puntaje + 1 }
+    si (largo >= 12) { puntaje = puntaje + 1 }
+    si (largo >= 16) { puntaje = puntaje + 1 }
+
+    variable i = 0
+    variable tiene_mayus = falso
+    variable tiene_minus = falso
+    variable tiene_num = falso
+    variable tiene_sim = falso
+
+    mientras (i < largo) {
+        variable c = contraseña[i]
+        si (c >= 'A' && c <= 'Z') { tiene_mayus = verdadero }
+        si (c >= 'a' && c <= 'z') { tiene_minus = verdadero }
+        si (c >= '0' && c <= '9') { tiene_num = verdadero }
+        si (c < '0' || (c > '9' && c < 'A') || (c > 'Z' && c < 'a') || c > 'z') { tiene_sim = verdadero }
+        i = i + 1
+    }
+
+    si (tiene_mayus) { puntaje = puntaje + 1 }
+    si (tiene_minus) { puntaje = puntaje + 1 }
+    si (tiene_num) { puntaje = puntaje + 1 }
+    si (tiene_sim) { puntaje = puntaje + 2 }
+
+    si (puntaje >= 7) { retornar "🔒 MUY SEGURA" }
+    si (puntaje >= 5) { retornar "🔐 SEGURA" }
+    si (puntaje >= 3) { retornar "🔓 DÉBIL" }
+    retornar "⚠️  MUY DÉBIL"
+}
+
+funcion main() {
+    escribir("=== GENERADOR DE CONTRASEÑAS SEGURAS ===\n")
+
+    variable largo = pedir_numero("Longitud deseada (8-32): ")
+    mientras (largo < 8 || largo > 32) {
+        escribir("  La longitud debe estar entre 8 y 32.")
+        largo = pedir_numero("Longitud deseada (8-32): ")
+    }
+
+    variable cant = pedir_numero("Cuantas contraseñas generar? (1-10): ")
+    mientras (cant < 1 || cant > 10) {
+        cant = pedir_numero("Cuantas contraseñas generar? (1-10): ")
+    }
+
+    escribir("\nGenerando ${cant} contraseñas de ${largo} caracteres...\n")
+
+    variable i = 0
+    mientras (i < cant) {
+        variable pw = generar_contraseña(largo, verdadero, verdadero, verdadero)
+        variable fortaleza = evaluar_fortaleza(pw)
+        escribir("  ${i + 1}. ${pw}  → ${fortaleza}")
+        i = i + 1
+    }
+
+    escribir("")
+    escribir("Consejos de seguridad:")
+    escribir("  • Usa al menos 12 caracteres")
+    escribir("  • Combina mayúsculas, minúsculas, números y símbolos")
+    escribir("  • No reuses contraseñas entre servicios")
+}
+
+main()

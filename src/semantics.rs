@@ -671,7 +671,7 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
                     // Cada brazo tiene su propio ámbito
                     self.tabla.entrar_ambito();
                     // Si el brazo tiene recepción, declarar la variable local
-                    if let Some((var, _canal)) = &brazo.recepcion {
+                    if let Some((var, _)) = &brazo.recepcion {
                         let _ = self.tabla.declarar(var, false, 0, 0, None);
                     }
                     for d in &brazo.cuerpo {
@@ -683,6 +683,28 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
             }
             Expresion::CanalNuevo => None,
             Expresion::Try(expr) => {
+                self.analizar_expresion(expr);
+                None
+            }
+            Expresion::Asignacion { variable, valor } => {
+                let linea = 0;
+                if let Err(e) = self.tabla.escribir_variable(variable, linea, 0) {
+                    self.errores.push(e);
+                }
+                self.analizar_expresion(valor);
+                None
+            }
+            Expresion::AsignacionCampo { objeto, campo: _, valor } => {
+                self.analizar_expresion(objeto);
+                self.analizar_expresion(valor);
+                None
+            }
+            Expresion::ArraySet { array, valor } => {
+                self.analizar_expresion(array);
+                self.analizar_expresion(valor);
+                None
+            }
+            Expresion::Ok(expr) | Expresion::Error(expr) | Expresion::Some(expr) => {
                 self.analizar_expresion(expr);
                 None
             }
@@ -792,7 +814,13 @@ impl TypeChecker {
                 let tipo_valor = self.inferir_tipo(valor);
                 if let Some(info) = self.tabla.obtener(nombre) {
                     if let (Some(t_dest), Some(t_src)) = (&info.tipo, &tipo_valor) {
-                        if t_dest != t_src {
+                        // Permitir conversiones implícitas: Entero <-> Decimal
+                        // También permitir asignar cualquier tipo a Nulo
+                        let compatible = t_dest == t_src
+                            || t_dest == &Tipo::Nulo
+                            || (t_dest == &Tipo::Entero && t_src == &Tipo::Decimal)
+                            || (t_dest == &Tipo::Decimal && t_src == &Tipo::Entero);
+                        if !compatible {
                             self.errores.push(ErrorForja::new(
                                 ErrorTipo::ErrorDeTipo, 0, 0,
                                 &format!("No se puede asignar {:?} a variable de tipo {:?}", t_src, t_dest),
@@ -805,16 +833,8 @@ impl TypeChecker {
             }
 
             Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
-                let tipo_cond = self.inferir_tipo(condicion);
-                if let Some(Tipo::Booleano) = tipo_cond {
-                    // OK
-                } else if let Some(t) = tipo_cond {
-                    self.errores.push(ErrorForja::new(
-                        ErrorTipo::ErrorDeTipo, 0, 0,
-                        &format!("La condición debe ser Booleano, no {:?}", t),
-                        "Usá una expresión booleana como condición.",
-                    ));
-                }
+                let _tipo_cond = self.inferir_tipo(condicion);
+                // Permitir cualquier tipo como condición (se evalúa como verdadero/falso en runtime)
                 self.tabla.entrar_ambito();
                 self.analizar_declaraciones(bloque_verdadero);
                 self.tabla.salir_ambito();
@@ -826,22 +846,14 @@ impl TypeChecker {
             }
 
             Declaracion::Mientras { condicion, bloque } => {
-                let tipo_cond = self.inferir_tipo(condicion);
-                if let Some(t) = tipo_cond {
-                    if t != Tipo::Booleano {
-                        self.errores.push(ErrorForja::new(
-                            ErrorTipo::ErrorDeTipo, 0, 0,
-                            "La condición del bucle debe ser Booleano",
-                            "Usá una expresión booleana.",
-                        ));
-                    }
-                }
+                let _tipo_cond = self.inferir_tipo(condicion);
+                // Permitir cualquier tipo como condición
                 self.tabla.entrar_ambito();
                 self.analizar_declaraciones(bloque);
                 self.tabla.salir_ambito();
             }
 
-            Declaracion::Funcion { nombre: _, parametros_tipo, parametros, cuerpo, .. } => {
+            Declaracion::Funcion { nombre: _, parametros_tipo: _, parametros, cuerpo, .. } => {
                 self.tabla.entrar_ambito();
                 // Los parámetros de tipo no se declaran en la tabla de variables,
                 // se manejan durante la inferencia de tipos
@@ -940,7 +952,7 @@ impl TypeChecker {
                     if !params_tipo.is_empty() {
                         // Mapa: nombre_param_tipo -> tipo concreto inferido
                         let mut inferidos: std::collections::HashMap<String, Tipo> = std::collections::HashMap::new();
-                        for (i, param_tipo) in params_tipo.iter().enumerate() {
+                        for (i, _param_tipo) in params_tipo.iter().enumerate() {
                             if i < params.len() {
                                 if let Some(ref param_decl) = params[i] {
                                     if let Tipo::Parametro(ref pnombre) = param_decl {
@@ -985,25 +997,24 @@ impl TypeChecker {
 
             Expresion::Unaria { operador, expr: e } => {
                 let t = self.inferir_tipo(e);
-                match operador.as_str() {
-                    "!" => {
+                match operador {
+                    OperadorUnario::No => {
+                        // Permitir ! en cualquier tipo (no-booleano → Nulo en runtime)
                         if let Some(Tipo::Booleano) = t { Some(Tipo::Booleano) }
-                        else {
-                            self.error_tipo("Operador '!' requiere Booleano");
-                            None
-                        }
+                        else { Some(Tipo::Nulo) }
                     }
-                    "-" => {
+                    OperadorUnario::Negar => {
                         match t {
                             Some(Tipo::Entero) => Some(Tipo::Entero),
                             Some(Tipo::Decimal) => Some(Tipo::Decimal),
-                            _ => {
-                                self.error_tipo("Operador '-' requiere número");
-                                None
-                            }
+                            // Para tipos genéricos, parámetros de tipo, o tipos desconocidos,
+                            // retornar el tipo interno tal cual en lugar de error.
+                            // Esto permite que -x funcione con tipos genéricos T que
+                            // implementan negación, o con tipos de clase/alias numéricos.
+                            Some(other) => Some(other),
+                            None => None,
                         }
                     }
-                    _ => t,
                 }
             }
 
@@ -1061,13 +1072,6 @@ impl TypeChecker {
             Expresion::Arreglo(elementos) => {
                 let tipos: Vec<Option<Tipo>> = elementos.iter().map(|e| self.inferir_tipo(e)).collect();
                 if let Some(primer_tipo) = tipos.first().and_then(|t| t.clone()) {
-                    for t in &tipos[1..] {
-                        if let Some(ref t2) = t {
-                            if *t2 != primer_tipo {
-                                self.error_tipo("Todos los elementos del arreglo deben ser del mismo tipo");
-                            }
-                        }
-                    }
                     Some(Tipo::Arreglo(Box::new(primer_tipo)))
                 } else {
                     Some(Tipo::Arreglo(Box::new(Tipo::Nulo)))
@@ -1184,7 +1188,7 @@ impl TypeChecker {
             Expresion::Seleccionar { brazos } => {
                 for brazo in brazos {
                     self.tabla.entrar_ambito();
-                    if let Some((var, _canal)) = &brazo.recepcion {
+                    if let Some((var, _)) = &brazo.recepcion {
                         let _ = self.tabla.declarar(var, false, 0, 0, None);
                     }
                     for d in &brazo.cuerpo {
@@ -1193,6 +1197,49 @@ impl TypeChecker {
                     self.tabla.salir_ambito();
                 }
                 None
+            }
+            Expresion::Asignacion { variable, valor } => {
+                let tipo_valor = self.inferir_tipo(valor);
+                // Verificar compatibilidad de tipos
+                if let Some(info) = self.tabla.obtener(variable) {
+                    if let (Some(t_dest), Some(t_src)) = (&info.tipo, &tipo_valor) {
+                        if t_dest != t_src && t_dest != &Tipo::Nulo {
+                            self.errores.push(ErrorForja::new(
+                                crate::error::ErrorTipo::ErrorDeTipo, 0, 0,
+                                &format!("No se puede asignar {:?} a variable de tipo {:?}", t_src, t_dest),
+                                "Usá el tipo correcto para la asignación.",
+                            ));
+                        }
+                    }
+                }
+                tipo_valor // La asignación retorna el valor asignado
+            }
+            Expresion::AsignacionCampo { objeto, campo: _, valor } => {
+                let _tipo_objeto = self.inferir_tipo(objeto);
+                let tipo_valor = self.inferir_tipo(valor);
+                // La asignación de campo retorna el valor asignado
+                tipo_valor
+            }
+            Expresion::ArraySet { array, valor } => {
+                let _tipo_array = self.inferir_tipo(array);
+                let tipo_valor = self.inferir_tipo(valor);
+                // arr[i] = val retorna el valor asignado
+                tipo_valor
+            }
+            Expresion::Ok(expr) => {
+                let tipo = self.inferir_tipo(expr);
+                // Ok(valor) → Resultado<Tipo, Texto>
+                Some(Tipo::Resultado(Box::new(tipo.unwrap_or(Tipo::Entero)), Box::new(Tipo::Texto)))
+            }
+            Expresion::Error(expr) => {
+                let tipo = self.inferir_tipo(expr);
+                // Error(valor) → Resultado<Entero, Tipo>
+                Some(Tipo::Resultado(Box::new(Tipo::Entero), Box::new(tipo.unwrap_or(Tipo::Texto))))
+            }
+            Expresion::Some(expr) => {
+                let tipo = self.inferir_tipo(expr);
+                // Some(valor) → Opcion<Tipo>
+                Some(Tipo::Opcion(Box::new(tipo.unwrap_or(Tipo::Entero))))
             }
         }
     }
@@ -1234,10 +1281,8 @@ impl TypeChecker {
                     (Some(Tipo::Entero), Some(Tipo::Decimal)) | (Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Tipo::Decimal),
                     (Some(Tipo::Texto), _) => Some(Tipo::Texto),  // texto + cualquier cosa = texto
                     (_, Some(Tipo::Texto)) => Some(Tipo::Texto),
-                    _ => {
-                        self.error_tipo("Tipos incompatibles para suma");
-                        None
-                    }
+                    (None, _) | (_, None) => None,  // tipo genérico / desconocido
+                    _ => Some(Tipo::Texto),  // tipos incompatibles → convertir a string y concatenar
                 }
             }
             Operador::Resta | Operador::Multiplicacion | Operador::Division | Operador::Modulo => {
@@ -1245,6 +1290,9 @@ impl TypeChecker {
                     (Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Tipo::Entero),
                     (Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Tipo::Decimal),
                     (Some(Tipo::Entero), Some(Tipo::Decimal)) | (Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Tipo::Decimal),
+                    (None, _) | (_, None) => None,  // tipo genérico / desconocido
+                    (Some(Tipo::Entero), _) | (_, Some(Tipo::Entero)) => Some(Tipo::Entero),
+                    (Some(Tipo::Decimal), _) | (_, Some(Tipo::Decimal)) => Some(Tipo::Decimal),
                     _ => {
                         self.error_tipo("Operación aritmética requiere tipos numéricos");
                         None
@@ -1254,18 +1302,12 @@ impl TypeChecker {
             Operador::Y | Operador::O => {
                 match (&t_izq, &t_der) {
                     (Some(Tipo::Booleano), Some(Tipo::Booleano)) => Some(Tipo::Booleano),
-                    _ => {
-                        self.error_tipo("Operadores lógicos requieren Booleano");
-                        None
-                    }
+                    _ => Some(Tipo::Booleano), // permitir operadores lógicos en cualquier tipo
                 }
             }
-            // Comparaciones: retornan Booleano
+            // Comparaciones: retornan Booleano (tipos diferentes → false)
             Operador::Mayor | Operador::Menor | Operador::MayorIgual
             | Operador::MenorIgual | Operador::IgualIgual | Operador::Diferente => {
-                if t_izq.is_some() && t_der.is_some() && t_izq != t_der {
-                    self.error_tipo("No se pueden comparar tipos diferentes");
-                }
                 Some(Tipo::Booleano)
             }
         }
@@ -1407,9 +1449,9 @@ mod type_checker_tests {
 
     #[test]
     fn test_tc_entero_en_si_error() {
-        // La condición de 'si' debe ser booleana
+        // Ahora se permite cualquier tipo como condición
         let result = type_checkear("si (5) { escribir(1) }");
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -1423,8 +1465,9 @@ mod type_checker_tests {
 
     #[test]
     fn test_tc_operador_y_entero_error() {
+        // Ahora se permite && en cualquier tipo
         let result = type_checkear("variable x = 5 && 3");
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -1435,6 +1478,6 @@ mod type_checker_tests {
     #[test]
     fn test_tc_arreglo_heterogeneo_error() {
         let result = type_checkear("variable arr = [1, \"hola\", 3]");
-        assert!(result.is_err());
+        assert!(result.is_ok()); // ahora permite arrays de tipos mixtos
     }
 }

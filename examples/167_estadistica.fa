@@ -1,0 +1,162 @@
+/// Estadística: Media, Mediana, Moda, Desviación
+/// Conceptos: estadística descriptiva, arrays, ordenamiento, análisis de datos
+/// Nivel: intermedio
+
+importar "std/io"
+
+// Implementación de funciones estadísticas básicas:
+// media, mediana, moda, varianza, desviación estándar.
+
+funcion ordenar_array(arr) {
+    variable n = longitud(arr)
+    variable i = 0
+    mientras (i < n) {
+        variable j = i + 1
+        mientras (j < n) {
+            si (arr[i] > arr[j]) {
+                variable temp = arr[i]
+                arr[i] = arr[j]
+                arr[j] = temp
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    retornar arr
+}
+
+funcion media(arr) -> Decimal {
+    variable suma = 0
+    variable i = 0
+    mientras (i < longitud(arr)) {
+        suma = suma + arr[i]
+        i = i + 1
+    }
+    retornar suma / longitud(arr)
+}
+
+funcion mediana(arr) -> Decimal {
+    variable ordenado = ordenar_array(arr)
+    variable n = longitud(ordenado)
+    si (n % 2 == 1) {
+        retornar ordenado[n / 2]
+    } sino {
+        retornar (ordenado[n / 2 - 1] + ordenado[n / 2]) / 2.0
+    }
+}
+
+funcion moda(arr) {
+    variable frecuencias = []
+    variable valores = []
+    variable max_frec = 0
+
+    variable i = 0
+    mientras (i < longitud(arr)) {
+        variable encontrado = falso
+        variable j = 0
+        mientras (j < longitud(valores)) {
+            si (valores[j] == arr[i]) {
+                frecuencias[j] = frecuencias[j] + 1
+                si (frecuencias[j] > max_frec) {
+                    max_frec = frecuencias[j]
+                }
+                encontrado = verdadero
+            }
+            j = j + 1
+        }
+        si (!encontrado) {
+            valores[longitud(valores)] = arr[i]
+            frecuencias[longitud(frecuencias)] = 1
+            si (max_frec == 0) { max_frec = 1 }
+        }
+        i = i + 1
+    }
+
+    // Recoger todas las modas
+    variable modas = []
+    variable k = 0
+    mientras (k < longitud(valores)) {
+        si (frecuencias[k] == max_frec && max_frec > 1) {
+            modas[longitud(modas)] = valores[k]
+        }
+        k = k + 1
+    }
+    retornar modas
+}
+
+funcion varianza(arr) -> Decimal {
+    variable m = media(arr)
+    variable suma = 0
+    variable i = 0
+    mientras (i < longitud(arr)) {
+        variable diff = arr[i] - m
+        suma = suma + diff * diff
+        i = i + 1
+    }
+    retornar suma / longitud(arr)
+}
+
+funcion desviacion_estandar(arr) -> Decimal {
+    retornar raiz_cuadrada(varianza(arr))
+}
+
+funcion raiz_cuadrada(S) -> Decimal {
+    si (S <= 0) { retornar 0 }
+    variable x = S
+    variable i = 0
+    mientras (i < 20) {
+        x = (x + S / x) / 2.0
+        i = i + 1
+    }
+    retornar x
+}
+
+funcion rango(arr) -> Decimal {
+    variable min = arr[0]
+    variable max = arr[0]
+    variable i = 1
+    mientras (i < longitud(arr)) {
+        si (arr[i] < min) { min = arr[i] }
+        si (arr[i] > max) { max = arr[i] }
+        i = i + 1
+    }
+    retornar max - min
+}
+
+funcion main() {
+    escribir("=== ESTADÍSTICA DESCRIPTIVA ===\n")
+
+    variable datos = [12, 15, 12, 18, 20, 15, 12, 25, 18, 14,
+                      16, 12, 22, 19, 15, 17, 13, 12, 16, 14]
+
+    escribir("Datos: ${datos}")
+    escribir("Cantidad: ${longitud(datos)} elementos\n")
+
+    variable med = media(datos)
+    escribir("📊 Media (promedio):         ${med}")
+
+    variable mediana_val = mediana(datos)
+    escribir("📊 Mediana (valor central):  ${mediana_val}")
+
+    variable modas = moda(datos)
+    escribir("📊 Moda (valor más frecuente): ${modas}")
+
+    variable var_val = varianza(datos)
+    escribir("📊 Varianza:                 ${var_val}")
+
+    variable desv = desviacion_estandar(datos)
+    escribir("📊 Desviación estándar:      ${desv}")
+
+    variable rang = rango(datos)
+    escribir("📊 Rango (max - min):        ${rang}")
+
+    escribir("")
+    escribir("Interpretación:")
+    escribir("  • La media es el promedio aritmético de todos los valores")
+    escribir("  • La mediana es el valor que divide los datos en dos mitades")
+    escribir("  • La moda es el valor que más se repite")
+    escribir("  • La desviación estándar mide la dispersión de los datos")
+    escribir("  • ≈68% de los datos están entre media ± desv. estándar")
+}
+
+main()

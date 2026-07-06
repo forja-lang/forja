@@ -105,7 +105,12 @@ impl Formatter {
                 self.indent += 1;
                 for metodo in metodos {
                     let params: Vec<String> = metodo.parametros.iter().map(|p| p.nombre.clone()).collect();
-                    self.push(&format!("funcion {}({}) {{\n", metodo.nombre, params.join(", ")));
+                    let ret = if let Some(ref t) = metodo.tipo_retorno {
+                        format!(" -> {:?}", t)
+                    } else {
+                        String::new()
+                    };
+                    self.push(&format!("funcion {}({}){} {{\n", metodo.nombre, params.join(", "), ret));
                     self.indent += 1;
                     for d in &metodo.cuerpo { self.formatear_declaracion(d); }
                     self.indent -= 1;
@@ -157,8 +162,9 @@ impl Formatter {
             Expresion::Seleccionar { brazos } => {
                 let mut out = String::from("seleccionar {\n");
                 for brazo in brazos {
-                    if let Some((var, canal)) = &brazo.recepcion {
-                        out.push_str(&format!("    caso {} = {}.recibir() {{\n", var, canal));
+                    if let Some((var, expr_recv)) = &brazo.recepcion {
+                        let expr_str = self.expresion_a_string(expr_recv);
+                        out.push_str(&format!("    caso {} = {} {{\n", var, expr_str));
                     } else if brazo.timeout_ms > 0 {
                         out.push_str(&format!("    tiempo {} {{\n", brazo.timeout_ms));
                     } else {
@@ -171,6 +177,31 @@ impl Formatter {
                 }
                 out.push_str("}");
                 out
+            }
+            Expresion::Unaria { operador, expr: e } => {
+                let op_str = match operador {
+                    OperadorUnario::Negar => "-",
+                    OperadorUnario::No => "!",
+                };
+                format!("{}{}", op_str, self.expresion_a_string(e))
+            }
+            Expresion::Asignacion { variable, valor } => {
+                format!("{} = {}", variable, self.expresion_a_string(valor))
+            }
+            Expresion::AsignacionCampo { objeto, campo, valor } => {
+                format!("{}.{} = {}", self.expresion_a_string(objeto), campo, self.expresion_a_string(valor))
+            }
+            Expresion::ArraySet { array, valor } => {
+                format!("{} = {}", self.expresion_a_string(array), self.expresion_a_string(valor))
+            }
+            Expresion::Ok(expr) => {
+                format!("Ok({})", self.expresion_a_string(expr))
+            }
+            Expresion::Error(expr) => {
+                format!("Error({})", self.expresion_a_string(expr))
+            }
+            Expresion::Some(expr) => {
+                format!("Some({})", self.expresion_a_string(expr))
             }
             _ => "?".to_string(),
         }

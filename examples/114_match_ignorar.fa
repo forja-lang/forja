@@ -1,0 +1,68 @@
+/// Patrón _ para ignorar
+/// Conceptos: coincidir, patrón ignorar (_), descartar valores, coincidencia parcial
+/// Nivel: básico
+
+importar "std/io"
+
+// El patrón _ ignora valores que no nos interesan
+tipo ResultadoPago = Exitoso(Entero) | Fallido(Texto) | Pendiente
+
+funcion resumen(pago) -> Texto {
+    coincidir (pago) {
+        // Ignoramos el monto con _
+        caso Exitoso(_) -> {
+            retornar "Pago procesado ✅"
+        }
+        // Ignoramos el mensaje de error
+        caso Fallido(_) -> {
+            retornar "Pago rechazado ❌"
+        }
+        caso Pendiente -> {
+            retornar "Pago en espera ⏳"
+        }
+    }
+}
+
+tipo Evento = Click(Entero, Entero) | Tecla(Texto) | Redimension(Entero, Entero) | Enfoque
+
+funcion manejar_evento(e) {
+    coincidir (e) {
+        // Ignoramos coordenadas si no nos interesan
+        caso Click(_, _) -> {
+            escribir("  Click detectado")
+        }
+        // Ignoramos nombres de tecla especial
+        caso Tecla(_) -> {
+            escribir("  Tecla presionada")
+        }
+        // Ignoramos dimensiones
+        caso Redimension(_, _) -> {
+            escribir("  Ventana redimensionada")
+        }
+        caso Enfoque -> {
+            escribir("  Campo enfocado")
+        }
+    }
+}
+
+funcion main() {
+    escribir("=== Patrón _ para ignorar ===\n")
+    escribir("El guión bajo _ ignora partes que no necesitamos.\n")
+
+    escribir("Pagos:")
+    escribir("  ${resumen(Exitoso(500))}")
+    escribir("  ${resumen(Fallido("Sin fondos"))}")
+    escribir("  ${resumen(Pendiente)}")
+
+    escribir("")
+    escribir("Eventos:")
+    manejar_evento(Click(150, 300))
+    manejar_evento(Tecla("Enter"))
+    manejar_evento(Redimension(1920, 1080))
+    manejar_evento(Enfoque)
+
+    escribir("")
+    escribir("El _ evita declarar variables que no se usan.")
+}
+
+main()

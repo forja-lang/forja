@@ -1,0 +1,53 @@
+/// Match sobre Resultado
+/// Conceptos: coincidir, caso Ok/Error, manejo de errores con patrones
+/// Nivel: intermedio
+
+importar "std/io"
+
+// Pattern matching sobre Resultado para manejar éxito y error
+
+funcion dividir(a, b) -> Resultado<Entero, Texto> {
+    si (b == 0) {
+        retornar Error("No se puede dividir por cero")
+    }
+    retornar Ok(a / b)
+}
+
+funcion procesar_division(a, b) {
+    variable resultado = dividir(a, b)
+    
+    escribir("${a} / ${b}:")
+    
+    coincidir (resultado) {
+        caso Ok(valor) -> {
+            escribir("  ✅ Resultado: ${valor}")
+        }
+        caso Error(mensaje) -> {
+            escribir("  ❌ Error: ${mensaje}")
+        }
+    }
+}
+
+funcion main() {
+    escribir("=== Match sobre Resultado ===")
+    
+    procesar_division(10, 2)
+    procesar_division(10, 0)
+    procesar_division(100, 3)
+    procesar_division(7, 0)
+    
+    // Extraer valor con match para cálculos posteriores:
+    variable r1 = dividir(20, 4)
+    
+    coincidir (r1) {
+        caso Ok(v) -> {
+            variable duplicado = v * 2
+            escribir("20/4 = ${v}, duplicado = ${duplicado}")
+        }
+        caso Error(m) -> {
+            escribir("Error: ${m}")
+        }
+    }
+}
+
+main()

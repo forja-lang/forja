@@ -1,0 +1,27 @@
+/// Escape en interpolación
+/// Conceptos: \${} literal, $$ literal, caracteres de escape
+/// Nivel: intermedio
+
+importar "std/io"
+
+// A veces necesitamos escribir ${} literal sin que se interprete
+
+variable nombre = "Ana"
+variable valor = 100
+
+// Uso de \${} para mostrar ${} literal:
+escribir("La variable se escribe \${nombre} y vale ${nombre}")
+
+// Uso de $$ para mostrar $ literal:
+escribir("El precio es $${valor}")
+escribir("Total: $${valor + 50}")
+
+// Combinación de texto literal e interpolado:
+escribir("En LaTeX se usa \${} para matemáticas, pero en Forja ${nombre} se interpola")
+
+// Ejemplo práctico: mostrar dinero
+variable precio = 1500
+variable impuesto = precio * 0.21
+escribir("Precio: $${precio}")
+escribir("IVA (21%): $${impuesto}")
+escribir("Total: $${precio + impuesto}")

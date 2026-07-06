@@ -552,7 +552,11 @@ impl Transpiler {
             sig.push_str(&params.join(", "));
             sig.push_str(")");
 
-            // Tipo de retorno (por defecto vacío si no hay return en el cuerpo)
+            // Tipo de retorno opcional explícito
+            if let Some(ref t) = metodo.tipo_retorno {
+                sig.push_str(&format!(" -> {}", self.tipo_a_rust(t)));
+            }
+
             sig.push_str(" {");
 
             self.emit_line(&sig);
@@ -1223,7 +1227,11 @@ impl Transpiler {
 
             Expresion::Unaria { operador, expr: e } => {
                 let e_str = self.transpilar_expresion(e);
-                format!("{}{}", operador, e_str)
+                let op_str = match operador {
+                    OperadorUnario::Negar => "-",
+                    OperadorUnario::No => "!",
+                };
+                format!("{}{}", op_str, e_str)
             }
 
             Expresion::LlamadaFuncion { nombre, argumentos } => {
@@ -1369,9 +1377,10 @@ impl Transpiler {
                     self.output = prev_output;
                     self.indent_level = prev_indent;
 
-                    if let Some((var, canal)) = &brazo.recepcion {
+                    if let Some((var, expr_recv)) = &brazo.recepcion {
                         // caso valor = rx.recibir() { ... }
-                        arms.push(format!("    recv({}) -> {} => {{\n        {}\n    }},", canal, var, cuerpo_str));
+                        let canal_str = self.transpilar_expresion(expr_recv);
+                        arms.push(format!("    recv({}) -> {} => {{\n        {}\n    }},", canal_str, var, cuerpo_str));
                     } else if brazo.timeout_ms > 0 {
                         // tiempo ms { ... } -> default con Duration
                         arms.push(format!("    default(std::time::Duration::from_millis({})) => {{\n        {}\n    }},", brazo.timeout_ms, cuerpo_str));
@@ -1381,6 +1390,30 @@ impl Transpiler {
                     }
                 }
                 format!("crossbeam::select!{{\n{}\n}}", arms.join("\n"))
+            }
+            Expresion::Asignacion { variable, valor } => {
+                let val_str = self.transpilar_expresion(valor);
+                format!("{{ let __tmp = {}; {} = __tmp; __tmp }}", val_str, variable)
+            }
+            Expresion::AsignacionCampo { objeto, campo, valor } => {
+                let obj_str = self.transpilar_expresion(objeto);
+                let val_str = self.transpilar_expresion(valor);
+                format!("{{ let __tmp = {}; {}.{} = __tmp; __tmp }}", val_str, obj_str, campo)
+            }
+            Expresion::ArraySet { array, valor } => {
+                // arr[i] = val como expresión → tmp = val; array = tmp; tmp
+                let arr_str = self.transpilar_expresion(array);
+                let val_str = self.transpilar_expresion(valor);
+                format!("{{ let __tmp = {}; {} = __tmp; __tmp }}", val_str, arr_str)
+            }
+            Expresion::Ok(expr) => {
+                format!("Ok({})", self.transpilar_expresion(expr))
+            }
+            Expresion::Error(expr) => {
+                format!("Err({})", self.transpilar_expresion(expr))
+            }
+            Expresion::Some(expr) => {
+                format!("Some({})", self.transpilar_expresion(expr))
             }
         }
     }

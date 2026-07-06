@@ -1,0 +1,103 @@
+/// Cronómetro con Hilos
+/// Conceptos: hilos, concurrencia, temporización, comunicación entre hilos
+/// Nivel: avanzado
+
+importar "std/io"
+
+// Cronómetro que corre en un hilo separado mientras el usuario
+// puede interactuar con el menú principal.
+
+funcion formatear_tiempo(segundos) -> Texto {
+    variable horas = segundos / 3600
+    variable minutos = (segundos % 3600) / 60
+    variable segs = segundos % 60
+
+    variable h_str = ""
+    si (horas < 10) { h_str = "0" + horas } sino { h_str = horas }
+
+    variable m_str = ""
+    si (minutos < 10) { m_str = "0" + minutos } sino { m_str = minutos }
+
+    variable s_str = ""
+    si (segs < 10) { s_str = "0" + segs } sino { s_str = segs }
+
+    retornar "${h_str}:${m_str}:${s_str}"
+}
+
+funcion correr_cronometro(tx_control, rx_respuesta) {
+    variable segundos = 0
+    variable corriendo = verdadero
+
+    mientras (corriendo) {
+        // Verificar si hay comando de pausa/detención
+        seleccionar {
+            caso rx_respuesta -> comando -> {
+                si (comando == "detener") {
+                    corriendo = falso
+                }
+                si (comando == "reiniciar") {
+                    segundos = 0
+                }
+            }
+            otro -> {
+                // Sin comando, seguir contando
+                esperar(1)
+                segundos = segundos + 1
+                escribir("\r  ⏱ ${formatear_tiempo(segundos)}   ", false)
+            }
+        }
+    }
+
+    escribir("\n  ⏱ Tiempo final: ${formatear_tiempo(segundos)}")
+    tx_control.enviar("terminado")
+}
+
+funcion main() {
+    escribir("=== CRONÓMETRO CON HILOS ===\n")
+    escribir("Instrucciones:")
+    escribir("  • El cronómetro corre en un hilo separado")
+    escribir("  • Escribe 'p' para pausar/reanudar")
+    escribir("  • Escribe 'r' para reiniciar")
+    escribir("  • Escribe 'q' para salir\n")
+
+    variable tx_main, rx_main = canal()
+    variable tx_hilo, rx_hilo = canal()
+
+    // Iniciar hilo del cronómetro
+    variable hilo_crono = hilo {
+        correr_cronometro(tx_hilo, rx_main)
+    }
+
+    variable pausado = falso
+    variable ejecutando = verdadero
+
+    mientras (ejecutando) {
+        variable comando = pedir_texto("Comando (p/r/q): ")
+
+        si (comando == "q") {
+            tx_main.enviar("detener")
+            ejecutando = falso
+        } sino {
+            si (comando == "r") {
+                tx_main.enviar("reiniciar")
+                escribir("  Cronómetro reiniciado.")
+            } sino {
+                si (comando == "p") {
+                    si (pausado) {
+                        escribir("  Reanudando...")
+                        pausado = falso
+                    } sino {
+                        escribir("  Pausado.")
+                        pausado = verdadero
+                    }
+                }
+            }
+        }
+    }
+
+    // Esperar a que el hilo termine
+    hilo_crono.unir()
+    escribir("\nCronómetro finalizado.")
+}
+
+main()

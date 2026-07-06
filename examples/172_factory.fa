@@ -1,0 +1,119 @@
+/// Patrón Factory
+/// Conceptos: factory, creación de objetos, desacoplamiento, abstracción
+/// Nivel: intermedio
+
+importar "std/io"
+
+// El patrón Factory proporciona una interfaz para crear objetos
+// sin especificar la clase concreta del objeto que se crea.
+
+clase Vehiculo {
+    tipo
+    ruedas
+    capacidad
+
+    constructor() {
+        este.tipo = ""
+        este.ruedas = 0
+        este.capacidad = 0
+    }
+
+    funcion describir() -> Texto {
+        retornar "${este.tipo}: ${este.ruedas} ruedas, ${este.capacidad} pasajeros"
+    }
+}
+
+clase FabricaVehiculos {
+    constructor() {
+    }
+
+    funcion crear_auto() {
+        variable v = nuevo Vehiculo()
+        v.tipo = "Auto"
+        v.ruedas = 4
+        v.capacidad = 5
+        retornar v
+    }
+
+    funcion crear_moto() {
+        variable v = nuevo Vehiculo()
+        v.tipo = "Moto"
+        v.ruedas = 2
+        v.capacidad = 2
+        retornar v
+    }
+
+    funcion crear_camion() {
+        variable v = nuevo Vehiculo()
+        v.tipo = "Camión"
+        v.ruedas = 6
+        v.capacidad = 3
+        retornar v
+    }
+
+    funcion crear_bicicleta() {
+        variable v = nuevo Vehiculo()
+        v.tipo = "Bicicleta"
+        v.ruedas = 2
+        v.capacidad = 1
+        retornar v
+    }
+
+    funcion crear_por_tipo(tipo) {
+        si (tipo == "auto") { retornar este.crear_auto() }
+        si (tipo == "moto") { retornar este.crear_moto() }
+        si (tipo == "camion") { retornar este.crear_camion() }
+        si (tipo == "bici") { retornar este.crear_bicicleta() }
+        escribir("  Tipo de vehículo desconocido: ${tipo}")
+        retornar nulo
+    }
+}
+
+funcion main() {
+    escribir("=== PATRÓN FACTORY ===\n")
+    escribir("Encapsula la creación de objetos en una fábrica.\n")
+
+    variable fabrica = nuevo FabricaVehiculos()
+
+    escribir("Creando vehículos desde la fábrica:")
+
+    variable auto = fabrica.crear_auto()
+    si (auto != nulo) {
+        escribir("  ${auto.describir()}")
+    }
+
+    variable moto = fabrica.crear_moto()
+    si (moto != nulo) {
+        escribir("  ${moto.describir()}")
+    }
+
+    variable camion = fabrica.crear_camion()
+    si (camion != nulo) {
+        escribir("  ${camion.describir()}")
+    }
+
+    variable bici = fabrica.crear_bicicleta()
+    si (bici != nulo) {
+        escribir("  ${bici.describir()}")
+    }
+
+    escribir("")
+    escribir("Creando por tipo (usando método genérico):")
+    variable tipos = ["auto", "moto", "camion", "bici", "avion"]
+    variable i = 0
+    mientras (i < longitud(tipos)) {
+        variable v = fabrica.crear_por_tipo(tipos[i])
+        si (v != nulo) {
+            escribir("  ${tipos[i]}: ${v.describir()}")
+        }
+        i = i + 1
+    }
+
+    escribir("")
+    escribir("Ventajas del Factory:")
+    escribir("  • El código cliente no necesita conocer las clases concretas")
+    escribir("  • Centraliza la lógica de creación")
+    escribir("  • Facilita añadir nuevos tipos")
+}
+
+main()

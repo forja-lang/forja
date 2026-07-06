@@ -1,9 +1,0 @@
-// Funciones en Forja
-// Los parámetros deben tener un tipo explícito.
-
-funcion saludo(nombre: Texto) {
-    escribir("Hola, " + nombre + "!")
-}
-
-saludo("Mundo")
-saludo("Forja")

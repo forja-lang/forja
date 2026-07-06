@@ -1,0 +1,43 @@
+/// Propagación de errores con el operador ?
+/// Conceptos: operador ?, propagación automática, cadenas de Resultado
+/// Nivel: intermedio
+
+importar "std/io"
+
+// El operador ? propaga automáticamente el error
+// si la expresión retorna un Resultado con Error
+
+funcion dividir(a, b) -> Resultado<Entero, Texto> {
+    si (b == 0) {
+        retornar Error("División por cero")
+    }
+    retornar Ok(a / b)
+}
+
+// Sin propagación manual:
+funcion calcular_sin_propagacion(a, b, c) -> Resultado<Entero, Texto> {
+    variable r1 = dividir(a, b)
+    // No podemos usar directamente el valor, necesitamos match
+    retornar r1
+}
+
+// Con propagación (?):
+funcion calcular_con_propagacion(a, b, c) -> Resultado<Entero, Texto> {
+    // El operador ? extrae el valor Ok o propaga el Error
+    variable r1 = dividir(a, b)?
+    variable r2 = dividir(r1, c)?
+    retornar Ok(r2)
+}
+
+// Cadena de operaciones:
+funcion procesar_valores(x, y, z) -> Resultado<Entero, Texto> {
+    variable paso1 = dividir(x, y)?
+    variable paso2 = dividir(paso1 * 2, z)?
+    variable paso3 = dividir(paso2 + 10, 2)?
+    retornar Ok(paso3)
+}
+
+escribir("=== Propagación con ? ===")
+escribir("Con propagación (válido): ${calcular_con_propagacion(100, 2, 5)}")
+escribir("Cadena válida: ${procesar_valores(50, 2, 3)}")
+escribir("Cadena con error: ${procesar_valores(50, 0, 3)}")

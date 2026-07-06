@@ -1,0 +1,69 @@
+/// Múltiples operaciones que retornan Resultado
+/// Conceptos: composición, múltiples pasos, cadena de validación
+/// Nivel: intermedio
+
+importar "std/io"
+
+// Combinar múltiples operaciones que pueden fallar
+
+funcion dividir(a, b) -> Resultado<Entero, Texto> {
+    si (b == 0) {
+        retornar Error("División por cero")
+    }
+    retornar Ok(a / b)
+}
+
+funcion raiz_cuadrada_entera(n) -> Resultado<Entero, Texto> {
+    si (n < 0) {
+        retornar Error("Raíz de número negativo")
+    }
+    variable i = 0
+    mientras (i * i <= n) {
+        si (i * i == n) {
+            retornar Ok(i)
+        }
+        i = i + 1
+    }
+    retornar Error("No es un cuadrado perfecto")
+}
+
+funcion calcular_hipotenusa(a, b) -> Resultado<Entero, Texto> {
+    // Múltiples pasos con propagación
+    variable a2 = dividir(a, 1)?  // solo validamos
+    variable b2 = dividir(b, 1)?
+    variable suma_cuadrados = a2 * a2 + b2 * b2
+    retornar raiz_cuadrada_entera(suma_cuadrados)
+}
+
+funcion procesar_estadisticas(numeros) -> Resultado<Entero, Texto> {
+    variable suma = 0
+    variable i = 0
+    mientras (i < longitud(numeros)) {
+        suma = suma + numeros[i]
+        i = i + 1
+    }
+    variable cantidad = longitud(numeros)
+    variable promedio = dividir(suma, cantidad)?
+    retornar Ok(promedio)
+}
+
+funcion main() {
+    escribir("=== Múltiples Resultados ===")
+    
+    // Probar hipotenusa
+    variable h = calcular_hipotenusa(3, 4)
+    coincidir (h) {
+        caso Ok(v) -> escribir("Hipotenusa (3,4): ${v}")
+        caso Error(m) -> escribir("Error: ${m}")
+    }
+    
+    // Probar estadísticas
+    variable datos = [10, 20, 30, 40, 50]
+    variable promedio = procesar_estadisticas(datos)
+    coincidir (promedio) {
+        caso Ok(v) -> escribir("Promedio: ${v}")
+        caso Error(m) -> escribir("Error: ${m}")
+    }
+}
+
+main()

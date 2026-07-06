@@ -1,0 +1,60 @@
+/// Par<T, U> como struct genérico
+/// Conceptos: múltiples parámetros de tipo, par clave-valor, tupla
+/// Nivel: intermedio
+
+importar "std/io"
+
+// Implementación de un par genérico similar a Rust
+
+clase Par<T, U> {
+    primero
+    segundo
+    
+    constructor(primero: T, segundo: U) {
+        este.primero = primero
+        este.segundo = segundo
+    }
+    
+    funcion obtener_primero() -> T {
+        retornar este.primero
+    }
+    
+    funcion obtener_segundo() -> U {
+        retornar este.segundo
+    }
+    
+    funcion intercambiar() -> Par<U, T> {
+        retornar nuevo Par(este.segundo, este.primero)
+    }
+}
+
+funcion main() {
+    escribir("=== Par<T, U> ===\n")
+    
+    // Par de Entero y Texto
+    variable par1 = nuevo Par(1, "uno")
+    escribir("Par(1, \"uno\"):")
+    escribir("  Primero: ${par1.obtener_primero()}")
+    escribir("  Segundo: ${par1.obtener_segundo()}")
+    
+    escribir("")
+    
+    // Par de Texto y Booleano
+    variable par2 = nuevo Par("activo", verdadero)
+    escribir("Par(\"activo\", verdadero):")
+    escribir("  Primero: ${par2.obtener_primero()}")
+    escribir("  Segundo: ${par2.obtener_segundo()}")
+    
+    escribir("")
+    
+    // Intercambiar
+    variable intercambiado = par1.intercambiar()
+    escribir("Intercambiado:")
+    escribir("  Primero (era segundo): ${intercambiado.obtener_primero()}")
+    escribir("  Segundo (era primero): ${intercambiado.obtener_segundo()}")
+    
+    escribir("")
+    escribir("Par funciona con cualquier combinación de tipos T y U")
+}
+
+main()

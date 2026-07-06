@@ -1,0 +1,38 @@
+/// Crear y unir un hilo
+/// Conceptos: hilo, unir, concurrencia básica, ejecución paralela
+/// Nivel: básico
+
+importar "std/io"
+
+// Los hilos permiten ejecutar código en paralelo
+
+funcion main() {
+    escribir("=== Hilo simple ===\n")
+
+    escribir("Creando hilo...\n")
+
+    variable h = hilo {
+        escribir("  🧵 Hilo: ejecutándose en paralelo!")
+        variable suma = 0
+        variable i = 1
+        mientras (i <= 5) {
+            suma = suma + i
+            i = i + 1
+        }
+        escribir("  🧵 Hilo: suma de 1 a 5 = ${suma}")
+        retornar suma
+    }
+
+    escribir("Main: haciendo otras cosas mientras el hilo corre...\n")
+    variable resultado = 10 * 10
+    escribir("Main: 10 * 10 = ${resultado}\n")
+
+    // Esperar a que el hilo termine
+    escribir("Main: esperando que el hilo termine...\n")
+    variable valor = h.unir()
+    escribir("Main: el hilo terminó con valor = ${valor}")
+
+    escribir("\nLos hilos permiten ejecutar tuntas concurrentemente.")
+}
+
+main()

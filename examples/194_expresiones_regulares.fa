@@ -1,0 +1,188 @@
+/// Patrones de Búsqueda (Expresiones Regulares)
+/// Conceptos: regex, patrones de búsqueda, validación, extracción de texto
+/// Nivel: avanzado
+
+importar "std/io"
+
+// Las expresiones regulares (regex) permiten buscar patrones en texto.
+// Este ejemplo simula funcionalidad de regex usando operaciones de string.
+
+// NOTA: Forja puede no tener regex nativo. Este ejemplo demuestra
+// el concepto implementando un motor de búsqueda simple.
+
+funcion coincide_patron(texto, patron) -> Booleano {
+    // Verificar si el patrón está contenido en el texto
+    si (longitud(patron) > longitud(texto)) {
+        retornar falso
+    }
+
+    variable i = 0
+    mientras (i <= longitud(texto) - longitud(patron)) {
+        variable coincide = verdadero
+        variable j = 0
+        mientras (j < longitud(patron)) {
+            variable c_pat = patron[j]
+            variable c_text = texto[i + j]
+
+            // Soporte básico de wildcard: '.' coincide con cualquier carácter
+            si (c_pat != '.' && c_pat != c_text) {
+                coincide = falso
+            }
+            j = j + 1
+        }
+        si (coincide) {
+            retornar verdadero
+        }
+        i = i + 1
+    }
+    retornar falso
+}
+
+funcion extraer_numeros(texto) {
+    variable numeros = []
+    variable num_actual = ""
+    variable i = 0
+
+    mientras (i < longitud(texto)) {
+        variable c = texto[i]
+        si (c >= '0' && c <= '9') {
+            num_actual = num_actual + c
+        } sino {
+            si (longitud(num_actual) > 0) {
+                numeros[longitud(numeros)] = num_actual
+                num_actual = ""
+            }
+        }
+        i = i + 1
+    }
+    si (longitud(num_actual) > 0) {
+        numeros[longitud(numeros)] = num_actual
+    }
+    retornar numeros
+}
+
+funcion validar_email(email) -> Booleano {
+    // Validación básica: debe contener @ y al menos un punto después
+    variable tiene_arroba = falso
+    variable tiene_punto_despues = falso
+    variable pos_arroba = 0
+    variable i = 0
+
+    mientras (i < longitud(email)) {
+        si (email[i] == '@') {
+            tiene_arroba = verdadero
+            pos_arroba = i
+        }
+        si (tiene_arroba && email[i] == '.' && i > pos_arroba + 1) {
+            tiene_punto_despues = verdadero
+        }
+        i = i + 1
+    }
+
+    retornar tiene_arroba && tiene_punto_despues && pos_arroba > 0
+}
+
+funcion validar_telefono(telefono) -> Booleano {
+    // Acepta: +1234567890, 123-456-7890, (123)456-7890
+    variable digitos = ""
+    variable i = 0
+    mientras (i < longitud(telefono)) {
+        variable c = telefono[i]
+        si (c >= '0' && c <= '9') {
+            digitos = digitos + c
+        }
+        i = i + 1
+    }
+    // Válido si tiene entre 7 y 15 dígitos
+    variable len = longitud(digitos)
+    retornar len >= 7 && len <= 15
+}
+
+funcion reemplazar_patron(texto, buscar, reemplazo) -> Texto {
+    variable resultado = ""
+    variable i = 0
+    mientras (i < longitud(texto)) {
+        // Verificar si hay coincidencia en la posición actual
+        variable coincide = verdadero
+        variable j = 0
+        mientras (j < longitud(buscar) && (i + j) < longitud(texto)) {
+            si (texto[i + j] != buscar[j]) {
+                coincide = falso
+            }
+            j = j + 1
+        }
+
+        si (coincide) {
+            resultado = resultado + reemplazo
+            i = i + longitud(buscar)
+        } sino {
+            resultado = resultado + texto[i]
+            i = i + 1
+        }
+    }
+    retornar resultado
+}
+
+funcion main() {
+    escribir("=== EXPRESIONES REGULARES (Simuladas) ===\n")
+
+    escribir("--- 1. Coincidencia de patrones ---")
+    variable textos = ["hola", "hola mundo", "mundo hola", "adios"]
+    variable patron = "hola"
+    escribir("  Buscando '${patron}':")
+    variable i = 0
+    mientras (i < longitud(textos)) {
+        variable coincide = coincide_patron(textos[i], patron)
+        escribir("    '${textos[i]}' → ${coincide}")
+        i = i + 1
+    }
+
+    escribir("")
+    escribir("--- 2. Extraer números de un texto ---")
+    variable texto_nums = "El precio es $123 y el descuento 45%, código #A7B8C9"
+    escribir("  Texto: '${texto_nums}'")
+    variable numeros = extraer_numeros(texto_nums)
+    escribir("  Números encontrados: ${numeros}")
+
+    escribir("")
+    escribir("--- 3. Validación de emails ---")
+    variable emails = ["user@email.com", "invalido", "sin.arroba.com", "a@b.co", "@inicio.com"]
+    variable j = 0
+    mientras (j < longitud(emails)) {
+        variable valido = validar_email(emails[j])
+        variable icono = "❌"
+        si (valido) { icono = "✅" }
+        escribir("  ${icono} '${emails[j]}' → ${valido}")
+        j = j + 1
+    }
+
+    escribir("")
+    escribir("--- 4. Validación de teléfonos ---")
+    variable telefonos = ["+1234567890", "123-456-7890", "(555)123-4567", "12", "12345"]
+    variable k = 0
+    mientras (k < longitud(telefonos)) {
+        variable valido = validar_telefono(telefonos[k])
+        variable icono = "❌"
+        si (valido) { icono = "✅" }
+        escribir("  ${icono} '${telefonos[k]}' → ${valido}")
+        k = k + 1
+    }
+
+    escribir("")
+    escribir("--- 5. Reemplazar patrones ---")
+    variable frase = "El gato y el perro y el ratón"
+    variable resultado = reemplazar_patron(frase, "gato", "🦁")
+    resultado = reemplazar_patron(resultado, "perro", "🐶")
+    resultado = reemplazar_patron(resultado, "ratón", "🐭")
+    escribir("  Original:  '${frase}'")
+    escribir("  Reemplazo: '${resultado}'")
+
+    escribir("")
+    escribir("Las expresiones regulares permiten:")
+    escribir("  • Buscar patrones complejos en texto")
+    escribir("  • Validar formatos (email, teléfono, código postal)")
+    escribir("  • Extraer y reemplazar información estructurada")
+    escribir("  • Analizar logs y archivos de texto")
+}
+
+main()

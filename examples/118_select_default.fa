@@ -1,0 +1,52 @@
+/// Select con rama otro (no bloqueante)
+/// Conceptos: seleccionar, otro, no bloqueante, intentar sin esperar
+/// Nivel: intermedio
+
+importar "std/io"
+
+// La rama 'otro' se ejecuta inmediatamente si ningún canal tiene datos
+
+funcion main() {
+    escribir("=== Select con rama otro (no bloqueante) ===\n")
+
+    variable tx, rx = canal()
+
+    // Intentar recibir sin bloqueo
+    escribir("Intentando recibir sin que haya datos...\n")
+
+    seleccionar {
+        caso rx -> mensaje -> {
+            escribir("Recibido: ${mensaje}")
+        }
+        otro -> {
+            escribir("No hay datos disponibles en este momento.")
+        }
+    }
+
+    escribir("")
+    escribir("Ahora enviamos datos e intentamos de nuevo:\n")
+
+    // Enviar y luego recibir
+    variable h = hilo {
+        tx.enviar("¡Hola desde el hilo!")
+        retornar 0
+    }
+
+    esperar(0.5)
+
+    seleccionar {
+        caso rx -> mensaje -> {
+            escribir("Recibido: ${mensaje}")
+        }
+        otro -> {
+            escribir("Todavía no hay datos.")
+        }
+    }
+
+    h.unir()
+
+    escribir("")
+    escribir("'otro' hace que select nunca se bloquee.")
+}
+
+main()

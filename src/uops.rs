@@ -44,6 +44,10 @@ pub enum Uop {
     ArrayGet, ArraySet, ArrayLen,
     MapNew(usize), MapGet, MapSet,
 
+    // === Built-in functions (stdlib) ===
+    ParseInt,        // pop string, push i64
+    TiempoActual,    // push current unix timestamp
+
     // === I/O ===
     Print, ReadLine,
 
@@ -150,6 +154,10 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::MapNew(n) => Uop::MapNew(*n),
         Opcode::MapGet => Uop::MapGet,
         Opcode::MapSet => Uop::MapSet,
+
+        // Built-in functions
+        Opcode::ParseInt => Uop::ParseInt,
+        Opcode::TiempoActual => Uop::TiempoActual,
 
         // I/O
         Opcode::Print => Uop::Print,

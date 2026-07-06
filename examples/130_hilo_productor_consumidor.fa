@@ -1,0 +1,57 @@
+/// Patrón productor-consumidor
+/// Conceptos: hilo, canal, productor, consumidor, patrón concurrente clásico
+/// Nivel: avanzado
+
+importar "std/io"
+
+// Productor: genera datos y los envía por un canal
+// Consumidor: recibe y procesa los datos
+
+funcion productor(id, tx) {
+    variable i = 1
+    mientras (i <= 5) {
+        variable dato = (id * 100) + i
+        escribir("  📦 Productor ${id}: produce ${dato}")
+        tx.enviar(dato)
+        esperar(0.1)  // simular trabajo
+        i = i + 1
+    }
+    escribir("  📦 Productor ${id}: terminó")
+    retornar 0
+}
+
+funcion consumidor(id, rx, total_esperado) {
+    variable recibidos = 0
+    variable suma = 0
+    mientras (recibidos < total_esperado) {
+        variable dato = rx.recibir()
+        suma = suma + dato
+        recibidos = recibidos + 1
+        escribir("  🛒 Consumidor ${id}: recibe ${dato} (suma parcial=${suma})")
+    }
+    escribir("  🛒 Consumidor ${id}: suma total = ${suma}")
+    retornar suma
+}
+
+funcion main() {
+    escribir("=== Patrón Productor-Consumidor ===\n")
+
+    variable tx, rx = canal()
+
+    // Lanzar 2 productores
+    variable p1 = hilo { productor(1, tx) }
+    variable p2 = hilo { productor(2, tx) }
+
+    // Lanzar 1 consumidor que espera 10 productos (5 de cada productor)
+    variable c = hilo { consumidor(1, rx, 10) }
+
+    // Esperar a que terminen
+    p1.unir()
+    p2.unir()
+    variable total = c.unir()
+
+    escribir("\nProceso completado. Suma total consumida: ${total}")
+    escribir("Los productores generan datos, los consumidores los procesan.")
+}
+
+main()

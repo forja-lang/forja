@@ -1,0 +1,79 @@
+/// Genéricos con trait bounds (restricciones)
+/// Conceptos: trait bound, restricción de tipo, don't care
+/// Nivel: avanzado
+
+importar "std/io"
+
+// Podemos restringir qué tipos pueden usarse con una función
+// genérica usando trait bounds
+
+trait Mostrable {
+    funcion mostrar() -> Texto
+}
+
+clase Persona {
+    nombre
+    edad
+}
+
+implementa Mostrable para Persona {
+    funcion mostrar() -> Texto {
+        retornar "Persona: ${este.nombre} (${este.edad})"
+    }
+}
+
+clase Producto {
+    nombre
+    precio
+}
+
+implementa Mostrable para Producto {
+    funcion mostrar() -> Texto {
+        retornar "Producto: ${este.nombre} - $${este.precio}"
+    }
+}
+
+// Función genérica que solo acepta tipos que implementan Mostrable
+funcion imprimir_elemento<T>(elemento: T) {
+    escribir(elemento.mostrar())
+}
+
+funcion imprimir_lista<T>(lista) {
+    variable i = 0
+    mientras (i < longitud(lista)) {
+        imprimir_elemento(lista[i])
+        i = i + 1
+    }
+}
+
+funcion main() {
+    escribir("=== Genéricos con Trait Bounds ===\n")
+    
+    variable p1 = nuevo Persona()
+    p1.nombre = "Ana"
+    p1.edad = 30
+    
+    variable p2 = nuevo Persona()
+    p2.nombre = "Juan"
+    p2.edad = 25
+    
+    variable personas = [p1, p2]
+    escribir("Personas:")
+    imprimir_lista(personas)
+    
+    escribir("")
+    
+    variable prod1 = nuevo Producto()
+    prod1.nombre = "Laptop"
+    prod1.precio = 1200
+    
+    variable prod2 = nuevo Producto()
+    prod2.nombre = "Mouse"
+    prod2.precio = 25
+    
+    variable productos = [prod1, prod2]
+    escribir("Productos:")
+    imprimir_lista(productos)
+}
+
+main()

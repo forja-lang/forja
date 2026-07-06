@@ -1,0 +1,113 @@
+/// Programa AOT Autónomo
+/// Conceptos: AOT, compilación anticipada, ejecutable independiente, sin dependencias
+/// Nivel: experto
+
+importar "std/io"
+
+// Un programa AOT (Ahead-Of-Time) se compila directamente a código
+// de máquina, generando un ejecutable independiente que no necesita
+// un intérprete o máquina virtual para ejecutarse.
+
+// Este ejemplo demuestra las características deseables en un
+// programa compilado AOT: autónomo, eficiente y ejecutable.
+
+// Constantes para configuración AOT
+constante NOMBRE_PROGRAMA = "ForjaAOT_Demo"
+constante VERSION = "1.0.0"
+constante AUTOR = "Forja Language"
+
+// En un binario AOT, estas funciones se compilan directamente
+// a código nativo, sin necesidad de VM.
+
+funcion verificar_plataforma() -> Texto {
+    escribir("  🔍 Detectando plataforma...")
+    // En un binario AOT, aquí irían directivas de compilación
+    // condicional para detectar el SO y arquitectura
+    variable plataforma = "Windows x86_64"
+    escribir("  💻 Plataforma: ${plataforma}")
+    retornar plataforma
+}
+
+funcion verificar_recursos() -> Booleano {
+    escribir("  🔍 Verificando recursos del sistema...")
+    // Simular verificación de memoria y CPU
+    escribir("  ✅ Memoria suficiente")
+    escribir("  ✅ CPU compatible")
+    retornar verdadero
+}
+
+funcion inicializar_modulos() {
+    escribir("  🔧 Inicializando módulos del programa...")
+    // En AOT, los módulos se enlazan en tiempo de compilación
+    escribir("  ✅ Módulo 'io' cargado")
+    escribir("  ✅ Módulo 'matematica' cargado")
+    escribir("  ✅ Módulo 'sistema' cargado")
+}
+
+funcion ejecutar_pruebas_rapidas() {
+    escribir("  🧪 Ejecutando pruebas de verificación...")
+
+    // Cálculos de prueba
+    variable resultado = 0
+    variable i = 0
+    mientras (i < 1000) {
+        resultado = resultado + i
+        i = i + 1
+    }
+
+    si (resultado == 499500) {
+        escribir("  ✅ Test aritmético: OK (suma 0-999 = ${resultado})")
+    } sino {
+        escribir("  ❌ Test aritmético: FALLÓ")
+    }
+}
+
+funcion mostrar_info_sistema() {
+    escribir("  📊 Información del sistema:")
+    escribir("    PID: " + 1234)
+    escribir("    Memoria usada: 2.4 MB")
+    escribir("    Tiempo de ejecución: modo compilado AOT")
+}
+
+funcion main() {
+    escribir("=== PROGRAMA AOT AUTÓNOMO ===\n")
+    escribir("${NOMBRE_PROGRAMA} v${VERSION}")
+    escribir("Autor: ${AUTOR}\n")
+
+    escribir("Inicializando...")
+    variable plataforma = verificar_plataforma()
+    variable recursos_ok = verificar_recursos()
+
+    si (!recursos_ok) {
+        escribir("  ❌ Recursos insuficientes. Abortando.")
+        retornar
+    }
+
+    inicializar_modulos()
+
+    escribir("")
+    ejecutar_pruebas_rapidas()
+
+    escribir("")
+    mostrar_info_sistema()
+
+    escribir("")
+    escribir("--- Demostración de funcionalidad ---")
+    escribir("Hola desde un programa Forja compilado AOT!")
+    escribir("Este binario es completamente autónomo.")
+    escribir("No necesita intérprete, VM ni dependencias externas.\n")
+
+    escribir("Ventajas del código AOT:")
+    escribir("  • Inicio instantáneo (sin tiempo de compilación JIT)")
+    escribir("  • Sin dependencias de runtime (todo incluido en el binario)")
+    escribir("  • Distribución simple: un solo archivo ejecutable")
+    escribir("  • Protección del código fuente (no hay bytecode expuesto)")
+    escribir("  • Mejor rendimiento en general que interpretado")
+
+    escribir("")
+    escribir("Comparación:")
+    escribir("  Interpretado:  forja run programa.fa")
+    escribir("  AOT:          ./programa.exe  (directo)")
+}
+
+main()

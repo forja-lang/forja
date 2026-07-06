@@ -1,0 +1,37 @@
+/// Función genérica intercambiar
+/// Conceptos: <T, U>, múltiples tipos genéricos, intercambio de valores
+/// Nivel: intermedio
+
+importar "std/io"
+
+// Función que intercambia dos valores de tipos posiblemente diferentes
+
+funcion intercambiar<T, U>(a: T, b: U) -> (U, T) {
+    retornar (b, a)
+}
+
+funcion main() {
+    escribir("=== Intercambiar Genérico ===\n")
+    
+    // Intercambiar Entero y Texto
+    variable x, y = intercambiar(42, "Hola")
+    escribir("intercambiar(42, \"Hola\") → (${x}, ${y})")
+    
+    // Intercambiar Texto y Booleano
+    variable a, b = intercambiar("Activo", falso)
+    escribir("intercambiar(\"Activo\", falso) → (${a}, ${b})")
+    
+    // Intercambiar números
+    variable m, n = intercambiar(3.14, 100)
+    escribir("intercambiar(3.14, 100) → (${m}, ${n})")
+    
+    // Doble intercambio (vuelve al original)
+    variable p, q = intercambiar(10, 20)
+    variable r, s = intercambiar(q, p)
+    escribir("Doble intercambio: (${r}, ${s})")
+    
+    escribir("")
+    escribir("Los tipos T y U pueden ser diferentes entre sí")
+}
+
+main()

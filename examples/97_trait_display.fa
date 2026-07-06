@@ -1,0 +1,49 @@
+/// @derive(Mostrar) para debugging
+/// Conceptos: @derive(Mostrar), Display, depuración, atributos
+/// Nivel: intermedio
+
+importar "std/io"
+
+// @derive(Mostrar) genera automáticamente una representación
+// en texto del tipo, similar a #[derive(Debug)] en Rust
+
+@derive(Mostrar)
+clase Persona {
+    nombre
+    edad
+    
+    constructor() {
+        este.nombre = "Ana"
+        este.edad = 30
+    }
+}
+
+@derive(Mostrar)
+clase Producto {
+    nombre
+    precio
+    
+    constructor() {
+        este.nombre = "Laptop"
+        este.precio = 1200
+    }
+}
+
+@derive(Mostrar)
+tipo Color = Rojo | Verde | Azul
+
+funcion main() {
+    escribir("=== @derive(Mostrar) ===\n")
+    
+    variable p = nuevo Persona()
+    variable prod = nuevo Producto()
+    
+    // Muestra representación automática del objeto
+    escribir("Persona: ${p}")
+    escribir("Producto: ${prod}")
+    
+    escribir("")
+    escribir("Los objetos se muestran automáticamente")
+}
+
+main()

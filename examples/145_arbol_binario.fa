@@ -1,0 +1,128 @@
+/// Árbol binario de búsqueda
+/// Conceptos: árbol binario, BST, nodos, subárbol izquierdo/derecho, recorridos
+/// Nivel: avanzado
+
+importar "std/io"
+
+clase NodoArbol {
+    valor
+    izquierdo
+    derecho
+
+    constructor(val) {
+        este.valor = val
+        este.izquierdo = nulo
+        este.derecho = nulo
+    }
+}
+
+clase ArbolBinario {
+    raiz
+
+    constructor() {
+        este.raiz = nulo
+    }
+
+    funcion insertar(nodo, valor) {
+        si (nodo == nulo) {
+            retornar nuevo NodoArbol(valor)
+        }
+        si (valor < nodo.valor) {
+            nodo.izquierdo = este.insertar(nodo.izquierdo, valor)
+        } sino {
+            si (valor > nodo.valor) {
+                nodo.derecho = este.insertar(nodo.derecho, valor)
+            }
+        }
+        retornar nodo
+    }
+
+    funcion agregar(valor) {
+        este.raiz = este.insertar(este.raiz, valor)
+    }
+
+    funcion buscar(nodo, valor) -> Booleano {
+        si (nodo == nulo) {
+            retornar falso
+        }
+        si (nodo.valor == valor) {
+            retornar verdadero
+        }
+        si (valor < nodo.valor) {
+            retornar este.buscar(nodo.izquierdo, valor)
+        }
+        retornar este.buscar(nodo.derecho, valor)
+    }
+
+    funcion contiene(valor) -> Booleano {
+        retornar este.buscar(este.raiz, valor)
+    }
+
+    funcion inorder(nodo) {
+        si (nodo != nulo) {
+            este.inorder(nodo.izquierdo)
+            escribir("  ${nodo.valor}")
+            este.inorder(nodo.derecho)
+        }
+    }
+
+    funcion preorder(nodo) {
+        si (nodo != nulo) {
+            escribir("  ${nodo.valor}")
+            este.preorder(nodo.izquierdo)
+            este.preorder(nodo.derecho)
+        }
+    }
+
+    funcion postorder(nodo) {
+        si (nodo != nulo) {
+            este.postorder(nodo.izquierdo)
+            este.postorder(nodo.derecho)
+            escribir("  ${nodo.valor}")
+        }
+    }
+
+    funcion mostrar_arbol(nodo, nivel) {
+        si (nodo != nulo) {
+            este.mostrar_arbol(nodo.derecho, nivel + 1)
+            variable esp = ""
+            variable i = 0
+            mientras (i < nivel) {
+                esp = esp + "    "
+                i = i + 1
+            }
+            escribir("${esp}${nodo.valor}")
+            este.mostrar_arbol(nodo.izquierdo, nivel + 1)
+        }
+    }
+}
+
+funcion main() {
+    escribir("=== Árbol Binario de Búsqueda ===\n")
+
+    variable arbol = nuevo ArbolBinario()
+    variable valores = [50, 30, 70, 20, 40, 60, 80, 35, 65]
+    escribir("Insertando: ${valores}\n")
+
+    variable i = 0
+    mientras (i < longitud(valores)) {
+        arbol.agregar(valores[i])
+        i = i + 1
+    }
+
+    escribir("Estructura del árbol:")
+    arbol.mostrar_arbol(arbol.raiz, 0)
+
+    escribir("")
+    escribir("Recorrido inorder (ordenado):")
+    arbol.inorder(arbol.raiz)
+
+    escribir("")
+    escribir("¿Contiene 40? ${arbol.contiene(40)}")
+    escribir("¿Contiene 99? ${arbol.contiene(99)}")
+
+    escribir("")
+    escribir("BST mantiene los elementos ordenados: izquierdo < raíz < derecho.")
+}
+
+main()

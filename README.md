@@ -472,7 +472,7 @@ Raven fue la inspiración original de Forja. Aquí la comparativa actualizada co
 | **AOT (.exe autónomo)** | ❌ | ✅ VM + bytecode incrustado |
 | **Formateador** | ❌ | ✅ `forja fmt` |
 | **LSP Server** | ❌ | ✅ `forja-lsp` |
-| **74 ejemplos educativos** | ❌ | ✅ Desde hola mundo hasta traits |
+| **200 ejemplos educativos** | ❌ | ✅ Desde hola mundo hasta temas avanzados |
 | **Benchmarks multi-target** | ❌ | ✅ VM / JIT / ASM / LLVM |
 
 ---
@@ -500,26 +500,288 @@ funcion factorial(n) { ... }
 Forja se puede ejecutar directamente en el navegador via WASM:
 
 - **Editor en vivo** — Escribe código y ejecútalo al instante
-- **74 ejemplos educativos** — Desde hola mundo hasta traits y concurrencia
+- **200 ejemplos educativos** — Desde hola mundo hasta temas avanzados
 - **URL Sharing** — Comparte tu código con solo un link
 - **Transpilación online** — Ve el código Rust generado
 
 El playground está en [`crates/forja-wasm/`](crates/forja-wasm/) con el core en [`src/lib.rs`](src/lib.rs).
 
-### 74 Ejemplos Educativos
+### 📚 200 Ejemplos Educativos
 
-Forja incluye **74 ejemplos progresivos** que cubren desde lo más básico hasta características avanzadas:
+Forja incluye **200 ejemplos progresivos** que cubren desde lo más básico hasta temas avanzados, organizados por categorías:
 
-| Rango | Temática | Ejemplos destacados |
-|-------|----------|-------------------|
-| **01–10** | Fundamentos | Hola mundo, variables, tipos, condicionales, bucles, funciones |
-| **11–20** | Estructuras de datos | Arrays, strings, clases, mapas, entrada/salida, operadores |
-| **21–30** | Control de flujo | Bucles avanzados, matrices, métodos de string, constantes |
-| **31–40** | POO y algoritmos | Clases con métodos, objetos, arrays de objetos, mapas anidados, tablas, primos, factorial |
-| **41–50** | Algoritmos clásicos | Palíndromos, vocales, dígitos, ordenamiento, conversiones, juegos |
-| **51–60** | Programación práctica | IMC, piedra-papel-tijera, cadenas, bancos, medianas, edad |
-| **61–70** | Algoritmos intermedios | Múltiplos, búsqueda lineal, arrays invertidos, promedios, rectángulos, **concurrencia** |
-| **71–74** | **Nuevas features** | **Traits**, **Genéricos**, **Atributos/Select**, **Doc comments** |
+#### Nivel Básico (01-30)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 01 | [`01_hola.fa`](examples/01_hola.fa) | Hola Mundo |
+| 02 | [`02_variables.fa`](examples/02_variables.fa) | Variables |
+| 03 | [`03_tipos.fa`](examples/03_tipos.fa) | Tipos de datos |
+| 04 | [`04_operaciones.fa`](examples/04_operaciones.fa) | Operaciones aritméticas |
+| 05 | [`05_condicionales.fa`](examples/05_condicionales.fa) | Condicionales if/else |
+| 06 | [`06_bucles.fa`](examples/06_bucles.fa) | Bucles while/repetir |
+| 07 | [`07_funciones.fa`](examples/07_funciones.fa) | Funciones |
+| 08 | [`08_arrays.fa`](examples/08_arrays.fa) | Arrays |
+| 09 | [`09_strings.fa`](examples/09_strings.fa) | Strings |
+| 10 | [`10_clases.fa`](examples/10_clases.fa) | Clases y objetos |
+| 11 | [`11_mapas.fa`](examples/11_mapas.fa) | Mapas (diccionarios) |
+| 12 | [`12_input.fa`](examples/12_input.fa) | Entrada/Salida (input) |
+| 13 | [`13_errores.fa`](examples/13_errores.fa) | Manejo de errores |
+| 14 | [`14_adivina.fa`](examples/14_adivina.fa) | Juego: Adivina el número |
+| 15 | [`15_calculadora.fa`](examples/15_calculadora.fa) | Calculadora simple |
+| 16 | [`16_logicos.fa`](examples/16_logicos.fa) | Operadores lógicos |
+| 17 | [`17_comparacion.fa`](examples/17_comparacion.fa) | Operadores de comparación |
+| 18 | [`18_anidados.fa`](examples/18_anidados.fa) | Condicionales anidados |
+| 19 | [`19_ambito.fa`](examples/19_ambito.fa) | Ámbito de variables |
+| 20 | [`20_decimales.fa`](examples/20_decimales.fa) | Números decimales |
+| 21 | [`21_modulo.fa`](examples/21_modulo.fa) | Operador módulo |
+| 22 | [`22_while_avanzado.fa`](examples/22_while_avanzado.fa) | While avanzado |
+| 23 | [`23_for_avanzado.fa`](examples/23_for_avanzado.fa) | For avanzado |
+| 24 | [`24_repetir_avanzado.fa`](examples/24_repetir_avanzado.fa) | Repetir avanzado |
+| 25 | [`25_array_operaciones.fa`](examples/25_array_operaciones.fa) | Operaciones con arrays |
+| 26 | [`26_matriz.fa`](examples/26_matriz.fa) | Matrices |
+| 27 | [`27_string_metodos.fa`](examples/27_string_metodos.fa) | Métodos de string |
+| 28 | [`28_booleanos.fa`](examples/28_booleanos.fa) | Valores booleanos |
+| 29 | [`29_constantes.fa`](examples/29_constantes.fa) | Constantes |
+| 30 | [`30_funciones_multiples.fa`](examples/30_funciones_multiples.fa) | Funciones múltiples |
+
+#### Nivel Intermedio (31-70)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 31 | [`31_clase_metodos.fa`](examples/31_clase_metodos.fa) | Clase con métodos |
+| 32 | [`32_clase_libro.fa`](examples/32_clase_libro.fa) | Clase Libro |
+| 33 | [`33_array_objetos.fa`](examples/33_array_objetos.fa) | Array de objetos |
+| 34 | [`34_mapas_avanzados.fa`](examples/34_mapas_avanzados.fa) | Mapas avanzados |
+| 35 | [`35_mapas_anidados.fa`](examples/35_mapas_anidados.fa) | Mapas anidados |
+| 36 | [`36_referencias.fa`](examples/36_referencias.fa) | Referencias |
+| 37 | [`37_tabla_multiplicar.fa`](examples/37_tabla_multiplicar.fa) | Tabla de multiplicar |
+| 38 | [`38_numeros_primos.fa`](examples/38_numeros_primos.fa) | Números primos |
+| 39 | [`39_factorial.fa`](examples/39_factorial.fa) | Factorial |
+| 40 | [`40_fibonacci.fa`](examples/40_fibonacci.fa) | Fibonacci |
+| 41 | [`41_palindromo.fa`](examples/41_palindromo.fa) | Palíndromo |
+| 42 | [`42_contar_vocales.fa`](examples/42_contar_vocales.fa) | Contar vocales |
+| 43 | [`43_suma_digitos.fa`](examples/43_suma_digitos.fa) | Suma de dígitos |
+| 44 | [`44_minimo_maximo.fa`](examples/44_minimo_maximo.fa) | Mínimo y máximo |
+| 45 | [`45_ordenar_array.fa`](examples/45_ordenar_array.fa) | Ordenar array |
+| 46 | [`46_potencia.fa`](examples/46_potencia.fa) | Potencia |
+| 47 | [`47_conversor_temperatura.fa`](examples/47_conversor_temperatura.fa) | Conversor de temperatura |
+| 48 | [`48_contar_palabras.fa`](examples/48_contar_palabras.fa) | Contar palabras |
+| 49 | [`49_calcular_descuento.fa`](examples/49_calcular_descuento.fa) | Calcular descuento |
+| 50 | [`50_adivina_mejorado.fa`](examples/50_adivina_mejorado.fa) | Adivina mejorado |
+| 51 | [`51_calculadora_imc.fa`](examples/51_calculadora_imc.fa) | Calculadora IMC |
+| 52 | [`52_piedra_papel_tijera.fa`](examples/52_piedra_papel_tijera.fa) | Piedra, papel o tijera |
+| 53 | [`53_while_contador.fa`](examples/53_while_contador.fa) | While contador |
+| 54 | [`54_cadena_edades.fa`](examples/54_cadena_edades.fa) | Cadena de edades |
+| 55 | [`55_while_centinela.fa`](examples/55_while_centinela.fa) | While centinela |
+| 56 | [`56_arrays_strings.fa`](examples/56_arrays_strings.fa) | Arrays y strings |
+| 57 | [`57_sumatoria.fa`](examples/57_sumatoria.fa) | Sumatoria |
+| 58 | [`58_secuencias.fa`](examples/58_secuencias.fa) | Secuencias |
+| 59 | [`59_mcd.fa`](examples/59_mcd.fa) | Máximo común divisor |
+| 60 | [`60_clase_banco.fa`](examples/60_clase_banco.fa) | Clase Banco |
+| 61 | [`61_arrays_medianas.fa`](examples/61_arrays_medianas.fa) | Arrays: medianas |
+| 62 | [`62_calcular_edad.fa`](examples/62_calcular_edad.fa) | Calcular edad |
+| 63 | [`63_multiplos.fa`](examples/63_multiplos.fa) | Múltiplos |
+| 64 | [`64_mayor_de_tres.fa`](examples/64_mayor_de_tres.fa) | Mayor de tres |
+| 65 | [`65_numeros_perfectos.fa`](examples/65_numeros_perfectos.fa) | Números perfectos |
+| 66 | [`66_busqueda_lineal.fa`](examples/66_busqueda_lineal.fa) | Búsqueda lineal |
+| 67 | [`67_invertir_array.fa`](examples/67_invertir_array.fa) | Invertir array |
+| 68 | [`68_promedio_array.fa`](examples/68_promedio_array.fa) | Promedio de array |
+| 69 | [`69_clase_rectangulo.fa`](examples/69_clase_rectangulo.fa) | Clase Rectángulo |
+| 70 | [`70_concurrencia.fa`](examples/70_concurrencia.fa) | Concurrencia básica |
+
+#### Features Nuevas (71-74)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 71 | [`71_traits.fa`](examples/71_traits.fa) | Traits |
+| 72 | [`72_genericos.fa`](examples/72_genericos.fa) | Genéricos |
+| 73 | [`73_atributos.fa`](examples/73_atributos.fa) | Atributos |
+| 73b| [`73_seleccionar.fa`](examples/73_seleccionar.fa) | Select sobre canales |
+| 74 | [`74_doc_comments.fa`](examples/74_doc_comments.fa) | Doc comments |
+
+#### String Interpolation (75-80)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 75 | [`75_interpolacion.fa`](examples/75_interpolacion.fa) | `${}` básico |
+| 76 | [`76_interpolacion_expresiones.fa`](examples/76_interpolacion_expresiones.fa) | Expresiones en `${}` |
+| 77 | [`77_interpolacion_objetos.fa`](examples/77_interpolacion_objetos.fa) | Objetos en `${}` |
+| 78 | [`78_interpolacion_escape.fa`](examples/78_interpolacion_escape.fa) | Escape en interpolación |
+| 79 | [`79_interpolacion_anidada.fa`](examples/79_interpolacion_anidada.fa) | Interpolación anidada |
+| 80 | [`80_interpolacion_formateo.fa`](examples/80_interpolacion_formateo.fa) | Formateo en `${}` |
+
+#### Result/Option (81-90)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 81 | [`81_resultado_simple.fa`](examples/81_resultado_simple.fa) | `Resultado<T, E>` simple |
+| 82 | [`82_resultado_propagacion.fa`](examples/82_resultado_propagacion.fa) | Propagación con `?` |
+| 83 | [`83_option_simple.fa`](examples/83_option_simple.fa) | `Opcion<T>` simple |
+| 84 | [`84_option_desempaquetar.fa`](examples/84_option_desempaquetar.fa) | Desempaquetar `Opcion` |
+| 85 | [`85_resultado_match.fa`](examples/85_resultado_match.fa) | `Resultado` con match |
+| 86 | [`86_resultado_multiple.fa`](examples/86_resultado_multiple.fa) | `Resultado` múltiple |
+| 87 | [`87_resultado_validacion.fa`](examples/87_resultado_validacion.fa) | Validación con `Resultado` |
+| 88 | [`88_option_combinar.fa`](examples/88_option_combinar.fa) | Combinar `Opcion` |
+| 89 | [`89_resultado_personalizado.fa`](examples/89_resultado_personalizado.fa) | `Resultado` personalizado |
+| 90 | [`90_resultado_test.fa`](examples/90_resultado_test.fa) | Testing con `Resultado` |
+
+#### Traits/Interfaces (91-100)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 91 | [`91_trait_simple.fa`](examples/91_trait_simple.fa) | Trait simple |
+| 92 | [`92_trait_multiple.fa`](examples/92_trait_multiple.fa) | Trait múltiple |
+| 93 | [`93_trait_polimorfismo.fa`](examples/93_trait_polimorfismo.fa) | Polimorfismo con traits |
+| 94 | [`94_trait_metodos_defecto.fa`](examples/94_trait_metodos_defecto.fa) | Métodos por defecto |
+| 95 | [`95_trait_herencia.fa`](examples/95_trait_herencia.fa) | Herencia de traits |
+| 96 | [`96_trait_generico.fa`](examples/96_trait_generico.fa) | Trait genérico |
+| 97 | [`97_trait_display.fa`](examples/97_trait_display.fa) | Trait Mostrar (Display) |
+| 98 | [`98_trait_igualdad.fa`](examples/98_trait_igualdad.fa) | Trait Igualdad |
+| 99 | [`99_trait_iterador.fa`](examples/99_trait_iterador.fa) | Trait Iterador |
+| 100 | [`100_trait_comparable.fa`](examples/100_trait_comparable.fa) | Trait Comparable |
+
+#### Genéricos (101-110)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 101 | [`101_generico_identidad.fa`](examples/101_generico_identidad.fa) | Identidad genérica |
+| 102 | [`102_generico_intercambiar.fa`](examples/102_generico_intercambiar.fa) | Intercambiar genérico |
+| 103 | [`103_generico_pila.fa`](examples/103_generico_pila.fa) | Pila genérica |
+| 104 | [`104_generico_caja.fa`](examples/104_generico_caja.fa) | Caja genérica |
+| 105 | [`105_generico_par.fa`](examples/105_generico_par.fa) | Par genérico |
+| 106 | [`106_generico_trait_bound.fa`](examples/106_generico_trait_bound.fa) | Trait Bound genérico |
+| 107 | [`107_generico_multiple.fa`](examples/107_generico_multiple.fa) | Múltiples genéricos |
+| 108 | [`108_generico_arbol.fa`](examples/108_generico_arbol.fa) | Árbol genérico |
+| 109 | [`109_generico_opcion.fa`](examples/109_generico_opcion.fa) | Opción genérica |
+| 110 | [`110_generico_resultado.fa`](examples/110_generico_resultado.fa) | Resultado genérico |
+
+#### Match y Patrones (111-115)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 111 | [`111_match_enum.fa`](examples/111_match_enum.fa) | Match con enum |
+| 112 | [`112_match_exhaustivo.fa`](examples/112_match_exhaustivo.fa) | Match exhaustivo |
+| 113 | [`113_match_patrones.fa`](examples/113_match_patrones.fa) | Patrones en match |
+| 114 | [`114_match_ignorar.fa`](examples/114_match_ignorar.fa) | Ignorar casos `_` |
+| 115 | [`115_match_anidado.fa`](examples/115_match_anidado.fa) | Match anidado |
+
+#### Select sobre Canales (116-120)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 116 | [`116_select_simple.fa`](examples/116_select_simple.fa) | Select simple |
+| 117 | [`117_select_timeout.fa`](examples/117_select_timeout.fa) | Select con timeout |
+| 118 | [`118_select_default.fa`](examples/118_select_default.fa) | Select con default |
+| 119 | [`119_select_multiple.fa`](examples/119_select_multiple.fa) | Select múltiple |
+| 120 | [`120_select_trabajadores.fa`](examples/120_select_trabajadores.fa) | Select con trabajadores |
+
+#### Atributos/Derive (121-125)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 121 | [`121_derive_mostrar.fa`](examples/121_derive_mostrar.fa) | @derive(Mostrar) |
+| 122 | [`122_derive_igualdad.fa`](examples/122_derive_igualdad.fa) | @derive(Igual) |
+| 123 | [`123_derive_multiple.fa`](examples/123_derive_multiple.fa) | @derive múltiple |
+| 124 | [`124_atributo_test.fa`](examples/124_atributo_test.fa) | @test |
+| 125 | [`125_atributos_personalizados.fa`](examples/125_atributos_personalizados.fa) | Atributos personalizados |
+
+#### Concurrencia (126-130)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 126 | [`126_hilo_simple.fa`](examples/126_hilo_simple.fa) | Hilo simple |
+| 127 | [`127_hilo_comunicacion.fa`](examples/127_hilo_comunicacion.fa) | Hilo con canal |
+| 128 | [`128_hilo_multiple.fa`](examples/128_hilo_multiple.fa) | Múltiples hilos |
+| 129 | [`129_hilo_retorno.fa`](examples/129_hilo_retorno.fa) | Hilo con retorno |
+| 130 | [`130_hilo_productor_consumidor.fa`](examples/130_hilo_productor_consumidor.fa) | Productor-Consumidor |
+
+#### Algoritmos Clásicos (131-140)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 131 | [`131_ordenamiento_burbuja.fa`](examples/131_ordenamiento_burbuja.fa) | Burbuja |
+| 132 | [`132_ordenamiento_insercion.fa`](examples/132_ordenamiento_insercion.fa) | Inserción |
+| 133 | [`133_ordenamiento_seleccion.fa`](examples/133_ordenamiento_seleccion.fa) | Selección |
+| 134 | [`134_ordenamiento_quicksort.fa`](examples/134_ordenamiento_quicksort.fa) | Quicksort |
+| 135 | [`135_ordenamiento_mergesort.fa`](examples/135_ordenamiento_mergesort.fa) | Mergesort |
+| 136 | [`136_busqueda_binaria.fa`](examples/136_busqueda_binaria.fa) | Búsqueda binaria |
+| 137 | [`137_busqueda_lineal.fa`](examples/137_busqueda_lineal.fa) | Búsqueda lineal |
+| 138 | [`138_recursividad.fa`](examples/138_recursividad.fa) | Recursividad |
+| 139 | [`139_torres_hanoi.fa`](examples/139_torres_hanoi.fa) | Torres de Hanoi |
+| 140 | [`140_algoritmo_euclides.fa`](examples/140_algoritmo_euclides.fa) | Algoritmo de Euclides |
+
+#### Estructuras de Datos (141-150)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 141 | [`141_lista_enlazada.fa`](examples/141_lista_enlazada.fa) | Lista enlazada |
+| 142 | [`142_lista_doble.fa`](examples/142_lista_doble.fa) | Lista doblemente enlazada |
+| 143 | [`143_pila.fa`](examples/143_pila.fa) | Pila (Stack) |
+| 144 | [`144_cola.fa`](examples/144_cola.fa) | Cola (Queue) |
+| 145 | [`145_arbol_binario.fa`](examples/145_arbol_binario.fa) | Árbol binario |
+| 146 | [`146_arbol_avl.fa`](examples/146_arbol_avl.fa) | Árbol AVL |
+| 147 | [`147_grafo_adyacencia.fa`](examples/147_grafo_adyacencia.fa) | Grafo (matriz adyacencia) |
+| 148 | [`148_grafo_lista.fa`](examples/148_grafo_lista.fa) | Grafo (lista adyacencia) |
+| 149 | [`149_tabla_hash.fa`](examples/149_tabla_hash.fa) | Tabla hash |
+| 150 | [`150_heap.fa`](examples/150_heap.fa) | Heap |
+
+#### Juegos Interactivos (151-160)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 151 | [`151_adivina_numero.fa`](examples/151_adivina_numero.fa) | Adivina el número |
+| 152 | [`152_piedra_papel_tijera.fa`](examples/152_piedra_papel_tijera.fa) | Piedra, papel o tijera |
+| 153 | [`153_ahorcado.fa`](examples/153_ahorcado.fa) | Ahorcado |
+| 154 | [`154_tateti.fa`](examples/154_tateti.fa) | Ta-Te-Ti |
+| 155 | [`155_memorice.fa`](examples/155_memorice.fa) | Memorice |
+| 156 | [`156_calculadora_cientifica.fa`](examples/156_calculadora_cientifica.fa) | Calculadora científica |
+| 157 | [`157_conversor_unidades.fa`](examples/157_conversor_unidades.fa) | Conversor de unidades |
+| 158 | [`158_contador_palabras.fa`](examples/158_contador_palabras.fa) | Contador de palabras |
+| 159 | [`159_generador_contraseñas.fa`](examples/159_generador_contraseñas.fa) | Generador de contraseñas |
+| 160 | [`160_cronometro.fa`](examples/160_cronometro.fa) | Cronómetro |
+
+#### Ciencia y Matemáticas (161-170)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 161 | [`161_aprox_pi.fa`](examples/161_aprox_pi.fa) | Aproximación de π |
+| 162 | [`162_aprox_e.fa`](examples/162_aprox_e.fa) | Aproximación de e |
+| 163 | [`163_raiz_cuadrada.fa`](examples/163_raiz_cuadrada.fa) | Raíz cuadrada |
+| 164 | [`164_ecuacion_segundo_grado.fa`](examples/164_ecuacion_segundo_grado.fa) | Ecuación de 2° grado |
+| 165 | [`165_numeros_complejos.fa`](examples/165_numeros_complejos.fa) | Números complejos |
+| 166 | [`166_matrices.fa`](examples/166_matrices.fa) | Matrices |
+| 167 | [`167_estadistica.fa`](examples/167_estadistica.fa) | Estadística básica |
+| 168 | [`168_regresion_lineal.fa`](examples/168_regresion_lineal.fa) | Regresión lineal |
+| 169 | [`169_simulacion_montecarlo.fa`](examples/169_simulacion_montecarlo.fa) | Simulación Montecarlo |
+| 170 | [`170_cifrado_cesar.fa`](examples/170_cifrado_cesar.fa) | Cifrado César |
+
+#### Patrones de Diseño (171-180)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 171 | [`171_singleton.fa`](examples/171_singleton.fa) | Singleton |
+| 172 | [`172_factory.fa`](examples/172_factory.fa) | Factory |
+| 173 | [`173_observador.fa`](examples/173_observador.fa) | Observador |
+| 174 | [`174_estrategia.fa`](examples/174_estrategia.fa) | Estrategia |
+| 175 | [`175_decorador.fa`](examples/175_decorador.fa) | Decorador |
+| 176 | [`176_comando.fa`](examples/176_comando.fa) | Comando |
+| 177 | [`177_visitante.fa`](examples/177_visitante.fa) | Visitante |
+| 178 | [`178_adaptador.fa`](examples/178_adaptador.fa) | Adaptador |
+| 179 | [`179_estado.fa`](examples/179_estado.fa) | Estado |
+| 180 | [`180_constructor.fa`](examples/180_constructor.fa) | Constructor (Builder) |
+
+#### System Programming (181-190)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 181 | [`181_ownership.fa`](examples/181_ownership.fa) | Ownership |
+| 182 | [`182_prestamos.fa`](examples/182_prestamos.fa) | Préstamos (borrowing) |
+| 183 | [`183_mutabilidad.fa`](examples/183_mutabilidad.fa) | Mutabilidad |
+| 184 | [`184_ffi_simple.fa`](examples/184_ffi_simple.fa) | FFI simple |
+| 185 | [`185_ffi_matematicas.fa`](examples/185_ffi_matematicas.fa) | FFI matemáticas |
+| 186 | [`186_gestion_memoria.fa`](examples/186_gestion_memoria.fa) | Gestión de memoria |
+| 187 | [`187_cola_circular.fa`](examples/187_cola_circular.fa) | Cola circular |
+| 188 | [`188_codigo_autonomo.fa`](examples/188_codigo_autonomo.fa) | Código autónomo |
+| 189 | [`189_benchmark_manual.fa`](examples/189_benchmark_manual.fa) | Benchmark manual |
+| 190 | [`190_optimizacion.fa`](examples/190_optimizacion.fa) | Optimización |
+
+#### Temas Avanzados (191-200)
+| # | Archivo | Concepto |
+|---|---------|----------|
+| 191 | [`191_compilacion_condicional.fa`](examples/191_compilacion_condicional.fa) | Compilación condicional |
+| 192 | [`192_metaprogramacion.fa`](examples/192_metaprogramacion.fa) | Metaprogramación |
+| 193 | [`193_json_basico.fa`](examples/193_json_basico.fa) | JSON básico |
+| 194 | [`194_expresiones_regulares.fa`](examples/194_expresiones_regulares.fa) | Expresiones regulares |
+| 195 | [`195_recorrido_arbol.fa`](examples/195_recorrido_arbol.fa) | Recorrido de árbol |
+| 196 | [`196_recorrido_grafo.fa`](examples/196_recorrido_grafo.fa) | Recorrido de grafo |
+| 197 | [`197_dijkstra.fa`](examples/197_dijkstra.fa) | Algoritmo de Dijkstra |
+| 198 | [`198_programacion_dinamica.fa`](examples/198_programacion_dinamica.fa) | Programación dinámica |
+| 199 | [`199_forja_desde_forja.fa`](examples/199_forja_desde_forja.fa) | Forja desde Forja |
+| 200 | [`200_todo_junto.fa`](examples/200_todo_junto.fa) | Todo junto |
 
 Explora todos los ejemplos en la carpeta [`examples/`](examples/).
 

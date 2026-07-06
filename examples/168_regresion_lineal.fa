@@ -1,0 +1,138 @@
+/// Regresión Lineal Simple
+/// Conceptos: estadística, mínimos cuadrados, predicción, correlación
+/// Nivel: avanzado
+
+importar "std/io"
+
+// Implementación de regresión lineal simple usando el método
+// de mínimos cuadrados: y = mx + b
+// donde m es la pendiente y b es la intersección.
+
+funcion media(arr) -> Decimal {
+    variable suma = 0
+    variable i = 0
+    mientras (i < longitud(arr)) {
+        suma = suma + arr[i]
+        i = i + 1
+    }
+    retornar suma / longitud(arr)
+}
+
+clase RegresionLineal {
+    pendiente
+    interseccion
+    r_cuadrado
+    x_media
+    y_media
+
+    constructor() {
+        este.pendiente = 0
+        este.interseccion = 0
+        este.r_cuadrado = 0
+        este.x_media = 0
+        este.y_media = 0
+    }
+
+    funcion entrenar(x, y) {
+        variable n = longitud(x)
+        si (n != longitud(y) || n == 0) {
+            escribir("  Error: Los arrays deben tener el mismo tamaño y no estar vacíos.")
+            retornar
+        }
+
+        este.x_media = media(x)
+        este.y_media = media(y)
+
+        // Calcular pendiente (m) usando fórmula de mínimos cuadrados
+        // m = Σ((xi - x̄)(yi - ȳ)) / Σ((xi - x̄)²)
+        variable numerador = 0
+        variable denominador = 0
+        variable i = 0
+        mientras (i < n) {
+            variable x_diff = x[i] - este.x_media
+            variable y_diff = y[i] - este.y_media
+            numerador = numerador + x_diff * y_diff
+            denominador = denominador + x_diff * x_diff
+            i = i + 1
+        }
+
+        si (denominador == 0) {
+            escribir("  Error: Todos los valores de x son iguales.")
+            retornar
+        }
+
+        este.pendiente = numerador / denominador
+        este.interseccion = este.y_media - este.pendiente * este.x_media
+
+        // Calcular R² (coeficiente de determinación)
+        // R² = 1 - SS_res / SS_tot
+        variable ss_res = 0
+        variable ss_tot = 0
+        variable j = 0
+        mientras (j < n) {
+            variable prediccion = este.predecir(x[j])
+            variable res = y[j] - prediccion
+            ss_res = ss_res + res * res
+            variable tot = y[j] - este.y_media
+            ss_tot = ss_tot + tot * tot
+            j = j + 1
+        }
+
+        si (ss_tot == 0) {
+            este.r_cuadrado = 1
+        } sino {
+            este.r_cuadrado = 1 - (ss_res / ss_tot)
+        }
+    }
+
+    funcion predecir(x_valor) -> Decimal {
+        retornar este.pendiente * x_valor + este.interseccion
+    }
+
+    funcion mostrar() {
+        escribir("  Ecuación: y = ${este.pendiente}x + ${este.interseccion}")
+        escribir("  R² = ${este.r_cuadrado}")
+    }
+}
+
+funcion main() {
+    escribir("=== REGRESIÓN LINEAL SIMPLE ===\n")
+    escribir("Método de mínimos cuadrados: y = mx + b\n")
+
+    // Datos de ejemplo: horas de estudio vs calificación
+    variable horas_estudio = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    variable calificaciones = [52, 55, 58, 65, 70, 73, 78, 82, 88, 92]
+
+    escribir("Datos de entrenamiento:")
+    escribir("  Horas de estudio → Calificación")
+    variable i = 0
+    mientras (i < longitud(horas_estudio)) {
+        escribir("  ${horas_estudio[i]}h → ${calificaciones[i]} puntos")
+        i = i + 1
+    }
+
+    variable modelo = nuevo RegresionLineal()
+    modelo.entrenar(horas_estudio, calificaciones)
+
+    escribir("")
+    escribir("Modelo entrenado:")
+    modelo.mostrar()
+
+    escribir("")
+    escribir("Predicciones:")
+    variable predecir_horas = [0, 2.5, 7.5, 11, 12]
+    variable j = 0
+    mientras (j < longitud(predecir_horas)) {
+        variable h = predecir_horas[j]
+        variable pred = modelo.predecir(h)
+        escribir("  ${h}h de estudio → calificación estimada: ${pred}")
+        j = j + 1
+    }
+
+    escribir("")
+    escribir("La regresión lineal encuentra la recta que mejor se ajusta")
+    escribir("a los datos minimizando la suma de errores al cuadrado.")
+    escribir("R² cercano a 1 indica un buen ajuste del modelo.")
+}
+
+main()

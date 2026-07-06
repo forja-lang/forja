@@ -1,0 +1,36 @@
+/// Función genérica identidad
+/// Conceptos: función genérica <T>, parámetro de tipo, polimorfismo paramétrico
+/// Nivel: intermedio
+
+importar "std/io"
+
+// La función identidad retorna exactamente lo que recibe,
+// funcionando para cualquier tipo T
+
+funcion identidad<T>(valor: T) -> T {
+    retornar valor
+}
+
+funcion main() {
+    escribir("=== Función Identidad Genérica ===\n")
+    
+    // T se infiere automáticamente del argumento
+    variable x = identidad(42)
+    variable y = identidad("Hola mundo")
+    variable z = identidad(verdadero)
+    variable w = identidad(3.14)
+    
+    escribir("identidad(42) = ${x}")
+    escribir("identidad(\"Hola mundo\") = ${y}")
+    escribir("identidad(verdadero) = ${z}")
+    escribir("identidad(3.14) = ${w}")
+    
+    // También funciona con arrays
+    variable arr = identidad([1, 2, 3])
+    escribir("identidad([1, 2, 3]) = ${arr}")
+    
+    escribir("")
+    escribir("La función identidad funciona para cualquier tipo T")
+}
+
+main()

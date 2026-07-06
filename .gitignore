@@ -11,5 +11,9 @@ benchmarks/**/*.html
 benchmarks/**/*.o
 .cargo/
 .roo/
-COMPARACION_FORJA_VS_RAVEN.md
+/COMPARACION_FORJA_VS_RAVEN.md
 /*test
+test_resultados.txt
+tests/
+/*.md
+*.md

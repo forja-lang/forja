@@ -1,0 +1,69 @@
+/// Patrones con datos (Constructor(nombre, edad))
+/// Conceptos: coincidir, patrones con datos, extracción de campos, variantes con parámetros
+/// Nivel: intermedio
+
+importar "std/io"
+
+// Enum con variantes que contienen datos asociados
+tipo Personaje = Heroe(Texto, Entero) | Villano(Texto, Entero) | Civil(Texto)
+
+funcion presentar(p) -> Texto {
+    coincidir (p) {
+        caso Heroe(nombre, poder) -> {
+            retornar "🦸 ${nombre} (poder: ${poder})"
+        }
+        caso Villano(nombre, maldad) -> {
+            retornar "🦹 ${nombre} (maldad: ${maldad})"
+        }
+        caso Civil(nombre) -> {
+            retornar "👤 ${nombre} (civil)"
+        }
+    }
+}
+
+funcion evaluar_peligro(p) -> Texto {
+    coincidir (p) {
+        // Podemos extraer y usar los datos en cada brazo
+        caso Heroe(_, poder) -> {
+            si (poder > 80) {
+                retornar "Héroe de élite"
+            } sino {
+                retornar "Héroe en entrenamiento"
+            }
+        }
+        caso Villano(_, maldad) -> {
+            si (maldad > 70) {
+                retornar "🔥 Amenaza crítica"
+            } sino {
+                retornar "Amenaza menor"
+            }
+        }
+        caso Civil(_) -> {
+            retornar "Inocente, sin peligro"
+        }
+    }
+}
+
+funcion main() {
+    escribir("=== Patrones con datos ===\n")
+
+    variable personajes = [
+        Heroe("Spark", 95),
+        Villano("Shadow", 85),
+        Civil("Juan"),
+        Heroe("Nova", 45),
+        Villano("Rata", 30)
+    ]
+
+    variable i = 0
+    mientras (i < longitud(personajes)) {
+        variable p = personajes[i]
+        escribir("${presentar(p)} — ${evaluar_peligro(p)}")
+        i = i + 1
+    }
+
+    escribir("")
+    escribir("Los patrones pueden extraer datos de las variantes del enum.")
+}
+
+main()

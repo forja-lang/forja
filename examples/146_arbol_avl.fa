@@ -1,0 +1,156 @@
+/// Árbol AVL auto-balanceado
+/// Conceptos: árbol AVL, balanceo, rotaciones, factor de equilibrio, BST balanceado
+/// Nivel: experto
+
+importar "std/io"
+
+clase NodoAVL {
+    valor
+    altura
+    izquierdo
+    derecho
+
+    constructor(val) {
+        este.valor = val
+        este.altura = 1
+        este.izquierdo = nulo
+        este.derecho = nulo
+    }
+}
+
+clase ArbolAVL {
+    raiz
+
+    constructor() {
+        este.raiz = nulo
+    }
+
+    funcion altura(nodo) -> Entero {
+        si (nodo == nulo) {
+            retornar 0
+        }
+        retornar nodo.altura
+    }
+
+    funcion balance(nodo) -> Entero {
+        si (nodo == nulo) {
+            retornar 0
+        }
+        retornar este.altura(nodo.izquierdo) - este.altura(nodo.derecho)
+    }
+
+    funcion rotar_derecha(y) {
+        variable x = y.izquierdo
+        variable T2 = x.derecho
+
+        x.derecho = y
+        y.izquierdo = T2
+
+        y.altura = 1 + maximo(este.altura(y.izquierdo), este.altura(y.derecho))
+        x.altura = 1 + maximo(este.altura(x.izquierdo), este.altura(x.derecho))
+
+        retornar x
+    }
+
+    funcion rotar_izquierda(x) {
+        variable y = x.derecho
+        variable T2 = y.izquierdo
+
+        y.izquierdo = x
+        x.derecho = T2
+
+        x.altura = 1 + maximo(este.altura(x.izquierdo), este.altura(x.derecho))
+        y.altura = 1 + maximo(este.altura(y.izquierdo), este.altura(y.derecho))
+
+        retornar y
+    }
+
+    funcion maximo(a, b) -> Entero {
+        si (a > b) { retornar a }
+        retornar b
+    }
+
+    funcion insertar(nodo, valor) {
+        si (nodo == nulo) {
+            retornar nuevo NodoAVL(valor)
+        }
+
+        si (valor < nodo.valor) {
+            nodo.izquierdo = este.insertar(nodo.izquierdo, valor)
+        } sino {
+            si (valor > nodo.valor) {
+                nodo.derecho = este.insertar(nodo.derecho, valor)
+            } sino {
+                retornar nodo  // valores duplicados no permitidos
+            }
+        }
+
+        nodo.altura = 1 + este.maximo(este.altura(nodo.izquierdo), este.altura(nodo.derecho))
+        variable bal = este.balance(nodo)
+
+        // Rotaciones para balancear
+        // Caso izquierda-izquierda
+        si (bal > 1 && valor < nodo.izquierdo.valor) {
+            retornar este.rotar_derecha(nodo)
+        }
+        // Caso derecha-derecha
+        si (bal < -1 && valor > nodo.derecho.valor) {
+            retornar este.rotar_izquierda(nodo)
+        }
+        // Caso izquierda-derecha
+        si (bal > 1 && valor > nodo.izquierdo.valor) {
+            nodo.izquierdo = este.rotar_izquierda(nodo.izquierdo)
+            retornar este.rotar_derecha(nodo)
+        }
+        // Caso derecha-izquierda
+        si (bal < -1 && valor < nodo.derecho.valor) {
+            nodo.derecho = este.rotar_derecha(nodo.derecho)
+            retornar este.rotar_izquierda(nodo)
+        }
+
+        retornar nodo
+    }
+
+    funcion agregar(valor) {
+        este.raiz = este.insertar(este.raiz, valor)
+    }
+
+    funcion mostrar(nodo, nivel) {
+        si (nodo != nulo) {
+            este.mostrar(nodo.derecho, nivel + 1)
+            variable esp = ""
+            variable i = 0
+            mientras (i < nivel) {
+                esp = esp + "    "
+                i = i + 1
+            }
+            escribir("${esp}${nodo.valor} (h=${nodo.altura})")
+            este.mostrar(nodo.izquierdo, nivel + 1)
+        }
+    }
+}
+
+funcion main() {
+    escribir("=== Árbol AVL Auto-balanceado ===\n")
+
+    variable avl = nuevo ArbolAVL()
+
+    // Insertar en orden creciente — el AVL se auto-balancea
+    variable valores = [10, 20, 30, 40, 50, 25]
+    escribir("Insertando: ${valores}\n")
+
+    variable i = 0
+    mientras (i < longitud(valores)) {
+        avl.agregar(valores[i])
+        i = i + 1
+    }
+
+    escribir("Estructura AVL (con alturas):")
+    avl.mostrar(avl.raiz, 0)
+
+    escribir("")
+    escribir("A diferencia del BST simple, AVL se mantiene balanceado.")
+    escribir("Altura máxima: O(log n) garantizado.")
+}
+
+main()

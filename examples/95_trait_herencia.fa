@@ -1,0 +1,86 @@
+/// Trait que extiende otro trait (herencia)
+/// Conceptos: herencia de traits, extends, jerarquía de interfaces
+/// Nivel: avanzado
+
+importar "std/io"
+
+// Un trait puede extender otro, heredando sus métodos
+
+trait Animal {
+    funcion hacer_sonido() -> Texto
+    funcion dormir() -> Texto
+}
+
+// Mascota extiende Animal (hereda hacer_sonido y dormir)
+trait Mascota : Animal {
+    funcion jugar() -> Texto
+    funcion obtener_nombre() -> Texto
+}
+
+clase Perro {
+    nombre
+    
+    constructor() {
+        este.nombre = "Firulais"
+    }
+}
+
+implementa Mascota para Perro {
+    // Métodos de Animal
+    funcion hacer_sonido() -> Texto {
+        retornar "${este.nombre}: ¡Guau!"
+    }
+    funcion dormir() -> Texto {
+        retornar "${este.nombre}: Zzz..."
+    }
+    
+    // Métodos de Mascota
+    funcion jugar() -> Texto {
+        retornar "${este.nombre} juega con la pelota"
+    }
+    funcion obtener_nombre() -> Texto {
+        retornar este.nombre
+    }
+}
+
+clase Gato {
+    nombre
+    
+    constructor() {
+        este.nombre = "Bigotes"
+    }
+}
+
+implementa Mascota para Gato {
+    funcion hacer_sonido() -> Texto {
+        retornar "${este.nombre}: ¡Miau!"
+    }
+    funcion dormir() -> Texto {
+        retornar "${este.nombre}: ronronea durmiendo"
+    }
+    funcion jugar() -> Texto {
+        retornar "${este.nombre} juega con un ovillo"
+    }
+    funcion obtener_nombre() -> Texto {
+        retornar este.nombre
+    }
+}
+
+funcion main() {
+    escribir("=== Herencia de Traits ===\n")
+    
+    variable p = nuevo Perro()
+    variable g = nuevo Gato()
+    
+    escribir(p.hacer_sonido())
+    escribir(p.jugar())
+    escribir(p.dormir())
+    
+    escribir("")
+    
+    escribir(g.hacer_sonido())
+    escribir(g.jugar())
+    escribir(g.dormir())
+}
+
+main()

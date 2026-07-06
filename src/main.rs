@@ -500,7 +500,7 @@ fn cmd_bench(args: &[String]) {
                 println!("  Compilación ASM + gcc -O2: {:.2} μs", compile_us);
 
                 // Medir ejecución en caliente (re-ejecutando el binario)
-                let t1 = std::time::Instant::now();
+                let _t1 = std::time::Instant::now();
                 let mut hot_ns_total = 0.0;
                 for _ in 0..iters {
                     let t_hot = std::time::Instant::now();

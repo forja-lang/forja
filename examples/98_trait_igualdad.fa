@@ -1,0 +1,72 @@
+/// @derive(Igual) para comparación
+/// Conceptos: @derive(Igual), Eq, comparación de objetos, igualdad
+/// Nivel: intermedio
+
+importar "std/io"
+
+// @derive(Igual) genera automáticamente la capacidad de
+// comparar objetos con == y !=
+
+@derive(Igual)
+clase Punto {
+    x
+    y
+    
+    constructor() {
+        este.x = 0
+        este.y = 0
+    }
+}
+
+@derive(Mostrar, Igual)
+clase ColorRGB {
+    r
+    g
+    b
+    
+    constructor() {
+        este.r = 0
+        este.g = 0
+        este.b = 0
+    }
+}
+
+funcion main() {
+    escribir("=== @derive(Igual) ===\n")
+    
+    variable p1 = nuevo Punto()
+    p1.x = 3
+    p1.y = 4
+    
+    variable p2 = nuevo Punto()
+    p2.x = 3
+    p2.y = 4
+    
+    variable p3 = nuevo Punto()
+    p3.x = 5
+    p3.y = 6
+    
+    escribir("p1 = (${p1.x}, ${p1.y})")
+    escribir("p2 = (${p2.x}, ${p2.y})")
+    escribir("p3 = (${p3.x}, ${p3.y})")
+    escribir("¿p1 == p2? ${p1 == p2}")
+    escribir("¿p1 == p3? ${p1 == p3}")
+    
+    escribir("")
+    escribir("Colores:")
+    variable c1 = nuevo ColorRGB()
+    c1.r = 255
+    c1.g = 0
+    c1.b = 0
+    
+    variable c2 = nuevo ColorRGB()
+    c2.r = 255
+    c2.g = 0
+    c2.b = 0
+    
+    escribir("c1: ${c1}")
+    escribir("c2: ${c2}")
+    escribir("¿c1 == c2? ${c1 == c2}")
+}
+
+main()

@@ -268,7 +268,7 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
                 self.cli();
             }
             Declaracion::Implementacion { trait_nombre, clase_nombre, metodos } => {
-                let mnames: Vec<String> = metodos.iter().map(|m| m.nombre.clone()).collect();
+                let _mnames: Vec<String> = metodos.iter().map(|m| m.nombre.clone()).collect();
                 let id = self.no(&format!("<b>implementa</b> {trait_nombre} para {clase_nombre}"), "c", "implementacion", !metodos.is_empty());
                 if !metodos.is_empty() {
                     self.ah(id);
@@ -304,7 +304,13 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
                     Operador::Y => "&&", Operador::O => "||",
                 }; format!("{}{op}{}", self.ec(izquierda), self.ec(derecha))
             }
-            Expresion::Unaria { operador, expr: ex } => format!("{operador}{}", self.ec(ex)),
+            Expresion::Unaria { operador, expr: ex } => {
+                let op_str = match operador {
+                    OperadorUnario::Negar => "-",
+                    OperadorUnario::No => "!",
+                };
+                format!("{op_str}{}", self.ec(ex))
+            }
             Expresion::LlamadaFuncion { nombre, argumentos } => { let args: Vec<String> = argumentos.iter().map(|a| self.ec(a)).collect(); format!("{nombre}({})", args.join(",")) }
             Expresion::AccesoMiembro { objeto, miembro } => format!("{}.{miembro}", self.ec(objeto)),
             Expresion::Instanciacion { clase, argumentos } => { let args: Vec<String> = argumentos.iter().map(|a| self.ec(a)).collect(); format!("nuevo {clase}({})", args.join(",")) }
@@ -318,8 +324,9 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
             Expresion::Seleccionar { brazos } => {
                 let mut out = String::from("seleccionar{");
                 for brazo in brazos {
-                    if let Some((var, canal)) = &brazo.recepcion {
-                        out.push_str(&format!("caso {var}={canal}.recibir()|"));
+                    if let Some((var, expr_recv)) = &brazo.recepcion {
+                        let expr_str = self.ec(expr_recv);
+                        out.push_str(&format!("caso {var}={expr_str}|"));
                     } else if brazo.timeout_ms > 0 {
                         out.push_str(&format!("tiempo {}|", brazo.timeout_ms));
                     } else {
@@ -330,6 +337,12 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
                 out
             }
             Expresion::Try(expr) => format!("{}?", self.ec(expr)),
+            Expresion::Asignacion { variable, valor } => format!("{}={}", variable, self.ec(valor)),
+            Expresion::AsignacionCampo { objeto, campo, valor } => format!("{}.{}={}", self.ec(objeto), campo, self.ec(valor)),
+            Expresion::ArraySet { array, valor } => format!("{}={}", self.ec(array), self.ec(valor)),
+            Expresion::Ok(expr) => format!("Ok({})", self.ec(expr)),
+            Expresion::Error(expr) => format!("Error({})", self.ec(expr)),
+            Expresion::Some(expr) => format!("Some({})", self.ec(expr)),
         }
     }
     fn dc(&self, d: &Declaracion) -> String { match d { Declaracion::Variable { nombre, valor, .. } => { if let Some(v) = valor { format!("{nombre}={}", self.ec(v)) } else { nombre.clone() } } Declaracion::Asignacion { nombre, valor } => format!("{nombre}={}", self.ec(valor)), _ => "?".to_string() } }

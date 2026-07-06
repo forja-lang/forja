@@ -1,0 +1,60 @@
+/// Interpolación con objetos y métodos
+/// Conceptos: ${objeto.campo}, ${objeto.metodo()}, acceso a miembros
+/// Nivel: básico
+
+importar "std/io"
+
+// Podemos acceder a campos y métodos de objetos dentro de ${}
+
+clase Persona {
+    nombre
+    edad
+    
+    constructor() {
+        este.nombre = "Carlos"
+        este.edad = 28
+    }
+    
+    funcion saludar() {
+        retornar "Hola, soy " + este.nombre
+    }
+    
+    funcion cumplir_anios() {
+        este.edad = este.edad + 1
+        retornar este.edad
+    }
+}
+
+variable p = nuevo Persona()
+
+// Acceso a campos:
+escribir("Nombre: ${p.nombre}")
+escribir("Edad: ${p.edad}")
+
+// Llamada a métodos:
+escribir("Saludo: ${p.saludar()}")
+
+// Métodos que retornan valores calculados:
+escribir("Después de cumplir años tendrá: ${p.cumplir_anios()}")
+
+// Acceso a arrays de objetos:
+clase Producto {
+    nombre
+    precio
+    
+    constructor() {
+        este.nombre = "Genérico"
+        este.precio = 0
+    }
+}
+
+variable prod1 = nuevo Producto()
+prod1.nombre = "Laptop"
+prod1.precio = 1200
+
+variable prod2 = nuevo Producto()
+prod2.nombre = "Mouse"
+prod2.precio = 25
+
+variable productos = [prod1, prod2]
+escribir("Primer producto: ${productos[0].nombre} - $${productos[0].precio}")

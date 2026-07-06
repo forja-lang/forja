@@ -1,9 +1,0 @@
-// POO simple en Forja (sin constructor)
-clase Punto {
-    x
-    y
-}
-
-variable p = nuevo Punto()
-escribir(p.x)
-escribir(p.y)

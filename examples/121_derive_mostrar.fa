@@ -1,0 +1,60 @@
+/// @derive(Mostrar) en clases y enums
+/// Conceptos: @derive(Mostrar), representación textual, depuración
+/// Nivel: básico
+
+importar "std/io"
+
+// @derive(Mostrar) genera una representación en texto del tipo
+
+@derive(Mostrar)
+clase Producto {
+    nombre
+    precio
+    stock
+
+    constructor() {
+        este.nombre = "Genérico"
+        este.precio = 0
+        este.stock = 0
+    }
+}
+
+@derive(Mostrar)
+clase Usuario {
+    id
+    nombre
+    email
+
+    constructor() {
+        este.id = 0
+        este.nombre = ""
+        este.email = ""
+    }
+}
+
+@derive(Mostrar)
+tipo Nivel = Bajo | Medio | Alto | Critico
+
+funcion main() {
+    escribir("=== @derive(Mostrar) ===\n")
+
+    variable p = nuevo Producto()
+    p.nombre = "Laptop Gamer"
+    p.precio = 1500
+    p.stock = 10
+
+    variable u = nuevo Usuario()
+    u.id = 42
+    u.nombre = "Ana García"
+    u.email = "ana@example.com"
+
+    escribir("Producto: ${p}")
+    escribir("Usuario: ${u}")
+    escribir("Nivel bajo: ${Bajo}")
+    escribir("Nivel crítico: ${Critico}")
+
+    escribir("")
+    escribir("@derive(Mostrar) muestra el contenido completo del objeto.")
+}
+
+main()

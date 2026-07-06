@@ -1,0 +1,188 @@
+/// Operaciones con Matrices
+/// Conceptos: arrays bidimensionales, álgebra lineal, multiplicación de matrices
+/// Nivel: avanzado
+
+importar "std/io"
+
+// Implementación de operaciones con matrices: suma, resta,
+// multiplicación, transposición, determinante (2x2 y 3x3).
+
+funcion crear_matriz(filas, columnas) {
+    variable m = []
+    variable i = 0
+    mientras (i < filas) {
+        variable fila = []
+        variable j = 0
+        mientras (j < columnas) {
+            fila[j] = 0
+            j = j + 1
+        }
+        m[i] = fila
+        i = i + 1
+    }
+    retornar m
+}
+
+funcion mostrar_matriz(m) {
+    variable filas = longitud(m)
+    variable columnas = longitud(m[0])
+    variable i = 0
+    mientras (i < filas) {
+        variable linea = "  | "
+        variable j = 0
+        mientras (j < columnas) {
+            linea = linea + m[i][j] + " "
+            j = j + 1
+        }
+        escribir(linea + "|")
+        i = i + 1
+    }
+}
+
+funcion suma_matrices(a, b) {
+    variable filas = longitud(a)
+    variable columnas = longitud(a[0])
+    variable resultado = crear_matriz(filas, columnas)
+    variable i = 0
+    mientras (i < filas) {
+        variable j = 0
+        mientras (j < columnas) {
+            resultado[i][j] = a[i][j] + b[i][j]
+            j = j + 1
+        }
+        i = i + 1
+    }
+    retornar resultado
+}
+
+funcion resta_matrices(a, b) {
+    variable filas = longitud(a)
+    variable columnas = longitud(a[0])
+    variable resultado = crear_matriz(filas, columnas)
+    variable i = 0
+    mientras (i < filas) {
+        variable j = 0
+        mientras (j < columnas) {
+            resultado[i][j] = a[i][j] - b[i][j]
+            j = j + 1
+        }
+        i = i + 1
+    }
+    retornar resultado
+}
+
+funcion multiplicar_matrices(a, b) {
+    variable filas_a = longitud(a)
+    variable columnas_a = longitud(a[0])
+    variable filas_b = longitud(b)
+    variable columnas_b = longitud(b[0])
+
+    si (columnas_a != filas_b) {
+        escribir("  Error: Dimensiones incompatibles para multiplicación.")
+        retornar nulo
+    }
+
+    variable resultado = crear_matriz(filas_a, columnas_b)
+    variable i = 0
+    mientras (i < filas_a) {
+        variable j = 0
+        mientras (j < columnas_b) {
+            variable suma = 0
+            variable k = 0
+            mientras (k < columnas_a) {
+                suma = suma + a[i][k] * b[k][j]
+                k = k + 1
+            }
+            resultado[i][j] = suma
+            j = j + 1
+        }
+        i = i + 1
+    }
+    retornar resultado
+}
+
+funcion transponer_matriz(m) {
+    variable filas = longitud(m)
+    variable columnas = longitud(m[0])
+    variable resultado = crear_matriz(columnas, filas)
+    variable i = 0
+    mientras (i < filas) {
+        variable j = 0
+        mientras (j < columnas) {
+            resultado[j][i] = m[i][j]
+            j = j + 1
+        }
+        i = i + 1
+    }
+    retornar resultado
+}
+
+funcion determinante_2x2(m) -> Entero {
+    retornar m[0][0] * m[1][1] - m[0][1] * m[1][0]
+}
+
+funcion determinante_3x3(m) -> Entero {
+    // Regla de Sarrus
+    variable a = m[0][0] * m[1][1] * m[2][2]
+    variable b = m[0][1] * m[1][2] * m[2][0]
+    variable c = m[0][2] * m[1][0] * m[2][1]
+    variable d = m[0][2] * m[1][1] * m[2][0]
+    variable e = m[0][0] * m[1][2] * m[2][1]
+    variable f = m[0][1] * m[1][0] * m[2][2]
+    retornar (a + b + c) - (d + e + f)
+}
+
+funcion main() {
+    escribir("=== OPERACIONES CON MATRICES ===\n")
+
+    // Matriz A: 2x3
+    variable A = [[1, 2, 3], [4, 5, 6]]
+    escribir("Matriz A (2×3):")
+    mostrar_matriz(A)
+
+    // Matriz B: 2x3
+    variable B = [[7, 8, 9], [10, 11, 12]]
+    escribir("Matriz B (2×3):")
+    mostrar_matriz(B)
+
+    escribir("")
+    escribir("A + B:")
+    mostrar_matriz(suma_matrices(A, B))
+
+    escribir("")
+    escribir("A - B:")
+    mostrar_matriz(resta_matrices(A, B))
+
+    // Multiplicación
+    variable C = [[1, 2], [3, 4], [5, 6]]
+    escribir("")
+    escribir("Matriz C (3×2):")
+    mostrar_matriz(C)
+
+    escribir("")
+    escribir("A × C (2×3 × 3×2 = 2×2):")
+    variable prod = multiplicar_matrices(A, C)
+    si (prod != nulo) {
+        mostrar_matriz(prod)
+    }
+
+    // Transposición
+    escribir("")
+    escribir("Transpuesta de A (2×3 → 3×2):")
+    mostrar_matriz(transponer_matriz(A))
+
+    // Determinantes
+    variable D = [[2, 3], [1, 4]]
+    escribir("")
+    escribir("Matriz D (2×2):")
+    mostrar_matriz(D)
+    escribir("  det(D) = ${determinante_2x2(D)}")
+
+    variable E = [[1, 2, 3], [4, 5, 6], [7, 8, 10]]
+    escribir("")
+    escribir("Matriz E (3×3):")
+    mostrar_matriz(E)
+    escribir("  det(E) = ${determinante_3x3(E)}")
+}
+
+main()

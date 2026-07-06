@@ -1,0 +1,92 @@
+/// Cola (queue) FIFO
+/// Conceptos: cola, FIFO, encolar, desencolar, estructura de datos
+/// Nivel: intermedio
+
+importar "std/io"
+
+clase Cola<T> {
+    elementos
+
+    constructor() {
+        este.elementos = []
+    }
+
+    funcion encolar(valor: T) {
+        este.elementos[longitud(este.elementos)] = valor
+    }
+
+    funcion desencolar() -> T {
+        si (longitud(este.elementos) == 0) {
+            retornar nulo
+        }
+        variable valor = este.elementos[0]
+        este.elementos = este.elementos[1..longitud(este.elementos)-1]
+        retornar valor
+    }
+
+    funcion frente() -> T {
+        si (longitud(este.elementos) == 0) {
+            retornar nulo
+        }
+        retornar este.elementos[0]
+    }
+
+    funcion esta_vacia() -> Booleano {
+        retornar longitud(este.elementos) == 0
+    }
+
+    funcion tamano() -> Entero {
+        retornar longitud(este.elementos)
+    }
+
+    funcion mostrar() {
+        escribir("  Cola: ${este.elementos}  (frente: ${este.frente()})")
+    }
+}
+
+funcion simulacion_banco() {
+    variable cola = nuevo Cola()
+    cola.encolar("Cliente 1")
+    cola.encolar("Cliente 2")
+    cola.encolar("Cliente 3")
+    cola.encolar("Cliente 4")
+
+    escribir("Llegan 4 clientes al banco:\n")
+    cola.mostrar()
+
+    escribir("")
+    variable atendidos = 0
+    mientras (!cola.esta_vacia()) {
+        variable cliente = cola.desencolar()
+        escribir("  Atendiendo: ${cliente}")
+        atendidos = atendidos + 1
+    }
+    escribir("\nSe atendieron ${atendidos} clientes en orden de llegada.")
+}
+
+funcion main() {
+    escribir("=== Cola (Queue FIFO) ===\n")
+
+    variable cola = nuevo Cola()
+    cola.encolar(10)
+    cola.encolar(20)
+    cola.encolar(30)
+    cola.mostrar()
+
+    escribir("Desencolando: ${cola.desencolar()}")
+    cola.mostrar()
+    cola.encolar(40)
+    cola.encolar(50)
+    cola.mostrar()
+    escribir("Frente: ${cola.frente()}")
+    escribir("Tamaño: ${cola.tamano()}")
+
+    escribir("")
+    escribir("Simulación de banco:")
+    simulacion_banco()
+
+    escribir("")
+    escribir("La cola sigue el principio FIFO (First In, First Out).")
+}
+
+main()
