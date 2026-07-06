@@ -18,3 +18,7 @@ tests/
 /*.md
 /*.exe
 /*.fa
+!/README.md
+!/README_*.md
+!/LICENSE.md
+!/LICENSE
