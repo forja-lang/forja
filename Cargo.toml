@@ -5,17 +5,24 @@ edition = "2021"
 description = "Forja (fa)"
 authors = ["lococoi"]
 
+[features]
+default = []
+gui = ["forja-gui-rt"]
+lsp = ["tower-lsp", "tokio"]
+all = ["gui", "lsp", "crossbeam"]
+
 [dependencies]
 # Sin dependencias externas para el núcleo - solo std de Rust
 # El JSON se genera manualmente en error.rs
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 crossbeam = { version = "0.8", optional = true }
+forja-gui-rt = { path = "crates/forja-gui-rt", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rustyline = "14"
-tower-lsp = "0.20"
-tokio = { version = "1", features = ["full"] }
+tower-lsp = { version = "0.20", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
 
 [[bench]]
 name = "bench-fa"
@@ -72,9 +79,20 @@ path = "benchmarks/debug_bytecode.rs"
 [[bin]]
 name = "forja-lsp"
 path = "src/bin/forja_lsp.rs"
+required-features = ["lsp"]
+
+[[bin]]
+name = "forja-gui"
+path = "src/bin/forja_gui.rs"
+required-features = ["gui"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.build-dependencies]
 winresource = "0.1"
+
+[workspace]
+members = [
+    "crates/forja-gui-rt",
+]
 
 [profile.release]
 opt-level = 3

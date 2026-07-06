@@ -25,3 +25,4 @@ tests/
 *.txt
 *test*
 *tests*
+.forja_gui_cache/
