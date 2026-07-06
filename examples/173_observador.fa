@@ -1,0 +1,116 @@
+/// Patrón Observer con Canales
+/// Conceptos: observer, canales, concurrencia, eventos, publicación/suscripción
+/// Nivel: avanzado
+
+importar "std/io"
+
+// El patrón Observer define una dependencia uno-a-muchos entre objetos,
+// de modo que cuando un objeto cambia su estado, todos sus dependientes
+// son notificados automáticamente usando canales.
+
+clase Sujeto {
+    estado
+    observadores
+    canal_tx
+
+    constructor() {
+        este.estado = 0
+        este.observadores = []
+        este.canal_tx = nulo
+    }
+
+    funcion agregar_observador(obs) {
+        variable n = longitud(este.observadores)
+        este.observadores[n] = obs
+        escribir("  👀 Observador agregado (total: ${n + 1})")
+    }
+
+    funcion notificar_todos() {
+        escribir("  📢 Notificando a ${longitud(este.observadores)} observadores...")
+        variable i = 0
+        mientras (i < longitud(este.observadores)) {
+            variable obs = este.observadores[i]
+            obs.tx.enviar(este.estado)
+            i = i + 1
+        }
+    }
+
+    funcion cambiar_estado(nuevo_estado) {
+        este.estado = nuevo_estado
+        escribir("  🔄 Estado cambiado a: ${nuevo_estado}")
+        este.notificar_todos()
+    }
+}
+
+clase Observador {
+    nombre
+    rx
+    tx
+
+    constructor() {
+        este.nombre = ""
+        este.rx = nulo
+        este.tx = nulo
+    }
+
+    funcion init(n) {
+        este.nombre = n
+        variable t, r = canal()
+        este.tx = t
+        este.rx = r
+    }
+
+    funcion empezar_escuchar() {
+        variable h = hilo {
+            mientras (verdadero) {
+                variable mensaje = este.rx.recibir()
+                escribir("  📬 ${este.nombre} recibió: estado = ${mensaje}")
+            }
+            retornar 0
+        }
+        retornar h
+    }
+}
+
+funcion main() {
+    escribir("=== PATRÓN OBSERVER ===\n")
+    escribir("Notifica cambios a múltiples observadores vía canales.\n")
+
+    variable sujeto = nuevo Sujeto()
+
+    variable obs1 = nuevo Observador()
+    obs1.init("Observador-1")
+    variable obs2 = nuevo Observador()
+    obs2.init("Observador-2")
+    variable obs3 = nuevo Observador()
+    obs3.init("Observador-3")
+
+    sujeto.agregar_observador(obs1)
+    sujeto.agregar_observador(obs2)
+    sujeto.agregar_observador(obs3)
+
+    escribir("")
+    variable h1 = obs1.empezar_escuchar()
+    variable h2 = obs2.empezar_escuchar()
+    variable h3 = obs3.empezar_escuchar()
+
+    escribir("Cambiando estado del sujeto:")
+    sujeto.cambiar_estado(10)
+    esperar(0.2)
+
+    escribir("")
+    sujeto.cambiar_estado(25)
+    esperar(0.2)
+
+    escribir("")
+    sujeto.cambiar_estado(42)
+    esperar(0.2)
+
+    escribir("")
+    escribir("El patrón Observer es ideal para:")
+    escribir("  • Interfaces de usuario (eventos de botones, cambios)")
+    escribir("  • Sistemas de eventos y notificaciones")
+    escribir("  • Arquitectura MVC (Modelo-Vista-Controlador)")
+}
+
+main()

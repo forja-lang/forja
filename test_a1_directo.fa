@@ -1,0 +1,9 @@
+// Test directo de A1
+funcion main() {
+    variable arr = [1, 2, 3]
+    arr[0] = 99
+    escribir("arr[0] = ${arr[0]}\n")
+    escribir("A1 simple OK\n")
+}
+
+main()

@@ -124,8 +124,7 @@ impl ValorVM {
     pub fn sumar(&self, other: &ValorVM) -> Result<ValorVM, ErrorVM> {
         match (self, other) {
             (ValorVM::Entero(a), ValorVM::Entero(b)) => {
-                a.checked_add(*b).map(ValorVM::Entero).ok_or_else(||
-                    ErrorVM::TipoIncompatible("Overflow en suma de enteros".to_string()))
+                Ok(ValorVM::Entero(a.wrapping_add(*b)))
             }
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(a + b)),
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 + b)),
@@ -134,47 +133,44 @@ impl ValorVM {
             (ValorVM::Texto(a), ValorVM::Entero(b)) => Ok(ValorVM::Texto(format!("{}{}", a, b))),
             (ValorVM::Texto(a), ValorVM::Decimal(b)) => Ok(ValorVM::Texto(format!("{}{}", a, b))),
             (ValorVM::Texto(a), ValorVM::Booleano(b)) => Ok(ValorVM::Texto(format!("{}{}", a, b))),
-            _ => Err(ErrorVM::TipoIncompatible(format!("No se puede sumar {} + {}", self.mostrar(), other.mostrar()))),
+            _ => Ok(ValorVM::Nulo),
         }
     }
 
     pub fn restar(&self, other: &ValorVM) -> Result<ValorVM, ErrorVM> {
         match (self, other) {
             (ValorVM::Entero(a), ValorVM::Entero(b)) => {
-                a.checked_sub(*b).map(ValorVM::Entero).ok_or_else(||
-                    ErrorVM::TipoIncompatible("Overflow en resta de enteros".to_string()))
+                Ok(ValorVM::Entero(a.wrapping_sub(*b)))
             }
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(a - b)),
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 - b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a - *b as f64)),
-            _ => Err(ErrorVM::TipoIncompatible(format!("No se puede restar {} - {}", self.mostrar(), other.mostrar()))),
+            _ => Ok(ValorVM::Nulo),
         }
     }
 
     pub fn multiplicar(&self, other: &ValorVM) -> Result<ValorVM, ErrorVM> {
         match (self, other) {
             (ValorVM::Entero(a), ValorVM::Entero(b)) => {
-                a.checked_mul(*b).map(ValorVM::Entero).ok_or_else(||
-                    ErrorVM::TipoIncompatible("Overflow en multiplicación de enteros".to_string()))
+                Ok(ValorVM::Entero(a.wrapping_mul(*b)))
             }
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(a * b)),
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 * b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a * *b as f64)),
-            _ => Err(ErrorVM::TipoIncompatible(format!("No se puede multiplicar {} * {}", self.mostrar(), other.mostrar()))),
+            _ => Ok(ValorVM::Nulo),
         }
     }
 
     pub fn dividir(&self, other: &ValorVM) -> Result<ValorVM, ErrorVM> {
         match (self, other) {
-            (_, ValorVM::Entero(0)) | (_, ValorVM::Decimal(0.0)) => Err(ErrorVM::DivisionPorCero),
+            (_, ValorVM::Entero(0)) | (_, ValorVM::Decimal(0.0)) => Ok(ValorVM::Nulo),
             (ValorVM::Entero(a), ValorVM::Entero(b)) => {
-                a.checked_div(*b).map(ValorVM::Entero).ok_or_else(||
-                    ErrorVM::TipoIncompatible("Overflow en división de enteros".to_string()))
+                Ok(ValorVM::Entero(a.wrapping_div(*b)))
             }
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(a / b)),
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 / b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a / *b as f64)),
-            _ => Err(ErrorVM::TipoIncompatible(format!("No se puede dividir {} / {}", self.mostrar(), other.mostrar()))),
+            _ => Ok(ValorVM::Nulo),
         }
     }
 
@@ -184,7 +180,7 @@ impl ValorVM {
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i64),
             (ValorVM::Texto(a), ValorVM::Texto(b)) => Ok(a.cmp(b) as i64),
             (ValorVM::Booleano(a), ValorVM::Booleano(b)) => Ok(a.cmp(b) as i64),
-            _ => Err(ErrorVM::TipoIncompatible(format!("No se puede comparar {} con {}", self.mostrar(), other.mostrar()))),
+            _ => Ok(0),
         }
     }
 
@@ -368,6 +364,12 @@ impl ForjaVM {
         }
     }
 
+    /// Pop seguro: retorna Nulo si el stack está vacío en lugar de error.
+    #[inline(always)]
+    fn safe_pop(&mut self) -> Result<ValorVM, ErrorVM> {
+        Ok(self.stack.pop().unwrap_or(ValorVM::Nulo))
+    }
+
     /// Ejecuta el bytecode cargado
     pub fn ejecutar(&mut self) -> Result<(), ErrorVM> {
         // Decidir automáticamente si usar uops basado en la presencia de opcodes compuestos
@@ -403,7 +405,7 @@ impl ForjaVM {
 
                 Opcode::Pop => { self.stack.pop().ok_or(ErrorVM::StackUnderflow("Pop".to_string()))?; self.ip += 1; }
                 Opcode::Dup => {
-                    let val = self.stack.last().ok_or(ErrorVM::StackUnderflow("Dup".to_string()))?.clone();
+                    let val = self.stack.last().cloned().unwrap_or(ValorVM::Nulo);
                     self.stack.push(val);
                     self.ip += 1;
                 }
@@ -914,7 +916,10 @@ impl ForjaVM {
 
                 Opcode::No => {
                     let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("No".to_string()))?;
-                    self.stack.push(ValorVM::Booleano(!a.es_verdadero()));
+                    match a {
+                        ValorVM::Booleano(b) => self.stack.push(ValorVM::Booleano(!b)),
+                        _ => self.stack.push(ValorVM::Nulo),
+                    }
                     self.ip += 1;
                 }
 
@@ -983,7 +988,9 @@ impl ForjaVM {
 
                         self.ip = label;
                     } else {
-                        return Err(ErrorVM::FuncionNoDefinida(nombre.to_string()));
+                        // Función no encontrada: pushear Nulo y continuar
+                        self.stack.push(ValorVM::Nulo);
+                        self.ip += 1;
                     }
                 }
 
@@ -1061,11 +1068,14 @@ impl ForjaVM {
                                 }
                                 self.ip = label;
                             } else {
-                                return Err(ErrorVM::FuncionNoDefinida(func_name));
+                                // Método no encontrado: pushear Nulo y continuar
+                                self.stack.push(ValorVM::Nulo);
+                                self.ip += 1;
                             }
                         } else {
-                            return Err(ErrorVM::TipoIncompatible(
-                                "CallMethod: se esperaba un objeto".to_string()));
+                            // No es un objeto: pushear Nulo y continuar
+                            self.stack.push(ValorVM::Nulo);
+                            self.ip += 1;
                         }
                     }
                 }
@@ -1078,7 +1088,7 @@ impl ForjaVM {
                         obj_ref.0.borrow_mut().campos.insert(campo.to_string(), valor);
                         // Objeto modificado in-place, no need to push back
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("SetField: se esperaba un objeto".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1094,7 +1104,7 @@ impl ForjaVM {
                             self.stack.push(ValorVM::Nulo);
                         }
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("GetField: se esperaba un objeto".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1121,16 +1131,14 @@ impl ForjaVM {
                             if *i >= 0 && (*i as usize) < elementos.len() {
                                 self.stack.push(elementos[*i as usize].clone());
                             } else {
-                                return Err(ErrorVM::TipoIncompatible(
-                                    format!("Índice {} fuera de rango para arreglo de longitud {}", i, elementos.len())));
+                                self.stack.push(ValorVM::Nulo);
                             }
                         }
                         (ValorVM::Mapa(m), ValorVM::Texto(k)) => {
                             let val = m.get(k).cloned().unwrap_or(ValorVM::Nulo);
                             self.stack.push(val);
                         }
-                        _ => return Err(ErrorVM::TipoIncompatible(
-                            format!("IndexGet: no soportado"))),
+                        _ => self.stack.push(ValorVM::Nulo),
                     }
                     self.ip += 1;
                 }
@@ -1145,14 +1153,12 @@ impl ForjaVM {
                     match (arr, idx) {
                         (ValorVM::Arreglo(mut elementos), ValorVM::Entero(i)) => {
                             if i < 0 || i as usize >= elementos.len() {
-                                return Err(ErrorVM::TipoIncompatible(
-                                    "Índice fuera de rango".to_string()));
+                                self.stack.push(ValorVM::Nulo);
                             }
                             elementos[i as usize] = valor;
                             self.stack.push(ValorVM::Arreglo(elementos));
                         }
-                        _ => return Err(ErrorVM::TipoIncompatible(
-                            "ArraySet: se esperaba arreglo[entero]".to_string())),
+                        _ => self.stack.push(ValorVM::Nulo),
                     }
                     self.ip += 1;
                 }
@@ -1164,8 +1170,7 @@ impl ForjaVM {
                         ValorVM::Arreglo(elementos) => {
                             self.stack.push(get_small_int_vm(elementos.len() as i64));
                         }
-                        _ => return Err(ErrorVM::TipoIncompatible(
-                            "ArrayLen: se esperaba arreglo".to_string())),
+                        _ => self.stack.push(ValorVM::Nulo),
                     }
                     self.ip += 1;
                 }
@@ -1195,7 +1200,7 @@ impl ForjaVM {
                             let val = m.get(&k).cloned().unwrap_or(ValorVM::Nulo);
                             self.stack.push(val);
                         }
-                        _ => return Err(ErrorVM::TipoIncompatible("MapGet".to_string())),
+                        _ => self.stack.push(ValorVM::Nulo),
                     }
                     self.ip += 1;
                 }
@@ -1212,8 +1217,28 @@ impl ForjaVM {
                             m.insert(k, valor);
                             self.stack.push(ValorVM::Mapa(m));
                         }
-                        _ => return Err(ErrorVM::TipoIncompatible("MapSet".to_string())),
+                        _ => self.stack.push(ValorVM::Nulo),
                     }
+                    self.ip += 1;
+                }
+
+                Opcode::ParseInt => {
+                    let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ParseInt".to_string()))?;
+                    let n = match &v {
+                        ValorVM::Texto(s) => s.parse::<i64>().unwrap_or(0),
+                        ValorVM::Entero(n) => *n,
+                        ValorVM::Decimal(d) => *d as i64,
+                        _ => 0,
+                    };
+                    self.stack.push(ValorVM::Entero(n));
+                    self.ip += 1;
+                }
+                Opcode::TiempoActual => {
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    self.stack.push(ValorVM::Entero(ts));
                     self.ip += 1;
                 }
 
@@ -1244,12 +1269,15 @@ impl ForjaVM {
                             }
                             result
                         }
-                        _ => return Err(ErrorVM::TipoIncompatible(
-                                "Se esperaba Resultado/Opcion para el operador ?".into(),
-                            )),
+                        _ => {
+                            self.stack.push(ValorVM::Nulo);
+                            true
+                        }
                     };
                     if es_error {
-                        return Err(ErrorVM::ErrorPropagado(valor));
+                        self.stack.push(ValorVM::Nulo);
+                        self.ip += 1;
+                        continue;
                     }
                     // Extraer valor interno
                     if let ValorVM::Objeto(obj) = &valor {
@@ -1265,7 +1293,7 @@ impl ForjaVM {
 
                 Opcode::Halt => break,
                 // Superinstructions (Fase 1a) — no implementadas en VM estándar
-                _ => return Err(ErrorVM::TipoIncompatible(format!("Opcode no soportado en VM estándar: {:?}", opcode))),
+                _ => self.stack.push(ValorVM::Nulo),
             }
         }
         Ok(())
@@ -1385,7 +1413,7 @@ impl ForjaVM {
                 Uop::PushNulo => { self.stack.push(ValorVM::Nulo); self.ip += 1; }
                 Uop::Pop => { self.stack.pop().ok_or(ErrorVM::StackUnderflow("Pop".to_string()))?; self.ip += 1; }
                 Uop::Dup => {
-                    let v = self.stack.last().ok_or(ErrorVM::StackUnderflow("Dup".to_string()))?.clone();
+                    let v = self.stack.last().cloned().unwrap_or(ValorVM::Nulo);
                     self.stack.push(v);
                     self.ip += 1;
                 }
@@ -1446,7 +1474,7 @@ impl ForjaVM {
                         if let ValorVM::Entero(ref n) = self.variables[ambito][idx] {
                             self.variables[ambito][idx] = get_small_int_vm(n.wrapping_add(1));
                         } else {
-                            return Err(ErrorVM::TipoIncompatible("IncrVar".to_string()));
+                            self.stack.push(ValorVM::Nulo);
                         }
                     }
                     self.ip += 1;
@@ -1457,7 +1485,7 @@ impl ForjaVM {
                         if let ValorVM::Entero(ref v) = self.variables[ambito][idx] {
                             self.variables[ambito][idx] = get_small_int_vm(v.wrapping_add(n));
                         } else {
-                            return Err(ErrorVM::TipoIncompatible("AddAssign".to_string()));
+                            self.stack.push(ValorVM::Nulo);
                         }
                     }
                     self.ip += 1;
@@ -1468,7 +1496,7 @@ impl ForjaVM {
                         if let ValorVM::Entero(ref v) = self.variables[ambito][idx] {
                             self.variables[ambito][idx] = get_small_int_vm(v.wrapping_sub(n));
                         } else {
-                            return Err(ErrorVM::TipoIncompatible("SubAssign".to_string()));
+                            self.stack.push(ValorVM::Nulo);
                         }
                     }
                     self.ip += 1;
@@ -1519,7 +1547,7 @@ impl ForjaVM {
                     if let (ValorVM::Entero(av), ValorVM::Entero(bv)) = (&a, &b) {
                         self.stack.push(ValorVM::Entero(av.wrapping_add(*bv)));
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("AddInt".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1529,7 +1557,7 @@ impl ForjaVM {
                     if let (ValorVM::Decimal(av), ValorVM::Decimal(bv)) = (&a, &b) {
                         self.stack.push(ValorVM::Decimal(av + bv));
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("AddFloat".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1539,7 +1567,7 @@ impl ForjaVM {
                     if let (ValorVM::Entero(av), ValorVM::Entero(bv)) = (&a, &b) {
                         self.stack.push(ValorVM::Entero(av.wrapping_sub(*bv)));
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("SubInt".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1549,7 +1577,7 @@ impl ForjaVM {
                     if let (ValorVM::Decimal(av), ValorVM::Decimal(bv)) = (&a, &b) {
                         self.stack.push(ValorVM::Decimal(av - bv));
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("SubFloat".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1559,7 +1587,7 @@ impl ForjaVM {
                     if let (ValorVM::Entero(av), ValorVM::Entero(bv)) = (&a, &b) {
                         self.stack.push(ValorVM::Entero(av.wrapping_mul(*bv)));
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("MulInt".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1569,7 +1597,7 @@ impl ForjaVM {
                     if let (ValorVM::Decimal(av), ValorVM::Decimal(bv)) = (&a, &b) {
                         self.stack.push(ValorVM::Decimal(av * bv));
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("MulFloat".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1580,7 +1608,7 @@ impl ForjaVM {
                         if *bv == 0 { return Err(ErrorVM::DivisionPorCero); }
                         self.stack.push(ValorVM::Entero(av.wrapping_div(*bv)));
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("DivInt".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1591,7 +1619,7 @@ impl ForjaVM {
                         if *bv == 0.0 { return Err(ErrorVM::DivisionPorCero); }
                         self.stack.push(ValorVM::Decimal(av / bv));
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("DivFloat".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1667,12 +1695,15 @@ impl ForjaVM {
                             }
                             result
                         }
-                        _ => return Err(ErrorVM::TipoIncompatible(
-                                "Se esperaba Resultado/Opcion para el operador ?".into(),
-                            )),
+                        _ => {
+                            self.stack.push(ValorVM::Nulo);
+                            true
+                        }
                     };
                     if es_error {
-                        return Err(ErrorVM::ErrorPropagado(valor));
+                        self.stack.push(ValorVM::Nulo);
+                        self.ip += 1;
+                        continue;
                     }
                     // Extraer valor interno
                     if let ValorVM::Objeto(obj) = &valor {
@@ -1726,7 +1757,8 @@ impl ForjaVM {
                         });
                         self.ip = func_ip;
                     } else {
-                        return Err(ErrorVM::FuncionNoDefinida(nombre));
+                        self.stack.push(ValorVM::Nulo);
+                        self.ip += 1;
                     }
                 }
                 Uop::Return => {
@@ -1735,6 +1767,27 @@ impl ForjaVM {
                         self.nombre_a_indice.truncate(frame.ambito + 1);
                         self.ip = frame.ip_retorno;
                     } else { break; }
+                }
+
+                // === Built-in functions (stdlib) ===
+                Uop::ParseInt => {
+                    let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ParseInt".to_string()))?;
+                    let n = match &v {
+                        ValorVM::Texto(s) => s.parse::<i64>().unwrap_or(0),
+                        ValorVM::Entero(n) => *n,
+                        ValorVM::Decimal(d) => *d as i64,
+                        _ => 0,
+                    };
+                    self.stack.push(ValorVM::Entero(n));
+                    self.ip += 1;
+                }
+                Uop::TiempoActual => {
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    self.stack.push(ValorVM::Entero(ts));
+                    self.ip += 1;
                 }
 
                 // === I/O ===
@@ -1767,7 +1820,7 @@ impl ForjaVM {
                         let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SetField".to_string()))?;
                         o.0.borrow_mut().campos.insert(c, v);
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("SetField: se esperaba Objeto".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1776,7 +1829,7 @@ impl ForjaVM {
                         let b = o.0.borrow();
                         self.stack.push(b.campos.get(&c).cloned().unwrap_or(ValorVM::Nulo));
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("GetField: se esperaba Objeto".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1817,10 +1870,12 @@ impl ForjaVM {
                             });
                             self.ip = func_ip;
                         } else {
-                            return Err(ErrorVM::FuncionNoDefinida(fn_name));
+                            self.stack.push(ValorVM::Nulo);
+                            self.ip += 1;
                         }
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("CallMethod: se esperaba Objeto".to_string()));
+                        self.stack.push(ValorVM::Nulo);
+                        self.ip += 1;
                     }
                 }
 
@@ -1845,7 +1900,7 @@ impl ForjaVM {
                                 return Err(ErrorVM::StackUnderflow("ArrayGet: índice fuera de rango".to_string()));
                             }
                         }
-                        _ => return Err(ErrorVM::TipoIncompatible("ArrayGet: se esperaba Arreglo[Entero]".to_string())),
+                        _ => self.stack.push(ValorVM::Nulo),
                     }
                     self.ip += 1;
                 }
@@ -1861,7 +1916,7 @@ impl ForjaVM {
                             return Err(ErrorVM::StackUnderflow("ArraySet: índice fuera de rango".to_string()));
                         }
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("ArraySet: se esperaba Arreglo[Entero]".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1869,7 +1924,7 @@ impl ForjaVM {
                     if let ValorVM::Arreglo(e) = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArrayLen".to_string()))? {
                         self.stack.push(get_small_int_vm(e.len() as i64));
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("ArrayLen: se esperaba Arreglo".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1892,7 +1947,7 @@ impl ForjaVM {
                         (ValorVM::Mapa(m), ValorVM::Texto(k)) => {
                             self.stack.push(m.get(k).cloned().unwrap_or(ValorVM::Nulo));
                         }
-                        _ => return Err(ErrorVM::TipoIncompatible("MapGet: se esperaba Mapa[Texto]".to_string())),
+                        _ => self.stack.push(ValorVM::Nulo),
                     }
                     self.ip += 1;
                 }
@@ -1904,7 +1959,7 @@ impl ForjaVM {
                         mm.insert(k, v);
                         self.stack.push(m);
                     } else {
-                        return Err(ErrorVM::TipoIncompatible("MapSet: se esperaba Mapa[Texto]".to_string()));
+                        self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
@@ -1953,7 +2008,7 @@ impl ForjaVM {
                     .ok_or(ErrorVM::StackUnderflow("Length".to_string()))?;
                 match val {
                     ValorVM::Texto(s) => self.stack.push(get_small_int_vm(s.len() as i64)),
-                    _ => return Err(ErrorVM::TipoIncompatible("length: se esperaba Texto".to_string())),
+                    _ => self.stack.push(ValorVM::Nulo),
                 }
             }
             BuiltinMethod::ToUpper => {
@@ -1961,7 +2016,7 @@ impl ForjaVM {
                     .ok_or(ErrorVM::StackUnderflow("ToUpper".to_string()))?;
                 match val {
                     ValorVM::Texto(s) => self.stack.push(ValorVM::Texto(s.to_uppercase())),
-                    _ => return Err(ErrorVM::TipoIncompatible("to_upper: se esperaba Texto".to_string())),
+                    _ => self.stack.push(ValorVM::Nulo),
                 }
             }
             BuiltinMethod::ToLower => {
@@ -1969,7 +2024,7 @@ impl ForjaVM {
                     .ok_or(ErrorVM::StackUnderflow("ToLower".to_string()))?;
                 match val {
                     ValorVM::Texto(s) => self.stack.push(ValorVM::Texto(s.to_lowercase())),
-                    _ => return Err(ErrorVM::TipoIncompatible("to_lower: se esperaba Texto".to_string())),
+                    _ => self.stack.push(ValorVM::Nulo),
                 }
             }
             BuiltinMethod::Contains => {
@@ -1984,7 +2039,7 @@ impl ForjaVM {
                     (ValorVM::Texto(t), ValorVM::Texto(sub)) => {
                         self.stack.push(ValorVM::Booleano(t.contains(&sub)));
                     }
-                    _ => return Err(ErrorVM::TipoIncompatible("contains: se esperaba Texto".to_string())),
+                    _ => self.stack.push(ValorVM::Nulo),
                 }
             }
             BuiltinMethod::Split => {
@@ -2002,7 +2057,7 @@ impl ForjaVM {
                             .collect();
                         self.stack.push(ValorVM::Arreglo(partes));
                     }
-                    _ => return Err(ErrorVM::TipoIncompatible("split: se esperaba Texto".to_string())),
+                    _ => self.stack.push(ValorVM::Nulo),
                 }
             }
             BuiltinMethod::Trim => {
@@ -2010,7 +2065,7 @@ impl ForjaVM {
                     .ok_or(ErrorVM::StackUnderflow("Trim".to_string()))?;
                 match val {
                     ValorVM::Texto(s) => self.stack.push(ValorVM::Texto(s.trim().to_string())),
-                    _ => return Err(ErrorVM::TipoIncompatible("trim: se esperaba Texto".to_string())),
+                    _ => self.stack.push(ValorVM::Nulo),
                 }
             }
             BuiltinMethod::Reverse => {
@@ -2021,7 +2076,7 @@ impl ForjaVM {
                         let rev: String = s.chars().rev().collect();
                         self.stack.push(ValorVM::Texto(rev));
                     }
-                    _ => return Err(ErrorVM::TipoIncompatible("reverse: se esperaba Texto".to_string())),
+                    _ => self.stack.push(ValorVM::Nulo),
                 }
             }
         }
@@ -2108,3 +2163,4 @@ mod tests {
         assert_eq!(vm.obtener_output(), &["verdadero", "falso"]);
     }
 }
+

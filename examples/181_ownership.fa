@@ -1,0 +1,112 @@
+/// Concepto de Ownership y Ámbito
+/// Conceptos: ownership, ámbito, ciclo de vida, memoria, valor vs referencia
+/// Nivel: avanzado
+
+importar "std/io"
+
+// El concepto de ownership (propiedad) define quién es dueño de un
+// valor y cuándo se libera. Forja gestiona la memoria automáticamente
+// pero es importante entender el ciclo de vida de las variables.
+
+clase Recurso {
+    id
+    activo
+
+    constructor() {
+        este.id = 0
+        este.activo = verdadero
+    }
+
+    funcion init(nuevo_id) {
+        este.id = nuevo_id
+        este.activo = verdadero
+        escribir("  🔨 Recurso #${este.id}: CREADO")
+    }
+
+    funcion usar() {
+        si (este.activo) {
+            escribir("  🔧 Recurso #${este.id}: en uso...")
+        } sino {
+            escribir("  ⚠️ Recurso #${este.id}: ¡YA NO ESTÁ DISPONIBLE!")
+        }
+    }
+
+    funcion liberar() {
+        este.activo = falso
+        escribir("  🗑️ Recurso #${este.id}: LIBERADO")
+    }
+}
+
+funcion demostrar_ambito() {
+    escribir("--- Ámbito local ---")
+    variable x = 42
+    escribir("  Dentro de la función: x = ${x}")
+    retornar x
+}
+
+funcion crear_recurso_local() {
+    escribir("--- Recurso local ---")
+    variable r = nuevo Recurso()
+    r.init(1)
+    r.usar()
+    // Al salir de la función, el recurso se libera automáticamente
+    escribir("  (saliendo de la función - el recurso se liberará)")
+}
+
+funcion transferir_ownership() {
+    escribir("--- Transferencia de ownership ---")
+    variable original = nuevo Recurso()
+    original.init(2)
+    original.usar()
+
+    // Transferir ownership (el valor se mueve a 'dueño')
+    variable dueno = original
+    escribir("  (original transferido a 'dueno')")
+    dueno.usar()
+
+    // ¡Error! 'original' ya no es válido aquí (comentado)
+    // original.usar()  // ❌ Esto fallaría - ownership transferido
+    escribir("  ℹ️ 'original' ya no puede usarse después de la transferencia")
+    dueno.liberar()
+}
+
+funcion ambito_anidado() {
+    escribir("--- Ámbito anidado ---")
+    variable a = 10
+    escribir("  Ámbito exterior: a = ${a}")
+
+    // Ámbito interior (bloque)
+    si (verdadero) {
+        variable b = 20
+        escribir("  Ámbito interior: a = ${a}, b = ${b}")
+        a = a + b
+        escribir("  Modificando a desde interior: a = ${a}")
+    }
+    // b ya no existe aquí
+    escribir("  Fuera del bloque: a = ${a}")
+}
+
+funcion main() {
+    escribir("=== CONCEPTO DE OWNERSHIP Y ÁMBITO ===\n")
+
+    variable valor = demostrar_ambito()
+    escribir("  Variable retornada: ${valor}\n")
+
+    crear_recurso_local()
+    escribir("  (el recurso local ya no existe fuera de la función)\n")
+
+    ambito_anidado()
+
+    escribir("")
+    escribir("")
+    transferir_ownership()
+
+    escribir("")
+    escribir("Reglas importantes de ownership:")
+    escribir("  1. Cada valor tiene un único dueño en cada momento")
+    escribir("  2. Al transferir (asignar a otra variable), el ownership cambia")
+    escribir("  3. Las variables se liberan al salir de su ámbito")
+    escribir("  4. Los ámbitos pueden anidarse y acceder a variables externas")
+}
+
+main()

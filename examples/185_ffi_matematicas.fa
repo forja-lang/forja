@@ -1,0 +1,155 @@
+/// FFI con math.h
+/// Conceptos: FFI, math.h, funciones matemáticas nativas, precisión
+/// Nivel: experto
+
+importar "std/io"
+
+// Ejemplo de cómo Forja podría llamar a funciones matemáticas
+// de la biblioteca estándar de C (math.h) mediante FFI.
+
+// Declaraciones FFI simuladas de funciones de math.h:
+// externa "m" funcion sqrt(n: Decimal) -> Decimal
+// externa "m" funcion sin(x: Decimal) -> Decimal
+// externa "m" funcion cos(x: Decimal) -> Decimal
+// externa "m" funcion tan(x: Decimal) -> Decimal
+// externa "m" funcion log(x: Decimal) -> Decimal
+// externa "m" funcion pow(x: Decimal, y: Decimal) -> Decimal
+
+// Implementaciones nativas en Forja (simulando FFI a math.h)
+funcion ffi_sqrt(x) -> Decimal {
+    si (x < 0) {
+        escribir("  ⚠️ sqrt(${x}): dominio inválido (número negativo)")
+        retornar -1
+    }
+    // Usando Newton-Raphson (simula llamada nativa)
+    variable resultado = x
+    variable i = 0
+    mientras (i < 20) {
+        resultado = (resultado + x / resultado) / 2.0
+        i = i + 1
+    }
+    escribir("  📐 FFI math.sqrt(${x}) = ${resultado}")
+    retornar resultado
+}
+
+funcion ffi_sin(grados) -> Decimal {
+    variable rad = grados * 3.1415926535 / 180.0
+    // Serie de Taylor (simula sin() nativa)
+    variable resultado = rad - (rad * rad * rad) / 6.0
+    resultado = resultado + (rad * rad * rad * rad * rad) / 120.0
+    resultado = resultado - (rad * rad * rad * rad * rad * rad * rad) / 5040.0
+    escribir("  📐 FFI math.sin(${grados}°) = ${resultado}")
+    retornar resultado
+}
+
+funcion ffi_cos(grados) -> Decimal {
+    variable rad = grados * 3.1415926535 / 180.0
+    // Serie de Taylor (simula cos() nativa)
+    variable resultado = 1.0 - (rad * rad) / 2.0
+    resultado = resultado + (rad * rad * rad * rad) / 24.0
+    resultado = resultado - (rad * rad * rad * rad * rad * rad) / 720.0
+    escribir("  📐 FFI math.cos(${grados}°) = ${resultado}")
+    retornar resultado
+}
+
+funcion ffi_log(x) -> Decimal {
+    si (x <= 0) {
+        escribir("  ⚠️ log(${x}): dominio inválido")
+        retornar -999999
+    }
+    // Aproximación de logaritmo natural
+    variable resultado = 0
+    variable termino = (x - 1) / (x + 1)
+    variable i = 0
+    mientras (i < 20) {
+        resultado = resultado + (1.0 / (2 * i + 1)) * potencia(termino, 2 * i + 1)
+        i = i + 1
+    }
+    resultado = 2 * resultado
+    escribir("  📐 FFI math.log(${x}) = ${resultado}")
+    retornar resultado
+}
+
+funcion ffi_pow(base, exp) -> Decimal {
+    // Simula pow() de math.h
+    variable resultado = 1.0
+    si (exp == 0) {
+        retornar 1.0
+    }
+    variable i = 0
+    mientras (i < exp) {
+        resultado = resultado * base
+        i = i + 1
+    }
+    escribir("  📐 FFI math.pow(${base}, ${exp}) = ${resultado}")
+    retornar resultado
+}
+
+funcion ffi_tan(grados) -> Decimal {
+    variable s = ffi_sin(grados)
+    variable c = ffi_cos(grados)
+    si (c == 0) {
+        escribir("  ⚠️ tan(${grados}°): asíntota (coseno = 0)")
+        retornar 999999
+    }
+    variable resultado = s / c
+    escribir("  📐 FFI math.tan(${grados}°) = ${resultado}")
+    retornar resultado
+}
+
+funcion ffi_abs(x) -> Decimal {
+    si (x < 0) { retornar -x }
+    retornar x
+}
+
+funcion potencia(base, exp) -> Decimal {
+    variable r = 1
+    variable i = 0
+    mientras (i < exp) {
+        r = r * base
+        i = i + 1
+    }
+    retornar r
+}
+
+funcion main() {
+    escribir("=== FFI CON math.h ===\n")
+    escribir("Llamadas simuladas a la biblioteca matemática de C.\n")
+
+    escribir("--- sqrt (raíz cuadrada) ---")
+    ffi_sqrt(144)
+    ffi_sqrt(2)
+    ffi_sqrt(-5)
+
+    escribir("")
+    escribir("--- sin, cos, tan (trigonométricas) ---")
+    ffi_sin(0)
+    ffi_sin(30)
+    ffi_sin(90)
+    ffi_cos(0)
+    ffi_cos(60)
+    ffi_cos(180)
+    ffi_tan(45)
+
+    escribir("")
+    escribir("--- log (logaritmo natural) ---")
+    ffi_log(1)
+    ffi_log(2.71828)
+    ffi_log(10)
+    ffi_log(100)
+
+    escribir("")
+    escribir("--- pow (potencia) ---")
+    ffi_pow(2, 10)
+    ffi_pow(5, 3)
+    ffi_pow(10, 0)
+
+    escribir("")
+    escribir("Ventajas de usar FFI con math.h:")
+    escribir("  • Cálculos más rápidos (C optimizado)")
+    escribir("  • Precisión de punto flotante nativa")
+    escribir("  • Funciones probadas y estables")
+    escribir("  • No es necesario reimplementar algoritmos complejos")
+}
+
+main()

@@ -1,0 +1,64 @@
+/// @derive(Igual) para comparar
+/// Conceptos: @derive(Igual), comparación, == y !=, igualdad estructural
+/// Nivel: básico
+
+importar "std/io"
+
+// @derive(Igual) permite comparar objetos con == y !=
+
+@derive(Igual)
+clase Punto2D {
+    x
+    y
+
+    constructor() {
+        este.x = 0
+        este.y = 0
+    }
+}
+
+@derive(Igual)
+clase Libro {
+    titulo
+    autor
+    anio
+
+    constructor() {
+        este.titulo = ""
+        este.autor = ""
+        este.anio = 0
+    }
+}
+
+@derive(Igual)
+tipo Moneda = Peso | Dolar | Euro | Real
+
+funcion main() {
+    escribir("=== @derive(Igual) ===\n")
+
+    variable p1 = nuevo Punto2D()
+    p1.x = 3
+    p1.y = 4
+
+    variable p2 = nuevo Punto2D()
+    p2.x = 3
+    p2.y = 4
+
+    variable p3 = nuevo Punto2D()
+    p3.x = 5
+    p3.y = 6
+
+    escribir("p1 (3,4) == p2 (3,4): ${p1 == p2}")
+    escribir("p1 (3,4) == p3 (5,6): ${p1 == p3}")
+    escribir("p1 (3,4) != p3 (5,6): ${p1 != p3}")
+
+    escribir("")
+    escribir("Comparando monedas:")
+    escribir("Dolar == Dolar: ${Dolar == Dolar}")
+    escribir("Dolar == Euro: ${Dolar == Euro}")
+
+    escribir("")
+    escribir("Con @derive(Igual) se comparan TODOS los campos automáticamente.")
+}
+
+main()

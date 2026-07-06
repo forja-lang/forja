@@ -1,0 +1,31 @@
+/// Resultado básico con Ok y Error
+/// Conceptos: Resultado<Entero, Texto>, Ok(), Error(), manejo de errores
+/// Nivel: intermedio
+
+importar "std/io"
+
+// Resultado permite representar operaciones que pueden
+// tener éxito (Ok) o fallar (Error)
+
+funcion dividir(a, b) -> Resultado<Entero, Texto> {
+    si (b == 0) {
+        retornar Error("No se puede dividir por cero")
+    }
+    retornar Ok(a / b)
+}
+
+// Probar casos exitosos y fallidos
+variable exito = dividir(10, 2)
+variable error = dividir(10, 0)
+
+escribir("=== Resultado Simple ===")
+escribir("10 / 2 = ${exito}")
+escribir("10 / 0 = ${error}")
+
+// Función que siempre tiene éxito
+funcion incrementar(valor) -> Resultado<Entero, Texto> {
+    retornar Ok(valor + 1)
+}
+
+variable mas_uno = incrementar(5)
+escribir("5 + 1 = ${mas_uno}")

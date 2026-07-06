@@ -1,0 +1,65 @@
+/// Resultado con tipo error personalizado
+/// Conceptos: tipo enum personalizado, errores tipados, variantes
+/// Nivel: avanzado
+
+importar "std/io"
+
+// Podemos definir nuestros propios tipos de error usando enum
+
+tipo ErrorMatematico = DivisionCero | RaizNegativa | ArgumentoInvalido(Texto)
+
+funcion dividir(a, b) -> Resultado<Entero, ErrorMatematico> {
+    si (b == 0) {
+        retornar Error(DivisionCero)
+    }
+    retornar Ok(a / b)
+}
+
+funcion raiz_cuadrada(n) -> Resultado<Entero, ErrorMatematico> {
+    si (n < 0) {
+        retornar Error(RaizNegativa)
+    }
+    variable i = 0
+    mientras (i * i <= n) {
+        si (i * i == n) {
+            retornar Ok(i)
+        }
+        i = i + 1
+    }
+    retornar Error(ArgumentoInvalido("No es cuadrado perfecto"))
+}
+
+funcion describir_error(err) -> Texto {
+    coincidir (err) {
+        caso DivisionCero -> {
+            retornar "Error: división por cero"
+        }
+        caso RaizNegativa -> {
+            retornar "Error: raíz cuadrada de número negativo"
+        }
+        caso ArgumentoInvalido(msg) -> {
+            retornar "Error: ${msg}"
+        }
+    }
+}
+
+funcion main() {
+    escribir("=== Error Personalizado ===\n")
+    
+    variable operaciones = [dividir(10, 0), dividir(10, 2), raiz_cuadrada(9), raiz_cuadrada(-4)]
+    
+    variable i = 0
+    mientras (i < longitud(operaciones)) {
+        coincidir (operaciones[i]) {
+            caso Ok(v) -> {
+                escribir("Operación ${i + 1}: ✅ ${v}")
+            }
+            caso Error(e) -> {
+                escribir("Operación ${i + 1}: ${describir_error(e)}")
+            }
+        }
+        i = i + 1
+    }
+}
+
+main()

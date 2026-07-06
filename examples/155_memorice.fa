@@ -1,0 +1,119 @@
+/// Juego de Memoria (Memorice)
+/// Conceptos: arrays, aleatoriedad, lógica de juego, tiempo real
+/// Nivel: intermedio
+
+importar "std/io"
+
+// Juego de memoria: se muestran cartas boca abajo y el jugador debe
+// encontrar los pares iguales recordando sus posiciones.
+
+funcion barajar(cartas) {
+    variable n = longitud(cartas)
+    variable i = 0
+    mientras (i < n) {
+        variable t = tiempo_actual()
+        variable j = (t + i * 7) % n
+        variable temp = cartas[i]
+        cartas[i] = cartas[j]
+        cartas[j] = temp
+        i = i + 1
+    }
+    retornar cartas
+}
+
+funcion crear_tablero() {
+    variable pares = ["A", "B", "C", "D", "E", "F", "G", "H"]
+    variable cartas = []
+    variable i = 0
+    mientras (i < longitud(pares)) {
+        cartas[i * 2] = pares[i]
+        cartas[i * 2 + 1] = pares[i]
+        i = i + 1
+    }
+    cartas = barajar(cartas)
+    retornar cartas
+}
+
+funcion mostrar_tablero_oculto(cartas, reveladas) {
+    escribir("")
+    variable i = 0
+    mientras (i < longitud(cartas)) {
+        si (reveladas[i]) {
+            escribir(" ${cartas[i]} ", false)
+        } sino {
+            escribir(" ? ", false)
+        }
+        si ((i + 1) % 4 == 0) {
+            escribir("")
+        }
+        i = i + 1
+    }
+    escribir("")
+}
+
+funcion todas_reveladas(reveladas) -> Booleano {
+    variable i = 0
+    mientras (i < longitud(reveladas)) {
+        si (!reveladas[i]) {
+            retornar falso
+        }
+        i = i + 1
+    }
+    retornar verdadero
+}
+
+funcion main() {
+    escribir("=== JUEGO DE MEMORIA ===\n")
+    escribir("Encuentra todos los pares iguales.\n")
+    escribir("Cartas: 16 (8 pares)\n")
+
+    variable cartas = crear_tablero()
+    variable reveladas = []
+    variable i = 0
+    mientras (i < longitud(cartas)) {
+        reveladas[i] = falso
+        i = i + 1
+    }
+
+    variable pares_encontrados = 0
+    variable intentos = 0
+
+    mientras (!todas_reveladas(reveladas)) {
+        mostrar_tablero_oculto(cartas, reveladas)
+
+        escribir("\nElige dos posiciones (1-16):")
+        variable p1 = pedir_numero("Primera carta: ") - 1
+        mientras (p1 < 0 || p1 >= 16 || reveladas[p1]) {
+            escribir("  Posición inválida o ya revelada.")
+            p1 = pedir_numero("Primera carta: ") - 1
+        }
+
+        variable p2 = pedir_numero("Segunda carta: ") - 1
+        mientras (p2 < 0 || p2 >= 16 || reveladas[p2] || p2 == p1) {
+            escribir("  Posición inválida, ya revelada o igual a la primera.")
+            p2 = pedir_numero("Segunda carta: ") - 1
+        }
+
+        intentos = intentos + 1
+
+        // Mostrar las dos cartas temporalmente
+        reveladas[p1] = verdadero
+        reveladas[p2] = verdadero
+        mostrar_tablero_oculto(cartas, reveladas)
+
+        si (cartas[p1] == cartas[p2]) {
+            escribir("  ✅ ¡Par encontrado: ${cartas[p1]}!")
+            pares_encontrados = pares_encontrados + 1
+        } sino {
+            escribir("  ❌ No son iguales (${cartas[p1]} vs ${cartas[p2]}). Intenta de nuevo.")
+            reveladas[p1] = falso
+            reveladas[p2] = falso
+        }
+    }
+
+    escribir("")
+    escribir("🎉 ¡FELICIDADES! Completaste el juego en ${intentos} intentos!")
+    escribir("Encontraste ${pares_encontrados} pares.")
+}
+
+main()

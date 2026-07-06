@@ -1,0 +1,47 @@
+/// Múltiples hilos y canales
+/// Conceptos: hilo, canal, múltiples hilos, fan-out, comunicación concurrente
+/// Nivel: intermedio
+
+importar "std/io"
+
+// Múltiples hilos pueden comunicarse usando un mismo canal
+
+funcion main() {
+    escribir("=== Múltiples hilos y canales ===\n")
+
+    variable tx, rx = canal()
+
+    // Lanzar 3 hilos que envían por el mismo canal
+    variable h1 = hilo {
+        tx.enviar("Hilo 1: primer mensaje")
+        retornar 1
+    }
+
+    variable h2 = hilo {
+        tx.enviar("Hilo 2: segundo mensaje")
+        retornar 2
+    }
+
+    variable h3 = hilo {
+        tx.enviar("Hilo 3: tercer mensaje")
+        retornar 3
+    }
+
+    // Recibir los 3 mensajes (pueden llegar en cualquier orden)
+    escribir("Recibiendo mensajes de todos los hilos:\n")
+    variable i = 0
+    mientras (i < 3) {
+        variable msg = rx.recibir()
+        escribir("  Main recibió: ${msg}")
+        i = i + 1
+    }
+
+    variable r1 = h1.unir()
+    variable r2 = h2.unir()
+    variable r3 = h3.unir()
+    escribir("\nTodos los hilos terminaron: ${r1}, ${r2}, ${r3}")
+
+    escribir("\nMúltiples hilos pueden compartir canales de forma segura.")
+}
+
+main()

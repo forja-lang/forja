@@ -465,10 +465,10 @@ fn try_avx2_unroll(bytecode: &[Opcode]) -> Option<Vec<Opcode>> {
                         }
 
                         // Extraer condición del bucle (desde LoadIdx(counter) hasta JumpSiFalso/Jump)
-                        let mut cond_start = body.len();
+                        let mut _cond_start = body.len();
                         for (k, op) in body.iter().enumerate() {
                             if matches!(op, LoadIdx(i) if *i == counter_idx) {
-                                cond_start = k;
+                                _cond_start = k;
                                 break;
                             }
                         }

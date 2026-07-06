@@ -1,0 +1,47 @@
+/// Select con timeout
+/// Conceptos: seleccionar, timeout, temporizador, espera con límite de tiempo
+/// Nivel: intermedio
+
+importar "std/io"
+
+// Podemos usar un canal de timeout para limitar el tiempo de espera
+
+funcion main() {
+    escribir("=== Select con timeout ===\n")
+
+    variable tx, rx = canal()
+
+    // Hilo lento: tarda 3 segundos en enviar
+    variable h = hilo {
+        esperar(3)  // espera 3 segundos
+        tx.enviar("Llegué tarde!")
+        retornar 0
+    }
+
+    // Canal de timeout que se activa en 1 segundo
+    variable tx_timeout, rx_timeout = canal()
+    variable t = hilo {
+        esperar(1)  // timeout de 1 segundo
+        tx_timeout.enviar(true)
+        retornar 0
+    }
+
+    escribir("Esperando datos con timeout de 1 segundo...\n")
+
+    seleccionar {
+        caso rx -> mensaje -> {
+            escribir("✅ Recibido: ${mensaje}")
+        }
+        caso rx_timeout -> _ -> {
+            escribir("⏰ Timeout! No se recibió respuesta a tiempo.")
+        }
+    }
+
+    h.unir()
+    t.unir()
+
+    escribir("")
+    escribir("El timeout evita bloqueos indefinidos al esperar canales.")
+}
+
+main()

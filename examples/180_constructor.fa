@@ -1,0 +1,153 @@
+/// Patrón Builder
+/// Conceptos: builder, construcción paso a paso, objetos complejos, fluent interface
+/// Nivel: intermedio
+
+importar "std/io"
+
+// El patrón Builder separa la construcción de un objeto complejo
+// de su representación final, permitiendo crear diferentes
+// configuraciones usando el mismo proceso de construcción.
+
+clase Computadora {
+    procesador
+    ram_gb
+    almacenamiento_gb
+    tarjeta_grafica
+    sistema_operativo
+    incluye_monitor
+    incluye_teclado
+    incluye_mouse
+
+    constructor() {
+        este.procesador = ""
+        este.ram_gb = 0
+        este.almacenamiento_gb = 0
+        este.tarjeta_grafica = ""
+        este.sistema_operativo = ""
+        este.incluye_monitor = falso
+        este.incluye_teclado = falso
+        este.incluye_mouse = falso
+    }
+
+    funcion describir() -> Texto {
+        variable desc = "Computadora:\n"
+        desc = desc + "  CPU: ${este.procesador}\n"
+        desc = desc + "  RAM: ${este.ram_gb} GB\n"
+        desc = desc + "  Almacenamiento: ${este.almacenamiento_gb} GB\n"
+        si (este.tarjeta_grafica != "") {
+            desc = desc + "  GPU: ${este.tarjeta_grafica}\n"
+        }
+        desc = desc + "  SO: ${este.sistema_operativo}\n"
+        desc = desc + "  Incluye:"
+        si (este.incluye_monitor) { desc = desc + " monitor" }
+        si (este.incluye_teclado) { desc = desc + " teclado" }
+        si (este.incluye_mouse) { desc = desc + " mouse" }
+        si (!este.incluye_monitor && !este.incluye_teclado && !este.incluye_mouse) {
+            desc = desc + " (solo CPU)"
+        }
+        retornar desc
+    }
+}
+
+clase BuilderComputadora {
+    computadora
+
+    constructor() {
+        este.computadora = nuevo Computadora()
+    }
+
+    funcion con_procesador(procesador) {
+        este.computadora.procesador = procesador
+        retornar este
+    }
+
+    funcion con_ram(gb) {
+        este.computadora.ram_gb = gb
+        retornar este
+    }
+
+    funcion con_almacenamiento(gb) {
+        este.computadora.almacenamiento_gb = gb
+        retornar este
+    }
+
+    funcion con_tarjeta_grafica(gpu) {
+        este.computadora.tarjeta_grafica = gpu
+        retornar este
+    }
+
+    funcion con_sistema_operativo(so) {
+        este.computadora.sistema_operativo = so
+        retornar este
+    }
+
+    funcion con_monitor() {
+        este.computadora.incluye_monitor = verdadero
+        retornar este
+    }
+
+    funcion con_teclado() {
+        este.computadora.incluye_teclado = verdadero
+        retornar este
+    }
+
+    funcion con_mouse() {
+        este.computadora.incluye_mouse = verdadero
+        retornar este
+    }
+
+    funcion construir() {
+        variable pc = este.computadora
+        este.computadora = nuevo Computadora()  // Reset para próximo uso
+        retornar pc
+    }
+}
+
+funcion main() {
+    escribir("=== PATRÓN BUILDER ===\n")
+    escribir("Construye objetos paso a paso con interfaz fluida.\n")
+
+    variable builder = nuevo BuilderComputadora()
+
+    escribir("--- PC Gamer ---")
+    variable pc_gamer = builder.con_procesador("Intel i7-13700K")
+        .con_ram(32)
+        .con_almacenamiento(1000)
+        .con_tarjeta_grafica("NVIDIA RTX 4080")
+        .con_sistema_operativo("Windows 11")
+        .con_monitor()
+        .con_teclado()
+        .con_mouse()
+        .construir()
+    escribir("  ${pc_gamer.describir()}")
+
+    escribir("")
+    escribir("--- PC de Oficina ---")
+    variable pc_oficina = builder.con_procesador("Intel i5-13400")
+        .con_ram(16)
+        .con_almacenamiento(512)
+        .con_sistema_operativo("Linux Ubuntu")
+        .con_monitor()
+        .con_teclado()
+        .con_mouse()
+        .construir()
+    escribir("  ${pc_oficina.describir()}")
+
+    escribir("")
+    escribir("--- Servidor ---")
+    variable servidor = builder.con_procesador("AMD EPYC 7763")
+        .con_ram(256)
+        .con_almacenamiento(4000)
+        .con_sistema_operativo("Ubuntu Server 22.04")
+        .construir()
+    escribir("  ${servidor.describir()}")
+
+    escribir("")
+    escribir("Ventajas del Builder:")
+    escribir("  • Construcción paso a paso con nombres descriptivos")
+    escribir("  • Mismo proceso de construcción produce diferentes representaciones")
+    escribir("  • Interfaz fluida (method chaining) para código más legible")
+    escribir("  • Evita constructores con demasiados parámetros")
+}
+
+main()

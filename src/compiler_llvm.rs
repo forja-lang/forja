@@ -304,13 +304,12 @@ impl LlvmBackend {
             Expresion::Binaria { izquierda, operador, derecha } => self.bin(izquierda, operador, derecha),
             Expresion::Unaria { operador, expr: ex } => {
                 let v = self.expr(ex)?;
-                match operador.as_str() {
-                    "-" => { let r = self.r(); line!(self.out, "{} = sub i64 0, {}", r, v); Ok(r) }
-                    "!" => {
+                match operador {
+                    OperadorUnario::Negar => { let r = self.r(); line!(self.out, "{} = sub i64 0, {}", r, v); Ok(r) }
+                    OperadorUnario::No => {
                         let r = self.r(); line!(self.out, "{} = icmp eq i64 {}, 0", r, v);
                         let x = self.r(); line!(self.out, "{} = zext i1 {} to i64", x, r); Ok(x)
                     }
-                    _ => Ok(v),
                 }
             }
             Expresion::LlamadaFuncion { nombre, argumentos } => {
@@ -414,6 +413,29 @@ impl LlvmBackend {
                 let _expr_str = self.expr(expr)?;
                 // ? no implementado en LLVM aún
                 Ok("0".into())
+            }
+            Expresion::Asignacion { variable, valor } => {
+                let val_reg = self.expr(valor)?;
+                // Guardar en variable
+                if let Some(var_reg) = self.vars.get(variable).cloned() {
+                    line!(self.out, "store i64 {}, i64* {}", val_reg, var_reg);
+                }
+                Ok(val_reg) // La asignación retorna el valor
+            }
+            Expresion::AsignacionCampo { objeto, campo: _, valor } => {
+                let _obj_reg = self.expr(objeto)?;
+                let val_reg = self.expr(valor)?;
+                Ok(val_reg)
+            }
+            Expresion::ArraySet { array, valor } => {
+                // No implementado completamente en LLVM; evaluar array y valor
+                let _arr_reg = self.expr(array)?;
+                let val_reg = self.expr(valor)?;
+                Ok(val_reg)
+            }
+            Expresion::Ok(expr) | Expresion::Error(expr) | Expresion::Some(expr) => {
+                // No implementado en LLVM - evaluar la expresión interna
+                self.expr(expr)
             }
         }
     }

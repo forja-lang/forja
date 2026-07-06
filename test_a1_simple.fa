@@ -1,0 +1,22 @@
+// Test A1 simple: this.elementos[indice] = valor
+clase Prueba {
+    elementos
+
+    funcion asignar(pos, val) {
+        este.elementos[pos] = val
+    }
+
+    funcion leer(pos) {
+        retornar este.elementos[pos]
+    }
+}
+
+funcion main() {
+    variable p = Prueba()
+    p.elementos = [10, 20, 30]
+    p.asignar(1, 999)
+    escribir("p[1] = ${p.leer(1)}\n")
+    escribir("A1 OK\n")
+}
+
+main()

@@ -1,0 +1,92 @@
+/// mut vs const vs variable
+/// Conceptos: mutabilidad, inmutabilidad, constantes, variables, diseño de datos
+/// Nivel: intermedio
+
+importar "std/io"
+
+// Forja distingue entre valores mutables (pueden cambiar),
+// inmutables (no pueden cambiar) y constantes (tiempo de compilación).
+
+constante VELOCIDAD_LUZ = 299792458  // m/s - constante global
+constante G = 9    // gravedad (aproximada)
+constante PI = 3   // π aproximado
+
+clase Punto {
+    x
+    y
+
+    constructor() {
+        este.x = 0
+        este.y = 0
+    }
+
+    funcion init(px, py) {
+        este.x = px
+        este.y = py
+    }
+
+    funcion mover(dx, dy) {
+        este.x = este.x + dx
+        este.y = este.y + dy
+        escribir("  📍 Punto movido a (${este.x}, ${este.y})")
+    }
+
+    funcion mostrar() {
+        escribir("  📌 Posición: (${este.x}, ${este.y})")
+    }
+}
+
+funcion main() {
+    escribir("=== MUT vs CONST vs VARIABLE ===\n")
+
+    escribir("--- Constantes (tiempo de compilación) ---")
+    escribir("  VELOCIDAD_LUZ = ${VELOCIDAD_LUZ} m/s")
+    escribir("  Gravedad (G) = ${G} m/s²")
+    escribir("  PI = ${PI}")
+    // ¡No se pueden modificar!
+    // VELOCIDAD_LUZ = 300000000  // ❌ Error: constante no modificable
+
+    escribir("")
+    escribir("--- Variables (mutables por defecto) ---")
+    variable contador = 0
+    escribir("  contador = ${contador}")
+    contador = 1
+    escribir("  contador = ${contador}")
+    contador = contador + 1
+    escribir("  contador = ${contador}")
+    contador = 100
+    escribir("  contador = ${contador}")
+
+    escribir("")
+    escribir("--- Objetos mutables ---")
+    variable punto = nuevo Punto()
+    punto.init(10, 20)
+    punto.mostrar()
+
+    punto.mover(5, -3)
+    punto.mostrar()
+
+    punto.mover(-2, 8)
+    punto.mostrar()
+
+    // Las propiedades de objetos son mutables por defecto
+    punto.x = 0
+    punto.y = 0
+    escribir("  Reiniciado a origen: (${punto.x}, ${punto.y})")
+
+    escribir("")
+    escribir("--- Práctica recomendada ---")
+    escribir("  • Usa CONSTANTE para valores fijos universales (PI, gravedad)")
+    escribir("  • Usa VARIABLE para valores que cambian (contadores, acumuladores)")
+    escribir("  • Las propiedades de clase son mutables por defecto")
+    escribir("  • La inmutabilidad evita efectos secundarios no deseados")
+    escribir("  • Prefiere crear nuevos objetos en lugar de mutar existentes")
+
+    constante NOMBRE_APP = "ForjaApp"
+    constante VERSION = "1.0.0"
+    escribir("")
+    escribir("  ${NOMBRE_APP} v${VERSION}")
+    escribir("  (las constantes llevan el valor en el nombre)")
+}
+
+main()

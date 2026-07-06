@@ -1,0 +1,206 @@
+/// DFS, BFS en Grafos
+/// Conceptos: grafos, DFS, BFS, recorridos, lista de adyacencia, visitados
+/// Nivel: avanzado
+
+importar "std/io"
+
+// Implementación de recorridos DFS y BFS sobre un grafo representado
+// mediante lista de adyacencia.
+
+clase Grafo {
+    num_nodos
+    adyacencia
+
+    constructor() {
+        este.num_nodos = 0
+        este.adyacencia = []
+    }
+
+    funcion init(n) {
+        este.num_nodos = n
+        este.adyacencia = []
+        variable i = 0
+        mientras (i < n) {
+            este.adyacencia[i] = []
+            i = i + 1
+        }
+    }
+
+    funcion agregar_arista(origen, destino) {
+        // Grafo no dirigido
+        variable idx_origen = longitud(este.adyacencia[origen])
+        este.adyacencia[origen][idx_origen] = destino
+
+        variable idx_destino = longitud(este.adyacencia[destino])
+        este.adyacencia[destino][idx_destino] = origen
+    }
+
+    funcion agregar_arista_dirigida(origen, destino) {
+        // Grafo dirigido
+        variable idx = longitud(este.adyacencia[origen])
+        este.adyacencia[origen][idx] = destino
+    }
+
+    funcion dfs(inicio) {
+        escribir("DFS desde nodo ${inicio}: ")
+        variable visitados = []
+        variable i = 0
+        mientras (i < este.num_nodos) {
+            visitados[i] = falso
+            i = i + 1
+        }
+        este.dfs_recursivo(inicio, visitados)
+        escribir("")
+    }
+
+    funcion dfs_recursivo(nodo, visitados) {
+        visitados[nodo] = verdadero
+        escribir("${nodo} ", falso)
+
+        variable i = 0
+        mientras (i < longitud(este.adyacencia[nodo])) {
+            variable vecino = este.adyacencia[nodo][i]
+            si (!visitados[vecino]) {
+                este.dfs_recursivo(vecino, visitados)
+            }
+            i = i + 1
+        }
+    }
+
+    funcion bfs(inicio) {
+        escribir("BFS desde nodo ${inicio}: ")
+        variable visitados = []
+        variable i = 0
+        mientras (i < este.num_nodos) {
+            visitados[i] = falso
+            i = i + 1
+        }
+
+        variable cola = []
+        cola[0] = inicio
+        variable idx = 0
+        variable len = 1
+        visitados[inicio] = verdadero
+
+        mientras (idx < len) {
+            variable nodo = cola[idx]
+            idx = idx + 1
+            escribir("${nodo} ", falso)
+
+            variable j = 0
+            mientras (j < longitud(este.adyacencia[nodo])) {
+                variable vecino = este.adyacencia[nodo][j]
+                si (!visitados[vecino]) {
+                    visitados[vecino] = verdadero
+                    cola[len] = vecino
+                    len = len + 1
+                }
+                j = j + 1
+            }
+        }
+        escribir("")
+    }
+
+    funcion tiene_camino(inicio, destino) -> Booleano {
+        // Verificar si existe camino entre dos nodos usando DFS
+        variable visitados = []
+        variable i = 0
+        mientras (i < este.num_nodos) {
+            visitados[i] = falso
+            i = i + 1
+        }
+
+        variable pila = []
+        pila[0] = inicio
+        variable idx = 0
+        variable len = 1
+
+        mientras (idx < len) {
+            variable nodo = pila[idx]
+            idx = idx + 1
+
+            si (nodo == destino) {
+                retornar verdadero
+            }
+
+            si (!visitados[nodo]) {
+                visitados[nodo] = verdadero
+                variable j = 0
+                mientras (j < longitud(este.adyacencia[nodo])) {
+                    variable vecino = este.adyacencia[nodo][j]
+                    si (!visitados[vecino]) {
+                        pila[len] = vecino
+                        len = len + 1
+                    }
+                    j = j + 1
+                }
+            }
+        }
+        retornar falso
+    }
+
+    funcion mostrar() {
+        escribir("Grafo (${este.num_nodos} nodos):")
+        variable i = 0
+        mientras (i < este.num_nodos) {
+            escribir("  ${i} → [", falso)
+            variable j = 0
+            mientras (j < longitud(este.adyacencia[i])) {
+                escribir("${este.adyacencia[i][j]}", falso)
+                si (j < longitud(este.adyacencia[i]) - 1) {
+                    escribir(", ", falso)
+                }
+                j = j + 1
+            }
+            escribir("]")
+            i = i + 1
+        }
+    }
+}
+
+funcion main() {
+    escribir("=== RECORRIDO DE GRAFOS (DFS y BFS) ===\n")
+
+    // Crear grafo no dirigido
+    variable grafo = nuevo Grafo()
+    grafo.init(8)
+
+    grafo.agregar_arista(0, 1)
+    grafo.agregar_arista(0, 2)
+    grafo.agregar_arista(1, 3)
+    grafo.agregar_arista(1, 4)
+    grafo.agregar_arista(2, 5)
+    grafo.agregar_arista(2, 6)
+    grafo.agregar_arista(3, 7)
+    grafo.agregar_arista(4, 7)
+    grafo.agregar_arista(5, 7)
+    grafo.agregar_arista(6, 7)
+
+    grafo.mostrar()
+
+    escribir("")
+    grafo.dfs(0)
+
+    escribir("")
+    grafo.bfs(0)
+
+    escribir("")
+    escribir("--- Verificación de caminos ---")
+    variable pares = [[0, 7], [0, 3], [1, 6], [0, 99]]
+    variable i = 0
+    mientras (i < longitud(pares)) {
+        variable par = pares[i]
+        variable hay_camino = grafo.tiene_camino(par[0], par[1])
+        escribir("  ¿Camino de ${par[0]} a ${par[1]}? ${hay_camino}")
+        i = i + 1
+    }
+
+    escribir("")
+    escribir("Comparación:")
+    escribir("  • DFS (profundidad): usa pila, va hasta el fondo, retrocede")
+    escribir("  • BFS (amplitud): usa cola, explora por niveles")
+    escribir("  • BFS encuentra el camino más corto en grafos no ponderados")
+    escribir("  • DFS usa menos memoria que BFS en grafos densos")
+}
+
+main()

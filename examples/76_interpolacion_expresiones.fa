@@ -1,0 +1,34 @@
+/// Interpolación con expresiones
+/// Conceptos: ${a + b}, ${fn()}, expresiones aritméticas en interpolación
+/// Nivel: básico
+
+importar "std/io"
+
+// No solo variables: cualquier expresión válida dentro de ${}
+
+variable a = 10
+variable b = 5
+
+// Operaciones aritméticas directas:
+escribir("La suma de ${a} y ${b} es ${a + b}")
+escribir("La resta es ${a - b}")
+escribir("La multiplicación es ${a * b}")
+escribir("La división es ${a / b}")
+
+// Expresiones booleanas:
+variable x = 7
+escribir("¿${x} es mayor que 5? ${x > 5}")
+escribir("¿${x} es par? ${x % 2 == 0}")
+
+// Llamadas a funciones dentro de interpolación:
+funcion cuadrado(n) {
+    retornar n * n
+}
+
+funcion doble(n) {
+    retornar n * 2
+}
+
+escribir("El cuadrado de ${a} es ${cuadrado(a)}")
+escribir("El doble de ${b} es ${doble(b)}")
+escribir("Cuadrado de la suma: ${cuadrado(a + b)}")

@@ -1,0 +1,96 @@
+/// Patrón Iterator vía trait
+/// Conceptos: iterador, trait Iterador, recorrer colecciones, abstracción
+/// Nivel: avanzado
+
+importar "std/io"
+
+// Implementación del patrón Iterator usando traits
+
+trait Iterador<T> {
+    funcion siguiente() -> Opcion<T>
+    function tiene_siguiente() -> Booleano
+}
+
+clase IteradorLista {
+    elementos
+    posicion
+    
+    constructor(lista) {
+        este.elementos = lista
+        este.posicion = 0
+    }
+}
+
+implementa Iterador<Entero> para IteradorLista {
+    funcion siguiente() -> Opcion<Entero> {
+        si (este.posicion < longitud(este.elementos)) {
+            variable valor = este.elementos[este.posicion]
+            este.posicion = este.posicion + 1
+            retornar Some(valor)
+        }
+        retornar None
+    }
+    
+    function tiene_siguiente() -> Booleano {
+        retornar este.posicion < longitud(este.elementos)
+    }
+}
+
+clase IteradorTexto {
+    elementos
+    posicion
+    
+    constructor(lista) {
+        este.elementos = lista
+        este.posicion = 0
+    }
+}
+
+implementa Iterador<Texto> para IteradorTexto {
+    funcion siguiente() -> Opcion<Texto> {
+        si (este.posicion < longitud(este.elementos)) {
+            variable valor = este.elementos[este.posicion]
+            este.posicion = este.posicion + 1
+            retornar Some(valor)
+        }
+        retornar None
+    }
+    
+    function tiene_siguiente() -> Booleano {
+        retornar este.posicion < longitud(este.elementos)
+    }
+}
+
+funcion main() {
+    escribir("=== Patrón Iterator ===\n")
+    
+    // Iterar sobre lista de números
+    variable numeros = [10, 20, 30, 40, 50]
+    variable iter_num = nuevo IteradorLista(numeros)
+    
+    escribir("Numeros:")
+    mientras (iter_num.tiene_siguiente()) {
+        variable val = iter_num.siguiente()
+        coincidir (val) {
+            caso Some(v) -> escribir("  ${v}")
+            caso None -> escribir("  fin")
+        }
+    }
+    
+    escribir("")
+    
+    // Iterar sobre lista de textos
+    variable textos = ["Hola", "Mundo", "Forja"]
+    variable iter_txt = nuevo IteradorTexto(textos)
+    
+    escribir("Palabras:")
+    mientras (iter_txt.tiene_siguiente()) {
+        variable val = iter_txt.siguiente()
+        coincidir (val) {
+            caso Some(v) -> escribir("  ${v}")
+            caso None -> escribir("  fin")
+        }
+    }
+}
+
+main()

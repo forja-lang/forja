@@ -91,13 +91,13 @@ funcion contiene(texto, patron) {
     retornar contar_ocurrencias(texto, patron) > 0
 }
 
-funcion reemplazar(texto, original, nuevo) {
+funcion reemplazar(texto, original, remplazo) {
     variable resultado = ""
     variable i = 0
     variable lo = longitud(original)
     mientras (i < longitud(texto)) {
         si (subcadena(texto, i, lo) == original) {
-            resultado = resultado + nuevo
+            resultado = resultado + remplazo
             i = i + lo
         } sino {
             resultado = resultado + texto[i]

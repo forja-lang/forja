@@ -1,0 +1,25 @@
+/// Interpolación básica de strings
+/// Conceptos: interpolación ${}, variables en strings, concatenación automática
+/// Nivel: básico
+
+importar "std/io"
+
+// La interpolación permite insertar variables directamente
+// dentro de un string usando la sintaxis ${variable}
+
+variable nombre = "Ana"
+variable edad = 30
+
+// Sin interpolación (concatenación manual):
+escribir("Hola, " + nombre + ". Tenés " + edad + " años.")
+
+// Con interpolación (más limpio y legible):
+escribir("Hola, ${nombre}. Tenés ${edad} años.")
+
+// También funciona con constantes:
+constante CIUDAD = "Buenos Aires"
+escribir("Vivo en ${CIUDAD}.")
+
+// Múltiples variables en un mismo string:
+variable pais = "Argentina"
+escribir("${nombre} vive en ${CIUDAD}, ${pais}.")

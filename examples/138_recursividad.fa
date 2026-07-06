@@ -1,0 +1,67 @@
+/// Ejemplos de recursividad (factorial, fibonacci, hanoi)
+/// Conceptos: recursividad, caso base, caso recursivo, pila de llamadas
+/// Nivel: intermedio
+
+importar "std/io"
+
+funcion factorial(n) -> Entero {
+    si (n <= 1) {
+        retornar 1  // caso base
+    }
+    retornar n * factorial(n - 1)  // caso recursivo
+}
+
+funcion fibonacci(n) -> Entero {
+    si (n <= 1) {
+        retornar n  // caso base
+    }
+    retornar fibonacci(n - 1) + fibonacci(n - 2)  // caso recursivo
+}
+
+funcion suma_hasta(n) -> Entero {
+    si (n <= 0) {
+        retornar 0
+    }
+    retornar n + suma_hasta(n - 1)
+}
+
+funcion potencia(base, exp) -> Entero {
+    si (exp == 0) {
+        retornar 1
+    }
+    retornar base * potencia(base, exp - 1)
+}
+
+funcion main() {
+    escribir("=== Recursividad ===\n")
+
+    escribir("Factorial:")
+    variable i = 1
+    mientras (i <= 10) {
+        escribir("  ${i}! = ${factorial(i)}")
+        i = i + 1
+    }
+
+    escribir("")
+    escribir("Fibonacci:")
+    variable j = 0
+    mientras (j <= 10) {
+        escribir("  fib(${j}) = ${fibonacci(j)}")
+        j = j + 1
+    }
+
+    escribir("")
+    escribir("Suma hasta n:")
+    escribir("  suma(10) = ${suma_hasta(10)}")
+    escribir("  suma(100) = ${suma_hasta(100)}")
+
+    escribir("")
+    escribir("Potencia:")
+    escribir("  2^8 = ${potencia(2, 8)}")
+    escribir("  3^4 = ${potencia(3, 4)}")
+
+    escribir("")
+    escribir("La recursividad resuelve problemas dividiéndolos en subproblemas más pequeños.")
+}
+
+main()
