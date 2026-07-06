@@ -5,12 +5,15 @@
   "fileTypes": [".fa"],
   "patterns": [
     { "include": "#comments" },
+    { "include": "#doc-comments" },
     { "include": "#strings" },
+    { "include": "#characters" },
+    { "include": "#numbers" },
+    { "include": "#literals" },
     { "include": "#keywords" },
     { "include": "#types" },
-    { "include": "#literals" },
-    { "include": "#numbers" },
     { "include": "#builtins" },
+    { "include": "#attributes" },
     { "include": "#function-definition" },
     { "include": "#class-definition" },
     { "include": "#new-instance" },
@@ -38,6 +41,15 @@
       ]
     },
 
+    "doc-comments": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.forja",
+          "match": "///.*$"
+        }
+      ]
+    },
+
     "strings": {
       "name": "string.quoted.double.forja",
       "begin": "\"",
@@ -45,7 +57,19 @@
       "patterns": [
         {
           "name": "constant.character.escape.forja",
-          "match": "\\\\[nrt\"\\\\]"
+          "match": "\\\\(n|t|r|\"|\\\\|')"
+        }
+      ]
+    },
+
+    "characters": {
+      "name": "constant.character.forja",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        {
+          "name": "constant.character.escape.forja",
+          "match": "\\\\(n|t|r|\\\\|')"
         }
       ]
     },
@@ -54,7 +78,7 @@
       "patterns": [
         {
           "name": "keyword.control.forja",
-          "match": "\\b(importar|variable|var|constante|const|mut|si|sino|mientras|para|repetir|funcion|retornar|clase|constructor|nuevo|este|prestado|prestado\\s+mut|tipo|coincidir|caso|BD)\\b"
+          "match": "\\b(importar|variable|var|constante|const|mut|si|sino|mientras|para|repetir|funcion|fun|retornar|clase|constructor|nuevo|este|prestado|tipo|coincidir|caso|BD|externo|externa|hilo|canal|enviar|recibir|unir|trait|implementa|donde|seleccionar|tiempo|otro|no)\\b"
         }
       ]
     },
@@ -78,11 +102,24 @@
 
     "builtins": {
       "name": "support.function.forja",
-      "match": "\\b(escribir|leer)\\b"
+      "match": "\\b(escribir|leer|asegurar|longitud|aleatorio|redondear|potencia|raiz|maximo|minimo|concatenar|insertar|eliminar|contiene|claves|valores|tamaño|a_caracter|a_texto|a_entero|a_decimal|es_entero|es_texto|es_decimal|es_booleano|es_lista|es_mapa|es_nulo|es_arreglo|tiempo_actual|esperar|abrir_archivo|leer_archivo|escribir_archivo|crear_directorio|existe_archivo|conectar|consultar|ejecutar|cerrar|transaccion|guardar)\\b"
+    },
+
+    "attributes": {
+      "patterns": [
+        {
+          "name": "keyword.operator.attribute.forja",
+          "match": "@"
+        },
+        {
+          "name": "entity.name.tag.forja",
+          "match": "\\b(test|derive)\\b"
+        }
+      ]
     },
 
     "function-definition": {
-      "match": "\\b(funcion)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b",
+      "match": "\\b(funcion|fun)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b",
       "captures": {
         "1": { "name": "keyword.control.forja" },
         "2": { "name": "entity.name.function.forja" }
@@ -141,7 +178,7 @@
 
     "operators": {
       "name": "keyword.operator.forja",
-      "match": "(\\+|-|\\*|/|==|!=|>=|<=|>|<|&&|\\|\\||!|=|&)"
+      "match": "\\+\\+|--|==|!=|>=|<=|\\+=|-=|\\*=|/=|%=|&&|\\|\\||->|::|\\.\\.\\.|%|\\||&|\\+|-|\\*|/|>|<|!|="
     },
 
     "punctuation": {
@@ -152,7 +189,9 @@
         { "name": "punctuation.dot.forja", "match": "\\." },
         { "name": "punctuation.parenthesis.forja", "match": "[\\(\\)]" },
         { "name": "punctuation.brace.forja", "match": "[\\{\\}]" },
-        { "name": "punctuation.bracket.forja", "match": "[\\[\\]]" }
+        { "name": "punctuation.bracket.forja", "match": "[\\[\\]]" },
+        { "name": "punctuation.question.forja", "match": "\\?" },
+        { "name": "punctuation.at.forja", "match": "@" }
       ]
     },
 
