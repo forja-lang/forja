@@ -1,0 +1,25 @@
+
+funcion main() {
+variable contador = 0
+variable toggle = verdadero
+espacio(16)
+texto_mediano("FAB (Floating Action Button):")
+espacio(8)
+espacio(16)
+texto_mediano("Icon Buttons:")
+espacio(8)
+espacio(16)
+texto_mediano("Segmented Buttons:")
+espacio(8)
+segmentado(["Día", "Semana", "Mes"], 0, ?)
+espacio(8)
+segmentado_multiple(["A", "B", "C"], [verdadero, falso, falso], ?)
+espacio(16)
+texto_mediano("Chips:")
+espacio(8)
+}
+
+funcion accion(valor) {
+retornar valor
+}
+

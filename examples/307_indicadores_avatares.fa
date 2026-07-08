@@ -1,0 +1,72 @@
+importar "gui"
+
+# Ejemplo: Indicadores, Avatares y Motion (Fases 7+8)
+funcion main() {
+    variable progreso = "45"
+    variable mostrar = verdadero
+
+    desplazable(
+    columna(
+        texto_grande("Indicadores y Avatares"),
+        espacio(16),
+
+        texto_mediano("Progreso Lineal:"),
+        barra_progreso(progreso),
+        espacio(4),
+        barra_progreso_indeterminada(),
+        espacio(8),
+
+        texto_mediano("Progreso Circular:"),
+        espacio(4),
+        fila_con_gap((
+            circulo_progreso(progreso),
+            circulo_progreso_indeterminado(),
+        ), 16, "centro"),
+
+        espacio(16),
+        texto_mediano("Badges (Distintivos):"),
+        espacio(8),
+        fila_con_gap((
+            distintivo(boton_icono("🔔", &accion), "3"),
+            distintivo_punto(boton_icono("💬", &accion)),
+        ), 16, "centro"),
+
+        espacio(16),
+        texto_mediano("Skeletons (carga):"),
+        espacio(8),
+        esqueleto_tarjeta(),
+        espacio(4),
+        esqueleto_linea(),
+
+        espacio(16),
+        texto_mediano("Avatares:"),
+        espacio(8),
+        fila_con_gap((
+            avatar("AB"),
+            avatar_icono("👤"),
+            grupo_avatar(("AB", "CD", "EF")),
+        ), 16, "centro"),
+
+        espacio(16),
+        texto_mediano("Estados:"),
+        espacio(8),
+        estado_vacio("📂", "No hay archivos todavía"),
+
+        espacio(16),
+        texto_mediano("Transición Fade:"),
+        transición(
+            tarjeta(etiqueta("Contenido con fade")),
+            mostrar
+        ),
+
+        espacio(16),
+        texto_mediano("Efecto Ripple:"),
+        efecto_onda(
+            boton_relleno("Botón con ripple", &accion)
+        ),
+    ))
+}
+
+funcion accion(valor: Texto) -> Texto {
+    retornar valor
+}

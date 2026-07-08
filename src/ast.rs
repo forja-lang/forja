@@ -37,6 +37,7 @@ pub enum Tipo {
     Decimal,
     Texto,
     Booleano,
+    Exacto,
     Nulo,
     Clase(String),       // nombre de clase definida por usuario
     #[allow(dead_code)]
@@ -144,6 +145,8 @@ pub enum Expresion {
     LiteralNumero(i64),
     /// Literal numérico decimal (ej: 3.14)
     LiteralDecimal(f64),
+    /// Literal exacto BigDecimal (ej: 19.99 con >15 decimales → coeff=1999, scale=2)
+    LiteralExacto(i128, u32),
     /// Literal de texto (ej: "hola")
     LiteralTexto(String),
     /// Literal booleano

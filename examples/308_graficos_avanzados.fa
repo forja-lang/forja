@@ -1,0 +1,79 @@
+# Ejemplo 308: Gráficos y Componentes Avanzados
+# Requiere: forja build --features gui
+importar "gui"
+
+funcion main() {
+    variable puntuacion = 3
+    
+    desplazable(
+    columna(
+        texto_grande("Gráficos y Componentes Avanzados"),
+        espacio(16),
+        
+        texto_mediano("Gráfico de barras:"),
+        gráfico_barras((30, 55, 80, 45, 70), ("Ene", "Feb", "Mar", "Abr", "May")),
+        
+        espacio(16),
+        texto_mediano("Gráfico de pastel:"),
+        gráfico_pastel((30, 25, 20, 15, 10), ("A", "B", "C", "D", "E")),
+        
+        espacio(16),
+        texto_mediano("Gráfico donut:"),
+        gráfico_donut((40, 30, 20, 10), ("Rojo", "Azul", "Verde", "Amarillo")),
+        
+        espacio(16),
+        texto_mediano("Gráfico indicador (Gauge):"),
+        gráfico_indicador(75, 0, 100),
+        
+        espacio(16),
+        texto_mediano("Mini gráfico (Sparkline):"),
+        minigráfico((10, 25, 18, 42, 35, 60, 48)),
+        
+        espacio(16),
+        texto_mediano("Gráfico de líneas:"),
+        gráfico_linea((15, 30, 22, 55, 48, 70), ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb")),
+        
+        espacio(16),
+        texto_mediano("Calificación (estrellas):"),
+        calificación(puntuacion, 5, &calificar),
+        
+        espacio(16),
+        texto_mediano("Asistente de pasos:"),
+        asistente_pasos(("Paso 1", "Paso 2", "Paso 3"), 0, &avanzar_paso),
+        
+        espacio(16),
+        texto_mediano("Migas de pan:"),
+        migaja_de_pan(("Inicio", "Documentos", "Proyectos", "Código")),
+        
+        espacio(16),
+        texto_mediano("Calendario:"),
+        calendario(1, 2025, &seleccionar_fecha),
+        
+        espacio(16),
+        texto_mediano("Visor Markdown:"),
+        visor_markdown("# Título Principal\n## Subtítulo\nTexto normal con **negrita** y *cursiva*\n- Elemento 1\n- Elemento 2"),
+        
+        espacio(16),
+        texto_mediano("Código QR:"),
+        visor_qr("https://forja-lang.dev", 128.0),
+        
+        espacio(16),
+        boton_relleno("Seleccionar archivo", &seleccionar_archivo)
+    ))
+}
+
+funcion calificar(valor: Texto) -> Texto {
+    retornar "Calificado: " + valor
+}
+
+funcion avanzar_paso(valor: Texto) -> Texto {
+    retornar "Paso cambiado: " + valor
+}
+
+funcion seleccionar_fecha(valor: Texto) -> Texto {
+    retornar "Fecha seleccionada: " + valor
+}
+
+funcion seleccionar_archivo(valor: Texto) -> Texto {
+    retornar "Archivo seleccionado: " + valor
+}
