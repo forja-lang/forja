@@ -1,0 +1,75 @@
+# Ejemplo 309: Material You Expressive
+# Requiere: forja build --features gui
+importar "gui"
+
+funcion main() {
+    desplazable(
+    columna(
+        texto_grande("Material You Expressive"),
+        espacio(16),
+        
+        texto_mediano("Glassmorphism (Efecto Vidrio):"),
+        espacio(8),
+        tarjeta_vidrio(
+            columna(
+                texto_mediano("Tarjeta Glass"),
+                etiqueta("Fondo semi-transparente con blur"),
+                espacio(8),
+                boton_relleno("Botón interno", &accion)
+            ),
+            20.0, 0.7
+        ),
+        
+        espacio(16),
+        texto_mediano("Gradiente lineal:"),
+        espacio(8),
+        gradiente_lineal(
+            tarjeta(etiqueta("Fondo con gradiente")),
+            ("#6750A4", "#D0BCFF")
+        ),
+        
+        espacio(16),
+        texto_mediano("Botón Morphing:"),
+        espacio(8),
+        boton_morphing("⚡", "Acción rápida", &accion),
+        
+        espacio(16),
+        texto_mediano("Efecto brillo (Glow):"),
+        espacio(8),
+        efecto_brillo(
+            boton_relleno("Botón con Glow", &accion),
+            "#6750A4", 2.0
+        ),
+        
+        espacio(16),
+        texto_mediano("Fondo expresivo:"),
+        espacio(8),
+        fondo_expresivo(("#FF6B6B", "#4ECDC4", "#45B7D1")),
+        
+        espacio(16),
+        texto_mediano("Gradiente radial:"),
+        espacio(8),
+        gradiente_radial(
+            tarjeta(etiqueta("Gradiente radial")),
+            ("#BB86FC", "#3700B3")
+        ),
+        
+        espacio(16),
+        texto_mediano("Glow combinado con Glass:"),
+        espacio(8),
+        efecto_brillo(
+            tarjeta_vidrio(
+                columna(
+                    texto_mediano("Glass + Glow"),
+                    etiqueta("Combinación de efectos")
+                ),
+                15.0, 0.75
+            ),
+            "#6750A4", 3.0
+        )
+    ))
+}
+
+funcion accion(valor: Texto) -> Texto {
+    retornar "Acción ejecutada"
+}

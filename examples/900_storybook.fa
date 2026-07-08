@@ -1,0 +1,732 @@
+# ═══════════════════════════════════════════════════════════════════
+#  FORJA STORYBOOK — Visor Interactivo de Componentes
+#  Muestra los ~200 componentes organizados en 11 categorías
+#  con preview en vivo, controles editables y toggle de tema.
+# ═══════════════════════════════════════════════════════════════════
+#
+#  Ejecutar (nativo):
+#    forja-gui examples/900_storybook.fa
+#    forja-gui --dark examples/900_storybook.fa
+#    forja-gui --tema #FF5722 examples/900_storybook.fa
+#
+#  Compilar y ejecutar:
+#    cargo build --features gui
+#    cargo run --bin forja --features gui -- ejemplo examples/900_storybook.fa
+#
+# ═══════════════════════════════════════════════════════════════════
+
+importar "gui"
+
+# ═══════════════════════════════════════════════════════════════════
+#  FUNCIÓN PRINCIPAL
+# ═══════════════════════════════════════════════════════════════════
+
+funcion main() {
+    variable pagina = 0
+    variable tema_oscuro = "falso"
+    variable color_seed = "#6750A4"
+
+    # Variables para controles en secciones
+    variable btn_disabled = "falso"
+    variable btn_icon = "falso"
+    variable switch_val = "verdadero"
+    variable slider_val = "50"
+    variable texto_val = ""
+    variable rating_val = "3"
+
+    andamio(
+        barra_superior(
+            "🎨 Forja Storybook",
+            (
+                boton_icono("☀️", &toggle_tema_cb),
+                boton_icono("⚙️", &ajustes_cb)
+            )
+        ),
+
+        fila((
+            riel_navegacion(
+                (item_navegacion("🔘", "Botones"),
+                 item_navegacion("⌨️", "Inputs"),
+                 item_navegacion("🃏", "Tarjetas"),
+                 item_navegacion("💬", "Feedback"),
+                 item_navegacion("🧭", "Navegación"),
+                 item_navegacion("📊", "Indicadores"),
+                 item_navegacion("👤", "Avatares"),
+                 item_navegacion("📈", "Gráficos"),
+                 item_navegacion("🎭", "Expressive"),
+                 item_navegacion("🏃", "Motion"),
+                 item_navegacion("📐", "Layout")),
+                pagina,
+                &cambiar_pagina_cb
+            ),
+
+            desplazable(
+                columna(
+                    texto_grande(titulo_categoria(pagina)),
+                    espacio(4),
+                    separador(),
+                    espacio(8),
+
+                    # Renderizar según categoría activa
+                    si (pagina == 0) {
+                        seccion_botones(btn_disabled, btn_icon)
+                    } sino {
+                        si (pagina == 1) {
+                            seccion_inputs(texto_val, slider_val, switch_val)
+                        } sino {
+                            si (pagina == 2) {
+                                seccion_tarjetas()
+                            } sino {
+                                si (pagina == 3) {
+                                    seccion_feedback()
+                                } sino {
+                                    si (pagina == 4) {
+                                        seccion_navegacion()
+                                    } sino {
+                                        si (pagina == 5) {
+                                            seccion_indicadores(slider_val)
+                                        } sino {
+                                            si (pagina == 6) {
+                                                seccion_avatares()
+                                            } sino {
+                                                si (pagina == 7) {
+                                                    seccion_graficos(rating_val)
+                                                } sino {
+                                                    si (pagina == 8) {
+                                                        seccion_expressive()
+                                                    } sino {
+                                                        si (pagina == 9) {
+                                                            seccion_motion()
+                                                        } sino {
+                                                            seccion_layout()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                )
+            )
+        ))
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  TÍTULO DE CATEGORÍA
+# ═══════════════════════════════════════════════════════════════════
+
+funcion titulo_categoria(p: Entero) -> Texto {
+    si (p == 0) { retornar "🔘 Botones" }
+    sino {
+        si (p == 1) { retornar "⌨️ Inputs y Formularios" }
+        sino {
+            si (p == 2) { retornar "🃏 Tarjetas y Listas" }
+            sino {
+                si (p == 3) { retornar "💬 Feedback" }
+                sino {
+                    si (p == 4) { retornar "🧭 Navegación" }
+                    sino {
+                        si (p == 5) { retornar "📊 Indicadores" }
+                        sino {
+                            si (p == 6) { retornar "👤 Avatares" }
+                            sino {
+                                si (p == 7) { retornar "📈 Gráficos" }
+                                sino {
+                                    si (p == 8) { retornar "🎭 Expressive" }
+                                    sino {
+                                        si (p == 9) { retornar "🏃 Motion" }
+                                        sino { retornar "📐 Layout" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 0: BOTONES
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_botones(disabled: Texto, con_icono: Texto) {
+    retornar columna(
+        texto_mediano("Variantes principales"),
+        espacio(8),
+        fila_con_gap((
+            boton_relleno("Relleno", &accion_story),
+            boton_tonal("Tonal", &accion_story),
+            boton_perfilado("Perfilado", &accion_story),
+            boton_texto("Texto", &accion_story),
+            boton_elevado("Elevado", &accion_story)
+        ), 8, "centro"),
+
+        espacio(16),
+        texto_mediano("FAB"),
+        espacio(8),
+        fila_con_gap((
+            fab_pequeño("➕", &accion_story),
+            fab("➕", &accion_story),
+            fab_grande("➕", &accion_story),
+            fab_extendido("Crear", "➕", &accion_story)
+        ), 8, "centro"),
+
+        espacio(16),
+        texto_mediano("Icon Buttons"),
+        espacio(8),
+        fila_con_gap((
+            boton_icono("⭐", &accion_story),
+            boton_icono_relleno("⭐", &accion_story),
+            boton_icono_tonal("⭐", &accion_story),
+            boton_icono_perfilado("⭐", &accion_story)
+        ), 8, "centro"),
+
+        espacio(16),
+        texto_mediano("Segmented Buttons"),
+        espacio(8),
+        segmentado(("Día", "Semana", "Mes"), 0, &accion_story),
+        espacio(4),
+        segmentado_multiple(("A", "B", "C"), (verdadero, falso, falso), &accion_story),
+
+        espacio(16),
+        texto_mediano("Chips"),
+        espacio(8),
+        flujo((
+            subconjunto_asistente("Ayuda", &accion_story),
+            subconjunto_filtro("Filtro", verdadero, &accion_story),
+            subconjunto_entrada("Cerrar ✕", &accion_story),
+            subconjunto_sugerencia("Sugerencia", &accion_story)
+        ), 8),
+
+        espacio(16),
+        separador(),
+        texto_mediano("🎛️ Controles"),
+        espacio(8),
+        interruptor("Deshabilitado", disabled),
+        espacio(4),
+        interruptor("Mostrar icono", con_icono)
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 1: INPUTS
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_inputs(texto: Texto, slider: Texto, sw: Texto) {
+    retornar columna(
+        texto_mediano("Campos de texto"),
+        espacio(8),
+        campo_texto(texto, "Texto (relleno)"),
+        espacio(8),
+        campo_perfilado(texto, "Texto (perfilado)"),
+        espacio(8),
+        campo_email(texto, "Correo electrónico"),
+        espacio(8),
+        campo_contraseña(texto, "Contraseña"),
+        espacio(8),
+        campo_numero(texto, "Edad", 0, 150),
+        espacio(8),
+        campo_busqueda(texto),
+
+        espacio(16),
+        texto_mediano("Selección"),
+        espacio(8),
+        menu_seleccion(("Opción 1", "Opción 2", "Opción 3"), 0, "Elegir..."),
+
+        espacio(16),
+        texto_mediano("Controles"),
+        espacio(8),
+        interruptor("Interruptor", sw),
+        espacio(8),
+        deslizante(slider, 0, 100),
+        espacio(8),
+        deslizante_discreto(slider, 0, 100, 10),
+
+        espacio(16),
+        texto_mediano("Fecha y Hora"),
+        espacio(8),
+        fila_con_gap((
+            selector_fecha("2025-01-15"),
+            selector_hora("14:30")
+        ), 16, "centro"),
+
+        espacio(16),
+        texto_mediano("Color"),
+        espacio(8),
+        selector_color("#6750A4")
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 2: TARJETAS Y LISTAS
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_tarjetas() {
+    retornar columna(
+        texto_mediano("Variantes de tarjeta"),
+        espacio(8),
+        fila_con_gap((
+            tarjeta(columna((
+                texto_mediano("Filled"),
+                etiqueta("Tarjeta rellena estándar"),
+                boton_tonal("Acción", &accion_story)
+            ))),
+            tarjeta_elevada(columna((
+                texto_mediano("Elevated"),
+                etiqueta("Con sombra sutil"),
+                boton_tonal("Acción", &accion_story)
+            ))),
+            tarjeta_perfilada(columna((
+                texto_mediano("Outlined"),
+                etiqueta("Con borde"),
+                boton_tonal("Acción", &accion_story)
+            )))
+        ), 16, "inicio"),
+
+        espacio(16),
+        texto_mediano("Listas"),
+        espacio(8),
+        lista_con_dividores((
+            elemento_lista_doble(icono_material("folder", 24, "secondary"), "Documentos", "15 archivos", icono_material("arrow_forward", 24, "on_surface_variant")),
+            elemento_lista_doble(icono_material("image", 24, "secondary"), "Imágenes", "42 archivos", icono_material("arrow_forward", 24, "on_surface_variant")),
+            elemento_lista_doble(icono_material("audiotrack", 24, "secondary"), "Música", "8 archivos", icono_material("arrow_forward", 24, "on_surface_variant"))
+        )),
+
+        espacio(16),
+        texto_mediano("Tabla de datos"),
+        espacio(8),
+        tabla_ordenable(
+            ("Nombre", "Edad", "Ciudad"),
+            (("Ana García", "28", "Madrid"),
+             ("Carlos López", "35", "Barcelona"),
+             ("María Díaz", "22", "Valencia"))
+        )
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 3: FEEDBACK
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_feedback() {
+    retornar columna(
+        texto_mediano("Diálogos"),
+        espacio(8),
+        fila_con_gap((
+            boton_relleno("Alerta", &mostrar_alerta_cb),
+            boton_tonal("Confirmar", &mostrar_confirmacion_cb),
+            boton_perfilado("Personalizado", &mostrar_personalizado_cb)
+        ), 8, "centro"),
+
+        espacio(16),
+        texto_mediano("Bottom Sheets"),
+        espacio(8),
+        fila_con_gap((
+            boton_tonal("Hoja estándar", &mostrar_hoja_cb),
+            boton_tonal("Hoja modal", &mostrar_hoja_modal_cb)
+        ), 8, "centro"),
+
+        espacio(16),
+        texto_mediano("Snackbar"),
+        espacio(8),
+        fila_con_gap((
+            boton_relleno("Notificar", &mostrar_notificacion_cb),
+            boton_tonal("Con acción", &mostrar_notificacion_accion_cb)
+        ), 8, "centro"),
+
+        espacio(16),
+        texto_mediano("Menús"),
+        espacio(8),
+        fila_con_gap((
+            menú_desplegable(("Editar", "Copiar", "Pegar", "Eliminar"), 0, &accion_story),
+            información(boton_icono("❓", &accion_story), "Tooltip de ayuda")
+        ), 8, "centro")
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 4: NAVEGACIÓN
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_navegacion() {
+    variable tab_activo = 0
+    retornar columna(
+        texto_mediano("Top App Bar"),
+        espacio(8),
+        barra_superior("Título", (boton_icono("🔔", &accion_story), boton_icono("⚙️", &accion_story))),
+        espacio(8),
+        barra_superior_media("Título Mediano"),
+        espacio(8),
+        barra_superior_grande("Título Grande"),
+
+        espacio(16),
+        texto_mediano("Pestañas"),
+        espacio(8),
+        pestañas(("Inicio", "Explorar", "Perfil"), tab_activo, &cambiar_tab_cb),
+
+        espacio(16),
+        texto_mediano("Barra de búsqueda"),
+        espacio(8),
+        barra_busqueda("Buscar...", ""),
+
+        espacio(16),
+        texto_mediano("Barra de navegación inferior"),
+        espacio(8),
+        barra_navegacion(
+            (item_navegacion("🏠", "Inicio"),
+             item_navegacion("🔍", "Buscar"),
+             item_navegacion("❤️", "Fav"),
+             item_navegacion("👤", "Perfil")),
+            0,
+            &accion_story
+        )
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 5: INDICADORES
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_indicadores(progreso: Texto) {
+    retornar columna(
+        texto_mediano("Barras de progreso"),
+        espacio(8),
+        barra_progreso(progreso),
+        espacio(4),
+        barra_progreso_indeterminada(),
+
+        espacio(16),
+        texto_mediano("Progreso circular"),
+        espacio(8),
+        fila_con_gap((
+            circulo_progreso(progreso),
+            circulo_progreso_indeterminado()
+        ), 16, "centro"),
+
+        espacio(16),
+        texto_mediano("Badges"),
+        espacio(8),
+        fila_con_gap((
+            distintivo(boton_icono("🔔", &accion_story), "3"),
+            distintivo_punto(boton_icono("💬", &accion_story))
+        ), 16, "centro"),
+
+        espacio(16),
+        texto_mediano("Skeleton (carga)"),
+        espacio(8),
+        esqueleto_tarjeta(),
+        espacio(4),
+        esqueleto_linea(),
+
+        espacio(16),
+        texto_mediano("Estados"),
+        espacio(8),
+        estado_vacio("📂", "No hay elementos"),
+        espacio(4),
+        estado_error("Error de conexión")
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 6: AVATARES
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_avatares() {
+    retornar columna(
+        texto_mediano("Avatares"),
+        espacio(8),
+        fila_con_gap((
+            avatar("AB"),
+            avatar_icono("👤"),
+            avatar_icono("🎨"),
+            avatar_icono("💻")
+        ), 16, "centro"),
+
+        espacio(16),
+        texto_mediano("Grupo de avatares"),
+        espacio(8),
+        grupo_avatar(("AB", "CD", "EF", "GH")),
+
+        espacio(16),
+        texto_mediano("Avatar con imagen"),
+        espacio(8),
+        avatar_imagen("logo.png"),
+
+        espacio(16),
+        texto_mediano("Visor Markdown"),
+        espacio(8),
+        visor_markdown("**Storybook** de componentes *Forja*")
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 7: GRÁFICOS
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_graficos(puntuacion: Texto) {
+    retornar columna(
+        texto_mediano("Gráfico de barras"),
+        espacio(8),
+        gráfico_barras((30, 55, 80, 45, 70), ("Ene", "Feb", "Mar", "Abr", "May")),
+
+        espacio(16),
+        texto_mediano("Gráfico de pastel"),
+        espacio(8),
+        fila_con_gap((
+            gráfico_pastel((30, 25, 20, 15, 10), ("A", "B", "C", "D", "E")),
+            gráfico_donut((30, 25, 20, 15, 10), ("A", "B", "C", "D", "E"))
+        ), 16, "centro"),
+
+        espacio(16),
+        texto_mediano("Indicador (Gauge)"),
+        espacio(8),
+        gráfico_indicador(75, 0, 100),
+
+        espacio(16),
+        texto_mediano("Sparkline"),
+        espacio(8),
+        minigráfico((10, 25, 18, 42, 35, 60, 48)),
+
+        espacio(16),
+        texto_mediano("Calificación"),
+        espacio(8),
+        calificación(3, 5, &accion_story)
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 8: EXPRESSIVE
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_expressive() {
+    retornar columna(
+        texto_mediano("Glassmorphism"),
+        espacio(8),
+        tarjeta_vidrio(
+            columna((
+                texto_mediano("Tarjeta Glass"),
+                etiqueta("Fondo semi-transparente")
+            )),
+            20.0, 0.7
+        ),
+
+        espacio(16),
+        texto_mediano("Gradiente lineal"),
+        espacio(8),
+        gradiente_lineal(
+            tarjeta(etiqueta("Fondo con gradiente")),
+            ("#6750A4", "#D0BCFF")
+        ),
+
+        espacio(16),
+        texto_mediano("Efecto brillo (Glow)"),
+        espacio(8),
+        efecto_brillo(
+            boton_relleno("Botón con Glow", &accion_story),
+            "#6750A4", 2.0
+        ),
+
+        espacio(16),
+        texto_mediano("Gradiente radial"),
+        espacio(8),
+        gradiente_radial(
+            tarjeta(etiqueta("Gradiente radial")),
+            ("#BB86FC", "#3700B3")
+        ),
+
+        espacio(16),
+        texto_mediano("Fondo expresivo"),
+        espacio(8),
+        fondo_expresivo(("#FF6B6B", "#4ECDC4", "#45B7D1"))
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 9: MOTION
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_motion() {
+    variable visible = verdadero
+    retornar columna(
+        texto_mediano("Transiciones"),
+        espacio(8),
+        interruptor("Mostrar contenido", visible),
+        espacio(8),
+        transición(
+            tarjeta_elevada(columna((
+                texto_mediano("Transición Fade"),
+                etiqueta("Este contenido aparece/desaparece con fade"),
+                boton_relleno("Acción", &accion_story)
+            ))),
+            visible
+        ),
+
+        espacio(16),
+        texto_mediano("Efecto Ripple"),
+        espacio(8),
+        efecto_onda(
+            boton_relleno("Botón con ripple", &accion_story)
+        ),
+
+        espacio(16),
+        texto_mediano("Botón Morphing"),
+        espacio(8),
+        boton_morphing("⚡", "Acción rápida", &accion_story)
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 10: LAYOUT
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_layout() {
+    retornar columna(
+        texto_mediano("Contenedores básicos"),
+        espacio(8),
+        fila_con_gap((
+            tarjeta(centrado(etiqueta("Centrado"))),
+            tarjeta(relleno(etiqueta("Con padding"), 16))
+        ), 16, "centro"),
+
+        espacio(16),
+        texto_mediano("Flow layout (wrap)"),
+        espacio(8),
+        flujo((
+            subconjunto_asistente("Uno", &accion_story),
+            subconjunto_asistente("Dos", &accion_story),
+            subconjunto_asistente("Tres", &accion_story),
+            subconjunto_asistente("Cuatro", &accion_story),
+            subconjunto_asistente("Cinco", &accion_story),
+            subconjunto_asistente("Seis", &accion_story),
+            subconjunto_asistente("Siete", &accion_story)
+        ), 8),
+
+        espacio(16),
+        texto_mediano("Layout responsive"),
+        espacio(8),
+        adaptable(
+            tarjeta(etiqueta("Compact (< 600px)")),
+            tarjeta_elevada(etiqueta("Medium (600-840px)")),
+            tarjeta_perfilada(etiqueta("Expanded (> 840px)"))
+        ),
+
+        espacio(16),
+        texto_mediano("Espaciadores"),
+        espacio(8),
+        fila((
+            boton_relleno("Izquierda", &accion_story),
+            expansor(),
+            boton_relleno("Derecha", &accion_story)
+        )),
+
+        espacio(16),
+        texto_mediano("Caja relativa"),
+        espacio(8),
+        caja_relativa(
+            tarjeta_elevada(centrado(etiqueta("16:9"))),
+            1.777
+        ),
+
+        espacio(16),
+        texto_mediano("Flex Layout"),
+        espacio(8),
+        flex_layout(
+            (boton_relleno("A", &accion_story),
+             boton_tonal("B", &accion_story),
+             boton_perfilado("C", &accion_story)),
+            "horizontal", 12, falso
+        )
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  CALLBACKS
+# ═══════════════════════════════════════════════════════════════════
+
+funcion accion_story(valor: Texto) -> Texto {
+    retornar valor
+}
+
+funcion toggle_tema_cb(valor: Texto) -> Texto {
+    retornar "Tema alternado"
+}
+
+funcion ajustes_cb(valor: Texto) -> Texto {
+    notificación("Storybook v1.0 — Material You Expressive")
+    retornar valor
+}
+
+funcion cambiar_pagina_cb(valor: Texto) -> Texto {
+    retornar valor
+}
+
+funcion cambiar_tab_cb(valor: Texto) -> Texto {
+    retornar valor
+}
+
+# ─── Diálogos ───
+
+funcion mostrar_alerta_cb(valor: Texto) -> Texto {
+    dialogo_alerta("Título", "Mensaje de alerta Material You")
+    retornar valor
+}
+
+funcion mostrar_confirmacion_cb(valor: Texto) -> Texto {
+    dialogo_confirmacion("¿Confirmar?", "¿Estás seguro?", &accion_story, &accion_story)
+    retornar valor
+}
+
+funcion mostrar_personalizado_cb(valor: Texto) -> Texto {
+    dialogo_personalizado("Personalizado",
+        columna((
+            etiqueta("Contenido personalizado"),
+            campo_texto("", "Campo en diálogo"),
+            boton_relleno("OK", &accion_story)
+        ))
+    )
+    retornar valor
+}
+
+# ─── Bottom Sheets ───
+
+funcion mostrar_hoja_cb(valor: Texto) -> Texto {
+    hoja_inferior(
+        columna((
+            texto_mediano("Bottom Sheet"),
+            etiqueta("Contenido de la hoja inferior"),
+            boton_relleno("Cerrar", &accion_story)
+        )),
+        "verdadero"
+    )
+    retornar valor
+}
+
+funcion mostrar_hoja_modal_cb(valor: Texto) -> Texto {
+    hoja_inferior_modal(
+        columna((
+            texto_mediano("Modal Sheet"),
+            etiqueta("Overlay semitransparente"),
+            boton_relleno("Cerrar", &accion_story)
+        )),
+        "verdadero"
+    )
+    retornar valor
+}
+
+# ─── Notificaciones ───
+
+funcion mostrar_notificacion_cb(valor: Texto) -> Texto {
+    notificación("Archivo guardado correctamente")
+    retornar valor
+}
+
+funcion mostrar_notificacion_accion_cb(valor: Texto) -> Texto {
+    notificación_accion("Cambios detectados", "Guardar", &accion_story)
+    retornar valor
+}

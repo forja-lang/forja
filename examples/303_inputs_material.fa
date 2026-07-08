@@ -1,0 +1,89 @@
+# ─── Ejemplo 303: Inputs y Formularios Material You ───────────────
+# Muestra todos los tipos de input implementados con tema Material Design 3
+# Requiere: forja run --features gui
+
+importar "gui"
+
+funcion main() {
+    variable nombre = ""
+    variable email = ""
+    variable contraseña = ""
+    variable edad = "25"
+    variable busqueda = ""
+    variable pais = "0"
+    variable tema = "0"
+    variable notificaciones = "verdadero"
+    variable volumen = "50.0"
+    variable temperatura_min = "18.0"
+    variable temperatura_max = "26.0"
+    variable fecha = "2024-01-15"
+    variable hora = "14:30"
+    variable color_fav = "#6750A4"
+    variable chips_sel = ""
+
+    desplazable(
+    columna(
+        texto_grande("Formulario Material You"),
+        espacio(8),
+
+        texto_mediano("📝 Campos de texto:"),
+        espacio(4),
+        campo_texto(nombre, "Nombre completo"),
+        espacio(4),
+        campo_email(email, "Correo electrónico"),
+        espacio(4),
+        campo_contraseña(contraseña, "Contraseña"),
+        espacio(4),
+        campo_numero(edad, "Edad", 0, 150),
+
+        espacio(12),
+        texto_mediano("🔍 Búsqueda y selección:"),
+        espacio(4),
+        campo_busqueda(busqueda),
+        espacio(4),
+        menu_seleccion(("Argentina", "Brasil", "Chile", "Uruguay"), pais, "País"),
+
+        espacio(12),
+        texto_mediano("⚙️ Controles:"),
+        espacio(4),
+        interruptor("Recibir notificaciones", notificaciones),
+        espacio(4),
+        deslizante_discreto(volumen, 0, 100, 10),
+
+        espacio(12),
+        texto_mediano("🌡️ Slider de rango:"),
+        espacio(4),
+        deslizante_rango(temperatura_min, temperatura_max, 0, 50),
+
+        espacio(12),
+        texto_mediano("🔘 Selección de tema:"),
+        espacio(4),
+        grupo_radio(("Claro", "Oscuro", "Sistema"), tema, &cambiar_tema),
+
+        espacio(12),
+        texto_mediano("📅 Date/Time Pickers:"),
+        espacio(4),
+        fila_con_gap((
+            selector_fecha(fecha),
+            selector_hora(hora),
+        ), 16, "centro"),
+
+        espacio(12),
+        texto_mediano("🎨 Color picker:"),
+        espacio(4),
+        selector_color(color_fav),
+
+        espacio(16),
+        boton_relleno("Enviar formulario", &enviar),
+        espacio(8),
+        etiqueta_dinamica("resultado")
+    ))
+}
+
+funcion cambiar_tema(valor: Texto) -> Texto {
+    retornar valor
+}
+
+funcion enviar(valor: Texto) -> Texto {
+    retornar "✅ Formulario enviado correctamente"
+}

@@ -1,0 +1,632 @@
+# ═══════════════════════════════════════════════════════════════════
+#  FORJA STORYBOOK — Responsive Edition
+#  Visor de componentes con 3 layouts según WindowSizeClass:
+#    - Compact (< 600px):  sidebar colapsada, navegación inferior
+#    - Medium (600-840px): sidebar compacta (solo iconos)
+#    - Expanded (> 840px): sidebar completa con labels
+# ═══════════════════════════════════════════════════════════════════
+#
+#  Ejecutar:
+#    forja-gui examples/902_storybook_responsive.fa
+#
+# ═══════════════════════════════════════════════════════════════════
+
+importar "gui"
+
+# ═══════════════════════════════════════════════════════════════════
+#  FUNCIÓN PRINCIPAL
+# ═══════════════════════════════════════════════════════════════════
+
+funcion main() {
+    # ─── Variables de estado ───
+    variable pagina = 0
+    variable tema_oscuro = "falso"
+    variable menu_abierto = "falso"
+
+    # ─── Variables para controles ───
+    variable btn_disabled = "falso"
+    variable btn_icon = "falso"
+    variable switch_val = "verdadero"
+    variable slider_val = "50"
+    variable texto_val = ""
+    variable rating_val = "3"
+
+    # ─── Andamio principal ───
+    andamio(
+        # Barra superior con menú hamburguesa y acciones
+        barra_superior(
+            "📱 Forja Storybook",
+            (
+                boton_icono("🍔", &toggle_menu_cb),
+                boton_icono("🌙", &toggle_tema_cb),
+            )
+        ),
+
+        # Cuerpo: responsive según tamaño de ventana
+        cuerpo_responsive(pagina,
+            btn_disabled, btn_icon,
+            texto_val, slider_val, switch_val,
+            rating_val, menu_abierto),
+
+        # Barra inferior (solo visible en Compact)
+        barra_navegacion(
+            (item_navegacion("🔘", "Botones"),
+             item_navegacion("⌨️", "Inputs"),
+             item_navegacion("🃏", "Tarjetas"),
+             item_navegacion("💬", "Feedback"),
+             item_navegacion("🧭", "Nav")),
+            pagina, &cambiar_pagina_cb
+        )
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  CUERPO RESPONSIVE (3 layouts según WindowSizeClass)
+# ═══════════════════════════════════════════════════════════════════
+#  Usa andamio() con adaptable() para cambiar entre:
+#    Compact   → sin sidebar, solo navegación inferior
+#    Medium    → sidebar compacta (iconos sin texto)
+#    Expanded  → sidebar completa (iconos + labels)
+# ═══════════════════════════════════════════════════════════════════
+
+funcion cuerpo_responsive(p: Entero,
+    btn_disabled: Texto, btn_icon: Texto,
+    texto_val: Texto, slider_val: Texto, switch_val: Texto,
+    rating_val: Texto, menu_abierto: Texto) {
+
+    retornar adaptable(
+
+        # ─── COMPACT (< 600px) ───
+        # Sin sidebar. La navegación se hace por la barra inferior.
+        # El menú hamburguesa abre un cajón lateral.
+        columna(
+            espacio(8),
+
+            # Título de categoría
+            texto_grande(titulo_categoria(p)),
+            espacio(4),
+            separador(),
+            espacio(8),
+
+            # Contenido desplazable
+            desplazable(
+                seccion_activa(p,
+                    btn_disabled, btn_icon,
+                    texto_val, slider_val, switch_val,
+                    rating_val)
+            ),
+
+            # Cajón modal para navegación completa (hamburger menu)
+            cajon_modal(
+                (item_navegacion("🔘", "Botones"),
+                 item_navegacion("⌨️", "Inputs"),
+                 item_navegacion("🃏", "Tarjetas"),
+                 item_navegacion("💬", "Feedback"),
+                 item_navegacion("🧭", "Navegación"),
+                 item_navegacion("📊", "Indicadores"),
+                 item_navegacion("👤", "Avatares"),
+                 item_navegacion("📈", "Gráficos"),
+                 item_navegacion("🎭", "Expressive"),
+                 item_navegacion("🏃", "Motion"),
+                 item_navegacion("📐", "Layout")),
+                p, &cambiar_pagina_cb,
+                menu_abierto
+            )
+        ),
+
+        # ─── MEDIUM (600-840px) ───
+        # Sidebar compacta: solo iconos, sin labels
+        # Contenido a la derecha
+        fila((
+            riel_navegacion(
+                (item_navegacion("🔘", ""),
+                 item_navegacion("⌨️", ""),
+                 item_navegacion("🃏", ""),
+                 item_navegacion("💬", ""),
+                 item_navegacion("🧭", ""),
+                 item_navegacion("📊", ""),
+                 item_navegacion("👤", ""),
+                 item_navegacion("📈", ""),
+                 item_navegacion("🎭", ""),
+                 item_navegacion("🏃", ""),
+                 item_navegacion("📐", "")),
+                p, &cambiar_pagina_cb,
+                falso    # extendido = falso → solo iconos
+            ),
+
+            # Contenido principal
+            desplazable(
+                columna(
+                    texto_grande(titulo_categoria(p)),
+                    espacio(4),
+                    separador(),
+                    espacio(8),
+
+                    seccion_activa(p,
+                        btn_disabled, btn_icon,
+                        texto_val, slider_val, switch_val,
+                        rating_val)
+                )
+            )
+        )),
+
+        # ─── EXPANDED (> 840px) ───
+        # Sidebar completa: iconos + labels
+        # Layout tipo IDE
+        fila((
+            riel_navegacion(
+                (item_navegacion("🔘", "Botones"),
+                 item_navegacion("⌨️", "Inputs"),
+                 item_navegacion("🃏", "Tarjetas"),
+                 item_navegacion("💬", "Feedback"),
+                 item_navegacion("🧭", "Navegación"),
+                 item_navegacion("📊", "Indicadores"),
+                 item_navegacion("👤", "Avatares"),
+                 item_navegacion("📈", "Gráficos"),
+                 item_navegacion("🎭", "Expressive"),
+                 item_navegacion("🏃", "Motion"),
+                 item_navegacion("📐", "Layout")),
+                p, &cambiar_pagina_cb,
+                verdadero   # extendido = verdadero → iconos + labels
+            ),
+
+            # Contenido principal con más espacio
+            desplazable(
+                columna(
+                    texto_grande(titulo_categoria(p)),
+                    espacio(8),
+                    separador(),
+                    espacio(12),
+
+                    seccion_activa(p,
+                        btn_disabled, btn_icon,
+                        texto_val, slider_val, switch_val,
+                        rating_val)
+                )
+            )
+        ))
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  HELPER: Título de categoría
+# ═══════════════════════════════════════════════════════════════════
+
+funcion titulo_categoria(p: Entero) -> Texto {
+    si (p == 0) { retornar "🔘 Botones" }
+    sino {
+        si (p == 1) { retornar "⌨️ Inputs" }
+        sino {
+            si (p == 2) { retornar "🃏 Tarjetas" }
+            sino {
+                si (p == 3) { retornar "💬 Feedback" }
+                sino {
+                    si (p == 4) { retornar "🧭 Navegación" }
+                    sino {
+                        si (p == 5) { retornar "📊 Indicadores" }
+                        sino {
+                            si (p == 6) { retornar "👤 Avatares" }
+                            sino {
+                                si (p == 7) { retornar "📈 Gráficos" }
+                                sino {
+                                    si (p == 8) { retornar "🎭 Expressive" }
+                                    sino {
+                                        si (p == 9) { retornar "🏃 Motion" }
+                                        sino { retornar "📐 Layout" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  HELPER: Sección activa
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_activa(p: Entero,
+    btn_disabled: Texto, btn_icon: Texto,
+    texto_val: Texto, slider_val: Texto, switch_val: Texto,
+    rating_val: Texto) {
+
+    si (p == 0) { retornar seccion_botones(btn_disabled, btn_icon) }
+    sino {
+        si (p == 1) { retornar seccion_inputs(texto_val, slider_val, switch_val) }
+        sino {
+            si (p == 2) { retornar seccion_tarjetas() }
+            sino {
+                si (p == 3) { retornar seccion_feedback() }
+                sino {
+                    si (p == 4) { retornar seccion_navegacion() }
+                    sino {
+                        si (p == 5) { retornar seccion_indicadores(slider_val) }
+                        sino {
+                            si (p == 6) { retornar seccion_avatares() }
+                            sino {
+                                si (p == 7) { retornar seccion_graficos(rating_val) }
+                                sino {
+                                    si (p == 8) { retornar seccion_expressive() }
+                                    sino {
+                                        si (p == 9) { retornar seccion_motion() }
+                                        sino { retornar seccion_layout() }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 0: BOTONES
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_botones(disabled: Texto, con_icono: Texto) {
+    retornar columna(
+        texto_mediano("Variantes principales"),
+        espacio(8),
+        fila_con_gap((
+            boton_relleno("Relleno", &accion_story),
+            boton_tonal("Tonal", &accion_story),
+            boton_perfilado("Perfilado", &accion_story),
+            boton_texto("Texto", &accion_story),
+            boton_elevado("Elevado", &accion_story),
+        ), 8, "centro"),
+
+        espacio(16),
+        texto_mediano("FAB"),
+        espacio(8),
+        fila_con_gap((
+            fab_pequeño("➕", &accion_story),
+            fab("➕", &accion_story),
+            fab_grande("➕", &accion_story),
+        ), 8, "centro"),
+
+        espacio(16),
+        texto_mediano("Icon Buttons"),
+        espacio(8),
+        fila_con_gap((
+            boton_icono("⭐", &accion_story),
+            boton_icono_relleno("⭐", &accion_story),
+            boton_icono_tonal("⭐", &accion_story),
+        ), 8, "centro"),
+
+        espacio(16),
+        texto_mediano("Chips"),
+        espacio(8),
+        flujo((
+            subconjunto_asistente("Ayuda", &accion_story),
+            subconjunto_filtro("Filtro", verdadero, &accion_story),
+            subconjunto_sugerencia("Sugerencia", &accion_story),
+        ), 8),
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 1: INPUTS
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_inputs(texto: Texto, slider: Texto, sw: Texto) {
+    retornar columna(
+        texto_mediano("Campos de texto"),
+        espacio(8),
+        campo_texto(texto, "Texto"),
+        espacio(8),
+        campo_email(texto, "Email"),
+        espacio(8),
+        campo_contraseña(texto, "Contraseña"),
+        espacio(8),
+        campo_numero(texto, "Edad", 0, 150),
+
+        espacio(16),
+        texto_mediano("Controles"),
+        espacio(8),
+        interruptor("Interruptor", sw),
+        espacio(8),
+        deslizante(slider, 0, 100),
+
+        espacio(16),
+        texto_mediano("Fecha y Color"),
+        espacio(8),
+        fila_con_gap((
+            selector_fecha("2025-01-15"),
+            selector_color("#6750A4"),
+        ), 16, "centro"),
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 2: TARJETAS
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_tarjetas() {
+    retornar columna(
+        texto_mediano("Variantes de tarjeta"),
+        espacio(8),
+        fila_con_gap((
+            tarjeta(etiqueta("Filled")),
+            tarjeta_elevada(etiqueta("Elevated")),
+            tarjeta_perfilada(etiqueta("Outlined")),
+        ), 16, "inicio"),
+
+        espacio(16),
+        texto_mediano("Listas"),
+        espacio(8),
+        lista_con_dividores((
+            elemento_lista_doble(icono_material("folder", 24, "secondary"), "Docs", "15 archivos", icono_material("arrow_forward", 24, "on_surface_variant")),
+            elemento_lista_doble(icono_material("image", 24, "secondary"), "Fotos", "42 archivos", icono_material("arrow_forward", 24, "on_surface_variant")),
+            elemento_lista_doble(icono_material("audiotrack", 24, "secondary"), "Música", "8 archivos", icono_material("arrow_forward", 24, "on_surface_variant")),
+        )),
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 3: FEEDBACK
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_feedback() {
+    retornar columna(
+        texto_mediano("Diálogos"),
+        espacio(8),
+        fila_con_gap((
+            boton_relleno("Alerta", &mostrar_alerta_cb),
+            boton_tonal("Confirmar", &mostrar_confirmacion_cb),
+        ), 8, "centro"),
+
+        espacio(16),
+        texto_mediano("Bottom Sheets"),
+        espacio(8),
+        boton_tonal("Hoja inferior", &mostrar_hoja_cb),
+
+        espacio(16),
+        texto_mediano("Snackbar"),
+        espacio(8),
+        boton_relleno("Notificar", &mostrar_notificacion_cb),
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 4: NAVEGACIÓN
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_navegacion() {
+    retornar columna(
+        texto_mediano("Top App Bar"),
+        espacio(8),
+        barra_superior("Título", (boton_icono("🔔", &accion_story), boton_icono("⚙️", &accion_story))),
+
+        espacio(16),
+        texto_mediano("Pestañas"),
+        espacio(8),
+        pestañas(("Inicio", "Explorar"), 0, &cambiar_tab_cb),
+
+        espacio(16),
+        texto_mediano("Barra inferior"),
+        espacio(8),
+        barra_navegacion(
+            (item_navegacion("🏠", "Inicio"),
+             item_navegacion("🔍", "Buscar"),
+             item_navegacion("👤", "Perfil")),
+            0, &accion_story
+        ),
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 5: INDICADORES
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_indicadores(progreso: Texto) {
+    retornar columna(
+        texto_mediano("Barras de progreso"),
+        espacio(8),
+        barra_progreso(progreso),
+        espacio(8),
+        barra_progreso_indeterminada(),
+
+        espacio(16),
+        texto_mediano("Progreso circular"),
+        espacio(8),
+        fila_con_gap((
+            circulo_progreso(progreso),
+            circulo_progreso_indeterminado(),
+        ), 16, "centro"),
+
+        espacio(16),
+        texto_mediano("Badges"),
+        espacio(8),
+        fila_con_gap((
+            distintivo(boton_icono("🔔", &accion_story), "3"),
+            distintivo_punto(boton_icono("💬", &accion_story)),
+        ), 16, "centro"),
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 6: AVATARES
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_avatares() {
+    retornar columna(
+        texto_mediano("Avatares"),
+        espacio(8),
+        fila_con_gap((
+            avatar("AB"),
+            avatar_icono("👤"),
+            avatar_icono("🎨"),
+        ), 16, "centro"),
+
+        espacio(16),
+        texto_mediano("Grupo de avatares"),
+        espacio(8),
+        grupo_avatar(("AB", "CD", "EF")),
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 7: GRÁFICOS
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_graficos(puntuacion: Texto) {
+    retornar columna(
+        texto_mediano("Gráfico de barras"),
+        espacio(8),
+        gráfico_barras((30, 55, 80, 45, 70), ("Ene", "Feb", "Mar", "Abr", "May")),
+
+        espacio(16),
+        texto_mediano("Gráfico de pastel"),
+        espacio(8),
+        gráfico_pastel((30, 25, 20, 15, 10), ("A", "B", "C", "D", "E")),
+
+        espacio(16),
+        texto_mediano("Sparkline"),
+        espacio(8),
+        minigráfico((10, 25, 18, 42, 35, 60, 48)),
+
+        espacio(16),
+        texto_mediano("Calificación"),
+        espacio(8),
+        calificación(3, 5, &accion_story),
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 8: EXPRESSIVE
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_expressive() {
+    retornar columna(
+        texto_mediano("Glassmorphism"),
+        espacio(8),
+        tarjeta_vidrio(etiqueta("Efecto vidrio"), 20.0, 0.7),
+
+        espacio(16),
+        texto_mediano("Gradiente"),
+        espacio(8),
+        gradiente_lineal(
+            tarjeta(etiqueta("Gradiente")),
+            ("#6750A4", "#D0BCFF")
+        ),
+
+        espacio(16),
+        texto_mediano("Glow"),
+        espacio(8),
+        efecto_brillo(
+            boton_relleno("Brillo", &accion_story),
+            "#6750A4", 2.0
+        ),
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 9: MOTION
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_motion() {
+    variable visible = verdadero
+    retornar columna(
+        texto_mediano("Transiciones"),
+        espacio(8),
+        interruptor("Mostrar", visible),
+        espacio(8),
+        transición(
+            tarjeta_elevada(etiqueta("Fade transition")),
+            visible
+        ),
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECCIÓN 10: LAYOUT
+# ═══════════════════════════════════════════════════════════════════
+
+funcion seccion_layout() {
+    retornar columna(
+        texto_mediano("Flow layout"),
+        espacio(8),
+        flujo((
+            subconjunto_asistente("Tag 1", &accion_story),
+            subconjunto_asistente("Tag 2", &accion_story),
+            subconjunto_asistente("Tag 3", &accion_story),
+        ), 8),
+
+        espacio(16),
+        texto_mediano("Flex Layout"),
+        espacio(8),
+        flex_layout(
+            (boton_relleno("A", &accion_story),
+             boton_tonal("B", &accion_story),
+             boton_perfilado("C", &accion_story)),
+            "horizontal", 12, falso
+        ),
+
+        espacio(16),
+        texto_mediano("Espaciadores"),
+        espacio(8),
+        fila((
+            boton_relleno("Izquierda", &accion_story),
+            expansor(),
+            boton_relleno("Derecha", &accion_story),
+        )),
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  CALLBACKS
+# ═══════════════════════════════════════════════════════════════════
+
+funcion accion_story(valor: Texto) -> Texto {
+    retornar valor
+}
+
+funcion toggle_tema_cb(valor: Texto) -> Texto {
+    retornar "Tema alternado"
+}
+
+funcion toggle_menu_cb(valor: Texto) -> Texto {
+    retornar "Menú toggle"
+}
+
+funcion cambiar_pagina_cb(valor: Texto) -> Texto {
+    retornar valor
+}
+
+funcion cambiar_tab_cb(valor: Texto) -> Texto {
+    retornar valor
+}
+
+# ─── Diálogos ───
+
+funcion mostrar_alerta_cb(valor: Texto) -> Texto {
+    dialogo_alerta("Título", "Mensaje de alerta")
+    retornar valor
+}
+
+funcion mostrar_confirmacion_cb(valor: Texto) -> Texto {
+    dialogo_confirmacion("¿Confirmar?", "¿Estás seguro?", &accion_story, &accion_story)
+    retornar valor
+}
+
+funcion mostrar_hoja_cb(valor: Texto) -> Texto {
+    hoja_inferior(
+        columna((
+            texto_mediano("Bottom Sheet"),
+            etiqueta("Contenido"),
+            boton_relleno("Cerrar", &accion_story)
+        )),
+        "verdadero"
+    )
+    retornar valor
+}
+
+funcion mostrar_notificacion_cb(valor: Texto) -> Texto {
+    notificación("Archivo guardado")
+    retornar valor
+}

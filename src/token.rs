@@ -87,6 +87,8 @@ pub enum TokenKind {
     TipoDecimal,
     /// `Booleano` - tipo bool
     TipoBooleano,
+    /// `Exacto` - tipo BigDecimal (coeficiente i128, escala u32)
+    TipoExacto,
 
     // === Símbolos ===
     /// `@` - arroba para atributos/anotaciones
@@ -161,6 +163,8 @@ pub enum TokenKind {
     Numero(i64),
     /// Número decimal
     Decimal(f64),
+    /// Número exacto (BigDecimal) — coeficiente i128, escala u32 (dígitos decimales)
+    LiteralExacto(i128, u32),
     /// Cadena de texto entre comillas dobles
     Texto(String),
     /// Caracter literal entre comillas simples ('a')
@@ -219,6 +223,7 @@ impl fmt::Display for TokenKind {
             TokenKind::TipoEntero => write!(f, "Entero"),
             TokenKind::TipoDecimal => write!(f, "Decimal"),
             TokenKind::TipoBooleano => write!(f, "Booleano"),
+            TokenKind::TipoExacto => write!(f, "Exacto"),
             TokenKind::Arroba => write!(f, "@"),
             TokenKind::Amp => write!(f, "&"),
             TokenKind::LlaveAbrir => write!(f, "{{"),
@@ -251,6 +256,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Identificador(id) => write!(f, "identificador('{}')", id),
             TokenKind::Numero(n) => write!(f, "numero({})", n),
             TokenKind::Decimal(d) => write!(f, "decimal({})", d),
+            TokenKind::LiteralExacto(coeff, scale) => write!(f, "LiteralExacto({}, {})", coeff, scale),
             TokenKind::Texto(s) => write!(f, "texto(\"{}\")", s),
             TokenKind::Caracter(c) => write!(f, "'{}'", c),
             TokenKind::DocComment(s) => write!(f, "///{}", s),
