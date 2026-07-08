@@ -202,6 +202,12 @@ impl DeadCodeEliminator {
                 }
                 Declaracion::LlamadaFuncion { nombre, argumentos } => {
                     self.funciones_llamadas.insert(nombre.clone());
+                    // Si el nombre es "objeto.metodo", la parte antes del punto
+                    // es una variable que se está usando (el receptor del método)
+                    if let Some(dot_pos) = nombre.find('.') {
+                        let var_name = &nombre[..dot_pos];
+                        self.variables_usadas.insert(var_name.to_string());
+                    }
                     for arg in argumentos { self.recolectar_en_expresion(arg); }
                 }
                 Declaracion::Expresion(expr) => self.recolectar_en_expresion(expr),
@@ -264,6 +270,11 @@ impl DeadCodeEliminator {
             Expresion::Binaria { izquierda, derecha, .. } => { self.recolectar_en_expresion(izquierda); self.recolectar_en_expresion(derecha); }
             Expresion::LlamadaFuncion { nombre, argumentos } => {
                 self.funciones_llamadas.insert(nombre.clone());
+                // Si el nombre es "objeto.metodo", extraer la variable receptora
+                if let Some(dot_pos) = nombre.find('.') {
+                    let var_name = &nombre[..dot_pos];
+                    self.variables_usadas.insert(var_name.to_string());
+                }
                 for arg in argumentos { self.recolectar_en_expresion(arg); }
             }
             Expresion::AccesoMiembro { objeto, .. } => { self.recolectar_en_expresion(objeto); }

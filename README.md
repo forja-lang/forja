@@ -363,6 +363,38 @@ El pipeline de compilación consiste en:
 - **Múltiples targets de compilación**: Ensamblador, LLVM IR, ejecutables autónomos
 - **Playground WASM**: Ejecución en navegador
 
+## 🎨 GUI - Material You Expressive
+
+Forja incluye una librería de componentes UI con diseño **Material Design 3 (Material You)**.
+Incluye 200+ componentes responsivos con tema dinámico, iconos vectoriales y modo oscuro.
+
+📚 **[Documentación completa](docs/gui/index.md)**
+🚀 **[Guía de inicio rápido](docs/gui/empezar.md)**
+
+### Componentes principales
+- **Botones**: 14 variantes (Filled, Tonal, Outlined, Text, Elevated, FAB, Icon, Segmented, Chips)
+- **Inputs**: TextField, Select, Sliders, Switches, Date/Time Pickers
+- **Navegación**: NavigationBar, TopAppBar, Tabs, Drawer, SearchBar
+- **Feedback**: Dialogs, BottomSheets, Snackbar, Tooltips, Menús
+- **Layout**: Flex, Grid, Flow, Responsive (Compact/Medium/Expanded)
+- **Gráficos**: Line, Bar, Pie, Donut, Gauge, Sparkline
+- **Expressive**: Glassmorphism, Gradientes, Glow
+
+### Tema
+```bash
+# Claro (por defecto)
+forja-gui ejemplo.fa
+
+# Oscuro
+forja-gui --dark ejemplo.fa
+
+# Auto (detecta sistema)
+forja-gui --auto-tema ejemplo.fa
+
+# Color personalizado
+forja-gui --tema #FF5722 ejemplo.fa
+```
+
 ## Instalación
 
 ```bash

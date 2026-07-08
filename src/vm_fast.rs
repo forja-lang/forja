@@ -2255,21 +2255,27 @@ impl ForjaFast {
                     self.ip += 1;
                 }
                 Opcode::SetField(c) => {
-                    // peek del objeto (depth 1), valor en tope (depth 0)
-                    let obj_val = *self.peek_valor(1);
+                    // Stack: [valor, valor_dup, objeto] (top = objeto)
+                    let obj_val = *self.peek_valor(0);
+                    if self.show_bytecode {
+                        eprintln!("[SetField] campo={:?}, obj_val.es_objeto={}, top_len={}, stack.len={}", c, obj_val.es_objeto(), self.top_len, self.stack.len());
+                    }
                     if obj_val.es_objeto() {
+                        let obj_idx = obj_val.indice_objeto();
+                        if self.show_bytecode {
+                            eprintln!("[SetField] obj_idx={}", obj_idx);
+                        }
                         let field_sym = self.sym_table.intern(c.as_ref());
                         // Intentar inline cache
                         let cache = &self.ic_setfield[self.ip].clone();
                         if let Some((clase_cache, idx_cache)) = cache {
-                            let obj_idx = obj_val.indice_objeto();
                             let clase_actual = self.obj_shapes[obj_idx as usize];
                             if clase_actual == *clase_cache {
                                 let campos_len = self.get_obj(obj_idx).campos_vec.len();
                                 if *idx_cache < campos_len {
                                     // Cache HIT! Acceso directo por índice
-                                    let v = self.pop_valor()?; // valor
                                     let _ = self.pop_valor()?; // objeto
+                                    let v = self.pop_valor()?; // valor
                                     self.get_obj_mut(obj_idx).campos_vec[*idx_cache] = v;
                                     self.ip += 1;
                                     continue;
@@ -2282,19 +2288,18 @@ impl ForjaFast {
                                 self.ic_miss_count[self.ip] = 0;
                             }
                         }
-                        // Fallback: búsqueda con Shape
-                        let v = self.pop_valor()?;
-                        let obj = self.pop_valor()?;
-                        let idx = obj.indice_objeto();
-                        let clase_sym = self.obj_shapes[idx as usize];
+                        // Fallback: pop objeto, luego valor
+                        let _ = self.pop_valor()?; // objeto
+                        let v = self.pop_valor()?; // valor
+                        let clase_sym = self.obj_shapes[obj_idx as usize];
                         if let Some(desc) = self.class_descriptors.get(&clase_sym) {
                             let shape_idx = desc.shape.get_idx(field_sym);
                             if let Some(sidx) = shape_idx {
                                 // Campo conocido en el shape — asignar directamente
-                                if sidx < self.obj_heap[idx as usize].campos_vec.len() {
-                                    self.obj_heap[idx as usize].campos_vec[sidx] = v;
+                                if sidx < self.obj_heap[obj_idx as usize].campos_vec.len() {
+                                    self.obj_heap[obj_idx as usize].campos_vec[sidx] = v;
                                 } else {
-                                    self.obj_heap[idx as usize].campos_vec.push(v);
+                                    self.obj_heap[obj_idx as usize].campos_vec.push(v);
                                 }
                                 // Actualizar cache
                                 self.ic_setfield[self.ip] = Some((clase_sym, sidx));
@@ -2302,19 +2307,19 @@ impl ForjaFast {
                                 // Campo nuevo — expandir shape y asignar
                                 let desc_mut = self.class_descriptors.get_mut(&clase_sym).unwrap();
                                 let sidx = desc_mut.shape.add_campo(field_sym);
-                                if sidx < self.obj_heap[idx as usize].campos_vec.len() {
-                                    self.obj_heap[idx as usize].campos_vec[sidx] = v;
+                                if sidx < self.obj_heap[obj_idx as usize].campos_vec.len() {
+                                    self.obj_heap[obj_idx as usize].campos_vec[sidx] = v;
                                 } else {
-                                    self.obj_heap[idx as usize].campos_vec.push(v);
+                                    self.obj_heap[obj_idx as usize].campos_vec.push(v);
                                 }
                                 self.ic_setfield[self.ip] = Some((clase_sym, sidx));
                             }
                         } else {
                             // Sin descriptor — expandir vectores directamente
-                            if (field_sym.0 as usize) < self.obj_heap[idx as usize].campos_vec.len() {
-                                self.obj_heap[idx as usize].campos_vec[field_sym.0 as usize] = v;
+                            if (field_sym.0 as usize) < self.obj_heap[obj_idx as usize].campos_vec.len() {
+                                self.obj_heap[obj_idx as usize].campos_vec[field_sym.0 as usize] = v;
                             } else {
-                                self.obj_heap[idx as usize].campos_vec.push(v);
+                                self.obj_heap[obj_idx as usize].campos_vec.push(v);
                             }
                         }
                     } else { /* No es un objeto real, ignorar silenciosamente */ }

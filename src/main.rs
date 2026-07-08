@@ -1020,7 +1020,7 @@ fn intentar_selfrun_gui() -> bool {
             return true;
         }
         println!("  🪟 Iniciando GUI nativa (programa incrustado)...");
-        if forja::gui_nativa::build_and_run(&programa).is_err() {
+        if forja::gui_nativa::build_and_run(&programa, None, false).is_err() {
             eprintln!("❌ Error al ejecutar GUI nativa");
         }
         true
@@ -1984,7 +1984,7 @@ fn ejecutar_gui_nativa(source: &str, _path: &str, quiet: bool) -> Result<Vec<Str
 
     // 3. GUI nativa
     if !quiet { println!("  🪟 Construyendo GUI nativa..."); }
-    forja::gui_nativa::build_and_run(&programa)?;
+    forja::gui_nativa::build_and_run(&programa, None, false)?;
 
     Ok(vec![])
 }

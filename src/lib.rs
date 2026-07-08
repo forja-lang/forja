@@ -162,6 +162,7 @@ pub fn ejecutar(source: &str) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
     let bytecode = compilar_pipeline(source)?;
     let mut vm = ForjaFast::new();
+    vm.set_max_inst(10_000_000); // límite de seguridad para evitar bucles infinitos
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
     Ok(vm.obtener_output().to_vec())
