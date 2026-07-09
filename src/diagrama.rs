@@ -293,7 +293,8 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
         match e {
             Expresion::LiteralNumero(n) => n.to_string(), Expresion::LiteralDecimal(d) => d.to_string(),
             Expresion::LiteralTexto(s) => format!("\"{s}\""), Expresion::LiteralBooleano(b) => (if *b { "true" } else { "false" }).to_string(),
-            Expresion::LiteralNulo => "nulo".to_string(), Expresion::Identificador(n) => n.clone(),
+            Expresion::LiteralNulo => "nulo".to_string(), Expresion::LiteralExacto(coeff, scale) => format!("Exacto({},{})", coeff, scale),
+            Expresion::Identificador(n) => n.clone(),
             Expresion::Binaria { izquierda, operador, derecha } => {
                 let op = match operador {
                     Operador::Suma => "+", Operador::Resta => "-", Operador::Multiplicacion => "*",
@@ -346,5 +347,5 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
         }
     }
     fn dc(&self, d: &Declaracion) -> String { match d { Declaracion::Variable { nombre, valor, .. } => { if let Some(v) = valor { format!("{nombre}={}", self.ec(v)) } else { nombre.clone() } } Declaracion::Asignacion { nombre, valor } => format!("{nombre}={}", self.ec(valor)), _ => "?".to_string() } }
-    fn ts(&self, t: &Tipo) -> String { match t { Tipo::Entero => "Entero".to_string(), Tipo::Decimal => "Decimal".to_string(), Tipo::Texto => "Texto".to_string(), Tipo::Booleano => "Booleano".to_string(), Tipo::Nulo => "Nulo".to_string(), Tipo::Clase(n) => n.clone(), Tipo::Arreglo(t) => format!("[{}]", self.ts(t)), Tipo::Funcion(params, ret) => { let p: Vec<String> = params.iter().map(|t| self.ts(t)).collect(); format!("({})->{}", p.join(","), self.ts(ret)) }, Tipo::Resultado(ok, err) => format!("Resultado<{},{}>", self.ts(ok), self.ts(err)), Tipo::Opcion(inner) => format!("Opcion<{}>", self.ts(inner)), Tipo::RasgoObjeto(n) => format!("Rasgo<{}>", n), Tipo::Parametro(n) => format!("Parametro<{}>", n) } }
+    fn ts(&self, t: &Tipo) -> String { match t { Tipo::Entero => "Entero".to_string(), Tipo::Decimal => "Decimal".to_string(), Tipo::Texto => "Texto".to_string(), Tipo::Booleano => "Booleano".to_string(), Tipo::Nulo => "Nulo".to_string(), Tipo::Exacto => "Exacto".to_string(), Tipo::Clase(n) => n.clone(), Tipo::Arreglo(t) => format!("[{}]", self.ts(t)), Tipo::Funcion(params, ret) => { let p: Vec<String> = params.iter().map(|t| self.ts(t)).collect(); format!("({})->{}", p.join(","), self.ts(ret)) }, Tipo::Resultado(ok, err) => format!("Resultado<{},{}>", self.ts(ok), self.ts(err)), Tipo::Opcion(inner) => format!("Opcion<{}>", self.ts(inner)), Tipo::RasgoObjeto(n) => format!("Rasgo<{}>", n), Tipo::Parametro(n) => format!("Parametro<{}>", n) } }
 }

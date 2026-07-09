@@ -5654,6 +5654,7 @@ fn evaluar_expresion(
         Expresion::LiteralTexto(s) => ValorGUI::Texto(s.clone()),
         Expresion::LiteralNumero(n) => ValorGUI::Entero(*n),
         Expresion::LiteralBooleano(b) => ValorGUI::Texto(if *b { "verdadero".to_string() } else { "falso".to_string() }),
+        Expresion::LiteralExacto(_, _) => ValorGUI::Nulo,
         Expresion::LiteralNulo => ValorGUI::Nulo,
         Expresion::Identificador(v) => {
             // Buscar en locales primero, luego en state
@@ -5721,6 +5722,7 @@ fn inicializar_estado(decls: &[Declaracion], state: &mut AppStateNativo) {
                         let v = match valor {
                             Some(Expresion::LiteralTexto(s)) => ValorGUI::Texto(s.clone()),
                             Some(Expresion::LiteralNumero(n)) => ValorGUI::Entero(*n),
+                            Some(Expresion::LiteralExacto(_, _)) => ValorGUI::Nulo,
                             _ => ValorGUI::Texto(String::new()),
                         };
                         state.variables.insert(nombre.clone(), v);

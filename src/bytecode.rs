@@ -242,6 +242,34 @@ pub enum Opcode {
     /// el IC (clase_id, método_idx) se maneja aparte en el vector ic_callmethod.
     /// Creado en quickening, no serializable.
     CallMethodCached(u32, usize),   // (method_sym_id, nargs)
+
+    // === Opcodes para Exacto (BigDecimal) ===
+    /// Push valor Exacto al stack (coeff, scale)
+    PushExacto(i128, u32),
+    /// Sumar dos Exacto del stack
+    AddExact,
+    /// Restar dos Exacto del stack
+    SubExact,
+    /// Multiplicar dos Exacto del stack
+    MulExact,
+    /// Dividir dos Exacto del stack
+    DivExact,
+    /// Comparar igualdad dos Exacto
+    IgualExact,
+    /// Comparar menor que dos Exacto
+    MenorExact,
+    /// Comparar mayor que dos Exacto
+    MayorExact,
+    /// Convertir Entero (i64) → Exacto (BigDecimal)
+    EnteroAExacto,
+    /// Convertir Decimal (f64) → Exacto (BigDecimal)
+    DecimalAExacto,
+
+    // === Superinstructions para Exacto ===
+    /// PushExacto(coeff, scale) + DeclareIdx(idx)
+    DeclareExactOp(usize, i128, u32),
+    /// AddExact + StoreIdx(idx)
+    AddStoreExact(usize),
 }
 
 /// Generador de bytecode a partir del AST de Forja
@@ -276,6 +304,8 @@ impl BytecodeGenerator {
             Expresion::LiteralDecimal(_) => Some(Tipo::Decimal),
             Expresion::LiteralTexto(_) => Some(Tipo::Texto),
             Expresion::LiteralBooleano(_) => Some(Tipo::Booleano),
+            Expresion::LiteralExacto(_, _) => Some(Tipo::Exacto),
+            Expresion::LiteralNulo => Some(Tipo::Nulo),
             Expresion::Identificador(nombre) => {
                 // Keywords booleanos
                 match nombre.as_str() {
@@ -307,7 +337,7 @@ impl BytecodeGenerator {
         let tipo_izq = self.inferir_tipo_expresion(izquierda);
         let tipo_der = self.inferir_tipo_expresion(derecha);
 
-        let especializado = match (op, tipo_izq, tipo_der) {
+        let especializado = match (op, tipo_izq.clone(), tipo_der.clone()) {
             // Aritméticas: Entero-Entero
             (Operador::Suma, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::AddInt),
             (Operador::Resta, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::SubInt),
@@ -338,36 +368,108 @@ impl BytecodeGenerator {
             (Operador::Mayor, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MayorFloat),
             (Operador::MenorIgual, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MenorIgualFloat),
             (Operador::MayorIgual, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MayorIgualFloat),
+            // Aritméticas: Exacto-Exacto
+            (Operador::Suma, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::AddExact),
+            (Operador::Resta, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::SubExact),
+            (Operador::Multiplicacion, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::MulExact),
+            (Operador::Division, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::DivExact),
+            // Comparaciones: Exacto-Exacto
+            (Operador::IgualIgual, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::IgualExact),
+            (Operador::Menor, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::MenorExact),
+            (Operador::Mayor, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::MayorExact),
             // Sin información de tipos → usar genérico
             _ => None,
         };
 
         match especializado {
             Some(op_especializado) => {
+                // Para operaciones Exacto puras: emitir directo
                 self.generar_expresion(izquierda);
                 self.generar_expresion(derecha);
                 self.emitir(op_especializado);
             }
             None => {
-                // Fallback: emitir opcode genérico
-                self.generar_expresion(izquierda);
-                self.generar_expresion(derecha);
-                let op = match op {
-                    Operador::Suma => Opcode::Add,
-                    Operador::Resta => Opcode::Sub,
-                    Operador::Multiplicacion => Opcode::Mul,
-                    Operador::Division => Opcode::Div,
-                    Operador::Mayor => Opcode::Mayor,
-                    Operador::Menor => Opcode::Menor,
-                    Operador::MayorIgual => Opcode::MayorIgual,
-                    Operador::MenorIgual => Opcode::MenorIgual,
-                    Operador::IgualIgual => Opcode::Igual,
-                    Operador::Diferente => Opcode::Diferente,
-                    Operador::Y => Opcode::Y,
-                    Operador::O => Opcode::O,
-                    _ => unreachable!(),
-                };
-                self.emitir(op);
+                // Detectar operaciones mixtas con Exacto para emitir conversiones
+                let es_exacto_izq = matches!(tipo_izq, Some(Tipo::Exacto));
+                let es_exacto_der = matches!(tipo_der, Some(Tipo::Exacto));
+                let es_entero_izq = matches!(tipo_izq, Some(Tipo::Entero));
+                let es_entero_der = matches!(tipo_der, Some(Tipo::Entero));
+                let es_decimal_izq = matches!(tipo_izq, Some(Tipo::Decimal));
+                let es_decimal_der = matches!(tipo_der, Some(Tipo::Decimal));
+
+                if es_exacto_izq || es_exacto_der {
+                    // Caso Exacto + Entero → Exacto o Exacto + Decimal → Exacto
+                    // Generar operandos con conversión automática al valor más preciso
+                    self.generar_expresion(izquierda);
+                    if es_entero_izq || es_decimal_izq {
+                        // El operando izquierdo necesita conversión a Exacto
+                        if es_entero_izq {
+                            self.emitir(Opcode::EnteroAExacto);
+                        } else {
+                            self.emitir(Opcode::DecimalAExacto);
+                        }
+                    }
+                    self.generar_expresion(derecha);
+                    if es_entero_der || es_decimal_der {
+                        // El operando derecho necesita conversión a Exacto
+                        if es_entero_der {
+                            self.emitir(Opcode::EnteroAExacto);
+                        } else {
+                            self.emitir(Opcode::DecimalAExacto);
+                        }
+                    }
+                    // Emitir opcode Exacto según el operador
+                    let op_exact = match op {
+                        Operador::Suma => Opcode::AddExact,
+                        Operador::Resta => Opcode::SubExact,
+                        Operador::Multiplicacion => Opcode::MulExact,
+                        Operador::Division => Opcode::DivExact,
+                        Operador::IgualIgual => Opcode::IgualExact,
+                        Operador::Menor => Opcode::MenorExact,
+                        Operador::Mayor => Opcode::MayorExact,
+                        _ => {
+                            // Otros comparadores no soportados → fallback genérico
+                            let op_gen = match op {
+                                Operador::Suma => Opcode::Add,
+                                Operador::Resta => Opcode::Sub,
+                                Operador::Multiplicacion => Opcode::Mul,
+                                Operador::Division => Opcode::Div,
+                                Operador::Mayor => Opcode::Mayor,
+                                Operador::Menor => Opcode::Menor,
+                                Operador::MayorIgual => Opcode::MayorIgual,
+                                Operador::MenorIgual => Opcode::MenorIgual,
+                                Operador::IgualIgual => Opcode::Igual,
+                                Operador::Diferente => Opcode::Diferente,
+                                Operador::Y => Opcode::Y,
+                                Operador::O => Opcode::O,
+                                _ => unreachable!(),
+                            };
+                            self.emitir(op_gen);
+                            return;
+                        }
+                    };
+                    self.emitir(op_exact);
+                } else {
+                    // Fallback: emitir opcode genérico
+                    self.generar_expresion(izquierda);
+                    self.generar_expresion(derecha);
+                    let op = match op {
+                        Operador::Suma => Opcode::Add,
+                        Operador::Resta => Opcode::Sub,
+                        Operador::Multiplicacion => Opcode::Mul,
+                        Operador::Division => Opcode::Div,
+                        Operador::Mayor => Opcode::Mayor,
+                        Operador::Menor => Opcode::Menor,
+                        Operador::MayorIgual => Opcode::MayorIgual,
+                        Operador::MenorIgual => Opcode::MenorIgual,
+                        Operador::IgualIgual => Opcode::Igual,
+                        Operador::Diferente => Opcode::Diferente,
+                        Operador::Y => Opcode::Y,
+                        Operador::O => Opcode::O,
+                        _ => unreachable!(),
+                    };
+                    self.emitir(op);
+                }
             }
         }
     }
@@ -805,6 +907,7 @@ impl BytecodeGenerator {
             Expresion::LiteralDecimal(d) => self.emitir(Opcode::PushDecimal(*d)),
             Expresion::LiteralTexto(s) => self.emitir(Opcode::PushTexto(Rc::from(s.as_str()))),
             Expresion::LiteralBooleano(b) => self.emitir(Opcode::PushBooleano(*b)),
+            Expresion::LiteralExacto(coeff, scale) => self.emitir(Opcode::PushExacto(*coeff, *scale)),
             Expresion::LiteralNulo => self.emitir(Opcode::PushNulo),
 
             Expresion::Identificador(nombre) => {
@@ -1230,6 +1333,20 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
                 bytes.extend_from_slice(&num.to_le_bytes());
                 bytes.extend_from_slice(&(*div_src as u32).to_le_bytes());
             }
+            // Opcodes para Exacto (BigDecimal)
+            Opcode::PushExacto(coeff, scale) => {
+                bytes.extend_from_slice(&coeff.to_le_bytes());
+                bytes.extend_from_slice(&scale.to_le_bytes());
+            }
+            // Superinstructions Exacto
+            Opcode::DeclareExactOp(idx, coeff, scale) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&coeff.to_le_bytes());
+                bytes.extend_from_slice(&scale.to_le_bytes());
+            }
+            Opcode::AddStoreExact(idx) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            }
             _ => {} // Opcodes sin payload
         }
     }
@@ -1312,6 +1429,20 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::FusedDivSub(_, _, _) => 101,
         Opcode::FusedDivAddConst(_, _, _) => 102,
         Opcode::FusedDivSubConst(_, _, _) => 103,
+        // Opcodes para Exacto (BigDecimal) — Fase Exacto
+        Opcode::PushExacto(_, _) => 110,
+        Opcode::AddExact => 111,
+        Opcode::SubExact => 112,
+        Opcode::MulExact => 113,
+        Opcode::DivExact => 114,
+        Opcode::IgualExact => 115,
+        Opcode::MenorExact => 116,
+        Opcode::MayorExact => 117,
+        Opcode::EnteroAExacto => 118,
+        Opcode::DecimalAExacto => 119,
+        // Superinstructions Exacto
+        Opcode::DeclareExactOp(_, _, _) => 120,
+        Opcode::AddStoreExact(_) => 121,
         // Opcodes especializados (runtime-only, no serializables)
         _ => 255,
     }
@@ -1379,6 +1510,20 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         95 => Some(Opcode::LoadAddPacked(0, 0, 0)),
         70 => Some(Opcode::Print),
         71 => Some(Opcode::ReadLine),
+        // Opcodes para Exacto (BigDecimal)
+        110 => Some(Opcode::PushExacto(0, 0)),
+        111 => Some(Opcode::AddExact),
+        112 => Some(Opcode::SubExact),
+        113 => Some(Opcode::MulExact),
+        114 => Some(Opcode::DivExact),
+        115 => Some(Opcode::IgualExact),
+        116 => Some(Opcode::MenorExact),
+        117 => Some(Opcode::MayorExact),
+        118 => Some(Opcode::EnteroAExacto),
+        119 => Some(Opcode::DecimalAExacto),
+        // Superinstructions Exacto
+        120 => Some(Opcode::DeclareExactOp(0, 0, 0)),
+        121 => Some(Opcode::AddStoreExact(0)),
         _ => None,
     }
 }
@@ -1728,6 +1873,43 @@ if version >= 2 {
                     _ => Opcode::FusedDivSubConst(dst, num, div_src),
                 });
             }
+            // Opcodes para Exacto: PushExacto(coeff, scale) — 16 + 4 = 20 bytes payload
+            110 => {
+                if pos + 20 > data.len() { return None; }
+                let coeff = i128::from_le_bytes([
+                    data[pos], data[pos+1], data[pos+2], data[pos+3],
+                    data[pos+4], data[pos+5], data[pos+6], data[pos+7],
+                    data[pos+8], data[pos+9], data[pos+10], data[pos+11],
+                    data[pos+12], data[pos+13], data[pos+14], data[pos+15],
+                ]);
+                pos += 16;
+                let scale = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]);
+                pos += 4;
+                opcodes.push(Opcode::PushExacto(coeff, scale));
+            }
+            // Superinstructions Exacto: DeclareExactOp(idx, coeff, scale) — 4 + 16 + 4 = 24 bytes
+            120 => {
+                if pos + 24 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let coeff = i128::from_le_bytes([
+                    data[pos], data[pos+1], data[pos+2], data[pos+3],
+                    data[pos+4], data[pos+5], data[pos+6], data[pos+7],
+                    data[pos+8], data[pos+9], data[pos+10], data[pos+11],
+                    data[pos+12], data[pos+13], data[pos+14], data[pos+15],
+                ]);
+                pos += 16;
+                let scale = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]);
+                pos += 4;
+                opcodes.push(Opcode::DeclareExactOp(idx, coeff, scale));
+            }
+            // AddStoreExact(idx) — 4 bytes payload
+            121 => {
+                if pos + 4 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                opcodes.push(Opcode::AddStoreExact(idx));
+            }
             _ => {
                 // Opcodes sin payload
                 let template = byte_to_opcode(byte)?;
@@ -1971,6 +2153,19 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
                 // MulFloat + StoreIdx(idx) → MulStoreFloat(idx)
                 (Opcode::MulFloat, Opcode::StoreIdx(idx)) => {
                     result.push(Opcode::MulStoreFloat(*idx));
+                    i += 2;
+                    continue;
+                }
+                // === Fusiones Exacto (BigDecimal) ===
+                // PushExacto(coeff, scale) + DeclareIdx(idx) → DeclareExactOp(idx, coeff, scale)
+                (Opcode::PushExacto(coeff, scale), Opcode::DeclareIdx(idx, _)) => {
+                    result.push(Opcode::DeclareExactOp(*idx, *coeff, *scale));
+                    i += 2;
+                    continue;
+                }
+                // AddExact + StoreIdx(idx) → AddStoreExact(idx)
+                (Opcode::AddExact, Opcode::StoreIdx(idx)) => {
+                    result.push(Opcode::AddStoreExact(*idx));
                     i += 2;
                     continue;
                 }

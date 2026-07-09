@@ -1221,6 +1221,7 @@ impl CompilerAsm {
             Some(Tipo::Decimal) => TipoAsm::Decimal,
             Some(Tipo::Texto) => TipoAsm::Texto,
             Some(Tipo::Booleano) => TipoAsm::Booleano,
+            Some(Tipo::Exacto) => TipoAsm::Texto,
             Some(Tipo::Clase(n)) => TipoAsm::Clase(n.clone()),
             Some(Tipo::Nulo) => TipoAsm::Entero,
             Some(Tipo::Arreglo(_)) => TipoAsm::Texto,
@@ -1228,7 +1229,7 @@ impl CompilerAsm {
             Some(Tipo::Resultado(_, _)) => TipoAsm::Texto,
             Some(Tipo::Opcion(_)) => TipoAsm::Texto,
             Some(Tipo::RasgoObjeto(n)) => TipoAsm::Clase(n.clone()),
-            Some(Tipo::Parametro(_)) => TipoAsm::Texto, // genérico → tratar como texto
+            Some(Tipo::Parametro(_)) => TipoAsm::Texto,
         }
     }
 
@@ -1239,6 +1240,7 @@ impl CompilerAsm {
                 Tipo::Decimal => TipoAsm::Decimal,
                 Tipo::Texto => TipoAsm::Texto,
                 Tipo::Booleano => TipoAsm::Booleano,
+                Tipo::Exacto => TipoAsm::Texto,
                 Tipo::Clase(n) => TipoAsm::Clase(n.clone()),
                 _ => TipoAsm::Entero,
             }
@@ -1251,6 +1253,7 @@ impl CompilerAsm {
             Expresion::LiteralDecimal(_) => Some(Tipo::Decimal),
             Expresion::LiteralTexto(_) => Some(Tipo::Texto),
             Expresion::LiteralBooleano(_) => Some(Tipo::Booleano),
+            Expresion::LiteralExacto(_, _) => Some(Tipo::Exacto),
             Expresion::LiteralNulo => Some(Tipo::Nulo),
             _ => None,
         }
@@ -1752,6 +1755,11 @@ impl CompilerAsm {
         let fp = a.fp_reg();
 
         match expr {
+            Expresion::LiteralExacto(_, _) => {
+                self.emit_line("    // LiteralExacto no implementado en ASM");
+                self.emit_line(&a.xor_reg_reg(ret, ret));
+                ret.to_string()
+            }
             Expresion::LiteralNumero(n) => {
                 self.emit_line(&a.mov_reg_imm(ret, *n));
                 ret.to_string()

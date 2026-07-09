@@ -37,8 +37,10 @@ pub enum Tipo {
     Decimal,
     Texto,
     Booleano,
-    Exacto,
     Nulo,
+    /// Número exacto de precisión arbitraria (BigDecimal) — coeff i128, scale u32
+    #[allow(dead_code)]
+    Exacto,
     Clase(String),       // nombre de clase definida por usuario
     #[allow(dead_code)]
     Arreglo(Box<Tipo>),  // arreglo de algún tipo
@@ -145,14 +147,15 @@ pub enum Expresion {
     LiteralNumero(i64),
     /// Literal numérico decimal (ej: 3.14)
     LiteralDecimal(f64),
-    /// Literal exacto BigDecimal (ej: 19.99 con >15 decimales → coeff=1999, scale=2)
-    LiteralExacto(i128, u32),
     /// Literal de texto (ej: "hola")
     LiteralTexto(String),
     /// Literal booleano
     LiteralBooleano(bool),
     /// Literal nulo
     LiteralNulo,
+    /// Literal exacto (BigDecimal) — coeficiente i128, escala u32
+    #[allow(dead_code)]
+    LiteralExacto(i128, u32),
     /// Referencia a variable (ej: x, alumno.nombre)
     Identificador(String),
     /// Operación binaria (ej: a + b, x > 5)

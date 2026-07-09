@@ -2,8 +2,10 @@
 name = "forja"
 version = "0.7.0"
 edition = "2021"
-description = "Forja (fa)"
+description = "Forja (fa) - Lenguaje de programación educativo en español"
 authors = ["lococoi"]
+license = "GPL-3.0-or-later"
+license-file = "LICENSE.md"
 
 [features]
 default = []

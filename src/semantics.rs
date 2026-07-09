@@ -321,7 +321,7 @@ impl BorrowChecker {
     fn es_copy(tipo: &Option<Tipo>) -> bool {
         match tipo {
             None => true, // Si no sabemos el tipo, asumimos Copy (seguro)
-            Some(Tipo::Entero) | Some(Tipo::Decimal) | Some(Tipo::Booleano) | Some(Tipo::Nulo) => true,
+            Some(Tipo::Entero) | Some(Tipo::Decimal) | Some(Tipo::Booleano) | Some(Tipo::Nulo) | Some(Tipo::Exacto) => true,
             Some(Tipo::Texto) | Some(Tipo::Clase(_)) | Some(Tipo::Arreglo(_)) | Some(Tipo::Funcion(_, _)) => false,
             Some(Tipo::Resultado(_, _)) | Some(Tipo::Opcion(_)) | Some(Tipo::RasgoObjeto(_)) | Some(Tipo::Parametro(_)) => false,
         }
@@ -497,6 +497,7 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
             Expresion::LiteralTexto(_) => Some(Tipo::Texto),
             Expresion::LiteralBooleano(_) => Some(Tipo::Booleano),
             Expresion::LiteralNulo => Some(Tipo::Nulo),
+            Expresion::LiteralExacto(_, _) => Some(Tipo::Exacto),
 
             Expresion::Identificador(nombre) => {
                 let linea = 0;
@@ -836,7 +837,15 @@ impl TypeChecker {
                             || t_dest == &Tipo::Nulo
                             || t_src == &Tipo::Nulo
                             || (t_dest == &Tipo::Entero && t_src == &Tipo::Decimal)
-                            || (t_dest == &Tipo::Decimal && t_src == &Tipo::Entero);
+                            || (t_dest == &Tipo::Decimal && t_src == &Tipo::Entero)
+                            // Coerción con Exacto:
+                            // Entero → Exacto (siempre permitido)
+                            // Decimal → Exacto (con posible pérdida de precisión)
+                            // Exacto → Decimal (con pérdida de precisión)
+                            || (t_dest == &Tipo::Exacto && t_src == &Tipo::Entero)
+                            || (t_dest == &Tipo::Exacto && t_src == &Tipo::Decimal)
+                            || (t_dest == &Tipo::Decimal && t_src == &Tipo::Exacto)
+                            || (t_dest == &Tipo::Entero && t_src == &Tipo::Exacto);
                         // Si no es compatible, simplemente ignoramos el error de tipo
                         // (la VM pushea Nulo en runtime si hay incompatibilidad)
                     }
@@ -993,6 +1002,7 @@ impl TypeChecker {
             Expresion::LiteralTexto(_) => Some(Tipo::Texto),
             Expresion::LiteralBooleano(_) => Some(Tipo::Booleano),
             Expresion::LiteralNulo => Some(Tipo::Nulo),
+            Expresion::LiteralExacto(_, _) => Some(Tipo::Exacto),
 
             Expresion::Identificador(nombre) => {
                 match nombre.as_str() {
@@ -1019,6 +1029,7 @@ impl TypeChecker {
                         match t {
                             Some(Tipo::Entero) => Some(Tipo::Entero),
                             Some(Tipo::Decimal) => Some(Tipo::Decimal),
+                            Some(Tipo::Exacto) => Some(Tipo::Exacto),
                             // Para tipos genéricos, parámetros de tipo, o tipos desconocidos,
                             // retornar el tipo interno tal cual en lugar de error.
                             // Esto permite que -x funcione con tipos genéricos T que
@@ -1290,7 +1301,10 @@ impl TypeChecker {
                 match (&t_izq, &t_der) {
                     (Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Tipo::Entero),
                     (Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Tipo::Decimal),
+                    (Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
                     (Some(Tipo::Entero), Some(Tipo::Decimal)) | (Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Tipo::Decimal),
+                    (Some(Tipo::Exacto), Some(Tipo::Entero)) | (Some(Tipo::Entero), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
+                    (Some(Tipo::Exacto), Some(Tipo::Decimal)) | (Some(Tipo::Decimal), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
                     (Some(Tipo::Texto), _) => Some(Tipo::Texto),  // texto + cualquier cosa = texto
                     (_, Some(Tipo::Texto)) => Some(Tipo::Texto),
                     (None, _) | (_, None) => None,  // tipo genérico / desconocido
@@ -1301,10 +1315,14 @@ impl TypeChecker {
                 match (&t_izq, &t_der) {
                     (Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Tipo::Entero),
                     (Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Tipo::Decimal),
+                    (Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
                     (Some(Tipo::Entero), Some(Tipo::Decimal)) | (Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Tipo::Decimal),
+                    (Some(Tipo::Exacto), Some(Tipo::Entero)) | (Some(Tipo::Entero), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
+                    (Some(Tipo::Exacto), Some(Tipo::Decimal)) | (Some(Tipo::Decimal), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
                     (None, _) | (_, None) => None,  // tipo genérico / desconocido
                     (Some(Tipo::Entero), _) | (_, Some(Tipo::Entero)) => Some(Tipo::Entero),
                     (Some(Tipo::Decimal), _) | (_, Some(Tipo::Decimal)) => Some(Tipo::Decimal),
+                    (Some(Tipo::Exacto), _) | (_, Some(Tipo::Exacto)) => Some(Tipo::Exacto),
                     _ => {
                         self.error_tipo("Operación aritmética requiere tipos numéricos");
                         None
