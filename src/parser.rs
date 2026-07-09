@@ -1507,6 +1507,13 @@ impl Parser {
 
     /// Parsea el núcleo de una expresión primaria (sin postfijo)
     fn parse_expresion_primaria_interna(&mut self) -> Result<Expresion, ErrorForja> {
+        if self.coincide(TokenKind::LiteralExacto(0, 0)) || self.coincide(TokenKind::LiteralExacto(i128::MIN, 0)) {
+            if let TokenKind::LiteralExacto(coeff, scale) = self.peek().kind {
+                self.avanzar();
+                return Ok(Expresion::LiteralExacto(coeff, scale));
+            }
+        }
+
         if self.coincide(TokenKind::Numero(0)) || self.coincide(TokenKind::Numero(i64::MIN)) {
             if let TokenKind::Numero(n) = self.peek().kind {
                 self.avanzar();
@@ -1757,6 +1764,7 @@ impl Parser {
             TokenKind::Identificador(_)
             | TokenKind::Numero(_)
             | TokenKind::Decimal(_)
+            | TokenKind::LiteralExacto(_, _)
             | TokenKind::Caracter(_)
             | TokenKind::ParenAbrir
             | TokenKind::Menos
@@ -1931,6 +1939,7 @@ impl Parser {
             Expresion::LiteralNumero(n) => Some(n.to_string()),
             Expresion::LiteralDecimal(d) => Some(d.to_string()),
             Expresion::LiteralBooleano(b) => Some(b.to_string()),
+            Expresion::LiteralExacto(coeff, scale) => Some(format!("{}e{}", coeff, scale)),
             Expresion::AccesoMiembro { objeto, miembro } => {
                 if let Some(obj_name) = self.expresion_a_nombre(objeto) {
                     Some(format!("{}.{}", obj_name, miembro))
@@ -2063,6 +2072,7 @@ impl Parser {
             TokenKind::TipoDecimal => { self.avanzar(); Ok(Tipo::Decimal) }
             TokenKind::TipoTexto => { self.avanzar(); Ok(Tipo::Texto) }
             TokenKind::TipoBooleano => { self.avanzar(); Ok(Tipo::Booleano) }
+            TokenKind::TipoExacto => { self.avanzar(); Ok(Tipo::Exacto) }
             TokenKind::Identificador(s) => {
                 let nombre = s.clone();
                 self.avanzar();
@@ -2102,6 +2112,7 @@ impl Parser {
                         "Decimal" => Tipo::Decimal,
                         "Texto" => Tipo::Texto,
                         "Booleano" => Tipo::Booleano,
+                        "Exacto" => Tipo::Exacto,
                         _ => Tipo::Clase(nombre),
                     };
                     Ok(tipo)
@@ -2277,6 +2288,7 @@ impl Parser {
             TokenKind::TipoDecimal => "Decimal".to_string(),
             TokenKind::TipoTexto => "Texto".to_string(),
             TokenKind::TipoBooleano => "Booleano".to_string(),
+            TokenKind::TipoExacto => "Exacto".to_string(),
             TokenKind::Enviar => "enviar".to_string(),
             TokenKind::Recibir => "recibir".to_string(),
             TokenKind::Unir => "unir".to_string(),
@@ -2318,6 +2330,7 @@ impl Parser {
             TokenKind::Identificador(_)
                 | TokenKind::Numero(_)
                 | TokenKind::Decimal(_)
+                | TokenKind::LiteralExacto(_, _)
                 | TokenKind::Texto(_)
                 | TokenKind::Caracter(_)
                 | TokenKind::Verdadero
@@ -2473,7 +2486,7 @@ impl Parser {
                     Ok(Patron::Constructor(nombre, vec![]))
                 }
             }
-            TokenKind::Numero(_) | TokenKind::Decimal(_) | TokenKind::Texto(_)
+            TokenKind::Numero(_) | TokenKind::Decimal(_) | TokenKind::LiteralExacto(_, _) | TokenKind::Texto(_)
             | TokenKind::Verdadero | TokenKind::Falso | TokenKind::Nulo => {
                 let expr = self.parse_expresion_primaria()?;
                 Ok(Patron::Literal(expr))

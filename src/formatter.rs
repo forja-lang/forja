@@ -131,6 +131,7 @@ impl Formatter {
         match expr {
             Expresion::LiteralNumero(n) => n.to_string(),
             Expresion::LiteralDecimal(d) => d.to_string(),
+            Expresion::LiteralExacto(coeff, scale) => format!("{}e{}", coeff, scale),
             Expresion::LiteralTexto(s) => format!("\"{}\"", s),
             Expresion::LiteralBooleano(b) => (if *b { "verdadero" } else { "falso" }).to_string(),
             Expresion::LiteralNulo => "nulo".to_string(),

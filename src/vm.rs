@@ -75,6 +75,7 @@ pub fn get_small_int_vm(n: i64) -> ValorVM {
 pub enum ValorVM {
     Entero(i64),
     Decimal(f64),
+    Exacto(i128, u32),
     Texto(String),
     Booleano(bool),
     Nulo,
@@ -88,6 +89,10 @@ impl PartialEq for ValorVM {
         match (self, other) {
             (ValorVM::Entero(a), ValorVM::Entero(b)) => a == b,
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => a == b,
+            (ValorVM::Exacto(a, sa), ValorVM::Exacto(b, sb)) => {
+                let (a_adj, b_adj, _) = homogeneizar_exacto(*a, *sa, *b, *sb);
+                a_adj == b_adj
+            }
             (ValorVM::Texto(a), ValorVM::Texto(b)) => a == b,
             (ValorVM::Booleano(a), ValorVM::Booleano(b)) => a == b,
             (ValorVM::Nulo, ValorVM::Nulo) => true,
@@ -99,11 +104,45 @@ impl PartialEq for ValorVM {
     }
 }
 
+/// Homogeneiza dos valores Exacto a la misma escala.
+/// Retorna (a_ajustado, b_ajustado, escala_comun).
+/// Usa wrapping_* para evitar panics por overflow.
+pub fn homogeneizar_exacto(a: i128, sa: u32, b: i128, sb: u32) -> (i128, i128, u32) {
+    if sa == sb {
+        (a, b, sa)
+    } else if sa < sb {
+        let factor = 10_i128.wrapping_pow(sb - sa);
+        (a.wrapping_mul(factor), b, sb)
+    } else {
+        let factor = 10_i128.wrapping_pow(sa - sb);
+        (a, b.wrapping_mul(factor), sa)
+    }
+}
+
 impl ValorVM {
     pub fn mostrar(&self) -> String {
         match self {
             ValorVM::Entero(n) => n.to_string(),
             ValorVM::Decimal(d) => d.to_string(),
+            ValorVM::Exacto(coeff, scale) => {
+                if *scale == 0 {
+                    return coeff.to_string();
+                }
+                let signo = if *coeff < 0 { "-" } else { "" };
+                let abs_coeff = coeff.unsigned_abs();
+                let s = abs_coeff.to_string();
+                let digitos = s.len() as u32;
+                if *scale >= digitos {
+                    // Caso: escala >= dígitos → agregar ceros a la izquierda
+                    let ceros = *scale - digitos;
+                    format!("{}0.{}{}", signo, "0".repeat(ceros as usize), s)
+                } else {
+                    // Caso normal: insertar punto decimal
+                    let punto = digitos - *scale;
+                    let (entera, fracc) = s.split_at(punto as usize);
+                    format!("{}{}.{}", signo, entera, fracc)
+                }
+            }
             ValorVM::Texto(s) => s.clone(),
             ValorVM::Booleano(b) => (if *b { "verdadero" } else { "falso" }).to_string(),
             ValorVM::Nulo => "nulo".to_string(),
@@ -129,6 +168,32 @@ impl ValorVM {
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(a + b)),
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 + b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a + *b as f64)),
+            (ValorVM::Exacto(a_coeff, a_scale), ValorVM::Exacto(b_coeff, b_scale)) => {
+                let (a, b, escala) = homogeneizar_exacto(*a_coeff, *a_scale, *b_coeff, *b_scale);
+                Ok(ValorVM::Exacto(a.wrapping_add(b), escala))
+            }
+            (ValorVM::Exacto(coeff, scale), ValorVM::Entero(n)) => {
+                // Exacto + Entero: convertir Entero a Exacto con scale=0
+                let (a, b, escala) = homogeneizar_exacto(*coeff, *scale, *n as i128, 0);
+                Ok(ValorVM::Exacto(a.wrapping_add(b), escala))
+            }
+            (ValorVM::Entero(n), ValorVM::Exacto(coeff, scale)) => {
+                let (a, b, escala) = homogeneizar_exacto(*n as i128, 0, *coeff, *scale);
+                Ok(ValorVM::Exacto(a.wrapping_add(b), escala))
+            }
+            (ValorVM::Exacto(coeff, scale), ValorVM::Decimal(d)) => {
+                // Exacto + Decimal: convertir Decimal a Exacto
+                let d_scale = 10u32;
+                let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
+                let (a, b, escala) = homogeneizar_exacto(*coeff, *scale, d_coeff, d_scale);
+                Ok(ValorVM::Exacto(a.wrapping_add(b), escala))
+            }
+            (ValorVM::Decimal(d), ValorVM::Exacto(coeff, scale)) => {
+                let d_scale = 10u32;
+                let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
+                let (a, b, escala) = homogeneizar_exacto(d_coeff, d_scale, *coeff, *scale);
+                Ok(ValorVM::Exacto(a.wrapping_add(b), escala))
+            }
             (ValorVM::Texto(a), ValorVM::Texto(b)) => Ok(ValorVM::Texto(format!("{}{}", a, b))),
             (ValorVM::Texto(a), ValorVM::Entero(b)) => Ok(ValorVM::Texto(format!("{}{}", a, b))),
             (ValorVM::Texto(a), ValorVM::Decimal(b)) => Ok(ValorVM::Texto(format!("{}{}", a, b))),
@@ -145,6 +210,30 @@ impl ValorVM {
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(a - b)),
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 - b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a - *b as f64)),
+            (ValorVM::Exacto(a_coeff, a_scale), ValorVM::Exacto(b_coeff, b_scale)) => {
+                let (a, b, escala) = homogeneizar_exacto(*a_coeff, *a_scale, *b_coeff, *b_scale);
+                Ok(ValorVM::Exacto(a.wrapping_sub(b), escala))
+            }
+            (ValorVM::Exacto(coeff, scale), ValorVM::Entero(n)) => {
+                let (a, b, escala) = homogeneizar_exacto(*coeff, *scale, *n as i128, 0);
+                Ok(ValorVM::Exacto(a.wrapping_sub(b), escala))
+            }
+            (ValorVM::Entero(n), ValorVM::Exacto(coeff, scale)) => {
+                let (a, b, escala) = homogeneizar_exacto(*n as i128, 0, *coeff, *scale);
+                Ok(ValorVM::Exacto(a.wrapping_sub(b), escala))
+            }
+            (ValorVM::Exacto(coeff, scale), ValorVM::Decimal(d)) => {
+                let d_scale = 10u32;
+                let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
+                let (a, b, escala) = homogeneizar_exacto(*coeff, *scale, d_coeff, d_scale);
+                Ok(ValorVM::Exacto(a.wrapping_sub(b), escala))
+            }
+            (ValorVM::Decimal(d), ValorVM::Exacto(coeff, scale)) => {
+                let d_scale = 10u32;
+                let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
+                let (a, b, escala) = homogeneizar_exacto(d_coeff, d_scale, *coeff, *scale);
+                Ok(ValorVM::Exacto(a.wrapping_sub(b), escala))
+            }
             _ => Ok(ValorVM::Nulo),
         }
     }
@@ -157,6 +246,31 @@ impl ValorVM {
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(a * b)),
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 * b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a * *b as f64)),
+            (ValorVM::Exacto(a_coeff, a_scale), ValorVM::Exacto(b_coeff, b_scale)) => {
+                let coeff = a_coeff.wrapping_mul(*b_coeff);
+                let scale = a_scale + b_scale;
+                Ok(ValorVM::Exacto(coeff, scale))
+            }
+            (ValorVM::Exacto(coeff, scale), ValorVM::Entero(n)) => {
+                Ok(ValorVM::Exacto(coeff.wrapping_mul(*n as i128), *scale))
+            }
+            (ValorVM::Entero(n), ValorVM::Exacto(coeff, scale)) => {
+                Ok(ValorVM::Exacto(coeff.wrapping_mul(*n as i128), *scale))
+            }
+            (ValorVM::Exacto(coeff, scale), ValorVM::Decimal(d)) => {
+                let d_scale = 10u32;
+                let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
+                let new_coeff = coeff.wrapping_mul(d_coeff);
+                let new_scale = scale + d_scale;
+                Ok(ValorVM::Exacto(new_coeff, new_scale))
+            }
+            (ValorVM::Decimal(d), ValorVM::Exacto(coeff, scale)) => {
+                let d_scale = 10u32;
+                let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
+                let new_coeff = coeff.wrapping_mul(d_coeff);
+                let new_scale = scale + d_scale;
+                Ok(ValorVM::Exacto(new_coeff, new_scale))
+            }
             _ => Ok(ValorVM::Nulo),
         }
     }
@@ -170,6 +284,51 @@ impl ValorVM {
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(a / b)),
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 / b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a / *b as f64)),
+            (ValorVM::Exacto(a_coeff, a_scale), ValorVM::Exacto(b_coeff, b_scale)) => {
+                if *b_coeff == 0 { return Ok(ValorVM::Nulo); }
+                let extra = 38u32;
+                let dividendo = a_coeff.wrapping_mul(10_i128.wrapping_pow(extra));
+                let escala = a_scale + extra - b_scale;
+                let cociente = dividendo.wrapping_div(*b_coeff);
+                Ok(ValorVM::Exacto(cociente, escala))
+            }
+            (ValorVM::Exacto(coeff, scale), ValorVM::Entero(n)) => {
+                if *n == 0 { return Ok(ValorVM::Nulo); }
+                let extra = 38u32;
+                let dividendo = coeff.wrapping_mul(10_i128.wrapping_pow(extra));
+                let escala = scale + extra - 0;
+                let cociente = dividendo.wrapping_div(*n as i128);
+                Ok(ValorVM::Exacto(cociente, escala))
+            }
+            (ValorVM::Entero(n), ValorVM::Exacto(coeff, scale)) => {
+                if *coeff == 0 { return Ok(ValorVM::Nulo); }
+                let extra = 38u32;
+                let n_coeff = *n as i128;
+                let dividendo = n_coeff.wrapping_mul(10_i128.wrapping_pow(extra));
+                let escala = 0 + extra - scale;
+                let cociente = dividendo.wrapping_div(*coeff);
+                Ok(ValorVM::Exacto(cociente, escala))
+            }
+            (ValorVM::Exacto(coeff, scale), ValorVM::Decimal(d)) => {
+                let d_scale = 10u32;
+                let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
+                if d_coeff == 0 { return Ok(ValorVM::Nulo); }
+                let extra = 38u32;
+                let dividendo = coeff.wrapping_mul(10_i128.wrapping_pow(extra));
+                let escala = scale + extra - d_scale;
+                let cociente = dividendo.wrapping_div(d_coeff);
+                Ok(ValorVM::Exacto(cociente, escala))
+            }
+            (ValorVM::Decimal(d), ValorVM::Exacto(coeff, scale)) => {
+                if *coeff == 0 { return Ok(ValorVM::Nulo); }
+                let d_scale = 10u32;
+                let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
+                let extra = 38u32;
+                let dividendo = d_coeff.wrapping_mul(10_i128.wrapping_pow(extra));
+                let escala = d_scale + extra - scale;
+                let cociente = dividendo.wrapping_div(*coeff);
+                Ok(ValorVM::Exacto(cociente, escala))
+            }
             _ => Ok(ValorVM::Nulo),
         }
     }
@@ -178,6 +337,30 @@ impl ValorVM {
         match (self, other) {
             (ValorVM::Entero(a), ValorVM::Entero(b)) => Ok(a.cmp(b) as i64),
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i64),
+            (ValorVM::Exacto(a_coeff, a_scale), ValorVM::Exacto(b_coeff, b_scale)) => {
+                let (a, b, _) = homogeneizar_exacto(*a_coeff, *a_scale, *b_coeff, *b_scale);
+                Ok(a.cmp(&b) as i64)
+            }
+            (ValorVM::Exacto(coeff, scale), ValorVM::Entero(n)) => {
+                let (a, b, _) = homogeneizar_exacto(*coeff, *scale, *n as i128, 0);
+                Ok(a.cmp(&b) as i64)
+            }
+            (ValorVM::Entero(n), ValorVM::Exacto(coeff, scale)) => {
+                let (a, b, _) = homogeneizar_exacto(*n as i128, 0, *coeff, *scale);
+                Ok(a.cmp(&b) as i64)
+            }
+            (ValorVM::Exacto(coeff, scale), ValorVM::Decimal(d)) => {
+                let d_scale = 10u32;
+                let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
+                let (a, b, _) = homogeneizar_exacto(*coeff, *scale, d_coeff, d_scale);
+                Ok(a.cmp(&b) as i64)
+            }
+            (ValorVM::Decimal(d), ValorVM::Exacto(coeff, scale)) => {
+                let d_scale = 10u32;
+                let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
+                let (a, b, _) = homogeneizar_exacto(d_coeff, d_scale, *coeff, *scale);
+                Ok(a.cmp(&b) as i64)
+            }
             (ValorVM::Texto(a), ValorVM::Texto(b)) => Ok(a.cmp(b) as i64),
             (ValorVM::Booleano(a), ValorVM::Booleano(b)) => Ok(a.cmp(b) as i64),
             _ => Ok(0),
@@ -189,6 +372,7 @@ impl ValorVM {
             ValorVM::Booleano(b) => *b,
             ValorVM::Entero(n) => *n != 0,
             ValorVM::Decimal(d) => *d != 0.0,
+            ValorVM::Exacto(coeff, _) => *coeff != 0,
             ValorVM::Texto(s) => !s.is_empty(),
             ValorVM::Nulo => false,
             ValorVM::Objeto(_) => true,
@@ -1294,8 +1478,78 @@ impl ForjaVM {
                     self.ip += 1;
                 }
 
+                // === Opcodes para Exacto (BigDecimal) ===
+                Opcode::PushExacto(coeff, scale) => {
+                    self.stack.push(ValorVM::Exacto(coeff, scale));
+                    self.ip += 1;
+                }
+                Opcode::AddExact => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddExact".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddExact".to_string()))?;
+                    self.stack.push(a.sumar(&b)?);
+                    self.ip += 1;
+                }
+                Opcode::SubExact => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubExact".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubExact".to_string()))?;
+                    self.stack.push(a.restar(&b)?);
+                    self.ip += 1;
+                }
+                Opcode::MulExact => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulExact".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulExact".to_string()))?;
+                    self.stack.push(a.multiplicar(&b)?);
+                    self.ip += 1;
+                }
+                Opcode::DivExact => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivExact".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivExact".to_string()))?;
+                    self.stack.push(a.dividir(&b)?);
+                    self.ip += 1;
+                }
+                Opcode::IgualExact => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualExact".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualExact".to_string()))?;
+                    let cmp = a.comparar(&b)?;
+                    self.stack.push(ValorVM::Booleano(cmp == 0));
+                    self.ip += 1;
+                }
+                Opcode::MenorExact => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorExact".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorExact".to_string()))?;
+                    let cmp = a.comparar(&b)?;
+                    self.stack.push(ValorVM::Booleano(cmp == -1));
+                    self.ip += 1;
+                }
+                Opcode::MayorExact => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorExact".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorExact".to_string()))?;
+                    let cmp = a.comparar(&b)?;
+                    self.stack.push(ValorVM::Booleano(cmp == 1));
+                    self.ip += 1;
+                }
+                Opcode::EnteroAExacto => {
+                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("EnteroAExacto".to_string()))?;
+                    match val {
+                        ValorVM::Entero(n) => self.stack.push(ValorVM::Exacto(n as i128, 0)),
+                        _ => self.stack.push(val),
+                    }
+                    self.ip += 1;
+                }
+                Opcode::DecimalAExacto => {
+                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DecimalAExacto".to_string()))?;
+                    match val {
+                        ValorVM::Decimal(d) => {
+                            let scale = 10u32;
+                            let coeff = (d * 10_f64.powi(scale as i32)) as i128;
+                            self.stack.push(ValorVM::Exacto(coeff, scale));
+                        }
+                        _ => self.stack.push(val),
+                    }
+                    self.ip += 1;
+                }
                 Opcode::Halt => break,
-                // Superinstructions (Fase 1a) — no implementadas en VM estándar
+                // Superinstructions — no implementadas en VM estándar
                 _ => self.stack.push(ValorVM::Nulo),
             }
         }
@@ -1325,6 +1579,7 @@ impl ForjaVM {
                     let tipo = match valor {
                         ValorVM::Entero(_) => "Entero",
                         ValorVM::Decimal(_) => "Decimal",
+                        ValorVM::Exacto(_, _) => "Exacto",
                         ValorVM::Texto(_) => "Texto",
                         ValorVM::Booleano(_) => "Booleano",
                         ValorVM::Nulo => "Nulo",
@@ -1363,7 +1618,7 @@ impl ForjaVM {
     }
 
     /// Tag de tipo para especialización adaptativa
-    /// Nulo=0, Otros=5, Entero=1, Decimal=2, Texto=3, Booleano=4
+    /// Nulo=0, Otros=5, Entero=1, Decimal=2, Texto=3, Booleano=4, Exacto=6
     #[inline(always)]
     fn tipo_tag_valor(v: &ValorVM) -> u8 {
         match v {
@@ -1372,6 +1627,7 @@ impl ForjaVM {
             ValorVM::Decimal(_) => 2,
             ValorVM::Texto(_) => 3,
             ValorVM::Booleano(_) => 4,
+            ValorVM::Exacto(_, _) => 6,
             _ => 5,
         }
     }
@@ -1966,6 +2222,73 @@ impl ForjaVM {
                         self.stack.push(m);
                     } else {
                         self.stack.push(ValorVM::Nulo);
+                    }
+                    self.ip += 1;
+                }
+                // === Exacto operations (BigDecimal) ===
+                Uop::PushExacto(coeff, scale) => { self.stack.push(ValorVM::Exacto(coeff, scale)); self.ip += 1; }
+                Uop::AddExact => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddExact".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddExact".to_string()))?;
+                    self.stack.push(a.sumar(&b)?);
+                    self.ip += 1;
+                }
+                Uop::SubExact => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubExact".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubExact".to_string()))?;
+                    self.stack.push(a.restar(&b)?);
+                    self.ip += 1;
+                }
+                Uop::MulExact => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulExact".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulExact".to_string()))?;
+                    self.stack.push(a.multiplicar(&b)?);
+                    self.ip += 1;
+                }
+                Uop::DivExact => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivExact".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivExact".to_string()))?;
+                    self.stack.push(a.dividir(&b)?);
+                    self.ip += 1;
+                }
+                Uop::IgualExact => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualExact".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualExact".to_string()))?;
+                    let cmp = a.comparar(&b)?;
+                    self.stack.push(ValorVM::Booleano(cmp == 0));
+                    self.ip += 1;
+                }
+                Uop::MenorExact => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorExact".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorExact".to_string()))?;
+                    let cmp = a.comparar(&b)?;
+                    self.stack.push(ValorVM::Booleano(cmp == -1));
+                    self.ip += 1;
+                }
+                Uop::MayorExact => {
+                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorExact".to_string()))?;
+                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorExact".to_string()))?;
+                    let cmp = a.comparar(&b)?;
+                    self.stack.push(ValorVM::Booleano(cmp == 1));
+                    self.ip += 1;
+                }
+                Uop::EnteroAExacto => {
+                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("EnteroAExacto".to_string()))?;
+                    match val {
+                        ValorVM::Entero(n) => self.stack.push(ValorVM::Exacto(n as i128, 0)),
+                        _ => self.stack.push(val),
+                    }
+                    self.ip += 1;
+                }
+                Uop::DecimalAExacto => {
+                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DecimalAExacto".to_string()))?;
+                    match val {
+                        ValorVM::Decimal(d) => {
+                            let scale = 10u32;
+                            let coeff = (d * 10_f64.powi(scale as i32)) as i128;
+                            self.stack.push(ValorVM::Exacto(coeff, scale));
+                        }
+                        _ => self.stack.push(val),
                     }
                     self.ip += 1;
                 }

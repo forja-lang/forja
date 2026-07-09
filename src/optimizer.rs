@@ -67,6 +67,10 @@ impl Optimizer {
                                 self.cambios_realizados += 1;
                                 return Expresion::LiteralNumero(-n);
                             }
+                            if let ValorConstante::Exacto(coeff, scale) = valor {
+                                self.cambios_realizados += 1;
+                                return Expresion::LiteralExacto(-coeff, scale);
+                            }
                         }
                     }
                 }
@@ -82,13 +86,14 @@ impl Optimizer {
     }
 
     fn es_literal(&self, expr: &Expresion) -> bool {
-        matches!(expr, Expresion::LiteralNumero(_) | Expresion::LiteralDecimal(_) | Expresion::LiteralTexto(_) | Expresion::LiteralBooleano(_) | Expresion::LiteralNulo)
+        matches!(expr, Expresion::LiteralNumero(_) | Expresion::LiteralDecimal(_) | Expresion::LiteralExacto(_, _) | Expresion::LiteralTexto(_) | Expresion::LiteralBooleano(_) | Expresion::LiteralNulo)
     }
 
     fn literal_a_valor(&self, expr: &Expresion) -> Option<ValorConstante> {
         match expr {
             Expresion::LiteralNumero(n) => Some(ValorConstante::Entero(*n)),
             Expresion::LiteralDecimal(d) => Some(ValorConstante::Decimal(*d)),
+            Expresion::LiteralExacto(coeff, scale) => Some(ValorConstante::Exacto(*coeff, *scale)),
             Expresion::LiteralTexto(s) => Some(ValorConstante::Texto(s.clone())),
             Expresion::LiteralBooleano(b) => Some(ValorConstante::Booleano(*b)),
             Expresion::LiteralNulo => Some(ValorConstante::Nulo),
@@ -100,6 +105,7 @@ impl Optimizer {
         match valor {
             ValorConstante::Entero(n) => Expresion::LiteralNumero(*n),
             ValorConstante::Decimal(d) => Expresion::LiteralDecimal(*d),
+            ValorConstante::Exacto(coeff, scale) => Expresion::LiteralExacto(*coeff, *scale),
             ValorConstante::Texto(s) => Expresion::LiteralTexto(s.clone()),
             ValorConstante::Booleano(b) => Expresion::LiteralBooleano(*b),
             ValorConstante::Nulo => Expresion::LiteralNulo,
@@ -135,6 +141,42 @@ impl Optimizer {
                 MenorIgual => Some(ValorConstante::Booleano(a <= b)),
                 _ => None,
             },
+            (ValorConstante::Exacto(a, sa), ValorConstante::Exacto(b, sb)) => {
+                // Constant folding solo si ambos son Exacto puro
+                let (a_adj, b_adj, escala) = homogeneizar_exacto(*a, *sa, *b, *sb)?;
+                match op {
+                    Suma => {
+                        let result = a_adj.checked_add(b_adj)?;
+                        Some(ValorConstante::Exacto(result, escala))
+                    }
+                    Resta => {
+                        let result = a_adj.checked_sub(b_adj)?;
+                        Some(ValorConstante::Exacto(result, escala))
+                    }
+                    Multiplicacion => {
+                        // Multiplicar coeficientes, sumar escalas
+                        let coeff = a.checked_mul(*b)?;
+                        let new_scale = sa.checked_add(*sb)?;
+                        Some(ValorConstante::Exacto(coeff, new_scale))
+                    }
+                    Division if *b != 0 => {
+                        // Expandir dividendo con 38 dígitos extra
+                        let extra = 38u32;
+                        let factor = 10i128.checked_pow(extra)?;
+                        let a_expandido = a.checked_mul(factor)?;
+                        let coeff = a_expandido / b;
+                        let escala_result = sa.checked_add(extra)?.checked_sub(*sb)?;
+                        Some(ValorConstante::Exacto(coeff, escala_result))
+                    }
+                    IgualIgual => Some(ValorConstante::Booleano(a_adj == b_adj)),
+                    Diferente => Some(ValorConstante::Booleano(a_adj != b_adj)),
+                    Mayor => Some(ValorConstante::Booleano(a_adj > b_adj)),
+                    Menor => Some(ValorConstante::Booleano(a_adj < b_adj)),
+                    MayorIgual => Some(ValorConstante::Booleano(a_adj >= b_adj)),
+                    MenorIgual => Some(ValorConstante::Booleano(a_adj <= b_adj)),
+                    _ => None,
+                }
+            }
             (ValorConstante::Texto(a), ValorConstante::Texto(b)) => match op {
                 Suma => Some(ValorConstante::Texto(format!("{}{}", a, b))),
                 IgualIgual => Some(ValorConstante::Booleano(a == b)),
@@ -301,12 +343,32 @@ impl DeadCodeEliminator {
 }
 
 enum ValorConstante {
-    Entero(i64), Decimal(f64), Texto(String), Booleano(bool), Nulo,
+    Entero(i64), Decimal(f64), Exacto(i128, u32), Texto(String), Booleano(bool), Nulo,
 }
 
 impl ValorConstante {
     fn as_entero(&self) -> Option<i64> { if let ValorConstante::Entero(n) = self { Some(*n) } else { None } }
     fn as_booleano(&self) -> Option<bool> { if let ValorConstante::Booleano(b) = self { Some(*b) } else { None } }
+}
+
+/// Homogeneiza dos valores Exacto a la misma escala.
+/// Retorna (a_ajustado, b_ajustado, escala_comun).
+/// Si hay overflow, retorna None.
+fn homogeneizar_exacto(a: i128, sa: u32, b: i128, sb: u32) -> Option<(i128, i128, u32)> {
+    if sa == sb {
+        return Some((a, b, sa));
+    }
+    if sa < sb {
+        // a necesita expandirse: a = a * 10^(sb - sa)
+        let factor = 10i128.checked_pow(sb - sa)?;
+        let a_ajustado = a.checked_mul(factor)?;
+        Some((a_ajustado, b, sb))
+    } else {
+        // b necesita expandirse: b = b * 10^(sa - sb)
+        let factor = 10i128.checked_pow(sa - sb)?;
+        let b_ajustado = b.checked_mul(factor)?;
+        Some((a, b_ajustado, sa))
+    }
 }
 
 #[cfg(test)]
