@@ -409,4 +409,10 @@ cargo build --release --features lsp  # Soporte LSP
 
 ## Licencia
 
-Licencia Source-Available. Ver LICENSE.md para términos completos.
+Forja está licenciado bajo la **GNU General Public License v3.0 (GPLv3)** con términos adicionales sobre la marca registrada.
+
+- **Código fuente**: GPLv3 - puedes usar, estudiar, modificar y redistribuir siempre que las modificaciones sigan la misma licencia.
+- **Marca "Forja"**: El nombre y logo son marca registrada. Queda prohibido usarlos para promocionar forks o productos derivados sin autorización.
+- **Programas creados con Forja**: Pueden usar cualquier licencia que desees. El copyleft de GPL solo se aplica al compilador/intérprete, no a tu código.
+
+Ver [LICENSE.md](LICENSE.md) para términos completos.

@@ -126,6 +126,11 @@ impl ValorFast {
         ValorFast(Self::QNAN | Self::TAG_MAP | idx as u64)
     }
 
+    // ─── Constante Exacto ──────────────────────────────────────────────────
+    /// Bit 47 se usa como flag Exacto sobre TAG_OBJ: si está presente, el valor
+    /// es un Exacto (BigDecimal) en lugar de un objeto.
+    const BIT_EXACTO: u64 = 0x0000800000000000; // bit 47
+
     // ─── Getters de tipo ──────────────────────────────────────────────────────
     #[inline(always)]
     pub fn es_nulo(&self) -> bool { self.0 == (Self::QNAN | Self::TAG_NIL) }
@@ -149,7 +154,9 @@ impl ValorFast {
     }
 
     #[inline(always)]
-    pub fn es_objeto(&self) -> bool { (self.0 & Self::TAG_MASK) == Self::TAG_OBJ }
+    pub fn es_objeto(&self) -> bool {
+        (self.0 & Self::TAG_MASK) == Self::TAG_OBJ && (self.0 & Self::BIT_EXACTO) == 0
+    }
 
     #[inline(always)]
     pub fn es_texto(&self) -> bool { (self.0 & Self::TAG_MASK) == Self::TAG_STR }
@@ -159,6 +166,11 @@ impl ValorFast {
 
     #[inline(always)]
     pub fn es_mapa(&self) -> bool { (self.0 & Self::TAG_MASK) == Self::TAG_MAP }
+
+    #[inline(always)]
+    pub fn es_exacto(&self) -> bool {
+        (self.0 & Self::TAG_MASK) == Self::TAG_OBJ && (self.0 & Self::BIT_EXACTO) != 0
+    }
 
     // ─── Accesores de valor ───────────────────────────────────────────────────
     #[inline(always)]
@@ -182,6 +194,9 @@ impl ValorFast {
     #[inline(always)]
     pub fn indice_mapa(&self) -> u32 { (self.0 & 0xFFFFFFFF) as u32 }
 
+    #[inline(always)]
+    pub fn indice_exacto(&self) -> u32 { (self.0 & 0xFFFFFFFF) as u32 }
+
     // ─── Utilidad ─────────────────────────────────────────────────────────────
     #[inline(always)]
     pub fn es_verdadero(&self) -> bool {
@@ -190,6 +205,7 @@ impl ValorFast {
         else if self.es_entero() { self.a_entero() != 0 }
         else if self.es_flotante() { self.a_flotante() != 0.0 }
         else if self.es_texto() { true } // el texto vacío se considera verdadero? No, se verifica con longitud
+        else if self.es_exacto() { true } // Exacto siempre es verdadero (coeff != 0 es verdadero)
         else { true } // objetos, arrays, mapas siempre son verdadero
     }
 
@@ -198,6 +214,7 @@ impl ValorFast {
         else if self.es_booleano() { "booleano" }
         else if self.es_entero() { "entero" }
         else if self.es_flotante() { "flotante" }
+        else if self.es_exacto() { "exacto" }
         else if self.es_objeto() { "objeto" }
         else if self.es_texto() { "texto" }
         else if self.es_arreglo() { "arreglo" }
@@ -217,6 +234,54 @@ pub struct ObjVal {
 impl ObjVal {
     pub fn new(clase: SymId) -> Self {
         ObjVal { clase, campos_vec: Vec::new() }
+    }
+}
+
+// ─── Exacto (BigDecimal) ───────────────────────────────────────────────────
+
+#[derive(Clone, Debug)]
+pub struct ExactoVal {
+    pub coeficiente: i128,
+    pub escala: u32,
+}
+
+impl ExactoVal {
+    pub fn new(coeficiente: i128, escala: u32) -> Self {
+        ExactoVal { coeficiente, escala }
+    }
+}
+
+/// Muestra un valor Exacto (BigDecimal) como string
+pub fn mostrar_exacto(coeff: i128, scale: u32) -> String {
+    if scale == 0 {
+        return coeff.to_string();
+    }
+    let signo = if coeff < 0 { "-" } else { "" };
+    let abs_coeff = coeff.unsigned_abs();
+    let s = abs_coeff.to_string();
+    let digitos = s.len() as u32;
+    if scale >= digitos {
+        let ceros = scale - digitos;
+        format!("{}0.{}{}", signo, "0".repeat(ceros as usize), s)
+    } else {
+        let punto = digitos - scale;
+        let (entera, fracc) = s.split_at(punto as usize);
+        format!("{}{}.{}", signo, entera, fracc)
+    }
+}
+
+/// Homogeneiza dos valores Exacto a la misma escala.
+/// Retorna (a_ajustado, b_ajustado, escala_comun).
+/// Usa wrapping_* para evitar panics por overflow.
+fn homogeneizar_exacto_fast(a: i128, sa: u32, b: i128, sb: u32) -> (i128, i128, u32) {
+    if sa == sb {
+        (a, b, sa)
+    } else if sa < sb {
+        let factor = 10_i128.wrapping_pow(sb - sa);
+        (a.wrapping_mul(factor), b, sb)
+    } else {
+        let factor = 10_i128.wrapping_pow(sa - sb);
+        (a, b.wrapping_mul(factor), sa)
     }
 }
 
@@ -265,6 +330,11 @@ pub struct ForjaFast {
     str_free: Vec<u32>,          // free list strings
     array_free: Vec<u32>,        // free list arrays
     map_free: Vec<u32>,          // free list mapas
+
+    // ─── Exacto Heap ─────────────────────────────────────────────────
+    exacto_heap: Vec<ExactoVal>,      // valores Exacto (BigDecimal)
+    exacto_marked: Vec<bool>,         // marcas GC para Exacto
+    exacto_free: Vec<u32>,           // free list Exacto
 
     // Contadores para GC automático
     gc_allocs_since_last: usize, // alocaciones desde último GC
@@ -374,6 +444,9 @@ impl ForjaFast {
             map_marked: Vec::new(),
             obj_free: Vec::new(), str_free: Vec::new(),
             array_free: Vec::new(), map_free: Vec::new(),
+            exacto_heap: Vec::new(),
+            exacto_marked: Vec::new(),
+            exacto_free: Vec::new(),
             gc_allocs_since_last: 0, gc_threshold: 1000,
             cache_add_type: None, cache_sub_type: None, cache_mul_type: None, cache_div_type: None,
             contador_especializacion: Vec::new(),
@@ -593,6 +666,9 @@ impl ForjaFast {
         self.str_heap.clear();
         self.array_heap.clear();
         self.map_heap.clear();
+        self.exacto_heap.clear();
+        self.exacto_marked.clear();
+        self.exacto_free.clear();
         self.gc_allocs_since_last = 0;
         self.fast_math = false;
     }
@@ -671,6 +747,45 @@ impl ForjaFast {
         }
     }
 
+    #[inline(always)]
+    fn alloc_exacto(&mut self, e: ExactoVal) -> u32 {
+        self.gc_allocs_since_last += 1;
+        if self.gc_allocs_since_last >= self.gc_threshold {
+            self.gc_collect();
+            self.gc_allocs_since_last = 0;
+        }
+        if let Some(idx) = self.exacto_free.pop() {
+            self.exacto_heap[idx as usize] = e;
+            idx
+        } else {
+            let idx = self.exacto_heap.len() as u32;
+            self.exacto_heap.push(e);
+            self.exacto_marked.push(false);
+            idx
+        }
+    }
+
+    /// Crea un ValorFast que representa un valor Exacto (BigDecimal).
+    /// Aloja en el heap de Exacto y retorna un ValorFast con TAG_OBJ + BIT_EXACTO.
+    #[inline(always)]
+    pub fn exacto_valor(&mut self, coeficiente: i128, escala: u32) -> ValorFast {
+        let e = ExactoVal::new(coeficiente, escala);
+        let _idx = self.alloc_exacto(e);
+        ValorFast(ValorFast::QNAN | ValorFast::TAG_OBJ | ValorFast::BIT_EXACTO | _idx as u64)
+    }
+
+    /// Obtiene referencia al valor Exacto desde un ValorFast.
+    #[inline(always)]
+    fn get_exacto(&self, idx: u32) -> &ExactoVal {
+        &self.exacto_heap[idx as usize]
+    }
+
+    /// Obtiene referencia mutable al valor Exacto desde un ValorFast.
+    #[inline(always)]
+    fn get_exacto_mut(&mut self, idx: u32) -> &mut ExactoVal {
+        &mut self.exacto_heap[idx as usize]
+    }
+
     // ─── Garbage Collector Mark-and-Sweep ────────────────────────────────────
 
     /// Ejecuta un ciclo completo de GC Mark-and-Sweep.
@@ -683,6 +798,7 @@ impl ForjaFast {
         for m in &mut self.str_marked { *m = false; }
         for m in &mut self.array_marked { *m = false; }
         for m in &mut self.map_marked { *m = false; }
+        for m in &mut self.exacto_marked { *m = false; }
 
         // Recolectar raíces en Vec temporal para evitar borrow conflicts
         let mut roots: Vec<ValorFast> = Vec::new();
@@ -736,6 +852,14 @@ impl ForjaFast {
                 self.map_free.push(i as u32);
             }
         }
+
+        // Exacto no marcados → free list
+        for i in 0..self.exacto_heap.len() {
+            if !self.exacto_marked[i] {
+                self.exacto_heap[i] = ExactoVal::new(0, 0);
+                self.exacto_free.push(i as u32);
+            }
+        }
     }
 
     /// Marca un ValorFast como alcanzable y sigue referencias recursivamente.
@@ -774,6 +898,11 @@ impl ForjaFast {
                 for v in &values {
                     self.mark_value(*v);
                 }
+            }
+        } else if val.es_exacto() {
+            let idx = val.indice_exacto() as usize;
+            if idx < self.exacto_heap.len() {
+                self.exacto_marked[idx] = true;
             }
         }
         // Enteros, flotantes, booleanos, nulo: no tienen referencias al heap
@@ -840,6 +969,10 @@ impl ForjaFast {
         if v.es_texto() { return self.get_str(v.indice_texto()).to_string(); }
         if v.es_booleano() { return (if v.a_booleano() { "verdadero" } else { "falso" }).to_string(); }
         if v.es_nulo() { return "nulo".to_string(); }
+        if v.es_exacto() {
+            let e = self.get_exacto(v.indice_exacto());
+            return mostrar_exacto(e.coeficiente, e.escala);
+        }
         if v.es_objeto() {
             let o = self.get_obj(v.indice_objeto());
             let nombre_clase = self.sym_table.get(o.clase);
@@ -2948,18 +3081,230 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
-                // Exacto operations (no implementadas en vm_fast Opcode)
-                Opcode::PushExacto(_, _) => { self.push_valor(ValorFast::nulo()); self.ip += 1; }
-                Opcode::AddExact
-                | Opcode::SubExact
-                | Opcode::MulExact
-                | Opcode::DivExact
-                | Opcode::IgualExact
-                | Opcode::MenorExact
-                | Opcode::MayorExact
-                | Opcode::EnteroAExacto
-                | Opcode::DecimalAExacto => { self.push_valor(ValorFast::nulo()); self.ip += 1; }
-                Opcode::DeclareExactOp(_, _, _) | Opcode::AddStoreExact(_) => { self.push_valor(ValorFast::nulo()); self.ip += 1; }
+                // ── Exacto operations (BigDecimal) ─────────────────────────
+                Opcode::PushExacto(coeff, scale) => {
+                    let v = self.exacto_valor(coeff, scale);
+                    self.push_valor(v);
+                    self.ip += 1;
+                }
+                Opcode::AddExact => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    let val = if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                        let result = a_adj.wrapping_add(b_adj);
+                        self.exacto_valor(result, escala)
+                    } else if a.es_entero() && b.es_exacto() {
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(a.a_entero() as i128, 0, be.coeficiente, be.escala);
+                        let result = a_adj.wrapping_add(b_adj);
+                        self.exacto_valor(result, escala)
+                    } else if a.es_exacto() && b.es_entero() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, b.a_entero() as i128, 0);
+                        let result = a_adj.wrapping_add(b_adj);
+                        self.exacto_valor(result, escala)
+                    } else {
+                        ValorFast::nulo()
+                    };
+                    self.push_valor(val);
+                    self.ip += 1;
+                }
+                Opcode::SubExact => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    let val = if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                        let result = a_adj.wrapping_sub(b_adj);
+                        self.exacto_valor(result, escala)
+                    } else if a.es_entero() && b.es_exacto() {
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(a.a_entero() as i128, 0, be.coeficiente, be.escala);
+                        let result = a_adj.wrapping_sub(b_adj);
+                        self.exacto_valor(result, escala)
+                    } else if a.es_exacto() && b.es_entero() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, b.a_entero() as i128, 0);
+                        let result = a_adj.wrapping_sub(b_adj);
+                        self.exacto_valor(result, escala)
+                    } else {
+                        ValorFast::nulo()
+                    };
+                    self.push_valor(val);
+                    self.ip += 1;
+                }
+                Opcode::MulExact => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    let val = if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        let result = ae.coeficiente.wrapping_mul(be.coeficiente);
+                        let escala = ae.escala + be.escala;
+                        self.exacto_valor(result, escala)
+                    } else if a.es_entero() && b.es_exacto() {
+                        let be = self.get_exacto(b.indice_exacto());
+                        let result = (a.a_entero() as i128).wrapping_mul(be.coeficiente);
+                        self.exacto_valor(result, be.escala)
+                    } else if a.es_exacto() && b.es_entero() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let result = ae.coeficiente.wrapping_mul(b.a_entero() as i128);
+                        self.exacto_valor(result, ae.escala)
+                    } else {
+                        ValorFast::nulo()
+                    };
+                    self.push_valor(val);
+                    self.ip += 1;
+                }
+                Opcode::DivExact => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    let val = if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        if be.coeficiente == 0 {
+                            ValorFast::nulo()
+                        } else {
+                            let extra = 20; // precisión extra para división
+                            let dividendo = ae.coeficiente.wrapping_mul(10_i128.wrapping_pow(extra));
+                            let escala = ae.escala + extra;
+                            // Homogeneizar: ajustar b a misma escala
+                            let (div_adj, b_adj, escala_final) = if escala >= be.escala {
+                                let factor = 10_i128.wrapping_pow(escala - be.escala);
+                                (dividendo, be.coeficiente.wrapping_mul(factor), escala)
+                            } else {
+                                let factor = 10_i128.wrapping_pow(be.escala - escala);
+                                (dividendo.wrapping_mul(factor), be.coeficiente, be.escala)
+                            };
+                            let cociente = div_adj.wrapping_div(b_adj);
+                            self.exacto_valor(cociente, escala_final)
+                        }
+                    } else if a.es_entero() && b.es_exacto() {
+                        let be = self.get_exacto(b.indice_exacto());
+                        if be.coeficiente == 0 { ValorFast::nulo() } else {
+                            let extra = 20;
+                            let dividendo = (a.a_entero() as i128).wrapping_mul(10_i128.wrapping_pow(extra));
+                            let cociente = dividendo.wrapping_div(be.coeficiente);
+                            self.exacto_valor(cociente, extra.wrapping_sub(be.escala))
+                        }
+                    } else if a.es_exacto() && b.es_entero() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        if b.a_entero() == 0 { ValorFast::nulo() } else {
+                            let cociente = ae.coeficiente.wrapping_div(b.a_entero() as i128);
+                            self.exacto_valor(cociente, ae.escala)
+                        }
+                    } else {
+                        ValorFast::nulo()
+                    };
+                    self.push_valor(val);
+                    self.ip += 1;
+                }
+                Opcode::IgualExact => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    let igual = if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, _) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                        a_adj == b_adj
+                    } else {
+                        false
+                    };
+                    self.push_valor(ValorFast::booleano(igual));
+                    self.ip += 1;
+                }
+                Opcode::MenorExact => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    let menor = if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, _) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                        a_adj < b_adj
+                    } else {
+                        false
+                    };
+                    self.push_valor(ValorFast::booleano(menor));
+                    self.ip += 1;
+                }
+                Opcode::MayorExact => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    let mayor = if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, _) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                        a_adj > b_adj
+                    } else {
+                        false
+                    };
+                    self.push_valor(ValorFast::booleano(mayor));
+                    self.ip += 1;
+                }
+                Opcode::EnteroAExacto => {
+                    let val = self.pop_valor()?;
+                    if val.es_entero() {
+                        let v = self.exacto_valor(val.a_entero() as i128, 0);
+                        self.push_valor(v);
+                    } else {
+                        self.push_valor(val);
+                    }
+                    self.ip += 1;
+                }
+                Opcode::DecimalAExacto => {
+                    let val = self.pop_valor()?;
+                    if val.es_flotante() {
+                        let d = val.a_flotante();
+                        // Convertir f64 a Exacto con escala 10 (10 dígitos decimales)
+                        let escala = 10u32;
+                        let coeff = (d * 10_f64.powi(escala as i32)) as i128;
+                        let v = self.exacto_valor(coeff, escala);
+                        self.push_valor(v);
+                    } else {
+                        self.push_valor(val);
+                    }
+                    self.ip += 1;
+                }
+                Opcode::DeclareExactOp(idx, coeff, scale) => {
+                    // Declarar variable con valor Exacto literal
+                    if idx >= self.flat_vars.len() {
+                        self.flat_vars.resize(idx + 1, ValorFast::nulo());
+                    }
+                    let v = self.exacto_valor(coeff, scale);
+                    self.flat_vars[idx] = v;
+                    self.push_valor(v);
+                    self.ip += 1;
+                }
+                Opcode::AddStoreExact(idx) => {
+                    // Pop valor, sumar a variable en idx (acumulador Exacto)
+                    let b = self.pop_valor()?;
+                    let var_val = if idx < self.flat_vars.len() {
+                        self.flat_vars[idx]
+                    } else {
+                        ValorFast::nulo()
+                    };
+                    if var_val.es_exacto() {
+                        let ae = self.get_exacto(var_val.indice_exacto());
+                        if b.es_exacto() {
+                            let be = self.get_exacto(b.indice_exacto());
+                            let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                            let result = a_adj.wrapping_add(b_adj);
+                            let v = self.exacto_valor(result, escala);
+                            self.flat_vars[idx] = v;
+                        } else if b.es_entero() {
+                            let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, b.a_entero() as i128, 0);
+                            let result = a_adj.wrapping_add(b_adj);
+                            let v = self.exacto_valor(result, escala);
+                            self.flat_vars[idx] = v;
+                        }
+                    }
+                    self.push_valor(ValorFast::nulo());
+                    self.ip += 1;
+                }
             }
             // Aplicar patch de especialización/des-especialización diferido
             if let Some(op) = patch_op {
@@ -3708,17 +4053,178 @@ impl ForjaFast {
                 Uop::Try => {
                     self.push_valor(ValorFast::nulo());
                 }
-                // Exacto operations (no implementadas en vm_fast Uop)
-                Uop::PushExacto(_, _) => { self.push_valor(ValorFast::nulo()); self.ip += 1; }
-                Uop::AddExact
-                | Uop::SubExact
-                | Uop::MulExact
-                | Uop::DivExact
-                | Uop::IgualExact
-                | Uop::MenorExact
-                | Uop::MayorExact
-                | Uop::EnteroAExacto
-                | Uop::DecimalAExacto => { self.push_valor(ValorFast::nulo()); self.ip += 1; }
+                // ── Exacto operations (BigDecimal) ─────────────────────────
+                Uop::PushExacto(coeff, scale) => {
+                    let v = self.exacto_valor(coeff, scale);
+                    self.push_valor(v);
+                    self.ip += 1;
+                }
+                Uop::AddExact => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    let val = if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                        self.exacto_valor(a_adj.wrapping_add(b_adj), escala)
+                    } else if a.es_entero() && b.es_exacto() {
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(a.a_entero() as i128, 0, be.coeficiente, be.escala);
+                        self.exacto_valor(a_adj.wrapping_add(b_adj), escala)
+                    } else if a.es_exacto() && b.es_entero() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, b.a_entero() as i128, 0);
+                        self.exacto_valor(a_adj.wrapping_add(b_adj), escala)
+                    } else {
+                        ValorFast::nulo()
+                    };
+                    self.push_valor(val);
+                    self.ip += 1;
+                }
+                Uop::SubExact => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    let val = if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                        self.exacto_valor(a_adj.wrapping_sub(b_adj), escala)
+                    } else if a.es_entero() && b.es_exacto() {
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(a.a_entero() as i128, 0, be.coeficiente, be.escala);
+                        self.exacto_valor(a_adj.wrapping_sub(b_adj), escala)
+                    } else if a.es_exacto() && b.es_entero() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, b.a_entero() as i128, 0);
+                        self.exacto_valor(a_adj.wrapping_sub(b_adj), escala)
+                    } else {
+                        ValorFast::nulo()
+                    };
+                    self.push_valor(val);
+                    self.ip += 1;
+                }
+                Uop::MulExact => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    let val = if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        self.exacto_valor(ae.coeficiente.wrapping_mul(be.coeficiente), ae.escala + be.escala)
+                    } else if a.es_entero() && b.es_exacto() {
+                        let be = self.get_exacto(b.indice_exacto());
+                        self.exacto_valor((a.a_entero() as i128).wrapping_mul(be.coeficiente), be.escala)
+                    } else if a.es_exacto() && b.es_entero() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        self.exacto_valor(ae.coeficiente.wrapping_mul(b.a_entero() as i128), ae.escala)
+                    } else {
+                        ValorFast::nulo()
+                    };
+                    self.push_valor(val);
+                    self.ip += 1;
+                }
+                Uop::DivExact => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    let val = if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        if be.coeficiente == 0 { ValorFast::nulo() } else {
+                            let extra = 20;
+                            let dividendo = ae.coeficiente.wrapping_mul(10_i128.wrapping_pow(extra));
+                            let escala = ae.escala + extra;
+                            let (div_adj, b_adj, escala_final) = if escala >= be.escala {
+                                let factor = 10_i128.wrapping_pow(escala - be.escala);
+                                (dividendo, be.coeficiente.wrapping_mul(factor), escala)
+                            } else {
+                                let factor = 10_i128.wrapping_pow(be.escala - escala);
+                                (dividendo.wrapping_mul(factor), be.coeficiente, be.escala)
+                            };
+                            self.exacto_valor(div_adj.wrapping_div(b_adj), escala_final)
+                        }
+                    } else if a.es_entero() && b.es_exacto() {
+                        let be = self.get_exacto(b.indice_exacto());
+                        if be.coeficiente == 0 { ValorFast::nulo() } else {
+                            let extra = 20;
+                            let dividendo = (a.a_entero() as i128).wrapping_mul(10_i128.wrapping_pow(extra));
+                            let cociente = dividendo.wrapping_div(be.coeficiente);
+                            self.exacto_valor(cociente, extra.wrapping_sub(be.escala))
+                        }
+                    } else if a.es_exacto() && b.es_entero() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        if b.a_entero() == 0 { ValorFast::nulo() } else {
+                            self.exacto_valor(ae.coeficiente.wrapping_div(b.a_entero() as i128), ae.escala)
+                        }
+                    } else {
+                        ValorFast::nulo()
+                    };
+                    self.push_valor(val);
+                    self.ip += 1;
+                }
+                Uop::IgualExact => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    let igual = if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, _) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                        a_adj == b_adj
+                    } else {
+                        false
+                    };
+                    self.push_valor(ValorFast::booleano(igual));
+                    self.ip += 1;
+                }
+                Uop::MenorExact => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    let menor = if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, _) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                        a_adj < b_adj
+                    } else {
+                        false
+                    };
+                    self.push_valor(ValorFast::booleano(menor));
+                    self.ip += 1;
+                }
+                Uop::MayorExact => {
+                    let b = self.pop_valor()?;
+                    let a = self.pop_valor()?;
+                    let mayor = if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, _) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                        a_adj > b_adj
+                    } else {
+                        false
+                    };
+                    self.push_valor(ValorFast::booleano(mayor));
+                    self.ip += 1;
+                }
+                Uop::EnteroAExacto => {
+                    let val = self.pop_valor()?;
+                    if val.es_entero() {
+                        let v = self.exacto_valor(val.a_entero() as i128, 0);
+                        self.push_valor(v);
+                    } else {
+                        self.push_valor(val);
+                    }
+                    self.ip += 1;
+                }
+                Uop::DecimalAExacto => {
+                    let val = self.pop_valor()?;
+                    if val.es_flotante() {
+                        let d = val.a_flotante();
+                        let escala = 10u32;
+                        let coeff = (d * 10_f64.powi(escala as i32)) as i128;
+                        let exact = self.exacto_valor(coeff, escala);
+                        self.push_valor(exact);
+                    } else {
+                        self.push_valor(val);
+                    }
+                    self.ip += 1;
+                }
             }
         }
         Ok(())
