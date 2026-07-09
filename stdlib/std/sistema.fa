@@ -1,0 +1,86 @@
+# módulo: sistema
+# Funciones del sistema operativo y entorno de ejecución
+#
+# Uso: importar "std/sistema"
+#
+# Proporciona acceso a:
+#   - Argumentos de línea de comandos
+#   - Variables de entorno
+#   - Salida del proceso
+#   - Directorio de trabajo actual
+#   - Tiempo del sistema (milisegundos)
+#   - Información del SO y versión del lenguaje
+
+importar "std/resultado"
+
+# ═════════════════════════════════════════════════════════════════════════
+# Clase ErrorSistema
+# ═════════════════════════════════════════════════════════════════════════
+
+clase ErrorSistema {
+    mensaje: Texto
+    codigo: Entero
+
+    constructor(mensaje: Texto, codigo: Entero) {
+        este.mensaje = mensaje
+        este.codigo = codigo
+    }
+}
+
+# ═════════════════════════════════════════════════════════════════════════
+# Funciones del Sistema
+# ═════════════════════════════════════════════════════════════════════════
+
+# Obtiene los argumentos de línea de comandos como Arreglo<Texto>
+# El primer elemento es la ruta del ejecutable.
+funcion argumentos() -> Arreglo<Texto> {
+    retornar _sistema_argumentos()
+}
+
+# Obtiene el valor de una variable de entorno
+# Retorna Opcion<Texto> — Some(valor) si existe, None si no existe
+funcion variable_entorno(nombre: Texto) -> Opcion<Texto> {
+    variable valor = _sistema_variable_entorno(nombre)
+    si (valor == "") {
+        retornar None()
+    } sino {
+        retornar Some(valor)
+    }
+}
+
+# Termina el proceso con un código de salida
+# 0 = éxito, cualquier otro valor indica error
+funcion salir(codigo: Entero) {
+    _sistema_salir(codigo)
+}
+
+# Obtiene el directorio de trabajo actual
+# Retorna Resultado<Texto, ErrorSistema>
+funcion directorio_actual() -> Resultado<Texto, ErrorSistema> {
+    variable dir = _sistema_directorio_actual()
+    si (dir == "") {
+        retornar Error(nuevo ErrorSistema("No se pudo obtener el directorio actual", 1))
+    }
+    retornar Ok(dir)
+}
+
+# Tiempo actual en milisegundos desde Unix epoch (1/1/1970)
+# Útil para medir tiempos con precisión, timestamps, etc.
+funcion tiempo_ms() -> Entero {
+    retornar _sistema_tiempo_actual_ms()
+}
+
+# ═════════════════════════════════════════════════════════════════════════
+# Información del Entorno
+# ═════════════════════════════════════════════════════════════════════════
+
+# Nombre del sistema operativo
+# Retorna: "windows", "linux", "macos" según corresponda (determinado en compilación)
+funcion sistema_operativo() -> Texto {
+    retornar _sistema_so()
+}
+
+# Versión del lenguaje Forja
+funcion version_forja() -> Texto {
+    retornar "0.1.0"
+}

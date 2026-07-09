@@ -1003,7 +1003,7 @@ impl ForjaFast {
     }
 
     #[inline(always)]
-    fn alloc_arr(&mut self, arr: Vec<ValorFast>) -> u32 {
+    pub(crate) fn alloc_arr(&mut self, arr: Vec<ValorFast>) -> u32 {
         self.gc_allocs_since_last += 1;
         if self.gc_allocs_since_last >= self.gc_threshold {
             self.gc_collect();
@@ -1020,7 +1020,7 @@ impl ForjaFast {
     }
 
     #[inline(always)]
-    fn alloc_map(&mut self, m: HashMap<String, ValorFast>) -> u32 {
+    pub(crate) fn alloc_map(&mut self, m: HashMap<String, ValorFast>) -> u32 {
         self.gc_allocs_since_last += 1;
         if self.gc_allocs_since_last >= self.gc_threshold {
             self.gc_collect();
@@ -1223,12 +1223,12 @@ impl ForjaFast {
     }
 
     #[inline(always)]
-    fn get_map(&self, idx: u32) -> &HashMap<String, ValorFast> {
+    pub(crate) fn get_map(&self, idx: u32) -> &HashMap<String, ValorFast> {
         &self.map_heap[idx as usize]
     }
 
     #[inline(always)]
-    fn get_map_mut(&mut self, idx: u32) -> &mut HashMap<String, ValorFast> {
+    pub(crate) fn get_map_mut(&mut self, idx: u32) -> &mut HashMap<String, ValorFast> {
         &mut self.map_heap[idx as usize]
     }
 
