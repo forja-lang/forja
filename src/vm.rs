@@ -122,6 +122,21 @@ pub fn homogeneizar_exacto(a: i128, sa: u32, b: i128, sb: u32) -> (i128, i128, u
     }
 }
 
+/// Normaliza un valor Exacto eliminando ceros finales del coeficiente.
+/// Esto evita que la escala crezca sin límite en multiplicaciones repetidas.
+fn normalizar_exacto(coeff: i128, scale: u32) -> (i128, u32) {
+    if coeff == 0 {
+        return (0, 0);
+    }
+    let mut c = coeff;
+    let mut s = scale;
+    while s > 0 && c % 10 == 0 {
+        c /= 10;
+        s -= 1;
+    }
+    (c, s)
+}
+
 impl ValorVM {
     pub fn mostrar(&self) -> String {
         match self {
@@ -250,8 +265,7 @@ impl ValorVM {
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 * b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a * *b as f64)),
             (ValorVM::Exacto(a_coeff, a_scale), ValorVM::Exacto(b_coeff, b_scale)) => {
-                let coeff = a_coeff.wrapping_mul(*b_coeff);
-                let scale = a_scale + b_scale;
+                let (coeff, scale) = normalizar_exacto(a_coeff.wrapping_mul(*b_coeff), a_scale + b_scale);
                 Ok(ValorVM::Exacto(coeff, scale))
             }
             (ValorVM::Exacto(coeff, scale), ValorVM::Entero(n)) => {
@@ -263,15 +277,13 @@ impl ValorVM {
             (ValorVM::Exacto(coeff, scale), ValorVM::Decimal(d)) => {
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
-                let new_coeff = coeff.wrapping_mul(d_coeff);
-                let new_scale = scale + d_scale;
+                let (new_coeff, new_scale) = normalizar_exacto(coeff.wrapping_mul(d_coeff), scale + d_scale);
                 Ok(ValorVM::Exacto(new_coeff, new_scale))
             }
             (ValorVM::Decimal(d), ValorVM::Exacto(coeff, scale)) => {
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
-                let new_coeff = coeff.wrapping_mul(d_coeff);
-                let new_scale = scale + d_scale;
+                let (new_coeff, new_scale) = normalizar_exacto(coeff.wrapping_mul(d_coeff), scale + d_scale);
                 Ok(ValorVM::Exacto(new_coeff, new_scale))
             }
             _ => Ok(ValorVM::Nulo),
