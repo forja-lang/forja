@@ -643,7 +643,7 @@ fn cmd_bench(args: &[String]) {
 /// --native         : usa GUI nativa (sin cargo, requiere --features gui)
 fn cmd_run(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native] [--debug|--console|--no-debug]");
+        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native] [--debug|--console|--no-debug] [--contratos|--no-contratos]");
         process::exit(1);
     }
 
@@ -652,6 +652,8 @@ fn cmd_run(args: &[String]) {
     let mut native_gui = false;
     let mut debug_mode = false;
     let mut no_debug = false;
+    let mut verificar_contratos = true;  // default: contratos activados
+    let mut contratos_explicit = false;  // si el usuario explicitó la opción
     let mut path: &String = &args[0];
 
     // Escanear todos los args: flags + archivo .fa en cualquier orden
@@ -667,6 +669,8 @@ fn cmd_run(args: &[String]) {
             "--native" => native_gui = true,
             "--debug" | "--console" => debug_mode = true,
             "--no-debug" => no_debug = true,
+            "--contratos" => { verificar_contratos = true; contratos_explicit = true; }
+            "--no-contratos" => { verificar_contratos = false; contratos_explicit = true; }
             _ => {
                 if arg.ends_with(".fa") {
                     path = &args[i];
@@ -729,8 +733,30 @@ fn cmd_run(args: &[String]) {
         }
     }
 
+    // Determinar directorio raíz del proyecto (busca hacia arriba hasta encontrar stdlib/)
+    fn encontrar_raiz_proyecto(path: &std::path::Path) -> std::path::PathBuf {
+        let dir = if path.is_file() {
+            path.parent().unwrap_or(std::path::Path::new("."))
+        } else {
+            path
+        };
+        for ancestor in dir.ancestors() {
+            if ancestor.join("stdlib").exists() {
+                return ancestor.to_path_buf();
+            }
+        }
+        dir.to_path_buf()
+    }
+    let root_dir = encontrar_raiz_proyecto(std::path::Path::new(path));
+
     let result = match vm_mode {
-        "fast" => forja::ejecutar(&source),
+        "fast" => {
+            if contratos_explicit {
+                forja::ejecutar_con_opciones_desde(&source, &root_dir, verificar_contratos)
+            } else {
+                forja::ejecutar_desde(&source, &root_dir)
+            }
+        }
         "jit" => forja::ejecutar_jit(&source),
         _ => forja::ejecutar_vm(&source),  // Default: VM original
     };

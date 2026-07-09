@@ -20,11 +20,16 @@
 
 use std::collections::HashMap;
 use std::rc::Rc;
-use crate::bytecode::{self, Opcode, BuiltinKind};
+use crate::bytecode::{self, Opcode, BuiltinKind, ContratoBytecode};
 use crate::symbol_table::{SymbolTable, SymId};
 use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops};
 use crate::class_descriptor::{Shape, ClassDescriptor};
 use crate::prof_count;
+
+/// Índice especial de variable para 'resultado' en postcondiciones.
+/// Usado por el generador de bytecode para compilar Expresion::Resultado.
+/// La VM detecta este índice especial al ejecutar uops de contratos.
+pub const RESULTADO_IDX: usize = usize::MAX;
 
 // Small Integer Cache [-5, 256] — thread_local! porque ValorFast es Copy (u64)
 use std::cell::OnceCell;
@@ -389,6 +394,11 @@ pub struct ForjaFast {
     ejecutadas: usize,
     fast_math: bool,
     pub show_bytecode: bool,
+
+    // ─── Design by Contract ────────────────────────────────────────────────
+    pub contratos: Vec<ContratoBytecode>,
+    pub anterior_stack: HashMap<usize, ValorFast>,
+    pub verificar_contratos: bool,
 }
 
 // Flat Var Stack frame: guarda solo base_ptr_previo y num_vars (O(1)),
@@ -471,6 +481,9 @@ impl ForjaFast {
             funciones: HashMap::new(), func_params: HashMap::new(), bytecode: Vec::new(), output: Vec::new(),
             max_inst: usize::MAX, ejecutadas: 0, fast_math: false,
             show_bytecode: false,
+            contratos: Vec::new(),
+            anterior_stack: HashMap::new(),
+            verificar_contratos: true,
         };
         vm.init_symbols();
         vm
@@ -480,9 +493,275 @@ impl ForjaFast {
         self.max_inst = n;
     }
 
+    /// Habilita/deshabilita verificación de contratos (debug/release)
+    pub fn con_contratos(mut self, activo: bool) -> Self {
+        self.verificar_contratos = activo;
+        self
+    }
+
     /// Resetea el estado de ejecución (ip, stack, output) pero
     /// CONSERVA flat_vars (variables globales) y funciones.
     /// Útil para REPL: entre líneas queremos mantener las variables.
+    /// Ejecuta una secuencia de uops de condición de contrato.
+    /// Maneja RESULTADO_IDX (sustituye por valor_retorno) y
+    /// busca en anterior_stack para variables guardadas.
+    fn ejecutar_uops_contrato(&mut self, uops: &[Uop], valor_retorno: Option<ValorFast>) -> ValorFast {
+        // Stack temporal para evaluar la condición
+        let mut stack: Vec<ValorFast> = Vec::with_capacity(16);
+        let len = uops.len();
+        let mut ip = 0usize;
+
+        while ip < len {
+            match &uops[ip] {
+                Uop::PushEntero(n) => stack.push(get_small_int_fast(*n)),
+                Uop::PushDecimal(d) => stack.push(ValorFast::flotante(*d)),
+                Uop::PushTexto(s) => {
+                    let idx = self.alloc_str(std::rc::Rc::clone(s));
+                    stack.push(ValorFast::texto(idx));
+                }
+                Uop::PushBooleano(b) => stack.push(ValorFast::booleano(*b)),
+                Uop::PushNulo => stack.push(ValorFast::nulo()),
+                Uop::Dup => { let v = stack.last().copied().unwrap_or(ValorFast::nulo()); stack.push(v); }
+                Uop::Pop => { stack.pop(); }
+
+                Uop::LoadIdx(idx) => {
+                    if *idx == RESULTADO_IDX {
+                        // resultado especial: usar valor_retorno
+                        if let Some(ret) = valor_retorno {
+                            stack.push(ret);
+                        } else {
+                            stack.push(ValorFast::nulo());
+                        }
+                    } else if let Some(&saved) = self.anterior_stack.get(idx) {
+                        // Variable guardada con SaveAnterior → usar valor anterior
+                        stack.push(saved);
+                    } else {
+                        // Variable normal: cargar del flat_vars
+                        let actual = self.base_ptr + idx;
+                        let v = if actual < self.flat_vars.len() {
+                            self.flat_vars[actual]
+                        } else {
+                            ValorFast::nulo()
+                        };
+                        stack.push(v);
+                    }
+                }
+                Uop::StoreIdx(idx) => {
+                    let val = stack.pop().unwrap_or(ValorFast::nulo());
+                    let actual = self.base_ptr + idx;
+                    if actual >= self.flat_vars.len() {
+                        self.flat_vars.resize(actual + 1, ValorFast::nulo());
+                    }
+                    self.flat_vars[actual] = val;
+                }
+                Uop::DeclareVar(idx) => {
+                    let actual = self.base_ptr + idx;
+                    if actual >= self.flat_vars.len() {
+                        self.flat_vars.resize(actual + 1, ValorFast::nulo());
+                    }
+                }
+                Uop::DeclareInit(idx) => {
+                    let val = stack.pop().unwrap_or(ValorFast::nulo());
+                    let actual = self.base_ptr + idx;
+                    if actual >= self.flat_vars.len() {
+                        self.flat_vars.resize(actual + 1, ValorFast::nulo());
+                    }
+                    self.flat_vars[actual] = val;
+                }
+
+                // Aritméticas
+                Uop::Add => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    if a.es_entero() && b.es_entero() {
+                        stack.push(get_small_int_fast(a.a_entero() as i64 + b.a_entero() as i64));
+                    } else {
+                        stack.push(ValorFast::nulo());
+                    }
+                }
+                Uop::Sub => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    if a.es_entero() && b.es_entero() {
+                        stack.push(get_small_int_fast(a.a_entero() as i64 - b.a_entero() as i64));
+                    } else {
+                        stack.push(ValorFast::nulo());
+                    }
+                }
+                Uop::Mul => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    if a.es_entero() && b.es_entero() {
+                        stack.push(get_small_int_fast(a.a_entero() as i64 * b.a_entero() as i64));
+                    } else {
+                        stack.push(ValorFast::nulo());
+                    }
+                }
+                Uop::Div => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    if a.es_entero() && b.es_entero() && b.a_entero() != 0 {
+                        stack.push(get_small_int_fast(a.a_entero() as i64 / b.a_entero() as i64));
+                    } else {
+                        stack.push(ValorFast::nulo());
+                    }
+                }
+                Uop::AddInt => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    if a.es_entero() && b.es_entero() {
+                        stack.push(get_small_int_fast(a.a_entero() as i64 + b.a_entero() as i64));
+                    } else {
+                        stack.push(ValorFast::nulo());
+                    }
+                }
+                Uop::SubInt => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    if a.es_entero() && b.es_entero() {
+                        stack.push(get_small_int_fast(a.a_entero() as i64 - b.a_entero() as i64));
+                    } else {
+                        stack.push(ValorFast::nulo());
+                    }
+                }
+                Uop::MulInt => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    if a.es_entero() && b.es_entero() {
+                        stack.push(get_small_int_fast(a.a_entero() as i64 * b.a_entero() as i64));
+                    } else {
+                        stack.push(ValorFast::nulo());
+                    }
+                }
+                Uop::DivInt => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    if a.es_entero() && b.es_entero() && b.a_entero() != 0 {
+                        stack.push(get_small_int_fast(a.a_entero() as i64 / b.a_entero() as i64));
+                    } else {
+                        stack.push(ValorFast::nulo());
+                    }
+                }
+                Uop::AddFloat => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    if a.es_flotante() && b.es_flotante() {
+                        stack.push(ValorFast::flotante(a.a_flotante() + b.a_flotante()));
+                    } else {
+                        stack.push(ValorFast::nulo());
+                    }
+                }
+                Uop::SubFloat => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    if a.es_flotante() && b.es_flotante() {
+                        stack.push(ValorFast::flotante(a.a_flotante() - b.a_flotante()));
+                    } else {
+                        stack.push(ValorFast::nulo());
+                    }
+                }
+                Uop::MulFloat => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    if a.es_flotante() && b.es_flotante() {
+                        stack.push(ValorFast::flotante(a.a_flotante() * b.a_flotante()));
+                    } else {
+                        stack.push(ValorFast::nulo());
+                    }
+                }
+                Uop::DivFloat => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    if a.es_flotante() && b.es_flotante() && b.a_flotante() != 0.0 {
+                        stack.push(ValorFast::flotante(a.a_flotante() / b.a_flotante()));
+                    } else {
+                        stack.push(ValorFast::nulo());
+                    }
+                }
+
+                // Comparaciones
+                Uop::Igual => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    stack.push(ValorFast::booleano(
+                        if a.es_entero() && b.es_entero() { a.a_entero() == b.a_entero() }
+                        else if a.es_flotante() && b.es_flotante() { a.a_flotante() == b.a_flotante() }
+                        else if a.es_booleano() && b.es_booleano() { a.a_booleano() == b.a_booleano() }
+                        else { false }
+                    ));
+                }
+                Uop::Diferente => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    stack.push(ValorFast::booleano(
+                        if a.es_entero() && b.es_entero() { a.a_entero() != b.a_entero() }
+                        else { false }
+                    ));
+                }
+                Uop::Menor => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    stack.push(ValorFast::booleano(
+                        if a.es_entero() && b.es_entero() { a.a_entero() < b.a_entero() }
+                        else if a.es_flotante() && b.es_flotante() { a.a_flotante() < b.a_flotante() }
+                        else { false }
+                    ));
+                }
+                Uop::Mayor => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    stack.push(ValorFast::booleano(
+                        if a.es_entero() && b.es_entero() { a.a_entero() > b.a_entero() }
+                        else if a.es_flotante() && b.es_flotante() { a.a_flotante() > b.a_flotante() }
+                        else { false }
+                    ));
+                }
+                Uop::MenorIgual => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    stack.push(ValorFast::booleano(
+                        if a.es_entero() && b.es_entero() { a.a_entero() <= b.a_entero() }
+                        else if a.es_flotante() && b.es_flotante() { a.a_flotante() <= b.a_flotante() }
+                        else { false }
+                    ));
+                }
+                Uop::MayorIgual => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    stack.push(ValorFast::booleano(
+                        if a.es_entero() && b.es_entero() { a.a_entero() >= b.a_entero() }
+                        else if a.es_flotante() && b.es_flotante() { a.a_flotante() >= b.a_flotante() }
+                        else { false }
+                    ));
+                }
+                Uop::No => {
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    stack.push(ValorFast::booleano(!a.es_verdadero()));
+                }
+                Uop::Y => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    stack.push(ValorFast::booleano(a.es_verdadero() && b.es_verdadero()));
+                }
+                Uop::O => {
+                    let b = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    stack.push(ValorFast::booleano(a.es_verdadero() || b.es_verdadero()));
+                }
+
+                // Saltos (no deberían aparecer en contratos simples)
+                Uop::Jump(_) | Uop::JumpSiFalso(_) | Uop::Label(_) => {}
+
+                // Otros opcodes: ignorar
+                _ => {}
+            }
+            ip += 1;
+        }
+
+        // El resultado es el tope del stack (o falso si está vacío)
+        stack.pop().unwrap_or(ValorFast::booleano(false))
+    }
+
     pub fn reset_ejecucion(&mut self) {
         self.ip = 0;
         self.stack.clear();
@@ -1774,25 +2053,23 @@ impl ForjaFast {
                             self.push_valor(ValorFast::nulo());
                         } else {
                             let extra = 20;
-                            let dividendo = ae.coeficiente.wrapping_mul(10_i128.wrapping_pow(extra));
-                            let escala = ae.escala.wrapping_add(extra);
-                            let (div_adj, b_adj, escala_final) = if escala >= be.escala {
-                                let factor = 10_i128.wrapping_pow(escala - be.escala);
-                                (dividendo, be.coeficiente.wrapping_mul(factor), escala)
-                            } else {
-                                let factor = 10_i128.wrapping_pow(be.escala - escala);
-                                (dividendo.wrapping_mul(factor), be.coeficiente, be.escala)
-                            };
-                            let cociente = div_adj.wrapping_div(b_adj);
-                            let v = self.exacto_valor(cociente, escala_final);
+                            // Homogeneizar primero: ambos operandos a la misma escala
+                            let (a_adj, b_adj, _) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                            // Luego agregar precisión extra solo al dividendo
+                            let dividendo = a_adj.wrapping_mul(10_i128.wrapping_pow(extra));
+                            let cociente = dividendo.wrapping_div(b_adj);
+                            let v = self.exacto_valor(cociente, extra);
                             self.push_valor(v);
                         }
                     } else if a.es_exacto() && b.es_entero() {
                         let ae = self.get_exacto(a.indice_exacto());
                         if b.a_entero() == 0 { self.push_valor(ValorFast::nulo()); }
                         else {
-                            let cociente = ae.coeficiente.wrapping_div(b.a_entero() as i128);
-                            let v = self.exacto_valor(cociente, ae.escala);
+                            let extra = 20;
+                            let (a_adj, b_adj, _) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, b.a_entero() as i128, 0);
+                            let dividendo = a_adj.wrapping_mul(10_i128.wrapping_pow(extra));
+                            let cociente = dividendo.wrapping_div(b_adj);
+                            let v = self.exacto_valor(cociente, extra);
                             self.push_valor(v);
                         }
                     } else if a.es_entero() && b.es_exacto() {
@@ -1800,8 +2077,9 @@ impl ForjaFast {
                         if be.coeficiente == 0 { self.push_valor(ValorFast::nulo()); }
                         else {
                             let extra = 20;
-                            let dividendo = (a.a_entero() as i128).wrapping_mul(10_i128.wrapping_pow(extra));
-                            let cociente = dividendo.wrapping_div(be.coeficiente);
+                            let (a_adj, b_adj, _) = homogeneizar_exacto_fast(a.a_entero() as i128, 0, be.coeficiente, be.escala);
+                            let dividendo = a_adj.wrapping_mul(10_i128.wrapping_pow(extra));
+                            let cociente = dividendo.wrapping_div(b_adj);
                             let v = self.exacto_valor(cociente, extra);
                             self.push_valor(v);
                         }
@@ -3119,7 +3397,101 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
+                // === Pattern Matching opcodes ===
+                Opcode::CheckTag(tag_idx) => {
+                    // Verificar que el valor en el tope tenga el tag indicado
+                    let val = self.pop_valor()?;
+                    let es_match = if val.es_objeto() {
+                        let obj_idx = val.indice_objeto() as usize;
+                        if obj_idx < self.obj_heap.len() {
+                            // Buscar campo "tag" en campos_vec por índice 0 (convención)
+                            // Cuando se crean enum variants, el tag se guarda en posición 0
+                            let campos = &self.obj_heap[obj_idx].campos_vec;
+                            if !campos.is_empty() {
+                                // El primer campo es el tag del enum
+                                let tag_val = campos[0];
+                                tag_val.es_entero() && tag_val.a_entero() == tag_idx as i32
+                            } else {
+                                tag_idx == 0
+                            }
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+                    self.push_valor(ValorFast::booleano(es_match));
+                    self.ip += 1;
+                }
+                Opcode::ExtractField(field_idx) => {
+                    // Extraer el campo i-ésimo del objeto en el tope
+                    let val = self.pop_valor()?;
+                    if val.es_objeto() {
+                        let obj_idx = val.indice_objeto() as usize;
+                        if obj_idx < self.obj_heap.len() {
+                            let campos = &self.obj_heap[obj_idx].campos_vec;
+                            if field_idx < campos.len() {
+                                self.push_valor(campos[field_idx]);
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                            }
+                        } else {
+                            self.push_valor(ValorFast::nulo());
+                        }
+                    } else {
+                        self.push_valor(ValorFast::nulo());
+                    }
+                    self.ip += 1;
+                }
                 Opcode::Halt => break,
+
+                // ─── Design by Contract (Fase 5+6) ─────────────────────────
+                Opcode::CheckPre(idx) => {
+                    if !self.verificar_contratos { self.ip += 1; continue; }
+                    if idx >= self.contratos.len() { self.ip += 1; continue; }
+                    let contrato = &self.contratos[idx].clone();
+                    let resultado = self.ejecutar_uops_contrato(&contrato.condicion, None);
+                    if !resultado.es_verdadero() {
+                        panic!("❌ Precondición: {}", contrato.mensaje);
+                    }
+                    self.ip += 1;
+                }
+                Opcode::CheckPost(idx) => {
+                    if !self.verificar_contratos { self.ip += 1; continue; }
+                    if idx >= self.contratos.len() { self.ip += 1; continue; }
+                    let contrato = &self.contratos[idx].clone();
+                    // El valor de retorno está en el tope del stack
+                    let valor_retorno = self.pop_valor()?;
+                    let resultado = self.ejecutar_uops_contrato(&contrato.condicion, Some(valor_retorno));
+                    if !resultado.es_verdadero() {
+                        panic!("❌ Postcondición: {}", contrato.mensaje);
+                    }
+                    // Re-push el valor de retorno para el Return posterior
+                    self.push_valor(valor_retorno);
+                    self.ip += 1;
+                }
+                Opcode::SaveAnterior(var_idx) => {
+                    if !self.verificar_contratos { self.ip += 1; continue; }
+                    let actual = self.base_ptr + var_idx;
+                    let valor = if actual < self.flat_vars.len() {
+                        self.flat_vars[actual]
+                    } else {
+                        ValorFast::nulo()
+                    };
+                    self.anterior_stack.insert(var_idx, valor);
+                    self.ip += 1;
+                }
+                Opcode::CheckInv(idx) => {
+                    if !self.verificar_contratos { self.ip += 1; continue; }
+                    if idx >= self.contratos.len() { self.ip += 1; continue; }
+                    let contrato = &self.contratos[idx].clone();
+                    let resultado = self.ejecutar_uops_contrato(&contrato.condicion, None);
+                    if !resultado.es_verdadero() {
+                        panic!("❌ Invariante: {}", contrato.mensaje);
+                    }
+                    self.ip += 1;
+                }
+
                 // AVX2 packed SIMD opcodes (JIT-only, no-op en VM)
                 Opcode::AddPacked(_, _, _, _)
                 | Opcode::SubPacked(_, _, _, _)
@@ -3274,32 +3646,30 @@ impl ForjaFast {
                             ValorFast::nulo()
                         } else {
                             let extra = 20; // precisión extra para división
-                            let dividendo = ae.coeficiente.wrapping_mul(10_i128.wrapping_pow(extra));
-                            let escala = ae.escala + extra;
-                            // Homogeneizar: ajustar b a misma escala
-                            let (div_adj, b_adj, escala_final) = if escala >= be.escala {
-                                let factor = 10_i128.wrapping_pow(escala - be.escala);
-                                (dividendo, be.coeficiente.wrapping_mul(factor), escala)
-                            } else {
-                                let factor = 10_i128.wrapping_pow(be.escala - escala);
-                                (dividendo.wrapping_mul(factor), be.coeficiente, be.escala)
-                            };
-                            let cociente = div_adj.wrapping_div(b_adj);
-                            self.exacto_valor(cociente, escala_final)
+                            // Homogeneizar primero: ambos coeficientes a misma escala
+                            let (a_adj, b_adj, _) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                            // Luego agregar precisión extra solo al dividendo
+                            let dividendo = a_adj.wrapping_mul(10_i128.wrapping_pow(extra));
+                            let cociente = dividendo.wrapping_div(b_adj);
+                            self.exacto_valor(cociente, extra)
                         }
                     } else if a.es_entero() && b.es_exacto() {
                         let be = self.get_exacto(b.indice_exacto());
                         if be.coeficiente == 0 { ValorFast::nulo() } else {
                             let extra = 20;
-                            let dividendo = (a.a_entero() as i128).wrapping_mul(10_i128.wrapping_pow(extra));
-                            let cociente = dividendo.wrapping_div(be.coeficiente);
-                            self.exacto_valor(cociente, extra.wrapping_sub(be.escala))
+                            let (a_adj, b_adj, _) = homogeneizar_exacto_fast(a.a_entero() as i128, 0, be.coeficiente, be.escala);
+                            let dividendo = a_adj.wrapping_mul(10_i128.wrapping_pow(extra));
+                            let cociente = dividendo.wrapping_div(b_adj);
+                            self.exacto_valor(cociente, extra)
                         }
                     } else if a.es_exacto() && b.es_entero() {
                         let ae = self.get_exacto(a.indice_exacto());
                         if b.a_entero() == 0 { ValorFast::nulo() } else {
-                            let cociente = ae.coeficiente.wrapping_div(b.a_entero() as i128);
-                            self.exacto_valor(cociente, ae.escala)
+                            let extra = 20;
+                            let (a_adj, b_adj, _) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, b.a_entero() as i128, 0);
+                            let dividendo = a_adj.wrapping_mul(10_i128.wrapping_pow(extra));
+                            let cociente = dividendo.wrapping_div(b_adj);
+                            self.exacto_valor(cociente, extra)
                         }
                     } else {
                         ValorFast::nulo()

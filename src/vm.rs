@@ -1548,6 +1548,44 @@ impl ForjaVM {
                     }
                     self.ip += 1;
                 }
+                // === Pattern Matching opcodes ===
+                Opcode::CheckTag(tag_idx) => {
+                    // Verificar que el valor en el tope tenga el tag indicado
+                    let val = self.safe_pop()?;
+                    match &val {
+                        ValorVM::Objeto(obj_ref) => {
+                            let obj = obj_ref.0.borrow();
+                            if let Some(tag_val) = obj.campos.get("tag") {
+                                if let ValorVM::Entero(tag) = tag_val {
+                                    self.stack.push(ValorVM::Booleano(*tag == tag_idx as i64));
+                                } else {
+                                    self.stack.push(ValorVM::Booleano(tag_idx == 0));
+                                }
+                            } else {
+                                self.stack.push(ValorVM::Booleano(false));
+                            }
+                        }
+                        _ => self.stack.push(ValorVM::Booleano(false)),
+                    }
+                    self.ip += 1;
+                }
+                Opcode::ExtractField(field_idx) => {
+                    // Extraer el campo i-ésimo del objeto en el tope
+                    let val = self.safe_pop()?;
+                    match val {
+                        ValorVM::Objeto(obj_ref) => {
+                            let obj = obj_ref.0.borrow();
+                            // Como el HashMap no tiene orden, usamos claves numéricas "_0", "_1", etc.
+                            if let Some(field_val) = obj.campos.get(&format!("_{}", field_idx)) {
+                                self.stack.push(field_val.clone());
+                            } else {
+                                self.stack.push(ValorVM::Nulo);
+                            }
+                        }
+                        _ => self.stack.push(ValorVM::Nulo),
+                    }
+                    self.ip += 1;
+                }
                 Opcode::Halt => break,
                 // Superinstructions — no implementadas en VM estándar
                 _ => self.stack.push(ValorVM::Nulo),

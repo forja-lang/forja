@@ -1,0 +1,109 @@
+importar "std/io"
+importar "std/matematica"
+
+# ── Enum básico ──
+tipo Estado = Activo | Inactivo | Suspenso
+
+funcion describir_estado(e) -> Texto {
+    coincidir (e) {
+        caso Activo -> { retornar "Usuario activo" }
+        caso Inactivo -> { retornar "Usuario inactivo" }
+        caso Suspenso -> { retornar "Usuario suspendido" }
+    }
+}
+
+# ── Enum con datos ──
+tipo ResultadoPago = Exitosa(Entero) | Fallida(Texto) | Pendiente
+
+funcion procesar_pago(r) -> Texto {
+    coincidir (r) {
+        caso Exitosa(monto) -> {
+            retornar "Pago exitoso: $" + monto
+        }
+        caso Fallida(razon) -> {
+            retornar "Pago fallido: " + razon
+        }
+        caso Pendiente -> {
+            retornar "Pago pendiente"
+        }
+    }
+}
+
+# ── Match anidado ──
+tipo Color = RGB(Entero, Entero, Entero) | Hexadecimal(Texto)
+
+tipo Figura = Circulo(Entero) | Rectangulo(Entero, Entero)
+
+tipo Dibujo = Simple(Figura) | Coloreada(Figura, Color)
+
+funcion describir(d) -> Texto {
+    coincidir (d) {
+        caso Simple(figura) -> {
+            coincidir (figura) {
+                caso Circulo(radio) -> {
+                    retornar "Circulo de radio " + radio
+                }
+                caso Rectangulo(ancho, alto) -> {
+                    retornar "Rectangulo " + ancho + "x" + alto
+                }
+            }
+        }
+        caso Coloreada(figura, color) -> {
+            coincidir (color) {
+                caso RGB(r, g, b) -> {
+                    retornar "Figura RGB(" + r + "," + g + "," + b + ")"
+                }
+                caso Hexadecimal(hex) -> {
+                    retornar "Figura color " + hex
+                }
+            }
+        }
+    }
+}
+
+# ── Ignorar (_) ──
+funcion es_par_por_match(n) -> Booleano {
+    coincidir (n % 2) {
+        caso 0 -> { retornar verdadero }
+        caso _ -> { retornar falso }
+    }
+}
+
+# ── Test exhaustivo ──
+funcion main() {
+    imprimir("═══ Tests de Pattern Matching ═══")
+    imprimir_linea()
+
+    # Test: enumeraciones sin datos
+    imprimir("Test: Estado")
+    imprimir("  " + describir_estado(Activo))
+    imprimir("  " + describir_estado(Inactivo))
+    imprimir("  " + describir_estado(Suspenso))
+
+    # Test: enumeraciones con datos
+    imprimir("Test: ResultadoPago")
+    imprimir("  " + procesar_pago(Exitosa(500)))
+    imprimir("  " + procesar_pago(Fallida("Saldo insuficiente")))
+    imprimir("  " + procesar_pago(Pendiente))
+
+    # Test: match anidado
+    imprimir("Test: Dibujo anidado")
+    imprimir("  " + describir(Simple(Circulo(10))))
+    imprimir("  " + describir(Coloreada(Rectangulo(3, 4), RGB(255, 0, 0))))
+
+    # Test: Ignorar
+    imprimir("Test: Ignorar")
+    imprimir("  es_par(4): " + es_par_por_match(4))
+    imprimir("  es_par(7): " + es_par_por_match(7))
+
+    # Test: variable en patron
+    imprimir("Test: Variable en patron")
+    coincidir (42) {
+        caso x -> { imprimir("  El valor es: " + x) }
+    }
+
+    imprimir_linea()
+    imprimir("Todos los tests pasaron ✅")
+}
+
+main()

@@ -29,6 +29,14 @@ pub enum Opcode {
     PushNulo,
     Pop,
     Dup,
+    
+    // === Pattern Matching (enum destructuring) ===
+    /// Verifica que el tag del enum en tope de pila sea igual al índice
+    /// No modifica la pila (solo empuja booleano)
+    CheckTag(usize),
+    /// Extrae el campo i-ésimo de la variante en tope de pila
+    /// Reemplaza el objeto en tope por el campo extraído
+    ExtractField(usize),
 
     // === Variables (búsqueda por nombre — original) ===
     Load(Rc<str>),
@@ -270,6 +278,28 @@ pub enum Opcode {
     DeclareExactOp(usize, i128, u32),
     /// AddExact + StoreIdx(idx)
     AddStoreExact(usize),
+
+    // === Design by Contract (Fase 5+6) ===
+    /// Verificar precondición (índice en tabla de contratos)
+    CheckPre(usize),
+    /// Verificar postcondición (índice en tabla de contratos)
+    CheckPost(usize),
+    /// Guardar valor anterior de variable para anterior()
+    SaveAnterior(usize),
+    /// Verificar invariante de clase (índice en tabla de contratos)
+    CheckInv(usize),
+}
+
+/// Design by Contract: tipo de contrato
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContractType { Pre, Post, Inv }
+
+/// Contrato compilado a bytecode (condición expresada como micro-opcodes)
+#[derive(Debug, Clone)]
+pub struct ContratoBytecode {
+    pub condicion: Vec<crate::uops::Uop>,
+    pub mensaje: String,
+    pub tipo: ContractType,
 }
 
 /// Generador de bytecode a partir del AST de Forja
@@ -279,6 +309,20 @@ pub struct BytecodeGenerator {
     errores: Vec<ErrorForja>,
     /// Tipos inferidos por el TypeChecker (compile-time type information)
     tipos_inferidos: Option<std::collections::HashMap<String, Tipo>>,
+
+    // === Design by Contract ===
+    pub contratos: Vec<ContratoBytecode>,
+
+    // === Variable index tracking for contract uop compilation ===
+    /// Mapa nombre→índice para las variables del ámbito actual
+    var_indices: std::collections::HashMap<String, usize>,
+    /// Contador de índices para el ámbito actual
+    var_counter: usize,
+
+    // === Enum info for pattern matching ===
+    /// enum_nombre → [(variante_nombre, [tipos_campos])]
+    /// Para traducir nombre de constructor a tag (índice) y tipos de campos
+    enum_variantes: std::collections::HashMap<String, Vec<(String, Vec<Tipo>)>>,
 }
 
 impl BytecodeGenerator {
@@ -288,6 +332,10 @@ impl BytecodeGenerator {
             label_counter: 0,
             errores: Vec::new(),
             tipos_inferidos: None,
+            contratos: Vec::new(),
+            var_indices: std::collections::HashMap::new(),
+            var_counter: 0,
+            enum_variantes: std::collections::HashMap::new(),
         }
     }
 
@@ -578,6 +626,8 @@ impl BytecodeGenerator {
                             enlace_nombre: None,
                             atributos: vec![],
                             doc: None,
+                            precondiciones: metodo.precondiciones.clone(),
+                            postcondiciones: metodo.postcondiciones.clone(),
                         };
                         nuevas_funciones.push(func_decl);
                     }
@@ -610,6 +660,8 @@ impl BytecodeGenerator {
                             enlace_nombre: None,
                             atributos: vec![],
                             doc: None,
+                            precondiciones: metodo.precondiciones.clone(),
+                            postcondiciones: metodo.postcondiciones.clone(),
                         };
                         nuevas_funciones.push(func_decl);
                     }
@@ -671,9 +723,62 @@ impl BytecodeGenerator {
         }
     }
 
+    /// Busca el tag (índice) de un constructor por su nombre en todos los enums registrados
+    fn obtener_tag_constructor(&self, nombre_constructor: &str) -> Option<usize> {
+        for (_nombre_enum, variantes) in &self.enum_variantes {
+            for (i, (vname, _)) in variantes.iter().enumerate() {
+                if vname == nombre_constructor {
+                    return Some(i);
+                }
+            }
+        }
+        None
+    }
+
+    /// Emite bytecode para extraer campos de un constructor según subpatrones
+    fn emitir_subpatrones_constructor(&mut self, subpatrones: &[Patron]) {
+        for (i, sub) in subpatrones.iter().enumerate() {
+            match sub {
+                Patron::Variable(nombre) => {
+                    // Extraer campo i-ésimo y asignar a variable
+                    self.emitir(Opcode::ExtractField(i));
+                    self.var_indices.entry(nombre.clone()).or_insert_with(|| {
+                        let idx = self.var_counter;
+                        self.var_counter += 1;
+                        idx
+                    });
+                    self.emitir(Opcode::Store(Rc::from(nombre.as_str())));
+                }
+                Patron::Ignorar => {
+                    // Extraer campo i-ésimo y descartar
+                    self.emitir(Opcode::ExtractField(i));
+                    self.emitir(Opcode::Pop);
+                }
+                Patron::Constructor(_, sub_sub) => {
+                    // Constructor anidado: extraer campo y luego procesar recursivamente
+                    self.emitir(Opcode::ExtractField(i));
+                    self.emitir_subpatrones_constructor(sub_sub);
+                    // Pop del objeto extraído
+                    self.emitir(Opcode::Pop);
+                }
+                Patron::Literal(_) => {
+                    // Patrón literal en subpatrón: extraer campo y descartar (no implementado completamente)
+                    self.emitir(Opcode::ExtractField(i));
+                    self.emitir(Opcode::Pop);
+                }
+            }
+        }
+    }
+
     fn generar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
             Declaracion::Variable { mutable, nombre, valor, tipo } => {
+                // Track variable index for contract compilation
+                self.var_indices.entry(nombre.clone()).or_insert_with(|| {
+                    let idx = self.var_counter;
+                    self.var_counter += 1;
+                    idx
+                });
                 if let Some(val) = valor {
                     self.generar_expresion(val);
                     // Si la variable tiene tipo Exacto y el valor es un literal
@@ -687,6 +792,17 @@ impl BytecodeGenerator {
                                 }
                                 Expresion::LiteralNumero(_) => {
                                     self.emitir(Opcode::EnteroAExacto);
+                                }
+                                Expresion::Unaria { operador: OperadorUnario::Negar, expr } => {
+                                    match expr.as_ref() {
+                                        Expresion::LiteralDecimal(_) => {
+                                            self.emitir(Opcode::DecimalAExacto);
+                                        }
+                                        Expresion::LiteralNumero(_) => {
+                                            self.emitir(Opcode::EnteroAExacto);
+                                        }
+                                        _ => {}
+                                    }
                                 }
                                 _ => {}
                             }
@@ -736,11 +852,49 @@ impl BytecodeGenerator {
                 }
             }
 
-            Declaracion::Funcion { nombre, parametros, cuerpo, .. } => {
+            Declaracion::Funcion { nombre, parametros, cuerpo, precondiciones, postcondiciones, .. } => {
                 // Emitir FunctionDef con nombres de parámetros
                 let param_names: Vec<Rc<str>> = parametros.iter().map(|p| Rc::from(p.nombre.as_str())).collect();
                 self.emitir(Opcode::FunctionDef(Rc::from(nombre.as_str()), param_names));
+
+                // Inicializar tracking de variables para compilación de contratos
+                self.var_indices.clear();
+                self.var_counter = 0;
+                for p in parametros {
+                    self.var_indices.entry(p.nombre.clone()).or_insert_with(|| {
+                        let idx = self.var_counter;
+                        self.var_counter += 1;
+                        idx
+                    });
+                }
+
+                // Precondiciones: emitir CheckPre ANTES del cuerpo
+                for c in precondiciones {
+                    let idx = self.registrar_contrato(c, ContractType::Pre);
+                    self.emitir(Opcode::CheckPre(idx));
+                }
+
+                // SaveAnterior: guardar variables usadas en postcondiciones con anterior()
+                for c in postcondiciones {
+                    let vars_en_expr = self.encontrar_variables_en_expr(&c.condicion);
+                    for var_name in &vars_en_expr {
+                        if self.tiene_anterior(&c.condicion, var_name) {
+                            if let Some(&var_idx) = self.var_indices.get(var_name) {
+                                self.emitir(Opcode::SaveAnterior(var_idx));
+                            }
+                        }
+                    }
+                }
+
+                // Cuerpo de la función
                 self.generar_declaraciones(cuerpo);
+
+                // Postcondiciones: emitir CheckPost DESPUÉS del cuerpo (antes del Return)
+                for c in postcondiciones {
+                    let idx = self.registrar_contrato(c, ContractType::Post);
+                    self.emitir(Opcode::CheckPost(idx));
+                }
+
                 // Al final de la función, hacemos return implícito
                 self.emitir(Opcode::Return);
             }
@@ -758,7 +912,13 @@ impl BytecodeGenerator {
             }
 
             Declaracion::Importar(_) => {}
-            Declaracion::Enum { .. } => {}
+            Declaracion::Enum { nombre, variantes, .. } => {
+                // Almacenar información de variantes para pattern matching
+                let var_info: Vec<(String, Vec<Tipo>)> = variantes.iter()
+                    .map(|v| (v.nombre.clone(), v.tipos.clone()))
+                    .collect();
+                self.enum_variantes.insert(nombre.clone(), var_info);
+            }
 
             Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
                 let label_else = self.nueva_label();
@@ -1080,20 +1240,63 @@ impl BytecodeGenerator {
                             self.emitir(Opcode::Jump(label_end));
                             self.emitir(Opcode::Label(label_next));
                         }
-                        Patron::Ignorar | Patron::Variable(_) => {
-                            // Ignorar/Variable siempre matchean
+                        Patron::Ignorar => {
+                            // Ignorar siempre matchea
                             self.emitir(Opcode::Pop); // remover input de la pila
                             self.generar_cuerpo_match(&brazo.cuerpo);
                             if !es_ultimo {
                                 self.emitir(Opcode::Jump(label_end));
                             }
                         }
-                        Patron::Constructor(_, _) => {
-                            // Constructor: remover input y generar cuerpo
-                            self.emitir(Opcode::Pop); // remover input de la pila
+                        Patron::Variable(nombre) => {
+                            // Variable bindea el valor: asignar a variable
+                            // Registrar en var_indices para contracts
+                            self.var_indices.entry(nombre.clone()).or_insert_with(|| {
+                                let idx = self.var_counter;
+                                self.var_counter += 1;
+                                idx
+                            });
+                            self.emitir(Opcode::Store(Rc::from(nombre.as_str())));
                             self.generar_cuerpo_match(&brazo.cuerpo);
                             if !es_ultimo {
                                 self.emitir(Opcode::Jump(label_end));
+                            }
+                        }
+                        Patron::Constructor(nombre_ctor, subpatrones) => {
+                            if subpatrones.is_empty() {
+                                // Constructor sin datos: siempre matchea (old behavior)
+                                // Para enums simples como Norte, Sur, etc.
+                                // TODO: cuando los valores enum tengan tags, usar CheckTag
+                                self.emitir(Opcode::Pop);
+                                self.generar_cuerpo_match(&brazo.cuerpo);
+                                if !es_ultimo {
+                                    self.emitir(Opcode::Jump(label_end));
+                                }
+                            } else {
+                                // Constructor con subpatrones: extraer campos
+                                // Buscar tag para este constructor
+                                let tag = self.obtener_tag_constructor(nombre_ctor)
+                                    .unwrap_or(0);
+                                
+                                if !es_ultimo {
+                                    self.emitir(Opcode::Dup);
+                                }
+                                self.emitir(Opcode::CheckTag(tag));
+                                
+                                if !es_ultimo {
+                                    let label_next = self.nueva_label();
+                                    self.emitir(Opcode::JumpSiFalso(label_next));
+                                    self.emitir_subpatrones_constructor(subpatrones);
+                                    self.emitir(Opcode::Pop);
+                                    self.generar_cuerpo_match(&brazo.cuerpo);
+                                    self.emitir(Opcode::Jump(label_end));
+                                    self.emitir(Opcode::Label(label_next));
+                                } else {
+                                    // Último brazo: extraer campos y ejecutar cuerpo
+                                    self.emitir_subpatrones_constructor(subpatrones);
+                                    self.emitir(Opcode::Pop);
+                                    self.generar_cuerpo_match(&brazo.cuerpo);
+                                }
                             }
                         }
                     }
@@ -1205,7 +1408,202 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::PushTexto(Rc::from("some")));
                 self.emitir(Opcode::SetField(Rc::from("tipo")));
             }
+            Expresion::Resultado => {
+                // resultado en postcondición - no implementado en bytecode
+                self.emitir(Opcode::PushNulo);
+            }
+            Expresion::Anterior(expr) => {
+                // anterior(expr) - por ahora solo evaluar la expresión
+                self.generar_expresion(expr);
+            }
         }
+    }
+
+    // ─── Design by Contract ─────────────────────────────────────────────────
+
+    /// Encuentra nombres de variables usadas en una expresión (para SaveAnterior)
+    fn encontrar_variables_en_expr(&self, expr: &Expresion) -> Vec<String> {
+        let mut vars = Vec::new();
+        match expr {
+            Expresion::Identificador(n) => {
+                // Solo variables reales, no keywords
+                match n.as_str() {
+                    "verdadero" | "falso" | "nulo" | "resultado" => {}
+                    _ => vars.push(n.clone()),
+                }
+            }
+            Expresion::Binaria { izquierda, derecha, .. } => {
+                vars.extend(self.encontrar_variables_en_expr(izquierda));
+                vars.extend(self.encontrar_variables_en_expr(derecha));
+            }
+            Expresion::Unaria { expr: e, .. } => {
+                vars.extend(self.encontrar_variables_en_expr(e));
+            }
+            Expresion::LlamadaFuncion { argumentos, .. } => {
+                for arg in argumentos {
+                    vars.extend(self.encontrar_variables_en_expr(arg));
+                }
+            }
+            Expresion::AccesoMiembro { objeto, .. } => {
+                vars.extend(self.encontrar_variables_en_expr(objeto));
+            }
+            Expresion::Grupo(e) => {
+                vars.extend(self.encontrar_variables_en_expr(e));
+            }
+            Expresion::Anterior(expr) => {
+                // recursivo: buscar variables dentro de anterior()
+                vars.extend(self.encontrar_variables_en_expr(expr));
+            }
+            _ => {}
+        }
+        vars
+    }
+
+    /// Verifica si una expresión contiene `anterior()` para una variable específica
+    fn tiene_anterior(&self, expr: &Expresion, var_name: &str) -> bool {
+        match expr {
+            Expresion::Anterior(inner) => {
+                if let Expresion::Identificador(n) = inner.as_ref() {
+                    if n == var_name { return true; }
+                }
+                false
+            }
+            Expresion::Binaria { izquierda, derecha, .. } => {
+                self.tiene_anterior(izquierda, var_name) || self.tiene_anterior(derecha, var_name)
+            }
+            Expresion::Unaria { expr: e, .. } => self.tiene_anterior(e, var_name),
+            Expresion::LlamadaFuncion { argumentos, .. } => {
+                argumentos.iter().any(|a| self.tiene_anterior(a, var_name))
+            }
+            Expresion::Grupo(e) => self.tiene_anterior(e, var_name),
+            _ => false,
+        }
+    }
+
+    /// Compila una expresión de contrato a uops usando los índices de variable del ámbito actual
+    fn expresion_a_uops(&self, expr: &Expresion) -> Vec<crate::uops::Uop> {
+        let mut uops = Vec::new();
+        self.expresion_a_uops_inner(expr, &mut uops);
+        uops
+    }
+
+    fn expresion_a_uops_inner(&self, expr: &Expresion, output: &mut Vec<crate::uops::Uop>) {
+        use crate::uops::Uop;
+        match expr {
+            Expresion::LiteralNumero(n) => output.push(Uop::PushEntero(*n)),
+            Expresion::LiteralDecimal(d) => output.push(Uop::PushDecimal(*d)),
+            Expresion::LiteralTexto(s) => output.push(Uop::PushTexto(std::rc::Rc::from(s.as_str()))),
+            Expresion::LiteralBooleano(b) => output.push(Uop::PushBooleano(*b)),
+            Expresion::LiteralNulo => output.push(Uop::PushNulo),
+
+            Expresion::Identificador(nombre) => {
+                match nombre.as_str() {
+                    "verdadero" => output.push(Uop::PushBooleano(true)),
+                    "falso" => output.push(Uop::PushBooleano(false)),
+                    "resultado" => {
+                        // 'resultado' en postcondiciones: usar índice especial
+                        output.push(Uop::LoadIdx(crate::vm_fast::RESULTADO_IDX));
+                    }
+                    _ => {
+                        // Buscar el índice de la variable
+                        if let Some(&idx) = self.var_indices.get(nombre) {
+                            output.push(Uop::LoadIdx(idx));
+                        } else {
+                            // Fallback: push nulo (variable no encontrada)
+                            output.push(Uop::PushNulo);
+                        }
+                    }
+                }
+            }
+
+            Expresion::Binaria { izquierda, operador, derecha } => {
+                self.expresion_a_uops_inner(izquierda, output);
+                self.expresion_a_uops_inner(derecha, output);
+                match operador {
+                    Operador::Suma => output.push(Uop::Add),
+                    Operador::Resta => output.push(Uop::Sub),
+                    Operador::Multiplicacion => output.push(Uop::Mul),
+                    Operador::Division => output.push(Uop::Div),
+                    Operador::Modulo => {
+                        // a % b = a - (a/b)*b
+                        // Duplicamos izquierda
+                        self.expresion_a_uops_inner(izquierda, output);
+                        output.push(Uop::Dup);
+                        self.expresion_a_uops_inner(izquierda, output);
+                        self.expresion_a_uops_inner(derecha, output);
+                        output.push(Uop::Div);
+                        self.expresion_a_uops_inner(derecha, output);
+                        output.push(Uop::Mul);
+                        output.push(Uop::Sub);
+                    }
+                    Operador::IgualIgual => output.push(Uop::Igual),
+                    Operador::Diferente => output.push(Uop::Diferente),
+                    Operador::Menor => output.push(Uop::Menor),
+                    Operador::Mayor => output.push(Uop::Mayor),
+                    Operador::MenorIgual => output.push(Uop::MenorIgual),
+                    Operador::MayorIgual => output.push(Uop::MayorIgual),
+                    Operador::Y => output.push(Uop::Y),
+                    Operador::O => output.push(Uop::O),
+                }
+            }
+
+            Expresion::Unaria { operador, expr: e } => {
+                self.expresion_a_uops_inner(e, output);
+                match operador {
+                    OperadorUnario::No => output.push(Uop::No),
+                    OperadorUnario::Negar => {
+                        // -expr → 0 - expr
+                        output.push(Uop::PushEntero(0));
+                        self.expresion_a_uops_inner(e, output);
+                        output.push(Uop::Sub);
+                    }
+                }
+            }
+
+            Expresion::Grupo(e) => self.expresion_a_uops_inner(e, output),
+
+            Expresion::Anterior(inner) => {
+                // anterior(var): compilar como LoadIdx normal (VM busca en anterior_stack)
+                self.expresion_a_uops_inner(inner, output);
+            }
+
+            Expresion::AccesoMiembro { objeto, miembro: _ } => {
+                // Acceso a miembro: solo evaluar el objeto
+                self.expresion_a_uops_inner(objeto, output);
+            }
+
+            Expresion::LlamadaFuncion { argumentos, .. } => {
+                // En contratos, las llamadas se evalúan recursivamente
+                for arg in argumentos {
+                    self.expresion_a_uops_inner(arg, output);
+                }
+                // Las llamadas a función no se pueden ejecutar en contratos simples
+                // push nulo como valor de retorno
+                output.push(Uop::PushNulo);
+            }
+
+            _ => {
+                // Cualquier otra expresión: no soportada en contratos, push nulo
+                output.push(Uop::PushNulo);
+            }
+        }
+    }
+
+    /// Registra un contrato en la tabla de contratos y retorna su índice
+    pub fn registrar_contrato(&mut self, c: &Contrato, tipo: ContractType) -> usize {
+        let idx = self.contratos.len();
+        let condicion_uops = self.expresion_a_uops(&c.condicion);
+        let mensaje = c.mensaje.clone().unwrap_or_else(|| match tipo {
+            ContractType::Pre => "Precondición falló".to_string(),
+            ContractType::Post => "Postcondición falló".to_string(),
+            ContractType::Inv => "Invariante de clase falló".to_string(),
+        });
+        self.contratos.push(ContratoBytecode {
+            condicion: condicion_uops,
+            mensaje,
+            tipo,
+        });
+        idx
     }
 }
 
@@ -1389,6 +1787,17 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             Opcode::AddStoreExact(idx) => {
                 bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
+            // Pattern matching opcodes — payload: 4 bytes (usize)
+            Opcode::CheckTag(idx) | Opcode::ExtractField(idx) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            }
+            // Design by Contract opcodes — payload: 4 bytes (usize)
+            Opcode::CheckPre(idx)
+            | Opcode::CheckPost(idx)
+            | Opcode::SaveAnterior(idx)
+            | Opcode::CheckInv(idx) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            }
             _ => {} // Opcodes sin payload
         }
     }
@@ -1485,6 +1894,14 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         // Superinstructions Exacto
         Opcode::DeclareExactOp(_, _, _) => 120,
         Opcode::AddStoreExact(_) => 121,
+        // Design by Contract (Fase 5+6)
+        Opcode::CheckPre(_) => 130,
+        Opcode::CheckPost(_) => 131,
+        Opcode::SaveAnterior(_) => 132,
+        Opcode::CheckInv(_) => 133,
+        // Pattern matching opcodes
+        Opcode::CheckTag(_) => 140,
+        Opcode::ExtractField(_) => 141,
         // Opcodes especializados (runtime-only, no serializables)
         _ => 255,
     }
@@ -1566,6 +1983,14 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         // Superinstructions Exacto
         120 => Some(Opcode::DeclareExactOp(0, 0, 0)),
         121 => Some(Opcode::AddStoreExact(0)),
+        // Design by Contract (Fase 5+6) — placeholder
+        130 => Some(Opcode::CheckPre(0)),
+        131 => Some(Opcode::CheckPost(0)),
+        132 => Some(Opcode::SaveAnterior(0)),
+        133 => Some(Opcode::CheckInv(0)),
+        // Pattern matching opcodes
+        140 => Some(Opcode::CheckTag(0)),
+        141 => Some(Opcode::ExtractField(0)),
         _ => None,
     }
 }
@@ -1951,6 +2376,28 @@ if version >= 2 {
                 let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
                 pos += 4;
                 opcodes.push(Opcode::AddStoreExact(idx));
+            }
+            // Pattern matching opcodes — 4 bytes payload (usize)
+            140 | 141 => {
+                if pos + 4 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                opcodes.push(match byte {
+                    140 => Opcode::CheckTag(idx),
+                    _ => Opcode::ExtractField(idx),
+                });
+            }
+            // Design by Contract opcodes — 4 bytes payload (usize)
+            130 | 131 | 132 | 133 => {
+                if pos + 4 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                opcodes.push(match byte {
+                    130 => Opcode::CheckPre(idx),
+                    131 => Opcode::CheckPost(idx),
+                    132 => Opcode::SaveAnterior(idx),
+                    _ => Opcode::CheckInv(idx),
+                });
             }
             _ => {
                 // Opcodes sin payload
