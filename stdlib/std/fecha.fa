@@ -1,0 +1,306 @@
+# módulo: fecha
+# Funciones de fecha y hora
+#
+# Uso: importar "std/fecha"
+#
+# Proporciona:
+#   - ahora()              — fecha/hora actual como "2026-07-09 12:30:15"
+#   - hoy()                — fecha actual como "2026-07-09"
+#   - hora_actual()        — hora actual como "12:30:15"
+#   - formatear(ts, fmt)   — formatea timestamp según formato (%Y, %m, %d, %H, %M, %S, %B, %A)
+#   - parsear(texto, fmt)  — parsea texto con formato a timestamp
+#   - formato_largo(ts)    — "9 de julio de 2026"
+#   - formato_corto(ts)    — "09/07/2026"
+
+# ═════════════════════════════════════════════════════════════════════════
+# Clase ErrorFecha
+# ═════════════════════════════════════════════════════════════════════════
+
+clase ErrorFecha {
+    mensaje: Texto
+    codigo: Entero
+
+    constructor(mensaje: Texto, codigo: Entero) {
+        este.mensaje = mensaje
+        este.codigo = codigo
+    }
+}
+
+# ═════════════════════════════════════════════════════════════════════════
+# Funciones Públicas
+# ═════════════════════════════════════════════════════════════════════════
+
+# Obtiene la fecha y hora actual como texto legible
+# Ejemplo: "2026-07-09 12:30:15"
+funcion ahora() -> Texto {
+    retornar formatear(tiempo_actual(), "%Y-%m-%d %H:%M:%S")
+}
+
+# Obtiene la fecha actual como texto
+# Ejemplo: "2026-07-09"
+funcion hoy() -> Texto {
+    retornar formatear(tiempo_actual(), "%Y-%m-%d")
+}
+
+# Obtiene la hora actual como texto
+# Ejemplo: "12:30:15"
+funcion hora_actual() -> Texto {
+    retornar formatear(tiempo_actual(), "%H:%M:%S")
+}
+
+# Convierte timestamp a fecha texto según formato
+# Directivas: %Y (año 4d), %y (año 2d), %m (mes), %d (día),
+#             %H (hora), %M (minuto), %S (segundo),
+#             %B (nombre mes), %A (nombre día), %% (literal %)
+# Ejemplo: formatear(tiempo_actual(), "%Y-%m-%d") → "2026-07-09"
+funcion formatear(ts: Entero, formato: Texto) -> Texto {
+    variable mapa = _obtener_mapa(ts)
+    variable resultado = ""
+    variable i = 0
+    variable n = longitud(formato)
+
+    mientras (i < n) {
+        variable c = formato[i]
+        si (c == "%") {
+            i = i + 1
+            si (i >= n) {
+                retornar resultado
+            }
+            variable d = formato[i]
+            si (d == "Y") {
+                resultado = resultado + _formatear_numero(mapa["año"], 4)
+            }
+            si (d == "y") {
+                resultado = resultado + _formatear_numero(mapa["año"] % 100, 2)
+            }
+            si (d == "m") {
+                resultado = resultado + _formatear_numero(mapa["mes"], 2)
+            }
+            si (d == "d") {
+                resultado = resultado + _formatear_numero(mapa["dia"], 2)
+            }
+            si (d == "H") {
+                resultado = resultado + _formatear_numero(mapa["hora"], 2)
+            }
+            si (d == "M") {
+                resultado = resultado + _formatear_numero(mapa["minuto"], 2)
+            }
+            si (d == "S") {
+                resultado = resultado + _formatear_numero(mapa["segundo"], 2)
+            }
+            si (d == "B") {
+                resultado = resultado + mapa["nombre_mes"]
+            }
+            si (d == "A") {
+                resultado = resultado + mapa["nombre_dia"]
+            }
+            si (d == "%") {
+                resultado = resultado + "%"
+            }
+        } sino {
+            resultado = resultado + c
+        }
+        i = i + 1
+    }
+    retornar resultado
+}
+
+# Convierte texto a timestamp según formato
+# Directivas soportadas: %Y, %y, %m, %d, %H, %M, %S
+# Los separadores literales en el formato deben coincidir con el texto.
+# Retorna Resultado<Entero, ErrorFecha>
+# Ejemplo: parsear("2026-07-09", "%Y-%m-%d") → Ok(timestamp)
+funcion parsear(texto: Texto, formato: Texto) -> Resultado<Entero, ErrorFecha> {
+    variable año = 0
+    variable mes = 1
+    variable dia = 1
+    variable hora = 0
+    variable minuto = 0
+    variable segundo = 0
+    variable text_idx = 0
+    variable i = 0
+    variable n = longitud(formato)
+    variable largo_texto = longitud(texto)
+
+    mientras (i < n && text_idx < largo_texto) {
+        variable c = formato[i]
+        si (c == "%") {
+            i = i + 1
+            si (i >= n) {
+                retornar Error(nuevo ErrorFecha("Formato truncado", 2))
+            }
+            variable d = formato[i]
+            si (d == "%") {
+                # Literal %
+                si (text_idx < largo_texto && texto[text_idx] == "%") {
+                    text_idx = text_idx + 1
+                }
+            }
+            si (d == "Y") {
+                si (text_idx + 4 > largo_texto) {
+                    retornar Error(nuevo ErrorFecha("Texto demasiado corto para formato", 1))
+                }
+                variable valor_texto = subcadena(texto, text_idx, 4)
+                año = a_numero(valor_texto)
+                text_idx = text_idx + 4
+            }
+            si (d == "y") {
+                si (text_idx + 2 > largo_texto) {
+                    retornar Error(nuevo ErrorFecha("Texto demasiado corto para formato", 1))
+                }
+                variable valor_texto = subcadena(texto, text_idx, 2)
+                año = 2000 + a_numero(valor_texto)
+                text_idx = text_idx + 2
+            }
+            si (d == "m") {
+                si (text_idx + 2 > largo_texto) {
+                    retornar Error(nuevo ErrorFecha("Texto demasiado corto para formato", 1))
+                }
+                variable valor_texto = subcadena(texto, text_idx, 2)
+                mes = a_numero(valor_texto)
+                text_idx = text_idx + 2
+            }
+            si (d == "d") {
+                si (text_idx + 2 > largo_texto) {
+                    retornar Error(nuevo ErrorFecha("Texto demasiado corto para formato", 1))
+                }
+                variable valor_texto = subcadena(texto, text_idx, 2)
+                dia = a_numero(valor_texto)
+                text_idx = text_idx + 2
+            }
+            si (d == "H") {
+                si (text_idx + 2 > largo_texto) {
+                    retornar Error(nuevo ErrorFecha("Texto demasiado corto para formato", 1))
+                }
+                variable valor_texto = subcadena(texto, text_idx, 2)
+                hora = a_numero(valor_texto)
+                text_idx = text_idx + 2
+            }
+            si (d == "M") {
+                si (text_idx + 2 > largo_texto) {
+                    retornar Error(nuevo ErrorFecha("Texto demasiado corto para formato", 1))
+                }
+                variable valor_texto = subcadena(texto, text_idx, 2)
+                minuto = a_numero(valor_texto)
+                text_idx = text_idx + 2
+            }
+            si (d == "S") {
+                si (text_idx + 2 > largo_texto) {
+                    retornar Error(nuevo ErrorFecha("Texto demasiado corto para formato", 1))
+                }
+                variable valor_texto = subcadena(texto, text_idx, 2)
+                segundo = a_numero(valor_texto)
+                text_idx = text_idx + 2
+            }
+        } sino {
+            # Coincidir caracter literal del formato con el texto
+            si (text_idx < largo_texto && texto[text_idx] == c) {
+                text_idx = text_idx + 1
+            } sino {
+                retornar Error(nuevo ErrorFecha("El texto no coincide con el formato en posición " + text_idx, 1))
+            }
+        }
+        i = i + 1
+    }
+
+    retornar Ok(_fecha_a_timestamp(año, mes, dia, hora, minuto, segundo))
+}
+
+# Formato largo legible
+# Ejemplo: formato_largo(tiempo_actual()) → "9 de julio de 2026"
+funcion formato_largo(ts: Entero) -> Texto {
+    variable mapa = _obtener_mapa(ts)
+    variable dia = mapa["dia"]
+    variable nombre_mes = mapa["nombre_mes"]
+    variable año = mapa["año"]
+    retornar a_texto(dia) + " de " + nombre_mes + " de " + a_texto(año)
+}
+
+# Formato corto numérico
+# Ejemplo: formato_corto(tiempo_actual()) → "09/07/2026"
+funcion formato_corto(ts: Entero) -> Texto {
+    retornar formatear(ts, "%d/%m/%Y")
+}
+
+# ═════════════════════════════════════════════════════════════════════════
+# Funciones Internas
+# ═════════════════════════════════════════════════════════════════════════
+
+# Obtiene el mapa de componentes desde un timestamp
+# Llama a la función nativa _fecha_desde_timestamp (retorna JSON)
+# y parsea el JSON a un mapa Forja con {año, mes, dia, hora, minuto, segundo, nombre_dia, nombre_mes}
+funcion _obtener_mapa(ts: Entero) {
+    variable json_str = _fecha_desde_timestamp(ts)
+    variable mapa = {}
+    mapa["año"] = _extraer_entero(json_str, "año")
+    mapa["mes"] = _extraer_entero(json_str, "mes")
+    mapa["dia"] = _extraer_entero(json_str, "dia")
+    mapa["hora"] = _extraer_entero(json_str, "hora")
+    mapa["minuto"] = _extraer_entero(json_str, "minuto")
+    mapa["segundo"] = _extraer_entero(json_str, "segundo")
+    mapa["nombre_dia"] = _extraer_texto(json_str, "nombre_dia")
+    mapa["nombre_mes"] = _extraer_texto(json_str, "nombre_mes")
+    retornar mapa
+}
+
+# Extrae el texto de un campo del JSON devuelto por _fecha_desde_timestamp
+# Busca "clave": en el texto y extrae el valor hasta , o }
+funcion _extraer_campo(ts: Texto, clave: Texto) -> Texto {
+    variable busqueda = "\"" + clave + "\":"
+    variable partes = dividir(ts, busqueda)
+    si (longitud(partes) < 2) {
+        retornar ""
+    }
+    variable resto = partes[1]
+    variable i = 0
+    variable n = longitud(resto)
+
+    # Saltar espacios
+    mientras (i < n && (resto[i] == " " || resto[i] == "\t")) {
+        i = i + 1
+    }
+
+    # Leer hasta , o }
+    variable valor = ""
+    mientras (i < n) {
+        variable c = resto[i]
+        si (c == "," || c == "}") {
+            # Fin del valor
+            i = n
+        } sino {
+            valor = valor + c
+            i = i + 1
+        }
+    }
+
+    retornar valor
+}
+
+# Extrae un valor entero de un campo JSON
+funcion _extraer_entero(ts: Texto, clave: Texto) -> Entero {
+    variable texto = _extraer_campo(ts, clave)
+    si (longitud(texto) == 0) {
+        retornar 0
+    }
+    retornar a_numero(texto)
+}
+
+# Extrae un valor texto de un campo JSON (remueve comillas)
+funcion _extraer_texto(ts: Texto, clave: Texto) -> Texto {
+    variable texto = _extraer_campo(ts, clave)
+    variable n = longitud(texto)
+    # Remover comillas si tiene
+    si (n >= 2 && texto[0] == "\"" && texto[n - 1] == "\"") {
+        texto = subcadena(texto, 1, n - 2)
+    }
+    retornar texto
+}
+
+# Formatea un número con ceros a la izquierda
+funcion _formatear_numero(valor: Entero, digitos: Entero) -> Texto {
+    variable texto = a_texto(valor)
+    mientras (longitud(texto) < digitos) {
+        texto = "0" + texto
+    }
+    retornar texto
+}

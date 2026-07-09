@@ -1,0 +1,113 @@
+/// 213 — Fecha y Aleatorio
+///
+/// Demostración de los módulos std/fecha y std/aleatorio
+///
+/// Ejecutar:
+///   cargo run --bin forja -- ejecutar examples\213_fecha_aleatorio.fa
+
+importar "std/fecha"
+importar "std/aleatorio"
+
+funcion main() {
+    escribir("═══════════════════════════════════")
+    escribir("  MÓDULO FECHA")
+    escribir("═══════════════════════════════════")
+
+    # Fecha/hora actual en varios formatos
+    variable ahora = fecha.ahora()
+    escribir("  ahora()          → " + ahora)
+
+    variable hoy = fecha.hoy()
+    escribir("  hoy()            → " + hoy)
+
+    variable hora = fecha.hora_actual()
+    escribir("  hora_actual()    → " + hora)
+
+    # Timestamp actual
+    variable ts = tiempo_actual()
+    escribir("  timestamp        → " + ts)
+
+    # Formato personalizado
+    variable f1 = fecha.formatear(ts, "%A, %d de %B de %Y")
+    escribir("  formatear(largo) → " + f1)
+
+    variable f2 = fecha.formatear(ts, "%d/%m/%Y")
+    escribir("  formatear(corto) → " + f2)
+
+    variable f3 = fecha.formatear(ts, "%H:%M:%S")
+    escribir("  formatear(hora)  → " + f3)
+
+    # Formato largo y corto
+    variable largo = fecha.formato_largo(ts)
+    escribir("  formato_largo()  → " + largo)
+
+    variable corto = fecha.formato_corto(ts)
+    escribir("  formato_corto()  → " + corto)
+
+    # Parsear fecha desde texto
+    variable texto_fecha = "2026-12-25"
+    variable res_parse = fecha.parsear(texto_fecha, "%Y-%m-%d")
+    coincidir (res_parse) {
+        caso Ok(ts_parse) -> {
+            variable fecha_parseada = fecha.formatear(ts_parse, "%A, %d de %B de %Y")
+            escribir("  parsear(\"" + texto_fecha + "\") → " + fecha_parseada)
+        }
+        caso Error(e) -> {
+            escribir("  Error al parsear: " + e.mensaje)
+        }
+    }
+
+    escribir("")
+    escribir("═══════════════════════════════════")
+    escribir("  MÓDULO ALEATORIO")
+    escribir("═══════════════════════════════════")
+
+    # Números aleatorios
+    variable i = 0
+    escribir("  5 números aleatorios [0, 100):")
+    mientras (i < 5) {
+        variable num = aleatorio.entero(100)
+        escribir("    → " + num)
+        i = i + 1
+    }
+
+    # Decimales aleatorios
+    escribir("  3 decimales aleatorios [0.0, 1.0):")
+    i = 0
+    mientras (i < 3) {
+        variable dec = aleatorio.decimal()
+        escribir("    → " + dec)
+        i = i + 1
+    }
+
+    # Elemento aleatorio de un arreglo
+    variable frutas = ["manzana", "banana", "cereza", "dátil", "uva"]
+    escribir("  Arreglo original: " + frutas)
+    escribir("  Elemento aleatorio: " + aleatorio.elemento(frutas))
+
+    # Mezclar arreglo
+    variable mezclado = aleatorio.mezclar(frutas)
+    escribir("  Arreglo mezclado: " + mezclado)
+
+    # Semilla reproducible
+    aleatorio.semilla(42)
+    escribir("")
+    escribir("  Con semilla fija (42):")
+    variable a1 = aleatorio.entero(100)
+    variable a2 = aleatorio.entero(100)
+    variable a3 = aleatorio.entero(100)
+    escribir("    " + a1 + ", " + a2 + ", " + a3)
+
+    # Repetir con misma semilla da mismos valores
+    aleatorio.semilla(42)
+    variable b1 = aleatorio.entero(100)
+    variable b2 = aleatorio.entero(100)
+    variable b3 = aleatorio.entero(100)
+    escribir("  Repetir con semilla(42):")
+    escribir("    " + b1 + ", " + b2 + ", " + b3)
+    escribir("  (deben coincidir)")
+
+    escribir("")
+    escribir("═══════════════════════════════════")
+    escribir("  ¡Módulos fecha y aleatorio funcionando!")
+}
