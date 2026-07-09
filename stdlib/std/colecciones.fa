@@ -1,0 +1,249 @@
+# módulo: colecciones
+# Descripción: Operaciones funcionales sobre arreglos y mapas
+#
+# Este módulo provee funciones de alto orden (map, filter, reduce, etc.)
+# para trabajar con colecciones de forma funcional y declarativa.
+# Todas las funciones retornan NUEVAS colecciones sin modificar la original.
+
+# ═══════════════════════════════════════════════════════════════
+# ARREGLO — Operaciones funcionales
+# ═══════════════════════════════════════════════════════════════
+
+# Aplica una función a cada elemento del arreglo y retorna un nuevo arreglo.
+# Ejemplo: mapa([1,2,3], func(x) { x * 2 }) → [2,4,6]
+funcion mapa(arr, callback) {
+    variable res = []
+    variable i = 0
+    mientras (i < longitud(arr)) {
+        res.empujar(callback(arr[i]))
+        i = i + 1
+    }
+    retornar res
+}
+
+# Filtra elementos que cumplen una condición.
+# Retorna un nuevo arreglo solo con los elementos para los cuales
+# callback retorna verdadero.
+# Ejemplo: filtrar([1,2,3,4], func(x) { x > 2 }) → [3,4]
+funcion filtrar(arr, callback) {
+    variable res = []
+    variable i = 0
+    mientras (i < longitud(arr)) {
+        si (callback(arr[i])) {
+            res.empujar(arr[i])
+        }
+        i = i + 1
+    }
+    retornar res
+}
+
+# Reduce (pliega) un arreglo a un valor acumulativo.
+# Aplica callback(acumulador, elemento) a cada elemento,
+# donde acumulador comienza siendo valor_inicial.
+# Ejemplo: reducir([1,2,3], func(acc, x) { acc + x }, 0) → 6
+funcion reducir(arr, callback, valor_inicial) {
+    variable acumulador = valor_inicial
+    variable i = 0
+    mientras (i < longitud(arr)) {
+        acumulador = callback(acumulador, arr[i])
+        i = i + 1
+    }
+    retornar acumulador
+}
+
+# Retorna el primer elemento que cumple la condición.
+# Si ningún elemento cumple, retorna nulo.
+# Ejemplo: encontrar([1,2,3,4], func(x) { x > 2 }) → 3
+funcion encontrar(arr, callback) {
+    variable i = 0
+    mientras (i < longitud(arr)) {
+        si (callback(arr[i])) {
+            retornar arr[i]
+        }
+        i = i + 1
+    }
+    retornar nulo
+}
+
+# Retorna verdadero si ALGÚN elemento cumple la condición.
+# Ejemplo: alguno([1,2,3], func(x) { x > 2 }) → verdadero
+funcion alguno(arr, callback) -> Booleano {
+    variable i = 0
+    mientras (i < longitud(arr)) {
+        si (callback(arr[i])) {
+            retornar verdadero
+        }
+        i = i + 1
+    }
+    retornar falso
+}
+
+# Retorna verdadero si TODOS los elementos cumplen la condición.
+# Ejemplo: todos([2,4,6], func(x) { x % 2 == 0 }) → verdadero
+funcion todos(arr, callback) -> Booleano {
+    variable i = 0
+    mientras (i < longitud(arr)) {
+        si (no callback(arr[i])) {
+            retornar falso
+        }
+        i = i + 1
+    }
+    retornar verdadero
+}
+
+# Retorna el arreglo ordenado (nuevo arreglo, no modifica el original).
+# Implementa ordenamiento de burbuja O(n²).
+# Funciona con números (enteros, flotantes).
+# Ejemplo: ordenar([3,1,4,1,5]) → [1,1,3,4,5]
+funcion ordenar(arr) {
+    # Copiar el arreglo original
+    variable res = []
+    variable k = 0
+    mientras (k < longitud(arr)) {
+        res.empujar(arr[k])
+        k = k + 1
+    }
+
+    # Burbuja
+    variable n = longitud(res)
+    variable i = 0
+    mientras (i < n) {
+        variable j = 0
+        mientras (j < n - i - 1) {
+            si (res[j] > res[j + 1]) {
+                variable temp = res[j]
+                res[j] = res[j + 1]
+                res[j + 1] = temp
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    retornar res
+}
+
+# Retorna un arreglo aplanado (1 nivel de profundidad).
+# Si un elemento es un arreglo, sus elementos se agregan individualmente.
+# Ejemplo: aplanar([[1,2],[3,[4]]]) → [1,2,3,[4]]
+funcion aplanar(arr) {
+    variable res = []
+    variable i = 0
+    mientras (i < longitud(arr)) {
+        variable elem = arr[i]
+        si (tipo(elem) == "arreglo") {
+            variable j = 0
+            mientras (j < longitud(elem)) {
+                res.empujar(elem[j])
+                j = j + 1
+            }
+        } sino {
+            res.empujar(elem)
+        }
+        i = i + 1
+    }
+    retornar res
+}
+
+# Retorna un arreglo sin elementos duplicados.
+# Conserva el orden de primera aparición.
+# Ejemplo: unico([1,2,2,3,1]) → [1,2,3]
+funcion unico(arr) {
+    variable res = []
+    variable i = 0
+    mientras (i < longitud(arr)) {
+        variable elemento = arr[i]
+        variable encontrado = falso
+        variable j = 0
+        mientras (j < longitud(res)) {
+            si (res[j] == elemento) {
+                encontrado = verdadero
+                j = longitud(res)
+            }
+            j = j + 1
+        }
+        si (no encontrado) {
+            res.empujar(elemento)
+        }
+        i = i + 1
+    }
+    retornar res
+}
+
+# Invierte el orden del arreglo.
+# Retorna un nuevo arreglo con los elementos en orden inverso.
+# Ejemplo: invertir([1,2,3]) → [3,2,1]
+funcion invertir(arr) {
+    variable res = []
+    variable i = longitud(arr) - 1
+    mientras (i >= 0) {
+        res.empujar(arr[i])
+        i = i - 1
+    }
+    retornar res
+}
+
+# Retorna un segmento (rebanada) del arreglo desde 'inicio' hasta 'fin' (exclusivo).
+# Ejemplo: segmento([1,2,3,4,5], 1, 3) → [2,3]
+funcion segmento(arr, inicio, fin) {
+    variable res = []
+    variable i = inicio
+    mientras (i < fin && i < longitud(arr)) {
+        res.empujar(arr[i])
+        i = i + 1
+    }
+    retornar res
+}
+
+# ═══════════════════════════════════════════════════════════════
+# MAPA — Operaciones
+# ═══════════════════════════════════════════════════════════════
+#
+# NOTA: Las funciones sobre mapas requieren soporte de iteración
+# nativa sobre mapas en el runtime de Forja. Actualmente los mapas
+# soportan acceso por clave (mapa["clave"]) y asignación, pero no
+# enumeración programática de claves. Estas funciones están definidas
+# para completitud de la API y funcionarán cuando el runtime agregue
+# iteración de mapas.
+
+# Retorna las claves del mapa como un arreglo.
+# Ejemplo: claves({"a":1, "b":2}) → ["a", "b"]
+funcion claves(mapa) {
+    # NOTA: requiere iteración nativa sobre mapas.
+    # Por ahora retorna arreglo vacío.
+    variable res = []
+    retornar res
+}
+
+# Retorna los valores del mapa como un arreglo.
+# Ejemplo: valores({"a":1, "b":2}) → [1, 2]
+funcion valores(mapa) {
+    # NOTA: requiere iteración nativa sobre mapas.
+    variable res = []
+    retornar res
+}
+
+# Retorna los pares [clave, valor] como arreglo de arreglos.
+# Ejemplo: pares({"a":1, "b":2}) → [["a",1], ["b",2]]
+funcion pares(mapa) {
+    # NOTA: requiere iteración nativa sobre mapas.
+    variable res = []
+    retornar res
+}
+
+# Combina dos mapas en uno nuevo.
+# Si ambos mapas tienen la misma clave, el valor de mapa2 prevalece.
+# Ejemplo: fusionar({"a":1}, {"b":2}) → {"a":1, "b":2}
+funcion fusionar(mapa1, mapa2) {
+    # NOTA: requiere iteración nativa sobre mapas.
+    # Por ahora retorna un mapa vacío.
+    retornar {}
+}
+
+# Filtra un mapa por sus claves.
+# Retorna un nuevo mapa solo con las claves para las cuales
+# callback(clave) retorna verdadero.
+# Ejemplo: filtrar_claves({"a":1, "b":2, "c":3}, func(k) { k != "b" }) → {"a":1, "c":3}
+funcion filtrar_claves(mapa, callback) {
+    # NOTA: requiere iteración nativa sobre mapas.
+    retornar {}
+}

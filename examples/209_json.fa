@@ -1,0 +1,188 @@
+# Ejemplo: Módulo JSON
+# Muestra parseo y generación de JSON con std/json
+#
+# Uso: forja ejecutar examples/209_json.fa
+
+importar "std/json"
+importar "std/archivo"
+
+funcion prueba_json() {
+    imprimir("=== Prueba de Módulo JSON ===")
+    imprimir("")
+
+    # ─── 1. PARSEAR JSON ─────────────────────────────────────────────────
+    imprimir("--- 1. parsear ---")
+
+    # JSON objeto
+    variable json_str = '{"nombre": "Ana", "edad": 30, "activo": true, "salario": 45000.50}'
+    variable res_parse = json.parsear(json_str)
+    coincidir (res_parse) {
+        caso Ok(obj) -> {
+            imprimir("  ✓ Objeto parseado:")
+            imprimir("    nombre: " + obj["nombre"])
+            imprimir("    edad: " + a_texto(obj["edad"]))
+            imprimir("    activo: " + a_texto(obj["activo"]))
+            imprimir("    salario: " + a_texto(obj["salario"]))
+        }
+        caso Error(e) -> {
+            imprimir("  ERROR: " + e.mensaje)
+        }
+    }
+
+    # JSON array
+    variable json_arr = '[10, 20, 30, 40, 50]'
+    variable res_arr = json.parsear(json_arr)
+    coincidir (res_arr) {
+        caso Ok(arr) -> {
+            imprimir("  ✓ Array parseado:")
+            para (variable i = 0; i < 5; i = i + 1) {
+                imprimir("    [" + a_texto(i) + "] = " + a_texto(arr[i]))
+            }
+        }
+        caso Error(e) -> {
+            imprimir("  ERROR: " + e.mensaje)
+        }
+    }
+
+    # JSON anidado
+    variable json_complejo = '{"personas": [{"nombre": "Luis", "edad": 25}, {"nombre": "Maria", "edad": 35}], "total": 2}'
+    variable res_complejo = json.parsear(json_complejo)
+    coincidir (res_complejo) {
+        caso Ok(data) -> {
+            imprimir("  ✓ JSON anidado parseado:")
+            variable personas = data["personas"]
+            imprimir("    Total personas: " + a_texto(data["total"]))
+            para (variable i = 0; i < data["total"]; i = i + 1) {
+                variable p = personas[i]
+                imprimir("    Persona " + a_texto(i) + ": " + p["nombre"] + " (" + a_texto(p["edad"]) + " anios)")
+            }
+        }
+        caso Error(e) -> {
+            imprimir("  ERROR: " + e.mensaje)
+        }
+    }
+
+    # Error de parseo
+    variable json_invalido = '{invalido}'
+    variable res_error = json.parsear(json_invalido)
+    coincidir (res_error) {
+        caso Ok(_) -> {
+            imprimir("  ✗ Debería haber fallado")
+        }
+        caso Error(e) -> {
+            imprimir("  ✓ Error esperado: " + e.mensaje)
+        }
+    }
+
+    # ─── 2. STRINGIFICAR ─────────────────────────────────────────────────
+    imprimir("")
+    imprimir("--- 2. stringificar ---")
+
+    # Mapa a JSON
+    variable mapa = {}
+    mapa["nombre"] = "Carlos"
+    mapa["edad"] = 28
+    mapa["activo"] = falso
+    mapa["notas"] = [85, 90, 78]
+    variable res_str = json.stringificar(mapa)
+    coincidir (res_str) {
+        caso Ok(texto) -> {
+            imprimir("  ✓ Mapa stringificado: " + texto)
+        }
+        caso Error(e) -> {
+            imprimir("  ERROR: " + e.mensaje)
+        }
+    }
+
+    # Array a JSON
+    variable lista = [1, 2, "tres", verdadero, nulo]
+    variable res_lista = json.stringificar(lista)
+    coincidir (res_lista) {
+        caso Ok(texto) -> {
+            imprimir("  ✓ Array stringificado: " + texto)
+        }
+        caso Error(e) -> {
+            imprimir("  ERROR: " + e.mensaje)
+        }
+    }
+
+    # Valores simples
+    variable res_num = json.stringificar(42)
+    coincidir (res_num) {
+        caso Ok(texto) -> {
+            imprimir("  ✓ Número stringificado: " + texto)
+        }
+        caso Error(e) -> {
+            imprimir("  ERROR: " + e.mensaje)
+        }
+    }
+
+    variable res_text = json.stringificar("Hola Mundo")
+    coincidir (res_text) {
+        caso Ok(texto) -> {
+            imprimir("  ✓ Texto stringificado: " + texto)
+        }
+        caso Error(e) -> {
+            imprimir("  ERROR: " + e.mensaje)
+        }
+    }
+
+    variable res_bool = json.stringificar(verdadero)
+    coincidir (res_bool) {
+        caso Ok(texto) -> {
+            imprimir("  ✓ Booleano stringificado: " + texto)
+        }
+        caso Error(e) -> {
+            imprimir("  ERROR: " + e.mensaje)
+        }
+    }
+
+    # ─── 3. LECTURA Y ESCRITURA DE ARCHIVOS JSON ────────────────────────
+    imprimir("")
+    imprimir("--- 3. leer_json / escribir_json ---")
+
+    variable ruta_json = "_prueba_json.json"
+    variable datos = {}
+    datos["aplicacion"] = "Forja"
+    datos["version"] = 1
+    datos["lenguajes"] = ["Rust", "Forja"]
+
+    # Escribir
+    variable res_esc = json.escribir_json(ruta_json, datos)
+    coincidir (res_esc) {
+        caso Ok(_) -> {
+            imprimir("  ✓ Archivo JSON escrito: " + ruta_json)
+        }
+        caso Error(e) -> {
+            imprimir("  ERROR al escribir: " + e.mensaje)
+        }
+    }
+
+    # Leer
+    variable res_lec = json.leer_json(ruta_json)
+    coincidir (res_lec) {
+        caso Ok(leido) -> {
+            imprimir("  ✓ Archivo JSON leído:")
+            imprimir("    aplicacion: " + leido["aplicacion"])
+            imprimir("    version: " + a_texto(leido["version"]))
+            variable langs = leido["lenguajes"]
+            para (variable i = 0; i < 2; i = i + 1) {
+                imprimir("    lenguajes[" + a_texto(i) + "]: " + langs[i])
+            }
+        }
+        caso Error(e) -> {
+            imprimir("  ERROR al leer: " + e.mensaje)
+        }
+    }
+
+    # Limpiar archivo temporal
+    variable res_elim = eliminar_archivo(ruta_json)
+    si (res_elim == 0) {
+        imprimir("  ✓ Archivo temporal eliminado")
+    }
+
+    imprimir("")
+    imprimir("=== Fin de prueba JSON ===")
+}
+
+prueba_json()

@@ -1,0 +1,87 @@
+# módulo: json
+# Descripción: Parseo y generación de JSON
+#
+# Uso: importar "std/json"
+#
+# Todas las funciones que pueden fallar retornan Resultado<T, ErrorJSON>
+# donde ErrorJSON contiene:
+#   .mensaje — descripción del error
+#   .codigo  — 0=Exito, 1=error_json, 2=error_argumento
+
+# ═════════════════════════════════════════════════════════════════════════
+# Clase ErrorJSON
+# ═════════════════════════════════════════════════════════════════════════
+
+clase ErrorJSON {
+    mensaje: Texto
+    codigo: Entero
+
+    constructor(mensaje: Texto, codigo: Entero) {
+        este.mensaje = mensaje
+        este.codigo = codigo
+    }
+}
+
+# ═════════════════════════════════════════════════════════════════════════
+# Operaciones JSON
+# ═════════════════════════════════════════════════════════════════════════
+
+# Parsea un texto JSON y retorna el valor Forja correspondiente.
+# El resultado puede ser un Arreglo, Mapa, Texto, Entero, Decimal, Booleano o Nulo.
+funcion parsear(texto: Texto) {
+    variable res = _json_parsear(texto)
+    si (res[0] != 0) {
+        retornar Error(nuevo ErrorJSON(res[1], res[0]))
+    }
+    retornar Ok(res[1])
+}
+
+# Convierte un valor Forja a texto JSON.
+funcion stringificar(valor) {
+    variable res = _json_stringificar(valor)
+    si (res[0] != 0) {
+        retornar Error(nuevo ErrorJSON(res[1], res[0]))
+    }
+    retornar Ok(res[1])
+}
+
+# ═════════════════════════════════════════════════════════════════════════
+# Conveniencia: Archivos JSON
+# ═════════════════════════════════════════════════════════════════════════
+
+# Lee un archivo JSON y lo parsea.
+# Retorna Error si el archivo no existe o el JSON es inválido.
+funcion leer_json(ruta: Texto) {
+    importar "std/archivo"
+    variable res_archivo = archivo.leer_archivo(ruta)
+    coincidir (res_archivo) {
+        caso Ok(contenido) -> {
+            retornar parsear(contenido)
+        }
+        caso Error(e) -> {
+            retornar Error(nuevo ErrorJSON("Error al leer archivo: " + e.mensaje, 1))
+        }
+    }
+}
+
+# Convierte un valor Forja a JSON y lo escribe en un archivo.
+funcion escribir_json(ruta: Texto, valor) {
+    variable res_str = stringificar(valor)
+    coincidir (res_str) {
+        caso Ok(texto_json) -> {
+            importar "std/archivo"
+            variable res_archivo = archivo.escribir_archivo(ruta, texto_json)
+            coincidir (res_archivo) {
+                caso Ok(_) -> {
+                    retornar Ok(nulo)
+                }
+                caso Error(e) -> {
+                    retornar Error(nuevo ErrorJSON("Error al escribir archivo: " + e.mensaje, 1))
+                }
+            }
+        }
+        caso Error(e) -> {
+            retornar Error(nuevo ErrorJSON("Error al stringificar: " + e.mensaje, 1))
+        }
+    }
+}
