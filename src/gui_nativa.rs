@@ -227,6 +227,59 @@ pub struct IconAction {
     pub callback: String,
 }
 
+// ─── Navigator (sistema de navegación por pantallas) ──────────────
+
+/// Una pantalla dentro del Navigator
+#[derive(Debug)]
+pub struct NavigatorScreen {
+    /// Identificador único de la pantalla
+    pub id: String,
+    /// Título mostrado en la barra de navegación/tabs
+    pub titulo: String,
+    /// Icono opcional (para NavigationBar/Tabs)
+    pub icono: Option<String>,
+    /// Contenido de la pantalla
+    pub contenido: Box<Layout>,
+    /// Badge opcional (notificaciones)
+    pub badge: Option<String>,
+}
+
+impl NavigatorScreen {
+    pub fn new(id: &str, titulo: &str, contenido: Layout) -> Self {
+        NavigatorScreen {
+            id: id.to_string(),
+            titulo: titulo.to_string(),
+            icono: None,
+            contenido: Box::new(contenido),
+            badge: None,
+        }
+    }
+}
+
+/// Tipo de navegación visual del Navigator
+#[derive(Debug, Clone, PartialEq)]
+pub enum NavigatorType {
+    /// Solo las pantallas, sin barra de navegación
+    None,
+    /// NavigationBar inferior (mobile style)
+    BottomBar,
+    /// NavigationRail lateral
+    Rail,
+    /// Pestañas superiores
+    Tabs,
+    /// Cajón lateral (Drawer)
+    Drawer,
+}
+
+/// Animación de transición entre pantallas
+#[derive(Debug, Clone, PartialEq)]
+pub enum NavigatorAnim {
+    /// Sin animación
+    None,
+    /// Fundido
+    Fade,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TopAppBarVariant {
     Small,
@@ -510,6 +563,18 @@ enum Layout {
     },
 
     // === NAVEGACIÓN ===
+    /// Navigator: sistema de navegación por pantallas con push/pop
+    Navigator {
+        screens: Vec<NavigatorScreen>,
+        /// Variable que almacena el ID de la pantalla actual
+        current_var: String,
+        /// Variable para pila de navegación (historial)
+        history_var: String,
+        /// Tipo de navegación visual
+        nav_type: NavigatorType,
+        /// Animación de transición
+        anim: NavigatorAnim,
+    },
     NavigationBar {
         items: Vec<NavItem>,
         seleccion: usize,
@@ -802,6 +867,46 @@ fn extraer_nav_items(args: &[Expresion], index: usize) -> Vec<NavItem> {
                                 _ => None,
                             }).unwrap_or(None);
                         Some(NavItem { icono, label, badge })
+                    }
+                    _ => None,
+                }).collect::<Vec<_>>()
+            ),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+fn extraer_navigator_screens(args: &[Expresion], index: usize) -> Vec<NavigatorScreen> {
+    args.get(index)
+        .and_then(|a| match a {
+            Expresion::Arreglo(exprs) => Some(
+                exprs.iter().filter_map(|e| match e {
+                    Expresion::LlamadaFuncion { nombre, argumentos } if nombre == "pantalla" || nombre == "screen" => {
+                        let id = argumentos.first()
+                            .map(|a| match a {
+                                Expresion::LiteralTexto(s) => s.clone(),
+                                _ => String::new(),
+                            }).unwrap_or_default();
+                        let titulo = argumentos.get(1)
+                            .map(|a| match a {
+                                Expresion::LiteralTexto(s) => s.clone(),
+                                _ => String::new(),
+                            }).unwrap_or_default();
+                        let contenido = argumentos.get(2)
+                            .and_then(expr_a_layout)
+                            .unwrap_or(Layout::Spacer(0.0));
+                        let icono = argumentos.get(3)
+                            .map(|a| match a {
+                                Expresion::LiteralTexto(s) => Some(s.clone()),
+                                _ => None,
+                            }).unwrap_or(None);
+                        Some(NavigatorScreen {
+                            id,
+                            titulo,
+                            icono,
+                            contenido: Box::new(contenido),
+                            badge: None,
+                        })
                     }
                     _ => None,
                 }).collect::<Vec<_>>()
@@ -2095,6 +2200,51 @@ Expresion::Identificador(v, ..) =>
                 // Navegación Material You
                 // ═══════════════════════════════════════════════════════
 
+                // ─── Navigator (navegación por pantallas) ──────────
+                "navegador" | "navigator" => {
+                    let screens = extraer_navigator_screens(argumentos, 0);
+                    let current_var = argumentos.get(1)
+                        .map(|a| match a {
+                            Expresion::LiteralTexto(s) => s.clone(),
+                            _ => "pantalla_actual".to_string(),
+                        }).unwrap_or_else(|| "pantalla_actual".to_string());
+                    let current_var_clone = current_var.clone();
+                    let nav_type_str = argumentos.get(2)
+                        .map(|a| match a {
+                            Expresion::LiteralTexto(s) => s.clone(),
+                            _ => "ninguno".to_string(),
+                        }).unwrap_or_else(|| "ninguno".to_string());
+                    let nav_type = match nav_type_str.to_lowercase().as_str() {
+                        "barra" | "bottom" | "inferior" => NavigatorType::BottomBar,
+                        "riel" | "rail" | "lateral" => NavigatorType::Rail,
+                        "pestañas" | "tabs" | "tab" => NavigatorType::Tabs,
+                        "cajon" | "drawer" => NavigatorType::Drawer,
+                        _ => NavigatorType::None,
+                    };
+                    if screens.is_empty() {
+                        Some(Layout::Spacer(0.0))
+                    } else {
+                        Some(Layout::Navigator {
+                            screens,
+                            current_var: current_var_clone,
+                            history_var: format!("{}_historial", current_var),
+                            nav_type,
+                            anim: NavigatorAnim::None,
+                        })
+                    }
+                }
+
+                // ─── Pantalla individual (para usar dentro de navigator) ──
+                "pantalla" | "screen" => {
+                    // Las pantallas individuales se procesan dentro de extraer_navigator_screens
+                    // Como llamada directa, devolvemos placeholder
+                    let titulo = extraer_texto(argumentos, 0);
+                    Some(Layout::StyledLabel {
+                        texto: format!("[Pantalla: {}]", titulo),
+                        style: "body_medium".to_string(),
+                    })
+                }
+
                 // ─── NavigationBar ───────────────────────────────────
                 "barra_navegacion" | "navigation_bar" => {
                     let items = extraer_nav_items(argumentos, 0);
@@ -2907,6 +3057,176 @@ fn parse_color(s: &str) -> Option<RgbColor> {
             }
         }
     }
+}
+
+// ─── Helpers para Navigator ─────────────────────────────────────
+
+/// Renderiza una NavigationBar para el Navigator
+fn render_navigator_bottom_bar<'a>(
+    screens: &[NavigatorScreen],
+    current_idx: usize,
+    current_var: &str,
+    prog: &[Declaracion],
+    scheme: &ColorScheme,
+    theme: &MaterialTheme,
+) -> Box<AnyWidgetView<AppStateNativo>> {
+    let cv = current_var.to_string();
+    let p = prog.to_vec();
+    let label_style = get_text_style(&theme.typography, "label_small");
+
+    let mut nav_items: Vec<Box<AnyWidgetView<AppStateNativo>>> = Vec::new();
+    for (i, screen) in screens.iter().enumerate() {
+        let cv_inner = cv.clone();
+        let p_inner = p.clone();
+        let idx = i;
+        let is_selected = i == current_idx;
+        let fg_color: Color = if is_selected {
+            scheme.primary.into()
+        } else {
+            scheme.on_surface_variant.into()
+        };
+        let icon_text = screen.icono.clone().unwrap_or_else(|| "•".to_string());
+        let item_widget = view::flex(Axis::Vertical, (
+            view::label(icon_text)
+                .text_size(24.0)
+                .color(fg_color),
+            view::label(screen.titulo.clone())
+                .text_size(label_style.font_size as f32)
+                .weight(if is_selected { FontWeight::MEDIUM } else { FontWeight::NORMAL })
+                .color(fg_color),
+        )).gap(Length::px(2.0));
+
+        // Capturar el ID de la pantalla antes del closure para evitar capturar screens
+        let screen_id = screens[idx].id.clone();
+        let btn = view::button(item_widget, move |data: &mut AppStateNativo| {
+            data.escribir(&cv_inner, ValorGUI::Texto(screen_id.clone()));
+            ejecutar_callback_y_actualizar(&cv_inner, data, &p_inner);
+        });
+        nav_items.push(Box::new(btn) as Box<AnyWidgetView<AppStateNativo>>);
+    }
+
+    Box::new(
+        view::flex(Axis::Horizontal, (nav_items,))
+            .gap(Length::px(0.0))
+            .background(Background::Color(scheme.surface.into()))
+    )
+}
+
+/// Renderiza Tabs para el Navigator
+fn render_navigator_tabs(
+    screens: Vec<NavigatorScreen>,
+    current_idx: usize,
+    current_var: &str,
+    prog: &[Declaracion],
+    scheme: &ColorScheme,
+    theme: &MaterialTheme,
+) -> Box<AnyWidgetView<AppStateNativo>> {
+    let cv = current_var.to_string();
+    let p = prog.to_vec();
+    let label_style = get_text_style(&theme.typography, "label_large");
+
+    let mut tab_widgets: Vec<Box<AnyWidgetView<AppStateNativo>>> = Vec::new();
+    for (i, screen) in screens.iter().enumerate() {
+        let cv_inner = cv.clone();
+        let p_inner = p.clone();
+        let idx = i;
+        let is_selected = i == current_idx;
+
+        let fg_color: Color = if is_selected {
+            scheme.primary.into()
+        } else {
+            scheme.on_surface_variant.into()
+        };
+
+        let tab_content = view::flex(Axis::Vertical, (
+            view::label(screen.titulo.clone())
+                .text_size(label_style.font_size as f32)
+                .weight(if is_selected { FontWeight::BOLD } else { FontWeight::MEDIUM })
+                .color(fg_color),
+            if is_selected {
+                Box::new(
+                    view::sized_box(view::label(String::new()))
+                        .height(Length::px(3.0))
+                        .background(Background::Color(scheme.primary.into()))
+                ) as Box<AnyWidgetView<AppStateNativo>>
+            } else {
+                Box::new(
+                    view::sized_box(view::label(String::new()))
+                        .height(Length::px(3.0))
+                ) as Box<AnyWidgetView<AppStateNativo>>
+            },
+        )).gap(Length::px(4.0));
+
+        let screen_id = screens[idx].id.clone();
+        let btn = view::button(tab_content, move |data: &mut AppStateNativo| {
+            data.escribir(&cv_inner, ValorGUI::Texto(screen_id.clone()));
+            ejecutar_callback_y_actualizar(&cv_inner, data, &p_inner);
+        });
+        tab_widgets.push(Box::new(btn) as Box<AnyWidgetView<AppStateNativo>>);
+    }
+
+    Box::new(
+        view::flex(Axis::Horizontal, (tab_widgets,))
+            .gap(Length::px(0.0))
+    )
+}
+
+/// Renderiza un NavigationRail para el Navigator
+fn render_navigator_rail(
+    screens: Vec<NavigatorScreen>,
+    current_idx: usize,
+    current_var: &str,
+    prog: &[Declaracion],
+    scheme: &ColorScheme,
+    theme: &MaterialTheme,
+) -> Box<AnyWidgetView<AppStateNativo>> {
+    let cv = current_var.to_string();
+    let p = prog.to_vec();
+
+    let mut rail_items: Vec<Box<AnyWidgetView<AppStateNativo>>> = Vec::new();
+    for (i, screen) in screens.iter().enumerate() {
+        let cv_inner = cv.clone();
+        let p_inner = p.clone();
+        let idx = i;
+        let is_selected = i == current_idx;
+
+        let fg_color: Color = if is_selected {
+            scheme.on_secondary_container.into()
+        } else {
+            scheme.on_surface_variant.into()
+        };
+        let bg_color: Color = if is_selected {
+            scheme.secondary_container.into()
+        } else {
+            Color::TRANSPARENT
+        };
+
+        let icon_text = screen.icono.clone().unwrap_or_else(|| "•".to_string());
+        let content = view::flex(Axis::Vertical, (
+            view::label(icon_text)
+                .text_size(24.0)
+                .color(fg_color),
+            view::label(screen.titulo.clone())
+                .text_size(10.0)
+                .color(fg_color),
+        )).gap(Length::px(2.0));
+
+        let screen_id = screens[idx].id.clone();
+        let btn = view::button(content, move |data: &mut AppStateNativo| {
+            data.escribir(&cv_inner, ValorGUI::Texto(screen_id.clone()));
+            ejecutar_callback_y_actualizar(&cv_inner, data, &p_inner);
+        });
+        let styled_btn = view::sized_box(btn)
+            .background(Background::Color(bg_color))
+            .corner_radius(16.0);
+        rail_items.push(Box::new(styled_btn) as Box<AnyWidgetView<AppStateNativo>>);
+    }
+
+    Box::new(
+        view::flex(Axis::Vertical, (rail_items,))
+            .gap(Length::px(4.0))
+            .background(Background::Color(scheme.surface.into()))
+    )
 }
 
 // ─── Layout → xilem widgets (con tema Material You) ──────────────
@@ -4549,6 +4869,120 @@ fn layout_a_view<'a>(
         // ═══════════════════════════════════════════════════════════
         // Navegación Material You
         // ═══════════════════════════════════════════════════════════
+
+        // ─── Navigator (navegación por pantallas) ────────────────────
+        Layout::Navigator { screens, current_var, history_var: _, nav_type, anim: _ } => {
+            let scheme = &theme.scheme;
+            let p = _prog.to_vec();
+
+            // Leer la pantalla actual desde el store reactivo
+            let current_id = data.leer(current_var).to_string();
+            let current_idx = screens.iter().position(|s| s.id == current_id)
+                .unwrap_or(0);
+            let idx = current_idx % screens.len();
+
+            // Obtener la pantalla actual y renderizar su contenido
+            let current_screen = &screens[idx];
+            let content = layout_a_view(&current_screen.contenido, data, _prog, theme);
+
+            // Pre-extraer datos de navegación para evitar ownership issues en closures
+            let nav_ids: Vec<String> = screens.iter().map(|s| s.id.clone()).collect();
+            let nav_titles: Vec<String> = screens.iter().map(|s| s.titulo.clone()).collect();
+            let nav_icons: Vec<String> = screens.iter()
+                .map(|s| s.icono.clone().unwrap_or_else(|| "•".to_string()))
+                .collect();
+
+            // Construir la navegación según el tipo
+            match nav_type {
+                NavigatorType::None => content,
+                NavigatorType::BottomBar => {
+                    let cv = current_var.to_string();
+                    let sc = scheme.clone();
+                    let label_style = get_text_style(&theme.typography, "label_small");
+                    let mut items: Vec<Box<AnyWidgetView<AppStateNativo>>> = Vec::new();
+                    for i in 0..screens.len() {
+                        let cv_inner = cv.clone();
+                        let sid = nav_ids[i].clone();
+                        let titulo = nav_titles[i].clone();
+                        let icono = nav_icons[i].clone();
+                        let sel = i == idx;
+                        let fg: Color = if sel { sc.primary.into() } else { sc.on_surface_variant.into() };
+                        let w = view::flex(Axis::Vertical, (
+                            view::label(icono).text_size(24.0).color(fg),
+                            view::label(titulo).text_size(label_style.font_size as f32)
+                                .weight(if sel { FontWeight::MEDIUM } else { FontWeight::NORMAL }).color(fg),
+                        )).gap(Length::px(2.0));
+                        let btn = view::button(w, move |data: &mut AppStateNativo| {
+                            data.escribir(&cv_inner, ValorGUI::Texto(sid.clone()));
+                            ejecutar_callback_y_actualizar(&cv_inner, data, &p);
+                        });
+                        items.push(Box::new(btn) as Box<AnyWidgetView<AppStateNativo>>);
+                    }
+                    let bar = Box::new(view::flex(Axis::Horizontal, (items,))
+                        .gap(Length::px(0.0)).background(Background::Color(sc.surface.into())));
+                    Box::new(view::flex(Axis::Vertical, (content, bar)).gap(Length::px(0.0)))
+                }
+                NavigatorType::Tabs => {
+                    let cv = current_var.to_string();
+                    let sc = scheme.clone();
+                    let label_style = get_text_style(&theme.typography, "label_large");
+                    let mut items: Vec<Box<AnyWidgetView<AppStateNativo>>> = Vec::new();
+                    for i in 0..screens.len() {
+                        let cv_inner = cv.clone();
+                        let sid = nav_ids[i].clone();
+                        let titulo = nav_titles[i].clone();
+                        let sel = i == idx;
+                        let fg: Color = if sel { sc.primary.into() } else { sc.on_surface_variant.into() };
+                        let tab = view::flex(Axis::Vertical, (
+                            view::label(titulo).text_size(label_style.font_size as f32)
+                                .weight(if sel { FontWeight::BOLD } else { FontWeight::MEDIUM }).color(fg),
+                            if sel {
+                                Box::new(view::sized_box(view::label(String::new()))
+                                    .height(Length::px(3.0)).background(Background::Color(sc.primary.into())))
+                                    as Box<AnyWidgetView<AppStateNativo>>
+                            } else {
+                                Box::new(view::sized_box(view::label(String::new())).height(Length::px(3.0)))
+                                    as Box<AnyWidgetView<AppStateNativo>>
+                            },
+                        )).gap(Length::px(4.0));
+                        let btn = view::button(tab, move |data: &mut AppStateNativo| {
+                            data.escribir(&cv_inner, ValorGUI::Texto(sid.clone()));
+                            ejecutar_callback_y_actualizar(&cv_inner, data, &p);
+                        });
+                        items.push(Box::new(btn) as Box<AnyWidgetView<AppStateNativo>>);
+                    }
+                    let tabs = Box::new(view::flex(Axis::Horizontal, (items,)).gap(Length::px(0.0)));
+                    Box::new(view::flex(Axis::Vertical, (tabs, content)).gap(Length::px(0.0)))
+                }
+                NavigatorType::Rail | NavigatorType::Drawer => {
+                    let cv = current_var.to_string();
+                    let sc = scheme.clone();
+                    let mut items: Vec<Box<AnyWidgetView<AppStateNativo>>> = Vec::new();
+                    for i in 0..screens.len() {
+                        let cv_inner = cv.clone();
+                        let sid = nav_ids[i].clone();
+                        let titulo = nav_titles[i].clone();
+                        let icono = nav_icons[i].clone();
+                        let sel = i == idx;
+                        let fg: Color = if sel { sc.on_secondary_container.into() } else { sc.on_surface_variant.into() };
+                        let bg: Color = if sel { sc.secondary_container.into() } else { Color::TRANSPARENT };
+                        let w = view::flex(Axis::Vertical, (
+                            view::label(icono).text_size(24.0).color(fg),
+                            view::label(titulo).text_size(10.0).color(fg),
+                        )).gap(Length::px(2.0));
+                        let btn = view::button(w, move |data: &mut AppStateNativo| {
+                            data.escribir(&cv_inner, ValorGUI::Texto(sid.clone()));
+                            ejecutar_callback_y_actualizar(&cv_inner, data, &p);
+                        });
+                        items.push(Box::new(view::sized_box(btn).background(Background::Color(bg)).corner_radius(16.0))
+                            as Box<AnyWidgetView<AppStateNativo>>);
+                    }
+                    let rail = Box::new(view::flex(Axis::Vertical, (items,))
+                        .gap(Length::px(4.0)).background(Background::Color(sc.surface.into())));
+                    Box::new(view::flex(Axis::Horizontal, (rail, content)).gap(Length::px(0.0)))
+                }
+            }
+        }
 
         // ─── NavigationBar ───────────────────────────────────────────
         // Bottom navigation estilo mobile con fondo surface
