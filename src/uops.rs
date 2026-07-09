@@ -94,6 +94,13 @@ pub enum Uop {
     MayorExact,
     EnteroAExacto,
     DecimalAExacto,
+
+    // === Funciones Nativas ===
+    /// Llama a una función nativa registrada
+    CallNative(Rc<str>, usize),
+
+    /// Polling no bloqueante de socket
+    SocketPoll(Rc<str>),
 }
 
 /// Convierte un Opcode atómico (no compuesto) a su Uop equivalente
@@ -324,6 +331,10 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         | Opcode::CheckPost(_)
         | Opcode::SaveAnterior(_)
         | Opcode::CheckInv(_) => Uop::Label(0), // no-op en uops
+
+        // Funciones Nativas
+        Opcode::CallNative(nombre, nargs) => Uop::CallNative(Rc::clone(nombre), *nargs),
+        Opcode::SocketPoll(var) => Uop::SocketPoll(Rc::clone(var)),
     }
 }
 

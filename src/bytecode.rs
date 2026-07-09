@@ -288,6 +288,15 @@ pub enum Opcode {
     SaveAnterior(usize),
     /// Verificar invariante de clase (índice en tabla de contratos)
     CheckInv(usize),
+
+    // === Funciones Nativas (Native Registry) ===
+    /// Llama a una función nativa registrada en NativeRegistry
+    /// (nombre_función, número_de_argumentos)
+    CallNative(Rc<str>, usize),
+
+    /// Polling no bloqueante de socket para integración con seleccionar
+    /// (nombre_variable_socket)
+    SocketPoll(Rc<str>),
 }
 
 /// Design by Contract: tipo de contrato
