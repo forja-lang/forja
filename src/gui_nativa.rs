@@ -657,10 +657,10 @@ fn extraer_callback(args: &[Expresion], index: usize) -> String {
     args.get(index)
         .map(|a| match a {
             Expresion::Referencia { expr, .. } => match expr.as_ref() {
-                Expresion::Identificador(n) => n.clone(),
+                Expresion::Identificador(n, ..) => n.clone(),
                 _ => String::new(),
             },
-            Expresion::Identificador(n) => n.clone(),
+            Expresion::Identificador(n, ..) => n.clone(),
             _ => String::new(),
         })
         .unwrap_or_default()
@@ -769,10 +769,10 @@ fn extraer_icon_actions(args: &[Expresion], index: usize) -> Vec<IconAction> {
                         let callback = argumentos.get(1)
                             .map(|a| match a {
                                 Expresion::Referencia { expr, .. } => match expr.as_ref() {
-                                    Expresion::Identificador(n) => n.clone(),
+                                    Expresion::Identificador(n, ..) => n.clone(),
                                     _ => String::new(),
                                 },
-                                Expresion::Identificador(n) => n.clone(),
+                                Expresion::Identificador(n, ..) => n.clone(),
                                 _ => String::new(),
                             }).unwrap_or_default();
                         Some(IconAction { icono, callback })
@@ -793,10 +793,10 @@ fn extraer_icon_actions(args: &[Expresion], index: usize) -> Vec<IconAction> {
                         let callback = argumentos.get(1)
                             .map(|a| match a {
                                 Expresion::Referencia { expr, .. } => match expr.as_ref() {
-                                    Expresion::Identificador(n) => n.clone(),
+                                    Expresion::Identificador(n, ..) => n.clone(),
                                     _ => String::new(),
                                 },
-                                Expresion::Identificador(n) => n.clone(),
+                                Expresion::Identificador(n, ..) => n.clone(),
                                 _ => String::new(),
                             }).unwrap_or_default();
                         Some(vec![IconAction { icono, callback }])
@@ -854,7 +854,7 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                 "escribir" | "etiqueta" | "label" | "text" => {
                     if let Some(arg) = argumentos.first() {
                         match arg {
-                            Expresion::Identificador(v) =>
+Expresion::Identificador(v, ..) =>
                                 Some(Layout::Label { texto: v.clone(), es_variable: true }),
                             Expresion::LiteralTexto(s) =>
                                 Some(Layout::Label { texto: s.clone(), es_variable: false }),
@@ -886,7 +886,7 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                 "etiqueta_dinamica" | "varlabel" => {
                     let variable = argumentos.first()
                         .map(|a| match a {
-                            Expresion::Identificador(s) => s.clone(),
+                            Expresion::Identificador(s, ..) => s.clone(),
                             Expresion::LiteralTexto(s) => s.clone(),
                             _ => String::new(),
                         }).unwrap_or_default();
@@ -907,7 +907,7 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                     let variable = argumentos.first()
                         .map(|a| match a {
                             Expresion::LiteralTexto(s) => s.clone(),
-                            Expresion::Identificador(s) => s.clone(),
+                            Expresion::Identificador(s, ..) => s.clone(),
                             _ => String::new(),
                         }).unwrap_or_default();
                     let placeholder = argumentos.get(1)
@@ -921,7 +921,7 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                     let variable = argumentos.first()
                         .map(|a| match a {
                             Expresion::LiteralTexto(s) => s.clone(),
-                            Expresion::Identificador(s) => s.clone(),
+                            Expresion::Identificador(s, ..) => s.clone(),
                             _ => String::new(),
                         }).unwrap_or_default();
                     let placeholder = argumentos.get(1)
@@ -935,7 +935,7 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                     let variable = argumentos.first()
                         .map(|a| match a {
                             Expresion::LiteralTexto(s) => s.clone(),
-                            Expresion::Identificador(s) => s.clone(),
+                            Expresion::Identificador(s, ..) => s.clone(),
                             _ => String::new(),
                         }).unwrap_or_default();
                     Some(Layout::ProgressBar { variable })
@@ -944,7 +944,7 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                     let variable = argumentos.first()
                         .map(|a| match a {
                             Expresion::LiteralTexto(s) => s.clone(),
-                            Expresion::Identificador(s) => s.clone(),
+                            Expresion::Identificador(s, ..) => s.clone(),
                             _ => String::new(),
                         }).unwrap_or_default();
                     let min = argumentos.get(1)
@@ -959,12 +959,12 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                     let variable = argumentos.get(1)
                         .map(|a| match a {
                             Expresion::LiteralTexto(s) => s.clone(),
-                            Expresion::Identificador(s) => s.clone(),
+                            Expresion::Identificador(s, ..) => s.clone(),
                             _ => String::new(),
                         }).or_else(|| {
                             argumentos.first().map(|a| match a {
                                 Expresion::LiteralTexto(s) => s.clone(),
-                                Expresion::Identificador(s) => s.clone(),
+                                Expresion::Identificador(s, ..) => s.clone(),
                                 _ => String::new(),
                             })
                         }).unwrap_or_default();
@@ -1732,7 +1732,7 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                     let child = argumentos.first().and_then(expr_a_layout);
                     let _variable = argumentos.get(1)
                         .map(|a| match a {
-                            Expresion::Identificador(s) => s.clone(),
+                            Expresion::Identificador(s, ..) => s.clone(),
                             _ => String::new(),
                         }).unwrap_or_default();
                     child.map(|c| Layout::MaterialCard {
@@ -2195,7 +2195,7 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                     let valor = argumentos.get(1)
                         .map(|a| match a {
                             Expresion::LiteralTexto(s) => Some(s.clone()),
-                            Expresion::Identificador(s) => Some(s.clone()),
+                            Expresion::Identificador(s, ..) => Some(s.clone()),
                             Expresion::LiteralNumero(n) => Some(n.to_string()),
                             _ => None,
                         }).unwrap_or(None);
@@ -2241,7 +2241,7 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                         _ => None,
                     }).unwrap_or(None);
                     let accion_cb = argumentos.get(3).map(|a| match a {
-                        Expresion::Identificador(s) => Some(s.clone()),
+                        Expresion::Identificador(s, ..) => Some(s.clone()),
                         _ => None,
                     }).unwrap_or(None);
                     Some(Layout::EmptyState {
@@ -2256,7 +2256,7 @@ fn expr_a_layout(expr: &Expresion) -> Option<Layout> {
                 "estado_error" | "error_state" => {
                     let mensaje = extraer_texto(argumentos, 0);
                     let on_retry = argumentos.get(1).map(|a| match a {
-                        Expresion::Identificador(s) => Some(s.clone()),
+                        Expresion::Identificador(s, ..) => Some(s.clone()),
                         _ => None,
                     }).unwrap_or(None);
                     Some(Layout::ErrorState { mensaje, on_retry })
@@ -2658,7 +2658,7 @@ fn styled_label(args: &[Expresion], style: &str) -> Option<Layout> {
     let texto = args.first()
         .map(|a| match a {
             Expresion::LiteralTexto(s) => s.clone(),
-            Expresion::Identificador(s) => s.clone(),
+            Expresion::Identificador(s, ..) => s.clone(),
             _ => String::new(),
         }).unwrap_or_default();
     Some(Layout::StyledLabel {
@@ -5614,7 +5614,7 @@ fn evaluar_bloque(
 ) -> ValorGUI {
     for decl in decls {
         match decl {
-            Declaracion::Retornar { valor } => {
+            Declaracion::Retornar { valor, .. } => {
                 if let Some(expr) = valor {
                     return evaluar_expresion(expr, locals, state, programa);
                 }
@@ -5656,7 +5656,7 @@ fn evaluar_expresion(
         Expresion::LiteralBooleano(b) => ValorGUI::Texto(if *b { "verdadero".to_string() } else { "falso".to_string() }),
         Expresion::LiteralExacto(_, _) => ValorGUI::Nulo,
         Expresion::LiteralNulo => ValorGUI::Nulo,
-        Expresion::Identificador(v) => {
+        Expresion::Identificador(v, ..) => {
             // Buscar en locales primero, luego en state
             locals.get(v)
                 .cloned()

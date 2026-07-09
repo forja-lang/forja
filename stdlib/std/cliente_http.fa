@@ -1,0 +1,248 @@
+# modulo: cliente_http
+# Descripcion: Cliente HTTP/1.1 completo para Forja
+#
+# Uso: importar "std/cliente_http"
+#
+# Nota: Usa funciones nativas _http_* y _socket_*
+
+# ─── Clase RespuestaCliente ─────────────────────────────────────────
+clase RespuestaCliente {
+    codigo
+    status
+    cabeceras
+    cuerpo
+    exito
+    error
+    redirigido
+    url_final
+
+    constructor() {
+        este.codigo = 200
+        este.status = "OK"
+        este.cabeceras = {}
+        este.cuerpo = ""
+        este.exito = verdadero
+        este.error = ""
+        este.redirigido = falso
+        este.url_final = ""
+    }
+}
+
+funcion _respuesta_error(mensaje) {
+    variable r = nuevo RespuestaCliente()
+    r.exito = falso
+    r.error = mensaje
+    r.codigo = 0
+    r.status = ""
+    r.cabeceras = {}
+    r.cuerpo = ""
+    r.redirigido = falso
+    r.url_final = ""
+    retornar r
+}
+
+# ─── Clase OpcionesCliente ──────────────────────────────────────────
+clase OpcionesCliente {
+    cabeceras
+    timeout
+    seguir_redirecciones
+    max_redirecciones
+
+    constructor() {
+        este.cabeceras = {}
+        este.timeout = 30000
+        este.seguir_redirecciones = verdadero
+        este.max_redirecciones = 5
+    }
+}
+
+# ─── Funciones auxiliares internas ──────────────────────────────────
+
+funcion _cabeceras_a_texto(cabeceras) -> Texto {
+    variable partes = []
+    variable claves = claves_mapa(cabeceras)
+    variable i = 0
+    mientras (i < longitud(claves)) {
+        partes = partes + [claves[i], cabeceras[claves[i]]]
+        i = i + 1
+    }
+    retornar unir(partes, "|")
+}
+
+funcion _texto_a_mapa(texto: Texto) {
+    variable mapa = {}
+    variable partes = dividir(texto, "|")
+    variable i = 0
+    mientras (i + 1 < longitud(partes)) {
+        mapa[partes[i]] = partes[i + 1]
+        i = i + 2
+    }
+    retornar mapa
+}
+
+funcion _resolver_url(url: Texto) {
+    variable protocolo = "http"
+    variable host = ""
+    variable puerto = 80
+    variable ruta = "/"
+    variable resto = url
+
+    si (empieza_con(url, "https://")) {
+        protocolo = "https"
+        puerto = 443
+        resto = url[8..]
+    } sino {
+        si (empieza_con(url, "http://")) {
+            protocolo = "http"
+            resto = url[7..]
+        }
+    }
+
+    variable pos_barra = buscar(resto, "/")
+    variable host_parte = resto
+    si (pos_barra >= 0) {
+        host_parte = resto[..pos_barra]
+        ruta = resto[pos_barra..]
+    }
+
+    variable pos_dos_puntos = buscar(host_parte, ":")
+    si (pos_dos_puntos >= 0) {
+        host = host_parte[..pos_dos_puntos]
+        puerto = a_entero(host_parte[pos_dos_puntos + 1..])
+    } sino {
+        host = host_parte
+    }
+
+    retornar {
+        "protocolo": protocolo,
+        "host": host,
+        "puerto_num": puerto,
+        "ruta": ruta
+    }
+}
+
+funcion _realizar_solicitud(metodo: Texto, url: Texto, cuerpo: Texto, opciones) {
+    variable url_info = _resolver_url(url)
+    variable host = url_info["host"]
+    variable puerto = url_info["puerto_num"]
+    variable ruta = url_info["ruta"]
+
+    variable socket = _socket_tcp_conectar(host, puerto)
+    si (socket == nulo) {
+        retornar _respuesta_error("Error de conexion a " + host + ":" + a_texto(puerto))
+    }
+
+    si (opciones.timeout > 0) {
+        _socket_fijar_timeout(socket, opciones.timeout)
+    }
+
+    variable cabeceras = {}
+    cabeceras["Host"] = host
+    cabeceras["User-Agent"] = "Forja-HTTP/1.0"
+    cabeceras["Accept"] = "*/*"
+    cabeceras["Connection"] = "close"
+
+    variable claves_user = claves_mapa(opciones.cabeceras)
+    variable i = 0
+    mientras (i < longitud(claves_user)) {
+        cabeceras[claves_user[i]] = opciones.cabeceras[claves_user[i]]
+        i = i + 1
+    }
+
+    variable cabeceras_texto = _cabeceras_a_texto(cabeceras)
+    variable solicitud_raw = _http_crear_solicitud_raw(metodo, ruta, cabeceras_texto, cuerpo)
+    _socket_enviar(socket, solicitud_raw)
+
+    variable respuesta_raw = ""
+    variable intento = 0
+    mientras (intento < 500) {
+        variable datos = _socket_recibir(socket, 4096)
+        si (datos == nulo) {
+            romper
+        }
+        si (datos == "") {
+            romper
+        }
+        respuesta_raw = respuesta_raw + datos
+        intento = intento + 1
+    }
+
+    _socket_cerrar(socket)
+
+    si (respuesta_raw == "") {
+        retornar _respuesta_error("Respuesta vacia del servidor")
+    }
+
+    variable parseado = _http_parsear_respuesta(respuesta_raw)
+    si (parseado == nulo || parseado == "") {
+        retornar _respuesta_error("Error al parsear respuesta HTTP")
+    }
+
+    variable partes = _texto_a_mapa(parseado)
+    variable codigo_str = partes["codigo"]
+    variable status_texto = partes["status"]
+    variable cabeceras_resp = partes["cabeceras"]
+    variable cuerpo_resp = partes["cuerpo"]
+
+    variable respuesta = nuevo RespuestaCliente()
+    respuesta.codigo = a_entero(codigo_str)
+    respuesta.status = status_texto
+    respuesta.cabeceras = _texto_a_mapa(_http_parsear_cabeceras(cabeceras_resp))
+    respuesta.cuerpo = cuerpo_resp
+    respuesta.url_final = url
+    respuesta.exito = verdadero
+
+    si (opciones.seguir_redirecciones) {
+        variable redirecciones = 0
+        mientras ((respuesta.codigo == 301 || respuesta.codigo == 302 || respuesta.codigo == 303 || respuesta.codigo == 307 || respuesta.codigo == 308) && redirecciones < opciones.max_redirecciones) {
+            variable location = respuesta.cabeceras["location"]
+            si (location == nulo) {
+                location = respuesta.cabeceras["Location"]
+            }
+            si (location != nulo) {
+                respuesta.redirigido = verdadero
+                redirecciones = redirecciones + 1
+                respuesta = _realizar_solicitud(metodo, location, cuerpo, opciones)
+            } sino {
+                romper
+            }
+        }
+    }
+
+    retornar respuesta
+}
+
+# ─── API Publica ────────────────────────────────────────────────────
+
+funcion get(url: Texto) {
+    variable opciones = nuevo OpcionesCliente()
+    retornar _realizar_solicitud("GET", url, "", opciones)
+}
+
+funcion get_con_opciones(url: Texto, opciones) {
+    retornar _realizar_solicitud("GET", url, "", opciones)
+}
+
+funcion post(url: Texto, cuerpo: Texto) {
+    variable opciones = nuevo OpcionesCliente()
+    retornar _realizar_solicitud("POST", url, cuerpo, opciones)
+}
+
+funcion post_con_opciones(url: Texto, cuerpo: Texto, opciones) {
+    retornar _realizar_solicitud("POST", url, cuerpo, opciones)
+}
+
+funcion put(url: Texto, cuerpo: Texto) {
+    variable opciones = nuevo OpcionesCliente()
+    retornar _realizar_solicitud("PUT", url, cuerpo, opciones)
+}
+
+funcion eliminar(url: Texto) {
+    variable opciones = nuevo OpcionesCliente()
+    retornar _realizar_solicitud("DELETE", url, "", opciones)
+}
+
+funcion patch(url: Texto, cuerpo: Texto) {
+    variable opciones = nuevo OpcionesCliente()
+    retornar _realizar_solicitud("PATCH", url, cuerpo, opciones)
+}

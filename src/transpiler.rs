@@ -959,7 +959,7 @@ impl Transpiler {
                         for decl_cuerpo in &metodo.cuerpo {
                             if let Declaracion::AsignacionMiembro { objeto, miembro, valor } = decl_cuerpo {
                                 // este.campo = expr → inferir tipo
-                                if let Expresion::Identificador(ref nombre_self) = objeto.as_ref() {
+                                if let Expresion::Identificador(ref nombre_self, ..) = objeto.as_ref() {
                                     if nombre_self == "self" {
                                         let tipo_inferido = self.inferir_tipo_expr(valor, &metodo.parametros);
                                         tipos_campos.insert(miembro.clone(), tipo_inferido);
@@ -1005,7 +1005,7 @@ impl Transpiler {
             Expresion::LiteralBooleano(_) => "bool".to_string(),
             Expresion::LiteralExacto(_, _) => "f64".to_string(),
             Expresion::LiteralNulo => "()".to_string(),
-            Expresion::Identificador(nombre) => {
+            Expresion::Identificador(nombre, ..) => {
                 // Buscar si el identificador es un parámetro con tipo conocido
                 for p in params {
                     if p.nombre == *nombre {
@@ -1149,11 +1149,11 @@ impl Transpiler {
                 .iter()
                 .filter_map(|decl| {
                     if let Declaracion::AsignacionMiembro { objeto, miembro, valor } = decl {
-                        if let Expresion::Identificador(ref nombre_self) = objeto.as_ref() {
+                        if let Expresion::Identificador(ref nombre_self, ..) = objeto.as_ref() {
                             if nombre_self == "self" {
                                 // El valor puede ser un identificador (param) o una expresión
                                 let val_str = match valor.as_ref() {
-                                    Expresion::Identificador(id) => id.clone(),
+                                    Expresion::Identificador(id, ..) => id.clone(),
                                     other => self.transpilar_expresion(other),
                                 };
                                 return Some((miembro.clone(), val_str));
@@ -1326,7 +1326,7 @@ impl Transpiler {
     /// Retorna Some(Tipo) si encuentra una declaración `retornar` con valor.
     fn inferir_tipo_retorno(&self, cuerpo: &[Declaracion]) -> Option<Tipo> {
         for decl in cuerpo {
-            if let Declaracion::Retornar { valor: Some(val) } = decl {
+            if let Declaracion::Retornar { valor: Some(val), .. } = decl {
                 // Inferir tipo del valor retornado
                 let tipo = match val {
                     Expresion::LiteralNumero(_) => Some(Tipo::Entero),
@@ -1334,7 +1334,7 @@ impl Transpiler {
                     Expresion::LiteralTexto(_) => Some(Tipo::Texto),
                     Expresion::LiteralBooleano(_) => Some(Tipo::Booleano),
                     Expresion::LiteralNulo => Some(Tipo::Nulo),
-                    Expresion::Identificador(nombre) => {
+                    Expresion::Identificador(nombre, ..) => {
                         // Buscar si la variable tiene tipo conocido
                         match nombre.as_str() {
                             "verdadero" | "falso" => Some(Tipo::Booleano),
@@ -1415,7 +1415,7 @@ impl Transpiler {
                 self.analizar_expr_para_tipos(cantidad, tipos);
                 for d in bloque { self.analizar_declaracion_para_tipos(d, tipos); }
             }
-            Declaracion::Retornar { valor: Some(val) } => {
+            Declaracion::Retornar { valor: Some(val), .. } => {
                 self.analizar_expr_para_tipos(val, tipos);
             }
             Declaracion::Expresion(expr) => {
@@ -1430,7 +1430,7 @@ impl Transpiler {
 
     fn analizar_expr_para_tipos(&self, expr: &Expresion, tipos: &mut std::collections::HashMap<String, String>) {
         match expr {
-            Expresion::Identificador(nombre) => {
+            Expresion::Identificador(nombre, ..) => {
                 // Si el parámetro se usa con literales numéricos, es Entero
                 if !tipos.contains_key(nombre) {
                     tipos.insert(nombre.clone(), "i64".to_string());
@@ -1486,7 +1486,7 @@ impl Transpiler {
 
     fn transpilar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { mutable, nombre, tipo, valor } => {
+            Declaracion::Variable { mutable, nombre, tipo, valor, .. } => {
                 // Analizar si la variable es realmente mutable (se reasigna en el código)
                 let realmente_mutable = *mutable && es_variable_mutable(
                     nombre,
@@ -1513,7 +1513,7 @@ impl Transpiler {
                 self.emit_line(&format!("{};", decl_str));
             }
 
-            Declaracion::Asignacion { nombre, valor } => {
+            Declaracion::Asignacion { nombre, valor, .. } => {
                 let val_str = self.transpilar_expresion(valor);
                 self.emit_line(&format!("{} = {};", nombre, val_str));
             }
@@ -1530,7 +1530,7 @@ impl Transpiler {
                 self.emit_line(&format!("{}[{}] = {};", nombre, idx_str, val_str));
             }
 
-            Declaracion::Funcion { nombre, parametros_tipo, parametros, tipo_retorno, cuerpo, externa: _, enlace_nombre: _, atributos, doc, precondiciones, postcondiciones } => {
+            Declaracion::Funcion { nombre, parametros_tipo, parametros, tipo_retorno, cuerpo, atributos, doc, precondiciones, postcondiciones, .. } => {
                 // Emitir doc comment si existe
                 if let Some(doc_text) = doc {
                     for line in doc_text.lines() {
@@ -1749,7 +1749,7 @@ impl Transpiler {
 
                 if let Some(cond) = condicion {
                     if let Expresion::Binaria { izquierda, operador: Operador::Menor, derecha } = cond.as_ref() {
-                        if let Expresion::Identificador(ref var_name) = izquierda.as_ref() {
+                        if let Expresion::Identificador(ref var_name, ..) = izquierda.as_ref() {
                             // Patrón detectado: for x in 0..N
                             let range_end = self.transpilar_expresion(derecha);
                             self.emit_line(&format!("for {} in 0..{} {{", var_name, range_end));
@@ -1871,7 +1871,7 @@ impl Transpiler {
                 self.emit_line(&format!("{}.{};", obj_str, miembro));
             }
 
-            Declaracion::Retornar { valor } => {
+            Declaracion::Retornar { valor, .. } => {
                 if self.modo_postcondiciones {
                     let postconds = self.postcondiciones_actuales.clone();
                     if let Some(val) = valor {
@@ -1946,7 +1946,7 @@ impl Transpiler {
             Expresion::LiteralBooleano(b) => b.to_string(),
             Expresion::LiteralNulo => "()".to_string(),
 
-            Expresion::Identificador(nombre) => {
+            Expresion::Identificador(nombre, ..) => {
                 if nombre == "self" {
                     "self".to_string()
                 } else if nombre == "verdadero" {
@@ -2215,7 +2215,7 @@ impl Transpiler {
             }
             Expresion::Resultado => "_return_value".to_string(),
             Expresion::Anterior(expr) => {
-                if let Expresion::Identificador(var) = expr.as_ref() {
+                if let Expresion::Identificador(var, ..) = expr.as_ref() {
                     format!("_anterior_{}", var)
                 } else {
                     // para anterior(este.campo) usar el valor actual como fallback
@@ -2264,7 +2264,7 @@ impl Transpiler {
     fn recolectar_vars_anterior(&self, expr: &Expresion, vars: &mut Vec<String>) {
         match expr {
             Expresion::Anterior(inner) => {
-                if let Expresion::Identificador(var) = inner.as_ref() {
+                if let Expresion::Identificador(var, ..) = inner.as_ref() {
                     if !vars.contains(var) {
                         vars.push(var.clone());
                     }
