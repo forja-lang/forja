@@ -13,6 +13,9 @@ pub struct REPL {
     /// ejecución para que variables, funciones y clases persistan.
     source_acumulado: String,
     rl: Editor<(), FileHistory>,
+    /// VM persistente para hot-reload (Fase 1).
+    /// Se crea en la primera ejecución y se reusa en :reload.
+    vm_fast: Option<crate::vm_fast::ForjaFast>,
 }
 
 impl REPL {
@@ -47,6 +50,7 @@ impl REPL {
         println!("🔨 Forja v{} — Modo interactivo ({})", env!("CARGO_PKG_VERSION"), modo_desc);
         println!("    Escribí 'salir' para terminar  ·  ↑/↓ historial  ·  Tab autocompletado");
         println!("    'variables' para ver estado  ·  'limpiar' para reiniciar  ·  '--vm <modo>' para cambiar VM");
+        println!("    ':reload' para recargar funciones (hot reload Fase 1)");
         println!();
 
         REPL {
@@ -55,6 +59,7 @@ impl REPL {
             show_bytecode: false,
             source_acumulado: String::new(),
             rl,
+            vm_fast: None,
         }
     }
 
@@ -106,6 +111,40 @@ impl REPL {
                         "--debug off" => {
                             self.show_bytecode = false;
                             println!("🔧 Modo debug desactivado");
+                            continue;
+                        }
+                        ":reload" => {
+                            if let Some(ref mut vm) = self.vm_fast {
+                                // Recompilar el código acumulado y recargar funciones
+                                let full_source = self.source_acumulado.clone();
+                                if full_source.is_empty() {
+                                    println!("⚠️  No hay código cargado para recargar");
+                                } else {
+                                    let mut lexer = Lexer::new(&full_source);
+                                    let tokens = match lexer.tokenize() {
+                                        Ok(t) => t,
+                                        Err(e) => { eprintln!("❌ Error de lexer: {}", e[0]); continue; }
+                                    };
+                                    let mut parser = Parser::new(tokens);
+                                    let programa = match parser.parse() {
+                                        Ok(p) => p,
+                                        Err(e) => { eprintln!("❌ Error de parser: {}", e[0]); continue; }
+                                    };
+                                    let mut gen = BytecodeGenerator::new();
+                                    let bytecode = match gen.generar(&programa) {
+                                        Ok(b) => b,
+                                        Err(_) => { eprintln!("❌ Error generando bytecode"); continue; }
+                                    };
+                                    let bytecode = optimizar_indices(&bytecode);
+                                    let bytecode = fusionar_opcodes(&bytecode);
+
+                                    vm.cargar_bytecode(bytecode);
+                                    println!("♻️  Hot reload completado — {} funciones recargadas",
+                                        vm.function_table.entries.len());
+                                }
+                            } else {
+                                println!("⚠️  No hay VM activa. Ejecutá código primero.");
+                            }
                             continue;
                         }
                         _ => {
@@ -162,7 +201,12 @@ impl REPL {
 
         match self.vm_mode.as_str() {
             "fast" => {
-                let mut vm = crate::vm_fast::ForjaFast::new();
+                // Usar VM persistente si ya existe, o crear una nueva
+                let vm = self.vm_fast.get_or_insert_with(|| {
+                    let mut v = crate::vm_fast::ForjaFast::new();
+                    v.show_bytecode = self.show_bytecode;
+                    v
+                });
                 vm.show_bytecode = self.show_bytecode;
                 vm.cargar_bytecode(bytecode);
                 vm.ejecutar().map_err(|e| format!("{}", e))?;

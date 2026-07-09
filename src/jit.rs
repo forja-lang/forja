@@ -1157,6 +1157,26 @@ impl NativeJIT {
             f(vars.as_mut_ptr(), output as *mut Vec<String>)
         })
     }
+
+    /// Reemplaza el código compilado de una función en el cache del JIT.
+    /// Retorna true si la función existía previamente y fue reemplazada.
+    pub fn reemplazar(&mut self, name: &str, ptr: *mut u8, size: usize) -> bool {
+        let existed = self.compiled.contains_key(name);
+        self.compiled.insert(name.to_string(), CompiledCode { ptr, size });
+        existed
+    }
+}
+
+/// Reemplaza una función JIT compilada por una nueva versión.
+/// Útil para hot reload: permite reemplazar el código máquina de una función
+/// sin reiniciar la VM.
+pub fn jit_reemplazar_funcion(
+    jit: &mut NativeJIT,
+    nombre: &str,
+    ops: &[Opcode]
+) -> Result<(), String> {
+    jit.compile(nombre, ops)?;
+    Ok(())
 }
 
 #[cfg(test)]
