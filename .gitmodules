@@ -1,3 +1,15 @@
 [submodule "patches"]
 	path = patches
 	url = https://github.com/forja-lang/patches.git
+[submodule "vscode"]
+	path = vscode
+	url = https://github.com/forja-lang/vscode.git
+[submodule "examples"]
+	path = examples
+	url = https://github.com/forja-lang/examples.git
+[submodule "benchmarks"]
+	path = benchmarks
+	url = https://github.com/forja-lang/benchmarks.git
+[submodule "docs"]
+	path = docs
+	url = https://github.com/forja-lang/docs.git

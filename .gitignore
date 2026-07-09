@@ -5,10 +5,8 @@ target/
 test_inline_rs/
 tests/
 .vscode/
-docs/
 $null
-benchmarks/**/*.html
-benchmarks/**/*.o
+
 .cargo/
 .roo/
 /COMPARACION_FORJA_VS_RAVEN.md
@@ -26,6 +24,5 @@ plans/*.md
 *test*
 *tests*
 .forja_gui_cache/
-vscode/forja-syntax/*.md
-vscode/forja-syntax/**/*.md
+
 .kilo/
