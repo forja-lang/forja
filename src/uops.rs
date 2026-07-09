@@ -315,6 +315,15 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::AddStoreExact(_idx) => {
             Uop::AddExact // marcador
         }
+
+        // Design by Contract opcodes (VM-level, no uop equivalent)
+        // Se mapean a Label(0) (no-op) porque solo se ejecutan en dispatch directo
+        // Pattern matching opcodes (no-op en uops, se manejan en dispatch directo)
+        Opcode::CheckTag(_) | Opcode::ExtractField(_) => Uop::Label(0),
+        Opcode::CheckPre(_)
+        | Opcode::CheckPost(_)
+        | Opcode::SaveAnterior(_)
+        | Opcode::CheckInv(_) => Uop::Label(0), // no-op en uops
     }
 }
 

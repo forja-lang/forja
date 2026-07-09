@@ -344,6 +344,8 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
             Expresion::Ok(expr) => format!("Ok({})", self.ec(expr)),
             Expresion::Error(expr) => format!("Error({})", self.ec(expr)),
             Expresion::Some(expr) => format!("Some({})", self.ec(expr)),
+            Expresion::Resultado => "resultado".to_string(),
+            Expresion::Anterior(expr) => format!("anterior({})", self.ec(expr)),
         }
     }
     fn dc(&self, d: &Declaracion) -> String { match d { Declaracion::Variable { nombre, valor, .. } => { if let Some(v) = valor { format!("{nombre}={}", self.ec(v)) } else { nombre.clone() } } Declaracion::Asignacion { nombre, valor } => format!("{nombre}={}", self.ec(valor)), _ => "?".to_string() } }
