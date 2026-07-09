@@ -1,0 +1,6 @@
+# Test: exacto directo entre dos Exactos literales
+variable a: Exacto = 1.0
+variable b: Exacto = 0.9
+variable r: Exacto = a - b
+escribir("1.0 - 0.9 =")
+escribir(r)

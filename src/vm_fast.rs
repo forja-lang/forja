@@ -1531,6 +1531,22 @@ impl ForjaFast {
                         self.push_valor(ValorFast::flotante(a.a_entero() as f64 + b.a_flotante()));
                     } else if a.es_flotante() && b.es_entero() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_entero() as f64));
+                    } else if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                        let v = self.exacto_valor(a_adj.wrapping_add(b_adj), escala);
+                        self.push_valor(v);
+                    } else if a.es_exacto() && b.es_entero() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, b.a_entero() as i128, 0);
+                        let v = self.exacto_valor(a_adj.wrapping_add(b_adj), escala);
+                        self.push_valor(v);
+                    } else if a.es_entero() && b.es_exacto() {
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(a.a_entero() as i128, 0, be.coeficiente, be.escala);
+                        let v = self.exacto_valor(a_adj.wrapping_add(b_adj), escala);
+                        self.push_valor(v);
                     } else if a.es_texto() {
                         let s = format!("{}{}", self.get_str(a.indice_texto()), self.mostrar_valor(&b));
                         let idx = self.alloc_str(Rc::from(s.as_str()));
@@ -1599,6 +1615,22 @@ impl ForjaFast {
                         self.push_valor(ValorFast::flotante(a.a_entero() as f64 - b.a_flotante()));
                     } else if a.es_flotante() && b.es_entero() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() - b.a_entero() as f64));
+                    } else if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, be.coeficiente, be.escala);
+                        let v = self.exacto_valor(a_adj.wrapping_sub(b_adj), escala);
+                        self.push_valor(v);
+                    } else if a.es_exacto() && b.es_entero() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(ae.coeficiente, ae.escala, b.a_entero() as i128, 0);
+                        let v = self.exacto_valor(a_adj.wrapping_sub(b_adj), escala);
+                        self.push_valor(v);
+                    } else if a.es_entero() && b.es_exacto() {
+                        let be = self.get_exacto(b.indice_exacto());
+                        let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(a.a_entero() as i128, 0, be.coeficiente, be.escala);
+                        let v = self.exacto_valor(a_adj.wrapping_sub(b_adj), escala);
+                        self.push_valor(v);
                     } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
@@ -1653,6 +1685,22 @@ impl ForjaFast {
                         self.push_valor(ValorFast::flotante(a.a_entero() as f64 * b.a_flotante()));
                     } else if a.es_flotante() && b.es_entero() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() * b.a_entero() as f64));
+                    } else if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        let result = ae.coeficiente.wrapping_mul(be.coeficiente);
+                        let v = self.exacto_valor(result, ae.escala.wrapping_add(be.escala));
+                        self.push_valor(v);
+                    } else if a.es_exacto() && b.es_entero() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let result = ae.coeficiente.wrapping_mul(b.a_entero() as i128);
+                        let v = self.exacto_valor(result, ae.escala);
+                        self.push_valor(v);
+                    } else if a.es_entero() && b.es_exacto() {
+                        let be = self.get_exacto(b.indice_exacto());
+                        let result = (a.a_entero() as i128).wrapping_mul(be.coeficiente);
+                        let v = self.exacto_valor(result, be.escala);
+                        self.push_valor(v);
                     } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
                 }
@@ -1719,6 +1767,44 @@ impl ForjaFast {
                         self.push_valor(ValorFast::flotante(a.a_entero() as f64 / b.a_flotante()));
                     } else if a.es_flotante() && b.es_entero() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() / b.a_entero() as f64));
+                    } else if a.es_exacto() && b.es_exacto() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        let be = self.get_exacto(b.indice_exacto());
+                        if be.coeficiente == 0 {
+                            self.push_valor(ValorFast::nulo());
+                        } else {
+                            let extra = 20;
+                            let dividendo = ae.coeficiente.wrapping_mul(10_i128.wrapping_pow(extra));
+                            let escala = ae.escala.wrapping_add(extra);
+                            let (div_adj, b_adj, escala_final) = if escala >= be.escala {
+                                let factor = 10_i128.wrapping_pow(escala - be.escala);
+                                (dividendo, be.coeficiente.wrapping_mul(factor), escala)
+                            } else {
+                                let factor = 10_i128.wrapping_pow(be.escala - escala);
+                                (dividendo.wrapping_mul(factor), be.coeficiente, be.escala)
+                            };
+                            let cociente = div_adj.wrapping_div(b_adj);
+                            let v = self.exacto_valor(cociente, escala_final);
+                            self.push_valor(v);
+                        }
+                    } else if a.es_exacto() && b.es_entero() {
+                        let ae = self.get_exacto(a.indice_exacto());
+                        if b.a_entero() == 0 { self.push_valor(ValorFast::nulo()); }
+                        else {
+                            let cociente = ae.coeficiente.wrapping_div(b.a_entero() as i128);
+                            let v = self.exacto_valor(cociente, ae.escala);
+                            self.push_valor(v);
+                        }
+                    } else if a.es_entero() && b.es_exacto() {
+                        let be = self.get_exacto(b.indice_exacto());
+                        if be.coeficiente == 0 { self.push_valor(ValorFast::nulo()); }
+                        else {
+                            let extra = 20;
+                            let dividendo = (a.a_entero() as i128).wrapping_mul(10_i128.wrapping_pow(extra));
+                            let cociente = dividendo.wrapping_div(be.coeficiente);
+                            let v = self.exacto_valor(cociente, extra);
+                            self.push_valor(v);
+                        }
                     } else {
                         self.push_valor(ValorFast::nulo());
                     }
@@ -2063,26 +2149,44 @@ impl ForjaFast {
                     else if a.es_flotante()&&b.es_flotante(){a.a_flotante()==b.a_flotante()}
                     else if a.es_texto()&&b.es_texto(){self.get_str(a.indice_texto())==self.get_str(b.indice_texto())}
                     else if a.es_booleano()&&b.es_booleano(){a.a_booleano()==b.a_booleano()}
+                    else if a.es_exacto()&&b.es_exacto(){let ae=self.get_exacto(a.indice_exacto());let be=self.get_exacto(b.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(ae.coeficiente,ae.escala,be.coeficiente,be.escala);aa==bb}
+                    else if a.es_exacto()&&b.es_entero(){let ae=self.get_exacto(a.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(ae.coeficiente,ae.escala,b.a_entero()as i128,0);aa==bb}
+                    else if a.es_entero()&&b.es_exacto(){let be=self.get_exacto(b.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(a.a_entero()as i128,0,be.coeficiente,be.escala);aa==bb}
                     else{false}));self.ip+=1;}
                 Opcode::Diferente=>{let(b,a)=(self.pop_valor()?,self.pop_valor()?);self.push_valor(ValorFast::booleano(
                     if a.es_entero()&&b.es_entero(){a.a_entero()!=b.a_entero()}
                     else if a.es_flotante()&&b.es_flotante(){a.a_flotante()!=b.a_flotante()}
+                    else if a.es_exacto()&&b.es_exacto(){let ae=self.get_exacto(a.indice_exacto());let be=self.get_exacto(b.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(ae.coeficiente,ae.escala,be.coeficiente,be.escala);aa!=bb}
+                    else if a.es_exacto()&&b.es_entero(){let ae=self.get_exacto(a.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(ae.coeficiente,ae.escala,b.a_entero()as i128,0);aa!=bb}
+                    else if a.es_entero()&&b.es_exacto(){let be=self.get_exacto(b.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(a.a_entero()as i128,0,be.coeficiente,be.escala);aa!=bb}
                     else{false}));self.ip+=1;}
                 Opcode::Menor=>{let(b,a)=(self.pop_valor()?,self.pop_valor()?);self.push_valor(ValorFast::booleano(
                     if a.es_entero()&&b.es_entero(){a.a_entero()<b.a_entero()}
                     else if a.es_flotante()&&b.es_flotante(){a.a_flotante()<b.a_flotante()}
+                    else if a.es_exacto()&&b.es_exacto(){let ae=self.get_exacto(a.indice_exacto());let be=self.get_exacto(b.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(ae.coeficiente,ae.escala,be.coeficiente,be.escala);aa<bb}
+                    else if a.es_exacto()&&b.es_entero(){let ae=self.get_exacto(a.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(ae.coeficiente,ae.escala,b.a_entero()as i128,0);aa<bb}
+                    else if a.es_entero()&&b.es_exacto(){let be=self.get_exacto(b.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(a.a_entero()as i128,0,be.coeficiente,be.escala);aa<bb}
                     else{false}));self.ip+=1;}
                 Opcode::Mayor=>{let(b,a)=(self.pop_valor()?,self.pop_valor()?);self.push_valor(ValorFast::booleano(
                     if a.es_entero()&&b.es_entero(){a.a_entero()>b.a_entero()}
                     else if a.es_flotante()&&b.es_flotante(){a.a_flotante()>b.a_flotante()}
+                    else if a.es_exacto()&&b.es_exacto(){let ae=self.get_exacto(a.indice_exacto());let be=self.get_exacto(b.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(ae.coeficiente,ae.escala,be.coeficiente,be.escala);aa>bb}
+                    else if a.es_exacto()&&b.es_entero(){let ae=self.get_exacto(a.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(ae.coeficiente,ae.escala,b.a_entero()as i128,0);aa>bb}
+                    else if a.es_entero()&&b.es_exacto(){let be=self.get_exacto(b.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(a.a_entero()as i128,0,be.coeficiente,be.escala);aa>bb}
                     else{false}));self.ip+=1;}
                 Opcode::MenorIgual=>{let(b,a)=(self.pop_valor()?,self.pop_valor()?);self.push_valor(ValorFast::booleano(
                     if a.es_entero()&&b.es_entero(){a.a_entero()<=b.a_entero()}
                     else if a.es_flotante()&&b.es_flotante(){a.a_flotante()<=b.a_flotante()}
+                    else if a.es_exacto()&&b.es_exacto(){let ae=self.get_exacto(a.indice_exacto());let be=self.get_exacto(b.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(ae.coeficiente,ae.escala,be.coeficiente,be.escala);aa<=bb}
+                    else if a.es_exacto()&&b.es_entero(){let ae=self.get_exacto(a.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(ae.coeficiente,ae.escala,b.a_entero()as i128,0);aa<=bb}
+                    else if a.es_entero()&&b.es_exacto(){let be=self.get_exacto(b.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(a.a_entero()as i128,0,be.coeficiente,be.escala);aa<=bb}
                     else{false}));self.ip+=1;}
                 Opcode::MayorIgual=>{let(b,a)=(self.pop_valor()?,self.pop_valor()?);self.push_valor(ValorFast::booleano(
                     if a.es_entero()&&b.es_entero(){a.a_entero()>=b.a_entero()}
                     else if a.es_flotante()&&b.es_flotante(){a.a_flotante()>=b.a_flotante()}
+                    else if a.es_exacto()&&b.es_exacto(){let ae=self.get_exacto(a.indice_exacto());let be=self.get_exacto(b.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(ae.coeficiente,ae.escala,be.coeficiente,be.escala);aa>=bb}
+                    else if a.es_exacto()&&b.es_entero(){let ae=self.get_exacto(a.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(ae.coeficiente,ae.escala,b.a_entero()as i128,0);aa>=bb}
+                    else if a.es_entero()&&b.es_exacto(){let be=self.get_exacto(b.indice_exacto());let(aa,bb,_)=homogeneizar_exacto_fast(a.a_entero()as i128,0,be.coeficiente,be.escala);aa>=bb}
                     else{false}));self.ip+=1;}
                 Opcode::Y=>{let b=self.pop_valor()?;let a=self.pop_valor()?;self.push_valor(ValorFast::booleano(a.es_verdadero()&&b.es_verdadero()));self.ip+=1;}
                 Opcode::O=>{let b=self.pop_valor()?;let a=self.pop_valor()?;self.push_valor(ValorFast::booleano(a.es_verdadero()||b.es_verdadero()));self.ip+=1;}

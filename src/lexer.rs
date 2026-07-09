@@ -169,6 +169,12 @@ impl Lexer {
             "seleccionar" => TokenKind::Seleccionar,
             "tiempo" => TokenKind::Tiempo,
             "otro" => TokenKind::Otro,
+            // Contratos Design by Contract
+            "requiere" => TokenKind::Requiere,
+            "asegura" => TokenKind::Asegura,
+            "siempre" => TokenKind::Siempre,
+            "resultado" => TokenKind::ResultadoKw,
+            "anterior" => TokenKind::Anterior,
             // Tipos de datos como soft keywords: son keywords solo en contexto de tipos,
             // pero identificadores normales en otros contextos (expresiones, etc.)
             // Entero, Decimal, Texto, Booleano → se devuelven como Identificador

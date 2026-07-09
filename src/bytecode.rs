@@ -419,6 +419,11 @@ impl BytecodeGenerator {
                         }
                     }
                     // Emitir opcode Exacto según el operador
+                    // Nota: MayorIgual, MenorIgual y Diferente no tienen
+                    // opcode Exacto directo → se descomponen:
+                    //   e >= other → !(e < other)
+                    //   e <= other → !(e > other)
+                    //   e != other → !(e == other)
                     let op_exact = match op {
                         Operador::Suma => Opcode::AddExact,
                         Operador::Resta => Opcode::SubExact,
@@ -427,6 +432,24 @@ impl BytecodeGenerator {
                         Operador::IgualIgual => Opcode::IgualExact,
                         Operador::Menor => Opcode::MenorExact,
                         Operador::Mayor => Opcode::MayorExact,
+                        Operador::MayorIgual => {
+                            // e >= other → !(e < other)
+                            self.emitir(Opcode::MenorExact);
+                            self.emitir(Opcode::No);
+                            return;
+                        }
+                        Operador::MenorIgual => {
+                            // e <= other → !(e > other)
+                            self.emitir(Opcode::MayorExact);
+                            self.emitir(Opcode::No);
+                            return;
+                        }
+                        Operador::Diferente => {
+                            // e != other → !(e == other)
+                            self.emitir(Opcode::IgualExact);
+                            self.emitir(Opcode::No);
+                            return;
+                        }
                         _ => {
                             // Otros comparadores no soportados → fallback genérico
                             let op_gen = match op {
@@ -650,9 +673,25 @@ impl BytecodeGenerator {
 
     fn generar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { mutable, nombre, valor, .. } => {
+            Declaracion::Variable { mutable, nombre, valor, tipo } => {
                 if let Some(val) = valor {
                     self.generar_expresion(val);
+                    // Si la variable tiene tipo Exacto y el valor es un literal
+                    // Decimal o Entero, emitir conversión para que el runtime
+                    // almacene el valor correcto como Exacto (BigDecimal).
+                    if let Some(Tipo::Exacto) = tipo {
+                        if let Some(val_expr) = valor {
+                            match val_expr {
+                                Expresion::LiteralDecimal(_) => {
+                                    self.emitir(Opcode::DecimalAExacto);
+                                }
+                                Expresion::LiteralNumero(_) => {
+                                    self.emitir(Opcode::EnteroAExacto);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
                 } else {
                     self.emitir(Opcode::PushNulo);
                 }
@@ -924,14 +963,17 @@ impl BytecodeGenerator {
             }
 
             Expresion::Unaria { operador, expr: e } => {
-                self.generar_expresion(e);
                 match operador {
                     OperadorUnario::No => {
+                        self.generar_expresion(e);
                         self.emitir(Opcode::No);
                     }
                     OperadorUnario::Negar => {
+                        // Para -expr, necesitamos 0 - expr.
+                        // Primero push 0, luego evaluamos la expresión para que
+                        // el stack quede [0, expr_val] y Sub calcule 0 - expr_val = -expr_val
                         self.emitir(Opcode::PushEntero(0));
-                        // Swap: 0 - valor
+                        self.generar_expresion(e);
                         self.emitir(Opcode::Sub);
                     }
                 }
