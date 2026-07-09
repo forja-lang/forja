@@ -58,7 +58,12 @@ pub fn es_jiteable(opcodes: &[Opcode]) -> bool {
             Opcode::Modulo2(_) |
             // Fase B: AVX2 SoA
             Opcode::ReduceAdd(_, _) | Opcode::LoadAddPacked(_, _, _) => {}
-            // NO JITeables
+            // NO JITeables — Fase 5: Exacto (BigDecimal) no soportado en JIT nativo
+            Opcode::PushExacto(_, _) | Opcode::AddExact | Opcode::SubExact |
+            Opcode::MulExact | Opcode::DivExact |
+            Opcode::IgualExact | Opcode::MenorExact | Opcode::MayorExact |
+            Opcode::EnteroAExacto | Opcode::DecimalAExacto |
+            Opcode::DeclareExactOp(_, _, _) | Opcode::AddStoreExact(_) => return false,
             _ => return false,
         }
     }
