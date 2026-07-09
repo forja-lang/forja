@@ -36,6 +36,7 @@ pub mod selfrun;
 pub mod jit;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod module;
+pub use module::{ModuleId, ModuleInfo, ModuleCache};
 #[cfg(not(target_arch = "wasm32"))]
 pub mod prelude;
 #[cfg(not(target_arch = "wasm32"))]
@@ -244,6 +245,50 @@ pub fn compilar_pipeline_completa(source: &str) -> Result<(Vec<bytecode::Opcode>
     let contratos = gen.contratos;
 
     Ok((bytecode, contratos))
+}
+
+/// Compila un módulo Forja a ModuleBytecode, sin resolución de imports.
+/// El caller debe proveer el source completo del módulo (con imports ya resueltos
+/// inline, o un módulo sin imports externos).
+///
+/// Útil para hot-reload: se pasa el código fuente actualizado del módulo y su
+/// module_id, y se obtiene un ModuleBytecode listo para pasar a hot_swap_module().
+#[cfg(not(target_arch = "wasm32"))]
+pub fn compilar_modulo(source: &str, module_id: ModuleId) -> Result<bytecode::ModuleBytecode, String> {
+    use bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
+
+    // FASE 1: Lexer
+    let mut lexer = lexer::Lexer::new(source);
+    let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
+
+    // FASE 2: Parser
+    let mut parser = parser::Parser::new(tokens);
+    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+
+    // FASE 3: Type Checker + Type Inference
+    let mut type_checker = semantics::TypeChecker::new();
+    type_checker.analizar(&programa).map_err(|e| format!("{}", e[0]))?;
+    let tipos_inferidos = type_checker.obtener_tipos_inferidos();
+
+    // FASE 4: Optimizador (constant folding)
+    let mut optimizer = optimizer::Optimizer::new();
+    let programa = optimizer.optimizar(&programa);
+
+    // FASE 4b: Dead Code Elimination
+    let mut dce = optimizer::DeadCodeEliminator::new();
+    let programa = dce.eliminar(&programa);
+
+    // FASE 5: Generar ModuleBytecode con generar_para_modulo()
+    let mut gen = BytecodeGenerator::new();
+    gen.set_tipos_inferidos(tipos_inferidos);
+    let mut module_bc = gen.generar_para_modulo(&programa, module_id)
+        .map_err(|_| "Error generando bytecode para módulo".to_string())?;
+
+    // FASE 6: Optimizar bytecode interno (índices globales + fusión de opcodes)
+    module_bc.opcodes = optimizar_indices(&module_bc.opcodes);
+    module_bc.opcodes = fusionar_opcodes(&module_bc.opcodes);
+
+    Ok(module_bc)
 }
 
 /// Compila y ejecuta código Forja en ForjaFast (VM ultra-rápida)

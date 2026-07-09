@@ -1,0 +1,41 @@
+# Demostración de Hot Reload (Fase 2) en Forja
+#
+# Para probar:
+# 1. Ejecutar: forja run examples/222_hot_reload/demo_hot_reload.fa
+# 2. Verás la versión del módulo y el saludo
+# 3. Modificar examples/222_hot_reload/modulo.fa:
+#    - Cambiar "versión 1" a "versión 2" en función version_modulo()
+#    - O cambiar el mensaje de saludo
+# 4. Llamar _recargar_modulo("modulo") desde el código o :reload modulo desde REPL
+# 5. Llamar las funciones nuevamente y ver los cambios
+#
+# También se puede probar _recargar_todo() para recargar todos los módulos cambiados.
+
+# ── Importar el módulo ──
+importar "modulo"
+
+# ── Función de prueba que usa el módulo ──
+fun probar_modulo() {
+    escribir("=== Prueba de módulo cargado ===")
+    modulo.saludar("Mundo")
+    escribir("3 + 5 = {modulo.sumar(3, 5)}")
+    escribir("Versión del módulo: {modulo.version_modulo()}")
+    escribir("")
+}
+
+# ── Ejecutar prueba inicial ──
+probar_modulo()
+
+# ── Información sobre hot reload ──
+escribir("=== Hot Reload disponible ===")
+escribir("Para recargar manualmente (REPL):")
+escribir("  :reload modulo")
+escribir("")
+escribir("Para recargar desde código Forja:")
+escribir("  _recargar_modulo(\"modulo\")")
+escribir("")
+escribir("Para recargar todos los módulos cambiados:")
+escribir("  _recargar_todo()")
+escribir("")
+escribir("Para ver la versión de un módulo:")
+escribir("  _version_modulo(\"modulo\")")

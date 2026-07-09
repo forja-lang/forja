@@ -19,12 +19,14 @@
 // Si NO es NaN pattern → es un f64 directo
 
 use std::collections::HashMap;
-use std::rc::Rc;
-use crate::bytecode::{self, Opcode, BuiltinKind, ContratoBytecode};
+use std::sync::Arc;
+use crate::bytecode::{self, Opcode, BuiltinKind, ContratoBytecode, ModuleBytecode};
 use crate::symbol_table::{SymbolTable, SymId};
 use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops};
 use crate::class_descriptor::{Shape, ClassDescriptor};
 use crate::native_registry::{NativeRegistry, SocketState};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::module::{ModuleId, ModuleInfo, ModuleResolver};
 use crate::prof_count;
 
 /// Índice especial de variable para 'resultado' en postcondiciones.
@@ -311,6 +313,13 @@ pub struct FunctionTable {
     pub entries: Vec<FuncVersion>,
 }
 
+/// Bytecode versionado: preserva versiones antiguas para frames en ejecución
+#[derive(Clone)]
+pub struct VersionedBytecode {
+    pub version: u32,
+    pub opcodes: Vec<Opcode>,
+}
+
 // ─── ForjaFast VM (con VM Heap) ────────────────────────────────────────────
 
 pub struct ForjaFast {
@@ -333,7 +342,7 @@ pub struct ForjaFast {
     // ─── VM Heap ─────────────────────────────────────────────────────────────
     // Objetos, strings, arrays y mapas viven aquí y se referencian por índice u32.
     obj_heap: Vec<ObjVal>,
-    str_heap: Vec<Rc<str>>,
+    str_heap: Vec<Arc<str>>,
     array_heap: Vec<Vec<ValorFast>>,
     map_heap: Vec<HashMap<String, ValorFast>>,
     obj_marked: Vec<bool>,       // marcas GC para objetos
@@ -374,6 +383,8 @@ pub struct ForjaFast {
     // ─── Thread Heap ─────────────────────────────────────────────────────
     /// Resultados de hilos ya ejecutados (None si no se ha unido aún)
     pub thread_heap: Vec<Option<ValorFast>>,
+    /// Receptores para resultados de hilos (para unir())
+    pub thread_rx: Vec<Option<std::sync::mpsc::Receiver<ValorFast>>>,
     /// Marcas GC para hilos
     pub thread_marked: Vec<bool>,
     /// Free list para hilos
@@ -440,7 +451,24 @@ pub struct ForjaFast {
     pub function_table: FunctionTable,          // Tabla de indirección
     pub sym_to_func_idx: HashMap<SymId, usize>, // Mapeo SymId → índice en function_table
     pub function_versions: HashMap<SymId, u32>, // Versión actual de cada función
-    pub bytecode_pool: Vec<Vec<Opcode>>,        // Pool de bytecode versionado
+    pub bytecode_pool: Vec<VersionedBytecode>,  // Pool de bytecode versionado
+
+    // ─── Hot Reload: Module Registry ───────────────────────────────────────
+    /// Registro de módulos cargados (ModuleId → ModuleInfo)
+    pub module_registry: HashMap<ModuleId, ModuleInfo>,
+    /// Módulo propietario de cada función (SymId → ModuleId)
+    pub module_fn_owners: HashMap<SymId, ModuleId>,
+    /// Resolver de módulos (para recargar)
+    pub module_resolver: ModuleResolver,
+    /// Variables globales de módulo (SymId del nombre → (índice_global, mutable))
+    pub nombre_a_idx_global: HashMap<SymId, (usize, bool)>,
+    /// Valores persistentes de variables globales de módulo (idx → ValorFast)
+    /// Persisten entre hot-reloads para que el estado de la variable se preserve.
+    pub global_var_persist: Vec<ValorFast>,
+    /// Índices que ya han sido inicializados como globales de módulo
+    pub global_var_inited: std::collections::HashSet<usize>,
+    /// Rango de bytecode que ocupa cada módulo en self.bytecode (start, end)
+    pub modulo_bytecode_ranges: HashMap<ModuleId, (usize, usize)>,
 
     max_inst: usize,
     ejecutadas: usize,
@@ -467,6 +495,8 @@ struct FrmFast {
     base_ptr_previo: usize,
     #[allow(dead_code)]
     num_vars: usize,
+    /// Versión de función capturada al crear el frame (para hot-swap)
+    func_version: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -498,7 +528,7 @@ impl ForjaFast {
     pub fn new() -> Self {
         let mut vm = ForjaFast {
             ip: 0, stack: Vec::with_capacity(256),
-            frame_buffer: [FrmFast { ip_ret: 0, base_ptr_previo: 0, num_vars: 0 }; 2048],
+            frame_buffer: [FrmFast { ip_ret: 0, base_ptr_previo: 0, num_vars: 0, func_version: 0 }; 2048],
             frame_count: 0,
             flat_vars: Vec::with_capacity(128), base_ptr: 0,
             stack_top: [ValorFast::nulo(), ValorFast::nulo(), ValorFast::nulo(), ValorFast::nulo()],
@@ -556,6 +586,7 @@ impl ForjaFast {
             chan_tx_free: Vec::new(), chan_rx_free: Vec::new(),
             // Threads
             thread_heap: Vec::new(),
+            thread_rx: Vec::new(),
             thread_marked: Vec::new(),
             thread_free: Vec::new(),
             // Hot Reload: Function Table
@@ -563,6 +594,14 @@ impl ForjaFast {
             sym_to_func_idx: HashMap::new(),
             function_versions: HashMap::new(),
             bytecode_pool: Vec::new(),
+            // Hot Reload: Module Registry
+            module_registry: HashMap::new(),
+            module_fn_owners: HashMap::new(),
+            module_resolver: ModuleResolver::new("."),
+            nombre_a_idx_global: HashMap::new(),
+            global_var_persist: Vec::new(),
+            global_var_inited: std::collections::HashSet::new(),
+            modulo_bytecode_ranges: HashMap::new(),
         };
         vm.init_symbols();
         vm
@@ -595,7 +634,7 @@ impl ForjaFast {
                 Uop::PushEntero(n) => stack.push(get_small_int_fast(*n)),
                 Uop::PushDecimal(d) => stack.push(ValorFast::flotante(*d)),
                 Uop::PushTexto(s) => {
-                    let idx = self.alloc_str(std::rc::Rc::clone(s));
+                    let idx = self.alloc_str(Arc::clone(s));
                     stack.push(ValorFast::texto(idx));
                 }
                 Uop::PushBooleano(b) => stack.push(ValorFast::booleano(*b)),
@@ -1049,6 +1088,7 @@ impl ForjaFast {
         self.chan_tx_free.clear();
         self.chan_rx_free.clear();
         self.thread_heap.clear();
+        self.thread_rx.clear();
         self.thread_marked.clear();
         self.thread_free.clear();
         self.gc_allocs_since_last = 0;
@@ -1079,7 +1119,7 @@ impl ForjaFast {
     }
 
     #[inline(always)]
-    pub fn alloc_str(&mut self, s: Rc<str>) -> u32 {
+    pub fn alloc_str(&mut self, s: Arc<str>) -> u32 {
         self.gc_allocs_since_last += 1;
         if self.gc_allocs_since_last >= self.gc_threshold {
             self.gc_collect();
@@ -1185,13 +1225,15 @@ impl ForjaFast {
     }
 
     #[inline(always)]
-    fn alloc_thread(&mut self, resultado: Option<ValorFast>) -> u32 {
+    fn alloc_thread(&mut self, resultado: Option<ValorFast>, rx: Option<std::sync::mpsc::Receiver<ValorFast>>) -> u32 {
         if let Some(idx) = self.thread_free.pop() {
             self.thread_heap[idx as usize] = resultado;
+            self.thread_rx[idx as usize] = rx;
             idx
         } else {
             let idx = self.thread_heap.len() as u32;
             self.thread_heap.push(resultado);
+            self.thread_rx.push(rx);
             self.thread_marked.push(false);
             idx
         }
@@ -1255,7 +1297,7 @@ impl ForjaFast {
         // Strings no marcados → free list
         for i in 0..self.str_heap.len() {
             if !self.str_marked[i] {
-                self.str_heap[i] = Rc::from("");
+                self.str_heap[i] = Arc::from("");
                 self.str_free.push(i as u32);
             }
         }
@@ -1366,7 +1408,7 @@ impl ForjaFast {
     }
 
     #[inline(always)]
-    pub fn get_str(&self, idx: u32) -> &Rc<str> {
+    pub fn get_str(&self, idx: u32) -> &Arc<str> {
         &self.str_heap[idx as usize]
     }
 
@@ -1910,6 +1952,25 @@ impl ForjaFast {
                     self.flat_vars[actual] = val;
                     self.ip += 1;
                 }
+                Opcode::DeclareIdxGlobal(idx, _) => {
+                    // Asegurar espacio en global_var_persist
+                    if idx >= self.global_var_persist.len() {
+                        self.global_var_persist.resize(idx + 1, ValorFast::nulo());
+                    }
+                    if !self.global_var_inited.contains(&idx) {
+                        // Primera inicialización: tomar el valor del stack
+                        let val = self.pop_valor()?;
+                        self.global_var_persist[idx] = val;
+                        self.global_var_inited.insert(idx);
+                    } else {
+                        // Hot-reload: preservar valor anterior, descartar el nuevo
+                        self.pop_valor()?;
+                    }
+                    // Sincronizar flat_vars para que LoadIdx/StoreIdx funcionen
+                    if idx >= self.flat_vars.len() { self.flat_vars.resize(idx + 1, ValorFast::nulo()); }
+                    self.flat_vars[idx] = self.global_var_persist[idx];
+                    self.ip += 1;
+                }
 
                 // === OPCODES FUSIONADOS (sin push/pop — asignación directa) ===
                 Opcode::DeclareEnteroOp(idx, n) => {
@@ -1986,7 +2047,7 @@ impl ForjaFast {
                             2 => {
                                 if a.es_texto() && b.es_texto() {
                                     let s = format!("{}{}", self.get_str(a.indice_texto()), self.get_str(b.indice_texto()));
-                                    let idx = self.alloc_str(Rc::from(s.as_str()));
+                                    let idx = self.alloc_str(Arc::from(s.as_str()));
                                     self.push_valor(ValorFast::texto(idx));
                                     self.ip += 1;
                                     continue;
@@ -2022,17 +2083,17 @@ impl ForjaFast {
                         self.push_valor(v);
                     } else if a.es_texto() {
                         let s = format!("{}{}", self.get_str(a.indice_texto()), self.mostrar_valor(&b));
-                        let idx = self.alloc_str(Rc::from(s.as_str()));
+                        let idx = self.alloc_str(Arc::from(s.as_str()));
                         self.push_valor(ValorFast::texto(idx));
                     } else if b.es_texto() {
                         let s = format!("{}{}", self.mostrar_valor(&a), self.get_str(b.indice_texto()));
-                        let idx = self.alloc_str(Rc::from(s.as_str()));
+                        let idx = self.alloc_str(Arc::from(s.as_str()));
                         self.push_valor(ValorFast::texto(idx));
                     } else {
                         let s1 = self.mostrar_valor(&a);
                         let s2 = self.mostrar_valor(&b);
                         let result = format!("{}{}", s1, s2);
-                        let idx = self.alloc_str(Rc::from(result.as_str()));
+                        let idx = self.alloc_str(Arc::from(result.as_str()));
                         self.push_valor(ValorFast::texto(idx));
                     }
                     self.ip += 1;
@@ -2710,6 +2771,7 @@ impl ForjaFast {
                                     ip_ret: next_ip,
                                     base_ptr_previo: self.base_ptr,
                                     num_vars: num_vars_actual,
+                                    func_version: entry.version,
                                 };
                                 self.frame_count += 1;
     
@@ -2782,6 +2844,7 @@ impl ForjaFast {
                                 ip_ret: next_ip,
                                 base_ptr_previo: self.base_ptr,
                                 num_vars: num_vars_actual,
+                                func_version: entry.version,
                             };
                             self.frame_count += 1;
                             self.base_ptr = self.flat_vars.len();
@@ -2827,14 +2890,14 @@ impl ForjaFast {
                             if nargs != 1 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                             let v = self.pop_valor()?;
                             let tipo_str = v.tipo_str();
-                            let idx = self.alloc_str(Rc::from(tipo_str));
+                            let idx = self.alloc_str(Arc::from(tipo_str));
                             self.push_valor(ValorFast::texto(idx));
                         }
                         BuiltinKind::ATexto => {
                             if nargs != 1 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
                             let v = self.pop_valor()?;
                             let s = self.mostrar_valor(&v);
-                            let idx = self.alloc_str(Rc::from(s.as_str()));
+                            let idx = self.alloc_str(Arc::from(s.as_str()));
                             self.push_valor(ValorFast::texto(idx));
                         }
                         BuiltinKind::EsNumero => {
@@ -2978,7 +3041,7 @@ impl ForjaFast {
                             // EOF: push Nulo para que el programa pueda detectar fin de entrada
                             self.push_valor(ValorFast::nulo());
                         } else {
-                            let idx = self.alloc_str(Rc::from(trimmed));
+                            let idx = self.alloc_str(Arc::from(trimmed));
                             self.push_valor(ValorFast::texto(idx));
                         }
                     } else {
@@ -3177,8 +3240,17 @@ impl ForjaFast {
                             let thread_idx = self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
                             if method_sym == self.sym_unir || method_sym.0 == self.sym_table.intern("unir").0
                                 || method_sym.0 == self.sym_table.intern("join").0 {
-                                if let Some(val) = self.thread_heap[thread_idx] {
-                                    self.push_valor(val);
+                                // Si hay receiver pendiente, recibir resultado del hilo
+                                if thread_idx < self.thread_rx.len() {
+                                    if let Some(rx) = self.thread_rx[thread_idx as usize].take() {
+                                        let val = rx.recv().unwrap_or(ValorFast::nulo());
+                                        self.thread_heap[thread_idx as usize] = Some(val);
+                                        self.push_valor(val);
+                                    } else if let Some(val) = self.thread_heap[thread_idx as usize] {
+                                        self.push_valor(val);
+                                    } else {
+                                        self.push_valor(ValorFast::nulo());
+                                    }
                                 } else {
                                     self.push_valor(ValorFast::nulo());
                                 }
@@ -3197,7 +3269,7 @@ impl ForjaFast {
                                     return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                                 }
                                 let num_vars_actual=self.flat_vars.len()-self.base_ptr;
-                                self.frame_buffer[self.frame_count]=FrmFast{ip_ret:self.ip+1,base_ptr_previo:self.base_ptr,num_vars:num_vars_actual};
+                                self.frame_buffer[self.frame_count]=FrmFast{ip_ret:self.ip+1,base_ptr_previo:self.base_ptr,num_vars:num_vars_actual,func_version:entry.version};
                                 self.frame_count+=1;
                                 self.base_ptr=self.flat_vars.len();
                                 let total_vars=1+nargs;
@@ -3219,7 +3291,7 @@ impl ForjaFast {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                             }
                             let num_vars_actual=self.flat_vars.len()-self.base_ptr;
-                            self.frame_buffer[self.frame_count]=FrmFast{ip_ret:self.ip+1,base_ptr_previo:self.base_ptr,num_vars:num_vars_actual};
+                            self.frame_buffer[self.frame_count]=FrmFast{ip_ret:self.ip+1,base_ptr_previo:self.base_ptr,num_vars:num_vars_actual,func_version:entry.version};
                             self.frame_count+=1;
                             self.base_ptr=self.flat_vars.len();
                             let total_vars=1+nargs;
@@ -3265,6 +3337,7 @@ impl ForjaFast {
                                         ip_ret: self.ip + 1,
                                         base_ptr_previo: self.base_ptr,
                                         num_vars: num_vars_actual,
+                                        func_version: entry.version,
                                     };
                                     self.frame_count += 1;
                                     self.base_ptr = self.flat_vars.len();
@@ -3345,8 +3418,16 @@ impl ForjaFast {
                             let thread_idx = self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
                             if method_sym == self.sym_unir || method_sym.0 == self.sym_table.intern("unir").0
                                 || method_sym.0 == self.sym_table.intern("join").0 {
-                                if let Some(val) = self.thread_heap[thread_idx] {
-                                    self.push_valor(val);
+                                if thread_idx < self.thread_rx.len() {
+                                    if let Some(rx) = self.thread_rx[thread_idx as usize].take() {
+                                        let val = rx.recv().unwrap_or(ValorFast::nulo());
+                                        self.thread_heap[thread_idx as usize] = Some(val);
+                                        self.push_valor(val);
+                                    } else if let Some(val) = self.thread_heap[thread_idx as usize] {
+                                        self.push_valor(val);
+                                    } else {
+                                        self.push_valor(ValorFast::nulo());
+                                    }
                                 } else {
                                     self.push_valor(ValorFast::nulo());
                                 }
@@ -3369,6 +3450,7 @@ impl ForjaFast {
                                     ip_ret: self.ip + 1,
                                     base_ptr_previo: self.base_ptr,
                                     num_vars: num_vars_actual,
+                                    func_version: entry.version,
                                 };
                                 self.frame_count += 1;
                                 self.base_ptr = self.flat_vars.len();
@@ -3401,6 +3483,7 @@ impl ForjaFast {
                                 ip_ret: self.ip + 1,
                                 base_ptr_previo: self.base_ptr,
                                 num_vars: num_vars_actual,
+                                func_version: entry.version,
                             };
                             self.frame_count += 1;
                             self.base_ptr = self.flat_vars.len();
@@ -4130,59 +4213,70 @@ impl ForjaFast {
                     self.ip += 1;
                 }
 
-                // ─── HILOS (ejecución sincrónica por ahora) ──────────────────────
+                // ─── HILOS REALES con std::thread::spawn ─────────────────────────
                 Opcode::ThreadSpawn(func_name, captured_count) => {
-                    // Pop valores capturados
+                    // Pop valores capturados (argumentos para la función del hilo)
                     let mut captured: Vec<ValorFast> = Vec::with_capacity(captured_count);
                     for _ in 0..captured_count {
                         captured.push(self.pop_valor()?);
                     }
                     captured.reverse();
-                    // Buscar función en la tabla de indirección
+                    // Buscar función en la tabla
                     let fn_sym = self.sym_table.intern(func_name.as_ref());
                     if let Some(entry) = self.lookup_func_entry(fn_sym) {
                         let nargs = captured.len();
-                        // Guardar estado actual para restaurar después
-                        let ip_anterior = self.ip;
-                        let frame_count_anterior = self.frame_count;
-                        let base_ptr_anterior = self.base_ptr;
-                        let flat_vars_anterior = self.flat_vars.len();
-                        // Crear frame para la función del hilo
-                        let total_vars = 1 + nargs;
-                        let vars_size = entry.vars_size.max(total_vars);
-                        self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
-                        self.flat_vars[self.base_ptr] = ValorFast::nulo(); // self = nulo
-                        for (i, arg) in captured.into_iter().enumerate() {
-                            self.flat_vars[self.base_ptr + 1 + i] = arg;
+                        // Clonar estado para el hilo
+                        let thread_bytecode = self.bytecode.clone();
+                        let thread_sym_table = self.sym_table.clone();
+                        let thread_funcs = self.funciones.clone();
+                        let thread_func_params = self.func_params.clone();
+                        let thread_ip = entry.ip;
+                        let thread_vars_size = entry.vars_size.max(1 + nargs);
+                        // Canal para recibir el resultado del hilo
+                        let (tx_result, rx_result) = std::sync::mpsc::channel::<ValorFast>();
+                        // Spawn thread
+                        let spawn_result = std::thread::Builder::new()
+                            .name(format!("forja-hilo-{}", func_name))
+                            .spawn(move || {
+                                let mut hilo_vm = ForjaFast::new();
+                                hilo_vm.bytecode = thread_bytecode;
+                                hilo_vm.sym_table = thread_sym_table;
+                                hilo_vm.funciones = thread_funcs;
+                                hilo_vm.func_params = thread_func_params;
+                                hilo_vm.flat_vars.resize(thread_vars_size, ValorFast::nulo());
+                                hilo_vm.flat_vars[0] = ValorFast::nulo();
+                                for (i, arg) in captured.into_iter().enumerate() {
+                                    hilo_vm.flat_vars[1 + i] = arg;
+                                }
+                                hilo_vm.base_ptr = 0;
+                                // Configurar frame inicial para que Return funcione correctamente
+                                hilo_vm.frame_buffer[0] = FrmFast {
+                                    ip_ret: hilo_vm.bytecode.len(), // después del último opcode
+                                    base_ptr_previo: 0,
+                                    num_vars: 0,
+                                    func_version: 0,
+                                };
+                                hilo_vm.frame_count = 1;
+                                hilo_vm.ip = thread_ip;
+                                let _ = hilo_vm.ejecutar();
+                                let ret = hilo_vm.stack.first().copied().unwrap_or(ValorFast::nulo());
+                                tx_result.send(ret).ok();
+                            });
+                        match spawn_result {
+                            Ok(_join_handle) => {
+                                // Almacenar receiver y crear objeto Hilo
+                                let thread_idx = self.alloc_thread(None, Some(rx_result));
+                                let mut obj = ObjVal::new(self.sym_hilo);
+                                obj.campos_vec.push(ValorFast::entero(thread_idx as i32));
+                                let obj_idx = self.alloc_obj(obj);
+                                self.push_valor(ValorFast::objeto(obj_idx));
+                                self.ip += 1;
+                            }
+                            Err(_) => {
+                                self.push_valor(ValorFast::nulo());
+                                self.ip += 1;
+                            }
                         }
-                        let num_vars_actual = self.flat_vars.len() - self.base_ptr;
-                        self.frame_buffer[self.frame_count] = FrmFast {
-                            ip_ret: self.ip + 1,
-                            base_ptr_previo: self.base_ptr,
-                            num_vars: num_vars_actual,
-                        };
-                        self.frame_count += 1;
-                        self.base_ptr = self.flat_vars.len();
-                        self.ip = entry.ip;
-                        // Ejecutar la función inline
-                        let _ = self.ejecutar();
-                        // Obtener valor de retorno del stack
-                        let ret = if !self.stack.is_empty() {
-                            self.stack[0]
-                        } else {
-                            ValorFast::nulo()
-                        };
-                        // Restaurar estado (no continuar en la función del hilo)
-                        self.ip = ip_anterior + 1;
-                        self.frame_count = frame_count_anterior;
-                        self.base_ptr = base_ptr_anterior;
-                        self.flat_vars.truncate(flat_vars_anterior);
-                        // Guardar resultado y crear objeto Hilo
-                        let hilo_idx = self.alloc_thread(Some(ret));
-                        let mut obj = ObjVal::new(self.sym_hilo);
-                        obj.campos_vec.push(ValorFast::entero(hilo_idx as i32));
-                        let obj_idx = self.alloc_obj(obj);
-                        self.push_valor(ValorFast::objeto(obj_idx));
                     } else {
                         self.push_valor(ValorFast::nulo());
                         self.ip += 1;
@@ -4381,7 +4475,7 @@ impl ForjaFast {
                         self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_entero() as f64));
                     } else if a.es_texto() {
                         let s = format!("{}{}", self.get_str(a.indice_texto()), self.mostrar_valor(&b));
-                        let idx = self.alloc_str(Rc::from(s.as_str()));
+                        let idx = self.alloc_str(Arc::from(s.as_str()));
                         self.push_valor(ValorFast::texto(idx));
                     } else { self.push_valor(ValorFast::nulo()); }
                     self.ip += 1;
@@ -4582,6 +4676,7 @@ impl ForjaFast {
                                 ip_ret: next_ip,
                                 base_ptr_previo: self.base_ptr,
                                 num_vars: num_vars_actual,
+                                func_version: entry.version,
                             };
                             self.frame_count += 1;
 
@@ -4670,10 +4765,10 @@ impl ForjaFast {
                 Uop::ReadLine => {
                     let mut i = String::new(); print!("> "); let _ = std::io::Write::flush(&mut std::io::stdout());
                     if std::io::stdin().read_line(&mut i).is_ok() {
-                        let idx = self.alloc_str(Rc::from(i.trim()));
+                        let idx = self.alloc_str(Arc::from(i.trim()));
                         self.push_valor(ValorFast::texto(idx));
                     } else {
-                        let idx = self.alloc_str(Rc::from(""));
+                        let idx = self.alloc_str(Arc::from(""));
                         self.push_valor(ValorFast::texto(idx));
                     }
                     self.ip += 1;
@@ -4861,8 +4956,16 @@ impl ForjaFast {
                             let thread_idx = self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
                             if method_sym == self.sym_unir || method_sym.0 == self.sym_table.intern("unir").0
                                 || method_sym.0 == self.sym_table.intern("join").0 {
-                                if let Some(val) = self.thread_heap[thread_idx] {
-                                    self.push_valor(val);
+                                if thread_idx < self.thread_rx.len() {
+                                    if let Some(rx) = self.thread_rx[thread_idx as usize].take() {
+                                        let val = rx.recv().unwrap_or(ValorFast::nulo());
+                                        self.thread_heap[thread_idx as usize] = Some(val);
+                                        self.push_valor(val);
+                                    } else if let Some(val) = self.thread_heap[thread_idx as usize] {
+                                        self.push_valor(val);
+                                    } else {
+                                        self.push_valor(ValorFast::nulo());
+                                    }
                                 } else {
                                     self.push_valor(ValorFast::nulo());
                                 }
@@ -4881,7 +4984,7 @@ impl ForjaFast {
                                     return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                                 }
                                 let num_vars_actual = self.flat_vars.len() - self.base_ptr;
-                                self.frame_buffer[self.frame_count] = FrmFast { ip_ret: self.ip + 1, base_ptr_previo: self.base_ptr, num_vars: num_vars_actual };
+                                self.frame_buffer[self.frame_count] = FrmFast { ip_ret: self.ip + 1, base_ptr_previo: self.base_ptr, num_vars: num_vars_actual, func_version: entry.version };
                                 self.frame_count += 1;
                                 self.base_ptr = self.flat_vars.len();
                                 let total_vars = 1 + nargs;
@@ -4905,7 +5008,7 @@ impl ForjaFast {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
                             }
                             let num_vars_actual = self.flat_vars.len() - self.base_ptr;
-                            self.frame_buffer[self.frame_count] = FrmFast { ip_ret: self.ip + 1, base_ptr_previo: self.base_ptr, num_vars: num_vars_actual };
+                            self.frame_buffer[self.frame_count] = FrmFast { ip_ret: self.ip + 1, base_ptr_previo: self.base_ptr, num_vars: num_vars_actual, func_version: entry.version };
                             self.frame_count += 1;
                             self.base_ptr = self.flat_vars.len();
                             let total_vars = 1 + nargs;
@@ -5267,6 +5370,109 @@ impl ForjaFast {
         })
     }
 
+    // ─── Hot Reload: Intercambio Completo de Módulo ─────────────────────
+
+    /// Reemplazar en caliente el bytecode de un módulo completo.
+    ///
+    /// 1. Preserva el bytecode anterior en `bytecode_pool` (para frames activos).
+    /// 2. Reemplaza el rango [start, end) del módulo en `self.bytecode`.
+    /// 3. Re-mapea todas las funciones del módulo en `function_table`.
+    /// 4. Actualiza `module_registry[module_id].version`.
+    /// 5. Re-inicializa inline caches y aplica quickening.
+    ///
+    /// El módulo debe estar registrado en `modulo_bytecode_ranges`.
+    pub fn hot_swap_module(&mut self, module_id: ModuleId, nuevo_bc: &ModuleBytecode) -> Result<(), String> {
+        // 1. Determinar la versión actual y calcular la nueva
+        let version_actual = self.module_registry.get(&module_id)
+            .map(|info| info.version)
+            .unwrap_or(0);
+        let nueva_version = version_actual + 1;
+
+        // 2. Preservar bytecode completo actual en el pool
+        self.bytecode_pool.push(VersionedBytecode {
+            version: version_actual,
+            opcodes: self.bytecode.clone(),
+        });
+
+        // 3. Obtener el rango que ocupa el módulo en self.bytecode
+        let (start, end) = self.modulo_bytecode_ranges.get(&module_id)
+            .copied()
+            .ok_or_else(|| format!("hot_swap_module: módulo {} no está registrado en modulo_bytecode_ranges", module_id.0))?;
+        let old_len = end - start;
+        let new_len = nuevo_bc.opcodes.len();
+
+        // 4. Reemplazar bytecode del módulo in-place
+        if new_len == old_len {
+            for (dst, src) in self.bytecode[start..end].iter_mut().zip(nuevo_bc.opcodes.iter()) {
+                let op = src.clone();
+                *dst = op;
+            }
+        } else {
+            let tail = self.bytecode[end..].to_vec();
+            self.bytecode.truncate(start);
+            self.bytecode.extend_from_slice(&nuevo_bc.opcodes);
+            self.bytecode.extend(tail);
+
+            // Ajustar rangos de otros módulos que están después
+            let shift = (new_len as isize) - (old_len as isize);
+            let otros: Vec<(ModuleId, (usize, usize))> = self.modulo_bytecode_ranges.iter()
+                .filter(|(id, _)| **id != module_id)
+                .map(|(id, &range)| (*id, range))
+                .collect();
+            for (other_id, (other_start, other_end)) in otros {
+                if other_start >= end {
+                    self.modulo_bytecode_ranges.insert(other_id,
+                        (((other_start as isize) + shift) as usize,
+                         ((other_end as isize) + shift) as usize));
+                }
+            }
+        }
+
+        // 5. Actualizar rango del módulo
+        let new_end = start + new_len;
+        self.modulo_bytecode_ranges.insert(module_id, (start, new_end));
+
+        // 6. Re-mapear funciones del módulo en la function_table
+        let funciones = nuevo_bc.desglosar();
+        for (nombre, ip_rel, vars_size) in &funciones {
+            let sym = self.sym_table.intern(nombre.as_str());
+            let ip_absoluta = start + ip_rel;
+
+            if let Some(&idx) = self.sym_to_func_idx.get(&sym) {
+                self.function_table.entries[idx] = FuncVersion {
+                    ip: ip_absoluta,
+                    vars_size: *vars_size,
+                    version: nueva_version,
+                    module_id: Some(module_id),
+                };
+                self.function_versions.insert(sym, nueva_version);
+            } else {
+                self.registrar_funcion(sym, ip_absoluta, *vars_size, Some(module_id));
+                self.function_versions.insert(sym, nueva_version);
+            }
+        }
+
+        // 7. Actualizar versión en module_registry
+        if let Some(info) = self.module_registry.get_mut(&module_id) {
+            info.version = nueva_version;
+        }
+
+        // 8. Re-inicializar inline caches (el tamaño de self.bytecode pudo cambiar)
+        self.contador_especializacion = vec![0u8; self.bytecode.len()];
+        self.ic_getfield = vec![None; self.bytecode.len()];
+        self.ic_setfield = vec![None; self.bytecode.len()];
+        self.ic_miss_count = vec![0u8; self.bytecode.len()];
+        self.ic_callmethod = vec![None; self.bytecode.len()];
+
+        // 9. Aplicar quickening (especialización estática)
+        self.quickening();
+
+        // 10. Fusionar patrones Direct float (Fase 3a/b)
+        self.bytecode = crate::bytecode::fusionar_direct_float_opcodes(&self.bytecode);
+
+        Ok(())
+    }
+
     pub fn obtener_output(&self) -> &[String] { &self.output }
 }
 
@@ -5301,7 +5507,7 @@ impl ForjaFast {
                 let v = self.pop_valor()?;
                 if v.es_texto() {
                     let s = self.get_str(v.indice_texto()).to_uppercase();
-                    let idx = self.alloc_str(Rc::from(s.as_str()));
+                    let idx = self.alloc_str(Arc::from(s.as_str()));
                     self.push_valor(ValorFast::texto(idx));
                 } else { self.push_valor(ValorFast::nulo()); }
             }
@@ -5309,7 +5515,7 @@ impl ForjaFast {
                 let v = self.pop_valor()?;
                 if v.es_texto() {
                     let s = self.get_str(v.indice_texto()).to_lowercase();
-                    let idx = self.alloc_str(Rc::from(s.as_str()));
+                    let idx = self.alloc_str(Arc::from(s.as_str()));
                     self.push_valor(ValorFast::texto(idx));
                 } else { self.push_valor(ValorFast::nulo()); }
             }
@@ -5330,7 +5536,7 @@ impl ForjaFast {
                     let sep_s = self.get_str(sep.indice_texto()).clone();
                     let parts: Vec<ValorFast> = s.split(sep_s.as_ref())
                         .map(|p| {
-                            let idx = self.alloc_str(Rc::from(p));
+                            let idx = self.alloc_str(Arc::from(p));
                             ValorFast::texto(idx)
                         })
                         .collect();
@@ -5342,7 +5548,7 @@ impl ForjaFast {
                 let v = self.pop_valor()?;
                 if v.es_texto() {
                     let s = self.get_str(v.indice_texto()).trim().to_string();
-                    let idx = self.alloc_str(Rc::from(s.as_str()));
+                    let idx = self.alloc_str(Arc::from(s.as_str()));
                     self.push_valor(ValorFast::texto(idx));
                 } else { self.push_valor(ValorFast::nulo()); }
             }
@@ -5350,7 +5556,7 @@ impl ForjaFast {
                 let v = self.pop_valor()?;
                 if v.es_texto() {
                     let r: String = self.get_str(v.indice_texto()).chars().rev().collect();
-                    let idx = self.alloc_str(Rc::from(r.as_str()));
+                    let idx = self.alloc_str(Arc::from(r.as_str()));
                     self.push_valor(ValorFast::texto(idx));
                 } else { self.push_valor(ValorFast::nulo()); }
             }
