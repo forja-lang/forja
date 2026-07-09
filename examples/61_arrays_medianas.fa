@@ -1,7 +1,0 @@
-// 🎓 Lección 61: Elemento medio de un array
-
-variable datos = [10, 20, 30, 40, 50]
-variable medio = 2
-variable elementoMedio = datos[medio]
-escribir("Array: " + datos)
-escribir("Elemento en posición " + medio + ": " + elementoMedio)

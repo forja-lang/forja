@@ -1,6 +1,0 @@
-// 🎓 Lección 35: Mapas con booleanos
-// Ejecutar con: forja run examples/35_mapas_anidados.fa --vm vm
-
-variable empleado = {"nombre": "Carlos", "edad": 32, "activo": verdadero}
-escribir(empleado["nombre"])
-escribir(empleado["edad"])

@@ -1,7 +1,0 @@
-// 🎓 Lección 1: ¡Hola, mundo!
-// Todo programa comienza mostrando algo en pantalla.
-// La instrucción 'escribir()' muestra texto o números.
-
-escribir("¡Hola, mundo!")
-escribir("Bienvenido a Forja!")
-escribir(42)
