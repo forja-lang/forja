@@ -1,0 +1,68 @@
+# módulo: aleatorio
+# Generación de números aleatorios (xorshift32)
+#
+# Uso: importar "std/aleatorio"
+#
+# Proporciona:
+#   - semilla(valor)    — establece la semilla del generador
+#   - entero(max)       — entero aleatorio en [0, max)
+#   - decimal()         — decimal aleatorio en [0.0, 1.0)
+#   - elemento(arr)     — elemento aleatorio de un arreglo
+#   - mezclar(arr)      — mezcla aleatoria (Fisher-Yates) de un arreglo
+#
+# Implementación: xorshift32 — rápido, simple, buena distribución
+# para uso no criptográfico.
+
+variable _estado_aleatorio = 123456789  # semilla por defecto
+
+# Establece la semilla del generador aleatorio
+# Útil para obtener secuencias reproducibles
+funcion semilla(valor: Entero) {
+    _estado_aleatorio = valor
+}
+
+# Retorna un entero aleatorio en [0, max)
+# Implementación xorshift32: generador pseudoaleatorio de 32 bits
+funcion entero(max: Entero) -> Entero {
+    # xorshift32 — tres desplazamientos XOR
+    _estado_aleatorio = _estado_aleatorio ^ (_estado_aleatorio << 13)
+    _estado_aleatorio = _estado_aleatorio ^ (_estado_aleatorio >> 17)
+    _estado_aleatorio = _estado_aleatorio ^ (_estado_aleatorio << 5)
+
+    # Valor absoluto para asegurar rango positivo
+    variable valor = _estado_aleatorio
+    si (valor < 0) {
+        valor = -valor
+    }
+    retornar valor % max
+}
+
+# Retorna un decimal aleatorio en [0.0, 1.0)
+# Usa entero(max=1000000) y divide para obtener precisión de 6 decimales
+funcion decimal() -> Decimal {
+    variable max = 1000000
+    variable val = entero(max)
+    retornar val / 1000000.0
+}
+
+# Retorna un elemento aleatorio de un arreglo
+# El arreglo debe tener al menos un elemento
+funcion elemento(arr) {
+    variable idx = entero(longitud(arr))
+    retornar arr[idx]
+}
+
+# Retorna un arreglo mezclado aleatoriamente (algoritmo Fisher-Yates)
+# No modifica el arreglo original; retorna una copia mezclada
+funcion mezclar(arr) {
+    variable resultado = arr  # copia superficial
+    variable i = longitud(resultado) - 1
+    mientras (i > 0) {
+        variable j = entero(i + 1)
+        variable temp = resultado[i]
+        resultado[i] = resultado[j]
+        resultado[j] = temp
+        i = i - 1
+    }
+    retornar resultado
+}
