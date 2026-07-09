@@ -2,6 +2,12 @@
 
 Forja es un lenguaje de programación educativo con palabras clave en español, diseñado para enseñar conceptos de sistemas sin la complejidad sintáctica de Rust. El lenguaje incluye JIT nativo x86-64, múltiples implementaciones de VM y targets de compilación a ensamblador y LLVM IR.
 
+[![Docs](https://img.shields.io/badge/docs-forja--lang.github.io/docs-blue)](https://forja-lang.github.io/docs)
+[![VS Code](https://img.shields.io/badge/vscode-extensio%CC%81n-007ACC?logo=visualstudiocode)](https://github.com/forja-lang/vscode)
+[![Examples](https://img.shields.io/badge/examples-256%2B-brightgreen)](https://github.com/forja-lang/examples)
+[![Benchmarks](https://img.shields.io/badge/benchmarks-resultados-orange)](https://github.com/forja-lang/benchmarks)
+[![Patches](https://img.shields.io/badge/patches-xilem%2Fmasonry-lightgrey)](https://github.com/forja-lang/patches)
+
 ## Palabras Clave del Lenguaje
 
 ### Declaraciones
@@ -401,8 +407,8 @@ y [`examples/501_contratos_error.fa`](examples/501_contratos_error.fa) para un e
 Forja incluye una librería de componentes UI con diseño **Material Design 3 (Material You)**.
 Incluye 200+ componentes responsivos con tema dinámico, iconos vectoriales y modo oscuro.
 
-📚 **[Documentación completa](docs/gui/index.md)**
-🚀 **[Guía de inicio rápido](docs/gui/empezar.md)**
+📚 **[Documentación completa](https://github.com/forja-lang/docs)**
+🚀 **[Guía de inicio rápido](https://github.com/forja-lang/docs)**
 
 ### Componentes principales
 - **Botones**: 14 variantes (Filled, Tonal, Outlined, Text, Elevated, FAB, Icon, Segmented, Chips)
@@ -431,7 +437,7 @@ forja-gui --tema #FF5722 ejemplo.fa
 ## Instalación
 
 ```bash
-git clone https://github.com/lococoi/forja.git
+git clone https://github.com/forja-lang/forja.git
 cd forja
 
 cargo build --release                 # Binario principal únicamente
