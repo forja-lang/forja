@@ -1,0 +1,429 @@
+# modulo: cliente_h2
+# Descripcion: Cliente HTTP/2 (h2c) para Forja
+#
+# Uso: importar "std/cliente_h2"
+#
+# Depende de funciones nativas _h2_*, _hpack_*, _socket_*, _base64_*
+# Proporciona:
+#   ClienteH2(url) - clase cliente HTTP/2
+#   get/put/eliminar/patch - solicitudes HTTP
+#   post - solicitud POST
+
+# ─── Constantes ───────────────────────────────────────────────────────
+constante H2_FRAME_DATA = 0
+constante H2_FRAME_HEADERS = 1
+constante H2_FRAME_PRIORITY = 2
+constante H2_FRAME_RST_STREAM = 3
+constante H2_FRAME_SETTINGS = 4
+constante H2_FRAME_PUSH_PROMISE = 5
+constante H2_FRAME_PING = 6
+constante H2_FRAME_GOAWAY = 7
+constante H2_FRAME_WINDOW_UPDATE = 8
+constante H2_FRAME_CONTINUATION = 9
+
+constante H2_FLAG_END_STREAM = 1
+constante H2_FLAG_END_HEADERS = 4
+constante H2_FLAG_ACK = 1
+
+constante H2_ERROR_NO_ERROR = 0
+constante H2_ERROR_REFUSED_STREAM = 7
+
+constante H2_PREFACE = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+
+# ─── Clase RespuestaClienteH2 ─────────────────────────────────────────
+clase RespuestaClienteH2 {
+    codigo
+    status
+    cabeceras
+    cuerpo
+    exito
+    error
+    stream_id
+
+    constructor() {
+        este.codigo = 200
+        este.status = "OK"
+        este.cabeceras = {}
+        este.cuerpo = ""
+        este.exito = verdadero
+        este.error = ""
+        este.stream_id = 1
+    }
+}
+
+# ─── Clase OpcionesClienteH2 ──────────────────────────────────────────
+clase OpcionesClienteH2 {
+    cabeceras
+    timeout
+    no_verificar_preface
+
+    constructor() {
+        este.cabeceras = {}
+        este.timeout = 30000
+        este.no_verificar_preface = falso
+    }
+}
+
+# ─── Clase ClienteH2 ──────────────────────────────────────────────────
+clase ClienteH2 {
+    _host
+    _puerto
+    _protocolo
+    _socket
+    _conectado
+    _stream_id
+    _resp_parcial
+
+    constructor(url: Texto) {
+        variable info = _resolver_url(url)
+        este._host = info["host"]
+        este._puerto = info["puerto_num"]
+        este._protocolo = info["protocolo"]
+        este._socket = nulo
+        este._conectado = falso
+        este._stream_id = 1
+        este._resp_parcial = nulo
+    }
+}
+
+# ─── Helpers internos ────────────────────────────────────────────────
+
+funcion _cabeceras_a_texto(cabeceras) -> Texto {
+    variable partes = []
+    variable claves = claves_mapa(cabeceras)
+    variable i = 0
+    mientras (i < longitud(claves)) {
+        partes = partes + [claves[i], cabeceras[claves[i]]]
+        i = i + 1
+    }
+    retornar unir(partes, "|")
+}
+
+funcion _texto_a_mapa(texto: Texto) {
+    variable mapa = {}
+    variable partes = dividir(texto, "|")
+    variable i = 0
+    mientras (i + 1 < longitud(partes)) {
+        mapa[partes[i]] = partes[i + 1]
+        i = i + 2
+    }
+    retornar mapa
+}
+
+funcion _respuesta_error(mensaje) {
+    variable r = nuevo RespuestaClienteH2()
+    r.exito = falso
+    r.error = mensaje
+    r.codigo = 0
+    r.cabeceras = {}
+    r.cuerpo = ""
+    retornar r
+}
+
+funcion _resolver_url(url: Texto) {
+    variable protocolo = "http"
+    variable host = ""
+    variable puerto = 80
+    variable ruta = "/"
+    variable resto = url
+
+    si (empieza_con(url, "https://")) {
+        protocolo = "https"
+        puerto = 443
+        resto = url[8..]
+    } sino {
+        si (empieza_con(url, "http://")) {
+            protocolo = "http"
+            resto = url[7..]
+        }
+    }
+
+    variable pos_barra = buscar(resto, "/")
+    variable host_parte = resto
+    si (pos_barra >= 0) {
+        host_parte = resto[..pos_barra]
+        ruta = resto[pos_barra..]
+    }
+
+    variable pos_dos_puntos = buscar(host_parte, ":")
+    si (pos_dos_puntos >= 0) {
+        host = host_parte[..pos_dos_puntos]
+        puerto = a_entero(host_parte[pos_dos_puntos + 1..])
+    } sino {
+        host = host_parte
+    }
+
+    retornar {
+        "protocolo": protocolo,
+        "host": host,
+        "puerto_num": puerto,
+        "ruta": ruta
+    }
+}
+
+# ─── Conexion y handshake H2 ─────────────────────────────────────────
+
+funcion _cliente_conectar(cliente) -> Logico {
+    si (cliente._conectado) {
+        retornar verdadero
+    }
+
+    # Conectar TCP
+    variable socket = _socket_tcp_conectar(cliente._host, cliente._puerto)
+    si (socket == nulo) {
+        retornar falso
+    }
+    cliente._socket = socket
+
+    # Enviar preface HTTP/2 (24 bytes ASCII)
+    variable preface_str = _h2_preface()
+    si (preface_str != H2_PREFACE) {
+        _socket_cerrar(socket)
+        cliente._socket = nulo
+        retornar falso
+    }
+    _socket_enviar(socket, preface_str)
+
+    # Enviar SETTINGS inicial (frame por defecto)
+    variable frame_settings = _h2_settings_default()
+    si (frame_settings == nulo) {
+        _socket_cerrar(socket)
+        cliente._socket = nulo
+        retornar falso
+    }
+    variable partes = _texto_a_mapa(frame_settings)
+    variable payload_b64 = partes["payload"]
+    _h2_escribir_frame(socket, H2_FRAME_SETTINGS, 0, 0, payload_b64)
+
+    # Esperar SETTINGS + ACK del servidor
+    variable settings_ok = falso
+    variable ack_ok = falso
+    variable intentos = 0
+    mientras (intentos < 10) {
+        variable frame_raw = _h2_leer_frame(socket)
+        si (frame_raw == nulo) {
+            romper
+        }
+        variable partes = _texto_a_mapa(frame_raw)
+        variable tipo = a_entero(partes["type"])
+        variable flags = a_entero(partes["flags"])
+        _ = partes["stream_id"]
+        _ = partes["payload"]
+
+        si (tipo == H2_FRAME_SETTINGS) {
+            si ( (flags & H2_FLAG_ACK) != 0) {
+                ack_ok = verdadero
+            } sino {
+                settings_ok = verdadero
+                # Enviar ACK
+                _h2_escribir_frame(socket, H2_FRAME_SETTINGS, H2_FLAG_ACK, 0, "")
+            }
+        }
+        si (tipo == H2_FRAME_GOAWAY) {
+            _socket_cerrar(socket)
+            cliente._socket = nulo
+            retornar falso
+        }
+        si (settings_ok && ack_ok) {
+            romper
+        }
+        intentos = intentos + 1
+    }
+
+    si (settings_ok || ack_ok) {
+        cliente._conectado = verdadero
+        retornar verdadero
+    }
+
+    _socket_cerrar(socket)
+    cliente._socket = nulo
+    retornar falso
+}
+
+# ─── Envio de solicitudes H2 ─────────────────────────────────────────
+
+funcion _cliente_enviar_solicitud(cliente, metodo: Texto, ruta: Texto, cuerpo: Texto, opciones) {
+    si (!_cliente_conectar(cliente)) {
+        retornar _respuesta_error("No se pudo conectar a " + cliente._host)
+    }
+
+    variable socket = cliente._socket
+    variable stream_id = cliente._stream_id
+    cliente._stream_id = stream_id + 2
+
+    # Construir cabeceras HTTP/2 (pseudoheaders + user)
+    variable cabeceras = {
+        ":method": metodo,
+        ":path": ruta,
+        ":scheme": cliente._protocolo,
+        ":authority": cliente._host
+    }
+
+    # Agregar cabeceras de usuario
+    variable claves_user = claves_mapa(opciones.cabeceras)
+    variable i = 0
+    mientras (i < longitud(claves_user)) {
+        cabeceras[claves_user[i]] = opciones.cabeceras[claves_user[i]]
+        i = i + 1
+    }
+
+    # Codificar cabeceras a HPACK
+    variable cab_texto = _cabeceras_a_texto(cabeceras)
+    variable hp_b64 = _hpack_codificar(cab_texto)
+
+    # Enviar HEADERS frame
+    variable flags = H2_FLAG_END_HEADERS
+    si (cuerpo == "" || cuerpo == nulo) {
+        flags = flags | H2_FLAG_END_STREAM
+    }
+    _h2_escribir_frame(socket, H2_FRAME_HEADERS, flags, stream_id, hp_b64)
+
+    # Enviar DATA si hay cuerpo
+    si (cuerpo != "" && cuerpo != nulo) {
+        variable data_b64 = _base64_codificar(cuerpo)
+        _h2_escribir_frame(socket, H2_FRAME_DATA, H2_FLAG_END_STREAM, stream_id, data_b64)
+    }
+
+    # Leer frames de respuesta
+    variable respuesta = _cliente_leer_respuesta(cliente, stream_id, opciones)
+    retornar respuesta
+}
+
+funcion _cliente_leer_respuesta(cliente, stream_id: Entero, opciones) {
+    variable socket = cliente._socket
+    variable status = ""
+    variable cabeceras = {}
+    variable cuerpo = ""
+    variable cabeceras_recibidas = falso
+
+    variable intentos = 0
+    mientras (intentos < 200) {
+        variable frame_raw = _h2_leer_frame(socket)
+        si (frame_raw == nulo) {
+            romper
+        }
+
+        variable partes = _texto_a_mapa(frame_raw)
+        variable tipo = a_entero(partes["type"])
+        variable flags = a_entero(partes["flags"])
+        variable frame_stream = a_entero(partes["stream_id"])
+        variable payload_b64 = partes["payload"]
+
+        # Ignorar frames de otros streams
+        si (frame_stream != stream_id) {
+            # Manejar frames de conexion global
+            si (frame_stream == 0) {
+                si (tipo == H2_FRAME_SETTINGS) {
+                    si ( (flags & H2_FLAG_ACK) == 0) {
+                        _h2_escribir_frame(socket, H2_FRAME_SETTINGS, H2_FLAG_ACK, 0, "")
+                    }
+                }
+                si (tipo == H2_FRAME_PING) {
+                    _h2_escribir_frame(socket, H2_FRAME_PING, H2_FLAG_ACK, 0, payload_b64)
+                }
+            }
+            siguiente
+        }
+
+        si (tipo == H2_FRAME_HEADERS) {
+            variable cab_texto = _hpack_decodificar(payload_b64)
+            si (cab_texto != nulo) {
+                variable cab_map = _texto_a_mapa(cab_texto)
+                variable pseudo = cab_map[":status"]
+                si (pseudo != nulo) {
+                    status = pseudo
+                }
+                cabeceras = cab_map
+            }
+            cabeceras_recibidas = verdadero
+            si ( (flags & H2_FLAG_END_STREAM) != 0) {
+                romper
+            }
+        }
+
+        si (tipo == H2_FRAME_DATA) {
+            si (payload_b64 != "") {
+                variable datos = _base64_decodificar(payload_b64)
+                si (datos != -1) {
+                    cuerpo = cuerpo + datos
+                }
+            }
+            si ( (flags & H2_FLAG_END_STREAM) != 0) {
+                romper
+            }
+        }
+
+        si (tipo == H2_FRAME_RST_STREAM) {
+            # Stream cancelado por el servidor
+            cabeceras_recibidas = falso
+            romper
+        }
+
+        si (tipo == H2_FRAME_GOAWAY) {
+            cliente._conectado = falso
+            romper
+        }
+
+        intentos = intentos + 1
+    }
+
+    si (!cabeceras_recibidas) {
+        retornar _respuesta_error("No se recibieron cabeceras de respuesta")
+    }
+
+    variable respuesta = nuevo RespuestaClienteH2()
+    respuesta.codigo = a_entero(status)
+    respuesta.status = status
+    respuesta.cabeceras = cabeceras
+    respuesta.cuerpo = cuerpo
+    respuesta.stream_id = stream_id
+    respuesta.exito = verdadero
+    retornar respuesta
+}
+
+# ─── Metodos publicos ────────────────────────────────────────────────
+
+funcion _realizar_solicitud(metodo: Texto, url: Texto, cuerpo: Texto, opciones) {
+    variable cliente = nuevo ClienteH2(url)
+    variable info = _resolver_url(url)
+    variable ruta = info["ruta"]
+
+    si (opciones == nulo) {
+        opciones = nuevo OpcionesClienteH2()
+    }
+
+    retornar _cliente_enviar_solicitud(cliente, metodo, ruta, cuerpo, opciones)
+}
+
+funcion get(url: Texto) {
+    variable opciones = nuevo OpcionesClienteH2()
+    retornar _realizar_solicitud("GET", url, "", opciones)
+}
+
+funcion get_con_opciones(url: Texto, opciones) {
+    retornar _realizar_solicitud("GET", url, "", opciones)
+}
+
+funcion post(url: Texto, cuerpo: Texto) {
+    variable opciones = nuevo OpcionesClienteH2()
+    retornar _realizar_solicitud("POST", url, cuerpo, opciones)
+}
+
+funcion post_con_opciones(url: Texto, cuerpo: Texto, opciones) {
+    retornar _realizar_solicitud("POST", url, cuerpo, opciones)
+}
+
+funcion put(url: Texto, cuerpo: Texto) {
+    variable opciones = nuevo OpcionesClienteH2()
+    retornar _realizar_solicitud("PUT", url, cuerpo, opciones)
+}
+
+funcion eliminar(url: Texto) {
+    variable opciones = nuevo OpcionesClienteH2()
+    retornar _realizar_solicitud("DELETE", url, "", opciones)
+}
+
+funcion patch(url: Texto, cuerpo: Texto) {
+    variable opciones = nuevo OpcionesClienteH2()
+    retornar _realizar_solicitud("PATCH", url, cuerpo, opciones)
+}

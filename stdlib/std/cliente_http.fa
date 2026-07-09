@@ -47,12 +47,14 @@ clase OpcionesCliente {
     timeout
     seguir_redirecciones
     max_redirecciones
+    usar_h2c
 
     constructor() {
         este.cabeceras = {}
         este.timeout = 30000
         este.seguir_redirecciones = verdadero
         este.max_redirecciones = 5
+        este.usar_h2c = falso
     }
 }
 
@@ -140,7 +142,16 @@ funcion _realizar_solicitud(metodo: Texto, url: Texto, cuerpo: Texto, opciones) 
     cabeceras["Host"] = host
     cabeceras["User-Agent"] = "Forja-HTTP/1.0"
     cabeceras["Accept"] = "*/*"
-    cabeceras["Connection"] = "close"
+
+    # ─── Soporte h2c upgrade ────────────────────────────────────────
+    variable usar_h2c = opciones.usar_h2c
+    si (usar_h2c) {
+        cabeceras["Connection"] = "Upgrade, HTTP2-Settings"
+        cabeceras["Upgrade"] = "h2c"
+        cabeceras["HTTP2-Settings"] = "AAQA"
+    } sino {
+        cabeceras["Connection"] = "close"
+    }
 
     variable claves_user = claves_mapa(opciones.cabeceras)
     variable i = 0
@@ -165,6 +176,14 @@ funcion _realizar_solicitud(metodo: Texto, url: Texto, cuerpo: Texto, opciones) 
         }
         respuesta_raw = respuesta_raw + datos
         intento = intento + 1
+    }
+
+    # ─── Manejar upgrade h2c ────────────────────────────────────────
+    si (usar_h2c && contiene(respuesta_raw, "101") && contiene(respuesta_raw, "Upgrade: h2c")) {
+        _socket_cerrar(socket)
+        variable resp = _respuesta_error("Servidor actualizado a HTTP/2. Usa 'importar \"std/cliente_h2\"'")
+        resp.cabeceras["h2c_upgrade"] = "true"
+        retornar resp
     }
 
     _socket_cerrar(socket)
