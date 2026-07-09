@@ -448,74 +448,21 @@ cargo build --release --features lsp  # Soporte LSP
 
 ## Cross-compilation para Android
 
-Forja puede compilarse para dispositivos Android (ARM64, x86_64, ARM32, x86) usando el NDK de Android.
+Forja compila a Android (ARM64, x86_64, ARM32, x86) con un solo comando. El script detecta el NDK automáticamente e instala los targets de Rust que falten.
 
-### Prerrequisitos
-
-- **Rust toolchain** con targets Android:
-  ```bash
-  rustup target add aarch64-linux-android x86_64-linux-android armv7-linux-androideabi i686-linux-android
-  ```
-- **Android NDK** (r25+). Instalarlo desde Android Studio (SDK Manager → SDK Tools → NDK) o con sdkmanager:
-  ```bash
-  sdkmanager "ndk;27.0.12077973"
-  ```
-
-### Compilar (Linux, macOS, Windows+Git Bash)
-
-Usando `make` (recomendado):
 ```bash
-# Validar que el NDK está instalado
-make setup-android
-
-# Compilar para ARM64 (dispositivos modernos)
-make android-arm64
-
-# Compilar para todos los targets
-make android-all
-
-# Compilar target específico
-make aarch64-linux-android
+bash scripts/build-android.sh              # Todos los targets (release)
+bash scripts/build-android.sh aarch64-linux-android  # Solo ARM64
 ```
 
-Usando el script bash directamente:
+O con `make`:
+
 ```bash
-# Compilar todo (release, features gui)
-bash scripts/build-android.sh
-
-# Compilar target específico
-bash scripts/build-android.sh aarch64-linux-android release gui
+make android-all       # Todos los targets
+make android-arm64     # Solo ARM64
 ```
 
-Usando el toolchain manualmente:
-```bash
-source scripts/toolchain-android.sh
-cargo build --target aarch64-linux-android --features gui --release
-```
-
-### Compilar en Windows (PowerShell)
-
-Si no usas Git Bash, activá el toolchain con dot-source y compilá manual:
-```powershell
-. .\scripts\toolchain-android.ps1
-cargo build --target aarch64-linux-android --features gui --release
-```
-
-### Detección del NDK
-
-El toolchain busca el NDK automáticamente en este orden:
-
-1. `$ANDROID_NDK_HOME` — variable de entorno explícita
-2. `$ANDROID_HOME/ndk/` — SDK de Android Studio
-3. `$HOME/Android/Sdk/ndk/` — Linux (ruta por defecto)
-4. `$HOME/Library/Android/Sdk/ndk/` — macOS (ruta por defecto)
-5. `$LOCALAPPDATA/Android/Sdk/ndk/` — Windows (Git Bash)
-
-Si no encuentra el NDK, muestra un mensaje de error con instrucciones.
-
-### CI/CD
-
-El workflow de GitHub Actions ya incluye un job `build-android` que compila los 4 targets en Ubuntu usando `nttld/setup-ndk@v1`. Ver [`.github/workflows/rust.yml`](.github/workflows/rust.yml).
+El NDK se busca en `$ANDROID_NDK_HOME`, `$ANDROID_HOME/ndk/`, y las rutas por defecto de cada SO. Si no está instalado, el script muestra cómo hacerlo.
 
 ## Licencia
 
