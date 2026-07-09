@@ -133,9 +133,10 @@ _LINKER_MAP[armv7-linux-androideabi]="armv7a-linux-androideabi21-clang"
 _LINKER_MAP[i686-linux-android]="i686-linux-android21-clang"
 
 # ── Main ────────────────────────────────────────────────────────────────────
-
-# Locate NDK
-NDK_ROOT="$(_detect_ndk)" || _die "\
+_main() {
+    # Locate NDK
+    local NDK_ROOT
+    NDK_ROOT="$(_detect_ndk)" || _die "\
 No Android NDK found.
 
 Install the NDK via one of these methods:
@@ -150,69 +151,74 @@ Searched locations (in order):
   - \$HOME/Library/Android/Sdk/ndk/       (macOS)
   - \$LOCALAPPDATA/Android/Sdk/ndk/       (Windows / Git Bash)"
 
-# Detect host platform tag
-HOST_TAG="$(_detect_host_tag)"
-LLVM_BIN="${NDK_ROOT}/toolchains/llvm/prebuilt/${HOST_TAG}/bin"
+    # Detect host platform tag
+    local HOST_TAG
+    HOST_TAG="$(_detect_host_tag)"
+    local LLVM_BIN="${NDK_ROOT}/toolchains/llvm/prebuilt/${HOST_TAG}/bin"
 
-if [[ ! -d "$LLVM_BIN" ]]; then
-    _die "LLVM toolchain not found at: ${LLVM_BIN}"$'\n'"\
+    if [[ ! -d "$LLVM_BIN" ]]; then
+        _die "LLVM toolchain not found at: ${LLVM_BIN}"$'\n'"\
 Your NDK may be incomplete or corrupted. Reinstall the NDK."
-fi
-
-# Determine linker extension for Windows (Git Bash / MSYS2 / Cygwin)
-_LINKER_EXT=""
-if [[ "$(uname -s)" =~ ^(CYGWIN|MINGW|MSYS) ]]; then
-    if [[ -f "${LLVM_BIN}/aarch64-linux-android21-clang.cmd" ]]; then
-        _LINKER_EXT=".cmd"
     fi
-fi
 
-# ── Validate all linkers exist ─────────────────────────────────────────────
-echo "=========================================="
-echo "  Android NDK Toolchain"
-echo "  NDK Root:  ${NDK_ROOT}"
-echo "  LLVM Bin:  ${LLVM_BIN}"
-echo "  Host:      ${HOST_TAG}"
-echo "=========================================="
-
-_ALL_OK=true
-for target in "${!_LINKER_MAP[@]}"; do
-    linker_name="${_LINKER_MAP[$target]}${_LINKER_EXT}"
-    linker_path="${LLVM_BIN}/${linker_name}"
-
-    if [[ -x "$linker_path" ]] || [[ -f "$linker_path" ]]; then
-        echo "  [✓] ${target} → ${linker_path}"
-    else
-        echo "  [✗] ${target} → MISSING: ${linker_path}" >&2
-        _ALL_OK=false
+    # Determine linker extension for Windows (Git Bash / MSYS2 / Cygwin)
+    local _LINKER_EXT=""
+    if [[ "$(uname -s)" =~ ^(CYGWIN|MINGW|MSYS) ]]; then
+        if [[ -f "${LLVM_BIN}/aarch64-linux-android21-clang.cmd" ]]; then
+            _LINKER_EXT=".cmd"
+        fi
     fi
-done
-echo ""
 
-if ! $_ALL_OK; then
-    _die "One or more NDK linkers are missing."$'\n'"\
+    # ── Validate all linkers exist ─────────────────────────────────────────────
+    echo "=========================================="
+    echo "  Android NDK Toolchain"
+    echo "  NDK Root:  ${NDK_ROOT}"
+    echo "  LLVM Bin:  ${LLVM_BIN}"
+    echo "  Host:      ${HOST_TAG}"
+    echo "=========================================="
+
+    local _ALL_OK=true
+    for target in "${!_LINKER_MAP[@]}"; do
+        local linker_name="${_LINKER_MAP[$target]}${_LINKER_EXT}"
+        local linker_path="${LLVM_BIN}/${linker_name}"
+
+        if [[ -x "$linker_path" ]] || [[ -f "$linker_path" ]]; then
+            echo "  [✓] ${target} → ${linker_path}"
+        else
+            echo "  [✗] ${target} → MISSING: ${linker_path}" >&2
+            _ALL_OK=false
+        fi
+    done
+    echo ""
+
+    if ! $_ALL_OK; then
+        _die "One or more NDK linkers are missing."$'\n'"\
 Your NDK may be incomplete or corrupted. Reinstall the NDK (r25+ recommended)."
-fi
+    fi
 
-# ── Export environment variables (only when sourced) ────────────────────────
-if $_IS_SOURCED; then
-    echo "Exporting CARGO_TARGET_*_LINKER variables..."
+    # ── Export environment variables (only when sourced) ────────────────────────
+    if $_IS_SOURCED; then
+        echo "Exporting CARGO_TARGET_*_LINKER variables..."
 
-    export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${LLVM_BIN}/${_LINKER_MAP[aarch64-linux-android]}${_LINKER_EXT}"
-    export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=-Wl,--no-undefined"
+        export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${LLVM_BIN}/${_LINKER_MAP[aarch64-linux-android]}${_LINKER_EXT}"
+        export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=-Wl,--no-undefined"
 
-    export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="${LLVM_BIN}/${_LINKER_MAP[x86_64-linux-android]}${_LINKER_EXT}"
-    export CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=-Wl,--no-undefined"
+        export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="${LLVM_BIN}/${_LINKER_MAP[x86_64-linux-android]}${_LINKER_EXT}"
+        export CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=-Wl,--no-undefined"
 
-    export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="${LLVM_BIN}/${_LINKER_MAP[armv7-linux-androideabi]}${_LINKER_EXT}"
-    export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_RUSTFLAGS="-C link-arg=-Wl,--no-undefined"
+        export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="${LLVM_BIN}/${_LINKER_MAP[armv7-linux-androideabi]}${_LINKER_EXT}"
+        export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_RUSTFLAGS="-C link-arg=-Wl,--no-undefined"
 
-    export CARGO_TARGET_I686_LINUX_ANDROID_LINKER="${LLVM_BIN}/${_LINKER_MAP[i686-linux-android]}${_LINKER_EXT}"
-    export CARGO_TARGET_I686_LINUX_ANDROID_RUSTFLAGS="-C link-arg=-Wl,--no-undefined"
+        export CARGO_TARGET_I686_LINUX_ANDROID_LINKER="${LLVM_BIN}/${_LINKER_MAP[i686-linux-android]}${_LINKER_EXT}"
+        export CARGO_TARGET_I686_LINUX_ANDROID_RUSTFLAGS="-C link-arg=-Wl,--no-undefined"
 
-    echo "Done. Android toolchain is ready."
-    echo "Run: cargo build --target <target> --features gui --release"
-else
-    echo "NDK validation passed."
-    echo "Run: source scripts/toolchain-android.sh  (to set up the environment)"
-fi
+        echo "Done. Android toolchain is ready."
+        echo "Run: cargo build --target <target> --features gui --release"
+    else
+        echo "NDK validation passed."
+        echo "Run: source scripts/toolchain-android.sh  (to set up the environment)"
+    fi
+}
+
+# Execute main
+_main

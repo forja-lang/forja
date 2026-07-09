@@ -2964,10 +2964,22 @@ fn layout_a_view<'a>(
             Box::new(view::sized_box(inner).width(Length::px(*max_width)))
         }
         Layout::Label { texto, es_variable } => {
-            let txt = if *es_variable { data.leer(texto).to_string() } else { texto.clone() };
-            // Aplicar color del tema: on_surface por defecto
-            let color: forja_gui_rt::Color = get_color_role(&theme.scheme, "on_surface").into();
-            Box::new(view::label(txt).color(color))
+            if *es_variable {
+                let var_name = texto.clone();
+                let txt = data.leer(&var_name).to_string();
+                let gen = data.store.generation(&var_name);
+                let color: forja_gui_rt::Color = get_color_role(&theme.scheme, "on_surface").into();
+                Box::new(memoize(
+                    (gen, txt, color),
+                    move |(_, text, clr): &(u64, String, forja_gui_rt::Color)| {
+                        view::label(text.clone()).color(*clr)
+                    }
+                ))
+            } else {
+                let txt = texto.clone();
+                let color: forja_gui_rt::Color = get_color_role(&theme.scheme, "on_surface").into();
+                Box::new(view::label(txt).color(color))
+            }
         }
         Layout::Title(texto) => {
             // Usar estilo headline_medium del tema
@@ -2988,8 +3000,18 @@ fn layout_a_view<'a>(
             )
         }
         Layout::VariableLabel { variable } => {
-            let txt = data.leer(variable).to_string();
-            Box::new(view::variable_label(txt))
+            let var_name = variable.clone();
+            // Leer valor Y generación para memoize reactivo
+            let txt = data.leer(&var_name).to_string();
+            let gen = data.store.generation(&var_name);
+            // Usar memoize para que este widget solo se reconstruya
+            // cuando la generación de la variable cambie
+            Box::new(memoize(
+                (gen, txt),
+                move |(_, text): &(u64, String)| {
+                    view::variable_label(text.clone())
+                }
+            ))
         }
         Layout::Button { texto, callback } => {
             let cb = callback.clone();
@@ -3002,43 +3024,72 @@ fn layout_a_view<'a>(
             // el color primario se aplica donde la API lo permita
         }
         Layout::TextInput { variable, multiline: _, placeholder } => {
-            let p = placeholder.clone();
-            let val = data.leer(variable).to_string();
             let var_name = variable.clone();
-            let mut ti = view::text_input(val, move |data: &mut AppStateNativo, new_val: String| {
-                data.escribir(&var_name, ValorGUI::Texto(new_val));
-            });
-            if !p.is_empty() {
-                ti = ti.placeholder(p);
-            }
-            Box::new(map_message(ti, |_data: &mut AppStateNativo, result: MessageResult<()>| {
-                match result {
-                    MessageResult::Action(()) => MessageResult::Nop,
-                    other => other,
+            let val = data.leer(&var_name).to_string();
+            let gen = data.store.generation(&var_name);
+            let ph = placeholder.clone();
+            Box::new(memoize(
+                (gen, val.clone(), var_name.clone(), ph.clone()),
+                move |(_, text, _, _): &(u64, String, String, String)| {
+                    let vn = var_name.clone();
+                    let pl = ph.clone();
+                    let mut ti = view::text_input(text.clone(), move |data: &mut AppStateNativo, new_val: String| {
+                        data.escribir(&vn, ValorGUI::Texto(new_val));
+                    });
+                    if !pl.is_empty() {
+                        ti = ti.placeholder(pl.as_str());
+                    }
+                    map_message(ti, |_data: &mut AppStateNativo, result: MessageResult<()>| {
+                        match result {
+                            MessageResult::Action(()) => MessageResult::Nop,
+                            other => other,
+                        }
+                    })
                 }
-            }))
+            ))
         }
         Layout::ProgressBar { variable } => {
-            let val = data.leer(variable).to_string();
-            let num: f64 = val.parse().unwrap_or(0.0);
-            Box::new(view::progress_bar(Some(num)))
+            let var_name = variable.clone();
+            let val_str = data.leer(&var_name).to_string();
+            let num: f64 = val_str.parse().unwrap_or(0.0);
+            let gen = data.store.generation(&var_name);
+            Box::new(memoize(
+                (gen, num),
+                move |(_, n): &(u64, f64)| {
+                    view::progress_bar(Some(*n))
+                }
+            ))
         }
         Layout::Slider { variable, min, max } => {
             let var_name = variable.clone();
-            let val = data.leer(variable).to_f64();
+            let val = data.leer(&var_name).to_f64();
+            let gen = data.store.generation(&var_name);
             let mn = *min;
             let mx = *max;
-            Box::new(view::slider(mn, mx, val, move |data: &mut AppStateNativo, new_val: f64| {
-                data.escribir(&var_name, ValorGUI::Decimal(new_val));
-            }))
+            Box::new(memoize(
+                (gen, val, mn, mx),
+                move |(_, v, mn2, mx2): &(u64, f64, f64, f64)| {
+                    let vn = var_name.clone();
+                    view::slider(*mn2, *mx2, *v, move |data: &mut AppStateNativo, new_val: f64| {
+                        data.escribir(&vn, ValorGUI::Decimal(new_val));
+                    })
+                }
+            ))
         }
         Layout::Checkbox { variable } => {
             let var_name = variable.clone();
             let txt = variable.clone();
-            let checked = data.leer(variable).to_bool();
-            Box::new(view::checkbox(txt, checked, move |data: &mut AppStateNativo, new_checked: bool| {
-                data.escribir(&var_name, ValorGUI::Booleano(new_checked));
-            }))
+            let checked = data.leer(&var_name).to_bool();
+            let gen = data.store.generation(&var_name);
+            Box::new(memoize(
+                (gen, checked, txt),
+                move |(_, chk, label_txt): &(u64, bool, String)| {
+                    let vn = var_name.clone();
+                    view::checkbox(label_txt.clone(), *chk, move |data: &mut AppStateNativo, new_checked: bool| {
+                        data.escribir(&vn, ValorGUI::Booleano(new_checked));
+                    })
+                }
+            ))
         }
         Layout::Prose(texto) => {
             Box::new(view::prose(texto.clone()))
