@@ -78,6 +78,18 @@ pub enum TokenKind {
     /// `otro` - rama default en seleccionar
     Otro,
 
+    // === Contratos (Design by Contract) ===
+    /// `requiere` - precondición
+    Requiere,
+    /// `asegura` - postcondición
+    Asegura,
+    /// `siempre` - invariante de clase
+    Siempre,
+    /// `resultado` - valor de retorno en postcondiciones (keyword)
+    ResultadoKw,
+    /// `anterior` - valor anterior en postcondiciones (keyword)
+    Anterior,
+
     // === Tipos de datos ===
     /// `Texto` - tipo string
     TipoTexto,
@@ -219,6 +231,11 @@ impl fmt::Display for TokenKind {
             TokenKind::Seleccionar => write!(f, "seleccionar"),
             TokenKind::Tiempo => write!(f, "tiempo"),
             TokenKind::Otro => write!(f, "otro"),
+            TokenKind::Requiere => write!(f, "requiere"),
+            TokenKind::Asegura => write!(f, "asegura"),
+            TokenKind::Siempre => write!(f, "siempre"),
+            TokenKind::ResultadoKw => write!(f, "resultado"),
+            TokenKind::Anterior => write!(f, "anterior"),
             TokenKind::TipoTexto => write!(f, "Texto"),
             TokenKind::TipoEntero => write!(f, "Entero"),
             TokenKind::TipoDecimal => write!(f, "Decimal"),
