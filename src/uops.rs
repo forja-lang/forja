@@ -82,6 +82,18 @@ pub enum Uop {
     AddAssign(usize, i64),
     /// vars[a] -= n
     SubAssign(usize, i64),
+
+    // === Opcodes para Exacto (BigDecimal) ===
+    PushExacto(i128, u32),
+    AddExact,
+    SubExact,
+    MulExact,
+    DivExact,
+    IgualExact,
+    MenorExact,
+    MayorExact,
+    EnteroAExacto,
+    DecimalAExacto,
 }
 
 /// Convierte un Opcode atómico (no compuesto) a su Uop equivalente
@@ -283,6 +295,26 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         | Opcode::FusedDivSub(_, _, _)
         | Opcode::FusedDivAddConst(_, _, _)
         | Opcode::FusedDivSubConst(_, _, _) => Uop::AddFloat,
+
+        // === Exacto (BigDecimal) opcodes ===
+        Opcode::PushExacto(coeff, scale) => Uop::PushExacto(*coeff, *scale),
+        Opcode::AddExact => Uop::AddExact,
+        Opcode::SubExact => Uop::SubExact,
+        Opcode::MulExact => Uop::MulExact,
+        Opcode::DivExact => Uop::DivExact,
+        Opcode::IgualExact => Uop::IgualExact,
+        Opcode::MenorExact => Uop::MenorExact,
+        Opcode::MayorExact => Uop::MayorExact,
+        Opcode::EnteroAExacto => Uop::EnteroAExacto,
+        Opcode::DecimalAExacto => Uop::DecimalAExacto,
+
+        // Superinstructions Exacto — marcadores que se expanden en expandir_a_uops
+        Opcode::DeclareExactOp(idx, _coeff, _scale) => {
+            Uop::DeclareInit(*idx) // marcador
+        }
+        Opcode::AddStoreExact(_idx) => {
+            Uop::AddExact // marcador
+        }
     }
 }
 
@@ -468,6 +500,20 @@ pub fn expandir_a_uops(bytecode: &[Opcode]) -> Vec<Uop> {
                 }
             }
 
+            // === SUPERINSTRUCTIONS EXACTO — expansión a uops ===
+
+            // DeclareExactOp(idx, coeff, scale) → DeclareVar(idx), PushExacto(coeff, scale), StorePop(idx)
+            Opcode::DeclareExactOp(idx, coeff, scale) => {
+                uops.push(Uop::DeclareVar(*idx));
+                uops.push(Uop::PushExacto(*coeff, *scale));
+                uops.push(Uop::StorePop(*idx));
+            }
+            // AddStoreExact(idx) → AddExact, StoreIdx(idx)
+            Opcode::AddStoreExact(idx) => {
+                uops.push(Uop::AddExact);
+                uops.push(Uop::StoreIdx(*idx));
+            }
+
             // Fase A: Modulo2(src) → push(vars[src] & 1)
             Opcode::Modulo2(src) => {
                 // En uops expandimos a: LoadIdx(src), PushEntero(1), And (aproximado como Add)
@@ -611,6 +657,10 @@ fn construir_mapeo_posiciones(bytecode: &[Opcode]) -> Vec<usize> {
             Opcode::Modulo2(_) => 3,
             // Fase B: JIT-only, 1 uop placeholder
             Opcode::ReduceAdd(_, _) | Opcode::LoadAddPacked(_, _, _) => 1,
+            // Superinstructions Exacto: DeclareExactOp(_, _, _) → 3 uops
+            Opcode::DeclareExactOp(_, _, _) => 3,
+            // AddStoreExact(idx) → 2 uops
+            Opcode::AddStoreExact(_) => 2,
             _ => 1,
         };
         uop_idx += expansion_len;
@@ -673,6 +723,9 @@ pub fn tiene_opcodes_compuestos(bytecode: &[Opcode]) -> bool {
                 // Fase B: AVX2 SoA opcodes
                 | Opcode::ReduceAdd(_, _)
                 | Opcode::LoadAddPacked(_, _, _)
+                // Superinstructions Exacto
+                | Opcode::DeclareExactOp(_, _, _)
+                | Opcode::AddStoreExact(_)
         )
     })
 }

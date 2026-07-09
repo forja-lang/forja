@@ -283,6 +283,10 @@ impl LlvmBackend {
                 let r = self.r(); line!(self.out, "{} = fadd double 0.0, {:e}", r, d);
                 let i = self.r(); line!(self.out, "{} = bitcast double {} to i64", i, r); Ok(i)
             }
+            Expresion::LiteralExacto(_, _) => {
+                // No implementado en LLVM
+                Ok("0".into())
+            }
             Expresion::LiteralTexto(s) => {
                 let lbl = self.sl();
                 let esc = s.replace('\\', "\\5C").replace('"', "\\22")

@@ -177,6 +177,7 @@ impl Lexer {
             "Entero" => TokenKind::Identificador("Entero".to_string()),
             "Decimal" => TokenKind::Identificador("Decimal".to_string()),
             "Booleano" => TokenKind::Identificador("Booleano".to_string()),
+            "Exacto" => TokenKind::Identificador("Exacto".to_string()),
             _ => TokenKind::Identificador(palabra.to_string()),
         }
     }
@@ -195,42 +196,110 @@ impl Lexer {
         self.identificar_keyword(&palabra)
     }
 
-    /// Lee un número (entero o decimal)
+    /// Lee un número (entero, decimal o exacto)
     fn leer_numero(&mut self) -> TokenKind {
-        let mut num_str = String::new();
+        let mut parte_entera = String::new();
         while let Some(ch) = self.current() {
             if ch.is_ascii_digit() {
-                num_str.push(ch);
+                parte_entera.push(ch);
                 self.advance();
             } else {
                 break;
             }
         }
 
-        // Verificar si es decimal
+        let mut parte_fraccion = String::new();
+        let mut tiene_punto = false;
+
+        // Verificar si tiene punto decimal
         if self.current() == Some('.') {
             let next = self.source.get(self.pos + 1).copied();
             if next.is_some() && next.unwrap().is_ascii_digit() {
-                num_str.push('.');
+                tiene_punto = true;
                 self.advance(); // consume .
                 while let Some(ch) = self.current() {
                     if ch.is_ascii_digit() {
-                        num_str.push(ch);
+                        parte_fraccion.push(ch);
                         self.advance();
                     } else {
                         break;
                     }
                 }
+            }
+        }
+
+        // Verificar si tiene exponente (e/E)
+        if self.current() == Some('e') || self.current() == Some('E') {
+            self.advance(); // consume e/E
+            let mut exp_str = String::new();
+            // Signo opcional
+            if self.current() == Some('+') || self.current() == Some('-') {
+                exp_str.push(self.current().unwrap());
+                self.advance();
+            }
+            // Leer dígitos del exponente
+            while let Some(ch) = self.current() {
+                if ch.is_ascii_digit() {
+                    exp_str.push(ch);
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            let exponente: i32 = exp_str.parse().unwrap_or(0);
+
+            // Construir coeff a partir de dígitos significativos
+            let digitos_str = format!("{}{}", parte_entera, parte_fraccion);
+            let digitos_fraccionarios = parte_fraccion.len() as i32;
+
+            if let Ok(coeff) = digitos_str.parse::<i128>() {
+                if exponente >= 0 {
+                    if exponente >= digitos_fraccionarios {
+                        // coeff * 10^(exponente - digitos_fraccionarios)
+                        // Ej: 1.5e3 → partes "1","5", df=1, exp=3 ⇒ coeff=15, multiplier=10^2=100 ⇒ 1500, scale=0
+                        let potencia = (exponente - digitos_fraccionarios) as u32;
+                        let multiplier = 10u128.pow(potencia) as i128;
+                        return TokenKind::LiteralExacto(coeff * multiplier, 0);
+                    } else {
+                        // Ej: 1.55e1 → partes "1","55", df=2, exp=1 ⇒ coeff=155, scale=1
+                        let scale = (digitos_fraccionarios - exponente) as u32;
+                        return TokenKind::LiteralExacto(coeff, scale);
+                    }
+                } else {
+                    // exponente negativo: ej 1.5e-2 → partes "1","5", df=1, exp=-2 ⇒ coeff=15, scale=1+2=3
+                    let scale = (digitos_fraccionarios + (-exponente)) as u32;
+                    return TokenKind::LiteralExacto(coeff, scale);
+                }
+            } else {
+                return TokenKind::Error('0');
+            }
+        }
+
+        // Sin exponente
+        if tiene_punto {
+            let digitos_fraccionarios = parte_fraccion.len();
+            if digitos_fraccionarios > 15 {
+                // Más de 15 decimales → LiteralExacto
+                let digitos_str = format!("{}{}", parte_entera, parte_fraccion);
+                if let Ok(coeff) = digitos_str.parse::<i128>() {
+                    return TokenKind::LiteralExacto(coeff, digitos_fraccionarios as u32);
+                } else {
+                    return TokenKind::Error('0');
+                }
+            } else {
+                // Hasta 15 decimales → Decimal(f64) (comportamiento actual)
+                let num_str = format!("{}.{}", parte_entera, parte_fraccion);
                 if let Ok(val) = num_str.parse::<f64>() {
                     return TokenKind::Decimal(val);
                 }
             }
         }
 
-        if let Ok(val) = num_str.parse::<i64>() {
+        // Entero sin punto ni exponente
+        if let Ok(val) = parte_entera.parse::<i64>() {
             TokenKind::Numero(val)
         } else {
-            TokenKind::Error(num_str.chars().next().unwrap_or('?'))
+            TokenKind::Error(parte_entera.chars().next().unwrap_or('?'))
         }
     }
 

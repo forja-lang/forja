@@ -2948,6 +2948,18 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
+                // Exacto operations (no implementadas en vm_fast Opcode)
+                Opcode::PushExacto(_, _) => { self.push_valor(ValorFast::nulo()); self.ip += 1; }
+                Opcode::AddExact
+                | Opcode::SubExact
+                | Opcode::MulExact
+                | Opcode::DivExact
+                | Opcode::IgualExact
+                | Opcode::MenorExact
+                | Opcode::MayorExact
+                | Opcode::EnteroAExacto
+                | Opcode::DecimalAExacto => { self.push_valor(ValorFast::nulo()); self.ip += 1; }
+                Opcode::DeclareExactOp(_, _, _) | Opcode::AddStoreExact(_) => { self.push_valor(ValorFast::nulo()); self.ip += 1; }
             }
             // Aplicar patch de especialización/des-especialización diferido
             if let Some(op) = patch_op {
@@ -3696,6 +3708,17 @@ impl ForjaFast {
                 Uop::Try => {
                     self.push_valor(ValorFast::nulo());
                 }
+                // Exacto operations (no implementadas en vm_fast Uop)
+                Uop::PushExacto(_, _) => { self.push_valor(ValorFast::nulo()); self.ip += 1; }
+                Uop::AddExact
+                | Uop::SubExact
+                | Uop::MulExact
+                | Uop::DivExact
+                | Uop::IgualExact
+                | Uop::MenorExact
+                | Uop::MayorExact
+                | Uop::EnteroAExacto
+                | Uop::DecimalAExacto => { self.push_valor(ValorFast::nulo()); self.ip += 1; }
             }
         }
         Ok(())
