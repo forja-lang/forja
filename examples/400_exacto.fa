@@ -26,9 +26,9 @@ escribir(pi_exacto)
 # Resta de exactos
 variable x: Exacto = 1.0
 variable y: Exacto = 0.9
-variable resultado: Exacto = x - y
+variable resta: Exacto = x - y
 escribir("1.0 - 0.9 =")
-escribir(resultado)
+escribir(resta)
 
 # División
 variable dividendo: Exacto = 10.0
@@ -50,7 +50,7 @@ variable suma: Exacto = a + b
 escribir("Exacto: 0.1 + 0.2 =")
 escribir(suma)
 
-# Mostrar que Exacto mantiene precisión con operaciones
+# Mostrar que Exacto mantiene precisión
 variable diff: Exacto = 1.0 - 0.9999999999
 escribir("1.0 - 0.9999999999 =")
 escribir(diff)

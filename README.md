@@ -363,6 +363,39 @@ El pipeline de compilación consiste en:
 - **Múltiples targets de compilación**: Ensamblador, LLVM IR, ejecutables autónomos
 - **Playground WASM**: Ejecución en navegador
 
+## 📜 Design by Contract
+
+Forja soporta **Design by Contract** (Diseño por Contrato) con precondiciones, postcondiciones e invariantes de clase.
+
+```forja
+funcion dividir(a: Entero, b: Entero) -> Entero
+    requiere b != 0, "No se puede dividir por cero"
+    asegura resultado <= a
+{
+    retornar a / b
+}
+```
+
+### Keywords
+
+| Palabra | Propósito | Ejemplo |
+|---------|-----------|---------|
+| `requiere` | Precondición | `requiere x > 0, "mensaje"` |
+| `asegura` | Postcondición | `asegura resultado > 0` |
+| `siempre` | Invariante de clase | `siempre saldo >= 0` |
+| `resultado` | Valor de retorno en postcondición | `asegura resultado > 0` |
+| `anterior()` | Valor previo a la ejecución | `asegura x == anterior(x) + 1` |
+
+### Modos
+
+- **Debug** (default): Los contratos se verifican en runtime
+- **Release**: Los contratos se eliminan (`--release`, `--no-contratos`)
+
+### Ejemplos
+
+Ver [`examples/500_contratos.fa`](examples/500_contratos.fa) para un ejemplo completo de contratos exitosos,
+y [`examples/501_contratos_error.fa`](examples/501_contratos_error.fa) para un ejemplo de contratos que fallan.
+
 ## 🎨 GUI - Material You Expressive
 
 Forja incluye una librería de componentes UI con diseño **Material Design 3 (Material You)**.

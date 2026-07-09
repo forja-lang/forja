@@ -2,6 +2,57 @@ use crate::ast::*;
 use crate::error::{ErrorForja, ErrorTipo};
 use std::collections::HashMap;
 
+// ============================================================
+// Helpers para patrones de match
+// ============================================================
+
+/// Extrae nombres de variables de un patrón recursivamente
+fn extraer_variables_patron(patron: &Patron) -> Vec<String> {
+    match patron {
+        Patron::Variable(nombre) => {
+            vec![nombre.clone()]
+        }
+        Patron::Constructor(_, subpatrones) => {
+            let mut vars = Vec::new();
+            for sub in subpatrones {
+                vars.extend(extraer_variables_patron(sub));
+            }
+            vars
+        }
+        _ => vec![],
+    }
+}
+
+/// Verifica que no haya nombres de variable duplicados en un patrón
+fn verificar_patron_duplicados(patron: &Patron) -> Result<(), ErrorForja> {
+    let mut vars = std::collections::HashSet::new();
+    verificar_duplicados_rec(patron, &mut vars)
+}
+
+fn verificar_duplicados_rec(patron: &Patron, vars: &mut std::collections::HashSet<String>) -> Result<(), ErrorForja> {
+    match patron {
+        Patron::Variable(nombre) => {
+            if vars.contains(nombre) {
+                return Err(ErrorForja::new(
+                    ErrorTipo::ErrorSemantico,
+                    0, 0,
+                    &format!("La variable '{}' aparece más de una vez en el mismo patrón.", nombre),
+                    "Usá nombres distintos para cada variable en el patrón.",
+                ));
+            }
+            vars.insert(nombre.clone());
+            Ok(())
+        }
+        Patron::Constructor(_, subpatrones) => {
+            for sub in subpatrones {
+                verificar_duplicados_rec(sub, vars)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Estado de una variable en el análisis de ownership
 #[derive(Debug, Clone, PartialEq)]
 enum EstadoVariable {
@@ -660,6 +711,21 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
                         }
                     }
                 }
+                // Analizar cuerpos con variables de patrón declaradas en ámbito propio
+                for brazo in brazos {
+                    self.tabla.entrar_ambito();
+                    let vars = extraer_variables_patron(&brazo.patron);
+                    for nombre in &vars {
+                        // Las variables de patrón son inmutables
+                        if let Err(e) = self.tabla.declarar(nombre, false, 0, 0, None) {
+                            self.errores.push(e);
+                        }
+                    }
+                    for d in &brazo.cuerpo {
+                        self.analizar_declaracion(d);
+                    }
+                    self.tabla.salir_ambito();
+                }
                 None
             }
 
@@ -724,6 +790,7 @@ Declaracion::AsignacionIndex { nombre, indice, valor } => {
                 self.analizar_expresion(expr);
                 None
             }
+            Expresion::Resultado | Expresion::Anterior(_) => None,
         }
     }
 }
@@ -747,6 +814,11 @@ pub struct TypeChecker {
     tipos_param_genericos: std::collections::HashMap<String, Tipo>,
     /// Mapa: nombre_del_tipo → [variante1, variante2, ...]
     variantes_enum: HashMap<String, Vec<String>>,
+    // Design by Contract
+    /// True cuando se están verificando postcondiciones (asegura)
+    en_postcondicion: bool,
+    /// Tipo de retorno de la función actual para resolver 'resultado'
+    tipo_retorno_actual: Option<Tipo>,
 }
 
 impl TypeChecker {
@@ -759,6 +831,8 @@ impl TypeChecker {
             rasgos: std::collections::HashMap::new(),
             tipos_param_genericos: std::collections::HashMap::new(),
             variantes_enum: HashMap::new(),
+            en_postcondicion: false,
+            tipo_retorno_actual: None,
         }
     }
 
@@ -875,26 +949,115 @@ impl TypeChecker {
                 self.tabla.salir_ambito();
             }
 
-            Declaracion::Funcion { nombre: _, parametros_tipo: _, parametros, cuerpo, .. } => {
+            Declaracion::Funcion { nombre: _, parametros_tipo: _, parametros, cuerpo, tipo_retorno, precondiciones, postcondiciones, .. } => {
                 self.tabla.entrar_ambito();
                 // Los parámetros de tipo no se declaran en la tabla de variables,
                 // se manejan durante la inferencia de tipos
                 for param in parametros {
                     let _ = self.tabla.declarar(&param.nombre, param.mutable, 0, 0, param.tipo.clone());
                 }
+                // Guardar tipo de retorno para resolver 'resultado' en postcondiciones
+                let tipo_retorno_anterior = self.tipo_retorno_actual.clone();
+                self.tipo_retorno_actual = tipo_retorno.clone();
+                // Verificar precondiciones: NO estamos en postcondición
+                self.en_postcondicion = false;
+                for c in precondiciones {
+                    let tipo = self.inferir_tipo(&c.condicion);
+                    if let Some(ref t) = tipo {
+                        if *t != Tipo::Booleano {
+                            self.errores.push(ErrorForja::new(
+                                ErrorTipo::ErrorDeTipo,
+                                0, 0,
+                                &format!("La precondición debe ser Booleano, no {:?}", t),
+                                "Usá una expresión booleana en la precondición (ej: x > 0)",
+                            ));
+                        }
+                    }
+                }
+                // Verificar postcondiciones: SÍ estamos en postcondición
+                self.en_postcondicion = true;
+                for c in postcondiciones {
+                    let tipo = self.inferir_tipo(&c.condicion);
+                    if let Some(ref t) = tipo {
+                        if *t != Tipo::Booleano {
+                            self.errores.push(ErrorForja::new(
+                                ErrorTipo::ErrorDeTipo,
+                                0, 0,
+                                &format!("La postcondición debe ser Booleano, no {:?}", t),
+                                "Usá una expresión booleana en la postcondición (ej: resultado > 0)",
+                            ));
+                        }
+                    }
+                }
+                // Analizar cuerpo (ya no en postcondición)
+                self.en_postcondicion = false;
                 self.analizar_declaraciones(cuerpo);
                 self.tabla.salir_ambito();
+                // Restaurar tipo de retorno anterior
+                self.tipo_retorno_actual = tipo_retorno_anterior;
             }
 
-            Declaracion::Clase { metodos, .. } => {
+            Declaracion::Clase { metodos, invariantes, .. } => {
+                // Verificar invariantes de clase: deben ser Booleanas
+                for inv in invariantes {
+                    let tipo = self.inferir_tipo(&inv.condicion);
+                    if let Some(ref t) = tipo {
+                        if *t != Tipo::Booleano {
+                            self.errores.push(ErrorForja::new(
+                                ErrorTipo::ErrorDeTipo,
+                                0, 0,
+                                &format!("El invariante de clase debe ser Booleano, no {:?}", t),
+                                "Usá una expresión booleana en el invariante (ej: este.cuenta >= 0)",
+                            ));
+                        }
+                    }
+                }
+                // Procesar métodos con sus contratos
                 for metodo in metodos {
                     self.tabla.entrar_ambito();
                     let _ = self.tabla.declarar("self", false, 0, 0, None);
                     for param in &metodo.parametros {
                         let _ = self.tabla.declarar(&param.nombre, param.mutable, 0, 0, param.tipo.clone());
                     }
+                    // Guardar tipo de retorno para 'resultado' en postcondiciones del método
+                    let tipo_retorno_anterior = self.tipo_retorno_actual.clone();
+                    self.tipo_retorno_actual = metodo.tipo_retorno.clone();
+                    // Verificar precondiciones del método
+                    self.en_postcondicion = false;
+                    for c in &metodo.precondiciones {
+                        let tipo = self.inferir_tipo(&c.condicion);
+                        if let Some(ref t) = tipo {
+                            if *t != Tipo::Booleano {
+                                self.errores.push(ErrorForja::new(
+                                    ErrorTipo::ErrorDeTipo,
+                                    0, 0,
+                                    &format!("La precondición del método '{}' debe ser Booleano, no {:?}", metodo.nombre, t),
+                                    "Usá una expresión booleana en la precondición",
+                                ));
+                            }
+                        }
+                    }
+                    // Verificar postcondiciones del método
+                    self.en_postcondicion = true;
+                    for c in &metodo.postcondiciones {
+                        let tipo = self.inferir_tipo(&c.condicion);
+                        if let Some(ref t) = tipo {
+                            if *t != Tipo::Booleano {
+                                self.errores.push(ErrorForja::new(
+                                    ErrorTipo::ErrorDeTipo,
+                                    0, 0,
+                                    &format!("La postcondición del método '{}' debe ser Booleano, no {:?}", metodo.nombre, t),
+                                    "Usá una expresión booleana en la postcondición",
+                                ));
+                            }
+                        }
+                    }
+                    // Analizar cuerpo del método
+                    self.en_postcondicion = false;
                     self.analizar_declaraciones(&metodo.cuerpo);
                     self.tabla.salir_ambito();
+                    // Restaurar tipo de retorno
+                    self.tipo_retorno_actual = tipo_retorno_anterior;
                 }
             }
 
@@ -1175,6 +1338,25 @@ impl TypeChecker {
                         }
                     }
                 }
+                // Verificar patrones duplicados
+                for brazo in brazos {
+                    if let Err(e) = verificar_patron_duplicados(&brazo.patron) {
+                        self.errores.push(e);
+                    }
+                }
+                // Analizar cuerpos con variables de patrón declaradas en ámbito propio
+                for brazo in brazos {
+                    self.tabla.entrar_ambito();
+                    let vars = extraer_variables_patron(&brazo.patron);
+                    for nombre in &vars {
+                        // Las variables de patrón son inmutables
+                        let _ = self.tabla.declarar(nombre, false, 0, 0, None);
+                    }
+                    for d in &brazo.cuerpo {
+                        self.analizar_declaracion(d);
+                    }
+                    self.tabla.salir_ambito();
+                }
                 None
             }
 
@@ -1264,6 +1446,56 @@ impl TypeChecker {
                 let tipo = self.inferir_tipo(expr);
                 // Some(valor) → Opcion<Tipo>
                 Some(Tipo::Opcion(Box::new(tipo.unwrap_or(Tipo::Entero))))
+            }
+            Expresion::Resultado => {
+                // 'resultado' solo es válido DENTRO de postcondiciones (asegura)
+                if !self.en_postcondicion {
+                    self.errores.push(ErrorForja::new(
+                        ErrorTipo::ErrorSemantico,
+                        0, 0,
+                        "'resultado' solo se puede usar en postcondiciones (asegura)",
+                        "Usá 'resultado' dentro de un bloque 'asegura ...'",
+                    ));
+                    None
+                } else if let Some(ref ret) = self.tipo_retorno_actual {
+                    // El tipo de 'resultado' es el tipo de retorno de la función
+                    Some(ret.clone())
+                } else {
+                    self.errores.push(ErrorForja::new(
+                        ErrorTipo::ErrorSemantico,
+                        0, 0,
+                        "'resultado' solo se puede usar en funciones con tipo de retorno",
+                        "Agregá '-> Tipo' a la función o usá 'retornar expr'",
+                    ));
+                    None
+                }
+            }
+            Expresion::Anterior(expr) => {
+                // 'anterior(expr)' solo es válido DENTRO de postcondiciones
+                if !self.en_postcondicion {
+                    self.errores.push(ErrorForja::new(
+                        ErrorTipo::ErrorSemantico,
+                        0, 0,
+                        "'anterior()' solo se puede usar en postcondiciones (asegura)",
+                        "Mové la expresión dentro de un 'asegura ...'",
+                    ));
+                    return None;
+                }
+                // Verificar que expr sea una variable o acceso a campo
+                match expr.as_ref() {
+                    Expresion::Identificador(_) => { /* ok */ }
+                    Expresion::AccesoMiembro { .. } => { /* ok */ }
+                    _ => {
+                        self.errores.push(ErrorForja::new(
+                            ErrorTipo::ErrorSemantico,
+                            0, 0,
+                            "'anterior()' solo acepta variables o accesos a campo (este.campo)",
+                            "Usá 'anterior(variable)' o 'anterior(este.campo)'",
+                        ));
+                    }
+                }
+                // El tipo de anterior(expr) es el tipo de expr
+                self.inferir_tipo(expr)
             }
         }
     }

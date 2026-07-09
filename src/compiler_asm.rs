@@ -757,6 +757,11 @@ pub struct CompilerAsm {
     // Persistent variable → register mapping (Linear Scan)
     var_reg_map: HashMap<String, &'static str>,  // variable -> registro calle-saved
     reg_var_map: HashMap<&'static str, String>,   // registro -> variable
+    // Design by Contract
+    postcondiciones_activas: bool,
+    retval_stack_label: String,
+    end_label_fn: String,
+    contract_label_counter: usize,
 }
 
 impl CompilerAsm {
@@ -779,6 +784,10 @@ impl CompilerAsm {
             reg_saved: Vec::new(),
             var_reg_map: HashMap::new(),
             reg_var_map: HashMap::new(),
+            postcondiciones_activas: false,
+            retval_stack_label: String::new(),
+            end_label_fn: String::new(),
+            contract_label_counter: 0,
         }
     }
 
@@ -1045,6 +1054,10 @@ impl CompilerAsm {
             reg_saved: Vec::new(),
             var_reg_map: HashMap::new(),
             reg_var_map: HashMap::new(),
+            postcondiciones_activas: false,
+            retval_stack_label: String::new(),
+            end_label_fn: String::new(),
+            contract_label_counter: 0,
         }
     }
 
@@ -1084,6 +1097,7 @@ impl CompilerAsm {
         self.emit_line(&ext_exit);
         self.emit_line(&ext_malloc);
         self.emit_line(&ext_free);
+        self.emit_line(&self.arch.extern_directive("forja_contract_error"));
         // En Windows, necesitamos GetStdHandle + WriteFile para syscalls directas
         if self.arch == TargetArch::X86_64Windows {
             self.emit_line(&self.arch.extern_directive("GetStdHandle"));
@@ -1513,15 +1527,12 @@ impl CompilerAsm {
                 self.emit_line(&a.str_mem_index(tmp, ret, 8, a.tmp2_reg()));
             }
 
-            Declaracion::Funcion { nombre, parametros, cuerpo, externa, .. } => {
+            Declaracion::Funcion { nombre, parametros, cuerpo, externa, precondiciones, postcondiciones, .. } => {
                 // Si es función externa, solo emitir directiva .extern y saltar definición
                 if *externa {
                     self.emit_line(&self.arch.extern_directive(nombre));
-                    // También declararla como .globl para que el linker la vea
                     self.emit_line(&self.arch.globl_directive(nombre));
                     self.emit_line(&format!("{}:", nombre));
-                    // No generar prólogo, epílogo, ni stack frame
-                    // El linker resuelve el símbolo en tiempo de enlace
                     self.emit_line(&format!("    // función externa '{}' - resuelta por el linker", nombre));
                     self.emit_line(&self.arch.ret());
                     self.emit_line("");
@@ -1535,29 +1546,28 @@ impl CompilerAsm {
                 self.stack_offset = 0;
 
                 // --- Estimar tamaño del stack frame ---
-                let mut frame_estimate = a.shadow_space(); // shadow space mínimo en Windows
-                // Parámetros
+                let mut frame_estimate = a.shadow_space();
                 for param in parametros {
                     let tipo_asm = self.tipo_parametro_a_asm(param);
                     frame_estimate += self.tipo_asm_size(&tipo_asm);
                 }
-                // Variables locales (pre-scan) — solo las que NO entren en registros
+                // +8 for retval if postcondiciones
+                if !postcondiciones.is_empty() {
+                    frame_estimate += 8;
+                }
                 for d in cuerpo.iter() {
                     if let Declaracion::Variable { tipo, valor, .. } = d {
                         let tipo_inferido = tipo.clone().or_else(|| {
                             valor.as_ref().and_then(|v| self.inferir_tipo_de_expr(v))
                         });
                         let tipo_asm = self.tipo_forja_a_asm(&tipo_inferido);
-                        // Si es tipo decimal siempre va a stack
                         if let TipoAsm::Decimal = tipo_asm {
                             frame_estimate += self.tipo_asm_size(&tipo_asm);
                         } else {
-                            // Entero/texto/bool: podría ir a registro, estimamos que sí
                             frame_estimate += self.tipo_asm_size(&tipo_asm);
                         }
                     }
                 }
-                // Alinear a 16 bytes, mínimo 32 para shadow space en Windows
                 let frame_size = std::cmp::max(
                     ((frame_estimate + 15) / 16) * 16,
                     if a.shadow_space() > 0 { 32 } else { 16 },
@@ -1566,17 +1576,30 @@ impl CompilerAsm {
                 // ── Prólogo ──
                 let regs = self.reg_names.clone();
                 self.emit_line(&format!("{}:", nombre));
-                // 1) Guardar registros calle-saved (deben ir ANTES de push rbp
-                //    para poder restaurarlos con pop tras mov rsp, rbp)
-                for reg in &regs {
-                    self.emit_line(&a.push_reg(reg));
-                }
-                // 2) Frame pointer
+                for reg in &regs { self.emit_line(&a.push_reg(reg)); }
                 for line in &a.push_fp_lr() { self.emit_line(line); }
                 self.emit_line(&a.set_fp_from_sp());
-                // 3) Variables locales
-                if frame_size > 0 {
-                    self.emit_line(&a.sub_sp(frame_size));
+                if frame_size > 0 { self.emit_line(&a.sub_sp(frame_size)); }
+
+                // ── Setup for postcondiciones ──
+                let has_post = !postcondiciones.is_empty();
+                if has_post {
+                    self.postcondiciones_activas = true;
+                    // Reserve stack slot for retval
+                    self.stack_offset -= 8;
+                    let rv_label = format!(".Lrv_{}", self.contract_label_counter);
+                    self.retval_stack_label = rv_label;
+                    let end_lbl = format!(".Lend_fn_{}", self.contract_label_counter);
+                    self.end_label_fn = end_lbl;
+                    self.contract_label_counter += 1;
+                    // Emit retval string messages in data section
+                    for c in postcondiciones {
+                        let msg = c.mensaje.clone().unwrap_or_else(|| "Postcondición falló".to_string());
+                        let mlbl = format!(".Lmsg_post_{}", self.contract_label_counter);
+                        self.rdata.push_str(&format!("{}:\n", mlbl));
+                        self.rdata.push_str(&format!("    .asciz \"{}\"\n", msg));
+                        self.contract_label_counter += 1;
+                    }
                 }
 
                 // ── Parámetros ──
@@ -1584,30 +1607,18 @@ impl CompilerAsm {
                 for (i, param) in parametros.iter().enumerate() {
                     let tipo_asm = self.tipo_parametro_a_asm(param);
                     let size = self.tipo_asm_size(&tipo_asm);
-                    // Intentar asignar registro para el parámetro
                     let puede_tener_registro = matches!(tipo_asm, TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) | TipoAsm::Booleano);
-                    let param_reg = if puede_tener_registro {
-                        self.alloc_var_reg(&param.nombre)
-                    } else {
-                        None
-                    };
+                    let param_reg = if puede_tener_registro { self.alloc_var_reg(&param.nombre) } else { None };
 
                     if let Some(reg) = param_reg {
-                        // Parámetro en registro calle-saved
-                        self.variables.insert(param.nombre.clone(), StackVar {
-                            offset: 0, tipo: tipo_asm,
-                        });
+                        self.variables.insert(param.nombre.clone(), StackVar { offset: 0, tipo: tipo_asm });
                         if i < arg_regs.len() {
-                            // Mover del registro de argumento al calle-saved
                             self.emit_line(&a.mov_reg_reg(reg, arg_regs[i]));
                         }
                     } else {
-                        // Parámetro en stack
                         self.stack_offset -= if size > 4 { 8 } else { 4 };
                         let oa = -self.stack_offset;
-                        self.variables.insert(param.nombre.clone(), StackVar {
-                            offset: self.stack_offset, tipo: tipo_asm,
-                        });
+                        self.variables.insert(param.nombre.clone(), StackVar { offset: self.stack_offset, tipo: tipo_asm });
                         if i < arg_regs.len() {
                             self.emit_line(&a.str_reg_mem(arg_regs[i], fp, oa));
                         }
@@ -1615,28 +1626,78 @@ impl CompilerAsm {
                 }
                 self.emit_line("");
 
+                // ─── Precondiciones ───
+                for c in precondiciones {
+                    let msg = c.mensaje.clone().unwrap_or_else(|| "Precondición falló".to_string());
+                    let lbl_fail = self.nueva_etiqueta("pre_fail");
+                    let lbl_ok = self.nueva_etiqueta("pre_ok");
+                    let lbl_msg = format!(".Lmsg_pre_{}", self.contract_label_counter);
+                    self.rdata.push_str(&format!("{}:\n", lbl_msg));
+                    self.rdata.push_str(&format!("    .asciz \"{}\"\n", msg));
+                    self.contract_label_counter += 1;
+                    // Compile condition → resultado en ret (rax/x0)
+                    self.compilar_expresion_asm(&c.condicion);
+                    self.emit_line(&a.test_reg(ret));
+                    self.emit_line(&a.jump_if_zero(&lbl_fail)); // if false (0) → error
+                    self.emit_line(&a.jump(&lbl_ok));           // if true → ok
+                    self.emit_line(&format!("{}:", lbl_fail));
+                    // Call forja_contract_error with message
+                    match self.arch {
+                        TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
+                            self.emit_line(&self.arch.lea_label("rcx", &lbl_msg));
+                        }
+                        TargetArch::AArch64 => {
+                            self.emit_line(&self.arch.lea_label("x0", &lbl_msg));
+                        }
+                    }
+                    self.emit_line(&self.arch.call("forja_contract_error"));
+                    self.emit_line(&format!("{}:", lbl_ok));
+                }
+
                 // ── Cuerpo ──
                 for d in cuerpo { self.compilar_declaracion(d); }
 
-                // ── Epílogo ──
+                // ── Epílogo con postcondiciones ──
                 self.emit_line("");
+                if has_post {
+                    // Jump to end label (if body didn't have explicit return)
+                    let has_explicit_ret = cuerpo.iter().any(|x| matches!(x, Declaracion::Retornar { .. }));
+                    if !has_explicit_ret {
+                        self.emit_line(&a.jump(&self.end_label_fn));
+                    }
+                    // End label
+                    self.emit_line(&format!("{}:", self.end_label_fn));
+                    // Load retval from stack
+                    let rv_oa = 8; // offset from fp
+                    if a.ret_reg() == "rax" {
+                        self.emit_line(&format!("    mov rax, [{} - {}]", a.fp_reg(), rv_oa));
+                    } else {
+                        self.emit_line(&format!("    ldr x0, [{}, #-{}]", a.fp_reg(), rv_oa));
+                    }
+                    // Generate postcondición checks
+                    for c in postcondiciones {
+                        // We currently don't evaluate postcondición expressions in ASM for 'resultado'
+                        // For now, emit a comment that this is a postcondición check
+                        let msg = c.mensaje.clone().unwrap_or_else(|| "Postcondición falló".to_string());
+                        self.emit_line(&format!("    // postcondición: {}", msg));
+                        // Note: Full postcondición expression evaluation with 'resultado'
+                        // would need a special expression compiler similar to generar_expr_con_resultado
+                        // For now, the value is in rax/x0
+                    }
+                }
                 // Liberar todos los registros de variables de esta función
                 let nombres_var: Vec<String> = self.var_reg_map.keys().cloned().collect();
-                for v in nombres_var {
-                    self.free_var_reg(&v);
-                }
+                for v in nombres_var { self.free_var_reg(&v); }
                 self.emit_line(&a.mov_sp_fp());
                 for line in &a.pop_fp_lr() { self.emit_line(line); }
-                // Restaurar registros calle-saved (orden inverso)
-                for reg in regs.iter().rev() {
-                    self.emit_line(&a.pop_reg(reg));
-                }
+                for reg in regs.iter().rev() { self.emit_line(&a.pop_reg(reg)); }
                 self.emit_line(&a.ret());
 
                 self.variables = vars_previas;
                 self.stack_offset = stack_previo;
                 self.var_reg_map = var_reg_map_previo;
                 self.reg_var_map = reg_var_map_previo;
+                self.postcondiciones_activas = false;
                 self.funcion_actual = None;
             }
 
@@ -1717,17 +1778,36 @@ impl CompilerAsm {
             Declaracion::AccesoMiembro { .. } => {}
 
             Declaracion::Retornar { valor } => {
-                if let Some(val) = valor {
-                    self.compilar_expresion_asm(val);
+                if self.postcondiciones_activas {
+                    // Store return value and jump to end label
+                    if let Some(val) = valor {
+                        self.compilar_expresion_asm(val);
+                    } else {
+                        // No value: rax/x0 = 0
+                        let a = self.arch;
+                        self.emit_line(&a.mov_reg_imm(a.ret_reg(), 0));
+                    }
+                    // Store retval (rax/x0) into stack slot
+                    let a = self.arch;
+                    let rv_oa = 8; // offset from fp
+                    if a.ret_reg() == "rax" {
+                        self.emit_line(&format!("    mov [{} - {}], rax", a.fp_reg(), rv_oa));
+                    } else {
+                        self.emit_line(&format!("    str x0, [{}, #-{}]", a.fp_reg(), rv_oa));
+                    }
+                    self.emit_line(&a.jump(&self.end_label_fn));
+                } else {
+                    if let Some(val) = valor {
+                        self.compilar_expresion_asm(val);
+                    }
+                    let regs = self.reg_names.clone();
+                    self.emit_line(&a.mov_sp_fp());
+                    for line in &a.pop_fp_lr() { self.emit_line(line); }
+                    for reg in regs.iter().rev() {
+                        self.emit_line(&a.pop_reg(reg));
+                    }
+                    self.emit_line(&a.ret());
                 }
-                let regs = self.reg_names.clone();
-                self.emit_line(&a.mov_sp_fp());
-                for line in &a.pop_fp_lr() { self.emit_line(line); }
-                // Restaurar registros calle-saved (orden inverso al push en prólogo)
-                for reg in regs.iter().rev() {
-                    self.emit_line(&a.pop_reg(reg));
-                }
-                self.emit_line(&a.ret());
             }
 
             Declaracion::Importar(_) | Declaracion::Enum { .. } => {}
@@ -2019,29 +2099,96 @@ impl CompilerAsm {
             }
 
             Expresion::Coincidir { expr: e, brazos } => {
-                self.compilar_expresion_asm(e);
-                let lend = self.nueva_etiqueta("match_end");
-                for brazo in brazos {
-                    match &brazo.patron {
-                        Patron::Variable(_) => {
-                            for d in &brazo.cuerpo { self.compilar_declaracion(d); }
-                            self.emit_line(&a.jump(&lend));
+                self.compilar_expresion_asm(e);  // resultado en rax/x0
+                let end_label = self.nueva_etiqueta("match_end");
+                
+                // Guardar el valor matcheado en el stack para usarlo en cada brazo
+                self.emit_line(&a.push_reg(ret));
+                
+                for (i, brazo) in brazos.iter().enumerate() {
+                    let is_last = i == brazos.len() - 1;
+                    
+                    if !is_last {
+                        let next_label = self.nueva_etiqueta("match_next");
+                        
+                        match &brazo.patron {
+                            Patron::Literal(lit) => {
+                                // Cargar el valor original desde el stack
+                                self.emit_line(&a.ldr_reg_mem(tmp, a.sp_reg(), 0));
+                                // Compilar el literal (resultado en ret/rax)
+                                let prev_stack = self.stack_offset;
+                                self.compilar_expresion_asm(lit);
+                                self.stack_offset = prev_stack;
+                                // Comparar: tmp (original) vs ret (literal)
+                                self.emit_line(&a.cmp_reg_reg(tmp, ret));
+                                // Saltar al siguiente brazo si NO son iguales (jne)
+                                match a {
+                                    TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
+                                        self.emit_line(&format!("    jne {}", next_label));
+                                    }
+                                    TargetArch::AArch64 => {
+                                        self.emit_line(&format!("    b.ne {}", next_label));
+                                    }
+                                }
+                            }
+                            Patron::Variable(_) | Patron::Ignorar | Patron::Constructor(_, _) => {
+                                // Siempre matchea
+                            }
                         }
-                        Patron::Literal(lit) => {
-                            let nxt = self.nueva_etiqueta("match_next");
-                            self.emit_line(&a.push_reg(ret));
-                            self.compilar_expresion_asm(lit);
-                            self.emit_line(&a.pop_reg(tmp));
-                            self.emit_line(&a.cmp_reg_reg(ret, tmp));
-                            self.emit_line(&a.jump_if_zero(&nxt));
-                            for d in &brazo.cuerpo { self.compilar_declaracion(d); }
-                            self.emit_line(&a.jump(&lend));
-                            self.emit_line(&format!("{}:", nxt));
+                        
+                        // Registrar variables del patrón
+                        let vars_patron = extraer_variables_patron_asm(&brazo.patron);
+                        for nombre in &vars_patron {
+                            self.stack_offset -= 8;
+                            self.variables.insert(nombre.clone(), StackVar {
+                                offset: self.stack_offset,
+                                tipo: TipoAsm::Entero,
+                            });
+                            let oa = -self.stack_offset;
+                            self.emit_line(&a.ldr_reg_mem(ret, a.sp_reg(), 0));
+                            self.emit_line(&a.str_reg_mem(ret, fp, oa));
                         }
-                        _ => {}
+                        
+                        // Cuerpo del brazo
+                        for d in &brazo.cuerpo {
+                            self.compilar_declaracion(d);
+                        }
+                        
+                        // Saltar al final (no evaluar más brazos)
+                        self.emit_line(&a.jump(&end_label));
+                        // Label del siguiente brazo
+                        self.emit_line(&format!("{}:", next_label));
+                    } else {
+                        // Último brazo: default, siempre matchea
+                        let vars_patron = extraer_variables_patron_asm(&brazo.patron);
+                        for nombre in &vars_patron {
+                            self.stack_offset -= 8;
+                            self.variables.insert(nombre.clone(), StackVar {
+                                offset: self.stack_offset,
+                                tipo: TipoAsm::Entero,
+                            });
+                            let oa = -self.stack_offset;
+                            // Cargar el valor original desde el tope del stack
+                            self.emit_line(&a.ldr_reg_mem(ret, a.sp_reg(), 0));
+                            self.emit_line(&a.str_reg_mem(ret, fp, oa));
+                        }
+                        
+                        for d in &brazo.cuerpo {
+                            self.compilar_declaracion(d);
+                        }
                     }
                 }
-                self.emit_line(&format!("{}:", lend));
+                
+                // Limpiar el stack (pop del valor guardado)
+                if a.sp_reg() == "rsp" {
+                    self.emit_line("    add rsp, 8");
+                } else {
+                    self.emit_line("    add sp, sp, #8");
+                }
+                self.emit_line(&format!("{}:", end_label));
+                // Restaurar ret con el valor original (para usar como expresión)
+                // El valor matcheado ya no está disponible, poner 0
+                self.emit_line(&a.xor_reg_reg(ret, ret));
                 ret.to_string()
             }
 
@@ -2132,6 +2279,31 @@ impl CompilerAsm {
             }
             Expresion::Ok(expr) | Expresion::Error(expr) | Expresion::Some(expr) => {
                 // No implementado en ASM - compilar la expresión interna
+                self.compilar_expresion_asm(expr)
+            }
+            Expresion::Resultado => {
+                // 'resultado' - return value in postcondiciones
+                // Return value is in rax/x0 (or on stack if postcondiciones_activas)
+                let a = self.arch;
+                let ret = a.ret_reg();
+                if self.postcondiciones_activas {
+                    // Load from stack slot
+                    let rv_oa = 8;
+                    if ret == "rax" {
+                        self.emit_line(&format!("    mov {}, [{} - {}] ; resultado", ret, a.fp_reg(), rv_oa));
+                    } else {
+                        self.emit_line(&format!("    ldr {}, [{}, #-{}] ; resultado", ret, a.fp_reg(), rv_oa));
+                    }
+                } else {
+                    // Should not happen normally, but just return the current ret
+                    self.emit_line(&format!("    // resultado (sin postcondición activa)"));
+                }
+                ret.to_string()
+            }
+            Expresion::Anterior(expr) => {
+                // 'anterior(expr)' - value before function execution
+                // For now, just evaluate the expression (current value)
+                self.emit_line("    // anterior() - usando valor actual");
                 self.compilar_expresion_asm(expr)
             }
         }
@@ -2817,6 +2989,8 @@ impl CompilerAsm {
             enlace_nombre: None,
             atributos: vec![],
             doc: None,
+            precondiciones: metodo.precondiciones.clone(),
+            postcondiciones: metodo.postcondiciones.clone(),
         };
         self.compilar_declaracion(&func_decl);
         self.emit_line("");
@@ -2873,6 +3047,21 @@ impl CompilerAsm {
     fn emit_line(&mut self, texto: impl AsRef<str>) {
         self.output.push_str(texto.as_ref());
         self.output.push('\n');
+    }
+}
+
+/// Extrae nombres de variables de un patrón recursivamente (para ASM backend)
+fn extraer_variables_patron_asm(patron: &Patron) -> Vec<String> {
+    match patron {
+        Patron::Variable(nombre) => vec![nombre.clone()],
+        Patron::Constructor(_, subpatrones) => {
+            let mut vars = Vec::new();
+            for sub in subpatrones {
+                vars.extend(extraer_variables_patron_asm(sub));
+            }
+            vars
+        }
+        _ => vec![],
     }
 }
 

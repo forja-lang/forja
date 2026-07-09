@@ -318,6 +318,9 @@ impl Parser {
             None
         };
 
+        // Parsear contratos Design by Contract
+        let (precondiciones, postcondiciones) = self.parse_contratos()?;
+
         self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' para el cuerpo de la función.")?;
         let cuerpo = self.parse_bloque()?;
 
@@ -331,7 +334,67 @@ impl Parser {
             enlace_nombre: None,
             atributos: vec![],
             doc: None,
+            precondiciones,
+            postcondiciones,
         }))
+    }
+
+    /// Parsea contratos (requiere/asegura) entre la firma y el cuerpo de función.
+    /// Retorna (precondiciones, postcondiciones).
+    fn parse_contratos(&mut self) -> Result<(Vec<Contrato>, Vec<Contrato>), ErrorForja> {
+        let mut pre = Vec::new();
+        let mut post = Vec::new();
+
+        loop {
+            match self.peek().kind {
+                TokenKind::Requiere => {
+                    self.avanzar();
+                    let condicion = self.parse_expresion()?;
+                    let mensaje = self.parse_mensaje_contrato();
+                    pre.push(Contrato { condicion, mensaje });
+                }
+                TokenKind::Asegura => {
+                    self.avanzar();
+                    let condicion = self.parse_expresion()?;
+                    let mensaje = self.parse_mensaje_contrato();
+                    post.push(Contrato { condicion, mensaje });
+                }
+                _ => break,
+            }
+        }
+
+        Ok((pre, post))
+    }
+
+    /// Parsea mensaje opcional de contrato: coma + texto
+    fn parse_mensaje_contrato(&mut self) -> Option<String> {
+        if self.coincide(TokenKind::Coma) {
+            self.avanzar();
+            if let TokenKind::Texto(ref msg) = self.peek().kind {
+                let msg = msg.clone();
+                self.avanzar();
+                return Some(msg);
+            }
+        }
+        None
+    }
+
+    /// Parsea invariantes de clase (keyword: siempre)
+    fn parse_invariantes(&mut self) -> Result<Vec<Contrato>, ErrorForja> {
+        let mut inv = Vec::new();
+
+        loop {
+            if self.coincide(TokenKind::Siempre) {
+                self.avanzar();
+                let condicion = self.parse_expresion()?;
+                let mensaje = self.parse_mensaje_contrato();
+                inv.push(Contrato { condicion, mensaje });
+            } else {
+                break;
+            }
+        }
+
+        Ok(inv)
     }
 
     /// externo funcion <nombre>(<parametros>) [-> <Tipo>] ;
@@ -381,6 +444,8 @@ impl Parser {
             enlace_nombre,
             atributos: vec![],
             doc: None,
+            precondiciones: vec![],
+            postcondiciones: vec![],
         }))
     }
 
@@ -392,6 +457,9 @@ impl Parser {
 
         // Parsear parámetros de tipo genérico <T, U> si existen
         let parametros_tipo = self.parse_parametros_tipo()?;
+
+        // Parsear invariantes de clase (siempre)
+        let invariantes = self.parse_invariantes()?;
 
         self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' para el cuerpo de la clase.")?;
 
@@ -415,6 +483,7 @@ impl Parser {
             campos,
             metodos,
             atributos: vec![],
+            invariantes,
         }))
     }
 
@@ -620,6 +689,9 @@ impl Parser {
             None
         };
 
+        // Parsear contratos Design by Contract
+        let (precondiciones, postcondiciones) = self.parse_contratos()?;
+
         self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' para el cuerpo del método.")?;
         let cuerpo = self.parse_bloque()?;
 
@@ -628,6 +700,8 @@ impl Parser {
             parametros,
             tipo_retorno,
             cuerpo,
+            precondiciones,
+            postcondiciones,
         })
     }
 
@@ -1696,6 +1770,21 @@ impl Parser {
             return Ok(Expresion::CanalNuevo);
         }
 
+        // `resultado` - valor de retorno en postcondiciones (Design by Contract)
+        if self.coincide(TokenKind::ResultadoKw) {
+            self.avanzar();
+            return Ok(Expresion::Resultado);
+        }
+
+        // `anterior(expr)` - valor anterior en postcondiciones (Design by Contract)
+        if self.coincide(TokenKind::Anterior) {
+            self.avanzar();
+            self.esperar(TokenKind::ParenAbrir, "Se esperaba '(' después de 'anterior'")?;
+            let expr = self.parse_expresion()?;
+            self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de la expresión en 'anterior'")?;
+            return Ok(Expresion::Anterior(Box::new(expr)));
+        }
+
         // Palabras clave que pueden usarse como identificadores en expresiones
         // (soft keywords: son keywords solo en contextos específicos)
         let soft_keywords = [
@@ -2482,8 +2571,14 @@ impl Parser {
                     self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de los subpatrones del constructor.")?;
                     Ok(Patron::Constructor(nombre, subpatrones))
                 } else {
-                    // Constructor simple (sin argumentos)
-                    Ok(Patron::Constructor(nombre, vec![]))
+                    // Distinguir entre variable y constructor según la primera letra:
+                    // - Minúscula o empieza con _ → Variable (bindea el valor)
+                    // - Mayúscula → Constructor (variante de enum sin datos)
+                    if nombre.starts_with(char::is_uppercase) {
+                        Ok(Patron::Constructor(nombre, vec![]))
+                    } else {
+                        Ok(Patron::Variable(nombre))
+                    }
                 }
             }
             TokenKind::Numero(_) | TokenKind::Decimal(_) | TokenKind::LiteralExacto(_, _) | TokenKind::Texto(_)

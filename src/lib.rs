@@ -122,6 +122,83 @@ pub fn compilar_con_ast(source: &str) -> Result<(Vec<ast::Declaracion>, String),
 }
 
 pub fn compilar_pipeline(source: &str) -> Result<Vec<bytecode::Opcode>, String> {
+    Ok(compilar_pipeline_completa(source)?.0)
+}
+
+/// Resuelve los imports en un programa Forja usando un ModuleResolver.
+/// Reemplaza nodos `Importar` con las declaraciones reales de los módulos.
+#[cfg(not(target_arch = "wasm32"))]
+fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast::Programa, String> {
+    use module::ModuleResolver;
+    use package_resolver::PackageResolver;
+
+    // 1. Lexer + Parser del código fuente principal
+    let mut lexer = lexer::Lexer::new(source);
+    let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
+    let mut parser = parser::Parser::new(tokens);
+    let mut programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+
+    // 2. Resolver imports recursivamente con ModuleResolver
+    let project_dir = if root_dir.is_file() {
+        root_dir.parent().unwrap_or(std::path::Path::new("."))
+    } else {
+        root_dir
+    };
+    let mut module_resolver = ModuleResolver::new(project_dir.to_str().unwrap_or("."));
+    module_resolver.package_resolver = Some(PackageResolver::new(project_dir));
+
+    let mut final_decls = Vec::new();
+    for decl in programa.declaraciones {
+        if let ast::Declaracion::Importar(ref ruta) = decl {
+            let sub_prog = module_resolver.resolver(ruta).map_err(|e| format!("{}", e[0]))?;
+            final_decls.extend(sub_prog.declaraciones);
+        } else {
+            final_decls.push(decl);
+        }
+    }
+    programa.declaraciones = final_decls;
+    Ok(programa)
+}
+
+/// Compila código Forja a bytecode, resolviendo imports desde un directorio raíz.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn compilar_pipeline_completa_desde(source: &str, root_dir: &std::path::Path) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
+    use bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
+
+    // FASE 1-2: Resolver imports y obtener AST completo
+    let programa = resolver_imports(source, root_dir)?;
+
+    // FASE 3: Type Checker + Type Inference
+    let mut type_checker = semantics::TypeChecker::new();
+    type_checker.analizar(&programa).map_err(|e| format!("{}", e[0]))?;
+    let tipos_inferidos = type_checker.obtener_tipos_inferidos();
+
+    // FASE 4: Optimizador
+    let mut optimizer = optimizer::Optimizer::new();
+    let programa = optimizer.optimizar(&programa);
+
+    // FASE 4b: Dead Code Elimination
+    let mut dce = optimizer::DeadCodeEliminator::new();
+    let programa = dce.eliminar(&programa);
+
+    // FASE 5: Generar bytecode con especialización por tipos
+    let mut gen = BytecodeGenerator::new();
+    gen.set_tipos_inferidos(tipos_inferidos);
+    let bytecode = gen.generar(&programa).map_err(|_| "Error generando bytecode".to_string())?;
+
+    // FASE 6: Optimizar bytecode: indices globales + fusion de opcodes
+    let bytecode = optimizar_indices(&bytecode);
+    let bytecode = fusionar_opcodes(&bytecode);
+
+    // Extraer contratos del generador
+    let contratos = gen.contratos;
+
+    Ok((bytecode, contratos))
+}
+
+/// Compila código Forja a bytecode + tabla de contratos (Design by Contract)
+/// Sin resolución de imports (usa el source "plano").
+pub fn compilar_pipeline_completa(source: &str) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
     use bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
 
     // FASE 1: Lexer
@@ -154,14 +231,45 @@ pub fn compilar_pipeline(source: &str) -> Result<Vec<bytecode::Opcode>, String> 
     let bytecode = optimizar_indices(&bytecode);
     let bytecode = fusionar_opcodes(&bytecode);
 
-    Ok(bytecode)
+    // Extraer contratos del generador
+    let contratos = gen.contratos;
+
+    Ok((bytecode, contratos))
 }
 
 /// Compila y ejecuta código Forja en ForjaFast (VM ultra-rápida)
 pub fn ejecutar(source: &str) -> Result<Vec<String>, String> {
+    ejecutar_con_opciones(source, true)
+}
+
+/// Compila y ejecuta código Forja en ForjaFast con opciones y resolución de imports.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn ejecutar_desde(source: &str, root_dir: &std::path::Path) -> Result<Vec<String>, String> {
+    ejecutar_con_opciones_desde(source, root_dir, true)
+}
+
+/// Compila y ejecuta código Forja en ForjaFast con opciones
+/// - `verificar_contratos`: si true, verifica pre/post condiciones en runtime
+pub fn ejecutar_con_opciones(source: &str, verificar_contratos: bool) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
-    let bytecode = compilar_pipeline(source)?;
+    let (bytecode, contratos) = compilar_pipeline_completa(source)?;
     let mut vm = ForjaFast::new();
+    vm.contratos = contratos;
+    vm.verificar_contratos = verificar_contratos;
+    vm.set_max_inst(10_000_000); // límite de seguridad para evitar bucles infinitos
+    vm.cargar_bytecode(bytecode);
+    vm.ejecutar().map_err(|e| format!("{}", e))?;
+    Ok(vm.obtener_output().to_vec())
+}
+
+/// Compila y ejecuta código Forja en ForjaFast con opciones y resolución de imports.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn ejecutar_con_opciones_desde(source: &str, root_dir: &std::path::Path, verificar_contratos: bool) -> Result<Vec<String>, String> {
+    use vm_fast::ForjaFast;
+    let (bytecode, contratos) = compilar_pipeline_completa_desde(source, root_dir)?;
+    let mut vm = ForjaFast::new();
+    vm.contratos = contratos;
+    vm.verificar_contratos = verificar_contratos;
     vm.set_max_inst(10_000_000); // límite de seguridad para evitar bucles infinitos
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;

@@ -74,6 +74,10 @@ pub struct Transpiler {
     layout_stack: Vec<String>,
     /// True si se usó columna/fila como layout contenedor (para no duplicar flex)
     gui_container_layout: bool,
+    /// Postcondiciones de la función actual (para transformar retornar)
+    postcondiciones_actuales: Vec<Contrato>,
+    /// Si la función actual tiene postcondiciones activas
+    modo_postcondiciones: bool,
 }
 
 struct ClaseInfo {
@@ -83,6 +87,8 @@ struct ClaseInfo {
     metodos: Vec<String>,             // nombres de métodos
     /// Mapa campo -> tipo inferido desde constructor
     tipos_campos: HashMap<String, String>,
+    /// Invariantes de clase (Design by Contract)
+    invariantes: Vec<Contrato>,
 }
 
 /// Determina si una expresión hija necesita paréntesis según el operador padre.
@@ -133,6 +139,8 @@ impl Transpiler {
             saltar_main: false,
             layout_stack: Vec::new(),
             gui_container_layout: false,
+            postcondiciones_actuales: Vec::new(),
+            modo_postcondiciones: false,
         }
     }
 
@@ -942,7 +950,7 @@ impl Transpiler {
 
     fn recolectar_clases(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
-            if let Declaracion::Clase { nombre, campos, metodos, .. } = decl {
+            if let Declaracion::Clase { nombre, campos, metodos, invariantes, .. } = decl {
                 let mut tipos_campos: HashMap<String, String> = HashMap::new();
 
                 // Escanear constructores para inferir tipos de campos
@@ -981,6 +989,7 @@ impl Transpiler {
                         campos: campos_info,
                         metodos: metodos_info,
                         tipos_campos,
+                        invariantes: invariantes.clone(),
                     },
                 );
             }
@@ -1038,7 +1047,7 @@ impl Transpiler {
 
     fn generar_clases(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
-            if let Declaracion::Clase { nombre, parametros_tipo, campos, metodos, atributos } = decl {
+            if let Declaracion::Clase { nombre, parametros_tipo, campos, metodos, atributos, .. } = decl {
                 // Generar parámetros genéricos si existen
                 let gen_params_str = if parametros_tipo.is_empty() {
                     String::new()
@@ -1216,9 +1225,63 @@ impl Transpiler {
             self.emit_line(&sig);
             self.indent();
 
+            // ─── Invariantes de clase (al inicio del método) ─────────
+            let invariantes = self.clases.get(nombre_clase)
+                .map(|info| info.invariantes.clone())
+                .unwrap_or_default();
+            if !invariantes.is_empty() {
+                self.emit_line("// ═══ Invariantes ═══");
+                for c in &invariantes {
+                    let cond = self.transpilar_expresion(&c.condicion);
+                    let msg = c.mensaje.clone().unwrap_or_else(|| "Invariante falló".to_string());
+                    self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                }
+            }
+
+            // ─── Precondiciones del método ───────────────────────────
+            if !metodo.precondiciones.is_empty() {
+                self.emit_line("// ═══ Precondiciones ═══");
+                for c in &metodo.precondiciones {
+                    let cond = self.transpilar_expresion(&c.condicion);
+                    let msg = c.mensaje.clone().unwrap_or_else(|| "Precondición falló".to_string());
+                    self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                }
+            }
+
+            // ─── Snapshots para anterior() en postcondiciones ─────────
+            let mut vars_anterior: Vec<String> = Vec::new();
+            for c in &metodo.postcondiciones {
+                self.recolectar_vars_anterior(&c.condicion, &mut vars_anterior);
+            }
+            for var in &vars_anterior {
+                self.emit_line(&format!("let _anterior_{} = {}.clone();", var, var));
+            }
+
+            // ─── Guardar estado de postcondiciones ────────────────────
+            let prev_postcondiciones = std::mem::take(&mut self.postcondiciones_actuales);
+            let prev_modo = self.modo_postcondiciones;
+            if !metodo.postcondiciones.is_empty() {
+                self.postcondiciones_actuales = metodo.postcondiciones.clone();
+                self.modo_postcondiciones = true;
+            }
+
             for decl in &metodo.cuerpo {
                 self.transpilar_declaracion(decl);
             }
+
+            // ─── Invariantes al final del método ──────────────────────
+            if !invariantes.is_empty() {
+                self.emit_line("// ═══ Invariantes ═══");
+                for c in &invariantes {
+                    let cond = self.transpilar_expresion(&c.condicion);
+                    let msg = c.mensaje.clone().unwrap_or_else(|| "Invariante falló".to_string());
+                    self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                }
+            }
+
+            // Restaurar estado de postcondiciones
+            self.postcondiciones_actuales = prev_postcondiciones;
+            self.modo_postcondiciones = prev_modo;
 
             self.dedent();
             self.emit_line("}");
@@ -1467,7 +1530,7 @@ impl Transpiler {
                 self.emit_line(&format!("{}[{}] = {};", nombre, idx_str, val_str));
             }
 
-            Declaracion::Funcion { nombre, parametros_tipo, parametros, tipo_retorno, cuerpo, externa: _, enlace_nombre: _, atributos, doc } => {
+            Declaracion::Funcion { nombre, parametros_tipo, parametros, tipo_retorno, cuerpo, externa: _, enlace_nombre: _, atributos, doc, precondiciones, postcondiciones } => {
                 // Emitir doc comment si existe
                 if let Some(doc_text) = doc {
                     for line in doc_text.lines() {
@@ -1528,6 +1591,33 @@ impl Transpiler {
                 self.emit_line(&format!("fn {}{}({}){} {{", nombre, gen_params_str, params.join(", "), ret_str));
                 self.indent();
 
+                // ─── Precondiciones ───────────────────────────────────────
+                if !precondiciones.is_empty() {
+                    self.emit_line("// ═══ Precondiciones ═══");
+                    for c in precondiciones {
+                        let cond = self.transpilar_expresion(&c.condicion);
+                        let msg = c.mensaje.clone().unwrap_or_else(|| "Precondición falló".to_string());
+                        self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                    }
+                }
+
+                // ─── Snapshots para anterior() en postcondiciones ─────────
+                let mut vars_anterior: Vec<String> = Vec::new();
+                for c in postcondiciones {
+                    self.recolectar_vars_anterior(&c.condicion, &mut vars_anterior);
+                }
+                for var in &vars_anterior {
+                    self.emit_line(&format!("let _anterior_{} = {}.clone();", var, var));
+                }
+
+                // ─── Guardar estado de postcondiciones ────────────────────
+                let prev_postcondiciones = std::mem::take(&mut self.postcondiciones_actuales);
+                let prev_modo = self.modo_postcondiciones;
+                if !postcondiciones.is_empty() {
+                    self.postcondiciones_actuales = postcondiciones.clone();
+                    self.modo_postcondiciones = true;
+                }
+
                 // Guardar contexto actual y poner el cuerpo de la función como ámbito de búsqueda
                 // para que las variables locales también sean analizadas por es_variable_mutable
                 let declaraciones_previas = std::mem::take(&mut self.declaraciones_globales);
@@ -1539,6 +1629,8 @@ impl Transpiler {
 
                 // Restaurar contexto anterior
                 self.declaraciones_globales = declaraciones_previas;
+                self.postcondiciones_actuales = prev_postcondiciones;
+                self.modo_postcondiciones = prev_modo;
 
                 self.dedent();
                 self.emit_line("}");
@@ -1780,11 +1872,34 @@ impl Transpiler {
             }
 
             Declaracion::Retornar { valor } => {
-                if let Some(val) = valor {
-                    let val_str = self.transpilar_expresion(val);
-                    self.emit_line(&format!("return {};", val_str));
+                if self.modo_postcondiciones {
+                    let postconds = self.postcondiciones_actuales.clone();
+                    if let Some(val) = valor {
+                        let val_str = self.transpilar_expresion(val);
+                        self.emit_line(&format!("let _return_value = {};", val_str));
+                        // Emitir postcondiciones
+                        for c in &postconds {
+                            let cond = self.transpilar_expresion(&c.condicion);
+                            let msg = c.mensaje.clone().unwrap_or_else(|| "Postcondición falló".to_string());
+                            self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                        }
+                        self.emit_line("return _return_value;");
+                    } else {
+                        // Sin valor de retorno: emitir postcondiciones y retornar
+                        for c in &postconds {
+                            let cond = self.transpilar_expresion(&c.condicion);
+                            let msg = c.mensaje.clone().unwrap_or_else(|| "Postcondición falló".to_string());
+                            self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                        }
+                        self.emit_line("return;");
+                    }
                 } else {
-                    self.emit_line("return;");
+                    if let Some(val) = valor {
+                        let val_str = self.transpilar_expresion(val);
+                        self.emit_line(&format!("return {};", val_str));
+                    } else {
+                        self.emit_line("return;");
+                    }
                 }
             }
 
@@ -1987,12 +2102,24 @@ impl Transpiler {
 
             Expresion::Coincidir { expr, brazos } => {
                 let expr_str = self.transpilar_expresion(expr);
-                let mut result = format!("match {} {{", expr_str);
+                let mut result = format!("match {} {{\n", expr_str);
                 for brazo in brazos {
-                    result.push_str(&format!(" {} => {{ ", self.patron_a_rust(&brazo.patron)));
-                    result.push_str(" }},");
+                    let patron_str = self.patron_a_rust(&brazo.patron);
+                    result.push_str(&format!("    {} => {{\n", patron_str));
+                    // Save current output state and redirect to capture body
+                    let saved_output = std::mem::take(&mut self.output);
+                    let saved_indent = self.indent_level;
+                    self.indent_level += 2;
+                    for decl in &brazo.cuerpo {
+                        self.transpilar_declaracion(decl);
+                    }
+                    result.push_str(&self.output);
+                    // Restore state
+                    self.output = saved_output;
+                    self.indent_level = saved_indent;
+                    result.push_str("    },\n");
                 }
-                result.push_str(" }}");
+                result.push_str("}");
                 result
             }
 
@@ -2086,17 +2213,27 @@ impl Transpiler {
             Expresion::Some(expr) => {
                 format!("Some({})", self.transpilar_expresion(expr))
             }
+            Expresion::Resultado => "_return_value".to_string(),
+            Expresion::Anterior(expr) => {
+                if let Expresion::Identificador(var) = expr.as_ref() {
+                    format!("_anterior_{}", var)
+                } else {
+                    // para anterior(este.campo) usar el valor actual como fallback
+                    self.transpilar_expresion(expr)
+                }
+            }
         }
     }
 
-    fn patron_a_rust(&self, patron: &Patron) -> String {
+    fn patron_a_rust(&mut self, patron: &Patron) -> String {
         match patron {
             Patron::Variable(n) => n.clone(),
             Patron::Constructor(n, ps) => {
                 let sub: Vec<String> = ps.iter().map(|p| self.patron_a_rust(p)).collect();
                 format!("{}({})", n, sub.join(", "))
             }
-            Patron::Ignorar | Patron::Literal(_) => "_".to_string(),
+            Patron::Ignorar => "_".to_string(),
+            Patron::Literal(lit) => self.transpilar_expresion(lit),
         }
     }
 
@@ -2119,6 +2256,61 @@ impl Transpiler {
             Tipo::Opcion(inner) => format!("Option<{}>", self.tipo_a_rust(inner)),
             Tipo::RasgoObjeto(nombre) => format!("Box<dyn {}>", nombre),
             Tipo::Parametro(nombre) => nombre.clone(),
+        }
+    }
+
+    /// Recorre recursivamente una expresión buscando `Anterior(Identificador)` para
+    /// generar las variables snapshot necesarias en Design by Contract.
+    fn recolectar_vars_anterior(&self, expr: &Expresion, vars: &mut Vec<String>) {
+        match expr {
+            Expresion::Anterior(inner) => {
+                if let Expresion::Identificador(var) = inner.as_ref() {
+                    if !vars.contains(var) {
+                        vars.push(var.clone());
+                    }
+                }
+            }
+            Expresion::Binaria { izquierda, derecha, .. } => {
+                self.recolectar_vars_anterior(izquierda, vars);
+                self.recolectar_vars_anterior(derecha, vars);
+            }
+            Expresion::Unaria { expr: e, .. } => {
+                self.recolectar_vars_anterior(e, vars);
+            }
+            Expresion::LlamadaFuncion { argumentos, .. } => {
+                for arg in argumentos {
+                    self.recolectar_vars_anterior(arg, vars);
+                }
+            }
+            Expresion::AccesoMiembro { objeto, .. } => {
+                self.recolectar_vars_anterior(objeto, vars);
+            }
+            Expresion::Grupo(inner) => {
+                self.recolectar_vars_anterior(inner, vars);
+            }
+            Expresion::Index { objeto, indice } => {
+                self.recolectar_vars_anterior(objeto, vars);
+                self.recolectar_vars_anterior(indice, vars);
+            }
+            Expresion::Arreglo(elementos) => {
+                for e in elementos {
+                    self.recolectar_vars_anterior(e, vars);
+                }
+            }
+            Expresion::Mapa(pares) => {
+                for (k, v) in pares {
+                    self.recolectar_vars_anterior(k, vars);
+                    self.recolectar_vars_anterior(v, vars);
+                }
+            }
+            Expresion::Referencia { expr: e, .. } => {
+                self.recolectar_vars_anterior(e, vars);
+            }
+            Expresion::Ok(inner) => self.recolectar_vars_anterior(inner, vars),
+            Expresion::Error(inner) => self.recolectar_vars_anterior(inner, vars),
+            Expresion::Some(inner) => self.recolectar_vars_anterior(inner, vars),
+            Expresion::Try(inner) => self.recolectar_vars_anterior(inner, vars),
+            _ => {}
         }
     }
 
