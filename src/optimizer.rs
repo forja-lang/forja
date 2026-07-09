@@ -308,7 +308,7 @@ impl DeadCodeEliminator {
 
     fn recolectar_en_expresion(&mut self, expr: &Expresion) {
         match expr {
-            Expresion::Identificador(nombre) => { self.variables_usadas.insert(nombre.clone()); }
+            Expresion::Identificador(nombre, ..) => { self.variables_usadas.insert(nombre.clone()); }
             Expresion::Binaria { izquierda, derecha, .. } => { self.recolectar_en_expresion(izquierda); self.recolectar_en_expresion(derecha); }
             Expresion::LlamadaFuncion { nombre, argumentos } => {
                 self.funciones_llamadas.insert(nombre.clone());

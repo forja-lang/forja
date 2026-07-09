@@ -1,0 +1,12 @@
+# Ejemplo: WebSocket Cliente
+# Uso: forja ejecutar examples/219_websocket.fa
+
+importar "std/websocket"
+
+funcion main() {
+    imprimir("WebSocket: este ejemplo requiere un servidor WebSocket")
+    imprimir("Usar: conectar('ws://echo.example.com/echo')")
+    imprimir("Por ahora, solo probamos que el modulo se importa correctamente.")
+}
+
+main()

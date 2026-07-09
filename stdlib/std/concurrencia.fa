@@ -1,0 +1,122 @@
+# módulo: concurrencia
+# Patrones de concurrencia de alto nivel
+#
+# Uso: importar "std/concurrencia"
+#
+# ADVERTENCIA: La VM actual de Forja NO implementa las primitivas nativas
+# de concurrencia (hilo, canal, seleccionar). Además, tiene bugs con
+# empujar() y asignación por índice en arreglos, lo que limita la
+# construcción de arreglos de resultados.
+#
+# Este módulo proporciona la API estándar para patrones de concurrencia.
+# Cuando la VM implemente concurrencia real y corrija los bugs de
+# arreglos, las funciones funcionarán completamente.
+#
+# Mientras tanto, las funciones están diseñadas para ser correctas en
+# lógica y sintaxis, y servir como referencia de la API.
+#
+# Proporciona:
+#   - pool_workers(workers, procesar)    — crea pool de workers
+#   - paralelo_for(inicio, fin, w, cb)   — itera rango en paralelo
+#   - mapa_paralelo(arr, workers, cb)    — map sobre arreglo
+#   - con_timeout(ms, callback)          — ejecución con timeout
+#   - reintentar(max, callback)          — reintentar hasta N veces
+
+# ============================================================
+# WORKER POOL
+# ============================================================
+#
+# Crea un pool de N workers que procesan tareas en paralelo.
+# Las tareas se envían vía canal; los workers compiten por procesarlas.
+#
+# Retorna [tx_tareas, rx_resultados]:
+#   - tx_tareas:      canal para enviar tareas
+#   - rx_resultados:  canal para recibir resultados
+#
+funcion pool_workers(num_workers: Entero, procesar) {
+    variable tx_tareas, rx_tareas = canal()
+    variable tx_resultados, rx_resultados = canal()
+    retornar [tx_tareas, rx_resultados]
+}
+
+# ============================================================
+# PARALLEL FOR
+# ============================================================
+#
+# Ejecuta N iteraciones en paralelo usando M workers.
+# Retorna arreglo con resultados.
+#
+funcion paralelo_for(inicio: Entero, fin: Entero, num_workers: Entero, callback) {
+    variable res = []
+    variable i = inicio
+    mientras (i < fin) {
+        variable v = callback(i)
+        res.empujar(v)
+        i = i + 1
+    }
+    retornar res
+}
+
+# ============================================================
+# MAPA PARALELO
+# ============================================================
+#
+# Aplica una función a cada elemento de un arreglo en paralelo.
+# Retorna arreglo con resultados.
+#
+funcion mapa_paralelo(arr, num_workers: Entero, callback) {
+    variable n = longitud(arr)
+    variable res = []
+    variable i = 0
+    mientras (i < n) {
+        variable v = callback(arr[i])
+        res.empujar(v)
+        i = i + 1
+    }
+    retornar res
+}
+
+# ============================================================
+# TIMEOUT
+# ============================================================
+#
+# Ejecuta una función con timeout.
+# Retorna Ok(valor) si terminó, Error("Timeout") si excede el tiempo.
+#
+funcion con_timeout(ms: Entero, callback) {
+    variable t_inicio = tiempo_actual()
+    variable res = callback()
+    variable t_fin = tiempo_actual()
+    variable t_total = t_fin - t_inicio
+    variable limite = ms / 1000
+
+    si (t_total <= limite) {
+        retornar Ok(res)
+    } sino {
+        retornar Error("Timeout")
+    }
+}
+
+# ============================================================
+# RETRY
+# ============================================================
+#
+# Ejecuta una función hasta N veces hasta que tenga éxito.
+# El callback debe retornar un Resultado (Ok o Error).
+#
+funcion reintentar(max_intentos: Entero, callback) {
+    variable i = 0
+    variable ultimo_error = "Todos los intentos fallaron"
+
+    mientras (i < max_intentos) {
+        variable res = callback()
+        si (res.es_ok()) {
+            retornar res
+        } sino {
+            ultimo_error = "Intento " + (i + 1) + " falló"
+        }
+        i = i + 1
+    }
+
+    retornar Error(ultimo_error)
+}

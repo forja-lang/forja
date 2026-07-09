@@ -140,7 +140,7 @@ impl LlvmBackend {
                 let key = format!("anterior_{}", self.anterior_count);
                 self.anterior_count += 1;
                 let val_reg = match inner.as_ref() {
-                    Expresion::Identificador(name) => {
+                    Expresion::Identificador(name, ..) => {
                         if let Some(p) = self.vars.get(name).cloned() {
                             let r = self.r();
                             line!(self.out, "{} = load i64, i64* {} ; anterior snapshot of {}", r, p, name);
@@ -212,7 +212,7 @@ impl LlvmBackend {
                 // Collect all anterior ptrs first to avoid borrow issues
                 let anterior_ptrs: Vec<String> = self.anterior_map.values().cloned().collect();
                 match inner.as_ref() {
-                    Expresion::Identificador(name) => {
+                    Expresion::Identificador(name, ..) => {
                         if !anterior_ptrs.is_empty() {
                             let ptr = &anterior_ptrs[0];
                             let r = self.r();
@@ -250,7 +250,7 @@ impl LlvmBackend {
             }
             Expresion::LiteralBooleano(b) => Ok(if *b { "1" } else { "0" }.into()),
             Expresion::LiteralNulo => Ok("0".into()),
-            Expresion::Identificador(n) => {
+            Expresion::Identificador(n, ..) => {
                 if n == "verdadero" { Ok("1".into()) }
                 else if n == "falso" || n == "nulo" { Ok("0".into()) }
                 else if let Some(r) = self.load(n) { Ok(r) }
@@ -383,7 +383,7 @@ impl LlvmBackend {
                 let p = self.alloca(nombre);
                 if let Some(v) = valor { let r = self.expr(v)?; self.store(&p, &r); }
             }
-            Declaracion::Asignacion { nombre, valor } => {
+            Declaracion::Asignacion { nombre, valor, .. } => {
                 if let Some(p) = self.vars.get(nombre).cloned() { let r = self.expr(valor)?; self.store(&p, &r); }
             }
             Declaracion::AsignacionMiembro { objeto, miembro, valor } => {
@@ -415,7 +415,7 @@ impl LlvmBackend {
             Declaracion::Repetir { cantidad, bloque } => self.repetir(cantidad, bloque)?,
             Declaracion::LlamadaFuncion { nombre, argumentos } => { self.llamar(nombre, argumentos, false)?; }
             Declaracion::AccesoMiembro { .. } => {}
-            Declaracion::Retornar { valor } => {
+            Declaracion::Retornar { valor, .. } => {
                 if self.postcondiciones_activas {
                     // Store return value in retval alloca and jump to unified end
                     if let Some(v) = valor {
@@ -657,7 +657,7 @@ impl LlvmBackend {
             }
             Expresion::LiteralBooleano(b) => Ok(if *b { "1" } else { "0" }.into()),
             Expresion::LiteralNulo => Ok("0".into()),
-            Expresion::Identificador(n) => {
+            Expresion::Identificador(n, ..) => {
                 if n == "verdadero" { Ok("1".into()) }
                 else if n == "falso" || n == "nulo" { Ok("0".into()) }
                 else if let Some(r) = self.load(n) { Ok(r) }
@@ -701,7 +701,7 @@ impl LlvmBackend {
             }
             Expresion::Grupo(ex) => self.expr(ex),
             Expresion::Referencia { expr: ex, .. } => {
-                if let Expresion::Identificador(n) = ex.as_ref() {
+                if let Expresion::Identificador(n, ..) = ex.as_ref() {
                     if let Some(p) = self.vars.get(n).cloned() {
                         let r = self.r(); line!(self.out, "{} = ptrtoint i64* {} to i64", r, p); return Ok(r);
                     }

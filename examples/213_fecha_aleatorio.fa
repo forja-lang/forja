@@ -2,6 +2,10 @@
 ///
 /// Demostración de los módulos std/fecha y std/aleatorio
 ///
+/// NOTA: Las funciones importadas se llaman sin prefijo de módulo
+/// (ej: formatear() en vez de fecha.formatear()) debido a una
+/// limitación actual en la resolución de nombres con prefijo.
+///
 /// Ejecutar:
 ///   cargo run --bin forja -- ejecutar examples\213_fecha_aleatorio.fa
 
@@ -111,3 +115,5 @@ funcion main() {
     escribir("═══════════════════════════════════")
     escribir("  ¡Módulos fecha y aleatorio funcionando!")
 }
+
+main()
