@@ -20,7 +20,7 @@ android-all: $(ANDROID_TARGETS)
 # shell invocation so the exported environment variables persist for cargo.
 $(ANDROID_TARGETS):
 	@echo "=== Building for $@ ==="
-	source $(TOOLCHAIN_SCRIPT) && cargo build --target $@ --features gui --release
+	. $(TOOLCHAIN_SCRIPT) && cargo build --target $@ --features gui --release
 
 # ── Convenience aliases ────────────────────────────────────────────────────
 android-arm64: aarch64-linux-android
