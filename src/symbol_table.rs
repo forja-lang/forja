@@ -1,16 +1,17 @@
 /// Tabla de símbolos global con String Interning
 /// Permite comparar identificadores en O(1) usando SymId en lugar de O(n) con strcmp
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Un identificador de símbolo único — comparación O(1)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SymId(pub u32);
 
 /// Tabla de símbolos global con interning
+#[derive(Clone)]
 pub struct SymbolTable {
-    strings: Vec<Rc<str>>,              // ID → string
-    lookup: HashMap<Rc<str>, SymId>,    // string → ID
+    strings: Vec<Arc<str>>,              // ID → string
+    lookup: HashMap<Arc<str>, SymId>,    // string → ID
 }
 
 impl SymbolTable {
@@ -20,7 +21,7 @@ impl SymbolTable {
 
     /// Interna un string y devuelve su SymId (reusa si ya existe)
     pub fn intern(&mut self, s: &str) -> SymId {
-        let rc: Rc<str> = Rc::from(s);
+        let rc: Arc<str> = Arc::from(s);
         if let Some(&id) = self.lookup.get(&rc) {
             return id;
         }
@@ -30,8 +31,8 @@ impl SymbolTable {
         id
     }
 
-    /// Interna un Rc<str> y devuelve su SymId (reusa si ya existe)
-    pub fn intern_rc(&mut self, s: &Rc<str>) -> SymId {
+    /// Interna un Arc<str> y devuelve su SymId (reusa si ya existe)
+    pub fn intern_arc(&mut self, s: &Arc<str>) -> SymId {
         if let Some(&id) = self.lookup.get(s) {
             return id;
         }

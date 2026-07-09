@@ -1,0 +1,592 @@
+# modulo: servidor_h2
+# Descripcion: Servidor HTTP/2 (h2c) para Forja
+#
+# Uso: importar "std/servidor_h2"
+#
+# Depende de funciones nativas _h2_*, _hpack_*, _socket_*, _base64_*
+# Proporciona:
+#   ServidorH2(puerto) - clase servidor HTTP/2
+#   get/post/put/eliminar/patch - registro de rutas
+#   iniciar(servidor) - inicia el bucle de aceptacion
+#   detener(servidor) - detiene el servidor
+
+# ─── Constantes ───────────────────────────────────────────────────────
+constante H2_FRAME_DATA = 0
+constante H2_FRAME_HEADERS = 1
+constante H2_FRAME_PRIORITY = 2
+constante H2_FRAME_RST_STREAM = 3
+constante H2_FRAME_SETTINGS = 4
+constante H2_FRAME_PUSH_PROMISE = 5
+constante H2_FRAME_PING = 6
+constante H2_FRAME_GOAWAY = 7
+constante H2_FRAME_WINDOW_UPDATE = 8
+constante H2_FRAME_CONTINUATION = 9
+
+constante H2_FLAG_END_STREAM = 1
+constante H2_FLAG_END_HEADERS = 4
+constante H2_FLAG_ACK = 1
+
+constante H2_ERROR_NO_ERROR = 0
+constante H2_ERROR_PROTOCOL_ERROR = 1
+constante H2_ERROR_INTERNAL_ERROR = 2
+constante H2_ERROR_REFUSED_STREAM = 7
+constante H2_ERROR_CANCEL = 8
+constante H2_ERROR_COMPRESSION_ERROR = 9
+
+constante H2_PREFACE_LEN = 24
+
+# ─── Clase SolicitudH2 ───────────────────────────────────────────────
+clase SolicitudH2 {
+    metodo
+    ruta
+    cabeceras
+    cuerpo
+    parametros
+    params_ruta
+    ip
+    stream_id
+
+    constructor() {
+        este.metodo = "GET"
+        este.ruta = "/"
+        este.cabeceras = {}
+        este.cuerpo = ""
+        este.parametros = {}
+        este.params_ruta = {}
+        este.ip = ""
+        este.stream_id = 1
+    }
+}
+
+# ─── Clase RespuestaH2 ───────────────────────────────────────────────
+clase RespuestaH2 {
+    codigo
+    cabeceras
+    cuerpo
+    tipo_contenido
+
+    constructor() {
+        este.codigo = 200
+        este.cabeceras = {}
+        este.cuerpo = ""
+        este.tipo_contenido = "text/plain"
+    }
+}
+
+# ─── Clase ConexionH2Srv ─────────────────────────────────────────────
+clase ConexionH2Srv {
+    socket
+    stream_id_counter
+    ventana_entrada
+    ventana_salida
+    max_concurrente
+    corriendo
+
+    constructor(socket) {
+        este.socket = socket
+        este.stream_id_counter = 1
+        este.ventana_entrada = 65535
+        este.ventana_salida = 65535
+        este.max_concurrente = 100
+        este.corriendo = verdadero
+    }
+}
+
+# ─── Clase ServidorH2 ────────────────────────────────────────────────
+clase ServidorH2 {
+    _puerto
+    _host
+    _rutas
+    _rutas_params
+    _middlewares
+    _corriendo
+    _conexiones
+
+    constructor(puerto: Entero) {
+        este._puerto = puerto
+        este._host = "0.0.0.0"
+        este._rutas = {}
+        este._rutas_params = {}
+        este._middlewares = []
+        este._corriendo = falso
+        este._conexiones = []
+    }
+}
+
+# ─── Helpers internos ────────────────────────────────────────────────
+
+funcion _cabeceras_a_texto(cabeceras) -> Texto {
+    variable partes = []
+    variable claves = claves_mapa(cabeceras)
+    variable i = 0
+    mientras (i < longitud(claves)) {
+        partes = partes + [claves[i], cabeceras[claves[i]]]
+        i = i + 1
+    }
+    retornar unir(partes, "|")
+}
+
+funcion _texto_a_mapa(texto: Texto) {
+    variable mapa = {}
+    variable partes = dividir(texto, "|")
+    variable i = 0
+    mientras (i + 1 < longitud(partes)) {
+        mapa[partes[i]] = partes[i + 1]
+        i = i + 2
+    }
+    retornar mapa
+}
+
+# ─── Envio de frames H2 ──────────────────────────────────────────────
+# Los payloads binarios (HPACK, DATA) se pasan como Base64 entre Forja y Rust
+# _h2_escribir_frame(socket, tipo, flags, stream_id, payload_b64)
+# _h2_enviar_*(socket, ...) escriben frames directamente al socket TCP
+
+funcion _h2_enviar_frame(conn, tipo: Entero, flags: Entero, stream_id: Entero, payload_b64: Texto) {
+    _h2_escribir_frame(conn.socket, tipo, flags, stream_id, payload_b64)
+}
+
+funcion _h2_enviar_headers(conn, stream_id: Entero, cabeceras, end_stream: Logico) {
+    variable cab_texto = _cabeceras_a_texto(cabeceras)
+    variable hp_block = _hpack_codificar(cab_texto)
+    variable flags = H2_FLAG_END_HEADERS
+    si (end_stream) {
+        flags = flags | H2_FLAG_END_STREAM
+    }
+    _h2_enviar_frame(conn, H2_FRAME_HEADERS, flags, stream_id, hp_block)
+}
+
+funcion _h2_enviar_data(conn, stream_id: Entero, datos: Texto, end_stream: Logico) {
+    variable payload_b64 = _base64_codificar(datos)
+    variable flags = 0
+    si (end_stream) {
+        flags = H2_FLAG_END_STREAM
+    }
+    _h2_enviar_frame(conn, H2_FRAME_DATA, flags, stream_id, payload_b64)
+}
+
+# NOTA: NO definir wrappers con nombres que choquen con los nativos
+# _h2_enviar_rst_stream, _h2_enviar_goaway, _h2_enviar_window_update, _h2_enviar_ping
+# son funciones nativas. Llamar directamente conn.socket como primer argumento.
+
+# ─── Handshake h2c ────────────────────────────────────────────────────
+
+funcion _h2_negociar_h2c_conexion(servidor, socket, datos_raw: Texto) {
+    variable ok = _h2_negociar_h2c(socket, datos_raw)
+    si (ok) {
+        variable conn = nuevo ConexionH2Srv(socket)
+        servidor._conexiones = servidor._conexiones + [conn]
+        retornar conn
+    }
+    retornar nulo
+}
+
+funcion _h2_establecer_h2c_directo(servidor, socket) {
+    # El preface de 24 bytes ya fue leido y verificado en iniciar()
+    # Ahora hacemos el handshake h2c directo
+
+    variable conn = nuevo ConexionH2Srv(socket)
+
+    # Obtener frame SETTINGS por defecto
+    variable frame_default = _h2_settings_default()
+    si (frame_default == nulo) {
+        _socket_cerrar(socket)
+        retornar nulo
+    }
+
+    # Enviar nuestros SETTINGS
+    variable partes = _texto_a_mapa(frame_default)
+    variable payload_b64 = partes["payload"]
+    _h2_enviar_frame(conn, H2_FRAME_SETTINGS, 0, 0, payload_b64)
+
+    # Esperar SETTINGS del cliente
+    variable intentos = 0
+    mientras (intentos < 10) {
+        variable frame_raw = _h2_leer_frame(socket)
+        si (frame_raw == nulo) {
+            romper
+        }
+        variable partes = _texto_a_mapa(frame_raw)
+        variable tipo = a_entero(partes["type"])
+        variable flags = a_entero(partes["flags"])
+        _ = partes["stream_id"]
+        _ = partes["payload"]
+
+        si (tipo == H2_FRAME_SETTINGS) {
+            # Enviar SETTINGS ACK
+            _h2_enviar_frame(conn, H2_FRAME_SETTINGS, H2_FLAG_ACK, 0, "")
+            romper
+        } sino {
+            si (tipo == H2_FRAME_GOAWAY) {
+                _socket_cerrar(socket)
+                retornar nulo
+            }
+        }
+        intentos = intentos + 1
+    }
+
+    servidor._conexiones = servidor._conexiones + [conn]
+    retornar conn
+}
+
+# ─── Procesamiento de frames ──────────────────────────────────────────
+
+funcion _h2_procesar_frame(servidor, conn, tipo: Entero, flags: Entero, stream_id: Entero, payload_b64: Texto) {
+    si (tipo == H2_FRAME_SETTINGS) {
+        variable ack = flags & H2_FLAG_ACK
+        si (ack == 0) {
+            _h2_enviar_frame(conn, H2_FRAME_SETTINGS, H2_FLAG_ACK, 0, "")
+        }
+        retornar
+    }
+
+    si (tipo == H2_FRAME_PING) {
+        _h2_enviar_frame(conn, H2_FRAME_PING, H2_FLAG_ACK, 0, payload_b64)
+        retornar
+    }
+
+    si (tipo == H2_FRAME_WINDOW_UPDATE) {
+        retornar
+    }
+
+    si (tipo == H2_FRAME_HEADERS) {
+        _h2_procesar_headers(servidor, conn, flags, stream_id, payload_b64)
+        retornar
+    }
+
+    si (tipo == H2_FRAME_DATA) {
+        _h2_procesar_data(conn, stream_id, payload_b64)
+        retornar
+    }
+
+    si (tipo == H2_FRAME_RST_STREAM) {
+        retornar
+    }
+
+    si (tipo == H2_FRAME_GOAWAY) {
+        conn.corriendo = falso
+        retornar
+    }
+}
+
+funcion _h2_procesar_headers(servidor, conn, flags: Entero, stream_id: Entero, payload_b64: Texto) {
+    # Decodificar HPACK (payload_b64 es Base64 del bloque HPACK)
+    variable cabeceras = _hpack_decodificar(payload_b64)
+    si (cabeceras == nulo) {
+        _h2_enviar_rst_stream(conn.socket, stream_id, H2_ERROR_COMPRESSION_ERROR)
+        retornar
+    }
+
+    variable cab_map = _texto_a_mapa(cabeceras)
+    variable method = cab_map[":method"]
+    variable path = cab_map[":path"]
+    variable scheme = cab_map[":scheme"]
+    variable authority = cab_map[":authority"]
+    _ = scheme
+    _ = authority
+
+    si (method == nulo) {
+        method = "GET"
+    }
+    si (path == nulo) {
+        path = "/"
+    }
+
+    # Extraer query string
+    variable ruta = path
+    variable query = ""
+    variable pos_q = buscar(path, "?")
+    si (pos_q >= 0) {
+        ruta = path[..pos_q]
+        query = path[pos_q+1..]
+    }
+
+    # Construir solicitud
+    variable solicitud = nuevo SolicitudH2()
+    solicitud.metodo = method
+    solicitud.ruta = ruta
+    solicitud.cabeceras = cab_map
+    solicitud.stream_id = stream_id
+    solicitud.ip = _socket_direccion_remota(conn.socket)
+
+    variable parametros = {}
+    si (longitud(query) > 0) {
+        variable query_parseado = _query_parsear(query)
+        si (query_parseado != -1) {
+            parametros = _texto_a_mapa(query_parseado)
+        }
+    }
+    solicitud.parametros = parametros
+
+    # Resolver ruta
+    variable respuesta = _h2_resolver_ruta(servidor, solicitud, conn)
+    si (respuesta == nulo) {
+        retornar
+    }
+
+    # Enviar respuesta
+    variable end_stream = (flags & H2_FLAG_END_STREAM) != 0
+    _h2_enviar_respuesta(conn, stream_id, respuesta, end_stream)
+}
+
+funcion _h2_procesar_data(conn, stream_id: Entero, payload_b64: Texto) {
+    _ = conn
+    _ = stream_id
+    _ = payload_b64
+    # El cuerpo viaja en frames DATA luego de HEADERS
+    # Para solicitudes simples con END_STREAM en HEADERS, no hay DATA
+}
+
+# ─── Resolucion de rutas ──────────────────────────────────────────────
+
+funcion _h2_resolver_ruta(servidor, solicitud, conn) {
+    variable metodo = solicitud.metodo
+    variable ruta = solicitud.ruta
+
+    variable rutas_metodo = servidor._rutas[metodo]
+    si (rutas_metodo != nulo && rutas_metodo[ruta] != nulo) {
+        variable manejador = rutas_metodo[ruta]
+        variable respuesta = nuevo RespuestaH2()
+        variable res = manejador(solicitud)
+        si (res != nulo) {
+            respuesta = res
+        } sino {
+            respuesta.codigo = 500
+            respuesta.cuerpo = "Error interno del servidor"
+        }
+        retornar respuesta
+    }
+
+    # Buscar en rutas con parametros
+    variable rutas_params = servidor._rutas_params[metodo]
+    si (rutas_params != nulo) {
+        variable claves = claves_mapa(rutas_params)
+        variable i = 0
+        mientras (i < longitud(claves)) {
+            variable info = rutas_params[claves[i]]
+            variable partes_ruta = dividir(ruta, "/")
+            variable partes_clave = dividir(claves[i], "/")
+
+            si (longitud(partes_ruta) == longitud(partes_clave)) {
+                variable params_encontrados = {}
+                variable coincide = verdadero
+                variable j = 0
+                variable idx_param = 0
+                mientras (j < longitud(partes_ruta)) {
+                    variable pr = partes_ruta[j]
+                    variable pc = partes_clave[j]
+                    si (pc == "(:param)") {
+                        si (idx_param < longitud(info["params"])) {
+                            params_encontrados[info["params"][idx_param]] = pr
+                        }
+                        idx_param = idx_param + 1
+                    } sino {
+                        si (pr != pc) {
+                            coincide = falso
+                            romper
+                        }
+                    }
+                    j = j + 1
+                }
+                si (coincide) {
+                    solicitud.params_ruta = params_encontrados
+                    variable manejador = info["manejador"]
+                    variable respuesta = nuevo RespuestaH2()
+                    variable res = manejador(solicitud)
+                    si (res != nulo) {
+                        respuesta = res
+                    } sino {
+                        respuesta.codigo = 500
+                        respuesta.cuerpo = "Error interno del servidor"
+                    }
+                    retornar respuesta
+                }
+            }
+            i = i + 1
+        }
+    }
+
+    # 404
+    variable respuesta_404 = nuevo RespuestaH2()
+    respuesta_404.codigo = 404
+    respuesta_404.cuerpo = "Ruta no encontrada: " + metodo + " " + ruta
+    retornar respuesta_404
+}
+
+# ─── Envio de respuestas H2 ──────────────────────────────────────────
+
+funcion _h2_enviar_respuesta(conn, stream_id: Entero, respuesta, end_stream: Logico) {
+    # Preparar cabeceras de respuesta
+    variable cabeceras = {
+        ":status": a_texto(respuesta.codigo),
+        "server": "Forja-H2/1.0",
+        "content-type": respuesta.tipo_contenido
+    }
+
+    # Fusionar cabeceras adicionales
+    variable claves_adic = claves_mapa(respuesta.cabeceras)
+    variable i = 0
+    mientras (i < longitud(claves_adic)) {
+        cabeceras[claves_adic[i]] = respuesta.cabeceras[claves_adic[i]]
+        i = i + 1
+    }
+
+    # Enviar HEADERS
+    _h2_enviar_headers(conn, stream_id, cabeceras, falso)
+
+    # Enviar DATA si hay cuerpo
+    si (longitud(respuesta.cuerpo) > 0) {
+        _h2_enviar_data(conn, stream_id, respuesta.cuerpo, end_stream)
+    } sino {
+        si (end_stream) {
+            _h2_enviar_data(conn, stream_id, "", verdadero)
+        }
+    }
+}
+
+# ─── Enrutamiento (API publica) ──────────────────────────────────────
+
+funcion _registrar_ruta_h2(servidor, metodo: Texto, ruta: Texto, manejador) {
+    variable partes_ruta = dividir(ruta, "/")
+    variable params_encontrados = []
+    variable patron = []
+    variable i = 0
+    mientras (i < longitud(partes_ruta)) {
+        variable parte = partes_ruta[i]
+        si (longitud(parte) > 0 && parte[0] == ":") {
+            params_encontrados = params_encontrados + [parte[1..]]
+            patron = patron + ["(:param)"]
+        } sino {
+            patron = patron + [parte]
+        }
+        i = i + 1
+    }
+
+    variable patron_str = unir(patron, "/")
+
+    si (servidor._rutas[metodo] == nulo) {
+        servidor._rutas[metodo] = {}
+        servidor._rutas_params[metodo] = {}
+    }
+
+    si (longitud(params_encontrados) > 0) {
+        servidor._rutas_params[metodo][patron_str] = {
+            "params": params_encontrados,
+            "manejador": manejador
+        }
+    } sino {
+        servidor._rutas[metodo][ruta] = manejador
+    }
+}
+
+funcion get(servidor, ruta: Texto, manejador) {
+    _registrar_ruta_h2(servidor, "GET", ruta, manejador)
+}
+
+funcion post(servidor, ruta: Texto, manejador) {
+    _registrar_ruta_h2(servidor, "POST", ruta, manejador)
+}
+
+funcion put(servidor, ruta: Texto, manejador) {
+    _registrar_ruta_h2(servidor, "PUT", ruta, manejador)
+}
+
+funcion eliminar(servidor, ruta: Texto, manejador) {
+    _registrar_ruta_h2(servidor, "DELETE", ruta, manejador)
+}
+
+funcion patch(servidor, ruta: Texto, manejador) {
+    _registrar_ruta_h2(servidor, "PATCH", ruta, manejador)
+}
+
+funcion usar(servidor, middleware) {
+    servidor._middlewares = servidor._middlewares + [middleware]
+}
+
+# ─── Inicio del servidor ────────────────────────────────────────────
+
+funcion iniciar(servidor) {
+    servidor._corriendo = verdadero
+    imprimir("Servidor HTTP/2 (h2c) Forja iniciado en http://" + servidor._host + ":" + a_texto(servidor._puerto) + "/")
+    imprimir("Presiona Ctrl+C para detener")
+
+    variable servidor_socket = _socket_tcp_escuchar(servidor._puerto, 128)
+    si (servidor_socket == nulo) {
+        imprimir("Error al iniciar servidor H2 en puerto " + a_texto(servidor._puerto))
+        servidor._corriendo = falso
+        retornar
+    }
+
+    mientras (servidor._corriendo) {
+        variable cliente = _socket_aceptar(servidor_socket)
+        si (cliente == nulo) {
+            siguiente
+        }
+        si (cliente == -1) {
+            siguiente
+        }
+
+        # Leer primeros 24 bytes para detectar protocolo
+        variable datos = _socket_recibir(cliente, 24)
+        si (datos == nulo || datos == "") {
+            _socket_cerrar(cliente)
+            siguiente
+        }
+
+        si (empieza_con(datos, "PRI * HTTP/2.0")) {
+            # h2c directo (Prior Knowledge) - preface ya consumido
+            variable h2 = _h2_establecer_h2c_directo(servidor, cliente)
+            si (h2 != nulo) {
+                _h2_bucle_conexion(servidor, h2)
+            } sino {
+                _socket_cerrar(cliente)
+            }
+        } sino {
+            si (contiene(datos, "Upgrade: h2c") || contiene(datos, "HTTP2-Settings")) {
+                variable h2 = _h2_negociar_h2c_conexion(servidor, cliente, datos)
+                si (h2 == nulo) {
+                    _socket_cerrar(cliente)
+                } sino {
+                    _h2_bucle_conexion(servidor, h2)
+                }
+            } sino {
+                # HTTP/1.1 u otro protocolo - cerrar
+                _socket_cerrar(cliente)
+            }
+        }
+    }
+
+    _socket_cerrar(servidor_socket)
+}
+
+funcion _h2_bucle_conexion(servidor, conn) {
+    mientras (conn.corriendo && servidor._corriendo) {
+        variable frame_raw = _h2_leer_frame(conn.socket)
+        si (frame_raw == nulo) {
+            conn.corriendo = falso
+            romper
+        }
+
+        variable partes = _texto_a_mapa(frame_raw)
+        variable tipo = a_entero(partes["type"])
+        variable flags = a_entero(partes["flags"])
+        variable stream_id = a_entero(partes["stream_id"])
+        variable payload_b64 = partes["payload"]
+
+        _h2_procesar_frame(servidor, conn, tipo, flags, stream_id, payload_b64)
+    }
+
+    _socket_cerrar(conn.socket)
+}
+
+funcion detener(servidor) {
+    servidor._corriendo = falso
+    variable i = 0
+    mientras (i < longitud(servidor._conexiones)) {
+        variable conn = servidor._conexiones[i]
+        conn.corriendo = falso
+        _h2_enviar_goaway(conn.socket, 0, H2_ERROR_NO_ERROR)
+        i = i + 1
+    }
+    imprimir("Servidor HTTP/2 detenido")
+}

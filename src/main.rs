@@ -27,6 +27,14 @@ mod package_config;
 mod package_resolver;
 mod native_registry;
 
+// HTTP/2 nativo — h2c (cleartext), sin dependencias externas
+#[cfg(not(target_arch = "wasm32"))]
+mod native_h2_core;
+
+// HTTP/2 con TLS (rustls) — feature flag "h2-tls"
+#[cfg(all(feature = "h2-tls", not(target_arch = "wasm32")))]
+mod native_h2_tls;
+
 use std::env;
 use std::fs;
 use std::path::Path;

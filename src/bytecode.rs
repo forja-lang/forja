@@ -297,6 +297,13 @@ pub enum Opcode {
     /// Polling no bloqueante de socket para integración con seleccionar
     /// (nombre_variable_socket)
     SocketPoll(Rc<str>),
+
+    // === Concurrencia: Canales mpsc e Hilos ===
+    /// Crear un canal mpsc real, empuja [tx_obj, rx_obj]
+    ChannelNew,
+    /// Lanzar un hilo que ejecuta la función `func_name`
+    /// Los valores capturados ya están en la pila (captured_count)
+    ThreadSpawn(Rc<str>, usize),
 }
 
 /// Design by Contract: tipo de contrato
@@ -332,6 +339,10 @@ pub struct BytecodeGenerator {
     /// enum_nombre → [(variante_nombre, [tipos_campos])]
     /// Para traducir nombre de constructor a tag (índice) y tipos de campos
     enum_variantes: std::collections::HashMap<String, Vec<(String, Vec<Tipo>)>>,
+
+    // === Channel counter for canal() ===
+    /// Contador para asignar IDs únicos a canales
+    pub channel_counter: i64,
 }
 
 impl BytecodeGenerator {
@@ -345,6 +356,7 @@ impl BytecodeGenerator {
             var_indices: std::collections::HashMap::new(),
             var_counter: 0,
             enum_variantes: std::collections::HashMap::new(),
+            channel_counter: 0,
         }
     }
 
@@ -1095,15 +1107,27 @@ impl BytecodeGenerator {
             }
 
             Declaracion::AsignacionMultiple { variables, mutable, valor } => {
-                // Bytecode: evaluar valor, push Nulo para slots extra, luego declarar cada variable
-                self.generar_expresion(valor);
-                // Push Nulo para cada variable adicional (el expr solo deja 1 valor)
-                for _ in 1..variables.len() {
-                    self.emitir(Opcode::PushNulo);
-                }
-                // Declarar cada variable en orden inverso (stack es LIFO)
-                for var in variables.iter().rev() {
-                    self.emitir(Opcode::Declare(Rc::from(var.as_str()), *mutable));
+                // CASO ESPECIAL: canal() → crea canal mpsc real, asigna tx y rx
+                if let Expresion::CanalNuevo = valor.as_ref() {
+                    // ChannelNew empuja [tx_obj, rx_obj] al stack
+                    self.emitir(Opcode::ChannelNew);
+                    // Si hay más de 2 variables, llenar resto con Nulo
+                    for _ in 2..variables.len() {
+                        self.emitir(Opcode::PushNulo);
+                    }
+                    // Declarar en orden inverso (pop rx primero, luego tx)
+                    for varname in variables.iter().rev() {
+                        self.emitir(Opcode::Declare(Rc::from(varname.as_str()), *mutable));
+                    }
+                } else {
+                    // Caso general: evaluar valor, push Nulo para slots extra
+                    self.generar_expresion(valor);
+                    for _ in 1..variables.len() {
+                        self.emitir(Opcode::PushNulo);
+                    }
+                    for var in variables.iter().rev() {
+                        self.emitir(Opcode::Declare(Rc::from(var.as_str()), *mutable));
+                    }
                 }
             }
         }
@@ -1337,7 +1361,8 @@ impl BytecodeGenerator {
             }
 
             Expresion::Hilo { cuerpo } => {
-                // Concurrencia no implementada en bytecode VM
+                // Por ahora, ejecutar el cuerpo inline (síncrono)
+                // En el futuro, ThreadSpawn lanzará un hilo real
                 for d in cuerpo {
                     self.generar_declaracion(d);
                 }
@@ -1346,8 +1371,9 @@ impl BytecodeGenerator {
             }
 
             Expresion::CanalNuevo => {
-                // Concurrencia no implementada en bytecode VM - retorna Nulo
-                self.emitir(Opcode::PushNulo);
+                // Crear canal mpsc real: ChannelNew empuja [tx_obj, rx_obj]
+                self.emitir(Opcode::ChannelNew);
+                self.emitir(Opcode::ArrayNew(2));
             }
             Expresion::Seleccionar { brazos } => {
                 // No implementado en bytecode VM - ejecutar todos los cuerpos secuencialmente

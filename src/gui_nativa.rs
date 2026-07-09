@@ -551,6 +551,24 @@ enum Layout {
     RippleEffect { child: Box<Layout>, color: String },
 
     // ═══════════════════════════════════════════════════════════════════
+    // INTERACCIONES (Pull-to-refresh, Swipe-to-dismiss)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// Pull-to-refresh: envuelve un hijo con capacidad de recargar al tirar hacia abajo
+    PullToRefresh {
+        child: Box<Layout>,
+        callback: String,
+        refreshing: String,
+    },
+    /// Swipe-to-dismiss: deslizar para descartar con opción de deshacer
+    SwipeToDismiss {
+        child: Box<Layout>,
+        on_dismiss: String,
+        label: String,
+        dismissed: String,
+    },
+
+    // ═══════════════════════════════════════════════════════════════════
     // GRÁFICOS (Fase 9)
     // ═══════════════════════════════════════════════════════════════════
 
@@ -2346,6 +2364,42 @@ Expresion::Identificador(v, ..) =>
                     child.map(|c| Layout::RippleEffect {
                         child: Box::new(c),
                         color: if color.is_empty() { "primary".to_string() } else { color },
+                    })
+                }
+
+                // ─── PullToRefresh ──────────────────────────────────
+                "pull_to_refresh" | "pulltorefresh" | "tirar_recargar" => {
+                    let child = argumentos.first().and_then(expr_a_layout);
+                    let callback = extraer_callback(argumentos, 1);
+                    let refreshing = argumentos.get(2)
+                        .map(|a| match a {
+                            Expresion::Identificador(s, ..) => s.clone(),
+                            Expresion::LiteralTexto(s) => s.clone(),
+                            _ => String::new(),
+                        }).unwrap_or_default();
+                    child.map(|c| Layout::PullToRefresh {
+                        child: Box::new(c),
+                        callback,
+                        refreshing: if refreshing.is_empty() { "refreshing".to_string() } else { refreshing },
+                    })
+                }
+
+                // ─── SwipeToDismiss ─────────────────────────────────
+                "swipe_to_dismiss" | "swipetodismiss" | "deslizar_descartar" => {
+                    let child = argumentos.first().and_then(expr_a_layout);
+                    let on_dismiss = extraer_callback(argumentos, 1);
+                    let label = extraer_texto(argumentos, 2);
+                    let dismissed = argumentos.get(3)
+                        .map(|a| match a {
+                            Expresion::Identificador(s, ..) => s.clone(),
+                            Expresion::LiteralTexto(s) => s.clone(),
+                            _ => String::new(),
+                        }).unwrap_or_default();
+                    child.map(|c| Layout::SwipeToDismiss {
+                        child: Box::new(c),
+                        on_dismiss: if on_dismiss.is_empty() { String::new() } else { on_dismiss },
+                        label: if label.is_empty() { "Descartar".to_string() } else { label },
+                        dismissed: if dismissed.is_empty() { "dismissed".to_string() } else { dismissed },
                     })
                 }
 
@@ -4939,6 +4993,112 @@ fn layout_a_view<'a>(
         Layout::RippleEffect { child, color: _ } => {
             let inner = layout_a_view(child, data, _prog, theme);
             Box::new(view::sized_box(inner).corner_radius(4.0))
+        }
+
+        // ─── PullToRefresh ────────────────────────────────────────────
+        Layout::PullToRefresh { child, callback, refreshing } => {
+            let is_refreshing = data.variables.get(refreshing).map(|v| v.to_bool()).unwrap_or(false);
+            let prog = _prog.to_vec();
+            let cb = callback.clone();
+            let ref_var = refreshing.clone();
+
+            // Botón de recargar en la parte superior
+            let scheme = &theme.scheme;
+            let label_style = get_text_style(&theme.typography, "label_medium");
+            let fg: Color = scheme.primary.into();
+            let refresh_label = if is_refreshing {
+                view::label("🔄 Actualizando...")
+                    .text_size(label_style.font_size as f32)
+                    .color(fg)
+            } else {
+                view::label("⬇️ Tira para recargar")
+                    .text_size(label_style.font_size as f32)
+                    .color(fg)
+            };
+
+            let btn = view::button(refresh_label, move |data: &mut AppStateNativo| {
+                if !cb.is_empty() {
+                    data.escribir(&ref_var, ValorGUI::Booleano(true));
+                    ejecutar_callback_y_actualizar(&cb, data, &prog);
+                }
+            });
+            let header = Box::new(view::sized_box(btn).padding(8.0)) as Box<AnyWidgetView<AppStateNativo>>;
+
+            let inner = layout_a_view(child, data, _prog, theme);
+
+            // TODO xilem 0.4: cuando soporte gesture detection, reemplazar por drag-down gesture.
+            // Por ahora usamos un botón como activador manual.
+            let mut column_children: Vec<Box<AnyWidgetView<AppStateNativo>>> = Vec::new();
+            column_children.push(header);
+            column_children.push(inner);
+            Box::new(view::portal(view::flex(Axis::Vertical, (column_children,)).gap(Length::px(4.0))))
+        }
+
+        // ─── SwipeToDismiss ───────────────────────────────────────────
+        Layout::SwipeToDismiss { child, on_dismiss, label, dismissed } => {
+            let is_dismissed = data.variables.get(dismissed).map(|v| v.to_bool()).unwrap_or(false);
+            let prog = _prog.to_vec();
+            let cb = on_dismiss.clone();
+            let dismiss_var = dismissed.clone();
+            let action_text = label.clone();
+
+            if is_dismissed {
+                // Ya descartado: mostrar opción de deshacer
+                let scheme = &theme.scheme;
+                let fg: Color = scheme.on_surface.into();
+                let btn_fg: Color = scheme.primary.into();
+                let undo_label = view::label("🗑️ Elemento descartado")
+                    .text_size(14.0)
+                    .color(fg);
+                let undo_btn = view::button(
+                    view::label(format!("↩️ {}", action_text))
+                        .text_size(14.0)
+                        .weight(FontWeight::MEDIUM)
+                        .color(btn_fg),
+                    move |data: &mut AppStateNativo| {
+                        data.escribir(&dismiss_var, ValorGUI::Booleano(false));
+                    },
+                );
+                let mut row_children: Vec<Box<AnyWidgetView<AppStateNativo>>> = Vec::new();
+                row_children.push(Box::new(undo_label) as Box<AnyWidgetView<AppStateNativo>>);
+                row_children.push(Box::new(view::sized_box(view::label(String::new())).width(Length::px(8.0)))
+                    as Box<AnyWidgetView<AppStateNativo>>);
+                row_children.push(Box::new(undo_btn) as Box<AnyWidgetView<AppStateNativo>>);
+                Box::new(view::sized_box(
+                    view::flex(Axis::Horizontal, (row_children,)).gap(Length::px(4.0))
+                ).padding(12.0).corner_radius(8.0))
+            } else {
+                // Mostrar contenido + botón de descartar
+                let inner = layout_a_view(child, data, _prog, theme);
+                let scheme = &theme.scheme;
+                let dismiss_fg: Color = scheme.error.into();
+                let prog_clone = prog.clone();
+                let cb_clone = cb.clone();
+                let dismiss_var_clone = dismiss_var.clone();
+
+                let action_btn = view::button(
+                    view::label("✕")
+                        .text_size(18.0)
+                        .weight(FontWeight::BOLD)
+                        .color(dismiss_fg),
+                    move |data: &mut AppStateNativo| {
+                        data.escribir(&dismiss_var_clone, ValorGUI::Booleano(true));
+                        if !cb_clone.is_empty() {
+                            ejecutar_callback_y_actualizar(&cb_clone, data, &prog_clone);
+                        }
+                    },
+                );
+                let dismiss_btn = Box::new(view::sized_box(action_btn).padding(8.0))
+                    as Box<AnyWidgetView<AppStateNativo>>;
+
+                let mut swipe_children: Vec<Box<AnyWidgetView<AppStateNativo>>> = Vec::new();
+                swipe_children.push(inner);
+                swipe_children.push(dismiss_btn);
+
+                // TODO xilem 0.4: cuando soporte gestos de deslizamiento, reemplazar por swipe gesture.
+                // Por ahora usamos un botón ✕ como activador manual.
+                Box::new(view::flex(Axis::Horizontal, (swipe_children,)).gap(Length::px(4.0)))
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════

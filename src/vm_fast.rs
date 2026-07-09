@@ -342,6 +342,28 @@ pub struct ForjaFast {
     exacto_marked: Vec<bool>,         // marcas GC para Exacto
     exacto_free: Vec<u32>,           // free list Exacto
 
+    // ─── Channel Heaps (mpsc) ────────────────────────────────────────────
+    /// Canales de transmisión (Sender)
+    pub chan_tx_heap: Vec<std::sync::mpsc::Sender<ValorFast>>,
+    /// Canales de recepción (Receiver)
+    pub chan_rx_heap: Vec<std::sync::mpsc::Receiver<ValorFast>>,
+    /// Marcas GC para canales tx
+    pub chan_tx_marked: Vec<bool>,
+    /// Marcas GC para canales rx
+    pub chan_rx_marked: Vec<bool>,
+    /// Free list para canales tx
+    pub chan_tx_free: Vec<u32>,
+    /// Free list para canales rx
+    pub chan_rx_free: Vec<u32>,
+
+    // ─── Thread Heap ─────────────────────────────────────────────────────
+    /// Resultados de hilos ya ejecutados (None si no se ha unido aún)
+    pub thread_heap: Vec<Option<ValorFast>>,
+    /// Marcas GC para hilos
+    pub thread_marked: Vec<bool>,
+    /// Free list para hilos
+    pub thread_free: Vec<u32>,
+
     // Contadores para GC automático
     gc_allocs_since_last: usize, // alocaciones desde último GC
     gc_threshold: usize,         // ejecutar GC cada N alocaciones
@@ -384,6 +406,14 @@ pub struct ForjaFast {
     sym_obtener: SymId,
     sym_remover: SymId,
     sym_nuevo: SymId,
+
+    // ─── SymId para canales e hilos ────────────────────────────────────
+    sym_canal_tx: SymId,
+    sym_canal_rx: SymId,
+    sym_hilo: SymId,
+    sym_enviar: SymId,
+    sym_recibir: SymId,
+    sym_unir: SymId,
 
     funciones: HashMap<SymId, FuncFast>,
     /// Nombres de parámetros por función (necesario para mapear args en Call)
@@ -485,6 +515,12 @@ impl ForjaFast {
             sym_obtener: SymId(0),
             sym_remover: SymId(0),
             sym_nuevo: SymId(0),
+            sym_canal_tx: SymId(0),
+            sym_canal_rx: SymId(0),
+            sym_hilo: SymId(0),
+            sym_enviar: SymId(0),
+            sym_recibir: SymId(0),
+            sym_unir: SymId(0),
             funciones: HashMap::new(), func_params: HashMap::new(), bytecode: Vec::new(), output: Vec::new(),
             max_inst: usize::MAX, ejecutadas: 0, fast_math: false,
             show_bytecode: false,
@@ -493,6 +529,14 @@ impl ForjaFast {
             verificar_contratos: true,
             native_registry: NativeRegistry::new(),
             socket_heap: Vec::new(),
+            // Canales mpsc
+            chan_tx_heap: Vec::new(), chan_rx_heap: Vec::new(),
+            chan_tx_marked: Vec::new(), chan_rx_marked: Vec::new(),
+            chan_tx_free: Vec::new(), chan_rx_free: Vec::new(),
+            // Threads
+            thread_heap: Vec::new(),
+            thread_marked: Vec::new(),
+            thread_free: Vec::new(),
         };
         vm.init_symbols();
         vm
@@ -795,6 +839,12 @@ impl ForjaFast {
         self.sym_obtener = self.sym_table.intern("obtener");
         self.sym_remover = self.sym_table.intern("remover");
         self.sym_nuevo = self.sym_table.intern("nuevo");
+        self.sym_canal_tx = self.sym_table.intern("CanalTx");
+        self.sym_canal_rx = self.sym_table.intern("CanalRx");
+        self.sym_hilo = self.sym_table.intern("Hilo");
+        self.sym_enviar = self.sym_table.intern("enviar");
+        self.sym_recibir = self.sym_table.intern("recibir");
+        self.sym_unir = self.sym_table.intern("unir");
     }
 
     fn init_ic(&mut self) {
@@ -866,7 +916,7 @@ impl ForjaFast {
                             _ => {}
                         }
                     }
-                    let sym_id = self.sym_table.intern_rc(n);
+                    let sym_id = self.sym_table.intern(n.as_ref());
                     self.funciones.insert(sym_id, FuncFast { ip: i + 1, vars_size: max_idx });
                     self.func_params.insert(sym_id, params.iter().map(|p| p.to_string()).collect());
                 }
@@ -958,6 +1008,15 @@ impl ForjaFast {
         self.exacto_marked.clear();
         self.exacto_free.clear();
         self.socket_heap.clear();
+        self.chan_tx_heap.clear();
+        self.chan_rx_heap.clear();
+        self.chan_tx_marked.clear();
+        self.chan_rx_marked.clear();
+        self.chan_tx_free.clear();
+        self.chan_rx_free.clear();
+        self.thread_heap.clear();
+        self.thread_marked.clear();
+        self.thread_free.clear();
         self.gc_allocs_since_last = 0;
         self.fast_math = false;
     }
@@ -1063,6 +1122,47 @@ impl ForjaFast {
         ValorFast(ValorFast::QNAN | ValorFast::TAG_OBJ | ValorFast::BIT_EXACTO | _idx as u64)
     }
 
+    // ─── Channel / Thread Heap Helpers ───────────────────────────────────────
+
+    #[inline(always)]
+    fn alloc_chan_tx(&mut self, tx: std::sync::mpsc::Sender<ValorFast>) -> u32 {
+        if let Some(idx) = self.chan_tx_free.pop() {
+            self.chan_tx_heap[idx as usize] = tx;
+            idx
+        } else {
+            let idx = self.chan_tx_heap.len() as u32;
+            self.chan_tx_heap.push(tx);
+            self.chan_tx_marked.push(false);
+            idx
+        }
+    }
+
+    #[inline(always)]
+    fn alloc_chan_rx(&mut self, rx: std::sync::mpsc::Receiver<ValorFast>) -> u32 {
+        if let Some(idx) = self.chan_rx_free.pop() {
+            self.chan_rx_heap[idx as usize] = rx;
+            idx
+        } else {
+            let idx = self.chan_rx_heap.len() as u32;
+            self.chan_rx_heap.push(rx);
+            self.chan_rx_marked.push(false);
+            idx
+        }
+    }
+
+    #[inline(always)]
+    fn alloc_thread(&mut self, resultado: Option<ValorFast>) -> u32 {
+        if let Some(idx) = self.thread_free.pop() {
+            self.thread_heap[idx as usize] = resultado;
+            idx
+        } else {
+            let idx = self.thread_heap.len() as u32;
+            self.thread_heap.push(resultado);
+            self.thread_marked.push(false);
+            idx
+        }
+    }
+
     /// Obtiene referencia al valor Exacto desde un ValorFast.
     #[inline(always)]
     fn get_exacto(&self, idx: u32) -> &ExactoVal {
@@ -1147,6 +1247,30 @@ impl ForjaFast {
             if !self.exacto_marked[i] {
                 self.exacto_heap[i] = ExactoVal::new(0, 0);
                 self.exacto_free.push(i as u32);
+            }
+        }
+
+        // Canales tx no marcados → free list
+        for i in 0..self.chan_tx_heap.len() {
+            if !self.chan_tx_marked[i] {
+                // Los Senders no tienen drop trivial, dejamos que se dropeen
+                // Reemplazar con un sender dummy sería imposible porque mpsc::Sender
+                // no tiene un constructor público. Marcamos como free slot.
+                self.chan_tx_free.push(i as u32);
+            }
+        }
+
+        // Canales rx no marcados → free list
+        for i in 0..self.chan_rx_heap.len() {
+            if !self.chan_rx_marked[i] {
+                self.chan_rx_free.push(i as u32);
+            }
+        }
+
+        // Hilos no marcados → free list (join handles ya consumidos con unir())
+        for i in 0..self.thread_heap.len() {
+            if !self.thread_marked[i] {
+                self.thread_free.push(i as u32);
             }
         }
     }
@@ -1583,7 +1707,7 @@ impl ForjaFast {
                 // Reemplazar Call(nombre, nargs) por CallDirect o CallBuiltin
                 // cuando sea posible, eliminando el hash lookup.
                 Opcode::Call(nombre, nargs) => {
-                    let sym = self.sym_table.intern_rc(&nombre);
+                    let sym = self.sym_table.intern(nombre.as_ref());
                     // Buscar por índice en self.funciones (posición en HashMap)
                     if let Some(func_idx) = self.funciones.iter().position(|(k, _)| *k == sym) {
                         self.bytecode[i] = Opcode::CallDirect(func_idx, nargs);
@@ -1614,7 +1738,7 @@ impl ForjaFast {
                 // Convertir el método a SymId (como u32) para comparaciones O(1) en runtime.
                 // El inline cache (clase_id, método_idx) se maneja en ic_callmethod.
                 Opcode::CallMethod(m, nargs) => {
-                    let method_sym = self.sym_table.intern_rc(&m);
+                    let method_sym = self.sym_table.intern(m.as_ref());
                     self.bytecode[i] = Opcode::CallMethodCached(method_sym.0, nargs);
                 }
 
@@ -2513,7 +2637,7 @@ impl ForjaFast {
 
                 Opcode::Call(nombre, nargs) => {
                     let call_ip = self.ip;
-                    let sym_id = self.sym_table.intern_rc(&nombre);
+                    let sym_id = self.sym_table.intern(nombre.as_ref());
                     if let Some(func) = self.funciones.get(&sym_id).cloned() {
                         // Tail Call Elimination: si el próximo opcode es Return,
                         // no creamos un nuevo frame — reemplazamos args en el scope actual
@@ -2987,6 +3111,54 @@ impl ForjaFast {
                         let idx = obj.indice_objeto();
                         let clase_sym = self.obj_shapes[idx as usize];
                         let method_sym = self.sym_table.intern(m.as_ref());
+                        // ── NATIVE DISPATCH: CanalTx / CanalRx / Hilo ───────────
+                        if clase_sym == self.sym_canal_tx {
+                            let chan_idx = self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            if method_sym == self.sym_enviar || method_sym.0 == self.sym_table.intern("send").0 {
+                                if !args.is_empty() {
+                                    let val = args[0];
+                                    match self.chan_tx_heap[chan_idx].send(val) {
+                                        Ok(_) => self.push_valor(ValorFast::booleano(true)),
+                                        Err(_) => self.push_valor(ValorFast::booleano(false)),
+                                    }
+                                } else {
+                                    self.push_valor(ValorFast::nulo());
+                                }
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                            }
+                            self.ip += 1;
+                            continue;
+                        }
+                        if clase_sym == self.sym_canal_rx {
+                            let chan_idx = self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            if method_sym == self.sym_recibir || method_sym.0 == self.sym_table.intern("recibir").0
+                                || method_sym.0 == self.sym_table.intern("receive").0 || method_sym.0 == self.sym_table.intern("recv").0 {
+                                match self.chan_rx_heap[chan_idx].recv() {
+                                    Ok(val) => self.push_valor(val),
+                                    Err(_) => self.push_valor(ValorFast::nulo()),
+                                }
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                            }
+                            self.ip += 1;
+                            continue;
+                        }
+                        if clase_sym == self.sym_hilo {
+                            let thread_idx = self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            if method_sym == self.sym_unir || method_sym.0 == self.sym_table.intern("unir").0
+                                || method_sym.0 == self.sym_table.intern("join").0 {
+                                if let Some(val) = self.thread_heap[thread_idx] {
+                                    self.push_valor(val);
+                                } else {
+                                    self.push_valor(ValorFast::nulo());
+                                }
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                            }
+                            self.ip += 1;
+                            continue;
+                        }
                         // Buscar método via MRO
                         let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
                         if let Some(fn_sym) = fn_sym {
@@ -3112,6 +3284,54 @@ impl ForjaFast {
                         let idx = obj.indice_objeto();
                         let clase_sym = self.obj_shapes[idx as usize];
                         let method_sym = SymId(method_sym_id);
+                        // ── NATIVE DISPATCH: CanalTx / CanalRx / Hilo ───────────
+                        if clase_sym == self.sym_canal_tx {
+                            let chan_idx = self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            if method_sym == self.sym_enviar || method_sym.0 == self.sym_table.intern("send").0 {
+                                if !args.is_empty() {
+                                    let val = args[0];
+                                    match self.chan_tx_heap[chan_idx].send(val) {
+                                        Ok(_) => self.push_valor(ValorFast::booleano(true)),
+                                        Err(_) => self.push_valor(ValorFast::booleano(false)),
+                                    }
+                                } else {
+                                    self.push_valor(ValorFast::nulo());
+                                }
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                            }
+                            self.ip += 1;
+                            continue;
+                        }
+                        if clase_sym == self.sym_canal_rx {
+                            let chan_idx = self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            if method_sym == self.sym_recibir || method_sym.0 == self.sym_table.intern("recibir").0
+                                || method_sym.0 == self.sym_table.intern("receive").0 || method_sym.0 == self.sym_table.intern("recv").0 {
+                                match self.chan_rx_heap[chan_idx].recv() {
+                                    Ok(val) => self.push_valor(val),
+                                    Err(_) => self.push_valor(ValorFast::nulo()),
+                                }
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                            }
+                            self.ip += 1;
+                            continue;
+                        }
+                        if clase_sym == self.sym_hilo {
+                            let thread_idx = self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            if method_sym == self.sym_unir || method_sym.0 == self.sym_table.intern("unir").0
+                                || method_sym.0 == self.sym_table.intern("join").0 {
+                                if let Some(val) = self.thread_heap[thread_idx] {
+                                    self.push_valor(val);
+                                } else {
+                                    self.push_valor(ValorFast::nulo());
+                                }
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                            }
+                            self.ip += 1;
+                            continue;
+                        }
                         // Buscar método via MRO
                         let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
                         if let Some(fn_sym) = fn_sym {
@@ -3212,8 +3432,8 @@ impl ForjaFast {
                 }
                 Opcode::ArraySet=>{
                     let i=self.pop_valor()?;
-                    let v=self.pop_valor()?;
                     let a=self.pop_valor()?;
+                    let v=self.pop_valor()?;
                     if a.es_arreglo() && i.es_entero() {
                         let arr_idx = a.indice_arreglo();
                         let ii = i.a_entero();
@@ -3870,6 +4090,84 @@ impl ForjaFast {
                     self.push_valor(ValorFast::nulo());
                     self.ip += 1;
                 }
+
+                // ─── CANALES mpsc ─────────────────────────────────────────────
+                Opcode::ChannelNew => {
+                    let (tx, rx) = std::sync::mpsc::channel::<ValorFast>();
+                    let tx_idx = self.alloc_chan_tx(tx);
+                    let rx_idx = self.alloc_chan_rx(rx);
+                    // Crear objeto CanalTx
+                    let mut obj_tx = ObjVal::new(self.sym_canal_tx);
+                    obj_tx.campos_vec.push(ValorFast::entero(tx_idx as i32));
+                    let obj_tx_idx = self.alloc_obj(obj_tx);
+                    // Crear objeto CanalRx
+                    let mut obj_rx = ObjVal::new(self.sym_canal_rx);
+                    obj_rx.campos_vec.push(ValorFast::entero(rx_idx as i32));
+                    let obj_rx_idx = self.alloc_obj(obj_rx);
+                    // Push tx, luego rx (ArrayNew [tx, rx] — tx index 0, rx index 1)
+                    self.push_valor(ValorFast::objeto(obj_tx_idx));
+                    self.push_valor(ValorFast::objeto(obj_rx_idx));
+                    self.ip += 1;
+                }
+
+                // ─── HILOS (ejecución sincrónica por ahora) ──────────────────────
+                Opcode::ThreadSpawn(func_name, captured_count) => {
+                    // Pop valores capturados
+                    let mut captured: Vec<ValorFast> = Vec::with_capacity(captured_count);
+                    for _ in 0..captured_count {
+                        captured.push(self.pop_valor()?);
+                    }
+                    captured.reverse();
+                    // Buscar función
+                    let fn_sym = self.sym_table.intern(func_name.as_ref());
+                    if let Some(func) = self.funciones.get(&fn_sym).cloned() {
+                        let nargs = captured.len();
+                        // Guardar estado actual para restaurar después
+                        let ip_anterior = self.ip;
+                        let frame_count_anterior = self.frame_count;
+                        let base_ptr_anterior = self.base_ptr;
+                        let flat_vars_anterior = self.flat_vars.len();
+                        // Crear frame para la función del hilo
+                        let total_vars = 1 + nargs;
+                        let vars_size = func.vars_size.max(total_vars);
+                        self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
+                        self.flat_vars[self.base_ptr] = ValorFast::nulo(); // self = nulo
+                        for (i, arg) in captured.into_iter().enumerate() {
+                            self.flat_vars[self.base_ptr + 1 + i] = arg;
+                        }
+                        let num_vars_actual = self.flat_vars.len() - self.base_ptr;
+                        self.frame_buffer[self.frame_count] = FrmFast {
+                            ip_ret: self.ip + 1,
+                            base_ptr_previo: self.base_ptr,
+                            num_vars: num_vars_actual,
+                        };
+                        self.frame_count += 1;
+                        self.base_ptr = self.flat_vars.len();
+                        self.ip = func.ip;
+                        // Ejecutar la función inline
+                        let _ = self.ejecutar();
+                        // Obtener valor de retorno del stack
+                        let ret = if !self.stack.is_empty() {
+                            self.stack[0]
+                        } else {
+                            ValorFast::nulo()
+                        };
+                        // Restaurar estado (no continuar en la función del hilo)
+                        self.ip = ip_anterior + 1;
+                        self.frame_count = frame_count_anterior;
+                        self.base_ptr = base_ptr_anterior;
+                        self.flat_vars.truncate(flat_vars_anterior);
+                        // Guardar resultado y crear objeto Hilo
+                        let hilo_idx = self.alloc_thread(Some(ret));
+                        let mut obj = ObjVal::new(self.sym_hilo);
+                        obj.campos_vec.push(ValorFast::entero(hilo_idx as i32));
+                        let obj_idx = self.alloc_obj(obj);
+                        self.push_valor(ValorFast::objeto(obj_idx));
+                    } else {
+                        self.push_valor(ValorFast::nulo());
+                        self.ip += 1;
+                    }
+                }
             }
             // Aplicar patch de especialización/des-especialización diferido
             if let Some(op) = patch_op {
@@ -4500,6 +4798,54 @@ impl ForjaFast {
                         let idx = obj.indice_objeto();
                         let clase_sym = self.obj_shapes[idx as usize];
                         let method_sym = self.sym_table.intern(&m);
+                        // ── NATIVE DISPATCH: CanalTx / CanalRx / Hilo ───────────
+                        if clase_sym == self.sym_canal_tx {
+                            let chan_idx = self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            if method_sym == self.sym_enviar || method_sym.0 == self.sym_table.intern("send").0 {
+                                if !args.is_empty() {
+                                    let val = args[0];
+                                    match self.chan_tx_heap[chan_idx].send(val) {
+                                        Ok(_) => self.push_valor(ValorFast::booleano(true)),
+                                        Err(_) => self.push_valor(ValorFast::booleano(false)),
+                                    }
+                                } else {
+                                    self.push_valor(ValorFast::nulo());
+                                }
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                            }
+                            self.ip += 1;
+                            continue;
+                        }
+                        if clase_sym == self.sym_canal_rx {
+                            let chan_idx = self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            if method_sym == self.sym_recibir || method_sym.0 == self.sym_table.intern("recibir").0
+                                || method_sym.0 == self.sym_table.intern("receive").0 || method_sym.0 == self.sym_table.intern("recv").0 {
+                                match self.chan_rx_heap[chan_idx].recv() {
+                                    Ok(val) => self.push_valor(val),
+                                    Err(_) => self.push_valor(ValorFast::nulo()),
+                                }
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                            }
+                            self.ip += 1;
+                            continue;
+                        }
+                        if clase_sym == self.sym_hilo {
+                            let thread_idx = self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            if method_sym == self.sym_unir || method_sym.0 == self.sym_table.intern("unir").0
+                                || method_sym.0 == self.sym_table.intern("join").0 {
+                                if let Some(val) = self.thread_heap[thread_idx] {
+                                    self.push_valor(val);
+                                } else {
+                                    self.push_valor(ValorFast::nulo());
+                                }
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                            }
+                            self.ip += 1;
+                            continue;
+                        }
                         // Buscar método via MRO
                         let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
                         if let Some(fn_sym) = fn_sym {
@@ -4576,8 +4922,8 @@ impl ForjaFast {
                 }
                 Uop::ArraySet => {
                     let i = self.pop_valor()?;
-                    let v = self.pop_valor()?;
                     let a = self.pop_valor()?;
+                    let v = self.pop_valor()?;
                     if a.es_arreglo() && i.es_entero() {
                         let arr_idx = a.indice_arreglo();
                         let ii = i.a_entero();
@@ -4845,12 +5191,24 @@ impl ForjaFast {
     pub fn obtener_output(&self) -> &[String] { &self.output }
 }
 
-enum BuiltinFast { Len, Upper, Lower, Contains, Split, Trim, Reverse }
+enum BuiltinFast { Len, Upper, Lower, Contains, Split, Trim, Reverse, Obtener, Empujar, Remover }
 fn resolver_builtin_fast(m: &str) -> Option<BuiltinFast> {
-    match m { "length"=>Some(BuiltinFast::Len),"to_upper"=>Some(BuiltinFast::Upper),"to_lower"=>Some(BuiltinFast::Lower),"contains"=>Some(BuiltinFast::Contains),"split"=>Some(BuiltinFast::Split),"trim"=>Some(BuiltinFast::Trim),"reverse"=>Some(BuiltinFast::Reverse),_=>None }
+    match m {
+        "length"|"longitud" => Some(BuiltinFast::Len),
+        "to_upper" => Some(BuiltinFast::Upper),
+        "to_lower" => Some(BuiltinFast::Lower),
+        "contains"|"contiene" => Some(BuiltinFast::Contains),
+        "split"|"dividir" => Some(BuiltinFast::Split),
+        "trim"|"recortar" => Some(BuiltinFast::Trim),
+        "reverse"|"invertir" => Some(BuiltinFast::Reverse),
+        "obtener"|"get" => Some(BuiltinFast::Obtener),
+        "empujar"|"push" => Some(BuiltinFast::Empujar),
+        "remover"|"remove" => Some(BuiltinFast::Remover),
+        _=>None
+    }
 }
 impl ForjaFast {
-    fn exec_builtin(&mut self, b: BuiltinFast, _n: usize) -> Result<(), ErrFast> {
+    fn exec_builtin(&mut self, b: BuiltinFast, _nargs: usize) -> Result<(), ErrFast> {
         match b {
             BuiltinFast::Len=>{
                 let v = self.pop_valor()?;
@@ -4915,6 +5273,39 @@ impl ForjaFast {
                     let r: String = self.get_str(v.indice_texto()).chars().rev().collect();
                     let idx = self.alloc_str(Rc::from(r.as_str()));
                     self.push_valor(ValorFast::texto(idx));
+                } else { self.push_valor(ValorFast::nulo()); }
+            }
+            BuiltinFast::Obtener=>{
+                let idx_val = self.pop_valor()?;
+                let arr_val = self.pop_valor()?;
+                if arr_val.es_arreglo() && idx_val.es_entero() {
+                    let arr = self.get_arr(arr_val.indice_arreglo());
+                    let i = idx_val.a_entero();
+                    if i >= 0 && (i as usize) < arr.len() {
+                        self.push_valor(arr[i as usize]);
+                    } else { self.push_valor(ValorFast::nulo()); }
+                } else { self.push_valor(ValorFast::nulo()); }
+            }
+            BuiltinFast::Empujar=>{
+                let val = self.pop_valor()?;
+                let arr_val = self.pop_valor()?;
+                if arr_val.es_arreglo() {
+                    let arr_idx = arr_val.indice_arreglo();
+                    self.get_arr_mut(arr_idx).push(val);
+                    self.push_valor(arr_val);
+                } else { self.push_valor(ValorFast::nulo()); }
+            }
+            BuiltinFast::Remover=>{
+                let idx_val = self.pop_valor()?;
+                let arr_val = self.pop_valor()?;
+                if arr_val.es_arreglo() && idx_val.es_entero() {
+                    let arr_idx = arr_val.indice_arreglo();
+                    let i = idx_val.a_entero();
+                    let arr = self.get_arr_mut(arr_idx);
+                    if i >= 0 && (i as usize) < arr.len() {
+                        arr.remove(i as usize);
+                    }
+                    self.push_valor(arr_val);
                 } else { self.push_valor(ValorFast::nulo()); }
             }
         }
