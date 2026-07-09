@@ -9,27 +9,26 @@ ANDROID_TARGETS = aarch64-linux-android x86_64-linux-android armv7-linux-android
 # Ensure toolchain script is executable
 SCRIPTS_DIR := scripts
 TOOLCHAIN_SCRIPT := $(SCRIPTS_DIR)/toolchain-android.sh
+BUILD_SCRIPT := $(SCRIPTS_DIR)/build-android.sh
 
 .PHONY: all android-all android-arm64 android-x86_64 android-armv7 android-x86 setup-android
 
 # ── Build all Android targets ───────────────────────────────────────────────
-android-all: $(ANDROID_TARGETS)
+android-all:
+	@bash $(BUILD_SCRIPT)
 
 # ── Individual targets ─────────────────────────────────────────────────────
-# Each target calls `source toolchain-android.sh && cargo build` in a single
-# shell invocation so the exported environment variables persist for cargo.
-$(ANDROID_TARGETS):
-	@echo "=== Building for $@ ==="
-	. $(TOOLCHAIN_SCRIPT) && cargo build --target $@ --features gui --release
+android-arm64:
+	@bash $(BUILD_SCRIPT) aarch64-linux-android
 
-# ── Convenience aliases ────────────────────────────────────────────────────
-android-arm64: aarch64-linux-android
+android-x86_64:
+	@bash $(BUILD_SCRIPT) x86_64-linux-android
 
-android-x86_64: x86_64-linux-android
+android-armv7:
+	@bash $(BUILD_SCRIPT) armv7-linux-androideabi
 
-android-armv7: armv7-linux-androideabi
-
-android-x86: i686-linux-android
+android-x86:
+	@bash $(BUILD_SCRIPT) i686-linux-android
 
 # ── Validate NDK setup without building ────────────────────────────────────
 setup-android:
