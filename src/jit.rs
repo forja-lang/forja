@@ -1120,6 +1120,15 @@ impl NativeJIT {
                     } else { c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x83]); c.i32(dd); }
                 }
 
+                // Fase 5: Exacto (BigDecimal) — no implementado en JIT nativo
+                Opcode::PushExacto(_, _) | Opcode::AddExact | Opcode::SubExact |
+                Opcode::MulExact | Opcode::DivExact |
+                Opcode::IgualExact | Opcode::MenorExact | Opcode::MayorExact |
+                Opcode::EnteroAExacto | Opcode::DecimalAExacto |
+                Opcode::DeclareExactOp(_, _, _) | Opcode::AddStoreExact(_) => {
+                    return Err(format!("Exacto (BigDecimal) no implementado en JIT nativo: {:?}", op));
+                }
+
                 _ => { return Err(format!("non-JIT {:?}", op)); }
             }
             i += 1;

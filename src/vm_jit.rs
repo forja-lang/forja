@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
+use crate::vm::homogeneizar_exacto;
 
 const OP_PUSH_ENTERO: u8 = 0;  const OP_PUSH_DECIMAL: u8 = 1;
 const OP_PUSH_TEXTO: u8 = 2;   const OP_PUSH_BOOL: u8 = 3;
@@ -35,6 +36,15 @@ const OP_MUL_INT: u8 = 104;    const OP_MUL_FLOAT: u8 = 105;
 const OP_DIV_INT: u8 = 106;    const OP_DIV_FLOAT: u8 = 107;
 const OP_IGUAL_INT: u8 = 108;  const OP_MENOR_INT: u8 = 109;
 const OP_MAYOR_INT: u8 = 110;
+// Opcodes para Exacto (BigDecimal)
+const OP_PUSH_EXACTO: u8 = 43;  const OP_ADD_EXACT: u8 = 44;
+const OP_SUB_EXACT: u8 = 45;    const OP_MUL_EXACT: u8 = 46;
+const OP_DIV_EXACT: u8 = 47;    const OP_IGUAL_EXACT: u8 = 48;
+const OP_MENOR_EXACT: u8 = 49;  const OP_MAYOR_EXACT: u8 = 50;
+const OP_ENTERO_A_EXACTO: u8 = 51;
+const OP_DECIMAL_A_EXACTO: u8 = 52;
+const OP_DECLARE_EXACT_OP: u8 = 53;
+const OP_ADD_STORE_EXACT: u8 = 54;
 
 // Small Integer Cache [-5, 256] — thread_local! porque ValorDT no es Send/Sync
 use std::cell::OnceCell;
@@ -63,7 +73,7 @@ pub fn get_small_int_dt(n: i64) -> ValorDT {
 
 #[derive(Clone)]
 pub enum ValorDT {
-    Entero(i64), Decimal(f64), Texto(Rc<str>), Booleano(bool),
+    Entero(i64), Exacto(i128, u32), Decimal(f64), Texto(Rc<str>), Booleano(bool),
     Nulo, Objeto(ObjetoRefDT), Arreglo(Vec<ValorDT>), Mapa(HashMap<String, ValorDT>),
 }
 #[derive(Clone)]
@@ -75,13 +85,30 @@ impl ValorDT {
     fn es_verdadero(&self) -> bool {
         match self {
             ValorDT::Booleano(b) => *b, ValorDT::Entero(n) => *n != 0,
-            ValorDT::Decimal(d) => *d != 0.0, ValorDT::Texto(s) => !s.is_empty(),
+            ValorDT::Exacto(c, _) => *c != 0, ValorDT::Decimal(d) => *d != 0.0,
+            ValorDT::Texto(s) => !s.is_empty(),
             ValorDT::Nulo => false, _ => true,
         }
     }
     fn mostrar(&self) -> String {
         match self {
-            ValorDT::Entero(n) => n.to_string(), ValorDT::Decimal(d) => d.to_string(),
+            ValorDT::Entero(n) => n.to_string(),
+            ValorDT::Exacto(coeff, scale) => {
+                if *scale == 0 { return coeff.to_string(); }
+                let signo = if *coeff < 0 { "-" } else { "" };
+                let abs_coeff = coeff.unsigned_abs();
+                let s = abs_coeff.to_string();
+                let digitos = s.len() as u32;
+                if *scale >= digitos {
+                    let ceros = *scale - digitos;
+                    format!("{}0.{}{}", signo, "0".repeat(ceros as usize), s)
+                } else {
+                    let punto = digitos - *scale;
+                    let (entera, fracc) = s.split_at(punto as usize);
+                    format!("{}{}.{}", signo, entera, fracc)
+                }
+            }
+            ValorDT::Decimal(d) => d.to_string(),
             ValorDT::Texto(s) => s.to_string(),
             ValorDT::Booleano(b) => (if *b { "verdadero" } else { "falso" }).to_string(),
             ValorDT::Nulo => "nulo".to_string(),
@@ -99,12 +126,13 @@ pub struct BytecodeDT {
     pub float_ops: Vec<f64>,
     pub str_ops: Vec<String>,
     pub str_list_ops: Vec<Vec<String>>,
+    pub exacto_ops: Vec<(i128, u32)>,
     pub fn_positions: HashMap<String, (usize, Vec<String>)>,  // nombre → (ip, params)
     pub call_names: HashMap<usize, String>,  // IP en code[] → nombre de función para OP_CALL
     pub fn_str_start: HashMap<String, usize>,  // nombre → str_idx al inicio del cuerpo
     pub fn_strl_start: HashMap<String, usize>,  // nombre → str_list_idx al inicio del cuerpo
     pub jump_ops: Vec<usize>,  // destinos de salto (separados de int_ops para evitar desync)
-    pub idx_at_ip: Vec<(usize, usize, usize, usize)>,  // (str_idx, int_idx, float_idx, jump_idx) por IP
+    pub idx_at_ip: Vec<(usize, usize, usize, usize, usize)>,  // (str_idx, int_idx, float_idx, jump_idx, exacto_idx) por IP
 }
 
 /// Compilador de bytecode compacto — con label resolution correcta
@@ -113,6 +141,7 @@ pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
         code: Vec::with_capacity(opcodes.len()),
         int_ops: Vec::new(), float_ops: Vec::new(),
         str_ops: Vec::new(), str_list_ops: Vec::new(),
+        exacto_ops: Vec::new(),
         fn_positions: HashMap::new(),
         call_names: HashMap::new(),
         fn_str_start: HashMap::new(),
@@ -236,7 +265,32 @@ pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
             crate::bytecode::Opcode::MapGet => { bc.code.push(OP_MAP_GET); }
             crate::bytecode::Opcode::MapSet => { bc.code.push(OP_MAP_SET); }
             crate::bytecode::Opcode::Halt => { bc.code.push(OP_HALT); }
-            // Superinstructions (Fase 1a) — no implementadas en JIT clásico
+            // === Opcodes para Exacto (BigDecimal) ===
+            crate::bytecode::Opcode::PushExacto(coeff, scale) => {
+                bc.code.push(OP_PUSH_EXACTO);
+                bc.exacto_ops.push((*coeff, *scale));
+            }
+            crate::bytecode::Opcode::AddExact => { bc.code.push(OP_ADD_EXACT); }
+            crate::bytecode::Opcode::SubExact => { bc.code.push(OP_SUB_EXACT); }
+            crate::bytecode::Opcode::MulExact => { bc.code.push(OP_MUL_EXACT); }
+            crate::bytecode::Opcode::DivExact => { bc.code.push(OP_DIV_EXACT); }
+            crate::bytecode::Opcode::IgualExact => { bc.code.push(OP_IGUAL_EXACT); }
+            crate::bytecode::Opcode::MenorExact => { bc.code.push(OP_MENOR_EXACT); }
+            crate::bytecode::Opcode::MayorExact => { bc.code.push(OP_MAYOR_EXACT); }
+            crate::bytecode::Opcode::EnteroAExacto => { bc.code.push(OP_ENTERO_A_EXACTO); }
+            crate::bytecode::Opcode::DecimalAExacto => { bc.code.push(OP_DECIMAL_A_EXACTO); }
+            crate::bytecode::Opcode::DeclareExactOp(idx, coeff, scale) => {
+                // Expandir superinstrucción: PushExacto + Declare
+                bc.code.push(OP_PUSH_EXACTO);
+                bc.exacto_ops.push((*coeff, *scale));
+                bc.code.push(OP_DECLARE);
+                bc.str_ops.push(format!("%idx_{}", idx));
+            }
+            crate::bytecode::Opcode::AddStoreExact(idx) => {
+                bc.code.push(OP_ADD_STORE_EXACT);
+                bc.int_ops.push(*idx as i64);
+            }
+            // Superinstructions sin soporte en JIT clásico
             _ => {}
         }
     }
@@ -252,26 +306,28 @@ pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
     }
 
     // Precomputar índices esperados en cada posición de código
-    // Esto permite restaurar str_idx/int_idx/float_idx/jump_idx después de saltos
+    // Esto permite restaurar str_idx/int_idx/float_idx/jump_idx/exacto_idx después de saltos
     let code_len = bc.code.len();
     let mut idx_at_ip = Vec::with_capacity(code_len);
     let mut sim_str: usize = 0;
     let mut sim_int: usize = 0;
     let mut sim_float: usize = 0;
     let mut sim_jump: usize = 0;
+    let mut sim_exacto: usize = 0;
 
     // Simular el avance secuencial de índices para cada bytecode
     // Usamos una segunda pasada porque los jump_placeholders ya están resueltos
     for ip in 0..code_len {
-        idx_at_ip.push((sim_str, sim_int, sim_float, sim_jump));
+        idx_at_ip.push((sim_str, sim_int, sim_float, sim_jump, sim_exacto));
         match bc.code[ip] {
-            OP_PUSH_ENTERO | OP_PUSH_BOOL | OP_CALL => { sim_int += 1; }
+            OP_PUSH_ENTERO | OP_PUSH_BOOL | OP_CALL | OP_ADD_STORE_EXACT => { sim_int += 1; }
             OP_PUSH_DECIMAL => { sim_float += 1; }
             OP_PUSH_TEXTO | OP_LOAD | OP_STORE | OP_DECLARE
             | OP_NEW_OBJ | OP_SET_FIELD | OP_GET_FIELD
             | OP_CALL_METHOD | OP_FN_DEF => { sim_str += 1; }
             OP_JUMP | OP_JUMP_SI_FALSO => { sim_jump += 1; }
             OP_ARRAY_NEW | OP_MAP_NEW => { sim_int += 1; }
+            OP_PUSH_EXACTO => { sim_exacto += 1; }
             _ => {}
         }
     }
@@ -287,13 +343,15 @@ pub struct ForjaDT {
     code: Vec<u8>,
     int_ops: Vec<i64>, float_ops: Vec<f64>,
     str_ops: Vec<String>, str_list_ops: Vec<Vec<String>>,
+    exacto_ops: Vec<(i128, u32)>,
     call_names: HashMap<usize, String>,
     fn_str_start: HashMap<String, usize>,  // nombre → str_idx al inicio del cuerpo
     fn_strl_start: HashMap<String, usize>, // nombre → str_list_idx al inicio del cuerpo
     jump_ops: Vec<usize>,  // destinos de salto (separados)
-    idx_at_ip: Vec<(usize, usize, usize, usize)>,  // (str_idx, int_idx, float_idx, jump_idx) por IP
+    idx_at_ip: Vec<(usize, usize, usize, usize, usize)>,  // (str_idx, int_idx, float_idx, jump_idx, exacto_idx) por IP
     ip: usize, int_idx: usize, float_idx: usize, str_idx: usize, str_list_idx: usize,
     jump_idx: usize,  // índice en jump_ops
+    exacto_idx: usize,  // índice en exacto_ops
     stack: Vec<ValorDT>,
     call_stack: Vec<FrameDT>,
     variables: Vec<Vec<ValorDT>>,
@@ -305,7 +363,7 @@ pub struct ForjaDT {
     instrucciones_ejecutadas: usize,
 }
 
-struct FrameDT { ip_retorno: usize, int_ret: usize, float_ret: usize, str_ret: usize, strl_ret: usize, jump_ret: usize }
+struct FrameDT { ip_retorno: usize, int_ret: usize, float_ret: usize, str_ret: usize, strl_ret: usize, jump_ret: usize, exacto_ret: usize }
 
 #[derive(Debug, Clone)]
 pub enum ErrorDT {
@@ -336,13 +394,14 @@ impl ForjaDT {
         ForjaDT {
             code: Vec::new(), int_ops: Vec::new(), float_ops: Vec::new(),
             str_ops: Vec::new(), str_list_ops: Vec::new(),
+            exacto_ops: Vec::new(),
             call_names: HashMap::new(),
             fn_str_start: HashMap::new(),
             fn_strl_start: HashMap::new(),
             jump_ops: Vec::new(),
             idx_at_ip: Vec::new(),
             ip: 0, int_idx: 0, float_idx: 0, str_idx: 0, str_list_idx: 0,
-            jump_idx: 0,
+            jump_idx: 0, exacto_idx: 0,
             stack: Vec::with_capacity(256), call_stack: Vec::with_capacity(64),
             variables: vec![Vec::with_capacity(32)],
             var_indices: vec![HashMap::with_capacity(32)],
@@ -361,6 +420,7 @@ impl ForjaDT {
         self.code = bc.code; self.int_ops = bc.int_ops;
         self.float_ops = bc.float_ops; self.str_ops = bc.str_ops;
         self.str_list_ops = bc.str_list_ops;
+        self.exacto_ops = bc.exacto_ops;
         self.call_names = bc.call_names;
         self.fn_str_start = bc.fn_str_start;
         self.fn_strl_start = bc.fn_strl_start;
@@ -374,12 +434,13 @@ impl ForjaDT {
 
         self.str_idx = 0; self.str_list_idx = 0;
         self.ip = 0; self.int_idx = 0; self.float_idx = 0;
-        self.jump_idx = 0;
+        self.jump_idx = 0; self.exacto_idx = 0;
     }
 
     pub fn reset(&mut self) {
         self.ip = 0; self.int_idx = 0; self.float_idx = 0;
         self.str_idx = 0; self.str_list_idx = 0; self.jump_idx = 0;
+        self.exacto_idx = 0;
         self.stack.clear(); self.call_stack.clear(); self.output.clear();
         self.call_names.clear();
     }
@@ -391,6 +452,7 @@ impl ForjaDT {
     fn rs(&mut self) -> String { let s = self.str_ops[self.str_idx].clone(); self.str_idx += 1; s }
     fn ri(&mut self) -> i64 { let n = self.int_ops[self.int_idx]; self.int_idx += 1; n }
     fn rf(&mut self) -> f64 { let f = self.float_ops[self.float_idx]; self.float_idx += 1; f }
+    fn re(&mut self) -> (i128, u32) { let p = self.exacto_ops[self.exacto_idx]; self.exacto_idx += 1; p }
 
     pub fn ejecutar(&mut self) -> Result<(), ErrorDT> {
         let len = self.code.len();
@@ -456,8 +518,8 @@ impl ForjaDT {
                     self.jump_idx += 1;
                     // Restaurar índices precomputados para la IP destino
                     if self.ip < self.idx_at_ip.len() {
-                        let (s, i, f, j) = self.idx_at_ip[self.ip];
-                        self.str_idx = s; self.int_idx = i; self.float_idx = f; self.jump_idx = j;
+                        let (s, i, f, j, e) = self.idx_at_ip[self.ip];
+                        self.str_idx = s; self.int_idx = i; self.float_idx = f; self.jump_idx = j; self.exacto_idx = e;
                     }
                 }
                 OP_JUMP_SI_FALSO => {
@@ -467,8 +529,8 @@ impl ForjaDT {
                         self.ip = t;
                         // Restaurar índices precomputados para la IP destino
                         if self.ip < self.idx_at_ip.len() {
-                            let (s, i, f, j) = self.idx_at_ip[self.ip];
-                            self.str_idx = s; self.int_idx = i; self.float_idx = f; self.jump_idx = j;
+                            let (s, i, f, j, e) = self.idx_at_ip[self.ip];
+                            self.str_idx = s; self.int_idx = i; self.float_idx = f; self.jump_idx = j; self.exacto_idx = e;
                         }
                     } else {
                         self.ip += 1;
@@ -482,7 +544,7 @@ impl ForjaDT {
                     let nombre = self.call_names.get(&call_ip).cloned().unwrap_or_default();
                     let nargs = self.ri() as usize;
                     if let Some(func) = self.funciones.get(&nombre).cloned() {
-                        self.call_stack.push(FrameDT { ip_retorno: call_ip + 1, int_ret: self.int_idx, float_ret: self.float_idx, str_ret: self.str_idx, strl_ret: self.str_list_idx, jump_ret: self.jump_idx });
+                        self.call_stack.push(FrameDT { ip_retorno: call_ip + 1, int_ret: self.int_idx, float_ret: self.float_idx, str_ret: self.str_idx, strl_ret: self.str_list_idx, jump_ret: self.jump_idx, exacto_ret: self.exacto_idx });
                         // Sincronizar índices al inicio del cuerpo de la función
                         if let Some(&str_start) = self.fn_str_start.get(&nombre) {
                             self.str_idx = str_start;
@@ -492,8 +554,8 @@ impl ForjaDT {
                         }
                         // Sincronizar int_idx, float_idx, jump_idx desde mapa precomputado
                         if func.ip < self.idx_at_ip.len() {
-                            let (_, i, f, j) = self.idx_at_ip[func.ip];
-                            self.int_idx = i; self.float_idx = f; self.jump_idx = j;
+                            let (_, i, f, j, e) = self.idx_at_ip[func.ip];
+                            self.int_idx = i; self.float_idx = f; self.jump_idx = j; self.exacto_idx = e;
                         }
                         let mut args: Vec<ValorDT> = Vec::with_capacity(nargs);
                         for _ in 0..nargs { args.push(self.pop()?); } args.reverse();
@@ -513,7 +575,7 @@ impl ForjaDT {
                         self.variables.pop(); self.var_indices.pop(); self.var_contadores.pop();
                         self.ip = f.ip_retorno; self.int_idx = f.int_ret;
                         self.float_idx = f.float_ret; self.str_idx = f.str_ret; self.str_list_idx = f.strl_ret;
-                        self.jump_idx = f.jump_ret;
+                        self.jump_idx = f.jump_ret; self.exacto_idx = f.exacto_ret;
                     } else { break; }
                 }
 
@@ -539,7 +601,7 @@ impl ForjaDT {
                         let clase = obj_ref.0.borrow().clase.clone();
                         let fn_name = format!("{}.{}", clase, metodo);
                         if let Some(func) = self.funciones.get(&fn_name).cloned() {
-                            self.call_stack.push(FrameDT { ip_retorno: call_ip + 1, int_ret: self.int_idx, float_ret: self.float_idx, str_ret: self.str_idx, strl_ret: self.str_list_idx, jump_ret: self.jump_idx });
+                            self.call_stack.push(FrameDT { ip_retorno: call_ip + 1, int_ret: self.int_idx, float_ret: self.float_idx, str_ret: self.str_idx, strl_ret: self.str_list_idx, jump_ret: self.jump_idx, exacto_ret: self.exacto_idx });
                             let mut all = vec![ValorDT::Objeto(obj_ref)]; all.extend(args);
                             let mut nv = Vec::with_capacity(func.param_names.len());
                             let mut ni = HashMap::with_capacity(func.param_names.len());
@@ -589,6 +651,139 @@ impl ForjaDT {
                 OP_IGUAL_INT => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x==y,_=>return Err(ErrorDT::TipoIncompatible("==".into()))})); self.ip += 1; }
                 OP_MENOR_INT => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x<y,_=>return Err(ErrorDT::TipoIncompatible("<".into()))})); self.ip += 1; }
                 OP_MAYOR_INT => { let(b,a)=(self.pop()?,self.pop()?);self.push(ValorDT::Booleano(match(&a,&b){(ValorDT::Entero(x),ValorDT::Entero(y))=>x>y,_=>return Err(ErrorDT::TipoIncompatible(">".into()))})); self.ip += 1; }
+                // ── Exacto operations (BigDecimal) ─────────────────────────
+                OP_PUSH_EXACTO => {
+                    let (coeff, scale) = self.re();
+                    self.push(ValorDT::Exacto(coeff, scale));
+                    self.ip += 1;
+                }
+                OP_ADD_EXACT => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
+                            let (a_adj, b_adj, escala) = homogeneizar_exacto(*ac, *as_, *bc, *bs);
+                            self.push(ValorDT::Exacto(a_adj.wrapping_add(b_adj), escala));
+                        }
+                        _ => return Err(ErrorDT::TipoIncompatible("add_exact".into())),
+                    }
+                    self.ip += 1;
+                }
+                OP_SUB_EXACT => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
+                            let (a_adj, b_adj, escala) = homogeneizar_exacto(*ac, *as_, *bc, *bs);
+                            self.push(ValorDT::Exacto(a_adj.wrapping_sub(b_adj), escala));
+                        }
+                        _ => return Err(ErrorDT::TipoIncompatible("sub_exact".into())),
+                    }
+                    self.ip += 1;
+                }
+                OP_MUL_EXACT => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
+                            self.push(ValorDT::Exacto(ac.wrapping_mul(*bc), as_ + bs));
+                        }
+                        _ => return Err(ErrorDT::TipoIncompatible("mul_exact".into())),
+                    }
+                    self.ip += 1;
+                }
+                OP_DIV_EXACT => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
+                            if *bc == 0 {
+                                self.push(ValorDT::Nulo);
+                            } else {
+                                // Extender dividendo con 10 dígitos de precisión extra
+                                let extra: u32 = 10;
+                                let dividendo = ac.wrapping_mul(10_i128.wrapping_pow(extra));
+                                let escala = as_ + extra - bs;
+                                let cociente = dividendo.wrapping_div(*bc);
+                                self.push(ValorDT::Exacto(cociente, escala));
+                            }
+                        }
+                        _ => return Err(ErrorDT::TipoIncompatible("div_exact".into())),
+                    }
+                    self.ip += 1;
+                }
+                OP_IGUAL_EXACT => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
+                            let (a_adj, b_adj, _) = homogeneizar_exacto(*ac, *as_, *bc, *bs);
+                            self.push(ValorDT::Booleano(a_adj == b_adj));
+                        }
+                        _ => return Err(ErrorDT::TipoIncompatible("== exact".into())),
+                    }
+                    self.ip += 1;
+                }
+                OP_MENOR_EXACT => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
+                            let (a_adj, b_adj, _) = homogeneizar_exacto(*ac, *as_, *bc, *bs);
+                            self.push(ValorDT::Booleano(a_adj < b_adj));
+                        }
+                        _ => return Err(ErrorDT::TipoIncompatible("< exact".into())),
+                    }
+                    self.ip += 1;
+                }
+                OP_MAYOR_EXACT => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (&a, &b) {
+                        (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
+                            let (a_adj, b_adj, _) = homogeneizar_exacto(*ac, *as_, *bc, *bs);
+                            self.push(ValorDT::Booleano(a_adj > b_adj));
+                        }
+                        _ => return Err(ErrorDT::TipoIncompatible("> exact".into())),
+                    }
+                    self.ip += 1;
+                }
+                OP_ENTERO_A_EXACTO => {
+                    let val = self.pop()?;
+                    match val {
+                        ValorDT::Entero(n) => self.push(ValorDT::Exacto(n as i128, 0)),
+                        other => self.push(other),
+                    }
+                    self.ip += 1;
+                }
+                OP_DECIMAL_A_EXACTO => {
+                    let val = self.pop()?;
+                    match val {
+                        ValorDT::Decimal(d) => {
+                            let escala = 10u32;
+                            let coeff = (d * 10_f64.powi(escala as i32)) as i128;
+                            self.push(ValorDT::Exacto(coeff, escala));
+                        }
+                        other => self.push(other),
+                    }
+                    self.ip += 1;
+                }
+                OP_ADD_STORE_EXACT => {
+                    let idx = self.ri() as usize;
+                    let b = self.pop()?;
+                    // Buscar la variable y sumarle el valor
+                    let var_name = format!("%idx_{}", idx);
+                    let a = self.buscar_var(&var_name)?.clone();
+                    let result = match (&a, &b) {
+                        (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
+                            let (a_adj, b_adj, escala) = homogeneizar_exacto(*ac, *as_, *bc, *bs);
+                            ValorDT::Exacto(a_adj.wrapping_add(b_adj), escala)
+                        }
+                        _ => return Err(ErrorDT::TipoIncompatible("add_store_exact".into())),
+                    };
+                    self.asignar_var(&var_name, result)?;
+                    self.ip += 1;
+                }
                 OP_HALT => break,
                 _ => break,
             }

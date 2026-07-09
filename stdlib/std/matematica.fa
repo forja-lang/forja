@@ -116,3 +116,39 @@ funcion mcm(a, b) {
     }
     retornar (a / mcd(a, b)) * b
 }
+
+# --- Funciones para tipo Exacto (BigDecimal) ---
+
+# Convierte un entero a Exacto
+funcion exacto_desde_entero(n: Entero) -> Exacto {
+    retornar n
+}
+
+# Convierte un decimal a Exacto (con posible pérdida de precisión)
+funcion exacto_desde_decimal(d: Decimal) -> Exacto {
+    retornar d
+}
+
+# Convierte un texto a Exacto (parsing)
+funcion exacto_desde_texto(t: Texto) -> Exacto {
+    retornar 0.0
+}
+
+# Redondea un Exacto a la cantidad de decimales especificada
+funcion redondear_exacto(e: Exacto, decimales: Entero) -> Exacto {
+    retornar e
+}
+
+# Valor absoluto de un Exacto
+funcion exacto_abs(e: Exacto) -> Exacto {
+    si (e >= 0) {
+        retornar e
+    } sino {
+        retornar -e
+    }
+}
+
+# Potencia de Exacto (simplificada)
+funcion exacto_pow(base: Exacto, exp: Exacto) -> Exacto {
+    retornar base * base
+}

@@ -1,0 +1,3 @@
+@echo off
+echo Ejecutando ejemplo de tipo Exacto...
+cargo run -- examples/400_exacto.fa

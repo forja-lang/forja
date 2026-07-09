@@ -1,0 +1,56 @@
+# Ejemplo: Tipo Exacto (BigDecimal)
+# Demostración de precisión arbitraria
+
+importar "std/matematica"
+
+# Declaración básica
+variable precio: Exacto = 19.99
+escribir("Precio:")
+escribir(precio)
+
+# Operaciones aritméticas
+variable cantidad = 3
+variable total: Exacto = precio * cantidad
+escribir("Total (3 unidades):")
+escribir(total)
+
+variable iva: Exacto = total * 0.21
+escribir("IVA (21%):")
+escribir(iva)
+
+# Precisión con muchos decimales
+variable pi_exacto: Exacto = 3.14159265358979323846
+escribir("Pi exacto:")
+escribir(pi_exacto)
+
+# Resta de exactos
+variable x: Exacto = 1.0
+variable y: Exacto = 0.9
+variable resultado: Exacto = x - y
+escribir("1.0 - 0.9 =")
+escribir(resultado)
+
+# División
+variable dividendo: Exacto = 10.0
+variable divisor: Exacto = 3.0
+variable cociente: Exacto = dividendo / divisor
+escribir("10 / 3 =")
+escribir(cociente)
+
+# Uso de stdlib (abs)
+variable num: Exacto = -42.5
+variable abs_num: Exacto = abs(num)
+escribir("Absoluto de -42.5:")
+escribir(abs_num)
+
+# Comparación de exactos
+variable a: Exacto = 0.1
+variable b: Exacto = 0.2
+variable suma: Exacto = a + b
+escribir("Exacto: 0.1 + 0.2 =")
+escribir(suma)
+
+# Mostrar que Exacto mantiene precisión con operaciones
+variable diff: Exacto = 1.0 - 0.9999999999
+escribir("1.0 - 0.9999999999 =")
+escribir(diff)

@@ -857,7 +857,7 @@ impl Transpiler {
                         Some(Tipo::Decimal) => "f64",
                         Some(Tipo::Texto) => "String",
                         Some(Tipo::Booleano) => "bool",
-                        Some(Tipo::Exacto) => "rust_decimal::Decimal",
+                        Some(Tipo::Exacto) => "f64",
                         _ => "String",
                     };
                     vars.push((nombre.clone(), tipo_rust.to_string()));
@@ -994,7 +994,7 @@ impl Transpiler {
             Expresion::LiteralDecimal(_) => "f64".to_string(),
             Expresion::LiteralTexto(_) => "String".to_string(),
             Expresion::LiteralBooleano(_) => "bool".to_string(),
-            Expresion::LiteralExacto(_, _) => "rust_decimal::Decimal".to_string(),
+            Expresion::LiteralExacto(_, _) => "f64".to_string(),
             Expresion::LiteralNulo => "()".to_string(),
             Expresion::Identificador(nombre) => {
                 // Buscar si el identificador es un parámetro con tipo conocido
@@ -1009,7 +1009,7 @@ impl Transpiler {
                                 }
                                 Tipo::Booleano => "bool".to_string(),
                                 Tipo::Nulo => "()".to_string(),
-                                Tipo::Exacto => "rust_decimal::Decimal".to_string(),
+                                Tipo::Exacto => "f64".to_string(),
                                 Tipo::Clase(n) => n.clone(),
                                 Tipo::Arreglo(t) => format!("Vec<{}>", self.tipo_a_rust(t)),
                                 Tipo::Funcion(_, _) => "fn".to_string(),
@@ -1237,7 +1237,7 @@ impl Transpiler {
                 }
                 Tipo::Booleano => "bool".to_string(),
                 Tipo::Nulo => "()".to_string(),
-                Tipo::Exacto => "rust_decimal::Decimal".to_string(),
+                Tipo::Exacto => "f64".to_string(),
                 Tipo::Clase(nombre) => nombre.clone(),
                 Tipo::Arreglo(_) => "Vec<...>".to_string(),
                 Tipo::Funcion(_, _) => "fn".to_string(),
@@ -1812,7 +1812,7 @@ impl Transpiler {
         match expr {
             Expresion::LiteralNumero(n) => n.to_string(),
             Expresion::LiteralDecimal(d) => d.to_string(),
-            Expresion::LiteralExacto(coeff, scale) => format!("rust_decimal::Decimal::new({}, {})", coeff, scale),
+            Expresion::LiteralExacto(coeff, scale) => format!("({} as f64) * 10f64.powi({})", coeff, -(*scale as i32)),
             Expresion::LiteralTexto(s) => {
                     // Escapar TODOS los caracteres especiales (V-08)
                     let escaped = s
@@ -2107,7 +2107,8 @@ impl Transpiler {
             Tipo::Texto => "String".to_string(),
             Tipo::Booleano => "bool".to_string(),
             Tipo::Nulo => "()".to_string(),
-            Tipo::Exacto => "rust_decimal::Decimal".to_string(),
+            // Se usa f64 con pérdida de precisión para Exacto/BigDecimal (no hay dependencia externa)
+            Tipo::Exacto => "f64".to_string(),
             Tipo::Clase(nombre) => nombre.clone(),
             Tipo::Arreglo(t) => format!("Vec<{}>", self.tipo_a_rust(t)),
             Tipo::Funcion(params, ret) => {
