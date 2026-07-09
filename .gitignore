@@ -1,6 +1,5 @@
 plans/
 fib_rs/
-scripts/
 target/
 test_inline_rs/
 tests/
@@ -24,5 +23,5 @@ plans/*.md
 *test*
 *tests*
 .forja_gui_cache/
-
 .kilo/
+REORGANIZACION_REPOS.md

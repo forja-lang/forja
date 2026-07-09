@@ -6,3 +6,4 @@ description = "Forja GUI Runtime — Pre-compila xilem para compilación rápida
 
 [dependencies]
 xilem = "0.4"
+serde_json = "1"
