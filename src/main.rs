@@ -31,9 +31,15 @@ mod native_registry;
 #[cfg(not(target_arch = "wasm32"))]
 mod native_h2_core;
 
+mod module;
+
 // HTTP/2 con TLS (rustls) — feature flag "h2-tls"
 #[cfg(all(feature = "h2-tls", not(target_arch = "wasm32")))]
 mod native_h2_tls;
+#[cfg(not(any(feature = "h2-tls", target_arch = "wasm32")))]
+mod native_h2_tls { // stub vacío
+    pub struct SocketState;
+}
 
 use std::env;
 use std::fs;

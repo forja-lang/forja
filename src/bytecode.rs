@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 use crate::ast::*;
 use crate::error::ErrorForja;
 
@@ -24,7 +24,7 @@ pub enum Opcode {
     // === Gestión de pila ===
     PushEntero(i64),
     PushDecimal(f64),
-    PushTexto(Rc<str>),
+    PushTexto(Arc<str>),
     PushBooleano(bool),
     PushNulo,
     Pop,
@@ -39,14 +39,18 @@ pub enum Opcode {
     ExtractField(usize),
 
     // === Variables (búsqueda por nombre — original) ===
-    Load(Rc<str>),
-    Store(Rc<str>),
-    Declare(Rc<str>, bool), // (nombre, mutable)
+    Load(Arc<str>),
+    Store(Arc<str>),
+    Declare(Arc<str>, bool), // (nombre, mutable)
 
     // === Variables (acceso por índice — ultra rápido) ===
     LoadIdx(usize),
     StoreIdx(usize),
     DeclareIdx(usize, bool), // (índice, mutable)
+
+    // === Variables Globales de Módulo (persistentes entre recargas) ===
+    /// Declara una variable global de módulo que persiste entre recargas
+    DeclareIdxGlobal(usize, bool), // (índice global, mutable)
 
     // === Opcodes fusionados (opcode fusion — eliminan push/pop) ===
     DeclareEnteroOp(usize, i64),   // fusion: PushEntero(n) + DeclareIdx(idx, _)
@@ -109,15 +113,15 @@ pub enum Opcode {
     Try,
 
     // === Funciones ===
-    FunctionDef(Rc<str>, Vec<Rc<str>>), // (nombre, parámetros)
-    Call(Rc<str>, usize),
+    FunctionDef(Arc<str>, Vec<Arc<str>>), // (nombre, parámetros)
+    Call(Arc<str>, usize),
     Return,
 
     // === POO ===
-    NewObject(Rc<str>),                // crear instancia de clase
-    SetField(Rc<str>),                 // este.campo = pop()
-    GetField(Rc<str>),                 // push(este.campo)
-    CallMethod(Rc<str>, usize),        // obj.metodo(args) - resuelve clase en runtime
+    NewObject(Arc<str>),                // crear instancia de clase
+    SetField(Arc<str>),                 // este.campo = pop()
+    GetField(Arc<str>),                 // push(este.campo)
+    CallMethod(Arc<str>, usize),        // obj.metodo(args) - resuelve clase en runtime
 
     // === Arrays ===
     ArrayNew(usize),                  // crear array con N elementos (pop N de la pila)
@@ -292,18 +296,18 @@ pub enum Opcode {
     // === Funciones Nativas (Native Registry) ===
     /// Llama a una función nativa registrada en NativeRegistry
     /// (nombre_función, número_de_argumentos)
-    CallNative(Rc<str>, usize),
+    CallNative(Arc<str>, usize),
 
     /// Polling no bloqueante de socket para integración con seleccionar
     /// (nombre_variable_socket)
-    SocketPoll(Rc<str>),
+    SocketPoll(Arc<str>),
 
     // === Concurrencia: Canales mpsc e Hilos ===
     /// Crear un canal mpsc real, empuja [tx_obj, rx_obj]
     ChannelNew,
     /// Lanzar un hilo que ejecuta la función `func_name`
     /// Los valores capturados ya están en la pila (captured_count)
-    ThreadSpawn(Rc<str>, usize),
+    ThreadSpawn(Arc<str>, usize),
 }
 
 /// Design by Contract: tipo de contrato
@@ -343,6 +347,8 @@ pub struct BytecodeGenerator {
     // === Channel counter for canal() ===
     /// Contador para asignar IDs únicos a canales
     pub channel_counter: i64,
+    /// Contador para IDs únicos de hilos
+    pub hilo_counter: usize,
 }
 
 impl BytecodeGenerator {
@@ -357,6 +363,7 @@ impl BytecodeGenerator {
             var_counter: 0,
             enum_variantes: std::collections::HashMap::new(),
             channel_counter: 0,
+            hilo_counter: 0,
         }
     }
 
@@ -768,7 +775,7 @@ impl BytecodeGenerator {
                         self.var_counter += 1;
                         idx
                     });
-                    self.emitir(Opcode::Store(Rc::from(nombre.as_str())));
+                    self.emitir(Opcode::Store(Arc::from(nombre.as_str())));
                 }
                 Patron::Ignorar => {
                     // Extraer campo i-ésimo y descartar
@@ -832,19 +839,19 @@ impl BytecodeGenerator {
                 } else {
                     self.emitir(Opcode::PushNulo);
                 }
-                self.emitir(Opcode::Declare(Rc::from(nombre.as_str()), *mutable));
+                self.emitir(Opcode::Declare(Arc::from(nombre.as_str()), *mutable));
             }
 
             Declaracion::Asignacion { nombre, valor } => {
                 self.generar_expresion(valor);
-                self.emitir(Opcode::Store(Rc::from(nombre.as_str())));
+                self.emitir(Opcode::Store(Arc::from(nombre.as_str())));
             }
 
             Declaracion::AsignacionMiembro { objeto, miembro, valor } => {
                 // Generar el valor primero, luego el objeto, luego SetField
                 self.generar_expresion(valor);
                 self.generar_expresion(objeto);
-                self.emitir(Opcode::SetField(Rc::from(miembro.as_str())));
+                self.emitir(Opcode::SetField(Arc::from(miembro.as_str())));
             }
 
             Declaracion::AsignacionIndex { nombre, indice, valor } => {
@@ -858,25 +865,25 @@ impl BytecodeGenerator {
                     // ArraySet: pops indice, array, val; set array[indice]=val; push modified_array
                     // → [..., modified_array] → [..., modified_array, obj] → SetField pops obj, modified_array
                     self.generar_expresion(valor);
-                    self.emitir(Opcode::Load(Rc::from(obj_nombre)));
-                    self.emitir(Opcode::GetField(Rc::from(campo)));
+                    self.emitir(Opcode::Load(Arc::from(obj_nombre)));
+                    self.emitir(Opcode::GetField(Arc::from(campo)));
                     self.generar_expresion(indice);
                     self.emitir(Opcode::ArraySet);
-                    self.emitir(Opcode::Load(Rc::from(obj_nombre)));
-                    self.emitir(Opcode::SetField(Rc::from(campo)));
+                    self.emitir(Opcode::Load(Arc::from(obj_nombre)));
+                    self.emitir(Opcode::SetField(Arc::from(campo)));
                 } else {
                     self.generar_expresion(valor);
-                    self.emitir(Opcode::Load(Rc::from(nombre.as_str())));
+                    self.emitir(Opcode::Load(Arc::from(nombre.as_str())));
                     self.generar_expresion(indice);
                     self.emitir(Opcode::ArraySet);
-                    self.emitir(Opcode::Store(Rc::from(nombre.as_str())));
+                    self.emitir(Opcode::Store(Arc::from(nombre.as_str())));
                 }
             }
 
             Declaracion::Funcion { nombre, parametros, cuerpo, precondiciones, postcondiciones, .. } => {
                 // Emitir FunctionDef con nombres de parámetros
-                let param_names: Vec<Rc<str>> = parametros.iter().map(|p| Rc::from(p.nombre.as_str())).collect();
-                self.emitir(Opcode::FunctionDef(Rc::from(nombre.as_str()), param_names));
+                let param_names: Vec<Arc<str>> = parametros.iter().map(|p| Arc::from(p.nombre.as_str())).collect();
+                self.emitir(Opcode::FunctionDef(Arc::from(nombre.as_str()), param_names));
 
                 // Inicializar tracking de variables para compilación de contratos
                 self.var_indices.clear();
@@ -989,7 +996,7 @@ impl BytecodeGenerator {
 
                             self.emitir(Opcode::Label(label_inicio));
                             // Load var, load limit, check <
-                            self.emitir(Opcode::Load(Rc::from(var_name.as_str())));
+                            self.emitir(Opcode::Load(Arc::from(var_name.as_str())));
                             self.generar_expresion(derecha);
                             self.emitir(Opcode::Menor);
                             self.emitir(Opcode::JumpSiFalso(label_fin));
@@ -1034,25 +1041,25 @@ impl BytecodeGenerator {
             Declaracion::Repetir { cantidad, bloque } => {
                 // repetir(N) { ... } → for _ in 0..N { ... }
                 // Variable temporal para contador
-                let var_contador = Rc::from("__repetir_counter");
+                let var_contador = Arc::from("__repetir_counter");
                 let label_inicio = self.nueva_label();
                 let label_fin = self.nueva_label();
 
                 self.emitir(Opcode::PushEntero(0));
-                self.emitir(Opcode::Declare(Rc::clone(&var_contador), true));
+                self.emitir(Opcode::Declare(Arc::clone(&var_contador), true));
 
                 self.emitir(Opcode::Label(label_inicio));
-                self.emitir(Opcode::Load(Rc::clone(&var_contador)));
+                self.emitir(Opcode::Load(Arc::clone(&var_contador)));
                 self.generar_expresion(cantidad);
                 self.emitir(Opcode::Menor);
                 self.emitir(Opcode::JumpSiFalso(label_fin));
 
                 self.generar_declaraciones(bloque);
 
-                self.emitir(Opcode::Load(Rc::clone(&var_contador)));
+                self.emitir(Opcode::Load(Arc::clone(&var_contador)));
                 self.emitir(Opcode::PushEntero(1));
                 self.emitir(Opcode::Add);
-                self.emitir(Opcode::Store(Rc::clone(&var_contador)));
+                self.emitir(Opcode::Store(Arc::clone(&var_contador)));
 
                 self.emitir(Opcode::Jump(label_inicio));
                 self.emitir(Opcode::Label(label_fin));
@@ -1071,8 +1078,8 @@ impl BytecodeGenerator {
                 } else if nombre.contains('.') {
                     // Método: objeto.metodo(args) → load objeto, push args, CallMethod
                     let parts: Vec<&str> = nombre.splitn(2, '.').collect();
-                    let obj_name = Rc::from(parts[0]);
-                    let method_name = Rc::from(parts[1]);
+                    let obj_name = Arc::from(parts[0]);
+                    let method_name = Arc::from(parts[1]);
                     self.emitir(Opcode::Load(obj_name));
                     for arg in argumentos {
                         self.generar_expresion(arg);
@@ -1082,7 +1089,7 @@ impl BytecodeGenerator {
                     for arg in argumentos {
                         self.generar_expresion(arg);
                     }
-                    self.emitir(Opcode::Call(Rc::from(nombre.as_str()), argumentos.len()));
+                    self.emitir(Opcode::Call(Arc::from(nombre.as_str()), argumentos.len()));
                 }
             }
 
@@ -1117,7 +1124,7 @@ impl BytecodeGenerator {
                     }
                     // Declarar en orden inverso (pop rx primero, luego tx)
                     for varname in variables.iter().rev() {
-                        self.emitir(Opcode::Declare(Rc::from(varname.as_str()), *mutable));
+                        self.emitir(Opcode::Declare(Arc::from(varname.as_str()), *mutable));
                     }
                 } else {
                     // Caso general: evaluar valor, push Nulo para slots extra
@@ -1126,7 +1133,7 @@ impl BytecodeGenerator {
                         self.emitir(Opcode::PushNulo);
                     }
                     for var in variables.iter().rev() {
-                        self.emitir(Opcode::Declare(Rc::from(var.as_str()), *mutable));
+                        self.emitir(Opcode::Declare(Arc::from(var.as_str()), *mutable));
                     }
                 }
             }
@@ -1137,7 +1144,7 @@ impl BytecodeGenerator {
         match expr {
             Expresion::LiteralNumero(n) => self.emitir(Opcode::PushEntero(*n)),
             Expresion::LiteralDecimal(d) => self.emitir(Opcode::PushDecimal(*d)),
-            Expresion::LiteralTexto(s) => self.emitir(Opcode::PushTexto(Rc::from(s.as_str()))),
+            Expresion::LiteralTexto(s) => self.emitir(Opcode::PushTexto(Arc::from(s.as_str()))),
             Expresion::LiteralBooleano(b) => self.emitir(Opcode::PushBooleano(*b)),
             Expresion::LiteralExacto(coeff, scale) => self.emitir(Opcode::PushExacto(*coeff, *scale)),
             Expresion::LiteralNulo => self.emitir(Opcode::PushNulo),
@@ -1147,7 +1154,7 @@ impl BytecodeGenerator {
                 match nombre.as_str() {
                     "verdadero" => self.emitir(Opcode::PushBooleano(true)),
                     "falso" => self.emitir(Opcode::PushBooleano(false)),
-                    _ => self.emitir(Opcode::Load(Rc::from(nombre.as_str()))),
+                    _ => self.emitir(Opcode::Load(Arc::from(nombre.as_str()))),
                 }
             }
 
@@ -1187,14 +1194,14 @@ impl BytecodeGenerator {
                     // Método: objeto.metodo(args) → push objeto, push args, CallMethod
                     let parts: Vec<&str> = nombre.splitn(2, '.').collect();
                     let obj_name = parts[0];
-                    let method_name = Rc::from(parts[1]);
+                    let method_name = Arc::from(parts[1]);
                     // Si el objeto es un literal, lo generamos como expresión
                     if obj_name.starts_with('"') {
                         // Es un literal string: "texto".metodo()
                         let texto = obj_name.trim_matches('"');
-                        self.emitir(Opcode::PushTexto(Rc::from(texto)));
+                        self.emitir(Opcode::PushTexto(Arc::from(texto)));
                     } else {
-                        self.emitir(Opcode::Load(Rc::from(obj_name)));
+                        self.emitir(Opcode::Load(Arc::from(obj_name)));
                     }
                     for arg in argumentos {
                         self.generar_expresion(arg);
@@ -1204,18 +1211,18 @@ impl BytecodeGenerator {
                     for arg in argumentos {
                         self.generar_expresion(arg);
                     }
-                    self.emitir(Opcode::Call(Rc::from(nombre.as_str()), argumentos.len()));
+                    self.emitir(Opcode::Call(Arc::from(nombre.as_str()), argumentos.len()));
                 }
             }
 
             Expresion::AccesoMiembro { objeto, miembro } => {
                 self.generar_expresion(objeto);
-                self.emitir(Opcode::GetField(Rc::from(miembro.as_str())));
+                self.emitir(Opcode::GetField(Arc::from(miembro.as_str())));
             }
 
             Expresion::Instanciacion { clase, argumentos } => {
                 // Crear objeto
-                self.emitir(Opcode::NewObject(Rc::from(clase.as_str())));
+                self.emitir(Opcode::NewObject(Arc::from(clase.as_str())));
                 // Si hay argumentos, llamar constructor con self + args
                 if !argumentos.is_empty() {
                     self.emitir(Opcode::Dup);
@@ -1223,7 +1230,7 @@ impl BytecodeGenerator {
                         self.generar_expresion(arg);
                     }
                     // Llamar a "Clase.nuevo" con nargs+1 (incluyendo self)
-                    let constructor = Rc::from(format!("{}.{}", clase, "nuevo"));
+                    let constructor = Arc::from(format!("{}.{}", clase, "nuevo"));
                     self.emitir(Opcode::Call(constructor, argumentos.len() + 1));
                 }
                 // El objeto queda en el stack para ser asignado a una variable
@@ -1289,7 +1296,7 @@ impl BytecodeGenerator {
                                 self.var_counter += 1;
                                 idx
                             });
-                            self.emitir(Opcode::Store(Rc::from(nombre.as_str())));
+                            self.emitir(Opcode::Store(Arc::from(nombre.as_str())));
                             self.generar_cuerpo_match(&brazo.cuerpo);
                             if !es_ultimo {
                                 self.emitir(Opcode::Jump(label_end));
@@ -1339,9 +1346,9 @@ impl BytecodeGenerator {
 
             Expresion::Closure { parametros, cuerpo } => {
                 // TODO: implementar bytecode para closures
-                let nombre = Rc::from(format!("__closure_{}", self.label_counter).as_str());
+                let nombre = Arc::from(format!("__closure_{}", self.label_counter).as_str());
                 self.label_counter += 1;
-                let param_names: Vec<Rc<str>> = parametros.iter().map(|p| Rc::from(p.nombre.as_str())).collect();
+                let param_names: Vec<Arc<str>> = parametros.iter().map(|p| Arc::from(p.nombre.as_str())).collect();
                 self.emitir(Opcode::FunctionDef(nombre, param_names));
                 for d in cuerpo {
                     self.generar_declaracion(d);
@@ -1361,14 +1368,30 @@ impl BytecodeGenerator {
             }
 
             Expresion::Hilo { cuerpo } => {
-                // Ejecutar cuerpo inline (síncrono por ahora)
+                // Compilar el cuerpo como función separada con forward jump
+                //   Jump(over_N)          ← salta la función del hilo
+                //   FunctionDef(__hilo_N) ← registra la función
+                //   [body opcodes]
+                //   Return
+                //   Label(over_N)
+                //   ThreadSpawn(__hilo_N) ← lanza el hilo REAL
+                let hilo_id = self.hilo_counter;
+                self.hilo_counter += 1;
+                let func_name: Arc<str> = Arc::from(format!("__hilo_{}", hilo_id).as_str());
+                let label_over = self.nueva_label();
+                // Forward jump para saltar la función del hilo
+                self.emitir(Opcode::Jump(label_over));
+                // Definición de la función del hilo
+                let func_name_clone = func_name.clone();
+                self.emitir(Opcode::FunctionDef(func_name_clone, Vec::new()));
                 for d in cuerpo {
                     self.generar_declaracion(d);
                 }
-                // Crear objeto Hilo con valor por defecto
-                self.emitir(Opcode::PushEntero(0));
-                self.emitir(Opcode::NewObject(Rc::from("Hilo")));
-                self.emitir(Opcode::SetField(Rc::from("valor")));
+                self.emitir(Opcode::Return);
+                // Label destino del forward jump
+                self.emitir(Opcode::Label(label_over));
+                // ThreadSpawn: lanza el hilo REAL con std::thread::spawn
+                self.emitir(Opcode::ThreadSpawn(func_name, 0));
             }
 
             Expresion::CanalNuevo => {
@@ -1390,7 +1413,7 @@ impl BytecodeGenerator {
                 // Generar valor, duplicar (para retornar como expresión), store en variable
                 self.generar_expresion(valor);
                 self.emitir(Opcode::Dup);
-                self.emitir(Opcode::Store(Rc::from(variable.as_str())));
+                self.emitir(Opcode::Store(Arc::from(variable.as_str())));
             }
             Expresion::AsignacionCampo { objeto, campo, valor } => {
                 // obj.campo = valor → generar objeto, luego valor, luego SetField
@@ -1398,7 +1421,7 @@ impl BytecodeGenerator {
                 self.generar_expresion(valor);
                 self.emitir(Opcode::Dup);
                 self.generar_expresion(objeto);
-                self.emitir(Opcode::SetField(Rc::from(campo.as_str())));
+                self.emitir(Opcode::SetField(Arc::from(campo.as_str())));
             }
             Expresion::ArraySet { array, valor } => {
                 // arr[i] = val como expresión → push val, dup, push objeto, push índice, ArraySet, pop arr
@@ -1414,35 +1437,35 @@ impl BytecodeGenerator {
             Expresion::Ok(expr) => {
                 // Crear objeto Resultado con campo tipo="ok" y campo valor=expr
                 // Dup el objeto para mantenerlo en stack después de SetField
-                self.emitir(Opcode::NewObject(Rc::from("Resultado")));
+                self.emitir(Opcode::NewObject(Arc::from("Resultado")));
                 self.emitir(Opcode::Dup);
                 self.generar_expresion(expr);
-                self.emitir(Opcode::SetField(Rc::from("valor")));
+                self.emitir(Opcode::SetField(Arc::from("valor")));
                 self.emitir(Opcode::Dup);
-                self.emitir(Opcode::PushTexto(Rc::from("ok")));
-                self.emitir(Opcode::SetField(Rc::from("tipo")));
+                self.emitir(Opcode::PushTexto(Arc::from("ok")));
+                self.emitir(Opcode::SetField(Arc::from("tipo")));
             }
             Expresion::Error(expr) => {
                 // Crear objeto Resultado con campo tipo="error" y campo valor=expr
                 // Dup el objeto para mantenerlo en stack después de SetField
-                self.emitir(Opcode::NewObject(Rc::from("Resultado")));
+                self.emitir(Opcode::NewObject(Arc::from("Resultado")));
                 self.emitir(Opcode::Dup);
                 self.generar_expresion(expr);
-                self.emitir(Opcode::SetField(Rc::from("valor")));
+                self.emitir(Opcode::SetField(Arc::from("valor")));
                 self.emitir(Opcode::Dup);
-                self.emitir(Opcode::PushTexto(Rc::from("error")));
-                self.emitir(Opcode::SetField(Rc::from("tipo")));
+                self.emitir(Opcode::PushTexto(Arc::from("error")));
+                self.emitir(Opcode::SetField(Arc::from("tipo")));
             }
             Expresion::Some(expr) => {
                 // Crear objeto Opcion con campo tipo="some" y campo valor=expr
                 // Dup el objeto para mantenerlo en stack después de SetField
-                self.emitir(Opcode::NewObject(Rc::from("Opcion")));
+                self.emitir(Opcode::NewObject(Arc::from("Opcion")));
                 self.emitir(Opcode::Dup);
                 self.generar_expresion(expr);
-                self.emitir(Opcode::SetField(Rc::from("valor")));
+                self.emitir(Opcode::SetField(Arc::from("valor")));
                 self.emitir(Opcode::Dup);
-                self.emitir(Opcode::PushTexto(Rc::from("some")));
-                self.emitir(Opcode::SetField(Rc::from("tipo")));
+                self.emitir(Opcode::PushTexto(Arc::from("some")));
+                self.emitir(Opcode::SetField(Arc::from("tipo")));
             }
             Expresion::Resultado => {
                 // resultado en postcondición - no implementado en bytecode
@@ -1528,7 +1551,7 @@ impl BytecodeGenerator {
         match expr {
             Expresion::LiteralNumero(n) => output.push(Uop::PushEntero(*n)),
             Expresion::LiteralDecimal(d) => output.push(Uop::PushDecimal(*d)),
-            Expresion::LiteralTexto(s) => output.push(Uop::PushTexto(std::rc::Rc::from(s.as_str()))),
+            Expresion::LiteralTexto(s) => output.push(Uop::PushTexto(Arc::from(s.as_str()))),
             Expresion::LiteralBooleano(b) => output.push(Uop::PushBooleano(*b)),
             Expresion::LiteralNulo => output.push(Uop::PushNulo),
 
@@ -1640,6 +1663,150 @@ impl BytecodeGenerator {
             tipo,
         });
         idx
+    }
+}
+
+// ─── ModuleBytecode: Bytecode producido para un módulo completo ────────────
+
+use crate::symbol_table::SymId;
+
+/// Bytecode generado para un módulo completo, con metadatos para hot-reload
+pub struct ModuleBytecode {
+    pub opcodes: Vec<Opcode>,
+    pub module_id: SymId,
+    pub global_var_indices: Vec<(String, bool)>, // nombres de vars globales
+    pub function_sym_ids: Vec<SymId>,           // SymIds de funciones definidas
+}
+
+impl BytecodeGenerator {
+    /// Genera bytecode para un módulo completo, identificando variables globales
+    /// y funciones que pertenecen al módulo.
+    pub fn generar_para_modulo(&mut self, programa: &Programa, module_id: SymId) -> Result<ModuleBytecode, Vec<ErrorForja>> {
+        // Reiniciar estado del generador para este módulo
+        self.opcodes.clear();
+        self.var_indices.clear();
+        self.var_counter = 0;
+
+        // Variables globales del módulo (ámbito módulo)
+        let mut global_var_indices: Vec<(String, bool)> = Vec::new();
+        let mut function_sym_ids: Vec<SymId> = Vec::new();
+
+        // Primera pasada: identificar variables globales y funciones
+        for decl in &programa.declaraciones {
+            match decl {
+                Declaracion::Variable { nombre, mutable, .. } => {
+                    // Esta es una variable global del módulo
+                    global_var_indices.push((nombre.clone(), *mutable));
+                }
+                Declaracion::Funcion { nombre, .. } => {
+                    // Generar un SymId temporal para la función
+                    let temp_id = SymId(nombre.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)));
+                    function_sym_ids.push(temp_id);
+                }
+                Declaracion::Clase { nombre, metodos, .. } => {
+                    for metodo in metodos {
+                        let nombre_metodo = if metodo.nombre.is_empty() { "nuevo" } else { &metodo.nombre };
+                        let full_name = format!("{}.{}", nombre, nombre_metodo);
+                        let temp_id = SymId(full_name.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)));
+                        function_sym_ids.push(temp_id);
+                    }
+                }
+                Declaracion::Implementacion { clase_nombre, metodos, .. } => {
+                    for metodo in metodos {
+                        let full_name = format!("{}.{}", clase_nombre, metodo.nombre);
+                        let temp_id = SymId(full_name.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)));
+                        function_sym_ids.push(temp_id);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Generar bytecode con el generador estándar
+        let raw = self.generar(programa)?;
+
+        // Post-procesar: reemplazar Declare para variables globales con DeclareIdxGlobal
+        let mut opcodes = Vec::with_capacity(raw.len());
+        let mut global_idx = 0usize;
+        for op in raw {
+            match &op {
+                Opcode::Declare(nombre, mutable) if global_var_indices.iter().any(|(g, _)| g == nombre.as_ref()) => {
+                    opcodes.push(Opcode::DeclareIdxGlobal(global_idx, *mutable));
+                    global_idx += 1;
+                }
+                _ => {
+                    opcodes.push(op);
+                }
+            }
+        }
+
+        Ok(ModuleBytecode {
+            opcodes,
+            module_id,
+            global_var_indices,
+            function_sym_ids,
+        })
+    }
+}
+
+impl ModuleBytecode {
+    /// Escanea los opcodes del módulo y extrae (nombre_función, ip_start, vars_size)
+    /// para cada FunctionDef, calculando vars_size recorriendo el cuerpo de cada función.
+    pub fn desglosar(&self) -> Vec<(String, usize, usize)> {
+        let mut func_ranges: Vec<(usize, usize)> = Vec::new();
+        for (i, op) in self.opcodes.iter().enumerate() {
+            if let Opcode::FunctionDef(_, _) = op {
+                func_ranges.push((i, self.opcodes.len()));
+                if func_ranges.len() > 1 {
+                    let prev = func_ranges.len() - 2;
+                    func_ranges[prev].1 = i;
+                }
+            }
+        }
+
+        let mut resultado = Vec::new();
+        for (range_start, range_end) in &func_ranges {
+            let (nombre, params) = match &self.opcodes[*range_start] {
+                Opcode::FunctionDef(n, p) => (n.clone(), p.clone()),
+                _ => unreachable!(),
+            };
+            let mut max_idx = params.len();
+            for j in (*range_start + 1)..*range_end {
+                match &self.opcodes[j] {
+                    Opcode::LoadIdx(idx) | Opcode::StoreIdx(idx) | Opcode::DeclareIdx(idx, _) => {
+                        if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                    }
+                    Opcode::DeclareEnteroOp(idx, _) | Opcode::DeclareBooleanoOp(idx, _) | Opcode::StoreEnteroOp(idx, _)
+                        | Opcode::DeclareFloatOp(idx, _) | Opcode::StoreFloatOp(idx, _) => {
+                        if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                    }
+                    Opcode::LoadIdxEntero(idx) | Opcode::LoadIdxFloat(idx) | Opcode::StoreIdxEntero(idx) | Opcode::StoreIdxFloat(idx) => {
+                        if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                    }
+                    Opcode::LoadAddInt(idx, _) | Opcode::LoadAddFloat(idx, _) => {
+                        if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                    }
+                    Opcode::LoadIdx2(a, b) => {
+                        if *a + 1 > max_idx { max_idx = *a + 1; }
+                        if *b + 1 > max_idx { max_idx = *b + 1; }
+                    }
+                    Opcode::LoadStoreIdx(a, b) => {
+                        if *a + 1 > max_idx { max_idx = *a + 1; }
+                        if *b + 1 > max_idx { max_idx = *b + 1; }
+                    }
+                    Opcode::AddStoreIdx(idx) | Opcode::SubStoreIdx(idx) | Opcode::MulStoreIdx(idx)
+                        | Opcode::AddStoreFloat(idx) | Opcode::SubStoreFloat(idx) | Opcode::MulStoreFloat(idx) => {
+                        if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                    }
+                    Opcode::LoadJumpSiFalso(idx, _) | Opcode::LoadJump(idx, _) => {
+                        if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                    }
+                    _ => {}
+                }
+            }
+            resultado.push((nombre.to_string(), *range_start + 1, max_idx));
+        }
+        resultado
     }
 }
 
@@ -1834,6 +2001,11 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             | Opcode::CheckInv(idx) => {
                 bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
+            // Fase 2: DeclareIdxGlobal(usize, bool)
+            Opcode::DeclareIdxGlobal(idx, mutable) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.push(if *mutable { 1 } else { 0 });
+            }
             _ => {} // Opcodes sin payload
         }
     }
@@ -1860,6 +2032,7 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::LoadIdx(_) => 13,
         Opcode::StoreIdx(_) => 14,
         Opcode::DeclareIdx(_, _) => 15,
+        Opcode::DeclareIdxGlobal(_, _) => 142,
         Opcode::DeclareEnteroOp(_, _) => 16,
         Opcode::DeclareBooleanoOp(_, _) => 17,
         Opcode::StoreEnteroOp(_, _) => 18,
@@ -1948,14 +2121,14 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
     match byte {
         0 => Some(Opcode::PushEntero(0)),
         1 => Some(Opcode::PushDecimal(0.0)),
-        2 => Some(Opcode::PushTexto(Rc::from(""))),
+        2 => Some(Opcode::PushTexto(Arc::from(""))),
         3 => Some(Opcode::PushBooleano(false)),
         4 => Some(Opcode::PushNulo),
         5 => Some(Opcode::Pop),
         6 => Some(Opcode::Dup),
-        10 => Some(Opcode::Load(Rc::from(""))),
-        11 => Some(Opcode::Store(Rc::from(""))),
-        12 => Some(Opcode::Declare(Rc::from(""), false)),
+        10 => Some(Opcode::Load(Arc::from(""))),
+        11 => Some(Opcode::Store(Arc::from(""))),
+        12 => Some(Opcode::Declare(Arc::from(""), false)),
         13 => Some(Opcode::LoadIdx(0)),
         14 => Some(Opcode::StoreIdx(0)),
         15 => Some(Opcode::DeclareIdx(0, false)),
@@ -1986,13 +2159,13 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         51 => Some(Opcode::JumpSiFalso(0)),
         52 => Some(Opcode::Label(0)),
         53 => Some(Opcode::Halt),
-        55 => Some(Opcode::FunctionDef(Rc::from(""), Vec::new())),
-        60 => Some(Opcode::Call(Rc::from(""), 0)),
+        55 => Some(Opcode::FunctionDef(Arc::from(""), Vec::new())),
+        60 => Some(Opcode::Call(Arc::from(""), 0)),
         61 => Some(Opcode::Return),
-        62 => Some(Opcode::NewObject(Rc::from(""))),
-        63 => Some(Opcode::SetField(Rc::from(""))),
-        64 => Some(Opcode::GetField(Rc::from(""))),
-        65 => Some(Opcode::CallMethod(Rc::from(""), 0)),
+        62 => Some(Opcode::NewObject(Arc::from(""))),
+        63 => Some(Opcode::SetField(Arc::from(""))),
+        64 => Some(Opcode::GetField(Arc::from(""))),
+        65 => Some(Opcode::CallMethod(Arc::from(""), 0)),
         80 => Some(Opcode::ArrayNew(0)),
         81 => Some(Opcode::ArrayGet),
         82 => Some(Opcode::ArraySet),
@@ -2027,6 +2200,7 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         // Pattern matching opcodes
         140 => Some(Opcode::CheckTag(0)),
         141 => Some(Opcode::ExtractField(0)),
+        142 => Some(Opcode::DeclareIdxGlobal(0, false)),
         _ => None,
     }
 }
@@ -2039,9 +2213,9 @@ const MAX_STRING_LENGTH: usize = 65536;
 
 /// Helper seguro para obtener un string del pool por índice.
 /// Retorna None si el índice está fuera de rango (seguridad contra datos corruptos).
-fn string_pool_get(pool: &[String], idx: usize) -> Option<Rc<str>> {
+fn string_pool_get(pool: &[String], idx: usize) -> Option<Arc<str>> {
     if idx < pool.len() {
-        Some(Rc::from(pool[idx].as_str()))
+        Some(Arc::from(pool[idx].as_str()))
     } else {
         None
     }
@@ -2286,7 +2460,7 @@ if version >= 2 {
                     if pos + p_len > data.len() { return None; }
                     let p = String::from_utf8(data[pos..pos+p_len].to_vec()).ok()?;
                     pos += p_len;
-                    params.push(Rc::from(p.as_str()));
+                    params.push(Arc::from(p.as_str()));
                 }
                 opcodes.push(Opcode::FunctionDef(name, params));
             }
@@ -2432,14 +2606,23 @@ if version >= 2 {
                     130 => Opcode::CheckPre(idx),
                     131 => Opcode::CheckPost(idx),
                     132 => Opcode::SaveAnterior(idx),
-                    _ => Opcode::CheckInv(idx),
-                });
-            }
-            _ => {
-                // Opcodes sin payload
-                let template = byte_to_opcode(byte)?;
-                opcodes.push(template);
-            }
+                   _ => Opcode::CheckInv(idx),
+               });
+           }
+           // Fase 2: DeclareIdxGlobal(usize, bool) — 5 bytes payload (u32 idx + u8 mutable)
+           142 => {
+               if pos + 5 > data.len() { return None; }
+               let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+               pos += 4;
+               let mutable = data[pos] == 1;
+               pos += 1;
+               opcodes.push(Opcode::DeclareIdxGlobal(idx, mutable));
+           }
+           _ => {
+               // Opcodes sin payload
+               let template = byte_to_opcode(byte)?;
+               opcodes.push(template);
+           }
         }
     }
 
@@ -2809,7 +2992,7 @@ mod tests {
     fn test_bytecode_variable() {
         let bc = generar_bytecode("variable x = 5").unwrap();
         assert_eq!(bc[0], Opcode::PushEntero(5));
-        assert_eq!(bc[1], Opcode::Declare(Rc::from("x"), true));
+        assert_eq!(bc[1], Opcode::Declare(Arc::from("x"), true));
         assert_eq!(bc[2], Opcode::Halt);
     }
 
@@ -2817,7 +3000,7 @@ mod tests {
     fn test_bytecode_constante() {
         let bc = generar_bytecode("constante x = 10").unwrap();
         assert_eq!(bc[0], Opcode::PushEntero(10));
-        assert_eq!(bc[1], Opcode::Declare(Rc::from("x"), false));
+        assert_eq!(bc[1], Opcode::Declare(Arc::from("x"), false));
         assert_eq!(bc[2], Opcode::Halt);
     }
 
@@ -2828,14 +3011,14 @@ mod tests {
         assert_eq!(bc[1], Opcode::PushEntero(3));
         // Ahora se emite AddInt porque ambos literales se infieren como Entero
         assert_eq!(bc[2], Opcode::AddInt);
-        assert_eq!(bc[3], Opcode::Declare(Rc::from("x"), true));
+        assert_eq!(bc[3], Opcode::Declare(Arc::from("x"), true));
         assert_eq!(bc[4], Opcode::Halt);
     }
 
     #[test]
     fn test_bytecode_escribir() {
         let bc = generar_bytecode("escribir(\"Hola\")").unwrap();
-        assert_eq!(bc[0], Opcode::PushTexto(Rc::from("Hola")));
+        assert_eq!(bc[0], Opcode::PushTexto(Arc::from("Hola")));
         assert_eq!(bc[1], Opcode::Print);
         assert_eq!(bc[2], Opcode::Halt);
     }
@@ -2866,7 +3049,7 @@ mod tests {
     fn test_serializacion() {
         let bc = vec![
             Opcode::PushEntero(42),
-            Opcode::Declare(Rc::from("x"), true),
+            Opcode::Declare(Arc::from("x"), true),
             Opcode::Halt,
         ];
         let serializado = serializar_bytecode(&bc);
@@ -2966,5 +3149,168 @@ mod tests {
             "Se esperaba Add genérico (tipos incompatibles), pero se encontraron: {:?}",
             bc
         );
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Hot Reload — Fase 2
+    // ═════════════════════════════════════════════════════════════════════
+
+    fn generar_bytecode_para_modulo(source: &str, module_id: SymId) -> Result<ModuleBytecode, Vec<ErrorForja>> {
+        use crate::lexer::Lexer;
+        use crate::parser::Parser;
+        use crate::semantics;
+
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize()?;
+        let mut parser = Parser::new(tokens);
+        let programa = parser.parse()?;
+
+        let mut type_checker = semantics::TypeChecker::new();
+        type_checker.analizar(&programa)?;
+        let tipos_inferidos = type_checker.obtener_tipos_inferidos();
+
+        let mut gen = BytecodeGenerator::new();
+        gen.set_tipos_inferidos(tipos_inferidos);
+        gen.generar_para_modulo(&programa, module_id)
+    }
+
+    #[test]
+    fn test_generar_para_modulo_con_funciones() {
+        let source = "\
+fun saludar(nombre) {
+    escribir(\"Hola, {nombre}\")
+}
+
+fun sumar(a, b) {
+    retornar a + b
+}
+
+fun version() {
+    retornar 1
+}
+";
+        let module_id = SymId(42);
+        let module_bc = generar_bytecode_para_modulo(source, module_id).unwrap();
+
+        // El ModuleBytecode debe tener el module_id correcto
+        assert_eq!(module_bc.module_id, module_id);
+        // Debe haber al menos un opcode
+        assert!(!module_bc.opcodes.is_empty(), "El bytecode no debe estar vacío");
+        // Debe tener 3 funciones registradas
+        assert_eq!(module_bc.function_sym_ids.len(), 3,
+            "Se esperaban 3 funciones (saludar, sumar, version)");
+    }
+
+    #[test]
+    fn test_generar_para_modulo_con_globales() {
+        let source = "\
+variable contador = 0
+variable nombre = \"test\"
+
+fun incrementar() {
+    contador = contador + 1
+}
+
+fun obtener() {
+    retornar contador
+}
+";
+        let module_id = SymId(7);
+        let module_bc = generar_bytecode_para_modulo(source, module_id).unwrap();
+
+        // Debe tener al menos una variable global (contador, nombre)
+        assert!(!module_bc.global_var_indices.is_empty(),
+            "Debe haber al menos una variable global registrada");
+        // Cada entrada debe ser (nombre -> mutable)
+        for (_nombre, mutable) in &module_bc.global_var_indices {
+            assert!(*mutable, "Las variables declaradas deben ser mutables, got {}", mutable);
+        }
+    }
+
+    #[test]
+    fn test_module_bytecode_desglosar() {
+        let source = "\
+fun foo(a, b) {
+    escribir(a + b)
+}
+
+fun bar(x) {
+    retornar x * 2
+}
+";
+        let module_id = SymId(99);
+        let module_bc = generar_bytecode_para_modulo(source, module_id).unwrap();
+
+        let funciones = module_bc.desglosar();
+
+        // Debe encontrar exactamente 2 funciones
+        assert_eq!(funciones.len(), 2,
+            "desglosar() debe encontrar 2 funciones, encontró {}: {:?}",
+            funciones.len(), funciones.iter().map(|(n,_,_)| n.clone()).collect::<Vec<_>>());
+
+        // Verificar nombres
+        let nombres: Vec<&str> = funciones.iter().map(|(n,_,_)| n.as_str()).collect();
+        assert!(nombres.contains(&"foo"), "Debe contener 'foo', got {:?}", nombres);
+        assert!(nombres.contains(&"bar"), "Debe contener 'bar', got {:?}", nombres);
+
+        // foo tiene 2 parámetros → vars_size >= 2
+        let (_name, _ip, vars_foo) = funciones.iter().find(|(n,_,_)| n == "foo").unwrap();
+        assert!(*vars_foo >= 2, "foo debe tener vars_size >= 2, got {}", vars_foo);
+
+        // bar tiene 1 parámetro → vars_size >= 1
+        let (_name, _ip, vars_bar) = funciones.iter().find(|(n,_,_)| n == "bar").unwrap();
+        assert!(*vars_bar >= 1, "bar debe tener vars_size >= 1, got {}", vars_bar);
+    }
+
+    #[test]
+    fn test_declare_idx_global_serializacion_roundtrip() {
+        let opcodes = vec![
+            Opcode::DeclareIdxGlobal(0, true),    // idx 0, mutable
+            Opcode::DeclareIdxGlobal(5, false),   // idx 5, inmutable
+            Opcode::DeclareIdxGlobal(255, true),  // idx 255, mutable
+        ];
+
+        let serialized = serializar_bytecode(&opcodes);
+        let deserialized = deserializar_bytecode(&serialized).unwrap();
+
+        assert_eq!(deserialized.len(), 3, "Debe deserializar 3 opcodes");
+        assert_eq!(deserialized[0], Opcode::DeclareIdxGlobal(0, true),
+            "El primer opcode debe ser DeclareIdxGlobal(0, true)");
+        assert_eq!(deserialized[1], Opcode::DeclareIdxGlobal(5, false),
+            "El segundo opcode debe ser DeclareIdxGlobal(5, false)");
+        assert_eq!(deserialized[2], Opcode::DeclareIdxGlobal(255, true),
+            "El tercer opcode debe ser DeclareIdxGlobal(255, true)");
+    }
+
+    #[test]
+    fn test_module_bytecode_serializacion() {
+        let source = "\
+variable global_x = 42
+
+fun probar() {
+    retornar global_x
+}
+";
+        let module_id = SymId(100);
+        let module_bc = generar_bytecode_para_modulo(source, module_id).unwrap();
+
+        // Verificar que tiene DeclareIdxGlobal
+        let has_declare_idx = module_bc.opcodes.iter().any(|op| matches!(op, Opcode::DeclareIdxGlobal(_, _)));
+        assert!(has_declare_idx, "El bytecode del módulo debe contener DeclareIdxGlobal");
+
+        // Serialización round-trip
+        let serialized = serializar_bytecode(&module_bc.opcodes);
+        let deserialized = deserializar_bytecode(&serialized).unwrap();
+        assert_eq!(module_bc.opcodes.len(), deserialized.len(),
+            "La cantidad de opcodes debe coincidir tras round-trip. Original: {}, deserializado: {}",
+            module_bc.opcodes.len(), deserialized.len());
+
+        // Verificar que los idx globales sobreviven
+        for op in &deserialized {
+            if let Opcode::DeclareIdxGlobal(idx, mutable) = op {
+                assert!(*idx == 0, "El único global debe ser idx=0, got {}", idx);
+                assert!(*mutable, "global_x debe ser mutable, got {}", mutable);
+            }
+        }
     }
 }

@@ -1,5 +1,5 @@
 use crate::bytecode::Opcode;
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Micro-opcodes internos para expansión de opcodes compuestos
 #[derive(Debug, Clone, PartialEq)]
@@ -7,7 +7,7 @@ pub enum Uop {
     // === Stack operations ===
     PushEntero(i64),
     PushDecimal(f64),
-    PushTexto(Rc<str>),
+    PushTexto(Arc<str>),
     PushBooleano(bool),
     PushNulo,
     Pop,
@@ -97,10 +97,10 @@ pub enum Uop {
 
     // === Funciones Nativas ===
     /// Llama a una función nativa registrada
-    CallNative(Rc<str>, usize),
+    CallNative(Arc<str>, usize),
 
     /// Polling no bloqueante de socket
-    SocketPoll(Rc<str>),
+    SocketPoll(Arc<str>),
 }
 
 /// Convierte un Opcode atómico (no compuesto) a su Uop equivalente
@@ -110,7 +110,7 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         // Stack
         Opcode::PushEntero(n) => Uop::PushEntero(*n),
         Opcode::PushDecimal(d) => Uop::PushDecimal(*d),
-        Opcode::PushTexto(s) => Uop::PushTexto(Rc::clone(s)),
+        Opcode::PushTexto(s) => Uop::PushTexto(Arc::clone(s)),
         Opcode::PushBooleano(b) => Uop::PushBooleano(*b),
         Opcode::PushNulo => Uop::PushNulo,
         Opcode::Pop => Uop::Pop,
@@ -121,6 +121,7 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::StoreIdx(idx) => Uop::StoreIdx(*idx),
         // DeclareIdx hace POP del stack (el valor a asignar), igual que Declare
         Opcode::DeclareIdx(idx, _) => Uop::DeclareInit(*idx),
+        Opcode::DeclareIdxGlobal(idx, _) => Uop::DeclareInit(*idx),
 
         // Opcodes compuestos (que se expandirán)
         Opcode::DeclareEnteroOp(idx, _n) => {
@@ -333,12 +334,13 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         | Opcode::CheckInv(_) => Uop::Label(0), // no-op en uops
 
         // Funciones Nativas
-        Opcode::CallNative(nombre, nargs) => Uop::CallNative(Rc::clone(nombre), *nargs),
-        Opcode::SocketPoll(var) => Uop::SocketPoll(Rc::clone(var)),
+        Opcode::CallNative(nombre, nargs) => Uop::CallNative(Arc::clone(nombre), *nargs),
+        Opcode::SocketPoll(var) => Uop::SocketPoll(Arc::clone(var)),
 
         // Concurrencia: opcodes atómicos manejados por dispatch directo
         Opcode::ChannelNew => Uop::Label(0), // no-op en uops
         Opcode::ThreadSpawn(_, _) => Uop::Label(0), // no-op en uops
+        Opcode::Jump(_) => Uop::Label(0), // no-op en uops (control de flujo manejado por dispatch directo)
     }
 }
 
