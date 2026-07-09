@@ -280,6 +280,13 @@ impl NativeRegistry {
     }
 }
 
+/// Placeholder para Fase 2: recarga de módulo completo.
+/// Esta función será llamada desde Forja para recargar un módulo.
+#[allow(unused_variables)]
+pub fn _recargar_modulo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    Ok(ValorFast::booleano(true))
+}
+
 // ═════════════════════════════════════════════════════════════════════════
 // Helpers internos
 // ═════════════════════════════════════════════════════════════════════════

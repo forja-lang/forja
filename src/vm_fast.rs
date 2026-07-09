@@ -294,7 +294,22 @@ fn homogeneizar_exacto_fast(a: i128, sa: u32, b: i128, sb: u32) -> (i128, i128, 
 // ─── Frame de Call ─────────────────────────────────────────────────────────
 
 #[derive(Clone)]
-struct FuncFast { ip: usize, vars_size: usize }
+struct FuncFast { ip: usize, vars_size: usize, version: u32 }
+
+/// Versión de una función: permite reemplazarla en caliente
+#[derive(Clone, Copy, Debug)]
+pub struct FuncVersion {
+    pub ip: usize,         // Instruction pointer dentro del bytecode
+    pub vars_size: usize,  // Tamaño del frame de variables locales
+    pub version: u32,      // Número de versión (se incrementa en cada recarga)
+    pub module_id: Option<SymId>,  // Módulo al que pertenece (None = builtin/nativa)
+}
+
+/// Tabla de indirección de funciones con soporte de versionado
+#[derive(Clone)]
+pub struct FunctionTable {
+    pub entries: Vec<FuncVersion>,
+}
 
 // ─── ForjaFast VM (con VM Heap) ────────────────────────────────────────────
 
@@ -421,6 +436,12 @@ pub struct ForjaFast {
     bytecode: Vec<Opcode>,
     pub output: Vec<String>,
 
+    // ─── Hot Reload: Function Table (indirección) ──────────────────────────
+    pub function_table: FunctionTable,          // Tabla de indirección
+    pub sym_to_func_idx: HashMap<SymId, usize>, // Mapeo SymId → índice en function_table
+    pub function_versions: HashMap<SymId, u32>, // Versión actual de cada función
+    pub bytecode_pool: Vec<Vec<Opcode>>,        // Pool de bytecode versionado
+
     max_inst: usize,
     ejecutadas: usize,
     fast_math: bool,
@@ -537,6 +558,11 @@ impl ForjaFast {
             thread_heap: Vec::new(),
             thread_marked: Vec::new(),
             thread_free: Vec::new(),
+            // Hot Reload: Function Table
+            function_table: FunctionTable { entries: Vec::new() },
+            sym_to_func_idx: HashMap::new(),
+            function_versions: HashMap::new(),
+            bytecode_pool: Vec::new(),
         };
         vm.init_symbols();
         vm
@@ -864,6 +890,7 @@ impl ForjaFast {
 
         // Primera pasada: indexar labels, funciones, y calcular vars_size
         let mut label_positions: HashMap<usize, usize> = HashMap::new();
+        let mut registos_pendientes: Vec<(SymId, usize, usize, Option<SymId>)> = Vec::new();
         // Pre-calcular rangos de funciones para limitar escaneo de vars_size
         let mut func_ranges: Vec<(usize, usize)> = Vec::new(); // (start, end)
         for (i, op) in self.bytecode.iter().enumerate() {
@@ -917,14 +944,21 @@ impl ForjaFast {
                         }
                     }
                     let sym_id = self.sym_table.intern(n.as_ref());
-                    self.funciones.insert(sym_id, FuncFast { ip: i + 1, vars_size: max_idx });
+                    self.funciones.insert(sym_id, FuncFast { ip: i + 1, vars_size: max_idx, version: 1u32 });
                     self.func_params.insert(sym_id, params.iter().map(|p| p.to_string()).collect());
+                    // Diferir registro en function_table para evitar E0502 (self.bytecode.iter() inmutable vs self.registrar_funcion() mutable)
+                    registos_pendientes.push((sym_id, i + 1, max_idx, None));
                 }
                 Opcode::Label(l) => {
                     label_positions.insert(*l, i);
                 }
                 _ => {}
             }
+        }
+
+        // Segunda sub-pasada: registrar funciones diferidas (ya no hay borrow de self.bytecode)
+        for (sym_id, ip, vars_size, module_id) in &registos_pendientes {
+            self.registrar_funcion(*sym_id, *ip, *vars_size, *module_id);
         }
 
         // Segunda pasada: resolver labels usando get_mut para acceder a los opcodes
@@ -2638,7 +2672,7 @@ impl ForjaFast {
                 Opcode::Call(nombre, nargs) => {
                     let call_ip = self.ip;
                     let sym_id = self.sym_table.intern(nombre.as_ref());
-                    if let Some(func) = self.funciones.get(&sym_id).cloned() {
+                    if let Some(entry) = self.lookup_func_entry(sym_id) {
                         // Tail Call Elimination: si el próximo opcode es Return,
                         // no creamos un nuevo frame — reemplazamos args en el scope actual
                         let next_ip = call_ip + 1;
@@ -2657,47 +2691,47 @@ impl ForjaFast {
                             self.flat_vars.resize(self.base_ptr + nargs, ValorFast::nulo());
                             for (i, arg) in args.into_iter().enumerate() {
                                 self.flat_vars[self.base_ptr + i] = arg;
+                                }
+    
+                                self.ip = entry.ip;
+                                // El Return que seguía se saltea porque ip apunta directo al cuerpo
+                            } else {
+                                // Sincronizar cache antes de manipular stack directamente
+                                self.flush_stack();
+    
+                                // Normal call: extender flat_vars con nuevo ámbito (O(1))
+                                // Guardar base_ptr actual y num_vars para restaurarlos en Return
+                                let max_frames = self.frame_buffer.len();
+                                if self.frame_count >= max_frames {
+                                    return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
+                                }
+                                let num_vars_actual = self.flat_vars.len() - self.base_ptr;
+                                self.frame_buffer[self.frame_count] = FrmFast {
+                                    ip_ret: next_ip,
+                                    base_ptr_previo: self.base_ptr,
+                                    num_vars: num_vars_actual,
+                                };
+                                self.frame_count += 1;
+    
+                                // Nuevo base_ptr al final del flat_vars actual
+                                self.base_ptr = self.flat_vars.len();
+    
+                                // Pop args del stack de valores
+                                let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                                for _ in 0..nargs { args.push(self.pop_valor()?); }
+                                args.reverse();
+    
+                                // Reservar espacio en flat_vars para todos los índices de la función
+                                let vars_size = entry.vars_size.max(nargs);
+                                self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
+    
+                                // Poner args en índices locales 0, 1, 2...
+                                for (i, arg) in args.into_iter().enumerate() {
+                                    self.flat_vars[self.base_ptr + i] = arg;
+                                }
+    
+                                self.ip = entry.ip;
                             }
-
-                            self.ip = func.ip;
-                            // El Return que seguía se saltea porque ip apunta directo al cuerpo
-                        } else {
-                            // Sincronizar cache antes de manipular stack directamente
-                            self.flush_stack();
-
-                            // Normal call: extender flat_vars con nuevo ámbito (O(1))
-                            // Guardar base_ptr actual y num_vars para restaurarlos en Return
-                            let max_frames = self.frame_buffer.len();
-                            if self.frame_count >= max_frames {
-                                return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
-                            }
-                            let num_vars_actual = self.flat_vars.len() - self.base_ptr;
-                            self.frame_buffer[self.frame_count] = FrmFast {
-                                ip_ret: next_ip,
-                                base_ptr_previo: self.base_ptr,
-                                num_vars: num_vars_actual,
-                            };
-                            self.frame_count += 1;
-
-                            // Nuevo base_ptr al final del flat_vars actual
-                            self.base_ptr = self.flat_vars.len();
-
-                            // Pop args del stack de valores
-                            let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
-                            for _ in 0..nargs { args.push(self.pop_valor()?); }
-                            args.reverse();
-
-                            // Reservar espacio en flat_vars para todos los índices de la función
-                            let vars_size = func.vars_size.max(nargs);
-                            self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
-
-                            // Poner args en índices locales 0, 1, 2...
-                            for (i, arg) in args.into_iter().enumerate() {
-                                self.flat_vars[self.base_ptr + i] = arg;
-                            }
-
-                            self.ip = func.ip;
-                        }
                     } else {
                         // Fallback: buscar en funciones nativas
                         self.flush_stack();
@@ -2719,15 +2753,10 @@ impl ForjaFast {
                     }
                 }
 
-                // ─── CALLDIRECT (Fase 2b) — llama por índice de función, sin HashMap lookup ───
+                // ─── CALLDIRECT (Fase 2b) — llama por índice de función, directo a function_table ───
                 Opcode::CallDirect(func_idx, nargs) => {
-                    // Obtener la función del HashMap por su posición en el iterador
-                    let func_entry: Option<(SymId, FuncFast)> = self.funciones.iter()
-                        .enumerate()
-                        .filter(|(i, _)| *i == func_idx)
-                        .map(|(_, (k, v))| (*k, v.clone()))
-                        .next();
-                    if let Some((_, func)) = func_entry {
+                    // Obtener la función de la function_table por índice
+                    if let Some(entry) = self.function_table.entries.get(func_idx).copied() {
                         let next_ip = self.ip + 1;
                         let is_tail = next_ip < len && matches!(self.bytecode.get(next_ip), Some(Opcode::Return));
 
@@ -2741,7 +2770,7 @@ impl ForjaFast {
                             for (i, arg) in args.into_iter().enumerate() {
                                 self.flat_vars[self.base_ptr + i] = arg;
                             }
-                            self.ip = func.ip;
+                            self.ip = entry.ip;
                         } else {
                             self.flush_stack();
                             let max_frames = self.frame_buffer.len();
@@ -2759,12 +2788,12 @@ impl ForjaFast {
                             let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
                             for _ in 0..nargs { args.push(self.pop_valor()?); }
                             args.reverse();
-                            let vars_size = func.vars_size.max(nargs);
+                            let vars_size = entry.vars_size.max(nargs);
                             self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
                             for (i, arg) in args.into_iter().enumerate() {
                                 self.flat_vars[self.base_ptr + i] = arg;
                             }
-                            self.ip = func.ip;
+                            self.ip = entry.ip;
                         }
                     } else {
                         self.push_valor(ValorFast::nulo());
@@ -3162,7 +3191,7 @@ impl ForjaFast {
                         // Buscar método via MRO
                         let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
                         if let Some(fn_sym) = fn_sym {
-                            if let Some(func)=self.funciones.get(&fn_sym).cloned(){
+                            if let Some(entry)=self.lookup_func_entry(fn_sym){
                                 let max_frames = self.frame_buffer.len();
                                 if self.frame_count >= max_frames {
                                     return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
@@ -3172,11 +3201,11 @@ impl ForjaFast {
                                 self.frame_count+=1;
                                 self.base_ptr=self.flat_vars.len();
                                 let total_vars=1+nargs;
-                                let vars_size=func.vars_size.max(total_vars);
+                                let vars_size=entry.vars_size.max(total_vars);
                                 self.flat_vars.resize(self.base_ptr+vars_size,ValorFast::nulo());
                                 self.flat_vars[self.base_ptr]=ValorFast::objeto(idx);
                                 for(i,arg) in args.into_iter().enumerate(){self.flat_vars[self.base_ptr+1+i]=arg;}
-                                self.ip=func.ip;
+                                self.ip=entry.ip;
                                 continue;
                             }
                         }
@@ -3184,7 +3213,7 @@ impl ForjaFast {
                         let c = self.sym_table.get(clase_sym);
                         let fn_name=format!("{}.{}",c,m);
                         let fn_sym = self.sym_table.intern(&fn_name);
-                        if let Some(func)=self.funciones.get(&fn_sym).cloned(){
+                        if let Some(entry)=self.lookup_func_entry(fn_sym){
                             let max_frames = self.frame_buffer.len();
                             if self.frame_count >= max_frames {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
@@ -3194,11 +3223,11 @@ impl ForjaFast {
                             self.frame_count+=1;
                             self.base_ptr=self.flat_vars.len();
                             let total_vars=1+nargs;
-                            let vars_size=func.vars_size.max(total_vars);
+                            let vars_size=entry.vars_size.max(total_vars);
                             self.flat_vars.resize(self.base_ptr+vars_size,ValorFast::nulo());
                             self.flat_vars[self.base_ptr]=ValorFast::objeto(idx);
                             for(i,arg) in args.into_iter().enumerate(){self.flat_vars[self.base_ptr+1+i]=arg;}
-                            self.ip=func.ip;
+                            self.ip=entry.ip;
                         }else{self.push_valor(ValorFast::nulo());self.ip+=1;}
                     }else{self.push_valor(ValorFast::nulo());}
                 }
@@ -3215,12 +3244,7 @@ impl ForjaFast {
                     // Intentar inline cache primero
                     let cache = &self.ic_callmethod[self.ip].clone();
                     if let Some((clase_id_cache, func_idx_cache)) = cache {
-                        let func: Option<FuncFast> = self.funciones.iter()
-                            .enumerate()
-                            .filter(|(i, _)| *i == *func_idx_cache)
-                            .map(|(_, (_, v))| v.clone())
-                            .next();
-                        if let Some(func) = func {
+                        if let Some(entry) = self.function_table.entries.get(*func_idx_cache).copied() {
                             // Cache candidate — verificar flush_stack
                             self.flush_stack();
                             let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
@@ -3245,13 +3269,13 @@ impl ForjaFast {
                                     self.frame_count += 1;
                                     self.base_ptr = self.flat_vars.len();
                                     let total_vars = 1 + nargs;
-                                    let vars_size = func.vars_size.max(total_vars);
+                                    let vars_size = entry.vars_size.max(total_vars);
                                     self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
                                     self.flat_vars[self.base_ptr] = ValorFast::objeto(obj_idx);
                                     for (i, arg) in args.into_iter().enumerate() {
                                         self.flat_vars[self.base_ptr + 1 + i] = arg;
                                     }
-                                    self.ip = func.ip;
+                                    self.ip = entry.ip;
                                     continue;
                                 }
                             }
@@ -3335,7 +3359,7 @@ impl ForjaFast {
                         // Buscar método via MRO
                         let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
                         if let Some(fn_sym) = fn_sym {
-                            if let Some(func) = self.funciones.get(&fn_sym).cloned() {
+                            if let Some(entry) = self.lookup_func_entry(fn_sym) {
                                 let max_frames = self.frame_buffer.len();
                                 if self.frame_count >= max_frames {
                                     return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
@@ -3349,18 +3373,16 @@ impl ForjaFast {
                                 self.frame_count += 1;
                                 self.base_ptr = self.flat_vars.len();
                                 let total_vars = 1 + nargs;
-                                let vars_size = func.vars_size.max(total_vars);
+                                let vars_size = entry.vars_size.max(total_vars);
                                 self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
                                 self.flat_vars[self.base_ptr] = ValorFast::objeto(idx);
                                 for (i, arg) in args.into_iter().enumerate() {
                                     self.flat_vars[self.base_ptr + 1 + i] = arg;
                                 }
-                                // Actualizar inline cache
-                                let func_idx = self.funciones.iter()
-                                    .position(|(k, _)| *k == fn_sym)
-                                    .unwrap_or(0);
+                                // Actualizar inline cache con índice de function_table
+                                let func_idx = self.sym_to_func_idx.get(&fn_sym).copied().unwrap_or(0);
                                 self.ic_callmethod[self.ip] = Some((clase_sym, func_idx));
-                                self.ip = func.ip;
+                                self.ip = entry.ip;
                                 continue;
                             }
                         }
@@ -3369,7 +3391,7 @@ impl ForjaFast {
                         let method_name = self.sym_table.get(method_sym);
                         let fn_name = format!("{}.{}", c, method_name);
                         let fn_sym = self.sym_table.intern(&fn_name);
-                        if let Some(func) = self.funciones.get(&fn_sym).cloned() {
+                        if let Some(entry) = self.lookup_func_entry(fn_sym) {
                             let max_frames = self.frame_buffer.len();
                             if self.frame_count >= max_frames {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
@@ -3383,18 +3405,16 @@ impl ForjaFast {
                             self.frame_count += 1;
                             self.base_ptr = self.flat_vars.len();
                             let total_vars = 1 + nargs;
-                            let vars_size = func.vars_size.max(total_vars);
+                            let vars_size = entry.vars_size.max(total_vars);
                             self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
                             self.flat_vars[self.base_ptr] = ValorFast::objeto(idx);
                             for (i, arg) in args.into_iter().enumerate() {
                                 self.flat_vars[self.base_ptr + 1 + i] = arg;
                             }
                             // Actualizar inline cache
-                            let func_idx = self.funciones.iter()
-                                .position(|(k, _)| *k == fn_sym)
-                                .unwrap_or(0);
+                            let func_idx = self.sym_to_func_idx.get(&fn_sym).copied().unwrap_or(0);
                             self.ic_callmethod[self.ip] = Some((clase_sym, func_idx));
-                            self.ip = func.ip;
+                            self.ip = entry.ip;
                         } else {
                             self.push_valor(ValorFast::nulo());
                             self.ip += 1;
@@ -4118,9 +4138,9 @@ impl ForjaFast {
                         captured.push(self.pop_valor()?);
                     }
                     captured.reverse();
-                    // Buscar función
+                    // Buscar función en la tabla de indirección
                     let fn_sym = self.sym_table.intern(func_name.as_ref());
-                    if let Some(func) = self.funciones.get(&fn_sym).cloned() {
+                    if let Some(entry) = self.lookup_func_entry(fn_sym) {
                         let nargs = captured.len();
                         // Guardar estado actual para restaurar después
                         let ip_anterior = self.ip;
@@ -4129,7 +4149,7 @@ impl ForjaFast {
                         let flat_vars_anterior = self.flat_vars.len();
                         // Crear frame para la función del hilo
                         let total_vars = 1 + nargs;
-                        let vars_size = func.vars_size.max(total_vars);
+                        let vars_size = entry.vars_size.max(total_vars);
                         self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
                         self.flat_vars[self.base_ptr] = ValorFast::nulo(); // self = nulo
                         for (i, arg) in captured.into_iter().enumerate() {
@@ -4143,7 +4163,7 @@ impl ForjaFast {
                         };
                         self.frame_count += 1;
                         self.base_ptr = self.flat_vars.len();
-                        self.ip = func.ip;
+                        self.ip = entry.ip;
                         // Ejecutar la función inline
                         let _ = self.ejecutar();
                         // Obtener valor de retorno del stack
@@ -4191,6 +4211,7 @@ impl ForjaFast {
         uops = optimizar_uops(&uops);
 
         // 4. Re-mapear IPs de funciones: de posiciones bytecode a posiciones uops
+        //    También actualizar la function_table con las nuevas IPs
         let mut nuevas_funciones = HashMap::new();
         for (&sym_id, func) in self.funciones.iter() {
             let nombre_str = self.sym_table.get(sym_id);
@@ -4198,17 +4219,22 @@ impl ForjaFast {
             for (i, uop) in uops.iter().enumerate() {
                 if let Uop::FunctionDef(n, _) = uop {
                     if n == nombre_str {
-                        nuevas_funciones.insert(sym_id, FuncFast { ip: i + 1, vars_size: func.vars_size });
+                        nuevas_funciones.insert(sym_id, FuncFast { ip: i + 1, vars_size: func.vars_size, version: func.version });
                         encontrada = true;
                         break;
                     }
                 }
             }
             if !encontrada {
-                nuevas_funciones.insert(sym_id, FuncFast { ip: func.ip, vars_size: func.vars_size });
+                nuevas_funciones.insert(sym_id, FuncFast { ip: func.ip, vars_size: func.vars_size, version: func.version });
             }
         }
         self.funciones = nuevas_funciones;
+        // Reconstruir function_table con las IPs re-mapeadas (recolectar primero para evitar E0502)
+        let funcs_remapeo: Vec<(SymId, usize, usize)> = self.funciones.iter().map(|(k, v)| (*k, v.ip, v.vars_size)).collect();
+        for (sym_id, ip, vars_size) in &funcs_remapeo {
+            self.reemplazar_funcion(*sym_id, *ip, *vars_size);
+        }
 
         let len = uops.len();
         self.ip = 0;
@@ -4530,7 +4556,7 @@ impl ForjaFast {
                 // === FUNCTIONS (Flat Var Stack) ===
                 Uop::Call(nombre, nargs) => {
                     let sym_id = self.sym_table.intern(&nombre);
-                    if let Some(func) = self.funciones.get(&sym_id).cloned() {
+                    if let Some(entry) = self.lookup_func_entry(sym_id) {
                         let next_ip = self.ip + 1;
                         let is_tail = next_ip < len && matches!(uops.get(next_ip), Some(Uop::Return));
 
@@ -4544,7 +4570,7 @@ impl ForjaFast {
                             for (i, arg) in args.into_iter().enumerate() {
                                 self.flat_vars[self.base_ptr + i] = arg;
                             }
-                            self.ip = func.ip;
+                            self.ip = entry.ip;
                         } else {
                             self.flush_stack();
                             let max_frames = self.frame_buffer.len();
@@ -4565,13 +4591,13 @@ impl ForjaFast {
                             for _ in 0..nargs { args.push(self.pop_valor()?); }
                             args.reverse();
 
-                            let vars_size = func.vars_size.max(nargs);
+                            let vars_size = entry.vars_size.max(nargs);
                             self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
 
                             for (i, arg) in args.into_iter().enumerate() {
                                 self.flat_vars[self.base_ptr + i] = arg;
                             }
-                            self.ip = func.ip;
+                            self.ip = entry.ip;
                         }
                     } else {
                         // Fallback a funciones nativas
@@ -4849,7 +4875,7 @@ impl ForjaFast {
                         // Buscar método via MRO
                         let fn_sym = self.resolver_metodo_mro(clase_sym, method_sym);
                         if let Some(fn_sym) = fn_sym {
-                            if let Some(func) = self.funciones.get(&fn_sym).cloned() {
+                            if let Some(entry) = self.lookup_func_entry(fn_sym) {
                                 let max_frames = self.frame_buffer.len();
                                 if self.frame_count >= max_frames {
                                     return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
@@ -4859,13 +4885,13 @@ impl ForjaFast {
                                 self.frame_count += 1;
                                 self.base_ptr = self.flat_vars.len();
                                 let total_vars = 1 + nargs;
-                                let vars_size = func.vars_size.max(total_vars);
+                                let vars_size = entry.vars_size.max(total_vars);
                                 self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
                                 self.flat_vars[self.base_ptr] = ValorFast::objeto(idx);
                                 for (i, arg) in args.into_iter().enumerate() {
                                     self.flat_vars[self.base_ptr + 1 + i] = arg;
                                 }
-                                self.ip = func.ip;
+                                self.ip = entry.ip;
                                 continue;
                             }
                         }
@@ -4873,7 +4899,7 @@ impl ForjaFast {
                         let c = self.sym_table.get(clase_sym);
                         let fn_name = format!("{}.{}", c, m);
                         let fn_sym = self.sym_table.intern(&fn_name);
-                        if let Some(func) = self.funciones.get(&fn_sym).cloned() {
+                        if let Some(entry) = self.lookup_func_entry(fn_sym) {
                             let max_frames = self.frame_buffer.len();
                             if self.frame_count >= max_frames {
                                 return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
@@ -4883,13 +4909,13 @@ impl ForjaFast {
                             self.frame_count += 1;
                             self.base_ptr = self.flat_vars.len();
                             let total_vars = 1 + nargs;
-                            let vars_size = func.vars_size.max(total_vars);
+                            let vars_size = entry.vars_size.max(total_vars);
                             self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
                             self.flat_vars[self.base_ptr] = ValorFast::objeto(idx);
                             for (i, arg) in args.into_iter().enumerate() {
                                 self.flat_vars[self.base_ptr + 1 + i] = arg;
                             }
-                            self.ip = func.ip;
+                            self.ip = entry.ip;
                         } else { self.push_valor(ValorFast::nulo()); self.ip += 1; }
                     } else { self.push_valor(ValorFast::nulo()); }
                 }
@@ -5186,6 +5212,59 @@ impl ForjaFast {
             }
         }
         Ok(())
+    }
+
+    // ─── Hot Reload: Function Table API ─────────────────────────────────
+
+    /// Registrar una función en la tabla de indirección
+    pub fn registrar_funcion(&mut self, sym: SymId, ip: usize, vars_size: usize, module_id: Option<SymId>) -> usize {
+        let version = self.function_versions.get(&sym).copied().unwrap_or(1);
+        let idx = self.sym_to_func_idx.get(&sym).copied().unwrap_or(usize::MAX);
+        let entry = FuncVersion { ip, vars_size, version, module_id };
+
+        if idx == usize::MAX {
+            // Nueva función
+            let new_idx = self.function_table.entries.len();
+            self.function_table.entries.push(entry);
+            self.sym_to_func_idx.insert(sym, new_idx);
+            self.function_versions.insert(sym, version);
+            new_idx
+        } else {
+            // Reemplazar función existente (hot reload)
+            self.function_table.entries[idx] = entry;
+            self.function_versions.insert(sym, version);
+            idx
+        }
+    }
+
+    /// Reemplazar una función en caliente (hot reload)
+    pub fn reemplazar_funcion(&mut self, sym: SymId, nueva_ip: usize, nuevo_vars_size: usize) -> bool {
+        if let Some(&idx) = self.sym_to_func_idx.get(&sym) {
+            let version = self.function_versions.get(&sym).copied().unwrap_or(0) + 1;
+            self.function_table.entries[idx] = FuncVersion {
+                ip: nueva_ip,
+                vars_size: nuevo_vars_size,
+                version,
+                module_id: self.function_table.entries[idx].module_id,
+            };
+            self.function_versions.insert(sym, version);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Obtener versión actual de una función
+    pub fn version_funcion(&self, sym: SymId) -> u32 {
+        self.function_versions.get(&sym).copied().unwrap_or(0)
+    }
+
+    /// Buscar una función en la function_table (indirección para hot reload)
+    /// Retorna None si no está registrada; en ese caso se cae a funciones nativas.
+    pub fn lookup_func_entry(&self, sym: SymId) -> Option<FuncVersion> {
+        self.sym_to_func_idx.get(&sym).copied().and_then(|idx| {
+            self.function_table.entries.get(idx).copied()
+        })
     }
 
     pub fn obtener_output(&self) -> &[String] { &self.output }
