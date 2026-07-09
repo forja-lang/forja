@@ -32,6 +32,57 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
+  build-android:
+    name: Build Android
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - aarch64-linux-android
+          - x86_64-linux-android
+          - armv7-linux-androideabi
+          - i686-linux-android
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Install Rust targets
+        run: rustup target add ${{ matrix.target }}
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27
+          add-to-path: false
+      - name: Build for ${{ matrix.target }}
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          case "${{ matrix.target }}" in
+            aarch64-linux-android)
+              LINKER="$NDK_BIN/aarch64-linux-android21-clang"
+              ;;
+            x86_64-linux-android)
+              LINKER="$NDK_BIN/x86_64-linux-android21-clang"
+              ;;
+            armv7-linux-androideabi)
+              LINKER="$NDK_BIN/armv7a-linux-androideabi21-clang"
+              ;;
+            i686-linux-android)
+              LINKER="$NDK_BIN/i686-linux-android21-clang"
+              ;;
+          esac
+          echo "Using linker: $LINKER"
+          CARGO_TARGET_$(echo ${{ matrix.target }} | tr '[:lower:]-' '[:upper:]_')_LINKER="$LINKER" \
+            cargo build --target ${{ matrix.target }} --features gui --release --verbose
+      - name: Upload artifact (${{ matrix.target }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: forja-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/forja
+
   build:
     name: Build (${{ matrix.os }})
     needs: test

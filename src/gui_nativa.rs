@@ -17,6 +17,7 @@ use forja_gui_rt::{
     TextStyle,           // Estilo de texto individual
     ShapeSystem,         // Sistema de formas (radios de borde)
     ShapeFamily,         // Familia de componentes para formas
+    VariableStore,       // Store reactivo de variables
 };
 use forja_gui_rt::icons;
 
@@ -65,15 +66,49 @@ impl From<&str> for ValorGUI {
 
 #[derive(Debug, Clone)]
 pub struct AppStateNativo {
-    pub variables: HashMap<String, ValorGUI>,
+    pub store: VariableStore,
     pub window_size: WindowSizeClass,
     pub window_width: f64,
+}
+
+// ─── Conversión ValorGUI ↔ serde_json::Value ─────────────────────
+
+impl From<ValorGUI> for serde_json::Value {
+    fn from(val: ValorGUI) -> Self {
+        match val {
+            ValorGUI::Texto(s) => serde_json::Value::String(s),
+            ValorGUI::Entero(n) => serde_json::Value::Number(n.into()),
+            ValorGUI::Decimal(f) => serde_json::Value::String(f.to_string()),
+            ValorGUI::Booleano(b) => serde_json::Value::Bool(b),
+            ValorGUI::Nulo => serde_json::Value::Null,
+        }
+    }
+}
+
+impl From<serde_json::Value> for ValorGUI {
+    fn from(val: serde_json::Value) -> Self {
+        match val {
+            serde_json::Value::String(s) => ValorGUI::Texto(s),
+            serde_json::Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    ValorGUI::Entero(i)
+                } else if let Some(f) = n.as_f64() {
+                    ValorGUI::Decimal(f)
+                } else {
+                    ValorGUI::Nulo
+                }
+            }
+            serde_json::Value::Bool(b) => ValorGUI::Booleano(b),
+            serde_json::Value::Null => ValorGUI::Nulo,
+            _ => ValorGUI::Nulo,
+        }
+    }
 }
 
 impl AppStateNativo {
     pub fn new() -> Self {
         AppStateNativo {
-            variables: HashMap::new(),
+            store: VariableStore::new(),
             window_size: WindowSizeClass::Compact,
             window_width: 800.0, // Valor por defecto razonable
         }
@@ -84,11 +119,16 @@ impl AppStateNativo {
         self.window_width = width;
         self.window_size = WindowSizeClass::from_width(width);
     }
+    
     pub fn leer(&self, nombre: &str) -> ValorGUI {
-        self.variables.get(nombre).cloned().unwrap_or(ValorGUI::Nulo)
+        self.store.get(nombre)
+            .map(ValorGUI::from)
+            .unwrap_or(ValorGUI::Nulo)
     }
+    
     pub fn escribir(&mut self, nombre: &str, valor: ValorGUI) {
-        self.variables.insert(nombre.to_string(), valor);
+        let json_val: serde_json::Value = valor.into();
+        self.store.set(nombre, json_val);
     }
 }
 
@@ -4072,7 +4112,7 @@ fn layout_a_view<'a>(
         // ─── DialogOverlay ───────────────────────────────────────────
         // Diálogo superpuesto con overlay semitransparente
         Layout::DialogOverlay { dialog, visible } => {
-            let show = data.variables.get(visible).map(|v| v.to_string() == "true").unwrap_or(false);
+            let show = data.leer(visible).to_string() == "true";
             if show {
                 let inner = layout_a_view(dialog, data, _prog, theme);
                 let overlay_color: Color = RgbColor(0, 0, 0).with_alpha(0.32);
@@ -4232,7 +4272,7 @@ fn layout_a_view<'a>(
         // ─── BottomSheet ─────────────────────────────────────────────
         // Panel que emerge desde abajo (Standard, Modal, Expanded)
         Layout::BottomSheet { child, variant, visible, on_dismiss: _ } => {
-            let show = data.variables.get(visible).map(|v| v.to_string() == "true").unwrap_or(false);
+            let show = data.leer(visible).to_string() == "true";
             if show {
                 let scheme = &theme.scheme;
                 let inner = layout_a_view(child, data, _prog, theme);
@@ -4283,7 +4323,7 @@ fn layout_a_view<'a>(
         // ─── Snackbar ────────────────────────────────────────────────
         // Barra inferior de notificación temporal
         Layout::Snackbar { mensaje, accion_texto, accion_callback, duracion: _, visible } => {
-            let show = data.variables.get(visible).map(|v| v.to_string() == "true").unwrap_or(false);
+            let show = data.leer(visible).to_string() == "true";
             if show {
                 let scheme = &theme.scheme;
                 let bg: Color = scheme.inverse_surface.into();
@@ -4369,7 +4409,7 @@ fn layout_a_view<'a>(
         // ─── Menu ────────────────────────────────────────────────────
         // Menú desplegable con lista de opciones
         Layout::Menu { items, on_select, visible } => {
-            let show = data.variables.get(visible).map(|v| v.to_string() == "true").unwrap_or(true);
+            let show = data.leer(visible).to_string() == "true";
             if show && !items.is_empty() {
                 let scheme = &theme.scheme;
                 let surface_bg: Color = scheme.surface.into();
@@ -4413,7 +4453,7 @@ fn layout_a_view<'a>(
         // ─── ContextMenu ─────────────────────────────────────────────
         // Menú contextual con lista de opciones
         Layout::ContextMenu { items, on_select, visible } => {
-            let show = data.variables.get(visible).map(|v| v.to_string() == "true").unwrap_or(true);
+            let show = data.leer(visible).to_string() == "true";
             if show && !items.is_empty() {
                 let scheme = &theme.scheme;
                 let surface_bg: Color = scheme.surface.into();
@@ -4491,7 +4531,7 @@ fn layout_a_view<'a>(
                 )).gap(Length::px(2.0));
 
                 let btn = view::button(item_widget, move |data: &mut AppStateNativo| {
-                    data.variables.insert(cb_inner.clone(), ValorGUI::Entero(idx as i64));
+                    data.escribir(&cb_inner, ValorGUI::Entero(idx as i64));
                     ejecutar_callback_y_actualizar(&cb_inner, data, &p_inner);
                 });
 
@@ -4552,7 +4592,7 @@ fn layout_a_view<'a>(
                 };
 
                 let btn = view::button(content, move |data: &mut AppStateNativo| {
-                    data.variables.insert(cb_inner.clone(), ValorGUI::Entero(idx as i64));
+                    data.escribir(&cb_inner, ValorGUI::Entero(idx as i64));
                     ejecutar_callback_y_actualizar(&cb_inner, data, &p_inner);
                 });
 
@@ -4579,7 +4619,7 @@ fn layout_a_view<'a>(
             let cb = on_change.clone();
 
             if *modal {
-                let show = data.variables.get(visible).map(|v| v.to_string() == "true").unwrap_or(false);
+                let show = data.leer(visible).to_string() == "true";
                 if !show {
                     return Box::new(view::sized_box(view::label(String::new())));
                 }
@@ -4614,7 +4654,7 @@ fn layout_a_view<'a>(
                 )).gap(Length::px(16.0));
 
                 let btn = view::button(item_content, move |data: &mut AppStateNativo| {
-                    data.variables.insert(cb_inner.clone(), ValorGUI::Entero(idx as i64));
+                    data.escribir(&cb_inner, ValorGUI::Entero(idx as i64));
                     ejecutar_callback_y_actualizar(&cb_inner, data, &p_inner);
                 });
 
@@ -4774,7 +4814,7 @@ fn layout_a_view<'a>(
                 )).gap(Length::px(4.0));
 
                 let btn = view::button(tab_content, move |data: &mut AppStateNativo| {
-                    data.variables.insert(cb_inner.clone(), ValorGUI::Entero(idx as i64));
+                    data.escribir(&cb_inner, ValorGUI::Entero(idx as i64));
                     ejecutar_callback_y_actualizar(&cb_inner, data, &p_inner);
                 });
 
@@ -4820,7 +4860,7 @@ fn layout_a_view<'a>(
         // Vista de búsqueda con resultados
         Layout::SearchView { query: _, resultados, visible } => {
             let scheme = &theme.scheme;
-            let show = data.variables.get(visible).map(|v| v.to_string() == "true").unwrap_or(true);
+            let show = data.leer(visible).to_string() == "true";
             if show {
                 let mut result_widgets: Vec<Box<AnyWidgetView<AppStateNativo>>> = Vec::new();
                 for r in resultados.iter() {
@@ -4853,7 +4893,7 @@ fn layout_a_view<'a>(
                     view::sized_box(view::label(String::new())).width(Length::px(60.0)).height(Length::px(4.0)).background(Background::Color(indicator_color)).corner_radius(2.0),
                 )))
             } else {
-                let valor = data.variables.get(variable).map(|v| v.to_f64() / 100.0).unwrap_or(0.0).max(0.0).min(1.0);
+                let valor = data.leer(variable).to_f64() / 100.0;
                 Box::new(view::zstack((
                     view::sized_box(view::label(String::new())).height(Length::px(4.0)).background(Background::Color(track_color)).corner_radius(2.0),
                     view::sized_box(view::label(String::new())).width(Length::px(300.0 * valor)).height(Length::px(4.0)).background(Background::Color(indicator_color)).corner_radius(2.0),
@@ -4870,7 +4910,7 @@ fn layout_a_view<'a>(
             if *indeterminado {
                 Box::new(view::sized_box(view::label("⟳").text_size((s * 0.5) as f32).color(indicator_color)).width(Length::px(s)).height(Length::px(s)).background(Background::Color(track_color)).corner_radius(s / 2.0))
             } else {
-                let _valor = data.variables.get(variable).map(|v| v.to_f64()).unwrap_or(0.0);
+                let _valor = data.leer(variable).to_f64();
                 Box::new(view::sized_box(view::label(format!("{:.0}%", _valor)).text_size((s * 0.3) as f32).color(indicator_color)).width(Length::px(s)).height(Length::px(s)).border_color(indicator_color).border_width(4.0).corner_radius(s / 2.0).background(Background::Color(track_color)))
             }
         }
@@ -4985,7 +5025,7 @@ fn layout_a_view<'a>(
 
         // ─── FadeTransition ──────────────────────────────────────────
         Layout::FadeTransition { child, visible, duracion: _ } => {
-            let show = data.variables.get(visible).map(|v| v.to_string() == "true").unwrap_or(false);
+            let show = data.leer(visible).to_string() == "true";
             if show { layout_a_view(child, data, _prog, theme) } else { Box::new(view::sized_box(view::label(String::new()))) }
         }
 
@@ -4997,7 +5037,7 @@ fn layout_a_view<'a>(
 
         // ─── PullToRefresh ────────────────────────────────────────────
         Layout::PullToRefresh { child, callback, refreshing } => {
-            let is_refreshing = data.variables.get(refreshing).map(|v| v.to_bool()).unwrap_or(false);
+            let is_refreshing = data.leer(refreshing).to_bool();
             let prog = _prog.to_vec();
             let cb = callback.clone();
             let ref_var = refreshing.clone();
@@ -5036,7 +5076,7 @@ fn layout_a_view<'a>(
 
         // ─── SwipeToDismiss ───────────────────────────────────────────
         Layout::SwipeToDismiss { child, on_dismiss, label, dismissed } => {
-            let is_dismissed = data.variables.get(dismissed).map(|v| v.to_bool()).unwrap_or(false);
+            let is_dismissed = data.leer(dismissed).to_bool();
             let prog = _prog.to_vec();
             let cb = on_dismiss.clone();
             let dismiss_var = dismissed.clone();
@@ -5224,7 +5264,7 @@ fn layout_a_view<'a>(
                 let btn = view::button(
                     view::label(star.to_string()).text_size(24.0).color(star_color),
                     move |data: &mut AppStateNativo| {
-                        data.variables.insert("rating".to_string(), ValorGUI::Entero((i + 1) as i64));
+                        data.escribir("rating", ValorGUI::Entero((i + 1) as i64));
                         if !cb_name.is_empty() {
                             ejecutar_callback_y_actualizar(&cb_name, data, &p);
                         }
@@ -5252,7 +5292,7 @@ fn layout_a_view<'a>(
                 let cb_name = cb.clone();
                 let p = prog.clone();
                 let btn = view::button(view::flex(Axis::Vertical, (Box::new(circle) as Box<AnyWidgetView<AppStateNativo>>, Box::new(label) as Box<AnyWidgetView<AppStateNativo>>)).gap(Length::px(4.0)).cross_axis_alignment(CrossAxisAlignment::Center), move |data: &mut AppStateNativo| {
-                    data.variables.insert("step".to_string(), ValorGUI::Entero(i as i64));
+                    data.escribir("step", ValorGUI::Entero(i as i64));
                     if !cb_name.is_empty() {
                         ejecutar_callback_y_actualizar(&cb_name, data, &p);
                     }
@@ -5305,7 +5345,7 @@ fn layout_a_view<'a>(
                         let dia_btn = view::button(
                             view::label(dia_num.to_string()).text_size(12.0).color(scheme.on_surface.into()),
                             move |data: &mut AppStateNativo| {
-                                data.variables.insert("fecha".to_string(), ValorGUI::Texto(format!("{}/{}/{}", dia_num, mes_val, año_val)));
+                                data.escribir("fecha", ValorGUI::Texto(format!("{}/{}/{}", dia_num, mes_val, año_val)));
                                 if !cb_name.is_empty() {
                                     ejecutar_callback_y_actualizar(&cb_name, data, &p);
                                 }
@@ -5380,7 +5420,7 @@ fn layout_a_view<'a>(
                     Box::new(view::label("Seleccionar archivo").text_size(14.0).weight(FontWeight::MEDIUM)) as Box<AnyWidgetView<AppStateNativo>>,
                 )).gap(Length::px(8.0)).cross_axis_alignment(CrossAxisAlignment::Center),
                 move |data: &mut AppStateNativo| {
-                    data.variables.insert("archivo".to_string(), ValorGUI::Texto("archivo_seleccionado.txt".to_string()));
+                    data.escribir("archivo", ValorGUI::Texto("archivo_seleccionado.txt".to_string()));
                     if !cb.is_empty() {
                         ejecutar_callback_y_actualizar(&cb, data, &prog);
                     }
@@ -5870,7 +5910,7 @@ pub fn ejecutar_callback_y_actualizar(
 ) {
     let resultado = ejecutar_callback_forja(nombre_fn, state, programa);
     // Guardar en la variable 'resultado' por convención
-    state.variables.insert("resultado".to_string(), resultado);
+    state.escribir("resultado", resultado);
 }
 
 fn inicializar_estado(decls: &[Declaracion], state: &mut AppStateNativo) {
@@ -5885,7 +5925,7 @@ fn inicializar_estado(decls: &[Declaracion], state: &mut AppStateNativo) {
                             Some(Expresion::LiteralExacto(_, _)) => ValorGUI::Nulo,
                             _ => ValorGUI::Texto(String::new()),
                         };
-                        state.variables.insert(nombre.clone(), v);
+                        state.escribir(nombre, v);
                     }
                 }
                 return;
