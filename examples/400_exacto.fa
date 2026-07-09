@@ -54,3 +54,43 @@ escribir(suma)
 variable diff: Exacto = 1.0 - 0.9999999999
 escribir("1.0 - 0.9999999999 =")
 escribir(diff)
+
+# --- Pruebas de las nuevas funciones de std/matematica ---
+
+# exacto_desde_texto
+variable desde_texto: Exacto = exacto_desde_texto("123.456")
+escribir("exacto_desde_texto('123.456'):")
+escribir(desde_texto)
+
+variable desde_entero: Exacto = exacto_desde_texto("42")
+escribir("exacto_desde_texto('42'):")
+escribir(desde_entero)
+
+variable desde_negativo: Exacto = exacto_desde_texto("-3.14")
+escribir("exacto_desde_texto('-3.14'):")
+escribir(desde_negativo)
+
+# redondear_exacto
+variable valor_redondear: Exacto = 123.4567
+variable redondeado: Exacto = redondear_exacto(valor_redondear, 2)
+escribir("redondear_exacto(123.4567, 2):")
+escribir(redondeado)
+
+variable redondeado_cero: Exacto = redondear_exacto(valor_redondear, 0)
+escribir("redondear_exacto(123.4567, 0):")
+escribir(redondeado_cero)
+
+# exacto_pow
+variable base_pow: Exacto = 2.0
+variable exp_pow: Exacto = 3.0
+variable pow_result: Exacto = exacto_pow(base_pow, exp_pow)
+escribir("exacto_pow(2.0, 3.0):")
+escribir(pow_result)
+
+variable pow_result2: Exacto = exacto_pow(5.0, 0.0)
+escribir("exacto_pow(5.0, 0.0):")
+escribir(pow_result2)
+
+variable pow_result3: Exacto = exacto_pow(3.0, 10.0)
+escribir("exacto_pow(3.0, 10.0) = 59049:")
+escribir(pow_result3)

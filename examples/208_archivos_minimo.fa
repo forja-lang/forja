@@ -1,0 +1,31 @@
+# Prueba minima del modulo archivo
+importar "std/archivo"
+
+imprimir("--- Test: existe_archivo ---")
+variable ruta = "_test_minimo.txt"
+variable res = escribir_archivo(ruta, "contenido")
+coincidir (res) {
+    caso Ok(_) -> {
+        imprimir("  ✓ Escritura exitosa")
+    }
+    caso Error(e) -> {
+        imprimir("  ERROR: " + e.mensaje)
+    }
+}
+
+si (existe_archivo(ruta)) {
+    imprimir("  ✓ existe_archivo OK")
+}
+
+variable res2 = leer_archivo(ruta)
+coincidir (res2) {
+    caso Ok(contenido) -> {
+        imprimir("  ✓ Leido: " + contenido)
+    }
+    caso Error(e) -> {
+        imprimir("  ERROR: " + e.mensaje)
+    }
+}
+
+eliminar_archivo(ruta)
+imprimir("--- Test completado ---")

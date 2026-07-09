@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
-//use std::io::Write;
+use std::sync::{Arc, Mutex};
+use std::io::{Read, Write};
+use std::net::ToSocketAddrs;
 use crate::bytecode::Opcode;
 use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops, tiene_opcodes_compuestos};
+use crate::native_registry::SocketState;
 
 /// Un objeto en la VM (instancia de clase) con referencia compartida
 #[derive(Debug, Clone)]
@@ -417,6 +420,9 @@ impl std::fmt::Display for ErrorVM {
 }
 
 /// Máquina Virtual de Forja (stack-based)
+/// Tipo de función nativa para la VM clásica (usa ValorVM en vez de ValorFast)
+type NativeFnVM = fn(&mut ForjaVM, &[ValorVM]) -> Result<ValorVM, ErrorVM>;
+
 pub struct ForjaVM {
     ip: usize,
     stack: Vec<ValorVM>,
@@ -438,6 +444,12 @@ pub struct ForjaVM {
     /// Sistema de especialización adaptativa (PEP 659)
     contador_especializacion: Vec<u8>,
     umbral_especializacion: u8,
+
+    // ─── Funciones Nativas ────────────────────────────────────────────────
+    /// Tabla de funciones nativas para la VM clásica
+    native_funcs: HashMap<String, NativeFnVM>,
+    /// Heap de sockets (compartido con native_registry::SocketState)
+    socket_heap: Vec<SocketState>,
 }
 
 struct Frame {
@@ -450,7 +462,7 @@ struct Frame {
 
 impl ForjaVM {
     pub fn new() -> Self {
-        ForjaVM {
+        let mut vm = ForjaVM {
             ip: 0,
             stack: Vec::new(),
             call_stack: Vec::new(),
@@ -466,7 +478,33 @@ impl ForjaVM {
             inline_cache: HashMap::new(),
             contador_especializacion: Vec::new(),
             umbral_especializacion: 3,
-        }
+            native_funcs: HashMap::new(),
+            socket_heap: Vec::new(),
+        };
+        vm.registrar_nativas();
+        vm
+    }
+
+    /// Registra las funciones nativas disponibles para la VM clásica
+    fn registrar_nativas(&mut self) {
+        // TCP Cliente
+        self.native_funcs.insert("_socket_tcp_conectar".to_string(), clasica_socket_tcp_conectar);
+        self.native_funcs.insert("_socket_enviar".to_string(), clasica_socket_enviar);
+        self.native_funcs.insert("_socket_recibir".to_string(), clasica_socket_recibir);
+        self.native_funcs.insert("_socket_cerrar".to_string(), clasica_socket_cerrar);
+        self.native_funcs.insert("_socket_activo".to_string(), clasica_socket_activo);
+        self.native_funcs.insert("_socket_fijar_timeout".to_string(), clasica_socket_fijar_timeout);
+        self.native_funcs.insert("_socket_direccion_local".to_string(), clasica_socket_direccion_local);
+        self.native_funcs.insert("_socket_direccion_remota".to_string(), clasica_socket_direccion_remota);
+
+        // TCP Servidor
+        self.native_funcs.insert("_socket_tcp_escuchar".to_string(), clasica_socket_tcp_escuchar);
+        self.native_funcs.insert("_socket_aceptar".to_string(), clasica_socket_aceptar);
+
+        // UDP
+        self.native_funcs.insert("_socket_udp_escuchar".to_string(), clasica_socket_udp_escuchar);
+        self.native_funcs.insert("_socket_udp_enviar".to_string(), clasica_socket_udp_enviar);
+        self.native_funcs.insert("_socket_udp_recibir".to_string(), clasica_socket_udp_recibir);
     }
 
     pub fn set_max_instrucciones(&mut self, n: usize) {
@@ -539,6 +577,67 @@ impl ForjaVM {
     /// Obtiene el ámbito actual (índice del Vec<Vec<ValorVM>> activo)
     fn ambito_actual(&self) -> usize {
         self.call_stack.last().map(|f| f.ambito).unwrap_or(0)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Gestión de Sockets (Socket Heap)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// Aloca un nuevo socket en el heap y retorna su índice
+    fn socket_alloc(&mut self, state: SocketState) -> u32 {
+        let idx = self.socket_heap.len() as u32;
+        self.socket_heap.push(state);
+        idx
+    }
+
+    /// Obtiene referencia al estado de un socket por índice
+    fn socket_get(&self, idx: u32) -> &SocketState {
+        &self.socket_heap[idx as usize]
+    }
+
+    /// Obtiene referencia mutable al estado de un socket
+    fn socket_get_mut(&mut self, idx: u32) -> &mut SocketState {
+        &mut self.socket_heap[idx as usize]
+    }
+
+    /// Cierra un socket por índice
+    fn socket_cerrar(&mut self, idx: u32) {
+        if let Some(socket) = self.socket_heap.get_mut(idx as usize) {
+            socket.cerrar();
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Helpers para funciones nativas
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// Extrae un texto (String) de un ValorVM
+    fn obtener_texto_vm(val: &ValorVM) -> Result<String, ErrorVM> {
+        match val {
+            ValorVM::Texto(s) => Ok(s.clone()),
+            _ => Err(ErrorVM::TipoIncompatible("se esperaba un texto".into())),
+        }
+    }
+
+    /// Extrae un entero (i64) de un ValorVM
+    fn obtener_entero_vm(val: &ValorVM) -> Result<i64, ErrorVM> {
+        match val {
+            ValorVM::Entero(n) => Ok(*n),
+            ValorVM::Decimal(d) => Ok(*d as i64),
+            _ => Err(ErrorVM::TipoIncompatible("se esperaba un número entero".into())),
+        }
+    }
+
+    /// Resuelve una dirección host:puerto a SocketAddr
+    fn resolver_direccion_vm(direccion: &str, puerto: u16) -> Result<std::net::SocketAddr, String> {
+        let addr_str = format!("{}:{}", direccion, puerto);
+        if let Ok(addr) = addr_str.parse::<std::net::SocketAddr>() {
+            return Ok(addr);
+        }
+        let addrs = (direccion, puerto).to_socket_addrs()
+            .map_err(|e| format!("no se pudo resolver '{}': {}", addr_str, e))?;
+        addrs.into_iter().next()
+            .ok_or_else(|| format!("no se encontraron direcciones para '{}'", addr_str))
     }
 
     /// Asegura que el Vec del ámbito actual tenga al menos `idx + 1` elementos
@@ -1172,8 +1271,28 @@ impl ForjaVM {
 
                         self.ip = label;
                     } else {
-                        // Función no encontrada: pushear Nulo y continuar
-                        self.stack.push(ValorVM::Nulo);
+                        // Función no encontrada: buscar en funciones nativas
+                        let nombre_str = nombre.to_string();
+                        match self.native_funcs.get(&nombre_str) {
+                            Some(func) => {
+                                // Recopilar args de la pila (ya están al revés del caller)
+                                let mut args: Vec<ValorVM> = Vec::with_capacity(nargs);
+                                for _ in 0..nargs {
+                                    args.push(self.stack.pop().ok_or(
+                                        ErrorVM::StackUnderflow("Call nativo args".to_string())
+                                    )?);
+                                }
+                                args.reverse();
+                                match func(self, &args) {
+                                    Ok(val) => self.stack.push(val),
+                                    Err(e) => return Err(e),
+                                }
+                            }
+                            None => {
+                                // Función no encontrada en ningún lado
+                                self.stack.push(ValorVM::Nulo);
+                            }
+                        }
                         self.ip += 1;
                     }
                 }
@@ -1412,6 +1531,14 @@ impl ForjaVM {
                         ValorVM::Texto(s) => s.parse::<i64>().unwrap_or(0),
                         ValorVM::Entero(n) => *n,
                         ValorVM::Decimal(d) => *d as i64,
+                        ValorVM::Exacto(coeff, scale) => {
+                            if *scale == 0 {
+                                *coeff as i64
+                            } else {
+                                let divisor = 10_i128.wrapping_pow(*scale);
+                                (coeff.wrapping_div(divisor)) as i64
+                            }
+                        }
                         _ => 0,
                     };
                     self.stack.push(ValorVM::Entero(n));
@@ -1587,6 +1714,36 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Opcode::Halt => break,
+
+                // === Funciones Nativas ===
+                Opcode::CallNative(nombre, nargs) => {
+                    let mut args: Vec<ValorVM> = Vec::with_capacity(nargs);
+                    for _ in 0..nargs {
+                        args.push(self.stack.pop().ok_or(
+                            ErrorVM::StackUnderflow("CallNative args".to_string())
+                        )?);
+                    }
+                    args.reverse();
+
+                    match self.native_funcs.get(&nombre.to_string()) {
+                        Some(func) => {
+                            match func(self, &args) {
+                                Ok(val) => self.stack.push(val),
+                                Err(e) => return Err(e),
+                            }
+                        }
+                        None => {
+                            self.stack.push(ValorVM::Nulo);
+                        }
+                    }
+                    self.ip += 1;
+                }
+
+                Opcode::SocketPoll(_) => {
+                    self.stack.push(ValorVM::Booleano(false));
+                    self.ip += 1;
+                }
+
                 // Superinstructions — no implementadas en VM estándar
                 _ => self.stack.push(ValorVM::Nulo),
             }
@@ -2073,6 +2230,14 @@ impl ForjaVM {
                         ValorVM::Texto(s) => s.parse::<i64>().unwrap_or(0),
                         ValorVM::Entero(n) => *n,
                         ValorVM::Decimal(d) => *d as i64,
+                        ValorVM::Exacto(coeff, scale) => {
+                            if *scale == 0 {
+                                *coeff as i64
+                            } else {
+                                let divisor = 10_i128.wrapping_pow(*scale);
+                                (coeff.wrapping_div(divisor)) as i64
+                            }
+                        }
                         _ => 0,
                     };
                     self.stack.push(ValorVM::Entero(n));
@@ -2330,9 +2495,441 @@ impl ForjaVM {
                     }
                     self.ip += 1;
                 }
+
+                // === Funciones Nativas (Native Registry) ===
+                Uop::CallNative(nombre, nargs) => {
+                    // Recopilar argumentos de la pila
+                    let mut args: Vec<ValorVM> = Vec::with_capacity(nargs);
+                    for _ in 0..nargs {
+                        args.push(self.stack.pop().ok_or(
+                            ErrorVM::StackUnderflow("CallNative args".to_string())
+                        )?);
+                    }
+                    args.reverse();
+
+                    // Buscar y ejecutar la función nativa
+                    match self.native_funcs.get(&nombre.to_string()) {
+                        Some(func) => {
+                            match func(self, &args) {
+                                Ok(val) => self.stack.push(val),
+                                Err(e) => return Err(e),
+                            }
+                        }
+                        None => {
+                            self.stack.push(ValorVM::Nulo);
+                        }
+                    }
+                    self.ip += 1;
+                }
+
+                Uop::SocketPoll(_) => {
+                    // SocketPoll no implementado en VM clásica, retorna falso
+                    self.stack.push(ValorVM::Booleano(false));
+                    self.ip += 1;
+                }
             }
         }
         Ok(())
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Funciones Nativas para la VM clásica (TCP Cliente)
+// ═════════════════════════════════════════════════════════════════════════
+
+/// Conecta a un servidor TCP (cliente).
+fn clasica_socket_tcp_conectar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
+    if args.len() < 2 {
+        return Err(ErrorVM::TipoIncompatible(
+            "_socket_tcp_conectar requiere 2 argumentos: direccion (texto), puerto (entero)".into()
+        ));
+    }
+
+    let direccion = ForjaVM::obtener_texto_vm(&args[0])?;
+    let puerto = ForjaVM::obtener_entero_vm(&args[1])?;
+
+    if puerto < 1 || puerto > 65535 {
+        return Err(ErrorVM::TipoIncompatible(format!(
+            "direccion_invalida: puerto {} fuera de rango (1-65535)", puerto
+        )));
+    }
+
+    let addr = match ForjaVM::resolver_direccion_vm(&direccion, puerto as u16) {
+        Ok(a) => a,
+        Err(msg) => return Err(ErrorVM::TipoIncompatible(format!("direccion_invalida: {}", msg))),
+    };
+
+    match std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(30)) {
+        Ok(stream) => {
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+            let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(30)));
+
+            let socket_idx = vm.socket_alloc(SocketState::new_tcp_stream(stream));
+            Ok(ValorVM::Entero(socket_idx as i64))
+        }
+        Err(e) => {
+            let error_kind = match e.kind() {
+                std::io::ErrorKind::ConnectionRefused => "conexion_rechazada",
+                std::io::ErrorKind::TimedOut => "tiempo_agotado",
+                std::io::ErrorKind::AddrNotAvailable => "direccion_invalida",
+                std::io::ErrorKind::PermissionDenied => "permiso_denegado",
+                std::io::ErrorKind::InvalidInput => "direccion_invalida",
+                _ => "error_interno",
+            };
+            Err(ErrorVM::TipoIncompatible(format!("{}: {}", error_kind, e)))
+        }
+    }
+}
+
+/// Envía datos por un socket TCP.
+fn clasica_socket_enviar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
+    if args.len() < 2 {
+        return Err(ErrorVM::TipoIncompatible(
+            "_socket_enviar requiere 2 argumentos: socket, datos (texto)".into()
+        ));
+    }
+
+    let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
+    let datos = ForjaVM::obtener_texto_vm(&args[1])?;
+
+    if socket_idx as usize >= vm.socket_heap.len() || !vm.socket_get(socket_idx).connected {
+        return Err(ErrorVM::TipoIncompatible("socket_cerrado: el socket no está conectado".into()));
+    }
+
+    let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
+        Some(arc) => Arc::clone(arc),
+        None => return Err(ErrorVM::TipoIncompatible("error_interno: el socket no es TCP".into())),
+    };
+
+    let mut stream = stream_arc.lock().unwrap();
+    match stream.write_all(datos.as_bytes()) {
+        Ok(()) => Ok(ValorVM::Entero(datos.len() as i64)),
+        Err(e) => Err(ErrorVM::TipoIncompatible(format!("error_interno: {}", e))),
+    }
+}
+
+/// Recibe datos de un socket TCP.
+fn clasica_socket_recibir(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
+    if args.len() < 2 {
+        return Err(ErrorVM::TipoIncompatible(
+            "_socket_recibir requiere 2 argumentos: socket, buffer_tamano (entero)".into()
+        ));
+    }
+
+    let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
+    let buffer_tamano = ForjaVM::obtener_entero_vm(&args[1])?;
+    let buffer_tamano = buffer_tamano.max(1).min(65536) as usize;
+
+    if socket_idx as usize >= vm.socket_heap.len() || !vm.socket_get(socket_idx).connected {
+        return Err(ErrorVM::TipoIncompatible("socket_cerrado: el socket no está conectado".into()));
+    }
+
+    let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
+        Some(arc) => Arc::clone(arc),
+        None => return Err(ErrorVM::TipoIncompatible("error_interno: el socket no es TCP".into())),
+    };
+
+    let mut stream = stream_arc.lock().unwrap();
+    let mut buffer = vec![0u8; buffer_tamano];
+    match stream.read(&mut buffer) {
+        Ok(0) => {
+            vm.socket_get_mut(socket_idx).connected = false;
+            Ok(ValorVM::Texto(String::new()))
+        }
+        Ok(n) => {
+            let datos = String::from_utf8_lossy(&buffer[..n]).to_string();
+            Ok(ValorVM::Texto(datos))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+            Ok(ValorVM::Texto(String::new()))
+        }
+        Err(e) => Err(ErrorVM::TipoIncompatible(format!("error_interno: {}", e))),
+    }
+}
+
+/// Cierra un socket.
+fn clasica_socket_cerrar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
+    if args.is_empty() {
+        return Err(ErrorVM::TipoIncompatible("_socket_cerrar requiere 1 argumento: socket".into()));
+    }
+    let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
+    vm.socket_cerrar(socket_idx);
+    Ok(ValorVM::Nulo)
+}
+
+/// Verifica si un socket está activo/conectado.
+fn clasica_socket_activo(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
+    if args.is_empty() {
+        return Err(ErrorVM::TipoIncompatible("_socket_activo requiere 1 argumento: socket".into()));
+    }
+    let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
+    if socket_idx as usize >= vm.socket_heap.len() {
+        return Ok(ValorVM::Booleano(false));
+    }
+    Ok(ValorVM::Booleano(vm.socket_get(socket_idx).connected))
+}
+
+/// Fija el timeout de un socket.
+fn clasica_socket_fijar_timeout(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
+    if args.len() < 2 {
+        return Err(ErrorVM::TipoIncompatible(
+            "_socket_fijar_timeout requiere 2 argumentos: socket, tiempo_ms (entero)".into()
+        ));
+    }
+
+    let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
+    let tiempo_ms = ForjaVM::obtener_entero_vm(&args[1])?;
+    let timeout = if tiempo_ms > 0 {
+        Some(std::time::Duration::from_millis(tiempo_ms as u64))
+    } else {
+        None
+    };
+
+    if socket_idx as usize >= vm.socket_heap.len() {
+        return Err(ErrorVM::TipoIncompatible("socket_invalido: índice fuera de rango".into()));
+    }
+
+    // Aplicar timeout al stream subyacente si existe
+    if let Some(arc) = &vm.socket_get(socket_idx).tcp_stream {
+        let stream = arc.lock().unwrap();
+        let _ = stream.set_read_timeout(timeout);
+        let _ = stream.set_write_timeout(timeout);
+    }
+
+    vm.socket_get_mut(socket_idx).timeout_ms = if tiempo_ms > 0 { Some(tiempo_ms as u64) } else { None };
+    Ok(ValorVM::Nulo)
+}
+
+/// Obtiene la dirección local del socket.
+fn clasica_socket_direccion_local(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
+    if args.is_empty() {
+        return Err(ErrorVM::TipoIncompatible("_socket_direccion_local requiere 1 argumento: socket".into()));
+    }
+    let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
+    if socket_idx as usize >= vm.socket_heap.len() {
+        return Err(ErrorVM::TipoIncompatible("socket_invalido: índice fuera de rango".into()));
+    }
+    match &vm.socket_get(socket_idx).local_addr {
+        Some(addr) => Ok(ValorVM::Texto(addr.clone())),
+        None => Err(ErrorVM::TipoIncompatible("error_interno: no se pudo obtener la dirección local".into())),
+    }
+}
+
+/// Obtiene la dirección remota del socket.
+fn clasica_socket_direccion_remota(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
+    if args.is_empty() {
+        return Err(ErrorVM::TipoIncompatible("_socket_direccion_remota requiere 1 argumento: socket".into()));
+    }
+    let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
+    if socket_idx as usize >= vm.socket_heap.len() {
+        return Err(ErrorVM::TipoIncompatible("socket_invalido: índice fuera de rango".into()));
+    }
+    match &vm.socket_get(socket_idx).peer_addr {
+        Some(addr) => Ok(ValorVM::Texto(addr.clone())),
+        None => Err(ErrorVM::TipoIncompatible("error_interno: el socket no tiene dirección remota".into())),
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Funciones Nativas para la VM clásica (TCP Servidor)
+// ═════════════════════════════════════════════════════════════════════════
+
+/// Crea un socket TCP a la escucha (servidor).
+fn clasica_socket_tcp_escuchar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
+    if args.len() < 1 {
+        return Err(ErrorVM::TipoIncompatible(
+            "_socket_tcp_escuchar requiere al menos 1 argumento: puerto (entero)".into()
+        ));
+    }
+
+    let puerto = ForjaVM::obtener_entero_vm(&args[0])?;
+    if puerto < 1 || puerto > 65535 {
+        return Err(ErrorVM::TipoIncompatible(format!(
+            "direccion_invalida: puerto {} fuera de rango (1-65535)", puerto
+        )));
+    }
+
+    let addr: std::net::SocketAddr = match format!("0.0.0.0:{}", puerto).parse() {
+        Ok(a) => a,
+        Err(e) => return Err(ErrorVM::TipoIncompatible(format!("direccion_invalida: {}", e))),
+    };
+
+    match std::net::TcpListener::bind(addr) {
+        Ok(listener) => {
+            let _ = listener.set_nonblocking(true);
+            let socket_idx = vm.socket_alloc(SocketState::new_tcp_listener(listener));
+            Ok(ValorVM::Entero(socket_idx as i64))
+        }
+        Err(e) => {
+            let error_kind = match e.kind() {
+                std::io::ErrorKind::AddrInUse => "direccion_en_uso",
+                std::io::ErrorKind::PermissionDenied => "permiso_denegado",
+                _ => "error_interno",
+            };
+            Err(ErrorVM::TipoIncompatible(format!("{}: {}", error_kind, e)))
+        }
+    }
+}
+
+/// Acepta una conexión entrante de un TcpListener.
+fn clasica_socket_aceptar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
+    if args.is_empty() {
+        return Err(ErrorVM::TipoIncompatible(
+            "_socket_aceptar requiere 1 argumento: socket".into()
+        ));
+    }
+
+    let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
+    if socket_idx as usize >= vm.socket_heap.len() {
+        return Err(ErrorVM::TipoIncompatible("socket_invalido: índice fuera de rango".into()));
+    }
+
+    let listener_arc = match &vm.socket_get(socket_idx).tcp_listener {
+        Some(arc) => Arc::clone(arc),
+        None => return Err(ErrorVM::TipoIncompatible(
+            "error_interno: el socket no es un TcpListener".into()
+        )),
+    };
+
+    let listener = listener_arc.lock().unwrap();
+    match listener.accept() {
+        Ok((stream, _peer_addr)) => {
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+            let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(30)));
+
+            let nuevo_idx = vm.socket_alloc(SocketState::new_tcp_stream(stream));
+            Ok(ValorVM::Entero(nuevo_idx as i64))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+            // No hay conexiones pendientes → retornar -1 (señal no-bloqueante)
+            Ok(ValorVM::Entero(-1))
+        }
+        Err(e) => {
+            Err(ErrorVM::TipoIncompatible(format!("error_interno: {}", e)))
+        }
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Funciones Nativas para la VM clásica (UDP)
+// ═════════════════════════════════════════════════════════════════════════
+
+/// Crea un socket UDP a la escucha (bind).
+fn clasica_socket_udp_escuchar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
+    if args.len() < 1 {
+        return Err(ErrorVM::TipoIncompatible(
+            "_socket_udp_escuchar requiere al menos 1 argumento: puerto (entero)".into()
+        ));
+    }
+
+    let puerto = ForjaVM::obtener_entero_vm(&args[0])?;
+    if puerto < 1 || puerto > 65535 {
+        return Err(ErrorVM::TipoIncompatible(format!(
+            "direccion_invalida: puerto {} fuera de rango (1-65535)", puerto
+        )));
+    }
+
+    let addr: std::net::SocketAddr = match format!("0.0.0.0:{}", puerto).parse() {
+        Ok(a) => a,
+        Err(e) => return Err(ErrorVM::TipoIncompatible(format!("direccion_invalida: {}", e))),
+    };
+
+    match std::net::UdpSocket::bind(addr) {
+        Ok(socket) => {
+            let _ = socket.set_nonblocking(true);
+            let _ = socket.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+
+            let socket_idx = vm.socket_alloc(SocketState::new_udp_socket(socket));
+            Ok(ValorVM::Entero(socket_idx as i64))
+        }
+        Err(e) => {
+            let error_kind = match e.kind() {
+                std::io::ErrorKind::AddrInUse => "direccion_en_uso",
+                std::io::ErrorKind::PermissionDenied => "permiso_denegado",
+                _ => "error_interno",
+            };
+            Err(ErrorVM::TipoIncompatible(format!("{}: {}", error_kind, e)))
+        }
+    }
+}
+
+/// Envía datos por un socket UDP.
+fn clasica_socket_udp_enviar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
+    if args.len() < 4 {
+        return Err(ErrorVM::TipoIncompatible(
+            "_socket_udp_enviar requiere 4 argumentos: socket, datos, direccion, puerto".into()
+        ));
+    }
+
+    let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
+    let datos = ForjaVM::obtener_texto_vm(&args[1])?;
+    let direccion = ForjaVM::obtener_texto_vm(&args[2])?;
+    let puerto = ForjaVM::obtener_entero_vm(&args[3])?;
+
+    if puerto < 1 || puerto > 65535 {
+        return Err(ErrorVM::TipoIncompatible(format!(
+            "direccion_invalida: puerto {} fuera de rango (1-65535)", puerto
+        )));
+    }
+
+    if socket_idx as usize >= vm.socket_heap.len() {
+        return Err(ErrorVM::TipoIncompatible("socket_invalido: índice fuera de rango".into()));
+    }
+
+    let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
+        Some(arc) => Arc::clone(arc),
+        None => return Err(ErrorVM::TipoIncompatible(
+            "error_interno: el socket no es UDP".into()
+        )),
+    };
+
+    let destino = match ForjaVM::resolver_direccion_vm(&direccion, puerto as u16) {
+        Ok(a) => a,
+        Err(msg) => return Err(ErrorVM::TipoIncompatible(format!("direccion_invalida: {}", msg))),
+    };
+
+    let socket = socket_arc.lock().unwrap();
+    match socket.send_to(datos.as_bytes(), destino) {
+        Ok(n) => Ok(ValorVM::Entero(n as i64)),
+        Err(e) => Err(ErrorVM::TipoIncompatible(format!("error_interno: {}", e))),
+    }
+}
+
+/// Recibe datos de un socket UDP.
+fn clasica_socket_udp_recibir(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
+    if args.len() < 2 {
+        return Err(ErrorVM::TipoIncompatible(
+            "_socket_udp_recibir requiere 2 argumentos: socket, buffer_tamano (entero)".into()
+        ));
+    }
+
+    let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
+    let buffer_tamano = ForjaVM::obtener_entero_vm(&args[1])?;
+    let buffer_tamano = buffer_tamano.max(1).min(65536) as usize;
+
+    if socket_idx as usize >= vm.socket_heap.len() {
+        return Err(ErrorVM::TipoIncompatible("socket_invalido: índice fuera de rango".into()));
+    }
+
+    let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
+        Some(arc) => Arc::clone(arc),
+        None => return Err(ErrorVM::TipoIncompatible(
+            "error_interno: el socket no es UDP".into()
+        )),
+    };
+
+    let socket = socket_arc.lock().unwrap();
+    let mut buffer = vec![0u8; buffer_tamano];
+
+    match socket.recv_from(&mut buffer) {
+        Ok((n, _origen)) => {
+            let datos = String::from_utf8_lossy(&buffer[..n]).to_string();
+            Ok(ValorVM::Texto(datos))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+            Ok(ValorVM::Texto(String::new()))
+        }
+        Err(e) => Err(ErrorVM::TipoIncompatible(format!("error_interno: {}", e))),
     }
 }
 
@@ -2375,6 +2972,7 @@ impl ForjaVM {
                     .ok_or(ErrorVM::StackUnderflow("Length".to_string()))?;
                 match val {
                     ValorVM::Texto(s) => self.stack.push(get_small_int_vm(s.len() as i64)),
+                    ValorVM::Arreglo(arr) => self.stack.push(get_small_int_vm(arr.len() as i64)),
                     _ => self.stack.push(ValorVM::Nulo),
                 }
             }
