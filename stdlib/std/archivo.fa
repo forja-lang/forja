@@ -1,0 +1,344 @@
+# módulo: archivo
+# Descripción: Operaciones del sistema de archivos
+#
+# Uso: importar "std/archivo"
+#
+# Todas las funciones que pueden fallar retornan Resultado<T, ErrorArchivo>
+# donde ErrorArchivo contiene:
+#   .mensaje — descripción del error
+#   .codigo  — 0=Exito, 1=archivo_no_encontrado, 2=permiso_denegado,
+#              3=ruta_invalida, 4=es_directorio, 5=error_interno
+#
+# Las funciones internas _archivo_* son proporcionadas por la VM
+# y no deben llamarse directamente desde código de usuario.
+
+importar "std/resultado"
+
+# ═════════════════════════════════════════════════════════════════════════
+# Clase ErrorArchivo
+# ═════════════════════════════════════════════════════════════════════════
+
+# Representa un error en operaciones de archivos
+# Contiene un mensaje descriptivo y un código numérico
+clase ErrorArchivo {
+    mensaje: Texto
+    codigo: Entero
+
+    constructor(mensaje: Texto, codigo: Entero) {
+        este.mensaje = mensaje
+        este.codigo = codigo
+    }
+}
+
+# ═════════════════════════════════════════════════════════════════════════
+# Operaciones con Archivos
+# ═════════════════════════════════════════════════════════════════════════
+
+# Lee el contenido completo de un archivo como texto.
+#
+# Parámetros:
+#   ruta: ruta al archivo a leer
+#
+# Retorna: Resultado<Texto, ErrorArchivo>
+#   Ok(contenido) si se leyó exitosamente
+#   Error si el archivo no existe, no tiene permisos o es un directorio
+#
+# Errores: archivo_no_encontrado, permiso_denegado, es_directorio
+#
+# Ejemplo:
+#   variable res = leer_archivo("datos.txt")
+#   si (res es Ok) {
+#       imprimir(res.valor)
+#   }
+funcion leer_archivo(ruta: Texto) -> Resultado<Texto, ErrorArchivo> {
+    variable resultado = _archivo_leer(ruta)
+    si (resultado == -1) {
+        retornar Error(ErrorArchivo("No se pudo leer el archivo: " + ruta, 1))
+    }
+    retornar Ok(resultado)
+}
+
+# Escribe contenido en un archivo (crea o sobrescribe).
+#
+# Parámetros:
+#   ruta: ruta del archivo a escribir
+#   contenido: texto a escribir en el archivo
+#
+# Retorna: Resultado<Nulo, ErrorArchivo>
+#   Ok(nulo) si se escribió exitosamente
+#   Error si no hay permisos o la ruta es inválida
+#
+# Errores: permiso_denegado, ruta_invalida
+#
+# Ejemplo:
+#   escribir_archivo("saludo.txt", "Hola mundo!")
+funcion escribir_archivo(ruta: Texto, contenido: Texto) -> Resultado<Nulo, ErrorArchivo> {
+    variable resultado = _archivo_escribir(ruta, contenido)
+    si (resultado == -1) {
+        retornar Error(ErrorArchivo("No se pudo escribir el archivo: " + ruta, 2))
+    }
+    retornar Ok(nulo)
+}
+
+# Verifica si un archivo o directorio existe en la ruta dada.
+#
+# Parámetros:
+#   ruta: ruta a verificar
+#
+# Retorna: Booleano (nunca falla)
+#   verdadero si el archivo o directorio existe
+#   falso si no existe o la ruta es inválida
+#
+# Ejemplo:
+#   si (existe_archivo("config.fa")) {
+#       imprimir("El archivo existe")
+#   }
+funcion existe_archivo(ruta: Texto) -> Booleano {
+    retornar _archivo_existe(ruta)
+}
+
+# Elimina un archivo.
+#
+# Parámetros:
+#   ruta: ruta del archivo a eliminar
+#
+# Retorna: Resultado<Nulo, ErrorArchivo>
+#   Ok(nulo) si se eliminó exitosamente
+#   Error si el archivo no existe o no hay permisos
+#
+# Errores: archivo_no_encontrado, permiso_denegado
+#
+# Ejemplo:
+#   eliminar_archivo("temp.txt")
+funcion eliminar_archivo(ruta: Texto) -> Resultado<Nulo, ErrorArchivo> {
+    variable resultado = _archivo_eliminar(ruta)
+    si (resultado == -1) {
+        retornar Error(ErrorArchivo("No se pudo eliminar el archivo: " + ruta, 1))
+    }
+    retornar Ok(nulo)
+}
+
+# Copia un archivo de origen a destino.
+#
+# Parámetros:
+#   origen: ruta del archivo origen
+#   destino: ruta del archivo destino
+#
+# Retorna: Resultado<Nulo, ErrorArchivo>
+#   Ok(nulo) si se copió exitosamente
+#   Error si el origen no existe, destino inválido o no hay permisos
+#
+# Errores: archivo_no_encontrado, permiso_denegado, ruta_invalida
+#
+# Ejemplo:
+#   copiar_archivo("original.txt", "copia.txt")
+funcion copiar_archivo(origen: Texto, destino: Texto) -> Resultado<Nulo, ErrorArchivo> {
+    si (longitud(origen) == 0 || longitud(destino) == 0) {
+        retornar Error(ErrorArchivo("Las rutas no pueden estar vacías", 3))
+    }
+    variable resultado = _archivo_copiar(origen, destino)
+    si (resultado == -1) {
+        retornar Error(ErrorArchivo("No se pudo copiar de '" + origen + "' a '" + destino + "'", 1))
+    }
+    retornar Ok(nulo)
+}
+
+# Mueve o renombra un archivo.
+#
+# Parámetros:
+#   origen: ruta actual del archivo
+#   destino: nueva ruta del archivo
+#
+# Retorna: Resultado<Nulo, ErrorArchivo>
+#   Ok(nulo) si se movió exitosamente
+#   Error si el origen no existe, destino inválido o no hay permisos
+#
+# Errores: archivo_no_encontrado, permiso_denegado
+#
+# Ejemplo:
+#   mover_archivo("viejito.txt", "nuevo.txt")
+funcion mover_archivo(origen: Texto, destino: Texto) -> Resultado<Nulo, ErrorArchivo> {
+    si (longitud(origen) == 0 || longitud(destino) == 0) {
+        retornar Error(ErrorArchivo("Las rutas no pueden estar vacías", 3))
+    }
+    variable resultado = _archivo_mover(origen, destino)
+    si (resultado == -1) {
+        retornar Error(ErrorArchivo("No se pudo mover de '" + origen + "' a '" + destino + "'", 1))
+    }
+    retornar Ok(nulo)
+}
+
+# Obtiene el tamaño de un archivo en bytes.
+#
+# Parámetros:
+#   ruta: ruta del archivo a consultar
+#
+# Retorna: Resultado<Entero, ErrorArchivo>
+#   Ok(tamano) con el tamaño en bytes
+#   Error si el archivo no existe, no hay permisos o es un directorio
+#
+# Errores: archivo_no_encontrado, permiso_denegado, es_directorio
+#
+# Ejemplo:
+#   variable res = tamano_archivo("datos.txt")
+#   si (res es Ok) {
+#       imprimir("Tamaño: " + a_texto(res.valor) + " bytes")
+#   }
+funcion tamano_archivo(ruta: Texto) -> Resultado<Entero, ErrorArchivo> {
+    variable resultado = _archivo_tamano(ruta)
+    si (resultado == -1) {
+        retornar Error(ErrorArchivo("No se pudo obtener el tamaño de: " + ruta, 1))
+    }
+    retornar Ok(resultado)
+}
+
+# ═════════════════════════════════════════════════════════════════════════
+# Operaciones con Directorios
+# ═════════════════════════════════════════════════════════════════════════
+
+# Crea un directorio y toda su jerarquía si es necesario (mkdir -p).
+#
+# Parámetros:
+#   ruta: ruta del directorio a crear
+#
+# Retorna: Resultado<Nulo, ErrorArchivo>
+#   Ok(nulo) si se creó exitosamente
+#   Error si no hay permisos o la ruta es inválida
+#
+# Errores: permiso_denegado, ruta_invalida
+#
+# Ejemplo:
+#   crear_directorio("backup/2024/mes")
+funcion crear_directorio(ruta: Texto) -> Resultado<Nulo, ErrorArchivo> {
+    variable resultado = _directorio_crear(ruta)
+    si (resultado == -1) {
+        retornar Error(ErrorArchivo("No se pudo crear el directorio: " + ruta, 2))
+    }
+    retornar Ok(nulo)
+}
+
+# Elimina un directorio y todo su contenido recursivamente (rm -rf).
+#
+# Parámetros:
+#   ruta: ruta del directorio a eliminar
+#
+# Retorna: Resultado<Nulo, ErrorArchivo>
+#   Ok(nulo) si se eliminó exitosamente
+#   Error si el directorio no existe o no hay permisos
+#
+# Errores: archivo_no_encontrado, permiso_denegado
+#
+# Ejemplo:
+#   eliminar_directorio("carpeta_temporal")
+funcion eliminar_directorio(ruta: Texto) -> Resultado<Nulo, ErrorArchivo> {
+    variable resultado = _directorio_eliminar(ruta)
+    si (resultado == -1) {
+        retornar Error(ErrorArchivo("No se pudo eliminar el directorio: " + ruta, 1))
+    }
+    retornar Ok(nulo)
+}
+
+# Lista el contenido de un directorio.
+#
+# Parámetros:
+#   ruta: ruta del directorio a listar
+#
+# Retorna: Resultado<Arreglo<Texto>, ErrorArchivo>
+#   Ok(lista) con los nombres de archivos y directorios
+#   Error si el directorio no existe o no hay permisos
+#
+# Errores: archivo_no_encontrado, permiso_denegado
+#
+# Ejemplo:
+#   variable res = listar_directorio(".")
+#   si (res es Ok) {
+#       variable archivos = res.valor
+#       variable i = 0
+#       mientras (i < longitud(archivos)) {
+#           imprimir(archivos[i])
+#           i = i + 1
+#       }
+#   }
+funcion listar_directorio(ruta: Texto) -> Resultado<Arreglo<Texto>, ErrorArchivo> {
+    variable resultado = _directorio_listar(ruta)
+    si (resultado == -1) {
+        retornar Error(ErrorArchivo("No se pudo listar el directorio: " + ruta, 1))
+    }
+    retornar Ok(dividir(resultado, "\n"))
+}
+
+# ═════════════════════════════════════════════════════════════════════════
+# Funciones de Consulta Adicionales
+# ═════════════════════════════════════════════════════════════════════════
+
+# Obtiene metadatos completos de un archivo o directorio.
+#
+# Parámetros:
+#   ruta: ruta del archivo o directorio a consultar
+#
+# Retorna: Resultado<Mapa, ErrorArchivo>
+#   El mapa contiene las siguientes claves:
+#     - "tamano": tamaño en bytes
+#     - "es_directorio": "true" si es directorio, "false" si es archivo
+#     - "es_archivo": "true" si es archivo, "false" si es directorio
+#     - "permisos": "solo_lectura" o "lectura_escritura"
+#     - "modificado": timestamp UNIX de última modificación
+#
+# Errores: archivo_no_encontrado, permiso_denegado
+#
+# Ejemplo:
+#   variable res = info_archivo("documento.txt")
+#   si (res es Ok) {
+#       imprimir(a_texto(res.valor))
+#   }
+funcion info_archivo(ruta: Texto) -> Resultado<Mapa, ErrorArchivo> {
+    variable resultado = _archivo_info(ruta)
+    si (resultado == -1) {
+        retornar Error(ErrorArchivo("No se pudo obtener información de: " + ruta, 1))
+    }
+
+    # Parsear el formato "clave:valor;clave:valor;..."
+    variable info = {}
+    variable partes = dividir(resultado, ";")
+    variable i = 0
+    mientras (i < longitud(partes)) {
+        variable par = dividir(partes[i], ":")
+        si (longitud(par) == 2) {
+            info[par[0]] = par[1]
+        }
+        i = i + 1
+    }
+    retornar Ok(info)
+}
+
+# Verifica si la ruta es un directorio.
+#
+# Parámetros:
+#   ruta: ruta a verificar
+#
+# Retorna: Booleano (nunca falla)
+#   verdadero si la ruta existe y es un directorio
+#   falso si no existe, es un archivo, o hay error
+#
+# Ejemplo:
+#   si (es_directorio("mi_carpeta")) {
+#       imprimir("Es un directorio")
+#   }
+funcion es_directorio(ruta: Texto) -> Booleano {
+    variable info = _archivo_info(ruta)
+    si (info == -1) {
+        retornar falso
+    }
+
+    # Buscar el campo "es_directorio" en el string
+    variable partes = dividir(info, ";")
+    variable i = 0
+    mientras (i < longitud(partes)) {
+        variable par = dividir(partes[i], ":")
+        si (longitud(par) == 2 y par[0] == "es_directorio") {
+            retornar par[1] == "true"
+        }
+        i = i + 1
+    }
+    retornar falso
+}

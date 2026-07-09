@@ -130,13 +130,66 @@ funcion exacto_desde_decimal(d: Decimal) -> Exacto {
 }
 
 # Convierte un texto a Exacto (parsing)
+# Ejemplo: exacto_desde_texto("123.456") -> 123.456
 funcion exacto_desde_texto(t: Texto) -> Exacto {
-    retornar 0.0
+    # Dividir por el punto decimal
+    variable partes = t.split(".")
+    variable largo = partes.length()
+    
+    # Si no hay punto, convertir entero directamente
+    si (largo == 1) {
+        variable val: Exacto = 0.0 + a_numero(t)
+        retornar val
+    }
+    
+    # Extraer partes antes y después del punto
+    variable parte_entera_str = partes[0]
+    variable parte_fraccion_str = partes[1]
+    
+    variable parte_entera = a_numero(parte_entera_str)
+    variable parte_fraccion = a_numero(parte_fraccion_str)
+    
+    # Si la parte entera es negativa, la fracción también debe serlo
+    si (parte_entera < 0) {
+        parte_fraccion = -parte_fraccion
+    }
+    
+    # Calcular 10^len_fraccion
+    variable len_fraccion = parte_fraccion_str.length()
+    variable divisor = 1
+    variable i = 0
+    mientras (i < len_fraccion) {
+        divisor = divisor * 10
+        i = i + 1
+    }
+    
+    # Construir el Exacto: parte_entera + parte_fraccion / 10^len
+    variable val: Exacto = 0.0 + parte_entera
+    variable fraccion_exacto: Exacto = 0.0 + parte_fraccion
+    val = val + (fraccion_exacto / divisor)
+    
+    retornar val
 }
 
 # Redondea un Exacto a la cantidad de decimales especificada
+# Ejemplo: redondear_exacto(123.4567, 2) -> 123.45
 funcion redondear_exacto(e: Exacto, decimales: Entero) -> Exacto {
-    retornar e
+    # Calcular 10^decimales
+    variable factor = 1
+    variable i = 0
+    mientras (i < decimales) {
+        factor = factor * 10
+        i = i + 1
+    }
+    
+    # Multiplicar, truncar a entero, dividir
+    variable temporal: Exacto = e * factor
+    variable entero_val = a_numero(temporal)
+    
+    # Convertir entero a Exacto y dividir
+    variable res: Exacto = 0.0
+    res = res + entero_val
+    retornar res / factor
 }
 
 # Valor absoluto de un Exacto
@@ -148,7 +201,23 @@ funcion exacto_abs(e: Exacto) -> Exacto {
     }
 }
 
-# Potencia de Exacto (simplificada)
+# Potencia de Exacto (exponente entero, exponenciación binaria)
+# Calcula base^exp usando el algoritmo de exponenciación binaria rápida
+# Ejemplo: exacto_pow(2.0, 3.0) -> 8.0
 funcion exacto_pow(base: Exacto, exp: Exacto) -> Exacto {
-    retornar base * base
+    # Convertir exponente a entero (trunca si tiene decimales)
+    variable n = a_numero(exp)
+    variable res: Exacto = 1.0
+    variable b: Exacto = base
+    
+    # Exponenciación binaria: O(log n)
+    mientras (n > 0) {
+        si ((n % 2) != 0) {
+            res = res * b
+        }
+        n = n / 2
+        b = b * b
+    }
+    
+    retornar res
 }

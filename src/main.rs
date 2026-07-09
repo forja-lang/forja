@@ -25,6 +25,7 @@ mod optimizer;
 mod formatter;
 mod package_config;
 mod package_resolver;
+mod native_registry;
 
 use std::env;
 use std::fs;

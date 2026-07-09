@@ -24,6 +24,7 @@ use crate::bytecode::{self, Opcode, BuiltinKind, ContratoBytecode};
 use crate::symbol_table::{SymbolTable, SymId};
 use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops};
 use crate::class_descriptor::{Shape, ClassDescriptor};
+use crate::native_registry::{NativeRegistry, SocketState};
 use crate::prof_count;
 
 /// Índice especial de variable para 'resultado' en postcondiciones.
@@ -325,10 +326,10 @@ pub struct ForjaFast {
     array_marked: Vec<bool>,     // marcas GC para arrays
     // ─── Class Descriptors + Shape ─────────────────────────────────────────
     /// Cache de descriptores de clase (clase SymId → ClassDescriptor)
-    class_descriptors: HashMap<SymId, ClassDescriptor>,
+    pub class_descriptors: HashMap<SymId, ClassDescriptor>,
     /// Shape de cada objeto (por índice en obj_heap)
     /// obj_shapes[idx] = clase SymId del objeto en obj_heap[idx]
-    obj_shapes: Vec<SymId>,
+    pub obj_shapes: Vec<SymId>,
 
     map_marked: Vec<bool>,       // marcas GC para mapas
     obj_free: Vec<u32>,          // free list objetos
@@ -368,7 +369,7 @@ pub struct ForjaFast {
 
     // ─── String Interning (SymbolTable) ────────────────────────────────────
     /// Tabla de símbolos: mapea strings únicos a SymId para comparaciones O(1)
-    sym_table: SymbolTable,
+    pub sym_table: SymbolTable,
 
     // Cache de SymId para builtins comunes (comparaciones O(1))
     sym_escribir: SymId,
@@ -399,6 +400,12 @@ pub struct ForjaFast {
     pub contratos: Vec<ContratoBytecode>,
     pub anterior_stack: HashMap<usize, ValorFast>,
     pub verificar_contratos: bool,
+
+    // ─── Native Functions Registry ──────────────────────────────────────
+    pub native_registry: NativeRegistry,
+
+    // ─── Socket Heap (TCP/UDP) ──────────────────────────────────────────
+    pub socket_heap: Vec<SocketState>,
 }
 
 // Flat Var Stack frame: guarda solo base_ptr_previo y num_vars (O(1)),
@@ -484,6 +491,8 @@ impl ForjaFast {
             contratos: Vec::new(),
             anterior_stack: HashMap::new(),
             verificar_contratos: true,
+            native_registry: NativeRegistry::new(),
+            socket_heap: Vec::new(),
         };
         vm.init_symbols();
         vm
@@ -948,6 +957,7 @@ impl ForjaFast {
         self.exacto_heap.clear();
         self.exacto_marked.clear();
         self.exacto_free.clear();
+        self.socket_heap.clear();
         self.gc_allocs_since_last = 0;
         self.fast_math = false;
     }
@@ -955,7 +965,7 @@ impl ForjaFast {
     // ─── VM Heap Helpers ──────────────────────────────────────────────────────
 
     #[inline(always)]
-    fn alloc_obj(&mut self, obj: ObjVal) -> u32 {
+    pub fn alloc_obj(&mut self, obj: ObjVal) -> u32 {
         self.gc_allocs_since_last += 1;
         if self.gc_allocs_since_last >= self.gc_threshold {
             self.gc_collect();
@@ -976,7 +986,7 @@ impl ForjaFast {
     }
 
     #[inline(always)]
-    fn alloc_str(&mut self, s: Rc<str>) -> u32 {
+    pub fn alloc_str(&mut self, s: Rc<str>) -> u32 {
         self.gc_allocs_since_last += 1;
         if self.gc_allocs_since_last >= self.gc_threshold {
             self.gc_collect();
@@ -1188,27 +1198,27 @@ impl ForjaFast {
     }
 
     #[inline(always)]
-    fn get_obj(&self, idx: u32) -> &ObjVal {
+    pub fn get_obj(&self, idx: u32) -> &ObjVal {
         &self.obj_heap[idx as usize]
     }
 
     #[inline(always)]
-    fn get_obj_mut(&mut self, idx: u32) -> &mut ObjVal {
+    pub fn get_obj_mut(&mut self, idx: u32) -> &mut ObjVal {
         &mut self.obj_heap[idx as usize]
     }
 
     #[inline(always)]
-    fn get_str(&self, idx: u32) -> &Rc<str> {
+    pub fn get_str(&self, idx: u32) -> &Rc<str> {
         &self.str_heap[idx as usize]
     }
 
     #[inline(always)]
-    fn get_arr(&self, idx: u32) -> &Vec<ValorFast> {
+    pub fn get_arr(&self, idx: u32) -> &Vec<ValorFast> {
         &self.array_heap[idx as usize]
     }
 
     #[inline(always)]
-    fn get_arr_mut(&mut self, idx: u32) -> &mut Vec<ValorFast> {
+    pub fn get_arr_mut(&mut self, idx: u32) -> &mut Vec<ValorFast> {
         &mut self.array_heap[idx as usize]
     }
 
@@ -1268,6 +1278,32 @@ impl ForjaFast {
             return format!("{{{}}}", s.join(","));
         }
         "?".to_string()
+    }
+
+    // ─── Socket Heap Management ───────────────────────────────────────────
+
+    /// Aloca un nuevo socket en el socket heap y retorna su índice
+    pub fn socket_alloc(&mut self, state: SocketState) -> u32 {
+        let idx = self.socket_heap.len() as u32;
+        self.socket_heap.push(state);
+        idx
+    }
+
+    /// Obtiene referencia al estado de un socket por índice
+    pub fn socket_get(&self, idx: u32) -> &SocketState {
+        &self.socket_heap[idx as usize]
+    }
+
+    /// Obtiene referencia mutable al estado de un socket
+    pub fn socket_get_mut(&mut self, idx: u32) -> &mut SocketState {
+        &mut self.socket_heap[idx as usize]
+    }
+
+    /// Cierra un socket por índice
+    pub fn socket_cerrar(&mut self, idx: u32) {
+        if let Some(socket) = self.socket_heap.get_mut(idx as usize) {
+            socket.cerrar();
+        }
     }
 
     // ─── Type tagging (para especialización adaptativa) ───────────────────────
@@ -2539,8 +2575,22 @@ impl ForjaFast {
                             self.ip = func.ip;
                         }
                     } else {
-                        let _name_str = self.sym_table.get(sym_id).to_string();
-                        self.push_valor(ValorFast::nulo());
+                        // Fallback: buscar en funciones nativas
+                        self.flush_stack();
+                        let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                        for _ in 0..nargs { args.push(self.pop_valor()?); }
+                        args.reverse();
+
+                        let nombre_str = nombre.to_string();
+                        let func = self.native_registry.obtener_fn(&nombre_str);
+                        if let Some(func) = func {
+                            match func(self, &args) {
+                                Ok(val) => { self.push_valor(val); }
+                                Err(_) => { self.push_valor(ValorFast::nulo()); }
+                            }
+                        } else {
+                            self.push_valor(ValorFast::nulo());
+                        }
                         self.ip += 1;
                     }
                 }
@@ -2697,6 +2747,31 @@ impl ForjaFast {
                     self.ip += 1;
                 }
 
+                // ─── FUNCIONES NATIVAS (Native Registry) ─────────────────
+                Opcode::CallNative(nombre, nargs) => {
+                    self.flush_stack();
+                    let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                    for _ in 0..nargs { args.push(self.pop_valor()?); }
+                    args.reverse();
+
+                    let func = self.native_registry.obtener_fn(&nombre);
+                    match func {
+                        Some(func) => match func(self, &args) {
+                            Ok(val) => { self.push_valor(val); }
+                            Err(e) => { return Err(e); }
+                        }
+                        None => { return Err(ErrFast::FnNoDef(format!("función nativa '{}' no encontrada", nombre))); }
+                    }
+                    self.ip += 1;
+                }
+
+                Opcode::SocketPoll(_var_nombre) => {
+                    // TODO: Implementar en Fase 4 (integración con seleccionar)
+                    // Por ahora, simula que no hay datos disponibles
+                    self.push_valor(ValorFast::booleano(false));
+                    self.ip += 1;
+                }
+
                 Opcode::Return => {
                     if self.frame_count == 0 { break; }
                     self.frame_count -= 1;
@@ -2718,6 +2793,15 @@ impl ForjaFast {
                         v.a_entero()
                     } else if v.es_flotante() {
                         v.a_flotante() as i32
+                    } else if v.es_exacto() {
+                        let idx = v.indice_exacto();
+                        let exacto = self.get_exacto(idx);
+                        if exacto.escala == 0 {
+                            exacto.coeficiente as i32
+                        } else {
+                            let divisor = 10_i128.wrapping_pow(exacto.escala);
+                            (exacto.coeficiente.wrapping_div(divisor)) as i32
+                        }
                     } else {
                         0
                     };
@@ -2949,6 +3033,13 @@ impl ForjaFast {
 
                 // ─── CALLMETHODCACHED (Fase 2b) — método con SymId e inline cache ───
                 Opcode::CallMethodCached(method_sym_id, nargs) => {
+                    // Primero verificar si es un builtin (split, length, etc.)
+                    let method_name_str = self.sym_table.get(SymId(method_sym_id));
+                    if let Some(b) = resolver_builtin_fast(method_name_str) {
+                        self.exec_builtin(b, nargs)?;
+                        self.ip += 1;
+                        continue;
+                    }
                     // Intentar inline cache primero
                     let cache = &self.ic_callmethod[self.ip].clone();
                     if let Some((clase_id_cache, func_idx_cache)) = cache {
@@ -4185,8 +4276,22 @@ impl ForjaFast {
                             self.ip = func.ip;
                         }
                     } else {
-                        let _name_str = self.sym_table.get(sym_id).to_string();
-                        self.push_valor(ValorFast::nulo());
+                        // Fallback a funciones nativas
+                        self.flush_stack();
+                        let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                        for _ in 0..nargs { args.push(self.pop_valor()?); }
+                        args.reverse();
+
+                        let nombre_str = nombre.to_string();
+                        let func = self.native_registry.obtener_fn(&nombre_str);
+                        if let Some(func) = func {
+                            match func(self, &args) {
+                                Ok(val) => { self.push_valor(val); }
+                                Err(_) => { self.push_valor(ValorFast::nulo()); }
+                            }
+                        } else {
+                            self.push_valor(ValorFast::nulo());
+                        }
                         self.ip += 1;
                     }
                 }
@@ -4212,6 +4317,15 @@ impl ForjaFast {
                         v.a_entero()
                     } else if v.es_flotante() {
                         v.a_flotante() as i32
+                    } else if v.es_exacto() {
+                        let idx = v.indice_exacto();
+                        let exacto = self.get_exacto(idx);
+                        if exacto.escala == 0 {
+                            exacto.coeficiente as i32
+                        } else {
+                            let divisor = 10_i128.wrapping_pow(exacto.escala);
+                            (exacto.coeficiente.wrapping_div(divisor)) as i32
+                        }
                     } else {
                         0
                     };
@@ -4697,6 +4811,30 @@ impl ForjaFast {
                     } else {
                         self.push_valor(val);
                     }
+                    self.ip += 1;
+                }
+
+                // === Funciones Nativas (Native Registry) ===
+                Uop::CallNative(nombre, nargs) => {
+                    self.flush_stack();
+                    let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                    for _ in 0..nargs { args.push(self.pop_valor()?); }
+                    args.reverse();
+
+                    let func = self.native_registry.obtener_fn(&nombre);
+                    match func {
+                        Some(func) => match func(self, &args) {
+                            Ok(val) => { self.push_valor(val); }
+                            Err(e) => { return Err(e); }
+                        }
+                        None => { return Err(ErrFast::FnNoDef(format!("función nativa '{}' no encontrada", nombre))); }
+                    }
+                    self.ip += 1;
+                }
+
+                Uop::SocketPoll(_var_nombre) => {
+                    // TODO: Implementar en Fase 4
+                    self.push_valor(ValorFast::booleano(false));
                     self.ip += 1;
                 }
             }

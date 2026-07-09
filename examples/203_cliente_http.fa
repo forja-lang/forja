@@ -1,0 +1,76 @@
+
+
+constante HOST = "httpbin.org"
+
+constante PUERTO = 80
+
+constante TIMEOUT_SEGUNDOS = 10
+
+funcion construir_solicitud(host, ruta) {
+variable solicitud = "GET " + ruta + " HTTP/1.1
+" + "Host: " + host + "
+" + "User-Agent: Forja-Sockets/1.0
+" + "Accept: application/json
+" + "Connection: close
+" + "
+"
+retornar solicitud
+}
+
+funcion recibir_respuesta(socket) {
+variable respuesta = ""
+variable intentos_maximos = 100
+variable intento = 0
+mientras (intento < intentos_maximos) {
+variable resultado = sockets.recibir(socket, sockets.BUFFER_TAMANO)
+intento = intento + 1
+    }
+retornar Ok(respuesta)
+}
+
+funcion mostrar_respuesta(respuesta) {
+escribir("")
+escribir("── Respuesta HTTP ──────────────────────")
+escribir("Total: " + a_texto(longitud(respuesta)) + " bytes")
+escribir("")
+escribir(respuesta)
+escribir("────────────────────────────────────────")
+}
+
+funcion probar_solicitud_json() {
+escribir("")
+escribir("── Solicitud GET /json ─────────────────")
+variable resultado = sockets.conectar(HOST, PUERTO)
+}
+
+funcion probar_conexion_con_timeout() {
+escribir("")
+escribir("── Conexión con timeout ───────────────")
+escribir("Intentando conectar a " + HOST + ":" + a_texto(PUERTO) + " con timeout de " + a_texto(TIMEOUT_SEGUNDOS * 1000) + "ms")
+variable resultado = sockets.conectar_con_timeout(HOST, PUERTO, TIMEOUT_SEGUNDOS * 1000)
+}
+
+funcion probar_puerto_invalido() {
+escribir("")
+escribir("── Manejo de errores: puerto inválido ─")
+escribir("Intentando conectar a " + HOST + ":99999 (puerto inválido)...")
+variable resultado = sockets.conectar(HOST, 99999)
+}
+
+funcion main() {
+escribir("╔══════════════════════════════════════╗")
+escribir("║    Cliente HTTP - Forja std/sockets  ║")
+escribir("╚══════════════════════════════════════╝")
+escribir("")
+escribir("Demostración del módulo std/sockets")
+escribir("usando la API pública con prefijo sockets.")
+escribir("")
+probar_solicitud_json()
+probar_conexion_con_timeout()
+probar_puerto_invalido()
+escribir("")
+escribir("Ejecución completada.")
+}
+
+main()
+

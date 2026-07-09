@@ -20,6 +20,7 @@ pub mod vm_jit;
 pub mod vm_fast;
 pub mod symbol_table;
 pub mod class_descriptor;
+pub mod native_registry;
 
 // Módulos que dependen del sistema de archivos o del SO
 // (no compilables a WASM)
