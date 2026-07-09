@@ -1361,13 +1361,14 @@ impl BytecodeGenerator {
             }
 
             Expresion::Hilo { cuerpo } => {
-                // Por ahora, ejecutar el cuerpo inline (síncrono)
-                // En el futuro, ThreadSpawn lanzará un hilo real
+                // Ejecutar cuerpo inline (síncrono por ahora)
                 for d in cuerpo {
                     self.generar_declaracion(d);
                 }
-                // Hilo como expresión retorna Nulo
-                self.emitir(Opcode::PushNulo);
+                // Crear objeto Hilo con valor por defecto
+                self.emitir(Opcode::PushEntero(0));
+                self.emitir(Opcode::NewObject(Rc::from("Hilo")));
+                self.emitir(Opcode::SetField(Rc::from("valor")));
             }
 
             Expresion::CanalNuevo => {
