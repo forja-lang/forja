@@ -2,12 +2,13 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::ToSocketAddrs;
-use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::symbol_table::{SymbolTable, SymId};
 use crate::vm_fast::{ForjaFast, ValorFast, ErrFast};
+use crate::bytecode::BytecodeGenerator;
 use base64::Engine;
 use sha2::Digest;
 
@@ -122,6 +123,7 @@ impl NativeRegistry {
         reg.registrar_codificacion();
         reg.registrar_hash();
         reg.registrar_web();
+        reg.registrar_hot_reload();
         #[cfg(feature = "h2-tls")]
         crate::native_h2_tls::registrar_tls(&mut reg);
         reg
@@ -278,13 +280,13 @@ impl NativeRegistry {
         self.registrar("_h2_enviar_bytes_raw", crate::native_h2_core::native_h2_enviar_bytes_raw);
         self.registrar("_h2_negociar_h2c", crate::native_h2_core::native_h2_negociar_h2c);
     }
-}
 
-/// Placeholder para Fase 2: recarga de módulo completo.
-/// Esta función será llamada desde Forja para recargar un módulo.
-#[allow(unused_variables)]
-pub fn _recargar_modulo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    Ok(ValorFast::booleano(true))
+    fn registrar_hot_reload(&mut self) {
+        // ─── Hot Reload Builtins ──────────────────────────────────────────────
+        self.registrar("_recargar_modulo", native_recargar_modulo);
+        self.registrar("_version_modulo", native_version_modulo);
+        self.registrar("_recargar_todo", native_recargar_todo);
+    }
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -462,17 +464,17 @@ fn native_socket_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
         Ok(0) => {
             drop(stream);
             vm.socket_get_mut(socket_idx).connected = false;
-            let idx = vm.alloc_str(Rc::from(""));
+            let idx = vm.alloc_str(Arc::from(""));
             Ok(ValorFast::texto(idx))
         }
         Ok(n) => {
             let datos = String::from_utf8_lossy(&buffer[..n]).to_string();
-            let idx = vm.alloc_str(Rc::from(datos.as_str()));
+            let idx = vm.alloc_str(Arc::from(datos.as_str()));
             Ok(ValorFast::texto(idx))
         }
         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
             drop(stream);
-            let idx = vm.alloc_str(Rc::from(""));
+            let idx = vm.alloc_str(Arc::from(""));
             Ok(ValorFast::texto(idx))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
@@ -540,7 +542,7 @@ fn native_socket_direccion_local(vm: &mut ForjaFast, args: &[ValorFast]) -> Resu
     let state = vm.socket_get(socket_idx);
     match &state.local_addr {
         Some(addr) => {
-            let idx = vm.alloc_str(Rc::from(addr.as_str()));
+            let idx = vm.alloc_str(Arc::from(addr.as_str()));
             Ok(ValorFast::texto(idx))
         }
         None => Err(ErrFast::TipoInv("error_interno: no se pudo obtener la dirección local".into())),
@@ -555,7 +557,7 @@ fn native_socket_direccion_remota(vm: &mut ForjaFast, args: &[ValorFast]) -> Res
     let state = vm.socket_get(socket_idx);
     match &state.peer_addr {
         Some(addr) => {
-            let idx = vm.alloc_str(Rc::from(addr.as_str()));
+            let idx = vm.alloc_str(Arc::from(addr.as_str()));
             Ok(ValorFast::texto(idx))
         }
         None => Err(ErrFast::TipoInv("error_interno: el socket no tiene dirección remota".into())),
@@ -754,11 +756,11 @@ fn native_socket_udp_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
     match socket.recv_from(&mut buffer) {
         Ok((n, _origen)) => {
             let datos = String::from_utf8_lossy(&buffer[..n]).to_string();
-            let idx = vm.alloc_str(Rc::from(datos.as_str()));
+            let idx = vm.alloc_str(Arc::from(datos.as_str()));
             Ok(ValorFast::texto(idx))
         }
         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-            let idx = vm.alloc_str(Rc::from(""));
+            let idx = vm.alloc_str(Arc::from(""));
             Ok(ValorFast::texto(idx))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
@@ -779,7 +781,7 @@ fn native_archivo_leer(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
     }
     match std::fs::read_to_string(&ruta) {
         Ok(contenido) => {
-            let idx = vm.alloc_str(Rc::from(contenido.as_str()));
+            let idx = vm.alloc_str(Arc::from(contenido.as_str()));
             Ok(ValorFast::texto(idx))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
@@ -915,7 +917,7 @@ fn native_directorio_listar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
                 }
             }
             let resultado = nombres.join("\n");
-            let idx = vm.alloc_str(Rc::from(resultado.as_str()));
+            let idx = vm.alloc_str(Arc::from(resultado.as_str()));
             Ok(ValorFast::texto(idx))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
@@ -945,7 +947,7 @@ fn native_archivo_info(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
                 if meta.permissions().readonly() { "solo_lectura" } else { "lectura_escritura" },
                 modificado
             );
-            let idx = vm.alloc_str(Rc::from(info.as_str()));
+            let idx = vm.alloc_str(Arc::from(info.as_str()));
             Ok(ValorFast::texto(idx))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
@@ -1027,7 +1029,7 @@ fn native_fecha_desde_timestamp(vm: &mut ForjaFast, args: &[ValorFast]) -> Resul
         año, mes, dia, hora, minuto, segundo, nombre_dia, nombre_mes
     );
 
-    let idx = vm.alloc_str(Rc::from(salida.as_str()));
+    let idx = vm.alloc_str(Arc::from(salida.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1136,7 +1138,7 @@ fn native_base64_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
 
     let texto = obtener_texto(vm, args[0])?;
     let codificado = base64::engine::general_purpose::STANDARD.encode(texto.as_bytes());
-    let idx = vm.alloc_str(Rc::from(codificado.as_str()));
+    let idx = vm.alloc_str(Arc::from(codificado.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1155,12 +1157,12 @@ fn native_base64_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
     match resultado {
         Ok(bytes) => {
             let decodificado = String::from_utf8_lossy(&bytes).to_string();
-            let idx = vm.alloc_str(Rc::from(decodificado.as_str()));
+            let idx = vm.alloc_str(Arc::from(decodificado.as_str()));
             Ok(ValorFast::texto(idx))
         }
         Err(_) => {
             // Retornar cadena vacía para indicar error (la capa Forja lo maneja)
-            let idx = vm.alloc_str(Rc::from(""));
+            let idx = vm.alloc_str(Arc::from(""));
             Ok(ValorFast::texto(idx))
         }
     }
@@ -1185,7 +1187,7 @@ fn native_sha256(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, Er
     let hex_str = hash.iter()
         .map(|b| format!("{:02x}", b))
         .collect::<String>();
-    let idx = vm.alloc_str(Rc::from(hex_str.as_str()));
+    let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1268,7 +1270,7 @@ fn native_http_parsear_solicitud(vm: &mut ForjaFast, args: &[ValorFast]) -> Resu
         ("cuerpo", &cuerpo),
     ]);
 
-    let idx = vm.alloc_str(Rc::from(salida.as_str()));
+    let idx = vm.alloc_str(Arc::from(salida.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1321,7 +1323,7 @@ fn native_http_parsear_respuesta(vm: &mut ForjaFast, args: &[ValorFast]) -> Resu
         ("cuerpo", &cuerpo),
     ]);
 
-    let idx = vm.alloc_str(Rc::from(salida.as_str()));
+    let idx = vm.alloc_str(Arc::from(salida.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1343,7 +1345,7 @@ fn native_http_parsear_cabeceras(vm: &mut ForjaFast, args: &[ValorFast]) -> Resu
 
     let pares: Vec<(&str, &str)> = mapa.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     let salida = construir_mapa_texto(&pares);
-    let idx = vm.alloc_str(Rc::from(salida.as_str()));
+    let idx = vm.alloc_str(Arc::from(salida.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1377,7 +1379,7 @@ fn native_http_texto_status(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
         503 => "Service Unavailable",
         _ => "Unknown",
     };
-    let idx = _vm.alloc_str(Rc::from(texto));
+    let idx = _vm.alloc_str(Arc::from(texto));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1430,7 +1432,7 @@ fn native_http_fecha_texto(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
         Err(_) => "Thu, 01 Jan 1970 00:00:00 GMT".to_string(),
     };
 
-    let idx = _vm.alloc_str(Rc::from(datetime.as_str()));
+    let idx = _vm.alloc_str(Arc::from(datetime.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1462,7 +1464,7 @@ fn native_url_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valo
     }
 
     let decodificado = String::from_utf8_lossy(&resultado).to_string();
-    let idx = vm.alloc_str(Rc::from(decodificado.as_str()));
+    let idx = vm.alloc_str(Arc::from(decodificado.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1485,7 +1487,7 @@ fn native_url_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
         }
     }
 
-    let idx = vm.alloc_str(Rc::from(resultado.as_str()));
+    let idx = vm.alloc_str(Arc::from(resultado.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1509,7 +1511,7 @@ fn native_query_parsear(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
 
     let pares_ref: Vec<(&str, &str)> = mapa.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     let salida = construir_mapa_texto(&pares_ref);
-    let idx = vm.alloc_str(Rc::from(salida.as_str()));
+    let idx = vm.alloc_str(Arc::from(salida.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1596,7 +1598,7 @@ fn native_mime_tipo_archivo(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
         .map(|(_, v)| *v)
         .unwrap_or("application/octet-stream");
 
-    let idx = _vm.alloc_str(Rc::from(mime));
+    let idx = _vm.alloc_str(Arc::from(mime));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1612,7 +1614,7 @@ fn native_mime_extension_por_tipo(_vm: &mut ForjaFast, args: &[ValorFast]) -> Re
         .map(|(k, _)| *k)
         .unwrap_or("bin");
 
-    let idx = _vm.alloc_str(Rc::from(ext));
+    let idx = _vm.alloc_str(Arc::from(ext));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1631,7 +1633,7 @@ fn native_ws_handshake_aceptar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
     let hash = sha2::Sha256::digest(concatenado.as_bytes());
     let accept = base64::engine::general_purpose::STANDARD.encode(hash);
 
-    let idx = vm.alloc_str(Rc::from(accept.as_str()));
+    let idx = vm.alloc_str(Arc::from(accept.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1698,7 +1700,7 @@ fn native_ws_frame_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
     }
 
     let frame_str = String::from_utf8_lossy(&frame).to_string();
-    let idx = vm.alloc_str(Rc::from(frame_str.as_str()));
+    let idx = vm.alloc_str(Arc::from(frame_str.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1769,7 +1771,7 @@ fn native_ws_frame_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
         ("longitud", &len.to_string()),
     ]);
 
-    let idx = vm.alloc_str(Rc::from(salida.as_str()));
+    let idx = vm.alloc_str(Arc::from(salida.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1799,7 +1801,7 @@ fn native_chunked_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
     // Chunk final
     resultado.push_str("0\r\n\r\n");
 
-    let idx = vm.alloc_str(Rc::from(resultado.as_str()));
+    let idx = vm.alloc_str(Arc::from(resultado.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1858,7 +1860,7 @@ fn native_chunked_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<
         resultado.join("")
     };
 
-    let idx = vm.alloc_str(Rc::from(decodificado.as_str()));
+    let idx = vm.alloc_str(Arc::from(decodificado.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1893,7 +1895,7 @@ fn native_http_crear_solicitud_raw(vm: &mut ForjaFast, args: &[ValorFast]) -> Re
         solicitud.push_str("\r\n");
     }
 
-    let idx = vm.alloc_str(Rc::from(solicitud.as_str()));
+    let idx = vm.alloc_str(Arc::from(solicitud.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -1940,6 +1942,124 @@ fn native_http_crear_respuesta_raw(vm: &mut ForjaFast, args: &[ValorFast]) -> Re
         respuesta.push_str("Content-Length: 0\r\n\r\n");
     }
 
-    let idx = vm.alloc_str(Rc::from(respuesta.as_str()));
+    let idx = vm.alloc_str(Arc::from(respuesta.as_str()));
     Ok(ValorFast::texto(idx))
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Hot Reload — Native Functions
+// ═════════════════════════════════════════════════════════════════════════
+
+/// Recarga un módulo completo por nombre (ruta relativa al proyecto).
+/// args[0]: nombre del módulo (Texto)
+/// Retorna: texto "ok" si se recargó correctamente, o texto con el error.
+fn native_recargar_modulo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Ok(ValorFast::texto(vm.alloc_str(Arc::from("error: se requiere nombre del módulo"))));
+    }
+
+    let nombre_modulo = crate::native_registry::obtener_texto(vm, args[0])?;
+    let module_id = SymId(vm.sym_table.intern(&nombre_modulo).0);
+
+    // Verificar que el módulo está registrado
+    if !vm.module_registry.contains_key(&module_id) {
+        return Ok(ValorFast::texto(vm.alloc_str(Arc::from(format!("error: módulo '{}' no está cargado", nombre_modulo)))));
+    }
+
+    // Verificar si el módulo cambió en disco
+    if !vm.module_resolver.modulo_cambio(&nombre_modulo) {
+        return Ok(ValorFast::texto(vm.alloc_str(Arc::from("ok: sin cambios"))));
+    }
+
+    // Recargar: obtener nuevo AST del módulo
+    let programa = match vm.module_resolver.recargar(module_id) {
+        Ok(p) => p,
+        Err(e) => {
+            let msg = e.iter().map(|err| format!("{}", err)).collect::<Vec<_>>().join(", ");
+            return Ok(ValorFast::texto(vm.alloc_str(Arc::from(format!("error: {}", msg)))));
+        }
+    };
+
+    // Generar nuevo bytecode para el módulo
+    let mut gen = BytecodeGenerator::new();
+    let module_bc = match gen.generar_para_modulo(&programa, module_id) {
+        Ok(mbc) => mbc,
+        Err(e) => {
+            let msg = e.iter().map(|err| format!("{}", err)).collect::<Vec<_>>().join(", ");
+            return Ok(ValorFast::texto(vm.alloc_str(Arc::from(format!("error: {}", msg)))));
+        }
+    };
+
+    // Hot-swap: reemplazar bytecode en caliente
+    match vm.hot_swap_module(module_id, &module_bc) {
+        Ok(()) => Ok(ValorFast::texto(vm.alloc_str(Arc::from(format!("ok: recargado (v{})", vm.module_registry.get(&module_id).map(|i| i.version).unwrap_or(0)))))),
+        Err(e) => Ok(ValorFast::texto(vm.alloc_str(Arc::from(format!("error: {}", e))))),
+    }
+}
+
+/// Retorna la versión actual de un módulo.
+/// args[0]: nombre del módulo (Texto)
+/// Retorna: entero con la versión, o -1 si no está registrado.
+fn native_version_modulo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Ok(ValorFast::entero(-1));
+    }
+
+    let nombre_modulo = crate::native_registry::obtener_texto(vm, args[0])?;
+    let module_id = SymId(vm.sym_table.intern(&nombre_modulo).0);
+
+    let version = vm.module_registry.get(&module_id)
+        .map(|info| info.version as i32)
+        .unwrap_or(-1i32);
+
+    Ok(ValorFast::entero(version))
+}
+
+/// Recarga todos los módulos que hayan cambiado en disco.
+/// Retorna: texto con lista de módulos recargados, o "ok: sin cambios".
+fn native_recargar_todo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let _ = args; // sin argumentos
+
+    let cambiados = vm.module_resolver.modulos_cambiados();
+    if cambiados.is_empty() {
+        return Ok(ValorFast::texto(vm.alloc_str(Arc::from("ok: sin cambios"))));
+    }
+
+    let mut recargados: Vec<String> = Vec::new();
+    for (module_id, ruta) in &cambiados {
+        // Recargar AST del módulo
+        let programa = match vm.module_resolver.recargar(*module_id) {
+            Ok(p) => p,
+            Err(e) => {
+                let msg = e.iter().map(|err| format!("{}", err)).collect::<Vec<_>>().join(", ");
+                recargados.push(format!("{}: error: {}", ruta, msg));
+                continue;
+            }
+        };
+
+        // Generar nuevo bytecode
+        let mut gen = BytecodeGenerator::new();
+        let module_bc = match gen.generar_para_modulo(&programa, *module_id) {
+            Ok(mbc) => mbc,
+            Err(e) => {
+                let msg = e.iter().map(|err| format!("{}", err)).collect::<Vec<_>>().join(", ");
+                recargados.push(format!("{}: error: {}", ruta, msg));
+                continue;
+            }
+        };
+
+        // Hot-swap
+        match vm.hot_swap_module(*module_id, &module_bc) {
+            Ok(()) => {
+                let version = vm.module_registry.get(module_id).map(|i| i.version).unwrap_or(0);
+                recargados.push(format!("{}: v{}", ruta, version));
+            }
+            Err(e) => {
+                recargados.push(format!("{}: error: {}", ruta, e));
+            }
+        }
+    }
+
+    let resultado = recargados.join(", ");
+    Ok(ValorFast::texto(vm.alloc_str(Arc::from(resultado))))
 }

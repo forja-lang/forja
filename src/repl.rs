@@ -1,6 +1,7 @@
 use crate::bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
+use crate::symbol_table::SymId;
 use rustyline::{Editor, history::FileHistory};
 
 /// REPL interactivo de Forja con historial y autocompletado
@@ -113,37 +114,77 @@ impl REPL {
                             println!("🔧 Modo debug desactivado");
                             continue;
                         }
-                        ":reload" => {
-                            if let Some(ref mut vm) = self.vm_fast {
-                                // Recompilar el código acumulado y recargar funciones
-                                let full_source = self.source_acumulado.clone();
-                                if full_source.is_empty() {
-                                    println!("⚠️  No hay código cargado para recargar");
-                                } else {
-                                    let mut lexer = Lexer::new(&full_source);
-                                    let tokens = match lexer.tokenize() {
-                                        Ok(t) => t,
-                                        Err(e) => { eprintln!("❌ Error de lexer: {}", e[0]); continue; }
-                                    };
-                                    let mut parser = Parser::new(tokens);
-                                    let programa = match parser.parse() {
-                                        Ok(p) => p,
-                                        Err(e) => { eprintln!("❌ Error de parser: {}", e[0]); continue; }
-                                    };
-                                    let mut gen = BytecodeGenerator::new();
-                                    let bytecode = match gen.generar(&programa) {
-                                        Ok(b) => b,
-                                        Err(_) => { eprintln!("❌ Error generando bytecode"); continue; }
-                                    };
-                                    let bytecode = optimizar_indices(&bytecode);
-                                    let bytecode = fusionar_opcodes(&bytecode);
+                        cmd if cmd.starts_with(":reload") => {
+                            let arg = cmd.trim_start_matches(":reload").trim();
+                            if arg.is_empty() {
+                                // ── Legacy: recargar código acumulado completo ──────────
+                                if let Some(ref mut vm) = self.vm_fast {
+                                    let full_source = self.source_acumulado.clone();
+                                    if full_source.is_empty() {
+                                        println!("⚠️  No hay código cargado para recargar");
+                                    } else {
+                                        let mut lexer = Lexer::new(&full_source);
+                                        let tokens = match lexer.tokenize() {
+                                            Ok(t) => t,
+                                            Err(e) => { eprintln!("❌ Error de lexer: {}", e[0]); continue; }
+                                        };
+                                        let mut parser = Parser::new(tokens);
+                                        let programa = match parser.parse() {
+                                            Ok(p) => p,
+                                            Err(e) => { eprintln!("❌ Error de parser: {}", e[0]); continue; }
+                                        };
+                                        let mut gen = BytecodeGenerator::new();
+                                        let bytecode = match gen.generar(&programa) {
+                                            Ok(b) => b,
+                                            Err(_) => { eprintln!("❌ Error generando bytecode"); continue; }
+                                        };
+                                        let bytecode = optimizar_indices(&bytecode);
+                                        let bytecode = fusionar_opcodes(&bytecode);
 
-                                    vm.cargar_bytecode(bytecode);
-                                    println!("♻️  Hot reload completado — {} funciones recargadas",
-                                        vm.function_table.entries.len());
+                                        vm.cargar_bytecode(bytecode);
+                                        println!("♻️  Hot reload completado — {} funciones recargadas",
+                                            vm.function_table.entries.len());
+                                    }
+                                } else {
+                                    println!("⚠️  No hay VM activa. Ejecutá código primero.");
                                 }
                             } else {
-                                println!("⚠️  No hay VM activa. Ejecutá código primero.");
+                                // ── Hot-swap de módulo específico ──────────────────────
+                                let nombre_modulo = arg.to_string();
+                                if let Some(ref mut vm) = self.vm_fast {
+                                    // Construir SymId con el mismo hash que module.rs
+                                    let module_sym = SymId(
+                                        nombre_modulo.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32))
+                                    );
+                                    if !vm.module_registry.contains_key(&module_sym) {
+                                        eprintln!("❌ Módulo '{}' no está registrado en la VM. Usá 'recargar_todo()' desde Forja.", nombre_modulo);
+                                        continue;
+                                    }
+                                    // Recargar desde disco
+                                    let programa = match vm.module_resolver.recargar(module_sym) {
+                                        Ok(p) => p,
+                                        Err(e) => { eprintln!("❌ Error recargando módulo: {}", e[0]); continue; }
+                                    };
+                                    // Recompilar a ModuleBytecode
+                                    let mut gen = BytecodeGenerator::new();
+                                    let module_bc = match gen.generar_para_modulo(&programa, module_sym) {
+                                        Ok(mbc) => mbc,
+                                        Err(_) => { eprintln!("❌ Error generando bytecode del módulo"); continue; }
+                                    };
+                                    // Obtener versión desde el registro
+                                    let version = vm.module_registry.get(&module_sym)
+                                        .map(|info| info.version)
+                                        .unwrap_or(0);
+                                    // Hacer hot-swap en la VM
+                                    match vm.hot_swap_module(module_sym, &module_bc) {
+                                        Ok(()) => {
+                                            println!("♻️  Módulo '{}' recargado (v{})", nombre_modulo, version + 1);
+                                        }
+                                        Err(e) => { eprintln!("❌ Error en hot-swap: {}", e); }
+                                    }
+                                } else {
+                                    println!("⚠️  No hay VM activa. Ejecutá código primero.");
+                                }
                             }
                             continue;
                         }
