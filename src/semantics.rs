@@ -814,11 +814,12 @@ impl TypeChecker {
 
     fn analizar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { mutable, nombre, valor, .. } => {
-                let tipo_inferido = if let Some(val) = valor {
-                    self.inferir_tipo(val)
-                } else {
-                    None
+            Declaracion::Variable { mutable, nombre, valor, tipo } => {
+                // La anotación explícita de tipo tiene prioridad sobre la inferencia
+                let tipo_inferido = match (tipo, valor) {
+                    (Some(t), _) => Some(t.clone()),    // Anotación explícita gana
+                    (None, Some(val)) => self.inferir_tipo(val), // Inferir del valor
+                    (None, None) => None,               // Sin tipo ni valor
                 };
                 if let Some(ref tipo) = tipo_inferido {
                     self.tipos.insert(nombre.clone(), tipo.clone());

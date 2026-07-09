@@ -103,6 +103,13 @@ pub enum Patron {
     Ignorar,
 }
 
+/// Un contrato Design by Contract (precondición, postcondición o invariante)
+#[derive(Debug, Clone)]
+pub struct Contrato {
+    pub condicion: Expresion,
+    pub mensaje: Option<String>,
+}
+
 /// Método dentro de una clase
 #[derive(Debug, Clone)]
 pub struct Metodo {
@@ -110,6 +117,8 @@ pub struct Metodo {
     pub parametros: Vec<Parametro>,
     pub tipo_retorno: Option<Tipo>,
     pub cuerpo: Vec<Declaracion>,
+    pub precondiciones: Vec<Contrato>,
+    pub postcondiciones: Vec<Contrato>,
 }
 
 /// Firma de método en un rasgo (sin cuerpo)
@@ -247,6 +256,10 @@ pub enum Expresion {
     Error(Box<Expresion>),
     /// Construir valor Some de Opcion (ej: Some(42))
     Some(Box<Expresion>),
+    /// `resultado` - valor de retorno en postcondición (Design by Contract)
+    Resultado,
+    /// `anterior(expr)` - captura valor de expr antes de ejecución (Design by Contract)
+    Anterior(Box<Expresion>),
 }
 
 /// Declaraciones del lenguaje
@@ -287,6 +300,8 @@ pub enum Declaracion {
         enlace_nombre: Option<String>,    // nombre real en C (ej: "printf")
         atributos: Vec<Atributo>,         // atributos/anotaciones
         doc: Option<String>,              // doc comment (///)
+        precondiciones: Vec<Contrato>,    // precondiciones (requiere)
+        postcondiciones: Vec<Contrato>,   // postcondiciones (asegura)
     },
     /// Definición de clase (ej: clase Persona { ... })
     Clase {
@@ -295,6 +310,7 @@ pub enum Declaracion {
         campos: Vec<VariableClase>,
         metodos: Vec<Metodo>,
         atributos: Vec<Atributo>,         // atributos/anotaciones
+        invariantes: Vec<Contrato>,       // invariantes de clase (siempre)
     },
     /// Condicional si/sino
     Si {
