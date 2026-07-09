@@ -449,6 +449,23 @@ funcion iniciar(servidor) {
             siguiente
         }
 
+        # ─── Detección de protocolo ─────────────────────────────────────
+        # HTTP/2 h2c: el preface "PRI * HTTP/2.0" identifica una conexion H2
+        si (empieza_con(datos, "PRI * HTTP/2.0")) {
+            imprimir("[servidor_web] Conexion HTTP/2 (h2c) detectada en puerto " + a_texto(servidor._puerto))
+            imprimir("[servidor_web] Usa 'importar \"std/servidor_h2\"' y ServidorH2 para manejar HTTP/2")
+            _socket_cerrar(cliente)
+            siguiente
+        }
+
+        # HTTP/2 via Upgrade: h2c
+        si (contiene(datos, "Upgrade: h2c") || contiene(datos, "HTTP2-Settings")) {
+            imprimir("[servidor_web] Solicitud HTTP/1.1 con upgrade h2c detectada")
+            imprimir("[servidor_web] Usa 'importar \"std/servidor_h2\"' y ServidorH2 para manejar HTTP/2")
+            _socket_cerrar(cliente)
+            siguiente
+        }
+
         _manejar_solicitud(servidor, cliente, datos)
         _socket_cerrar(cliente)
     }

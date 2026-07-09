@@ -54,6 +54,14 @@ pub mod formatter;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod jit_engine;
 
+// HTTP/2 nativo — h2c (cleartext), sin dependencias externas
+#[cfg(not(target_arch = "wasm32"))]
+pub mod native_h2_core;
+
+// HTTP/2 con TLS (rustls) — feature flag "h2-tls"
+#[cfg(all(feature = "h2-tls", not(target_arch = "wasm32")))]
+pub mod native_h2_tls;
+
 use error::ErrorForja;
 
 /// Compila un archivo .fa completo y devuelve el código Rust exportado (opcional)

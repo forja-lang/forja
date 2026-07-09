@@ -122,6 +122,8 @@ impl NativeRegistry {
         reg.registrar_codificacion();
         reg.registrar_hash();
         reg.registrar_web();
+        #[cfg(feature = "h2-tls")]
+        crate::native_h2_tls::registrar_tls(&mut reg);
         reg
     }
 
@@ -261,6 +263,20 @@ impl NativeRegistry {
         // ─── Construcción de mensajes ─────────────────────────────────────
         self.registrar("_http_crear_solicitud_raw", native_http_crear_solicitud_raw);
         self.registrar("_http_crear_respuesta_raw", native_http_crear_respuesta_raw);
+
+        // ─── HTTP/2 ────────────────────────────────────────────────────────
+        self.registrar("_h2_preface", crate::native_h2_core::native_h2_preface);
+        self.registrar("_h2_escribir_frame", crate::native_h2_core::native_h2_escribir_frame);
+        self.registrar("_h2_leer_frame", crate::native_h2_core::native_h2_leer_frame);
+        self.registrar("_hpack_codificar", crate::native_h2_core::native_hpack_codificar);
+        self.registrar("_hpack_decodificar", crate::native_h2_core::native_hpack_decodificar);
+        self.registrar("_h2_settings_default", crate::native_h2_core::native_h2_settings_default);
+        self.registrar("_h2_enviar_goaway", crate::native_h2_core::native_h2_enviar_goaway);
+        self.registrar("_h2_enviar_rst_stream", crate::native_h2_core::native_h2_enviar_rst_stream);
+        self.registrar("_h2_enviar_window_update", crate::native_h2_core::native_h2_enviar_window_update);
+        self.registrar("_h2_enviar_ping", crate::native_h2_core::native_h2_enviar_ping);
+        self.registrar("_h2_enviar_bytes_raw", crate::native_h2_core::native_h2_enviar_bytes_raw);
+        self.registrar("_h2_negociar_h2c", crate::native_h2_core::native_h2_negociar_h2c);
     }
 }
 
@@ -268,11 +284,11 @@ impl NativeRegistry {
 // Helpers internos
 // ═════════════════════════════════════════════════════════════════════════
 
-fn error_socket_msg(kind: &str, msg: &str) -> String {
+pub(crate) fn error_socket_msg(kind: &str, msg: &str) -> String {
     format!("{}: {}", kind, msg)
 }
 
-fn obtener_texto(vm: &mut ForjaFast, val: ValorFast) -> Result<String, ErrFast> {
+pub(crate) fn obtener_texto(vm: &mut ForjaFast, val: ValorFast) -> Result<String, ErrFast> {
     if val.es_texto() {
         let s = vm.get_str(val.indice_texto()).to_string();
         Ok(s)
@@ -281,7 +297,7 @@ fn obtener_texto(vm: &mut ForjaFast, val: ValorFast) -> Result<String, ErrFast> 
     }
 }
 
-fn obtener_entero(val: ValorFast) -> Result<i64, ErrFast> {
+pub(crate) fn obtener_entero(val: ValorFast) -> Result<i64, ErrFast> {
     if val.es_entero() {
         Ok(val.a_entero() as i64)
     } else if val.es_flotante() {
@@ -291,7 +307,7 @@ fn obtener_entero(val: ValorFast) -> Result<i64, ErrFast> {
     }
 }
 
-fn extraer_indice_socket(vm: &mut ForjaFast, val: ValorFast) -> Result<u32, ErrFast> {
+pub(crate) fn extraer_indice_socket(vm: &mut ForjaFast, val: ValorFast) -> Result<u32, ErrFast> {
     if !val.es_objeto() {
         return Err(ErrFast::TipoInv("se esperaba un objeto Socket".into()));
     }
@@ -307,7 +323,7 @@ fn extraer_indice_socket(vm: &mut ForjaFast, val: ValorFast) -> Result<u32, ErrF
     Ok(idx_val.a_entero() as u32)
 }
 
-fn crear_valor_socket(vm: &mut ForjaFast, socket_idx: u32) -> ValorFast {
+pub(crate) fn crear_valor_socket(vm: &mut ForjaFast, socket_idx: u32) -> ValorFast {
     let sym_socket = vm.sym_table.intern("@Socket");
     if !vm.class_descriptors.contains_key(&sym_socket) {
         use crate::class_descriptor::{ClassDescriptor, Shape};
@@ -328,7 +344,7 @@ fn crear_valor_socket(vm: &mut ForjaFast, socket_idx: u32) -> ValorFast {
 }
 
 /// Resuelve una dirección de host:puerto a SocketAddr
-fn resolver_direccion(direccion: &str, puerto: u16) -> Result<std::net::SocketAddr, String> {
+pub(crate) fn resolver_direccion(direccion: &str, puerto: u16) -> Result<std::net::SocketAddr, String> {
     let addr_str = format!("{}:{}", direccion, puerto);
     if let Ok(addr) = addr_str.parse::<std::net::SocketAddr>() {
         return Ok(addr);

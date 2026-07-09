@@ -1,0 +1,78 @@
+# Ejemplo 220: Servidor HTTP/2 (h2c)
+#
+# Uso: forja run examples/220_servidor_h2.fa
+# Luego: curl --http2-prior-knowledge http://localhost:9500/
+# O navegar con navegador que soporte h2c (pocos)
+#
+# NOTA: HTTP/2 sin TLS (h2c) requiere prior knowledge o upgrade HTTP/1.1
+# La mayoria de navegadores requieren TLS para HTTP/2
+
+importar "std/servidor_h2"
+
+funcion manejador_raiz(solicitud) {
+    variable resp = nuevo RespuestaH2()
+    resp.codigo = 200
+    resp.tipo_contenido = "text/html; charset=utf-8"
+    resp.cuerpo = "<h1>Hola desde HTTP/2!</h1><p>Bienvenido a Forja H2</p>"
+    retornar resp
+}
+
+funcion manejador_json(solicitud) {
+    variable resp = nuevo RespuestaH2()
+    resp.codigo = 200
+    resp.tipo_contenido = "application/json"
+    resp.cuerpo = "{ \"mensaje\": \"Hola HTTP/2\", \"stream_id\": " + a_texto(solicitud.stream_id) + " }"
+    retornar resp
+}
+
+funcion manejador_echo(solicitud) {
+    variable resp = nuevo RespuestaH2()
+    resp.codigo = 200
+    resp.tipo_contenido = "text/plain"
+    resp.cuerpo = "Metodo: " + solicitud.metodo + "\nRuta: " + solicitud.ruta + "\nStream: " + a_texto(solicitud.stream_id)
+    retornar resp
+}
+
+funcion manejador_usuario(solicitud) {
+    variable resp = nuevo RespuestaH2()
+    resp.codigo = 200
+    resp.tipo_contenido = "text/html; charset=utf-8"
+    variable id = solicitud.params_ruta["id"]
+    resp.cuerpo = "<h1>Perfil de Usuario</h1><p>ID: " + id + "</p>"
+    retornar resp
+}
+
+funcion manejador_404(solicitud) {
+    variable resp = nuevo RespuestaH2()
+    resp.codigo = 404
+    resp.tipo_contenido = "text/plain"
+    resp.cuerpo = "Ruta no encontrada: " + solicitud.metodo + " " + solicitud.ruta
+    retornar resp
+}
+
+funcion manejador_500(solicitud) {
+    variable resp = nuevo RespuestaH2()
+    resp.codigo = 500
+    resp.tipo_contenido = "text/plain"
+    resp.cuerpo = "Error interno del servidor"
+    retornar resp
+}
+
+funcion main() {
+    variable servidor = nuevo ServidorH2(9500)
+    get(servidor, "/", manejador_raiz)
+    get(servidor, "/json", manejador_json)
+    get(servidor, "/echo", manejador_echo)
+    get(servidor, "/usuario/:id", manejador_usuario)
+    post(servidor, "/echo", manejador_echo)
+    put(servidor, "/echo", manejador_echo)
+    eliminar(servidor, "/echo", manejador_echo)
+    patch(servidor, "/echo", manejador_echo)
+
+    imprimir("=== Servidor HTTP/2 (h2c) en http://localhost:9500/ ===")
+    imprimir("Prueba: curl --http2-prior-knowledge http://localhost:9500/")
+    imprimir("Prueba: curl --http2-prior-knowledge http://localhost:9500/json")
+    iniciar(servidor)
+}
+
+main()

@@ -335,6 +335,10 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         // Funciones Nativas
         Opcode::CallNative(nombre, nargs) => Uop::CallNative(Rc::clone(nombre), *nargs),
         Opcode::SocketPoll(var) => Uop::SocketPoll(Rc::clone(var)),
+
+        // Concurrencia: opcodes atómicos manejados por dispatch directo
+        Opcode::ChannelNew => Uop::Label(0), // no-op en uops
+        Opcode::ThreadSpawn(_, _) => Uop::Label(0), // no-op en uops
     }
 }
 

@@ -670,6 +670,31 @@ funcion efecto_onda(hijo) { retornar hijo }
 funcion ripple_effect(hijo) { retornar hijo }
 
 # ==========================================
+# INTERACCIONES (Pull-to-refresh, Swipe-to-dismiss)
+# ==========================================
+
+# Pull-to-refresh: envuelve contenido con capacidad de recargar al tirar
+# hijo: widget a envolver
+# cb: callback a ejecutar al recargar
+# refrescando (opcional): nombre de variable booleana para estado de carga
+funcion pull_to_refresh(hijo, cb) { retornar hijo }
+funcion pull_to_refresh(hijo, cb, refrescando: Texto) { retornar hijo }
+funcion pulltorefresh(hijo, cb) { retornar hijo }
+funcion tirar_recargar(hijo, cb) { retornar hijo }
+
+# Swipe-to-dismiss: contenido que se puede descartar deslizando
+# hijo: widget a envolver
+# cb (opcional): callback al descartar
+# etiqueta (opcional): texto para botón de deshacer
+# descartado (opcional): nombre de variable booleana para estado
+funcion swipe_to_dismiss(hijo) { retornar hijo }
+funcion swipe_to_dismiss(hijo, cb) { retornar hijo }
+funcion swipe_to_dismiss(hijo, cb, etiqueta: Texto) { retornar hijo }
+funcion swipe_to_dismiss(hijo, cb, etiqueta: Texto, descartado: Texto) { retornar hijo }
+funcion swipetodismiss(hijo) { retornar hijo }
+funcion deslizar_descartar(hijo, cb) { retornar hijo }
+
+# ==========================================
 # GRÁFICOS (Fase 9)
 # ==========================================
 
