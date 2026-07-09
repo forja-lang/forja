@@ -1,0 +1,50 @@
+# NOTAS DE ATRIBUCIÓN / ATTRIBUTION NOTES
+
+## Forja Language (this project)
+
+**Copyright (c) 2026 lococoi**
+
+Licensed under GNU GPL v3.0 (see LICENSE.md).
+
+"Forja" es una marca registrada de lococoi. El uso del nombre "Forja", logo o identidad visual requiere autorización para forks derivados.
+
+---
+
+## Dependencies and Their Licenses
+
+### rustyline
+- **Repository**: https://github.com/kkharji/rustyline
+- **License**: MPL-2.0 (Mozilla Public License 2.0)
+- **Copyright**: (c) 2016-2022 Kofi Okyere
+
+### serde / serde_json / serde_with
+- **Repository**: https://github.com/serde-rs/serde, https://github.com/serde-rs/json
+- **License**: MIT OR Apache-2.0
+- **Copyright**: (c) 2017 Serde Developers
+
+### crossbeam
+- **Repository**: https://github.com/crossbeam-rs/crossbeam
+- **License**: MIT OR Apache-2.0
+- **Copyright**: (c) 2016 The Crossbeam Project Developers
+
+### tower-lsp
+- **Repository**: https://github.com/ebkal/tower-lsp
+- **License**: MIT OR Apache-2.0
+- **Copyright**: (c) 2020 David Kern
+
+### tokio
+- **Repository**: https://github.com/tokio-rs/tokio
+- **License**: MIT
+- **Copyright**: (c) Tokio Contributors
+
+---
+
+## Material You / Material Design References
+
+Forja's GUI components are inspired by Material Design 3 (Material You) specifications from Google. The color algorithms (dynamic color from wallpaper) are implementations based on Material Design guidance. This does not imply endorsement by Google.
+
+---
+
+## Trademark
+
+All uses of the "Forja" name in derivative works must clearly indicate that the software is a fork/modification and not the official Forja distribution. For commercial use of the Forja trademark, contact lococoi for licensing.
