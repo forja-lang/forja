@@ -10,8 +10,9 @@ license = "GPL-3.0-or-later"
 default = []
 gui = ["forja-gui-rt"]
 lsp = ["tower-lsp", "tokio"]
+dap = []
 h2-tls = ["rustls", "rustls-pki-types", "webpki-roots"]
-all = ["gui", "lsp", "crossbeam", "h2-tls"]
+all = ["gui", "lsp", "dap", "crossbeam", "h2-tls"]
 
 [dependencies]
 # Sin dependencias externas para el núcleo - solo std de Rust
@@ -22,7 +23,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 crossbeam = { version = "0.8", optional = true }
 forja-gui-rt = { path = "crates/forja-gui-rt", optional = true }
-rustls = { version = "0.23", optional = true, default-features = false, features = ["ring"] }
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std"] }
 rustls-pki-types = { version = "1", optional = true }
 webpki-roots = { version = "0.26", optional = true }
 
@@ -40,6 +41,11 @@ required-features = ["lsp"]
 name = "forja-gui"
 path = "src/bin/forja_gui.rs"
 required-features = ["gui"]
+
+[[bin]]
+name = "forja-dap"
+path = "src/bin/forja_dap.rs"
+required-features = ["dap"]
 
 [[bench]]
 name = "bench-fa"

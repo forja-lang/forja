@@ -340,7 +340,9 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         // Concurrencia: opcodes atómicos manejados por dispatch directo
         Opcode::ChannelNew => Uop::Label(0), // no-op en uops
         Opcode::ThreadSpawn(_, _) => Uop::Label(0), // no-op en uops
-        Opcode::Jump(_) => Uop::Label(0), // no-op en uops (control de flujo manejado por dispatch directo)
+
+        // Debug: SetLine es ignorado en uops (la info de línea se maneja aparte)
+        Opcode::SetLine(_) => Uop::Label(0),
     }
 }
 

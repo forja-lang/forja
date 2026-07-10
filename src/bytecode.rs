@@ -308,6 +308,12 @@ pub enum Opcode {
     /// Lanzar un hilo que ejecuta la función `func_name`
     /// Los valores capturados ya están en la pila (captured_count)
     ThreadSpawn(Arc<str>, usize),
+
+    // === Debug: Información de línea de código fuente ===
+    /// Indica que el próximo opcode corresponde a la línea `usize` del código fuente.
+    /// Es insertado por el compilador en modo debug para permitir step debugging
+    /// y mapeo de breakpoints línea → IP.
+    SetLine(usize),
 }
 
 /// Design by Contract: tipo de contrato
@@ -2006,6 +2012,10 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
                 bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
                 bytes.push(if *mutable { 1 } else { 0 });
             }
+            // Debug: SetLine(line) — payload: 4 bytes (u32)
+            Opcode::SetLine(line) => {
+                bytes.extend_from_slice(&(*line as u32).to_le_bytes());
+            }
             _ => {} // Opcodes sin payload
         }
     }
@@ -2111,6 +2121,8 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         // Pattern matching opcodes
         Opcode::CheckTag(_) => 140,
         Opcode::ExtractField(_) => 141,
+        // Debug: SetLine opcode
+        Opcode::SetLine(_) => 150,
         // Opcodes especializados (runtime-only, no serializables)
         _ => 255,
     }
@@ -2201,6 +2213,8 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         140 => Some(Opcode::CheckTag(0)),
         141 => Some(Opcode::ExtractField(0)),
         142 => Some(Opcode::DeclareIdxGlobal(0, false)),
+        // Debug: SetLine opcode
+        150 => Some(Opcode::SetLine(0)),
         _ => None,
     }
 }
@@ -2611,18 +2625,25 @@ if version >= 2 {
            }
            // Fase 2: DeclareIdxGlobal(usize, bool) — 5 bytes payload (u32 idx + u8 mutable)
            142 => {
-               if pos + 5 > data.len() { return None; }
-               let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
-               pos += 4;
-               let mutable = data[pos] == 1;
-               pos += 1;
-               opcodes.push(Opcode::DeclareIdxGlobal(idx, mutable));
-           }
-           _ => {
-               // Opcodes sin payload
-               let template = byte_to_opcode(byte)?;
-               opcodes.push(template);
-           }
+              if pos + 5 > data.len() { return None; }
+              let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+              pos += 4;
+              let mutable = data[pos] == 1;
+              pos += 1;
+              opcodes.push(Opcode::DeclareIdxGlobal(idx, mutable));
+          }
+          // Debug: SetLine(line) — 4 bytes payload (u32 linea)
+          150 => {
+              if pos + 4 > data.len() { return None; }
+              let line = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+              pos += 4;
+              opcodes.push(Opcode::SetLine(line));
+          }
+          _ => {
+              // Opcodes sin payload
+              let template = byte_to_opcode(byte)?;
+              opcodes.push(template);
+          }
         }
     }
 
