@@ -1,0 +1,75 @@
+name: Deploy Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: docs
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Download WASM playground from latest release
+        continue-on-error: true
+        run: |
+          curl -sL \
+            https://github.com/forja-lang/forja/releases/latest/download/forja_wasm_bg.wasm \
+            -o src/wasm/forja_wasm_bg.wasm
+          curl -sL \
+            https://github.com/forja-lang/forja/releases/latest/download/forja_wasm.js \
+            -o src/wasm/forja_wasm.js
+      - name: Verify WASM files (fallback to local if download failed)
+        run: |
+          if grep -q "Not Found" src/wasm/forja_wasm.js 2>/dev/null; then
+            echo "⚠️  Download failed (404), restoring local files..."
+            git checkout -- src/wasm/forja_wasm.js src/wasm/forja_wasm_bg.wasm 2>/dev/null || true
+          fi
+          if [ ! -f src/wasm/forja_wasm.js ] || [ ! -f src/wasm/forja_wasm_bg.wasm ]; then
+            echo "❌ Missing WASM files — build will fail"
+          else
+            echo "✅ WASM files ready"
+          fi
+
+      - run: npm ci
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
