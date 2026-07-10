@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::io::{Read, Write};
 use std::net::ToSocketAddrs;
 use crate::bytecode::Opcode;

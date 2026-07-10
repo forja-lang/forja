@@ -174,6 +174,7 @@ pub struct AccessibilityManager {
     /// Anuncios pendientes
     announcements: Arc<std::sync::RwLock<Vec<Anuncio>>>,
     /// ID del widget con foco
+    #[allow(dead_code)]
     focused_id: Arc<AtomicU64>,
     /// Último widget anunciado (para evitar repeticiones)
     last_announced: Arc<std::sync::RwLock<String>>,

@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::symbol_table::{SymbolTable, SymId};
 use crate::vm_fast::{ForjaFast, ValorFast, ErrFast};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::bytecode::BytecodeGenerator;
 use base64::Engine;
 use sha2::Digest;
@@ -123,6 +124,7 @@ impl NativeRegistry {
         reg.registrar_codificacion();
         reg.registrar_hash();
         reg.registrar_web();
+        #[cfg(not(target_arch = "wasm32"))]
         reg.registrar_hot_reload();
         #[cfg(feature = "h2-tls")]
         crate::native_h2_tls::registrar_tls(&mut reg);
@@ -267,20 +269,24 @@ impl NativeRegistry {
         self.registrar("_http_crear_respuesta_raw", native_http_crear_respuesta_raw);
 
         // ─── HTTP/2 ────────────────────────────────────────────────────────
-        self.registrar("_h2_preface", crate::native_h2_core::native_h2_preface);
-        self.registrar("_h2_escribir_frame", crate::native_h2_core::native_h2_escribir_frame);
-        self.registrar("_h2_leer_frame", crate::native_h2_core::native_h2_leer_frame);
-        self.registrar("_hpack_codificar", crate::native_h2_core::native_hpack_codificar);
-        self.registrar("_hpack_decodificar", crate::native_h2_core::native_hpack_decodificar);
-        self.registrar("_h2_settings_default", crate::native_h2_core::native_h2_settings_default);
-        self.registrar("_h2_enviar_goaway", crate::native_h2_core::native_h2_enviar_goaway);
-        self.registrar("_h2_enviar_rst_stream", crate::native_h2_core::native_h2_enviar_rst_stream);
-        self.registrar("_h2_enviar_window_update", crate::native_h2_core::native_h2_enviar_window_update);
-        self.registrar("_h2_enviar_ping", crate::native_h2_core::native_h2_enviar_ping);
-        self.registrar("_h2_enviar_bytes_raw", crate::native_h2_core::native_h2_enviar_bytes_raw);
-        self.registrar("_h2_negociar_h2c", crate::native_h2_core::native_h2_negociar_h2c);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.registrar("_h2_preface", crate::native_h2_core::native_h2_preface);
+            self.registrar("_h2_escribir_frame", crate::native_h2_core::native_h2_escribir_frame);
+            self.registrar("_h2_leer_frame", crate::native_h2_core::native_h2_leer_frame);
+            self.registrar("_hpack_codificar", crate::native_h2_core::native_hpack_codificar);
+            self.registrar("_hpack_decodificar", crate::native_h2_core::native_hpack_decodificar);
+            self.registrar("_h2_settings_default", crate::native_h2_core::native_h2_settings_default);
+            self.registrar("_h2_enviar_goaway", crate::native_h2_core::native_h2_enviar_goaway);
+            self.registrar("_h2_enviar_rst_stream", crate::native_h2_core::native_h2_enviar_rst_stream);
+            self.registrar("_h2_enviar_window_update", crate::native_h2_core::native_h2_enviar_window_update);
+            self.registrar("_h2_enviar_ping", crate::native_h2_core::native_h2_enviar_ping);
+            self.registrar("_h2_enviar_bytes_raw", crate::native_h2_core::native_h2_enviar_bytes_raw);
+            self.registrar("_h2_negociar_h2c", crate::native_h2_core::native_h2_negociar_h2c);
+        }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn registrar_hot_reload(&mut self) {
         // ─── Hot Reload Builtins ──────────────────────────────────────────────
         self.registrar("_recargar_modulo", native_recargar_modulo);
@@ -1946,6 +1952,7 @@ fn native_http_crear_respuesta_raw(vm: &mut ForjaFast, args: &[ValorFast]) -> Re
     Ok(ValorFast::texto(idx))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 // ═════════════════════════════════════════════════════════════════════════
 // Hot Reload — Native Functions
 // ═════════════════════════════════════════════════════════════════════════
@@ -2000,6 +2007,7 @@ fn native_recargar_modulo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valo
 /// Retorna la versión actual de un módulo.
 /// args[0]: nombre del módulo (Texto)
 /// Retorna: entero con la versión, o -1 si no está registrado.
+#[cfg(not(target_arch = "wasm32"))]
 fn native_version_modulo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Ok(ValorFast::entero(-1));
@@ -2017,6 +2025,7 @@ fn native_version_modulo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
 
 /// Recarga todos los módulos que hayan cambiado en disco.
 /// Retorna: texto con lista de módulos recargados, o "ok: sin cambios".
+#[cfg(not(target_arch = "wasm32"))]
 fn native_recargar_todo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let _ = args; // sin argumentos
 
