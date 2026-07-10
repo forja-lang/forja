@@ -19,3 +19,9 @@
 [submodule "crates/forja-wasm"]
 	path = crates/forja-wasm
 	url = https://github.com/forja-lang/forja-wasm.git
+[submodule "stdlib/std"]
+	path = stdlib/std
+	url = https://github.com/forja-lang/forja-stdlib-std.git
+[submodule "stdlib/gui"]
+	path = stdlib/gui
+	url = https://github.com/forja-lang/forja-stdlib-gui.git

@@ -1474,8 +1474,12 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::SetField(Arc::from("tipo")));
             }
             Expresion::Resultado => {
-                // resultado en postcondición - no implementado en bytecode
-                self.emitir(Opcode::PushNulo);
+                if self.var_indices.contains_key("resultado") || self.opcodes.iter().any(|op| matches!(op, Opcode::Declare(name, _) if name.as_ref() == "resultado")) {
+                    self.emitir(Opcode::Load(Arc::from("resultado")));
+                } else {
+                    // resultado en postcondición - no implementado en bytecode
+                    self.emitir(Opcode::PushNulo);
+                }
             }
             Expresion::Anterior(expr) => {
                 // anterior(expr) - por ahora solo evaluar la expresión
