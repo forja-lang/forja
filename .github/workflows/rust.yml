@@ -75,8 +75,8 @@ jobs:
               ;;
           esac
           echo "Using linker: $LINKER"
-          CARGO_TARGET_$(echo ${{ matrix.target }} | tr '[:lower:]-' '[:upper:]_')_LINKER="$LINKER" \
-            cargo build --target ${{ matrix.target }} --features gui --release --verbose
+          export "CARGO_TARGET_$(echo ${{ matrix.target }} | tr '[:lower:]-' '[:upper:]_')_LINKER=$LINKER"
+          cargo build --target ${{ matrix.target }} --features gui --release --verbose
       - name: Upload artifact (${{ matrix.target }})
         uses: actions/upload-artifact@v4
         with:
