@@ -733,8 +733,13 @@ impl Lexer {
                                 break;
                             }
                         }
-                        self.tokens_pendientes
-                            .push(Token::new(TokenKind::Identificador(ident), self.linea, self.columna));
+                        if ident == "este" {
+                            self.tokens_pendientes
+                                .push(Token::new(TokenKind::Este, self.linea, self.columna));
+                        } else {
+                            self.tokens_pendientes
+                                .push(Token::new(TokenKind::Identificador(ident), self.linea, self.columna));
+                        }
                     } else {
                         // Carácter desconocido, avanzar
                         return Err(ErrorForja::new(
