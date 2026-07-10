@@ -4,6 +4,8 @@
 
 // Módulo de signals/streams reactivos (reemplaza HashMap)
 pub mod signals;
+// Módulo de accesibilidad (TalkBack/VoiceOver)
+pub mod accessibility;
 
 // Re-exportar todo lo que necesita el código generado por Forja
 pub use xilem::view::{
@@ -86,4 +88,17 @@ pub use signals::{
     ReactiveCtx,
     read_var,
     write_var,
+};
+
+// Re-exportar tipos principales de accesibilidad
+pub use accessibility::{
+    AccessibilityManager,
+    A11yData,
+    Anuncio,
+    PrioridadAnuncio,
+    descripcion_accesible,
+    material_role,
+    estado_checkbox,
+    estado_switch,
+    estado_seleccion,
 };
