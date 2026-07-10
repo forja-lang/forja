@@ -5,7 +5,7 @@ test_inline_rs/
 tests/
 .vscode/
 $null
-
+return$null
 .cargo/
 .roo/
 /COMPARACION_FORJA_VS_RAVEN.md
