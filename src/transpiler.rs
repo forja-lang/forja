@@ -996,7 +996,7 @@ impl Transpiler {
                 for metodo in metodos {
                     if metodo.nombre == "nuevo" {
                         for decl_cuerpo in &metodo.cuerpo {
-                            if let Declaracion::AsignacionMiembro { objeto, miembro, valor } = decl_cuerpo {
+                            if let Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } = decl_cuerpo {
                                 // este.campo = expr → inferir tipo
                                 if let Expresion::Identificador(ref nombre_self, ..) = objeto.as_ref() {
                                     if nombre_self == "self" {
@@ -1187,7 +1187,7 @@ impl Transpiler {
                 .cuerpo
                 .iter()
                 .filter_map(|decl| {
-                    if let Declaracion::AsignacionMiembro { objeto, miembro, valor } = decl {
+                    if let Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } = decl {
                         if let Expresion::Identificador(ref nombre_self, ..) = objeto.as_ref() {
                             if nombre_self == "self" {
                                 // El valor puede ser un identificador (param) o una expresión
@@ -1561,13 +1561,13 @@ impl Transpiler {
                 self.emit_line(&format!("{} = {};", nombre, val_str));
             }
 
-            Declaracion::AsignacionMiembro { objeto, miembro, valor } => {
+            Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } => {
                 let obj_str = self.transpilar_expresion(objeto);
                 let val_str = self.transpilar_expresion(valor);
                 self.emit_line(&format!("{}.{} = {};", obj_str, miembro, val_str));
             }
 
-            Declaracion::AsignacionIndex { nombre, indice, valor } => {
+            Declaracion::AsignacionIndex { nombre, indice, valor, .. } => {
                 let idx_str = self.transpilar_expresion(indice);
                 let val_str = self.transpilar_expresion(valor);
                 self.emit_line(&format!("{}[{}] = {};", nombre, idx_str, val_str));
