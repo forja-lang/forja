@@ -745,6 +745,9 @@ impl Parser {
 
             if self.coincide(TokenKind::Coma) {
                 self.avanzar();
+                if self.coincide(TokenKind::ParenCerrar) {
+                    break;
+                }
             } else {
                 break;
             }
@@ -764,6 +767,9 @@ impl Parser {
                 params.push(ParametroTipo { nombre });
                 if self.coincide(TokenKind::Coma) {
                     self.avanzar();
+                    if self.coincide(TokenKind::Mayor) {
+                        break;
+                    }
                 } else {
                     break;
                 }
@@ -1648,6 +1654,9 @@ impl Parser {
                 let mut elementos = vec![first];
                 while self.coincide(TokenKind::Coma) {
                     self.avanzar();
+                    if self.coincide(TokenKind::ParenCerrar) {
+                        break;
+                    }
                     elementos.push(self.parse_expresion()?);
                 }
                 self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' para cerrar la tupla.")?;
@@ -2076,6 +2085,9 @@ impl Parser {
                 elementos.push(self.parse_expresion()?);
                 if self.coincide(TokenKind::Coma) {
                     self.avanzar();
+                    if self.coincide(TokenKind::CorcheteCerrar) {
+                        break;
+                    }
                 } else {
                     break;
                 }
@@ -2123,6 +2135,9 @@ impl Parser {
 
                 if self.coincide(TokenKind::Coma) {
                     self.avanzar();
+                    if self.coincide(TokenKind::LlaveCerrar) {
+                        break;
+                    }
                 } else {
                     break;
                 }
@@ -2145,6 +2160,9 @@ impl Parser {
             argumentos.push(self.parse_expresion()?);
             if self.coincide(TokenKind::Coma) {
                 self.avanzar();
+                if self.coincide(TokenKind::ParenCerrar) {
+                    break;
+                }
             } else {
                 break;
             }
@@ -2232,6 +2250,9 @@ impl Parser {
         tipos.push(self.parse_tipo()?);
         while self.coincide(TokenKind::Coma) {
             self.avanzar();
+            if self.coincide(TokenKind::Mayor) {
+                break;
+            }
             tipos.push(self.parse_tipo()?);
         }
         Ok(tipos)
@@ -2563,6 +2584,9 @@ impl Parser {
                             subpatrones.push(self.parse_patron()?);
                             if self.coincide(TokenKind::Coma) {
                                 self.avanzar();
+                                if self.coincide(TokenKind::ParenCerrar) {
+                                    break;
+                                }
                             } else {
                                 break;
                             }
@@ -2767,5 +2791,20 @@ mod tests {
         let source = "variable 123 = 5"; // 123 ahora es aceptado como nombre
         let result = parse_source(source);
         assert!(result.is_ok()); // ahora acepta números como nombres de variable
+    }
+
+    #[test]
+    fn test_parse_comas_finales() {
+        // Test trailing commas in function calls, arguments, tuples, arrays, maps, and parameters.
+        let sources = vec![
+            "funcion f(a: Entero, b: Texto,) { retornar (a, b,) }",
+            "variable x = f(1, \"hola\",)",
+            "variable arr = [1, 2, 3,]",
+            "variable mapa = { \"clave\": 1, }",
+        ];
+        for src in sources {
+            let result = parse_source(src);
+            assert!(result.is_ok(), "Falló el parsing de trailing comma en: {}", src);
+        }
     }
 }
