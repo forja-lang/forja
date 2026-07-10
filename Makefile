@@ -11,7 +11,7 @@ SCRIPTS_DIR := scripts
 TOOLCHAIN_SCRIPT := $(SCRIPTS_DIR)/toolchain-android.sh
 BUILD_SCRIPT := $(SCRIPTS_DIR)/build-android.sh
 
-.PHONY: all android-all android-arm64 android-x86_64 android-armv7 android-x86 setup-android
+.PHONY: all android-all android-arm64 android-x86_64 android-armv7 android-x86 setup-android bump-patch bump-minor bump-major
 
 # ── Build all Android targets ───────────────────────────────────────────────
 android-all:
@@ -34,3 +34,16 @@ android-x86:
 setup-android:
 	@echo "=== Checking Android NDK setup ==="
 	@bash $(TOOLCHAIN_SCRIPT) check
+
+# ── Version Bumping ────────────────────────────────────────────────────────
+bump-patch:
+	@python -m bumpversion patch
+	@git push origin main --tags
+
+bump-minor:
+	@python -m bumpversion minor
+	@git push origin main --tags
+
+bump-major:
+	@python -m bumpversion major
+	@git push origin main --tags

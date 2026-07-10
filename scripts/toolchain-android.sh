@@ -127,10 +127,10 @@ _detect_ndk() {
 # ── Linker definitions ─────────────────────────────────────────────────────
 # Maps Rust target → NDK linker name
 declare -A _LINKER_MAP
-_LINKER_MAP[aarch64-linux-android]="aarch64-linux-android21-clang"
-_LINKER_MAP[x86_64-linux-android]="x86_64-linux-android21-clang"
-_LINKER_MAP[armv7-linux-androideabi]="armv7a-linux-androideabi21-clang"
-_LINKER_MAP[i686-linux-android]="i686-linux-android21-clang"
+_LINKER_MAP[aarch64-linux-android]="aarch64-linux-android23-clang"
+_LINKER_MAP[x86_64-linux-android]="x86_64-linux-android23-clang"
+_LINKER_MAP[armv7-linux-androideabi]="armv7a-linux-androideabi23-clang"
+_LINKER_MAP[i686-linux-android]="i686-linux-android23-clang"
 
 # ── Main ────────────────────────────────────────────────────────────────────
 _main() {
@@ -164,7 +164,7 @@ Your NDK may be incomplete or corrupted. Reinstall the NDK."
     # Determine linker extension for Windows (Git Bash / MSYS2 / Cygwin)
     local _LINKER_EXT=""
     if [[ "$(uname -s)" =~ ^(CYGWIN|MINGW|MSYS) ]]; then
-        if [[ -f "${LLVM_BIN}/aarch64-linux-android21-clang.cmd" ]]; then
+        if [[ -f "${LLVM_BIN}/aarch64-linux-android23-clang.cmd" ]]; then
             _LINKER_EXT=".cmd"
         fi
     fi
