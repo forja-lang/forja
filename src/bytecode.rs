@@ -1175,11 +1175,20 @@ impl BytecodeGenerator {
                     "verdadero" => self.emitir(Opcode::PushBooleano(true)),
                     "falso" => self.emitir(Opcode::PushBooleano(false)),
                     "None" => {
-                        // None es Opcion con tipo="none" y valor=nulo
+                        // None es Opcion con tipo="none": creamos NewObject y dejamos como resultado
+                        let tmp_nombre: Arc<str> = Arc::from(format!("__none_{}", self.label_counter).as_str());
+                        self.label_counter += 1;
+                        // Declarar temp var para el objeto
                         self.emitir(Opcode::NewObject(Arc::from("Opcion")));
-                        self.emitir(Opcode::Dup);
+                        self.emitir(Opcode::Declare(tmp_nombre.clone(), true));
+                        // Establecer tipo="none": push "none", Dup, Load obj, SetField
                         self.emitir(Opcode::PushTexto(Arc::from("none")));
+                        self.emitir(Opcode::Dup);
+                        self.emitir(Opcode::Load(tmp_nombre.clone()));
                         self.emitir(Opcode::SetField(Arc::from("tipo")));
+                        self.emitir(Opcode::Pop);
+                        // Dejar el objeto en el stack como resultado
+                        self.emitir(Opcode::Load(tmp_nombre));
                     }
                     _ => self.emitir(Opcode::Load(Arc::from(nombre.as_str()))),
                 }
@@ -1524,36 +1533,67 @@ impl BytecodeGenerator {
             }
             Expresion::Ok(expr) => {
                 // Crear objeto Resultado con campo tipo="ok" y campo valor=expr
-                // Dup el objeto para mantenerlo en stack después de SetField
+                // Stack order para SetField: [valor, valor_dup, objeto] con objeto en top
+                let tmp: Arc<str> = Arc::from(format!("__ok_{}", self.label_counter).as_str());
+                self.label_counter += 1;
                 self.emitir(Opcode::NewObject(Arc::from("Resultado")));
-                self.emitir(Opcode::Dup);
+                self.emitir(Opcode::Declare(tmp.clone(), true));
+                // obj.valor = expr
                 self.generar_expresion(expr);
-                self.emitir(Opcode::SetField(Arc::from("valor")));
                 self.emitir(Opcode::Dup);
+                self.emitir(Opcode::Load(tmp.clone()));
+                self.emitir(Opcode::SetField(Arc::from("valor")));
+                self.emitir(Opcode::Pop);
+                // obj.tipo = "ok"
                 self.emitir(Opcode::PushTexto(Arc::from("ok")));
+                self.emitir(Opcode::Dup);
+                self.emitir(Opcode::Load(tmp.clone()));
                 self.emitir(Opcode::SetField(Arc::from("tipo")));
+                self.emitir(Opcode::Pop);
+                // Dejar objeto en stack
+                self.emitir(Opcode::Load(tmp));
             }
             Expresion::Error(expr) => {
                 // Crear objeto Resultado con campo tipo="error" y campo valor=expr
-                // Dup el objeto para mantenerlo en stack después de SetField
+                let tmp: Arc<str> = Arc::from(format!("__err_{}", self.label_counter).as_str());
+                self.label_counter += 1;
                 self.emitir(Opcode::NewObject(Arc::from("Resultado")));
-                self.emitir(Opcode::Dup);
+                self.emitir(Opcode::Declare(tmp.clone(), true));
+                // obj.valor = expr
                 self.generar_expresion(expr);
-                self.emitir(Opcode::SetField(Arc::from("valor")));
                 self.emitir(Opcode::Dup);
+                self.emitir(Opcode::Load(tmp.clone()));
+                self.emitir(Opcode::SetField(Arc::from("valor")));
+                self.emitir(Opcode::Pop);
+                // obj.tipo = "error"
                 self.emitir(Opcode::PushTexto(Arc::from("error")));
+                self.emitir(Opcode::Dup);
+                self.emitir(Opcode::Load(tmp.clone()));
                 self.emitir(Opcode::SetField(Arc::from("tipo")));
+                self.emitir(Opcode::Pop);
+                // Dejar objeto en stack
+                self.emitir(Opcode::Load(tmp));
             }
             Expresion::Some(expr) => {
                 // Crear objeto Opcion con campo tipo="some" y campo valor=expr
-                // Dup el objeto para mantenerlo en stack después de SetField
+                let tmp: Arc<str> = Arc::from(format!("__some_{}", self.label_counter).as_str());
+                self.label_counter += 1;
                 self.emitir(Opcode::NewObject(Arc::from("Opcion")));
-                self.emitir(Opcode::Dup);
+                self.emitir(Opcode::Declare(tmp.clone(), true));
+                // obj.valor = expr
                 self.generar_expresion(expr);
-                self.emitir(Opcode::SetField(Arc::from("valor")));
                 self.emitir(Opcode::Dup);
+                self.emitir(Opcode::Load(tmp.clone()));
+                self.emitir(Opcode::SetField(Arc::from("valor")));
+                self.emitir(Opcode::Pop);
+                // obj.tipo = "some"
                 self.emitir(Opcode::PushTexto(Arc::from("some")));
+                self.emitir(Opcode::Dup);
+                self.emitir(Opcode::Load(tmp.clone()));
                 self.emitir(Opcode::SetField(Arc::from("tipo")));
+                self.emitir(Opcode::Pop);
+                // Dejar objeto en stack
+                self.emitir(Opcode::Load(tmp));
             }
             Expresion::Resultado => {
                 if self.var_indices.contains_key("resultado") || self.opcodes.iter().any(|op| matches!(op, Opcode::Declare(name, _) if name.as_ref() == "resultado")) {
