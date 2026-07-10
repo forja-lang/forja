@@ -1,0 +1,11 @@
+[package]
+name = "forja_106_generico_rasgo_bound"
+version = "0.7.0"
+edition = "2021"
+
+# Exportado por Forja (fa) desde 106_generico_rasgo_bound.fa (podés ejecutar directo con 'forja ejecutar')
+# https://github.com/lococoi/forja
+
+[workspace]
+
+[dependencies]

@@ -102,10 +102,43 @@ jobs:
           name: forja-${{ matrix.os }}
           path: target/release/forja${{ matrix.os == 'windows-latest' && '.exe' || '' }}
 
+  build-wasm:
+    name: Build WASM
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+      - name: Install wasm-bindgen
+        run: cargo install wasm-bindgen-cli
+      - name: Build forja-wasm
+        run: cargo build --package forja-wasm --target wasm32-unknown-unknown --release
+      - name: Generate WASM bindings
+        run: |
+          wasm-bindgen \
+            target/wasm32-unknown-unknown/release/forja_wasm.wasm \
+            --out-dir wasm-output \
+            --target web
+      - name: Install wasm-opt (binaryen)
+        run: sudo apt-get install -y binaryen
+      - name: Optimize WASM with wasm-opt
+        run: wasm-opt -O3 wasm-output/forja_wasm_bg.wasm -o wasm-output/forja_wasm_bg.wasm
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: forja-wasm
+          path: wasm-output/*
+
   release:
     name: Create Release
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    needs: build
+    needs: [build, build-wasm]
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -126,6 +159,8 @@ jobs:
           cp artifacts/forja-ubuntu-latest/forja binaries/forja-linux
           cp artifacts/forja-macOS-latest/forja binaries/forja-macos
           cp artifacts/forja-windows-latest/forja.exe binaries/forja.exe
+          cp artifacts/forja-wasm/forja_wasm.js binaries/forja_wasm.js
+          cp artifacts/forja-wasm/forja_wasm_bg.wasm binaries/forja_wasm_bg.wasm
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:

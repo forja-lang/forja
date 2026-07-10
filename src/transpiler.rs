@@ -295,11 +295,22 @@ impl Transpiler {
             // Emitir app_logic() con los widgets recolectados
             self.emit_line("fn app_logic(data: &mut AppState) -> impl WidgetView<AppState> {");
             // Siempre envolver en flex vertical para evitar expresiones sueltas en el cuerpo
-            self.emit_line("    view::flex(Axis::Vertical, (");
+            // Usamos Vec<Box<AnyWidgetView>> en lugar de tupla para evitar el límite
+            // de aridad de FlexSequence (máximo ~12 elementos en tupla)
+            self.emit_line("    let children: Vec<Box<AnyWidgetView<AppState>>> = vec![");
             for w in &widgets {
-                self.emit_line(&format!("    {}", w));
+                let trimmed = w.trim();
+                let widget_expr = trimmed.trim_end_matches(',');
+                // Si ya tiene Box::new (procesar_expresion_widget), usar directo
+                // Si no, envolver en Box::new(...) as Box<AnyWidgetView>
+                if widget_expr.starts_with("Box::new(") || widget_expr.starts_with("//") {
+                    self.emit_line(&format!("        {},", widget_expr));
+                } else if !widget_expr.is_empty() {
+                    self.emit_line(&format!("        Box::new({}) as Box<AnyWidgetView<AppState>>,", widget_expr));
+                }
             }
-            self.emit_line("    ))");
+            self.emit_line("    ];");
+            self.emit_line("    view::flex(Axis::Vertical, (children,))");
             self.emit_line("}");
             self.emit_line("");
 
