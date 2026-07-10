@@ -36,6 +36,7 @@ pub mod selfrun;
 pub mod jit;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod module;
+#[cfg(not(target_arch = "wasm32"))]
 pub use module::{ModuleId, ModuleInfo, ModuleCache};
 #[cfg(not(target_arch = "wasm32"))]
 pub mod prelude;
@@ -50,6 +51,10 @@ pub mod package_config;
 pub mod diagrama;
 pub mod optimizer;
 pub mod formatter;
+
+// Debugger (modo paso a paso con breakpoints)
+#[cfg(not(target_arch = "wasm32"))]
+pub mod debugger;
 
 // JIT Engine (orquestador con fallback)
 #[cfg(not(target_arch = "wasm32"))]

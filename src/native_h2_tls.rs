@@ -6,8 +6,9 @@
 
 use crate::native_registry::{
     extraer_indice_socket, obtener_entero, obtener_texto,
-    ErrFast, NativeRegistry, ValorFast,
+    NativeRegistry,
 };
+use crate::vm_fast::{ErrFast, ValorFast};
 use crate::vm_fast::ForjaFast;
 use rustls::pki_types::ServerName;
 use std::io::{Read, Write};
@@ -77,7 +78,7 @@ fn native_tls_conectar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
         .with_no_client_auth();
     let config = std::sync::Arc::new(config);
 
-    let server_name = ServerName::try_from(hostname.as_str())
+    let server_name = ServerName::try_from(hostname)
         .map_err(|_| ErrFast::TipoInv("tls_error: hostname inválido".into()))?;
 
     let conn = rustls::ClientConnection::new(config, server_name)

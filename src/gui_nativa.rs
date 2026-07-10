@@ -250,13 +250,13 @@ pub struct NavigatorScreen {
     /// Icono opcional (para NavigationBar/Tabs)
     pub icono: Option<String>,
     /// Contenido de la pantalla
-    pub contenido: Box<Layout>,
+    pub(crate) contenido: Box<Layout>,
     /// Badge opcional (notificaciones)
     pub badge: Option<String>,
 }
 
 impl NavigatorScreen {
-    pub fn new(id: &str, titulo: &str, contenido: Layout) -> Self {
+    pub(crate) fn new(id: &str, titulo: &str, contenido: Layout) -> Self {
         NavigatorScreen {
             id: id.to_string(),
             titulo: titulo.to_string(),
@@ -310,7 +310,7 @@ pub enum AvatarVariant {
 // ─── Layout (representación intermedia) ───────────────────────────
 
 #[derive(Debug)]
-enum Layout {
+pub(crate) enum Layout {
     // ─── Layouts básicos ──────────────────────────────────────────
     Column { children: Vec<Layout>, gap: f64, alignment: String },
     CenteredColumn(Vec<Layout>),
@@ -3189,7 +3189,7 @@ fn render_navigator_rail(
     current_var: &str,
     prog: &[Declaracion],
     scheme: &ColorScheme,
-    theme: &MaterialTheme,
+    _theme: &MaterialTheme,
 ) -> Box<AnyWidgetView<AppStateNativo>> {
     let cv = current_var.to_string();
     let p = prog.to_vec();
@@ -3361,9 +3361,9 @@ fn layout_a_view<'a>(
             let ph = placeholder.clone();
             Box::new(memoize(
                 (gen, val.clone(), var_name.clone(), ph.clone()),
-                move |(_, text, _, _): &(u64, String, String, String)| {
-                    let vn = var_name.clone();
-                    let pl = ph.clone();
+                move |(_, text, vn, pl): &(u64, String, String, String)| {
+                    let vn = vn.clone();
+                    let pl = pl.clone();
                     let mut ti = view::text_input(text.clone(), move |data: &mut AppStateNativo, new_val: String| {
                         data.escribir(&vn, ValorGUI::Texto(new_val));
                     });
@@ -3398,9 +3398,9 @@ fn layout_a_view<'a>(
             let mn = *min;
             let mx = *max;
             Box::new(memoize(
-                (gen, val, mn, mx),
-                move |(_, v, mn2, mx2): &(u64, f64, f64, f64)| {
-                    let vn = var_name.clone();
+                (gen, val, mn, mx, var_name.clone()),
+                move |(_, v, mn2, mx2, vn): &(u64, f64, f64, f64, String)| {
+                    let vn = vn.clone();
                     view::slider(*mn2, *mx2, *v, move |data: &mut AppStateNativo, new_val: f64| {
                         data.escribir(&vn, ValorGUI::Decimal(new_val));
                     })
@@ -3413,9 +3413,9 @@ fn layout_a_view<'a>(
             let checked = data.leer(&var_name).to_bool();
             let gen = data.store.generation(&var_name);
             Box::new(memoize(
-                (gen, checked, txt),
-                move |(_, chk, label_txt): &(u64, bool, String)| {
-                    let vn = var_name.clone();
+                (gen, checked, txt, var_name.clone()),
+                move |(_, chk, label_txt, vn): &(u64, bool, String, String)| {
+                    let vn = vn.clone();
                     view::checkbox(label_txt.clone(), *chk, move |data: &mut AppStateNativo, new_checked: bool| {
                         data.escribir(&vn, ValorGUI::Booleano(new_checked));
                     })

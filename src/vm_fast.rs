@@ -20,7 +20,9 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::bytecode::{self, Opcode, BuiltinKind, ContratoBytecode, ModuleBytecode};
+use crate::bytecode::{self, Opcode, BuiltinKind, ContratoBytecode};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::bytecode::ModuleBytecode;
 use crate::symbol_table::{SymbolTable, SymId};
 use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops};
 use crate::class_descriptor::{Shape, ClassDescriptor};
@@ -296,7 +298,7 @@ fn homogeneizar_exacto_fast(a: i128, sa: u32, b: i128, sb: u32) -> (i128, i128, 
 // ─── Frame de Call ─────────────────────────────────────────────────────────
 
 #[derive(Clone)]
-struct FuncFast { ip: usize, vars_size: usize, version: u32 }
+pub(crate) struct FuncFast { ip: usize, vars_size: usize, version: u32 }
 
 /// Versión de una función: permite reemplazarla en caliente
 #[derive(Clone, Copy, Debug)]
@@ -324,16 +326,16 @@ pub struct VersionedBytecode {
 
 pub struct ForjaFast {
     pub ip: usize,
-    stack: Vec<ValorFast>,
-    frame_buffer: [FrmFast; 2048],
-    frame_count: usize,
+    pub(crate) stack: Vec<ValorFast>,
+    pub(crate) frame_buffer: [FrmFast; 2048],
+    pub(crate) frame_count: usize,
 
     // Flat Var Stack: un único Vec para TODAS las variables de todas las funciones.
     // Cada función usa un rango [base_ptr, base_ptr + num_vars) dentro de flat_vars.
     // En Call se extiende flat_vars y se actualiza base_ptr (O(1), sin alloc de Vec nuevo).
     // En Return se trunca flat_vars y se restaura base_ptr (O(1)).
-    flat_vars: Vec<ValorFast>,
-    base_ptr: usize,
+    pub(crate) flat_vars: Vec<ValorFast>,
+    pub(crate) base_ptr: usize,
 
     // Stack caching — Top 4 registros en array fijo + contador
     stack_top: [ValorFast; 4],   // Los 4 registros superiores del stack
@@ -441,10 +443,10 @@ pub struct ForjaFast {
     sym_recibir: SymId,
     sym_unir: SymId,
 
-    funciones: HashMap<SymId, FuncFast>,
+    pub(crate) funciones: HashMap<SymId, FuncFast>,
     /// Nombres de parámetros por función (necesario para mapear args en Call)
     func_params: HashMap<SymId, Vec<String>>,
-    bytecode: Vec<Opcode>,
+    pub bytecode: Vec<Opcode>,
     pub output: Vec<String>,
 
     // ─── Hot Reload: Function Table (indirección) ──────────────────────────
@@ -455,10 +457,13 @@ pub struct ForjaFast {
 
     // ─── Hot Reload: Module Registry ───────────────────────────────────────
     /// Registro de módulos cargados (ModuleId → ModuleInfo)
+    #[cfg(not(target_arch = "wasm32"))]
     pub module_registry: HashMap<ModuleId, ModuleInfo>,
     /// Módulo propietario de cada función (SymId → ModuleId)
+    #[cfg(not(target_arch = "wasm32"))]
     pub module_fn_owners: HashMap<SymId, ModuleId>,
     /// Resolver de módulos (para recargar)
+    #[cfg(not(target_arch = "wasm32"))]
     pub module_resolver: ModuleResolver,
     /// Variables globales de módulo (SymId del nombre → (índice_global, mutable))
     pub nombre_a_idx_global: HashMap<SymId, (usize, bool)>,
@@ -468,10 +473,11 @@ pub struct ForjaFast {
     /// Índices que ya han sido inicializados como globales de módulo
     pub global_var_inited: std::collections::HashSet<usize>,
     /// Rango de bytecode que ocupa cada módulo en self.bytecode (start, end)
+    #[cfg(not(target_arch = "wasm32"))]
     pub modulo_bytecode_ranges: HashMap<ModuleId, (usize, usize)>,
 
-    max_inst: usize,
-    ejecutadas: usize,
+    pub(crate) max_inst: usize,
+    pub(crate) ejecutadas: usize,
     fast_math: bool,
     pub show_bytecode: bool,
 
@@ -490,13 +496,13 @@ pub struct ForjaFast {
 // Flat Var Stack frame: guarda solo base_ptr_previo y num_vars (O(1)),
 // en lugar de clonar todo el Vec de variables.
 #[derive(Clone, Copy)]
-struct FrmFast {
-    ip_ret: usize,
-    base_ptr_previo: usize,
+pub(crate) struct FrmFast {
+    pub(crate) ip_ret: usize,
+    pub(crate) base_ptr_previo: usize,
     #[allow(dead_code)]
-    num_vars: usize,
+    pub(crate) num_vars: usize,
     /// Versión de función capturada al crear el frame (para hot-swap)
-    func_version: u32,
+    pub(crate) func_version: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -595,12 +601,16 @@ impl ForjaFast {
             function_versions: HashMap::new(),
             bytecode_pool: Vec::new(),
             // Hot Reload: Module Registry
+            #[cfg(not(target_arch = "wasm32"))]
             module_registry: HashMap::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             module_fn_owners: HashMap::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             module_resolver: ModuleResolver::new("."),
             nombre_a_idx_global: HashMap::new(),
             global_var_persist: Vec::new(),
             global_var_inited: std::collections::HashSet::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             modulo_bytecode_ranges: HashMap::new(),
         };
         vm.init_symbols();
@@ -1452,7 +1462,7 @@ impl ForjaFast {
 
     // ─── Mostrar valores (con acceso al heap) ────────────────────────────────
 
-    fn mostrar_valor(&self, v: &ValorFast) -> String {
+    pub(crate) fn mostrar_valor(&self, v: &ValorFast) -> String {
         if v.es_entero() { return v.a_entero().to_string(); }
         if v.es_flotante() { return v.a_flotante().to_string(); }
         if v.es_texto() { return self.get_str(v.indice_texto()).to_string(); }
@@ -1524,7 +1534,7 @@ impl ForjaFast {
     /// Si el cache está lleno (top_len == 4), mueve el más viejo al stack real
     /// y hace shift left.
     #[inline(always)]
-    fn push_valor(&mut self, val: ValorFast) {
+    pub(crate) fn push_valor(&mut self, val: ValorFast) {
         prof_count!(push_valor_calls);
         if self.top_len < 4 {
             self.stack_top[self.top_len] = val;
@@ -1545,7 +1555,7 @@ impl ForjaFast {
     /// Si el cache está vacío, pop del stack real.
     /// Si el stack está vacío, retorna Nulo en lugar de error.
     #[inline(always)]
-    fn pop_valor(&mut self) -> Result<ValorFast, ErrFast> {
+    pub(crate) fn pop_valor(&mut self) -> Result<ValorFast, ErrFast> {
         prof_count!(pop_valor_calls);
         if self.top_len > 0 {
             self.top_len -= 1;
@@ -1561,7 +1571,7 @@ impl ForjaFast {
     /// Lee el valor a `depth` posiciones del tope (0 = tos, 1 = tos2, etc.)
     /// Si la profundidad excede el stack, devuelve &ValorFast::nulo() (seguro).
     #[inline(always)]
-    fn peek_valor(&self, depth: usize) -> &ValorFast {
+    pub(crate) fn peek_valor(&self, depth: usize) -> &ValorFast {
         // Nulo estático para retorno seguro cuando depth excede el stack
         static NULO_VAL: ValorFast = ValorFast(0x7FF8000000000000);
         if depth >= self.top_len + self.stack.len() {
@@ -1597,7 +1607,7 @@ impl ForjaFast {
     /// Útil antes de operaciones que manipulan self.stack directamente
     /// (como Call/Return argument passing).
     #[inline(always)]
-    fn flush_stack(&mut self) {
+    pub(crate) fn flush_stack(&mut self) {
         for i in 0..self.top_len {
             self.stack.push(self.stack_top[i]);
         }
@@ -4282,6 +4292,11 @@ impl ForjaFast {
                         self.ip += 1;
                     }
                 }
+
+                // Debug: SetLine — información de línea para el debugger
+                Opcode::SetLine(_line) => {
+                    self.ip += 1;
+                }
             }
             // Aplicar patch de especialización/des-especialización diferido
             if let Some(op) = patch_op {
@@ -5381,6 +5396,7 @@ impl ForjaFast {
     /// 5. Re-inicializa inline caches y aplica quickening.
     ///
     /// El módulo debe estar registrado en `modulo_bytecode_ranges`.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn hot_swap_module(&mut self, module_id: ModuleId, nuevo_bc: &ModuleBytecode) -> Result<(), String> {
         // 1. Determinar la versión actual y calcular la nueva
         let version_actual = self.module_registry.get(&module_id)
