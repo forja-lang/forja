@@ -355,6 +355,8 @@ pub struct BytecodeGenerator {
     pub channel_counter: i64,
     /// Contador para IDs únicos de hilos
     pub hilo_counter: usize,
+    /// Clases que definen constructor
+    clases_con_constructor: std::collections::HashSet<String>,
 }
 
 impl BytecodeGenerator {
@@ -370,6 +372,7 @@ impl BytecodeGenerator {
             enum_variantes: std::collections::HashMap::new(),
             channel_counter: 0,
             hilo_counter: 0,
+            clases_con_constructor: std::collections::HashSet::new(),
         }
     }
 
@@ -622,6 +625,17 @@ impl BytecodeGenerator {
 
     /// Genera bytecode a partir de un programa AST
     pub fn generar(&mut self, programa: &Programa) -> Result<Vec<Opcode>, Vec<ErrorForja>> {
+        self.clases_con_constructor.clear();
+        for decl in &programa.declaraciones {
+            if let Declaracion::Clase { nombre, metodos, .. } = decl {
+                for metodo in metodos {
+                    if metodo.nombre.is_empty() || metodo.nombre == "nuevo" {
+                        self.clases_con_constructor.insert(nombre.clone());
+                    }
+                }
+            }
+        }
+
         // Separa declaraciones en globales y funciones/métodos
         // Vec de referencias al AST original + Vec de funciones nuevas
         let mut globales: Vec<&Declaracion> = Vec::new();
@@ -1160,6 +1174,13 @@ impl BytecodeGenerator {
                 match nombre.as_str() {
                     "verdadero" => self.emitir(Opcode::PushBooleano(true)),
                     "falso" => self.emitir(Opcode::PushBooleano(false)),
+                    "None" => {
+                        // None es Opcion con tipo="none" y valor=nulo
+                        self.emitir(Opcode::NewObject(Arc::from("Opcion")));
+                        self.emitir(Opcode::Dup);
+                        self.emitir(Opcode::PushTexto(Arc::from("none")));
+                        self.emitir(Opcode::SetField(Arc::from("tipo")));
+                    }
                     _ => self.emitir(Opcode::Load(Arc::from(nombre.as_str()))),
                 }
             }
@@ -1229,8 +1250,8 @@ impl BytecodeGenerator {
             Expresion::Instanciacion { clase, argumentos } => {
                 // Crear objeto
                 self.emitir(Opcode::NewObject(Arc::from(clase.as_str())));
-                // Si hay argumentos, llamar constructor con self + args
-                if !argumentos.is_empty() {
+                // Si hay argumentos o la clase define un constructor, llamarlo con self + args
+                if !argumentos.is_empty() || self.clases_con_constructor.contains(clase) {
                     self.emitir(Opcode::Dup);
                     for arg in argumentos {
                         self.generar_expresion(arg);
@@ -1238,6 +1259,9 @@ impl BytecodeGenerator {
                     // Llamar a "Clase.nuevo" con nargs+1 (incluyendo self)
                     let constructor = Arc::from(format!("{}.{}", clase, "nuevo"));
                     self.emitir(Opcode::Call(constructor, argumentos.len() + 1));
+                    // Descartar el valor retornado por el constructor (siempre nulo)
+                    // El objeto original queda en el stack debajo
+                    self.emitir(Opcode::Pop);
                 }
                 // El objeto queda en el stack para ser asignado a una variable
             }
@@ -1309,18 +1333,76 @@ impl BytecodeGenerator {
                             }
                         }
                         Patron::Constructor(nombre_ctor, subpatrones) => {
-                            if subpatrones.is_empty() {
-                                // Constructor sin datos: siempre matchea (old behavior)
-                                // Para enums simples como Norte, Sur, etc.
-                                // TODO: cuando los valores enum tengan tags, usar CheckTag
+                            // Determinar si es un constructor built-in de Opcion/Resultado
+                            let tipo_field = match nombre_ctor.as_str() {
+                                "Some" | "Alguno" => Some("some"),
+                                "None" | "Ninguno" => Some("none"),
+                                "Ok"   => Some("ok"),
+                                "Error" | "Err" => Some("error"),
+                                _ => None,
+                            };
+
+                            if let Some(tipo_str) = tipo_field {
+                                // Constructores built-in: el objeto está en el stack
+                                // Para arms con subpatrones (Some(v), Ok(v)): siempre Dup para conservar
+                                // Para arms sin subpatrones (None): si es último, solo Pop; si no, Dup+check
+                                if subpatrones.is_empty() {
+                                    if es_ultimo {
+                                        // Último brazo sin subpatrones (ej. caso None): es el fallthrough
+                                        // El objeto aún está en el stack — simplemente pop y ejecutar
+                                        self.emitir(Opcode::Pop);
+                                        self.generar_cuerpo_match(&brazo.cuerpo);
+                                    } else {
+                                        // Brazo intermedio sin subpatrones: Dup, check tipo, ejecutar o saltar
+                                        self.emitir(Opcode::Dup);
+                                        self.emitir(Opcode::GetField(Arc::from("tipo")));
+                                        self.emitir(Opcode::PushTexto(Arc::from(tipo_str)));
+                                        self.emitir(Opcode::Igual);
+                                        let label_next = self.nueva_label();
+                                        self.emitir(Opcode::JumpSiFalso(label_next));
+                                        // Matcheó: pop el objeto original y ejecutar
+                                        self.emitir(Opcode::Pop);
+                                        self.generar_cuerpo_match(&brazo.cuerpo);
+                                        self.emitir(Opcode::Jump(label_end));
+                                        // No matcheó: el objeto original sigue en el stack
+                                        self.emitir(Opcode::Label(label_next));
+                                    }
+                                } else {
+                                    // Brazo con subpatrones (Some(v), Ok(v)): Dup para conservar
+                                    self.emitir(Opcode::Dup);
+                                    self.emitir(Opcode::GetField(Arc::from("tipo")));
+                                    self.emitir(Opcode::PushTexto(Arc::from(tipo_str)));
+                                    self.emitir(Opcode::Igual);
+                                    let label_next = self.nueva_label();
+                                    self.emitir(Opcode::JumpSiFalso(label_next));
+                                    // Matcheó: extraer "valor" del objeto original (stack: [obj])
+                                    if let Some(Patron::Variable(var_nombre)) = subpatrones.first() {
+                                        self.emitir(Opcode::GetField(Arc::from("valor")));
+                                        self.var_indices.entry(var_nombre.clone()).or_insert_with(|| {
+                                            let idx = self.var_counter;
+                                            self.var_counter += 1;
+                                            idx
+                                        });
+                                        self.emitir(Opcode::Store(Arc::from(var_nombre.as_str())));
+                                    } else {
+                                        self.emitir(Opcode::Pop);
+                                    }
+                                    self.generar_cuerpo_match(&brazo.cuerpo);
+                                    if !es_ultimo {
+                                        self.emitir(Opcode::Jump(label_end));
+                                    }
+                                    // No matcheó: el objeto original sigue en el stack
+                                    self.emitir(Opcode::Label(label_next));
+                                }
+                            } else if subpatrones.is_empty() {
+                                // Constructor sin datos de enum normal: siempre matchea (comportamiento previo)
                                 self.emitir(Opcode::Pop);
                                 self.generar_cuerpo_match(&brazo.cuerpo);
                                 if !es_ultimo {
                                     self.emitir(Opcode::Jump(label_end));
                                 }
                             } else {
-                                // Constructor con subpatrones: extraer campos
-                                // Buscar tag para este constructor
+                                // Constructor con subpatrones: extraer campos con CheckTag
                                 let tag = self.obtener_tag_constructor(nombre_ctor)
                                     .unwrap_or(0);
                                 
