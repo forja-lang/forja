@@ -379,8 +379,7 @@ impl BorrowChecker {
 
     fn analizar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { mutable, nombre, valor, .. } => {
-                let linea = 0;
+            Declaracion::Variable { mutable, nombre, valor, linea, columna, .. } => {
                 let mut tipo_inferido = None;
 
                 if let Some(val) = valor {
@@ -391,37 +390,36 @@ impl BorrowChecker {
                         // Obtener el tipo de la variable original
                         let tipo_original = self.tabla.obtener(id).and_then(|info| info.tipo.clone());
                         if !Self::es_copy(&tipo_original) {
-                            if let Err(e) = self.tabla.mover_variable(id, linea, 0) {
+                            if let Err(e) = self.tabla.mover_variable(id, *linea, *columna) {
                                 self.errores.push(e);
                             }
                         }
                     }
                 }
 
-                if let Err(e) = self.tabla.declarar(nombre, *mutable, linea, 0, tipo_inferido) {
+                if let Err(e) = self.tabla.declarar(nombre, *mutable, *linea, *columna, tipo_inferido) {
                     self.errores.push(e);
                 }
             }
 
-            Declaracion::Asignacion { nombre, valor } => {
-                let linea = 0;
-                if let Err(e) = self.tabla.escribir_variable(nombre, linea, 0) {
+            Declaracion::Asignacion { nombre, valor, linea, columna } => {
+                if let Err(e) = self.tabla.escribir_variable(nombre, *linea, *columna) {
                     self.errores.push(e);
                 }
                 self.analizar_expresion(valor);
             }
-Declaracion::AsignacionMiembro { objeto, miembro: _, valor } => {
-    self.analizar_expresion(objeto);
-    self.analizar_expresion(valor);
-}
+            Declaracion::AsignacionMiembro { objeto, miembro: _, valor, linea: _, columna: _ } => {
+                self.analizar_expresion(objeto);
+                self.analizar_expresion(valor);
+            }
 
-Declaracion::AsignacionIndex { nombre, indice, valor } => {
-    if let Err(e) = self.tabla.escribir_variable(nombre, 0, 0) {
-        self.errores.push(e);
-    }
-    self.analizar_expresion(indice);
-    self.analizar_expresion(valor);
-}
+            Declaracion::AsignacionIndex { nombre, indice, valor, linea, columna } => {
+                if let Err(e) = self.tabla.escribir_variable(nombre, *linea, *columna) {
+                    self.errores.push(e);
+                }
+                self.analizar_expresion(indice);
+                self.analizar_expresion(valor);
+            }
 
 
             Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
@@ -887,7 +885,7 @@ impl TypeChecker {
 
     fn analizar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { mutable, nombre, valor, tipo } => {
+            Declaracion::Variable { mutable, nombre, valor, tipo, linea, columna } => {
                 // La anotación explícita de tipo tiene prioridad sobre la inferencia
                 let tipo_inferido = match (tipo, valor) {
                     (Some(t), _) => Some(t.clone()),    // Anotación explícita gana
@@ -897,10 +895,10 @@ impl TypeChecker {
                 if let Some(ref tipo) = tipo_inferido {
                     self.tipos.insert(nombre.clone(), tipo.clone());
                 }
-                let _ = self.tabla.declarar(nombre, *mutable, 0, 0, tipo_inferido);
+                let _ = self.tabla.declarar(nombre, *mutable, *linea, *columna, tipo_inferido);
             }
 
-            Declaracion::Asignacion { nombre, valor } => {
+            Declaracion::Asignacion { nombre, valor, linea: _, columna: _ } => {
                 let tipo_valor = self.inferir_tipo(valor);
                 if let Some(info) = self.tabla.obtener(nombre) {
                     if let (Some(t_dest), Some(t_src)) = (&info.tipo, &tipo_valor) {
@@ -1060,7 +1058,7 @@ impl TypeChecker {
                 }
             }
 
-            Declaracion::AsignacionIndex { nombre, indice, valor } => {
+            Declaracion::AsignacionIndex { nombre, indice, valor, linea: _, columna: _ } => {
                 self.inferir_tipo(indice);
                 self.inferir_tipo(valor);
                 // También podría verificar que nombre es un arreglo
@@ -1633,6 +1631,14 @@ mod tests {
         // 'constante' es inmutable, no se puede reasignar
         let result = analizar_source("constante x = 5\nx = 10");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_linea_de_error_semantico() {
+        let result = analizar_source("constante x = 5\nx = 10");
+        assert!(result.is_err());
+        let errores = result.unwrap_err();
+        assert_eq!(errores[0].linea, 2);
     }
 
     #[test]

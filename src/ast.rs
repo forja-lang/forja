@@ -271,23 +271,31 @@ pub enum Declaracion {
         nombre: String,
         tipo: Option<Tipo>,
         valor: Option<Expresion>,
+        linea: usize,
+        columna: usize,
     },
     /// Asignación a variable existente (ej: x = 10)
     Asignacion {
         nombre: String,
         valor: Box<Expresion>,
+        linea: usize,
+        columna: usize,
     },
     /// Asignación a miembro (ej: este.nombre = "Ana")
     AsignacionMiembro {
         objeto: Box<Expresion>,
         miembro: String,
         valor: Box<Expresion>,
+        linea: usize,
+        columna: usize,
     },
     /// Asignación por índice (ej: arr[0] = 10)
     AsignacionIndex {
         nombre: String,
         indice: Box<Expresion>,
         valor: Box<Expresion>,
+        linea: usize,
+        columna: usize,
     },
     /// Definición de función (ej: funcion saludar(n) { ... })
     Funcion {

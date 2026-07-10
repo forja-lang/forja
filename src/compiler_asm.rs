@@ -1390,7 +1390,7 @@ impl CompilerAsm {
         let tmp = a.tmp_reg();
 
         match decl {
-            Declaracion::Variable { mutable: _, nombre, tipo, valor } => {
+            Declaracion::Variable { mutable: _, nombre, tipo, valor, .. } => {
                 let tipo_inferido = tipo.clone().or_else(|| {
                     valor.as_ref().and_then(|v| self.inferir_tipo_de_expr(v))
                 });
@@ -1453,7 +1453,7 @@ impl CompilerAsm {
                 }
             }
 
-            Declaracion::Asignacion { nombre, valor } => {
+            Declaracion::Asignacion { nombre, valor, .. } => {
                 let _ = self.compilar_expresion_asm(valor);
                 // ¿La variable destino está en un registro?
                 if let Some(&reg) = self.var_reg_map.get(nombre) {
@@ -1486,7 +1486,7 @@ impl CompilerAsm {
                 }
             }
 
-            Declaracion::AsignacionMiembro { objeto, miembro, valor } => {
+            Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } => {
                 // 1) Compilar objeto → puntero al struct en ret
                 self.compilar_expresion_asm(objeto);
                 // 2) Guardar puntero
@@ -1511,7 +1511,7 @@ impl CompilerAsm {
                 self.emit_line(&a.str_field(tmp, co, ret));
             }
 
-            Declaracion::AsignacionIndex { nombre, indice, valor } => {
+            Declaracion::AsignacionIndex { nombre, indice, valor, .. } => {
                 let _idx = self.compilar_expresion_asm(indice);
                 let _val = self.compilar_expresion_asm(valor);
                 // Cargar el puntero del array (desde registro o stack)

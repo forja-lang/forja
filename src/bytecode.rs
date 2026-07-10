@@ -820,7 +820,7 @@ impl BytecodeGenerator {
 
     fn generar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { mutable, nombre, valor, tipo } => {
+            Declaracion::Variable { mutable, nombre, valor, tipo, .. } => {
                 // Track variable index for contract compilation
                 self.var_indices.entry(nombre.clone()).or_insert_with(|| {
                     let idx = self.var_counter;
@@ -862,19 +862,19 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::Declare(Arc::from(nombre.as_str()), *mutable));
             }
 
-            Declaracion::Asignacion { nombre, valor } => {
+            Declaracion::Asignacion { nombre, valor, .. } => {
                 self.generar_expresion(valor);
                 self.emitir(Opcode::Store(Arc::from(nombre.as_str())));
             }
 
-            Declaracion::AsignacionMiembro { objeto, miembro, valor } => {
+            Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } => {
                 // Generar el valor primero, luego el objeto, luego SetField
                 self.generar_expresion(valor);
                 self.generar_expresion(objeto);
                 self.emitir(Opcode::SetField(Arc::from(miembro.as_str())));
             }
 
-            Declaracion::AsignacionIndex { nombre, indice, valor } => {
+            Declaracion::AsignacionIndex { nombre, indice, valor, .. } => {
                 // arr[i] = val → push val, push Load(arr), push indice, ArraySet, Store(arr)
                 // Si nombre contiene un punto (ej: "self.elementos"), es acceso a miembro
                 if let Some(dot_pos) = nombre.find('.') {

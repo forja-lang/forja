@@ -128,15 +128,15 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
 
     fn sd(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { mutable, nombre, tipo, valor } => {
+            Declaracion::Variable { mutable, nombre, tipo, valor, .. } => {
                 let kw = if *mutable { "var" } else { "const" };
                 let ts = tipo.as_ref().map(|t| format!(":{}", self.ts(t))).unwrap_or_default();
                 let vs = valor.as_ref().map(|v| format!(" = {}", self.ec(v))).unwrap_or_default();
                 self.bx(&format!("<span class='tg'>VARIABLE</span>{kw} {nombre}{ts}{vs}"), "vc");
             }
-            Declaracion::Asignacion { nombre, valor } => self.bx(&format!("<span class='tg'>ASIGNACION</span>{nombre} = {}", self.ec(valor)), "ac"),
-            Declaracion::AsignacionMiembro { objeto, miembro, valor } => self.bx(&format!("<span class='tg'>ASIGNACION</span>{}.{miembro} = {}", self.ec(objeto), self.ec(valor)), "ac"),
-            Declaracion::AsignacionIndex { nombre, indice, valor } => self.bx(&format!("<span class='tg'>ASIGNACION</span>{nombre}[{}] = {}", self.ec(indice), self.ec(valor)), "ac"),
+            Declaracion::Asignacion { nombre, valor, .. } => self.bx(&format!("<span class='tg'>ASIGNACION</span>{nombre} = {}", self.ec(valor)), "ac"),
+            Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } => self.bx(&format!("<span class='tg'>ASIGNACION</span>{}.{miembro} = {}", self.ec(objeto), self.ec(valor)), "ac"),
+            Declaracion::AsignacionIndex { nombre, indice, valor, .. } => self.bx(&format!("<span class='tg'>ASIGNACION</span>{nombre}[{}] = {}", self.ec(indice), self.ec(valor)), "ac"),
             Declaracion::Funcion { nombre, parametros, tipo_retorno, cuerpo, .. } => {
                 let ps: Vec<String> = parametros.iter().map(|p| p.nombre.clone()).collect();
                 let ret = tipo_retorno.as_ref().map(|t| format!("->{}", self.ts(t))).unwrap_or_default();
@@ -212,16 +212,16 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
 
     fn gd1(&mut self, d: &Declaracion) {
         match d {
-            Declaracion::Variable { mutable, nombre, tipo, valor } => {
+            Declaracion::Variable { mutable, nombre, tipo, valor, .. } => {
                 let kw = if *mutable { "var" } else { "const" };
                 let badge = if *mutable { "variable" } else { "constante" };
                 let ts = tipo.as_ref().map(|t| format!(":{}", self.ts(t))).unwrap_or_default();
                 let vs = valor.as_ref().map(|v| format!("={}", self.ec(v))).unwrap_or_default();
                 let _ = self.no(&format!("<b>{kw}</b> {nombre}{ts}{vs}"), "v", badge, false); self.cli();
             }
-            Declaracion::Asignacion { nombre, valor } => { let _ = self.no(&format!("asignar {nombre} = {}", self.ec(valor)), "a", "asignar", false); self.cli(); }
-            Declaracion::AsignacionMiembro { objeto, miembro, valor } => { self.no(&format!("asignar {}.{miembro} = {}", self.ec(objeto), self.ec(valor)), "a", "asignar", false); self.cli(); }
-            Declaracion::AsignacionIndex { nombre, indice, valor } => { self.no(&format!("asignar {nombre}[{}] = {}", self.ec(indice), self.ec(valor)), "a", "asignar", false); self.cli(); }
+            Declaracion::Asignacion { nombre, valor, .. } => { let _ = self.no(&format!("asignar {nombre} = {}", self.ec(valor)), "a", "asignar", false); self.cli(); }
+            Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } => { self.no(&format!("asignar {}.{miembro} = {}", self.ec(objeto), self.ec(valor)), "a", "asignar", false); self.cli(); }
+            Declaracion::AsignacionIndex { nombre, indice, valor, .. } => { self.no(&format!("asignar {nombre}[{}] = {}", self.ec(indice), self.ec(valor)), "a", "asignar", false); self.cli(); }
             Declaracion::Funcion { nombre, parametros, tipo_retorno, cuerpo, .. } => {
                 let ps: Vec<String> = parametros.iter().map(|p| { let mut s = p.nombre.clone(); if p.prestado { s = format!("&{s}"); } if let Some(ref t) = p.tipo { s = format!("{s}:{}", self.ts(t)); } s }).collect();
                 let ret = tipo_retorno.as_ref().map(|t| format!("->{}", self.ts(t))).unwrap_or_default();
@@ -348,6 +348,6 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
             Expresion::Anterior(expr) => format!("anterior({})", self.ec(expr)),
         }
     }
-    fn dc(&self, d: &Declaracion) -> String { match d { Declaracion::Variable { nombre, valor, .. } => { if let Some(v) = valor { format!("{nombre}={}", self.ec(v)) } else { nombre.clone() } } Declaracion::Asignacion { nombre, valor } => format!("{nombre}={}", self.ec(valor)), _ => "?".to_string() } }
+    fn dc(&self, d: &Declaracion) -> String { match d { Declaracion::Variable { nombre, valor, .. } => { if let Some(v) = valor { format!("{nombre}={}", self.ec(v)) } else { nombre.clone() } } Declaracion::Asignacion { nombre, valor, .. } => format!("{nombre}={}", self.ec(valor)), _ => "?".to_string() } }
     fn ts(&self, t: &Tipo) -> String { match t { Tipo::Entero => "Entero".to_string(), Tipo::Decimal => "Decimal".to_string(), Tipo::Texto => "Texto".to_string(), Tipo::Booleano => "Booleano".to_string(), Tipo::Nulo => "Nulo".to_string(), Tipo::Exacto => "Exacto".to_string(), Tipo::Clase(n) => n.clone(), Tipo::Arreglo(t) => format!("[{}]", self.ts(t)), Tipo::Funcion(params, ret) => { let p: Vec<String> = params.iter().map(|t| self.ts(t)).collect(); format!("({})->{}", p.join(","), self.ts(ret)) }, Tipo::Resultado(ok, err) => format!("Resultado<{},{}>", self.ts(ok), self.ts(err)), Tipo::Opcion(inner) => format!("Opcion<{}>", self.ts(inner)), Tipo::RasgoObjeto(n) => format!("Rasgo<{}>", n), Tipo::Parametro(n) => format!("Parametro<{}>", n) } }
 }

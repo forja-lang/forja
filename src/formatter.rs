@@ -168,7 +168,7 @@ impl Formatter {
 
     fn formatear_declaracion(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { mutable, nombre, tipo, valor } => {
+            Declaracion::Variable { mutable, nombre, tipo, valor, .. } => {
                 self.push(&self.indent_str());
                 let kw = if *mutable { "variable" } else { "constante" };
                 self.push(&format!("{} {}", kw, nombre));
@@ -181,20 +181,20 @@ impl Formatter {
                 }
                 self.push("\n");
             }
-            Declaracion::Asignacion { nombre, valor } => {
+            Declaracion::Asignacion { nombre, valor, .. } => {
                 self.push(&self.indent_str());
                 self.push(&format!("{} = ", nombre));
                 self.formatear_expresion(valor);
                 self.push("\n");
             }
-            Declaracion::AsignacionMiembro { objeto, miembro, valor } => {
+            Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } => {
                 self.push(&self.indent_str());
                 let obj_str = self.expresion_a_string(objeto);
                 self.push(&format!("{}.{} = ", obj_str, miembro));
                 self.formatear_expresion(valor);
                 self.push("\n");
             }
-            Declaracion::AsignacionIndex { nombre, indice, valor } => {
+            Declaracion::AsignacionIndex { nombre, indice, valor, .. } => {
                 self.push(&self.indent_str());
                 let ind_str = self.expresion_a_string(indice);
                 self.push(&format!("{}[{}] = ", nombre, ind_str));
