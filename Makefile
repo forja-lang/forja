@@ -37,13 +37,10 @@ setup-android:
 
 # ── Version Bumping ────────────────────────────────────────────────────────
 bump-patch:
-	@python -m bumpversion patch
-	@git push origin main --tags
+	@python scripts/bump.py patch
 
 bump-minor:
-	@python -m bumpversion minor
-	@git push origin main --tags
+	@python scripts/bump.py minor
 
 bump-major:
-	@python -m bumpversion major
-	@git push origin main --tags
+	@python scripts/bump.py major
