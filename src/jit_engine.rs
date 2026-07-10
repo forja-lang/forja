@@ -650,7 +650,10 @@ impl JitOrchestrator {
 
             // Si JIT falló, ejecutar con ForjaFast usando bytecode optimizado
             self.fallback.reset();
+            #[cfg(target_pointer_width = "64")]
             self.fallback.set_max_inst(100_000_000_000);
+            #[cfg(target_pointer_width = "32")]
+            self.fallback.set_max_inst(usize::MAX);
             self.fallback.cargar_bytecode(bc_fusion);
             self.fallback.ejecutar().map_err(|e| format!("{}", e))?;
             Ok(self.fallback.obtener_output().to_vec())
@@ -689,6 +692,7 @@ impl JitOrchestrator {
         }
         #[cfg(not(target_os = "windows"))]
         {
+            let _ = bytecode;
             Err("JIT no disponible en esta plataforma".into())
         }
     }
