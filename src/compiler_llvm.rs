@@ -386,11 +386,11 @@ impl LlvmBackend {
             Declaracion::Asignacion { nombre, valor, .. } => {
                 if let Some(p) = self.vars.get(nombre).cloned() { let r = self.expr(valor)?; self.store(&p, &r); }
             }
-            Declaracion::AsignacionMiembro { objeto, miembro, valor } => {
+            Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } => {
                 let o = self.expr(objeto)?; let v = self.expr(valor)?;
                 line!(self.out, "; assign {} .{} = {}", o, miembro, v);
             }
-            Declaracion::AsignacionIndex { nombre, indice, valor } => {
+            Declaracion::AsignacionIndex { nombre, indice, valor, .. } => {
                 let i = self.expr(indice)?; let v = self.expr(valor)?;
                 line!(self.out, "; assign {}[{}] = {}", nombre, i, v);
             }

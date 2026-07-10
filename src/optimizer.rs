@@ -20,12 +20,24 @@ impl Optimizer {
 
     fn optimizar_declaracion(&mut self, decl: &Declaracion) -> Declaracion {
         match decl {
-            Declaracion::Variable { mutable, nombre, tipo, valor } => {
+            Declaracion::Variable { mutable, nombre, tipo, valor, linea, columna } => {
                 let valor_opt = valor.as_ref().map(|v| self.optimizar_expresion(v));
-                Declaracion::Variable { mutable: *mutable, nombre: nombre.clone(), tipo: tipo.clone(), valor: valor_opt }
+                Declaracion::Variable {
+                    mutable: *mutable,
+                    nombre: nombre.clone(),
+                    tipo: tipo.clone(),
+                    valor: valor_opt,
+                    linea: *linea,
+                    columna: *columna,
+                }
             }
-            Declaracion::Asignacion { nombre, valor } => {
-                Declaracion::Asignacion { nombre: nombre.clone(), valor: Box::new(self.optimizar_expresion(valor)) }
+            Declaracion::Asignacion { nombre, valor, linea, columna } => {
+                Declaracion::Asignacion {
+                    nombre: nombre.clone(),
+                    valor: Box::new(self.optimizar_expresion(valor)),
+                    linea: *linea,
+                    columna: *columna,
+                }
             }
             Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
                 let cond_opt = self.optimizar_expresion(condicion);
@@ -229,7 +241,7 @@ impl DeadCodeEliminator {
                         self.recolectar_en_expresion(val);
                     }
                 }
-                Declaracion::Asignacion { nombre, valor } => {
+                Declaracion::Asignacion { nombre, valor, .. } => {
                     self.variables_usadas.insert(nombre.clone());
                     self.recolectar_en_expresion(valor);
                 }
@@ -237,7 +249,7 @@ impl DeadCodeEliminator {
                     self.recolectar_en_expresion(objeto);
                     self.recolectar_en_expresion(valor);
                 }
-                Declaracion::AsignacionIndex { nombre, indice, valor } => {
+                Declaracion::AsignacionIndex { nombre, indice, valor, .. } => {
                     self.variables_usadas.insert(nombre.clone());
                     self.recolectar_en_expresion(indice);
                     self.recolectar_en_expresion(valor);

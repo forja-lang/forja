@@ -185,6 +185,10 @@ impl Parser {
     /// constante <nombre> [: <tipo>] [= <expr>]  → inmutable
     /// variable a, b = <expr>                     → asignación múltiple
     fn parse_variable_decl(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
+        let tok = self.peek().clone();
+        let linea = tok.linea;
+        let columna = tok.columna;
+
         // Determinar si es mutable según el keyword
         let mutable = self.coincide(TokenKind::Variable);
         self.avanzar(); // consume 'variable' o 'constante'
@@ -281,6 +285,8 @@ impl Parser {
             nombre,
             tipo,
             valor,
+            linea,
+            columna,
         }))
     }
 
@@ -830,6 +836,7 @@ impl Parser {
             let decl = self.parse_variable_decl()?.unwrap();
             Some(Box::new(decl))
         } else {
+            let (linea, columna) = (self.linea_actual(), self.columna_actual());
             let nombre = self.esperar_identificador("Se esperaba una variable en la inicialización del 'para'.")?;
             if self.coincide(TokenKind::Igual) {
                 self.avanzar();
@@ -837,6 +844,8 @@ impl Parser {
                 Some(Box::new(Declaracion::Asignacion {
                     nombre,
                     valor: Box::new(valor),
+                    linea,
+                    columna,
                 }))
             } else {
                 return Err(ErrorForja::new(
@@ -864,12 +873,15 @@ impl Parser {
         let incremento = if self.coincide(TokenKind::ParenCerrar) {
             None
         } else {
+            let (linea, columna) = (self.linea_actual(), self.columna_actual());
             let nombre = self.esperar_identificador("Se esperaba una variable en el incremento del 'para'.")?;
             self.esperar(TokenKind::Igual, "Se esperaba '=' en el incremento.")?;
             let valor = self.parse_expresion()?;
             Some(Box::new(Declaracion::Asignacion {
                 nombre,
                 valor: Box::new(valor),
+                linea,
+                columna,
             }))
         };
 
@@ -1086,8 +1098,11 @@ impl Parser {
         // Identificador: nombre o nombre.metodo() o nombre.campo = valor
         if let TokenKind::Identificador(nombre) = &self.peek().kind {
             let nombre = nombre.clone();
+            let tok = self.peek().clone();
+            let linea = tok.linea;
+            let columna = tok.columna;
             self.avanzar();
-            return self.parse_post_identificador(nombre);
+            return self.parse_post_identificador(nombre, linea, columna);
         }
 
         // escribir() function call
@@ -1104,8 +1119,11 @@ impl Parser {
 
         // este.campo = valor  o  este.metodo()
         if self.coincide(TokenKind::Este) {
+            let tok = self.peek().clone();
+            let linea = tok.linea;
+            let columna = tok.columna;
             self.avanzar();
-            return self.parse_post_identificador("self".to_string());
+            return self.parse_post_identificador("self".to_string(), linea, columna);
         }
 
         // nuevo como nombre de variable si NO sigue un Identificador (nombre de clase)
@@ -1113,8 +1131,11 @@ impl Parser {
             let es_instanciacion = self.pos + 1 < self.tokens.len()
                 && matches!(&self.tokens[self.pos + 1].kind, TokenKind::Identificador(_));
             if !es_instanciacion {
+                let tok = self.peek().clone();
+                let linea = tok.linea;
+                let columna = tok.columna;
                 self.avanzar();
-                return self.parse_post_identificador("nuevo".to_string());
+                return self.parse_post_identificador("nuevo".to_string(), linea, columna);
             }
         }
 
@@ -1130,7 +1151,7 @@ impl Parser {
     /// - ident.miembro        (acceso a miembro)
     /// - ident(args)          (llamada a función)
     /// - ident                (solo identificador)
-    fn parse_post_identificador(&mut self, nombre: String) -> Result<Option<Declaracion>, ErrorForja> {
+    fn parse_post_identificador(&mut self, nombre: String, linea: usize, columna: usize) -> Result<Option<Declaracion>, ErrorForja> {
         // CASO 1: nombre(args) — llamada a función simple (sin encadenamiento)
         // Debe devolverse como Declaracion::LlamadaFuncion (sin Pop, manejado por el compilador)
         if self.coincide(TokenKind::ParenAbrir) {
@@ -1147,6 +1168,8 @@ impl Parser {
             return Ok(Some(Declaracion::Asignacion {
                 nombre,
                 valor: Box::new(valor),
+                linea,
+                columna,
             }));
         }
 
@@ -1164,6 +1187,8 @@ impl Parser {
                     nombre: nombre.clone(),
                     indice: Box::new(indice),
                     valor: Box::new(valor),
+                    linea,
+                    columna,
                 }));
             }
 
