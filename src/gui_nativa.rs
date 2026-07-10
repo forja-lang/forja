@@ -114,6 +114,17 @@ impl AppStateNativo {
         }
     }
     
+    /// Anuncia un mensaje de accesibilidad (TalkBack)
+    pub fn a11y_say(&self, mensaje: &str) {
+        println!("  ♿ [TalkBack] {}", mensaje);
+    }
+    
+    /// Anuncia foco en un widget
+    pub fn a11y_focus(&self, widget_type: &str, label: &str, value: &str, state: &str) {
+        let desc = descripcion_accesible(widget_type, label, value, state);
+        self.a11y_say(&desc);
+    }
+    
     /// Actualiza el tamaño de ventana y la clase de tamaño
     pub fn update_window_size(&mut self, width: f64) {
         self.window_width = width;
@@ -4883,6 +4894,8 @@ fn layout_a_view<'a>(
 
             // Obtener la pantalla actual y renderizar su contenido
             let current_screen = &screens[idx];
+            let a11y_screen_name = current_screen.titulo.clone();
+            data.a11y_focus("navigation", &a11y_screen_name, "", "Pantalla activa");
             let content = layout_a_view(&current_screen.contenido, data, _prog, theme);
 
             // Pre-extraer datos de navegación para evitar ownership issues en closures
@@ -4912,9 +4925,10 @@ fn layout_a_view<'a>(
                             view::label(titulo).text_size(label_style.font_size as f32)
                                 .weight(if sel { FontWeight::MEDIUM } else { FontWeight::NORMAL }).color(fg),
                         )).gap(Length::px(2.0));
+                        let p_clone = p.clone();
                         let btn = view::button(w, move |data: &mut AppStateNativo| {
                             data.escribir(&cv_inner, ValorGUI::Texto(sid.clone()));
-                            ejecutar_callback_y_actualizar(&cv_inner, data, &p);
+                            ejecutar_callback_y_actualizar(&cv_inner, data, &p_clone);
                         });
                         items.push(Box::new(btn) as Box<AnyWidgetView<AppStateNativo>>);
                     }
@@ -4945,9 +4959,10 @@ fn layout_a_view<'a>(
                                     as Box<AnyWidgetView<AppStateNativo>>
                             },
                         )).gap(Length::px(4.0));
+                        let p_clone = p.clone();
                         let btn = view::button(tab, move |data: &mut AppStateNativo| {
                             data.escribir(&cv_inner, ValorGUI::Texto(sid.clone()));
-                            ejecutar_callback_y_actualizar(&cv_inner, data, &p);
+                            ejecutar_callback_y_actualizar(&cv_inner, data, &p_clone);
                         });
                         items.push(Box::new(btn) as Box<AnyWidgetView<AppStateNativo>>);
                     }
@@ -4970,9 +4985,10 @@ fn layout_a_view<'a>(
                             view::label(icono).text_size(24.0).color(fg),
                             view::label(titulo).text_size(10.0).color(fg),
                         )).gap(Length::px(2.0));
+                        let p_clone = p.clone();
                         let btn = view::button(w, move |data: &mut AppStateNativo| {
                             data.escribir(&cv_inner, ValorGUI::Texto(sid.clone()));
-                            ejecutar_callback_y_actualizar(&cv_inner, data, &p);
+                            ejecutar_callback_y_actualizar(&cv_inner, data, &p_clone);
                         });
                         items.push(Box::new(view::sized_box(btn).background(Background::Color(bg)).corner_radius(16.0))
                             as Box<AnyWidgetView<AppStateNativo>>);
