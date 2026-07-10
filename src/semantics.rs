@@ -368,12 +368,11 @@ impl BorrowChecker {
         }
     }
 
-    /// Determina si un tipo es Copy (primitivo) o Move (compuesto)
     fn es_copy(tipo: &Option<Tipo>) -> bool {
         match tipo {
             None => true, // Si no sabemos el tipo, asumimos Copy (seguro)
-            Some(Tipo::Entero) | Some(Tipo::Decimal) | Some(Tipo::Booleano) | Some(Tipo::Nulo) | Some(Tipo::Exacto) => true,
-            Some(Tipo::Texto) | Some(Tipo::Clase(_)) | Some(Tipo::Arreglo(_)) | Some(Tipo::Funcion(_, _)) => false,
+            Some(Tipo::Entero) | Some(Tipo::Decimal) | Some(Tipo::Booleano) | Some(Tipo::Nulo) | Some(Tipo::Exacto) | Some(Tipo::Texto) => true,
+            Some(Tipo::Clase(_)) | Some(Tipo::Arreglo(_)) | Some(Tipo::Funcion(_, _)) => false,
             Some(Tipo::Resultado(_, _)) | Some(Tipo::Opcion(_)) | Some(Tipo::RasgoObjeto(_)) | Some(Tipo::Parametro(_)) => false,
         }
     }
