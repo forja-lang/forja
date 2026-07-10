@@ -1448,6 +1448,10 @@ impl TypeChecker {
                 Some(Tipo::Opcion(Box::new(tipo.unwrap_or(Tipo::Entero))))
             }
             Expresion::Resultado => {
+                // Si la variable "resultado" está declarada en el ámbito actual, usar su tipo.
+                if let Some(info) = self.tabla.obtener("resultado") {
+                    return info.tipo.clone();
+                }
                 // 'resultado' solo es válido DENTRO de postcondiciones (asegura)
                 if !self.en_postcondicion {
                     self.errores.push(ErrorForja::new(

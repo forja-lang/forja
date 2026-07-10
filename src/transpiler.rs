@@ -50,6 +50,31 @@ fn es_variable_mutable(nombre: &str, declaraciones: &[Declaracion], _ambito_actu
     false
 }
 
+fn existe_variable_resultado(declaraciones: &[Declaracion]) -> bool {
+    for decl in declaraciones {
+        match decl {
+            Declaracion::Variable { nombre, .. } if nombre == "resultado" => return true,
+            Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
+                if existe_variable_resultado(bloque_verdadero) { return true; }
+                if let Some(bf) = bloque_falso {
+                    if existe_variable_resultado(bf) { return true; }
+                }
+            }
+            Declaracion::Mientras { bloque, .. } => {
+                if existe_variable_resultado(bloque) { return true; }
+            }
+            Declaracion::Para { bloque, .. } => {
+                if existe_variable_resultado(bloque) { return true; }
+            }
+            Declaracion::Repetir { bloque, .. } => {
+                if existe_variable_resultado(bloque) { return true; }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Generador de código Rust a partir del AST de Forja
 pub struct Transpiler {
     output: String,
@@ -78,6 +103,8 @@ pub struct Transpiler {
     postcondiciones_actuales: Vec<Contrato>,
     /// Si la función actual tiene postcondiciones activas
     modo_postcondiciones: bool,
+    /// Si la función/método actual tiene un parámetro o variable local "resultado"
+    tiene_resultado_var: bool,
 }
 
 struct ClaseInfo {
@@ -141,6 +168,7 @@ impl Transpiler {
             gui_container_layout: false,
             postcondiciones_actuales: Vec::new(),
             modo_postcondiciones: false,
+            tiene_resultado_var: false,
         }
     }
 
@@ -1275,10 +1303,14 @@ impl Transpiler {
                 self.postcondiciones_actuales = metodo.postcondiciones.clone();
                 self.modo_postcondiciones = true;
             }
+            let prev_tiene_resultado = self.tiene_resultado_var;
+            self.tiene_resultado_var = metodo.parametros.iter().any(|p| p.nombre == "resultado") || existe_variable_resultado(&metodo.cuerpo);
 
             for decl in &metodo.cuerpo {
                 self.transpilar_declaracion(decl);
             }
+
+            self.tiene_resultado_var = prev_tiene_resultado;
 
             // ─── Invariantes al final del método ──────────────────────
             if !invariantes.is_empty() {
@@ -1634,9 +1666,14 @@ impl Transpiler {
                 let declaraciones_previas = std::mem::take(&mut self.declaraciones_globales);
                 self.declaraciones_globales = cuerpo.clone();
 
+                let prev_tiene_resultado = self.tiene_resultado_var;
+                self.tiene_resultado_var = parametros.iter().any(|p| p.nombre == "resultado") || existe_variable_resultado(cuerpo);
+
                 for d in cuerpo {
                     self.transpilar_declaracion(d);
                 }
+
+                self.tiene_resultado_var = prev_tiene_resultado;
 
                 // Restaurar contexto anterior
                 self.declaraciones_globales = declaraciones_previas;
@@ -2224,7 +2261,13 @@ impl Transpiler {
             Expresion::Some(expr) => {
                 format!("Some({})", self.transpilar_expresion(expr))
             }
-            Expresion::Resultado => "_return_value".to_string(),
+            Expresion::Resultado => {
+                if self.tiene_resultado_var {
+                    "resultado".to_string()
+                } else {
+                    "_return_value".to_string()
+                }
+            }
             Expresion::Anterior(expr) => {
                 if let Expresion::Identificador(var, ..) = expr.as_ref() {
                     format!("_anterior_{}", var)
