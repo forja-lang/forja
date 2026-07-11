@@ -166,7 +166,9 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
     for decl in programa.declaraciones {
         if let ast::Declaracion::Importar(ref ruta) = decl {
             let sub_prog = module_resolver.resolver(ruta).map_err(|e| format!("{}", e[0]))?;
-            final_decls.extend(sub_prog.declaraciones);
+            if ruta != "gui" {
+                final_decls.extend(sub_prog.declaraciones);
+            }
         } else {
             final_decls.push(decl);
         }

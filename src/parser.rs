@@ -735,6 +735,13 @@ impl Parser {
 
             let nombre = self.esperar_identificador("Se esperaba un nombre de parámetro.")?;
 
+            // Consumir elipsis (...) si existe para soportar stubs variádicos
+            if self.coincide(TokenKind::Punto) {
+                while self.coincide(TokenKind::Punto) {
+                    self.avanzar();
+                }
+            }
+
             // Tipo opcional
             let tipo = if self.coincide(TokenKind::DosPuntos) {
                 self.avanzar();
