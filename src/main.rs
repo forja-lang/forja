@@ -1908,13 +1908,13 @@ const GUI_CACHE_DIR: &str = ".forja_gui_cache";
 fn ejecutar_gui(source: &str, _input_path: &str, quiet: bool) -> Result<Vec<String>, String> {
     use std::path::Path;
 
-    let project_dir = GUI_CACHE_DIR;
+    let current_dir = std::env::current_dir()
+        .map_err(|e| format!("Error obteniendo directorio actual: {}", e))?;
+    let project_dir = current_dir.join(GUI_CACHE_DIR);
 
-    // 1. Parsear y transpilar (siempre, es rápido: milisegundos)
-    let mut lexer = forja::lexer::Lexer::new(source);
-    let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
-    let mut parser = forja::parser::Parser::new(tokens);
-    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+    // 1. Parsear, resolver imports y transpilar (siempre, es rápido: milisegundos)
+    let input_path_buf = std::path::Path::new(_input_path);
+    let programa = forja::resolver_imports(source, input_path_buf)?;
 
     let mut transpiler = forja::transpiler::Transpiler::new();
     let rust_code = transpiler.transpilar(&programa).map_err(|e| format!("{}", e[0]))?;
@@ -1923,12 +1923,25 @@ fn ejecutar_gui(source: &str, _input_path: &str, quiet: bool) -> Result<Vec<Stri
     let src_dir = Path::new(&project_dir).join("src");
     std::fs::create_dir_all(&src_dir).map_err(|e| format!("Error creando dir: {}", e))?;
 
+    fn find_workspace_root() -> Option<std::path::PathBuf> {
+        let mut dir = std::env::current_dir().ok()?;
+        loop {
+            if dir.join("crates").join("forja-gui-rt").exists() {
+                return Some(dir);
+            }
+            if !dir.pop() {
+                break;
+            }
+        }
+        None
+    }
+
     // 3. Escribir Cargo.toml con la ruta absoluta a forja-gui-rt
     //    (siempre se regenera para evitar inconsistencias si cambia la estructura)
     {
-        let current_dir = std::env::current_dir()
-            .map_err(|e| format!("Error obteniendo directorio actual: {}", e))?;
-        let rt_abs_path = current_dir.join("crates").join("forja-gui-rt");
+        let workspace_root = find_workspace_root()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        let rt_abs_path = workspace_root.join("crates").join("forja-gui-rt");
         let rt_path_str = rt_abs_path.to_string_lossy().replace('\\', "/");
 
         let cargo_toml = format!(r#"[package]
@@ -1956,9 +1969,9 @@ forja-gui-rt = {{ path = "{}" }}
     let rt_built_marker = cache_target.join(".rt_compiled");
     if !rt_built_marker.exists() {
         if !quiet { println!("  ⚙️  Pre-compilando runtime GUI (una vez)..."); }
-        let rt_path = std::env::current_dir()
-            .map_err(|e| format!("Error obteniendo dir actual: {}", e))?
-            .join("crates").join("forja-gui-rt");
+        let workspace_root = find_workspace_root()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        let rt_path = workspace_root.join("crates").join("forja-gui-rt");
         let rt_result = std::process::Command::new("cargo")
             .args(&["build", "--release"])
             .current_dir(&rt_path)
