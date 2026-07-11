@@ -823,6 +823,8 @@ pub struct TypeChecker {
     en_postcondicion: bool,
     /// Tipo de retorno de la función actual para resolver 'resultado'
     tipo_retorno_actual: Option<Tipo>,
+    linea_actual: usize,
+    columna_actual: usize,
 }
 
 impl TypeChecker {
@@ -837,6 +839,8 @@ impl TypeChecker {
             variantes_enum: HashMap::new(),
             en_postcondicion: false,
             tipo_retorno_actual: None,
+            linea_actual: 1,
+            columna_actual: 1,
         }
     }
 
@@ -893,6 +897,8 @@ impl TypeChecker {
     fn analizar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
             Declaracion::Variable { mutable, nombre, valor, tipo, linea, columna } => {
+                self.linea_actual = *linea;
+                self.columna_actual = *columna;
                 // La anotación explícita de tipo tiene prioridad sobre la inferencia
                 let tipo_inferido = match (tipo, valor) {
                     (Some(t), _) => Some(t.clone()),    // Anotación explícita gana
@@ -905,7 +911,9 @@ impl TypeChecker {
                 let _ = self.tabla.declarar(nombre, *mutable, *linea, *columna, tipo_inferido);
             }
 
-            Declaracion::Asignacion { nombre, valor, linea: _, columna: _ } => {
+            Declaracion::Asignacion { nombre, valor, linea, columna } => {
+                self.linea_actual = *linea;
+                self.columna_actual = *columna;
                 let tipo_valor = self.inferir_tipo(valor);
                 if let Some(info) = self.tabla.obtener(nombre) {
                     if let (Some(t_dest), Some(t_src)) = (&info.tipo, &tipo_valor) {
@@ -978,7 +986,7 @@ impl TypeChecker {
                         if *t != Tipo::Booleano {
                             self.errores.push(ErrorForja::new(
                                 ErrorTipo::ErrorDeTipo,
-                                0, 0,
+                                self.linea_actual, self.columna_actual,
                                 &format!("La precondición debe ser Booleano, no {:?}", t),
                                 "Usá una expresión booleana en la precondición (ej: x > 0)",
                             ));
@@ -993,7 +1001,7 @@ impl TypeChecker {
                         if *t != Tipo::Booleano {
                             self.errores.push(ErrorForja::new(
                                 ErrorTipo::ErrorDeTipo,
-                                0, 0,
+                                self.linea_actual, self.columna_actual,
                                 &format!("La postcondición debe ser Booleano, no {:?}", t),
                                 "Usá una expresión booleana en la postcondición (ej: resultado > 0)",
                             ));
@@ -1016,7 +1024,7 @@ impl TypeChecker {
                         if *t != Tipo::Booleano {
                             self.errores.push(ErrorForja::new(
                                 ErrorTipo::ErrorDeTipo,
-                                0, 0,
+                                self.linea_actual, self.columna_actual,
                                 &format!("El invariante de clase debe ser Booleano, no {:?}", t),
                                 "Usá una expresión booleana en el invariante (ej: este.cuenta >= 0)",
                             ));
@@ -1041,7 +1049,7 @@ impl TypeChecker {
                             if *t != Tipo::Booleano {
                                 self.errores.push(ErrorForja::new(
                                     ErrorTipo::ErrorDeTipo,
-                                    0, 0,
+                                    self.linea_actual, self.columna_actual,
                                     &format!("La precondición del método '{}' debe ser Booleano, no {:?}", metodo.nombre, t),
                                     "Usá una expresión booleana en la precondición",
                                 ));
@@ -1056,7 +1064,7 @@ impl TypeChecker {
                             if *t != Tipo::Booleano {
                                 self.errores.push(ErrorForja::new(
                                     ErrorTipo::ErrorDeTipo,
-                                    0, 0,
+                                    self.linea_actual, self.columna_actual,
                                     &format!("La postcondición del método '{}' debe ser Booleano, no {:?}", metodo.nombre, t),
                                     "Usá una expresión booleana en la postcondición",
                                 ));
@@ -1072,7 +1080,9 @@ impl TypeChecker {
                 }
             }
 
-            Declaracion::AsignacionIndex { nombre, indice, valor, linea: _, columna: _ } => {
+            Declaracion::AsignacionIndex { nombre, indice, valor, linea, columna } => {
+                self.linea_actual = *linea;
+                self.columna_actual = *columna;
                 self.inferir_tipo(indice);
                 self.inferir_tipo(valor);
                 // También podría verificar que nombre es un arreglo
@@ -1081,7 +1091,7 @@ impl TypeChecker {
                         // OK
                     } else if info.tipo.is_some() {
                         self.errores.push(ErrorForja::new(
-                            ErrorTipo::ErrorDeTipo, 0, 0,
+                            ErrorTipo::ErrorDeTipo, *linea, *columna,
                             &format!("'{}' no es un arreglo", nombre),
                             "Usá un arreglo para acceder por índice.",
                         ));
@@ -1101,7 +1111,7 @@ impl TypeChecker {
                         let implementado = metodos.iter().any(|m| m.nombre == firma.nombre);
                         if !implementado {
                             self.errores.push(ErrorForja::new(
-                                ErrorTipo::ErrorSemantico, 0, 0,
+                                ErrorTipo::ErrorSemantico, self.linea_actual, self.columna_actual,
                                 &format!("El rasgo '{}' requiere el método '{}' que no está implementado en '{}'.",
                                     rasgo_nombre, firma.nombre, clase_nombre),
                                 &format!("Implementá el método '{}' en la clase '{}'.", firma.nombre, clase_nombre),
@@ -1110,7 +1120,7 @@ impl TypeChecker {
                     }
                 } else {
                     self.errores.push(ErrorForja::new(
-                        ErrorTipo::ErrorSemantico, 0, 0,
+                        ErrorTipo::ErrorSemantico, self.linea_actual, self.columna_actual,
                         &format!("El rasgo '{}' no está definido.", rasgo_nombre),
                         "Definí el rasgo antes de usarlo con 'rasgo Nombre { ... }'.",
                     ));
@@ -1138,7 +1148,7 @@ impl TypeChecker {
                 if let Some((ref params, _, ref params_tipo)) = self.funciones.get(nombre) {
                     if argumentos.len() != params.len() {
                         self.errores.push(ErrorForja::new(
-                            ErrorTipo::ErrorDeTipo, 0, 0,
+                            ErrorTipo::ErrorDeTipo, self.linea_actual, self.columna_actual,
                             &format!("La función '{}' espera {} argumentos, pero se pasaron {}",
                                 nombre, params.len(), argumentos.len()),
                             "Revisá la cantidad de argumentos.",
@@ -1422,7 +1432,7 @@ impl TypeChecker {
                     if let (Some(t_dest), Some(t_src)) = (&info.tipo, &tipo_valor) {
                         if t_dest != t_src && t_dest != &Tipo::Nulo {
                             self.errores.push(ErrorForja::new(
-                                crate::error::ErrorTipo::ErrorDeTipo, 0, 0,
+                                crate::error::ErrorTipo::ErrorDeTipo, self.linea_actual, self.columna_actual,
                                 &format!("No se puede asignar {:?} a variable de tipo {:?}", t_src, t_dest),
                                 "Usá el tipo correcto para la asignación.",
                             ));
@@ -1593,7 +1603,7 @@ impl TypeChecker {
 
     fn error_tipo(&mut self, msg: &str) {
         self.errores.push(ErrorForja::new(
-            ErrorTipo::ErrorDeTipo, 0, 0, msg,
+            ErrorTipo::ErrorDeTipo, self.linea_actual, self.columna_actual, msg,
             "Revisá los tipos de las expresiones.",
         ));
     }
