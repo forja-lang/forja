@@ -119,6 +119,7 @@ impl Parser {
             TokenKind::Mientras => self.parse_mientras(),
             TokenKind::Para => self.parse_para(),
             TokenKind::Repetir => self.parse_repetir(),
+            TokenKind::Cuando => self.parse_cuando(),
             TokenKind::Retornar => self.parse_retornar(),
             TokenKind::Importar => self.parse_importar(),
             TokenKind::Hilo => self.parse_hilo(),
@@ -821,6 +822,24 @@ impl Parser {
         Ok(Some(Declaracion::Mientras {
             condicion: Box::new(condicion),
             bloque,
+        }))
+    }
+
+    /// cuando (<cond>) { <bloque> }
+    fn parse_cuando(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
+        let (linea, columna) = (self.linea_actual(), self.columna_actual());
+        self.avanzar(); // consume 'cuando'
+        self.esperar(TokenKind::ParenAbrir, "Se esperaba '(' después de 'cuando'.")?;
+        let condicion = self.parse_expresion()?;
+        self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de la condición.")?;
+        self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' para el bloque del 'cuando'.")?;
+        let cuerpo = self.parse_bloque()?;
+
+        Ok(Some(Declaracion::Cuando {
+            condicion: Box::new(condicion),
+            cuerpo,
+            linea,
+            columna,
         }))
     }
 
@@ -1711,15 +1730,15 @@ impl Parser {
             };
             self.avanzar();
 
-            // Detectar Ok(), Error(), Some() como constructores especiales
-            if (nombre == "Ok" || nombre == "Error" || nombre == "Some") && self.coincide(TokenKind::ParenAbrir) {
+            // Detectar Ok(), Error(), Algo() como constructores especiales
+            if (nombre == "Ok" || nombre == "Error" || nombre == "Algo") && self.coincide(TokenKind::ParenAbrir) {
                 self.avanzar(); // consume (
                 let arg = self.parse_expresion()?;
                 self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después del argumento.")?;
                 return match nombre.as_str() {
                     "Ok" => Ok(Expresion::Ok(Box::new(arg))),
                     "Error" => Ok(Expresion::Error(Box::new(arg))),
-                    "Some" => Ok(Expresion::Some(Box::new(arg))),
+                    "Algo" => Ok(Expresion::Algo(Box::new(arg))),
                     _ => unreachable!(),
                 };
             }
@@ -2736,6 +2755,17 @@ mod tests {
                 assert_eq!(bloque.len(), 1);
             }
             _ => panic!("Se esperaba Declaracion::Mientras"),
+        }
+    }
+
+    #[test]
+    fn test_parse_cuando() {
+        let prog = parse_source("cuando (x > 30) { x = 0 }").unwrap();
+        match &prog.declaraciones[0] {
+            Declaracion::Cuando { cuerpo, .. } => {
+                assert_eq!(cuerpo.len(), 1);
+            }
+            _ => panic!("Se esperaba Declaracion::Cuando"),
         }
     }
 

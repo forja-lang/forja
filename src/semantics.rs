@@ -442,6 +442,13 @@ impl BorrowChecker {
                 self.tabla.salir_ambito();
             }
 
+            Declaracion::Cuando { condicion, cuerpo, .. } => {
+                self.analizar_expresion(condicion);
+                self.tabla.entrar_ambito();
+                self.analizar_declaraciones(cuerpo);
+                self.tabla.salir_ambito();
+            }
+
             Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
                 self.tabla.entrar_ambito();
                 if let Some(init) = inicializacion {
@@ -783,7 +790,7 @@ impl BorrowChecker {
                 self.analizar_expresion(valor);
                 None
             }
-            Expresion::Ok(expr) | Expresion::Error(expr) | Expresion::Some(expr) => {
+            Expresion::Ok(expr) | Expresion::Error(expr) | Expresion::Algo(expr) => {
                 self.analizar_expresion(expr);
                 None
             }
@@ -943,6 +950,13 @@ impl TypeChecker {
                 // Permitir cualquier tipo como condición
                 self.tabla.entrar_ambito();
                 self.analizar_declaraciones(bloque);
+                self.tabla.salir_ambito();
+            }
+
+            Declaracion::Cuando { condicion, cuerpo, linea: _, columna: _ } => {
+                let _tipo_cond = self.inferir_tipo(condicion);
+                self.tabla.entrar_ambito();
+                self.analizar_declaraciones(cuerpo);
                 self.tabla.salir_ambito();
             }
 
@@ -1439,9 +1453,9 @@ impl TypeChecker {
                 // Error(valor) → Resultado<Entero, Tipo>
                 Some(Tipo::Resultado(Box::new(Tipo::Entero), Box::new(tipo.unwrap_or(Tipo::Texto))))
             }
-            Expresion::Some(expr) => {
+            Expresion::Algo(expr) => {
                 let tipo = self.inferir_tipo(expr);
-                // Some(valor) → Opcion<Tipo>
+                // Algo(valor) → Opcion<Tipo>
                 Some(Tipo::Opcion(Box::new(tipo.unwrap_or(Tipo::Entero))))
             }
             Expresion::Resultado => {

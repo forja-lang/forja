@@ -169,6 +169,7 @@ impl Lexer {
             "seleccionar" => TokenKind::Seleccionar,
             "tiempo" => TokenKind::Tiempo,
             "otro" => TokenKind::Otro,
+            "cuando" => TokenKind::Cuando,
             // Contratos Design by Contract
             "requiere" => TokenKind::Requiere,
             "asegura" => TokenKind::Asegura,

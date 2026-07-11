@@ -1002,6 +1002,14 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::Label(label_fin));
             }
 
+            Declaracion::Cuando { condicion, cuerpo, .. } => {
+                let label_end = self.nueva_label();
+                self.generar_expresion(condicion);
+                self.emitir(Opcode::JumpSiFalso(label_end));
+                self.generar_declaraciones(cuerpo);
+                self.emitir(Opcode::Label(label_end));
+            }
+
             Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
                 // Optimizar: for i in 0..N
                 if let Some(cond) = condicion {
@@ -1344,7 +1352,7 @@ impl BytecodeGenerator {
                         Patron::Constructor(nombre_ctor, subpatrones) => {
                             // Determinar si es un constructor built-in de Opcion/Resultado
                             let tipo_field = match nombre_ctor.as_str() {
-                                "Some" | "Alguno" => Some("some"),
+                                "Some" | "Alguno" | "Algo" => Some("some"),
                                 "None" | "Ninguno" => Some("none"),
                                 "Ok"   => Some("ok"),
                                 "Error" | "Err" => Some("error"),
@@ -1574,7 +1582,7 @@ impl BytecodeGenerator {
                 // Dejar objeto en stack
                 self.emitir(Opcode::Load(tmp));
             }
-            Expresion::Some(expr) => {
+            Expresion::Algo(expr) => {
                 // Crear objeto Opcion con campo tipo="some" y campo valor=expr
                 let tmp: Arc<str> = Arc::from(format!("__some_{}", self.label_counter).as_str());
                 self.label_counter += 1;

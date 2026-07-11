@@ -77,6 +77,8 @@ pub enum TokenKind {
     Tiempo,
     /// `otro` - rama default en seleccionar
     Otro,
+    /// `cuando` - bloque observador/reactivo
+    Cuando,
 
     // === Contratos (Design by Contract) ===
     /// `requiere` - precondición
@@ -231,6 +233,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Seleccionar => write!(f, "seleccionar"),
             TokenKind::Tiempo => write!(f, "tiempo"),
             TokenKind::Otro => write!(f, "otro"),
+            TokenKind::Cuando => write!(f, "cuando"),
             TokenKind::Requiere => write!(f, "requiere"),
             TokenKind::Asegura => write!(f, "asegura"),
             TokenKind::Siempre => write!(f, "siempre"),

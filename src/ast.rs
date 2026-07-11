@@ -254,8 +254,8 @@ pub enum Expresion {
     Ok(Box<Expresion>),
     /// Construir valor Error de Resultado (ej: Error("falló"))
     Error(Box<Expresion>),
-    /// Construir valor Some de Opcion (ej: Some(42))
-    Some(Box<Expresion>),
+    /// Construir valor Algo de Opcion (ej: Algo(42))
+    Algo(Box<Expresion>),
     /// `resultado` - valor de retorno en postcondición (Design by Contract)
     Resultado,
     /// `anterior(expr)` - captura valor de expr antes de ejecución (Design by Contract)
@@ -342,6 +342,13 @@ pub enum Declaracion {
     Repetir {
         cantidad: Box<Expresion>,
         bloque: Vec<Declaracion>,
+    },
+    /// Bloque reactivo/observador cuando
+    Cuando {
+        condicion: Box<Expresion>,
+        cuerpo: Vec<Declaracion>,
+        linea: usize,
+        columna: usize,
     },
     /// Llamada a función como statement
     LlamadaFuncion {
