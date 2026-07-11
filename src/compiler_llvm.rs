@@ -409,6 +409,9 @@ impl LlvmBackend {
                 self.si(condicion, bloque_verdadero, bloque_falso.as_deref())?;
             }
             Declaracion::Mientras { condicion, bloque } => self.mientras(condicion, bloque)?,
+            Declaracion::Cuando { condicion, cuerpo, .. } => {
+                self.si(condicion, cuerpo, None)?;
+            }
             Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
                 self.para(inicializacion.as_deref(), condicion.as_deref(), incremento.as_deref(), bloque)?;
             }
@@ -833,7 +836,7 @@ impl LlvmBackend {
                 let val_reg = self.expr(valor)?;
                 Ok(val_reg)
             }
-            Expresion::Ok(expr) | Expresion::Error(expr) | Expresion::Some(expr) => {
+            Expresion::Ok(expr) | Expresion::Error(expr) | Expresion::Algo(expr) => {
                 // No implementado en LLVM - evaluar la expresión interna
                 self.expr(expr)
             }

@@ -160,6 +160,10 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
                 for d in bloque { self.sd(d); }
                 self.bx("<span class='tg'>REPETIR</span>", "vc");
             }
+            Declaracion::Cuando { condicion, cuerpo, .. } => {
+                self.bx(&format!("<span class='tg'>CUANDO</span>{}", self.ec(condicion)), "ic");
+                for d in cuerpo { self.sd(d); }
+            }
             Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
                 let init = inicializacion.as_ref().map(|d| self.dc(d)).unwrap_or_default();
                 let cond = condicion.as_ref().map(|e| self.ec(e)).unwrap_or_default();
@@ -243,6 +247,10 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
             Declaracion::Mientras { condicion, bloque } => {
                 let c = self.ec(condicion); let id = self.no(&format!("<b>mientras</b> ({c})"), "b", "bucle", !bloque.is_empty());
                 if !bloque.is_empty() { self.ah(id); for d in bloque { self.gd1(d); } self.ch(); } self.cli();
+            }
+            Declaracion::Cuando { condicion, cuerpo, .. } => {
+                let c = self.ec(condicion); let id = self.no(&format!("<b>cuando</b> ({c})"), "b", "reactivo", !cuerpo.is_empty());
+                if !cuerpo.is_empty() { self.ah(id); for d in cuerpo { self.gd1(d); } self.ch(); } self.cli();
             }
             Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
                 let init = inicializacion.as_ref().map(|d| self.dc(d)).unwrap_or_default(); let cond = condicion.as_ref().map(|e| self.ec(e)).unwrap_or_default(); let inc = incremento.as_ref().map(|d| self.dc(d)).unwrap_or_default();
@@ -343,7 +351,7 @@ function co(){document.querySelectorAll('.ch').forEach(function(e){e.classList.a
             Expresion::ArraySet { array, valor } => format!("{}={}", self.ec(array), self.ec(valor)),
             Expresion::Ok(expr) => format!("Ok({})", self.ec(expr)),
             Expresion::Error(expr) => format!("Error({})", self.ec(expr)),
-            Expresion::Some(expr) => format!("Some({})", self.ec(expr)),
+            Expresion::Algo(expr) => format!("Algo({})", self.ec(expr)),
             Expresion::Resultado => "resultado".to_string(),
             Expresion::Anterior(expr) => format!("anterior({})", self.ec(expr)),
         }

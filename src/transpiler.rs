@@ -26,6 +26,11 @@ fn es_variable_mutable(nombre: &str, declaraciones: &[Declaracion], _ambito_actu
                     return true;
                 }
             }
+            Declaracion::Cuando { cuerpo, .. } => {
+                if es_variable_mutable(nombre, cuerpo, _ambito_actual + 1) {
+                    return true;
+                }
+            }
             Declaracion::Para { bloque, incremento, .. } => {
                 // El incremento del bucle `para` también es una asignación
                 if let Some(inc) = incremento {
@@ -62,6 +67,9 @@ fn existe_variable_resultado(declaraciones: &[Declaracion]) -> bool {
             }
             Declaracion::Mientras { bloque, .. } => {
                 if existe_variable_resultado(bloque) { return true; }
+            }
+            Declaracion::Cuando { cuerpo, .. } => {
+                if existe_variable_resultado(cuerpo) { return true; }
             }
             Declaracion::Para { bloque, .. } => {
                 if existe_variable_resultado(bloque) { return true; }
@@ -644,6 +652,9 @@ impl Transpiler {
                 Declaracion::Mientras { bloque, .. } => {
                     self.recolectar_widgets(bloque, widgets);
                 }
+                Declaracion::Cuando { cuerpo, .. } => {
+                    self.recolectar_widgets(cuerpo, widgets);
+                }
                 Declaracion::Para { bloque, .. } => {
                     self.recolectar_widgets(bloque, widgets);
                 }
@@ -921,6 +932,9 @@ impl Transpiler {
                 Declaracion::Mientras { bloque, .. } => {
                     vars.extend(self.analizar_variables_gui(bloque));
                 }
+                Declaracion::Cuando { cuerpo, .. } => {
+                    vars.extend(self.analizar_variables_gui(cuerpo));
+                }
                 Declaracion::Para { bloque, .. } => {
                     vars.extend(self.analizar_variables_gui(bloque));
                 }
@@ -959,6 +973,9 @@ impl Transpiler {
                 }
                 Declaracion::Mientras { bloque, .. } => {
                     if self.detectar_concurrencia(bloque) { return true; }
+                }
+                Declaracion::Cuando { cuerpo, .. } => {
+                    if self.detectar_concurrencia(cuerpo) { return true; }
                 }
                 Declaracion::Para { bloque, .. } => {
                     if self.detectar_concurrencia(bloque) { return true; }
@@ -1406,6 +1423,9 @@ impl Transpiler {
             if let Declaracion::Mientras { bloque, .. } = decl {
                 if let Some(t) = self.inferir_tipo_retorno(bloque) { return Some(t); }
             }
+            if let Declaracion::Cuando { cuerpo, .. } = decl {
+                if let Some(t) = self.inferir_tipo_retorno(cuerpo) { return Some(t); }
+            }
         }
         None
     }
@@ -1447,6 +1467,10 @@ impl Transpiler {
             Declaracion::Mientras { condicion, bloque } => {
                 self.analizar_expr_para_tipos(condicion, tipos);
                 for d in bloque { self.analizar_declaracion_para_tipos(d, tipos); }
+            }
+            Declaracion::Cuando { condicion, cuerpo, .. } => {
+                self.analizar_expr_para_tipos(condicion, tipos);
+                for d in cuerpo { self.analizar_declaracion_para_tipos(d, tipos); }
             }
             Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
                 if let Some(init) = inicializacion { self.analizar_declaracion_para_tipos(init, tipos); }
@@ -1781,6 +1805,19 @@ impl Transpiler {
                 self.indent();
 
                 for d in bloque {
+                    self.transpilar_declaracion(d);
+                }
+
+                self.dedent();
+                self.emit_line("}");
+            }
+
+            Declaracion::Cuando { condicion, cuerpo, .. } => {
+                let cond_str = self.transpilar_expresion(condicion);
+                self.emit_line(&format!("if {} {{", cond_str));
+                self.indent();
+
+                for d in cuerpo {
                     self.transpilar_declaracion(d);
                 }
 
@@ -2258,7 +2295,7 @@ impl Transpiler {
             Expresion::Error(expr) => {
                 format!("Err({})", self.transpilar_expresion(expr))
             }
-            Expresion::Some(expr) => {
+            Expresion::Algo(expr) => {
                 format!("Some({})", self.transpilar_expresion(expr))
             }
             Expresion::Resultado => {
@@ -2362,7 +2399,7 @@ impl Transpiler {
             }
             Expresion::Ok(inner) => self.recolectar_vars_anterior(inner, vars),
             Expresion::Error(inner) => self.recolectar_vars_anterior(inner, vars),
-            Expresion::Some(inner) => self.recolectar_vars_anterior(inner, vars),
+            Expresion::Algo(inner) => self.recolectar_vars_anterior(inner, vars),
             Expresion::Try(inner) => self.recolectar_vars_anterior(inner, vars),
             _ => {}
         }

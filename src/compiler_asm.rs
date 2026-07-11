@@ -1732,6 +1732,16 @@ impl CompilerAsm {
                 self.emit_line(&format!("{}:", lend));
             }
 
+            Declaracion::Cuando { condicion, cuerpo, .. } => {
+                let lend = self.nueva_etiqueta("cuando_end");
+                self.compilar_expresion_asm(condicion);
+                let a = self.arch.clone();
+                self.emit_line(&a.test_reg(ret));
+                self.emit_line(&a.jump_if_zero(&lend));
+                for d in cuerpo { self.compilar_declaracion(d); }
+                self.emit_line(&format!("{}:", lend));
+            }
+
             Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
                 let lstart = self.nueva_etiqueta("for_start");
                 let lend = self.nueva_etiqueta("for_end");
@@ -2277,7 +2287,7 @@ impl CompilerAsm {
                 self.compilar_expresion_asm(array);
                 String::new()
             }
-            Expresion::Ok(expr) | Expresion::Error(expr) | Expresion::Some(expr) => {
+            Expresion::Ok(expr) | Expresion::Error(expr) | Expresion::Algo(expr) => {
                 // No implementado en ASM - compilar la expresión interna
                 self.compilar_expresion_asm(expr)
             }
@@ -2486,6 +2496,14 @@ impl CompilerAsm {
                         return true;
                     }
                 }
+                Declaracion::Cuando { condicion, cuerpo, .. } => {
+                    if self.expr_llama_a(condicion, nombre) {
+                        return true;
+                    }
+                    if self.tiene_auto_llamada(cuerpo, nombre) {
+                        return true;
+                    }
+                }
                 Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
                     if let Some(init) = inicializacion {
                         if self.tiene_auto_llamada(&[init.as_ref().clone()], nombre) {
@@ -2619,6 +2637,14 @@ impl CompilerAsm {
                         return true;
                     }
                     if self.tiene_constructos_complejos(bloque) {
+                        return true;
+                    }
+                }
+                Declaracion::Cuando { condicion, cuerpo, .. } => {
+                    if self.expr_tiene_constructos_complejos(condicion) {
+                        return true;
+                    }
+                    if self.tiene_constructos_complejos(cuerpo) {
                         return true;
                     }
                 }
