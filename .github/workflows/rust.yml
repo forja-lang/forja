@@ -153,6 +153,8 @@ jobs:
     needs: [build, build-wasm]
     permissions:
       contents: write
+      attestations: write
+      id-token: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -173,6 +175,10 @@ jobs:
           cp artifacts/forja-windows-latest/forja.exe binaries/forja.exe
           cp artifacts/forja-wasm/forja_wasm.js binaries/forja_wasm.js
           cp artifacts/forja-wasm/forja_wasm_bg.wasm binaries/forja_wasm_bg.wasm
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: binaries/*
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
