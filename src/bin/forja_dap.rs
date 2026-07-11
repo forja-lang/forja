@@ -159,6 +159,8 @@ impl DAPState {
 // ─── Main ─────────────────────────────────────────────────────────────
 
 fn main() {
+    forja::selfrun::shadow_copy();
+
     let mut state = DAPState::new();
     let stdin = io::stdin();
     let _stdout = io::stdout();

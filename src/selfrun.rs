@@ -81,3 +81,53 @@ pub fn leer_datos_incrustados() -> Option<(Vec<u8>, [u8; 4])> {
 
     Some((data, magic))
 }
+
+/// Si estamos en Windows, copia el ejecutable actual al directorio temporal (%TEMP%)
+/// y lo ejecuta desde allí para liberar el ejecutable original (evita bloqueos de archivo).
+pub fn shadow_copy() {
+    #[cfg(target_os = "windows")]
+    {
+        use std::env;
+        use std::process::Command;
+
+        let exe_path = env::current_exe().unwrap_or_default();
+        let temp_dir = env::temp_dir();
+        
+        let exe_path_str = exe_path.to_string_lossy().to_lowercase();
+        let temp_dir_str = temp_dir.to_string_lossy().to_lowercase();
+        let file_name = exe_path.file_name().unwrap_or_default().to_string_lossy();
+        
+        // Evitar bucles: comprobar si ya somos la copia temporal por nombre o ruta
+        if file_name.starts_with("run_") 
+            || exe_path_str.contains("\\appdata\\local\\temp\\") 
+            || exe_path_str.starts_with(&temp_dir_str) 
+        {
+            return;
+        }
+
+        let mut temp_exe = temp_dir.clone();
+        temp_exe.push(format!("run_{}", file_name));
+
+        // Copiar el ejecutable
+        match fs::copy(&exe_path, &temp_exe) {
+            Ok(_) => {
+                // Ejecutar la copia pasando todos los argumentos originales
+                let args: Vec<String> = env::args().skip(1).collect();
+                match Command::new(&temp_exe).args(&args).status() {
+                    Ok(status) => {
+                        let exit_code = status.code().unwrap_or(0);
+                        std::process::exit(exit_code);
+                    }
+                    Err(e) => {
+                        eprintln!("Warning [shadow_copy]: Error al ejecutar la copia temporal: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                // Si falla la copia (por ejemplo, porque run_forja.exe ya está en ejecución y bloqueado),
+                // no hacemos nada y permitimos que el binario original continúe su ejecución normal.
+                eprintln!("Warning [shadow_copy]: No se pudo crear la copia temporal: {}", e);
+            }
+        }
+    }
+}

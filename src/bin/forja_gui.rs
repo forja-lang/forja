@@ -65,6 +65,8 @@ fn analizar_args() -> (String, bool, String, bool) {
 }
 
 fn main() {
+    forja::selfrun::shadow_copy();
+
     let (path, use_dark, seed_color, auto_theme) = analizar_args();
 
     let source = match fs::read_to_string(&path) {
