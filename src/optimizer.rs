@@ -283,6 +283,10 @@ impl DeadCodeEliminator {
                     self.recolectar_en_expresion(condicion);
                     self.recolectar_usos(bloque);
                 }
+                Declaracion::Cuando { condicion, cuerpo, .. } => {
+                    self.recolectar_en_expresion(condicion);
+                    self.recolectar_usos(cuerpo);
+                }
                 Declaracion::Repetir { cantidad, bloque } => {
                     self.recolectar_en_expresion(cantidad);
                     self.recolectar_usos(bloque);

@@ -229,6 +229,16 @@ impl Formatter {
                 self.indent -= 1;
                 self.push(&format!("{}}}\n", self.indent_str()));
             }
+            Declaracion::Cuando { condicion, cuerpo, .. } => {
+                self.push(&self.indent_str());
+                self.push("cuando (");
+                self.formatear_expresion(condicion);
+                self.push(") {\n");
+                self.indent += 1;
+                for d in cuerpo { self.formatear_declaracion(d); }
+                self.indent -= 1;
+                self.push(&format!("{}}}\n", self.indent_str()));
+            }
             Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
                 self.push(&self.indent_str());
                 self.push("para (");
@@ -636,9 +646,9 @@ impl Formatter {
                 let exp_str = self.expresion_a_string(expr);
                 format!("Error({})", exp_str)
             }
-            Expresion::Some(expr) => {
+            Expresion::Algo(expr) => {
                 let exp_str = self.expresion_a_string(expr);
-                format!("Some({})", exp_str)
+                format!("Algo({})", exp_str)
             }
             Expresion::Resultado => "resultado".to_string(),
             Expresion::Anterior(expr) => {
