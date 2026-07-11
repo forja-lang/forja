@@ -77,22 +77,12 @@ fn main() {
         }
     };
 
-    // 1. Lexer
-    let mut lexer = forja::lexer::Lexer::new(&source);
-    let tokens = match lexer.tokenize() {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("❌ Error léxico: {}", e[0]);
-            process::exit(1);
-        }
-    };
-
-    // 2. Parser
-    let mut parser = forja::parser::Parser::new(tokens);
-    let programa = match parser.parse() {
+    // 1. Parsear y resolver imports
+    let path_buf = std::path::Path::new(&path);
+    let programa = match forja::resolver_imports(&source, path_buf) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("❌ Error sintáctico: {}", e[0]);
+            eprintln!("❌ Error de resolución/sintaxis: {}", e);
             process::exit(1);
         }
     };

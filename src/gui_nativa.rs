@@ -764,6 +764,10 @@ fn extraer_layout(decls: &[Declaracion]) -> Layout {
                         if let Some(layout) = expr_a_layout(&expr) {
                             return layout;
                         }
+                    } else if let Declaracion::Expresion(expr) = d {
+                        if let Some(layout) = expr_a_layout(expr) {
+                            return layout;
+                        }
                     }
                 }
             }
