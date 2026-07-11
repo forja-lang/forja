@@ -24,3 +24,28 @@
 - No se ejecuta código binario externo
 - Las dependencias se auditan con `cargo audit`
 - El código del usuario (programas .fa) corre aislado en la VM
+- Los releases tienen artifact attestations generadas por GitHub Actions (Sigstore)
+
+## Verificación de releases / Release Verification
+
+Todos los releases publicados en GitHub incluyen **artifact attestations** firmadas criptográficamente mediante [GitHub Artifact Attestations](https://github.com/actions/attest-build-provenance) (basado en Sigstore).
+
+### Verificar un artifact descargado
+
+```bash
+# Requiere GitHub CLI (gh) versión 2.0+
+gh attestation verify <archivo> --owner forja-lang
+```
+
+Ejemplo:
+```bash
+gh attestation verify forja-linux --owner forja-lang
+```
+
+Si el artifact es íntegro y fue generado por el CI oficial de Forja, verás:
+```
+Loaded digest sha256:abc123... for forja-linux
+Loaded 1 attestation from GitHub
+...
+✓ Verification succeeded!
+```
