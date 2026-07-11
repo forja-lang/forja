@@ -1328,6 +1328,8 @@ fn keyword_abre_bloque(linea: &str) -> bool {
 
 #[tokio::main]
 async fn main() {
+    forja::selfrun::shadow_copy();
+
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 

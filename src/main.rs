@@ -51,6 +51,9 @@ use package_config::ForjaConfig;
 use package_resolver::PackageResolver;
 
 fn main() {
+    // Evitar bloqueos de archivo en Windows copiando el ejecutable al directorio temporal
+    selfrun::shadow_copy();
+
     // Intentar self-run (modo ejecutable autónomo con bytecode incrustado)
     if selfrun::try_selfrun().is_some() {
         return; // El bytecode se ejecutó, salir
@@ -1275,7 +1278,7 @@ fn pe_cambiar_a_subsistema_windows(exe: &mut [u8]) -> Result<(), String> {
 /// forja diagram|grafico <archivo.fa> [-o <salida.html>]
 fn cmd_diagram(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja diagrama|diagram|grafico <archivo.fa> [-o <salida.html>]");
+        eprintln!("Uso: forja diagrama|diagram|grafico <archivo.fa> [-o <salida.mmd>]");
         process::exit(1);
     }
 
@@ -1284,7 +1287,7 @@ fn cmd_diagram(args: &[String]) {
         args.get(2).cloned()
     } else {
         let input = Path::new(input_path);
-        Some(input.with_extension("html").to_string_lossy().to_string())
+        Some(input.with_extension("mmd").to_string_lossy().to_string())
     };
 
     let source = match fs::read_to_string(input_path) {
@@ -1306,17 +1309,21 @@ fn cmd_diagram(args: &[String]) {
         Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
     };
 
-    // Generar diagram HTML
+    // Generar diagrama Mermaid
     let mut gen = diagrama::DiagramGenerator::new();
-    let html = gen.generar(&programa);
+    let mmd = gen.generar(&programa);
 
     if let Some(out) = output_path {
-        match fs::write(&out, &html) {
-            Ok(_) => println!("✅ diagrama generado: {}", out),
-            Err(e) => { eprintln!("Error al escribir '{}': {}", out, e); process::exit(1); }
+        if out == "-" {
+            println!("{}", mmd);
+        } else {
+            match fs::write(&out, &mmd) {
+                Ok(_) => println!("✅ diagrama generado: {}", out),
+                Err(e) => { eprintln!("Error al escribir '{}': {}", out, e); process::exit(1); }
+            }
         }
     } else {
-        println!("{}", html);
+        println!("{}", mmd);
     }
 }
 
