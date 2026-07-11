@@ -143,7 +143,7 @@ pub fn compilar_pipeline(source: &str) -> Result<Vec<bytecode::Opcode>, String> 
 /// Resuelve los imports en un programa Forja usando un ModuleResolver.
 /// Reemplaza nodos `Importar` con las declaraciones reales de los módulos.
 #[cfg(not(target_arch = "wasm32"))]
-fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast::Programa, String> {
+pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast::Programa, String> {
     use module::ModuleResolver;
     use package_resolver::PackageResolver;
 
