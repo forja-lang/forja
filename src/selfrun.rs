@@ -111,9 +111,12 @@ pub fn shadow_copy() {
         // Copiar el ejecutable
         match fs::copy(&exe_path, &temp_exe) {
             Ok(_) => {
-                // Ejecutar la copia pasando todos los argumentos originales
+                // Ejecutar la copia pasando todos los argumentos originales y el path original en env var
                 let args: Vec<String> = env::args().skip(1).collect();
-                match Command::new(&temp_exe).args(&args).status() {
+                match Command::new(&temp_exe)
+                    .env("FORJA_ORIGINAL_EXE", &exe_path)
+                    .args(&args)
+                    .status() {
                     Ok(status) => {
                         let exit_code = status.code().unwrap_or(0);
                         std::process::exit(exit_code);

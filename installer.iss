@@ -34,6 +34,7 @@ Source: "target\release\forja.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "target\release\forja-gui.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "target\release\forja-lsp.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "target\release\forja-dap.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "target\release\forja-rt.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "stdlib\*.fa"; DestDir: "{app}\stdlib"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Registry]
