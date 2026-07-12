@@ -288,6 +288,7 @@ impl NativeRegistry {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn registrar_hot_reload(&mut self) {
         // ─── Hot Reload Builtins ──────────────────────────────────────────────
         self.registrar("_recargar_modulo", native_recargar_modulo);
