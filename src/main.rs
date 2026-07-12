@@ -18,7 +18,6 @@ mod vm_fast;
 mod symbol_table;
 mod class_descriptor;
 mod repl;
-mod aot;
 mod selfrun;
 mod diagrama;
 mod optimizer;
@@ -1163,7 +1162,7 @@ fn cmd_build(args: &[String]) {
     }
 
     // Programa sin GUI: AOT con bytecode (rápido, instantáneo)
-    if let Err(e) = aot::AOTCompiler::compilar(&input, &output) {
+    if let Err(e) = forja::aot::AOTCompiler::compilar(&input, &output) {
         eprintln!("{}", e);
         process::exit(1);
     }

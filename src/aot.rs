@@ -1,6 +1,4 @@
-use crate::bytecode::{self, BytecodeGenerator};
-use crate::lexer::Lexer;
-use crate::parser::Parser;
+use crate::bytecode;
 use std::fs;
 
 const FBC_MAGIC: &[u8; 4] = b"FBC\0";
@@ -15,19 +13,14 @@ impl AOTCompiler {
         let source = fs::read_to_string(entrada)
             .map_err(|e| format!("Error leyendo '{}': {}", entrada, e))?;
 
-        // 1. Lexer
-        let mut lexer = Lexer::new(&source);
-        let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
+        // 1. Obtener directorio base del script para resolver imports
+        let entrada_path = std::path::Path::new(entrada);
+        let base_dir = entrada_path.parent().unwrap_or(std::path::Path::new("."));
 
-        // 2. Parser
-        let mut parser = Parser::new(tokens);
-        let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+        // 2. Compilar con la pipeline completa (resuelve imports, type-checking, optimizaciones)
+        let (opcodes, _contratos) = crate::compilar_pipeline_completa_desde(&source, base_dir)?;
 
-        // 3. Generar bytecode
-        let mut gen = BytecodeGenerator::new();
-        let opcodes = gen.generar(&programa).map_err(|_| "Error generando bytecode".to_string())?;
-
-        // 4. Serializar bytecode a binario
+        // 3. Serializar bytecode a binario
         let fbc_data = bytecode::serializar_bytecode(&opcodes);
 
         // 5. Generar ejecutable autónomo (copiar forja.exe + apendar bytecode)
