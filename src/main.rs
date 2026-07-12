@@ -76,6 +76,11 @@ fn main() {
     let comando = &args[1];
 
     match comando.as_str() {
+        // Versión de Forja
+        "version" | "--version" | "-v" => {
+            println!("forja v{}", env!("CARGO_PKG_VERSION"));
+            std::process::exit(0);
+        },
         // Benchmark / medición
         "medir" | "bench" | "medicion" | "benchmark" => cmd_bench(&args[2..]),
         // Ejecutar en VM
@@ -453,6 +458,7 @@ fn mostrar_ayuda() {
     println!("  aprender                   Tutorial interactivo");
     println!("  palabras                   Lista de palabras clave");
     println!("  explicar <palabra>         Explicar un concepto");
+    println!("  version                    Mostrar la versión de Forja");
     println!("  ayuda [tema]               Mostrar esta ayuda\n");
     println!("Los comandos también aceptan su nombre en inglés:");
     println!("  run, build, transpile, build-asm, asm, new, init, add, remove, install, learn, keywords, explain, help, test\n");

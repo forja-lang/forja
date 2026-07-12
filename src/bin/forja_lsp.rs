@@ -1328,6 +1328,12 @@ fn keyword_abre_bloque(linea: &str) -> bool {
 
 #[tokio::main]
 async fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--version" || a == "-v" || a == "version") {
+        println!("forja-lsp v{}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+
     forja::selfrun::shadow_copy();
 
     let stdin = tokio::io::stdin();
