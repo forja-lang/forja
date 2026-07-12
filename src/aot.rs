@@ -20,6 +20,9 @@ impl AOTCompiler {
         // 2. Compilar con la pipeline completa (resuelve imports, type-checking, optimizaciones)
         let (opcodes, _contratos) = crate::compilar_pipeline_completa_desde(&source, base_dir)?;
 
+        // 2b. Sanitizar: convertir opcodes runtime-only a equivalentes genéricos
+        let opcodes = bytecode::sanitizar_para_serializacion(&opcodes);
+
         // 3. Serializar bytecode a binario
         let fbc_data = bytecode::serializar_bytecode(&opcodes);
 

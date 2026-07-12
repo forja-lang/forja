@@ -1966,6 +1966,51 @@ fn crc32(data: &[u8]) -> u32 {
     !crc
 }
 
+/// Sanitiza bytecode para serialización: convierte opcodes no-serializables
+/// (runtime-only) a sus equivalentes genéricos.
+/// Safety net para opcodes que no tengan representación binaria.
+pub fn sanitizar_para_serializacion(bc: &[Opcode]) -> Vec<Opcode> {
+    let mut result = Vec::with_capacity(bc.len());
+    for op in bc {
+        match op {
+            Opcode::PushAddInt(n) => {
+                result.push(Opcode::PushEntero(*n));
+                result.push(Opcode::AddInt);
+            }
+            Opcode::DupAddInt => {
+                result.push(Opcode::Dup);
+                result.push(Opcode::AddInt);
+            }
+            // Runtime-only: CallBuiltin → Call genérico
+            Opcode::CallBuiltin(kind, nargs) => {
+                let name = match kind {
+                    BuiltinKind::Escribir => "escribir",
+                    BuiltinKind::Longitud => "longitud",
+                    BuiltinKind::Len => "len",
+                    BuiltinKind::Tipo => "tipo",
+                    BuiltinKind::ATexto => "a_texto",
+                    BuiltinKind::EsNumero => "es_numero",
+                    BuiltinKind::EsTexto => "es_texto",
+                    BuiltinKind::Empujar => "empujar",
+                    BuiltinKind::Obtener => "obtener",
+                    BuiltinKind::Remover => "remover",
+                    BuiltinKind::Nuevo => "nuevo",
+                };
+                result.push(Opcode::Call(Arc::from(name), *nargs));
+            }
+            Opcode::CallDirect(_, nargs) => {
+                result.push(Opcode::Call(Arc::from("__direct"), *nargs));
+            }
+            Opcode::CallMethodCached(_, nargs) => {
+                result.push(Opcode::CallMethod(Arc::from("__cached"), *nargs));
+            }
+            // Cualquier otro opcode se mantiene (la mayoría son serializables ahora)
+            _ => result.push(op.clone()),
+        }
+    }
+    result
+}
+
 /// Serializa bytecode a binario (formato .fbc v2 con checksum CRC32)
 pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -2296,6 +2341,35 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::LoadIdxFloat(_) => 169,
         Opcode::StoreIdxEntero(_) => 170,
         Opcode::StoreIdxFloat(_) => 171,
+        // === Opcodes especializados por tipo (Fase 1 — type specialization) ===
+        Opcode::AddInt => 172,
+        Opcode::SubInt => 173,
+        Opcode::MulInt => 174,
+        Opcode::DivInt => 175,
+        Opcode::AddFloat => 176,
+        Opcode::SubFloat => 177,
+        Opcode::MulFloat => 178,
+        Opcode::DivFloat => 179,
+        Opcode::IgualInt => 180,
+        Opcode::MenorInt => 181,
+        Opcode::MayorInt => 182,
+        Opcode::IgualFloat => 183,
+        Opcode::DiferenteFloat => 184,
+        Opcode::MenorFloat => 185,
+        Opcode::MayorFloat => 186,
+        Opcode::MenorIgualFloat => 187,
+        Opcode::MayorIgualFloat => 188,
+        // === Superinstrucciones de fusión ===
+        Opcode::PushAddInt(_) => 189,
+        Opcode::DupAddInt => 190,
+        // === Misc runtime opcodes (serializables, generados en compile-time) ===
+        Opcode::Try => 191,
+        Opcode::ParseInt => 192,
+        Opcode::TiempoActual => 193,
+        Opcode::ChannelNew => 194,
+        Opcode::ThreadSpawn(_, _) => 195,
+        Opcode::CallNative(_, _) => 196,
+        Opcode::SocketPoll(_) => 197,
         // Opcodes especializados (runtime-only, no serializables)
         _ => 255,
     }
@@ -2401,7 +2475,34 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         169 => Some(Opcode::LoadIdxFloat(0)),
         170 => Some(Opcode::StoreIdxEntero(0)),
         171 => Some(Opcode::StoreIdxFloat(0)),
-        _ => None,
+        // Opcodes especializados por tipo
+        172 => Some(Opcode::AddInt),
+        173 => Some(Opcode::SubInt),
+        174 => Some(Opcode::MulInt),
+        175 => Some(Opcode::DivInt),
+        176 => Some(Opcode::AddFloat),
+        177 => Some(Opcode::SubFloat),
+        178 => Some(Opcode::MulFloat),
+        179 => Some(Opcode::DivFloat),
+        180 => Some(Opcode::IgualInt),
+        181 => Some(Opcode::MenorInt),
+        182 => Some(Opcode::MayorInt),
+        183 => Some(Opcode::IgualFloat),
+        184 => Some(Opcode::DiferenteFloat),
+        185 => Some(Opcode::MenorFloat),
+        186 => Some(Opcode::MayorFloat),
+        187 => Some(Opcode::MenorIgualFloat),
+        188 => Some(Opcode::MayorIgualFloat),
+        189 => Some(Opcode::PushAddInt(0)),
+        190 => Some(Opcode::DupAddInt),
+        191 => Some(Opcode::Try),
+        192 => Some(Opcode::ParseInt),
+        193 => Some(Opcode::TiempoActual),
+        194 => Some(Opcode::ChannelNew),
+        195 => Some(Opcode::ThreadSpawn(Arc::from(""), 0)),
+        196 => Some(Opcode::CallNative(Arc::from(""), 0)),
+        197 => Some(Opcode::SocketPoll(Arc::from(""))),
+       _ => None,
     }
 }
 
@@ -2870,6 +2971,42 @@ if version >= 2 {
               let line = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
               pos += 4;
               opcodes.push(Opcode::SetLine(line));
+          }
+          // PushAddInt(i64) — 8 bytes payload
+          189 => {
+              if pos + 8 > data.len() { return None; }
+              let n = i64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
+                  data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+              pos += 8;
+              opcodes.push(Opcode::PushAddInt(n));
+          }
+          // ThreadSpawn(Arc<str>, usize) — string_idx(4) + nargs(4)
+          195 => {
+              if pos + 8 > data.len() { return None; }
+              let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+              pos += 4;
+              let nargs = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+              pos += 4;
+              let s = string_pool_get(&string_pool, idx)?;
+              opcodes.push(Opcode::ThreadSpawn(s, nargs));
+          }
+          // CallNative(Arc<str>, usize) — string_idx(4) + nargs(4)
+          196 => {
+              if pos + 8 > data.len() { return None; }
+              let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+              pos += 4;
+              let nargs = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+              pos += 4;
+              let s = string_pool_get(&string_pool, idx)?;
+              opcodes.push(Opcode::CallNative(s, nargs));
+          }
+          // SocketPoll(Arc<str>) — string_idx(4)
+          197 => {
+              if pos + 4 > data.len() { return None; }
+              let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+              pos += 4;
+              let s = string_pool_get(&string_pool, idx)?;
+              opcodes.push(Opcode::SocketPoll(s));
           }
           _ => {
               // Opcodes sin payload
