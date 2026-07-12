@@ -1,6 +1,7 @@
 use crate::ast::*;
 use std::collections::HashSet;
 
+
 /// Optimizador de AST para Forja
 pub struct Optimizer {
     pub cambios_realizados: usize,

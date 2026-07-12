@@ -2,6 +2,7 @@ use crate::ast::*;
 use crate::error::ErrorForja;
 use std::collections::HashMap;
 
+
 /// Analiza si una variable es realmente mutable (se reasigna) dentro de un conjunto de declaraciones.
 /// Busca declaraciones `Asignacion` o `AsignacionIndex` que modifiquen la variable,
 /// respetando límites de ámbito (no cruza fronteras de función).
