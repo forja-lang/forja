@@ -2221,6 +2221,18 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             Opcode::SetLine(line) => {
                 bytes.extend_from_slice(&(*line as u32).to_le_bytes());
             }
+            Opcode::PushAddInt(n) => {
+                bytes.extend_from_slice(&n.to_le_bytes());
+            }
+            Opcode::ThreadSpawn(s, nargs) | Opcode::CallNative(s, nargs) => {
+                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
+                bytes.extend_from_slice(&idx.to_le_bytes());
+                bytes.extend_from_slice(&(*nargs as u32).to_le_bytes());
+            }
+            Opcode::SocketPoll(s) => {
+                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
+                bytes.extend_from_slice(&idx.to_le_bytes());
+            }
             _ => {} // Opcodes sin payload
         }
     }
@@ -3670,6 +3682,37 @@ fun bar(x) {
             "El segundo opcode debe ser DeclareIdxGlobal(5, false)");
         assert_eq!(deserialized[2], Opcode::DeclareIdxGlobal(255, true),
             "El tercer opcode debe ser DeclareIdxGlobal(255, true)");
+    }
+
+    #[test]
+    fn test_opcodes_especializados_serializacion_roundtrip() {
+        let opcodes = vec![
+            Opcode::AddInt,
+            Opcode::SubFloat,
+            Opcode::PushAddInt(42),
+            Opcode::DupAddInt,
+            Opcode::LoadIdxEntero(10),
+            Opcode::StoreIdxFloat(20),
+            Opcode::IgualInt,
+            Opcode::MenorFloat,
+            Opcode::Try,
+            Opcode::ParseInt,
+        ];
+
+        let serialized = serializar_bytecode(&opcodes);
+        let deserialized = deserializar_bytecode(&serialized).unwrap();
+
+        assert_eq!(deserialized.len(), opcodes.len(), "La cantidad de opcodes debe coincidir");
+        assert_eq!(deserialized[0], Opcode::AddInt);
+        assert_eq!(deserialized[1], Opcode::SubFloat);
+        assert_eq!(deserialized[2], Opcode::PushAddInt(42));
+        assert_eq!(deserialized[3], Opcode::DupAddInt);
+        assert_eq!(deserialized[4], Opcode::LoadIdxEntero(10));
+        assert_eq!(deserialized[5], Opcode::StoreIdxFloat(20));
+        assert_eq!(deserialized[6], Opcode::IgualInt);
+        assert_eq!(deserialized[7], Opcode::MenorFloat);
+        assert_eq!(deserialized[8], Opcode::Try);
+        assert_eq!(deserialized[9], Opcode::ParseInt);
     }
 
     #[test]

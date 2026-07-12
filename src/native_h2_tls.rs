@@ -93,7 +93,7 @@ fn native_tls_conectar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
         stream: stream_tls,
     }));
 
-    Ok(ValorFast::entero(idx as i32))
+    Ok(ValorFast::entero(idx as i64))
 }
 
 /// _tls_enviar(tls_idx, datos) -> bool

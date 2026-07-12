@@ -103,7 +103,9 @@ jobs:
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --release --bins --features all --verbose
+        run: |
+          cargo build --release --bins --features all --verbose
+          cargo build -p forja-rt --release --verbose
       - name: Build Windows Installer (Inno Setup)
         if: matrix.os == 'windows-latest'
         run: |
@@ -113,7 +115,6 @@ jobs:
         run: |
           mkdir staging
           copy target\release\forja.exe staging\
-          copy target\release\forja-gui.exe staging\
           copy target\release\forja-lsp.exe staging\
           copy target\release\forja-dap.exe staging\
           copy target\release\forja-rt.exe staging\
@@ -122,7 +123,7 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: |
           mkdir staging
-          cp target/release/forja target/release/forja-gui target/release/forja-lsp target/release/forja-dap target/release/forja-rt staging/
+          cp target/release/forja target/release/forja-lsp target/release/forja-dap target/release/forja-rt staging/
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -188,19 +189,16 @@ jobs:
           mkdir -p binaries
           # Linux
           cp artifacts/forja-ubuntu-latest/forja binaries/forja-linux
-          cp artifacts/forja-ubuntu-latest/forja-gui binaries/forja-gui-linux
           cp artifacts/forja-ubuntu-latest/forja-lsp binaries/forja-lsp-linux
           cp artifacts/forja-ubuntu-latest/forja-dap binaries/forja-dap-linux
           cp artifacts/forja-ubuntu-latest/forja-rt binaries/forja-rt-linux
           # macOS
           cp artifacts/forja-macOS-latest/forja binaries/forja-macos
-          cp artifacts/forja-macOS-latest/forja-gui binaries/forja-gui-macos
           cp artifacts/forja-macOS-latest/forja-lsp binaries/forja-lsp-macos
           cp artifacts/forja-macOS-latest/forja-dap binaries/forja-dap-macos
           cp artifacts/forja-macOS-latest/forja-rt binaries/forja-rt-macos
           # Windows
           cp artifacts/forja-windows-latest/forja.exe binaries/forja.exe
-          cp artifacts/forja-windows-latest/forja-gui.exe binaries/forja-gui.exe
           cp artifacts/forja-windows-latest/forja-lsp.exe binaries/forja-lsp.exe
           cp artifacts/forja-windows-latest/forja-dap.exe binaries/forja-dap.exe
           cp artifacts/forja-windows-latest/forja-rt.exe binaries/forja-rt.exe
