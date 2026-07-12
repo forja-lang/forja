@@ -114,10 +114,8 @@ xilem = { path = "patches/xilem" }
 masonry_winit = { path = "patches/masonry_winit" }
 
 [profile.release]
-opt-level = 3
-# LTO fat + codegen-units=1 es extremadamente lento (minutos).
-# Para desarrollo usamos lto = "thin" (casi misma perf, mucho más rápido).
-# Para distribución final: lto = "fat" + codegen-units = 1
-lto = "thin"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
 panic = "abort"
 strip = "symbols"
