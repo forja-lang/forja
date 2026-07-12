@@ -2,6 +2,8 @@
 
 Forja es un lenguaje de programación educativo moderno con sintaxis y palabras clave completamente en español. Está diseñado para enseñar conceptos de sistemas, teoría de lenguajes de programación y diseño por contrato sin la complejidad sintáctica de Rust. Incluye un compilador nativo, un compilador al vuelo (JIT) para arquitecturas x86-64, múltiples máquinas virtuales y soporte de interfaces gráficas.
 
+📖 **[Leé la documentación oficial aquí](https://forja-lang.github.io/docs)**
+
 ---
 
 ## ⚙️ Arquitectura del Compilador e Intérprete
