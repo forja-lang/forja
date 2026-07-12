@@ -2047,7 +2047,7 @@ impl ForjaFast {
                             0 => {
                                 prof_count!(type_check_int_pass);
                                 if a.es_entero() && b.es_entero() {
-                                    self.push_valor(get_small_int_fast(a.a_entero() as i64 + b.a_entero() as i64));
+                                    self.push_valor(get_small_int_fast(a.a_entero().wrapping_add(b.a_entero())));
                                     self.ip += 1;
                                     continue;
                                 }
@@ -2074,7 +2074,7 @@ impl ForjaFast {
                     }
                     self.cache_add_type = Some((ta, tb));
                     if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(a.a_entero() as i64 + b.a_entero() as i64));
+                        self.push_valor(get_small_int_fast(a.a_entero().wrapping_add(b.a_entero())));
                     } else if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_flotante()));
                     } else if a.es_entero() && b.es_flotante() {
@@ -2141,7 +2141,7 @@ impl ForjaFast {
                         match ta {
                             0 => {
                                 if a.es_entero() && b.es_entero() {
-                                    self.push_valor(get_small_int_fast(a.a_entero() as i64 - b.a_entero() as i64));
+                                    self.push_valor(get_small_int_fast(a.a_entero().wrapping_sub(b.a_entero())));
                                     self.ip += 1;
                                     continue;
                                 }
@@ -2158,7 +2158,7 @@ impl ForjaFast {
                     }
                     self.cache_sub_type = Some((ta, tb));
                     if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(a.a_entero() as i64 - b.a_entero() as i64));
+                        self.push_valor(get_small_int_fast(a.a_entero().wrapping_sub(b.a_entero())));
                     } else if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() - b.a_flotante()));
                     } else if a.es_entero() && b.es_flotante() {
@@ -2211,7 +2211,7 @@ impl ForjaFast {
                         match ta {
                             0 => {
                                 if a.es_entero() && b.es_entero() {
-                                    self.push_valor(get_small_int_fast(a.a_entero() as i64 * b.a_entero() as i64));
+                                    self.push_valor(get_small_int_fast(a.a_entero().wrapping_mul(b.a_entero())));
                                     self.ip += 1;
                                     continue;
                                 }
@@ -2228,7 +2228,7 @@ impl ForjaFast {
                     }
                     self.cache_mul_type = Some((ta, tb));
                     if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(a.a_entero() as i64 * b.a_entero() as i64));
+                        self.push_valor(get_small_int_fast(a.a_entero().wrapping_mul(b.a_entero())));
                     } else if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() * b.a_flotante()));
                     } else if a.es_entero() && b.es_flotante() {
@@ -2287,7 +2287,7 @@ impl ForjaFast {
                         match ta {
                             0 => {
                                 if a.es_entero() && b.es_entero() {
-                                    self.push_valor(get_small_int_fast(a.a_entero() as i64 / b.a_entero() as i64));
+                                    self.push_valor(get_small_int_fast(a.a_entero().wrapping_div(b.a_entero())));
                                     self.ip += 1;
                                     continue;
                                 }
@@ -2309,7 +2309,7 @@ impl ForjaFast {
                         if divisor == 0 {
                             self.push_valor(ValorFast::nulo());
                         } else {
-                            self.push_valor(get_small_int_fast(result / divisor));
+                            self.push_valor(get_small_int_fast(result.wrapping_div(divisor)));
                         }
                     } else if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() / b.a_flotante()));
@@ -2365,7 +2365,7 @@ impl ForjaFast {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
                     // Fast path directo: quickening garantiza enteros
-                    self.push_valor(get_small_int_fast(a.a_entero() as i64 + b.a_entero() as i64));
+                    self.push_valor(get_small_int_fast(a.a_entero().wrapping_add(b.a_entero())));
                     self.ip += 1;
                 }
                 Opcode::AddFloat => {
@@ -2388,7 +2388,7 @@ impl ForjaFast {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
                     // Fast path directo: quickening garantiza enteros
-                    self.push_valor(get_small_int_fast(a.a_entero() as i64 - b.a_entero() as i64));
+                    self.push_valor(get_small_int_fast(a.a_entero().wrapping_sub(b.a_entero())));
                     self.ip += 1;
                 }
                 Opcode::SubFloat => {
@@ -2407,7 +2407,7 @@ impl ForjaFast {
                         patch_op = Some(Opcode::Sub);
                         self.push_valor(a); self.push_valor(b);
                         let (b2, a2) = (self.pop_valor()?, self.pop_valor()?);
-                        if a2.es_entero() && b2.es_entero() { self.push_valor(get_small_int_fast(a2.a_entero() as i64 - b2.a_entero() as i64)); }
+                        if a2.es_entero() && b2.es_entero() { self.push_valor(get_small_int_fast(a2.a_entero().wrapping_sub(b2.a_entero()))); }
                         else if a2.es_flotante() && b2.es_flotante() { self.push_valor(ValorFast::flotante(a2.a_flotante() - b2.a_flotante())); }
                         else { self.push_valor(ValorFast::nulo()); }
                     }
@@ -2416,7 +2416,7 @@ impl ForjaFast {
                 Opcode::MulInt => {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
-                    self.push_valor(get_small_int_fast(a.a_entero() as i64 * b.a_entero() as i64));
+                    self.push_valor(get_small_int_fast(a.a_entero().wrapping_mul(b.a_entero())));
                     self.ip += 1;
                 }
                 Opcode::MulFloat => {
@@ -2433,7 +2433,7 @@ impl ForjaFast {
                         patch_op = Some(Opcode::Mul);
                         self.push_valor(a); self.push_valor(b);
                         let (b2, a2) = (self.pop_valor()?, self.pop_valor()?);
-                        if a2.es_entero() && b2.es_entero() { self.push_valor(get_small_int_fast(a2.a_entero() as i64 * b2.a_entero() as i64)); }
+                        if a2.es_entero() && b2.es_entero() { self.push_valor(get_small_int_fast(a2.a_entero().wrapping_mul(b2.a_entero()))); }
                         else if a2.es_flotante() && b2.es_flotante() { self.push_valor(ValorFast::flotante(a2.a_flotante() * b2.a_flotante())); }
                         else { self.push_valor(ValorFast::nulo()); }
                     }
@@ -2443,7 +2443,7 @@ impl ForjaFast {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
                     if b.a_entero() == 0 { self.push_valor(ValorFast::nulo()); self.ip += 1; continue; }
-                    self.push_valor(get_small_int_fast(a.a_entero() as i64 / b.a_entero() as i64));
+                    self.push_valor(get_small_int_fast(a.a_entero().wrapping_div(b.a_entero())));
                     self.ip += 1;
                 }
                 Opcode::DivFloat => {
@@ -5498,7 +5498,12 @@ impl ForjaFast {
     pub fn obtener_output(&self) -> &[String] { &self.output }
 }
 
-enum BuiltinFast { Len, Upper, Lower, Contains, Split, Trim, Reverse, Obtener, Empujar, Remover }
+enum BuiltinFast {
+    Len, Upper, Lower, Contains, Split, Trim, Reverse, Obtener, Empujar, Remover,
+    // Self-hosting string ops
+    StartsWith, EndsWith, CharAt, IndexOf, Substr, Replace, ParseEntero, ParseFlotante,
+    Repetir, Join,
+}
 fn resolver_builtin_fast(m: &str) -> Option<BuiltinFast> {
     match m {
         "length"|"longitud" => Some(BuiltinFast::Len),
@@ -5511,7 +5516,18 @@ fn resolver_builtin_fast(m: &str) -> Option<BuiltinFast> {
         "obtener"|"get" => Some(BuiltinFast::Obtener),
         "empujar"|"push" => Some(BuiltinFast::Empujar),
         "remover"|"remove" => Some(BuiltinFast::Remover),
-        _=>None
+        // Self-hosting string ops
+        "starts_with"|"empieza_con" => Some(BuiltinFast::StartsWith),
+        "ends_with"|"termina_con" => Some(BuiltinFast::EndsWith),
+        "char_at"|"caracter_en" => Some(BuiltinFast::CharAt),
+        "index_of"|"indice_de" => Some(BuiltinFast::IndexOf),
+        "substr"|"subcadena" => Some(BuiltinFast::Substr),
+        "replace"|"reemplazar" => Some(BuiltinFast::Replace),
+        "parse_entero"|"a_entero" => Some(BuiltinFast::ParseEntero),
+        "parse_flotante"|"a_flotante" => Some(BuiltinFast::ParseFlotante),
+        "repetir"|"repeat" => Some(BuiltinFast::Repetir),
+        "join"|"unir_elementos" => Some(BuiltinFast::Join),
+        _ => None
     }
 }
 impl ForjaFast {
@@ -5613,6 +5629,146 @@ impl ForjaFast {
                         arr.remove(i as usize);
                     }
                     self.push_valor(arr_val);
+                } else { self.push_valor(ValorFast::nulo()); }
+            }
+
+            // ── Self-hosting string builtins ────────────────────────────────
+
+            BuiltinFast::StartsWith => {
+                let prefix = self.pop_valor()?;
+                let v = self.pop_valor()?;
+                if v.es_texto() && prefix.es_texto() {
+                    let result = self.get_str(v.indice_texto())
+                        .starts_with(self.get_str(prefix.indice_texto()).as_ref());
+                    self.push_valor(ValorFast::booleano(result));
+                } else { self.push_valor(ValorFast::booleano(false)); }
+            }
+
+            BuiltinFast::EndsWith => {
+                let suffix = self.pop_valor()?;
+                let v = self.pop_valor()?;
+                if v.es_texto() && suffix.es_texto() {
+                    let result = self.get_str(v.indice_texto())
+                        .ends_with(self.get_str(suffix.indice_texto()).as_ref());
+                    self.push_valor(ValorFast::booleano(result));
+                } else { self.push_valor(ValorFast::booleano(false)); }
+            }
+
+            BuiltinFast::CharAt => {
+                let idx_val = self.pop_valor()?;
+                let v = self.pop_valor()?;
+                if v.es_texto() && idx_val.es_entero() {
+                    let s = self.get_str(v.indice_texto()).clone();
+                    let i = idx_val.a_entero();
+                    if i >= 0 && (i as usize) < s.chars().count() {
+                        let c: String = s.chars().nth(i as usize).into_iter().collect();
+                        let idx = self.alloc_str(Arc::from(c.as_str()));
+                        self.push_valor(ValorFast::texto(idx));
+                    } else {
+                        self.push_valor(ValorFast::nulo());
+                    }
+                } else { self.push_valor(ValorFast::nulo()); }
+            }
+
+            BuiltinFast::IndexOf => {
+                let sub = self.pop_valor()?;
+                let v = self.pop_valor()?;
+                if v.es_texto() && sub.es_texto() {
+                    let haystack = self.get_str(v.indice_texto()).clone();
+                    let needle = self.get_str(sub.indice_texto()).clone();
+                    let pos: i64 = haystack.find(needle.as_ref())
+                        .map(|b| haystack[..b].chars().count() as i64)
+                        .unwrap_or(-1);
+                    self.push_valor(get_small_int_fast(pos));
+                } else { self.push_valor(get_small_int_fast(-1)); }
+            }
+
+            BuiltinFast::Substr => {
+                let len_arg = self.pop_valor()?;
+                let start_arg = self.pop_valor()?;
+                let v = self.pop_valor()?;
+                if v.es_texto() && start_arg.es_entero() && len_arg.es_entero() {
+                    let s = self.get_str(v.indice_texto()).clone();
+                    let start = start_arg.a_entero().max(0) as usize;
+                    let len = len_arg.a_entero().max(0) as usize;
+                    let chars: Vec<char> = s.chars().collect();
+                    let end = (start + len).min(chars.len());
+                    let sub: String = if start < chars.len() {
+                        chars[start..end].iter().collect()
+                    } else { String::new() };
+                    let idx = self.alloc_str(Arc::from(sub.as_str()));
+                    self.push_valor(ValorFast::texto(idx));
+                } else { self.push_valor(ValorFast::nulo()); }
+            }
+
+            BuiltinFast::Replace => {
+                let new_s = self.pop_valor()?;
+                let old_s = self.pop_valor()?;
+                let v = self.pop_valor()?;
+                if v.es_texto() && old_s.es_texto() && new_s.es_texto() {
+                    let s = self.get_str(v.indice_texto()).clone();
+                    let old = self.get_str(old_s.indice_texto()).clone();
+                    let new = self.get_str(new_s.indice_texto()).clone();
+                    let result = s.replace(old.as_ref(), new.as_ref());
+                    let idx = self.alloc_str(Arc::from(result.as_str()));
+                    self.push_valor(ValorFast::texto(idx));
+                } else { self.push_valor(ValorFast::nulo()); }
+            }
+
+            BuiltinFast::ParseEntero => {
+                let v = self.pop_valor()?;
+                if v.es_texto() {
+                    let s = self.get_str(v.indice_texto());
+                    match s.trim().parse::<i64>() {
+                        Ok(n) => self.push_valor(get_small_int_fast(n)),
+                        Err(_) => self.push_valor(ValorFast::nulo()),
+                    }
+                } else if v.es_entero() {
+                    self.push_valor(v);
+                } else if v.es_flotante() {
+                    self.push_valor(get_small_int_fast(v.a_flotante() as i64));
+                } else { self.push_valor(ValorFast::nulo()); }
+            }
+
+            BuiltinFast::ParseFlotante => {
+                let v = self.pop_valor()?;
+                if v.es_texto() {
+                    let s = self.get_str(v.indice_texto());
+                    match s.trim().parse::<f64>() {
+                        Ok(f) => self.push_valor(ValorFast::flotante(f)),
+                        Err(_) => self.push_valor(ValorFast::nulo()),
+                    }
+                } else if v.es_flotante() {
+                    self.push_valor(v);
+                } else if v.es_entero() {
+                    self.push_valor(ValorFast::flotante(v.a_entero() as f64));
+                } else { self.push_valor(ValorFast::nulo()); }
+            }
+
+            BuiltinFast::Repetir => {
+                let count_val = self.pop_valor()?;
+                let v = self.pop_valor()?;
+                if v.es_texto() && count_val.es_entero() {
+                    let s = self.get_str(v.indice_texto()).clone();
+                    let n = count_val.a_entero().max(0) as usize;
+                    let result = s.repeat(n);
+                    let idx = self.alloc_str(Arc::from(result.as_str()));
+                    self.push_valor(ValorFast::texto(idx));
+                } else { self.push_valor(ValorFast::nulo()); }
+            }
+
+            BuiltinFast::Join => {
+                // arr.join(sep) → join array elements with separator
+                let sep_val = self.pop_valor()?;
+                let arr_val = self.pop_valor()?;
+                if arr_val.es_arreglo() && sep_val.es_texto() {
+                    let sep = self.get_str(sep_val.indice_texto()).clone();
+                    let arr = self.get_arr(arr_val.indice_arreglo()).clone();
+                    // Collect string representations before allocating the result
+                    let parts: Vec<String> = arr.iter().map(|v| self.mostrar_valor(v)).collect();
+                    let result = parts.join(sep.as_ref());
+                    let idx = self.alloc_str(Arc::from(result.as_str()));
+                    self.push_valor(ValorFast::texto(idx));
                 } else { self.push_valor(ValorFast::nulo()); }
             }
         }
