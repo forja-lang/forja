@@ -98,7 +98,7 @@ PS C:\forja> cargo build --release --features all
 | **`interactivo`** | `repl` | Inicia la consola de lectura e interpretación línea por línea. |
 | **`probar [archivo.fa]`** | `test` | Corre los módulos de prueba unitaria marcados con `@test`. |
 | **`medir <archivo.fa>`** | `benchmark` | Analiza el rendimiento del código (mediciones en frío y en caliente). |
-| **`diagrama <archivo.fa>`** | `grafico` | Genera un archivo HTML interactivo con la representación gráfica del AST. |
+| **`diagrama <archivo.fa>`** | `grafico` | Genera un diagrama en formato Mermaid (.mmd) con la representación del AST. |
 | **`formatear <archivo.fa>`** | `fmt` | Aplica una indentación estándar de 4 espacios al código fuente. |
 | **`compilar-asm <archivo.fa>`**| `asm` | Genera código de ensamblador nativo para Windows o Linux. |
 | **`transpilar <archivo.fa>`** | `transpilador` | Traduce el código de Forja a un proyecto estructurado en Rust. |
