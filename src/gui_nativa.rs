@@ -5393,16 +5393,25 @@ fn layout_a_view<'a>(
             let track_color: Color = scheme.surface_variant.into();
             let indicator_color: Color = scheme.primary.into();
             if *indeterminado {
-                Box::new(view::zstack((
-                    view::sized_box(view::label(String::new())).height(Length::px(4.0)).background(Background::Color(track_color)).corner_radius(2.0),
-                    view::sized_box(view::label(String::new())).width(Length::px(60.0)).height(Length::px(4.0)).background(Background::Color(indicator_color)).corner_radius(2.0),
-                )))
+                Box::new(view::sized_box(
+                    view::zstack((
+                        view::sized_box(view::label(String::new())).width(Length::px(300.0)).height(Length::px(4.0)).background(Background::Color(track_color)).corner_radius(2.0),
+                        view::sized_box(view::label(String::new())).width(Length::px(60.0)).height(Length::px(4.0)).background(Background::Color(indicator_color)).corner_radius(2.0),
+                    ))
+                ).width(Length::px(300.0)))
             } else {
-                let valor = data.leer(variable).to_f64() / 100.0;
-                Box::new(view::zstack((
-                    view::sized_box(view::label(String::new())).height(Length::px(4.0)).background(Background::Color(track_color)).corner_radius(2.0),
-                    view::sized_box(view::label(String::new())).width(Length::px(300.0 * valor)).height(Length::px(4.0)).background(Background::Color(indicator_color)).corner_radius(2.0),
-                )))
+                let valor = (data.leer(variable).to_f64() / 100.0).clamp(0.0, 1.0);
+                let filled_width = 300.0 * valor;
+                let empty_width = 300.0 * (1.0 - valor);
+                Box::new(view::sized_box(
+                    view::zstack((
+                        view::sized_box(view::label(String::new())).width(Length::px(300.0)).height(Length::px(4.0)).background(Background::Color(track_color)).corner_radius(2.0),
+                        view::flex(Axis::Horizontal, (
+                            view::sized_box(view::label(String::new())).width(Length::px(filled_width)).height(Length::px(4.0)).background(Background::Color(indicator_color)).corner_radius(2.0),
+                            view::sized_box(view::label(String::new())).width(Length::px(empty_width)).height(Length::px(4.0)),
+                        ))
+                    ))
+                ).width(Length::px(300.0)))
             }
         }
 
@@ -6361,7 +6370,9 @@ fn evaluar_expresion(
         Expresion::LiteralTexto(s) => ValorGUI::Texto(s.clone()),
         Expresion::LiteralNumero(n) => ValorGUI::Entero(*n),
         Expresion::LiteralBooleano(b) => ValorGUI::Texto(if *b { "verdadero".to_string() } else { "falso".to_string() }),
-        Expresion::LiteralExacto(_, _) => ValorGUI::Nulo,
+        Expresion::LiteralExacto(coeff, scale) => {
+            ValorGUI::Decimal(*coeff as f64 / (10f64).powi(*scale as i32))
+        }
         Expresion::LiteralNulo => ValorGUI::Nulo,
         Expresion::Identificador(v, ..) => {
             // Buscar en locales primero, luego en state
@@ -6429,7 +6440,9 @@ fn inicializar_estado(decls: &[Declaracion], state: &mut AppStateNativo) {
                         let v = match valor {
                             Some(Expresion::LiteralTexto(s)) => ValorGUI::Texto(s.clone()),
                             Some(Expresion::LiteralNumero(n)) => ValorGUI::Entero(*n),
-                            Some(Expresion::LiteralExacto(_, _)) => ValorGUI::Nulo,
+                            Some(Expresion::LiteralExacto(coeff, scale)) => {
+                                ValorGUI::Decimal(*coeff as f64 / (10f64).powi(*scale as i32))
+                            }
                             _ => ValorGUI::Texto(String::new()),
                         };
                         state.escribir(nombre, v);
