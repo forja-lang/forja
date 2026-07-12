@@ -10,18 +10,18 @@ El siguiente diagrama detalla cómo se procesa el código fuente de Forja hasta 
 
 ```mermaid
 graph TD
-    A["Código Fuente (.fa)"] ──> B["Analizador Léxico (Lexer)"]
-    B ──> C["Analizador Sintáctico (Parser)"]
-    C ──> D["Árbol de Sintaxis Abstracta (AST)"]
-    D ──> E["Verificador de Tipos (Type Checker)"]
-    E ──> F["Optimizador (Plegado de Constantes y Eliminación de Código Muerto)"]
-    F ──> G{"Generador de Código"}
+    A["Código Fuente (.fa)"] --> B["Analizador Léxico (Lexer)"]
+    B --> C["Analizador Sintáctico (Parser)"]
+    C --> D["Árbol de Sintaxis Abstracta (AST)"]
+    D --> E["Verificador de Tipos (Type Checker)"]
+    E --> F["Optimizador (Plegado de Constantes y Eliminación de Código Muerto)"]
+    F --> G{"Generador de Código"}
     
-    G ──>|Código de Bytes Optimizado| H["Máquina Virtual ForjaFast (NaN Tagging)"]
-    G ──>|Compilador al Vuelo| I["Código Máquina x86-64 (JIT)"]
-    G ──>|Transpilador| J["Código Rust (Proyecto Cargo)"]
-    G ──>|Ensamblador Nativo| K["Código Ensamblador (.s + GCC)"]
-    G ──>|Representación Intermedia| L["LLVM IR (.ll + LLC)"]
+    G -->|Código de Bytes Optimizado| H["Máquina Virtual ForjaFast (NaN Tagging)"]
+    G -->|Compilador al Vuelo| I["Código Máquina x86-64 (JIT)"]
+    G -->|Transpilador| J["Código Rust (Proyecto Cargo)"]
+    G -->|Ensamblador Nativo| K["Código Ensamblador (.s + GCC)"]
+    G -->|Representación Intermedia| L["LLVM IR (.ll + LLC)"]
 ```
 
 ---
