@@ -6261,8 +6261,10 @@ pub fn build_and_run(
             // Leer el ancho actual desde el thread-local (actualizado por WindowWidthProbe)
             let current_width = current_window_width();
             data.update_window_size(current_width);
-            // Envolver con WindowWidthProbe para que el width se actualice en cada layout
-            Box::new(observe_width(layout_a_view(&layout, data, &prog, &theme)))
+            let root_view = layout_a_view(&layout, data, &prog, &theme);
+            let root_bg = theme.scheme.surface.into();
+            let root_with_bg = view::sized_box(root_view).background(Background::Color(root_bg));
+            Box::new(observe_width(root_with_bg))
         },
         WindowOptions::new("Forja GUI - Material You")
             .with_initial_inner_size(LogicalSize::new(initial_width, 800.0)),
