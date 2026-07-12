@@ -39,13 +39,29 @@ impl AOTCompiler {
 
     /// Genera un .exe autónomo copiando forja.exe y apendizándole el bytecode
     fn generar_ejecutable(bytecode: &[u8], salida: &str) -> Result<(), String> {
-        // 1. Obtener la ruta del propio forja.exe
-        let self_path = std::env::current_exe()
-            .map_err(|e| format!("Error obteniendo ruta del ejecutable: {}", e))?;
+        // 1. Obtener la ruta del compilador original (antes de shadow copy)
+        let self_path = std::env::var("FORJA_ORIGINAL_EXE")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                std::env::current_exe().unwrap_or_default()
+            });
 
-        // 2. Leer forja.exe
-        let stub = fs::read(&self_path)
-            .map_err(|e| format!("Error leyendo '{}': {}", self_path.display(), e))?;
+        if self_path.as_os_str().is_empty() {
+            return Err("No se pudo obtener la ruta del ejecutable compilador".to_string());
+        }
+
+        // 2. Intentar buscar el runtime autónomo (forja-rt) en el mismo directorio
+        let rt_name = if cfg!(target_os = "windows") { "forja-rt.exe" } else { "forja-rt" };
+        let rt_path = self_path.with_file_name(rt_name);
+
+        let stub = if rt_path.exists() {
+            fs::read(&rt_path)
+                .map_err(|e| format!("Error leyendo stub runtime '{}': {}", rt_path.display(), e))?
+        } else {
+            // Fallback en desarrollo: usar el ejecutable en ejecución como stub
+            fs::read(&self_path)
+                .map_err(|e| format!("Error leyendo stub de desarrollo '{}': {}", self_path.display(), e))?
+        };
 
         // 3. Escribir stub + bytecode + footer
         let mut output = Vec::with_capacity(stub.len() + bytecode.len() + 8);
