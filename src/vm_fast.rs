@@ -43,7 +43,6 @@ thread_local! {
 }
 
 /// Devuelve ValorFast::entero(n) usando la Small Integer Cache si n está en [-5, 256]
-/// NOTA: n se trunca a i32 (pérdida de precisión para valores > 2^31)
 #[inline(always)]
 pub fn get_small_int_fast(n: i64) -> ValorFast {
     if n >= -5 && n <= 256 {
@@ -51,14 +50,14 @@ pub fn get_small_int_fast(n: i64) -> ValorFast {
             let cache = cell.get_or_init(|| {
                 let mut cache: [ValorFast; 262] = [ValorFast::nulo(); 262];
                 for i in 0..262 {
-                    cache[i] = ValorFast::entero(i as i32 - 5);
+                    cache[i] = ValorFast::entero((i as i64) - 5);
                 }
                 cache
             });
             cache[(n + 5) as usize]
         })
     } else {
-        ValorFast::entero(n as i32)
+        ValorFast::entero(n)
     }
 }
 
@@ -101,8 +100,8 @@ impl ValorFast {
     }
 
     #[inline(always)]
-    pub fn entero(i: i32) -> Self {
-        ValorFast(Self::QNAN | Self::TAG_INT | (i as u64 & 0xFFFFFFFF))
+    pub fn entero(i: i64) -> Self {
+        ValorFast(Self::QNAN | Self::TAG_INT | (i as u64 & Self::PAYLOAD_MASK))
     }
 
     #[inline(always)]
@@ -184,7 +183,14 @@ impl ValorFast {
 
     // ─── Accesores de valor ───────────────────────────────────────────────────
     #[inline(always)]
-    pub fn a_entero(&self) -> i32 { (self.0 & 0xFFFFFFFF) as i32 }
+    pub fn a_entero(&self) -> i64 {
+        let val = self.0 & Self::PAYLOAD_MASK;
+        if (val & 0x0000800000000000) != 0 {
+            (val | 0xFFFF000000000000) as i64
+        } else {
+            val as i64
+        }
+    }
 
     #[inline(always)]
     pub fn a_flotante(&self) -> f64 { f64::from_bits(self.0) }
@@ -3011,22 +3017,22 @@ impl ForjaFast {
 
                 Opcode::ParseInt => {
                     let v = self.pop_valor()?;
-                    let n: i32 = if v.es_texto() {
+                    let n: i64 = if v.es_texto() {
                         let idx = v.indice_texto();
                         let s = self.get_str(idx);
-                        s.parse::<i64>().unwrap_or(0) as i32
+                        s.parse::<i64>().unwrap_or(0)
                     } else if v.es_entero() {
                         v.a_entero()
                     } else if v.es_flotante() {
-                        v.a_flotante() as i32
+                        v.a_flotante() as i64
                     } else if v.es_exacto() {
                         let idx = v.indice_exacto();
                         let exacto = self.get_exacto(idx);
                         if exacto.escala == 0 {
-                            exacto.coeficiente as i32
+                            exacto.coeficiente as i64
                         } else {
                             let divisor = 10_i128.wrapping_pow(exacto.escala);
-                            (exacto.coeficiente.wrapping_div(divisor)) as i32
+                            (exacto.coeficiente.wrapping_div(divisor)) as i64
                         }
                     } else {
                         0
@@ -3038,7 +3044,7 @@ impl ForjaFast {
                     let ts = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
-                        .as_secs() as i32;
+                        .as_secs() as i64;
                     self.push_valor(ValorFast::entero(ts));
                     self.ip += 1;
                 }
@@ -3834,7 +3840,7 @@ impl ForjaFast {
                             if !campos.is_empty() {
                                 // El primer campo es el tag del enum
                                 let tag_val = campos[0];
-                                tag_val.es_entero() && tag_val.a_entero() == tag_idx as i32
+                                tag_val.es_entero() && tag_val.a_entero() == tag_idx as i64
                             } else {
                                 tag_idx == 0
                             }
@@ -4211,11 +4217,11 @@ impl ForjaFast {
                     let rx_idx = self.alloc_chan_rx(rx);
                     // Crear objeto CanalTx
                     let mut obj_tx = ObjVal::new(self.sym_canal_tx);
-                    obj_tx.campos_vec.push(ValorFast::entero(tx_idx as i32));
+                    obj_tx.campos_vec.push(ValorFast::entero(tx_idx as i64));
                     let obj_tx_idx = self.alloc_obj(obj_tx);
                     // Crear objeto CanalRx
                     let mut obj_rx = ObjVal::new(self.sym_canal_rx);
-                    obj_rx.campos_vec.push(ValorFast::entero(rx_idx as i32));
+                    obj_rx.campos_vec.push(ValorFast::entero(rx_idx as i64));
                     let obj_rx_idx = self.alloc_obj(obj_rx);
                     // Push tx, luego rx (ArrayNew [tx, rx] — tx index 0, rx index 1)
                     self.push_valor(ValorFast::objeto(obj_tx_idx));
@@ -4277,7 +4283,7 @@ impl ForjaFast {
                                 // Almacenar receiver y crear objeto Hilo
                                 let thread_idx = self.alloc_thread(None, Some(rx_result));
                                 let mut obj = ObjVal::new(self.sym_hilo);
-                                obj.campos_vec.push(ValorFast::entero(thread_idx as i32));
+                                obj.campos_vec.push(ValorFast::entero(thread_idx as i64));
                                 let obj_idx = self.alloc_obj(obj);
                                 self.push_valor(ValorFast::objeto(obj_idx));
                                 self.ip += 1;
@@ -4743,22 +4749,22 @@ impl ForjaFast {
                 // === Built-in functions (stdlib) ===
                 Uop::ParseInt => {
                     let v = self.pop_valor()?;
-                    let n: i32 = if v.es_texto() {
+                    let n: i64 = if v.es_texto() {
                         let idx = v.indice_texto();
                         let s = self.get_str(idx);
-                        s.parse::<i64>().unwrap_or(0) as i32
+                        s.parse::<i64>().unwrap_or(0)
                     } else if v.es_entero() {
                         v.a_entero()
                     } else if v.es_flotante() {
-                        v.a_flotante() as i32
+                        v.a_flotante() as i64
                     } else if v.es_exacto() {
                         let idx = v.indice_exacto();
                         let exacto = self.get_exacto(idx);
                         if exacto.escala == 0 {
-                            exacto.coeficiente as i32
+                            exacto.coeficiente as i64
                         } else {
                             let divisor = 10_i128.wrapping_pow(exacto.escala);
-                            (exacto.coeficiente.wrapping_div(divisor)) as i32
+                            (exacto.coeficiente.wrapping_div(divisor)) as i64
                         }
                     } else {
                         0
@@ -4770,7 +4776,7 @@ impl ForjaFast {
                     let ts = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
-                        .as_secs() as i32;
+                        .as_secs() as i64;
                     self.push_valor(ValorFast::entero(ts));
                     self.ip += 1;
                 }

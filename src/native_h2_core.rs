@@ -1,6 +1,9 @@
 // native_h2_core.rs — Núcleo HTTP/2 para Forja
 // Frames binarios, HPACK (Huffman + tabla dinámica), detección de protocolo
 // Sin dependencias externas — solo std
+#![allow(dead_code)]
+#![allow(unused_variables)]
+#![allow(unused_imports)]
 
 use crate::native_registry::*;
 use crate::vm_fast::*;
