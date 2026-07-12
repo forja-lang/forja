@@ -10,8 +10,9 @@ license = "GPL-3.0-or-later"
 default = []
 lsp = ["tower-lsp", "tokio"]
 dap = []
+gui = []
 h2-tls = ["rustls", "rustls-pki-types", "webpki-roots"]
-all = ["lsp", "dap", "crossbeam", "h2-tls"]
+all = ["lsp", "dap", "gui", "crossbeam", "h2-tls"]
 
 [dependencies]
 # Sin dependencias externas para el núcleo - solo std de Rust
