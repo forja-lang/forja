@@ -51,9 +51,6 @@ use package_config::ForjaConfig;
 use package_resolver::PackageResolver;
 
 fn main() {
-    // Evitar bloqueos de archivo en Windows copiando el ejecutable al directorio temporal
-    selfrun::shadow_copy();
-
     // Intentar self-run (modo ejecutable autónomo con bytecode incrustado)
     if selfrun::try_selfrun().is_some() {
         return; // El bytecode se ejecutó, salir
@@ -63,6 +60,9 @@ fn main() {
     if intentar_selfrun_gui() {
         return; // La GUI nativa se ejecutó, salir
     }
+
+    // Evitar bloqueos de archivo en Windows copiando el ejecutable al directorio temporal
+    selfrun::shadow_copy();
 
     let args: Vec<String> = env::args().collect();
 
