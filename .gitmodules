@@ -13,9 +13,15 @@
 [submodule "docs"]
 	path = docs
 	url = https://github.com/forja-lang/docs.git
+[submodule "crates/forja-gui-rt"]
+	path = crates/forja-gui-rt
+	url = https://github.com/forja-lang/forja-gui-rt.git
 [submodule "crates/forja-wasm"]
 	path = crates/forja-wasm
 	url = https://github.com/forja-lang/forja-wasm.git
 [submodule "stdlib/std"]
 	path = stdlib/std
 	url = https://github.com/forja-lang/forja-stdlib-std.git
+[submodule "stdlib/gui"]
+	path = stdlib/gui
+	url = https://github.com/forja-lang/forja-stdlib-gui.git
