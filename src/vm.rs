@@ -2959,18 +2959,38 @@ enum BuiltinMethod {
     Split,
     Trim,
     Reverse,
+    StartsWith,
+    EndsWith,
+    CharAt,
+    IndexOf,
+    Substr,
+    Replace,
+    ParseEntero,
+    ParseFlotante,
+    Repetir,
+    Join,
 }
 
 /// Resuelve un nombre de método a un BuiltinMethod si es conocido
 fn resolver_builtin(metodo: &str) -> Option<BuiltinMethod> {
     match metodo {
-        "length" => Some(BuiltinMethod::Length),
+        "length"|"longitud" => Some(BuiltinMethod::Length),
         "to_upper" => Some(BuiltinMethod::ToUpper),
         "to_lower" => Some(BuiltinMethod::ToLower),
-        "contains" => Some(BuiltinMethod::Contains),
-        "split" => Some(BuiltinMethod::Split),
-        "trim" => Some(BuiltinMethod::Trim),
-        "reverse" => Some(BuiltinMethod::Reverse),
+        "contains"|"contiene" => Some(BuiltinMethod::Contains),
+        "split"|"dividir" => Some(BuiltinMethod::Split),
+        "trim"|"recortar" => Some(BuiltinMethod::Trim),
+        "reverse"|"invertir" => Some(BuiltinMethod::Reverse),
+        "starts_with"|"empieza_con" => Some(BuiltinMethod::StartsWith),
+        "ends_with"|"termina_con" => Some(BuiltinMethod::EndsWith),
+        "char_at"|"caracter_en" => Some(BuiltinMethod::CharAt),
+        "index_of"|"indice_de" => Some(BuiltinMethod::IndexOf),
+        "substr"|"subcadena" => Some(BuiltinMethod::Substr),
+        "replace"|"reemplazar" => Some(BuiltinMethod::Replace),
+        "parse_entero"|"a_entero" => Some(BuiltinMethod::ParseEntero),
+        "parse_flotante"|"a_flotante" => Some(BuiltinMethod::ParseFlotante),
+        "repetir"|"repeat" => Some(BuiltinMethod::Repetir),
+        "join"|"unir_elementos" => Some(BuiltinMethod::Join),
         _ => None,
     }
 }
@@ -3052,6 +3072,178 @@ impl ForjaVM {
                     ValorVM::Texto(s) => {
                         let rev: String = s.chars().rev().collect();
                         self.stack.push(ValorVM::Texto(rev));
+                    }
+                    _ => self.stack.push(ValorVM::Nulo),
+                }
+            }
+            BuiltinMethod::StartsWith => {
+                if nargs < 1 {
+                    return Err(ErrorVM::StackUnderflow("StartsWith args".to_string()));
+                }
+                let prefix = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("StartsWith prefix".to_string()))?;
+                let s = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("StartsWith str".to_string()))?;
+                match (s, prefix) {
+                    (ValorVM::Texto(t), ValorVM::Texto(p)) => {
+                        self.stack.push(ValorVM::Booleano(t.starts_with(&p)));
+                    }
+                    _ => self.stack.push(ValorVM::Nulo),
+                }
+            }
+            BuiltinMethod::EndsWith => {
+                if nargs < 1 {
+                    return Err(ErrorVM::StackUnderflow("EndsWith args".to_string()));
+                }
+                let suffix = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("EndsWith suffix".to_string()))?;
+                let s = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("EndsWith str".to_string()))?;
+                match (s, suffix) {
+                    (ValorVM::Texto(t), ValorVM::Texto(suf)) => {
+                        self.stack.push(ValorVM::Booleano(t.ends_with(&suf)));
+                    }
+                    _ => self.stack.push(ValorVM::Nulo),
+                }
+            }
+            BuiltinMethod::CharAt => {
+                if nargs < 1 {
+                    return Err(ErrorVM::StackUnderflow("CharAt args".to_string()));
+                }
+                let idx = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("CharAt idx".to_string()))?;
+                let s = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("CharAt str".to_string()))?;
+                match (s, idx) {
+                    (ValorVM::Texto(t), ValorVM::Entero(i)) => {
+                        if i >= 0 && (i as usize) < t.chars().count() {
+                            let c: String = t.chars().nth(i as usize).into_iter().collect();
+                            self.stack.push(ValorVM::Texto(c));
+                        } else {
+                            self.stack.push(ValorVM::Nulo);
+                        }
+                    }
+                    _ => self.stack.push(ValorVM::Nulo),
+                }
+            }
+            BuiltinMethod::IndexOf => {
+                if nargs < 1 {
+                    return Err(ErrorVM::StackUnderflow("IndexOf args".to_string()));
+                }
+                let needle = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("IndexOf needle".to_string()))?;
+                let s = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("IndexOf str".to_string()))?;
+                match (s, needle) {
+                    (ValorVM::Texto(t), ValorVM::Texto(n)) => {
+                        let pos: i64 = t.find(&n)
+                            .map(|b| t[..b].chars().count() as i64)
+                            .unwrap_or(-1);
+                        self.stack.push(get_small_int_vm(pos));
+                    }
+                    _ => self.stack.push(get_small_int_vm(-1)),
+                }
+            }
+            BuiltinMethod::Substr => {
+                if nargs < 2 {
+                    return Err(ErrorVM::StackUnderflow("Substr args".to_string()));
+                }
+                let len_val = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("Substr len".to_string()))?;
+                let start_val = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("Substr start".to_string()))?;
+                let s = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("Substr str".to_string()))?;
+                match (s, start_val, len_val) {
+                    (ValorVM::Texto(t), ValorVM::Entero(start), ValorVM::Entero(len)) => {
+                        let start = start.max(0) as usize;
+                        let len = len.max(0) as usize;
+                        let chars: Vec<char> = t.chars().collect();
+                        let end = (start + len).min(chars.len());
+                        let sub: String = if start < chars.len() {
+                            chars[start..end].iter().collect()
+                        } else {
+                            String::new()
+                        };
+                        self.stack.push(ValorVM::Texto(sub));
+                    }
+                    _ => self.stack.push(ValorVM::Nulo),
+                }
+            }
+            BuiltinMethod::Replace => {
+                if nargs < 2 {
+                    return Err(ErrorVM::StackUnderflow("Replace args".to_string()));
+                }
+                let new_val = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("Replace new".to_string()))?;
+                let old_val = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("Replace old".to_string()))?;
+                let s = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("Replace str".to_string()))?;
+                match (s, old_val, new_val) {
+                    (ValorVM::Texto(t), ValorVM::Texto(old), ValorVM::Texto(new)) => {
+                        self.stack.push(ValorVM::Texto(t.replace(&old, &new)));
+                    }
+                    _ => self.stack.push(ValorVM::Nulo),
+                }
+            }
+            BuiltinMethod::ParseEntero => {
+                let val = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("ParseEntero".to_string()))?;
+                match val {
+                    ValorVM::Texto(s) => {
+                        match s.trim().parse::<i64>() {
+                            Ok(n) => self.stack.push(get_small_int_vm(n)),
+                            Err(_) => self.stack.push(ValorVM::Nulo),
+                        }
+                    }
+                    ValorVM::Entero(n) => self.stack.push(get_small_int_vm(n)),
+                    ValorVM::Decimal(f) => self.stack.push(get_small_int_vm(f as i64)),
+                    _ => self.stack.push(ValorVM::Nulo),
+                }
+            }
+            BuiltinMethod::ParseFlotante => {
+                let val = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("ParseFlotante".to_string()))?;
+                match val {
+                    ValorVM::Texto(s) => {
+                        match s.trim().parse::<f64>() {
+                            Ok(f) => self.stack.push(ValorVM::Decimal(f)),
+                            Err(_) => self.stack.push(ValorVM::Nulo),
+                        }
+                    }
+                    ValorVM::Decimal(f) => self.stack.push(ValorVM::Decimal(f)),
+                    ValorVM::Entero(n) => self.stack.push(ValorVM::Decimal(n as f64)),
+                    _ => self.stack.push(ValorVM::Nulo),
+                }
+            }
+            BuiltinMethod::Repetir => {
+                let count_val = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("Repetir count".to_string()))?;
+                let v = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("Repetir str".to_string()))?;
+                match (v, count_val) {
+                    (ValorVM::Texto(t), ValorVM::Entero(n)) => {
+                        let n = n.max(0) as usize;
+                        let result = t.repeat(n);
+                        self.stack.push(ValorVM::Texto(result));
+                    }
+                    _ => self.stack.push(ValorVM::Nulo),
+                }
+            }
+            BuiltinMethod::Join => {
+                if nargs < 1 {
+                    return Err(ErrorVM::StackUnderflow("Join args".to_string()));
+                }
+                let sep_val = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("Join sep".to_string()))?;
+                let arr_val = self.stack.pop()
+                    .ok_or(ErrorVM::StackUnderflow("Join arr".to_string()))?;
+                match (arr_val, sep_val) {
+                    (ValorVM::Arreglo(arr), ValorVM::Texto(sep)) => {
+                        let parts: Vec<String> = arr.iter().map(|v| v.mostrar()).collect();
+                        let result = parts.join(&sep);
+                        self.stack.push(ValorVM::Texto(result));
                     }
                     _ => self.stack.push(ValorVM::Nulo),
                 }
