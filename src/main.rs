@@ -1308,7 +1308,7 @@ fn cmd_transpile(args: &[String]) {
     let cargo_toml = format!(
         r#"[package]
 name = "{}"
-version = "0.7.0"
+version = "0.8.2"
 edition = "2021"
 
 # Exportado por Forja (fa) desde {} (podés ejecutar directo con 'forja ejecutar')
