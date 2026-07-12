@@ -1,144 +1,209 @@
 # 🔥 Forja (fa)
 
-Forja es un lenguaje de programación educativo con palabras clave en español, diseñado para enseñar conceptos de sistemas y diseño por contrato sin la complejidad sintáctica de Rust. El lenguaje incluye un compilador AOT, JIT nativo x86-64, múltiples implementaciones de VM (incluyendo la ultra-rápida *ForjaFast*) y targets de compilación a ensamblador y LLVM IR.
+Forja es un lenguaje de programación educativo moderno con sintaxis y palabras clave completamente en español. Está diseñado para enseñar conceptos de sistemas, teoría de lenguajes de programación y diseño por contrato sin la complejidad sintáctica de Rust. Incluye un compilador nativo, un compilador al vuelo (JIT) para arquitecturas x86-64, múltiples máquinas virtuales y soporte de interfaces gráficas.
 
 ---
 
-## 🎨 Características Destacadas
+## ⚙️ Arquitectura del Compilador e Intérprete
 
-*   **Palabras Clave en Español**: Ideal para la educación y el aprendizaje natural en hispanohablantes.
-*   **Design by Contract**: Soporte nativo para precondiciones, postcondiciones e invariantes (`requiere`, `asegura`, `siempre`).
-*   **Doble VM y JIT**: Elige entre la VM estándar, la VM optimizada *ForjaFast* (con NaN Tagging y fusión de opcodes) o JIT x86-64 nativo.
-*   **UI Reactiva**: Librería nativa de interfaz gráfica con diseño inspirado en Material Design 3 (Material You).
-*   **Multi-Plataforma**: Compilación AOT cruzada a ejecutables autónomos ligeros (~350 KB), incluyendo soporte para Windows, Linux, macOS y Android.
-
----
-
-## ⚙️ Arquitectura del Compilador
-
-El siguiente diagrama ilustra el flujo del pipeline del compilador desde el código fuente hasta sus múltiples destinos de ejecución:
+El siguiente diagrama detalla cómo se procesa el código fuente de Forja hasta sus distintos entornos de ejecución:
 
 ```mermaid
 graph TD
-    A["Código Fuente (.fa)"] --> B["Lexer (Tokenización)"]
-    B --> C["Parser (AST)"]
-    C --> D["Type Checker (Tipos e Inferencias)"]
-    D --> E["Optimizer (Constant Folding & DCE)"]
-    E --> F{"Generación de Código"}
-    F -->|Bytecode Optimizado| G["ForjaFast VM (NaN Tagging)"]
-    F -->|JIT Compiler| H["Código Máquina x86-64"]
-    F -->|Transpilador| I["Código Rust (Proyecto Cargo)"]
-    F -->|Compiler Asm| J["Código Ensamblador (vía GCC)"]
-    F -->|LLVM IR| K["LLVM IR (.ll)"]
+    A["Código Fuente (.fa)"] ──> B["Analizador Léxico (Lexer)"]
+    B ──> C["Analizador Sintáctico (Parser)"]
+    C ──> D["Árbol de Sintaxis Abstracta (AST)"]
+    D ──> E["Verificador de Tipos (Type Checker)"]
+    E ──> F["Optimizador (Plegado de Constantes y Eliminación de Código Muerto)"]
+    F ──> G{"Generador de Código"}
+    
+    G ──>|Código de Bytes Optimizado| H["Máquina Virtual ForjaFast (NaN Tagging)"]
+    G ──>|Compilador al Vuelo| I["Código Máquina x86-64 (JIT)"]
+    G ──>|Transpilador| J["Código Rust (Proyecto Cargo)"]
+    G ──>|Ensamblador Nativo| K["Código Ensamblador (.s + GCC)"]
+    G ──>|Representación Intermedia| L["LLVM IR (.ll + LLC)"]
 ```
 
 ---
 
-## 🛠️ Comandos de la CLI (en Español)
+## 📚 Sintaxis del Lenguaje por Ejemplo
 
-La interfaz de comandos de Forja está completamente localizada al español. Podés ejecutar las herramientas usando `forja <comando>` o en desarrollo mediante `cargo run --release --bin forja -- <comando>`.
+### 1. Variables, Constantes y Tipos Básicos
+```forja
+// Las variables son mutables por defecto usando 'variable' o 'var'
+variable edad = 18
+edad = 19 // ✅ Permitido
 
-| Comando en Español | Equivalente en Inglés | Descripción |
-| :--- | :--- | :--- |
-| **`ejecutar <archivo.fa>`** | `run` | Compila y corre un archivo en la VM ForjaFast por defecto. |
-| **`compilar <archivo.fa>`** | `build` | Genera un ejecutable autónomo (`.exe`) ultraligero (~350 KB). |
-| **`interactivo`** | `repl` | Inicia la consola REPL con persistencia de estado. |
-| **`probar [archivo.fa]`** | `test` | Corre unit-tests marcados con el atributo `@test`. |
-| **`medir <archivo.fa>`** | `bench` | Realiza benchmarks de tiempo de ejecución (Cold y Hot). |
-| **`diagrama <archivo.fa>`** | `diagram` | Exporta una visualización HTML interactiva del AST. |
-| **`formatear <archivo.fa>`** | `fmt` | Da formato consistente de 4 espacios al código fuente. |
-| **`compilar-asm <archivo.fa>`** | `build-asm` | Compila a código ensamblador nativo (x86-64 o ARM64). |
-| **`transpilar <archivo.fa>`** | `transpile` | Convierte el script Forja en un proyecto Rust completo. |
-| **`documentar <archivo.fa>`** | `doc` | Genera documentación HTML a partir de triple-slash (`///`) comments. |
-| **`colorear <archivo.fa>`** | `highlight` | Muestra el código fuente con resaltado ANSI en la terminal. |
-| **`nuevo <nombre>`** | `new` | Crea una estructura de proyecto inicializada. |
-| **`iniciar`** | `init` | Inicializa un proyecto en el directorio actual. |
-| **`aprender`** | `learn` | Abre el tutorial interactivo por consola. |
-| **`explicar <concepto>`** | `explain` | Explica palabras clave o conceptos sintácticos. |
-| **`palabras`** | `keywords` | Lista todas las palabras reservadas del lenguaje. |
-| **`ayuda`** | `help` | Muestra los comandos disponibles de la CLI. |
-
----
-
-## 🚀 Ejemplos de Uso Rápido
-
-### Ejecutar un Script
-```bash
-forja ejecutar examples/01_hola.fa
+// Las constantes son inmutables usando 'constante' o 'const'
+constante pi = 3.14159
+// pi = 3.2 // ❌ Error en tiempo de compilación
 ```
 
-### Compilar un Ejecutable Autónomo Ligero (~350 KB)
-```bash
-forja compilar examples/05_condicionales.fa -o condicionales.exe
-./condicionales.exe
+### 2. Control de Flujo (Condicionales y Bucles)
+```forja
+// Condicional clásico
+si (edad >= 18) {
+    escribir("Sos mayor de edad")
+} sino {
+    escribir("Sos menor de edad")
+}
+
+// Bucle condicional
+variable contador = 0
+mientras (contador < 3) {
+    escribir("Contador: " + contador)
+    contador = contador + 1
+}
+
+// Bucle determinado
+para (variable i = 0; i < 5; i = i + 1) {
+    escribir("Iteración: " + i)
+}
 ```
 
-### Forzar un Engine de VM Específico
-Se puede configurar el tipo de máquina virtual en la ejecución:
-```bash
-forja ejecutar examples/05_condicionales.fa --vm vm      # VM Original (Stack)
-forja ejecutar examples/05_condicionales.fa --vm fast    # ForjaFast (NaN Tagging)
-forja ejecutar examples/05_condicionales.fa --vm jit     # JIT Compiler x86-64
-```
-
----
-
-## 📜 Design by Contract (Diseño por Contrato)
-
-Forja soporta verificación de contratos en tiempo de ejecución de manera nativa mediante precondiciones (`requiere`), postcondiciones (`asegura`) e invariantes (`siempre`).
-
+### 3. Funciones y Diseño por Contrato (Design by Contract)
+Forja implementa el paradigma de diseño por contrato directamente en la firma de las funciones:
 ```forja
 funcion dividir(a: Entero, b: Entero) -> Entero
-    requiere b != 0, "No se puede dividir por cero"
-    asegura resultado <= a
+    requiere b != 0, "No se puede dividir por cero (Precondición)"
+    asegura resultado <= a, "El resultado es menor o igual al dividendo (Postcondición)"
 {
     retornar a / b
 }
 ```
 
-> [!NOTE]
-> Por defecto (modo Debug), los contratos se evalúan en runtime. Para compilación optimizada en producción, podés omitirlos agregando `--no-contratos`.
-
 ---
 
-## 🎨 Desarrollo de GUI (Material You)
+## 💻 Consola de Comandos (CLI)
 
-Forja incluye soporte opcional para desarrollo de interfaces gráficas basadas en el framework reactivo **Xilem** de Rust, con temas dinámicos inspirados en Material Design 3.
+Todos los comandos de la herramienta de consola de Forja aceptan términos y argumentos en español.
 
-```forja
-importar "gui"
+### Detección y Configuración Inicial
 
-funcion main() {
-    // Código responsivo e interactivo...
-}
+Para utilizar la herramienta de consola en cualquier directorio, podés configurar un alias o compilar el binario directamente en la carpeta del compilador:
+
+```powershell
+# Compilar todas las herramientas en modo optimizado (compilador, depurador, interfaz gráfica y servidor de lenguaje)
+PS C:\forja> cargo build --release --features all
 ```
 
-> [!TIP]
-> Para compilar y ejecutar apps con GUI nativa, asegurate de incluir la feature `gui`:
-> ```bash
-> cargo build --release --features gui
-> forja ejecutar app.fa --native
-> ```
+---
+
+### Referencia de Comandos en Español
+
+| Comando en Consola | Comando Alternativo | Propósito |
+| :--- | :--- | :--- |
+| **`ejecutar <archivo.fa>`** | `correr` | Compila y ejecuta el script en la máquina virtual *ForjaFast* (por defecto). |
+| **`compilar <archivo.fa>`** | `construir` | Genera un archivo ejecutable autónomo (`.exe`) optimizado de **~350 KB**. |
+| **`interactivo`** | `repl` | Inicia la consola de lectura e interpretación línea por línea. |
+| **`probar [archivo.fa]`** | `test` | Corre los módulos de prueba unitaria marcados con `@test`. |
+| **`medir <archivo.fa>`** | `benchmark` | Analiza el rendimiento del código (mediciones en frío y en caliente). |
+| **`diagrama <archivo.fa>`** | `grafico` | Genera un archivo HTML interactivo con la representación gráfica del AST. |
+| **`formatear <archivo.fa>`** | `fmt` | Aplica una indentación estándar de 4 espacios al código fuente. |
+| **`compilar-asm <archivo.fa>`**| `asm` | Genera código de ensamblador nativo para Windows o Linux. |
+| **`transpilar <archivo.fa>`** | `transpilador` | Traduce el código de Forja a un proyecto estructurado en Rust. |
+| **`documentar <archivo.fa>`** | `doc` | Lee comentarios documentales (`///`) y exporta páginas de ayuda HTML. |
+| **`colorear <archivo.fa>`** | `highlight` | Imprime el código fuente con colores ANSI en la terminal. |
+| **`nuevo <nombre>`** | `crear` | Crea un nuevo proyecto con estructura estándar y archivos de configuración. |
+| **`iniciar`** | `init` | Inicializa un proyecto de Forja en el directorio actual. |
+| **`aprender`** | `learn` | Ejecuta el curso y tutorial interactivo del lenguaje. |
+| **`explicar <concepto>`** | `explain` | Busca y describe la sintaxis o palabras clave en el glosario. |
+| **`palabras`** | `keywords` | Muestra la lista completa de palabras reservadas del lenguaje. |
+| **`ayuda`** | `help` | Imprime el manual general de la consola de comandos. |
 
 ---
 
-## 📥 Instalación de la Toolchain
+### Ejemplos Prácticos de Consola
 
-Cloná el repositorio y compilá la toolchain usando Cargo:
+Aquí se ilustra cómo interactuar con el compilador en un entorno de comandos típico:
+
+#### 1. Ejecutar un Script en la Máquina Virtual
+```powershell
+# Ejecución estándar (usa la máquina virtual optimizada ForjaFast por defecto)
+PS C:\forja> forja ejecutar ejemplos/01_hola.fa
+
+# Seleccionar la máquina virtual original
+PS C:\forja> forja ejecutar ejemplos/01_hola.fa --vm vm
+
+# Seleccionar el compilador al vuelo (JIT) nativo
+PS C:\forja> forja ejecutar ejemplos/01_hola.fa --vm jit
+```
+
+#### 2. Compilar a un Ejecutable Autónomo Ligero (~350 KB)
+```powershell
+# Compilar script de consola
+PS C:\forja> forja compilar ejemplos/05_condicionales.fa -o condicionales.exe
+✅ Ejecutable generado: condicionales.exe (277 bytes de código de bytes)
+
+# Ejecutar de forma directa e instantánea sin dependencias
+PS C:\forja> .\condicionales.exe
+Sos mayor de edad
+Buen trabajo!
+```
+
+#### 3. Realizar una Medición de Rendimiento (Benchmark)
+```powershell
+# Comparar el script corriendo en todas las configuraciones de máquinas virtuales
+PS C:\forja> forja medir ejemplos/40_fibonacci.fa --vm todas --iters 100
+```
+
+#### 4. Modo Interactivo (Consola de Lectura y Ejecución Directa)
+```powershell
+PS C:\forja> forja interactivo
+🔨 Forja v0.7.0 — Escribí 'salir' para terminar
+> variable x = 10
+> x = x + 5
+> escribir(x)
+15
+> salir
+👋 ¡Hasta luego!
+```
+
+---
+
+## ⚡ Motores de Ejecución y Rendimiento
+
+Forja incluye múltiples opciones de interpretación y generación de código:
+
+| Motor | Tipo de Ejecución | Rendimiento Relativo |
+| :--- | :--- | :--- |
+| **Representación LLVM** | Compilación estática a través de LLC (`-O2`) | **500x** (Velocidad nativa óptima) |
+| **Ensamblador Nativo** | Generación de código ensamblador más GCC (`-O2`) | **437x** (Velocidad nativa directa) |
+| **Compilador al Vuelo (JIT)** | Traducción dinámica a código máquina x86-64 | **62x** (Ejecución híbrida rápida) |
+| **Máquina Virtual ForjaFast** | Intérprete optimizado con *NaN Tagging* de 8 bytes | **4.8x** (Ejecución por defecto) |
+| **Máquina Virtual Original** | Intérprete estándar basado en pila e instrucciones | **1x** (Línea de base) |
+
+---
+
+## 🎨 Desarrollo Gráfico (GUI)
+
+Forja permite crear complejas aplicaciones de escritorio reactivas e interactivas gracias a la librería de interfaces gráficas. Las interfaces siguen la guía de estilo de **Material Design 3 (Material You)**, con soporte automático para modo oscuro y claro según el sistema operativo.
+
+```powershell
+# Ejecutar un script que importa "gui" en modo nativo
+PS C:\forja> forja ejecutar ejemplos/gui.fa --native
+
+# Forzar tema oscuro con un color semilla específico
+PS C:\forja> forja ejecutar ejemplos/gui.fa --native --dark --tema #FF5722
+```
+
+---
+
+## ⚙️ Compilación Cruzada para Android
+
+El compilador soporta la generación directa de binarios optimizados para dispositivos Android (arquitecturas ARM64, x86_64, ARM32 y x86):
 
 ```bash
-git clone https://github.com/forja-lang/forja.git
-cd forja
+# Compilar para todos los dispositivos soportados
+$ bash scripts/build-android.sh
 
-# Compilar todo (compilador CLI, LSP, DAP y soporte GUI)
-cargo build --release --features all
+# Compilar únicamente para arquitectura ARM64 de 64 bits
+$ bash scripts/build-android.sh aarch64-linux-android
 ```
 
 ---
 
-## 📜 Licencia
+## 📜 Licencia y Uso de Marca
 
-Forja está bajo la licencia **GNU General Public License v3.0 (GPLv3)**. Consultá [LICENSE.md](LICENSE.md) para más detalles.
-
-*   El código fuente del compilador/LSP está cubierto por GPLv3.
-*   **Tus programas escritos en Forja son libres** y podés distribuirlos bajo la licencia que prefieras.
+*   **Compilador y Herramientas**: Licenciado bajo la **Licencia Pública General de GNU v3.0 (GPLv3)**.
+*   **Tus Programas**: Escribir software en Forja no restringe su distribución. **Tus aplicaciones son de tu propiedad exclusiva** y podés elegir la licencia comercial o de código abierto que prefieras.
