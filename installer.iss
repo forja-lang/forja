@@ -34,7 +34,7 @@ Source: "target\release\forja.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "target\release\forja-gui.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "target\release\forja-lsp.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "target\release\forja-dap.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "stdlib\*"; DestDir: "{app}\stdlib"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "stdlib\*.fa"; DestDir: "{app}\stdlib"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Registry]
 Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Flags: preservestringtype; Check: NotOnPathYet
