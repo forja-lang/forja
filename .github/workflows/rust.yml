@@ -138,11 +138,10 @@ jobs:
           submodules: true
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          target: wasm32-unknown-unknown
-          override: true
+          targets: wasm32-unknown-unknown
       - name: Install wasm-bindgen
         run: cargo install wasm-bindgen-cli
       - name: Build forja-wasm
@@ -206,11 +205,11 @@ jobs:
           cp artifacts/forja-wasm/forja_wasm.js binaries/forja_wasm.js
           cp artifacts/forja-wasm/forja_wasm_bg.wasm binaries/forja_wasm_bg.wasm
       - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v2
         with:
           subject-path: binaries/*
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: v${{ env.VERSION }}
