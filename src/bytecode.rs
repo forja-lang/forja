@@ -2019,6 +2019,32 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
                 bytes.extend_from_slice(&idx.to_le_bytes());
                 bytes.push(if *mutable { 1 } else { 0 });
             }
+            Opcode::LoadIdx(idx)
+            | Opcode::StoreIdx(idx)
+            | Opcode::LoadIdxEntero(idx)
+            | Opcode::LoadIdxFloat(idx)
+            | Opcode::StoreIdxEntero(idx)
+            | Opcode::StoreIdxFloat(idx)
+            | Opcode::AddStoreIdx(idx)
+            | Opcode::SubStoreIdx(idx)
+            | Opcode::MulStoreIdx(idx) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            }
+            Opcode::DeclareIdx(idx, mutable) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.push(if *mutable { 1 } else { 0 });
+            }
+            Opcode::LoadAddInt(idx, n) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&n.to_le_bytes());
+            }
+            Opcode::LoadIdx2(a, b)
+            | Opcode::LoadStoreIdx(a, b)
+            | Opcode::LoadJumpSiFalso(a, b)
+            | Opcode::LoadJump(a, b) => {
+                bytes.extend_from_slice(&(*a as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*b as u32).to_le_bytes());
+            }
             Opcode::PushBooleano(b) => bytes.push(if *b { 1 } else { 0 }),
             Opcode::Jump(target) | Opcode::JumpSiFalso(target) | Opcode::Label(target) => {
                 bytes.extend_from_slice(&(*target as u32).to_le_bytes());
@@ -2257,6 +2283,19 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::ExtractField(_) => 141,
         // Debug: SetLine opcode
         Opcode::SetLine(_) => 150,
+        // Nuevos opcodes de optimización (serializables)
+        Opcode::LoadAddInt(_, _) => 160,
+        Opcode::LoadIdx2(_, _) => 161,
+        Opcode::LoadStoreIdx(_, _) => 162,
+        Opcode::AddStoreIdx(_) => 163,
+        Opcode::SubStoreIdx(_) => 164,
+        Opcode::MulStoreIdx(_) => 165,
+        Opcode::LoadJumpSiFalso(_, _) => 166,
+        Opcode::LoadJump(_, _) => 167,
+        Opcode::LoadIdxEntero(_) => 168,
+        Opcode::LoadIdxFloat(_) => 169,
+        Opcode::StoreIdxEntero(_) => 170,
+        Opcode::StoreIdxFloat(_) => 171,
         // Opcodes especializados (runtime-only, no serializables)
         _ => 255,
     }
@@ -2349,6 +2388,19 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         142 => Some(Opcode::DeclareIdxGlobal(0, false)),
         // Debug: SetLine opcode
         150 => Some(Opcode::SetLine(0)),
+        // Nuevas plantillas de opcodes de optimización (para deserializador)
+        160 => Some(Opcode::LoadAddInt(0, 0)),
+        161 => Some(Opcode::LoadIdx2(0, 0)),
+        162 => Some(Opcode::LoadStoreIdx(0, 0)),
+        163 => Some(Opcode::AddStoreIdx(0)),
+        164 => Some(Opcode::SubStoreIdx(0)),
+        165 => Some(Opcode::MulStoreIdx(0)),
+        166 => Some(Opcode::LoadJumpSiFalso(0, 0)),
+        167 => Some(Opcode::LoadJump(0, 0)),
+        168 => Some(Opcode::LoadIdxEntero(0)),
+        169 => Some(Opcode::LoadIdxFloat(0)),
+        170 => Some(Opcode::StoreIdxEntero(0)),
+        171 => Some(Opcode::StoreIdxFloat(0)),
         _ => None,
     }
 }
@@ -2481,6 +2533,52 @@ if version >= 2 {
                 // Validación de seguridad: el índice debe estar dentro del string_pool
                 let s = string_pool_get(&string_pool, idx)?;
                 opcodes.push(Opcode::Declare(s, mutable));
+            }
+            13 | 14 | 163 | 164 | 165 | 168 | 169 | 170 | 171 => { // Opcodes con payload de 1x u32 (index)
+                if pos + 4 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                opcodes.push(match byte {
+                    13 => Opcode::LoadIdx(idx),
+                    14 => Opcode::StoreIdx(idx),
+                    163 => Opcode::AddStoreIdx(idx),
+                    164 => Opcode::SubStoreIdx(idx),
+                    165 => Opcode::MulStoreIdx(idx),
+                    168 => Opcode::LoadIdxEntero(idx),
+                    169 => Opcode::LoadIdxFloat(idx),
+                    170 => Opcode::StoreIdxEntero(idx),
+                    _ => Opcode::StoreIdxFloat(idx),
+                });
+            }
+            15 => { // DeclareIdx
+                if pos + 5 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let mutable = data[pos] == 1;
+                pos += 1;
+                opcodes.push(Opcode::DeclareIdx(idx, mutable));
+            }
+            160 => { // LoadAddInt
+                if pos + 12 > data.len() { return None; }
+                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let n = i64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
+                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+                pos += 8;
+                opcodes.push(Opcode::LoadAddInt(idx, n));
+            }
+            161 | 162 | 166 | 167 => { // Opcodes con payload de 2x u32 (idx/dst, target/idx)
+                if pos + 8 > data.len() { return None; }
+                let a = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                let b = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                pos += 4;
+                opcodes.push(match byte {
+                    161 => Opcode::LoadIdx2(a, b),
+                    162 => Opcode::LoadStoreIdx(a, b),
+                    166 => Opcode::LoadJumpSiFalso(a, b),
+                    _ => Opcode::LoadJump(a, b),
+                });
             }
             3 => { // PushBooleano
                 if pos >= data.len() { return None; }
