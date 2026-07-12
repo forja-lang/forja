@@ -112,27 +112,25 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           iscc installer.iss
-      - name: Upload artifact (Windows)
+      - name: Stage Artifacts (Windows)
         if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: forja-windows-latest
-          path: |
-            target/release/forja.exe
-            target/release/forja-gui.exe
-            target/release/forja-lsp.exe
-            target/release/forja-dap.exe
-            forja-installer-x64.exe
-      - name: Upload artifact (Linux / macOS)
+        run: |
+          mkdir staging
+          copy target\release\forja.exe staging\
+          copy target\release\forja-gui.exe staging\
+          copy target\release\forja-lsp.exe staging\
+          copy target\release\forja-dap.exe staging\
+          copy forja-installer-x64.exe staging\
+      - name: Stage Artifacts (Linux / macOS)
         if: matrix.os != 'windows-latest'
+        run: |
+          mkdir staging
+          cp target/release/forja target/release/forja-gui target/release/forja-lsp target/release/forja-dap staging/
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: forja-${{ matrix.os }}
-          path: |
-            target/release/forja
-            target/release/forja-gui
-            target/release/forja-lsp
-            target/release/forja-dap
+          path: staging/*
 
   build-wasm:
     name: Build WASM
