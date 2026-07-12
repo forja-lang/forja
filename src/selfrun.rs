@@ -82,33 +82,6 @@ pub fn try_selfrun() -> Option<()> {
     Some(())
 }
 
-/// Lee datos incrustados al final del ejecutable con el formato:
-/// [...stub.exe...][...datos...][4 bytes: size u32 LE][4 bytes: magic]
-/// Retorna (datos, magic) si se encuentra, o None si no hay datos incrustados.
-pub fn leer_datos_incrustados() -> Option<(Vec<u8>, [u8; 4])> {
-    let exe_path = std::env::current_exe().ok()?;
-    let mut file = fs::File::open(&exe_path).ok()?;
-    let file_len = file.metadata().ok()?.len();
-    if file_len < 8 { return None; }
-
-    // Leer los últimos 8 bytes (size + magic)
-    file.seek(SeekFrom::End(-8)).ok()?;
-    let mut footer = [0u8; 8];
-    file.read_exact(&mut footer).ok()?;
-
-    let magic = [footer[4], footer[5], footer[6], footer[7]];
-
-    let data_size = u32::from_le_bytes([footer[0], footer[1], footer[2], footer[3]]) as u64;
-    if data_size == 0 || data_size > file_len - 8 { return None; }
-
-    let data_start = file_len - 8 - data_size;
-    file.seek(SeekFrom::Start(data_start)).ok()?;
-    let mut data = vec![0u8; data_size as usize];
-    file.read_exact(&mut data).ok()?;
-
-    Some((data, magic))
-}
-
 /// Si estamos en Windows, copia el ejecutable actual al directorio temporal (%TEMP%)
 /// y lo ejecuta desde allí para liberar el ejecutable original (evita bloqueos de archivo).
 pub fn shadow_copy() {

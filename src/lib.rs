@@ -30,9 +30,7 @@ pub mod native_registry;
 pub mod repl;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod aot;
-#[cfg(feature = "gui")]
-#[path = "../crates/forja-gui-rt/src/gui_nativa.rs"]
-pub mod gui_nativa;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub mod selfrun;
 #[cfg(not(target_arch = "wasm32"))]
