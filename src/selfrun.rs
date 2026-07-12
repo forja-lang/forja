@@ -5,6 +5,7 @@ use crate::vm::ForjaVM;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 
+
 const FBC_MAGIC: &[u8; 4] = b"FBC\0";
 
 /// Intenta cargar bytecode incrustado al final del propio .exe

@@ -18,6 +18,7 @@
 // Bits 47-0  = payload (48 bits)
 // Si NO es NaN pattern → es un f64 directo
 
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use crate::bytecode::{self, Opcode, BuiltinKind, ContratoBytecode};

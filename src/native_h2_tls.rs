@@ -4,6 +4,7 @@
 // La VM Forja es single-threaded para ejecución de scripts,
 // por lo que el Mutex nunca tiene contención real.
 
+
 use crate::native_registry::{
     extraer_indice_socket, obtener_entero, obtener_texto,
     NativeRegistry,

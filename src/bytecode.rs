@@ -2,6 +2,7 @@ use std::sync::Arc;
 use crate::ast::*;
 use crate::error::ErrorForja;
 
+
 /// Builtins conocidos de Forja — usados por CallBuiltin para evitar hash lookup
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BuiltinKind {
@@ -1236,9 +1237,13 @@ impl BytecodeGenerator {
                     // Built-in function handled
                 } else if nombre.contains('.') {
                     // Método: objeto.metodo(args) → push objeto, push args, CallMethod
-                    let parts: Vec<&str> = nombre.splitn(2, '.').collect();
-                    let obj_name = parts[0];
-                    let method_name = Arc::from(parts[1]);
+                    // Usamos rsplitn para encontrar el ÚLTIMO '.' que separa
+                    // el objeto del método. Para literales string que contienen
+                    // puntos (ej: "3.14".parse_flotante()) el splitn(2, '.')
+                    // se rompe porque el primer '.' está dentro del literal.
+                    let parts: Vec<&str> = nombre.rsplitn(2, '.').collect();
+                    let method_name = Arc::from(parts[0]);
+                    let obj_name = parts[1];
                     // Si el objeto es un literal, lo generamos como expresión
                     if obj_name.starts_with('"') {
                         // Es un literal string: "texto".metodo()
