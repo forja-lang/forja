@@ -107,12 +107,32 @@ jobs:
         with:
           submodules: true
       - name: Build
-        run: cargo build --release --verbose
-      - name: Upload artifact
+        run: cargo build --release --bins --features all --verbose
+      - name: Build Windows Installer (Inno Setup)
+        if: matrix.os == 'windows-latest'
+        run: |
+          iscc installer.iss
+      - name: Upload artifact (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: forja-windows-latest
+          path: |
+            target/release/forja.exe
+            target/release/forja-gui.exe
+            target/release/forja-lsp.exe
+            target/release/forja-dap.exe
+            forja-installer-x64.exe
+      - name: Upload artifact (Linux / macOS)
+        if: matrix.os != 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: forja-${{ matrix.os }}
-          path: target/release/forja${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          path: |
+            target/release/forja
+            target/release/forja-gui
+            target/release/forja-lsp
+            target/release/forja-dap
 
   build-wasm:
     name: Build WASM
@@ -170,9 +190,23 @@ jobs:
         shell: bash
         run: |
           mkdir -p binaries
+          # Linux
           cp artifacts/forja-ubuntu-latest/forja binaries/forja-linux
+          cp artifacts/forja-ubuntu-latest/forja-gui binaries/forja-gui-linux
+          cp artifacts/forja-ubuntu-latest/forja-lsp binaries/forja-lsp-linux
+          cp artifacts/forja-ubuntu-latest/forja-dap binaries/forja-dap-linux
+          # macOS
           cp artifacts/forja-macOS-latest/forja binaries/forja-macos
+          cp artifacts/forja-macOS-latest/forja-gui binaries/forja-gui-macos
+          cp artifacts/forja-macOS-latest/forja-lsp binaries/forja-lsp-macos
+          cp artifacts/forja-macOS-latest/forja-dap binaries/forja-dap-macos
+          # Windows
           cp artifacts/forja-windows-latest/forja.exe binaries/forja.exe
+          cp artifacts/forja-windows-latest/forja-gui.exe binaries/forja-gui.exe
+          cp artifacts/forja-windows-latest/forja-lsp.exe binaries/forja-lsp.exe
+          cp artifacts/forja-windows-latest/forja-dap.exe binaries/forja-dap.exe
+          cp artifacts/forja-windows-latest/forja-installer-x64.exe binaries/forja-installer-x64.exe
+          # WASM
           cp artifacts/forja-wasm/forja_wasm.js binaries/forja_wasm.js
           cp artifacts/forja-wasm/forja_wasm_bg.wasm binaries/forja_wasm_bg.wasm
       - name: Generate artifact attestation
