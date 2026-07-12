@@ -8,11 +8,10 @@ license = "GPL-3.0-or-later"
 
 [features]
 default = []
-gui = ["forja-gui-rt"]
 lsp = ["tower-lsp", "tokio"]
 dap = []
 h2-tls = ["rustls", "rustls-pki-types", "webpki-roots"]
-all = ["gui", "lsp", "dap", "crossbeam", "h2-tls"]
+all = ["lsp", "dap", "crossbeam", "h2-tls"]
 
 [dependencies]
 # Sin dependencias externas para el núcleo - solo std de Rust
@@ -22,7 +21,6 @@ sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 crossbeam = { version = "0.8", optional = true }
-forja-gui-rt = { path = "crates/forja-gui-rt", optional = true }
 rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std"] }
 rustls-pki-types = { version = "1", optional = true }
 webpki-roots = { version = "0.26", optional = true }
@@ -36,11 +34,6 @@ tokio = { version = "1", features = ["full"], optional = true }
 name = "forja-lsp"
 path = "src/bin/forja_lsp.rs"
 required-features = ["lsp"]
-
-[[bin]]
-name = "forja-gui"
-path = "src/bin/forja_gui.rs"
-required-features = ["gui"]
 
 [[bin]]
 name = "forja-dap"
@@ -104,7 +97,6 @@ winresource = "0.1"
 
 [workspace]
 members = [
-    "crates/forja-gui-rt",
     "crates/forja-wasm",
     "crates/forja-rt",
 ]
