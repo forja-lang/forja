@@ -3,6 +3,8 @@
 // Las warnings de código no usado son intencionales (API pública, código futuro)
 #![allow(dead_code)]
 
+extern crate self as forja;
+
 pub mod token;
 pub mod lexer;
 pub mod ast;

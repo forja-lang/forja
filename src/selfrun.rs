@@ -47,10 +47,37 @@ pub fn try_selfrun() -> Option<()> {
     // Deserializar bytecode
     let opcodes = crate::bytecode::deserializar_bytecode(&bytecode_data)?;
 
-    // Ejecutar en VM
-    let mut vm = ForjaVM::new();
-    vm.cargar_bytecode(opcodes);
-    vm.ejecutar().ok()?;
+    if std::env::var("FORJA_DEBUG_BC").is_ok() {
+        println!("OPCODES: {:?}", opcodes);
+    }
+
+    // Detectar si se especificó el modo de VM mediante --vm (por defecto es ForjaFast)
+    let args: Vec<String> = std::env::args().collect();
+    let mut use_fast = true;
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--vm" && i + 1 < args.len() {
+            if args[i + 1] == "vm" {
+                use_fast = false;
+            }
+            break;
+        }
+        i += 1;
+    }
+
+    // Ejecutar en la VM seleccionada
+    if use_fast {
+        let mut vm = crate::vm_fast::ForjaFast::new();
+        vm.cargar_bytecode(opcodes);
+        vm.ejecutar().ok()?;
+        for line in vm.obtener_output() {
+            println!("{}", line);
+        }
+    } else {
+        let mut vm = ForjaVM::new();
+        vm.cargar_bytecode(opcodes);
+        vm.ejecutar().ok()?;
+    }
 
     Some(())
 }
