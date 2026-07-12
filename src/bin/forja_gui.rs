@@ -16,6 +16,12 @@ use forja_gui_rt::MaterialTheme;
 fn analizar_args() -> (String, bool, String, bool) {
     let args: Vec<String> = env::args().collect();
 
+    // Versión de Forja GUI
+    if args.iter().any(|a| a == "--version" || a == "-v" || a == "version") {
+        println!("forja-gui v{}", env!("CARGO_PKG_VERSION"));
+        process::exit(0);
+    }
+
     // Detectar flags de tema
     let use_dark = args.contains(&"--dark".to_string());
     let auto_theme = args.contains(&"--auto-tema".to_string())
