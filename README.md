@@ -1,377 +1,91 @@
-# Forja (fa)
+# 🔥 Forja (fa)
 
-Forja es un lenguaje de programación educativo con palabras clave en español, diseñado para enseñar conceptos de sistemas sin la complejidad sintáctica de Rust. El lenguaje incluye JIT nativo x86-64, múltiples implementaciones de VM y targets de compilación a ensamblador y LLVM IR.
+Forja es un lenguaje de programación educativo con palabras clave en español, diseñado para enseñar conceptos de sistemas y diseño por contrato sin la complejidad sintáctica de Rust. El lenguaje incluye un compilador AOT, JIT nativo x86-64, múltiples implementaciones de VM (incluyendo la ultra-rápida *ForjaFast*) y targets de compilación a ensamblador y LLVM IR.
 
-[![Docs](https://img.shields.io/badge/docs-forja--lang.github.io/docs-blue)](https://forja-lang.github.io/docs)
-[![VS Code](https://img.shields.io/badge/vscode-extensio%CC%81n-007ACC?logo=visualstudiocode)](https://github.com/forja-lang/vscode)
-[![Examples](https://img.shields.io/badge/examples-256%2B-brightgreen)](https://github.com/forja-lang/examples)
-[![Benchmarks](https://img.shields.io/badge/benchmarks-resultados-orange)](https://github.com/forja-lang/benchmarks)
-[![Patches](https://img.shields.io/badge/patches-xilem%2Fmasonry-lightgrey)](https://github.com/forja-lang/patches)
+---
 
-## Palabras Clave del Lenguaje
+## 🎨 Características Destacadas
 
-### Declaraciones
+*   **Palabras Clave en Español**: Ideal para la educación y el aprendizaje natural en hispanohablantes.
+*   **Design by Contract**: Soporte nativo para precondiciones, postcondiciones e invariantes (`requiere`, `asegura`, `siempre`).
+*   **Doble VM y JIT**: Elige entre la VM estándar, la VM optimizada *ForjaFast* (con NaN Tagging y fusión de opcodes) o JIT x86-64 nativo.
+*   **UI Reactiva**: Librería nativa de interfaz gráfica con diseño inspirado en Material Design 3 (Material You).
+*   **Multi-Plataforma**: Compilación AOT cruzada a ejecutables autónomos ligeros (~350 KB), incluyendo soporte para Windows, Linux, macOS y Android.
 
-| Palabra | Alias | Descripción |
-|---------|-------|-------------|
-| `variable` | `var` | Declaración de variable mutable. Puede reasignarse. |
-| `constante` | `const` | Declaración de constante inmutable. No se puede reasignar. |
-| `funcion` | `fun` | Definición de función. Crea una unidad ejecutable. |
-| `clase` | - | Definición de clase. Crea un tipo con campos y métodos. |
-| `constructor` | - | Método inicializador de clase. Se ejecuta automáticamente al instanciar. |
-| `tipo` | - | Define un tipo algebraico (enum). |
+---
 
-### Control de Flujo
+## ⚙️ Arquitectura del Compilador
 
-| Palabra | Alias | Descripción |
-|---------|-------|-------------|
-| `si` | - | Rama condicional. Ejecuta el bloque si la condición es verdadera. |
-| `sino` | - | Rama alternativa para `si`. |
-| `mientras` | - | Bucle while. Repite mientras la condición sea verdadera. |
-| `para` | - | Bucle for con sintaxis: inicialización; condición; incremento. |
-| `repetir` | - | Bucle de repetición fija. Ejecuta exactamente N veces. |
-| `retornar` | - | Retorna valor desde función. |
-| `coincidir` | - | Expresión de pattern matching. |
-| `caso` | - | Rama de patrón dentro de `coincidir`. |
-| `otro` | `_` | Patrón comodín/por defecto en `coincidir`. |
+El siguiente diagrama ilustra el flujo del pipeline del compilador desde el código fuente hasta sus múltiples destinos de ejecución:
 
-### Programación Orientada a Objetos
-
-| Palabra | Descripción |
-|---------|-------------|
-| `nuevo` | Crea una instancia de clase. Invoca el constructor. |
-| `este` | Referencia al objeto actual (equivalente a `self`/`this`). |
-| `importar` | Importa declaraciones desde otro archivo de módulo. |
-
-### Tipos y Literales
-
-| Palabra | Descripción |
-|---------|-------------|
-| `Texto` | Anotación de tipo string. |
-| `Entero` | Anotación de tipo entero (i64). |
-| `Decimal` | Anotación de tipo flotante (f64). |
-| `Booleano` | Anotación de tipo booleano. |
-| `Nulo` | Valor literal nulo/ausente. |
-| `verdadero` | Literal booleano verdadero. |
-| `falso` | Literal booleano falso. |
-
-### Concurrencia
-
-| Palabra | Descripción |
-|---------|-------------|
-| `hilo` | Crea un nuevo hilo. Devuelve handle del hilo. |
-| `canal` | Crea canal de comunicación. Devuelve (emisor, receptor). |
-| `enviar` | Envía valor por canal. |
-| `recibir` | Recibe valor del canal. |
-| `unir` | Une el hilo, esperando su finalización. |
-| `seleccionar` | Select sobre múltiples canales (estilo Go). |
-| `tiempo` | Cláusula de timeout dentro de `seleccionar`. |
-
-### Rasgos y Genéricos
-
-| Palabra | Descripción |
-|---------|-------------|
-| `rasgo` | Define un trait (interfaz). |
-| `implementa` | Implementa un trait para una clase. |
-| `donde` | Restricción de bound de trait en parámetros genéricos. |
-
-### Manejo de Errores
-
-| Palabra | Alternativa | Descripción |
-|---------|-------------|-------------|
-| `Resultado` | - | Tipo Result<T, E> para manejo de errores. |
-| `Ok` | - | Variante de éxito de Result. |
-| `Error` | - | Variante de error de Result. |
-| `Opcion` | - | Tipo Option<T> para valores opcionales. |
-| `Some` | - | Variante Some de Option. |
-| `Ninguno` | `Nulo` | Variante None de Option. |
-
-### Atributos
-
-| Atributo | Descripción |
-|----------|-------------|
-| `@test` | Marca una función como test. |
-| `@derive(T)` | Auto-implementa trait T para una clase. |
-
-### Funciones Builtin
-
-| Función | Descripción |
-|---------|-------------|
-| `escribir(expr)` | Imprime expresión a stdout. |
-| `leer()` | Lee línea desde stdin. Devuelve Texto. |
-
-### Operadores
-
-| Operador | Descripción |
-|----------|-------------|
-| `+` | Suma o concatenación de strings. |
-| `-` | Resta. |
-| `*` | Multiplicación. |
-| `/` | División (entera). |
-| `%` | Módulo (resto). |
-| `==` | Comparación de igualdad. |
-| `!=` | Comparación de desigualdad. |
-| `>` | Mayor que. |
-| `<` | Menor que. |
-| `>=` | Mayor o igual que. |
-| `<=` | Menor o igual que. |
-| `\|\|` | OR lógico. |
-| `&&` | AND lógico. |
-| `!` | NOT lógico. |
-| `no` | Sintaxis alternativa para NOT lógico. |
-| `&` | Crea referencia (presta valor). |
-
-## Comandos de la CLI
-
-Los comandos se ejecutan mediante `cargo run --release --bin forja -- <comando>`. La ejecución directa usa `forja <archivo.fa>` para correr con ForjaFast VM.
-
-### `forja <archivo.fa>`
-
-Ejecuta un archivo Forja directamente en la VM ForjaFast (motor por defecto).
-
-```
-forja examples/01_hola.fa
+```mermaid
+graph TD
+    A["Código Fuente (.fa)"] --> B["Lexer (Tokenización)"]
+    B --> C["Parser (AST)"]
+    C --> D["Type Checker (Tipos e Inferencias)"]
+    D --> E["Optimizer (Constant Folding & DCE)"]
+    E --> F{"Generación de Código"}
+    F -->|Bytecode Optimizado| G["ForjaFast VM (NaN Tagging)"]
+    F -->|JIT Compiler| H["Código Máquina x86-64"]
+    F -->|Transpilador| I["Código Rust (Proyecto Cargo)"]
+    F -->|Compiler Asm| J["Código Ensamblador (vía GCC)"]
+    F -->|LLVM IR| K["LLVM IR (.ll)"]
 ```
 
-### `forja run [OPCIONES] <archivo>`
+---
 
-Ejecuta en la VM o backend especificado.
+## 🛠️ Comandos de la CLI (en Español)
 
-**Opciones:**
-- `--vm <vm>`: Selección de VM: `fast` (ForjaFast, por defecto), `vm` (VM original), `jit` (JIT nativo)
-- `--asm`: Compila a ensamblador nativo vía gcc (requiere gcc)
-- `--native`: Ejecuta con GUI nativa (requiere `--features gui`)
-- `--debug`, `--console`: Mantiene visible la consola
-- `--no-debug`: Oculta la consola (subsistema GUI Windows)
+La interfaz de comandos de Forja está completamente localizada al español. Podés ejecutar las herramientas usando `forja <comando>` o en desarrollo mediante `cargo run --release --bin forja -- <comando>`.
 
-```
-forja run examples/main.fa                    # ForjaFast por defecto
-forja run examples/main.fa --vm vm            # VM original
-forja run examples/main.fa --vm jit           # JIT nativo
-forja run examples/main.fa --asm              # Ensamblador nativo
-forja run examples/gui.fa --native            # GUI nativa
-```
+| Comando en Español | Equivalente en Inglés | Descripción |
+| :--- | :--- | :--- |
+| **`ejecutar <archivo.fa>`** | `run` | Compila y corre un archivo en la VM ForjaFast por defecto. |
+| **`compilar <archivo.fa>`** | `build` | Genera un ejecutable autónomo (`.exe`) ultraligero (~350 KB). |
+| **`interactivo`** | `repl` | Inicia la consola REPL con persistencia de estado. |
+| **`probar [archivo.fa]`** | `test` | Corre unit-tests marcados con el atributo `@test`. |
+| **`medir <archivo.fa>`** | `bench` | Realiza benchmarks de tiempo de ejecución (Cold y Hot). |
+| **`diagrama <archivo.fa>`** | `diagram` | Exporta una visualización HTML interactiva del AST. |
+| **`formatear <archivo.fa>`** | `fmt` | Da formato consistente de 4 espacios al código fuente. |
+| **`compilar-asm <archivo.fa>`** | `build-asm` | Compila a código ensamblador nativo (x86-64 o ARM64). |
+| **`transpilar <archivo.fa>`** | `transpile` | Convierte el script Forja en un proyecto Rust completo. |
+| **`documentar <archivo.fa>`** | `doc` | Genera documentación HTML a partir de triple-slash (`///`) comments. |
+| **`colorear <archivo.fa>`** | `highlight` | Muestra el código fuente con resaltado ANSI en la terminal. |
+| **`nuevo <nombre>`** | `new` | Crea una estructura de proyecto inicializada. |
+| **`iniciar`** | `init` | Inicializa un proyecto en el directorio actual. |
+| **`aprender`** | `learn` | Abre el tutorial interactivo por consola. |
+| **`explicar <concepto>`** | `explain` | Explica palabras clave o conceptos sintácticos. |
+| **`palabras`** | `keywords` | Lista todas las palabras reservadas del lenguaje. |
+| **`ayuda`** | `help` | Muestra los comandos disponibles de la CLI. |
 
-### `forja build [OPCIONES] <archivo>`
+---
 
-Genera un ejecutable autónomo con VM y bytecode incrustados, o incrusta el código fuente para ejecución GUI nativa.
+## 🚀 Ejemplos de Uso Rápido
 
-**Opciones:**
-- `-o <ruta>`: Ruta del ejecutable de salida
-- `--no-debug`: Oculta la consola (Windows)
-- `--debug`, `--console`: Mantiene visible la consola (modo debug)
-
-```
-forja build examples/main.fa -o programa.exe
-forja build examples/gui.fa -o app.exe --no-debug
-```
-
-### `forja build-asm [OPCIONES] <archivo>`
-
-Compila a ensamblador nativo (x86-64 o ARM64). Genera archivo `.s` y llama a gcc.
-
-**Opciones:**
-- `--target <arquitectura>`: Arquitectura objetivo:
-  - `x86_64-windows`: Convención de llamadas Windows x64
-  - `x86_64-linux`: Convención System V
-  - `arm64`: ARM64 AArch64
-- `-o <ruta>`: Ruta del ejecutable de salida
-
-```
-forja build-asm examples/main.fa                     # Auto-detecta plataforma
-forja build-asm examples/main.fa --target arm64      # Target ARM64
-forja build-asm examples/main.fa -o programa         # Nombre de salida personalizado
+### Ejecutar un Script
+```bash
+forja ejecutar examples/01_hola.fa
 ```
 
-### `forja build-llvm [OPCIONES] <archivo>`
-
-Genera LLVM IR para compilación con `llc`.
-
-**Opciones:**
-- `-o <ruta>`: Ruta del archivo `.ll` de salida
-
-```
-forja build-llvm examples/main.fa -o salida.ll
+### Compilar un Ejecutable Autónomo Ligero (~350 KB)
+```bash
+forja compilar examples/05_condicionales.fa -o condicionales.exe
+./condicionales.exe
 ```
 
-### `forja transpile [OPCIONES] <archivo>`
-
-Transpila código Forja a código Rust equivalente. Crea un proyecto Cargo completo.
-
-**Opciones:**
-- `-o <dir>`: Nombre del directorio de salida (por defecto: `<nombre>_rs`)
-
-```
-forja transpile examples/main.fa
-forja transpile examples/main.fa -o mi_proyecto
+### Forzar un Engine de VM Específico
+Se puede configurar el tipo de máquina virtual en la ejecución:
+```bash
+forja ejecutar examples/05_condicionales.fa --vm vm      # VM Original (Stack)
+forja ejecutar examples/05_condicionales.fa --vm fast    # ForjaFast (NaN Tagging)
+forja ejecutar examples/05_condicionales.fa --vm jit     # JIT Compiler x86-64
 ```
 
-### `forja test [archivo]`
+---
 
-Ejecuta tests marcados con anotación `@test`. Compila cada test a código nativo vía rustc.
+## 📜 Design by Contract (Diseño por Contrato)
 
-```
-forja test examples/test.fa
-forja test                              # Ejecuta todos los tests en examples/
-```
-
-### `forja bench [OPCIONES] <archivo>`
-
-Mide tiempos de ejecución con medición cold (primera ejecución) y hot (promedio de N iteraciones).
-
-**Opciones:**
-- `--iters <n>`: Número de iteraciones para promedio hot (por defecto: 100)
-- `--vm <vm>`: VM a medir: `fast`, `vm`, `jit`, o `todas` (por defecto: todas)
-- `--asm`: Mide ensamblador nativo en lugar de VMs
-
-```
-forja bench examples/main.fa --iters 100
-forja bench examples/main.fa --vm fast
-forja bench examples/main.fa --asm --iters 10
-```
-
-### `forja repl [OPCIONES]`
-
-Inicia modo REPL interactivo con estado persistente entre líneas.
-
-**Opciones:**
-- `--vm <vm>`: VM a usar: `fast` (por defecto), `vm`, o `jit`
-
-```
-forja repl
-forja repl --vm vm
-```
-
-### `forja fmt <archivo>`
-
-Formatea código fuente con indentación consistente (4 espacios).
-
-```
-forja fmt examples/main.fa
-```
-
-### `forja diagram <archivo>`
-
-Genera visualización HTML del AST.
-
-```
-forja diagram examples/main.fa
-forja diagram examples/main.fa -o diagrama.html
-```
-
-### `forja doc [OPCIONES] <archivo>`
-
-Genera documentación HTML desde doc comments (`///`).
-
-**Opciones:**
-- `-o <dir>`: Directorio de salida
-
-```
-forja doc examples/main.fa -o docs/
-```
-
-### `forja highlight <archivo>`
-
-Muestra código fuente con resaltado de sintaxis ANSI en la terminal.
-
-```
-forja highlight examples/main.fa
-```
-
-### `forja new <nombre>`
-
-Crea un nuevo proyecto con estructura estándar.
-
-```
-forja new mi_programa
-```
-
-Crea:
-- `mi_programa/main.fa`
-- `mi_programa/forja.json`
-- `mi_programa/modulos/`
-
-### `forja init`
-
-Inicializa un proyecto Forja en el directorio actual.
-
-```
-forja init
-```
-
-### `forja learn`
-
-Inicia tutorial interactivo.
-
-```
-forja learn
-```
-
-### `forja explain <palabra>`
-
-Explica una palabra clave o concepto.
-
-```
-forja explain variable
-forja explain funcion
-forja explain rasgo
-```
-
-### `forja keywords`
-
-Lista todas las palabras clave del lenguaje.
-
-```
-forja keywords
-```
-
-## Stack Tecnológico
-
-| Componente | Tecnología |
-|------------|------------|
-| Lenguaje | Rust (edition 2021) |
-| Compilador | Rust puro (sin dependencias externas para núcleo) |
-| REPL | rustyline |
-| JIT Nativo | Generación de código x86-64 en memoria |
-| GUI | Framework UI reactivo xilem (feature opcional) |
-| WASM | wasm-bindgen |
-| LLVM Backend | Generación de texto LLVM IR (sin bindings a libllvm) |
-
-## Arquitectura
-
-El pipeline de compilación consiste en:
-
-1. **Lexer** (`src/lexer.rs`): Tokeniza texto fuente
-2. **Parser** (`src/parser.rs`): Parsing descendente recursivo con precedencia
-3. **Type Checker** (`src/semantics.rs`): Valida tipos, ownership, traits y genéricos
-4. **Optimizer** (`src/optimizer.rs`): Constant folding, dead code elimination
-5. **Múltiples backends**: ForjaFast VM, JIT nativo, ensamblador, LLVM IR
-
-## Implementaciones de VM
-
-| VM | Archivo | Técnica | Rendimiento Relativo |
-|----|---------|---------|---------------------|
-| ForjaVM Original | src/vm.rs | Stack-based con tagged enums | 1x (línea base) |
-| ForjaFast | src/vm_fast.rs | NaN tagging, stack caching, superinstrucciones | ~4.8x más rápido |
-| JIT Nativo | src/jit.rs | Generación de código máquina x86-64 | ~62x más rápido |
-| Ensamblador Nativo | src/compiler_asm.rs | gcc -O2 | ~437x más rápido |
-| LLVM | src/compiler_llvm.rs | llc -O2 | ~500x más rápido |
-
-## Características del Lenguaje
-
-- **Interpolación de strings**: `"Hola ${nombre}, tienes ${edad} años"`
-- **Result/Opcion con `?`**: Propagación automática de errores
-- **Rasgos e implementaciones**: Polimorfismo basado en interfaces
-- **Genéricos**: Polimorfismo paramétrico con sintaxis `<T>`
-- **Pattern matching exhaustivo**: Verificación de cobertura en tiempo de compilación
-- **Concurrencia**: Hilos, canales, select con timeout
-- **JIT nativo**: Generación de código x86-64 sin dependencias externas
-- **Múltiples targets de compilación**: Ensamblador, LLVM IR, ejecutables autónomos
-- **Playground WASM**: Ejecución en navegador
-
-## 📜 Design by Contract
-
-Forja soporta **Design by Contract** (Diseño por Contrato) con precondiciones, postcondiciones e invariantes de clase.
+Forja soporta verificación de contratos en tiempo de ejecución de manera nativa mediante precondiciones (`requiere`), postcondiciones (`asegura`) e invariantes (`siempre`).
 
 ```forja
 funcion dividir(a: Entero, b: Entero) -> Entero
@@ -382,96 +96,49 @@ funcion dividir(a: Entero, b: Entero) -> Entero
 }
 ```
 
-### Keywords
+> [!NOTE]
+> Por defecto (modo Debug), los contratos se evalúan en runtime. Para compilación optimizada en producción, podés omitirlos agregando `--no-contratos`.
 
-| Palabra | Propósito | Ejemplo |
-|---------|-----------|---------|
-| `requiere` | Precondición | `requiere x > 0, "mensaje"` |
-| `asegura` | Postcondición | `asegura resultado > 0` |
-| `siempre` | Invariante de clase | `siempre saldo >= 0` |
-| `resultado` | Valor de retorno en postcondición | `asegura resultado > 0` |
-| `anterior()` | Valor previo a la ejecución | `asegura x == anterior(x) + 1` |
+---
 
-### Modos
+## 🎨 Desarrollo de GUI (Material You)
 
-- **Debug** (default): Los contratos se verifican en runtime
-- **Release**: Los contratos se eliminan (`--release`, `--no-contratos`)
+Forja incluye soporte opcional para desarrollo de interfaces gráficas basadas en el framework reactivo **Xilem** de Rust, con temas dinámicos inspirados en Material Design 3.
 
-### Ejemplos
+```forja
+importar "gui"
 
-Ver [`examples/500_contratos.fa`](examples/500_contratos.fa) para un ejemplo completo de contratos exitosos,
-y [`examples/501_contratos_error.fa`](examples/501_contratos_error.fa) para un ejemplo de contratos que fallan.
-
-## 🎨 GUI - Material You Expressive
-
-Forja incluye una librería de componentes UI con diseño **Material Design 3 (Material You)**.
-Incluye 200+ componentes responsivos con tema dinámico, iconos vectoriales y modo oscuro.
-
-📚 **[Documentación completa](https://github.com/forja-lang/docs)**
-🚀 **[Guía de inicio rápido](https://github.com/forja-lang/docs)**
-
-### Componentes principales
-- **Botones**: 14 variantes (Filled, Tonal, Outlined, Text, Elevated, FAB, Icon, Segmented, Chips)
-- **Inputs**: TextField, Select, Sliders, Switches, Date/Time Pickers
-- **Navegación**: NavigationBar, TopAppBar, Tabs, Drawer, SearchBar
-- **Feedback**: Dialogs, BottomSheets, Snackbar, Tooltips, Menús
-- **Layout**: Flex, Grid, Flow, Responsive (Compact/Medium/Expanded)
-- **Gráficos**: Line, Bar, Pie, Donut, Gauge, Sparkline
-- **Expressive**: Glassmorphism, Gradientes, Glow
-
-### Tema
-```bash
-# Claro (por defecto)
-forja-gui ejemplo.fa
-
-# Oscuro
-forja-gui --dark ejemplo.fa
-
-# Auto (detecta sistema)
-forja-gui --auto-tema ejemplo.fa
-
-# Color personalizado
-forja-gui --tema #FF5722 ejemplo.fa
+funcion main() {
+    // Código responsivo e interactivo...
+}
 ```
 
-## Instalación
+> [!TIP]
+> Para compilar y ejecutar apps con GUI nativa, asegurate de incluir la feature `gui`:
+> ```bash
+> cargo build --release --features gui
+> forja ejecutar app.fa --native
+> ```
+
+---
+
+## 📥 Instalación de la Toolchain
+
+Cloná el repositorio y compilá la toolchain usando Cargo:
 
 ```bash
 git clone https://github.com/forja-lang/forja.git
 cd forja
 
-cargo build --release                 # Binario principal únicamente
-cargo build --release --features all  # Todas las features (GUI, LSP)
-cargo build --release --features gui  # Soporte GUI
-cargo build --release --features lsp  # Soporte LSP
+# Compilar todo (compilador CLI, LSP, DAP y soporte GUI)
+cargo build --release --features all
 ```
 
-## Cross-compilation para Android
+---
 
-Forja compila a Android (ARM64, x86_64, ARM32, x86) con un solo comando. El script detecta el NDK automáticamente e instala los targets de Rust que falten.
+## 📜 Licencia
 
-```bash
-bash scripts/build-android.sh              # Todos los targets (release)
-bash scripts/build-android.sh aarch64-linux-android  # Solo ARM64
-```
+Forja está bajo la licencia **GNU General Public License v3.0 (GPLv3)**. Consultá [LICENSE.md](LICENSE.md) para más detalles.
 
-O con `make`:
-
-```bash
-make android-all       # Todos los targets
-make android-arm64     # Solo ARM64
-```
-
-El NDK se busca en `$ANDROID_NDK_HOME`, `$ANDROID_HOME/ndk/`, y las rutas por defecto de cada SO. Si no está instalado, el script muestra cómo hacerlo.
-
-## Licencia
-
-Forja está licenciado bajo la **GNU General Public License v3.0 (GPLv3)** con términos adicionales sobre la marca registrada.
-
-- **Código fuente**: GPLv3 - puedes usar, estudiar, modificar y redistribuir siempre que las modificaciones sigan la misma licencia.
-- **Marca "Forja"**: El nombre y logo son marca registrada. Queda prohibido usarlos para promocionar forks o productos derivados sin autorización.
-- **Programas creados con Forja**: Pueden usar cualquier licencia que desees. El copyleft de GPL solo se aplica al compilador/intérprete, no a tu código.
-
-Ver [LICENSE.md](LICENSE.md) para términos completos.
-
-[Code of Conduct](CODE_OF_CONDUCT.md) | [Security Policy](SECURITY.md)
+*   El código fuente del compilador/LSP está cubierto por GPLv3.
+*   **Tus programas escritos en Forja son libres** y podés distribuirlos bajo la licencia que prefieras.
