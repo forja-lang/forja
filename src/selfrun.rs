@@ -105,8 +105,9 @@ pub fn shadow_copy() {
             return;
         }
 
+        let pid = std::process::id();
         let mut temp_exe = temp_dir.clone();
-        temp_exe.push(format!("run_{}", file_name));
+        temp_exe.push(format!("run_{}_{}", pid, file_name));
 
         // Copiar el ejecutable
         match fs::copy(&exe_path, &temp_exe) {

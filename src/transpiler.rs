@@ -2014,20 +2014,23 @@ impl Transpiler {
             Expresion::LiteralDecimal(d) => d.to_string(),
             Expresion::LiteralExacto(coeff, scale) => format!("({} as f64) * 10f64.powi({})", coeff, -(*scale as i32)),
             Expresion::LiteralTexto(s) => {
-                    // Escapar TODOS los caracteres especiales (V-08)
-                    let escaped = s
-                        .replace('\\', "\\\\")
-                        .replace('"', "\\\"")
-                        .replace('\n', "\\n")
-                        .replace('\r', "\\r")
-                        .replace('\t', "\\t")
-                        .replace('\0', "\\0")
-                        .replace('\x07', "\\x07")  // bell
-                        .replace('\x08', "\\x08")  // backspace
-                        .replace('\x0B', "\\x0B")  // vertical tab
-                        .replace('\x0C', "\\x0C"); // form feed
-                    format!("String::from(\"{}\")", escaped)
+                let mut escaped = String::new();
+                for c in s.chars() {
+                    match c {
+                        '\\' => escaped.push_str("\\\\"),
+                        '"' => escaped.push_str("\\\""),
+                        '\n' => escaped.push_str("\\n"),
+                        '\r' => escaped.push_str("\\r"),
+                        '\t' => escaped.push_str("\\t"),
+                        '\0' => escaped.push_str("\\0"),
+                        _ if c.is_control() => {
+                            escaped.push_str(&format!("\\u{{{:x}}}", c as u32));
+                        }
+                        _ => escaped.push(c),
+                    }
                 }
+                format!("String::from(\"{}\")", escaped)
+            }
             Expresion::LiteralBooleano(b) => b.to_string(),
             Expresion::LiteralNulo => "()".to_string(),
 

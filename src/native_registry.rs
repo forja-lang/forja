@@ -352,7 +352,7 @@ pub(crate) fn crear_valor_socket(vm: &mut ForjaFast, socket_idx: u32) -> ValorFa
         vm.class_descriptors.insert(sym_socket, desc);
     }
     let mut obj = crate::vm_fast::ObjVal::new(sym_socket);
-    obj.campos_vec.push(ValorFast::entero(socket_idx as i32));
+    obj.campos_vec.push(ValorFast::entero(socket_idx as i64));
     let obj_idx = vm.alloc_obj(obj);
     vm.obj_shapes[obj_idx as usize] = sym_socket;
     ValorFast::objeto(obj_idx)
@@ -439,7 +439,7 @@ fn native_socket_enviar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
 
     let mut stream = stream_arc.lock().unwrap();
     match stream.write_all(datos.as_bytes()) {
-        Ok(()) => Ok(ValorFast::entero(datos.len() as i32)),
+        Ok(()) => Ok(ValorFast::entero(datos.len() as i64)),
         Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
     }
 }
@@ -647,7 +647,7 @@ fn native_socket_aceptar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
             Ok(val)
         }
         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-            Ok(ValorFast::entero(-1))
+            Ok(ValorFast::entero(-1i64))
         }
         Err(e) => {
             Err(ErrFast::TipoInv(format!("error_interno: {}", e)))
@@ -732,7 +732,7 @@ fn native_socket_udp_enviar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
 
     let socket = socket_arc.lock().unwrap();
     match socket.send_to(datos.as_bytes(), destino) {
-        Ok(n) => Ok(ValorFast::entero(n as i32)),
+        Ok(n) => Ok(ValorFast::entero(n as i64)),
         Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
     }
 }
@@ -804,7 +804,7 @@ fn native_archivo_escribir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
         return Err(ErrFast::TipoInv("ruta_invalida: la ruta no puede estar vacía".into()));
     }
     match std::fs::write(&ruta, contenido.as_bytes()) {
-        Ok(()) => Ok(ValorFast::entero(0)),
+        Ok(()) => Ok(ValorFast::entero(0i64)),
         Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
     }
 }
@@ -826,7 +826,7 @@ fn native_archivo_eliminar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
         return Err(ErrFast::TipoInv("ruta_invalida: la ruta no puede estar vacía".into()));
     }
     match std::fs::remove_file(&ruta) {
-        Ok(()) => Ok(ValorFast::entero(0)),
+        Ok(()) => Ok(ValorFast::entero(0i64)),
         Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
     }
 }
@@ -841,7 +841,7 @@ fn native_archivo_copiar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
         return Err(ErrFast::TipoInv("ruta_invalida: las rutas no pueden estar vacías".into()));
     }
     match std::fs::copy(&origen, &destino) {
-        Ok(_) => Ok(ValorFast::entero(0)),
+        Ok(_) => Ok(ValorFast::entero(0i64)),
         Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
     }
 }
@@ -856,7 +856,7 @@ fn native_archivo_mover(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
         return Err(ErrFast::TipoInv("ruta_invalida: las rutas no pueden estar vacías".into()));
     }
     match std::fs::rename(&origen, &destino) {
-        Ok(()) => Ok(ValorFast::entero(0)),
+        Ok(()) => Ok(ValorFast::entero(0i64)),
         Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
     }
 }
@@ -871,7 +871,7 @@ fn native_archivo_tamano(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
     }
     match std::fs::metadata(&ruta) {
         Ok(meta) => {
-            let tamano = meta.len() as i32;
+            let tamano = meta.len() as i64;
             Ok(ValorFast::entero(tamano))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
@@ -887,7 +887,7 @@ fn native_directorio_crear(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
         return Err(ErrFast::TipoInv("ruta_invalida: la ruta no puede estar vacía".into()));
     }
     match std::fs::create_dir_all(&ruta) {
-        Ok(()) => Ok(ValorFast::entero(0)),
+        Ok(()) => Ok(ValorFast::entero(0i64)),
         Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
     }
 }
@@ -901,7 +901,7 @@ fn native_directorio_eliminar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<
         return Err(ErrFast::TipoInv("ruta_invalida: la ruta no puede estar vacía".into()));
     }
     match std::fs::remove_dir_all(&ruta) {
-        Ok(()) => Ok(ValorFast::entero(0)),
+        Ok(()) => Ok(ValorFast::entero(0i64)),
         Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
     }
 }
@@ -1073,7 +1073,7 @@ fn native_fecha_a_timestamp(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
     let dias = days_from_civil(año, mes as u32, dia as u32);
     let ts = dias * 86400 + hora as i64 * 3600 + minuto as i64 * 60 + segundo as i64;
 
-    Ok(ValorFast::entero(ts as i32))
+    Ok(ValorFast::entero(ts))
 }
 
 /// Estado global para el generador aleatorio xorshift32
@@ -1112,7 +1112,7 @@ fn native_aleatorio_entero(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
 
     // Valor absoluto y módulo para asegurar rango positivo
     let valor = if estado < 0 { -estado } else { estado };
-    Ok(ValorFast::entero(valor % max as i32))
+    Ok(ValorFast::entero((valor % max as i32) as i64))
 }
 
 /// Helper para mapear std::io::Error a códigos de error estandarizados
@@ -2010,15 +2010,15 @@ fn native_recargar_modulo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valo
 #[cfg(not(target_arch = "wasm32"))]
 fn native_version_modulo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Ok(ValorFast::entero(-1));
+        return Ok(ValorFast::entero(-1i64));
     }
 
     let nombre_modulo = crate::native_registry::obtener_texto(vm, args[0])?;
     let module_id = SymId(vm.sym_table.intern(&nombre_modulo).0);
 
     let version = vm.module_registry.get(&module_id)
-        .map(|info| info.version as i32)
-        .unwrap_or(-1i32);
+        .map(|info| info.version as i64)
+        .unwrap_or(-1i64);
 
     Ok(ValorFast::entero(version))
 }

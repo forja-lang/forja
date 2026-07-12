@@ -1,6 +1,6 @@
-// Forja CLI — algunas advertencias son intencionales (código de API expuesto)
-#![allow(dead_code)]
-#![allow(unused_imports)]
+// #![allow(dead_code)]
+// #![allow(unused_imports)]
+
 
 mod lexer;
 mod token;
@@ -153,53 +153,157 @@ fn cmd_highlight(args: &[String]) {
         Err(e) => { eprintln!("Error al leer '{}': {}", path, e); return; }
     };
 
-    // Paleta ANSI Forja (coincide con VS Code y docs)
     use error::color;
     let kw = |s: &str| format!("{}{}{}", color::AMARILLO, s, color::RESET);
     let ty = |s: &str| format!("{}{}{}", color::CYAN, s, color::RESET);
     let fn_ = |s: &str| format!("{}{}{}", color::VERDE, s, color::RESET);
-    let _st = |s: &str| format!("{}{}{}", "\x1b[93m", s, color::RESET); // bright yellow
+    let st = |s: &str| format!("{}{}{}", "\x1b[93m", s, color::RESET); // bright yellow
     let co = |s: &str| format!("{}{}{}", color::GRIS, s, color::RESET);
-    let _nu = |s: &str| format!("{}{}{}", color::AZUL, s, color::RESET);
-    let _op = |s: &str| format!("{}{}{}", color::MAGENTA, s, color::RESET);
+    let nu = |s: &str| format!("{}{}{}", color::AZUL, s, color::RESET);
 
-    for line in source.lines() {
-        let mut colored = line.to_string();
+    let chars: Vec<char> = source.chars().collect();
+    let mut pos = 0;
+    let len = chars.len();
 
-        // Comentarios (primero, para no colorear adentro)
-        if let Some(pos) = colored.find("//") {
-            let before = &colored[..pos];
-            let comment = &colored[pos..];
-            colored = format!("{}{}", before, co(comment));
+    let keywords = [
+        "importar", "variable", "var", "constante", "const", "mut", "si", "sino",
+        "mientras", "para", "repetir", "funcion", "retornar", "clase",
+        "constructor", "nuevo", "este", "prestado", "coincidir", "caso", "tipo",
+        "verdadero", "falso", "nulo", "hilo", "canal", "enviar", "recibir",
+        "unir", "rasgo", "implementa", "donde", "seleccionar", "tiempo", "otro",
+        "cuando", "requiere", "asegura", "siempre", "resultado", "anterior"
+    ];
+
+    let tipos = ["Entero", "Decimal", "Texto", "Booleano", "Exacto"];
+
+    let mut output = String::new();
+
+    while pos < len {
+        let ch = chars[pos];
+
+        // 1. Comentarios de línea
+        if ch == '/' && pos + 1 < len && chars[pos + 1] == '/' {
+            let start = pos;
+            while pos < len && chars[pos] != '\n' {
+                pos += 1;
+            }
+            let comment: String = chars[start..pos].iter().collect();
+            output.push_str(&co(&comment));
+            continue;
         }
 
-        // Keywords
-        let keywords = ["importar", "variable", "var", "constante", "const", "mut", "si", "sino",
-            "mientras", "para", "repetir", "funcion", "retornar", "clase",
-            "constructor", "nuevo", "este", "prestado", "coincidir", "caso", "tipo",
-            "verdadero", "falso", "nulo"];
-        for k in &keywords {
-            colored = colored.replace(&format!("{} ", k), &format!("{} ", kw(k)));
-            colored = colored.replace(&format!("{})", k), &format!("{})", kw(k)));
-            colored = colored.replace(&format!("{}\n", k), &format!("{}\n", kw(k)));
+        // 2. Comentarios de bloque
+        if ch == '/' && pos + 1 < len && chars[pos + 1] == '*' {
+            let start = pos;
+            pos += 2;
+            while pos < len && !(chars[pos] == '*' && pos + 1 < len && chars[pos + 1] == '/') {
+                pos += 1;
+            }
+            if pos < len {
+                pos += 2;
+            }
+            let comment: String = chars[start..pos].iter().collect();
+            output.push_str(&co(&comment));
+            continue;
         }
 
-        // Tipos
-        let tipos = ["Entero", "Decimal", "Texto", "Booleano", "Nulo"];
-        for t in &tipos {
-            colored = colored.replace(t, &ty(t));
+        // 3. Cadenas de texto (Strings)
+        if ch == '"' {
+            let start = pos;
+            pos += 1;
+            let mut escape = false;
+            while pos < len {
+                let curr = chars[pos];
+                if escape {
+                    escape = false;
+                } else if curr == '\\' {
+                    escape = true;
+                } else if curr == '"' {
+                    pos += 1;
+                    break;
+                }
+                pos += 1;
+            }
+            let string_lit: String = chars[start..pos].iter().collect();
+            output.push_str(&st(&string_lit));
+            continue;
         }
 
-        // Funciones builtin
-        colored = colored.replace("escribir", &fn_("escribir"));
-        colored = colored.replace("leer", &fn_("leer"));
+        // 4. Caracteres literales
+        if ch == '\'' {
+            let start = pos;
+            pos += 1;
+            let mut escape = false;
+            while pos < len {
+                let curr = chars[pos];
+                if escape {
+                    escape = false;
+                } else if curr == '\\' {
+                    escape = true;
+                } else if curr == '\'' {
+                    pos += 1;
+                    break;
+                }
+                pos += 1;
+            }
+            let char_lit: String = chars[start..pos].iter().collect();
+            output.push_str(&st(&char_lit));
+            continue;
+        }
 
-        // Strings (reemplazar después de comillas)
-        // Números
-        // (simplificado para terminal)
+        // 5. Identificadores y Palabras Clave
+        if ch.is_alphabetic() || ch == '_' {
+            let start = pos;
+            while pos < len && (chars[pos].is_alphanumeric() || chars[pos] == '_') {
+                pos += 1;
+            }
+            let ident: String = chars[start..pos].iter().collect();
+            
+            // Ver si el siguiente token no-espacio es '('
+            let mut next_pos = pos;
+            while next_pos < len && (chars[next_pos] == ' ' || chars[next_pos] == '\t' || chars[next_pos] == '\r' || chars[next_pos] == '\n') {
+                next_pos += 1;
+            }
+            let es_funcion = next_pos < len && chars[next_pos] == '(';
 
-        println!("{}", colored);
+            if keywords.contains(&ident.as_str()) {
+                output.push_str(&kw(&ident));
+            } else if tipos.contains(&ident.as_str()) {
+                output.push_str(&ty(&ident));
+            } else if es_funcion {
+                output.push_str(&fn_(&ident));
+            } else {
+                output.push_str(&ident);
+            }
+            continue;
+        }
+
+        // 6. Números
+        if ch.is_ascii_digit() {
+            let start = pos;
+            let mut dot_seen = false;
+            while pos < len {
+                let curr = chars[pos];
+                if curr.is_ascii_digit() {
+                    pos += 1;
+                } else if curr == '.' && !dot_seen && pos + 1 < len && chars[pos + 1].is_ascii_digit() {
+                    dot_seen = true;
+                    pos += 2;
+                } else {
+                    break;
+                }
+            }
+            let num_lit: String = chars[start..pos].iter().collect();
+            output.push_str(&nu(&num_lit));
+            continue;
+        }
+
+        // 7. Cualquier otro caracter
+        output.push(ch);
+        pos += 1;
     }
+
+    print!("{}", output);
 }
 
 /// forja keywords|palabras|lista — Lista todas las palabras clave del lenguaje
@@ -231,6 +335,7 @@ fn cmd_keywords() {
         ("nulo",        "Valor nulo / vacío"),
         ("arreglo",     "Colección: [1, 2, 3]"),
         ("mapa",        "Diccionario: {{\"k\": \"v\"}}"),
+        ("cuando",      "Bloque observador/reactivo (reactividad)"),
     ];
     for (kw, desc) in &kws {
         println!("  {:<14} {}", kw, desc);
@@ -264,7 +369,8 @@ fn cmd_explain(codigo: &str) {
         "mientras" => "📖 'mientras' repite código mientras una condición sea verdadera.\n   Ej: mientras (x < 5) { x = x + 1 }",
         "para" => "📖 'para' repite código un número específico de veces.\n   Ej: para (i = 0; i < 3; i = i + 1) { }",
         "clase" => "📖 'clase' define un molde para crear objetos.\n   Ej: clase Persona { nombre constructor(n) { este.nombre = n } }",
-        _ => &format!("❌ No sé explicar '{}'.\n   Probá con: escribir, leer, variable, constante, si, funcion, mientras, para, clase", codigo)[..]
+        "cuando" => "📖 'cuando' ejecuta un bloque reactivamente cuando se cumple una condición observada.\n   Ej: cuando (temperatura > 30) { escribir(\"¡Calor!\") }",
+        _ => &format!("❌ No sé explicar '{}'.\n   Probá con: escribir, leer, variable, constante, si, funcion, mientras, para, clase, cuando", codigo)[..]
     };
     println!("{}", explicacion);
     println!("\n📚 Más información: forja help {}", codigo);
@@ -283,7 +389,12 @@ fn cmd_help(tema: &str) {
         "clase" => "📖 clase — Programación Orientada a Objetos\n\n  clase Nombre { campos constructor(p) { ... } funcion m() { ... } }\n\n  Ejemplo:\n    clase Persona {\n        nombre\n        constructor(n) { este.nombre = n }\n        funcion saludar() { escribir(\"Hola \" + este.nombre) }\n    }\n    variable p = nuevo Persona(\"Ana\")\n    p.saludar()\n",
         "arreglo" | "array" | "lista" => "📖 Arreglos — [1, 2, 3]\n\n  variable arr = [1, 2, 3]\n  arr[0]  // acceder (1)\n  arr[1] = 99  // asignar\n\n  Métodos:\n    arr.length()  // longitud\n",
         "mapa" | "diccionario" => "📖 Mapas — {\"clave\": valor}\n\n  variable m = {\"nombre\": \"Ana\", \"edad\": 30}\n  m[\"nombre\"]  // acceder (\"Ana\")\n",
-        _ => "❌ Tema no encontrado: 'tema'\n  Probá con: variable, si, mientras, para, repetir, funcion, clase, arreglo, mapa\n"
+        "cuando" | "observador" => "📖 cuando — Bloque reactivo/observador\n\n  cuando (condición) { ... }\n\n  Ejecuta el bloque reactivamente cuando la condición se vuelve verdadera.\n\n  Ejemplo:\n    variable temperatura = 20\n    cuando (temperatura > 30) {\n        escribir(\"Alerta de calor!\")\n    }\n    temperatura = 35 // Dispara el bloque reactivo\n",
+        _ => {
+            println!("❌ Tema no encontrado: '{}'", tema);
+            println!("  Probá con: variable, si, mientras, para, repetir, funcion, clase, arreglo, mapa, cuando\n");
+            return;
+        }
     };
     println!("{}", ayuda);
 }
