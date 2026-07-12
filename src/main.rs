@@ -55,10 +55,7 @@ fn main() {
         return; // El bytecode se ejecutó, salir
     }
 
-    // Intentar self-run GUI (programa con GUI nativa incrustada)
-    if intentar_selfrun_gui() {
-        return; // La GUI nativa se ejecutó, salir
-    }
+
 
     // Evitar bloqueos de archivo en Windows copiando el ejecutable al directorio temporal
     selfrun::shadow_copy();
@@ -659,22 +656,18 @@ fn cmd_bench(args: &[String]) {
     println!();
 }
 
-/// forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|vmopt] [--native]
+/// forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|vmopt]
 /// Ejecuta un archivo .fa en la VM seleccionada (default: ForjaFast)
 /// --vm fast|vm|jit : selecciona la VM (default: fast)
 /// --asm            : compila a ASM nativo y ejecuta (requiere gcc)
-/// --native         : usa GUI nativa (sin cargo, requiere --features gui)
 fn cmd_run(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native] [--debug|--console|--no-debug] [--contratos|--no-contratos]");
+        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--debug|--console|--no-debug] [--contratos|--no-contratos]");
         process::exit(1);
     }
 
     let mut vm_mode = "fast";
     let mut asm_mode = false;
-    let mut native_gui = false;
-    let mut debug_mode = false;
-    let mut no_debug = false;
     let mut verificar_contratos = true;  // default: contratos activados
     let mut contratos_explicit = false;  // si el usuario explicitó la opción
     let mut path: &String = &args[0];
@@ -689,9 +682,8 @@ fn cmd_run(args: &[String]) {
                 if i < args.len() { vm_mode = &args[i]; }
             }
             "--asm" => asm_mode = true,
-            "--native" => native_gui = true,
-            "--debug" | "--console" => debug_mode = true,
-            "--no-debug" => no_debug = true,
+            "--debug" | "--console" => {}
+            "--no-debug" => {}
             "--contratos" => { verificar_contratos = true; contratos_explicit = true; }
             "--no-contratos" => { verificar_contratos = false; contratos_explicit = true; }
             _ => {
@@ -706,8 +698,7 @@ fn cmd_run(args: &[String]) {
         i += 1;
     }
 
-    // --no-debug suprime mensajes de build (--debug/--console tienen prioridad)
-    let quiet = no_debug && !debug_mode;
+
 
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
@@ -726,35 +717,7 @@ fn cmd_run(args: &[String]) {
         return;
     }
 
-    // Detectar si usa GUI
-    if source.contains("importar \"gui\"") || source.contains("importar 'gui'") {
-        if native_gui {
-            if !quiet { println!("🎨 GUI nativa (sin cargo)..."); }
-            #[cfg(feature = "gui")]
-            {
-                let result = ejecutar_gui_nativa(&source, path, quiet);
-                match result {
-                    Ok(output) => { for line in output { println!("{}", line); } }
-                    Err(e) => { eprintln!("❌ Error en GUI nativa: {}", e); process::exit(1); }
-                }
-                return;
-            }
-            #[cfg(not(feature = "gui"))]
-            {
-                eprintln!("❌ La GUI nativa requiere compilar con --features gui");
-                eprintln!("   Ejecutá: cargo build --features gui");
-                process::exit(1);
-            }
-        } else {
-            if !quiet { println!("🎨 Detectado paquete GUI — compilando con Xilem..."); }
-            let result = ejecutar_gui(&source, path, quiet);
-            match result {
-                Ok(output) => { for line in output { println!("{}", line); } }
-                Err(e) => { eprintln!("❌ Error en GUI: {}", e); process::exit(1); }
-            }
-            return;
-        }
-    }
+
 
     // Determinar directorio raíz del proyecto (busca hacia arriba hasta encontrar stdlib/)
     fn encontrar_raiz_proyecto(path: &std::path::Path) -> std::path::PathBuf {
@@ -1028,72 +991,15 @@ fn cmd_repl() {
     repl.iniciar();
 }
 
-/// Intenta ejecutar un programa GUI incrustado (magic "FGC\0").
-/// Se llama al inicio de main(), antes de procesar argumentos.
-fn intentar_selfrun_gui() -> bool {
-    let (data, magic) = match selfrun::leer_datos_incrustados() {
-        Some(d) => d,
-        None => return false,
-    };
 
-    if &magic != b"FGC\0" {
-        return false;
-    }
-
-    let source = match String::from_utf8(data) {
-        Ok(s) => s,
-        Err(_) => return false,
-    };
-
-    // Verificar que realmente sea un programa GUI
-    if !source.contains("importar \"gui\"") && !source.contains("importar 'gui'") {
-        return false;
-    }
-
-    #[cfg(feature = "gui")]
-    {
-        // Parsear y ejecutar con GUI nativa (usando el runtime compilado en forja)
-        let mut lexer = forja::lexer::Lexer::new(&source);
-        let tokens = match lexer.tokenize() {
-            Ok(t) => t,
-            Err(_) => { eprintln!("❌ Error léxico en programa GUI incrustado"); return true; }
-        };
-        let mut parser = forja::parser::Parser::new(tokens);
-        let programa = match parser.parse() {
-            Ok(p) => p,
-            Err(_) => { eprintln!("❌ Error sintáctico en programa GUI incrustado"); return true; }
-        };
-        let mut checker = forja::semantics::BorrowChecker::new();
-        if checker.analizar(&programa).is_err() {
-            eprintln!("❌ Error semántico en programa GUI incrustado");
-            return true;
-        }
-        println!("  🪟 Iniciando GUI nativa (programa incrustado)...");
-        if forja::gui_nativa::build_and_run(&programa, None, false).is_err() {
-            eprintln!("❌ Error al ejecutar GUI nativa");
-        }
-        true
-    }
-
-    #[cfg(not(feature = "gui"))]
-    {
-        eprintln!("❌ Este ejecutable GUI requiere que forja se compile con --features gui");
-        eprintln!("   Recompilá con: cargo build --release --features all");
-        true // Devolvemos true para evitar que siga procesando argumentos
-    }
-}
 
 /// forja build|compilar|construir <archivo.fa> [-o <ejecutable>] [--debug|--console]
 /// Compila un archivo .fa a un ejecutable autónomo.
-/// Para programas GUI: incrusta el código fuente en una copia de forja.exe
-/// (usa el runtime nativo de Xilem ya compilado, sin dependencias externas).
 /// --debug, --console: mantener ventana de consola (ver errores)
 fn cmd_build(args: &[String]) {
     // Escanear argumentos en cualquier orden (archivo .fa, -o, flags)
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
-    let mut debug_mode = false;  // --debug / --console: mantener consola visible
-    let mut no_debug = false;    // --no-debug: ocultar consola (modo release)
 
     let mut i = 0;
     while i < args.len() {
@@ -1107,8 +1013,8 @@ fn cmd_build(args: &[String]) {
                     process::exit(1);
                 }
             }
-            "--debug" | "--console" => debug_mode = true,
-            "--no-debug" => no_debug = true,
+            "--debug" | "--console" => {}
+            "--no-debug" => {}
             _ => {
                 if args[i].ends_with(".fa") {
                     input = Some(args[i].clone());
@@ -1133,151 +1039,13 @@ fn cmd_build(args: &[String]) {
         Path::new(&input).with_extension("exe").to_string_lossy().to_string()
     });
 
-    // sin_consola = true solo con --no-debug explícito
-    // --debug/--console tienen prioridad y mantienen la consola visible
-    let sin_consola = no_debug && !debug_mode;
 
-    let source = match fs::read_to_string(&input) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Error al leer '{}': {}", input, e);
-            process::exit(1);
-        }
-    };
 
-    // Detectar si el programa usa GUI → embeber código fuente en copia de forja.exe
-    if source.contains("importar \"gui\"") || source.contains("importar 'gui'") {
-        println!("🎨 Programa GUI detectado — generando ejecutable autónomo con GUI nativa");
-        println!("   (incrusta el código fuente en forja.exe — 0 dependencias externas)");
-        if sin_consola {
-            println!("   🪟 Sin consola: el .exe no mostrará ventana de terminal (útil para distribución)");
-        } else {
-            println!("   🐞 Con consola: el .exe mostrará ventana de terminal (útil para debug)");
-        }
-        if let Err(e) = compilar_gui_embebido(&output, &source, sin_consola) {
-            eprintln!("❌ {}", e);
-            process::exit(1);
-        }
-        return;
-    }
-
-    // Programa sin GUI: AOT con bytecode (rápido, instantáneo)
+    // Compilar a ejecutable autónomo (AOT con bytecode)
     if let Err(e) = forja::aot::AOTCompiler::compilar(&input, &output) {
         eprintln!("{}", e);
         process::exit(1);
     }
-}
-
-/// Magic para identificar código fuente GUI incrustado al final del .exe
-const FGC_MAGIC: &[u8; 4] = b"FGC\0";
-
-/// Genera un .exe autónomo con GUI nativa, incrustando el código fuente Forja
-/// al final de una copia de forja.exe (que ya contiene Xilem compilado).
-///
-/// Si `sin_consola` es true: modifica el header PE a subsistema WINDOWS (sin terminal).
-/// Si `sin_consola` es false: mantiene el subsistema CONSOLE original (con terminal).
-fn compilar_gui_embebido(output_path: &str, source: &str, sin_consola: bool) -> Result<(), String> {
-    // 1. Obtener la ruta del propio forja.exe
-    let self_path = std::env::current_exe()
-        .map_err(|e| format!("Error obteniendo ruta del ejecutable: {}", e))?;
-
-    // 2. Leer forja.exe (stub)
-    let mut stub = fs::read(&self_path)
-        .map_err(|e| format!("Error leyendo '{}': {}", self_path.display(), e))?;
-
-    // 3. Si se solicita sin consola, cambiar subsistema PE: CONSOLE(3) → WINDOWS(2)
-    if sin_consola {
-        if let Err(e) = pe_cambiar_a_subsistema_windows(&mut stub) {
-            eprintln!("  ⚠️  No se pudo cambiar el subsistema: {}", e);
-            eprintln!("     El ejecutable mostrará una consola (usá --no-debug para ocultarla)");
-        }
-    }
-
-    // 4. Codificar el source a UTF-8
-    let source_bytes = source.as_bytes();
-    let src_size = source_bytes.len() as u32;
-
-    // 5. Escribir stub + source + footer
-    let mut output = Vec::with_capacity(stub.len() + source_bytes.len() + 8);
-    output.extend_from_slice(&stub);
-    output.extend_from_slice(source_bytes);
-
-    // Footer: [4 bytes: size u32 LE][4 bytes: magic "FGC\0"]
-    let size_bytes = src_size.to_le_bytes();
-    output.extend_from_slice(&size_bytes);
-    output.extend_from_slice(FGC_MAGIC);
-
-    // 6. Escribir archivo de salida
-    fs::write(output_path, &output)
-        .map_err(|e| format!("Error escribiendo '{}': {}", output_path, e))?;
-
-    println!("  ✅ Ejecutable generado: {} ({} bytes)", output_path, output.len());
-    if sin_consola {
-        println!("  🪟 Sin consola: el .exe no mostrará ventana de terminal");
-    } else {
-        println!("  🐞 Con consola: el .exe mostrará ventana de terminal (útil para debug)");
-        println!("     Para ocultarla: forja compilar ... --no-debug");
-    }
-    Ok(())
-}
-
-/// Modifica el header PE de un ejecutable Windows para cambiar el subsistema
-/// de CONSOLE (3) a WINDOWS (2), evitando que se abra una ventana de consola.
-///
-/// Formato PE: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
-fn pe_cambiar_a_subsistema_windows(exe: &mut [u8]) -> Result<(), String> {
-    if exe.len() < 64 {
-        return Err("Archivo demasiado corto para ser PE".to_string());
-    }
-
-    // El offset del signature PE está en el DOS header en offset 0x3C
-    let pe_sig_offset = u32::from_le_bytes([
-        exe[0x3C], exe[0x3D], exe[0x3E], exe[0x3F]
-    ]) as usize;
-
-    if pe_sig_offset + 4 >= exe.len() {
-        return Err("Offset PE signature inválido".to_string());
-    }
-
-    // Verificar signature "PE\0\0"
-    if &exe[pe_sig_offset..pe_sig_offset + 4] != b"PE\0\0" {
-        return Err("Signature PE no encontrada".to_string());
-    }
-
-    // Después del COFF header (20 bytes) viene el Optional header
-    let optional_header_offset = pe_sig_offset + 4 + 20;
-
-    if optional_header_offset + 70 >= exe.len() {
-        return Err("Archivo PE demasiado corto para optional header".to_string());
-    }
-
-    // El campo Subsystem está en el optional header en offset 68 (0x44)
-    // tanto para PE32 (magic 0x10B) como para PE32+ (magic 0x20B)
-    let _magic = u16::from_le_bytes([
-        exe[optional_header_offset],
-        exe[optional_header_offset + 1],
-    ]);
-
-    let subsystem_offset = optional_header_offset + 68;
-
-    if subsystem_offset + 2 > exe.len() {
-        return Err("Offset de subsistema fuera de rango".to_string());
-    }
-
-    let current_subsystem = u16::from_le_bytes([
-        exe[subsystem_offset],
-        exe[subsystem_offset + 1],
-    ]);
-
-    if current_subsystem == 2 {
-        return Ok(()); // Ya es WINDOWS_GUI
-    }
-
-    // Cambiar subsystem de 3 (CONSOLE) a 2 (WINDOWS GUI)
-    exe[subsystem_offset] = 2;
-    exe[subsystem_offset + 1] = 0;
-
-    Ok(())
 }
 
 /// forja diagram|grafico <archivo.fa> [-o <salida.html>]
@@ -1410,11 +1178,6 @@ fn cmd_transpile(args: &[String]) {
         }
     };
 
-    // Detectar si el programa usa GUI para incluir forja-gui-rt como dependencia
-    let usa_gui = programa.declaraciones.iter().any(|d| {
-        matches!(d, ast::Declaracion::Importar(ruta) if ruta == "gui")
-    });
-
     // Crear proyecto Cargo
     let src_dir = Path::new(&project_dir).join("src");
     if let Err(e) = fs::create_dir_all(&src_dir) {
@@ -1431,18 +1194,8 @@ fn cmd_transpile(args: &[String]) {
         }
     }
 
-    // Calcular ruta absoluta a forja-gui-rt si es GUI
-    let rt_dep = if usa_gui {
-        let current_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
-        let abs_rt = current_dir.join("crates").join("forja-gui-rt");
-        let rt_path_str = abs_rt.to_string_lossy().replace('\\', "/");
-        Some(format!("forja-gui-rt = {{ path = \"{}\" }}", rt_path_str))
-    } else {
-        None
-    };
-
     // Escribir Cargo.toml (con [workspace] para ser autocontenido y no heredar el workspace de Forja)
-    let mut cargo_toml = format!(
+    let cargo_toml = format!(
         r#"[package]
 name = "{}"
 version = "0.7.0"
@@ -1458,13 +1211,6 @@ edition = "2021"
         nombre_crate,
         Path::new(input_path).file_name().and_then(|s| s.to_str()).unwrap_or(input_path)
     );
-
-    if let Some(ref dep) = rt_dep {
-        cargo_toml.push_str(&format!(
-            "# GUI nativa con Xilem (framework UI reactivo con GPU)\n\
-             {}\n", dep
-        ));
-    }
 
     if let Err(e) = fs::write(Path::new(&project_dir).join("Cargo.toml"), &cargo_toml) {
         eprintln!("Error escribiendo Cargo.toml: {}", e);
@@ -1902,155 +1648,4 @@ fn ejecutar_test(test_fn: &Declaracion, rust_code: &str) -> Result<(), String> {
         }
         Err(msg)
     }
-}
-
-/// Directorio fijo para caché de proyectos GUI compilados
-const GUI_CACHE_DIR: &str = ".forja_gui_cache";
-
-/// forja ejecutar con GUI: transpila a Xilem, compila con cargo y ejecuta la ventana
-/// Usa un directorio de caché fijo para que cargo compile incrementalmente:
-/// la primera vez compila xilem + wgpu (lento), las siguientes solo recompila main.rs (rápido).
-fn ejecutar_gui(source: &str, _input_path: &str, quiet: bool) -> Result<Vec<String>, String> {
-    use std::path::Path;
-
-    let current_dir = std::env::current_dir()
-        .map_err(|e| format!("Error obteniendo directorio actual: {}", e))?;
-    let project_dir = current_dir.join(GUI_CACHE_DIR);
-
-    // 1. Parsear, resolver imports y transpilar (siempre, es rápido: milisegundos)
-    let input_path_buf = std::path::Path::new(_input_path);
-    let programa = forja::resolver_imports(source, input_path_buf)?;
-
-    let mut transpiler = forja::transpiler::Transpiler::new();
-    let rust_code = transpiler.transpilar(&programa).map_err(|e| format!("{}", e[0]))?;
-
-    // 2. Asegurar que existe el directorio del proyecto
-    let src_dir = Path::new(&project_dir).join("src");
-    std::fs::create_dir_all(&src_dir).map_err(|e| format!("Error creando dir: {}", e))?;
-
-    fn find_workspace_root() -> Option<std::path::PathBuf> {
-        let mut dir = std::env::current_dir().ok()?;
-        loop {
-            if dir.join("crates").join("forja-gui-rt").exists() {
-                return Some(dir);
-            }
-            if !dir.pop() {
-                break;
-            }
-        }
-        None
-    }
-
-    // 3. Escribir Cargo.toml con la ruta absoluta a forja-gui-rt
-    //    (siempre se regenera para evitar inconsistencias si cambia la estructura)
-    {
-        let workspace_root = find_workspace_root()
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-        let rt_abs_path = workspace_root.join("crates").join("forja-gui-rt");
-        let rt_path_str = rt_abs_path.to_string_lossy().replace('\\', "/");
-
-        let cargo_toml = format!(r#"[package]
-name = "forja_gui_app"
-version = "0.1.0"
-edition = "2021"
-
-[workspace]
-
-[dependencies]
-forja-gui-rt = {{ path = "{}" }}
-"#, rt_path_str);
-        std::fs::write(Path::new(&project_dir).join("Cargo.toml"), &cargo_toml)
-            .map_err(|e| format!("Error escribiendo Cargo.toml: {}", e))?;
-        if !quiet { println!("  📦 Proyecto Cargo inicializado (runtime: forja-gui-rt)"); }
-    }
-
-    // 4. Escribir main.rs (siempre, para que cargo detecte cambios)
-    let rs_path = src_dir.join("main.rs");
-    std::fs::write(&rs_path, &rust_code)
-        .map_err(|e| format!("Error escribiendo main.rs: {}", e))?;
-
-    // 5. Pre-compilar forja-gui-rt en el target del cache (si no está)
-    let cache_target = Path::new(&project_dir).join("target");
-    let rt_built_marker = cache_target.join(".rt_compiled");
-    if !rt_built_marker.exists() {
-        if !quiet { println!("  ⚙️  Pre-compilando runtime GUI (una vez)..."); }
-        let workspace_root = find_workspace_root()
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-        let rt_path = workspace_root.join("crates").join("forja-gui-rt");
-        let rt_result = std::process::Command::new("cargo")
-            .args(&["build", "--release"])
-            .current_dir(&rt_path)
-            .env("CARGO_TARGET_DIR", &cache_target)
-            .output()
-            .map_err(|e| format!("Error compilando runtime: {}", e))?;
-        if !rt_result.status.success() {
-            let stderr = String::from_utf8_lossy(&rt_result.stderr);
-            return Err(format!("Error compilando runtime GUI:\n{}", stderr));
-        }
-        std::fs::write(&rt_built_marker, "ok")
-            .map_err(|e| format!("Error escribiendo marcador: {}", e))?;
-    }
-
-    // 6. Compilar app con cargo (usa el target compartido, solo recompila main.rs)
-    if !quiet { println!("  🔨 Compilando app GUI..."); }
-    let build_result = std::process::Command::new("cargo")
-        .args(&["build", "--release"])
-        .current_dir(&project_dir)
-        .output()
-        .map_err(|e| format!("Error ejecutando cargo: {}", e))?;
-
-    if !build_result.status.success() {
-        let stderr = String::from_utf8_lossy(&build_result.stderr);
-        return Err(format!("Error de compilación:\n{}", stderr));
-    }
-
-    // 7. Ejecutar binario
-    let exe_name = if cfg!(target_os = "windows") {
-        "forja_gui_app.exe"
-    } else {
-        "forja_gui_app"
-    };
-    let mut exe_path = cache_target.join("release").join(exe_name);
-    
-    // Fallback a debug si release no existe
-    if !exe_path.exists() {
-        exe_path = cache_target.join("debug").join(exe_name);
-    }
-
-    if !quiet { println!("  🚀 Ejecutando..."); }
-    let run_output = std::process::Command::new(&exe_path)
-        .output()
-        .map_err(|e| format!("Error ejecutando GUI: {}", e))?;
-
-    // Mostrar stderr del binario hijo (útil para debug, solo si no está en quiet)
-    let stderr = String::from_utf8_lossy(&run_output.stderr);
-    if !quiet && !stderr.trim().is_empty() {
-        eprintln!("  🪟 [stderr del hijo]:\n{}", stderr);
-    }
-
-    // NOTA: NO eliminamos el directorio. Se reusa en la próxima ejecución
-    // para compilación incremental. Para limpiar: borrar .forja_gui_cache/
-
-    let stdout = String::from_utf8_lossy(&run_output.stdout);
-    Ok(stdout.lines().map(|s| s.to_string()).collect())
-}
-
-/// forja ejecutar --native: GUI nativa sin cargo (usa xilem directo desde AST)
-#[cfg(feature = "gui")]
-fn ejecutar_gui_nativa(source: &str, _path: &str, quiet: bool) -> Result<Vec<String>, String> {
-    // 1. Parsear
-    let mut lexer = forja::lexer::Lexer::new(source);
-    let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
-    let mut parser = forja::parser::Parser::new(tokens);
-    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
-
-    // 2. Análisis semántico
-    let mut checker = forja::semantics::BorrowChecker::new();
-    checker.analizar(&programa).map_err(|e| format!("{:?}", e[0]))?;
-
-    // 3. GUI nativa
-    if !quiet { println!("  🪟 Construyendo GUI nativa..."); }
-    forja::gui_nativa::build_and_run(&programa, None, false)?;
-
-    Ok(vec![])
 }
