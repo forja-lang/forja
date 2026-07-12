@@ -1167,6 +1167,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "forja-rt"
+version = "0.7.0"
+dependencies = [
+ "forja",
+]
+
+[[package]]
 name = "forja-wasm"
 version = "0.7.0"
 dependencies = [

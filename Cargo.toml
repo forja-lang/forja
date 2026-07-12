@@ -38,10 +38,6 @@ path = "src/bin/forja_lsp.rs"
 required-features = ["lsp"]
 
 [[bin]]
-name = "forja-rt"
-path = "src/bin/forja_rt.rs"
-
-[[bin]]
 name = "forja-gui"
 path = "src/bin/forja_gui.rs"
 required-features = ["gui"]
@@ -110,6 +106,7 @@ winresource = "0.1"
 members = [
     "crates/forja-gui-rt",
     "crates/forja-wasm",
+    "crates/forja-rt",
 ]
 exclude = [".forja_gui_cache"]
 
