@@ -152,7 +152,7 @@ PS C:\forja> forja medir ejemplos/40_fibonacci.fa --vm todas --iters 100
 #### 4. Modo Interactivo (Consola de Lectura y Ejecución Directa)
 ```powershell
 PS C:\forja> forja interactivo
-🔨 Forja v0.7.0 — Escribí 'salir' para terminar
+🔨 Forja v0.8.2 — Escribí 'salir' para terminar
 > variable x = 10
 > x = x + 5
 > escribir(x)
