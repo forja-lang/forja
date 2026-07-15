@@ -1141,7 +1141,7 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "forja"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "base64",
  "crossbeam",
@@ -1158,6 +1158,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "forja-android-rt"
+version = "0.8.3"
+dependencies = [
+ "forja",
+ "jni 0.21.1",
+]
+
+[[package]]
 name = "forja-gui-rt"
 version = "0.1.0"
 dependencies = [
@@ -1167,14 +1175,14 @@ dependencies = [
 
 [[package]]
 name = "forja-rt"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "forja",
 ]
 
 [[package]]
 name = "forja-wasm"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "forja",
  "serde",

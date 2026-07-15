@@ -1,6 +1,6 @@
 [package]
 name = "forja"
-version = "0.8.2"
+version = "0.8.3"
 edition = "2021"
 description = "Forja (fa) - Lenguaje de programación educativo en español"
 authors = ["lococoi"]
@@ -101,6 +101,7 @@ members = [
     "crates/forja-gui-rt",
     "crates/forja-wasm",
     "crates/forja-rt",
+    "crates/forja-android-rt",
 ]
 exclude = [".forja_gui_cache"]
 
