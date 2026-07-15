@@ -1,8 +1,0 @@
-[package]
-name = "forja-rt"
-version = "0.8.3"
-edition = "2021"
-description = "Stub de ejecución autónomo ligero para Forja"
-
-[dependencies]
-forja = { path = "../.." }
