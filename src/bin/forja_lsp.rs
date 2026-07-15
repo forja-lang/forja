@@ -836,14 +836,27 @@ impl Backend {
     }
 
     async fn _enviar_diagnostics(&self, uri: Url, texto: &str) {
-        // Intentar compilar para obtener errores reales
         let mut diagnostics = Vec::new();
 
-        // 1. Errores de compilación
+        // 1. Errores de compilación (filtrados)
         match forja::compilar(texto) {
             Ok(_) => {}
             Err(errors) => {
-                for err in errors {
+                'next_err: for err in &errors {
+                    let mensaje = format!("{}: {}", err.tipo, err.mensaje);
+
+                    // FALSO POSITIVO: variables de patrón en coincidir/caso
+                    // Ej: "ErrorSemantico: La variable 'valor' no está declarada"
+                    // cuando hay un "caso Ok(valor) -> { ... }" en el código
+                    if err.mensaje.contains("no está declarada") {
+                        let var_name = extraer_nombre_variable_error(&err.mensaje);
+                        if let Some(ref name) = var_name {
+                            if es_variable_de_patron(texto, err.linea, name) {
+                                continue 'next_err; // filtrar falso positivo
+                            }
+                        }
+                    }
+
                     diagnostics.push(Diagnostic {
                         range: Range {
                             start: Position {
@@ -857,7 +870,7 @@ impl Backend {
                         },
                         severity: Some(DiagnosticSeverity::ERROR),
                         source: Some("forja".to_string()),
-                        message: format!("{}: {}", err.tipo, err.mensaje),
+                        message: mensaje,
                         ..Default::default()
                     });
                 }
@@ -1348,6 +1361,44 @@ async fn main() {
     Server::new(stdin, stdout, socket).serve(service).await;
 }
 
+// ─── Helpers para filtrar falsos positivos del LSP ──────────────
+
+/// Extrae el nombre de variable de un error "La variable 'X' no está declarada"
+fn extraer_nombre_variable_error(mensaje: &str) -> Option<String> {
+    for delim in ["'", "\""] {
+        if let Some(start) = mensaje.find(delim) {
+            let rest = &mensaje[start+1..];
+            if let Some(end) = rest.find(delim) {
+                return Some(rest[..end].to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Verifica si una variable aparece como patrón en un `caso` cerca de la línea
+fn es_variable_de_patron(source: &str, linea: usize, var_name: &str) -> bool {
+    let lines: Vec<&str> = source.lines().collect();
+    let line_idx = linea.saturating_sub(1);
+    let start = line_idx.saturating_sub(5);
+    let end = std::cmp::min(line_idx + 5, lines.len());
+
+    for i in start..end {
+        let line = lines[i].trim();
+        if line.starts_with("caso ") {
+            if let Some(paren_start) = line.find('(') {
+                if let Some(paren_end) = line.rfind(')') {
+                    let inner = &line[paren_start+1..paren_end];
+                    if inner.split(',').any(|part| part.trim() == var_name) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 // ======================================================================
 // Tests
 // ======================================================================
@@ -1374,6 +1425,19 @@ mod tests {
         let analisis = analizar_documento("");
         assert!(analisis.simbolos.is_empty());
         assert!(analisis.referencias.is_empty());
+    }
+
+    #[test]
+    fn test_extraer_nombre_variable_error() {
+        let msg = "ErrorSemantico: La variable 'valor' no está declarada";
+        assert_eq!(extraer_nombre_variable_error(msg), Some("valor".to_string()));
+    }
+
+    #[test]
+    fn test_es_variable_de_patron() {
+        let src = "coincidir (resultado) {\n    caso Ok(valor) -> {\n        escribir(valor)\n    }\n}";
+        assert!(es_variable_de_patron(src, 2, "valor"));
+        assert!(!es_variable_de_patron(src, 2, "otra"));
     }
 
     #[test]
