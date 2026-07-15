@@ -25,3 +25,9 @@
 [submodule "stdlib/gui"]
 	path = stdlib/gui
 	url = https://github.com/forja-lang/forja-stdlib-gui.git
+[submodule "crates/forja-rt"]
+	path = crates/forja-rt
+	url = https://github.com/forja-lang/forja-rt.git
+[submodule "crates/forja-android-rt"]
+	path = crates/forja-android-rt
+	url = https://github.com/forja-lang/forja-android-rt.git
