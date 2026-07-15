@@ -15,7 +15,6 @@ En el proyecto Forja, nos comprometemos a mantener un entorno abierto, acogedor 
 
 ## Comportamiento esperado
 
-- Usar lenguaje inclusivo y respetuoso
 - Ser acogedor con opiniones y críticas constructivas
 - Respetar el tiempo y esfuerzo de otros colaboradores
 - Documentar código con claridad y ayudar a otros a entenderlo
