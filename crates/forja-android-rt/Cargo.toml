@@ -1,0 +1,20 @@
+[package]
+name = "forja-android-rt"
+version = "0.8.3"
+edition = "2021"
+description = "Forja Runtime for Android - JNI bridge for executing .fa scripts on Android"
+authors = ["lococoi"]
+license = "GPL-3.0-or-later"
+
+[lib]
+crate-type = ["cdylib"]
+name = "forja_android_rt"
+
+[dependencies]
+forja = { path = "../.." }
+jni = { version = "0.21", default-features = false }
+
+# NOTA: Usamos unwind en vez de abort porque necesitamos catch_unwind
+# para evitar que panics de Rust maten la app Android.
+# El overhead es ~200KB, aceptable para un .so.
+# Los profiles se heredan del workspace.

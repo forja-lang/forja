@@ -333,7 +333,7 @@ pub struct VersionedBytecode {
 
 pub struct ForjaFast {
     pub ip: usize,
-    pub(crate) stack: Vec<ValorFast>,
+    pub stack: Vec<ValorFast>,
     pub(crate) frame_buffer: [FrmFast; 2048],
     pub(crate) frame_count: usize,
 
@@ -350,10 +350,10 @@ pub struct ForjaFast {
 
     // ─── VM Heap ─────────────────────────────────────────────────────────────
     // Objetos, strings, arrays y mapas viven aquí y se referencian por índice u32.
-    obj_heap: Vec<ObjVal>,
-    str_heap: Vec<Arc<str>>,
-    array_heap: Vec<Vec<ValorFast>>,
-    map_heap: Vec<HashMap<String, ValorFast>>,
+    pub obj_heap: Vec<ObjVal>,
+    pub str_heap: Vec<Arc<str>>,
+    pub array_heap: Vec<Vec<ValorFast>>,
+    pub map_heap: Vec<HashMap<String, ValorFast>>,
     obj_marked: Vec<bool>,       // marcas GC para objetos
     str_marked: Vec<bool>,       // marcas GC para strings
     array_marked: Vec<bool>,     // marcas GC para arrays
@@ -371,7 +371,7 @@ pub struct ForjaFast {
     map_free: Vec<u32>,          // free list mapas
 
     // ─── Exacto Heap ─────────────────────────────────────────────────
-    exacto_heap: Vec<ExactoVal>,      // valores Exacto (BigDecimal)
+    pub exacto_heap: Vec<ExactoVal>,      // valores Exacto (BigDecimal)
     exacto_marked: Vec<bool>,         // marcas GC para Exacto
     exacto_free: Vec<u32>,           // free list Exacto
 
@@ -483,8 +483,8 @@ pub struct ForjaFast {
     #[cfg(not(target_arch = "wasm32"))]
     pub modulo_bytecode_ranges: HashMap<ModuleId, (usize, usize)>,
 
-    pub(crate) max_inst: usize,
-    pub(crate) ejecutadas: usize,
+    pub max_inst: usize,
+    pub ejecutadas: usize,
     fast_math: bool,
     pub show_bytecode: bool,
 
@@ -1153,7 +1153,7 @@ impl ForjaFast {
     }
 
     #[inline(always)]
-    pub(crate) fn alloc_arr(&mut self, arr: Vec<ValorFast>) -> u32 {
+    pub fn alloc_arr(&mut self, arr: Vec<ValorFast>) -> u32 {
         self.gc_allocs_since_last += 1;
         if self.gc_allocs_since_last >= self.gc_threshold {
             self.gc_collect();
@@ -1170,7 +1170,7 @@ impl ForjaFast {
     }
 
     #[inline(always)]
-    pub(crate) fn alloc_map(&mut self, m: HashMap<String, ValorFast>) -> u32 {
+    pub fn alloc_map(&mut self, m: HashMap<String, ValorFast>) -> u32 {
         self.gc_allocs_since_last += 1;
         if self.gc_allocs_since_last >= self.gc_threshold {
             self.gc_collect();
@@ -1187,7 +1187,7 @@ impl ForjaFast {
     }
 
     #[inline(always)]
-    fn alloc_exacto(&mut self, e: ExactoVal) -> u32 {
+    pub fn alloc_exacto(&mut self, e: ExactoVal) -> u32 {
         self.gc_allocs_since_last += 1;
         if self.gc_allocs_since_last >= self.gc_threshold {
             self.gc_collect();

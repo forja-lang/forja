@@ -130,6 +130,42 @@ jobs:
           name: forja-${{ matrix.os }}
           path: staging/*
 
+  build-aar:
+    name: Build Android AAR
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: |
+            aarch64-linux-android
+            x86_64-linux-android
+            armv7-linux-androideabi
+            i686-linux-android
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27
+          add-to-path: false
+      - name: Build AAR
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          bash scripts/build-aar.sh
+      - name: Upload AAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: forja-android-aar
+          path: dist/forja-android-rt-*.aar
+
   build-wasm:
     name: Build WASM
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
@@ -167,7 +203,7 @@ jobs:
   release:
     name: Create Release
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    needs: [build, build-wasm]
+    needs: [build, build-wasm, build-aar]
     permissions:
       contents: write
       attestations: write
@@ -206,6 +242,8 @@ jobs:
           # WASM
           cp artifacts/forja-wasm/forja_wasm.js binaries/forja_wasm.js
           cp artifacts/forja-wasm/forja_wasm_bg.wasm binaries/forja_wasm_bg.wasm
+          # Android AAR
+          cp artifacts/forja-android-aar/forja-android-rt-*.aar binaries/
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
         with:
