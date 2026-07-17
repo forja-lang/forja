@@ -108,6 +108,7 @@ exclude = [".forja_gui_cache"]
 [patch.crates-io]
 xilem = { path = "patches/xilem" }
 masonry_winit = { path = "patches/masonry_winit" }
+masonry = { path = "patches/masonry" }
 
 [profile.release]
 opt-level = "z"
