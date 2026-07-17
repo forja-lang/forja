@@ -100,15 +100,16 @@ winresource = "0.1"
 members = [
     "crates/forja-gui-rt",
     "crates/forja-wasm",
+    "crates/forja-wasm-gui",
     "crates/forja-rt",
     "crates/forja-android-rt",
 ]
 exclude = [".forja_gui_cache"]
 
 [patch.crates-io]
-xilem = { git = "https://github.com/forja-lang/patches.git", subdirectory = "xilem" }
-masonry_winit = { git = "https://github.com/forja-lang/patches.git", subdirectory = "masonry_winit" }
-masonry = { git = "https://github.com/forja-lang/patches.git", subdirectory = "masonry" }
+xilem = { git = "https://github.com/forja-lang/patches.git", branch = "xilem" }
+masonry_winit = { git = "https://github.com/forja-lang/patches.git", branch = "masonry_winit" }
+masonry = { git = "https://github.com/forja-lang/patches.git", branch = "masonry" }
 
 [profile.release]
 opt-level = "z"
