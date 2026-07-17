@@ -298,8 +298,14 @@ impl Transpiler {
             self.emit_line("");
 
             // main() delega completamente al runtime
+            // Soporta --load-state=<json> para hot reload
             self.emit_line("fn main() -> Result<(), String> {");
-            self.emit_line("    forja_gui_rt::build_and_run(&PROGRAMA, None, true)");
+            self.emit_line("    let args: Vec<String> = std::env::args().collect();");
+            self.emit_line("    let load_state = args.iter()");
+            self.emit_line("        .find_map(|a| a.strip_prefix(\"--load-state=\"))");
+            self.emit_line("        .map(|s| s.to_string());");
+            self.emit_line("");
+            self.emit_line("    forja_gui_rt::build_and_run(&PROGRAMA, load_state.as_deref(), None, true)");
             self.emit_line("}");
             self.emit_line("");
 
@@ -307,7 +313,7 @@ impl Transpiler {
             self.emit_line("#[cfg(target_os = \"android\")]");
             self.emit_line("#[no_mangle]");
             self.emit_line("fn android_main(app: winit::platform::android::activity::AndroidApp) {");
-            self.emit_line("    forja_gui_rt::build_and_run_android(&PROGRAMA, None, true, app);");
+            self.emit_line("    forja_gui_rt::build_and_run_android(&PROGRAMA, None, None, true, app);");
             self.emit_line("}");
             return Ok(self.output.clone());
         }
