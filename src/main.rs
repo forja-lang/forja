@@ -772,12 +772,13 @@ fn cmd_bench(args: &[String]) {
 /// --asm            : compila a ASM nativo y ejecuta (requiere gcc)
 fn cmd_run(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--debug|--console|--no-debug] [--contratos|--no-contratos]");
+        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native] [--debug|--console|--no-debug] [--contratos|--no-contratos]");
         process::exit(1);
     }
 
     let mut vm_mode = "fast";
     let mut asm_mode = false;
+    let mut native_mode = false;
     let mut verificar_contratos = true;  // default: contratos activados
     let mut contratos_explicit = false;  // si el usuario explicitó la opción
     let mut path: &String = &args[0];
@@ -792,6 +793,7 @@ fn cmd_run(args: &[String]) {
                 if i < args.len() { vm_mode = &args[i]; }
             }
             "--asm" => asm_mode = true,
+            "--native" => native_mode = true,
             "--debug" | "--console" => {}
             "--no-debug" => {}
             "--contratos" => { verificar_contratos = true; contratos_explicit = true; }
@@ -817,6 +819,15 @@ fn cmd_run(args: &[String]) {
             process::exit(1);
         }
     };
+
+    if native_mode {
+        let result = ejecutar_nativo(&source, path);
+        match result {
+            Ok(()) => {}
+            Err(e) => { eprintln!("Error en ejecución nativa: {}", e); process::exit(1); }
+        }
+        return;
+    }
 
     if asm_mode {
         let result = ejecutar_asm(&source, path);
@@ -928,6 +939,114 @@ fn ejecutar_asm(source: &str, input_path: &str) -> Result<Vec<String>, String> {
 
     let stdout = String::from_utf8_lossy(&run_output.stdout);
     Ok(stdout.lines().map(|s| s.to_string()).collect())
+}
+
+/// Ejecuta un programa Forja que usa GUI, compilándolo a nativo con cargo
+/// y ejecutando el binario resultante.
+/// Equivalente a hacer: forja transpile + cd dir + cargo run
+fn ejecutar_nativo(source: &str, input_path: &str) -> Result<(), String> {
+    // 1. Parsear el programa (usando módulos locales para evitar conflictos
+    //    entre crate forja (lib) y crate forja (bin))
+    let mut lexer = lexer::Lexer::new(source);
+    let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
+    let mut parser = parser::Parser::new(tokens);
+    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+
+    // 2. Detectar si usa GUI
+    let usa_gui = programa.declaraciones.iter().any(|d| {
+        matches!(d, ast::Declaracion::Importar(ruta) if ruta == "gui")
+    });
+    if !usa_gui {
+        return Err("El archivo no importa \"gui\". Usa `forja ejecutar` (sin --native) para ejecutar en consola.".to_string());
+    }
+
+    // 3. Nombre del proyecto
+    let input_stem = Path::new(input_path).file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("app");
+    let mut nombre_crate = input_stem.replace('-', "_").replace(' ', "_");
+    if !nombre_crate.is_empty() {
+        let first = nombre_crate.chars().next().unwrap();
+        if first.is_ascii_digit() {
+            nombre_crate = format!("forja_{}", nombre_crate);
+        }
+    }
+
+    // 4. Crear directorio temporal
+    let temp_dir = std::env::temp_dir().join(format!("forja_gui_{}", std::process::id()));
+    if temp_dir.exists() {
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Error creando directorio temporal: {}", e))?;
+
+    // 5. Transpilar a Rust
+    let mut transpiler = transpiler::Transpiler::new();
+    let codigo_rust = transpiler.transpilar(&programa)
+        .map_err(|e| format!("Error de transpilación: {}", e[0]))?;
+
+    // 6. Escribir main.rs
+    std::fs::write(temp_dir.join("main.rs"), &codigo_rust)
+        .map_err(|e| format!("Error escribiendo main.rs: {}", e))?;
+
+    // 7. Escribir Cargo.toml con rutas absolutas
+    let forja_root = std::fs::canonicalize(".")
+        .map_err(|e| format!("Error resolviendo ruta raíz: {}", e))?;
+    let forja_gui_rt_path = forja_root.join("crates/forja-gui-rt");
+
+    let cargo_toml = format!(
+        r#"[package]
+name = "{}"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+forja-gui-rt = {{ path = "{}" }}
+forja = {{ path = "{}" }}
+serde_json = "1"
+"#,
+        nombre_crate,
+        forja_gui_rt_path.display().to_string().replace("\\\\?\\", ""),
+        forja_root.display().to_string().replace("\\\\?\\", "")
+    );
+
+    std::fs::write(temp_dir.join("Cargo.toml"), &cargo_toml)
+        .map_err(|e| format!("Error escribiendo Cargo.toml: {}", e))?;
+
+    // 8. Compilar con cargo (release)
+    println!("📦 Compilando GUI nativa...");
+    let output = std::process::Command::new("cargo")
+        .args(&["build", "--release"])
+        .current_dir(&temp_dir)
+        .output()
+        .map_err(|e| format!("Error ejecutando cargo: {}. ¿Está instalado Rust?", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        std::fs::remove_dir_all(&temp_dir).ok();
+        return Err(format!("Error de compilación:\n{}", stderr));
+    }
+
+    // 9. Ejecutar el binario compilado
+    let exe_name = if cfg!(target_os = "windows") {
+        format!("{}.exe", nombre_crate)
+    } else {
+        nombre_crate.clone()
+    };
+    let bin_path = temp_dir.join("target").join("release").join(&exe_name);
+
+    println!("🚀 Ejecutando GUI nativa...");
+    let child = std::process::Command::new(&bin_path)
+        .spawn()
+        .map_err(|e| format!("Error ejecutando binario: {}", e))?;
+
+    // Esperar a que termine el proceso hijo
+    let _ = child.wait_with_output();
+
+    // Limpieza opcional (comentada para mantener el caché de cargo)
+    // std::fs::remove_dir_all(&temp_dir).ok();
+
+    Ok(())
 }
 
 /// forja fmt|formatear|format <archivo.fa>
@@ -1304,31 +1423,60 @@ fn cmd_transpile(args: &[String]) {
         }
     }
 
-    // Escribir Cargo.toml (con [workspace] para ser autocontenido y no heredar el workspace de Forja)
-    let cargo_toml = format!(
-        r#"[package]
+    let usa_gui = transpiler.usa_gui();
+    let cargo_toml = if usa_gui {
+        format!(
+            r#"[package]
+name = "{}"
+version = "0.8.3"
+edition = "2021"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "{}"
+path = "src/lib.rs"
+
+[dependencies]
+forja-gui-rt = {{ path = "C:\\Users\\gaucho\\forja\\crates\\forja-gui-rt" }}
+
+[target.'cfg(target_os = "android")'.dependencies.winit]
+version = "0.30.13"
+features = ["android-native-activity"]
+"#,
+            nombre_crate,
+            nombre_crate
+        )
+    } else {
+        format!(
+            r#"[package]
 name = "{}"
 version = "0.8.3"
 edition = "2021"
 
 # Exportado por Forja (fa) desde {} (podés ejecutar directo con 'forja ejecutar')
-# https://github.com/lococoi/forja
+# https://github.com/forja-lang/forja
 
 [workspace]
 
 [dependencies]
 "#,
-        nombre_crate,
-        Path::new(input_path).file_name().and_then(|s| s.to_str()).unwrap_or(input_path)
-    );
+            nombre_crate,
+            Path::new(input_path).file_name().and_then(|s| s.to_str()).unwrap_or(input_path)
+        )
+    };
 
     if let Err(e) = fs::write(Path::new(&project_dir).join("Cargo.toml"), &cargo_toml) {
         eprintln!("Error escribiendo Cargo.toml: {}", e);
         process::exit(1);
     }
 
-    // Escribir src/main.rs
-    let rs_path = src_dir.join("main.rs");
+    // Escribir src/lib.rs o src/main.rs
+    let file_name = if usa_gui { "lib.rs" } else { "main.rs" };
+    let rs_path = src_dir.join(file_name);
     if let Err(e) = fs::write(&rs_path, &rust_code) {
         eprintln!("Error escribiendo '{}': {}", rs_path.display(), e);
         process::exit(1);
