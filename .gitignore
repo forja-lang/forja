@@ -1,36 +1,46 @@
+# ── Directorios generados / temporales ──
 plans/
 fib_rs/
 target/
 test_inline_rs/
 tests/
 .vscode/
-$null
-return$null
 .cargo/
 .roo/
-/COMPARACION_FORJA_VS_RAVEN.md
-test_resultados.txt
-tests/
-plans/*.md
-/*.fa
-*.ps1
-*.exe
-!/README.md
-!/README_*.md
-!/LICENSE.md
-!/LICENSE
-*.txt
-*test*
-*tests*
 .forja_gui_cache/
 .kilo/
-REORGANIZACION_REPOS.md
 scratch/
-installer.iss
-logo.png
-forja_history.txt
 dist/
 temp_gui_project/
 temp_gui_android_project/
 examples/android/
 patches/
+
+# ── Ejecutables ──
+*.exe
+
+# ── Scripts ──
+*.ps1
+
+# ── Archivos de texto / resultados ──
+*.txt
+installer.iss
+logo.png
+forja_history.txt
+test_resultados.txt
+
+# ── Wildcards peligrosos ──
+*test*
+*tests*
+
+# ── Null (generados por el compilador) ──
+$null
+return$null
+
+# ── Markdown: solo raíz o README ──
+*.md
+!/*.md
+!README.md
+
+# ── Licencia ──
+!/LICENSE
