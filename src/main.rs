@@ -35,6 +35,7 @@ mod module;
 #[cfg(all(feature = "h2-tls", not(target_arch = "wasm32")))]
 mod native_h2_tls;
 #[cfg(not(any(feature = "h2-tls", target_arch = "wasm32")))]
+#[allow(dead_code)]
 mod native_h2_tls { // stub vacío
     pub struct SocketState;
 }
@@ -889,7 +890,7 @@ fn ejecutar_asm(source: &str, input_path: &str) -> Result<Vec<String>, String> {
     use std::process::Command;
 
     // 1. Parsear y compilar a ASM
-    use forja::compiler_asm::{self, TargetArch};
+    use forja::compiler_asm;
     use forja::lexer::Lexer;
     use forja::parser::Parser;
 
@@ -1333,6 +1334,7 @@ fn generar_doc_html(declaraciones: &[Declaracion]) -> String {
     html
 }
 
+#[allow(dead_code)]
 /// forja repl (default: ForjaFast)
 fn cmd_repl() {
     let mut repl = repl::REPL::new("fast");
