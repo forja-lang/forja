@@ -1472,6 +1472,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "forja-wasm-gui"
+version = "0.1.0"
+dependencies = [
+ "forja",
+ "js-sys",
+ "serde_json",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "form_urlencoded"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2301,7 +2312,7 @@ dependencies = [
 [[package]]
 name = "masonry"
 version = "0.4.0"
-source = "git+https://github.com/forja-lang/patches.git#655049ec98ac2680a20e29b4861144f69b92c287"
+source = "git+https://github.com/forja-lang/patches.git?branch=masonry#bc7d0e803040025145bb8e911cf1c7404df85613"
 dependencies = [
  "accesskit",
  "dpi",
@@ -2339,7 +2350,7 @@ dependencies = [
 [[package]]
 name = "masonry_winit"
 version = "0.4.0"
-source = "git+https://github.com/forja-lang/patches.git#655049ec98ac2680a20e29b4861144f69b92c287"
+source = "git+https://github.com/forja-lang/patches.git?branch=masonry_winit#3ec102fcef87236a3544c420a7e2e21d439fa088"
 dependencies = [
  "accesskit_winit",
  "copypasta",
@@ -5492,7 +5503,7 @@ checksum = "bec9e4a500ca8864c5b47b8b482a73d62e4237670e5b5f1d6b9e3cae50f28f2b"
 [[package]]
 name = "xilem"
 version = "0.4.0"
-source = "git+https://github.com/forja-lang/patches.git#655049ec98ac2680a20e29b4861144f69b92c287"
+source = "git+https://github.com/forja-lang/patches.git?branch=xilem#21c0cca98d0333a99e3db715bce5ce874ddae4db"
 dependencies = [
  "masonry",
  "masonry_winit",

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::fmt;
 
 /// Todos los tipos de token que reconoce Forja (fa)
