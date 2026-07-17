@@ -392,7 +392,7 @@ impl BytecodeGenerator {
             Expresion::LiteralBooleano(_) => Some(Tipo::Booleano),
             Expresion::LiteralExacto(_, _) => Some(Tipo::Exacto),
             Expresion::LiteralNulo => Some(Tipo::Nulo),
-            Expresion::Identificador(nombre) => {
+            Expresion::Identificador { nombre: nombre, .. } => {
                 // Keywords booleanos
                 match nombre.as_str() {
                     "verdadero" | "falso" => Some(Tipo::Booleano),
@@ -1015,7 +1015,7 @@ impl BytecodeGenerator {
                 // Optimizar: for i in 0..N
                 if let Some(cond) = condicion {
                     if let Expresion::Binaria { izquierda, operador: Operador::Menor, derecha } = cond.as_ref() {
-                        if let Expresion::Identificador(ref var_name) = izquierda.as_ref() {
+                        if let Expresion::Identificador { nombre: ref var_name, .. } = izquierda.as_ref() {
                             let label_inicio = self.nueva_label();
                             let label_fin = self.nueva_label();
 
@@ -1178,7 +1178,7 @@ impl BytecodeGenerator {
             Expresion::LiteralExacto(coeff, scale) => self.emitir(Opcode::PushExacto(*coeff, *scale)),
             Expresion::LiteralNulo => self.emitir(Opcode::PushNulo),
 
-            Expresion::Identificador(nombre) => {
+            Expresion::Identificador { nombre: nombre, .. } => {
                 // Keywords que son valores en Forja
                 match nombre.as_str() {
                     "verdadero" => self.emitir(Opcode::PushBooleano(true)),
@@ -1629,7 +1629,7 @@ impl BytecodeGenerator {
     fn encontrar_variables_en_expr(&self, expr: &Expresion) -> Vec<String> {
         let mut vars = Vec::new();
         match expr {
-            Expresion::Identificador(n) => {
+            Expresion::Identificador { nombre: n, .. } => {
                 // Solo variables reales, no keywords
                 match n.as_str() {
                     "verdadero" | "falso" | "nulo" | "resultado" => {}
@@ -1667,7 +1667,7 @@ impl BytecodeGenerator {
     fn tiene_anterior(&self, expr: &Expresion, var_name: &str) -> bool {
         match expr {
             Expresion::Anterior(inner) => {
-                if let Expresion::Identificador(n) = inner.as_ref() {
+                if let Expresion::Identificador { nombre: n, .. } = inner.as_ref() {
                     if n == var_name { return true; }
                 }
                 false
@@ -1700,7 +1700,7 @@ impl BytecodeGenerator {
             Expresion::LiteralBooleano(b) => output.push(Uop::PushBooleano(*b)),
             Expresion::LiteralNulo => output.push(Uop::PushNulo),
 
-            Expresion::Identificador(nombre) => {
+            Expresion::Identificador { nombre: nombre, .. } => {
                 match nombre.as_str() {
                     "verdadero" => output.push(Uop::PushBooleano(true)),
                     "falso" => output.push(Uop::PushBooleano(false)),

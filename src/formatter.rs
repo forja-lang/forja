@@ -483,7 +483,7 @@ impl Formatter {
             Expresion::LiteralTexto(s) => format!("\"{}\"", s),
             Expresion::LiteralBooleano(b) => (if *b { "verdadero" } else { "falso" }).to_string(),
             Expresion::LiteralNulo => "nulo".to_string(),
-            Expresion::Identificador(n, ..) => n.clone(),
+            Expresion::Identificador { nombre: n, .. } => n.clone(),
             Expresion::Binaria { izquierda, operador, derecha } => {
                 let op = match operador {
                     Operador::Suma => " + ", Operador::Resta => " - ",

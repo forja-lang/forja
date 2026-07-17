@@ -1884,7 +1884,7 @@ impl CompilerAsm {
                 ret.to_string()
             }
 
-            Expresion::Identificador(nombre) => {
+            Expresion::Identificador { nombre: nombre, .. } => {
                 if nombre == "verdadero" {
                     self.emit_line(&a.mov_reg_imm(a.ret_reg_32(), 1));
                 } else if nombre == "falso" || nombre == "nulo" {
@@ -2854,7 +2854,7 @@ impl CompilerAsm {
             }
 
             // ── Identificador: depende del tipo ──
-            Expresion::Identificador(nombre) => {
+            Expresion::Identificador { nombre: nombre, .. } => {
                 if nombre == "verdadero" {
                     self.gen_write_str_literal("verdadero");
                     return;
@@ -3031,7 +3031,7 @@ impl CompilerAsm {
     fn buscar_campo_offset(&self, objeto: &Expresion, miembro: &str) -> i32 {
         // Inferir el nombre de la clase a partir de la expresión del objeto
         let clase_nombre = match objeto {
-            Expresion::Identificador(nombre) => {
+            Expresion::Identificador { nombre: nombre, .. } => {
                 // Buscar el tipo de la variable
                 if let Some(var) = self.variables.get(nombre) {
                     match &var.tipo {

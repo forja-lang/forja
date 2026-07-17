@@ -329,7 +329,7 @@ impl DiagramGenerator {
             Expresion::LiteralBooleano(b) => (if *b { "true" } else { "false" }).to_string(),
             Expresion::LiteralNulo => "nulo".to_string(),
             Expresion::LiteralExacto(coeff, scale) => format!("Exacto({coeff},{scale})"),
-            Expresion::Identificador(n, ..) => n.clone(),
+            Expresion::Identificador { nombre: n, .. } => n.clone(),
             Expresion::Binaria { izquierda, operador, derecha } => {
                 let op = match operador {
                     Operador::Suma => "+", Operador::Resta => "-", Operador::Multiplicacion => "*",

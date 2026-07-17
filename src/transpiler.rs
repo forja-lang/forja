@@ -423,7 +423,7 @@ impl Transpiler {
                     "escribir" | "etiqueta" | "gui_etiqueta" | "text" | "label" => {
                         if let Some(arg) = argumentos.first() {
                             match arg {
-                                Expresion::Identificador(var, ..) => {
+                                Expresion::Identificador { nombre: var, .. } => {
                                     format!("Layout::Label {{ texto: String::from(\"{}\"), es_variable: true }}", var)
                                 }
                                 Expresion::LiteralTexto(s) => {
@@ -468,9 +468,9 @@ impl Transpiler {
                             // El callback puede ser Identificador("funcion") o Referencia { expr: Identificador("funcion") }
                             let arg = &argumentos[1];
                             match arg {
-                                Expresion::Identificador(cb, ..) => cb.clone(),
+                                Expresion::Identificador { nombre: cb, .. } => cb.clone(),
                                 Expresion::Referencia { expr, .. } => {
-                                    if let Expresion::Identificador(cb, ..) = expr.as_ref() {
+                                    if let Expresion::Identificador { nombre: cb, .. } = expr.as_ref() {
                                         cb.clone()
                                     } else {
                                         String::new()
@@ -791,7 +791,7 @@ impl Transpiler {
             Expresion::LiteralDecimal(f) => {
                 format!("Layout::Label {{ texto: String::from(\"{}\"), es_variable: false }}", f)
             }
-            Expresion::Identificador(var, ..) => {
+            Expresion::Identificador { nombre: var, .. } => {
                 format!("Layout::Label {{ texto: String::from(\"{}\"), es_variable: true }}", var)
             }
             _ => {
@@ -888,7 +888,7 @@ impl Transpiler {
                         for decl_cuerpo in &metodo.cuerpo {
                             if let Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } = decl_cuerpo {
                                 // este.campo = expr → inferir tipo
-                                if let Expresion::Identificador(ref nombre_self, ..) = objeto.as_ref() {
+                                if let Expresion::Identificador { nombre: ref nombre_self, .. } = objeto.as_ref() {
                                     if nombre_self == "self" {
                                         let tipo_inferido = self.inferir_tipo_expr(valor, &metodo.parametros);
                                         tipos_campos.insert(miembro.clone(), tipo_inferido);
@@ -934,7 +934,7 @@ impl Transpiler {
             Expresion::LiteralBooleano(_) => "bool".to_string(),
             Expresion::LiteralExacto(_, _) => "f64".to_string(),
             Expresion::LiteralNulo => "()".to_string(),
-            Expresion::Identificador(nombre, ..) => {
+            Expresion::Identificador { nombre: nombre, .. } => {
                 // Buscar si el identificador es un parámetro con tipo conocido
                 for p in params {
                     if p.nombre == *nombre {
@@ -1078,11 +1078,11 @@ impl Transpiler {
                 .iter()
                 .filter_map(|decl| {
                     if let Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } = decl {
-                        if let Expresion::Identificador(ref nombre_self, ..) = objeto.as_ref() {
+                        if let Expresion::Identificador { nombre: ref nombre_self, .. } = objeto.as_ref() {
                             if nombre_self == "self" {
                                 // El valor puede ser un identificador (param) o una expresión
                                 let val_str = match valor.as_ref() {
-                                    Expresion::Identificador(id, ..) => id.clone(),
+                                    Expresion::Identificador { nombre: id, .. } => id.clone(),
                                     other => self.transpilar_expresion(other),
                                 };
                                 return Some((miembro.clone(), val_str));
@@ -1267,7 +1267,7 @@ impl Transpiler {
                     Expresion::LiteralTexto(_) => Some(Tipo::Texto),
                     Expresion::LiteralBooleano(_) => Some(Tipo::Booleano),
                     Expresion::LiteralNulo => Some(Tipo::Nulo),
-                    Expresion::Identificador(nombre, ..) => {
+                    Expresion::Identificador { nombre: nombre, .. } => {
                         // Buscar si la variable tiene tipo conocido
                         match nombre.as_str() {
                             "verdadero" | "falso" => Some(Tipo::Booleano),
@@ -1370,7 +1370,7 @@ impl Transpiler {
 
     fn analizar_expr_para_tipos(&self, expr: &Expresion, tipos: &mut std::collections::HashMap<String, String>) {
         match expr {
-            Expresion::Identificador(nombre, ..) => {
+            Expresion::Identificador { nombre: nombre, .. } => {
                 // Si el parámetro se usa con literales numéricos, es Entero
                 if !tipos.contains_key(nombre) {
                     tipos.insert(nombre.clone(), "i64".to_string());
@@ -1415,7 +1415,7 @@ impl Transpiler {
     }
 
     fn asignar_tipo_si_parametro(&self, expr: &Expresion, tipos: &mut std::collections::HashMap<String, String>, tipo: &str) {
-        if let Expresion::Identificador(nombre) = expr {
+        if let Expresion::Identificador { nombre: nombre, .. } = expr {
             tipos.insert(nombre.clone(), tipo.to_string());
         }
     }
@@ -1707,7 +1707,7 @@ impl Transpiler {
 
                 if let Some(cond) = condicion {
                     if let Expresion::Binaria { izquierda, operador: Operador::Menor, derecha } = cond.as_ref() {
-                        if let Expresion::Identificador(ref var_name, ..) = izquierda.as_ref() {
+                        if let Expresion::Identificador { nombre: ref var_name, .. } = izquierda.as_ref() {
                             // Patrón detectado: for x in 0..N
                             let range_end = self.transpilar_expresion(derecha);
                             self.emit_line(&format!("for {} in 0..{} {{", var_name, range_end));
@@ -1907,7 +1907,7 @@ impl Transpiler {
             Expresion::LiteralBooleano(b) => b.to_string(),
             Expresion::LiteralNulo => "()".to_string(),
 
-            Expresion::Identificador(nombre, ..) => {
+            Expresion::Identificador { nombre: nombre, .. } => {
                 if nombre == "self" {
                     "self".to_string()
                 } else if nombre == "verdadero" {
@@ -2180,7 +2180,7 @@ impl Transpiler {
                 }
             }
             Expresion::Anterior(expr) => {
-                if let Expresion::Identificador(var, ..) = expr.as_ref() {
+                if let Expresion::Identificador { nombre: var, .. } = expr.as_ref() {
                     format!("_anterior_{}", var)
                 } else {
                     // para anterior(este.campo) usar el valor actual como fallback
@@ -2229,7 +2229,7 @@ impl Transpiler {
     fn recolectar_vars_anterior(&self, expr: &Expresion, vars: &mut Vec<String>) {
         match expr {
             Expresion::Anterior(inner) => {
-                if let Expresion::Identificador(var, ..) = inner.as_ref() {
+                if let Expresion::Identificador { nombre: var, .. } = inner.as_ref() {
                     if !vars.contains(var) {
                         vars.push(var.clone());
                     }
@@ -2458,7 +2458,7 @@ impl Transpiler {
             Expresion::LiteralBooleano(b) => format!("Expresion::LiteralBooleano({})", b),
             Expresion::LiteralNulo => "Expresion::LiteralNulo".to_string(),
             Expresion::LiteralExacto(coeff, scale) => format!("Expresion::LiteralExacto({}, {})", coeff, scale),
-            Expresion::Identificador(nombre) => format!("Expresion::Identificador(String::from(\"{}\"))", self.esc_ast_string(nombre)),
+            Expresion::Identificador { nombre: nombre, .. } => format!("Expresion::Identificador(String::from(\"{}\"))", self.esc_ast_string(nombre)),
             Expresion::Binaria { izquierda, operador, derecha } => {
                 format!("Expresion::Binaria {{ izquierda: Box::new({}), operador: {}, derecha: Box::new({}) }}",
                     self.generar_ast_expresion(izquierda), self.operador_a_ast(operador), self.generar_ast_expresion(derecha))

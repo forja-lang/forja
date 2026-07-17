@@ -386,11 +386,11 @@ impl BorrowChecker {
                     tipo_inferido = self.analizar_expresion(val);
 
                     // Si el valor es un identificador, verificar si hay que moverlo
-                    if let Expresion::Identificador(id) = val {
+                    if let Expresion::Identificador { nombre: id, linea: id_linea, columna: id_columna } = val {
                         // Obtener el tipo de la variable original
                         let tipo_original = self.tabla.obtener(id).and_then(|info| info.tipo.clone());
                         if !Self::es_copy(&tipo_original) {
-                            if let Err(e) = self.tabla.mover_variable(id, *linea, *columna) {
+                            if let Err(e) = self.tabla.mover_variable(id, *id_linea, *id_columna) {
                                 self.errores.push(e);
                             }
                         }
@@ -554,9 +554,8 @@ impl BorrowChecker {
             Expresion::LiteralNulo => Some(Tipo::Nulo),
             Expresion::LiteralExacto(_, _) => Some(Tipo::Exacto),
 
-            Expresion::Identificador(nombre) => {
-                let linea = 0;
-                if let Err(e) = self.tabla.leer_variable(nombre, linea, 0) {
+            Expresion::Identificador { nombre, linea, columna } => {
+                if let Err(e) = self.tabla.leer_variable(nombre, *linea, *columna) {
                     self.errores.push(e);
                 }
                 // Retornar el tipo de la variable si está registrada
@@ -583,14 +582,13 @@ impl BorrowChecker {
                     }
                 } else {
                     for arg in argumentos {
-                        if let Expresion::Identificador(id) = arg {
-                            let linea = 0;
+                        if let Expresion::Identificador { nombre: id, linea, columna } = arg {
                             // Solo mover si el tipo NO es Copy
                             let es_copy = self.tabla.obtener(id)
                                 .map(|info| Self::es_copy(&info.tipo))
                                 .unwrap_or(true);
                             if !es_copy {
-                                if let Err(e) = self.tabla.mover_variable(id, linea, 0) {
+                                if let Err(e) = self.tabla.mover_variable(id, *linea, *columna) {
                                     self.errores.push(e);
                                 }
                             }
@@ -614,11 +612,10 @@ impl BorrowChecker {
             }
 
             Expresion::Referencia { expr: e, mutable } => {
-                if let Expresion::Identificador(nombre) = e.as_ref() {
+                if let Expresion::Identificador { nombre, linea, columna } = e.as_ref() {
                     // Si es una función, permitir la referencia sin validar en tabla de variables
                     if !self.funciones.contains(nombre.as_str()) {
-                        let linea = 0;
-                        if let Err(err) = self.tabla.prestar_variable(nombre, *mutable, linea, 0) {
+                        if let Err(err) = self.tabla.prestar_variable(nombre, *mutable, *linea, *columna) {
                             self.errores.push(err);
                         }
                         // Solo analizar recursivamente si NO es función (evitar error de variable no declarada)
@@ -773,8 +770,8 @@ impl BorrowChecker {
                 None
             }
             Expresion::Asignacion { variable, valor } => {
-                let linea = 0;
-                if let Err(e) = self.tabla.escribir_variable(variable, linea, 0) {
+                // La posición se usa desde el contexto de la variable declarada, usamos 0 como fallback
+                if let Err(e) = self.tabla.escribir_variable(variable, 0, 0) {
                     self.errores.push(e);
                 }
                 self.analizar_expresion(valor);
@@ -1189,7 +1186,7 @@ impl TypeChecker {
             Expresion::LiteralNulo => Some(Tipo::Nulo),
             Expresion::LiteralExacto(_, _) => Some(Tipo::Exacto),
 
-            Expresion::Identificador(nombre) => {
+            Expresion::Identificador { nombre, .. } => {
                 match nombre.as_str() {
                     "verdadero" | "falso" => Some(Tipo::Booleano),
                     _ => self.tabla.obtener(nombre).and_then(|info| info.tipo.clone()),
@@ -1508,7 +1505,7 @@ impl TypeChecker {
                 }
                 // Verificar que expr sea una variable o acceso a campo
                 match expr.as_ref() {
-                    Expresion::Identificador(_) => { /* ok */ }
+                    Expresion::Identificador { .. } => { /* ok */ }
                     Expresion::AccesoMiembro { .. } => { /* ok */ }
                     _ => {
                         self.errores.push(ErrorForja::new(
@@ -1741,6 +1738,30 @@ mod tests {
         let source = "importar \"gui\"\nfuncion main() {\n    variable resultado = \"\"\n    columna(\n        escribir(\"A\"),\n        escribir(resultado),\n        escribir(\"B\")\n    )\n}";
         let result = analizar_source(source);
         assert!(result.is_ok(), "columna con múltiples escribir, uno con variable, debería funcionar: {:?}", result);
+    }
+
+    #[test]
+    fn test_si_sin_paren() {
+        let result = analizar_source("funcion main() {\n    variable x = 1\n    si x == 1 {\n        escribir(\"uno\")\n    }\n}");
+        assert!(result.is_ok(), "si sin parentesis deberia funcionar: {:?}", result);
+    }
+
+    #[test]
+    fn test_sino_si() {
+        let result = analizar_source("funcion main() {\n    variable x = 2\n    si x == 1 {\n        escribir(\"uno\")\n    } sino si x == 2 {\n        escribir(\"dos\")\n    } sino {\n        escribir(\"otro\")\n    }\n}");
+        assert!(result.is_ok(), "sino si deberia funcionar: {:?}", result);
+    }
+
+    #[test]
+    fn test_sino_si_con_paren() {
+        let result = analizar_source("funcion main() {\n    variable x = 2\n    si (x == 1) {\n        escribir(\"uno\")\n    } sino si (x == 2) {\n        escribir(\"dos\")\n    } sino {\n        escribir(\"otro\")\n    }\n}");
+        assert!(result.is_ok(), "sino si con parentesis deberia funcionar: {:?}", result);
+    }
+
+    #[test]
+    fn test_sino_si_sin_else() {
+        let result = analizar_source("funcion main() {\n    variable x = 2\n    si x == 1 {\n        escribir(\"uno\")\n    } sino si x == 2 {\n        escribir(\"dos\")\n    }\n}");
+        assert!(result.is_ok(), "sino si sin else final deberia funcionar: {:?}", result);
     }
 }
 
