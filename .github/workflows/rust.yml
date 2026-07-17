@@ -245,11 +245,11 @@ jobs:
           # Android AAR
           cp artifacts/forja-android-aar/forja-android-rt-*.aar binaries/
       - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: binaries/*
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: v0.8.3
