@@ -29,6 +29,7 @@ const OP_ARRAY_GET: u8 = 36;   const OP_ARRAY_SET: u8 = 37;
 const OP_ARRAY_LEN: u8 = 38;   const OP_MAP_NEW: u8 = 39;
 const OP_MAP_GET: u8 = 40;     const OP_MAP_SET: u8 = 41;
 const OP_HALT: u8 = 42;
+
 // Opcodes especializados (runtime-only, map to generic equivalents at compile time)
 const OP_ADD_INT: u8 = 100;    const OP_ADD_FLOAT: u8 = 101;
 const OP_SUB_INT: u8 = 102;    const OP_SUB_FLOAT: u8 = 103;
@@ -36,6 +37,7 @@ const OP_MUL_INT: u8 = 104;    const OP_MUL_FLOAT: u8 = 105;
 const OP_DIV_INT: u8 = 106;    const OP_DIV_FLOAT: u8 = 107;
 const OP_IGUAL_INT: u8 = 108;  const OP_MENOR_INT: u8 = 109;
 const OP_MAYOR_INT: u8 = 110;
+
 // Opcodes para Exacto (BigDecimal)
 const OP_PUSH_EXACTO: u8 = 43;  const OP_ADD_EXACT: u8 = 44;
 const OP_SUB_EXACT: u8 = 45;    const OP_MUL_EXACT: u8 = 46;
