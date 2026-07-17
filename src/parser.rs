@@ -794,18 +794,45 @@ impl Parser {
     }
 
     /// si (<cond>) { <bloque> } [ sino { <bloque> } ]
+    /// si <cond> { <bloque> } [ sino si <cond> { <bloque> } ] [ sino { <bloque> } ]
     fn parse_si(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
         self.avanzar(); // consume 'si'
-        self.esperar(TokenKind::ParenAbrir, "Se esperaba '(' después de 'si'.")?;
-        let condicion = self.parse_expresion()?;
-        self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de la condición.")?;
+        self.parse_si_desde_condicion()
+    }
+
+    /// Parsea un `si`/`sino si` desde la condición (sin consumir 'si').
+    /// Soporta tanto `si (cond)` con paréntesis como `si cond` sin paréntesis.
+    fn parse_si_desde_condicion(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
+        // Parse condition — puede llevar paréntesis o no
+        let condicion = if self.coincide(TokenKind::ParenAbrir) {
+            self.avanzar();
+            let cond = self.parse_expresion()?;
+            self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de la condición.")?;
+            cond
+        } else {
+            // Sin paréntesis: la expresión termina donde aparece '{'
+            self.parse_expresion()?
+        };
+
         self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' para el bloque del 'si'.")?;
         let bloque_verdadero = self.parse_bloque()?;
 
+        // Manejar sino / sino si
         let bloque_falso = if self.coincide(TokenKind::Sino) {
-            self.avanzar();
-            self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' para el bloque del 'sino'.")?;
-            Some(self.parse_bloque()?)
+            self.avanzar(); // consume 'sino'
+            if self.coincide(TokenKind::Si) {
+                // sino si → otro condicional anidado (else if)
+                self.avanzar(); // consume 'si'
+                let sino_si = self.parse_si_desde_condicion()?;
+                if let Some(decl) = sino_si {
+                    Some(vec![decl])
+                } else {
+                    None
+                }
+            } else {
+                self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' para el bloque del 'sino'.")?;
+                Some(self.parse_bloque()?)
+            }
         } else {
             None
         };
@@ -1009,8 +1036,9 @@ impl Parser {
                     self.esperar_flecha()?; // consume ->
                     self.esperar(TokenKind::LlaveAbrir, "Se esperaba '{' para el cuerpo del caso.")?;
                     let cuerpo = self.parse_bloque()?;
+                    let (linea_primero, col_primero) = (self.linea_actual(), self.columna_actual());
                     brazos.push(BrazoSeleccionar {
-                        recepcion: Some((var_nombre, Expresion::Identificador(primero))),
+                        recepcion: Some((var_nombre, Expresion::Identificador { nombre: primero, linea: linea_primero, columna: col_primero })),
                         timeout_ms: 0,
                         cuerpo,
                     });
@@ -1221,7 +1249,7 @@ impl Parser {
             // nombre[índice][índice2]... o cadenas con . y ()
             // Construimos la expresión base de índice
             let mut expr: Expresion = Expresion::Index {
-                objeto: Box::new(Expresion::Identificador(nombre.clone())),
+                objeto: Box::new(Expresion::Identificador { nombre: nombre.clone(), linea, columna }),
                 indice: Box::new(indice),
             };
             let mut nombre_compuesto = nombre;
@@ -1281,7 +1309,7 @@ impl Parser {
                 self.avanzar();
                 let valor = self.parse_expresion()?;
                 return Ok(Some(Declaracion::Expresion(Expresion::AsignacionCampo {
-                    objeto: Box::new(Expresion::Identificador(nombre_clon)),
+                    objeto: Box::new(Expresion::Identificador { nombre: nombre_clon, linea, columna }),
                     campo: miembro,
                     valor: Box::new(valor),
                 })));
@@ -1312,7 +1340,7 @@ impl Parser {
                     return Ok(Some(Declaracion::Expresion(Expresion::ArraySet {
                         array: Box::new(Expresion::Index {
                             objeto: Box::new(Expresion::AccesoMiembro {
-                                objeto: Box::new(Expresion::Identificador(nombre)),
+                                objeto: Box::new(Expresion::Identificador { nombre: nombre, linea, columna }),
                                 miembro,
                             }),
                             indice: Box::new(indice),
@@ -1323,7 +1351,7 @@ impl Parser {
 
                 // nombre.miembro[índice] - acceso de lectura
                 let mut expr = Expresion::AccesoMiembro {
-                    objeto: Box::new(Expresion::Identificador(nombre_clon)),
+                    objeto: Box::new(Expresion::Identificador { nombre: nombre_clon, linea, columna }),
                     miembro,
                 };
 
@@ -1362,7 +1390,7 @@ impl Parser {
 
             // nombre.miembro o nombre.miembro.submiembro...
             let mut expr = Expresion::AccesoMiembro {
-                objeto: Box::new(Expresion::Identificador(nombre_clon)),
+                objeto: Box::new(Expresion::Identificador { nombre: nombre_clon, linea, columna }),
                 miembro,
             };
             // Encadenar más .miembro
@@ -1392,13 +1420,13 @@ impl Parser {
         }
 
         // CASO 5: Solo identificador
-        Ok(Some(Declaracion::Expresion(Expresion::Identificador(nombre))))
+        Ok(Some(Declaracion::Expresion(Expresion::Identificador { nombre, linea, columna })))
     }
 
     /// Helper para obtener nombre simple de una expresión
     fn expresion_a_nombre_simple(&self, expr: &Expresion) -> Option<String> {
         match expr {
-            Expresion::Identificador(n) => Some(n.clone()),
+            Expresion::Identificador { nombre: n, .. } => Some(n.clone()),
             _ => None,
         }
     }
@@ -1417,8 +1445,8 @@ impl Parser {
         let expr = self.parse_expresion_logica()?;
         if self.coincide(TokenKind::Igual) {
             match &expr {
-                Expresion::Identificador(_) => {
-                    if let Expresion::Identificador(nombre) = expr {
+                Expresion::Identificador { .. } => {
+                    if let Expresion::Identificador { nombre, .. } = expr {
                         self.avanzar(); // consumir =
                         let valor = self.parse_expresion_asignacion()?; // asociativo a la derecha
                         return Ok(Expresion::Asignacion {
@@ -1735,6 +1763,7 @@ impl Parser {
             } else {
                 unreachable!()
             };
+            let (id_linea, id_columna) = (self.peek().linea, self.peek().columna);
             self.avanzar();
 
             // Detectar Ok(), Error(), Algo() como constructores especiales
@@ -1762,7 +1791,7 @@ impl Parser {
             }
 
             // Para identificadores, manejar llamadas y accesos inline
-            return self.parse_llamada_o_acceso(Expresion::Identificador(nombre));
+            return self.parse_llamada_o_acceso(Expresion::Identificador { nombre, linea: id_linea, columna: id_columna });
         }
 
         if self.coincide(TokenKind::Nuevo) {
@@ -1772,13 +1801,15 @@ impl Parser {
             if es_instanciacion {
                 return self.parse_instanciacion();
             }
+            let (id_linea, id_columna) = (self.peek().linea, self.peek().columna);
             self.avanzar(); // consume 'nuevo' como identificador
-            return self.parse_llamada_o_acceso(Expresion::Identificador("nuevo".to_string()));
+            return self.parse_llamada_o_acceso(Expresion::Identificador { nombre: "nuevo".to_string(), linea: id_linea, columna: id_columna });
         }
 
         if self.coincide(TokenKind::Este) {
+            let (id_linea, id_columna) = (self.peek().linea, self.peek().columna);
             self.avanzar();
-            let expr = Expresion::Identificador("self".to_string());
+            let expr = Expresion::Identificador { nombre: "self".to_string(), linea: id_linea, columna: id_columna };
             if self.coincide(TokenKind::Punto) {
                 return self.parse_acceso_miembro(expr);
             }
@@ -1886,8 +1917,9 @@ impl Parser {
         for kw in &soft_keywords {
             if self.coincide(kw.clone()) {
                 let nombre = self.peek().kind.to_string();
+                let (id_linea, id_columna) = (self.peek().linea, self.peek().columna);
                 self.avanzar();
-                return self.parse_llamada_o_acceso(Expresion::Identificador(nombre));
+                return self.parse_llamada_o_acceso(Expresion::Identificador { nombre, linea: id_linea, columna: id_columna });
             }
         }
 
@@ -1976,7 +2008,7 @@ impl Parser {
                 self.avanzar();
                 let argumentos = self.parse_argumentos()?;
                 self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de los argumentos.")?;
-                if let Expresion::Identificador(nombre) = expr {
+                if let Expresion::Identificador { nombre, .. } = expr {
                     expr = Expresion::LlamadaFuncion { nombre, argumentos };
                 } else {
                     expr = Expresion::LlamadaFuncion {
@@ -2026,7 +2058,7 @@ impl Parser {
             let argumentos = self.parse_argumentos()?;
             self.esperar(TokenKind::ParenCerrar, "Se esperaba ')' después de los argumentos.")?;
 
-            if let Expresion::Identificador(nombre) = expr {
+            if let Expresion::Identificador { nombre, .. } = expr {
                 return Ok(Expresion::LlamadaFuncion { nombre, argumentos });
             }
 
@@ -2083,7 +2115,7 @@ impl Parser {
     /// Intenta obtener un nombre de expresión (para construir nombre compuesto)
     fn expresion_a_nombre(&self, expr: &Expresion) -> Option<String> {
         match expr {
-            Expresion::Identificador(n) => Some(n.clone()),
+            Expresion::Identificador { nombre: n, .. } => Some(n.clone()),
             Expresion::LiteralTexto(s) => Some(format!("\"{}\"", s)),
             Expresion::LiteralNumero(n) => Some(n.to_string()),
             Expresion::LiteralDecimal(d) => Some(d.to_string()),

@@ -166,7 +166,11 @@ pub enum Expresion {
     #[allow(dead_code)]
     LiteralExacto(i128, u32),
     /// Referencia a variable (ej: x, alumno.nombre)
-    Identificador(String),
+    Identificador {
+        nombre: String,
+        linea: usize,
+        columna: usize,
+    },
     /// Operación binaria (ej: a + b, x > 5)
     Binaria {
         izquierda: Box<Expresion>,
