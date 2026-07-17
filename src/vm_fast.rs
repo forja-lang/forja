@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Forja VM — Ultra Fast v6 (NaN Tagging)
 // Variables por índice numérico pre-asignado en bytecode
 // Load/Store/Declare son O(1) — acceso directo a Vec

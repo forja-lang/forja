@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::ast::*;
 use crate::error::{ErrorForja, ErrorTipo};
 use std::collections::HashMap;

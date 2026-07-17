@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::ast::*;
 use crate::error::ErrorForja;
 use std::collections::HashMap;
@@ -736,7 +737,7 @@ impl Transpiler {
                         let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
                         format!("Layout::TopAppBar {{ titulo: String::from(\"{}\"), acciones: vec![], menu_visible: false, variant: TopAppBarVariant::Large }}", titulo)
                     }
-                    "pestanas" | "tabs_widget" | "tabs" | "pestanas" => {
+                    "pestanas" | "tabs_widget" | "tabs" => {
                         let items: Vec<String> = argumentos.iter().map(|a| {
                             match a {
                                 Expresion::LiteralTexto(s) => format!("String::from(\"{}\")", self.esc_ast_string(s)),
@@ -769,7 +770,7 @@ impl Transpiler {
                         format!("Layout::BottomSheet {{ child: Box::new(Layout::Column {{ children: vec![{}], gap: 8.0, alignment: String::from(\"start\") }}), variant: SheetVariant::Standard, visible: String::from(\"{}\"), on_dismiss: None }}",
                             hijos.join(", "), visible)
                     }
-                    "notificacion" | "snackbar" | "notification" | "toast" | "notificacion" => {
+                    "snackbar" | "notification" | "notificacion" => {
                         let mensaje = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
                         format!("Layout::Snackbar {{ mensaje: String::from(\"{}\"), accion_texto: None, accion_callback: None, duracion: 4000.0, visible: String::from(\"snack_visible\") }}", mensaje)
                     }
@@ -940,7 +941,7 @@ impl Transpiler {
             Expresion::LiteralBooleano(_) => "bool".to_string(),
             Expresion::LiteralExacto(_, _) => "f64".to_string(),
             Expresion::LiteralNulo => "()".to_string(),
-            Expresion::Identificador { nombre: nombre, .. } => {
+            Expresion::Identificador { nombre, .. } => {
                 // Buscar si el identificador es un parámetro con tipo conocido
                 for p in params {
                     if p.nombre == *nombre {
@@ -1273,7 +1274,7 @@ impl Transpiler {
                     Expresion::LiteralTexto(_) => Some(Tipo::Texto),
                     Expresion::LiteralBooleano(_) => Some(Tipo::Booleano),
                     Expresion::LiteralNulo => Some(Tipo::Nulo),
-                    Expresion::Identificador { nombre: nombre, .. } => {
+                    Expresion::Identificador { nombre, .. } => {
                         // Buscar si la variable tiene tipo conocido
                         match nombre.as_str() {
                             "verdadero" | "falso" => Some(Tipo::Booleano),
@@ -1376,7 +1377,7 @@ impl Transpiler {
 
     fn analizar_expr_para_tipos(&self, expr: &Expresion, tipos: &mut std::collections::HashMap<String, String>) {
         match expr {
-            Expresion::Identificador { nombre: nombre, .. } => {
+            Expresion::Identificador { nombre, .. } => {
                 // Si el parámetro se usa con literales numéricos, es Entero
                 if !tipos.contains_key(nombre) {
                     tipos.insert(nombre.clone(), "i64".to_string());
@@ -1421,7 +1422,7 @@ impl Transpiler {
     }
 
     fn asignar_tipo_si_parametro(&self, expr: &Expresion, tipos: &mut std::collections::HashMap<String, String>, tipo: &str) {
-        if let Expresion::Identificador { nombre: nombre, .. } = expr {
+        if let Expresion::Identificador { nombre, .. } = expr {
             tipos.insert(nombre.clone(), tipo.to_string());
         }
     }
@@ -1913,7 +1914,7 @@ impl Transpiler {
             Expresion::LiteralBooleano(b) => b.to_string(),
             Expresion::LiteralNulo => "()".to_string(),
 
-            Expresion::Identificador { nombre: nombre, .. } => {
+            Expresion::Identificador { nombre, .. } => {
                 if nombre == "self" {
                     "self".to_string()
                 } else if nombre == "verdadero" {
@@ -2351,7 +2352,7 @@ impl Transpiler {
                 format!("Declaracion::AsignacionIndex {{ nombre: String::from(\"{}\"), indice: Box::new({}), valor: Box::new({}), linea: {}, columna: {} }}",
                     self.esc_ast_string(nombre), self.generar_ast_expresion(indice), self.generar_ast_expresion(valor), linea, columna)
             }
-            Declaracion::Funcion { nombre, parametros_tipo, parametros, tipo_retorno, cuerpo, externa, enlace_nombre, atributos, doc, precondiciones, postcondiciones } => {
+            Declaracion::Funcion { nombre, parametros_tipo, parametros, tipo_retorno, cuerpo, externa, enlace_nombre, atributos: _, doc, precondiciones: _, postcondiciones: _ } => {
                 let params_tipo_str: Vec<String> = parametros_tipo.iter()
                     .map(|p| format!("ParametroTipo {{ nombre: String::from(\"{}\"), rasgos: vec![] }}", self.esc_ast_string(&p.nombre)))
                     .collect();
@@ -2464,7 +2465,7 @@ impl Transpiler {
             Expresion::LiteralBooleano(b) => format!("Expresion::LiteralBooleano({})", b),
             Expresion::LiteralNulo => "Expresion::LiteralNulo".to_string(),
             Expresion::LiteralExacto(coeff, scale) => format!("Expresion::LiteralExacto({}, {})", coeff, scale),
-            Expresion::Identificador { nombre: nombre, .. } => format!("Expresion::Identificador(String::from(\"{}\"))", self.esc_ast_string(nombre)),
+            Expresion::Identificador { nombre, .. } => format!("Expresion::Identificador(String::from(\"{}\"))", self.esc_ast_string(nombre)),
             Expresion::Binaria { izquierda, operador, derecha } => {
                 format!("Expresion::Binaria {{ izquierda: Box::new({}), operador: {}, derecha: Box::new({}) }}",
                     self.generar_ast_expresion(izquierda), self.operador_a_ast(operador), self.generar_ast_expresion(derecha))

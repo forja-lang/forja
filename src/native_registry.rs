@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Registro de funciones nativas para la VM Forja
 use std::collections::HashMap;
 use std::io::{Read, Write};

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::sync::Arc;
 use crate::ast::*;
 use crate::error::ErrorForja;
@@ -392,7 +393,7 @@ impl BytecodeGenerator {
             Expresion::LiteralBooleano(_) => Some(Tipo::Booleano),
             Expresion::LiteralExacto(_, _) => Some(Tipo::Exacto),
             Expresion::LiteralNulo => Some(Tipo::Nulo),
-            Expresion::Identificador { nombre: nombre, .. } => {
+            Expresion::Identificador { nombre, .. } => {
                 // Keywords booleanos
                 match nombre.as_str() {
                     "verdadero" | "falso" => Some(Tipo::Booleano),
@@ -1178,7 +1179,7 @@ impl BytecodeGenerator {
             Expresion::LiteralExacto(coeff, scale) => self.emitir(Opcode::PushExacto(*coeff, *scale)),
             Expresion::LiteralNulo => self.emitir(Opcode::PushNulo),
 
-            Expresion::Identificador { nombre: nombre, .. } => {
+            Expresion::Identificador { nombre, .. } => {
                 // Keywords que son valores en Forja
                 match nombre.as_str() {
                     "verdadero" => self.emitir(Opcode::PushBooleano(true)),
@@ -1700,7 +1701,7 @@ impl BytecodeGenerator {
             Expresion::LiteralBooleano(b) => output.push(Uop::PushBooleano(*b)),
             Expresion::LiteralNulo => output.push(Uop::PushNulo),
 
-            Expresion::Identificador { nombre: nombre, .. } => {
+            Expresion::Identificador { nombre, .. } => {
                 match nombre.as_str() {
                     "verdadero" => output.push(Uop::PushBooleano(true)),
                     "falso" => output.push(Uop::PushBooleano(false)),

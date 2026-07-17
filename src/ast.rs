@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Definiciones del Árbol de Sintaxis Abstracta (AST) para Forja (fa)
 
 /// Operadores binarios
