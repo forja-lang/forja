@@ -100,14 +100,6 @@ pub struct Transpiler {
     declaraciones_globales: Vec<Declaracion>,
     /// Nombres de funciones externas (FFI)
     funciones_externas: Vec<String>,
-    /// Variables detectadas para GUI AppState dinámico
-    gui_vars: Vec<(String, String)>,
-    /// Si es true, transpilar_expresion referencia campos como data.nombre
-    gui_mode: bool,
-    /// Pila de cierres de layout (columna/fila anidados)
-    layout_stack: Vec<String>,
-    /// True si se usó columna/fila como layout contenedor (para no duplicar flex)
-    gui_container_layout: bool,
     /// Postcondiciones de la función actual (para transformar retornar)
     postcondiciones_actuales: Vec<Contrato>,
     /// Si la función actual tiene postcondiciones activas
@@ -170,11 +162,7 @@ impl Transpiler {
             clases: HashMap::new(),
             declaraciones_globales: Vec::new(),
             funciones_externas: Vec::new(),
-            gui_vars: Vec::new(),
-            gui_mode: false,
             saltar_main: false,
-            layout_stack: Vec::new(),
-            gui_container_layout: false,
             postcondiciones_actuales: Vec::new(),
             modo_postcondiciones: false,
             tiene_resultado_var: false,
@@ -197,7 +185,7 @@ impl Transpiler {
         self.recolectar_clases(&programa.declaraciones);
 
         // Segunda pasada: generar código
-        self.emit_line("// Código exportado desde Forja (fa) — https://github.com/lococoi/forja");
+        self.emit_line("// Código exportado desde Forja (fa) — https://github.com/forja-lang/forja");
         self.emit_line("// Podés ejecutarlo directo con 'forja ejecutar' sin necesidad de compilar Rust");
         self.emit_line("");
 
@@ -215,11 +203,10 @@ impl Transpiler {
             self.emit_line("");
         }
 
-        // Detectar si se usa el paquete GUI para emitir código Xilem REAL
+        // Detectar si se usa el paquete GUI para emitir código que usa forja_gui_rt
         if self.usa_gui() {
             self.emit_line("// ─── GUI: Forja GUI Runtime (xilem precompilado) ───");
-            self.emit_line("use forja_gui_rt::view::{self, Axis};");
-            self.emit_line("use forja_gui_rt::{AnyWidgetView, WidgetView, Xilem, WindowOptions, EventLoop, EventLoopError, Length};");
+            self.emit_line("use forja_gui_rt::*;");
             self.emit_line("");
         }
 
@@ -291,76 +278,37 @@ impl Transpiler {
             }
         }
 
-        // Si hay GUI: recolectar widgets recorriendo el AST recursivamente
+        // Si hay GUI: generar el AST completo como datos estáticos para el runtime
         if self.usa_gui() {
-            // Analizar variables para AppState dinámico
-            let mut gui_vars = self.analizar_variables_gui(&programa.declaraciones);
-            // Remover duplicados (mismo nombre, primer tipo se mantiene)
-            let mut seen = std::collections::HashSet::new();
-            gui_vars.retain(|(nombre, _)| seen.insert(nombre.clone()));
-            self.gui_vars = gui_vars;
-
-            // Generar AppState dinámico
-            self.emit_line("#[derive(Default)]");
-            self.emit_line("struct AppState {");
-            let gui_vars = self.gui_vars.clone();
-            if gui_vars.is_empty() {
-                self.emit_line("    _placeholder: (),");
-            } else {
-                for (nombre, tipo_rust) in &gui_vars {
-                    self.emit_line(&format!("    {}: {},", nombre, tipo_rust));
-                }
+            // Generar el programa completo como datos estáticos de Rust
+            // El runtime (forja_gui_rt) se encarga de todo: tema, estado, eventos, layout, bucle
+            let ast_code = self.generar_ast_programa(&programa.declaraciones);
+            self.emit_line("// ─── Programa Forja como datos estáticos para el runtime ───");
+            self.emit_line("use forja::ast::*;");
+            self.emit_line("");
+            self.emit_line("static PROGRAMA: Programa = Programa {");
+            self.emit_line("    declaraciones: vec![");
+            self.indent();
+            for line in ast_code.lines() {
+                self.emit_line(line);
             }
+            self.dedent();
+            self.emit_line("    ],");
+            self.emit_line("};");
+            self.emit_line("");
+
+            // main() delega completamente al runtime
+            self.emit_line("fn main() -> Result<(), String> {");
+            self.emit_line("    forja_gui_rt::build_and_run(&PROGRAMA, None, true)");
             self.emit_line("}");
             self.emit_line("");
 
-            // Activar gui_mode para que transpilar_expresion prefije con data.
-            self.gui_mode = true;
-
-            // Recolectar widgets recursivamente desde todo el AST
-            // Resetear estado de layout
-            self.gui_container_layout = false;
-
-            let mut widgets: Vec<String> = Vec::new();
-            self.recolectar_widgets(&programa.declaraciones, &mut widgets);
-
-            // Si no hay widgets, poner uno default
-            if widgets.is_empty() {
-                widgets.push("    view::label(String::from(\"Forja + Xilem GUI\")),".to_string());
-            }
-
-            // Emitir app_logic() con los widgets recolectados
-            self.emit_line("fn app_logic(data: &mut AppState) -> impl WidgetView<AppState> {");
-            // Siempre envolver en flex vertical para evitar expresiones sueltas en el cuerpo
-            // Usamos Vec<Box<AnyWidgetView>> en lugar de tupla para evitar el límite
-            // de aridad de FlexSequence (máximo ~12 elementos en tupla)
-            self.emit_line("    let children: Vec<Box<AnyWidgetView<AppState>>> = vec![");
-            for w in &widgets {
-                let trimmed = w.trim();
-                let widget_expr = trimmed.trim_end_matches(',');
-                // Si ya tiene Box::new (procesar_expresion_widget), usar directo
-                // Si no, envolver en Box::new(...) as Box<AnyWidgetView>
-                if widget_expr.starts_with("Box::new(") || widget_expr.starts_with("//") {
-                    self.emit_line(&format!("        {},", widget_expr));
-                } else if !widget_expr.is_empty() {
-                    self.emit_line(&format!("        Box::new({}) as Box<AnyWidgetView<AppState>>,", widget_expr));
-                }
-            }
-            self.emit_line("    ];");
-            self.emit_line("    view::flex(Axis::Vertical, (children,))");
+            // Android entry point
+            self.emit_line("#[cfg(target_os = \"android\")]");
+            self.emit_line("#[no_mangle]");
+            self.emit_line("fn android_main(app: winit::platform::android::activity::AndroidApp) {");
+            self.emit_line("    forja_gui_rt::build_and_run_android(&PROGRAMA, None, true, app);");
             self.emit_line("}");
-            self.emit_line("");
-
-            // Emitir main() Xilem con tema oscuro (default en Windows)
-            self.emit_line("fn main() -> Result<(), EventLoopError> {");
-            self.emit_line("    // Modo oscuro: Xilem usa tema dark por defecto en Windows");
-            self.emit_line("    Xilem::new_simple(");
-            self.emit_line("        AppState::default(),");
-            self.emit_line("        app_logic,");
-            self.emit_line("        WindowOptions::new(\"Forja GUI\".to_string()),");
-            self.emit_line("    ).run_in(EventLoop::with_user_event())");
-            self.emit_line("}");
-            self.gui_mode = false;
             return Ok(self.output.clone());
         }
 
@@ -389,563 +337,487 @@ impl Transpiler {
         self.funciones_externas.contains(&nombre.to_string())
     }
 
-    /// Recolecta widgets Xilem recorriendo el AST recursivamente
-    fn recolectar_widgets(&mut self, declaraciones: &[Declaracion], widgets: &mut Vec<String>) {
+    /// Recolecta expresiones Layout recorriendo el AST recursivamente.
+    /// Similar a `recolectar_widgets` pero genera `Layout::xxx` en lugar de widgets Xilem.
+    fn recolectar_layouts(&mut self, declaraciones: &[Declaracion], layouts: &mut Vec<Vec<String>>) {
         for decl in declaraciones {
             match decl {
                 Declaracion::LlamadaFuncion { nombre, argumentos } => {
-                    match nombre.as_str() {
-                        "columna" | "gui_columna" => {
-                            self.gui_container_layout = true;
-                            widgets.push("    view::sized_box(view::flex(Axis::Vertical, vec![".to_string());
-                            for arg in argumentos {
-                                self.procesar_expresion_widget(arg, widgets);
-                            }
-                            widgets.push("    ]))".to_string());
-                        }
-                        "fila" | "gui_fila" => {
-                            self.gui_container_layout = true;
-                            widgets.push("    view::flex(Axis::Horizontal, vec![".to_string());
-                            for arg in argumentos {
-                                self.procesar_expresion_widget(arg, widgets);
-                            }
-                            widgets.push("    ])".to_string());
-                        }
-                        "pila" | "gui_pila" | "zstack" => {
-                            self.gui_container_layout = true;
-                            widgets.push("    view::zstack(vec![".to_string());
-                            for arg in argumentos {
-                                self.procesar_expresion_widget(arg, widgets);
-                            }
-                            widgets.push("    ])".to_string());
-                        }
-                        "desplazable" | "gui_desplazable" | "scroll" => {
-                            if let Some(arg) = argumentos.first() {
-                                widgets.push("    view::portal(".to_string());
-                                self.procesar_expresion_widget(arg, widgets);
-                                widgets.push("    ),".to_string());
-                            }
-                        }
-                        "grilla" | "gui_grilla" | "grid" => {
-                            // último arg = columnas
-                            if let Some(Expresion::LiteralNumero(cols)) = argumentos.last() {
-                                let _hijos = &argumentos[..argumentos.len()-1];
-                                widgets.push(format!("    view::grid((\"_tmp\",), 1, {}),", cols));
-                            }
-                        }
-                        _ => {
-                            let args: Vec<String> = argumentos.iter()
-                                .map(|a| self.transpilar_expresion(a))
-                                .collect();
-                            match nombre.as_str() {
-                                "escribir" | "etiqueta" | "gui_etiqueta" | "text" | "label" => {
-                                    if let Some(arg) = args.first() {
-                                        widgets.push(format!("    view::label({}),", arg));
-                                    }
-                                }
-                                "etiqueta_dinamica" | "varlabel" => {
-                                    if let Some(Expresion::LiteralTexto(var_name)) = argumentos.first() {
-                                        if self.gui_vars.iter().any(|(v, _)| v == var_name) {
-                                            widgets.push(format!("    view::variable_label(data.{}.clone()),", var_name));
-                                        } else {
-                                            widgets.push("    view::variable_label(String::new()),".to_string());
-                                        }
-                                    }
-                                }
-                                "boton" | "gui_boton" | "btn" | "button" => {
-                                    let texto = args.first().map(|s| s.as_str()).unwrap_or("String::from(\"\")");
-                                    if args.len() >= 2 {
-                                        let callback = args[1].trim_start_matches('&').to_string();
-                                        widgets.push(format!(
-                                            "    view::text_button({}, |d: &mut AppState| {{ {}(); }}),",
-                                            texto, callback
-                                        ));
-                                    } else {
-                                        widgets.push(format!(
-                                            "    view::text_button({}, |d: &mut AppState| {{ println!(\"Boton: {}\"); }}),",
-                                            texto, texto
-                                        ));
-                                    }
-                                }
-                                "entrada_texto" | "gui_entrada_texto" | "input" => {
-                                    if let Some(val) = args.first() {
-                                        widgets.push(format!("    view::text_input({}.clone(), |_data, _val| {{ }}),", val));
-                                    }
-                                }
-                                "area_texto" | "textarea" => {
-                                    if let Some(val) = args.first() {
-                                        // text_input multiline (Masonry soporta multi-line natively)
-                                        widgets.push(format!("    view::text_input({}.clone(), |_data, _val| {{ }}),", val));
-                                    }
-                                }
-                                "barra_progreso" | "gui_barra_progreso" | "progress" => {
-                                    if let Some(val) = args.first() {
-                                        widgets.push(format!("    view::progress_bar(Some({}.parse::<f64>().unwrap_or(0.0))),", val));
-                                    }
-                                }
-                                "deslizante" | "gui_deslizante" | "slider" => {
-                                    if args.len() >= 3 {
-                                        if let Some(Expresion::LiteralTexto(var_name)) = argumentos.first() {
-                                            if self.gui_vars.iter().any(|(v, _)| v == var_name) {
-                                                widgets.push(format!(
-                                                    "    {{ let val = data.{}.parse::<f64>().unwrap_or(0.0); view::slider(val, {} as f64, {} as f64, |data: &mut AppState, val| {{ data.{} = val.to_string(); }}) }},",
-                                                    var_name, args[1], args[2], var_name
-                                                ));
-                                            }
-                                        } else {
-                                            widgets.push(format!(
-                                                "    view::slider({} as f64, {} as f64, {} as f64, |_data, _val| {{ }}),",
-                                                args[0], args[1], args[2]
-                                            ));
-                                        }
-                                    }
-                                }
-                                "casilla" | "checkbox" | "gui_casilla" | "check" => {
-                                    let etiqueta = args.first().map(|s| s.as_str()).unwrap_or("\"\"");
-                                    widgets.push(format!("    view::checkbox({}, false, |_data, _val| {{ }}),", etiqueta));
-                                }
-                                "texto_enriquecido" | "prose" => {
-                                    if let Some(arg) = args.first() {
-                                        widgets.push(format!("    view::prose({}),", arg));
-                                    }
-                                }
-                                "cargando" | "spinner" => {
-                                    widgets.push("    view::spinner(),".to_string());
-                                }
-                                "separador" | "divider" => {
-                                    widgets.push("    view::sized_box(view::label(String::new())).height(Length::px(1.0)),".to_string());
-                                }
-                                "espacio" | "spacer" => {
-                                    if let Some(arg) = args.first() {
-                                        widgets.push(format!("    view::sized_box(view::label(String::new())).width(Length::px({} as f64)).height(Length::px({} as f64)),", arg, arg));
-                                    }
-                                }
-                                "caja_fija" | "sized" => {
-                                    if args.len() >= 3 {
-                                        widgets.push(format!(
-                                            "    view::sized_box(view::label(String::new())).width(Length::px({} as f64)).height(Length::px({} as f64)),",
-                                            args[1], args[2]
-                                        ));
-                                    }
-                                }
-                                "panel_dividido" | "split" => {
-                                    // No implementado directamente en transpiler, se maneja mejor en nativo
-                                }
-                                // ─── Widgets Material Design ──────────────────────────────
-                                "texto_grande" | "heading" | "title" => {
-                                    if let Some(arg) = args.first() {
-                                        widgets.push(format!("    view::label({}),", arg));
-                                    }
-                                }
-                                "texto_mediano" | "subtitle" => {
-                                    if let Some(arg) = args.first() {
-                                        widgets.push(format!("    view::label({}),", arg));
-                                    }
-                                }
-                                "campo_texto" | "text_field" | "campo_email" | "email_field" | "campo_contraseña" | "password_field" => {
-                                    if let Some(val) = args.first() {
-                                        widgets.push(format!("    view::text_input({}.clone(), |_data, _val| {{ }}),", val));
-                                    }
-                                }
-                                "campo_numero" | "number_field" => {
-                                    if let Some(val) = args.first() {
-                                        widgets.push(format!("    view::text_input({}.clone(), |_data, _val| {{ }}),", val));
-                                    }
-                                }
-                                "campo_busqueda" | "search_field" | "search" => {
-                                    if let Some(val) = args.first() {
-                                        widgets.push(format!("    view::text_input({}.clone(), |_data, _val| {{ }}),", val));
-                                    }
-                                }
-                                "interruptor" | "switch" => {
-                                    if let Some(arg) = args.first() {
-                                        widgets.push(format!("    view::checkbox({}, false),", arg));
-                                    }
-                                }
-                                "deslizante_discreto" | "discrete_slider" | "range_slider" => {
-                                    if args.len() >= 3 {
-                                        if let Some(Expresion::LiteralTexto(var_name)) = argumentos.first() {
-                                            if self.gui_vars.iter().any(|(v, _)| v == var_name) {
-                                                widgets.push(format!(
-                                                    "    {{ let val = data.{}.parse::<f64>().unwrap_or(0.0); view::slider(val, {} as f64, {} as f64, |data: &mut AppState, val| {{ data.{} = val.to_string(); }}) }},",
-                                                    var_name, args[1], args[2], var_name
-                                                ));
-                                            }
-                                        } else {
-                                            widgets.push(format!(
-                                                "    view::slider({}, {}, {}, |d: &mut AppState| {{ }}),",
-                                                args[1], args[2], args[0]
-                                            ));
-                                        }
-                                    }
-                                }
-                                "selector_fecha" | "date_picker" | "date" => {
-                                    if let Some(val) = args.first() {
-                                        widgets.push(format!("    view::text_input({}.clone(), |_data, _val| {{ }}),", val));
-                                    }
-                                }
-                                "selector_hora" | "time_picker" | "time" => {
-                                    if let Some(val) = args.first() {
-                                        widgets.push(format!("    view::text_input({}.clone(), |_data, _val| {{ }}),", val));
-                                    }
-                                }
-                                "selector_color" | "color_picker" | "color" => {
-                                    if let Some(val) = args.first() {
-                                        widgets.push(format!("    view::text_input({}.clone(), |_data, _val| {{ }}),", val));
-                                    }
-                                }
-                                "boton_relleno" | "filled_button" => {
-                                    let texto = args.first().map(|s| s.as_str()).unwrap_or("String::from(\"\")");
-                                    if args.len() >= 2 {
-                                        widgets.push(format!(
-                                            "    view::button(view::label({}), |_data| {{ }}),",
-                                            texto
-                                        ));
-                                    } else {
-                                        widgets.push(format!(
-                                            "    view::button(view::label({}), |_data| {{ }}),",
-                                            texto
-                                        ));
-                                    }
-                                }
-                                "boton_texto" | "text_button_widget" => {
-                                    let texto = args.first().map(|s| s.as_str()).unwrap_or("String::from(\"\")");
-                                    if args.len() >= 2 {
-                                        widgets.push(format!(
-                                            "    view::button(view::label({}), |_data| {{ }}),",
-                                            texto
-                                        ));
-                                    } else {
-                                        widgets.push(format!(
-                                            "    view::button(view::label({}), |_data| {{ }}),",
-                                            texto
-                                        ));
-                                    }
-                                }
-                                "boton_tonal" | "tonal_button" | "boton_elevado" | "elevated_button" => {
-                                    let texto = args.first().map(|s| s.as_str()).unwrap_or("String::from(\"\")");
-                                    if args.len() >= 2 {
-                                        widgets.push(format!(
-                                            "    view::button(view::label({}), |_data| {{ }}),",
-                                            texto
-                                        ));
-                                    } else {
-                                        widgets.push(format!(
-                                            "    view::button(view::label({}), |_data| {{ }}),",
-                                            texto
-                                        ));
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
+                    let expr = Expresion::LlamadaFuncion {
+                        nombre: nombre.clone(),
+                        argumentos: argumentos.clone(),
+                    };
+                    let layout_code = self.generar_layout_code(&expr);
+                    layouts.push(vec![layout_code]);
+                }
+                Declaracion::Expresion(expr) => {
+                    let layout_code = self.generar_layout_code(expr);
+                    layouts.push(vec![layout_code]);
                 }
                 Declaracion::Funcion { cuerpo, .. } => {
-                    self.recolectar_widgets(cuerpo, widgets);
+                    self.recolectar_layouts(cuerpo, layouts);
                 }
                 Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
-                    self.recolectar_widgets(bloque_verdadero, widgets);
+                    self.recolectar_layouts(bloque_verdadero, layouts);
                     if let Some(bf) = bloque_falso {
-                        self.recolectar_widgets(bf, widgets);
+                        self.recolectar_layouts(bf, layouts);
                     }
                 }
                 Declaracion::Mientras { bloque, .. } => {
-                    self.recolectar_widgets(bloque, widgets);
+                    self.recolectar_layouts(bloque, layouts);
                 }
                 Declaracion::Cuando { cuerpo, .. } => {
-                    self.recolectar_widgets(cuerpo, widgets);
+                    self.recolectar_layouts(cuerpo, layouts);
                 }
                 Declaracion::Para { bloque, .. } => {
-                    self.recolectar_widgets(bloque, widgets);
+                    self.recolectar_layouts(bloque, layouts);
                 }
                 Declaracion::Repetir { bloque, .. } => {
-                    self.recolectar_widgets(bloque, widgets);
+                    self.recolectar_layouts(bloque, layouts);
                 }
                 _ => {}
             }
         }
     }
 
-    /// Procesa una expresión que representa un widget, usada como argumento de columna/fila
-    fn procesar_expresion_widget(&mut self, expr: &Expresion, widgets: &mut Vec<String>) {
+    /// Genera código Rust que construye un valor `Layout::xxx` directamente,
+    /// delegando al runtime de forja_gui_rt para la conversión a widgets reales.
+    fn generar_layout_code(&mut self, expr: &Expresion) -> String {
         match expr {
             Expresion::LlamadaFuncion { nombre, argumentos } => {
-                match nombre.as_str() {
+                let nombre_lower = nombre.to_lowercase();
+                match nombre_lower.as_str() {
+                    // Contenedores básicos (se generan como Layout recursivo)
                     "columna" | "gui_columna" => {
-                        widgets.push("    Box::new(view::sized_box(view::flex(Axis::Vertical, vec![".to_string());
-                        for arg in argumentos {
-                            self.procesar_expresion_widget(arg, widgets);
-                        }
-                        widgets.push("    ]))) as Box<AnyWidgetView<AppState>>,".to_string());
+                        let children: Vec<String> = argumentos.iter()
+                            .map(|a| self.generar_layout_code(a))
+                            .collect();
+                        format!(
+                            "Layout::Column {{ children: vec![{}], gap: 8.0, alignment: String::from(\"start\") }}",
+                            children.join(", ")
+                        )
                     }
                     "fila" | "gui_fila" => {
-                        widgets.push("    Box::new(view::flex(Axis::Horizontal, vec![".to_string());
-                        for arg in argumentos {
-                            self.procesar_expresion_widget(arg, widgets);
-                        }
-                        widgets.push("    ])) as Box<AnyWidgetView<AppState>>,".to_string());
+                        let children: Vec<String> = argumentos.iter()
+                            .map(|a| self.generar_layout_code(a))
+                            .collect();
+                        format!(
+                            "Layout::Row {{ children: vec![{}], gap: 8.0, alignment: String::from(\"start\") }}",
+                            children.join(", ")
+                        )
                     }
                     "pila" | "gui_pila" | "zstack" => {
-                        widgets.push("    Box::new(view::zstack(vec![".to_string());
-                        for arg in argumentos {
-                            self.procesar_expresion_widget(arg, widgets);
-                        }
-                        widgets.push("    ])) as Box<AnyWidgetView<AppState>>,".to_string());
+                        let children: Vec<String> = argumentos.iter()
+                            .map(|a| self.generar_layout_code(a))
+                            .collect();
+                        format!("Layout::ZStack(vec![{}])", children.join(", "))
                     }
                     "desplazable" | "gui_desplazable" | "scroll" => {
                         if let Some(arg) = argumentos.first() {
-                            widgets.push("    Box::new(view::portal(".to_string());
-                            self.procesar_expresion_widget(arg, widgets);
-                            widgets.push("    )) as Box<AnyWidgetView<AppState>>,".to_string());
+                            format!("Layout::Portal(Box::new({}))", self.generar_layout_code(arg))
+                        } else {
+                            "Layout::Spacer(0.0)".to_string()
                         }
                     }
-                    _ => {
-                        let args: Vec<String> = argumentos.iter()
-                            .map(|a| self.transpilar_expresion(a))
-                            .collect();
-                        match nombre.as_str() {
-                            "escribir" | "etiqueta" | "gui_etiqueta" | "text" | "label" => {
-                                if let Some(arg) = args.first() {
-                                    widgets.push(format!("    Box::new(view::label({})) as Box<AnyWidgetView<AppState>>,", arg));
+                    // Labels / Texto
+                    "escribir" | "etiqueta" | "gui_etiqueta" | "text" | "label" => {
+                        if let Some(arg) = argumentos.first() {
+                            match arg {
+                                Expresion::Identificador(var, ..) => {
+                                    format!("Layout::Label {{ texto: String::from(\"{}\"), es_variable: true }}", var)
+                                }
+                                Expresion::LiteralTexto(s) => {
+                                    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+                                    format!("Layout::Label {{ texto: String::from(\"{}\"), es_variable: false }}", escaped)
+                                }
+                                _ => {
+                                    "Layout::Label { texto: String::from(\"\"), es_variable: false }".to_string()
                                 }
                             }
-                            "etiqueta_dinamica" | "varlabel" => {
-                                if let Some(Expresion::LiteralTexto(var_name)) = argumentos.first() {
-                                    if self.gui_vars.iter().any(|(v, _)| v == var_name) {
-                                        widgets.push(format!("    Box::new(view::variable_label(data.{}.clone())) as Box<AnyWidgetView<AppState>>,", var_name));
-                                    } else {
-                                        widgets.push("    Box::new(view::variable_label(String::new())) as Box<AnyWidgetView<AppState>>,".to_string());
-                                    }
-                                }
-                            }
-                            "boton" | "gui_boton" | "btn" | "button" => {
-                                let texto = args.first().map(|s| s.as_str()).unwrap_or("String::from(\"\")");
-                                if args.len() >= 2 {
-                                    let callback = args[1].trim_start_matches('&').to_string();
-                                    widgets.push(format!(
-                                        "    Box::new(view::text_button({}, |d: &mut AppState| {{ {}(); }})) as Box<AnyWidgetView<AppState>>,",
-                                        texto, callback
-                                    ));
-                                } else {
-                                    widgets.push(format!(
-                                        "    Box::new(view::text_button({}, |d: &mut AppState| {{ println!(\"Boton: {}\"); }})) as Box<AnyWidgetView<AppState>>,",
-                                        texto, texto
-                                    ));
-                                }
-                            }
-                            "entrada_texto" | "gui_entrada_texto" | "input" => {
-                                if let Some(val) = args.first() {
-                                    widgets.push(format!("    Box::new(view::text_input({}.clone(), |_data, _val| {{ }})) as Box<AnyWidgetView<AppState>>,", val));
-                                }
-                            }
-                            "area_texto" | "textarea" => {
-                                if let Some(val) = args.first() {
-                                    widgets.push(format!("    Box::new(view::text_input({}.clone(), |_data, _val| {{ }})) as Box<AnyWidgetView<AppState>>,", val));
-                                }
-                            }
-                            "barra_progreso" | "gui_barra_progreso" | "progress" => {
-                                if let Some(val) = args.first() {
-                                    widgets.push(format!("    Box::new(view::progress_bar(Some({}.parse::<f64>().unwrap_or(0.0)))) as Box<AnyWidgetView<AppState>>,", val));
-                                }
-                            }
-                            "deslizante" | "gui_deslizante" | "slider" => {
-                                if args.len() >= 3 {
-                                    if let Some(Expresion::LiteralTexto(var_name)) = argumentos.first() {
-                                        if self.gui_vars.iter().any(|(v, _)| v == var_name) {
-                                            widgets.push(format!("    Box::new({{ let val = data.{}.parse::<f64>().unwrap_or(0.0); view::slider(val, {} as f64, {} as f64, |data: &mut AppState, val| {{ data.{} = val.to_string(); }}) }}) as Box<AnyWidgetView<AppState>>,", var_name, args[1], args[2], var_name));
-                                        }
-                                    } else {
-                                        widgets.push(format!(
-                                            "    Box::new(view::slider({} as f64, {} as f64, {} as f64, |_data, _val| {{ }})) as Box<AnyWidgetView<AppState>>,",
-                                            args[0], args[1], args[2]
-                                        ));
-                                    }
-                                }
-                            }
-                            "casilla" | "checkbox" | "gui_casilla" | "check" => {
-                                let etiqueta = args.first().map(|s| s.as_str()).unwrap_or("\"\"");
-                                widgets.push(format!("    Box::new(view::checkbox({}, false, |_data, _val| {{ }})) as Box<AnyWidgetView<AppState>>,", etiqueta));
-                            }
-                            "texto_enriquecido" | "prose" => {
-                                if let Some(arg) = args.first() {
-                                    widgets.push(format!("    Box::new(view::prose({})) as Box<AnyWidgetView<AppState>>,", arg));
-                                }
-                            }
-                            "cargando" | "spinner" => {
-                                widgets.push("    Box::new(view::spinner()) as Box<AnyWidgetView<AppState>>,".to_string());
-                            }
-                            "separador" | "divider" => {
-                                widgets.push("    Box::new(view::sized_box(view::label(String::new())).height(Length::px(1.0)).width(Length::px(f64::INFINITY))) as Box<AnyWidgetView<AppState>>,".to_string());
-                            }
-                            "espacio" | "spacer" => {
-                                if let Some(arg) = args.first() {
-                                    widgets.push(format!("    Box::new(view::sized_box(view::label(String::new())).width(Length::px({} as f64)).height(Length::px({} as f64))) as Box<AnyWidgetView<AppState>>,", arg, arg));
-                                }
-                            }
-                            "caja_fija" | "sized" => {
-                                if args.len() >= 3 {
-                                    widgets.push(format!(
-                                        "    Box::new(view::sized_box(view::label(String::new())).width(Length::px({} as f64)).height(Length::px({} as f64))) as Box<AnyWidgetView<AppState>>,",
-                                        args[1], args[2]
-                                    ));
-                                }
-                            }
-                            "texto_grande" | "heading" | "title" => {
-                                if let Some(arg) = args.first() {
-                                    widgets.push(format!("    Box::new(view::label({})) as Box<AnyWidgetView<AppState>>,", arg));
-                                }
-                            }
-                            "texto_mediano" | "subtitle" => {
-                                if let Some(arg) = args.first() {
-                                    widgets.push(format!("    Box::new(view::label({})) as Box<AnyWidgetView<AppState>>,", arg));
-                                }
-                            }
-                            "campo_texto" | "text_field" | "campo_email" | "email_field" | "campo_contraseña" | "password_field" => {
-                                if let Some(val) = args.first() {
-                                    widgets.push(format!("    Box::new(view::text_input({}.clone(), |_data, _val| {{ }})) as Box<AnyWidgetView<AppState>>,", val));
-                                }
-                            }
-                            "campo_numero" | "number_field" => {
-                                if let Some(val) = args.first() {
-                                    widgets.push(format!("    Box::new(view::text_input({}.clone(), |_data, _val| {{ }})) as Box<AnyWidgetView<AppState>>,", val));
-                                }
-                            }
-                            "campo_busqueda" | "search_field" | "search" => {
-                                if let Some(val) = args.first() {
-                                    widgets.push(format!("    Box::new(view::text_input({}.clone(), |_data, _val| {{ }})) as Box<AnyWidgetView<AppState>>,", val));
-                                }
-                            }
-                            "interruptor" | "switch" => {
-                                if let Some(arg) = args.first() {
-                                    widgets.push(format!("    Box::new(view::checkbox({}, false)) as Box<AnyWidgetView<AppState>>,", arg));
-                                }
-                            }
-                            "deslizante_discreto" | "discrete_slider" | "range_slider" => {
-                                if args.len() >= 3 {
-                                    if let Some(Expresion::LiteralTexto(var_name)) = argumentos.first() {
-                                        if self.gui_vars.iter().any(|(v, _)| v == var_name) {
-                                            widgets.push(format!("    Box::new({{ let val = data.{}.parse::<f64>().unwrap_or(0.0); view::slider(val, {} as f64, {} as f64, |data: &mut AppState, val| {{ data.{} = val.to_string(); }}) }}) as Box<AnyWidgetView<AppState>>,", var_name, args[1], args[2], var_name));
-                                        }
-                                    } else {
-                                        widgets.push(format!(
-                                            "    Box::new(view::slider({}, {}, {}, |d: &mut AppState| {{ }})) as Box<AnyWidgetView<AppState>>,",
-                                            args[1], args[2], args[0]
-                                        ));
-                                    }
-                                }
-                            }
-                            "selector_fecha" | "date_picker" | "date" => {
-                                if let Some(val) = args.first() {
-                                    widgets.push(format!("    Box::new(view::text_input({}.clone(), |_data, _val| {{ }})) as Box<AnyWidgetView<AppState>>,", val));
-                                }
-                            }
-                            "selector_hora" | "time_picker" | "time" => {
-                                if let Some(val) = args.first() {
-                                    widgets.push(format!("    Box::new(view::text_input({}.clone(), |_data, _val| {{ }})) as Box<AnyWidgetView<AppState>>,", val));
-                                }
-                            }
-                            "selector_color" | "color_picker" | "color" => {
-                                if let Some(val) = args.first() {
-                                    widgets.push(format!("    Box::new(view::text_input({}.clone(), |_data, _val| {{ }})) as Box<AnyWidgetView<AppState>>,", val));
-                                }
-                            }
-                            "boton_relleno" | "filled_button" => {
-                                let texto = args.first().map(|s| s.as_str()).unwrap_or("String::from(\"\")");
-                                if args.len() >= 2 {
-                                    widgets.push(format!(
-                                        "    Box::new(view::button(view::label({}), |_data| {{ }})) as Box<AnyWidgetView<AppState>>,",
-                                        texto
-                                    ));
-                                } else {
-                                    widgets.push(format!(
-                                        "    Box::new(view::button(view::label({}), |_data| {{ }})) as Box<AnyWidgetView<AppState>>,",
-                                        texto
-                                    ));
-                                }
-                            }
-                            "boton_texto" | "text_button_widget" => {
-                                let texto = args.first().map(|s| s.as_str()).unwrap_or("String::from(\"\")");
-                                if args.len() >= 2 {
-                                    widgets.push(format!(
-                                        "    Box::new(view::button(view::label({}), |_data| {{ }})) as Box<AnyWidgetView<AppState>>,",
-                                        texto
-                                    ));
-                                } else {
-                                    widgets.push(format!(
-                                        "    Box::new(view::button(view::label({}), |_data| {{ }})) as Box<AnyWidgetView<AppState>>,",
-                                        texto
-                                    ));
-                                }
-                            }
-                            "boton_tonal" | "tonal_button" | "boton_elevado" | "elevated_button" => {
-                                let texto = args.first().map(|s| s.as_str()).unwrap_or("String::from(\"\")");
-                                if args.len() >= 2 {
-                                    widgets.push(format!(
-                                        "    Box::new(view::button(view::label({}), |_data| {{ }})) as Box<AnyWidgetView<AppState>>,",
-                                        texto
-                                    ));
-                                } else {
-                                    widgets.push(format!(
-                                        "    Box::new(view::button(view::label({}), |_data| {{ }})) as Box<AnyWidgetView<AppState>>,",
-                                        texto
-                                    ));
-                                }
-                            }
-                            _ => {}
+                        } else {
+                            "Layout::Label { texto: String::from(\"\"), es_variable: false }".to_string()
                         }
+                    }
+                    "etiqueta_dinamica" | "varlabel" => {
+                        if let Some(Expresion::LiteralTexto(var_name)) = argumentos.first() {
+                            format!("Layout::VariableLabel {{ variable: String::from(\"{}\") }}", var_name)
+                        } else {
+                            "Layout::VariableLabel { variable: String::from(\"\") }".to_string()
+                        }
+                    }
+                    "texto_grande" | "heading" | "title" => {
+                        if let Some(arg) = argumentos.first() {
+                            match arg {
+                                Expresion::LiteralTexto(s) => {
+                                    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+                                    format!("Layout::Title(String::from(\"{}\"))", escaped)
+                                }
+                                _ => "Layout::Title(String::from(\"\"))".to_string()
+                            }
+                        } else {
+                            "Layout::Title(String::from(\"\"))".to_string()
+                        }
+                    }
+                    // Botones (callback como string para que el runtime lo maneje)
+                    "boton" | "gui_boton" | "btn" | "button" => {
+                        let texto = match argumentos.first() {
+                            Some(Expresion::LiteralTexto(s)) => s.clone(),
+                            _ => String::new(),
+                        };
+                        let callback = if argumentos.len() >= 2 {
+                            // El callback puede ser Identificador("funcion") o Referencia { expr: Identificador("funcion") }
+                            let arg = &argumentos[1];
+                            match arg {
+                                Expresion::Identificador(cb, ..) => cb.clone(),
+                                Expresion::Referencia { expr, .. } => {
+                                    if let Expresion::Identificador(cb, ..) = expr.as_ref() {
+                                        cb.clone()
+                                    } else {
+                                        String::new()
+                                    }
+                                }
+                                _ => String::new(),
+                            }
+                        } else {
+                            String::new()
+                        };
+                        let escaped_texto = texto.replace('\\', "\\\\").replace('"', "\\\"");
+                        format!(
+                            "Layout::Button {{ texto: String::from(\"{}\"), callback: String::from(\"{}\") }}",
+                            escaped_texto, callback
+                        )
+                    }
+                    // Interactivos básicos
+                    "entrada_texto" | "gui_entrada_texto" | "input" => {
+                        let var_name = match argumentos.first() {
+                            Some(Expresion::LiteralTexto(v)) => v.clone(),
+                            _ => String::new(),
+                        };
+                        format!(
+                            "Layout::TextInput {{ variable: String::from(\"{}\"), multiline: false, placeholder: String::new() }}",
+                            var_name
+                        )
+                    }
+                    "area_texto" | "textarea" => {
+                        let var_name = match argumentos.first() {
+                            Some(Expresion::LiteralTexto(v)) => v.clone(),
+                            _ => String::new(),
+                        };
+                        format!(
+                            "Layout::TextInput {{ variable: String::from(\"{}\"), multiline: true, placeholder: String::new() }}",
+                            var_name
+                        )
+                    }
+                    "barra_progreso" | "gui_barra_progreso" | "progress" => {
+                        let var_name = match argumentos.first() {
+                            Some(Expresion::LiteralTexto(v)) => v.clone(),
+                            _ => String::new(),
+                        };
+                        format!("Layout::ProgressBar {{ variable: String::from(\"{}\") }}", var_name)
+                    }
+                    "deslizante" | "gui_deslizante" | "slider" => {
+                        let var_name = match argumentos.first() {
+                            Some(Expresion::LiteralTexto(v)) => v.clone(),
+                            _ => String::new(),
+                        };
+                        let min = if argumentos.len() >= 2 {
+                            Self::extraer_f64_valor(&argumentos[1])
+                        } else { 0.0 };
+                        let max = if argumentos.len() >= 3 {
+                            Self::extraer_f64_valor(&argumentos[2])
+                        } else { 100.0 };
+                        format!(
+                            "Layout::Slider {{ variable: String::from(\"{}\"), min: {}, max: {} }}",
+                            var_name, min, max
+                        )
+                    }
+                    "casilla" | "checkbox" | "gui_casilla" | "check" => {
+                        let var_name = match argumentos.first() {
+                            Some(Expresion::LiteralTexto(v)) => v.clone(),
+                            _ => String::new(),
+                        };
+                        format!("Layout::Checkbox {{ variable: String::from(\"{}\") }}", var_name)
+                    }
+                    "texto_enriquecido" | "prose" => {
+                        let texto = match argumentos.first() {
+                            Some(Expresion::LiteralTexto(s)) => s.clone(),
+                            _ => String::new(),
+                        };
+                        let escaped = texto.replace('\\', "\\\\").replace('"', "\\\"");
+                        format!("Layout::Prose(String::from(\"{}\"))", escaped)
+                    }
+                    "cargando" | "spinner" => {
+                        "Layout::Spinner".to_string()
+                    }
+                    "separador" | "divider" => {
+                        "Layout::Separator".to_string()
+                    }
+                    "espacio" | "spacer" => {
+                        if let Some(arg) = argumentos.first() {
+                            let size = Self::extraer_f64_valor(arg);
+                            format!("Layout::Spacer({})", size)
+                        } else {
+                            "Layout::Spacer(8.0)".to_string()
+                        }
+                    }
+                    // Material You widgets
+                    "tema_material" | "material_theme" => {
+                        // ThemeProvider: child + seed color
+                        let seed = if argumentos.len() >= 2 {
+                            match &argumentos[1] {
+                                Expresion::LiteralTexto(s) => s.clone(),
+                                _ => "#6750A4".to_string(),
+                            }
+                        } else {
+                            "#6750A4".to_string()
+                        };
+                        let child_code = if let Some(arg) = argumentos.first() {
+                            self.generar_layout_code(arg)
+                        } else {
+                            "Layout::Spacer(0.0)".to_string()
+                        };
+                        format!("Layout::ThemeProvider {{ child: Box::new({}), theme: String::from(\"{}\") }}", child_code, seed)
+                    }
+                    "sombra" | "elevated_box" => {
+                        let child_code = if let Some(arg) = argumentos.first() {
+                            self.generar_layout_code(arg)
+                        } else {
+                            "Layout::Spacer(0.0)".to_string()
+                        };
+                        let nivel = if argumentos.len() >= 2 {
+                            Self::extraer_entero_valor(&argumentos[1])
+                        } else { 1u8 };
+                        format!(
+                            "Layout::ElevatedBox {{ child: Box::new({}), level: {}, shape_family: String::from(\"small\") }}",
+                            child_code, nivel
+                        )
+                    }
+                    "relleno" | "padding" => {
+                        let child_code = if let Some(arg) = argumentos.first() {
+                            self.generar_layout_code(arg)
+                        } else {
+                            "Layout::Spacer(0.0)".to_string()
+                        };
+                        let cantidad = if argumentos.len() >= 2 {
+                            Self::extraer_f64_valor(&argumentos[1])
+                        } else { 16.0 };
+                        format!(
+                            "Layout::Padding {{ child: Box::new({}), amount: {} }}",
+                            child_code, cantidad
+                        )
+                    }
+                    "expandido" | "expanded" => {
+                        let child_code = if let Some(arg) = argumentos.first() {
+                            self.generar_layout_code(arg)
+                        } else {
+                            "Layout::Spacer(0.0)".to_string()
+                        };
+                        format!("Layout::Expanded {{ child: Box::new({}) }}", child_code)
+                    }
+                    "centrado" | "centered" => {
+                        let child_code = if let Some(arg) = argumentos.first() {
+                            self.generar_layout_code(arg)
+                        } else {
+                            "Layout::Spacer(0.0)".to_string()
+                        };
+                        format!("Layout::Centered {{ child: Box::new({}) }}", child_code)
+                    }
+                    // ===== INDICADORES =====
+                    "barra_progreso_linear" | "progress_bar_linear" | "lineal_progreso" => {
+                        let _progress = argumentos.first().map_or(0.5, |a| Self::extraer_f64_valor(a));
+                        format!("Layout::LinearProgress {{ variable: String::from(\"\"), indeterminado: false }}")
+                    }
+                    "barra_progreso_indeterminada" | "indeterminado" | "indeterminate" => {
+                        "Layout::LinearProgress { variable: String::from(\"\"), indeterminado: true }".to_string()
+                    }
+                    "circulo_progreso" | "circular_progress" | "cargando_circular" => {
+                        let size = argumentos.first().map_or(48.0, |a| Self::extraer_f64_valor(a));
+                        format!("Layout::CircularProgress {{ variable: String::from(\"\"), size: {}, indeterminado: true }}", size)
+                    }
+                    "distintivo" | "badge" | "insignia" => {
+                        let texto = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() {
+                            self.esc_ast_string(s)
+                        } else { String::new() };
+                        format!("Layout::Badge {{ child: Box::new(Layout::Spacer(0.0)), valor: Some(String::from(\"{}\")), dot: false }}", texto)
+                    }
+                    "distintivo_punto" | "badge_dot" | "punto" => {
+                        "Layout::Badge { child: Box::new(Layout::Spacer(0.0)), valor: None, dot: true }".to_string()
+                    }
+                    "esqueleto" | "skeleton" | "placeholder_carga" => {
+                        let ancho = argumentos.first().map_or(200.0, |a| Self::extraer_f64_valor(a));
+                        let alto = argumentos.get(1).map_or(20.0, |a| Self::extraer_f64_valor(a));
+                        format!("Layout::Skeleton {{ ancho: {}, alto: {}, tipo: String::from(\"rect\") }}", ancho, alto)
+                    }
+                    "esqueleto_tarjeta" | "skeleton_card" | "tarjeta_placeholder" => {
+                        "Layout::Skeleton { ancho: 300.0, alto: 200.0, tipo: String::from(\"card\") }".to_string()
+                    }
+                    "esqueleto_linea" | "skeleton_line" | "linea_placeholder" => {
+                        "Layout::Skeleton { ancho: 200.0, alto: 16.0, tipo: String::from(\"line\") }".to_string()
+                    }
+                    "estado_vacio" | "empty_state" | "sin_datos" => {
+                        let mensaje = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { "Sin datos".to_string() };
+                        let icono = if argumentos.len() > 1 { if let Expresion::LiteralTexto(s) = &argumentos[1] { self.esc_ast_string(s) } else { "inbox".to_string() } } else { "inbox".to_string() };
+                        format!("Layout::EmptyState {{ icono: String::from(\"{}\"), mensaje: String::from(\"{}\"), accion_texto: None, accion_cb: None }}", icono, mensaje)
+                    }
+                    "estado_error" | "error_state" | "error" => {
+                        let mensaje = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { "Error".to_string() };
+                        format!("Layout::ErrorState {{ mensaje: String::from(\"{}\"), on_retry: None }}", mensaje)
+                    }
+
+                    // ===== AVATARES =====
+                    "avatar" | "avatar_text" | "avatar_texto" => {
+                        let texto = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        format!("Layout::Avatar {{ texto: String::from(\"{}\"), variant: AvatarVariant::Text, tamano: 40.0 }}", texto)
+                    }
+                    "avatar_icono" | "avatar_icon" => {
+                        let icono = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        format!("Layout::Avatar {{ texto: String::from(\"{}\"), variant: AvatarVariant::Icon, tamano: 40.0 }}", icono)
+                    }
+                    "avatar_imagen" | "avatar_image" | "avatar_img" => {
+                        let url = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        format!("Layout::Avatar {{ texto: String::from(\"{}\"), variant: AvatarVariant::Image, tamano: 40.0 }}", url)
+                    }
+                    "grupo_avatar" | "avatar_group" | "grupo_avatares" => {
+                        let hijos: Vec<String> = argumentos.iter().map(|a| {
+                            match a {
+                                Expresion::LiteralTexto(s) => format!("String::from(\"{}\")", self.esc_ast_string(s)),
+                                _ => String::from("String::from(\"?\")"),
+                            }
+                        }).collect();
+                        format!("Layout::AvatarGroup {{ avatares: vec![{}], max: 3 }}", hijos.join(", "))
+                    }
+
+                    // ===== NAVEGACION =====
+                    "navegador" | "navigator" | "navegacion" => {
+                        let tipo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { s.as_str() } else { "bottom" };
+                        let hijos: Vec<String> = if argumentos.len() > 1 {
+                            argumentos[1..].iter().map(|a| self.generar_layout_code(a)).collect()
+                        } else { vec![] };
+                        format!("Layout::Navigator {{ screens: vec![{}], current_var: String::from(\"screen_active\"), history_var: String::from(\"nav_history\"), nav_type: NavigatorType::{}, anim: NavigatorAnim::Fade }}",
+                            hijos.join(", "),
+                            match tipo { "rail" => "Rail", "tabs" => "Tabs", "drawer" => "Drawer", _ => "BottomBar" })
+                    }
+                    "barra_navegacion" | "navigation_bar" | "nav_bar" | "barra_inferior" | "bottom_bar" => {
+                        let items: Vec<String> = argumentos.iter().map(|a| self.generar_layout_code(a)).collect();
+                        format!("Layout::NavigationBar {{ items: vec![{}], seleccion: 0, on_change: String::new() }}", items.join(", "))
+                    }
+                    "item_navegacion" | "nav_item" | "item_nav" => {
+                        let icono = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        let texto = if argumentos.len() > 1 { if let Expresion::LiteralTexto(s) = &argumentos[1] { self.esc_ast_string(s) } else { String::new() } } else { String::new() };
+                        format!("Layout::NavItem {{ icono: String::from(\"{}\"), texto: String::from(\"{}\"), selected: false, on_click: None }}", icono, texto)
+                    }
+                    "riel_navegacion" | "navigation_rail" | "nav_rail" | "barra_lateral" => {
+                        let items: Vec<String> = argumentos.iter().map(|a| self.generar_layout_code(a)).collect();
+                        format!("Layout::NavigationRail {{ items: vec![{}], seleccion: 0, on_change: String::new(), extended: false }}", items.join(", "))
+                    }
+                    "cajon_navegacion" | "navigation_drawer" | "drawer" | "cajon_lateral" | "sidebar" => {
+                        let items: Vec<String> = argumentos.iter().map(|a| self.generar_layout_code(a)).collect();
+                        format!("Layout::NavigationDrawer {{ items: vec![{}], seleccion: 0, on_change: String::new(), modal: false, visible: String::from(\"drawer_visible\") }}", items.join(", "))
+                    }
+                    "cajon_modal" | "modal_drawer" | "drawer_modal" => {
+                        let items: Vec<String> = argumentos.iter().map(|a| self.generar_layout_code(a)).collect();
+                        format!("Layout::NavigationDrawer {{ items: vec![{}], seleccion: 0, on_change: String::new(), modal: true, visible: String::from(\"drawer_visible\") }}", items.join(", "))
+                    }
+                    "barra_superior" | "top_app_bar" | "barra_titulo" | "app_bar" => {
+                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        format!("Layout::TopAppBar {{ titulo: String::from(\"{}\"), acciones: vec![], menu_visible: false, variant: TopAppBarVariant::Small }}", titulo)
+                    }
+                    "barra_superior_mediana" | "medium_top_bar" => {
+                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        format!("Layout::TopAppBar {{ titulo: String::from(\"{}\"), acciones: vec![], menu_visible: false, variant: TopAppBarVariant::Medium }}", titulo)
+                    }
+                    "barra_superior_grande" | "large_top_bar" => {
+                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        format!("Layout::TopAppBar {{ titulo: String::from(\"{}\"), acciones: vec![], menu_visible: false, variant: TopAppBarVariant::Large }}", titulo)
+                    }
+                    "pestanas" | "tabs_widget" | "tabs" | "pestanas" => {
+                        let items: Vec<String> = argumentos.iter().map(|a| {
+                            match a {
+                                Expresion::LiteralTexto(s) => format!("String::from(\"{}\")", self.esc_ast_string(s)),
+                                _ => String::from("String::new()"),
+                            }
+                        }).collect();
+                        format!("Layout::Tabs {{ tabs: vec![{}], seleccion: 0, on_change: String::from(\"tab_change\"), scrollable: false }}", items.join(", "))
+                    }
+                    "barra_busqueda" | "search_bar" | "buscador" => {
+                        let placeholder = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { "Buscar...".to_string() };
+                        format!("Layout::SearchBar {{ placeholder: String::from(\"{}\"), on_search: String::new(), variable: String::from(\"busqueda\") }}", placeholder)
+                    }
+
+                    // ===== FEEDBACK =====
+                    "dialogo_alerta" | "dialog_alert" | "alerta" => {
+                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        let mensaje = if argumentos.len() > 1 { if let Expresion::LiteralTexto(s) = &argumentos[1] { self.esc_ast_string(s) } else { String::new() } } else { String::new() };
+                        format!("Layout::DialogAlert {{ titulo: String::from(\"{}\"), mensaje: String::from(\"{}\"), confirmar_texto: String::from(\"OK\"), cancelar_texto: String::from(\"Cancelar\"), on_confirm: String::new(), on_cancel: String::new() }}", titulo, mensaje)
+                    }
+                    "dialogo_confirmacion" | "dialog_confirm" | "confirmacion" => {
+                        let titulo = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        let mensaje = if argumentos.len() > 1 { if let Expresion::LiteralTexto(s) = &argumentos[1] { self.esc_ast_string(s) } else { String::new() } } else { String::new() };
+                        format!("Layout::DialogAlert {{ titulo: String::from(\"{}\"), mensaje: String::from(\"{}\"), confirmar_texto: String::from(\"Confirmar\"), cancelar_texto: String::from(\"Cancelar\"), on_confirm: String::new(), on_cancel: String::new() }}", titulo, mensaje)
+                    }
+                    "hoja_inferior" | "bottom_sheet" | "sheet" | "panel_inferior" => {
+                        let visible = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { "sheet_visible".to_string() };
+                        let hijos: Vec<String> = if argumentos.len() > 1 {
+                            argumentos[1..].iter().map(|a| self.generar_layout_code(a)).collect()
+                        } else { vec![] };
+                        format!("Layout::BottomSheet {{ child: Box::new(Layout::Column {{ children: vec![{}], gap: 8.0, alignment: String::from(\"start\") }}), variant: SheetVariant::Standard, visible: String::from(\"{}\"), on_dismiss: None }}",
+                            hijos.join(", "), visible)
+                    }
+                    "notificacion" | "snackbar" | "notification" | "toast" | "notificacion" => {
+                        let mensaje = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        format!("Layout::Snackbar {{ mensaje: String::from(\"{}\"), accion_texto: None, accion_callback: None, duracion: 4000.0, visible: String::from(\"snack_visible\") }}", mensaje)
+                    }
+                    "informacion" | "tooltip" | "info" => {
+                        let texto = if let Some(Expresion::LiteralTexto(s)) = argumentos.first() { self.esc_ast_string(s) } else { String::new() };
+                        let hijo = if argumentos.len() > 1 { self.generar_layout_code(&argumentos[1]) } else { "Layout::Spacer(0.0)".to_string() };
+                        format!("Layout::Tooltip {{ child: Box::new({}), texto: String::from(\"{}\") }}", hijo, texto)
+                    }
+
+                    // Si no es una función de widget conocida, usar fallback
+                    _ => {
+                        // Intentar transpilar como expresión genérica
+                        let s = self.transpilar_expresion(expr);
+                        format!("Layout::Label {{ texto: String::from(\"(widget: {})\"), es_variable: false }}", s.replace('"', "'"))
                     }
                 }
             }
+            Expresion::LiteralTexto(s) => {
+                let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+                format!("Layout::Label {{ texto: String::from(\"{}\"), es_variable: false }}", escaped)
+            }
+            Expresion::LiteralNumero(n) => {
+                format!("Layout::Label {{ texto: String::from(\"{}\"), es_variable: false }}", n)
+            }
+            Expresion::LiteralDecimal(f) => {
+                format!("Layout::Label {{ texto: String::from(\"{}\"), es_variable: false }}", f)
+            }
+            Expresion::Identificador(var, ..) => {
+                format!("Layout::Label {{ texto: String::from(\"{}\"), es_variable: true }}", var)
+            }
             _ => {
                 let s = self.transpilar_expresion(expr);
-                widgets.push(format!("    {});", s));
+                format!("Layout::Label {{ texto: String::from(\"(expr: {})\"), es_variable: false }}", s.replace('"', "'"))
             }
         }
     }
 
-    /// Analiza recursivamente el AST y recolecta variables (nombre, tipo_rust) para
-    /// generar AppState dinámicamente en programas GUI.
-    fn analizar_variables_gui(&self, declaraciones: &[Declaracion]) -> Vec<(String, String)> {
-        let mut vars = Vec::new();
-        for decl in declaraciones {
-            match decl {
-                Declaracion::Variable { nombre, tipo, .. } => {
-                    let tipo_rust = match tipo {
-                        Some(Tipo::Entero) => "i32",
-                        Some(Tipo::Decimal) => "f64",
-                        Some(Tipo::Texto) => "String",
-                        Some(Tipo::Booleano) => "bool",
-                        Some(Tipo::Exacto) => "f64",
-                        _ => "String",
-                    };
-                    vars.push((nombre.clone(), tipo_rust.to_string()));
-                }
-                Declaracion::Funcion { cuerpo, .. } => {
-                    vars.extend(self.analizar_variables_gui(cuerpo));
-                }
-                Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
-                    vars.extend(self.analizar_variables_gui(bloque_verdadero));
-                    if let Some(bf) = bloque_falso {
-                        vars.extend(self.analizar_variables_gui(bf));
-                    }
-                }
-                Declaracion::Mientras { bloque, .. } => {
-                    vars.extend(self.analizar_variables_gui(bloque));
-                }
-                Declaracion::Cuando { cuerpo, .. } => {
-                    vars.extend(self.analizar_variables_gui(cuerpo));
-                }
-                Declaracion::Para { bloque, .. } => {
-                    vars.extend(self.analizar_variables_gui(bloque));
-                }
-                Declaracion::Repetir { bloque, .. } => {
-                    vars.extend(self.analizar_variables_gui(bloque));
-                }
-                _ => {}
-            }
+    /// Extrae un valor f64 de una expresión literal
+    fn extraer_f64_valor(expr: &Expresion) -> f64 {
+        match expr {
+            Expresion::LiteralNumero(n) => *n as f64,
+            Expresion::LiteralDecimal(f) => *f,
+            Expresion::LiteralExacto(coeff, scale) => *coeff as f64 * 10_f64.powi(-(*scale as i32)),
+            _ => 0.0,
         }
-        vars
+    }
+
+    /// Extrae un valor entero (u8) de una expresión literal
+    fn extraer_entero_valor(expr: &Expresion) -> u8 {
+        match expr {
+            Expresion::LiteralNumero(n) => *n as u8,
+            Expresion::LiteralDecimal(f) => *f as u8,
+            _ => 1,
+        }
     }
 
     /// Detecta si el programa usa concurrencia (hilo, canal, enviar, recibir, unir, seleccionar)
@@ -2042,8 +1914,6 @@ impl Transpiler {
                     "true".to_string()
                 } else if nombre == "falso" {
                     "false".to_string()
-                } else if self.gui_mode && self.gui_vars.iter().any(|(v, _)| v == nombre) {
-                    format!("data.{}", nombre)
                 } else {
                     nombre.clone()
                 }
@@ -2435,6 +2305,318 @@ impl Transpiler {
         }
     }
 
+    // ============================================================
+    // Generacion de AST como codigo Rust (para delegar al runtime)
+    // ============================================================
+
+    /// Genera codigo Rust que reconstruye el `Programa` completo como datos estaticos.
+    fn generar_ast_programa(&self, declaraciones: &[Declaracion]) -> String {
+        let mut parts = Vec::new();
+        for decl in declaraciones {
+            parts.push(self.generar_ast_declaracion(decl));
+        }
+        parts.join(",\n")
+    }
+
+    /// Genera codigo Rust que reconstruye una `Declaracion`.
+    fn generar_ast_declaracion(&self, decl: &Declaracion) -> String {
+        match decl {
+            Declaracion::Variable { mutable, nombre, tipo, valor, linea, columna } => {
+                let tipo_str = match tipo {
+                    Some(t) => format!("Some({})", self.tipo_a_ast(t)),
+                    None => "None".to_string(),
+                };
+                let valor_str = match valor {
+                    Some(v) => format!("Some({})", self.generar_ast_expresion(v)),
+                    None => "None".to_string(),
+                };
+                format!("Declaracion::Variable {{ mutable: {}, nombre: String::from(\"{}\"), tipo: {}, valor: {}, linea: {}, columna: {} }}",
+                    mutable, self.esc_ast_string(nombre), tipo_str, valor_str, linea, columna)
+            }
+            Declaracion::Asignacion { nombre, valor, linea, columna } => {
+                format!("Declaracion::Asignacion {{ nombre: String::from(\"{}\"), valor: Box::new({}), linea: {}, columna: {} }}",
+                    self.esc_ast_string(nombre), self.generar_ast_expresion(valor), linea, columna)
+            }
+            Declaracion::AsignacionMiembro { objeto, miembro, valor, linea, columna } => {
+                format!("Declaracion::AsignacionMiembro {{ objeto: Box::new({}), miembro: String::from(\"{}\"), valor: Box::new({}), linea: {}, columna: {} }}",
+                    self.generar_ast_expresion(objeto), self.esc_ast_string(miembro), self.generar_ast_expresion(valor), linea, columna)
+            }
+            Declaracion::AsignacionIndex { nombre, indice, valor, linea, columna } => {
+                format!("Declaracion::AsignacionIndex {{ nombre: String::from(\"{}\"), indice: Box::new({}), valor: Box::new({}), linea: {}, columna: {} }}",
+                    self.esc_ast_string(nombre), self.generar_ast_expresion(indice), self.generar_ast_expresion(valor), linea, columna)
+            }
+            Declaracion::Funcion { nombre, parametros_tipo, parametros, tipo_retorno, cuerpo, externa, enlace_nombre, atributos, doc, precondiciones, postcondiciones } => {
+                let params_tipo_str: Vec<String> = parametros_tipo.iter()
+                    .map(|p| format!("ParametroTipo {{ nombre: String::from(\"{}\"), rasgos: vec![] }}", self.esc_ast_string(&p.nombre)))
+                    .collect();
+                let params_str: Vec<String> = parametros.iter().map(|p| {
+                    let tipo_str = match &p.tipo {
+                        Some(t) => format!("Some({})", self.tipo_a_ast(t)),
+                        None => "None".to_string(),
+                    };
+                    format!("Parametro {{ nombre: String::from(\"{}\"), tipo: {}, prestado: {}, mutable: {} }}",
+                        self.esc_ast_string(&p.nombre), tipo_str, p.prestado, p.mutable)
+                }).collect();
+                let ret_str = match tipo_retorno {
+                    Some(t) => format!("Some({})", self.tipo_a_ast(t)),
+                    None => "None".to_string(),
+                };
+                let cuerpo_str: Vec<String> = cuerpo.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                let enlace_str = match enlace_nombre {
+                    Some(s) => format!("Some(String::from(\"{}\"))", self.esc_ast_string(s)),
+                    None => "None".to_string(),
+                };
+                let docs_str = match doc {
+                    Some(s) => format!("Some(String::from(\"{}\"))", self.esc_ast_string(s)),
+                    None => "None".to_string(),
+                };
+                format!("Declaracion::Funcion {{ nombre: String::from(\"{}\"), parametros_tipo: vec![{}], parametros: vec![{}], tipo_retorno: {}, cuerpo: vec![{}], externa: {}, enlace_nombre: {}, atributos: vec![], doc: {}, precondiciones: vec![], postcondiciones: vec![] }}",
+                    self.esc_ast_string(nombre), params_tipo_str.join(", "), params_str.join(", "), ret_str, cuerpo_str.join(", "), externa, enlace_str, docs_str)
+            }
+            Declaracion::Expresion(expr) => {
+                format!("Declaracion::Expresion({})", self.generar_ast_expresion(expr))
+            }
+            Declaracion::LlamadaFuncion { nombre, argumentos } => {
+                let args_str: Vec<String> = argumentos.iter().map(|a| self.generar_ast_expresion(a)).collect();
+                format!("Declaracion::LlamadaFuncion {{ nombre: String::from(\"{}\"), argumentos: vec![{}] }}",
+                    self.esc_ast_string(nombre), args_str.join(", "))
+            }
+            Declaracion::Retornar { valor } => {
+                match valor {
+                    Some(v) => format!("Declaracion::Retornar {{ valor: Some({}) }}", self.generar_ast_expresion(v)),
+                    None => "Declaracion::Retornar { valor: None }".to_string(),
+                }
+            }
+            Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+                let bv: Vec<String> = bloque_verdadero.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                let bf_str = match bloque_falso {
+                    Some(bf) => {
+                        let items: Vec<String> = bf.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                        format!("Some(vec![{}])", items.join(", "))
+                    }
+                    None => "None".to_string(),
+                };
+                format!("Declaracion::Si {{ condicion: Box::new({}), bloque_verdadero: vec![{}], bloque_falso: {} }}",
+                    self.generar_ast_expresion(condicion), bv.join(", "), bf_str)
+            }
+            Declaracion::Mientras { condicion, bloque } => {
+                let blk: Vec<String> = bloque.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                format!("Declaracion::Mientras {{ condicion: Box::new({}), bloque: vec![{}] }}",
+                    self.generar_ast_expresion(condicion), blk.join(", "))
+            }
+            Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
+                let init_str = match inicializacion {
+                    Some(d) => format!("Some(Box::new({}))", self.generar_ast_declaracion(d)),
+                    None => "None".to_string(),
+                };
+                let cond_str = match condicion {
+                    Some(e) => format!("Some(Box::new({}))", self.generar_ast_expresion(e)),
+                    None => "None".to_string(),
+                };
+                let inc_str = match incremento {
+                    Some(d) => format!("Some(Box::new({}))", self.generar_ast_declaracion(d)),
+                    None => "None".to_string(),
+                };
+                let blk: Vec<String> = bloque.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                format!("Declaracion::Para {{ inicializacion: {}, condicion: {}, incremento: {}, bloque: vec![{}] }}",
+                    init_str, cond_str, inc_str, blk.join(", "))
+            }
+            Declaracion::Repetir { cantidad, bloque } => {
+                let blk: Vec<String> = bloque.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                format!("Declaracion::Repetir {{ cantidad: Box::new({}), bloque: vec![{}] }}",
+                    self.generar_ast_expresion(cantidad), blk.join(", "))
+            }
+            Declaracion::Cuando { condicion, cuerpo, linea, columna } => {
+                let blk: Vec<String> = cuerpo.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                format!("Declaracion::Cuando {{ condicion: Box::new({}), cuerpo: vec![{}], linea: {}, columna: {} }}",
+                    self.generar_ast_expresion(condicion), blk.join(", "), linea, columna)
+            }
+            Declaracion::Importar(ruta) => {
+                format!("Declaracion::Importar(String::from(\"{}\"))", self.esc_ast_string(ruta))
+            }
+            Declaracion::AsignacionMultiple { variables, mutable, valor } => {
+                let vars_str: Vec<String> = variables.iter().map(|v| format!("String::from(\"{}\")", self.esc_ast_string(v))).collect();
+                format!("Declaracion::AsignacionMultiple {{ variables: vec![{}], mutable: {}, valor: Box::new({}) }}",
+                    vars_str.join(", "), mutable, self.generar_ast_expresion(valor))
+            }
+            Declaracion::AccesoMiembro { objeto, miembro } => {
+                format!("Declaracion::AccesoMiembro {{ objeto: Box::new({}), miembro: String::from(\"{}\") }}",
+                    self.generar_ast_expresion(objeto), self.esc_ast_string(miembro))
+            }
+            _ => {
+                format!("// Declaracion omitida (generacion directa)")
+            }
+        }
+    }
+
+    /// Genera codigo Rust que reconstruye una `Expresion`.
+    fn generar_ast_expresion(&self, expr: &Expresion) -> String {
+        match expr {
+            Expresion::LiteralNumero(n) => format!("Expresion::LiteralNumero({})", n),
+            Expresion::LiteralDecimal(f) => format!("Expresion::LiteralDecimal({})", f),
+            Expresion::LiteralTexto(s) => format!("Expresion::LiteralTexto(String::from(\"{}\"))", self.esc_ast_string(s)),
+            Expresion::LiteralBooleano(b) => format!("Expresion::LiteralBooleano({})", b),
+            Expresion::LiteralNulo => "Expresion::LiteralNulo".to_string(),
+            Expresion::LiteralExacto(coeff, scale) => format!("Expresion::LiteralExacto({}, {})", coeff, scale),
+            Expresion::Identificador(nombre) => format!("Expresion::Identificador(String::from(\"{}\"))", self.esc_ast_string(nombre)),
+            Expresion::Binaria { izquierda, operador, derecha } => {
+                format!("Expresion::Binaria {{ izquierda: Box::new({}), operador: {}, derecha: Box::new({}) }}",
+                    self.generar_ast_expresion(izquierda), self.operador_a_ast(operador), self.generar_ast_expresion(derecha))
+            }
+            Expresion::Unaria { operador, expr: e } => {
+                format!("Expresion::Unaria {{ operador: {}, expr: Box::new({}) }}",
+                    match operador {
+                        OperadorUnario::Negar => "OperadorUnario::Negar",
+                        OperadorUnario::No => "OperadorUnario::No",
+                    },
+                    self.generar_ast_expresion(e))
+            }
+            Expresion::LlamadaFuncion { nombre, argumentos } => {
+                let args: Vec<String> = argumentos.iter().map(|a| self.generar_ast_expresion(a)).collect();
+                format!("Expresion::LlamadaFuncion {{ nombre: String::from(\"{}\"), argumentos: vec![{}] }}",
+                    self.esc_ast_string(nombre), args.join(", "))
+            }
+            Expresion::AccesoMiembro { objeto, miembro } => {
+                format!("Expresion::AccesoMiembro {{ objeto: Box::new({}), miembro: String::from(\"{}\") }}",
+                    self.generar_ast_expresion(objeto), self.esc_ast_string(miembro))
+            }
+            Expresion::Instanciacion { clase, argumentos } => {
+                let args: Vec<String> = argumentos.iter().map(|a| self.generar_ast_expresion(a)).collect();
+                format!("Expresion::Instanciacion {{ clase: String::from(\"{}\"), argumentos: vec![{}] }}",
+                    self.esc_ast_string(clase), args.join(", "))
+            }
+            Expresion::Referencia { expr: e, mutable } => {
+                format!("Expresion::Referencia {{ expr: Box::new({}), mutable: {} }}", self.generar_ast_expresion(e), mutable)
+            }
+            Expresion::Arreglo(elementos) => {
+                let elems: Vec<String> = elementos.iter().map(|e| self.generar_ast_expresion(e)).collect();
+                format!("Expresion::Arreglo(vec![{}])", elems.join(", "))
+            }
+            Expresion::Mapa(pares) => {
+                let entries: Vec<String> = pares.iter()
+                    .map(|(k, v)| format!("({}, {})", self.generar_ast_expresion(k), self.generar_ast_expresion(v)))
+                    .collect();
+                format!("Expresion::Mapa(vec![{}])", entries.join(", "))
+            }
+            Expresion::Index { objeto, indice } => {
+                format!("Expresion::Index {{ objeto: Box::new({}), indice: Box::new({}) }}",
+                    self.generar_ast_expresion(objeto), self.generar_ast_expresion(indice))
+            }
+            Expresion::Grupo(inner) => format!("Expresion::Grupo(Box::new({}))", self.generar_ast_expresion(inner)),
+            Expresion::Hilo { cuerpo } => {
+                let blk: Vec<String> = cuerpo.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                format!("Expresion::Hilo {{ cuerpo: vec![{}] }}", blk.join(", "))
+            }
+            Expresion::CanalNuevo => "Expresion::CanalNuevo".to_string(),
+            Expresion::Try(inner) => format!("Expresion::Try(Box::new({}))", self.generar_ast_expresion(inner)),
+            Expresion::Asignacion { variable, valor } => {
+                format!("Expresion::Asignacion {{ variable: String::from(\"{}\"), valor: Box::new({}) }}",
+                    self.esc_ast_string(variable), self.generar_ast_expresion(valor))
+            }
+            Expresion::AsignacionCampo { objeto, campo, valor } => {
+                format!("Expresion::AsignacionCampo {{ objeto: Box::new({}), campo: String::from(\"{}\"), valor: Box::new({}) }}",
+                    self.generar_ast_expresion(objeto), self.esc_ast_string(campo), self.generar_ast_expresion(valor))
+            }
+            Expresion::ArraySet { array, valor } => {
+                format!("Expresion::ArraySet {{ array: Box::new({}), valor: Box::new({}) }}",
+                    self.generar_ast_expresion(array), self.generar_ast_expresion(valor))
+            }
+            Expresion::Ok(inner) => format!("Expresion::Ok(Box::new({}))", self.generar_ast_expresion(inner)),
+            Expresion::Error(inner) => format!("Expresion::Error(Box::new({}))", self.generar_ast_expresion(inner)),
+            Expresion::Algo(inner) => format!("Expresion::Algo(Box::new({}))", self.generar_ast_expresion(inner)),
+            Expresion::Resultado => "Expresion::Resultado".to_string(),
+            Expresion::Anterior(inner) => format!("Expresion::Anterior(Box::new({}))", self.generar_ast_expresion(inner)),
+            Expresion::Coincidir { expr: e, brazos } => {
+                let brazos_str: Vec<String> = brazos.iter().map(|b| {
+                    let patron_str = self.patron_a_ast(&b.patron);
+                    let cuerpo_str: Vec<String> = b.cuerpo.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                    format!("BrazoMatch {{ patron: {}, cuerpo: vec![{}] }}", patron_str, cuerpo_str.join(", "))
+                }).collect();
+                format!("Expresion::Coincidir {{ expr: Box::new({}), brazos: vec![{}] }}",
+                    self.generar_ast_expresion(e), brazos_str.join(", "))
+            }
+            Expresion::Closure { parametros, cuerpo } => {
+                let params_str: Vec<String> = parametros.iter().map(|p| {
+                    let tipo_str = match &p.tipo {
+                        Some(t) => format!("Some({})", self.tipo_a_ast(t)),
+                        None => "None".to_string(),
+                    };
+                    format!("Parametro {{ nombre: String::from(\"{}\"), tipo: {}, prestado: {}, mutable: {} }}",
+                        self.esc_ast_string(&p.nombre), tipo_str, p.prestado, p.mutable)
+                }).collect();
+                let cuerpo_str: Vec<String> = cuerpo.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                format!("Expresion::Closure {{ parametros: vec![{}], cuerpo: vec![{}] }}", params_str.join(", "), cuerpo_str.join(", "))
+            }
+            Expresion::Seleccionar { brazos } => {
+                let brazos_str: Vec<String> = brazos.iter().map(|b| {
+                    let recp_str = match &b.recepcion {
+                        Some((var, expr)) => format!("Some((String::from(\"{}\"), {}))", var, self.generar_ast_expresion(expr)),
+                        None => "None".to_string(),
+                    };
+                    let cuerpo_str: Vec<String> = b.cuerpo.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                    format!("BrazoSeleccionar {{ recepcion: {}, cuerpo: vec![{}], timeout_ms: {} }}",
+                        recp_str, cuerpo_str.join(", "), b.timeout_ms)
+                }).collect();
+                format!("Expresion::Seleccionar {{ brazos: vec![{}] }}", brazos_str.join(", "))
+            }
+        }
+    }
+
+    fn operador_a_ast(&self, op: &Operador) -> String {
+        match op {
+            Operador::Suma => "Operador::Suma",
+            Operador::Resta => "Operador::Resta",
+            Operador::Multiplicacion => "Operador::Multiplicacion",
+            Operador::Division => "Operador::Division",
+            Operador::Modulo => "Operador::Modulo",
+            Operador::Mayor => "Operador::Mayor",
+            Operador::Menor => "Operador::Menor",
+            Operador::MayorIgual => "Operador::MayorIgual",
+            Operador::MenorIgual => "Operador::MenorIgual",
+            Operador::IgualIgual => "Operador::IgualIgual",
+            Operador::Diferente => "Operador::Diferente",
+            Operador::Y => "Operador::Y",
+            Operador::O => "Operador::O",
+        }.to_string()
+    }
+
+    fn tipo_a_ast(&self, tipo: &Tipo) -> String {
+        match tipo {
+            Tipo::Entero => "Tipo::Entero".to_string(),
+            Tipo::Decimal => "Tipo::Decimal".to_string(),
+            Tipo::Texto => "Tipo::Texto".to_string(),
+            Tipo::Booleano => "Tipo::Booleano".to_string(),
+            Tipo::Nulo => "Tipo::Nulo".to_string(),
+            Tipo::Exacto => "Tipo::Exacto".to_string(),
+            Tipo::Clase(n) => format!("Tipo::Clase(String::from(\"{}\"))", self.esc_ast_string(n)),
+            Tipo::Arreglo(t) => format!("Tipo::Arreglo(Box::new({}))", self.tipo_a_ast(t)),
+            Tipo::Funcion(params, ret) => {
+                let p: Vec<String> = params.iter().map(|t| self.tipo_a_ast(t)).collect();
+                format!("Tipo::Funcion(vec![{}], Box::new({}))", p.join(", "), self.tipo_a_ast(ret))
+            }
+            Tipo::Resultado(ok, err) => format!("Tipo::Resultado(Box::new({}), Box::new({}))", self.tipo_a_ast(ok), self.tipo_a_ast(err)),
+            Tipo::Opcion(inner) => format!("Tipo::Opcion(Box::new({}))", self.tipo_a_ast(inner)),
+            Tipo::RasgoObjeto(n) => format!("Tipo::RasgoObjeto(String::from(\"{}\"))", self.esc_ast_string(n)),
+            Tipo::Parametro(n) => format!("Tipo::Parametro(String::from(\"{}\"))", self.esc_ast_string(n)),
+        }
+    }
+
+    fn patron_a_ast(&self, patron: &Patron) -> String {
+        match patron {
+            Patron::Variable(n) => format!("Patron::Variable(String::from(\"{}\"))", self.esc_ast_string(n)),
+            Patron::Constructor(n, ps) => {
+                let sub: Vec<String> = ps.iter().map(|p| self.patron_a_ast(p)).collect();
+                format!("Patron::Constructor(String::from(\"{}\"), vec![{}])", self.esc_ast_string(n), sub.join(", "))
+            }
+            Patron::Ignorar => "Patron::Ignorar".to_string(),
+            Patron::Literal(lit) => format!("Patron::Literal({})", self.generar_ast_expresion(lit)),
+        }
+    }
+
+    fn esc_ast_string(&self, s: &str) -> String {
+        s.replace('\\', "\\\\").replace('"', "\\\"")
+    }
+
     #[allow(dead_code)]
     fn emit(&mut self, texto: &str) {
         self.output.push_str(texto);
@@ -2598,50 +2780,37 @@ mod tests {
     }
 
     #[test]
-    fn test_gui_appstate_sin_variables() {
+    fn test_gui_genera_programa_estatico() {
         let source = "importar \"gui\"\nfuncion main() {\n    escribir(\"hola\")\n}";
         let result = transpilar_source(source).unwrap();
-        assert!(result.contains("struct AppState {"));
-        assert!(result.contains("_placeholder: (),"));
-        assert!(result.contains("fn app_logic(data: &mut AppState)"));
+        // Ahora genera el programa como datos estaticos en vez de inline Xilem
+        assert!(result.contains("static PROGRAMA: Programa"));
+        assert!(result.contains("use forja::ast::*;"));
+        // main() usa build_and_run del runtime
+        assert!(result.contains("build_and_run"));
+        assert!(result.contains("PROGRAMA"));
     }
 
     #[test]
-    fn test_gui_appstate_con_variables() {
-        let source = "importar \"gui\"\nfuncion main() {\n    variable usuario = \"admin\"\n    variable contrasena = \"secreta\"\n    escribir(\"Usuario: \" + usuario)\n    escribir(\"Contrasena: \" + contrasena)\n}";
+    fn test_gui_genera_ast_widgets() {
+        let source = "importar \"gui\"\nfuncion main() {\n    variable usuario = \"admin\"\n    variable contrasena = \"secreta\"\n    escribir(usuario)\n    escribir(contrasena)\n}";
         let result = transpilar_source(source).unwrap();
-        assert!(result.contains("struct AppState {"));
-        assert!(result.contains("    usuario: String,"));
-        assert!(result.contains("    contrasena: String,"));
-        assert!(!result.contains("_placeholder"));
-    }
-
-    #[test]
-    fn test_gui_appstate_con_tipos_mixtos() {
-        let source = "importar \"gui\"\nfuncion main() {\n    variable edad: Entero = 25\n    variable nombre: Texto = \"Ana\"\n    variable activo: Booleano = verdadero\n    escribir(nombre)\n    escribir(edad)\n}";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("    edad: i32,"));
-        assert!(result.contains("    nombre: String,"));
-        assert!(result.contains("    activo: bool,"));
-    }
-
-    #[test]
-    fn test_gui_appstate_variables_en_main_referencia_data() {
-        let source = "importar \"gui\"\nfuncion main() {\n    variable mensaje = \"Hola Mundo\"\n    escribir(mensaje)\n}";
-        let result = transpilar_source(source).unwrap();
-        // Dentro de app_logic, 'mensaje' debe referenciarse como data.mensaje
-        assert!(result.contains("data.mensaje"));
+        // Debe generar el AST con declaraciones de variables y llamadas a funcion
+        assert!(result.contains("Declaracion::Variable"));
+        assert!(result.contains("Declaracion::LlamadaFuncion"));
+        // Debe contener los valores literales
+        assert!(result.contains("admin"));
+        assert!(result.contains("secreta"));
     }
 
     #[test]
     fn test_gui_boton_con_callback() {
         let source = "importar \"gui\"\nfuncion al_saludar() { escribir(\"Hola!\") }\nfuncion main() {\n    boton(\"Saludar\", &al_saludar)\n}";
         let result = transpilar_source(source).unwrap();
-        // Debe generar text_button con callback que invoca al_saludar()
-        assert!(result.contains("al_saludar();"));
-        // No debe tener el hardcode d.contador
-        assert!(!result.contains("d.contador"));
-        // Debe mantener el texto del boton
+        // Ahora genera el AST en vez de Layout::Button directamente
+        assert!(result.contains("LlamadaFuncion"));
+        assert!(result.contains("boton"));
+        assert!(result.contains("al_saludar"));
         assert!(result.contains("Saludar"));
     }
 
@@ -2649,131 +2818,35 @@ mod tests {
     fn test_gui_boton_sin_callback() {
         let source = "importar \"gui\"\nfuncion main() {\n    boton(\"Cerrar\")\n}";
         let result = transpilar_source(source).unwrap();
-        // Debe generar println! como callback
-        assert!(result.contains("println!"));
         assert!(result.contains("Cerrar"));
-        // No debe tener referencia a funcion
-        assert!(!result.contains("();"));
-    }
-
-    #[test]
-    fn test_gui_boton_con_callback_sin_referencia() {
-        // Prueba: boton("Texto", &fn) SIN espacio entre & y nombre
-        let source = "importar \"gui\"\nfuncion validar() { escribir(\"ok\") }\nfuncion main() {\n    boton(\"Validar\", &validar)\n}";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("validar();"));
-        assert!(!result.contains("d.contador"));
-    }
-
-    #[test]
-    fn test_gui_boton_y_etiqueta_mezclados() {
-        let source = "importar \"gui\"\nfuncion accion() {}\nfuncion main() {\n    etiqueta(\"Titulo\")\n    boton(\"Click\", &accion)\n    boton(\"Otro\")\n}";
-        let result = transpilar_source(source).unwrap();
-        // Debe tener 3 widgets generados
-        assert!(result.contains("label("));
-        assert!(result.contains("accion();"));
-        assert!(result.contains("println!"));
+        assert!(result.contains("LlamadaFuncion"));
     }
 
     #[test]
     fn test_gui_columna_basica() {
         let source = "importar \"gui\"\nfuncion main() {\n    columna(escribir(\"Arriba\"), boton(\"Click\"))\n}";
         let result = transpilar_source(source).unwrap();
-        // Debe generar flex(Axis::Vertical, vec![ ... ])
-        assert!(result.contains("flex(Axis::Vertical, vec!["));
-        assert!(result.contains("Box::new(view::label("));
-        assert!(result.contains("Box::new(view::text_button("));
-        assert!(result.contains("as Box<AnyWidgetView<AppState>>"));
-        // Debe tener cierre del vec
-        assert!(result.contains("])"));
-    }
-
-    #[test]
-    fn test_gui_columna_fila_anidado() {
-        let source = "importar \"gui\"\nfuncion main() {\n    columna(escribir(\"Arriba\"), boton(\"Click\"), fila(escribir(\"Izq\"), escribir(\"Der\")))\n}";
-        let result = transpilar_source(source).unwrap();
-        // Debe generar flex vertical con label, boton, y flex horizontal anidado
-        assert!(result.contains("flex(Axis::Vertical, vec!["));
-        assert!(result.contains("flex(Axis::Horizontal, vec!["));
-        assert!(result.contains("label(String::from(\"Arriba\"))"));
-        assert!(result.contains("text_button(String::from(\"Click\")"));
-        assert!(result.contains("label(String::from(\"Izq\"))"));
-        assert!(result.contains("label(String::from(\"Der\"))"));
-        assert!(result.contains("as Box<AnyWidgetView<AppState>>"));
-        // Verificar orden: label, boton, flex horizontal
-        let pos_arriba = result.find("Arriba").unwrap();
-        let pos_click = result.find("Click").unwrap();
-        let pos_izq = result.find("Izq").unwrap();
-        assert!(pos_arriba < pos_click, "Arriba debe ir antes que Click");
-        assert!(pos_click < pos_izq, "Click debe ir antes que Izq");
-    }
-
-    #[test]
-    fn test_gui_fila_basica() {
-        let source = "importar \"gui\"\nfuncion main() {\n    fila(escribir(\"A\"), escribir(\"B\"))\n}";
-        let result = transpilar_source(source).unwrap();
-        // Debe generar flex horizontal
-        assert!(result.contains("flex(Axis::Horizontal, vec!["));
-        assert!(result.contains("label(String::from(\"A\"))"));
-        assert!(result.contains("label(String::from(\"B\"))"));
-        assert!(result.contains("as Box<AnyWidgetView<AppState>>"));
-    }
-
-    #[test]
-    fn test_gui_widgets_plano_sin_columna_siguen_funcionando() {
-        let source = "importar \"gui\"\nfuncion main() {\n    etiqueta(\"Titulo\")\n    boton(\"Click\")\n}";
-        let result = transpilar_source(source).unwrap();
-        // Sin columna/fila, debe seguir emitiendo el flex wrapper antiguo
-        assert!(result.contains("view::flex(Axis::Vertical, ("));
-        assert!(result.contains("label("));
-        assert!(result.contains("text_button("));
+        // Ahora genera el AST, no Layout::Column directamente
+        assert!(result.contains("columna"));
+        assert!(result.contains("Arriba"));
+        assert!(result.contains("Click"));
     }
 
     #[test]
     fn test_gui_entrada_texto() {
         let source = "importar \"gui\"\nfuncion main() {\n    entrada_texto(\"Nombre\")\n}";
         let result = transpilar_source(source).unwrap();
-        assert!(result.contains("view::text_input("));
+        assert!(result.contains("entrada_texto"));
         assert!(result.contains("Nombre"));
     }
 
     #[test]
-    fn test_gui_barra_progreso() {
-        let source = "importar \"gui\"\nfuncion main() {\n    barra_progreso(0.5)\n}";
+    fn test_gui_multiple_widgets() {
+        let source = "importar \"gui\"\nfuncion main() {\n    escribir(\"Config\")\n    entrada_texto(\"Nombre\")\n    boton(\"Click\")\n}";
         let result = transpilar_source(source).unwrap();
-        assert!(result.contains("view::progress_bar(Some(0.5"));
-    }
-
-    #[test]
-    fn test_gui_slider() {
-        let source = "importar \"gui\"\nfuncion main() {\n    deslizante(50, 0, 100)\n}";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("view::slider(50 as f64, 0 as f64, 100 as f64"));
-    }
-
-    #[test]
-    fn test_gui_slider_con_variable() {
-        let source = "importar \"gui\"\nfuncion main() {\n    variable volumen = 50\n    deslizante(\"volumen\", 0, 100)\n}";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("let val = data.volumen.parse::<f64>().unwrap_or(0.0); view::slider(val"));
-        assert!(result.contains("data.volumen = val.to_string()"));
-    }
-
-    #[test]
-    fn test_gui_checkbox() {
-        let source = "importar \"gui\"\nfuncion main() {\n    casilla(\"Aceptar terminos\")\n}";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("view::checkbox("));
-    }
-
-    #[test]
-    fn test_gui_todos_widgets_juntos() {
-        let source = "importar \"gui\"\nfuncion main() {\n    escribir(\"Config\")\n    entrada_texto(\"Nombre\")\n    barra_progreso(0.5)\n    casilla(\"Aceptar\")\n    deslizante(50, 0, 100)\n}";
-        let result = transpilar_source(source).unwrap();
-        assert!(result.contains("view::label("));
-        assert!(result.contains("view::text_input("));
-        assert!(result.contains("view::progress_bar(Some(0.5"));
-        assert!(result.contains("view::checkbox("));
-        assert!(result.contains("view::slider(50 as f64, 0 as f64, 100 as f64"));
+        // Verificar que aparecen todos los nombres de widgets en el AST
+        assert!(result.contains("Config"));
+        assert!(result.contains("Nombre"));
+        assert!(result.contains("Click"));
     }
 }
