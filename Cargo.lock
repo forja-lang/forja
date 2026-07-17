@@ -1409,7 +1409,7 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "forja"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "base64",
  "crossbeam",
@@ -1427,7 +1427,7 @@ dependencies = [
 
 [[package]]
 name = "forja-android-rt"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "android_logger",
  "forja",
@@ -1454,7 +1454,7 @@ dependencies = [
 
 [[package]]
 name = "forja-rt"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "forja",
  "forja-gui-rt",
@@ -1462,7 +1462,7 @@ dependencies = [
 
 [[package]]
 name = "forja-wasm"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "forja",
  "serde",
@@ -2141,7 +2141,7 @@ dependencies = [
 
 [[package]]
 name = "keyboard-types"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fbe853b403ae61a04233030ae8a79d94975281ed9770a1f9e246732b534b28d"
 dependencies = [
@@ -4177,7 +4177,7 @@ dependencies = [
 
 [[package]]
 name = "tinystr"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8323304221c2a851516f22236c5722a72eaa19749016521d6dff0824447d96d"
 dependencies = [
@@ -5575,7 +5575,7 @@ dependencies = [
 
 [[package]]
 name = "yoke"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "709fe23a0424b6a435d82152b1bd3fdfb0833487d5fa90d05d42762a9891fef5"
 dependencies = [
