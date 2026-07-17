@@ -28,3 +28,6 @@
 [submodule "crates/forja-android-rt"]
 	path = crates/forja-android-rt
 	url = https://github.com/forja-lang/forja-android-rt.git
+[submodule "crates/forja-wasm-gui"]
+	path = crates/forja-wasm-gui
+	url = https://github.com/forja-lang/forja-wasm-gui.git
