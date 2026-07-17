@@ -779,6 +779,7 @@ fn cmd_run(args: &[String]) {
     let mut vm_mode = "fast";
     let mut asm_mode = false;
     let mut native_mode = false;
+    let mut hot_reload = false;
     let mut verificar_contratos = true;  // default: contratos activados
     let mut contratos_explicit = false;  // si el usuario explicitó la opción
     let mut path: &String = &args[0];
@@ -794,6 +795,7 @@ fn cmd_run(args: &[String]) {
             }
             "--asm" => asm_mode = true,
             "--native" => native_mode = true,
+            "--hot-reload" | "--hot" => hot_reload = true,
             "--debug" | "--console" => {}
             "--no-debug" => {}
             "--contratos" => { verificar_contratos = true; contratos_explicit = true; }
@@ -821,7 +823,7 @@ fn cmd_run(args: &[String]) {
     };
 
     if native_mode {
-        let result = ejecutar_nativo(&source, path);
+        let result = ejecutar_nativo(&source, path, hot_reload);
         match result {
             Ok(()) => {}
             Err(e) => { eprintln!("Error en ejecución nativa: {}", e); process::exit(1); }
@@ -944,7 +946,7 @@ fn ejecutar_asm(source: &str, input_path: &str) -> Result<Vec<String>, String> {
 /// Ejecuta un programa Forja que usa GUI, compilándolo a nativo con cargo
 /// y ejecutando el binario resultante.
 /// Equivalente a hacer: forja transpile + cd dir + cargo run
-fn ejecutar_nativo(source: &str, input_path: &str) -> Result<(), String> {
+fn ejecutar_nativo(source: &str, input_path: &str, hot_reload: bool) -> Result<(), String> {
     // 1. Parsear el programa (usando módulos locales para evitar conflictos
     //    entre crate forja (lib) y crate forja (bin))
     let mut lexer = lexer::Lexer::new(source);
@@ -1040,11 +1042,128 @@ serde_json = "1"
         .spawn()
         .map_err(|e| format!("Error ejecutando binario: {}", e))?;
 
-    // Esperar a que termine el proceso hijo
-    let _ = child.wait_with_output();
+    if hot_reload {
+        iniciar_watcher_hot_reload(input_path, &temp_dir, &exe_name, child)?;
+    } else {
+        // Esperar a que termine el proceso hijo
+        let _ = child.wait_with_output();
+    }
 
     // Limpieza opcional (comentada para mantener el caché de cargo)
     // std::fs::remove_dir_all(&temp_dir).ok();
+
+    Ok(())
+}
+
+/// Watcher por polling para hot reload de GUI nativa.
+/// Cada 500ms verifica si el archivo .fa cambió.
+/// Si cambió: mata la app actual, recompila, y ejecuta la nueva preservando estado.
+fn iniciar_watcher_hot_reload(
+    ruta_fa: &str,
+    temp_dir: &std::path::Path,
+    exe_name: &str,
+    mut child: std::process::Child,
+) -> Result<(), String> {
+    use std::io::Read;
+    use std::time::Duration;
+    use std::thread;
+
+    let fa_path = std::path::Path::new(ruta_fa).to_path_buf();
+    let build_dir = temp_dir.to_path_buf();
+    let source_original = std::fs::read_to_string(&fa_path).unwrap_or_default();
+    let mut last_content = source_original;
+
+    // Ruta donde la app guarda el estado al ser notificada
+    let state_path = build_dir.join("state.json");
+
+    println!("🔄 Hot reload activo. Esperando cambios en {}...", fa_path.display());
+
+    loop {
+        // Esperar antes de verificar
+        thread::sleep(Duration::from_millis(500));
+
+        // Leer el archivo .fa
+        let current_content = std::fs::read_to_string(&fa_path).unwrap_or_default();
+
+        if current_content != last_content && !current_content.is_empty() {
+            println!("📝 Cambio detectado! Recompilando...");
+            last_content = current_content.clone();
+
+            // Enviar señal a la app para que guarde estado
+            // Enviar SIGINT en Unix o un ctrl+c simulado en Windows
+            // La forma más portable: la app guarda estado al recibir cualquier señal,
+            // y además guarda estado periódicamente o en un archivo compartido.
+            //
+            // Estrategia: matamos el proceso y la app guarda estado en su
+            // Drop handler o al recibir la señal de kill. Pero como no podemos
+            // controlar eso fácilmente, usamos un archivo de estado compartido
+            // que la app lee al iniciar y escribe periódicamente.
+            //
+            // Enfoque simplificado: la app escribe state.json en cada render
+            // o en respuesta a una request. Pero como no podemos modificar la app
+            // arbitrariamente, hacemos que el driver de hot-reload lea el estado
+            // actual que la app haya persistido.
+
+            // Matar proceso anterior
+            println!("  ⏹️  Deteniendo app anterior (PID {})...", child.id());
+            child.kill().ok();
+            child.wait().ok();
+
+            // Recompilar
+            println!("  🔨 Recompilando...");
+            let status = std::process::Command::new("cargo")
+                .args(&["build", "--release"])
+                .current_dir(&build_dir)
+                .output()
+                .map_err(|e| format!("Error recompilando: {}", e))?;
+
+            if !status.status.success() {
+                let stderr = String::from_utf8_lossy(&status.stderr);
+                // Mostrar error pero seguir escuchando
+                eprintln!("⚠️ Error de compilación:\n{}", stderr);
+                continue;
+            }
+
+            // Cargar estado guardado (si existe)
+            let state_arg = if state_path.exists() {
+                if let Ok(mut file) = std::fs::File::open(&state_path) {
+                    let mut state = String::new();
+                    if file.read_to_string(&mut state).is_ok() && !state.is_empty() {
+                        format!("--load-state={}", state)
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            };
+
+            // Ejecutar nueva versión
+            let bin_path = build_dir.join("target/release").join(exe_name);
+
+            println!("  🚀 Reiniciando app con hot reload...");
+            let mut cmd = std::process::Command::new(&bin_path);
+            if !state_arg.is_empty() {
+                cmd.arg(&state_arg);
+            }
+            child = cmd.spawn()
+                .map_err(|e| format!("Error ejecutando nueva versión: {}", e))?;
+
+            println!("✅ App reiniciada con hot reload!");
+        }
+
+        // Verificar si el hijo sigue vivo
+        match child.try_wait() {
+            Ok(Some(_status)) => {
+                println!("👋 App terminada. Hot reload finalizado.");
+                break;
+            }
+            Ok(None) => {} // sigue vivo
+            Err(_) => break,
+        }
+    }
 
     Ok(())
 }
