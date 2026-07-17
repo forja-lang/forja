@@ -1446,6 +1446,7 @@ dependencies = [
  "image",
  "qrcode",
  "rfd",
+ "serde",
  "serde_json",
  "winit",
  "xilem",
