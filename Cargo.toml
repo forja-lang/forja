@@ -106,9 +106,9 @@ members = [
 exclude = [".forja_gui_cache"]
 
 [patch.crates-io]
-xilem = { path = "patches/xilem" }
-masonry_winit = { path = "patches/masonry_winit" }
-masonry = { path = "patches/masonry" }
+xilem = { git = "https://github.com/forja-lang/patches.git", subdirectory = "xilem" }
+masonry_winit = { git = "https://github.com/forja-lang/patches.git", subdirectory = "masonry_winit" }
+masonry = { git = "https://github.com/forja-lang/patches.git", subdirectory = "masonry" }
 
 [profile.release]
 opt-level = "z"
