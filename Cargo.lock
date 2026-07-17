@@ -2301,6 +2301,7 @@ dependencies = [
 [[package]]
 name = "masonry"
 version = "0.4.0"
+source = "git+https://github.com/forja-lang/patches.git#655049ec98ac2680a20e29b4861144f69b92c287"
 dependencies = [
  "accesskit",
  "dpi",
@@ -2338,6 +2339,7 @@ dependencies = [
 [[package]]
 name = "masonry_winit"
 version = "0.4.0"
+source = "git+https://github.com/forja-lang/patches.git#655049ec98ac2680a20e29b4861144f69b92c287"
 dependencies = [
  "accesskit_winit",
  "copypasta",
@@ -5490,6 +5492,7 @@ checksum = "bec9e4a500ca8864c5b47b8b482a73d62e4237670e5b5f1d6b9e3cae50f28f2b"
 [[package]]
 name = "xilem"
 version = "0.4.0"
+source = "git+https://github.com/forja-lang/patches.git#655049ec98ac2680a20e29b4861144f69b92c287"
 dependencies = [
  "masonry",
  "masonry_winit",
