@@ -1,7 +1,6 @@
 /// JIT Engine: Orquestador que decide qué compilar a nativo y qué ejecutar en VM
 /// Usa NativeJIT (jit.rs) para código enteros puros
 /// Hace fallback a ForjaFast para código complejo
-
 use crate::bytecode::{self, Opcode};
 use crate::vm_fast::ForjaFast;
 
@@ -88,7 +87,12 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
                 (PushDecimal(d), LoadIdxFloat(x), SubFloat, StoreIdxFloat(y)) if *d == 0.0 && x == y
             );
             if is_negation {
-                if let (_, LoadIdxFloat(x), _, _) = (&bytecode[i], &bytecode[i+1], &bytecode[i+2], &bytecode[i+3]) {
+                if let (_, LoadIdxFloat(x), _, _) = (
+                    &bytecode[i],
+                    &bytecode[i + 1],
+                    &bytecode[i + 2],
+                    &bytecode[i + 3],
+                ) {
                     preprocessed.push(XorSign(*x));
                     i += 4;
                     continue;
@@ -101,20 +105,33 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
 
     // Primera pasada: inferir tipos de variables desde declaraciones conocidas (usar preprocessed)
     let bytecode = &preprocessed;
-    let n_vars = bytecode.iter().filter_map(|op| match op {
-        LoadIdx(i) | StoreIdx(i) | DeclareIdx(i, _) => Some(*i),
-        LoadIdxEntero(i) | LoadIdxFloat(i) => Some(*i),
-        StoreIdxEntero(i) | StoreIdxFloat(i) => Some(*i),
-        DeclareEnteroOp(i, _) | DeclareBooleanoOp(i, _) | StoreEnteroOp(i, _)
-            | DeclareFloatOp(i, _) | StoreFloatOp(i, _) => Some(*i),
-        LoadAddInt(i, _) | LoadAddFloat(i, _)
-            | AddStoreIdx(i) | SubStoreIdx(i) | MulStoreIdx(i)
-            | AddStoreFloat(i) | SubStoreFloat(i) | MulStoreFloat(i) => Some(*i),
-        XorSign(i) => Some(*i),
-        LoadIdx2(a, _) | LoadStoreIdx(a, _) => Some(*a),
-        LoadJumpSiFalso(i, _) | LoadJump(i, _) => Some(*i),
-        _ => None,
-    }).max().map(|m| m + 1).unwrap_or(64);
+    let n_vars = bytecode
+        .iter()
+        .filter_map(|op| match op {
+            LoadIdx(i) | StoreIdx(i) | DeclareIdx(i, _) => Some(*i),
+            LoadIdxEntero(i) | LoadIdxFloat(i) => Some(*i),
+            StoreIdxEntero(i) | StoreIdxFloat(i) => Some(*i),
+            DeclareEnteroOp(i, _)
+            | DeclareBooleanoOp(i, _)
+            | StoreEnteroOp(i, _)
+            | DeclareFloatOp(i, _)
+            | StoreFloatOp(i, _) => Some(*i),
+            LoadAddInt(i, _)
+            | LoadAddFloat(i, _)
+            | AddStoreIdx(i)
+            | SubStoreIdx(i)
+            | MulStoreIdx(i)
+            | AddStoreFloat(i)
+            | SubStoreFloat(i)
+            | MulStoreFloat(i) => Some(*i),
+            XorSign(i) => Some(*i),
+            LoadIdx2(a, _) | LoadStoreIdx(a, _) => Some(*a),
+            LoadJumpSiFalso(i, _) | LoadJump(i, _) => Some(*i),
+            _ => None,
+        })
+        .max()
+        .map(|m| m + 1)
+        .unwrap_or(64);
 
     // 0=Entero, 1=Flotante, 2=Booleano, 3=Desconocido
     let mut tipos_var: Vec<Option<u8>> = vec![None; n_vars.max(64)];
@@ -122,25 +139,39 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
     for op in bytecode {
         match op {
             DeclareEnteroOp(idx, _) | StoreEnteroOp(idx, _) => {
-                if *idx < tipos_var.len() { tipos_var[*idx] = Some(0); }
+                if *idx < tipos_var.len() {
+                    tipos_var[*idx] = Some(0);
+                }
             }
             DeclareFloatOp(idx, _) | StoreFloatOp(idx, _) => {
-                if *idx < tipos_var.len() { tipos_var[*idx] = Some(1); }
+                if *idx < tipos_var.len() {
+                    tipos_var[*idx] = Some(1);
+                }
             }
             DeclareBooleanoOp(idx, _) => {
-                if *idx < tipos_var.len() { tipos_var[*idx] = Some(2); }
+                if *idx < tipos_var.len() {
+                    tipos_var[*idx] = Some(2);
+                }
             }
             LoadIdxEntero(idx) => {
-                if *idx < tipos_var.len() { tipos_var[*idx] = Some(0); }
+                if *idx < tipos_var.len() {
+                    tipos_var[*idx] = Some(0);
+                }
             }
             LoadIdxFloat(idx) => {
-                if *idx < tipos_var.len() { tipos_var[*idx] = Some(1); }
+                if *idx < tipos_var.len() {
+                    tipos_var[*idx] = Some(1);
+                }
             }
             StoreIdxEntero(idx) => {
-                if *idx < tipos_var.len() { tipos_var[*idx] = Some(0); }
+                if *idx < tipos_var.len() {
+                    tipos_var[*idx] = Some(0);
+                }
             }
             StoreIdxFloat(idx) => {
-                if *idx < tipos_var.len() { tipos_var[*idx] = Some(1); }
+                if *idx < tipos_var.len() {
+                    tipos_var[*idx] = Some(1);
+                }
             }
             _ => {}
         }
@@ -171,7 +202,9 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
             LoadIdx(idx) => {
                 let t = if *idx < tipos_var.len() {
                     tipos_var[*idx].unwrap_or(3)
-                } else { 3 };
+                } else {
+                    3
+                };
                 result.push(op.clone());
                 stack_tipos.push(t);
             }
@@ -200,54 +233,94 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
 
                 let (nuevo_op, result_tipo) = match op {
                     Add => {
-                        if t1 == 0 && t2 == 0 { (AddInt, 0) }
-                        else if t1 == 1 && t2 == 1 { (AddFloat, 1) }
-                        else { (op.clone(), 3) }
+                        if t1 == 0 && t2 == 0 {
+                            (AddInt, 0)
+                        } else if t1 == 1 && t2 == 1 {
+                            (AddFloat, 1)
+                        } else {
+                            (op.clone(), 3)
+                        }
                     }
                     Sub => {
-                        if t1 == 0 && t2 == 0 { (SubInt, 0) }
-                        else if t1 == 1 && t2 == 1 { (SubFloat, 1) }
-                        else { (op.clone(), 3) }
+                        if t1 == 0 && t2 == 0 {
+                            (SubInt, 0)
+                        } else if t1 == 1 && t2 == 1 {
+                            (SubFloat, 1)
+                        } else {
+                            (op.clone(), 3)
+                        }
                     }
                     Mul => {
-                        if t1 == 0 && t2 == 0 { (MulInt, 0) }
-                        else if t1 == 1 && t2 == 1 { (MulFloat, 1) }
-                        else { (op.clone(), 3) }
+                        if t1 == 0 && t2 == 0 {
+                            (MulInt, 0)
+                        } else if t1 == 1 && t2 == 1 {
+                            (MulFloat, 1)
+                        } else {
+                            (op.clone(), 3)
+                        }
                     }
                     Div => {
-                        if t1 == 0 && t2 == 0 { (DivInt, 0) }
-                        else if t1 == 1 && t2 == 1 { (DivFloat, 1) }
-                        else { (op.clone(), 3) }
+                        if t1 == 0 && t2 == 0 {
+                            (DivInt, 0)
+                        } else if t1 == 1 && t2 == 1 {
+                            (DivFloat, 1)
+                        } else {
+                            (op.clone(), 3)
+                        }
                     }
                     Igual => {
-                        if t1 == 0 && t2 == 0 { (IgualInt, 2) }
-                        else if t1 == 1 && t2 == 1 { (IgualFloat, 2) }
-                        else { (op.clone(), 2) }
+                        if t1 == 0 && t2 == 0 {
+                            (IgualInt, 2)
+                        } else if t1 == 1 && t2 == 1 {
+                            (IgualFloat, 2)
+                        } else {
+                            (op.clone(), 2)
+                        }
                     }
                     Diferente => {
-                        if t1 == 0 && t2 == 0 { (op.clone(), 2) }
-                        else if t1 == 1 && t2 == 1 { (DiferenteFloat, 2) }
-                        else { (op.clone(), 2) }
+                        if t1 == 0 && t2 == 0 {
+                            (op.clone(), 2)
+                        } else if t1 == 1 && t2 == 1 {
+                            (DiferenteFloat, 2)
+                        } else {
+                            (op.clone(), 2)
+                        }
                     }
                     Menor => {
-                        if t1 == 0 && t2 == 0 { (MenorInt, 2) }
-                        else if t1 == 1 && t2 == 1 { (MenorFloat, 2) }
-                        else { (op.clone(), 2) }
+                        if t1 == 0 && t2 == 0 {
+                            (MenorInt, 2)
+                        } else if t1 == 1 && t2 == 1 {
+                            (MenorFloat, 2)
+                        } else {
+                            (op.clone(), 2)
+                        }
                     }
                     Mayor => {
-                        if t1 == 0 && t2 == 0 { (MayorInt, 2) }
-                        else if t1 == 1 && t2 == 1 { (MayorFloat, 2) }
-                        else { (op.clone(), 2) }
+                        if t1 == 0 && t2 == 0 {
+                            (MayorInt, 2)
+                        } else if t1 == 1 && t2 == 1 {
+                            (MayorFloat, 2)
+                        } else {
+                            (op.clone(), 2)
+                        }
                     }
                     MenorIgual => {
-                        if t1 == 0 && t2 == 0 { (op.clone(), 2) }
-                        else if t1 == 1 && t2 == 1 { (MenorIgualFloat, 2) }
-                        else { (op.clone(), 2) }
+                        if t1 == 0 && t2 == 0 {
+                            (op.clone(), 2)
+                        } else if t1 == 1 && t2 == 1 {
+                            (MenorIgualFloat, 2)
+                        } else {
+                            (op.clone(), 2)
+                        }
                     }
                     MayorIgual => {
-                        if t1 == 0 && t2 == 0 { (op.clone(), 2) }
-                        else if t1 == 1 && t2 == 1 { (MayorIgualFloat, 2) }
-                        else { (op.clone(), 2) }
+                        if t1 == 0 && t2 == 0 {
+                            (op.clone(), 2)
+                        } else if t1 == 1 && t2 == 1 {
+                            (MayorIgualFloat, 2)
+                        } else {
+                            (op.clone(), 2)
+                        }
                     }
                     _ => (op.clone(), 3),
                 };
@@ -266,27 +339,42 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
                 stack_tipos.pop();
                 stack_tipos.push(1);
             }
-            IgualInt | MenorInt | MayorInt |
-            IgualFloat | DiferenteFloat | MenorFloat | MayorFloat |
-            MenorIgualFloat | MayorIgualFloat => {
+            IgualInt | MenorInt | MayorInt | IgualFloat | DiferenteFloat | MenorFloat
+            | MayorFloat | MenorIgualFloat | MayorIgualFloat => {
                 result.push(op.clone());
                 stack_tipos.pop();
                 stack_tipos.pop();
                 stack_tipos.push(2);
             }
             LoadAddInt(idx, _) => {
-                let t = if *idx < tipos_var.len() { tipos_var[*idx].unwrap_or(0) } else { 0 };
+                let t = if *idx < tipos_var.len() {
+                    tipos_var[*idx].unwrap_or(0)
+                } else {
+                    0
+                };
                 result.push(op.clone());
                 stack_tipos.push(t);
             }
             LoadAddFloat(idx, _) => {
-                let t = if *idx < tipos_var.len() { tipos_var[*idx].unwrap_or(1) } else { 1 };
+                let t = if *idx < tipos_var.len() {
+                    tipos_var[*idx].unwrap_or(1)
+                } else {
+                    1
+                };
                 result.push(op.clone());
                 stack_tipos.push(t);
             }
             LoadIdx2(a, b) => {
-                let ta = if *a < tipos_var.len() { tipos_var[*a].unwrap_or(3) } else { 3 };
-                let tb = if *b < tipos_var.len() { tipos_var[*b].unwrap_or(3) } else { 3 };
+                let ta = if *a < tipos_var.len() {
+                    tipos_var[*a].unwrap_or(3)
+                } else {
+                    3
+                };
+                let tb = if *b < tipos_var.len() {
+                    tipos_var[*b].unwrap_or(3)
+                } else {
+                    3
+                };
                 result.push(op.clone());
                 stack_tipos.push(ta);
                 stack_tipos.push(tb);
@@ -321,7 +409,11 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
                 result.push(op.clone());
             }
             LoadJump(idx, _) => {
-                let t = if *idx < tipos_var.len() { tipos_var[*idx].unwrap_or(3) } else { 3 };
+                let t = if *idx < tipos_var.len() {
+                    tipos_var[*idx].unwrap_or(3)
+                } else {
+                    3
+                };
                 result.push(op.clone());
                 stack_tipos.push(t);
             }
@@ -339,8 +431,10 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
             DeclareEnteroOp(_, _) => {
                 result.push(op.clone());
             }
-            AddPacked(_, _, _, _) | SubPacked(_, _, _, _) |
-            MulPacked(_, _, _, _) | DivPacked(_, _, _, _) => {
+            AddPacked(_, _, _, _)
+            | SubPacked(_, _, _, _)
+            | MulPacked(_, _, _, _)
+            | DivPacked(_, _, _, _) => {
                 result.push(op.clone());
             }
             // Fase A: Modulo2(src) — pushea 0 o 1 (entero)
@@ -385,27 +479,29 @@ fn standard_loop_unrolling(bytecode: &[Opcode]) -> Vec<Opcode> {
     for i in 0..bytecode.len() {
         if let Label(l) = &bytecode[i] {
             // Buscar Jump(l) hacia atrás (mismo label, y debe estar después de Label)
-            for j in (i+1)..bytecode.len() {
-                if let Label(_) = &bytecode[j] { break; } // otro label interrumpe el bucle
+            for j in (i + 1)..bytecode.len() {
+                if let Label(_) = &bytecode[j] {
+                    break;
+                } // otro label interrumpe el bucle
                 if let Jump(target) = &bytecode[j] {
                     if *target == *l {
                         // Encontramos un bucle! Label(l) ... cuerpo ... Jump(l)
-                        let body = &bytecode[i+1..j]; // cuerpo sin Label ni Jump
+                        let body = &bytecode[i + 1..j]; // cuerpo sin Label ni Jump
                         let unroll_factor = 4usize;
 
                         // Duplicar el cuerpo 4 veces (cada copia tiene i = i + 1)
-                        let mut new_body: Vec<Opcode> = Vec::with_capacity(body.len() * unroll_factor);
+                        let mut new_body: Vec<Opcode> =
+                            Vec::with_capacity(body.len() * unroll_factor);
                         for _ in 0..unroll_factor {
                             new_body.extend_from_slice(body);
                         }
 
                         // Reconstruir bytecode con bucle desenrollado
-                        let mut result: Vec<Opcode> = Vec::with_capacity(
-                            bytecode.len() + new_body.len() - body.len()
-                        );
+                        let mut result: Vec<Opcode> =
+                            Vec::with_capacity(bytecode.len() + new_body.len() - body.len());
                         result.extend_from_slice(&bytecode[..=i]); // hasta Label inclusive
-                        result.extend_from_slice(&new_body);       // cuerpo desenrollado ×4
-                        result.extend_from_slice(&bytecode[j..]);  // desde Jump en adelante
+                        result.extend_from_slice(&new_body); // cuerpo desenrollado ×4
+                        result.extend_from_slice(&bytecode[j..]); // desde Jump en adelante
                         return result;
                     }
                 }
@@ -423,50 +519,78 @@ fn try_avx2_unroll(bytecode: &[Opcode]) -> Option<Vec<Opcode>> {
     // Buscar patrón: Label(l) ... Jump(l)
     for i in 0..bytecode.len() {
         if let Label(l) = &bytecode[i] {
-            for j in (i+1)..bytecode.len() {
-                if let Label(_) = &bytecode[j] { break; }
+            for j in (i + 1)..bytecode.len() {
+                if let Label(_) = &bytecode[j] {
+                    break;
+                }
                 if let Jump(target) = &bytecode[j] {
                     if *target == *l {
-                        let body = &bytecode[i+1..j];
+                        let body = &bytecode[i + 1..j];
 
                         // Verificar que el cuerpo tiene operaciones float (PushDecimal + Add/Sub/Mul/Div)
                         let tiene_push_dec = body.iter().any(|op| matches!(op, PushDecimal(_)));
                         let tiene_arith = body.iter().any(|op| matches!(op, Add | Sub | Mul | Div));
-                        if !tiene_push_dec || !tiene_arith { return None; }
+                        if !tiene_push_dec || !tiene_arith {
+                            return None;
+                        }
 
                         // Contar variables escritas en el cuerpo
                         use std::collections::BTreeSet;
                         let mut escritas = BTreeSet::new();
                         for op in body {
-                            if let StoreIdx(i) = op { escritas.insert(*i); }
+                            if let StoreIdx(i) = op {
+                                escritas.insert(*i);
+                            }
                         }
-                        if escritas.len() > 6 { return None; } // muy complejo
+                        if escritas.len() > 6 {
+                            return None;
+                        } // muy complejo
 
                         // Encontrar max variable index
                         let max_idx = bytecode.iter().fold(0usize, |a, op| {
                             let idx = match op {
-                                LoadIdx(i) | StoreIdx(i) | DeclareIdx(i, _) |
-                                LoadIdxEntero(i) | LoadIdxFloat(i) |
-                                StoreIdxEntero(i) | StoreIdxFloat(i) |
-                                DeclareEnteroOp(i, _) | DeclareBooleanoOp(i, _) | StoreEnteroOp(i, _) |
-                                DeclareFloatOp(i, _) | StoreFloatOp(i, _) |
-                                AddStoreFloat(i) | SubStoreFloat(i) | MulStoreFloat(i) |
-                                XorSign(i) | LoadAddInt(i, _) | LoadAddFloat(i, _) |
-                                AddStoreIdx(i) | SubStoreIdx(i) | MulStoreIdx(i) |
-                                LoadIdx2(i, _) | LoadStoreIdx(i, _) |
-                                LoadJumpSiFalso(i, _) | LoadJump(i, _) => *i + 1,
+                                LoadIdx(i)
+                                | StoreIdx(i)
+                                | DeclareIdx(i, _)
+                                | LoadIdxEntero(i)
+                                | LoadIdxFloat(i)
+                                | StoreIdxEntero(i)
+                                | StoreIdxFloat(i)
+                                | DeclareEnteroOp(i, _)
+                                | DeclareBooleanoOp(i, _)
+                                | StoreEnteroOp(i, _)
+                                | DeclareFloatOp(i, _)
+                                | StoreFloatOp(i, _)
+                                | AddStoreFloat(i)
+                                | SubStoreFloat(i)
+                                | MulStoreFloat(i)
+                                | XorSign(i)
+                                | LoadAddInt(i, _)
+                                | LoadAddFloat(i, _)
+                                | AddStoreIdx(i)
+                                | SubStoreIdx(i)
+                                | MulStoreIdx(i)
+                                | LoadIdx2(i, _)
+                                | LoadStoreIdx(i, _)
+                                | LoadJumpSiFalso(i, _)
+                                | LoadJump(i, _) => *i + 1,
                                 _ => 0,
                             };
                             a.max(idx)
                         });
 
                         // No hay suficientes slots para SIMD si max_idx es muy grande
-                        if max_idx + 48 > 1024 { return None; }
+                        if max_idx + 48 > 1024 {
+                            return None;
+                        }
 
                         // Encontrar el contador (StoreIdx más cercano al final del body)
                         let mut counter_idx = 0usize;
                         for op in body.iter().rev() {
-                            if let StoreIdx(i) = op { counter_idx = *i; break; }
+                            if let StoreIdx(i) = op {
+                                counter_idx = *i;
+                                break;
+                            }
                         }
 
                         // Extraer condición del bucle (desde LoadIdx(counter) hasta JumpSiFalso/Jump)
@@ -549,7 +673,7 @@ fn try_avx2_unroll(bytecode: &[Opcode]) -> Option<Vec<Opcode>> {
                         result.push(PushDecimal(8.0));
                         result.push(AddFloat);
                         result.push(StoreIdxFloat(counter_idx));
-                        
+
                         // Extraer SOLO la condición del bucle (los últimos ~5 ops del body)
                         // Patrón: LoadIdx(i) + LoadIdx(limit) + [comparación] + JumpSiFalso
                         let mut cond_only: Vec<Opcode> = Vec::new();
@@ -589,9 +713,15 @@ fn try_avx2_unroll(bytecode: &[Opcode]) -> Option<Vec<Opcode>> {
                         // Store en la primera variable float del body
                         let mut target_idx = 0usize;
                         for op in body {
-                            if let StoreIdxFloat(i) = op { target_idx = *i; break; }
+                            if let StoreIdxFloat(i) = op {
+                                target_idx = *i;
+                                break;
+                            }
                             if let StoreIdx(i) = op {
-                                if *i != counter_idx { target_idx = *i; break; }
+                                if *i != counter_idx {
+                                    target_idx = *i;
+                                    break;
+                                }
                             }
                         }
                         if target_idx != 0 || body.iter().any(|op| matches!(op, StoreIdxFloat(0))) {

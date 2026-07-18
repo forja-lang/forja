@@ -3,9 +3,9 @@
 // permitiendo pausa en breakpoints, step over/into/out y
 // extracción de variables del stack/frames.
 
-use std::collections::HashMap;
 use crate::bytecode::Opcode;
-use crate::vm_fast::{ForjaFast, ValorFast, FrmFast, ErrFast, get_small_int_fast};
+use crate::vm_fast::{get_small_int_fast, ErrFast, ForjaFast, FrmFast, ValorFast};
+use std::collections::HashMap;
 
 /// Estado del debugger
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,10 +26,10 @@ pub enum DebugState {
 #[derive(Debug, Clone)]
 pub struct FrameDebug {
     pub id: usize,
-    pub name: String,         // nombre de la función
-    pub line: usize,          // línea actual
-    pub ip: usize,            // instruction pointer actual
-    pub vars: Vec<VarDebug>,  // variables locales
+    pub name: String,        // nombre de la función
+    pub line: usize,         // línea actual
+    pub ip: usize,           // instruction pointer actual
+    pub vars: Vec<VarDebug>, // variables locales
 }
 
 /// Información de una variable para DAP
@@ -88,7 +88,10 @@ impl Debugger {
         self.ip_to_line.clear();
         for (ip, op) in bc.iter().enumerate() {
             if let Opcode::SetLine(line) = op {
-                self.line_to_ip.entry(*line).or_insert_with(Vec::new).push(ip);
+                self.line_to_ip
+                    .entry(*line)
+                    .or_insert_with(Vec::new)
+                    .push(ip);
                 self.ip_to_line.insert(ip, *line);
             }
         }
@@ -115,7 +118,10 @@ impl Debugger {
 
     /// Verificar si estamos en un breakpoint
     pub fn en_breakpoint(&self) -> bool {
-        self.breakpoints.get(&self.current_line).copied().unwrap_or(false)
+        self.breakpoints
+            .get(&self.current_line)
+            .copied()
+            .unwrap_or(false)
     }
 
     /// Continuar ejecución libre (hasta breakpoint o fin)
@@ -180,14 +186,18 @@ impl Debugger {
                         }
                     }
                     DebugState::StepOver => {
-                        if *line != self.last_report_line && self.vm.frame_count <= self.step_over_frame_count {
+                        if *line != self.last_report_line
+                            && self.vm.frame_count <= self.step_over_frame_count
+                        {
                             self.state = DebugState::Paused;
                             self.last_report_line = *line;
                             return Ok(DebugEvent::StepCompletado { line: *line });
                         }
                     }
                     DebugState::StepOut => {
-                        if *line != self.last_report_line && self.vm.frame_count < self.step_out_target_frame {
+                        if *line != self.last_report_line
+                            && self.vm.frame_count < self.step_out_target_frame
+                        {
                             self.state = DebugState::Paused;
                             self.last_report_line = *line;
                             return Ok(DebugEvent::StepCompletado { line: *line });
@@ -207,14 +217,18 @@ impl Debugger {
             if self.state == DebugState::StepOut {
                 if self.vm.frame_count < self.step_out_target_frame {
                     self.state = DebugState::Paused;
-                    return Ok(DebugEvent::StepCompletado { line: self.current_line });
+                    return Ok(DebugEvent::StepCompletado {
+                        line: self.current_line,
+                    });
                 }
             }
 
             // Si el state es Running, check breakpoints después de SetLine
             if self.state == DebugState::Running && self.en_breakpoint() && self.current_line > 0 {
                 if let Some(&line) = self.ip_to_line.get(&self.vm.ip) {
-                    if line != self.last_report_line && self.breakpoints.get(&line).copied().unwrap_or(false) {
+                    if line != self.last_report_line
+                        && self.breakpoints.get(&line).copied().unwrap_or(false)
+                    {
                         self.current_line = line;
                         self.state = DebugState::Paused;
                         self.last_report_line = line;
@@ -228,17 +242,36 @@ impl Debugger {
     /// Ejecuta un solo opcode (equivalente a una iteración del loop de ForjaFast::ejecutar)
     fn ejecutar_un_paso(&mut self, op: &Opcode) -> Result<(), ErrFast> {
         match op {
-            Opcode::PushEntero(n) => { self.vm.push_valor(get_small_int_fast(*n)); self.vm.ip += 1; }
-            Opcode::PushDecimal(d) => { self.vm.push_valor(ValorFast::flotante(*d)); self.vm.ip += 1; }
+            Opcode::PushEntero(n) => {
+                self.vm.push_valor(get_small_int_fast(*n));
+                self.vm.ip += 1;
+            }
+            Opcode::PushDecimal(d) => {
+                self.vm.push_valor(ValorFast::flotante(*d));
+                self.vm.ip += 1;
+            }
             Opcode::PushTexto(s) => {
                 let idx = self.vm.alloc_str(s.clone());
                 self.vm.push_valor(ValorFast::texto(idx));
                 self.vm.ip += 1;
             }
-            Opcode::PushBooleano(b) => { self.vm.push_valor(ValorFast::booleano(*b)); self.vm.ip += 1; }
-            Opcode::PushNulo => { self.vm.push_valor(ValorFast::nulo()); self.vm.ip += 1; }
-            Opcode::Pop => { self.vm.pop_valor()?; self.vm.ip += 1; }
-            Opcode::Dup => { let v = *self.vm.peek_valor(0); self.vm.push_valor(v); self.vm.ip += 1; }
+            Opcode::PushBooleano(b) => {
+                self.vm.push_valor(ValorFast::booleano(*b));
+                self.vm.ip += 1;
+            }
+            Opcode::PushNulo => {
+                self.vm.push_valor(ValorFast::nulo());
+                self.vm.ip += 1;
+            }
+            Opcode::Pop => {
+                self.vm.pop_valor()?;
+                self.vm.ip += 1;
+            }
+            Opcode::Dup => {
+                let v = *self.vm.peek_valor(0);
+                self.vm.push_valor(v);
+                self.vm.ip += 1;
+            }
             Opcode::LoadIdx(idx) => {
                 let actual = self.vm.base_ptr + idx;
                 if actual < self.vm.flat_vars.len() {
@@ -264,11 +297,25 @@ impl Debugger {
                 }
                 self.vm.ip += 1;
             }
-            Opcode::Add => { self.vm.ip += 1; ejecutar_add(self)?; }
-            Opcode::Sub => { self.vm.ip += 1; ejecutar_sub(self)?; }
-            Opcode::Mul => { self.vm.ip += 1; ejecutar_mul(self)?; }
-            Opcode::Div => { self.vm.ip += 1; ejecutar_div(self)?; }
-            Opcode::Jump(target) => { self.vm.ip = *target; }
+            Opcode::Add => {
+                self.vm.ip += 1;
+                ejecutar_add(self)?;
+            }
+            Opcode::Sub => {
+                self.vm.ip += 1;
+                ejecutar_sub(self)?;
+            }
+            Opcode::Mul => {
+                self.vm.ip += 1;
+                ejecutar_mul(self)?;
+            }
+            Opcode::Div => {
+                self.vm.ip += 1;
+                ejecutar_div(self)?;
+            }
+            Opcode::Jump(target) => {
+                self.vm.ip = *target;
+            }
             Opcode::JumpSiFalso(target) => {
                 let cond = self.vm.pop_valor()?;
                 if !cond.es_verdadero() {
@@ -277,8 +324,12 @@ impl Debugger {
                     self.vm.ip += 1;
                 }
             }
-            Opcode::Label(_) => { self.vm.ip += 1; }
-            Opcode::Halt => { self.vm.ip = self.vm.bytecode.len(); }
+            Opcode::Label(_) => {
+                self.vm.ip += 1;
+            }
+            Opcode::Halt => {
+                self.vm.ip = self.vm.bytecode.len();
+            }
             Opcode::Call(nombre, nargs) => {
                 self.vm.ip += 1;
                 let n = *nargs;
@@ -296,11 +347,26 @@ impl Debugger {
                 self.vm.output.push(s);
                 self.vm.ip += 1;
             }
-            Opcode::Igual => { self.vm.ip += 1; ejecutar_igual(self)?; }
-            Opcode::Menor => { self.vm.ip += 1; ejecutar_menor(self)?; }
-            Opcode::Mayor => { self.vm.ip += 1; ejecutar_mayor(self)?; }
-            Opcode::Y => { self.vm.ip += 1; ejecutar_y(self)?; }
-            Opcode::O => { self.vm.ip += 1; ejecutar_o(self)?; }
+            Opcode::Igual => {
+                self.vm.ip += 1;
+                ejecutar_igual(self)?;
+            }
+            Opcode::Menor => {
+                self.vm.ip += 1;
+                ejecutar_menor(self)?;
+            }
+            Opcode::Mayor => {
+                self.vm.ip += 1;
+                ejecutar_mayor(self)?;
+            }
+            Opcode::Y => {
+                self.vm.ip += 1;
+                ejecutar_y(self)?;
+            }
+            Opcode::O => {
+                self.vm.ip += 1;
+                ejecutar_o(self)?;
+            }
             Opcode::No => {
                 let v = self.vm.pop_valor()?;
                 self.vm.push_valor(ValorFast::booleano(!v.es_verdadero()));
@@ -447,10 +513,19 @@ fn ejecutar_add(dbg: &mut Debugger) -> Result<(), ErrFast> {
     let a_int = a.es_entero();
     let b_int = b.es_entero();
     if a_int && b_int {
-        dbg.vm.push_valor(get_small_int_fast((a.a_entero() + b.a_entero()) as i64));
+        dbg.vm
+            .push_valor(get_small_int_fast((a.a_entero() + b.a_entero()) as i64));
     } else {
-        let af = if a_int { a.a_entero() as f64 } else { a.a_flotante() };
-        let bf = if b_int { b.a_entero() as f64 } else { b.a_flotante() };
+        let af = if a_int {
+            a.a_entero() as f64
+        } else {
+            a.a_flotante()
+        };
+        let bf = if b_int {
+            b.a_entero() as f64
+        } else {
+            b.a_flotante()
+        };
         dbg.vm.push_valor(ValorFast::flotante(af + bf));
     }
     Ok(())
@@ -462,10 +537,19 @@ fn ejecutar_sub(dbg: &mut Debugger) -> Result<(), ErrFast> {
     let a_int = a.es_entero();
     let b_int = b.es_entero();
     if a_int && b_int {
-        dbg.vm.push_valor(get_small_int_fast((a.a_entero() - b.a_entero()) as i64));
+        dbg.vm
+            .push_valor(get_small_int_fast((a.a_entero() - b.a_entero()) as i64));
     } else {
-        let af = if a_int { a.a_entero() as f64 } else { a.a_flotante() };
-        let bf = if b_int { b.a_entero() as f64 } else { b.a_flotante() };
+        let af = if a_int {
+            a.a_entero() as f64
+        } else {
+            a.a_flotante()
+        };
+        let bf = if b_int {
+            b.a_entero() as f64
+        } else {
+            b.a_flotante()
+        };
         dbg.vm.push_valor(ValorFast::flotante(af - bf));
     }
     Ok(())
@@ -477,10 +561,19 @@ fn ejecutar_mul(dbg: &mut Debugger) -> Result<(), ErrFast> {
     let a_int = a.es_entero();
     let b_int = b.es_entero();
     if a_int && b_int {
-        dbg.vm.push_valor(get_small_int_fast((a.a_entero() * b.a_entero()) as i64));
+        dbg.vm
+            .push_valor(get_small_int_fast((a.a_entero() * b.a_entero()) as i64));
     } else {
-        let af = if a_int { a.a_entero() as f64 } else { a.a_flotante() };
-        let bf = if b_int { b.a_entero() as f64 } else { b.a_flotante() };
+        let af = if a_int {
+            a.a_entero() as f64
+        } else {
+            a.a_flotante()
+        };
+        let bf = if b_int {
+            b.a_entero() as f64
+        } else {
+            b.a_flotante()
+        };
         dbg.vm.push_valor(ValorFast::flotante(af * bf));
     }
     Ok(())
@@ -492,10 +585,19 @@ fn ejecutar_div(dbg: &mut Debugger) -> Result<(), ErrFast> {
     let a_int = a.es_entero();
     let b_int = b.es_entero();
     if a_int && b_int && b.a_entero() != 0 {
-        dbg.vm.push_valor(get_small_int_fast((a.a_entero() / b.a_entero()) as i64));
+        dbg.vm
+            .push_valor(get_small_int_fast((a.a_entero() / b.a_entero()) as i64));
     } else {
-        let af = if a_int { a.a_entero() as f64 } else { a.a_flotante() };
-        let bf = if b_int { b.a_entero() as f64 } else { b.a_flotante() };
+        let af = if a_int {
+            a.a_entero() as f64
+        } else {
+            a.a_flotante()
+        };
+        let bf = if b_int {
+            b.a_entero() as f64
+        } else {
+            b.a_flotante()
+        };
         dbg.vm.push_valor(ValorFast::flotante(af / bf));
     }
     Ok(())
@@ -507,8 +609,16 @@ fn ejecutar_igual(dbg: &mut Debugger) -> Result<(), ErrFast> {
     let igual = if a.es_entero() && b.es_entero() {
         a.a_entero() == b.a_entero()
     } else {
-        let af = if a.es_entero() { a.a_entero() as f64 } else { a.a_flotante() };
-        let bf = if b.es_entero() { b.a_entero() as f64 } else { b.a_flotante() };
+        let af = if a.es_entero() {
+            a.a_entero() as f64
+        } else {
+            a.a_flotante()
+        };
+        let bf = if b.es_entero() {
+            b.a_entero() as f64
+        } else {
+            b.a_flotante()
+        };
         (af - bf).abs() < 1e-12
     };
     dbg.vm.push_valor(ValorFast::booleano(igual));
@@ -521,8 +631,16 @@ fn ejecutar_menor(dbg: &mut Debugger) -> Result<(), ErrFast> {
     let menor = if a.es_entero() && b.es_entero() {
         a.a_entero() < b.a_entero()
     } else {
-        let af = if a.es_entero() { a.a_entero() as f64 } else { a.a_flotante() };
-        let bf = if b.es_entero() { b.a_entero() as f64 } else { b.a_flotante() };
+        let af = if a.es_entero() {
+            a.a_entero() as f64
+        } else {
+            a.a_flotante()
+        };
+        let bf = if b.es_entero() {
+            b.a_entero() as f64
+        } else {
+            b.a_flotante()
+        };
         af < bf
     };
     dbg.vm.push_valor(ValorFast::booleano(menor));
@@ -535,8 +653,16 @@ fn ejecutar_mayor(dbg: &mut Debugger) -> Result<(), ErrFast> {
     let mayor = if a.es_entero() && b.es_entero() {
         a.a_entero() > b.a_entero()
     } else {
-        let af = if a.es_entero() { a.a_entero() as f64 } else { a.a_flotante() };
-        let bf = if b.es_entero() { b.a_entero() as f64 } else { b.a_flotante() };
+        let af = if a.es_entero() {
+            a.a_entero() as f64
+        } else {
+            a.a_flotante()
+        };
+        let bf = if b.es_entero() {
+            b.a_entero() as f64
+        } else {
+            b.a_flotante()
+        };
         af > bf
     };
     dbg.vm.push_valor(ValorFast::booleano(mayor));
@@ -546,14 +672,16 @@ fn ejecutar_mayor(dbg: &mut Debugger) -> Result<(), ErrFast> {
 fn ejecutar_y(dbg: &mut Debugger) -> Result<(), ErrFast> {
     let b = dbg.vm.pop_valor()?;
     let a = dbg.vm.pop_valor()?;
-    dbg.vm.push_valor(ValorFast::booleano(a.es_verdadero() && b.es_verdadero()));
+    dbg.vm
+        .push_valor(ValorFast::booleano(a.es_verdadero() && b.es_verdadero()));
     Ok(())
 }
 
 fn ejecutar_o(dbg: &mut Debugger) -> Result<(), ErrFast> {
     let b = dbg.vm.pop_valor()?;
     let a = dbg.vm.pop_valor()?;
-    dbg.vm.push_valor(ValorFast::booleano(a.es_verdadero() || b.es_verdadero()));
+    dbg.vm
+        .push_valor(ValorFast::booleano(a.es_verdadero() || b.es_verdadero()));
     Ok(())
 }
 
@@ -572,7 +700,9 @@ fn ejecutar_call_debug(dbg: &mut Debugger, nombre: &str, nargs: usize) -> Result
 
         let max_frames = dbg.vm.frame_buffer.len();
         if dbg.vm.frame_count >= max_frames {
-            return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
+            return Err(ErrFast::StackUnder(
+                "Stack overflow: demasiadas llamadas anidadas".into(),
+            ));
         }
 
         // Guardar frame actual
@@ -597,7 +727,9 @@ fn ejecutar_call_debug(dbg: &mut Debugger, nombre: &str, nargs: usize) -> Result
 
         // Reservar espacio para todas las variables de la función
         let vars_size = entry.vars_size.max(nargs);
-        dbg.vm.flat_vars.resize(dbg.vm.base_ptr + vars_size, ValorFast::nulo());
+        dbg.vm
+            .flat_vars
+            .resize(dbg.vm.base_ptr + vars_size, ValorFast::nulo());
 
         // Copiar args a flat_vars en índices 0, 1, 2...
         for (i, arg) in args.into_iter().enumerate() {
@@ -609,7 +741,10 @@ fn ejecutar_call_debug(dbg: &mut Debugger, nombre: &str, nargs: usize) -> Result
 
         Ok(())
     } else {
-        Err(ErrFast::FnNoDef(format!("función '{}' no encontrada", nombre)))
+        Err(ErrFast::FnNoDef(format!(
+            "función '{}' no encontrada",
+            nombre
+        )))
     }
 }
 

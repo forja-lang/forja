@@ -4,13 +4,11 @@
 // La VM Forja es single-threaded para ejecución de scripts,
 // por lo que el Mutex nunca tiene contención real.
 
-
 use crate::native_registry::{
-    extraer_indice_socket, obtener_entero, obtener_texto,
-    NativeRegistry,
+    extraer_indice_socket, obtener_entero, obtener_texto, NativeRegistry,
 };
-use crate::vm_fast::{ErrFast, ValorFast};
 use crate::vm_fast::ForjaFast;
+use crate::vm_fast::{ErrFast, ValorFast};
 use rustls::pki_types::ServerName;
 use std::io::{Read, Write};
 use std::sync::Mutex;
@@ -61,19 +59,13 @@ fn native_tls_conectar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
                     ErrFast::TipoInv(format!("error_io: no se pudo clonar stream: {}", e))
                 })?
             }
-            None => {
-                return Err(ErrFast::TipoInv(
-                    "error_interno: socket no es TCP".into(),
-                ))
-            }
+            None => return Err(ErrFast::TipoInv("error_interno: socket no es TCP".into())),
         }
     };
 
     // Configurar cliente TLS con root certs de webpki
     let mut root_store = rustls::RootCertStore::empty();
-    root_store.extend(
-        webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
-    );
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let config = rustls::ClientConfig::builder()
         .with_root_certificates(root_store)
         .with_no_client_auth();
@@ -90,9 +82,7 @@ fn native_tls_conectar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
     // Almacenar en heap global
     let mut heap = TLS_HEAP.lock().unwrap();
     let idx = heap.len() as u32;
-    heap.push(Some(ConexionTls {
-        stream: stream_tls,
-    }));
+    heap.push(Some(ConexionTls { stream: stream_tls }));
 
     Ok(ValorFast::entero(idx as i64))
 }

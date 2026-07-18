@@ -1,8 +1,8 @@
-use crate::bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
+use crate::bytecode::{fusionar_opcodes, optimizar_indices, BytecodeGenerator};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::symbol_table::SymId;
-use rustyline::{Editor, history::FileHistory};
+use rustyline::{history::FileHistory, Editor};
 
 /// REPL interactivo de Forja con historial y autocompletado
 pub struct REPL {
@@ -48,7 +48,11 @@ impl REPL {
             _ => "ForjaFast 🏆",
         };
 
-        println!("🔨 Forja v{} — Modo interactivo ({})", env!("CARGO_PKG_VERSION"), modo_desc);
+        println!(
+            "🔨 Forja v{} — Modo interactivo ({})",
+            env!("CARGO_PKG_VERSION"),
+            modo_desc
+        );
         println!("    Escribí 'salir' para terminar  ·  ↑/↓ historial  ·  Tab autocompletado");
         println!("    'variables' para ver estado  ·  'limpiar' para reiniciar  ·  '--vm <modo>' para cambiar VM");
         println!("    ':reload' para recargar funciones (hot reload Fase 1)");
@@ -95,12 +99,15 @@ impl REPL {
                             if !modo.is_empty() {
                                 self.vm_mode = modo.to_string();
                                 self.source_acumulado.clear();
-                                println!("✅ VM cambiada a: {}", match modo {
-                                    "fast" => "ForjaFast 🏆",
-                                    "vm" => "VM Original",
-                                    "jit" => "Forja JIT",
-                                    _ => modo,
-                                });
+                                println!(
+                                    "✅ VM cambiada a: {}",
+                                    match modo {
+                                        "fast" => "ForjaFast 🏆",
+                                        "vm" => "VM Original",
+                                        "jit" => "Forja JIT",
+                                        _ => modo,
+                                    }
+                                );
                             }
                             continue;
                         }
@@ -126,24 +133,35 @@ impl REPL {
                                         let mut lexer = Lexer::new(&full_source);
                                         let tokens = match lexer.tokenize() {
                                             Ok(t) => t,
-                                            Err(e) => { eprintln!("❌ Error de lexer: {}", e[0]); continue; }
+                                            Err(e) => {
+                                                eprintln!("❌ Error de lexer: {}", e[0]);
+                                                continue;
+                                            }
                                         };
                                         let mut parser = Parser::new(tokens);
                                         let programa = match parser.parse() {
                                             Ok(p) => p,
-                                            Err(e) => { eprintln!("❌ Error de parser: {}", e[0]); continue; }
+                                            Err(e) => {
+                                                eprintln!("❌ Error de parser: {}", e[0]);
+                                                continue;
+                                            }
                                         };
                                         let mut gen = BytecodeGenerator::new();
                                         let bytecode = match gen.generar(&programa) {
                                             Ok(b) => b,
-                                            Err(_) => { eprintln!("❌ Error generando bytecode"); continue; }
+                                            Err(_) => {
+                                                eprintln!("❌ Error generando bytecode");
+                                                continue;
+                                            }
                                         };
                                         let bytecode = optimizar_indices(&bytecode);
                                         let bytecode = fusionar_opcodes(&bytecode);
 
                                         vm.cargar_bytecode(bytecode);
-                                        println!("♻️  Hot reload completado — {} funciones recargadas",
-                                            vm.function_table.entries.len());
+                                        println!(
+                                            "♻️  Hot reload completado — {} funciones recargadas",
+                                            vm.function_table.entries.len()
+                                        );
                                     }
                                 } else {
                                     println!("⚠️  No hay VM activa. Ejecutá código primero.");
@@ -153,9 +171,10 @@ impl REPL {
                                 let nombre_modulo = arg.to_string();
                                 if let Some(ref mut vm) = self.vm_fast {
                                     // Construir SymId con el mismo hash que module.rs
-                                    let module_sym = SymId(
-                                        nombre_modulo.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32))
-                                    );
+                                    let module_sym =
+                                        SymId(nombre_modulo.bytes().fold(0u32, |acc, b| {
+                                            acc.wrapping_mul(31).wrapping_add(b as u32)
+                                        }));
                                     if !vm.module_registry.contains_key(&module_sym) {
                                         eprintln!("❌ Módulo '{}' no está registrado en la VM. Usá 'recargar_todo()' desde Forja.", nombre_modulo);
                                         continue;
@@ -163,24 +182,39 @@ impl REPL {
                                     // Recargar desde disco
                                     let programa = match vm.module_resolver.recargar(module_sym) {
                                         Ok(p) => p,
-                                        Err(e) => { eprintln!("❌ Error recargando módulo: {}", e[0]); continue; }
+                                        Err(e) => {
+                                            eprintln!("❌ Error recargando módulo: {}", e[0]);
+                                            continue;
+                                        }
                                     };
                                     // Recompilar a ModuleBytecode
                                     let mut gen = BytecodeGenerator::new();
-                                    let module_bc = match gen.generar_para_modulo(&programa, module_sym) {
-                                        Ok(mbc) => mbc,
-                                        Err(_) => { eprintln!("❌ Error generando bytecode del módulo"); continue; }
-                                    };
+                                    let module_bc =
+                                        match gen.generar_para_modulo(&programa, module_sym) {
+                                            Ok(mbc) => mbc,
+                                            Err(_) => {
+                                                eprintln!("❌ Error generando bytecode del módulo");
+                                                continue;
+                                            }
+                                        };
                                     // Obtener versión desde el registro
-                                    let version = vm.module_registry.get(&module_sym)
+                                    let version = vm
+                                        .module_registry
+                                        .get(&module_sym)
                                         .map(|info| info.version)
                                         .unwrap_or(0);
                                     // Hacer hot-swap en la VM
                                     match vm.hot_swap_module(module_sym, &module_bc) {
                                         Ok(()) => {
-                                            println!("♻️  Módulo '{}' recargado (v{})", nombre_modulo, version + 1);
+                                            println!(
+                                                "♻️  Módulo '{}' recargado (v{})",
+                                                nombre_modulo,
+                                                version + 1
+                                            );
                                         }
-                                        Err(e) => { eprintln!("❌ Error en hot-swap: {}", e); }
+                                        Err(e) => {
+                                            eprintln!("❌ Error en hot-swap: {}", e);
+                                        }
                                     }
                                 } else {
                                     println!("⚠️  No hay VM activa. Ejecutá código primero.");
@@ -236,7 +270,9 @@ impl REPL {
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
         let mut gen = BytecodeGenerator::new();
-        let bytecode = gen.generar(&programa).map_err(|_| "Error generando bytecode".to_string())?;
+        let bytecode = gen
+            .generar(&programa)
+            .map_err(|_| "Error generando bytecode".to_string())?;
         let bytecode = optimizar_indices(&bytecode);
         let bytecode = fusionar_opcodes(&bytecode);
 
@@ -252,7 +288,9 @@ impl REPL {
                 vm.cargar_bytecode(bytecode);
                 vm.ejecutar().map_err(|e| format!("{}", e))?;
                 let out = vm.obtener_output().to_vec();
-                for line in out { println!("{}", line); }
+                for line in out {
+                    println!("{}", line);
+                }
             }
             _ => {
                 let mut vm = crate::vm::ForjaVM::new();
@@ -260,7 +298,9 @@ impl REPL {
                 vm.reset();
                 vm.ejecutar().map_err(|e| format!("{}", e))?;
                 let out = vm.obtener_output().to_vec();
-                for line in out { println!("{}", line); }
+                for line in out {
+                    println!("{}", line);
+                }
             }
         }
         Ok(source.to_string())

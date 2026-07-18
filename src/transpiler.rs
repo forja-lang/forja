@@ -3,6 +3,9 @@ use crate::ast::*;
 use crate::error::ErrorForja;
 use std::collections::HashMap;
 
+/// Profundidad máxima de recursión para la transpilación.
+/// Previene stack overflow al recorrer ASTs con expresiones muy anidadas.
+const MAX_AST_PROFUNDIDAD: u32 = 10000;
 
 /// Analiza si una variable es realmente mutable (se reasigna) dentro de un conjunto de declaraciones.
 /// Busca declaraciones `Asignacion` o `AsignacionIndex` que modifiquen la variable,
@@ -13,7 +16,11 @@ fn es_variable_mutable(nombre: &str, declaraciones: &[Declaracion], _ambito_actu
             Declaracion::Asignacion { nombre: var, .. } if var == nombre => return true,
             Declaracion::AsignacionIndex { nombre: var, .. } if var == nombre => return true,
             // Buscar en ámbitos anidados (bloques si, mientras, para, repetir)
-            Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
+            Declaracion::Si {
+                bloque_verdadero,
+                bloque_falso,
+                ..
+            } => {
                 if es_variable_mutable(nombre, bloque_verdadero, _ambito_actual + 1) {
                     return true;
                 }
@@ -33,7 +40,9 @@ fn es_variable_mutable(nombre: &str, declaraciones: &[Declaracion], _ambito_actu
                     return true;
                 }
             }
-            Declaracion::Para { bloque, incremento, .. } => {
+            Declaracion::Para {
+                bloque, incremento, ..
+            } => {
                 // El incremento del bucle `para` también es una asignación
                 if let Some(inc) = incremento {
                     if es_variable_mutable(nombre, &[inc.as_ref().clone()], _ambito_actual + 1) {
@@ -61,23 +70,39 @@ fn existe_variable_resultado(declaraciones: &[Declaracion]) -> bool {
     for decl in declaraciones {
         match decl {
             Declaracion::Variable { nombre, .. } if nombre == "resultado" => return true,
-            Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
-                if existe_variable_resultado(bloque_verdadero) { return true; }
+            Declaracion::Si {
+                bloque_verdadero,
+                bloque_falso,
+                ..
+            } => {
+                if existe_variable_resultado(bloque_verdadero) {
+                    return true;
+                }
                 if let Some(bf) = bloque_falso {
-                    if existe_variable_resultado(bf) { return true; }
+                    if existe_variable_resultado(bf) {
+                        return true;
+                    }
                 }
             }
             Declaracion::Mientras { bloque, .. } => {
-                if existe_variable_resultado(bloque) { return true; }
+                if existe_variable_resultado(bloque) {
+                    return true;
+                }
             }
             Declaracion::Cuando { cuerpo, .. } => {
-                if existe_variable_resultado(cuerpo) { return true; }
+                if existe_variable_resultado(cuerpo) {
+                    return true;
+                }
             }
             Declaracion::Para { bloque, .. } => {
-                if existe_variable_resultado(bloque) { return true; }
+                if existe_variable_resultado(bloque) {
+                    return true;
+                }
             }
             Declaracion::Repetir { bloque, .. } => {
-                if existe_variable_resultado(bloque) { return true; }
+                if existe_variable_resultado(bloque) {
+                    return true;
+                }
             }
             _ => {}
         }
@@ -107,13 +132,16 @@ pub struct Transpiler {
     modo_postcondiciones: bool,
     /// Si la función/método actual tiene un parámetro o variable local "resultado"
     tiene_resultado_var: bool,
+    /// Profundidad actual de recursión al transpilar expresiones.
+    /// Previene stack overflow en ASTs con expresiones muy anidadas.
+    profundidad_expresion: u32,
 }
 
 struct ClaseInfo {
     #[allow(dead_code)]
-    campos: Vec<(String, String)>,    // (nombre_campo, tipo)
+    campos: Vec<(String, String)>, // (nombre_campo, tipo)
     #[allow(dead_code)]
-    metodos: Vec<String>,             // nombres de métodos
+    metodos: Vec<String>, // nombres de métodos
     /// Mapa campo -> tipo inferido desde constructor
     tipos_campos: HashMap<String, String>,
     /// Invariantes de clase (Design by Contract)
@@ -167,14 +195,15 @@ impl Transpiler {
             postcondiciones_actuales: Vec::new(),
             modo_postcondiciones: false,
             tiene_resultado_var: false,
+            profundidad_expresion: 0,
         }
     }
 
     /// Indica si el programa usa el paquete GUI
     pub fn usa_gui(&self) -> bool {
-        self.declaraciones_globales.iter().any(|d| {
-            matches!(d, Declaracion::Importar(ruta) if ruta == "gui")
-        })
+        self.declaraciones_globales
+            .iter()
+            .any(|d| matches!(d, Declaracion::Importar(ruta) if ruta == "gui"))
     }
 
     /// Exporta un programa Forja a código Rust (opcional, Forja ya ejecuta directo con VM)
@@ -186,13 +215,19 @@ impl Transpiler {
         self.recolectar_clases(&programa.declaraciones);
 
         // Segunda pasada: generar código
-        self.emit_line("// Código exportado desde Forja (fa) — https://github.com/forja-lang/forja");
-        self.emit_line("// Podés ejecutarlo directo con 'forja ejecutar' sin necesidad de compilar Rust");
+        self.emit_line(
+            "// Código exportado desde Forja (fa) — https://github.com/forja-lang/forja",
+        );
+        self.emit_line(
+            "// Podés ejecutarlo directo con 'forja ejecutar' sin necesidad de compilar Rust",
+        );
         self.emit_line("");
 
         // En Windows, las apps GUI deben usar el subsistema "windows" para no mostrar consola
         if self.usa_gui() {
-            self.emit_line("#![cfg_attr(target_os = \"windows\", windows_subsystem = \"windows\")]");
+            self.emit_line(
+                "#![cfg_attr(target_os = \"windows\", windows_subsystem = \"windows\")]",
+            );
             self.emit_line("");
         }
 
@@ -212,7 +247,9 @@ impl Transpiler {
         }
 
         // Recolectar funciones externas
-        self.funciones_externas = programa.declaraciones.iter()
+        self.funciones_externas = programa
+            .declaraciones
+            .iter()
             .filter(|d| matches!(d, Declaracion::Funcion { externa: true, .. }))
             .filter_map(|d| {
                 if let Declaracion::Funcion { nombre, .. } = d {
@@ -228,14 +265,34 @@ impl Transpiler {
             self.emit_line("extern \"C\" {");
             self.indent();
             for decl in &programa.declaraciones {
-                if let Declaracion::Funcion { nombre, parametros, tipo_retorno, externa: true, .. } = decl {
-                    let params_str: Vec<String> = parametros.iter()
-                        .map(|p| format!("{}: {}", p.nombre, self.tipo_a_rust(p.tipo.as_ref().unwrap_or(&Tipo::Entero))))
+                if let Declaracion::Funcion {
+                    nombre,
+                    parametros,
+                    tipo_retorno,
+                    externa: true,
+                    ..
+                } = decl
+                {
+                    let params_str: Vec<String> = parametros
+                        .iter()
+                        .map(|p| {
+                            format!(
+                                "{}: {}",
+                                p.nombre,
+                                self.tipo_a_rust(p.tipo.as_ref().unwrap_or(&Tipo::Entero))
+                            )
+                        })
                         .collect();
-                    let ret = tipo_retorno.as_ref()
+                    let ret = tipo_retorno
+                        .as_ref()
                         .map(|t| self.tipo_a_rust(t))
                         .unwrap_or_else(|| "()".to_string());
-                    self.emit_line(&format!("fn {}({}) -> {};", nombre, params_str.join(", "), ret));
+                    self.emit_line(&format!(
+                        "fn {}({}) -> {};",
+                        nombre,
+                        params_str.join(", "),
+                        ret
+                    ));
                 }
             }
             self.dedent();
@@ -244,9 +301,10 @@ impl Transpiler {
         }
 
         // Detectar si hay función main o clases para generar el fn main()
-        let tiene_main = programa.declaraciones.iter().any(|d| {
-            matches!(d, Declaracion::Funcion { nombre, .. } if nombre == "main")
-        });
+        let tiene_main = programa
+            .declaraciones
+            .iter()
+            .any(|d| matches!(d, Declaracion::Funcion { nombre, .. } if nombre == "main"));
         let _tiene_clases = !self.clases.is_empty();
 
         // Generar clases como struct + impl
@@ -306,15 +364,21 @@ impl Transpiler {
             self.emit_line("        .find_map(|a| a.strip_prefix(\"--load-state=\"))");
             self.emit_line("        .map(|s| s.to_string());");
             self.emit_line("");
-            self.emit_line("    forja_gui_rt::build_and_run(&PROGRAMA, load_state.as_deref(), None, true)");
+            self.emit_line(
+                "    forja_gui_rt::build_and_run(&PROGRAMA, load_state.as_deref(), None, true)",
+            );
             self.emit_line("}");
             self.emit_line("");
 
             // Android entry point
             self.emit_line("#[cfg(target_os = \"android\")]");
             self.emit_line("#[no_mangle]");
-            self.emit_line("fn android_main(app: winit::platform::android::activity::AndroidApp) {");
-            self.emit_line("    forja_gui_rt::build_and_run_android(&PROGRAMA, None, None, true, app);");
+            self.emit_line(
+                "fn android_main(app: winit::platform::android::activity::AndroidApp) {",
+            );
+            self.emit_line(
+                "    forja_gui_rt::build_and_run_android(&PROGRAMA, None, None, true, app);",
+            );
             self.emit_line("}");
             return Ok(self.output.clone());
         }
@@ -346,7 +410,11 @@ impl Transpiler {
 
     /// Recolecta expresiones Layout recorriendo el AST recursivamente.
     /// Similar a `recolectar_widgets` pero genera `Layout::xxx` en lugar de widgets Xilem.
-    fn recolectar_layouts(&mut self, declaraciones: &[Declaracion], layouts: &mut Vec<Vec<String>>) {
+    fn recolectar_layouts(
+        &mut self,
+        declaraciones: &[Declaracion],
+        layouts: &mut Vec<Vec<String>>,
+    ) {
         for decl in declaraciones {
             match decl {
                 Declaracion::LlamadaFuncion { nombre, argumentos } => {
@@ -364,7 +432,11 @@ impl Transpiler {
                 Declaracion::Funcion { cuerpo, .. } => {
                     self.recolectar_layouts(cuerpo, layouts);
                 }
-                Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
+                Declaracion::Si {
+                    bloque_verdadero,
+                    bloque_falso,
+                    ..
+                } => {
                     self.recolectar_layouts(bloque_verdadero, layouts);
                     if let Some(bf) = bloque_falso {
                         self.recolectar_layouts(bf, layouts);
@@ -790,20 +862,35 @@ impl Transpiler {
             }
             Expresion::LiteralTexto(s) => {
                 let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
-                format!("Layout::Label {{ texto: String::from(\"{}\"), es_variable: false }}", escaped)
+                format!(
+                    "Layout::Label {{ texto: String::from(\"{}\"), es_variable: false }}",
+                    escaped
+                )
             }
             Expresion::LiteralNumero(n) => {
-                format!("Layout::Label {{ texto: String::from(\"{}\"), es_variable: false }}", n)
+                format!(
+                    "Layout::Label {{ texto: String::from(\"{}\"), es_variable: false }}",
+                    n
+                )
             }
             Expresion::LiteralDecimal(f) => {
-                format!("Layout::Label {{ texto: String::from(\"{}\"), es_variable: false }}", f)
+                format!(
+                    "Layout::Label {{ texto: String::from(\"{}\"), es_variable: false }}",
+                    f
+                )
             }
             Expresion::Identificador { nombre: var, .. } => {
-                format!("Layout::Label {{ texto: String::from(\"{}\"), es_variable: true }}", var)
+                format!(
+                    "Layout::Label {{ texto: String::from(\"{}\"), es_variable: true }}",
+                    var
+                )
             }
             _ => {
                 let s = self.transpilar_expresion(expr);
-                format!("Layout::Label {{ texto: String::from(\"(expr: {})\"), es_variable: false }}", s.replace('"', "'"))
+                format!(
+                    "Layout::Label {{ texto: String::from(\"(expr: {})\"), es_variable: false }}",
+                    s.replace('"', "'")
+                )
             }
         }
     }
@@ -834,37 +921,64 @@ impl Transpiler {
                 Declaracion::Expresion(Expresion::Seleccionar { .. }) => return true,
                 Declaracion::Expresion(Expresion::Hilo { .. }) => return true,
                 Declaracion::Expresion(Expresion::CanalNuevo) => return true,
-                Declaracion::Variable { valor: Some(val), .. } => {
-                    if self.expr_tiene_concurrencia(val) { return true; }
-                }
-                Declaracion::AsignacionMultiple { valor, .. } => {
-                    if self.expr_tiene_concurrencia(valor) { return true; }
-                }
-                Declaracion::LlamadaFuncion { nombre, .. } => {
-                    if nombre.contains("enviar") || nombre.contains("recibir") || nombre.contains("unir") {
+                Declaracion::Variable {
+                    valor: Some(val), ..
+                } => {
+                    if self.expr_tiene_concurrencia(val) {
                         return true;
                     }
                 }
-                Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
-                    if self.detectar_concurrencia(bloque_verdadero) { return true; }
+                Declaracion::AsignacionMultiple { valor, .. } => {
+                    if self.expr_tiene_concurrencia(valor) {
+                        return true;
+                    }
+                }
+                Declaracion::LlamadaFuncion { nombre, .. } => {
+                    if nombre.contains("enviar")
+                        || nombre.contains("recibir")
+                        || nombre.contains("unir")
+                    {
+                        return true;
+                    }
+                }
+                Declaracion::Si {
+                    bloque_verdadero,
+                    bloque_falso,
+                    ..
+                } => {
+                    if self.detectar_concurrencia(bloque_verdadero) {
+                        return true;
+                    }
                     if let Some(bf) = bloque_falso {
-                        if self.detectar_concurrencia(bf) { return true; }
+                        if self.detectar_concurrencia(bf) {
+                            return true;
+                        }
                     }
                 }
                 Declaracion::Mientras { bloque, .. } => {
-                    if self.detectar_concurrencia(bloque) { return true; }
+                    if self.detectar_concurrencia(bloque) {
+                        return true;
+                    }
                 }
                 Declaracion::Cuando { cuerpo, .. } => {
-                    if self.detectar_concurrencia(cuerpo) { return true; }
+                    if self.detectar_concurrencia(cuerpo) {
+                        return true;
+                    }
                 }
                 Declaracion::Para { bloque, .. } => {
-                    if self.detectar_concurrencia(bloque) { return true; }
+                    if self.detectar_concurrencia(bloque) {
+                        return true;
+                    }
                 }
                 Declaracion::Repetir { bloque, .. } => {
-                    if self.detectar_concurrencia(bloque) { return true; }
+                    if self.detectar_concurrencia(bloque) {
+                        return true;
+                    }
                 }
                 Declaracion::Funcion { cuerpo, .. } => {
-                    if self.detectar_concurrencia(cuerpo) { return true; }
+                    if self.detectar_concurrencia(cuerpo) {
+                        return true;
+                    }
                 }
                 _ => {}
             }
@@ -886,18 +1000,36 @@ impl Transpiler {
 
     fn recolectar_clases(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
-            if let Declaracion::Clase { nombre, campos, metodos, invariantes, .. } = decl {
+            if let Declaracion::Clase {
+                nombre,
+                campos,
+                metodos,
+                invariantes,
+                ..
+            } = decl
+            {
                 let mut tipos_campos: HashMap<String, String> = HashMap::new();
 
                 // Escanear constructores para inferir tipos de campos
                 for metodo in metodos {
                     if metodo.nombre == "nuevo" {
                         for decl_cuerpo in &metodo.cuerpo {
-                            if let Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } = decl_cuerpo {
+                            if let Declaracion::AsignacionMiembro {
+                                objeto,
+                                miembro,
+                                valor,
+                                ..
+                            } = decl_cuerpo
+                            {
                                 // este.campo = expr → inferir tipo
-                                if let Expresion::Identificador { nombre: ref nombre_self, .. } = objeto.as_ref() {
+                                if let Expresion::Identificador {
+                                    nombre: ref nombre_self,
+                                    ..
+                                } = objeto.as_ref()
+                                {
                                     if nombre_self == "self" {
-                                        let tipo_inferido = self.inferir_tipo_expr(valor, &metodo.parametros);
+                                        let tipo_inferido =
+                                            self.inferir_tipo_expr(valor, &metodo.parametros);
                                         tipos_campos.insert(miembro.clone(), tipo_inferido);
                                     }
                                 }
@@ -909,15 +1041,15 @@ impl Transpiler {
                 let campos_info: Vec<(String, String)> = campos
                     .iter()
                     .map(|c| {
-                        let tipo = tipos_campos.get(&c.nombre).cloned().unwrap_or_else(|| "String".to_string());
+                        let tipo = tipos_campos
+                            .get(&c.nombre)
+                            .cloned()
+                            .unwrap_or_else(|| "String".to_string());
                         (c.nombre.clone(), tipo)
                     })
                     .collect();
 
-                let metodos_info: Vec<String> = metodos
-                    .iter()
-                    .map(|m| m.nombre.clone())
-                    .collect();
+                let metodos_info: Vec<String> = metodos.iter().map(|m| m.nombre.clone()).collect();
 
                 self.clases.insert(
                     nombre.clone(),
@@ -950,7 +1082,11 @@ impl Transpiler {
                                 Tipo::Entero => "i64".to_string(),
                                 Tipo::Decimal => "f64".to_string(),
                                 Tipo::Texto => {
-                                    if p.prestado { "&str".to_string() } else { "String".to_string() }
+                                    if p.prestado {
+                                        "&str".to_string()
+                                    } else {
+                                        "String".to_string()
+                                    }
                                 }
                                 Tipo::Booleano => "bool".to_string(),
                                 Tipo::Nulo => "()".to_string(),
@@ -969,7 +1105,7 @@ impl Transpiler {
                 // Si es un literal conocido (verdadero/falso)
                 match nombre.as_str() {
                     "verdadero" | "falso" => "bool".to_string(),
-                    _ => "String".to_string() // default
+                    _ => "String".to_string(), // default
                 }
             }
             Expresion::Binaria { izquierda, .. } => {
@@ -977,20 +1113,27 @@ impl Transpiler {
                 self.inferir_tipo_expr(izquierda, params)
             }
             Expresion::Unaria { expr: e, .. } => self.inferir_tipo_expr(e, params),
-            _ => "String".to_string()
+            _ => "String".to_string(),
         }
     }
 
     fn generar_clases(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
-            if let Declaracion::Clase { nombre, parametros_tipo, campos, metodos, atributos, .. } = decl {
+            if let Declaracion::Clase {
+                nombre,
+                parametros_tipo,
+                campos,
+                metodos,
+                atributos,
+                ..
+            } = decl
+            {
                 // Generar parámetros genéricos si existen
                 let gen_params_str = if parametros_tipo.is_empty() {
                     String::new()
                 } else {
-                    let gen_names: Vec<String> = parametros_tipo.iter()
-                        .map(|p| p.nombre.clone())
-                        .collect();
+                    let gen_names: Vec<String> =
+                        parametros_tipo.iter().map(|p| p.nombre.clone()).collect();
                     format!("<{}>", gen_names.join(", "))
                 };
 
@@ -1020,9 +1163,8 @@ impl Transpiler {
                 if parametros_tipo.is_empty() {
                     self.emit_line(&format!("impl {} {{", nombre));
                 } else {
-                    let gen_names: Vec<String> = parametros_tipo.iter()
-                        .map(|p| p.nombre.clone())
-                        .collect();
+                    let gen_names: Vec<String> =
+                        parametros_tipo.iter().map(|p| p.nombre.clone()).collect();
                     let gen_params = format!("<{}>", gen_names.join(", "));
                     self.emit_line(&format!("impl{} {}{} {{", gen_params, nombre, gen_params));
                 }
@@ -1072,10 +1214,7 @@ impl Transpiler {
                 })
                 .collect();
 
-            self.emit_line(&format!(
-                "fn nuevo({}) -> Self {{",
-                params.join(", ")
-            ));
+            self.emit_line(&format!("fn nuevo({}) -> Self {{", params.join(", ")));
             self.indent();
 
             // Generar inicialización de campos basada en el cuerpo del constructor
@@ -1084,8 +1223,18 @@ impl Transpiler {
                 .cuerpo
                 .iter()
                 .filter_map(|decl| {
-                    if let Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } = decl {
-                        if let Expresion::Identificador { nombre: ref nombre_self, .. } = objeto.as_ref() {
+                    if let Declaracion::AsignacionMiembro {
+                        objeto,
+                        miembro,
+                        valor,
+                        ..
+                    } = decl
+                    {
+                        if let Expresion::Identificador {
+                            nombre: ref nombre_self,
+                            ..
+                        } = objeto.as_ref()
+                        {
                             if nombre_self == "self" {
                                 // El valor puede ser un identificador (param) o una expresión
                                 let val_str = match valor.as_ref() {
@@ -1103,10 +1252,7 @@ impl Transpiler {
             if campos_inicializar.is_empty() {
                 self.emit_line(&format!("{} {{ }}", nombre_clase));
             } else {
-                self.emit_line(&format!(
-                    "{} {{",
-                    nombre_clase
-                ));
+                self.emit_line(&format!("{} {{", nombre_clase));
                 self.indent();
                 for (campo, valor) in &campos_inicializar {
                     self.emit_line(&format!("{}: {},", campo, valor));
@@ -1140,7 +1286,10 @@ impl Transpiler {
             let mut sig = format!("fn {}(", metodo.nombre);
 
             // Verificar si el primer parámetro ya es self
-            let tiene_self = metodo.parametros.first().map_or(false, |p| p.nombre == "self");
+            let tiene_self = metodo
+                .parametros
+                .first()
+                .map_or(false, |p| p.nombre == "self");
             if !tiene_self {
                 sig.push_str("&self");
                 if !params.is_empty() {
@@ -1162,14 +1311,19 @@ impl Transpiler {
             self.indent();
 
             // ─── Invariantes de clase (al inicio del método) ─────────
-            let invariantes = self.clases.get(nombre_clase)
+            let invariantes = self
+                .clases
+                .get(nombre_clase)
                 .map(|info| info.invariantes.clone())
                 .unwrap_or_default();
             if !invariantes.is_empty() {
                 self.emit_line("// ═══ Invariantes ═══");
                 for c in &invariantes {
                     let cond = self.transpilar_expresion(&c.condicion);
-                    let msg = c.mensaje.clone().unwrap_or_else(|| "Invariante falló".to_string());
+                    let msg = c
+                        .mensaje
+                        .clone()
+                        .unwrap_or_else(|| "Invariante falló".to_string());
                     self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
                 }
             }
@@ -1179,7 +1333,10 @@ impl Transpiler {
                 self.emit_line("// ═══ Precondiciones ═══");
                 for c in &metodo.precondiciones {
                     let cond = self.transpilar_expresion(&c.condicion);
-                    let msg = c.mensaje.clone().unwrap_or_else(|| "Precondición falló".to_string());
+                    let msg = c
+                        .mensaje
+                        .clone()
+                        .unwrap_or_else(|| "Precondición falló".to_string());
                     self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
                 }
             }
@@ -1201,7 +1358,8 @@ impl Transpiler {
                 self.modo_postcondiciones = true;
             }
             let prev_tiene_resultado = self.tiene_resultado_var;
-            self.tiene_resultado_var = metodo.parametros.iter().any(|p| p.nombre == "resultado") || existe_variable_resultado(&metodo.cuerpo);
+            self.tiene_resultado_var = metodo.parametros.iter().any(|p| p.nombre == "resultado")
+                || existe_variable_resultado(&metodo.cuerpo);
 
             for decl in &metodo.cuerpo {
                 self.transpilar_declaracion(decl);
@@ -1214,7 +1372,10 @@ impl Transpiler {
                 self.emit_line("// ═══ Invariantes ═══");
                 for c in &invariantes {
                     let cond = self.transpilar_expresion(&c.condicion);
-                    let msg = c.mensaje.clone().unwrap_or_else(|| "Invariante falló".to_string());
+                    let msg = c
+                        .mensaje
+                        .clone()
+                        .unwrap_or_else(|| "Invariante falló".to_string());
                     self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
                 }
             }
@@ -1236,7 +1397,11 @@ impl Transpiler {
                 Tipo::Entero => "i64".to_string(),
                 Tipo::Decimal => "f64".to_string(),
                 Tipo::Texto => {
-                    if param.prestado { "&str".to_string() } else { "String".to_string() }
+                    if param.prestado {
+                        "&str".to_string()
+                    } else {
+                        "String".to_string()
+                    }
                 }
                 Tipo::Booleano => "bool".to_string(),
                 Tipo::Nulo => "()".to_string(),
@@ -1266,7 +1431,10 @@ impl Transpiler {
     /// Retorna Some(Tipo) si encuentra una declaración `retornar` con valor.
     fn inferir_tipo_retorno(&self, cuerpo: &[Declaracion]) -> Option<Tipo> {
         for decl in cuerpo {
-            if let Declaracion::Retornar { valor: Some(val), .. } = decl {
+            if let Declaracion::Retornar {
+                valor: Some(val), ..
+            } = decl
+            {
                 // Inferir tipo del valor retornado
                 let tipo = match val {
                     Expresion::LiteralNumero(_) => Some(Tipo::Entero),
@@ -1294,17 +1462,30 @@ impl Transpiler {
                 return tipo;
             }
             // Buscar recursivamente en bloques
-            if let Declaracion::Si { bloque_verdadero, bloque_falso, .. } = decl {
-                if let Some(t) = self.inferir_tipo_retorno(bloque_verdadero) { return Some(t); }
+            if let Declaracion::Si {
+                bloque_verdadero,
+                bloque_falso,
+                ..
+            } = decl
+            {
+                if let Some(t) = self.inferir_tipo_retorno(bloque_verdadero) {
+                    return Some(t);
+                }
                 if let Some(bf) = bloque_falso {
-                    if let Some(t) = self.inferir_tipo_retorno(bf) { return Some(t); }
+                    if let Some(t) = self.inferir_tipo_retorno(bf) {
+                        return Some(t);
+                    }
                 }
             }
             if let Declaracion::Mientras { bloque, .. } = decl {
-                if let Some(t) = self.inferir_tipo_retorno(bloque) { return Some(t); }
+                if let Some(t) = self.inferir_tipo_retorno(bloque) {
+                    return Some(t);
+                }
             }
             if let Declaracion::Cuando { cuerpo, .. } = decl {
-                if let Some(t) = self.inferir_tipo_retorno(cuerpo) { return Some(t); }
+                if let Some(t) = self.inferir_tipo_retorno(cuerpo) {
+                    return Some(t);
+                }
             }
         }
         None
@@ -1312,7 +1493,11 @@ impl Transpiler {
 
     /// Escanea el cuerpo de una función para inferir tipos de parámetros no anotados.
     /// Retorna un mapa: nombre_del_parametro -> tipo_rust_inferido
-    fn inferir_tipos_desde_cuerpo(&self, cuerpo: &[Declaracion], params: &[Parametro]) -> std::collections::HashMap<String, String> {
+    fn inferir_tipos_desde_cuerpo(
+        &self,
+        cuerpo: &[Declaracion],
+        params: &[Parametro],
+    ) -> std::collections::HashMap<String, String> {
         let mut tipos: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
         // Inicializar con i64 por defecto para parámetros sin tipo
@@ -1329,53 +1514,96 @@ impl Transpiler {
         tipos
     }
 
-    fn analizar_declaracion_para_tipos(&self, decl: &Declaracion, tipos: &mut std::collections::HashMap<String, String>) {
+    fn analizar_declaracion_para_tipos(
+        &self,
+        decl: &Declaracion,
+        tipos: &mut std::collections::HashMap<String, String>,
+    ) {
         match decl {
-            Declaracion::Variable { valor: Some(val), .. } => {
+            Declaracion::Variable {
+                valor: Some(val), ..
+            } => {
                 self.analizar_expr_para_tipos(val, tipos);
             }
             Declaracion::Asignacion { valor, .. } => {
                 self.analizar_expr_para_tipos(valor, tipos);
             }
-            Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+            Declaracion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
                 self.analizar_expr_para_tipos(condicion, tipos);
-                for d in bloque_verdadero { self.analizar_declaracion_para_tipos(d, tipos); }
+                for d in bloque_verdadero {
+                    self.analizar_declaracion_para_tipos(d, tipos);
+                }
                 if let Some(bf) = bloque_falso {
-                    for d in bf { self.analizar_declaracion_para_tipos(d, tipos); }
+                    for d in bf {
+                        self.analizar_declaracion_para_tipos(d, tipos);
+                    }
                 }
             }
             Declaracion::Mientras { condicion, bloque } => {
                 self.analizar_expr_para_tipos(condicion, tipos);
-                for d in bloque { self.analizar_declaracion_para_tipos(d, tipos); }
+                for d in bloque {
+                    self.analizar_declaracion_para_tipos(d, tipos);
+                }
             }
-            Declaracion::Cuando { condicion, cuerpo, .. } => {
+            Declaracion::Cuando {
+                condicion, cuerpo, ..
+            } => {
                 self.analizar_expr_para_tipos(condicion, tipos);
-                for d in cuerpo { self.analizar_declaracion_para_tipos(d, tipos); }
+                for d in cuerpo {
+                    self.analizar_declaracion_para_tipos(d, tipos);
+                }
             }
-            Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
-                if let Some(init) = inicializacion { self.analizar_declaracion_para_tipos(init, tipos); }
-                if let Some(cond) = condicion { self.analizar_expr_para_tipos(cond, tipos); }
-                if let Some(inc) = incremento { self.analizar_declaracion_para_tipos(inc, tipos); }
-                for d in bloque { self.analizar_declaracion_para_tipos(d, tipos); }
+            Declaracion::Para {
+                inicializacion,
+                condicion,
+                incremento,
+                bloque,
+            } => {
+                if let Some(init) = inicializacion {
+                    self.analizar_declaracion_para_tipos(init, tipos);
+                }
+                if let Some(cond) = condicion {
+                    self.analizar_expr_para_tipos(cond, tipos);
+                }
+                if let Some(inc) = incremento {
+                    self.analizar_declaracion_para_tipos(inc, tipos);
+                }
+                for d in bloque {
+                    self.analizar_declaracion_para_tipos(d, tipos);
+                }
             }
             Declaracion::Repetir { cantidad, bloque } => {
                 self.analizar_expr_para_tipos(cantidad, tipos);
-                for d in bloque { self.analizar_declaracion_para_tipos(d, tipos); }
+                for d in bloque {
+                    self.analizar_declaracion_para_tipos(d, tipos);
+                }
             }
-            Declaracion::Retornar { valor: Some(val), .. } => {
+            Declaracion::Retornar {
+                valor: Some(val), ..
+            } => {
                 self.analizar_expr_para_tipos(val, tipos);
             }
             Declaracion::Expresion(expr) => {
                 self.analizar_expr_para_tipos(expr, tipos);
             }
             Declaracion::LlamadaFuncion { argumentos, .. } => {
-                for arg in argumentos { self.analizar_expr_para_tipos(arg, tipos); }
+                for arg in argumentos {
+                    self.analizar_expr_para_tipos(arg, tipos);
+                }
             }
             _ => {}
         }
     }
 
-    fn analizar_expr_para_tipos(&self, expr: &Expresion, tipos: &mut std::collections::HashMap<String, String>) {
+    fn analizar_expr_para_tipos(
+        &self,
+        expr: &Expresion,
+        tipos: &mut std::collections::HashMap<String, String>,
+    ) {
         match expr {
             Expresion::Identificador { nombre, .. } => {
                 // Si el parámetro se usa con literales numéricos, es Entero
@@ -1383,7 +1611,11 @@ impl Transpiler {
                     tipos.insert(nombre.clone(), "i64".to_string());
                 }
             }
-            Expresion::Binaria { izquierda, derecha, operador } => {
+            Expresion::Binaria {
+                izquierda,
+                derecha,
+                operador,
+            } => {
                 use Operador::*;
                 match operador {
                     Suma => {
@@ -1411,17 +1643,26 @@ impl Transpiler {
             Expresion::LiteralBooleano(_) => {}
             Expresion::Unaria { expr: e, .. } => self.analizar_expr_para_tipos(e, tipos),
             Expresion::LlamadaFuncion { argumentos, .. } => {
-                for arg in argumentos { self.analizar_expr_para_tipos(arg, tipos); }
+                for arg in argumentos {
+                    self.analizar_expr_para_tipos(arg, tipos);
+                }
             }
             Expresion::Arreglo(elementos) => {
-                for e in elementos { self.analizar_expr_para_tipos(e, tipos); }
+                for e in elementos {
+                    self.analizar_expr_para_tipos(e, tipos);
+                }
             }
             Expresion::Grupo(expr) => self.analizar_expr_para_tipos(expr, tipos),
             _ => {}
         }
     }
 
-    fn asignar_tipo_si_parametro(&self, expr: &Expresion, tipos: &mut std::collections::HashMap<String, String>, tipo: &str) {
+    fn asignar_tipo_si_parametro(
+        &self,
+        expr: &Expresion,
+        tipos: &mut std::collections::HashMap<String, String>,
+        tipo: &str,
+    ) {
         if let Expresion::Identificador { nombre, .. } = expr {
             tipos.insert(nombre.clone(), tipo.to_string());
         }
@@ -1433,13 +1674,16 @@ impl Transpiler {
 
     fn transpilar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { mutable, nombre, tipo, valor, .. } => {
+            Declaracion::Variable {
+                mutable,
+                nombre,
+                tipo,
+                valor,
+                ..
+            } => {
                 // Analizar si la variable es realmente mutable (se reasigna en el código)
-                let realmente_mutable = *mutable && es_variable_mutable(
-                    nombre,
-                    &self.declaraciones_globales,
-                    0,
-                );
+                let realmente_mutable =
+                    *mutable && es_variable_mutable(nombre, &self.declaraciones_globales, 0);
                 let mut decl_str = if realmente_mutable {
                     format!("let mut {}", nombre)
                 } else {
@@ -1465,19 +1709,40 @@ impl Transpiler {
                 self.emit_line(&format!("{} = {};", nombre, val_str));
             }
 
-            Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } => {
+            Declaracion::AsignacionMiembro {
+                objeto,
+                miembro,
+                valor,
+                ..
+            } => {
                 let obj_str = self.transpilar_expresion(objeto);
                 let val_str = self.transpilar_expresion(valor);
                 self.emit_line(&format!("{}.{} = {};", obj_str, miembro, val_str));
             }
 
-            Declaracion::AsignacionIndex { nombre, indice, valor, .. } => {
+            Declaracion::AsignacionIndex {
+                nombre,
+                indice,
+                valor,
+                ..
+            } => {
                 let idx_str = self.transpilar_expresion(indice);
                 let val_str = self.transpilar_expresion(valor);
                 self.emit_line(&format!("{}[{}] = {};", nombre, idx_str, val_str));
             }
 
-            Declaracion::Funcion { nombre, parametros_tipo, parametros, tipo_retorno, cuerpo, atributos, doc, precondiciones, postcondiciones, .. } => {
+            Declaracion::Funcion {
+                nombre,
+                parametros_tipo,
+                parametros,
+                tipo_retorno,
+                cuerpo,
+                atributos,
+                doc,
+                precondiciones,
+                postcondiciones,
+                ..
+            } => {
                 // Emitir doc comment si existe
                 if let Some(doc_text) = doc {
                     for line in doc_text.lines() {
@@ -1492,15 +1757,16 @@ impl Transpiler {
                 let tipos_inferidos = self.inferir_tipos_desde_cuerpo(cuerpo, parametros);
 
                 // Inferir tipo de retorno desde el cuerpo si no está anotado
-                let inferred_ret = tipo_retorno.clone().or_else(|| self.inferir_tipo_retorno(cuerpo));
+                let inferred_ret = tipo_retorno
+                    .clone()
+                    .or_else(|| self.inferir_tipo_retorno(cuerpo));
 
                 // Generar parámetros de tipo genérico <T, U> si existen
                 let gen_params_str = if parametros_tipo.is_empty() {
                     String::new()
                 } else {
-                    let gen_names: Vec<String> = parametros_tipo.iter()
-                        .map(|p| p.nombre.clone())
-                        .collect();
+                    let gen_names: Vec<String> =
+                        parametros_tipo.iter().map(|p| p.nombre.clone()).collect();
                     format!("<{}> ", gen_names.join(", "))
                 };
 
@@ -1520,7 +1786,8 @@ impl Transpiler {
                         let tipo = if p.tipo.is_some() {
                             self.inferir_tipo_parametro(p)
                         } else {
-                            tipos_inferidos.get(&p.nombre)
+                            tipos_inferidos
+                                .get(&p.nombre)
                                 .cloned()
                                 .unwrap_or_else(|| "i64".to_string())
                         };
@@ -1535,7 +1802,13 @@ impl Transpiler {
                     String::new()
                 };
 
-                self.emit_line(&format!("fn {}{}({}){} {{", nombre, gen_params_str, params.join(", "), ret_str));
+                self.emit_line(&format!(
+                    "fn {}{}({}){} {{",
+                    nombre,
+                    gen_params_str,
+                    params.join(", "),
+                    ret_str
+                ));
                 self.indent();
 
                 // ─── Precondiciones ───────────────────────────────────────
@@ -1543,7 +1816,10 @@ impl Transpiler {
                     self.emit_line("// ═══ Precondiciones ═══");
                     for c in precondiciones {
                         let cond = self.transpilar_expresion(&c.condicion);
-                        let msg = c.mensaje.clone().unwrap_or_else(|| "Precondición falló".to_string());
+                        let msg = c
+                            .mensaje
+                            .clone()
+                            .unwrap_or_else(|| "Precondición falló".to_string());
                         self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
                     }
                 }
@@ -1571,7 +1847,8 @@ impl Transpiler {
                 self.declaraciones_globales = cuerpo.clone();
 
                 let prev_tiene_resultado = self.tiene_resultado_var;
-                self.tiene_resultado_var = parametros.iter().any(|p| p.nombre == "resultado") || existe_variable_resultado(cuerpo);
+                self.tiene_resultado_var = parametros.iter().any(|p| p.nombre == "resultado")
+                    || existe_variable_resultado(cuerpo);
 
                 for d in cuerpo {
                     self.transpilar_declaracion(d);
@@ -1592,27 +1869,44 @@ impl Transpiler {
                 self.emit_line(&format!("trait {} {{", nombre));
                 self.indent();
                 for metodo in metodos {
-                    let params: Vec<String> = metodo.parametros.iter().map(|p| {
-                        let mut s = String::new();
-                        if p.prestado { s.push_str("&"); }
-                        if p.mutable { s.push_str("mut "); }
-                        s.push_str(&p.nombre);
-                        s.push_str(": ");
-                        s.push_str(&self.inferir_tipo_parametro(p));
-                        s
-                    }).collect();
+                    let params: Vec<String> = metodo
+                        .parametros
+                        .iter()
+                        .map(|p| {
+                            let mut s = String::new();
+                            if p.prestado {
+                                s.push_str("&");
+                            }
+                            if p.mutable {
+                                s.push_str("mut ");
+                            }
+                            s.push_str(&p.nombre);
+                            s.push_str(": ");
+                            s.push_str(&self.inferir_tipo_parametro(p));
+                            s
+                        })
+                        .collect();
                     let ret = match &metodo.tipo_retorno {
                         Some(t) => format!(" -> {}", self.tipo_a_rust(t)),
                         None => String::new(),
                     };
-                    self.emit_line(&format!("fn {}({}){};", metodo.nombre, params.join(", "), ret));
+                    self.emit_line(&format!(
+                        "fn {}({}){};",
+                        metodo.nombre,
+                        params.join(", "),
+                        ret
+                    ));
                 }
                 self.dedent();
                 self.emit_line("}");
                 self.emit_line("");
             }
 
-            Declaracion::Implementacion { rasgo_nombre, clase_nombre, metodos } => {
+            Declaracion::Implementacion {
+                rasgo_nombre,
+                clase_nombre,
+                metodos,
+            } => {
                 self.emit_line(&format!("impl {} for {} {{", rasgo_nombre, clase_nombre));
                 self.indent();
                 for metodo in metodos {
@@ -1632,17 +1926,25 @@ impl Transpiler {
                 self.emit_line(&format!("// importar \"{}\"", ruta));
             }
 
-            Declaracion::Enum { nombre, variantes, atributos } => {
+            Declaracion::Enum {
+                nombre,
+                variantes,
+                atributos,
+            } => {
                 // Generar #[derive(...)] desde @derive(Mostrar, Igual, ...)
                 self.emit_derive_from_atributos(atributos);
-                let vars: Vec<String> = variantes.iter().map(|v| {
-                    let tipos: Vec<String> = v.tipos.iter().map(|t| self.tipo_a_rust(t)).collect();
-                    if tipos.is_empty() {
-                        v.nombre.clone()
-                    } else {
-                        format!("{}({})", v.nombre, tipos.join(", "))
-                    }
-                }).collect();
+                let vars: Vec<String> = variantes
+                    .iter()
+                    .map(|v| {
+                        let tipos: Vec<String> =
+                            v.tipos.iter().map(|t| self.tipo_a_rust(t)).collect();
+                        if tipos.is_empty() {
+                            v.nombre.clone()
+                        } else {
+                            format!("{}({})", v.nombre, tipos.join(", "))
+                        }
+                    })
+                    .collect();
                 self.emit_line(&format!("enum {} {{", nombre));
                 self.indent();
                 for v in &vars {
@@ -1653,7 +1955,11 @@ impl Transpiler {
                 self.emit_line("");
             }
 
-            Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+            Declaracion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
                 let cond_str = self.transpilar_expresion(condicion);
                 self.emit_line(&format!("if {} {{", cond_str));
                 self.indent();
@@ -1692,7 +1998,9 @@ impl Transpiler {
                 self.emit_line("}");
             }
 
-            Declaracion::Cuando { condicion, cuerpo, .. } => {
+            Declaracion::Cuando {
+                condicion, cuerpo, ..
+            } => {
                 let cond_str = self.transpilar_expresion(condicion);
                 self.emit_line(&format!("if {} {{", cond_str));
                 self.indent();
@@ -1705,7 +2013,12 @@ impl Transpiler {
                 self.emit_line("}");
             }
 
-            Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
+            Declaracion::Para {
+                inicializacion,
+                condicion,
+                incremento,
+                bloque,
+            } => {
                 // Forja: para (i = 0; i < N; i = i + 1) { ... }
                 // Rust: for i in 0..N { ... }
                 //
@@ -1713,8 +2026,17 @@ impl Transpiler {
                 // De lo contrario, usamos while
 
                 if let Some(cond) = condicion {
-                    if let Expresion::Binaria { izquierda, operador: Operador::Menor, derecha } = cond.as_ref() {
-                        if let Expresion::Identificador { nombre: ref var_name, .. } = izquierda.as_ref() {
+                    if let Expresion::Binaria {
+                        izquierda,
+                        operador: Operador::Menor,
+                        derecha,
+                    } = cond.as_ref()
+                    {
+                        if let Expresion::Identificador {
+                            nombre: ref var_name,
+                            ..
+                        } = izquierda.as_ref()
+                        {
                             // Patrón detectado: for x in 0..N
                             let range_end = self.transpilar_expresion(derecha);
                             self.emit_line(&format!("for {} in 0..{} {{", var_name, range_end));
@@ -1845,7 +2167,10 @@ impl Transpiler {
                         // Emitir postcondiciones
                         for c in &postconds {
                             let cond = self.transpilar_expresion(&c.condicion);
-                            let msg = c.mensaje.clone().unwrap_or_else(|| "Postcondición falló".to_string());
+                            let msg = c
+                                .mensaje
+                                .clone()
+                                .unwrap_or_else(|| "Postcondición falló".to_string());
                             self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
                         }
                         self.emit_line("return _return_value;");
@@ -1853,7 +2178,10 @@ impl Transpiler {
                         // Sin valor de retorno: emitir postcondiciones y retornar
                         for c in &postconds {
                             let cond = self.transpilar_expresion(&c.condicion);
-                            let msg = c.mensaje.clone().unwrap_or_else(|| "Postcondición falló".to_string());
+                            let msg = c
+                                .mensaje
+                                .clone()
+                                .unwrap_or_else(|| "Postcondición falló".to_string());
                             self.emit_line(&format!("debug_assert!({}, \"{}\");", cond, msg));
                         }
                         self.emit_line("return;");
@@ -1868,10 +2196,18 @@ impl Transpiler {
                 }
             }
 
-            Declaracion::AsignacionMultiple { variables, mutable, valor } => {
+            Declaracion::AsignacionMultiple {
+                variables,
+                mutable,
+                valor,
+            } => {
                 let valor_str = self.transpilar_expresion(valor);
                 if *mutable {
-                    self.emit_line(&format!("let mut ({}) = {};", variables.join(", "), valor_str));
+                    self.emit_line(&format!(
+                        "let mut ({}) = {};",
+                        variables.join(", "),
+                        valor_str
+                    ));
                 } else {
                     self.emit_line(&format!("let ({}) = {};", variables.join(", "), valor_str));
                 }
@@ -1889,10 +2225,32 @@ impl Transpiler {
     // ============================================================
 
     fn transpilar_expresion(&mut self, expr: &Expresion) -> String {
+        // Verificar profundidad para prevenir stack overflow
+        self.profundidad_expresion += 1;
+        if self.profundidad_expresion > MAX_AST_PROFUNDIDAD {
+            self.profundidad_expresion -= 1;
+            self.errors.push(ErrorForja::new(
+                crate::error::ErrorTipo::ErrorSintactico,
+                0,
+                0,
+                "Expresión demasiado grande: se excedió la profundidad máxima en transpilación.",
+                "Simplificá la expresión dividiéndola en partes más pequeñas.",
+            ));
+            return String::from("/* expresión demasiado grande */ 0");
+        }
+        let result = self.transpilar_expresion_inner(expr);
+        self.profundidad_expresion -= 1;
+        result
+    }
+
+    /// Implementación interna de transpilar_expresion (sin control de profundidad).
+    fn transpilar_expresion_inner(&mut self, expr: &Expresion) -> String {
         match expr {
             Expresion::LiteralNumero(n) => n.to_string(),
             Expresion::LiteralDecimal(d) => d.to_string(),
-            Expresion::LiteralExacto(coeff, scale) => format!("({} as f64) * 10f64.powi({})", coeff, -(*scale as i32)),
+            Expresion::LiteralExacto(coeff, scale) => {
+                format!("({} as f64) * 10f64.powi({})", coeff, -(*scale as i32))
+            }
             Expresion::LiteralTexto(s) => {
                 let mut escaped = String::new();
                 for c in s.chars() {
@@ -1926,7 +2284,11 @@ impl Transpiler {
                 }
             }
 
-            Expresion::Binaria { izquierda, operador, derecha } => {
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
                 // Detectar concatenación de strings:
                 // Si ALGÚN operando es un literal de texto, usamos format!("{}{}", ...)
                 // en vez de String + String (que no compila si el otro operando es String).
@@ -2060,8 +2422,15 @@ impl Transpiler {
             }
 
             Expresion::Mapa(pares) => {
-                let entries: Vec<String> = pares.iter()
-                    .map(|(k, v)| format!("({}, {})", self.transpilar_expresion(k), self.transpilar_expresion(v)))
+                let entries: Vec<String> = pares
+                    .iter()
+                    .map(|(k, v)| {
+                        format!(
+                            "({}, {})",
+                            self.transpilar_expresion(k),
+                            self.transpilar_expresion(v)
+                        )
+                    })
                     .collect();
                 format!("std::collections::HashMap::from([{}])", entries.join(", "))
             }
@@ -2090,7 +2459,8 @@ impl Transpiler {
             }
 
             Expresion::Closure { parametros, cuerpo } => {
-                let params: Vec<String> = parametros.iter()
+                let params: Vec<String> = parametros
+                    .iter()
                     .map(|p| format!("{}: {}", p.nombre, self.inferir_tipo_parametro(p)))
                     .collect();
                 let _ = cuerpo;
@@ -2122,9 +2492,7 @@ impl Transpiler {
                 let inner = self.transpilar_expresion(expr);
                 format!("{}.into()?", inner)
             }
-            Expresion::CanalNuevo => {
-                "mpsc::channel()".to_string()
-            }
+            Expresion::CanalNuevo => "mpsc::channel()".to_string(),
             Expresion::Seleccionar { brazos } => {
                 // Transpilar a crossbeam::select! macro
                 // Usamos un enfoque similar a Hilo: guardar/restaurar output state
@@ -2144,13 +2512,19 @@ impl Transpiler {
                     if let Some((var, expr_recv)) = &brazo.recepcion {
                         // caso valor = rx.recibir() { ... }
                         let canal_str = self.transpilar_expresion(expr_recv);
-                        arms.push(format!("    recv({}) -> {} => {{\n        {}\n    }},", canal_str, var, cuerpo_str));
+                        arms.push(format!(
+                            "    recv({}) -> {} => {{\n        {}\n    }},",
+                            canal_str, var, cuerpo_str
+                        ));
                     } else if brazo.timeout_ms > 0 {
                         // tiempo ms { ... } -> default con Duration
                         arms.push(format!("    default(std::time::Duration::from_millis({})) => {{\n        {}\n    }},", brazo.timeout_ms, cuerpo_str));
                     } else {
                         // otro { ... } -> default (sin timeout)
-                        arms.push(format!("    default => {{\n        {}\n    }},", cuerpo_str));
+                        arms.push(format!(
+                            "    default => {{\n        {}\n    }},",
+                            cuerpo_str
+                        ));
                     }
                 }
                 format!("crossbeam::select!{{\n{}\n}}", arms.join("\n"))
@@ -2159,10 +2533,17 @@ impl Transpiler {
                 let val_str = self.transpilar_expresion(valor);
                 format!("{{ let __tmp = {}; {} = __tmp; __tmp }}", val_str, variable)
             }
-            Expresion::AsignacionCampo { objeto, campo, valor } => {
+            Expresion::AsignacionCampo {
+                objeto,
+                campo,
+                valor,
+            } => {
                 let obj_str = self.transpilar_expresion(objeto);
                 let val_str = self.transpilar_expresion(valor);
-                format!("{{ let __tmp = {}; {}.{} = __tmp; __tmp }}", val_str, obj_str, campo)
+                format!(
+                    "{{ let __tmp = {}; {}.{} = __tmp; __tmp }}",
+                    val_str, obj_str, campo
+                )
             }
             Expresion::ArraySet { array, valor } => {
                 // arr[i] = val como expresión → tmp = val; array = tmp; tmp
@@ -2224,7 +2605,11 @@ impl Transpiler {
                 let p: Vec<String> = params.iter().map(|t| self.tipo_a_rust(t)).collect();
                 format!("fn({}) -> {}", p.join(", "), self.tipo_a_rust(ret))
             }
-            Tipo::Resultado(ok, err) => format!("Result<{}, {}>", self.tipo_a_rust(ok), self.tipo_a_rust(err)),
+            Tipo::Resultado(ok, err) => format!(
+                "Result<{}, {}>",
+                self.tipo_a_rust(ok),
+                self.tipo_a_rust(err)
+            ),
             Tipo::Opcion(inner) => format!("Option<{}>", self.tipo_a_rust(inner)),
             Tipo::RasgoObjeto(nombre) => format!("Box<dyn {}>", nombre),
             Tipo::Parametro(nombre) => nombre.clone(),
@@ -2242,7 +2627,9 @@ impl Transpiler {
                     }
                 }
             }
-            Expresion::Binaria { izquierda, derecha, .. } => {
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => {
                 self.recolectar_vars_anterior(izquierda, vars);
                 self.recolectar_vars_anterior(derecha, vars);
             }
@@ -2293,20 +2680,28 @@ impl Transpiler {
     /// Emite #[derive(...)] a partir de atributos @derive(Mostrar, Igual, ...)
     fn emit_derive_from_atributos(&mut self, atributos: &[Atributo]) {
         if let Some(derive_attr) = atributos.iter().find(|a| a.nombre == "derive") {
-            let rasgos: Vec<&String> = derive_attr.argumentos.iter().filter(|a| {
-                matches!(a.as_str(), "Mostrar" | "Igual" | "Debug" | "Clone" | "Copiar")
-            }).collect();
+            let rasgos: Vec<&String> = derive_attr
+                .argumentos
+                .iter()
+                .filter(|a| {
+                    matches!(
+                        a.as_str(),
+                        "Mostrar" | "Igual" | "Debug" | "Clone" | "Copiar"
+                    )
+                })
+                .collect();
             if !rasgos.is_empty() {
-                let rust_traits: Vec<String> = rasgos.iter().map(|t| {
-                    match t.as_str() {
+                let rust_traits: Vec<String> = rasgos
+                    .iter()
+                    .map(|t| match t.as_str() {
                         "Mostrar" => "Display".to_string(),
                         "Igual" => "PartialEq".to_string(),
                         "Debug" => "Debug".to_string(),
                         "Clone" => "Clone".to_string(),
                         "Copiar" => "Copy".to_string(),
                         _ => t.to_string(),
-                    }
-                }).collect();
+                    })
+                    .collect();
                 self.emit_line(&format!("#[derive({})]", rust_traits.join(", ")));
             }
         }
@@ -2328,7 +2723,14 @@ impl Transpiler {
     /// Genera codigo Rust que reconstruye una `Declaracion`.
     fn generar_ast_declaracion(&self, decl: &Declaracion) -> String {
         match decl {
-            Declaracion::Variable { mutable, nombre, tipo, valor, linea, columna } => {
+            Declaracion::Variable {
+                mutable,
+                nombre,
+                tipo,
+                valor,
+                linea,
+                columna,
+            } => {
                 let tipo_str = match tipo {
                     Some(t) => format!("Some({})", self.tipo_a_ast(t)),
                     None => "None".to_string(),
@@ -2340,21 +2742,56 @@ impl Transpiler {
                 format!("Declaracion::Variable {{ mutable: {}, nombre: String::from(\"{}\"), tipo: {}, valor: {}, linea: {}, columna: {} }}",
                     mutable, self.esc_ast_string(nombre), tipo_str, valor_str, linea, columna)
             }
-            Declaracion::Asignacion { nombre, valor, linea, columna } => {
+            Declaracion::Asignacion {
+                nombre,
+                valor,
+                linea,
+                columna,
+            } => {
                 format!("Declaracion::Asignacion {{ nombre: String::from(\"{}\"), valor: Box::new({}), linea: {}, columna: {} }}",
                     self.esc_ast_string(nombre), self.generar_ast_expresion(valor), linea, columna)
             }
-            Declaracion::AsignacionMiembro { objeto, miembro, valor, linea, columna } => {
+            Declaracion::AsignacionMiembro {
+                objeto,
+                miembro,
+                valor,
+                linea,
+                columna,
+            } => {
                 format!("Declaracion::AsignacionMiembro {{ objeto: Box::new({}), miembro: String::from(\"{}\"), valor: Box::new({}), linea: {}, columna: {} }}",
                     self.generar_ast_expresion(objeto), self.esc_ast_string(miembro), self.generar_ast_expresion(valor), linea, columna)
             }
-            Declaracion::AsignacionIndex { nombre, indice, valor, linea, columna } => {
+            Declaracion::AsignacionIndex {
+                nombre,
+                indice,
+                valor,
+                linea,
+                columna,
+            } => {
                 format!("Declaracion::AsignacionIndex {{ nombre: String::from(\"{}\"), indice: Box::new({}), valor: Box::new({}), linea: {}, columna: {} }}",
                     self.esc_ast_string(nombre), self.generar_ast_expresion(indice), self.generar_ast_expresion(valor), linea, columna)
             }
-            Declaracion::Funcion { nombre, parametros_tipo, parametros, tipo_retorno, cuerpo, externa, enlace_nombre, atributos: _, doc, precondiciones: _, postcondiciones: _ } => {
-                let params_tipo_str: Vec<String> = parametros_tipo.iter()
-                    .map(|p| format!("ParametroTipo {{ nombre: String::from(\"{}\"), rasgos: vec![] }}", self.esc_ast_string(&p.nombre)))
+            Declaracion::Funcion {
+                nombre,
+                parametros_tipo,
+                parametros,
+                tipo_retorno,
+                cuerpo,
+                externa,
+                enlace_nombre,
+                atributos: _,
+                doc,
+                precondiciones: _,
+                postcondiciones: _,
+            } => {
+                let params_tipo_str: Vec<String> = parametros_tipo
+                    .iter()
+                    .map(|p| {
+                        format!(
+                            "ParametroTipo {{ nombre: String::from(\"{}\"), rasgos: vec![] }}",
+                            self.esc_ast_string(&p.nombre)
+                        )
+                    })
                     .collect();
                 let params_str: Vec<String> = parametros.iter().map(|p| {
                     let tipo_str = match &p.tipo {
@@ -2368,7 +2805,10 @@ impl Transpiler {
                     Some(t) => format!("Some({})", self.tipo_a_ast(t)),
                     None => "None".to_string(),
                 };
-                let cuerpo_str: Vec<String> = cuerpo.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                let cuerpo_str: Vec<String> = cuerpo
+                    .iter()
+                    .map(|d| self.generar_ast_declaracion(d))
+                    .collect();
                 let enlace_str = match enlace_nombre {
                     Some(s) => format!("Some(String::from(\"{}\"))", self.esc_ast_string(s)),
                     None => "None".to_string(),
@@ -2381,24 +2821,39 @@ impl Transpiler {
                     self.esc_ast_string(nombre), params_tipo_str.join(", "), params_str.join(", "), ret_str, cuerpo_str.join(", "), externa, enlace_str, docs_str)
             }
             Declaracion::Expresion(expr) => {
-                format!("Declaracion::Expresion({})", self.generar_ast_expresion(expr))
+                format!(
+                    "Declaracion::Expresion({})",
+                    self.generar_ast_expresion(expr)
+                )
             }
             Declaracion::LlamadaFuncion { nombre, argumentos } => {
-                let args_str: Vec<String> = argumentos.iter().map(|a| self.generar_ast_expresion(a)).collect();
+                let args_str: Vec<String> = argumentos
+                    .iter()
+                    .map(|a| self.generar_ast_expresion(a))
+                    .collect();
                 format!("Declaracion::LlamadaFuncion {{ nombre: String::from(\"{}\"), argumentos: vec![{}] }}",
                     self.esc_ast_string(nombre), args_str.join(", "))
             }
-            Declaracion::Retornar { valor } => {
-                match valor {
-                    Some(v) => format!("Declaracion::Retornar {{ valor: Some({}) }}", self.generar_ast_expresion(v)),
-                    None => "Declaracion::Retornar { valor: None }".to_string(),
-                }
-            }
-            Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
-                let bv: Vec<String> = bloque_verdadero.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+            Declaracion::Retornar { valor } => match valor {
+                Some(v) => format!(
+                    "Declaracion::Retornar {{ valor: Some({}) }}",
+                    self.generar_ast_expresion(v)
+                ),
+                None => "Declaracion::Retornar { valor: None }".to_string(),
+            },
+            Declaracion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
+                let bv: Vec<String> = bloque_verdadero
+                    .iter()
+                    .map(|d| self.generar_ast_declaracion(d))
+                    .collect();
                 let bf_str = match bloque_falso {
                     Some(bf) => {
-                        let items: Vec<String> = bf.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                        let items: Vec<String> =
+                            bf.iter().map(|d| self.generar_ast_declaracion(d)).collect();
                         format!("Some(vec![{}])", items.join(", "))
                     }
                     None => "None".to_string(),
@@ -2407,11 +2862,22 @@ impl Transpiler {
                     self.generar_ast_expresion(condicion), bv.join(", "), bf_str)
             }
             Declaracion::Mientras { condicion, bloque } => {
-                let blk: Vec<String> = bloque.iter().map(|d| self.generar_ast_declaracion(d)).collect();
-                format!("Declaracion::Mientras {{ condicion: Box::new({}), bloque: vec![{}] }}",
-                    self.generar_ast_expresion(condicion), blk.join(", "))
+                let blk: Vec<String> = bloque
+                    .iter()
+                    .map(|d| self.generar_ast_declaracion(d))
+                    .collect();
+                format!(
+                    "Declaracion::Mientras {{ condicion: Box::new({}), bloque: vec![{}] }}",
+                    self.generar_ast_expresion(condicion),
+                    blk.join(", ")
+                )
             }
-            Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
+            Declaracion::Para {
+                inicializacion,
+                condicion,
+                incremento,
+                bloque,
+            } => {
                 let init_str = match inicializacion {
                     Some(d) => format!("Some(Box::new({}))", self.generar_ast_declaracion(d)),
                     None => "None".to_string(),
@@ -2424,25 +2890,52 @@ impl Transpiler {
                     Some(d) => format!("Some(Box::new({}))", self.generar_ast_declaracion(d)),
                     None => "None".to_string(),
                 };
-                let blk: Vec<String> = bloque.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                let blk: Vec<String> = bloque
+                    .iter()
+                    .map(|d| self.generar_ast_declaracion(d))
+                    .collect();
                 format!("Declaracion::Para {{ inicializacion: {}, condicion: {}, incremento: {}, bloque: vec![{}] }}",
                     init_str, cond_str, inc_str, blk.join(", "))
             }
             Declaracion::Repetir { cantidad, bloque } => {
-                let blk: Vec<String> = bloque.iter().map(|d| self.generar_ast_declaracion(d)).collect();
-                format!("Declaracion::Repetir {{ cantidad: Box::new({}), bloque: vec![{}] }}",
-                    self.generar_ast_expresion(cantidad), blk.join(", "))
+                let blk: Vec<String> = bloque
+                    .iter()
+                    .map(|d| self.generar_ast_declaracion(d))
+                    .collect();
+                format!(
+                    "Declaracion::Repetir {{ cantidad: Box::new({}), bloque: vec![{}] }}",
+                    self.generar_ast_expresion(cantidad),
+                    blk.join(", ")
+                )
             }
-            Declaracion::Cuando { condicion, cuerpo, linea, columna } => {
-                let blk: Vec<String> = cuerpo.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+            Declaracion::Cuando {
+                condicion,
+                cuerpo,
+                linea,
+                columna,
+            } => {
+                let blk: Vec<String> = cuerpo
+                    .iter()
+                    .map(|d| self.generar_ast_declaracion(d))
+                    .collect();
                 format!("Declaracion::Cuando {{ condicion: Box::new({}), cuerpo: vec![{}], linea: {}, columna: {} }}",
                     self.generar_ast_expresion(condicion), blk.join(", "), linea, columna)
             }
             Declaracion::Importar(ruta) => {
-                format!("Declaracion::Importar(String::from(\"{}\"))", self.esc_ast_string(ruta))
+                format!(
+                    "Declaracion::Importar(String::from(\"{}\"))",
+                    self.esc_ast_string(ruta)
+                )
             }
-            Declaracion::AsignacionMultiple { variables, mutable, valor } => {
-                let vars_str: Vec<String> = variables.iter().map(|v| format!("String::from(\"{}\")", self.esc_ast_string(v))).collect();
+            Declaracion::AsignacionMultiple {
+                variables,
+                mutable,
+                valor,
+            } => {
+                let vars_str: Vec<String> = variables
+                    .iter()
+                    .map(|v| format!("String::from(\"{}\")", self.esc_ast_string(v)))
+                    .collect();
                 format!("Declaracion::AsignacionMultiple {{ variables: vec![{}], mutable: {}, valor: Box::new({}) }}",
                     vars_str.join(", "), mutable, self.generar_ast_expresion(valor))
             }
@@ -2461,25 +2954,42 @@ impl Transpiler {
         match expr {
             Expresion::LiteralNumero(n) => format!("Expresion::LiteralNumero({})", n),
             Expresion::LiteralDecimal(f) => format!("Expresion::LiteralDecimal({})", f),
-            Expresion::LiteralTexto(s) => format!("Expresion::LiteralTexto(String::from(\"{}\"))", self.esc_ast_string(s)),
+            Expresion::LiteralTexto(s) => format!(
+                "Expresion::LiteralTexto(String::from(\"{}\"))",
+                self.esc_ast_string(s)
+            ),
             Expresion::LiteralBooleano(b) => format!("Expresion::LiteralBooleano({})", b),
             Expresion::LiteralNulo => "Expresion::LiteralNulo".to_string(),
-            Expresion::LiteralExacto(coeff, scale) => format!("Expresion::LiteralExacto({}, {})", coeff, scale),
-            Expresion::Identificador { nombre, .. } => format!("Expresion::Identificador(String::from(\"{}\"))", self.esc_ast_string(nombre)),
-            Expresion::Binaria { izquierda, operador, derecha } => {
+            Expresion::LiteralExacto(coeff, scale) => {
+                format!("Expresion::LiteralExacto({}, {})", coeff, scale)
+            }
+            Expresion::Identificador { nombre, .. } => format!(
+                "Expresion::Identificador(String::from(\"{}\"))",
+                self.esc_ast_string(nombre)
+            ),
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
                 format!("Expresion::Binaria {{ izquierda: Box::new({}), operador: {}, derecha: Box::new({}) }}",
                     self.generar_ast_expresion(izquierda), self.operador_a_ast(operador), self.generar_ast_expresion(derecha))
             }
             Expresion::Unaria { operador, expr: e } => {
-                format!("Expresion::Unaria {{ operador: {}, expr: Box::new({}) }}",
+                format!(
+                    "Expresion::Unaria {{ operador: {}, expr: Box::new({}) }}",
                     match operador {
                         OperadorUnario::Negar => "OperadorUnario::Negar",
                         OperadorUnario::No => "OperadorUnario::No",
                     },
-                    self.generar_ast_expresion(e))
+                    self.generar_ast_expresion(e)
+                )
             }
             Expresion::LlamadaFuncion { nombre, argumentos } => {
-                let args: Vec<String> = argumentos.iter().map(|a| self.generar_ast_expresion(a)).collect();
+                let args: Vec<String> = argumentos
+                    .iter()
+                    .map(|a| self.generar_ast_expresion(a))
+                    .collect();
                 format!("Expresion::LlamadaFuncion {{ nombre: String::from(\"{}\"), argumentos: vec![{}] }}",
                     self.esc_ast_string(nombre), args.join(", "))
             }
@@ -2488,59 +2998,121 @@ impl Transpiler {
                     self.generar_ast_expresion(objeto), self.esc_ast_string(miembro))
             }
             Expresion::Instanciacion { clase, argumentos } => {
-                let args: Vec<String> = argumentos.iter().map(|a| self.generar_ast_expresion(a)).collect();
+                let args: Vec<String> = argumentos
+                    .iter()
+                    .map(|a| self.generar_ast_expresion(a))
+                    .collect();
                 format!("Expresion::Instanciacion {{ clase: String::from(\"{}\"), argumentos: vec![{}] }}",
                     self.esc_ast_string(clase), args.join(", "))
             }
             Expresion::Referencia { expr: e, mutable } => {
-                format!("Expresion::Referencia {{ expr: Box::new({}), mutable: {} }}", self.generar_ast_expresion(e), mutable)
+                format!(
+                    "Expresion::Referencia {{ expr: Box::new({}), mutable: {} }}",
+                    self.generar_ast_expresion(e),
+                    mutable
+                )
             }
             Expresion::Arreglo(elementos) => {
-                let elems: Vec<String> = elementos.iter().map(|e| self.generar_ast_expresion(e)).collect();
+                let elems: Vec<String> = elementos
+                    .iter()
+                    .map(|e| self.generar_ast_expresion(e))
+                    .collect();
                 format!("Expresion::Arreglo(vec![{}])", elems.join(", "))
             }
             Expresion::Mapa(pares) => {
-                let entries: Vec<String> = pares.iter()
-                    .map(|(k, v)| format!("({}, {})", self.generar_ast_expresion(k), self.generar_ast_expresion(v)))
+                let entries: Vec<String> = pares
+                    .iter()
+                    .map(|(k, v)| {
+                        format!(
+                            "({}, {})",
+                            self.generar_ast_expresion(k),
+                            self.generar_ast_expresion(v)
+                        )
+                    })
                     .collect();
                 format!("Expresion::Mapa(vec![{}])", entries.join(", "))
             }
             Expresion::Index { objeto, indice } => {
-                format!("Expresion::Index {{ objeto: Box::new({}), indice: Box::new({}) }}",
-                    self.generar_ast_expresion(objeto), self.generar_ast_expresion(indice))
+                format!(
+                    "Expresion::Index {{ objeto: Box::new({}), indice: Box::new({}) }}",
+                    self.generar_ast_expresion(objeto),
+                    self.generar_ast_expresion(indice)
+                )
             }
-            Expresion::Grupo(inner) => format!("Expresion::Grupo(Box::new({}))", self.generar_ast_expresion(inner)),
+            Expresion::Grupo(inner) => format!(
+                "Expresion::Grupo(Box::new({}))",
+                self.generar_ast_expresion(inner)
+            ),
             Expresion::Hilo { cuerpo } => {
-                let blk: Vec<String> = cuerpo.iter().map(|d| self.generar_ast_declaracion(d)).collect();
+                let blk: Vec<String> = cuerpo
+                    .iter()
+                    .map(|d| self.generar_ast_declaracion(d))
+                    .collect();
                 format!("Expresion::Hilo {{ cuerpo: vec![{}] }}", blk.join(", "))
             }
             Expresion::CanalNuevo => "Expresion::CanalNuevo".to_string(),
-            Expresion::Try(inner) => format!("Expresion::Try(Box::new({}))", self.generar_ast_expresion(inner)),
+            Expresion::Try(inner) => format!(
+                "Expresion::Try(Box::new({}))",
+                self.generar_ast_expresion(inner)
+            ),
             Expresion::Asignacion { variable, valor } => {
                 format!("Expresion::Asignacion {{ variable: String::from(\"{}\"), valor: Box::new({}) }}",
                     self.esc_ast_string(variable), self.generar_ast_expresion(valor))
             }
-            Expresion::AsignacionCampo { objeto, campo, valor } => {
+            Expresion::AsignacionCampo {
+                objeto,
+                campo,
+                valor,
+            } => {
                 format!("Expresion::AsignacionCampo {{ objeto: Box::new({}), campo: String::from(\"{}\"), valor: Box::new({}) }}",
                     self.generar_ast_expresion(objeto), self.esc_ast_string(campo), self.generar_ast_expresion(valor))
             }
             Expresion::ArraySet { array, valor } => {
-                format!("Expresion::ArraySet {{ array: Box::new({}), valor: Box::new({}) }}",
-                    self.generar_ast_expresion(array), self.generar_ast_expresion(valor))
+                format!(
+                    "Expresion::ArraySet {{ array: Box::new({}), valor: Box::new({}) }}",
+                    self.generar_ast_expresion(array),
+                    self.generar_ast_expresion(valor)
+                )
             }
-            Expresion::Ok(inner) => format!("Expresion::Ok(Box::new({}))", self.generar_ast_expresion(inner)),
-            Expresion::Error(inner) => format!("Expresion::Error(Box::new({}))", self.generar_ast_expresion(inner)),
-            Expresion::Algo(inner) => format!("Expresion::Algo(Box::new({}))", self.generar_ast_expresion(inner)),
+            Expresion::Ok(inner) => format!(
+                "Expresion::Ok(Box::new({}))",
+                self.generar_ast_expresion(inner)
+            ),
+            Expresion::Error(inner) => format!(
+                "Expresion::Error(Box::new({}))",
+                self.generar_ast_expresion(inner)
+            ),
+            Expresion::Algo(inner) => format!(
+                "Expresion::Algo(Box::new({}))",
+                self.generar_ast_expresion(inner)
+            ),
             Expresion::Resultado => "Expresion::Resultado".to_string(),
-            Expresion::Anterior(inner) => format!("Expresion::Anterior(Box::new({}))", self.generar_ast_expresion(inner)),
+            Expresion::Anterior(inner) => format!(
+                "Expresion::Anterior(Box::new({}))",
+                self.generar_ast_expresion(inner)
+            ),
             Expresion::Coincidir { expr: e, brazos } => {
-                let brazos_str: Vec<String> = brazos.iter().map(|b| {
-                    let patron_str = self.patron_a_ast(&b.patron);
-                    let cuerpo_str: Vec<String> = b.cuerpo.iter().map(|d| self.generar_ast_declaracion(d)).collect();
-                    format!("BrazoMatch {{ patron: {}, cuerpo: vec![{}] }}", patron_str, cuerpo_str.join(", "))
-                }).collect();
-                format!("Expresion::Coincidir {{ expr: Box::new({}), brazos: vec![{}] }}",
-                    self.generar_ast_expresion(e), brazos_str.join(", "))
+                let brazos_str: Vec<String> = brazos
+                    .iter()
+                    .map(|b| {
+                        let patron_str = self.patron_a_ast(&b.patron);
+                        let cuerpo_str: Vec<String> = b
+                            .cuerpo
+                            .iter()
+                            .map(|d| self.generar_ast_declaracion(d))
+                            .collect();
+                        format!(
+                            "BrazoMatch {{ patron: {}, cuerpo: vec![{}] }}",
+                            patron_str,
+                            cuerpo_str.join(", ")
+                        )
+                    })
+                    .collect();
+                format!(
+                    "Expresion::Coincidir {{ expr: Box::new({}), brazos: vec![{}] }}",
+                    self.generar_ast_expresion(e),
+                    brazos_str.join(", ")
+                )
             }
             Expresion::Closure { parametros, cuerpo } => {
                 let params_str: Vec<String> = parametros.iter().map(|p| {
@@ -2551,8 +3123,15 @@ impl Transpiler {
                     format!("Parametro {{ nombre: String::from(\"{}\"), tipo: {}, prestado: {}, mutable: {} }}",
                         self.esc_ast_string(&p.nombre), tipo_str, p.prestado, p.mutable)
                 }).collect();
-                let cuerpo_str: Vec<String> = cuerpo.iter().map(|d| self.generar_ast_declaracion(d)).collect();
-                format!("Expresion::Closure {{ parametros: vec![{}], cuerpo: vec![{}] }}", params_str.join(", "), cuerpo_str.join(", "))
+                let cuerpo_str: Vec<String> = cuerpo
+                    .iter()
+                    .map(|d| self.generar_ast_declaracion(d))
+                    .collect();
+                format!(
+                    "Expresion::Closure {{ parametros: vec![{}], cuerpo: vec![{}] }}",
+                    params_str.join(", "),
+                    cuerpo_str.join(", ")
+                )
             }
             Expresion::Seleccionar { brazos } => {
                 let brazos_str: Vec<String> = brazos.iter().map(|b| {
@@ -2564,7 +3143,10 @@ impl Transpiler {
                     format!("BrazoSeleccionar {{ recepcion: {}, cuerpo: vec![{}], timeout_ms: {} }}",
                         recp_str, cuerpo_str.join(", "), b.timeout_ms)
                 }).collect();
-                format!("Expresion::Seleccionar {{ brazos: vec![{}] }}", brazos_str.join(", "))
+                format!(
+                    "Expresion::Seleccionar {{ brazos: vec![{}] }}",
+                    brazos_str.join(", ")
+                )
             }
         }
     }
@@ -2584,7 +3166,8 @@ impl Transpiler {
             Operador::Diferente => "Operador::Diferente",
             Operador::Y => "Operador::Y",
             Operador::O => "Operador::O",
-        }.to_string()
+        }
+        .to_string()
     }
 
     fn tipo_a_ast(&self, tipo: &Tipo) -> String {
@@ -2599,21 +3182,42 @@ impl Transpiler {
             Tipo::Arreglo(t) => format!("Tipo::Arreglo(Box::new({}))", self.tipo_a_ast(t)),
             Tipo::Funcion(params, ret) => {
                 let p: Vec<String> = params.iter().map(|t| self.tipo_a_ast(t)).collect();
-                format!("Tipo::Funcion(vec![{}], Box::new({}))", p.join(", "), self.tipo_a_ast(ret))
+                format!(
+                    "Tipo::Funcion(vec![{}], Box::new({}))",
+                    p.join(", "),
+                    self.tipo_a_ast(ret)
+                )
             }
-            Tipo::Resultado(ok, err) => format!("Tipo::Resultado(Box::new({}), Box::new({}))", self.tipo_a_ast(ok), self.tipo_a_ast(err)),
+            Tipo::Resultado(ok, err) => format!(
+                "Tipo::Resultado(Box::new({}), Box::new({}))",
+                self.tipo_a_ast(ok),
+                self.tipo_a_ast(err)
+            ),
             Tipo::Opcion(inner) => format!("Tipo::Opcion(Box::new({}))", self.tipo_a_ast(inner)),
-            Tipo::RasgoObjeto(n) => format!("Tipo::RasgoObjeto(String::from(\"{}\"))", self.esc_ast_string(n)),
-            Tipo::Parametro(n) => format!("Tipo::Parametro(String::from(\"{}\"))", self.esc_ast_string(n)),
+            Tipo::RasgoObjeto(n) => format!(
+                "Tipo::RasgoObjeto(String::from(\"{}\"))",
+                self.esc_ast_string(n)
+            ),
+            Tipo::Parametro(n) => format!(
+                "Tipo::Parametro(String::from(\"{}\"))",
+                self.esc_ast_string(n)
+            ),
         }
     }
 
     fn patron_a_ast(&self, patron: &Patron) -> String {
         match patron {
-            Patron::Variable(n) => format!("Patron::Variable(String::from(\"{}\"))", self.esc_ast_string(n)),
+            Patron::Variable(n) => format!(
+                "Patron::Variable(String::from(\"{}\"))",
+                self.esc_ast_string(n)
+            ),
             Patron::Constructor(n, ps) => {
                 let sub: Vec<String> = ps.iter().map(|p| self.patron_a_ast(p)).collect();
-                format!("Patron::Constructor(String::from(\"{}\"), vec![{}])", self.esc_ast_string(n), sub.join(", "))
+                format!(
+                    "Patron::Constructor(String::from(\"{}\"), vec![{}])",
+                    self.esc_ast_string(n),
+                    sub.join(", ")
+                )
             }
             Patron::Ignorar => "Patron::Ignorar".to_string(),
             Patron::Literal(lit) => format!("Patron::Literal({})", self.generar_ast_expresion(lit)),

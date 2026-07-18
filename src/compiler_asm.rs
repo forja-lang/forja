@@ -21,9 +21,9 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TargetArch {
-    X86_64Windows,  // Microsoft x64 calling convention
-    X86_64Linux,    // System V AMD64
-    AArch64,        // ARM64 Linux / macOS
+    X86_64Windows, // Microsoft x64 calling convention
+    X86_64Linux,   // System V AMD64
+    AArch64,       // ARM64 Linux / macOS
 }
 
 impl TargetArch {
@@ -50,8 +50,12 @@ impl TargetArch {
 
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().replace("-", "_").as_str() {
-            "x86_64_windows" | "x86_64-windows" | "win64" | "windows" => Some(TargetArch::X86_64Windows),
-            "x86_64_linux" | "x86_64-linux" | "linux64" | "linux" | "x86_64" => Some(TargetArch::X86_64Linux),
+            "x86_64_windows" | "x86_64-windows" | "win64" | "windows" => {
+                Some(TargetArch::X86_64Windows)
+            }
+            "x86_64_linux" | "x86_64-linux" | "linux64" | "linux" | "x86_64" => {
+                Some(TargetArch::X86_64Linux)
+            }
             "aarch64" | "arm64" | "arm" => Some(TargetArch::AArch64),
             _ => None,
         }
@@ -217,12 +221,8 @@ impl TargetArch {
 
     fn set_fp_from_sp(&self) -> String {
         match self {
-            TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
-                "    mov rbp, rsp".to_string()
-            }
-            TargetArch::AArch64 => {
-                "    mov x29, sp".to_string()
-            }
+            TargetArch::X86_64Windows | TargetArch::X86_64Linux => "    mov rbp, rsp".to_string(),
+            TargetArch::AArch64 => "    mov x29, sp".to_string(),
         }
     }
 
@@ -250,12 +250,8 @@ impl TargetArch {
 
     fn mov_sp_fp(&self) -> String {
         match self {
-            TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
-                "    mov rsp, rbp".to_string()
-            }
-            TargetArch::AArch64 => {
-                "    mov sp, x29".to_string()
-            }
+            TargetArch::X86_64Windows | TargetArch::X86_64Linux => "    mov rsp, rbp".to_string(),
+            TargetArch::AArch64 => "    mov sp, x29".to_string(),
         }
     }
 
@@ -315,7 +311,13 @@ impl TargetArch {
                 format!("    mov [{0} + {1}*{2}], {3}", base, index, scale, src)
             }
             TargetArch::AArch64 => {
-                format!("    str {}, [{}, {}, lsl #{}]", src, base, index, log2(scale))
+                format!(
+                    "    str {}, [{}, {}, lsl #{}]",
+                    src,
+                    base,
+                    index,
+                    log2(scale)
+                )
             }
         }
     }
@@ -423,8 +425,8 @@ impl TargetArch {
             "rdi" | "edi" => "dil".to_string(),
             "rbp" | "ebp" => "bpl".to_string(),
             "rsp" | "esp" => "spl".to_string(),
-            "r8"  | "r8d"  => "r8b".to_string(),
-            "r9"  | "r9d"  => "r9b".to_string(),
+            "r8" | "r8d" => "r8b".to_string(),
+            "r9" | "r9d" => "r9b".to_string(),
             "r10" | "r10d" => "r10b".to_string(),
             "r11" | "r11d" => "r11b".to_string(),
             "r12" | "r12d" => "r12b".to_string(),
@@ -440,9 +442,7 @@ impl TargetArch {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
                 format!("    setg {}", Self::to_8bit_reg(dst))
             }
-            TargetArch::AArch64 => {
-                "    cset x0, gt".to_string()
-            }
+            TargetArch::AArch64 => "    cset x0, gt".to_string(),
         }
     }
 
@@ -451,9 +451,7 @@ impl TargetArch {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
                 format!("    setl {}", Self::to_8bit_reg(dst))
             }
-            TargetArch::AArch64 => {
-                "    cset x0, lt".to_string()
-            }
+            TargetArch::AArch64 => "    cset x0, lt".to_string(),
         }
     }
 
@@ -462,9 +460,7 @@ impl TargetArch {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
                 format!("    setge {}", Self::to_8bit_reg(dst))
             }
-            TargetArch::AArch64 => {
-                "    cset x0, ge".to_string()
-            }
+            TargetArch::AArch64 => "    cset x0, ge".to_string(),
         }
     }
 
@@ -473,9 +469,7 @@ impl TargetArch {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
                 format!("    setle {}", Self::to_8bit_reg(dst))
             }
-            TargetArch::AArch64 => {
-                "    cset x0, le".to_string()
-            }
+            TargetArch::AArch64 => "    cset x0, le".to_string(),
         }
     }
 
@@ -484,9 +478,7 @@ impl TargetArch {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
                 format!("    sete {}", Self::to_8bit_reg(dst))
             }
-            TargetArch::AArch64 => {
-                "    cset x0, eq".to_string()
-            }
+            TargetArch::AArch64 => "    cset x0, eq".to_string(),
         }
     }
 
@@ -495,9 +487,7 @@ impl TargetArch {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
                 format!("    setne {}", Self::to_8bit_reg(dst))
             }
-            TargetArch::AArch64 => {
-                "    cset x0, ne".to_string()
-            }
+            TargetArch::AArch64 => "    cset x0, ne".to_string(),
         }
     }
 
@@ -532,12 +522,8 @@ impl TargetArch {
 
     fn ret(&self) -> String {
         match self {
-            TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
-                "    ret".to_string()
-            }
-            TargetArch::AArch64 => {
-                "    ret".to_string()
-            }
+            TargetArch::X86_64Windows | TargetArch::X86_64Linux => "    ret".to_string(),
+            TargetArch::AArch64 => "    ret".to_string(),
         }
     }
 
@@ -581,7 +567,10 @@ impl TargetArch {
             }
             TargetArch::AArch64 => {
                 // ARM64 necesita adrp + add para direcciones lejanas
-                format!("    adrp {}, {}\n    add {}, {}, :lo12:{}", dst, label, dst, dst, label)
+                format!(
+                    "    adrp {}, {}\n    add {}, {}, :lo12:{}",
+                    dst, label, dst, dst, label
+                )
             }
         }
     }
@@ -614,8 +603,10 @@ impl TargetArch {
                 format!("    movsd {}, [rip + {}]", float_reg, label)
             }
             TargetArch::AArch64 => {
-                format!("    adrp {}, {}\n    ldr {}, [x0, :lo12:{}]",
-                    float_reg, label, float_reg, label)
+                format!(
+                    "    adrp {}, {}\n    ldr {}, [x0, :lo12:{}]",
+                    float_reg, label, float_reg, label
+                )
             }
         }
     }
@@ -673,12 +664,12 @@ impl TargetArch {
                 // Primero guardamos len (R8) ANTES de sobrescribir RDX con el buffer
                 vec![
                     format!("    sub rsp, 48"),
-                    format!("    mov rcx, -11"),           // STD_OUTPUT_HANDLE
+                    format!("    mov rcx, -11"), // STD_OUTPUT_HANDLE
                     format!("    call GetStdHandle"),
-                    format!("    mov rcx, rax"),            // hFile = handle
-                    format!("    mov r8, {}", reg_len),     // nNumberOfBytesToWrite (guardar primero)
-                    format!("    mov rdx, {}", reg_buf),    // lpBuffer (sobrescribe RDX después)
-                    format!("    lea r9, [rsp + 40]"),     // lpNumberOfBytesWritten
+                    format!("    mov rcx, rax"),         // hFile = handle
+                    format!("    mov r8, {}", reg_len),  // nNumberOfBytesToWrite (guardar primero)
+                    format!("    mov rdx, {}", reg_buf), // lpBuffer (sobrescribe RDX después)
+                    format!("    lea r9, [rsp + 40]"),   // lpNumberOfBytesWritten
                     format!("    mov qword ptr [rsp + 32], 0"), // lpOverlapped = NULL
                     format!("    call WriteFile"),
                     format!("    add rsp, 48"),
@@ -687,10 +678,10 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 // Linux ARM64 syscall: write(1, buf, len)
                 vec![
-                    format!("    mov x8, 64"),              // syscall nr: write
-                    format!("    mov x0, 1"),               // fd = stdout
-                    format!("    mov x1, {}", reg_buf),     // buf
-                    format!("    mov x2, {}", reg_len),     // len
+                    format!("    mov x8, 64"),          // syscall nr: write
+                    format!("    mov x0, 1"),           // fd = stdout
+                    format!("    mov x1, {}", reg_buf), // buf
+                    format!("    mov x2, {}", reg_len), // len
                     format!("    svc #0"),
                 ]
             }
@@ -747,17 +738,17 @@ pub struct CompilerAsm {
     stack_offset: i32,
     variables: HashMap<String, StackVar>,
     funciones: Vec<String>,
-    funciones_declaraciones: HashMap<String, Declaracion>,  // para inlining
+    funciones_declaraciones: HashMap<String, Declaracion>, // para inlining
     clases: HashMap<String, ClaseAsmInfo>,
     label_counter: usize,
     funcion_actual: Option<String>,
     // Register allocator
-    reg_pool: Vec<bool>,            // true = allocated
-    reg_names: Vec<&'static str>,   // register names
-    reg_saved: Vec<String>,         // saved register values for spilling
+    reg_pool: Vec<bool>,          // true = allocated
+    reg_names: Vec<&'static str>, // register names
+    reg_saved: Vec<String>,       // saved register values for spilling
     // Persistent variable → register mapping (Linear Scan)
-    var_reg_map: HashMap<String, &'static str>,  // variable -> registro calle-saved
-    reg_var_map: HashMap<&'static str, String>,   // registro -> variable
+    var_reg_map: HashMap<String, &'static str>, // variable -> registro calle-saved
+    reg_var_map: HashMap<&'static str, String>, // registro -> variable
     // Design by Contract
     postcondiciones_activas: bool,
     retval_stack_label: String,
@@ -805,7 +796,9 @@ impl CompilerAsm {
             }
             TargetArch::AArch64 => {
                 // Callee-saved en ARM64: X19-X28
-                let names: Vec<&str> = vec!["x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28"];
+                let names: Vec<&str> = vec![
+                    "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28",
+                ];
                 let pool = vec![false; names.len()];
                 (names, pool)
             }
@@ -982,13 +975,15 @@ impl CompilerAsm {
         let a = self.arch;
         let len = s.len();
         let lbl = self.nueva_etiqueta("wstr");
-        let escaped = s.replace('\\', "\\\\")
+        let escaped = s
+            .replace('\\', "\\\\")
             .replace('"', "\\\"")
             .replace('\n', "\\n")
             .replace('\r', "\\r")
             .replace('\t', "\\t");
         self.rdata.push_str(&format!("{}:\n", lbl));
-        self.rdata.push_str(&format!("    .asciz \"{}\"\n", escaped));
+        self.rdata
+            .push_str(&format!("    .asciz \"{}\"\n", escaped));
 
         match a {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
@@ -1019,12 +1014,12 @@ impl CompilerAsm {
         match a {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
                 // Después de gen_itoa: rdi = ptr, rax = len
-                self.emit_line(&a.mov_reg_reg("rsi", "rdi"));   // buf
-                self.emit_line(&a.mov_reg_reg("rdx", "rax"));   // len
+                self.emit_line(&a.mov_reg_reg("rsi", "rdi")); // buf
+                self.emit_line(&a.mov_reg_reg("rdx", "rax")); // len
                 for line in &a.gen_syscall_write("rsi", "rdx") {
                     self.emit_line(line);
                 }
-                self.emit_line("    add rsp, 32");  // liberar buffer itoa
+                self.emit_line("    add rsp, 32"); // liberar buffer itoa
             }
             TargetArch::AArch64 => {
                 // Después de gen_itoa: x1 = ptr, x0 = len
@@ -1066,7 +1061,10 @@ impl CompilerAsm {
         self.recolectar_clases(&programa.declaraciones);
 
         // Encabezado
-        self.emit_line(&format!("// Código assembly generado por Forja (fa) — target: {}", self.arch.name()));
+        self.emit_line(&format!(
+            "// Código assembly generado por Forja (fa) — target: {}",
+            self.arch.name()
+        ));
         self.emit_line("// Compilar: gcc -O2 -o programa este_archivo.s");
         self.emit_line("");
 
@@ -1113,7 +1111,8 @@ impl CompilerAsm {
         for decl in &programa.declaraciones {
             if let Declaracion::Funcion { nombre, .. } = decl {
                 self.funciones.push(nombre.clone());
-                self.funciones_declaraciones.insert(nombre.clone(), decl.clone());
+                self.funciones_declaraciones
+                    .insert(nombre.clone(), decl.clone());
             }
         }
 
@@ -1122,7 +1121,10 @@ impl CompilerAsm {
 
         // Generar métodos de clase como funciones (ej: "Punto.nuevo", "Punto.distancia")
         for decl in &programa.declaraciones {
-            if let Declaracion::Clase { nombre, metodos, .. } = decl {
+            if let Declaracion::Clase {
+                nombre, metodos, ..
+            } = decl
+            {
                 for metodo in metodos {
                     self.generar_metodo_asm(nombre, metodo);
                 }
@@ -1138,9 +1140,10 @@ impl CompilerAsm {
         }
 
         // main()
-        let tiene_main = programa.declaraciones.iter().any(|d| {
-            matches!(d, Declaracion::Funcion { nombre, .. } if nombre == "main")
-        });
+        let tiene_main = programa
+            .declaraciones
+            .iter()
+            .any(|d| matches!(d, Declaracion::Funcion { nombre, .. } if nombre == "main"));
 
         if !tiene_main {
             let regs = self.reg_names.clone();
@@ -1150,21 +1153,27 @@ impl CompilerAsm {
                 self.emit_line(&self.arch.push_reg(reg));
             }
             // 2) Frame pointer
-            for line in &self.arch.push_fp_lr() { self.emit_line(line); }
+            for line in &self.arch.push_fp_lr() {
+                self.emit_line(line);
+            }
             self.emit_line(&self.arch.set_fp_from_sp());
             self.emit_line(&self.arch.sub_sp(64));
 
             for decl in &programa.declaraciones {
                 match decl {
                     Declaracion::Funcion { .. } | Declaracion::Clase { .. } => {}
-                    _ => { self.compilar_declaracion(decl); }
+                    _ => {
+                        self.compilar_declaracion(decl);
+                    }
                 }
             }
 
             self.emit_line("");
             self.emit_line(&self.arch.mov_reg_imm(self.arch.ret_reg_32(), 0));
             self.emit_line(&self.arch.mov_sp_fp());
-            for line in &self.arch.pop_fp_lr() { self.emit_line(line); }
+            for line in &self.arch.pop_fp_lr() {
+                self.emit_line(line);
+            }
             // Restaurar registros calle-saved (orden inverso)
             for reg in regs.iter().rev() {
                 self.emit_line(&self.arch.pop_reg(reg));
@@ -1187,7 +1196,13 @@ impl CompilerAsm {
 
     fn recolectar_clases(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
-            if let Declaracion::Clase { nombre, campos, metodos, .. } = decl {
+            if let Declaracion::Clase {
+                nombre,
+                campos,
+                metodos,
+                ..
+            } = decl
+            {
                 let mut campos_info = Vec::new();
                 let mut offsets = HashMap::new();
                 let mut size = 0i32;
@@ -1195,17 +1210,28 @@ impl CompilerAsm {
                     let tipo = self.inferir_tipo_campo_asm(campo);
                     let tam = self.tipo_asm_size(&tipo);
                     // Alinear: cada campo empieza en múltiplo de su tamaño
-                    if tam > 0 { size = (size + tam - 1) / tam * tam + tam; }
-                    else { size += 8; }
+                    if tam > 0 {
+                        size = (size + tam - 1) / tam * tam + tam;
+                    } else {
+                        size += 8;
+                    }
                     let offset = i as i32 * 8; // offset simplificado: cada campo en qword
                     offsets.insert(campo.nombre.clone(), offset);
                     campos_info.push((campo.nombre.clone(), tipo));
                 }
                 let metodos_info: Vec<String> = metodos.iter().map(|m| m.nombre.clone()).collect();
-                if size == 0 { size = 8; }
-                self.clases.insert(nombre.clone(), ClaseAsmInfo {
-                    campos: campos_info, metodos: metodos_info, size, offsets,
-                });
+                if size == 0 {
+                    size = 8;
+                }
+                self.clases.insert(
+                    nombre.clone(),
+                    ClaseAsmInfo {
+                        campos: campos_info,
+                        metodos: metodos_info,
+                        size,
+                        offsets,
+                    },
+                );
             }
         }
     }
@@ -1220,7 +1246,9 @@ impl CompilerAsm {
                 Tipo::Clase(n) => TipoAsm::Clase(n.clone()),
                 _ => TipoAsm::Entero,
             }
-        } else { TipoAsm::Entero }
+        } else {
+            TipoAsm::Entero
+        }
     }
 
     fn tipo_asm_size(&self, tipo: &TipoAsm) -> i32 {
@@ -1259,7 +1287,9 @@ impl CompilerAsm {
                 Tipo::Clase(n) => TipoAsm::Clase(n.clone()),
                 _ => TipoAsm::Entero,
             }
-        } else { TipoAsm::Entero }
+        } else {
+            TipoAsm::Entero
+        }
     }
 
     fn inferir_tipo_de_expr(&self, expr: &Expresion) -> Option<Tipo> {
@@ -1303,48 +1333,70 @@ impl CompilerAsm {
 
         // forja_print_int
         self.emit_line("forja_print_int:");
-        for line in &a.push_fp_lr() { self.emit_line(line); }
+        for line in &a.push_fp_lr() {
+            self.emit_line(line);
+        }
         self.emit_line(&a.set_fp_from_sp());
-        if ss > 0 { self.emit_line(&a.sub_sp(ss)); }
+        if ss > 0 {
+            self.emit_line(&a.sub_sp(ss));
+        }
         self.emit_line(&a.mov_reg_reg(a.tmp2_reg(), ret)); // arg en tmp2 (rdx/x2)
         self.emit_line(&a.lea_label(tmp, "fmt_int"));
         self.emit_line(&a.call("printf"));
         self.emit_line(&a.mov_sp_fp());
-        for line in &a.pop_fp_lr() { self.emit_line(line); }
+        for line in &a.pop_fp_lr() {
+            self.emit_line(line);
+        }
         self.emit_line(&a.ret());
         self.emit_line("");
 
         // forja_print_str
         self.emit_line("forja_print_str:");
-        for line in &a.push_fp_lr() { self.emit_line(line); }
+        for line in &a.push_fp_lr() {
+            self.emit_line(line);
+        }
         self.emit_line(&a.set_fp_from_sp());
-        if ss > 0 { self.emit_line(&a.sub_sp(ss)); }
+        if ss > 0 {
+            self.emit_line(&a.sub_sp(ss));
+        }
         self.emit_line(&a.mov_reg_reg(a.tmp2_reg(), ret)); // arg string en tmp2
         self.emit_line(&a.lea_label(tmp, "fmt_str"));
         self.emit_line(&a.call("printf"));
         self.emit_line(&a.mov_sp_fp());
-        for line in &a.pop_fp_lr() { self.emit_line(line); }
+        for line in &a.pop_fp_lr() {
+            self.emit_line(line);
+        }
         self.emit_line(&a.ret());
         self.emit_line("");
 
         // forja_print_float
         self.emit_line("forja_print_float:");
-        for line in &a.push_fp_lr() { self.emit_line(line); }
+        for line in &a.push_fp_lr() {
+            self.emit_line(line);
+        }
         self.emit_line(&a.set_fp_from_sp());
-        if ss > 0 { self.emit_line(&a.sub_sp(ss)); }
+        if ss > 0 {
+            self.emit_line(&a.sub_sp(ss));
+        }
         // Pasar el double (que viene en xmm0/d0 a través de x0)
         self.emit_line(&a.lea_label(tmp, "fmt_float"));
         self.emit_line(&a.call("printf"));
         self.emit_line(&a.mov_sp_fp());
-        for line in &a.pop_fp_lr() { self.emit_line(line); }
+        for line in &a.pop_fp_lr() {
+            self.emit_line(line);
+        }
         self.emit_line(&a.ret());
         self.emit_line("");
 
         // forja_print_bool
         self.emit_line("forja_print_bool:");
-        for line in &a.push_fp_lr() { self.emit_line(line); }
+        for line in &a.push_fp_lr() {
+            self.emit_line(line);
+        }
         self.emit_line(&a.set_fp_from_sp());
-        if ss > 0 { self.emit_line(&a.sub_sp(ss)); }
+        if ss > 0 {
+            self.emit_line(&a.sub_sp(ss));
+        }
         self.emit_line(&a.test_reg(ret));
         self.emit_line(&a.jump_if_zero(".Lprint_false"));
         self.emit_line(&a.lea_label(a.tmp2_reg(), "fmt_bool_true"));
@@ -1355,28 +1407,38 @@ impl CompilerAsm {
         self.emit_line(&a.lea_label(tmp, "fmt_str"));
         self.emit_line(&a.call("printf"));
         self.emit_line(&a.mov_sp_fp());
-        for line in &a.pop_fp_lr() { self.emit_line(line); }
+        for line in &a.pop_fp_lr() {
+            self.emit_line(line);
+        }
         self.emit_line(&a.ret());
         self.emit_line("");
 
         // forja_print_newline
         self.emit_line("forja_print_newline:");
-        for line in &a.push_fp_lr() { self.emit_line(line); }
+        for line in &a.push_fp_lr() {
+            self.emit_line(line);
+        }
         self.emit_line(&a.set_fp_from_sp());
-        if ss > 0 { self.emit_line(&a.sub_sp(ss)); }
+        if ss > 0 {
+            self.emit_line(&a.sub_sp(ss));
+        }
         self.emit_line(&a.lea_label(tmp, "fmt_newline"));
         self.emit_line(&a.call("printf"));
         self.emit_line(&a.mov_sp_fp());
-        for line in &a.pop_fp_lr() { self.emit_line(line); }
+        for line in &a.pop_fp_lr() {
+            self.emit_line(line);
+        }
         self.emit_line(&a.ret());
         self.emit_line("");
     }
 
     fn generar_clases_asm(&mut self, _declaraciones: &[Declaracion]) {
         for (_nombre, info) in &self.clases {
-            self.output.push_str(&format!("// {}: struct de {} bytes\n", _nombre, info.size));
+            self.output
+                .push_str(&format!("// {}: struct de {} bytes\n", _nombre, info.size));
             for (i, (campo, tipo)) in info.campos.iter().enumerate() {
-                self.output.push_str(&format!("//   +{}: {} ({:?})\n", i * 8, campo, tipo));
+                self.output
+                    .push_str(&format!("//   +{}: {} ({:?})\n", i * 8, campo, tipo));
             }
             self.output.push_str("\n");
         }
@@ -1391,16 +1453,25 @@ impl CompilerAsm {
         let tmp = a.tmp_reg();
 
         match decl {
-            Declaracion::Variable { mutable: _, nombre, tipo, valor, .. } => {
-                let tipo_inferido = tipo.clone().or_else(|| {
-                    valor.as_ref().and_then(|v| self.inferir_tipo_de_expr(v))
-                });
+            Declaracion::Variable {
+                mutable: _,
+                nombre,
+                tipo,
+                valor,
+                ..
+            } => {
+                let tipo_inferido = tipo
+                    .clone()
+                    .or_else(|| valor.as_ref().and_then(|v| self.inferir_tipo_de_expr(v)));
                 let tipo_asm = self.tipo_forja_a_asm(&tipo_inferido);
                 let size = self.tipo_asm_size(&tipo_asm);
 
                 // Intentar asignar un registro calle-saved persistente
                 // (solo para tipos enteros, punteros y booleanos; los decimales van a stack)
-                let puede_tener_registro = matches!(tipo_asm, TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) | TipoAsm::Booleano);
+                let puede_tener_registro = matches!(
+                    tipo_asm,
+                    TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) | TipoAsm::Booleano
+                );
                 let reg_asignado = if puede_tener_registro {
                     self.alloc_var_reg(nombre)
                 } else {
@@ -1411,10 +1482,13 @@ impl CompilerAsm {
                     // ─── Variable en registro ───
                     // De todas formas creamos un StackVar con offset 0 para que
                     // get() no falle, pero no se usa para memoria.
-                    self.variables.insert(nombre.clone(), StackVar {
-                        offset: 0,
-                        tipo: tipo_asm.clone(),
-                    });
+                    self.variables.insert(
+                        nombre.clone(),
+                        StackVar {
+                            offset: 0,
+                            tipo: tipo_asm.clone(),
+                        },
+                    );
                     if let Some(val) = valor {
                         let _ = self.compilar_expresion_asm(val);
                         // ret (rax/x0) tiene el valor -> mover al registro asignado
@@ -1432,10 +1506,13 @@ impl CompilerAsm {
                     // ─── Variable en stack (sin registro disponible o tipo decimal) ───
                     self.stack_offset -= size;
                     self.stack_offset = self.stack_offset / size * size - size;
-                    self.variables.insert(nombre.clone(), StackVar {
-                        offset: self.stack_offset,
-                        tipo: tipo_asm.clone(),
-                    });
+                    self.variables.insert(
+                        nombre.clone(),
+                        StackVar {
+                            offset: self.stack_offset,
+                            tipo: tipo_asm.clone(),
+                        },
+                    );
                     if let Some(val) = valor {
                         let _ = self.compilar_expresion_asm(val);
                         let oa = -self.stack_offset;
@@ -1487,7 +1564,12 @@ impl CompilerAsm {
                 }
             }
 
-            Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } => {
+            Declaracion::AsignacionMiembro {
+                objeto,
+                miembro,
+                valor,
+                ..
+            } => {
                 // 1) Compilar objeto → puntero al struct en ret
                 self.compilar_expresion_asm(objeto);
                 // 2) Guardar puntero
@@ -1512,7 +1594,12 @@ impl CompilerAsm {
                 self.emit_line(&a.str_field(tmp, co, ret));
             }
 
-            Declaracion::AsignacionIndex { nombre, indice, valor, .. } => {
+            Declaracion::AsignacionIndex {
+                nombre,
+                indice,
+                valor,
+                ..
+            } => {
                 let _idx = self.compilar_expresion_asm(indice);
                 let _val = self.compilar_expresion_asm(valor);
                 // Cargar el puntero del array (desde registro o stack)
@@ -1528,13 +1615,24 @@ impl CompilerAsm {
                 self.emit_line(&a.str_mem_index(tmp, ret, 8, a.tmp2_reg()));
             }
 
-            Declaracion::Funcion { nombre, parametros, cuerpo, externa, precondiciones, postcondiciones, .. } => {
+            Declaracion::Funcion {
+                nombre,
+                parametros,
+                cuerpo,
+                externa,
+                precondiciones,
+                postcondiciones,
+                ..
+            } => {
                 // Si es función externa, solo emitir directiva .extern y saltar definición
                 if *externa {
                     self.emit_line(&self.arch.extern_directive(nombre));
                     self.emit_line(&self.arch.globl_directive(nombre));
                     self.emit_line(&format!("{}:", nombre));
-                    self.emit_line(&format!("    // función externa '{}' - resuelta por el linker", nombre));
+                    self.emit_line(&format!(
+                        "    // función externa '{}' - resuelta por el linker",
+                        nombre
+                    ));
                     self.emit_line(&self.arch.ret());
                     self.emit_line("");
                     return;
@@ -1558,9 +1656,9 @@ impl CompilerAsm {
                 }
                 for d in cuerpo.iter() {
                     if let Declaracion::Variable { tipo, valor, .. } = d {
-                        let tipo_inferido = tipo.clone().or_else(|| {
-                            valor.as_ref().and_then(|v| self.inferir_tipo_de_expr(v))
-                        });
+                        let tipo_inferido = tipo
+                            .clone()
+                            .or_else(|| valor.as_ref().and_then(|v| self.inferir_tipo_de_expr(v)));
                         let tipo_asm = self.tipo_forja_a_asm(&tipo_inferido);
                         if let TipoAsm::Decimal = tipo_asm {
                             frame_estimate += self.tipo_asm_size(&tipo_asm);
@@ -1577,10 +1675,16 @@ impl CompilerAsm {
                 // ── Prólogo ──
                 let regs = self.reg_names.clone();
                 self.emit_line(&format!("{}:", nombre));
-                for reg in &regs { self.emit_line(&a.push_reg(reg)); }
-                for line in &a.push_fp_lr() { self.emit_line(line); }
+                for reg in &regs {
+                    self.emit_line(&a.push_reg(reg));
+                }
+                for line in &a.push_fp_lr() {
+                    self.emit_line(line);
+                }
                 self.emit_line(&a.set_fp_from_sp());
-                if frame_size > 0 { self.emit_line(&a.sub_sp(frame_size)); }
+                if frame_size > 0 {
+                    self.emit_line(&a.sub_sp(frame_size));
+                }
 
                 // ── Setup for postcondiciones ──
                 let has_post = !postcondiciones.is_empty();
@@ -1595,7 +1699,10 @@ impl CompilerAsm {
                     self.contract_label_counter += 1;
                     // Emit retval string messages in data section
                     for c in postcondiciones {
-                        let msg = c.mensaje.clone().unwrap_or_else(|| "Postcondición falló".to_string());
+                        let msg = c
+                            .mensaje
+                            .clone()
+                            .unwrap_or_else(|| "Postcondición falló".to_string());
                         let mlbl = format!(".Lmsg_post_{}", self.contract_label_counter);
                         self.rdata.push_str(&format!("{}:\n", mlbl));
                         self.rdata.push_str(&format!("    .asciz \"{}\"\n", msg));
@@ -1608,18 +1715,37 @@ impl CompilerAsm {
                 for (i, param) in parametros.iter().enumerate() {
                     let tipo_asm = self.tipo_parametro_a_asm(param);
                     let size = self.tipo_asm_size(&tipo_asm);
-                    let puede_tener_registro = matches!(tipo_asm, TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) | TipoAsm::Booleano);
-                    let param_reg = if puede_tener_registro { self.alloc_var_reg(&param.nombre) } else { None };
+                    let puede_tener_registro = matches!(
+                        tipo_asm,
+                        TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) | TipoAsm::Booleano
+                    );
+                    let param_reg = if puede_tener_registro {
+                        self.alloc_var_reg(&param.nombre)
+                    } else {
+                        None
+                    };
 
                     if let Some(reg) = param_reg {
-                        self.variables.insert(param.nombre.clone(), StackVar { offset: 0, tipo: tipo_asm });
+                        self.variables.insert(
+                            param.nombre.clone(),
+                            StackVar {
+                                offset: 0,
+                                tipo: tipo_asm,
+                            },
+                        );
                         if i < arg_regs.len() {
                             self.emit_line(&a.mov_reg_reg(reg, arg_regs[i]));
                         }
                     } else {
                         self.stack_offset -= if size > 4 { 8 } else { 4 };
                         let oa = -self.stack_offset;
-                        self.variables.insert(param.nombre.clone(), StackVar { offset: self.stack_offset, tipo: tipo_asm });
+                        self.variables.insert(
+                            param.nombre.clone(),
+                            StackVar {
+                                offset: self.stack_offset,
+                                tipo: tipo_asm,
+                            },
+                        );
                         if i < arg_regs.len() {
                             self.emit_line(&a.str_reg_mem(arg_regs[i], fp, oa));
                         }
@@ -1629,7 +1755,10 @@ impl CompilerAsm {
 
                 // ─── Precondiciones ───
                 for c in precondiciones {
-                    let msg = c.mensaje.clone().unwrap_or_else(|| "Precondición falló".to_string());
+                    let msg = c
+                        .mensaje
+                        .clone()
+                        .unwrap_or_else(|| "Precondición falló".to_string());
                     let lbl_fail = self.nueva_etiqueta("pre_fail");
                     let lbl_ok = self.nueva_etiqueta("pre_ok");
                     let lbl_msg = format!(".Lmsg_pre_{}", self.contract_label_counter);
@@ -1640,7 +1769,7 @@ impl CompilerAsm {
                     self.compilar_expresion_asm(&c.condicion);
                     self.emit_line(&a.test_reg(ret));
                     self.emit_line(&a.jump_if_zero(&lbl_fail)); // if false (0) → error
-                    self.emit_line(&a.jump(&lbl_ok));           // if true → ok
+                    self.emit_line(&a.jump(&lbl_ok)); // if true → ok
                     self.emit_line(&format!("{}:", lbl_fail));
                     // Call forja_contract_error with message
                     match self.arch {
@@ -1656,13 +1785,17 @@ impl CompilerAsm {
                 }
 
                 // ── Cuerpo ──
-                for d in cuerpo { self.compilar_declaracion(d); }
+                for d in cuerpo {
+                    self.compilar_declaracion(d);
+                }
 
                 // ── Epílogo con postcondiciones ──
                 self.emit_line("");
                 if has_post {
                     // Jump to end label (if body didn't have explicit return)
-                    let has_explicit_ret = cuerpo.iter().any(|x| matches!(x, Declaracion::Retornar { .. }));
+                    let has_explicit_ret = cuerpo
+                        .iter()
+                        .any(|x| matches!(x, Declaracion::Retornar { .. }));
                     if !has_explicit_ret {
                         self.emit_line(&a.jump(&self.end_label_fn));
                     }
@@ -1679,7 +1812,10 @@ impl CompilerAsm {
                     for c in postcondiciones {
                         // We currently don't evaluate postcondición expressions in ASM for 'resultado'
                         // For now, emit a comment that this is a postcondición check
-                        let msg = c.mensaje.clone().unwrap_or_else(|| "Postcondición falló".to_string());
+                        let msg = c
+                            .mensaje
+                            .clone()
+                            .unwrap_or_else(|| "Postcondición falló".to_string());
                         self.emit_line(&format!("    // postcondición: {}", msg));
                         // Note: Full postcondición expression evaluation with 'resultado'
                         // would need a special expression compiler similar to generar_expr_con_resultado
@@ -1688,10 +1824,16 @@ impl CompilerAsm {
                 }
                 // Liberar todos los registros de variables de esta función
                 let nombres_var: Vec<String> = self.var_reg_map.keys().cloned().collect();
-                for v in nombres_var { self.free_var_reg(&v); }
+                for v in nombres_var {
+                    self.free_var_reg(&v);
+                }
                 self.emit_line(&a.mov_sp_fp());
-                for line in &a.pop_fp_lr() { self.emit_line(line); }
-                for reg in regs.iter().rev() { self.emit_line(&a.pop_reg(reg)); }
+                for line in &a.pop_fp_lr() {
+                    self.emit_line(line);
+                }
+                for reg in regs.iter().rev() {
+                    self.emit_line(&a.pop_reg(reg));
+                }
                 self.emit_line(&a.ret());
 
                 self.variables = vars_previas;
@@ -1706,17 +1848,25 @@ impl CompilerAsm {
             Declaracion::Rasgo { .. } => {}
             Declaracion::Implementacion { .. } => {}
 
-            Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+            Declaracion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
                 let lelse = self.nueva_etiqueta("else");
                 let lend = self.nueva_etiqueta("endif");
                 self.compilar_expresion_asm(condicion);
                 self.emit_line(&a.test_reg(ret));
                 self.emit_line(&a.jump_if_zero(&lelse));
-                for d in bloque_verdadero { self.compilar_declaracion(d); }
+                for d in bloque_verdadero {
+                    self.compilar_declaracion(d);
+                }
                 self.emit_line(&a.jump(&lend));
                 self.emit_line(&format!("{}:", lelse));
                 if let Some(bf) = bloque_falso {
-                    for d in bf { self.compilar_declaracion(d); }
+                    for d in bf {
+                        self.compilar_declaracion(d);
+                    }
                 }
                 self.emit_line(&format!("{}:", lend));
             }
@@ -1728,33 +1878,50 @@ impl CompilerAsm {
                 self.compilar_expresion_asm(condicion);
                 self.emit_line(&a.test_reg(ret));
                 self.emit_line(&a.jump_if_zero(&lend));
-                for d in bloque { self.compilar_declaracion(d); }
+                for d in bloque {
+                    self.compilar_declaracion(d);
+                }
                 self.emit_line(&a.jump(&lstart));
                 self.emit_line(&format!("{}:", lend));
             }
 
-            Declaracion::Cuando { condicion, cuerpo, .. } => {
+            Declaracion::Cuando {
+                condicion, cuerpo, ..
+            } => {
                 let lend = self.nueva_etiqueta("cuando_end");
                 self.compilar_expresion_asm(condicion);
                 let a = self.arch.clone();
                 self.emit_line(&a.test_reg(ret));
                 self.emit_line(&a.jump_if_zero(&lend));
-                for d in cuerpo { self.compilar_declaracion(d); }
+                for d in cuerpo {
+                    self.compilar_declaracion(d);
+                }
                 self.emit_line(&format!("{}:", lend));
             }
 
-            Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
+            Declaracion::Para {
+                inicializacion,
+                condicion,
+                incremento,
+                bloque,
+            } => {
                 let lstart = self.nueva_etiqueta("for_start");
                 let lend = self.nueva_etiqueta("for_end");
-                if let Some(init) = inicializacion { self.compilar_declaracion(init); }
+                if let Some(init) = inicializacion {
+                    self.compilar_declaracion(init);
+                }
                 self.emit_line(&format!("{}:", lstart));
                 if let Some(cond) = condicion {
                     self.compilar_expresion_asm(cond);
                     self.emit_line(&a.test_reg(ret));
                     self.emit_line(&a.jump_if_zero(&lend));
                 }
-                for d in bloque { self.compilar_declaracion(d); }
-                if let Some(inc) = incremento { self.compilar_declaracion(inc); }
+                for d in bloque {
+                    self.compilar_declaracion(d);
+                }
+                if let Some(inc) = incremento {
+                    self.compilar_declaracion(inc);
+                }
                 self.emit_line(&a.jump(&lstart));
                 self.emit_line(&format!("{}:", lend));
             }
@@ -1765,14 +1932,22 @@ impl CompilerAsm {
                 let cname = format!("__repetir_{}", self.label_counter);
                 self.stack_offset -= 8;
                 let oa = -self.stack_offset;
-                self.variables.insert(cname, StackVar { offset: self.stack_offset, tipo: TipoAsm::Entero });
+                self.variables.insert(
+                    cname,
+                    StackVar {
+                        offset: self.stack_offset,
+                        tipo: TipoAsm::Entero,
+                    },
+                );
                 self.emit_line(&a.mov_qword_ptr_imm(fp, oa, 0));
                 self.emit_line(&format!("{}:", lloop));
                 self.compilar_expresion_asm(cantidad);
                 self.emit_line(&a.ldr_reg_mem(tmp, fp, oa));
                 self.emit_line(&a.cmp_reg_reg(tmp, ret));
                 self.emit_line(&a.jump_if_ge(&lend));
-                for d in bloque { self.compilar_declaracion(d); }
+                for d in bloque {
+                    self.compilar_declaracion(d);
+                }
                 // incrementar contador: [fp - oa] += 1
                 self.emit_line(&a.ldr_reg_mem(tmp, fp, oa));
                 self.emit_line(&a.mov_reg_imm(a.tmp2_reg(), 1));
@@ -1813,7 +1988,9 @@ impl CompilerAsm {
                     }
                     let regs = self.reg_names.clone();
                     self.emit_line(&a.mov_sp_fp());
-                    for line in &a.pop_fp_lr() { self.emit_line(line); }
+                    for line in &a.pop_fp_lr() {
+                        self.emit_line(line);
+                    }
                     for reg in regs.iter().rev() {
                         self.emit_line(&a.pop_reg(reg));
                     }
@@ -1827,7 +2004,9 @@ impl CompilerAsm {
                 self.compilar_expresion_asm(expr);
             }
 
-            Declaracion::AsignacionMultiple { variables, valor, .. } => {
+            Declaracion::AsignacionMultiple {
+                variables, valor, ..
+            } => {
                 // SIMD/ASM backend: no implementar concurrencia
                 for var in variables {
                     let _ = var;
@@ -1866,17 +2045,25 @@ impl CompilerAsm {
 
             Expresion::LiteralTexto(s) => {
                 let lbl = self.nueva_etiqueta("str");
-                let escaped = s.replace('\\', "\\\\").replace('"', "\\\"")
-                    .replace('\n', "\\n").replace('\r', "\\r").replace('\t', "\\t");
+                let escaped = s
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('\n', "\\n")
+                    .replace('\r', "\\r")
+                    .replace('\t', "\\t");
                 self.rdata.push_str(&format!("{}:\n", lbl));
-                self.rdata.push_str(&format!("    .asciz \"{}\"\n", escaped));
+                self.rdata
+                    .push_str(&format!("    .asciz \"{}\"\n", escaped));
                 self.emit_line(&a.lea_label(ret, &lbl));
                 ret.to_string()
             }
 
             Expresion::LiteralBooleano(b) => {
-                if *b { self.emit_line(&a.mov_reg_imm(a.ret_reg_32(), 1)); }
-                else { self.emit_line(&a.xor_reg_reg(a.ret_reg_32(), a.ret_reg_32())); }
+                if *b {
+                    self.emit_line(&a.mov_reg_imm(a.ret_reg_32(), 1));
+                } else {
+                    self.emit_line(&a.xor_reg_reg(a.ret_reg_32(), a.ret_reg_32()));
+                }
                 ret.to_string()
             }
 
@@ -1927,7 +2114,11 @@ impl CompilerAsm {
                 ret.to_string()
             }
 
-            Expresion::Binaria { izquierda, operador, derecha } => {
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
                 self.compilar_expresion_asm(izquierda);
                 // Usar registro calle-saved si está disponible, sino push/pop
                 let reg_right = self.alloc_reg().unwrap_or(tmp);
@@ -1955,58 +2146,42 @@ impl CompilerAsm {
                         let mut lines = Vec::new();
                         // Guardar a, hacer a/b, multiplicar por b, restar de a
                         lines.push(format!("\tpush\t{ret}"));
-                        lines.extend(a.div_reg(tmp));  // ret = a / b (ret tiene a/b, tmp tiene b)
+                        lines.extend(a.div_reg(tmp)); // ret = a / b (ret tiene a/b, tmp tiene b)
                         lines.push(format!("\tpush\t{ret}")); // guardar a/b
-                        lines.push(format!("\tpop\ttmp"));    // tmp = a/b ... wait this is wrong for asm
-                        // For simplicity, use Rust-like modulo in asm:
+                        lines.push(format!("\tpop\ttmp")); // tmp = a/b ... wait this is wrong for asm
+                                                           // For simplicity, use Rust-like modulo in asm:
                         lines.push(format!("\t; modulo: use idiv for remainder"));
                         lines.push(format!("\tmov\trax, [rsp+8]  ; a"));
                         lines.push(format!("\tcqto"));
                         lines.push(format!("\tidiv\tr12         ; rdx = a % b"));
                         lines.push(format!("\tmov\t{ret}, rdx"));
                         lines
-                    },
-                    Operador::Mayor => vec![
-                        a.cmp_reg_reg(ret, tmp),
-                        a.set_g(ret),
-                        a.movzx(ret, ret),
-                    ],
-                    Operador::Menor => vec![
-                        a.cmp_reg_reg(ret, tmp),
-                        a.set_l(ret),
-                        a.movzx(ret, ret),
-                    ],
-                    Operador::MayorIgual => vec![
-                        a.cmp_reg_reg(ret, tmp),
-                        a.set_ge(ret),
-                        a.movzx(ret, ret),
-                    ],
-                    Operador::MenorIgual => vec![
-                        a.cmp_reg_reg(ret, tmp),
-                        a.set_le(ret),
-                        a.movzx(ret, ret),
-                    ],
-                    Operador::IgualIgual => vec![
-                        a.cmp_reg_reg(ret, tmp),
-                        a.set_e(ret),
-                        a.movzx(ret, ret),
-                    ],
-                    Operador::Diferente => vec![
-                        a.cmp_reg_reg(ret, tmp),
-                        a.set_ne(ret),
-                        a.movzx(ret, ret),
-                    ],
-                    Operador::Y => vec![
-                        a.test_reg(ret),
-                        a.mov_reg_imm(a.ret_reg_32(), 0),
-                    ],
-                    Operador::O => vec![
-                        a.test_reg(ret),
-                        a.mov_reg_imm(a.ret_reg_32(), 0),
-                    ],
+                    }
+                    Operador::Mayor => {
+                        vec![a.cmp_reg_reg(ret, tmp), a.set_g(ret), a.movzx(ret, ret)]
+                    }
+                    Operador::Menor => {
+                        vec![a.cmp_reg_reg(ret, tmp), a.set_l(ret), a.movzx(ret, ret)]
+                    }
+                    Operador::MayorIgual => {
+                        vec![a.cmp_reg_reg(ret, tmp), a.set_ge(ret), a.movzx(ret, ret)]
+                    }
+                    Operador::MenorIgual => {
+                        vec![a.cmp_reg_reg(ret, tmp), a.set_le(ret), a.movzx(ret, ret)]
+                    }
+                    Operador::IgualIgual => {
+                        vec![a.cmp_reg_reg(ret, tmp), a.set_e(ret), a.movzx(ret, ret)]
+                    }
+                    Operador::Diferente => {
+                        vec![a.cmp_reg_reg(ret, tmp), a.set_ne(ret), a.movzx(ret, ret)]
+                    }
+                    Operador::Y => vec![a.test_reg(ret), a.mov_reg_imm(a.ret_reg_32(), 0)],
+                    Operador::O => vec![a.test_reg(ret), a.mov_reg_imm(a.ret_reg_32(), 0)],
                 };
 
-                for line in &op_lines { self.emit_line(line); }
+                for line in &op_lines {
+                    self.emit_line(line);
+                }
                 ret.to_string()
             }
 
@@ -2060,17 +2235,23 @@ impl CompilerAsm {
                     }
                     let extra = if argumentos.len() > arg_regs.len() - 1 {
                         argumentos.len() - (arg_regs.len() - 1)
-                    } else { 0 };
+                    } else {
+                        0
+                    };
                     for i in 0..extra {
                         let idx = arg_regs.len() - 1 + i;
                         self.compilar_expresion_asm(&argumentos[idx]);
                         self.emit_line(&a.push_reg(ret));
                     }
                     let ss = a.shadow_space();
-                    if ss > 0 { self.emit_line(&a.sub_sp(ss)); }
+                    if ss > 0 {
+                        self.emit_line(&a.sub_sp(ss));
+                    }
                     self.emit_line(&a.call(&format!("{}.nuevo", clase)));
                     let cleanup = ss + (extra as i32) * 8;
-                    if cleanup > 0 { self.emit_line(&a.add_sp(cleanup)); }
+                    if cleanup > 0 {
+                        self.emit_line(&a.add_sp(cleanup));
+                    }
                     // 4) Restaurar puntero del struct en ret
                     self.emit_line(&a.mov_reg_reg(ret, tmp));
                 } else {
@@ -2110,18 +2291,18 @@ impl CompilerAsm {
             }
 
             Expresion::Coincidir { expr: e, brazos } => {
-                self.compilar_expresion_asm(e);  // resultado en rax/x0
+                self.compilar_expresion_asm(e); // resultado en rax/x0
                 let end_label = self.nueva_etiqueta("match_end");
-                
+
                 // Guardar el valor matcheado en el stack para usarlo en cada brazo
                 self.emit_line(&a.push_reg(ret));
-                
+
                 for (i, brazo) in brazos.iter().enumerate() {
                     let is_last = i == brazos.len() - 1;
-                    
+
                     if !is_last {
                         let next_label = self.nueva_etiqueta("match_next");
-                        
+
                         match &brazo.patron {
                             Patron::Literal(lit) => {
                                 // Cargar el valor original desde el stack
@@ -2146,25 +2327,28 @@ impl CompilerAsm {
                                 // Siempre matchea
                             }
                         }
-                        
+
                         // Registrar variables del patrón
                         let vars_patron = extraer_variables_patron_asm(&brazo.patron);
                         for nombre in &vars_patron {
                             self.stack_offset -= 8;
-                            self.variables.insert(nombre.clone(), StackVar {
-                                offset: self.stack_offset,
-                                tipo: TipoAsm::Entero,
-                            });
+                            self.variables.insert(
+                                nombre.clone(),
+                                StackVar {
+                                    offset: self.stack_offset,
+                                    tipo: TipoAsm::Entero,
+                                },
+                            );
                             let oa = -self.stack_offset;
                             self.emit_line(&a.ldr_reg_mem(ret, a.sp_reg(), 0));
                             self.emit_line(&a.str_reg_mem(ret, fp, oa));
                         }
-                        
+
                         // Cuerpo del brazo
                         for d in &brazo.cuerpo {
                             self.compilar_declaracion(d);
                         }
-                        
+
                         // Saltar al final (no evaluar más brazos)
                         self.emit_line(&a.jump(&end_label));
                         // Label del siguiente brazo
@@ -2174,22 +2358,25 @@ impl CompilerAsm {
                         let vars_patron = extraer_variables_patron_asm(&brazo.patron);
                         for nombre in &vars_patron {
                             self.stack_offset -= 8;
-                            self.variables.insert(nombre.clone(), StackVar {
-                                offset: self.stack_offset,
-                                tipo: TipoAsm::Entero,
-                            });
+                            self.variables.insert(
+                                nombre.clone(),
+                                StackVar {
+                                    offset: self.stack_offset,
+                                    tipo: TipoAsm::Entero,
+                                },
+                            );
                             let oa = -self.stack_offset;
                             // Cargar el valor original desde el tope del stack
                             self.emit_line(&a.ldr_reg_mem(ret, a.sp_reg(), 0));
                             self.emit_line(&a.str_reg_mem(ret, fp, oa));
                         }
-                        
+
                         for d in &brazo.cuerpo {
                             self.compilar_declaracion(d);
                         }
                     }
                 }
-                
+
                 // Limpiar el stack (pop del valor guardado)
                 if a.sp_reg() == "rsp" {
                     self.emit_line("    add rsp, 8");
@@ -2209,7 +2396,10 @@ impl CompilerAsm {
                 ret.to_string()
             }
 
-            Expresion::Referencia { expr: e, mutable: _ } => {
+            Expresion::Referencia {
+                expr: e,
+                mutable: _,
+            } => {
                 self.compilar_expresion_asm(e);
                 ret.to_string()
             }
@@ -2257,7 +2447,11 @@ impl CompilerAsm {
                 // El valor sigue en ret para ser usado como expresión
                 String::new()
             }
-            Expresion::AsignacionCampo { objeto, campo, valor } => {
+            Expresion::AsignacionCampo {
+                objeto,
+                campo,
+                valor,
+            } => {
                 // 1) Compilar objeto → puntero al struct en ret
                 self.compilar_expresion_asm(objeto);
                 // 2) Guardar puntero del objeto (push o registro temporal)
@@ -2301,9 +2495,19 @@ impl CompilerAsm {
                     // Load from stack slot
                     let rv_oa = 8;
                     if ret == "rax" {
-                        self.emit_line(&format!("    mov {}, [{} - {}] ; resultado", ret, a.fp_reg(), rv_oa));
+                        self.emit_line(&format!(
+                            "    mov {}, [{} - {}] ; resultado",
+                            ret,
+                            a.fp_reg(),
+                            rv_oa
+                        ));
                     } else {
-                        self.emit_line(&format!("    ldr {}, [{}, #-{}] ; resultado", ret, a.fp_reg(), rv_oa));
+                        self.emit_line(&format!(
+                            "    ldr {}, [{}, #-{}] ; resultado",
+                            ret,
+                            a.fp_reg(),
+                            rv_oa
+                        ));
                     }
                 } else {
                     // Should not happen normally, but just return the current ret
@@ -2320,7 +2524,12 @@ impl CompilerAsm {
         }
     }
 
-    fn compilar_llamada_funcion(&mut self, nombre: &str, argumentos: &[Expresion], _es_expresion: bool) {
+    fn compilar_llamada_funcion(
+        &mut self,
+        nombre: &str,
+        argumentos: &[Expresion],
+        _es_expresion: bool,
+    ) {
         let a = self.arch;
         let ret = a.ret_reg();
 
@@ -2334,7 +2543,7 @@ impl CompilerAsm {
         // el tipo de la variable y llamar a "Clase.metodo(self, args...)".
         if let Some(dot_pos) = nombre.find('.') {
             let base = &nombre[..dot_pos];
-            let method = &nombre[dot_pos+1..];
+            let method = &nombre[dot_pos + 1..];
             // Buscar el tipo de 'base' en las variables (clonamos para evitar borrow issues)
             let clase_nombre: Option<String> = self.variables.get(base).and_then(|var| {
                 if let TipoAsm::Clase(clase) = &var.tipo {
@@ -2346,7 +2555,7 @@ impl CompilerAsm {
             if let Some(clase) = clase_nombre {
                 // Cargar self (el puntero al objeto)
                 let self_reg = a.arg_regs()[0]; // primer arg = self
-                // offset del objeto en stack (0 si está en registro)
+                                                // offset del objeto en stack (0 si está en registro)
                 let obj_offset: i32 = self.variables.get(base).map(|var| var.offset).unwrap_or(0);
                 let obj_en_registro = self.var_reg_map.contains_key(base);
                 if obj_en_registro {
@@ -2369,7 +2578,9 @@ impl CompilerAsm {
                 // Args extras al stack
                 let extra = if argumentos.len() > arg_regs.len() - 1 {
                     argumentos.len() - (arg_regs.len() - 1)
-                } else { 0 };
+                } else {
+                    0
+                };
                 for i in 0..extra {
                     let idx = arg_regs.len() - 1 + i;
                     self.compilar_expresion_asm(&argumentos[idx]);
@@ -2378,10 +2589,14 @@ impl CompilerAsm {
                 // Llamar a Clase.metodo
                 let method_name = format!("{}.{}", clase, method);
                 let ss = a.shadow_space();
-                if ss > 0 { self.emit_line(&a.sub_sp(ss)); }
+                if ss > 0 {
+                    self.emit_line(&a.sub_sp(ss));
+                }
                 self.emit_line(&a.call(&method_name));
                 let cleanup = ss + (extra as i32) * 8;
-                if cleanup > 0 { self.emit_line(&a.add_sp(cleanup)); }
+                if cleanup > 0 {
+                    self.emit_line(&a.add_sp(cleanup));
+                }
                 return;
             }
             // Si no se pudo resolver, seguir con el nombre original (puede fallar en link)
@@ -2421,13 +2636,17 @@ impl CompilerAsm {
 
         // Shadow space para Windows
         let ss = a.shadow_space();
-        if ss > 0 { self.emit_line(&a.sub_sp(ss)); }
+        if ss > 0 {
+            self.emit_line(&a.sub_sp(ss));
+        }
 
         self.emit_line(&a.call(nombre));
 
         // Limpiar stack
         let cleanup = ss + (extra as i32) * 8;
-        if cleanup > 0 { self.emit_line(&a.add_sp(cleanup)); }
+        if cleanup > 0 {
+            self.emit_line(&a.add_sp(cleanup));
+        }
     }
 
     /// Determina si una función es candidata a inlining.
@@ -2476,7 +2695,11 @@ impl CompilerAsm {
                         return true;
                     }
                 }
-                Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+                Declaracion::Si {
+                    condicion,
+                    bloque_verdadero,
+                    bloque_falso,
+                } => {
                     if self.expr_llama_a(condicion, nombre) {
                         return true;
                     }
@@ -2497,7 +2720,9 @@ impl CompilerAsm {
                         return true;
                     }
                 }
-                Declaracion::Cuando { condicion, cuerpo, .. } => {
+                Declaracion::Cuando {
+                    condicion, cuerpo, ..
+                } => {
                     if self.expr_llama_a(condicion, nombre) {
                         return true;
                     }
@@ -2505,7 +2730,12 @@ impl CompilerAsm {
                         return true;
                     }
                 }
-                Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
+                Declaracion::Para {
+                    inicializacion,
+                    condicion,
+                    incremento,
+                    bloque,
+                } => {
                     if let Some(init) = inicializacion {
                         if self.tiene_auto_llamada(&[init.as_ref().clone()], nombre) {
                             return true;
@@ -2533,7 +2763,10 @@ impl CompilerAsm {
                         return true;
                     }
                 }
-                Declaracion::LlamadaFuncion { nombre: fn_name, argumentos } => {
+                Declaracion::LlamadaFuncion {
+                    nombre: fn_name,
+                    argumentos,
+                } => {
                     if fn_name == nombre {
                         return true;
                     }
@@ -2557,7 +2790,10 @@ impl CompilerAsm {
     /// Verifica si una expresión contiene una llamada a una función por nombre
     fn expr_llama_a(&self, expr: &Expresion, nombre: &str) -> bool {
         match expr {
-            Expresion::LlamadaFuncion { nombre: fn_name, argumentos } => {
+            Expresion::LlamadaFuncion {
+                nombre: fn_name,
+                argumentos,
+            } => {
                 if fn_name == nombre {
                     return true;
                 }
@@ -2568,9 +2804,9 @@ impl CompilerAsm {
                 }
                 false
             }
-            Expresion::Binaria { izquierda, derecha, .. } => {
-                self.expr_llama_a(izquierda, nombre) || self.expr_llama_a(derecha, nombre)
-            }
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => self.expr_llama_a(izquierda, nombre) || self.expr_llama_a(derecha, nombre),
             Expresion::Unaria { expr: e, .. } => self.expr_llama_a(e, nombre),
             Expresion::AccesoMiembro { objeto, .. } => self.expr_llama_a(objeto, nombre),
             Expresion::Instanciacion { argumentos, .. } => {
@@ -2620,7 +2856,11 @@ impl CompilerAsm {
                         return true;
                     }
                 }
-                Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+                Declaracion::Si {
+                    condicion,
+                    bloque_verdadero,
+                    bloque_falso,
+                } => {
                     if self.expr_tiene_constructos_complejos(condicion) {
                         return true;
                     }
@@ -2641,7 +2881,9 @@ impl CompilerAsm {
                         return true;
                     }
                 }
-                Declaracion::Cuando { condicion, cuerpo, .. } => {
+                Declaracion::Cuando {
+                    condicion, cuerpo, ..
+                } => {
                     if self.expr_tiene_constructos_complejos(condicion) {
                         return true;
                     }
@@ -2649,7 +2891,12 @@ impl CompilerAsm {
                         return true;
                     }
                 }
-                Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
+                Declaracion::Para {
+                    inicializacion,
+                    condicion,
+                    incremento,
+                    bloque,
+                } => {
                     if let Some(init) = inicializacion {
                         if self.tiene_constructos_complejos(&[init.as_ref().clone()]) {
                             return true;
@@ -2700,12 +2947,16 @@ impl CompilerAsm {
                 }
                 false
             }
-            Expresion::Binaria { izquierda, derecha, .. } => {
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => {
                 self.expr_tiene_constructos_complejos(izquierda)
                     || self.expr_tiene_constructos_complejos(derecha)
             }
             Expresion::Unaria { expr: e, .. } => self.expr_tiene_constructos_complejos(e),
-            Expresion::AccesoMiembro { objeto, .. } => self.expr_tiene_constructos_complejos(objeto),
+            Expresion::AccesoMiembro { objeto, .. } => {
+                self.expr_tiene_constructos_complejos(objeto)
+            }
             Expresion::Instanciacion { argumentos, .. } => {
                 for arg in argumentos {
                     if self.expr_tiene_constructos_complejos(arg) {
@@ -2752,16 +3003,22 @@ impl CompilerAsm {
         let decl = match self.funciones_declaraciones.get(nombre) {
             Some(d) => d.clone(),
             None => {
-                self.emit_line(&format!("    // ERROR: función '{}' no encontrada para inline", nombre));
+                self.emit_line(&format!(
+                    "    // ERROR: función '{}' no encontrada para inline",
+                    nombre
+                ));
                 return;
             }
         };
 
-        if let Declaracion::Funcion { parametros, cuerpo, .. } = decl {
+        if let Declaracion::Funcion {
+            parametros, cuerpo, ..
+        } = decl
+        {
             // Guardar estado del compilador (variables + stack_offset del caller)
             // CLONAMOS (no tomamos) para que las variables del caller sigan accesibles
             let vars_caller = self.variables.clone();
-            let stack_caller = self.stack_offset;  // ← guardar stack_offset antes del inline
+            let stack_caller = self.stack_offset; // ← guardar stack_offset antes del inline
 
             // 1. Evaluar argumentos y guardarlos en el stack del caller
             for (i, param) in parametros.iter().enumerate() {
@@ -2782,10 +3039,13 @@ impl CompilerAsm {
                 self.stack_offset -= alloc_size;
                 let oa = -self.stack_offset;
                 self.emit_line(&a.str_reg_mem(a.ret_reg(), fp, oa));
-                self.variables.insert(param.nombre.clone(), StackVar {
-                    offset: self.stack_offset,
-                    tipo: tipo_asm,
-                });
+                self.variables.insert(
+                    param.nombre.clone(),
+                    StackVar {
+                        offset: self.stack_offset,
+                        tipo: tipo_asm,
+                    },
+                );
             }
 
             // 2. Compilar el cuerpo sin prólogo/epílogo
@@ -2837,7 +3097,11 @@ impl CompilerAsm {
 
         match expr {
             // Concatenación de strings: recursivo
-            Expresion::Binaria { izquierda, operador: Operador::Suma, derecha } => {
+            Expresion::Binaria {
+                izquierda,
+                operador: Operador::Suma,
+                derecha,
+            } => {
                 self.compilar_escribir_expr(izquierda);
                 self.compilar_escribir_expr(derecha);
             }
@@ -2997,14 +3261,12 @@ impl CompilerAsm {
     /// reutilizando la lógica de compilación de funciones existente.
     fn generar_metodo_asm(&mut self, clase_nombre: &str, metodo: &Metodo) {
         let function_name = format!("{}.{}", clase_nombre, metodo.nombre);
-        let mut params = vec![
-            Parametro {
-                nombre: "self".to_string(),
-                prestado: true,
-                mutable: true,
-                tipo: Some(Tipo::Clase(clase_nombre.to_string())),
-            }
-        ];
+        let mut params = vec![Parametro {
+            nombre: "self".to_string(),
+            prestado: true,
+            mutable: true,
+            tipo: Some(Tipo::Clase(clase_nombre.to_string())),
+        }];
         params.extend(metodo.parametros.clone());
         let func_decl = Declaracion::Funcion {
             nombre: function_name.clone(),
@@ -3023,10 +3285,8 @@ impl CompilerAsm {
         self.emit_line("");
         // Registrar para que pueda ser llamada o inlneada
         self.funciones.push(function_name);
-        self.funciones_declaraciones.insert(
-            format!("{}.{}", clase_nombre, metodo.nombre),
-            func_decl,
-        );
+        self.funciones_declaraciones
+            .insert(format!("{}.{}", clase_nombre, metodo.nombre), func_decl);
     }
 
     fn buscar_campo_offset(&self, objeto: &Expresion, miembro: &str) -> i32 {
@@ -3046,7 +3306,10 @@ impl CompilerAsm {
             // Para instanciación anidada (ej: (nuevo Punto()).x)
             Expresion::Instanciacion { clase, .. } => Some(clase.clone()),
             // Para acceso encadenado (ej: obj.campo.subcampo -> miramos el campo)
-            Expresion::AccesoMiembro { objeto: inner, miembro: m } => {
+            Expresion::AccesoMiembro {
+                objeto: inner,
+                miembro: m,
+            } => {
                 // Intentar inferir de forma recursiva
                 let _inner_clase_offset = self.buscar_campo_offset(inner, m);
                 // Si encontramos offset 0 para inner.m, no podemos inferir clase
@@ -3102,7 +3365,10 @@ pub fn compilar_a_asm(programa: &Programa) -> Result<String, Vec<ErrorForja>> {
 }
 
 /// Compila un programa Forja a assembly nativo, especificando la arquitectura destino
-pub fn compilar_a_asm_con_target(programa: &Programa, target: TargetArch) -> Result<String, Vec<ErrorForja>> {
+pub fn compilar_a_asm_con_target(
+    programa: &Programa,
+    target: TargetArch,
+) -> Result<String, Vec<ErrorForja>> {
     let mut compiler = CompilerAsm::with_target(target);
     compiler.compilar(programa)
 }

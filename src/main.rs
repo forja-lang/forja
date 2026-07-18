@@ -1,29 +1,29 @@
 // #![allow(dead_code)]
 // #![allow(unused_imports)]
 
-mod lexer;
-mod token;
-mod parser;
 mod ast;
-mod error;
-mod semantics;
-mod transpiler;
-mod compiler_asm;
 mod bytecode;
-mod uops;
-mod vm;
-mod fprofiler;
-mod vm_fast;
-mod symbol_table;
 mod class_descriptor;
-mod repl;
-mod selfrun;
+mod compiler_asm;
 mod diagrama;
-mod optimizer;
+mod error;
 mod formatter;
+mod fprofiler;
+mod lexer;
+mod native_registry;
+mod optimizer;
 mod package_config;
 mod package_resolver;
-mod native_registry;
+mod parser;
+mod repl;
+mod selfrun;
+mod semantics;
+mod symbol_table;
+mod token;
+mod transpiler;
+mod uops;
+mod vm;
+mod vm_fast;
 
 // HTTP/2 nativo — h2c (cleartext), sin dependencias externas
 #[cfg(not(target_arch = "wasm32"))]
@@ -36,26 +36,25 @@ mod module;
 mod native_h2_tls;
 #[cfg(not(any(feature = "h2-tls", target_arch = "wasm32")))]
 #[allow(dead_code)]
-mod native_h2_tls { // stub vacío
+mod native_h2_tls {
+    // stub vacío
     pub struct SocketState;
 }
 
-use std::env;
-use std::fs;
-use std::path::Path;
-use std::process;
 use ast::Declaracion;
 use error::color;
 use package_config::ForjaConfig;
 use package_resolver::PackageResolver;
+use std::env;
+use std::fs;
+use std::path::Path;
+use std::process;
 
 fn main() {
     // Intentar self-run (modo ejecutable autónomo con bytecode incrustado)
     if selfrun::try_selfrun().is_some() {
         return; // El bytecode se ejecutó, salir
     }
-
-
 
     // Evitar bloqueos de archivo en Windows copiando el ejecutable al directorio temporal
     selfrun::shadow_copy();
@@ -76,7 +75,7 @@ fn main() {
         "version" | "--version" | "-v" => {
             println!("forja v{}", env!("CARGO_PKG_VERSION"));
             std::process::exit(0);
-        },
+        }
         // Benchmark / medición
         "medir" | "bench" | "medicion" | "benchmark" => cmd_bench(&args[2..]),
         // Ejecutar en VM
@@ -121,13 +120,20 @@ fn main() {
         "test" | "tests" | "probar" => cmd_test(&args[2..]),
         // Explicar concepto
         "explain" | "explicar" => {
-            if args.len() > 2 { cmd_explain(&args[2]); }
-            else { eprintln!("Uso: forja explain|explicar <palabra>"); process::exit(1); }
+            if args.len() > 2 {
+                cmd_explain(&args[2]);
+            } else {
+                eprintln!("Uso: forja explain|explicar <palabra>");
+                process::exit(1);
+            }
         }
         // Ayuda
         "help" | "--help" | "-h" | "ayuda" => {
-            if args.len() > 2 { cmd_help(&args[2]); }
-            else { mostrar_ayuda(); }
+            if args.len() > 2 {
+                cmd_help(&args[2]);
+            } else {
+                mostrar_ayuda();
+            }
         }
         _ => {
             // Si el primer argumento es un archivo .fa, ejecutar directo en ForjaFast
@@ -148,9 +154,12 @@ fn cmd_highlight(args: &[String]) {
         return;
     }
     let path = &args[0];
-    let source = match std::fs::read_to_string(path) {
+    let source = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
-        Err(e) => { eprintln!("Error al leer '{}': {}", path, e); return; }
+        Err(e) => {
+            eprintln!("{}", e);
+            return;
+        }
     };
 
     use error::color;
@@ -166,12 +175,47 @@ fn cmd_highlight(args: &[String]) {
     let len = chars.len();
 
     let keywords = [
-        "importar", "variable", "var", "constante", "const", "mut", "si", "sino",
-        "mientras", "para", "repetir", "funcion", "retornar", "clase",
-        "constructor", "nuevo", "este", "prestado", "coincidir", "caso", "tipo",
-        "verdadero", "falso", "nulo", "hilo", "canal", "enviar", "recibir",
-        "unir", "rasgo", "implementa", "donde", "seleccionar", "tiempo", "otro",
-        "cuando", "requiere", "asegura", "siempre", "resultado", "anterior"
+        "importar",
+        "variable",
+        "var",
+        "constante",
+        "const",
+        "mut",
+        "si",
+        "sino",
+        "mientras",
+        "para",
+        "repetir",
+        "funcion",
+        "retornar",
+        "clase",
+        "constructor",
+        "nuevo",
+        "este",
+        "prestado",
+        "coincidir",
+        "caso",
+        "tipo",
+        "verdadero",
+        "falso",
+        "nulo",
+        "hilo",
+        "canal",
+        "enviar",
+        "recibir",
+        "unir",
+        "rasgo",
+        "implementa",
+        "donde",
+        "seleccionar",
+        "tiempo",
+        "otro",
+        "cuando",
+        "requiere",
+        "asegura",
+        "siempre",
+        "resultado",
+        "anterior",
     ];
 
     let tipos = ["Entero", "Decimal", "Texto", "Booleano", "Exacto"];
@@ -258,10 +302,15 @@ fn cmd_highlight(args: &[String]) {
                 pos += 1;
             }
             let ident: String = chars[start..pos].iter().collect();
-            
+
             // Ver si el siguiente token no-espacio es '('
             let mut next_pos = pos;
-            while next_pos < len && (chars[next_pos] == ' ' || chars[next_pos] == '\t' || chars[next_pos] == '\r' || chars[next_pos] == '\n') {
+            while next_pos < len
+                && (chars[next_pos] == ' '
+                    || chars[next_pos] == '\t'
+                    || chars[next_pos] == '\r'
+                    || chars[next_pos] == '\n')
+            {
                 next_pos += 1;
             }
             let es_funcion = next_pos < len && chars[next_pos] == '(';
@@ -286,7 +335,11 @@ fn cmd_highlight(args: &[String]) {
                 let curr = chars[pos];
                 if curr.is_ascii_digit() {
                     pos += 1;
-                } else if curr == '.' && !dot_seen && pos + 1 < len && chars[pos + 1].is_ascii_digit() {
+                } else if curr == '.'
+                    && !dot_seen
+                    && pos + 1 < len
+                    && chars[pos + 1].is_ascii_digit()
+                {
                     dot_seen = true;
                     pos += 2;
                 } else {
@@ -312,30 +365,30 @@ fn cmd_keywords() {
     println!("  PALABRA         QUÉ HACE");
     println!("  ─────────────── ───────────────────────────────");
     let kws = [
-        ("escribir",    "Muestra mensajes en pantalla"),
-        ("leer",        "Lee entrada del usuario"),
-        ("variable/var","Declara una variable (mutable)"),
-        ("constante/const","Declara una constante (inmutable)"),
-        ("mut",         "Modificador de mutabilidad"),
-        ("si",          "Condicional (if / else)"),
-        ("sino",        "Bloque alternativo del si"),
-        ("mientras",    "Bucle que se repite mientras..."),
-        ("para",        "Bucle con contador"),
-        ("repetir",     "Repite un bloque N veces"),
-        ("funcion",     "Define una función"),
-        ("retornar",    "Devuelve un valor"),
-        ("clase",       "Define una clase (molde)"),
+        ("escribir", "Muestra mensajes en pantalla"),
+        ("leer", "Lee entrada del usuario"),
+        ("variable/var", "Declara una variable (mutable)"),
+        ("constante/const", "Declara una constante (inmutable)"),
+        ("mut", "Modificador de mutabilidad"),
+        ("si", "Condicional (if / else)"),
+        ("sino", "Bloque alternativo del si"),
+        ("mientras", "Bucle que se repite mientras..."),
+        ("para", "Bucle con contador"),
+        ("repetir", "Repite un bloque N veces"),
+        ("funcion", "Define una función"),
+        ("retornar", "Devuelve un valor"),
+        ("clase", "Define una clase (molde)"),
         ("constructor", "Constructor de una clase"),
-        ("nuevo",       "Crea una instancia de clase"),
-        ("este",        "El objeto actual (self)"),
-        ("prestado",    "Préstamo por referencia (&)"),
-        ("importar",    "Importa otros módulos"),
-        ("verdadero",   "Valor booleano: verdadero"),
-        ("falso",       "Valor booleano: falso"),
-        ("nulo",        "Valor nulo / vacío"),
-        ("arreglo",     "Colección: [1, 2, 3]"),
-        ("mapa",        "Diccionario: {{\"k\": \"v\"}}"),
-        ("cuando",      "Bloque observador/reactivo (reactividad)"),
+        ("nuevo", "Crea una instancia de clase"),
+        ("este", "El objeto actual (self)"),
+        ("prestado", "Préstamo por referencia (&)"),
+        ("importar", "Importa otros módulos"),
+        ("verdadero", "Valor booleano: verdadero"),
+        ("falso", "Valor booleano: falso"),
+        ("nulo", "Valor nulo / vacío"),
+        ("arreglo", "Colección: [1, 2, 3]"),
+        ("mapa", "Diccionario: {{\"k\": \"v\"}}"),
+        ("cuando", "Bloque observador/reactivo (reactividad)"),
     ];
     for (kw, desc) in &kws {
         println!("  {:<14} {}", kw, desc);
@@ -450,7 +503,9 @@ fn cmd_add() {
         ForjaConfig::new("app", "0.1.0")
     };
 
-    config.dependencias.insert(nombre.to_string(), version.to_string());
+    config
+        .dependencias
+        .insert(nombre.to_string(), version.to_string());
     if let Err(e) = config.save(config_path) {
         eprintln!("Error guardando forja.json: {}", e);
         return;
@@ -481,7 +536,9 @@ fn cmd_remove() {
         }
     };
 
-    if config.dependencias.remove(nombre).is_none() && config.dev_dependencias.remove(nombre).is_none() {
+    if config.dependencias.remove(nombre).is_none()
+        && config.dev_dependencias.remove(nombre).is_none()
+    {
         eprintln!("⚠️ La dependencia '{}' no está en forja.json", nombre);
         return;
     }
@@ -554,7 +611,9 @@ fn mostrar_ayuda() {
     println!("  repl                       Modo interactivo");
     println!("  diagram <archivo>         Generar diagram HTML del código");
     println!("  compilar <archivo>         Generar .exe autónomo");
-    println!("  compilar-asm <archivo>     Compilar a assembly nativo [--target <arch>] [-o <salida>]");
+    println!(
+        "  compilar-asm <archivo>     Compilar a assembly nativo [--target <arch>] [-o <salida>]"
+    );
     println!("  formatear <archivo>         Formatear código .fa");
     println!("  transpilar <archivo>       Exportar a proyecto Rust (opcional)");
     println!("  nuevo <nombre>             Crear nuevo proyecto");
@@ -585,7 +644,7 @@ fn mostrar_ayuda() {
 /// Mide tiempos de todas las VMs: creación, carga, ejecución (cold + hot)
 fn cmd_bench(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja medir|bench|medicion|benchmark <archivo.fa> [--iters N] [--vm fast|vm|jit|todas] [--asm]");
+        eprintln!("Uso: forja medir|bench|medicion|benchmark <archivo.fa> [--iters N] [--vm fast|vm|jit|todas] [--asm] [--max-archivo <MB>]");
         process::exit(1);
     }
 
@@ -593,19 +652,32 @@ fn cmd_bench(args: &[String]) {
     let mut iters = 100;
     let mut asm_mode = false;
     let mut vm_selected = "todas";
+    let mut max_archivo = forja::MAX_ARCHIVO_DEFAULT_MB;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--iters" => {
                 i += 1;
-                if i < args.len() { iters = args[i].parse().unwrap_or(100); }
-                if i == 0 && i + 1 < args.len() { path = &args[i + 1]; }
+                if i < args.len() {
+                    iters = args[i].parse().unwrap_or(100);
+                }
+                if i == 0 && i + 1 < args.len() {
+                    path = &args[i + 1];
+                }
             }
             "--vm" => {
                 i += 1;
-                if i < args.len() { vm_selected = &args[i]; }
+                if i < args.len() {
+                    vm_selected = &args[i];
+                }
             }
             "--asm" => asm_mode = true,
+            "--max-archivo" => {
+                i += 1;
+                if i < args.len() {
+                    max_archivo = args[i].parse().unwrap_or(forja::MAX_ARCHIVO_DEFAULT_MB);
+                }
+            }
             _ => {
                 if args[i].ends_with(".fa") || !args[i].starts_with("--") {
                     path = &args[i];
@@ -615,9 +687,12 @@ fn cmd_bench(args: &[String]) {
         i += 1;
     }
 
-    let source = match std::fs::read_to_string(path) {
+    let source = match forja::leer_archivo_con_limite(path, max_archivo) {
         Ok(s) => s,
-        Err(e) => { eprintln!("Error al leer '{}': {}", path, e); process::exit(1); }
+        Err(e) => {
+            eprintln!("Error al leer '{}': {}", path, e);
+            process::exit(1);
+        }
     };
 
     if asm_mode {
@@ -644,10 +719,17 @@ fn cmd_bench(args: &[String]) {
                     hot_ns_total += t_hot.elapsed().as_secs_f64() * 1_000_000_000.0;
                 }
                 let hot_ns = hot_ns_total / iters as f64;
-                println!("  Hot ({} iters): {:.2} ns/iter = {:.2} μs", iters, hot_ns, hot_ns / 1000.0);
+                println!(
+                    "  Hot ({} iters): {:.2} ns/iter = {:.2} μs",
+                    iters,
+                    hot_ns,
+                    hot_ns / 1000.0
+                );
                 println!();
                 println!("  Output del programa:");
-                for line in output { println!("    {}", line); }
+                for line in output {
+                    println!("    {}", line);
+                }
             }
             Err(e) => {
                 eprintln!("Error en ASM: {}", e);
@@ -659,7 +741,10 @@ fn cmd_bench(args: &[String]) {
 
     let bytecode = match forja::compilar_pipeline(&source) {
         Ok(bc) => bc,
-        Err(e) => { eprintln!("Error de compilación: {}", e); process::exit(1); }
+        Err(e) => {
+            eprintln!("Error de compilación: {}", e);
+            process::exit(1);
+        }
     };
 
     println!();
@@ -696,10 +781,18 @@ fn cmd_bench(args: &[String]) {
 
             vm.reset();
             let t3 = std::time::Instant::now();
-            for _ in 0..iters { let _ = vm.ejecutar(); }
+            for _ in 0..iters {
+                let _ = vm.ejecutar();
+            }
             let hot = t3.elapsed().as_secs_f64() * 1_000_000_000.0 / iters as f64;
 
-            resultados.push(VMMedicion { nombre: $nombre, crear_ns: crear, cargar_ns: cargar, cold_ns: cold, hot_ns: hot });
+            resultados.push(VMMedicion {
+                nombre: $nombre,
+                crear_ns: crear,
+                cargar_ns: cargar,
+                cold_ns: cold,
+                hot_ns: hot,
+            });
         }};
     }
 
@@ -728,22 +821,44 @@ fn cmd_bench(args: &[String]) {
         let cold = t1.elapsed().as_secs_f64() * 1_000_000_000.0;
 
         let t3 = std::time::Instant::now();
-        for _ in 0..iters { let _ = jit.ejecutar(&bytecode); }
+        for _ in 0..iters {
+            let _ = jit.ejecutar(&bytecode);
+        }
         let hot = t3.elapsed().as_secs_f64() * 1_000_000_000.0 / iters as f64;
 
-        resultados.push(VMMedicion { nombre, crear_ns: crear, cargar_ns: 0.0, cold_ns: cold, hot_ns: hot });
+        resultados.push(VMMedicion {
+            nombre,
+            crear_ns: crear,
+            cargar_ns: 0.0,
+            cold_ns: cold,
+            hot_ns: hot,
+        });
     }
 
     // Tabla de resultados
-    println!("  {:<20} {:>10} {:>10} {:>10} {:>10}", "VM", "Crear(ns)", "Cargar(ns)", "Cold(ns)", "Hot(ns)");
+    println!(
+        "  {:<20} {:>10} {:>10} {:>10} {:>10}",
+        "VM", "Crear(ns)", "Cargar(ns)", "Cold(ns)", "Hot(ns)"
+    );
     println!("  {}", "─".repeat(60));
 
     let baseline = resultados[0].hot_ns;
     for r in &resultados {
         let ratio = baseline / r.hot_ns;
-        let star = if ratio >= 5.0 { " ⚡⚡" } else if ratio >= 2.0 { " ⚡" } else if ratio >= 1.1 { " ✓" } else { "" };
+        let star = if ratio >= 5.0 {
+            " ⚡⚡"
+        } else if ratio >= 2.0 {
+            " ⚡"
+        } else if ratio >= 1.1 {
+            " ✓"
+        } else {
+            ""
+        };
         let cargar_s = format!("{:.0}", r.cargar_ns);
-        println!("  {:<20} {:>10.0} {:>10} {:>10.0} {:>10.0}{}", r.nombre, r.crear_ns, cargar_s, r.cold_ns, r.hot_ns, star);
+        println!(
+            "  {:<20} {:>10.0} {:>10} {:>10.0} {:>10.0}{}",
+            r.nombre, r.crear_ns, cargar_s, r.cold_ns, r.hot_ns, star
+        );
     }
 
     // Speedups
@@ -773,7 +888,7 @@ fn cmd_bench(args: &[String]) {
 /// --asm            : compila a ASM nativo y ejecuta (requiere gcc)
 fn cmd_run(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native] [--debug|--console|--no-debug] [--contratos|--no-contratos]");
+        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native] [--debug|--console|--no-debug] [--contratos|--no-contratos] [--max-archivo <MB>]");
         process::exit(1);
     }
 
@@ -781,8 +896,9 @@ fn cmd_run(args: &[String]) {
     let mut asm_mode = false;
     let mut native_mode = false;
     let mut hot_reload = false;
-    let mut verificar_contratos = true;  // default: contratos activados
-    let mut contratos_explicit = false;  // si el usuario explicitó la opción
+    let mut verificar_contratos = true; // default: contratos activados
+    let mut contratos_explicit = false; // si el usuario explicitó la opción
+    let mut max_archivo = forja::MAX_ARCHIVO_DEFAULT_MB;
     let mut path: &String = &args[0];
 
     // Escanear todos los args: flags + archivo .fa en cualquier orden
@@ -792,15 +908,29 @@ fn cmd_run(args: &[String]) {
         match arg {
             "--vm" => {
                 i += 1;
-                if i < args.len() { vm_mode = &args[i]; }
+                if i < args.len() {
+                    vm_mode = &args[i];
+                }
             }
             "--asm" => asm_mode = true,
             "--native" => native_mode = true,
             "--hot-reload" | "--hot" => hot_reload = true,
             "--debug" | "--console" => {}
             "--no-debug" => {}
-            "--contratos" => { verificar_contratos = true; contratos_explicit = true; }
-            "--no-contratos" => { verificar_contratos = false; contratos_explicit = true; }
+            "--contratos" => {
+                verificar_contratos = true;
+                contratos_explicit = true;
+            }
+            "--no-contratos" => {
+                verificar_contratos = false;
+                contratos_explicit = true;
+            }
+            "--max-archivo" => {
+                i += 1;
+                if i < args.len() {
+                    max_archivo = args[i].parse().unwrap_or(forja::MAX_ARCHIVO_DEFAULT_MB);
+                }
+            }
             _ => {
                 if arg.ends_with(".fa") {
                     path = &args[i];
@@ -813,12 +943,10 @@ fn cmd_run(args: &[String]) {
         i += 1;
     }
 
-
-
-    let source = match fs::read_to_string(path) {
+    let source = match forja::leer_archivo_con_limite(path, max_archivo) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Error al leer '{}': {}", path, e);
+            eprintln!("{}", e);
             process::exit(1);
         }
     };
@@ -827,7 +955,10 @@ fn cmd_run(args: &[String]) {
         let result = ejecutar_nativo(&source, path, hot_reload);
         match result {
             Ok(()) => {}
-            Err(e) => { eprintln!("Error en ejecución nativa: {}", e); process::exit(1); }
+            Err(e) => {
+                eprintln!("Error en ejecución nativa: {}", e);
+                process::exit(1);
+            }
         }
         return;
     }
@@ -835,13 +966,18 @@ fn cmd_run(args: &[String]) {
     if asm_mode {
         let result = ejecutar_asm(&source, path);
         match result {
-            Ok(output) => { for line in output { println!("{}", line); } }
-            Err(e) => { eprintln!("Error en ejecución ASM: {}", e); process::exit(1); }
+            Ok(output) => {
+                for line in output {
+                    println!("{}", line);
+                }
+            }
+            Err(e) => {
+                eprintln!("Error en ejecución ASM: {}", e);
+                process::exit(1);
+            }
         }
         return;
     }
-
-
 
     // Determinar directorio raíz del proyecto (busca hacia arriba hasta encontrar stdlib/)
     fn encontrar_raiz_proyecto(path: &std::path::Path) -> std::path::PathBuf {
@@ -868,7 +1004,7 @@ fn cmd_run(args: &[String]) {
             }
         }
         "jit" => forja::ejecutar_jit(&source),
-        _ => forja::ejecutar_vm(&source),  // Default: VM original
+        _ => forja::ejecutar_vm(&source), // Default: VM original
     };
 
     match result {
@@ -902,7 +1038,8 @@ fn ejecutar_asm(source: &str, input_path: &str) -> Result<Vec<String>, String> {
         .map_err(|e| format!("Error de compilación ASM: {:?}", e))?;
 
     // 2. Escribir ASM a archivo temporal
-    let stem = Path::new(input_path).file_stem()
+    let stem = Path::new(input_path)
+        .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("output");
     let asm_path = format!("{}_asm.s", stem);
@@ -912,8 +1049,7 @@ fn ejecutar_asm(source: &str, input_path: &str) -> Result<Vec<String>, String> {
         format!("{}_asm", stem)
     };
 
-    std::fs::write(&asm_path, &asm_code)
-        .map_err(|e| format!("Error escribiendo ASM: {}", e))?;
+    std::fs::write(&asm_path, &asm_code).map_err(|e| format!("Error escribiendo ASM: {}", e))?;
 
     // 3. Compilar con gcc -O2
     let output = Command::new("gcc")
@@ -929,7 +1065,11 @@ fn ejecutar_asm(source: &str, input_path: &str) -> Result<Vec<String>, String> {
 
     // 4. Ejecutar binario
     let run_output = Command::new(if cfg!(target_os = "windows") {
-        if exe_path.starts_with(".\\") { exe_path.clone() } else { format!(".\\{}", exe_path) }
+        if exe_path.starts_with(".\\") {
+            exe_path.clone()
+        } else {
+            format!(".\\{}", exe_path)
+        }
     } else {
         format!("./{}", exe_path)
     })
@@ -956,15 +1096,17 @@ fn ejecutar_nativo(source: &str, input_path: &str, hot_reload: bool) -> Result<(
     let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
     // 2. Detectar si usa GUI
-    let usa_gui = programa.declaraciones.iter().any(|d| {
-        matches!(d, ast::Declaracion::Importar(ruta) if ruta == "gui")
-    });
+    let usa_gui = programa
+        .declaraciones
+        .iter()
+        .any(|d| matches!(d, ast::Declaracion::Importar(ruta) if ruta == "gui"));
     if !usa_gui {
         return Err("El archivo no importa \"gui\". Usa `forja ejecutar` (sin --native) para ejecutar en consola.".to_string());
     }
 
     // 3. Nombre del proyecto
-    let input_stem = Path::new(input_path).file_stem()
+    let input_stem = Path::new(input_path)
+        .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("app");
     let mut nombre_crate = input_stem.replace('-', "_").replace(' ', "_");
@@ -985,7 +1127,8 @@ fn ejecutar_nativo(source: &str, input_path: &str, hot_reload: bool) -> Result<(
 
     // 5. Transpilar a Rust
     let mut transpiler = transpiler::Transpiler::new();
-    let codigo_rust = transpiler.transpilar(&programa)
+    let codigo_rust = transpiler
+        .transpilar(&programa)
         .map_err(|e| format!("Error de transpilación: {}", e[0]))?;
 
     // 6. Escribir main.rs
@@ -993,8 +1136,8 @@ fn ejecutar_nativo(source: &str, input_path: &str, hot_reload: bool) -> Result<(
         .map_err(|e| format!("Error escribiendo main.rs: {}", e))?;
 
     // 7. Escribir Cargo.toml con rutas absolutas
-    let forja_root = std::fs::canonicalize(".")
-        .map_err(|e| format!("Error resolviendo ruta raíz: {}", e))?;
+    let forja_root =
+        std::fs::canonicalize(".").map_err(|e| format!("Error resolviendo ruta raíz: {}", e))?;
     let forja_gui_rt_path = forja_root.join("crates/forja-gui-rt");
 
     let cargo_toml = format!(
@@ -1009,7 +1152,10 @@ forja = {{ path = "{}" }}
 serde_json = "1"
 "#,
         nombre_crate,
-        forja_gui_rt_path.display().to_string().replace("\\\\?\\", ""),
+        forja_gui_rt_path
+            .display()
+            .to_string()
+            .replace("\\\\?\\", ""),
         forja_root.display().to_string().replace("\\\\?\\", "")
     );
 
@@ -1066,8 +1212,8 @@ fn iniciar_watcher_hot_reload(
     mut child: std::process::Child,
 ) -> Result<(), String> {
     use std::io::Read;
-    use std::time::Duration;
     use std::thread;
+    use std::time::Duration;
 
     let fa_path = std::path::Path::new(ruta_fa).to_path_buf();
     let build_dir = temp_dir.to_path_buf();
@@ -1077,7 +1223,10 @@ fn iniciar_watcher_hot_reload(
     // Ruta donde la app guarda el estado al ser notificada
     let state_path = build_dir.join("state.json");
 
-    println!("🔄 Hot reload activo. Esperando cambios en {}...", fa_path.display());
+    println!(
+        "🔄 Hot reload activo. Esperando cambios en {}...",
+        fa_path.display()
+    );
 
     loop {
         // Esperar antes de verificar
@@ -1149,7 +1298,8 @@ fn iniciar_watcher_hot_reload(
             if !state_arg.is_empty() {
                 cmd.arg(&state_arg);
             }
-            child = cmd.spawn()
+            child = cmd
+                .spawn()
                 .map_err(|e| format!("Error ejecutando nueva versión: {}", e))?;
 
             println!("✅ App reiniciada con hot reload!");
@@ -1176,19 +1326,32 @@ fn cmd_fmt(args: &[String]) {
         process::exit(1);
     }
     let path = &args[0];
-    let source = match fs::read_to_string(path) {
+    let source = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
-        Err(e) => { eprintln!("Error al leer '{}': {}", path, e); process::exit(1); }
+        Err(e) => {
+            eprintln!("{}", e);
+            process::exit(1);
+        }
     };
     let mut lexer = lexer::Lexer::new(&source);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
-        Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
+        Err(errors) => {
+            for err in errors {
+                eprintln!("{}", err);
+            }
+            process::exit(1);
+        }
     };
     let mut parser = parser::Parser::new(tokens);
     let programa = match parser.parse() {
         Ok(p) => p,
-        Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
+        Err(errors) => {
+            for err in errors {
+                eprintln!("{}", err);
+            }
+            process::exit(1);
+        }
     };
     let mut fmt = formatter::Formatter::new();
     let output = fmt.formatear(&programa);
@@ -1197,7 +1360,10 @@ fn cmd_fmt(args: &[String]) {
         if output == source {
             println!("✅ El archivo está correctamente formateado");
         } else {
-            eprintln!("❌ El archivo necesita formateo. Ejecutá 'forja fmt {}'", path);
+            eprintln!(
+                "❌ El archivo necesita formateo. Ejecutá 'forja fmt {}'",
+                path
+            );
             process::exit(1);
         }
     } else if args.len() > 1 && args[1] == "-o" && args.len() > 2 {
@@ -1229,19 +1395,32 @@ fn cmd_doc(args: &[String]) {
         Some(input.with_extension("html").to_string_lossy().to_string())
     };
 
-    let source = match fs::read_to_string(path) {
+    let source = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
-        Err(e) => { eprintln!("Error al leer '{}': {}", path, e); process::exit(1); }
+        Err(e) => {
+            eprintln!("{}", e);
+            process::exit(1);
+        }
     };
     let mut lexer = lexer::Lexer::new(&source);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
-        Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
+        Err(errors) => {
+            for err in errors {
+                eprintln!("{}", err);
+            }
+            process::exit(1);
+        }
     };
     let mut parser = parser::Parser::new(tokens);
     let programa = match parser.parse() {
         Ok(p) => p,
-        Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
+        Err(errors) => {
+            for err in errors {
+                eprintln!("{}", err);
+            }
+            process::exit(1);
+        }
     };
 
     let html = generar_doc_html(&programa.declaraciones);
@@ -1249,7 +1428,10 @@ fn cmd_doc(args: &[String]) {
     if let Some(out) = output_path {
         match fs::write(&out, &html) {
             Ok(_) => println!("✅ Documentación generada: {}", out),
-            Err(e) => { eprintln!("Error al escribir '{}': {}", out, e); process::exit(1); }
+            Err(e) => {
+                eprintln!("Error al escribir '{}': {}", out, e);
+                process::exit(1);
+            }
         }
     } else {
         println!("{}", html);
@@ -1284,7 +1466,12 @@ fn generar_doc_html(declaraciones: &[Declaracion]) -> String {
 
     for decl in declaraciones {
         match decl {
-            Declaracion::Funcion { nombre, parametros, doc, .. } => {
+            Declaracion::Funcion {
+                nombre,
+                parametros,
+                doc,
+                ..
+            } => {
                 let params: Vec<&str> = parametros.iter().map(|p| p.nombre.as_str()).collect();
                 html.push_str("<div class='doc-block'>");
                 html.push_str(&format!(
@@ -1295,14 +1482,23 @@ fn generar_doc_html(declaraciones: &[Declaracion]) -> String {
                 if let Some(doc_text) = doc {
                     html.push_str(&format!(
                         "<div class='doc-text'>{}</div>",
-                        doc_text.replace('\n', "<br>").replace("&", "&").replace("<", "<").replace(">", ">")
+                        doc_text
+                            .replace('\n', "<br>")
+                            .replace("&", "&")
+                            .replace("<", "<")
+                            .replace(">", ">")
                     ));
                 } else {
                     html.push_str("<div class='meta'>Sin documentación</div>");
                 }
                 html.push_str("</div>\n");
             }
-            Declaracion::Clase { nombre, campos, metodos, .. } => {
+            Declaracion::Clase {
+                nombre,
+                campos,
+                metodos,
+                ..
+            } => {
                 html.push_str("<div class='doc-block'>");
                 html.push_str(&format!(
                     "<span class='tag tag-class'>clase</span> <h3>{}</h3>",
@@ -1317,7 +1513,9 @@ fn generar_doc_html(declaraciones: &[Declaracion]) -> String {
                 }
                 html.push_str("</div></div>\n");
             }
-            Declaracion::Variable { mutable, nombre, .. } => {
+            Declaracion::Variable {
+                mutable, nombre, ..
+            } => {
                 let kw = if *mutable { "variable" } else { "constante" };
                 html.push_str("<div class='doc-block'>");
                 html.push_str(&format!(
@@ -1340,8 +1538,6 @@ fn cmd_repl() {
     let mut repl = repl::REPL::new("fast");
     repl.iniciar();
 }
-
-
 
 /// forja build|compilar|construir <archivo.fa> [-o <ejecutable>] [--debug|--console]
 /// Compila un archivo .fa a un ejecutable autónomo.
@@ -1386,10 +1582,11 @@ fn cmd_build(args: &[String]) {
     };
 
     let output = output.unwrap_or_else(|| {
-        Path::new(&input).with_extension("exe").to_string_lossy().to_string()
+        Path::new(&input)
+            .with_extension("exe")
+            .to_string_lossy()
+            .to_string()
     });
-
-
 
     // Compilar a ejecutable autónomo (AOT con bytecode)
     if let Err(e) = forja::aot::AOTCompiler::compilar(&input, &output) {
@@ -1413,23 +1610,36 @@ fn cmd_diagram(args: &[String]) {
         Some(input.with_extension("mmd").to_string_lossy().to_string())
     };
 
-    let source = match fs::read_to_string(input_path) {
+    let source = match forja::leer_archivo_con_limite(input_path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
-        Err(e) => { eprintln!("Error al leer '{}': {}", input_path, e); process::exit(1); }
+        Err(e) => {
+            eprintln!("{}", e);
+            process::exit(1);
+        }
     };
 
     // Lexer
     let mut lexer = lexer::Lexer::new(&source);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
-        Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
+        Err(errors) => {
+            for err in errors {
+                eprintln!("{}", err);
+            }
+            process::exit(1);
+        }
     };
 
     // Parser
     let mut parser = parser::Parser::new(tokens);
     let programa = match parser.parse() {
         Ok(p) => p,
-        Err(errors) => { for err in errors { eprintln!("{}", err); } process::exit(1); }
+        Err(errors) => {
+            for err in errors {
+                eprintln!("{}", err);
+            }
+            process::exit(1);
+        }
     };
 
     // Generar diagrama Mermaid
@@ -1442,7 +1652,10 @@ fn cmd_diagram(args: &[String]) {
         } else {
             match fs::write(&out, &mmd) {
                 Ok(_) => println!("✅ diagrama generado: {}", out),
-                Err(e) => { eprintln!("Error al escribir '{}': {}", out, e); process::exit(1); }
+                Err(e) => {
+                    eprintln!("Error al escribir '{}': {}", out, e);
+                    process::exit(1);
+                }
             }
         }
     } else {
@@ -1459,22 +1672,25 @@ fn cmd_transpile(args: &[String]) {
     }
 
     let input_path = &args[0];
-    let input_stem = Path::new(input_path).file_stem()
+    let input_stem = Path::new(input_path)
+        .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("proyecto");
 
     // Directorio de salida
     let project_dir = if args.len() > 1 && args[1] == "-o" {
-        args.get(2).cloned().unwrap_or_else(|| format!("{}_rs", input_stem))
+        args.get(2)
+            .cloned()
+            .unwrap_or_else(|| format!("{}_rs", input_stem))
     } else {
         format!("{}_rs", input_stem)
     };
     let json_errors = args.contains(&"--json-errors".to_string());
 
-    let source = match fs::read_to_string(input_path) {
+    let source = match forja::leer_archivo_con_limite(input_path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Error al leer el archivo '{}': {}", input_path, e);
+            eprintln!("{}", e);
             process::exit(1);
         }
     };
@@ -1485,8 +1701,11 @@ fn cmd_transpile(args: &[String]) {
         Ok(t) => t,
         Err(errors) => {
             for err in errors {
-                if json_errors { eprintln!("{}", err.to_json()); }
-                else { eprintln!("{}", err); }
+                if json_errors {
+                    eprintln!("{}", err.to_json());
+                } else {
+                    eprintln!("{}", err);
+                }
             }
             process::exit(1);
         }
@@ -1498,8 +1717,11 @@ fn cmd_transpile(args: &[String]) {
         Ok(p) => p,
         Err(errors) => {
             for err in errors {
-                if json_errors { eprintln!("{}", err.to_json()); }
-                else { eprintln!("{}", err); }
+                if json_errors {
+                    eprintln!("{}", err.to_json());
+                } else {
+                    eprintln!("{}", err);
+                }
             }
             process::exit(1);
         }
@@ -1509,8 +1731,11 @@ fn cmd_transpile(args: &[String]) {
     let mut checker = semantics::BorrowChecker::new();
     if let Err(errors) = checker.analizar(&programa) {
         for err in errors {
-            if json_errors { eprintln!("{}", err.to_json()); }
-            else { eprintln!("{}", err); }
+            if json_errors {
+                eprintln!("{}", err.to_json());
+            } else {
+                eprintln!("{}", err);
+            }
         }
         process::exit(1);
     }
@@ -1521,8 +1746,11 @@ fn cmd_transpile(args: &[String]) {
         Ok(code) => code,
         Err(errors) => {
             for err in errors {
-                if json_errors { eprintln!("{}", err.to_json()); }
-                else { eprintln!("{}", err); }
+                if json_errors {
+                    eprintln!("{}", err.to_json());
+                } else {
+                    eprintln!("{}", err);
+                }
             }
             process::exit(1);
         }
@@ -1568,8 +1796,7 @@ forja-gui-rt = {{ path = "C:\\Users\\gaucho\\forja\\crates\\forja-gui-rt" }}
 version = "0.30.13"
 features = ["android-native-activity"]
 "#,
-            nombre_crate,
-            nombre_crate
+            nombre_crate, nombre_crate
         )
     } else {
         format!(
@@ -1586,7 +1813,10 @@ edition = "2021"
 [dependencies]
 "#,
             nombre_crate,
-            Path::new(input_path).file_name().and_then(|s| s.to_str()).unwrap_or(input_path)
+            Path::new(input_path)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(input_path)
         )
     };
 
@@ -1619,16 +1849,15 @@ edition = "2021"
             .status();
         match result {
             Ok(s) if s.success() => Ok(()),
-            _ => Err(())
+            _ => Err(()),
         }
     };
 
     // Intentar release primero, si falla probar debug
-    let build_ok = try_build(&["build", "--release"])
-        .or_else(|_| {
-            eprintln!("⚠️  Compilación release falló, intentando debug...");
-            try_build(&["build"])
-        });
+    let build_ok = try_build(&["build", "--release"]).or_else(|_| {
+        eprintln!("⚠️  Compilación release falló, intentando debug...");
+        try_build(&["build"])
+    });
 
     match build_ok {
         Ok(()) => {
@@ -1639,7 +1868,10 @@ edition = "2021"
                 input_stem.replace('-', "_").replace(' ', "_")
             };
             println!();
-            println!("🚀 Ejecutable: .\\{}\\target\\{}\\{}", project_dir, build_dir, exe_name);
+            println!(
+                "🚀 Ejecutable: .\\{}\\target\\{}\\{}",
+                project_dir, build_dir, exe_name
+            );
         }
         Err(_) => {
             eprintln!();
@@ -1664,8 +1896,12 @@ edition = "2021"
 /// -o:       archivo de salida (default: nombre del .fa con extensión del SO)
 fn cmd_build_asm(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja build-asm|compilar-asm|asm <archivo.fa> [--target <arch>] [-o <salida>]");
-        eprintln!("  --target: x86_64-windows | x86_64-linux | arm64  (default: plataforma actual)");
+        eprintln!(
+            "Uso: forja build-asm|compilar-asm|asm <archivo.fa> [--target <arch>] [-o <salida>]"
+        );
+        eprintln!(
+            "  --target: x86_64-windows | x86_64-linux | arm64  (default: plataforma actual)"
+        );
         process::exit(1);
     }
 
@@ -1682,7 +1918,9 @@ fn cmd_build_asm(args: &[String]) {
                 if i < args.len() {
                     target_str = Some(args[i].clone());
                 } else {
-                    eprintln!("Error: --target requiere un valor (x86_64-windows, x86_64-linux, arm64)");
+                    eprintln!(
+                        "Error: --target requiere un valor (x86_64-windows, x86_64-linux, arm64)"
+                    );
                     process::exit(1);
                 }
             }
@@ -1703,10 +1941,10 @@ fn cmd_build_asm(args: &[String]) {
         i += 1;
     }
 
-    let source = match fs::read_to_string(input_path) {
+    let source = match forja::leer_archivo_con_limite(input_path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Error al leer '{}': {}", input_path, e);
+            eprintln!("{}", e);
             process::exit(1);
         }
     };
@@ -1716,7 +1954,10 @@ fn cmd_build_asm(args: &[String]) {
         match compiler_asm::TargetArch::from_str(ts) {
             Some(t) => t,
             None => {
-                eprintln!("Error: target '{}' no soportado. Usá: x86_64-windows, x86_64-linux, arm64", ts);
+                eprintln!(
+                    "Error: target '{}' no soportado. Usá: x86_64-windows, x86_64-linux, arm64",
+                    ts
+                );
                 process::exit(1);
             }
         }
@@ -1725,12 +1966,17 @@ fn cmd_build_asm(args: &[String]) {
     };
 
     // Determinar output
-    let input_stem = Path::new(input_path).file_stem()
+    let input_stem = Path::new(input_path)
+        .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("output");
 
     let output_path = output_path.unwrap_or_else(|| {
-        let ext = if cfg!(target_os = "windows") { "exe" } else { "" };
+        let ext = if cfg!(target_os = "windows") {
+            "exe"
+        } else {
+            ""
+        };
         format!("{}.{}", input_stem, ext)
     });
 
@@ -1772,7 +2018,11 @@ fn cmd_build_asm(args: &[String]) {
     // Escribir archivo .s
     let asm_path = Path::new(&output_path).with_extension("s");
     match fs::write(&asm_path, &asm_code) {
-        Ok(_) => println!("✅ Assembly generado: {} (target: {})", asm_path.display(), target.name()),
+        Ok(_) => println!(
+            "✅ Assembly generado: {} (target: {})",
+            asm_path.display(),
+            target.name()
+        ),
         Err(e) => {
             eprintln!("Error escribiendo '{}': {}", asm_path.display(), e);
             process::exit(1);
@@ -1782,12 +2032,7 @@ fn cmd_build_asm(args: &[String]) {
     // Compilar con gcc
     println!("📦 Compilando con gcc -O2...");
     let gcc_result = std::process::Command::new("gcc")
-        .args(&[
-            "-O2",
-            "-o",
-            &output_path,
-            asm_path.to_str().unwrap(),
-        ])
+        .args(&["-O2", "-o", &output_path, asm_path.to_str().unwrap()])
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
         .status();
@@ -1797,7 +2042,10 @@ fn cmd_build_asm(args: &[String]) {
             println!("🚀 Ejecutable nativo: {}", output_path);
         }
         Ok(_) => {
-            eprintln!("⚠️  gcc falló. El assembly quedó en: {}", asm_path.display());
+            eprintln!(
+                "⚠️  gcc falló. El assembly quedó en: {}",
+                asm_path.display()
+            );
             eprintln!("   Compilá manualmente:");
             eprintln!("   gcc -O2 -o {} {}", output_path, asm_path.display());
         }
@@ -1849,8 +2097,8 @@ fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
     let inicio = std::time::Instant::now();
 
     for archivo in &archivos {
-        let codigo = std::fs::read_to_string(archivo)
-            .map_err(|e| format!("Error al leer '{}': {}", archivo, e))?;
+        let codigo = forja::leer_archivo_con_limite(archivo, forja::MAX_ARCHIVO_DEFAULT_MB)
+            .map_err(|e| e)?;
 
         // FASE 1: Lexer (inline como los demás cmd_*)
         let mut lexer = lexer::Lexer::new(&codigo);
@@ -1913,11 +2161,15 @@ fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
         };
 
         // Recolectar funciones con @test
-        let tests: Vec<&Declaracion> = programa.declaraciones.iter()
+        let tests: Vec<&Declaracion> = programa
+            .declaraciones
+            .iter()
             .filter(|d| {
                 if let Declaracion::Funcion { atributos, .. } = d {
                     atributos.iter().any(|a| a.nombre == "test")
-                } else { false }
+                } else {
+                    false
+                }
             })
             .collect();
 
@@ -1952,8 +2204,10 @@ fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
     let duracion = inicio.elapsed();
     let total = total_pasados + total_fallidos;
     println!("\n{}", "=".repeat(50));
-    println!("  📊 Resultados: {} pasados, {} fallidos (de {} totales)",
-        total_pasados, total_fallidos, total);
+    println!(
+        "  📊 Resultados: {} pasados, {} fallidos (de {} totales)",
+        total_pasados, total_fallidos, total
+    );
     println!("  ⏱  Tiempo total: {:?}", duracion);
     println!("{}", "=".repeat(50));
 
@@ -1973,23 +2227,22 @@ fn ejecutar_test(test_fn: &Declaracion, rust_code: &str) -> Result<(), String> {
     };
 
     // Quitar #[test] porque rustc sin --test no reconoce funciones marcadas
-    let rust_clean = rust_code.lines()
+    let rust_clean = rust_code
+        .lines()
         .filter(|line| line.trim() != "#[test]")
         .collect::<Vec<_>>()
         .join("\n");
 
     // El transpilador no genera fn main() (saltar_main = true),
     // así que añadimos uno que llame a la función de test.
-    let test_program = format!(
-        "{}\nfn main() {{\n    {}();\n}}\n",
-        rust_clean, nombre
-    );
+    let test_program = format!("{}\nfn main() {{\n    {}();\n}}\n", rust_clean, nombre);
 
     // Escribir a archivo temporal y compilar con rustc
     let tmp_dir = std::env::temp_dir().join("forja_test");
     std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Error creando dir temp: {}", e))?;
     let rs_file = tmp_dir.join("test.rs");
-    std::fs::write(&rs_file, &test_program).map_err(|e| format!("Error escribiendo test.rs: {}", e))?;
+    std::fs::write(&rs_file, &test_program)
+        .map_err(|e| format!("Error escribiendo test.rs: {}", e))?;
 
     // Compilar con rustc
     let output = std::process::Command::new("rustc")
@@ -2019,7 +2272,9 @@ fn ejecutar_test(test_fn: &Declaracion, rust_code: &str) -> Result<(), String> {
             msg.push_str(&stdout);
         }
         if !stderr.is_empty() {
-            if !msg.is_empty() { msg.push('\n'); }
+            if !msg.is_empty() {
+                msg.push('\n');
+            }
             msg.push_str(&stderr);
         }
         if msg.is_empty() {

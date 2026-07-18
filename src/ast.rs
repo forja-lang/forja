@@ -42,11 +42,11 @@ pub enum Tipo {
     /// Número exacto de precisión arbitraria (BigDecimal) — coeff i128, scale u32
     #[allow(dead_code)]
     Exacto,
-    Clase(String),       // nombre de clase definida por usuario
+    Clase(String), // nombre de clase definida por usuario
     #[allow(dead_code)]
-    Arreglo(Box<Tipo>),  // arreglo de algún tipo
+    Arreglo(Box<Tipo>), // arreglo de algún tipo
     #[allow(dead_code)]
-    Funcion(Vec<Tipo>, Box<Tipo>),  // (tipos_parametros, tipo_retorno)
+    Funcion(Vec<Tipo>, Box<Tipo>), // (tipos_parametros, tipo_retorno)
     /// Resultado con Ok/Error (Result<T, E>)
     Resultado(Box<Tipo>, Box<Tipo>),
     /// Valor opcional (Option<T>)
@@ -68,8 +68,8 @@ pub struct ParametroTipo {
 pub struct Parametro {
     pub nombre: String,
     pub prestado: bool,     // si es &T
-    pub mutable: bool,       // si es &mut T
-    pub tipo: Option<Tipo>,  // opcional, puede inferirse
+    pub mutable: bool,      // si es &mut T
+    pub tipo: Option<Tipo>, // opcional, puede inferirse
 }
 
 /// Variable declarada dentro de una clase
@@ -199,10 +199,7 @@ pub enum Expresion {
         argumentos: Vec<Expresion>,
     },
     /// Referencia (préstamo) (ej: &x)
-    Referencia {
-        expr: Box<Expresion>,
-        mutable: bool,
-    },
+    Referencia { expr: Box<Expresion>, mutable: bool },
     /// Arreglo literal (ej: [1, 2, 3])
     Arreglo(Vec<Expresion>),
     /// Mapa literal (ej: {"clave": valor})
@@ -227,17 +224,13 @@ pub enum Expresion {
     /// Expresión agrupada (ej: (a + b) * c)
     Grupo(Box<Expresion>),
     /// Hilo ligero (ej: hilo { ... })
-    Hilo {
-        cuerpo: Vec<Declaracion>,
-    },
+    Hilo { cuerpo: Vec<Declaracion> },
     /// Crear canal de comunicación (ej: canal())
     CanalNuevo,
     /// Operador de propagación de errores (expr?)
     Try(Box<Expresion>),
     /// Seleccionar entre múltiples canales
-    Seleccionar {
-        brazos: Vec<BrazoSeleccionar>,
-    },
+    Seleccionar { brazos: Vec<BrazoSeleccionar> },
     /// Asignación como expresión (ej: x = 5 retorna 5)
     Asignacion {
         variable: String,
@@ -305,25 +298,25 @@ pub enum Declaracion {
     /// Definición de función (ej: funcion saludar(n) { ... })
     Funcion {
         nombre: String,
-        parametros_tipo: Vec<ParametroTipo>,  // Parámetros genéricos <T, U>
+        parametros_tipo: Vec<ParametroTipo>, // Parámetros genéricos <T, U>
         parametros: Vec<Parametro>,
         tipo_retorno: Option<Tipo>,
         cuerpo: Vec<Declaracion>,
-        externa: bool,                    // si es función externa (FFI)
-        enlace_nombre: Option<String>,    // nombre real en C (ej: "printf")
-        atributos: Vec<Atributo>,         // atributos/anotaciones
-        doc: Option<String>,              // doc comment (///)
-        precondiciones: Vec<Contrato>,    // precondiciones (requiere)
-        postcondiciones: Vec<Contrato>,   // postcondiciones (asegura)
+        externa: bool,                  // si es función externa (FFI)
+        enlace_nombre: Option<String>,  // nombre real en C (ej: "printf")
+        atributos: Vec<Atributo>,       // atributos/anotaciones
+        doc: Option<String>,            // doc comment (///)
+        precondiciones: Vec<Contrato>,  // precondiciones (requiere)
+        postcondiciones: Vec<Contrato>, // postcondiciones (asegura)
     },
     /// Definición de clase (ej: clase Persona { ... })
     Clase {
         nombre: String,
-        parametros_tipo: Vec<ParametroTipo>,  // Parámetros genéricos <T, U>
+        parametros_tipo: Vec<ParametroTipo>, // Parámetros genéricos <T, U>
         campos: Vec<VariableClase>,
         metodos: Vec<Metodo>,
-        atributos: Vec<Atributo>,         // atributos/anotaciones
-        invariantes: Vec<Contrato>,       // invariantes de clase (siempre)
+        atributos: Vec<Atributo>,   // atributos/anotaciones
+        invariantes: Vec<Contrato>, // invariantes de clase (siempre)
     },
     /// Condicional si/sino
     Si {
@@ -367,9 +360,7 @@ pub enum Declaracion {
         miembro: String,
     },
     /// Retornar valor
-    Retornar {
-        valor: Option<Expresion>,
-    },
+    Retornar { valor: Option<Expresion> },
     /// Importar módulo: importar "ruta"
     Importar(String),
     /// Definición de enum: tipo Nombre = Variante1 | Variante2(Tipo)
@@ -377,7 +368,7 @@ pub enum Declaracion {
     Enum {
         nombre: String,
         variantes: Vec<Variante>,
-        atributos: Vec<Atributo>,         // atributos/anotaciones
+        atributos: Vec<Atributo>, // atributos/anotaciones
     },
     /// Asignación múltiple (ej: variable tx, rx = canal())
     AsignacionMultiple {

@@ -200,7 +200,8 @@ impl TablaDinamica {
 
     pub fn add(&mut self, name: &str, value: &str) {
         let size = Self::entry_size(name, value);
-        self.entries.insert(0, (name.to_string(), value.to_string()));
+        self.entries
+            .insert(0, (name.to_string(), value.to_string()));
         self.current_size += size;
         self.evict();
     }
@@ -255,71 +256,266 @@ impl TablaDinamica {
 // ═══════════════════════════════════════════════════════════════════════
 
 const HUFFMAN_TABLE: &[(u32, u8)] = &[
-    (0x1ff8, 13), (0x7fffd8, 23), (0xfffffe2, 28), (0xfffffe3, 28),
-    (0xfffffe4, 28), (0xfffffe5, 28), (0xfffffe6, 28), (0xfffffe7, 28),
-    (0xfffffe8, 28), (0xffffea, 24), (0x3ffffffc, 30), (0xfffffe9, 28),
-    (0xfffffea, 28), (0x3ffffffd, 30), (0xfffffeb, 28), (0xfffffec, 28),
-    (0xfffffed, 28), (0xfffffee, 28), (0xfffffef, 28), (0xffffff0, 28),
-    (0xffffff1, 28), (0xffffff2, 28), (0x3ffffffe, 30), (0xffffff3, 28),
-    (0xffffff4, 28), (0xffffff5, 28), (0xffffff6, 28), (0xffffff7, 28),
-    (0xffffff8, 28), (0xffffff9, 28), (0xffffffa, 28), (0xffffffb, 28),
-    (0x14, 6), (0x3f8, 10), (0x3f9, 10), (0xffa, 12),
-    (0x1ff9, 13), (0x15, 6), (0xf8, 8), (0x7fa, 11),
-    (0x3fa, 10), (0x3fb, 10), (0xf9, 8), (0x7fb, 11),
-    (0xfa, 8), (0x16, 6), (0x17, 6), (0x18, 6),
-    (0x0, 5), (0x1, 5), (0x2, 5), (0x19, 6),
-    (0x1a, 6), (0x1b, 6), (0x1c, 6), (0x1d, 6),
-    (0x1e, 6), (0x1f, 6), (0x5c, 7), (0xfb, 8),
-    (0x7ffc, 15), (0x20, 6), (0xffb, 12), (0x3fc, 10),
-    (0x1ffa, 13), (0x21, 6), (0x5d, 7), (0x5e, 7),
-    (0x5f, 7), (0x60, 7), (0x61, 7), (0x62, 7),
-    (0x63, 7), (0x64, 7), (0x65, 7), (0x66, 7),
-    (0x67, 7), (0x68, 7), (0x69, 7), (0x6a, 7),
-    (0x6b, 7), (0x6c, 7), (0x6d, 7), (0x6e, 7),
-    (0x6f, 7), (0x70, 7), (0x71, 7), (0x72, 7),
-    (0xfc, 8), (0x73, 7), (0xfd, 8), (0x1ffb, 13),
-    (0x7fff0, 19), (0x1ffc, 13), (0xffc, 12), (0x22, 6),
-    (0x74, 7), (0x75, 7), (0x76, 7), (0x77, 7),
-    (0x78, 7), (0x79, 7), (0x7a, 7), (0x7b, 7),
-    (0x7ffe, 15), (0x7fc, 11), (0x3ff, 10), (0x7fd, 11),
-    (0x1ffd, 13), (0xffffffc, 28), (0xfffe6, 20), (0x3fffd8, 22),
-    (0x7fffd9, 23), (0x3fffd9, 22), (0x7fffda, 23), (0x7fffdb, 23),
-    (0x7fffdc, 23), (0x7fffdd, 23), (0x7fffde, 23), (0xffffeb, 24),
-    (0x7fffdf, 23), (0xffffec, 24), (0xffffed, 24), (0x3fffe, 20),
-    (0x1fffe, 20), (0xffffffd, 28), (0x7fffe0, 23), (0x7fffe1, 23),
-    (0x7fffe2, 23), (0x7fffe3, 23), (0x7fffe4, 23), (0x1fffdc, 21),
-    (0x3fffda, 22), (0x7fffe5, 23), (0x3fffdb, 22), (0x7fffe6, 23),
-    (0x7fffe7, 23), (0x7fffe8, 23), (0x7fffe9, 23), (0x7fffea, 23),
-    (0x7fffeb, 23), (0xffffee, 24), (0xffffef, 24), (0x7fffec, 23),
-    (0xfffff0, 24), (0x3fffdc, 22), (0xfffff1, 24), (0xfffff2, 24),
-    (0xfffff3, 24), (0xfffff4, 24), (0xfffff5, 24), (0xfffff6, 24),
-    (0xfffff7, 24), (0xfffff8, 24), (0xfffff9, 24), (0xfffffa, 24),
-    (0xfffffb, 24), (0xfffffc, 24), (0x3fffdd, 22), (0x3fffde, 22),
-    (0xfffffd, 24), (0x3fffdf, 22), (0x3fffe0, 22), (0x3fffe1, 22),
-    (0xfffffe, 24), (0x3fffe2, 22), (0x3fffe3, 22), (0x3fffe4, 22),
-    (0x3fffe5, 22), (0x3fffe6, 22), (0x3fffe7, 22), (0x3fffe8, 22),
-    (0x3fffe9, 22), (0x3fffea, 22), (0x3fffeb, 22), (0x3fffec, 22),
-    (0x3fffed, 22), (0x3fffee, 22), (0x3fffef, 22), (0x3ffff0, 22),
-    (0x3ffff1, 22), (0x3ffff2, 22), (0x3ffff3, 22), (0x3ffff4, 22),
-    (0x3ffff5, 22), (0x3ffff6, 22), (0x3ffff7, 22), (0x3ffff8, 22),
-    (0x3ffff9, 22), (0x3ffffa, 22), (0x3ffffb, 22), (0x3ffffc, 22),
-    (0x3ffffd, 22), (0x3ffffe, 22), (0x3fffff, 22), (0x1fffdd, 21),
-    (0x1fffde, 21), (0x1fffdf, 21), (0x1fffe0, 21), (0x1fffe1, 21),
-    (0x1fffe2, 21), (0x1fffe3, 21), (0x1fffe4, 21), (0x1fffe5, 21),
-    (0x1fffe6, 21), (0x1fffe7, 21), (0x1fffe8, 21), (0x1fffe9, 21),
-    (0x1fffea, 21), (0x1fffeb, 21), (0x1fffec, 21), (0x1fffed, 21),
-    (0x1fffee, 21), (0x1fffef, 21), (0x1ffff0, 21), (0x1ffff1, 21),
-    (0x1ffff2, 21), (0x1ffff3, 21), (0x1ffff4, 21), (0x1ffff5, 21),
-    (0x1ffff6, 21), (0x1ffff7, 21), (0x1ffff8, 21), (0x1ffff9, 21),
-    (0x1ffffa, 21), (0x1ffffb, 21), (0x1ffffc, 21), (0x1ffffd, 21),
-    (0x1ffffe, 21), (0x1fffff, 21), (0x3ffe0, 18), (0x3ffe1, 18),
-    (0x3ffe2, 18), (0x3ffe3, 18), (0x3ffe4, 18), (0x3ffe5, 18),
-    (0x3ffe6, 18), (0x3ffe7, 18), (0x3ffe8, 18), (0x3ffe9, 18),
-    (0x3ffea, 18), (0x3ffeb, 18), (0x3ffec, 18), (0x3ffed, 18),
-    (0x3ffee, 18), (0x3ffef, 18), (0x3fff0, 18), (0x3fff1, 18),
-    (0x3fff2, 18), (0x3fff3, 18), (0x3fff4, 18), (0x3fff5, 18),
-    (0x3fff6, 18), (0x3fff7, 18), (0x3fff8, 18), (0x3fff9, 18),
-    (0x3fffa, 18), (0x3fffb, 18), (0x3fffc, 18), (0x3fffd, 18),
+    (0x1ff8, 13),
+    (0x7fffd8, 23),
+    (0xfffffe2, 28),
+    (0xfffffe3, 28),
+    (0xfffffe4, 28),
+    (0xfffffe5, 28),
+    (0xfffffe6, 28),
+    (0xfffffe7, 28),
+    (0xfffffe8, 28),
+    (0xffffea, 24),
+    (0x3ffffffc, 30),
+    (0xfffffe9, 28),
+    (0xfffffea, 28),
+    (0x3ffffffd, 30),
+    (0xfffffeb, 28),
+    (0xfffffec, 28),
+    (0xfffffed, 28),
+    (0xfffffee, 28),
+    (0xfffffef, 28),
+    (0xffffff0, 28),
+    (0xffffff1, 28),
+    (0xffffff2, 28),
+    (0x3ffffffe, 30),
+    (0xffffff3, 28),
+    (0xffffff4, 28),
+    (0xffffff5, 28),
+    (0xffffff6, 28),
+    (0xffffff7, 28),
+    (0xffffff8, 28),
+    (0xffffff9, 28),
+    (0xffffffa, 28),
+    (0xffffffb, 28),
+    (0x14, 6),
+    (0x3f8, 10),
+    (0x3f9, 10),
+    (0xffa, 12),
+    (0x1ff9, 13),
+    (0x15, 6),
+    (0xf8, 8),
+    (0x7fa, 11),
+    (0x3fa, 10),
+    (0x3fb, 10),
+    (0xf9, 8),
+    (0x7fb, 11),
+    (0xfa, 8),
+    (0x16, 6),
+    (0x17, 6),
+    (0x18, 6),
+    (0x0, 5),
+    (0x1, 5),
+    (0x2, 5),
+    (0x19, 6),
+    (0x1a, 6),
+    (0x1b, 6),
+    (0x1c, 6),
+    (0x1d, 6),
+    (0x1e, 6),
+    (0x1f, 6),
+    (0x5c, 7),
+    (0xfb, 8),
+    (0x7ffc, 15),
+    (0x20, 6),
+    (0xffb, 12),
+    (0x3fc, 10),
+    (0x1ffa, 13),
+    (0x21, 6),
+    (0x5d, 7),
+    (0x5e, 7),
+    (0x5f, 7),
+    (0x60, 7),
+    (0x61, 7),
+    (0x62, 7),
+    (0x63, 7),
+    (0x64, 7),
+    (0x65, 7),
+    (0x66, 7),
+    (0x67, 7),
+    (0x68, 7),
+    (0x69, 7),
+    (0x6a, 7),
+    (0x6b, 7),
+    (0x6c, 7),
+    (0x6d, 7),
+    (0x6e, 7),
+    (0x6f, 7),
+    (0x70, 7),
+    (0x71, 7),
+    (0x72, 7),
+    (0xfc, 8),
+    (0x73, 7),
+    (0xfd, 8),
+    (0x1ffb, 13),
+    (0x7fff0, 19),
+    (0x1ffc, 13),
+    (0xffc, 12),
+    (0x22, 6),
+    (0x74, 7),
+    (0x75, 7),
+    (0x76, 7),
+    (0x77, 7),
+    (0x78, 7),
+    (0x79, 7),
+    (0x7a, 7),
+    (0x7b, 7),
+    (0x7ffe, 15),
+    (0x7fc, 11),
+    (0x3ff, 10),
+    (0x7fd, 11),
+    (0x1ffd, 13),
+    (0xffffffc, 28),
+    (0xfffe6, 20),
+    (0x3fffd8, 22),
+    (0x7fffd9, 23),
+    (0x3fffd9, 22),
+    (0x7fffda, 23),
+    (0x7fffdb, 23),
+    (0x7fffdc, 23),
+    (0x7fffdd, 23),
+    (0x7fffde, 23),
+    (0xffffeb, 24),
+    (0x7fffdf, 23),
+    (0xffffec, 24),
+    (0xffffed, 24),
+    (0x3fffe, 20),
+    (0x1fffe, 20),
+    (0xffffffd, 28),
+    (0x7fffe0, 23),
+    (0x7fffe1, 23),
+    (0x7fffe2, 23),
+    (0x7fffe3, 23),
+    (0x7fffe4, 23),
+    (0x1fffdc, 21),
+    (0x3fffda, 22),
+    (0x7fffe5, 23),
+    (0x3fffdb, 22),
+    (0x7fffe6, 23),
+    (0x7fffe7, 23),
+    (0x7fffe8, 23),
+    (0x7fffe9, 23),
+    (0x7fffea, 23),
+    (0x7fffeb, 23),
+    (0xffffee, 24),
+    (0xffffef, 24),
+    (0x7fffec, 23),
+    (0xfffff0, 24),
+    (0x3fffdc, 22),
+    (0xfffff1, 24),
+    (0xfffff2, 24),
+    (0xfffff3, 24),
+    (0xfffff4, 24),
+    (0xfffff5, 24),
+    (0xfffff6, 24),
+    (0xfffff7, 24),
+    (0xfffff8, 24),
+    (0xfffff9, 24),
+    (0xfffffa, 24),
+    (0xfffffb, 24),
+    (0xfffffc, 24),
+    (0x3fffdd, 22),
+    (0x3fffde, 22),
+    (0xfffffd, 24),
+    (0x3fffdf, 22),
+    (0x3fffe0, 22),
+    (0x3fffe1, 22),
+    (0xfffffe, 24),
+    (0x3fffe2, 22),
+    (0x3fffe3, 22),
+    (0x3fffe4, 22),
+    (0x3fffe5, 22),
+    (0x3fffe6, 22),
+    (0x3fffe7, 22),
+    (0x3fffe8, 22),
+    (0x3fffe9, 22),
+    (0x3fffea, 22),
+    (0x3fffeb, 22),
+    (0x3fffec, 22),
+    (0x3fffed, 22),
+    (0x3fffee, 22),
+    (0x3fffef, 22),
+    (0x3ffff0, 22),
+    (0x3ffff1, 22),
+    (0x3ffff2, 22),
+    (0x3ffff3, 22),
+    (0x3ffff4, 22),
+    (0x3ffff5, 22),
+    (0x3ffff6, 22),
+    (0x3ffff7, 22),
+    (0x3ffff8, 22),
+    (0x3ffff9, 22),
+    (0x3ffffa, 22),
+    (0x3ffffb, 22),
+    (0x3ffffc, 22),
+    (0x3ffffd, 22),
+    (0x3ffffe, 22),
+    (0x3fffff, 22),
+    (0x1fffdd, 21),
+    (0x1fffde, 21),
+    (0x1fffdf, 21),
+    (0x1fffe0, 21),
+    (0x1fffe1, 21),
+    (0x1fffe2, 21),
+    (0x1fffe3, 21),
+    (0x1fffe4, 21),
+    (0x1fffe5, 21),
+    (0x1fffe6, 21),
+    (0x1fffe7, 21),
+    (0x1fffe8, 21),
+    (0x1fffe9, 21),
+    (0x1fffea, 21),
+    (0x1fffeb, 21),
+    (0x1fffec, 21),
+    (0x1fffed, 21),
+    (0x1fffee, 21),
+    (0x1fffef, 21),
+    (0x1ffff0, 21),
+    (0x1ffff1, 21),
+    (0x1ffff2, 21),
+    (0x1ffff3, 21),
+    (0x1ffff4, 21),
+    (0x1ffff5, 21),
+    (0x1ffff6, 21),
+    (0x1ffff7, 21),
+    (0x1ffff8, 21),
+    (0x1ffff9, 21),
+    (0x1ffffa, 21),
+    (0x1ffffb, 21),
+    (0x1ffffc, 21),
+    (0x1ffffd, 21),
+    (0x1ffffe, 21),
+    (0x1fffff, 21),
+    (0x3ffe0, 18),
+    (0x3ffe1, 18),
+    (0x3ffe2, 18),
+    (0x3ffe3, 18),
+    (0x3ffe4, 18),
+    (0x3ffe5, 18),
+    (0x3ffe6, 18),
+    (0x3ffe7, 18),
+    (0x3ffe8, 18),
+    (0x3ffe9, 18),
+    (0x3ffea, 18),
+    (0x3ffeb, 18),
+    (0x3ffec, 18),
+    (0x3ffed, 18),
+    (0x3ffee, 18),
+    (0x3ffef, 18),
+    (0x3fff0, 18),
+    (0x3fff1, 18),
+    (0x3fff2, 18),
+    (0x3fff3, 18),
+    (0x3fff4, 18),
+    (0x3fff5, 18),
+    (0x3fff6, 18),
+    (0x3fff7, 18),
+    (0x3fff8, 18),
+    (0x3fff9, 18),
+    (0x3fffa, 18),
+    (0x3fffb, 18),
+    (0x3fffc, 18),
+    (0x3fffd, 18),
 ];
 
 /// Codifica un string usando Huffman HPACK
@@ -533,10 +729,7 @@ fn decode_string(data: &[u8], offset: &mut usize) -> Result<String, ()> {
 }
 
 /// Codifica cabeceras Forja (HashMap) a bloque HPACK (RFC 7541)
-pub fn hpack_codificar(
-    cabeceras: &HashMap<String, String>,
-    tabla: &mut TablaDinamica,
-) -> Vec<u8> {
+pub fn hpack_codificar(cabeceras: &HashMap<String, String>, tabla: &mut TablaDinamica) -> Vec<u8> {
     let mut output = Vec::new();
 
     for (name, value) in cabeceras {
@@ -843,7 +1036,9 @@ pub fn hpack_decodificar(
             if use_name_index {
                 let idx = decode_integer(data, &mut offset, 6)?;
                 let value = decode_string(data, &mut offset)?;
-                let entry = tabla.get(idx as usize).map(|(n, _)| (n.to_string(), value.clone()));
+                let entry = tabla
+                    .get(idx as usize)
+                    .map(|(n, _)| (n.to_string(), value.clone()));
                 if let Some((name, val)) = entry {
                     cabeceras.insert(name.clone(), val.clone());
                     tabla.add(&name, &val);
@@ -863,7 +1058,9 @@ pub fn hpack_decodificar(
                 } else {
                     let idx = decode_integer(data, &mut offset, 6)?;
                     let value = decode_string(data, &mut offset)?;
-                    let entry = tabla.get(idx as usize).map(|(n, _)| (n.to_string(), value.clone()));
+                    let entry = tabla
+                        .get(idx as usize)
+                        .map(|(n, _)| (n.to_string(), value.clone()));
                     if let Some((name, val)) = entry {
                         cabeceras.insert(name.clone(), val.clone());
                         tabla.add(&name, &val);
@@ -916,7 +1113,9 @@ use base64::engine::Engine as _;
 /// Helper: decodifica Base64 a Vec<u8>
 fn b64_decodificar(texto: &str) -> Result<Vec<u8>, ErrFast> {
     let engine = base64::engine::general_purpose::STANDARD;
-    engine.decode(texto).map_err(|_| ErrFast::TipoInv("h2_b64_error: base64 inválido".into()))
+    engine
+        .decode(texto)
+        .map_err(|_| ErrFast::TipoInv("h2_b64_error: base64 inválido".into()))
 }
 
 /// Helper: codifica Vec<u8> a Base64 String
@@ -936,7 +1135,9 @@ fn escribir_raw_socket(vm: &mut ForjaFast, socket_idx: u32, datos: &[u8]) -> Res
     };
     let mut stream = stream_arc.lock().unwrap();
     use std::io::Write;
-    stream.write_all(datos).map_err(|e| ErrFast::TipoInv(format!("error_io: {}", e)))
+    stream
+        .write_all(datos)
+        .map_err(|e| ErrFast::TipoInv(format!("error_io: {}", e)))
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -946,7 +1147,8 @@ fn escribir_raw_socket(vm: &mut ForjaFast, socket_idx: u32, datos: &[u8]) -> Res
 
 pub fn native_h2_preface(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let preface = crear_preface_cliente();
-    let s = String::from_utf8(preface).map_err(|_| ErrFast::TipoInv("preface no es utf8".into()))?;
+    let s =
+        String::from_utf8(preface).map_err(|_| ErrFast::TipoInv("preface no es utf8".into()))?;
     Ok(ValorFast::texto(vm.alloc_str(s.into())))
 }
 
@@ -956,10 +1158,14 @@ pub fn native_h2_preface(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<Valo
 // payload_b64: payload del frame codificado en Base64
 // ═══════════════════════════════════════════════════════════════════════
 
-pub fn native_h2_escribir_frame(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn native_h2_escribir_frame(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 5 {
         return Err(ErrFast::TipoInv(
-            "_h2_escribir_frame requiere 5 args: socket, type, flags, stream_id, payload_b64".into()
+            "_h2_escribir_frame requiere 5 args: socket, type, flags, stream_id, payload_b64"
+                .into(),
         ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
@@ -993,7 +1199,9 @@ pub fn native_h2_escribir_frame(vm: &mut ForjaFast, args: &[ValorFast]) -> Resul
 
 pub fn native_h2_leer_frame(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
-        return Err(ErrFast::TipoInv("_h2_leer_frame requiere 1 argumento: socket".into()));
+        return Err(ErrFast::TipoInv(
+            "_h2_leer_frame requiere 1 argumento: socket".into(),
+        ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
 
@@ -1013,15 +1221,18 @@ pub fn native_h2_leer_frame(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
     let mut read = 0;
     while read < 9 {
         match stream.read(&mut header[read..]) {
-            Ok(0) => return Err(ErrFast::TipoInv("h2_frame_cerrado: conexión cerrada".into())),
+            Ok(0) => {
+                return Err(ErrFast::TipoInv(
+                    "h2_frame_cerrado: conexión cerrada".into(),
+                ))
+            }
             Ok(n) => read += n,
             Err(e) => return Err(ErrFast::TipoInv(format!("error_io: {}", e))),
         }
     }
 
-    let (len, frame_type, flags, stream_id) = H2Frame::parse_header(&header).map_err(|_| {
-        ErrFast::TipoInv("h2_frame_invalido: header mal formado".into())
-    })?;
+    let (len, frame_type, flags, stream_id) = H2Frame::parse_header(&header)
+        .map_err(|_| ErrFast::TipoInv("h2_frame_invalido: header mal formado".into()))?;
 
     // Validar tamaño máximo
     if len > 16777215 {
@@ -1033,7 +1244,11 @@ pub fn native_h2_leer_frame(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
     let mut read = 0;
     while read < len {
         match stream.read(&mut payload[read..]) {
-            Ok(0) => return Err(ErrFast::TipoInv("h2_frame_cerrado: payload truncado".into())),
+            Ok(0) => {
+                return Err(ErrFast::TipoInv(
+                    "h2_frame_cerrado: payload truncado".into(),
+                ))
+            }
             Ok(n) => read += n,
             Err(e) => return Err(ErrFast::TipoInv(format!("error_io: {}", e))),
         }
@@ -1056,10 +1271,13 @@ pub fn native_h2_leer_frame(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
 // Retorna: bloque HPACK codificado en Base64
 // ═══════════════════════════════════════════════════════════════════════
 
-pub fn native_hpack_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn native_hpack_codificar(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
-            "_hpack_codificar requiere 1 argumento: cabeceras_texto".into()
+            "_hpack_codificar requiere 1 argumento: cabeceras_texto".into(),
         ));
     }
     let cabeceras_texto = obtener_texto(vm, args[0])?;
@@ -1076,10 +1294,13 @@ pub fn native_hpack_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<
 // Retorna: "clave|valor|clave|valor|..."
 // ═══════════════════════════════════════════════════════════════════════
 
-pub fn native_hpack_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn native_hpack_decodificar(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
-            "_hpack_decodificar requiere 1 argumento: hpack_b64".into()
+            "_hpack_decodificar requiere 1 argumento: hpack_b64".into(),
         ));
     }
     let hpack_b64 = obtener_texto(vm, args[0])?;
@@ -1097,12 +1318,18 @@ pub fn native_hpack_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Resul
 // "type|4|flags|0|stream_id|0|payload|B64"
 // ═══════════════════════════════════════════════════════════════════════
 
-pub fn native_h2_settings_default(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let settings = H2Frame::settings(false, &[
-        (SETTINGS_MAX_CONCURRENT_STREAMS, 100),
-        (SETTINGS_INITIAL_WINDOW_SIZE, 65535),
-        (SETTINGS_MAX_FRAME_SIZE, 16384),
-    ]);
+pub fn native_h2_settings_default(
+    vm: &mut ForjaFast,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let settings = H2Frame::settings(
+        false,
+        &[
+            (SETTINGS_MAX_CONCURRENT_STREAMS, 100),
+            (SETTINGS_INITIAL_WINDOW_SIZE, 65535),
+            (SETTINGS_MAX_FRAME_SIZE, 16384),
+        ],
+    );
     let raw = settings.serializar();
 
     // Parsear el frame serializado para extraer payload
@@ -1123,10 +1350,13 @@ pub fn native_h2_settings_default(vm: &mut ForjaFast, _args: &[ValorFast]) -> Re
 // Envia un frame GOAWAY al socket.
 // ═══════════════════════════════════════════════════════════════════════
 
-pub fn native_h2_enviar_goaway(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn native_h2_enviar_goaway(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 {
         return Err(ErrFast::TipoInv(
-            "_h2_enviar_goaway requiere 3 args: socket, last_stream_id, error_code".into()
+            "_h2_enviar_goaway requiere 3 args: socket, last_stream_id, error_code".into(),
         ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
@@ -1142,10 +1372,13 @@ pub fn native_h2_enviar_goaway(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
 // Envia un frame RST_STREAM al socket.
 // ═══════════════════════════════════════════════════════════════════════
 
-pub fn native_h2_enviar_rst_stream(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn native_h2_enviar_rst_stream(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 {
         return Err(ErrFast::TipoInv(
-            "_h2_enviar_rst_stream requiere 3 args: socket, stream_id, error_code".into()
+            "_h2_enviar_rst_stream requiere 3 args: socket, stream_id, error_code".into(),
         ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
@@ -1161,10 +1394,13 @@ pub fn native_h2_enviar_rst_stream(vm: &mut ForjaFast, args: &[ValorFast]) -> Re
 // Envia un frame WINDOW_UPDATE al socket.
 // ═══════════════════════════════════════════════════════════════════════
 
-pub fn native_h2_enviar_window_update(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn native_h2_enviar_window_update(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 {
         return Err(ErrFast::TipoInv(
-            "_h2_enviar_window_update requiere 3 args: socket, stream_id, increment".into()
+            "_h2_enviar_window_update requiere 3 args: socket, stream_id, increment".into(),
         ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
@@ -1183,7 +1419,7 @@ pub fn native_h2_enviar_window_update(vm: &mut ForjaFast, args: &[ValorFast]) ->
 pub fn native_h2_enviar_ping(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
-            "_h2_enviar_ping requiere 2 args: socket, payload_8b64".into()
+            "_h2_enviar_ping requiere 2 args: socket, payload_8b64".into(),
         ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
@@ -1204,10 +1440,13 @@ pub fn native_h2_enviar_ping(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 // Util para enviar el preface HTTP/2 manualmente.
 // ═══════════════════════════════════════════════════════════════════════
 
-pub fn native_h2_enviar_bytes_raw(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn native_h2_enviar_bytes_raw(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
-            "_h2_enviar_bytes_raw requiere 2 args: socket, data_b64".into()
+            "_h2_enviar_bytes_raw requiere 2 args: socket, data_b64".into(),
         ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
@@ -1223,10 +1462,13 @@ pub fn native_h2_enviar_bytes_raw(vm: &mut ForjaFast, args: &[ValorFast]) -> Res
 // Retorna bool: verdadero si el upgrade fue exitoso.
 // ═══════════════════════════════════════════════════════════════════════
 
-pub fn native_h2_negociar_h2c(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn native_h2_negociar_h2c(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
-            "_h2_negociar_h2c requiere 2 args: socket, cabeceras_h1".into()
+            "_h2_negociar_h2c requiere 2 args: socket, cabeceras_h1".into(),
         ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
@@ -1239,14 +1481,18 @@ pub fn native_h2_negociar_h2c(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<
     };
 
     // Enviar respuesta 101 Switching Protocols
-    let respuesta = "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n";
+    let respuesta =
+        "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n";
     escribir_raw_socket(vm, socket_idx, respuesta.as_bytes())?;
 
     // Enviar SETTINGS inicial
-    let settings = H2Frame::settings(false, &[
-        (SETTINGS_MAX_CONCURRENT_STREAMS, 100),
-        (SETTINGS_INITIAL_WINDOW_SIZE, 65535),
-    ]);
+    let settings = H2Frame::settings(
+        false,
+        &[
+            (SETTINGS_MAX_CONCURRENT_STREAMS, 100),
+            (SETTINGS_INITIAL_WINDOW_SIZE, 65535),
+        ],
+    );
     let raw = settings.serializar();
     escribir_raw_socket(vm, socket_idx, &raw)?;
 

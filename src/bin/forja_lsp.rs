@@ -31,9 +31,9 @@ enum SimboloTipo {
 struct SimboloInfo {
     nombre: String,
     tipo_simbolo: SimboloTipo,
-    linea: u32,        // 0-based
-    col_inicio: u32,   // 0-based
-    col_fin: u32,      // 0-based exclusive
+    linea: u32,      // 0-based
+    col_inicio: u32, // 0-based
+    col_fin: u32,    // 0-based exclusive
     doc: Option<String>,
 }
 
@@ -64,19 +64,19 @@ impl AnalisisDocumento {
 fn leyenda_semantica() -> SemanticTokensLegend {
     SemanticTokensLegend {
         token_types: vec![
-            SemanticTokenType::new("keyword"),     // 0
-            SemanticTokenType::new("type"),        // 1
-            SemanticTokenType::new("string"),      // 2
-            SemanticTokenType::new("number"),      // 3
-            SemanticTokenType::new("comment"),     // 4
-            SemanticTokenType::new("operator"),    // 5
-            SemanticTokenType::new("decorator"),   // 6
-            SemanticTokenType::new("function"),    // 7
-            SemanticTokenType::new("class"),       // 8
-            SemanticTokenType::new("variable"),    // 9
-            SemanticTokenType::new("enum"),        // 10
-            SemanticTokenType::new("interface"),   // 11
-            SemanticTokenType::new("parameter"),   // 12
+            SemanticTokenType::new("keyword"),   // 0
+            SemanticTokenType::new("type"),      // 1
+            SemanticTokenType::new("string"),    // 2
+            SemanticTokenType::new("number"),    // 3
+            SemanticTokenType::new("comment"),   // 4
+            SemanticTokenType::new("operator"),  // 5
+            SemanticTokenType::new("decorator"), // 6
+            SemanticTokenType::new("function"),  // 7
+            SemanticTokenType::new("class"),     // 8
+            SemanticTokenType::new("variable"),  // 9
+            SemanticTokenType::new("enum"),      // 10
+            SemanticTokenType::new("interface"), // 11
+            SemanticTokenType::new("parameter"), // 12
         ],
         token_modifiers: vec![
             SemanticTokenModifier::new("declaration"),
@@ -229,12 +229,14 @@ impl LanguageServer for Backend {
                     ..Default::default()
                 }),
                 semantic_tokens_provider: Some(
-                    SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
-                        legend: leyenda_semantica(),
-                        full: Some(SemanticTokensFullOptions::Bool(true)),
-                        range: None,
-                        ..Default::default()
-                    }),
+                    SemanticTokensServerCapabilities::SemanticTokensOptions(
+                        SemanticTokensOptions {
+                            legend: leyenda_semantica(),
+                            full: Some(SemanticTokensFullOptions::Bool(true)),
+                            range: None,
+                            ..Default::default()
+                        },
+                    ),
                 ),
                 ..Default::default()
             },
@@ -289,10 +291,7 @@ impl LanguageServer for Backend {
     // Formatting
     // ----------------------------------------------------------------
 
-    async fn formatting(
-        &self,
-        params: DocumentFormattingParams,
-    ) -> Result<Option<Vec<TextEdit>>> {
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         let uri = params.text_document.uri;
         let text = self._get_text(&uri).await;
         Ok(Some(self._generar_text_edits(&text)))
@@ -377,10 +376,7 @@ impl LanguageServer for Backend {
     // Find References
     // ----------------------------------------------------------------
 
-    async fn references(
-        &self,
-        params: ReferenceParams,
-    ) -> Result<Option<Vec<Location>>> {
+    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
         let uri = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
         let analisis = self._get_analisis(&uri).await;
@@ -427,8 +423,14 @@ impl LanguageServer for Backend {
                     locs.push(Location {
                         uri: uri.clone(),
                         range: Range {
-                            start: Position { line: *l, character: *ci },
-                            end: Position { line: *l, character: *cf },
+                            start: Position {
+                                line: *l,
+                                character: *ci,
+                            },
+                            end: Position {
+                                line: *l,
+                                character: *cf,
+                            },
                         },
                     });
                 }
@@ -500,10 +502,7 @@ impl LanguageServer for Backend {
     // Code Actions
     // ----------------------------------------------------------------
 
-    async fn code_action(
-        &self,
-        params: CodeActionParams,
-    ) -> Result<Option<CodeActionResponse>> {
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
         let _uri = params.text_document.uri;
         let analisis = self._get_analisis(&_uri).await;
 
@@ -611,8 +610,14 @@ impl LanguageServer for Backend {
                 if ref_name == &nombre {
                     changes.push(TextEdit {
                         range: Range {
-                            start: Position { line: *l, character: *ci },
-                            end: Position { line: *l, character: *cf },
+                            start: Position {
+                                line: *l,
+                                character: *ci,
+                            },
+                            end: Position {
+                                line: *l,
+                                character: *cf,
+                            },
                         },
                         new_text: new_name.clone(),
                     });
@@ -636,10 +641,7 @@ impl LanguageServer for Backend {
     // Folding Range
     // ----------------------------------------------------------------
 
-    async fn folding_range(
-        &self,
-        params: FoldingRangeParams,
-    ) -> Result<Option<Vec<FoldingRange>>> {
+    async fn folding_range(&self, params: FoldingRangeParams) -> Result<Option<Vec<FoldingRange>>> {
         let uri = params.text_document.uri;
         let texto = self._get_text(&uri).await;
         Ok(Some(generar_folding_ranges(&texto)))
@@ -649,10 +651,7 @@ impl LanguageServer for Backend {
     // Completion
     // ----------------------------------------------------------------
 
-    async fn completion(
-        &self,
-        params: CompletionParams,
-    ) -> Result<Option<CompletionResponse>> {
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
         let texto = self._get_text(&uri).await;
@@ -765,10 +764,7 @@ impl LanguageServer for Backend {
     // Signature Help
     // ----------------------------------------------------------------
 
-    async fn signature_help(
-        &self,
-        params: SignatureHelpParams,
-    ) -> Result<Option<SignatureHelp>> {
+    async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
         let _uri = params.text_document_position_params.text_document.uri;
         let _pos = params.text_document_position_params.position;
 
@@ -832,7 +828,10 @@ impl Backend {
 
     async fn _get_analisis(&self, uri: &Url) -> AnalisisDocumento {
         let cache = self.analisis_cache.lock().await;
-        cache.get(uri).cloned().unwrap_or_else(AnalisisDocumento::vacio)
+        cache
+            .get(uri)
+            .cloned()
+            .unwrap_or_else(AnalisisDocumento::vacio)
     }
 
     async fn _enviar_diagnostics(&self, uri: Url, texto: &str) {
@@ -1143,9 +1142,7 @@ fn token_en_posicion(tokens: &[Token], pos: Position) -> Option<&Token> {
     let linea = pos.line as usize;
     let col = pos.character as usize;
     tokens.iter().find(|t| {
-        t.linea == linea
-            && col >= t.columna
-            && col < t.columna + t.kind.to_string().len()
+        t.linea == linea && col >= t.columna && col < t.columna + t.kind.to_string().len()
     })
 }
 
@@ -1327,8 +1324,20 @@ fn generar_folding_ranges(source: &str) -> Vec<FoldingRange> {
 
 fn keyword_abre_bloque(linea: &str) -> bool {
     let palabras_apertura = [
-        "si", "sino", "mientras", "para", "repetir", "funcion", "clase", "constructor",
-        "coincidir", "caso", "seleccionar", "hilo", "implementa", "externo",
+        "si",
+        "sino",
+        "mientras",
+        "para",
+        "repetir",
+        "funcion",
+        "clase",
+        "constructor",
+        "coincidir",
+        "caso",
+        "seleccionar",
+        "hilo",
+        "implementa",
+        "externo",
     ];
     palabras_apertura
         .iter()
@@ -1342,7 +1351,10 @@ fn keyword_abre_bloque(linea: &str) -> bool {
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.iter().any(|a| a == "--version" || a == "-v" || a == "version") {
+    if args
+        .iter()
+        .any(|a| a == "--version" || a == "-v" || a == "version")
+    {
         println!("forja-lsp v{}", env!("CARGO_PKG_VERSION"));
         return;
     }
@@ -1367,7 +1379,7 @@ async fn main() {
 fn extraer_nombre_variable_error(mensaje: &str) -> Option<String> {
     for delim in ["'", "\""] {
         if let Some(start) = mensaje.find(delim) {
-            let rest = &mensaje[start+1..];
+            let rest = &mensaje[start + 1..];
             if let Some(end) = rest.find(delim) {
                 return Some(rest[..end].to_string());
             }
@@ -1388,7 +1400,7 @@ fn es_variable_de_patron(source: &str, linea: usize, var_name: &str) -> bool {
         if line.starts_with("caso ") {
             if let Some(paren_start) = line.find('(') {
                 if let Some(paren_end) = line.rfind(')') {
-                    let inner = &line[paren_start+1..paren_end];
+                    let inner = &line[paren_start + 1..paren_end];
                     if inner.split(',').any(|part| part.trim() == var_name) {
                         return true;
                     }
@@ -1430,12 +1442,16 @@ mod tests {
     #[test]
     fn test_extraer_nombre_variable_error() {
         let msg = "ErrorSemantico: La variable 'valor' no está declarada";
-        assert_eq!(extraer_nombre_variable_error(msg), Some("valor".to_string()));
+        assert_eq!(
+            extraer_nombre_variable_error(msg),
+            Some("valor".to_string())
+        );
     }
 
     #[test]
     fn test_es_variable_de_patron() {
-        let src = "coincidir (resultado) {\n    caso Ok(valor) -> {\n        escribir(valor)\n    }\n}";
+        let src =
+            "coincidir (resultado) {\n    caso Ok(valor) -> {\n        escribir(valor)\n    }\n}";
         assert!(es_variable_de_patron(src, 2, "valor"));
         assert!(!es_variable_de_patron(src, 2, "otra"));
     }
