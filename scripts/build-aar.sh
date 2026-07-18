@@ -10,7 +10,7 @@
 #
 # Examples:
 #   bash scripts/build-aar.sh                  # default version
-#   bash scripts/build-aar.sh 0.8.4            # specific version
+#   bash scripts/build-aar.sh 0.8.5            # specific version
 # ============================================================
 set -euo pipefail
 
