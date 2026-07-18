@@ -444,6 +444,14 @@ pub(crate) fn resolver_direccion(
 // Funciones Nativas - TCP
 // ═════════════════════════════════════════════════════════════════════════
 
+/// Verifica el sandbox de red antes de una conexión.
+/// Si el sandbox bloquea la operación, retorna un error con mensaje claro.
+fn verificar_sandbox_red(vm: &ForjaFast, host: &str, puerto: u16) -> Result<(), ErrFast> {
+    vm.sandbox
+        .verificar_conexion(host, puerto)
+        .map_err(|msg| ErrFast::TipoInv(format!("sandbox_red: {}", msg)))
+}
+
 fn native_socket_tcp_conectar(
     vm: &mut ForjaFast,
     args: &[ValorFast],
@@ -463,6 +471,9 @@ fn native_socket_tcp_conectar(
             puerto
         )));
     }
+
+    // Verificar sandbox antes de conectar
+    verificar_sandbox_red(vm, &direccion, puerto as u16)?;
 
     let addr = match resolver_direccion(&direccion, puerto as u16) {
         Ok(a) => a,
@@ -711,6 +722,9 @@ fn native_socket_tcp_escuchar(
         )));
     }
 
+    // Verificar sandbox antes de escuchar (bind en 0.0.0.0)
+    verificar_sandbox_red(vm, "0.0.0.0", puerto as u16)?;
+
     let addr: std::net::SocketAddr = match format!("0.0.0.0:{}", puerto).parse() {
         Ok(a) => a,
         Err(e) => return Err(ErrFast::TipoInv(format!("direccion_invalida: {}", e))),
@@ -795,6 +809,9 @@ fn native_socket_udp_escuchar(
         )));
     }
 
+    // Verificar sandbox antes de escuchar (bind UDP en 0.0.0.0)
+    verificar_sandbox_red(vm, "0.0.0.0", puerto as u16)?;
+
     let addr: std::net::SocketAddr = match format!("0.0.0.0:{}", puerto).parse() {
         Ok(a) => a,
         Err(e) => return Err(ErrFast::TipoInv(format!("direccion_invalida: {}", e))),
@@ -839,6 +856,9 @@ fn native_socket_udp_enviar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
             puerto
         )));
     }
+
+    // Verificar sandbox antes de enviar UDP
+    verificar_sandbox_red(vm, &direccion, puerto as u16)?;
 
     let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
         Some(arc) => Arc::clone(arc),

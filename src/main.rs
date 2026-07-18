@@ -888,7 +888,7 @@ fn cmd_bench(args: &[String]) {
 /// --asm            : compila a ASM nativo y ejecuta (requiere gcc)
 fn cmd_run(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native] [--debug|--console|--no-debug] [--contratos|--no-contratos] [--max-archivo <MB>]");
+        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native] [--debug|--console|--no-debug] [--contratos|--no-contratos] [--max-archivo <MB>] [--allow-net <hosts>] [--allow-port <puertos>]");
         process::exit(1);
     }
 
@@ -900,6 +900,8 @@ fn cmd_run(args: &[String]) {
     let mut contratos_explicit = false; // si el usuario explicitó la opción
     let mut max_archivo = forja::MAX_ARCHIVO_DEFAULT_MB;
     let mut path: &String = &args[0];
+    let mut allow_net: Option<String> = None;
+    let mut allow_port: Option<String> = None;
 
     // Escanear todos los args: flags + archivo .fa en cualquier orden
     let mut i = 0;
@@ -931,6 +933,18 @@ fn cmd_run(args: &[String]) {
                     max_archivo = args[i].parse().unwrap_or(forja::MAX_ARCHIVO_DEFAULT_MB);
                 }
             }
+            "--allow-net" => {
+                i += 1;
+                if i < args.len() {
+                    allow_net = Some(args[i].clone());
+                }
+            }
+            "--allow-port" => {
+                i += 1;
+                if i < args.len() {
+                    allow_port = Some(args[i].clone());
+                }
+            }
             _ => {
                 if arg.ends_with(".fa") {
                     path = &args[i];
@@ -942,6 +956,9 @@ fn cmd_run(args: &[String]) {
         }
         i += 1;
     }
+
+    // Construir SandboxRed a partir de los flags
+    let sandbox = construir_sandbox(allow_net, allow_port);
 
     let source = match forja::leer_archivo_con_limite(path, max_archivo) {
         Ok(s) => s,
@@ -998,9 +1015,15 @@ fn cmd_run(args: &[String]) {
     let result = match vm_mode {
         "fast" => {
             if contratos_explicit {
-                forja::ejecutar_con_opciones_desde(&source, &root_dir, verificar_contratos)
+                forja::ejecutar_con_opciones_desde(
+                    &source,
+                    &root_dir,
+                    verificar_contratos,
+                    Some(sandbox),
+                )
             } else {
                 forja::ejecutar_desde(&source, &root_dir)
+                // ejecutar_desde usa sandbox default (air-gapped)
             }
         }
         "jit" => forja::ejecutar_jit(&source),
@@ -1018,6 +1041,38 @@ fn cmd_run(args: &[String]) {
             process::exit(1);
         }
     }
+}
+
+/// Construye un SandboxRed a partir de los argumentos de línea de comandos.
+///
+/// - `allow_net`: string con hosts separados por coma, o None (air-gapped).
+/// - `allow_port`: string con puertos separados por coma, o None (sin restricción).
+fn construir_sandbox(
+    allow_net: Option<String>,
+    allow_port: Option<String>,
+) -> forja::sandbox::SandboxRed {
+    let mut sandbox = forja::sandbox::SandboxRed::new();
+
+    if let Some(hosts_str) = allow_net {
+        let hosts: Vec<String> = hosts_str.split(',').map(|s| s.trim().to_string()).collect();
+        sandbox.hosts_permitidos = Some(hosts);
+        // Si hay --allow-net, habilitamos puertos (inicialmente vacío = ninguno)
+        sandbox.puertos_permitidos = Some(vec![]);
+    }
+
+    if let Some(puertos_str) = allow_port {
+        let puertos: Vec<u16> = puertos_str
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+        sandbox.puertos_permitidos = Some(puertos);
+        // Si hay --allow-port pero no --allow-net, habilitamos todos los hosts
+        if sandbox.hosts_permitidos.is_none() {
+            sandbox.hosts_permitidos = Some(vec!["*".to_string()]);
+        }
+    }
+
+    sandbox
 }
 
 /// Compila un programa Forja a ASM nativo, lo ensambla con gcc -O2 y lo ejecuta.
