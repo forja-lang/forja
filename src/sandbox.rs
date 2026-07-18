@@ -22,6 +22,7 @@
 /// `puertos_permitidos = None` → sin restricción de puertos (si hay red).
 /// `puertos_permitidos = Some(vec![])` → ningún puerto permitido.
 /// `puertos_permitidos = Some(vec![80, 443])` → solo esos puertos.
+
 #[derive(Debug, Clone)]
 pub struct SandboxRed {
     /// None = modo air-gapped (sin red).
