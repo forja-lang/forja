@@ -609,6 +609,7 @@ pub enum ErrorDT {
     VariableNoDeclarada(String),
     TipoIncompatible(String),
     DivisionPorCero,
+    OverflowAritmetico,
     FuncionNoDefinida(String),
     LimiteDeEjecucion,
     IndiceFueraRango(String),
@@ -622,6 +623,7 @@ impl std::fmt::Display for ErrorDT {
             ErrorDT::VariableNoDeclarada(v) => write!(f, "'{}' no declarada", v),
             ErrorDT::TipoIncompatible(m) => write!(f, "Tipo: {}", m),
             ErrorDT::DivisionPorCero => write!(f, "Div/0"),
+            ErrorDT::OverflowAritmetico => write!(f, "Overflow aritmético"),
             ErrorDT::FuncionNoDefinida(ref name) => write!(f, "Fn '{}' no existe", name),
             ErrorDT::LimiteDeEjecucion => write!(f, "Límite"),
             ErrorDT::IndiceFueraRango(m) => write!(f, "Índice: {}", m),
@@ -1353,8 +1355,13 @@ impl ForjaDT {
                     let a = self.pop()?;
                     match (&a, &b) {
                         (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
-                            let (a_adj, b_adj, escala) = homogeneizar_exacto(*ac, *as_, *bc, *bs);
-                            self.push(ValorDT::Exacto(a_adj.wrapping_add(b_adj), escala));
+                            let (a_adj, b_adj, escala) =
+                                homogeneizar_exacto(*ac, *as_, *bc, *bs)
+                                    .map_err(|_| ErrorDT::OverflowAritmetico)?;
+                            let r = a_adj
+                                .checked_add(b_adj)
+                                .ok_or(ErrorDT::OverflowAritmetico)?;
+                            self.push(ValorDT::Exacto(r, escala));
                         }
                         _ => return Err(ErrorDT::TipoIncompatible("add_exact".into())),
                     }
@@ -1365,8 +1372,13 @@ impl ForjaDT {
                     let a = self.pop()?;
                     match (&a, &b) {
                         (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
-                            let (a_adj, b_adj, escala) = homogeneizar_exacto(*ac, *as_, *bc, *bs);
-                            self.push(ValorDT::Exacto(a_adj.wrapping_sub(b_adj), escala));
+                            let (a_adj, b_adj, escala) =
+                                homogeneizar_exacto(*ac, *as_, *bc, *bs)
+                                    .map_err(|_| ErrorDT::OverflowAritmetico)?;
+                            let r = a_adj
+                                .checked_sub(b_adj)
+                                .ok_or(ErrorDT::OverflowAritmetico)?;
+                            self.push(ValorDT::Exacto(r, escala));
                         }
                         _ => return Err(ErrorDT::TipoIncompatible("sub_exact".into())),
                     }
@@ -1377,7 +1389,8 @@ impl ForjaDT {
                     let a = self.pop()?;
                     match (&a, &b) {
                         (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
-                            self.push(ValorDT::Exacto(ac.wrapping_mul(*bc), as_ + bs));
+                            let r = ac.checked_mul(*bc).ok_or(ErrorDT::OverflowAritmetico)?;
+                            self.push(ValorDT::Exacto(r, as_ + bs));
                         }
                         _ => return Err(ErrorDT::TipoIncompatible("mul_exact".into())),
                     }
@@ -1393,9 +1406,13 @@ impl ForjaDT {
                             } else {
                                 // Extender dividendo con 10 dígitos de precisión extra
                                 let extra: u32 = 10;
-                                let dividendo = ac.wrapping_mul(10_i128.wrapping_pow(extra));
+                                let factor = 10_i128.wrapping_pow(extra);
+                                let dividendo =
+                                    ac.checked_mul(factor).ok_or(ErrorDT::OverflowAritmetico)?;
                                 let escala = as_ + extra - bs;
-                                let cociente = dividendo.wrapping_div(*bc);
+                                let cociente = dividendo
+                                    .checked_div(*bc)
+                                    .ok_or(ErrorDT::OverflowAritmetico)?;
                                 self.push(ValorDT::Exacto(cociente, escala));
                             }
                         }
@@ -1408,7 +1425,8 @@ impl ForjaDT {
                     let a = self.pop()?;
                     match (&a, &b) {
                         (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
-                            let (a_adj, b_adj, _) = homogeneizar_exacto(*ac, *as_, *bc, *bs);
+                            let (a_adj, b_adj, _) = homogeneizar_exacto(*ac, *as_, *bc, *bs)
+                                .map_err(|_| ErrorDT::OverflowAritmetico)?;
                             self.push(ValorDT::Booleano(a_adj == b_adj));
                         }
                         _ => return Err(ErrorDT::TipoIncompatible("== exact".into())),
@@ -1420,7 +1438,8 @@ impl ForjaDT {
                     let a = self.pop()?;
                     match (&a, &b) {
                         (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
-                            let (a_adj, b_adj, _) = homogeneizar_exacto(*ac, *as_, *bc, *bs);
+                            let (a_adj, b_adj, _) = homogeneizar_exacto(*ac, *as_, *bc, *bs)
+                                .map_err(|_| ErrorDT::OverflowAritmetico)?;
                             self.push(ValorDT::Booleano(a_adj < b_adj));
                         }
                         _ => return Err(ErrorDT::TipoIncompatible("< exact".into())),
@@ -1432,7 +1451,8 @@ impl ForjaDT {
                     let a = self.pop()?;
                     match (&a, &b) {
                         (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
-                            let (a_adj, b_adj, _) = homogeneizar_exacto(*ac, *as_, *bc, *bs);
+                            let (a_adj, b_adj, _) = homogeneizar_exacto(*ac, *as_, *bc, *bs)
+                                .map_err(|_| ErrorDT::OverflowAritmetico)?;
                             self.push(ValorDT::Booleano(a_adj > b_adj));
                         }
                         _ => return Err(ErrorDT::TipoIncompatible("> exact".into())),
@@ -1467,8 +1487,13 @@ impl ForjaDT {
                     let a = self.buscar_var(&var_name)?.clone();
                     let result = match (&a, &b) {
                         (ValorDT::Exacto(ac, as_), ValorDT::Exacto(bc, bs)) => {
-                            let (a_adj, b_adj, escala) = homogeneizar_exacto(*ac, *as_, *bc, *bs);
-                            ValorDT::Exacto(a_adj.wrapping_add(b_adj), escala)
+                            let (a_adj, b_adj, escala) =
+                                homogeneizar_exacto(*ac, *as_, *bc, *bs)
+                                    .map_err(|_| ErrorDT::OverflowAritmetico)?;
+                            let r = a_adj
+                                .checked_add(b_adj)
+                                .ok_or(ErrorDT::OverflowAritmetico)?;
+                            ValorDT::Exacto(r, escala)
                         }
                         _ => return Err(ErrorDT::TipoIncompatible("add_store_exact".into())),
                     };

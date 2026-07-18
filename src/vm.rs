@@ -97,7 +97,10 @@ impl PartialEq for ValorVM {
             (ValorVM::Entero(a), ValorVM::Entero(b)) => a == b,
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => a == b,
             (ValorVM::Exacto(a, sa), ValorVM::Exacto(b, sb)) => {
-                let (a_adj, b_adj, _) = homogeneizar_exacto(*a, *sa, *b, *sb);
+                let (a_adj, b_adj, _) = match homogeneizar_exacto(*a, *sa, *b, *sb) {
+                    Ok(v) => v,
+                    Err(_) => return false,
+                };
                 a_adj == b_adj
             }
             (ValorVM::Texto(a), ValorVM::Texto(b)) => a == b,
@@ -113,16 +116,23 @@ impl PartialEq for ValorVM {
 
 /// Homogeneiza dos valores Exacto a la misma escala.
 /// Retorna (a_ajustado, b_ajustado, escala_comun).
-/// Usa wrapping_* para evitar panics por overflow.
-pub fn homogeneizar_exacto(a: i128, sa: u32, b: i128, sb: u32) -> (i128, i128, u32) {
+/// Retorna OverflowAritmetico si ocurre desbordamiento al homogeneizar escalas.
+pub fn homogeneizar_exacto(
+    a: i128,
+    sa: u32,
+    b: i128,
+    sb: u32,
+) -> Result<(i128, i128, u32), ErrorVM> {
     if sa == sb {
-        (a, b, sa)
+        Ok((a, b, sa))
     } else if sa < sb {
         let factor = 10_i128.wrapping_pow(sb - sa);
-        (a.wrapping_mul(factor), b, sb)
+        let a_adj = a.checked_mul(factor).ok_or(ErrorVM::OverflowAritmetico)?;
+        Ok((a_adj, b, sb))
     } else {
         let factor = 10_i128.wrapping_pow(sa - sb);
-        (a, b.wrapping_mul(factor), sa)
+        let b_adj = b.checked_mul(factor).ok_or(ErrorVM::OverflowAritmetico)?;
+        Ok((a, b_adj, sa))
     }
 }
 
@@ -190,30 +200,35 @@ impl ValorVM {
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 + b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a + *b as f64)),
             (ValorVM::Exacto(a_coeff, a_scale), ValorVM::Exacto(b_coeff, b_scale)) => {
-                let (a, b, escala) = homogeneizar_exacto(*a_coeff, *a_scale, *b_coeff, *b_scale);
-                Ok(ValorVM::Exacto(a.wrapping_add(b), escala))
+                let (a, b, escala) = homogeneizar_exacto(*a_coeff, *a_scale, *b_coeff, *b_scale)?;
+                let r = a.checked_add(b).ok_or(ErrorVM::OverflowAritmetico)?;
+                Ok(ValorVM::Exacto(r, escala))
             }
             (ValorVM::Exacto(coeff, scale), ValorVM::Entero(n)) => {
                 // Exacto + Entero: convertir Entero a Exacto con scale=0
-                let (a, b, escala) = homogeneizar_exacto(*coeff, *scale, *n as i128, 0);
-                Ok(ValorVM::Exacto(a.wrapping_add(b), escala))
+                let (a, b, escala) = homogeneizar_exacto(*coeff, *scale, *n as i128, 0)?;
+                let r = a.checked_add(b).ok_or(ErrorVM::OverflowAritmetico)?;
+                Ok(ValorVM::Exacto(r, escala))
             }
             (ValorVM::Entero(n), ValorVM::Exacto(coeff, scale)) => {
-                let (a, b, escala) = homogeneizar_exacto(*n as i128, 0, *coeff, *scale);
-                Ok(ValorVM::Exacto(a.wrapping_add(b), escala))
+                let (a, b, escala) = homogeneizar_exacto(*n as i128, 0, *coeff, *scale)?;
+                let r = a.checked_add(b).ok_or(ErrorVM::OverflowAritmetico)?;
+                Ok(ValorVM::Exacto(r, escala))
             }
             (ValorVM::Exacto(coeff, scale), ValorVM::Decimal(d)) => {
                 // Exacto + Decimal: convertir Decimal a Exacto
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
-                let (a, b, escala) = homogeneizar_exacto(*coeff, *scale, d_coeff, d_scale);
-                Ok(ValorVM::Exacto(a.wrapping_add(b), escala))
+                let (a, b, escala) = homogeneizar_exacto(*coeff, *scale, d_coeff, d_scale)?;
+                let r = a.checked_add(b).ok_or(ErrorVM::OverflowAritmetico)?;
+                Ok(ValorVM::Exacto(r, escala))
             }
             (ValorVM::Decimal(d), ValorVM::Exacto(coeff, scale)) => {
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
-                let (a, b, escala) = homogeneizar_exacto(d_coeff, d_scale, *coeff, *scale);
-                Ok(ValorVM::Exacto(a.wrapping_add(b), escala))
+                let (a, b, escala) = homogeneizar_exacto(d_coeff, d_scale, *coeff, *scale)?;
+                let r = a.checked_add(b).ok_or(ErrorVM::OverflowAritmetico)?;
+                Ok(ValorVM::Exacto(r, escala))
             }
             (ValorVM::Texto(a), ValorVM::Texto(b)) => Ok(ValorVM::Texto(format!("{}{}", a, b))),
             (ValorVM::Texto(a), ValorVM::Entero(b)) => Ok(ValorVM::Texto(format!("{}{}", a, b))),
@@ -230,28 +245,33 @@ impl ValorVM {
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 - b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a - *b as f64)),
             (ValorVM::Exacto(a_coeff, a_scale), ValorVM::Exacto(b_coeff, b_scale)) => {
-                let (a, b, escala) = homogeneizar_exacto(*a_coeff, *a_scale, *b_coeff, *b_scale);
-                Ok(ValorVM::Exacto(a.wrapping_sub(b), escala))
+                let (a, b, escala) = homogeneizar_exacto(*a_coeff, *a_scale, *b_coeff, *b_scale)?;
+                let r = a.checked_sub(b).ok_or(ErrorVM::OverflowAritmetico)?;
+                Ok(ValorVM::Exacto(r, escala))
             }
             (ValorVM::Exacto(coeff, scale), ValorVM::Entero(n)) => {
-                let (a, b, escala) = homogeneizar_exacto(*coeff, *scale, *n as i128, 0);
-                Ok(ValorVM::Exacto(a.wrapping_sub(b), escala))
+                let (a, b, escala) = homogeneizar_exacto(*coeff, *scale, *n as i128, 0)?;
+                let r = a.checked_sub(b).ok_or(ErrorVM::OverflowAritmetico)?;
+                Ok(ValorVM::Exacto(r, escala))
             }
             (ValorVM::Entero(n), ValorVM::Exacto(coeff, scale)) => {
-                let (a, b, escala) = homogeneizar_exacto(*n as i128, 0, *coeff, *scale);
-                Ok(ValorVM::Exacto(a.wrapping_sub(b), escala))
+                let (a, b, escala) = homogeneizar_exacto(*n as i128, 0, *coeff, *scale)?;
+                let r = a.checked_sub(b).ok_or(ErrorVM::OverflowAritmetico)?;
+                Ok(ValorVM::Exacto(r, escala))
             }
             (ValorVM::Exacto(coeff, scale), ValorVM::Decimal(d)) => {
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
-                let (a, b, escala) = homogeneizar_exacto(*coeff, *scale, d_coeff, d_scale);
-                Ok(ValorVM::Exacto(a.wrapping_sub(b), escala))
+                let (a, b, escala) = homogeneizar_exacto(*coeff, *scale, d_coeff, d_scale)?;
+                let r = a.checked_sub(b).ok_or(ErrorVM::OverflowAritmetico)?;
+                Ok(ValorVM::Exacto(r, escala))
             }
             (ValorVM::Decimal(d), ValorVM::Exacto(coeff, scale)) => {
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
-                let (a, b, escala) = homogeneizar_exacto(d_coeff, d_scale, *coeff, *scale);
-                Ok(ValorVM::Exacto(a.wrapping_sub(b), escala))
+                let (a, b, escala) = homogeneizar_exacto(d_coeff, d_scale, *coeff, *scale)?;
+                let r = a.checked_sub(b).ok_or(ErrorVM::OverflowAritmetico)?;
+                Ok(ValorVM::Exacto(r, escala))
             }
             _ => Ok(ValorVM::Nulo),
         }
@@ -264,28 +284,40 @@ impl ValorVM {
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 * b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a * *b as f64)),
             (ValorVM::Exacto(a_coeff, a_scale), ValorVM::Exacto(b_coeff, b_scale)) => {
-                let (coeff, scale) =
-                    normalizar_exacto(a_coeff.wrapping_mul(*b_coeff), a_scale + b_scale);
+                let mul = a_coeff
+                    .checked_mul(*b_coeff)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
+                let (coeff, scale) = normalizar_exacto(mul, a_scale + b_scale);
                 Ok(ValorVM::Exacto(coeff, scale))
             }
             (ValorVM::Exacto(coeff, scale), ValorVM::Entero(n)) => {
-                Ok(ValorVM::Exacto(coeff.wrapping_mul(*n as i128), *scale))
+                let r = coeff
+                    .checked_mul(*n as i128)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
+                Ok(ValorVM::Exacto(r, *scale))
             }
             (ValorVM::Entero(n), ValorVM::Exacto(coeff, scale)) => {
-                Ok(ValorVM::Exacto(coeff.wrapping_mul(*n as i128), *scale))
+                let r = coeff
+                    .checked_mul(*n as i128)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
+                Ok(ValorVM::Exacto(r, *scale))
             }
             (ValorVM::Exacto(coeff, scale), ValorVM::Decimal(d)) => {
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
-                let (new_coeff, new_scale) =
-                    normalizar_exacto(coeff.wrapping_mul(d_coeff), scale + d_scale);
+                let mul = coeff
+                    .checked_mul(d_coeff)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
+                let (new_coeff, new_scale) = normalizar_exacto(mul, scale + d_scale);
                 Ok(ValorVM::Exacto(new_coeff, new_scale))
             }
             (ValorVM::Decimal(d), ValorVM::Exacto(coeff, scale)) => {
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
-                let (new_coeff, new_scale) =
-                    normalizar_exacto(coeff.wrapping_mul(d_coeff), scale + d_scale);
+                let mul = coeff
+                    .checked_mul(d_coeff)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
+                let (new_coeff, new_scale) = normalizar_exacto(mul, scale + d_scale);
                 Ok(ValorVM::Exacto(new_coeff, new_scale))
             }
             _ => Ok(ValorVM::Nulo),
@@ -304,9 +336,14 @@ impl ValorVM {
                     return Ok(ValorVM::Nulo);
                 }
                 let extra = 38u32;
-                let dividendo = a_coeff.wrapping_mul(10_i128.wrapping_pow(extra));
+                let factor = 10_i128.wrapping_pow(extra);
+                let dividendo = a_coeff
+                    .checked_mul(factor)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
                 let escala = a_scale + extra - b_scale;
-                let cociente = dividendo.wrapping_div(*b_coeff);
+                let cociente = dividendo
+                    .checked_div(*b_coeff)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
                 Ok(ValorVM::Exacto(cociente, escala))
             }
             (ValorVM::Exacto(coeff, scale), ValorVM::Entero(n)) => {
@@ -314,9 +351,14 @@ impl ValorVM {
                     return Ok(ValorVM::Nulo);
                 }
                 let extra = 38u32;
-                let dividendo = coeff.wrapping_mul(10_i128.wrapping_pow(extra));
+                let factor = 10_i128.wrapping_pow(extra);
+                let dividendo = coeff
+                    .checked_mul(factor)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
                 let escala = scale + extra - 0;
-                let cociente = dividendo.wrapping_div(*n as i128);
+                let cociente = dividendo
+                    .checked_div(*n as i128)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
                 Ok(ValorVM::Exacto(cociente, escala))
             }
             (ValorVM::Entero(n), ValorVM::Exacto(coeff, scale)) => {
@@ -325,9 +367,14 @@ impl ValorVM {
                 }
                 let extra = 38u32;
                 let n_coeff = *n as i128;
-                let dividendo = n_coeff.wrapping_mul(10_i128.wrapping_pow(extra));
+                let factor = 10_i128.wrapping_pow(extra);
+                let dividendo = n_coeff
+                    .checked_mul(factor)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
                 let escala = 0 + extra - scale;
-                let cociente = dividendo.wrapping_div(*coeff);
+                let cociente = dividendo
+                    .checked_div(*coeff)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
                 Ok(ValorVM::Exacto(cociente, escala))
             }
             (ValorVM::Exacto(coeff, scale), ValorVM::Decimal(d)) => {
@@ -337,9 +384,14 @@ impl ValorVM {
                     return Ok(ValorVM::Nulo);
                 }
                 let extra = 38u32;
-                let dividendo = coeff.wrapping_mul(10_i128.wrapping_pow(extra));
+                let factor = 10_i128.wrapping_pow(extra);
+                let dividendo = coeff
+                    .checked_mul(factor)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
                 let escala = scale + extra - d_scale;
-                let cociente = dividendo.wrapping_div(d_coeff);
+                let cociente = dividendo
+                    .checked_div(d_coeff)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
                 Ok(ValorVM::Exacto(cociente, escala))
             }
             (ValorVM::Decimal(d), ValorVM::Exacto(coeff, scale)) => {
@@ -349,9 +401,14 @@ impl ValorVM {
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
                 let extra = 38u32;
-                let dividendo = d_coeff.wrapping_mul(10_i128.wrapping_pow(extra));
+                let factor = 10_i128.wrapping_pow(extra);
+                let dividendo = d_coeff
+                    .checked_mul(factor)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
                 let escala = d_scale + extra - scale;
-                let cociente = dividendo.wrapping_div(*coeff);
+                let cociente = dividendo
+                    .checked_div(*coeff)
+                    .ok_or(ErrorVM::OverflowAritmetico)?;
                 Ok(ValorVM::Exacto(cociente, escala))
             }
             _ => Ok(ValorVM::Nulo),
@@ -365,27 +422,27 @@ impl ValorVM {
                 Ok(a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i64)
             }
             (ValorVM::Exacto(a_coeff, a_scale), ValorVM::Exacto(b_coeff, b_scale)) => {
-                let (a, b, _) = homogeneizar_exacto(*a_coeff, *a_scale, *b_coeff, *b_scale);
+                let (a, b, _) = homogeneizar_exacto(*a_coeff, *a_scale, *b_coeff, *b_scale)?;
                 Ok(a.cmp(&b) as i64)
             }
             (ValorVM::Exacto(coeff, scale), ValorVM::Entero(n)) => {
-                let (a, b, _) = homogeneizar_exacto(*coeff, *scale, *n as i128, 0);
+                let (a, b, _) = homogeneizar_exacto(*coeff, *scale, *n as i128, 0)?;
                 Ok(a.cmp(&b) as i64)
             }
             (ValorVM::Entero(n), ValorVM::Exacto(coeff, scale)) => {
-                let (a, b, _) = homogeneizar_exacto(*n as i128, 0, *coeff, *scale);
+                let (a, b, _) = homogeneizar_exacto(*n as i128, 0, *coeff, *scale)?;
                 Ok(a.cmp(&b) as i64)
             }
             (ValorVM::Exacto(coeff, scale), ValorVM::Decimal(d)) => {
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
-                let (a, b, _) = homogeneizar_exacto(*coeff, *scale, d_coeff, d_scale);
+                let (a, b, _) = homogeneizar_exacto(*coeff, *scale, d_coeff, d_scale)?;
                 Ok(a.cmp(&b) as i64)
             }
             (ValorVM::Decimal(d), ValorVM::Exacto(coeff, scale)) => {
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
-                let (a, b, _) = homogeneizar_exacto(d_coeff, d_scale, *coeff, *scale);
+                let (a, b, _) = homogeneizar_exacto(d_coeff, d_scale, *coeff, *scale)?;
                 Ok(a.cmp(&b) as i64)
             }
             (ValorVM::Texto(a), ValorVM::Texto(b)) => Ok(a.cmp(b) as i64),
@@ -417,6 +474,7 @@ pub enum ErrorVM {
     VariableNoDeclarada(String),
     TipoIncompatible(String),
     DivisionPorCero,
+    OverflowAritmetico,
     #[allow(dead_code)]
     OpcodeDesconocido(u8),
     #[allow(dead_code)]
@@ -433,6 +491,12 @@ impl std::fmt::Display for ErrorVM {
             ErrorVM::VariableNoDeclarada(v) => write!(f, "Variable '{}' no declarada", v),
             ErrorVM::TipoIncompatible(msg) => write!(f, "Tipo incompatible: {}", msg),
             ErrorVM::DivisionPorCero => write!(f, "División por cero"),
+            ErrorVM::OverflowAritmetico => {
+                write!(
+                    f,
+                    "Error aritmético: la operación con Exacto produjo un desbordamiento"
+                )
+            }
             ErrorVM::OpcodeDesconocido(op) => write!(f, "Opcode desconocido: {}", op),
             ErrorVM::LabelNoEncontrada(l) => write!(f, "Label no encontrada: {}", l),
             ErrorVM::FuncionNoDefinida(fn_name) => write!(f, "Función '{}' no definida", fn_name),
