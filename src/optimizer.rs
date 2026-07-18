@@ -2,19 +2,30 @@
 use crate::ast::*;
 use std::collections::HashSet;
 
+/// Profundidad máxima de recursión para el optimizador.
+/// Previene stack overflow al recorrer ASTs con expresiones muy anidadas.
+const MAX_AST_PROFUNDIDAD: u32 = 10000;
 
 /// Optimizador de AST para Forja
 pub struct Optimizer {
     pub cambios_realizados: usize,
+    /// Profundidad actual de recursión al optimizar expresiones.
+    /// Previene stack overflow en ASTs con expresiones muy anidadas.
+    profundidad_expresion: u32,
 }
 
 impl Optimizer {
     pub fn new() -> Self {
-        Optimizer { cambios_realizados: 0 }
+        Optimizer {
+            cambios_realizados: 0,
+            profundidad_expresion: 0,
+        }
     }
 
     pub fn optimizar(&mut self, programa: &Programa) -> Programa {
-        let declaraciones = programa.declaraciones.iter()
+        let declaraciones = programa
+            .declaraciones
+            .iter()
             .map(|d| self.optimizar_declaracion(d))
             .collect();
         Programa { declaraciones }
@@ -22,7 +33,14 @@ impl Optimizer {
 
     fn optimizar_declaracion(&mut self, decl: &Declaracion) -> Declaracion {
         match decl {
-            Declaracion::Variable { mutable, nombre, tipo, valor, linea, columna } => {
+            Declaracion::Variable {
+                mutable,
+                nombre,
+                tipo,
+                valor,
+                linea,
+                columna,
+            } => {
                 let valor_opt = valor.as_ref().map(|v| self.optimizar_expresion(v));
                 Declaracion::Variable {
                     mutable: *mutable,
@@ -33,39 +51,52 @@ impl Optimizer {
                     columna: *columna,
                 }
             }
-            Declaracion::Asignacion { nombre, valor, linea, columna } => {
-                Declaracion::Asignacion {
-                    nombre: nombre.clone(),
-                    valor: Box::new(self.optimizar_expresion(valor)),
-                    linea: *linea,
-                    columna: *columna,
-                }
-            }
-            Declaracion::AsignacionMiembro { objeto, miembro, valor, linea, columna } => {
-                Declaracion::AsignacionMiembro {
-                    objeto: Box::new(self.optimizar_expresion(objeto)),
-                    miembro: miembro.clone(),
-                    valor: Box::new(self.optimizar_expresion(valor)),
-                    linea: *linea,
-                    columna: *columna,
-                }
-            }
-            Declaracion::AsignacionIndex { nombre, indice, valor, linea, columna } => {
-                Declaracion::AsignacionIndex {
-                    nombre: nombre.clone(),
-                    indice: Box::new(self.optimizar_expresion(indice)),
-                    valor: Box::new(self.optimizar_expresion(valor)),
-                    linea: *linea,
-                    columna: *columna,
-                }
-            }
-            Declaracion::AsignacionMultiple { variables, mutable, valor } => {
-                Declaracion::AsignacionMultiple {
-                    variables: variables.clone(),
-                    mutable: *mutable,
-                    valor: Box::new(self.optimizar_expresion(valor)),
-                }
-            }
+            Declaracion::Asignacion {
+                nombre,
+                valor,
+                linea,
+                columna,
+            } => Declaracion::Asignacion {
+                nombre: nombre.clone(),
+                valor: Box::new(self.optimizar_expresion(valor)),
+                linea: *linea,
+                columna: *columna,
+            },
+            Declaracion::AsignacionMiembro {
+                objeto,
+                miembro,
+                valor,
+                linea,
+                columna,
+            } => Declaracion::AsignacionMiembro {
+                objeto: Box::new(self.optimizar_expresion(objeto)),
+                miembro: miembro.clone(),
+                valor: Box::new(self.optimizar_expresion(valor)),
+                linea: *linea,
+                columna: *columna,
+            },
+            Declaracion::AsignacionIndex {
+                nombre,
+                indice,
+                valor,
+                linea,
+                columna,
+            } => Declaracion::AsignacionIndex {
+                nombre: nombre.clone(),
+                indice: Box::new(self.optimizar_expresion(indice)),
+                valor: Box::new(self.optimizar_expresion(valor)),
+                linea: *linea,
+                columna: *columna,
+            },
+            Declaracion::AsignacionMultiple {
+                variables,
+                mutable,
+                valor,
+            } => Declaracion::AsignacionMultiple {
+                variables: variables.clone(),
+                mutable: *mutable,
+                valor: Box::new(self.optimizar_expresion(valor)),
+            },
             Declaracion::Funcion {
                 nombre,
                 parametros_tipo,
@@ -79,7 +110,10 @@ impl Optimizer {
                 precondiciones,
                 postcondiciones,
             } => {
-                let cuerpo_opt = cuerpo.iter().map(|d| self.optimizar_declaracion(d)).collect();
+                let cuerpo_opt = cuerpo
+                    .iter()
+                    .map(|d| self.optimizar_declaracion(d))
+                    .collect();
                 Declaracion::Funcion {
                     nombre: nombre.clone(),
                     parametros_tipo: parametros_tipo.clone(),
@@ -90,8 +124,14 @@ impl Optimizer {
                     enlace_nombre: enlace_nombre.clone(),
                     atributos: atributos.clone(),
                     doc: doc.clone(),
-                    precondiciones: precondiciones.iter().map(|c| self.optimizar_contrato(c)).collect(),
-                    postcondiciones: postcondiciones.iter().map(|c| self.optimizar_contrato(c)).collect(),
+                    precondiciones: precondiciones
+                        .iter()
+                        .map(|c| self.optimizar_contrato(c))
+                        .collect(),
+                    postcondiciones: postcondiciones
+                        .iter()
+                        .map(|c| self.optimizar_contrato(c))
+                        .collect(),
                 }
             }
             Declaracion::Clase {
@@ -102,86 +142,145 @@ impl Optimizer {
                 atributos,
                 invariantes,
             } => {
-                let metodos_opt = metodos.iter().map(|m| {
-                    Metodo {
+                let metodos_opt = metodos
+                    .iter()
+                    .map(|m| Metodo {
                         nombre: m.nombre.clone(),
                         parametros: m.parametros.clone(),
                         tipo_retorno: m.tipo_retorno.clone(),
-                        cuerpo: m.cuerpo.iter().map(|d| self.optimizar_declaracion(d)).collect(),
-                        precondiciones: m.precondiciones.iter().map(|c| self.optimizar_contrato(c)).collect(),
-                        postcondiciones: m.postcondiciones.iter().map(|c| self.optimizar_contrato(c)).collect(),
-                    }
-                }).collect();
+                        cuerpo: m
+                            .cuerpo
+                            .iter()
+                            .map(|d| self.optimizar_declaracion(d))
+                            .collect(),
+                        precondiciones: m
+                            .precondiciones
+                            .iter()
+                            .map(|c| self.optimizar_contrato(c))
+                            .collect(),
+                        postcondiciones: m
+                            .postcondiciones
+                            .iter()
+                            .map(|c| self.optimizar_contrato(c))
+                            .collect(),
+                    })
+                    .collect();
                 Declaracion::Clase {
                     nombre: nombre.clone(),
                     parametros_tipo: parametros_tipo.clone(),
                     campos: campos.clone(),
                     metodos: metodos_opt,
                     atributos: atributos.clone(),
-                    invariantes: invariantes.iter().map(|c| self.optimizar_contrato(c)).collect(),
+                    invariantes: invariantes
+                        .iter()
+                        .map(|c| self.optimizar_contrato(c))
+                        .collect(),
                 }
             }
-            Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+            Declaracion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
                 let cond_opt = self.optimizar_expresion(condicion);
                 Declaracion::Si {
                     condicion: Box::new(cond_opt),
-                    bloque_verdadero: bloque_verdadero.iter().map(|d| self.optimizar_declaracion(d)).collect(),
-                    bloque_falso: bloque_falso.as_ref().map(|bf| bf.iter().map(|d| self.optimizar_declaracion(d)).collect()),
+                    bloque_verdadero: bloque_verdadero
+                        .iter()
+                        .map(|d| self.optimizar_declaracion(d))
+                        .collect(),
+                    bloque_falso: bloque_falso
+                        .as_ref()
+                        .map(|bf| bf.iter().map(|d| self.optimizar_declaracion(d)).collect()),
                 }
             }
-            Declaracion::Mientras { condicion, bloque } => {
-                Declaracion::Mientras {
-                    condicion: Box::new(self.optimizar_expresion(condicion)),
-                    bloque: bloque.iter().map(|d| self.optimizar_declaracion(d)).collect(),
-                }
-            }
-            Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
-                Declaracion::Para {
-                    inicializacion: inicializacion.as_ref().map(|i| Box::new(self.optimizar_declaracion(i))),
-                    condicion: condicion.as_ref().map(|c| Box::new(self.optimizar_expresion(c))),
-                    incremento: incremento.as_ref().map(|inc| Box::new(self.optimizar_declaracion(inc))),
-                    bloque: bloque.iter().map(|d| self.optimizar_declaracion(d)).collect(),
-                }
-            }
-            Declaracion::Repetir { cantidad, bloque } => {
-                Declaracion::Repetir {
-                    cantidad: Box::new(self.optimizar_expresion(cantidad)),
-                    bloque: bloque.iter().map(|d| self.optimizar_declaracion(d)).collect(),
-                }
-            }
-            Declaracion::Cuando { condicion, cuerpo, linea, columna } => {
-                Declaracion::Cuando {
-                    condicion: Box::new(self.optimizar_expresion(condicion)),
-                    cuerpo: cuerpo.iter().map(|d| self.optimizar_declaracion(d)).collect(),
-                    linea: *linea,
-                    columna: *columna,
-                }
-            }
-            Declaracion::LlamadaFuncion { nombre, argumentos } => {
-                Declaracion::LlamadaFuncion {
-                    nombre: nombre.clone(),
-                    argumentos: argumentos.iter().map(|a| self.optimizar_expresion(a)).collect(),
-                }
-            }
-            Declaracion::Retornar { valor } => {
-                Declaracion::Retornar {
-                    valor: valor.as_ref().map(|v| self.optimizar_expresion(v)),
-                }
-            }
-            Declaracion::Expresion(expr) => {
-                Declaracion::Expresion(self.optimizar_expresion(expr))
-            }
-            Declaracion::Implementacion { rasgo_nombre, clase_nombre, metodos } => {
-                let metodos_opt = metodos.iter().map(|m| {
-                    Metodo {
+            Declaracion::Mientras { condicion, bloque } => Declaracion::Mientras {
+                condicion: Box::new(self.optimizar_expresion(condicion)),
+                bloque: bloque
+                    .iter()
+                    .map(|d| self.optimizar_declaracion(d))
+                    .collect(),
+            },
+            Declaracion::Para {
+                inicializacion,
+                condicion,
+                incremento,
+                bloque,
+            } => Declaracion::Para {
+                inicializacion: inicializacion
+                    .as_ref()
+                    .map(|i| Box::new(self.optimizar_declaracion(i))),
+                condicion: condicion
+                    .as_ref()
+                    .map(|c| Box::new(self.optimizar_expresion(c))),
+                incremento: incremento
+                    .as_ref()
+                    .map(|inc| Box::new(self.optimizar_declaracion(inc))),
+                bloque: bloque
+                    .iter()
+                    .map(|d| self.optimizar_declaracion(d))
+                    .collect(),
+            },
+            Declaracion::Repetir { cantidad, bloque } => Declaracion::Repetir {
+                cantidad: Box::new(self.optimizar_expresion(cantidad)),
+                bloque: bloque
+                    .iter()
+                    .map(|d| self.optimizar_declaracion(d))
+                    .collect(),
+            },
+            Declaracion::Cuando {
+                condicion,
+                cuerpo,
+                linea,
+                columna,
+            } => Declaracion::Cuando {
+                condicion: Box::new(self.optimizar_expresion(condicion)),
+                cuerpo: cuerpo
+                    .iter()
+                    .map(|d| self.optimizar_declaracion(d))
+                    .collect(),
+                linea: *linea,
+                columna: *columna,
+            },
+            Declaracion::LlamadaFuncion { nombre, argumentos } => Declaracion::LlamadaFuncion {
+                nombre: nombre.clone(),
+                argumentos: argumentos
+                    .iter()
+                    .map(|a| self.optimizar_expresion(a))
+                    .collect(),
+            },
+            Declaracion::Retornar { valor } => Declaracion::Retornar {
+                valor: valor.as_ref().map(|v| self.optimizar_expresion(v)),
+            },
+            Declaracion::Expresion(expr) => Declaracion::Expresion(self.optimizar_expresion(expr)),
+            Declaracion::Implementacion {
+                rasgo_nombre,
+                clase_nombre,
+                metodos,
+            } => {
+                let metodos_opt = metodos
+                    .iter()
+                    .map(|m| Metodo {
                         nombre: m.nombre.clone(),
                         parametros: m.parametros.clone(),
                         tipo_retorno: m.tipo_retorno.clone(),
-                        cuerpo: m.cuerpo.iter().map(|d| self.optimizar_declaracion(d)).collect(),
-                        precondiciones: m.precondiciones.iter().map(|c| self.optimizar_contrato(c)).collect(),
-                        postcondiciones: m.postcondiciones.iter().map(|c| self.optimizar_contrato(c)).collect(),
-                    }
-                }).collect();
+                        cuerpo: m
+                            .cuerpo
+                            .iter()
+                            .map(|d| self.optimizar_declaracion(d))
+                            .collect(),
+                        precondiciones: m
+                            .precondiciones
+                            .iter()
+                            .map(|c| self.optimizar_contrato(c))
+                            .collect(),
+                        postcondiciones: m
+                            .postcondiciones
+                            .iter()
+                            .map(|c| self.optimizar_contrato(c))
+                            .collect(),
+                    })
+                    .collect();
                 Declaracion::Implementacion {
                     rasgo_nombre: rasgo_nombre.clone(),
                     clase_nombre: clase_nombre.clone(),
@@ -200,17 +299,38 @@ impl Optimizer {
     }
 
     fn optimizar_expresion(&mut self, expr: &Expresion) -> Expresion {
+        // Verificar profundidad para prevenir stack overflow
+        self.profundidad_expresion += 1;
+        if self.profundidad_expresion > MAX_AST_PROFUNDIDAD {
+            self.profundidad_expresion -= 1;
+            return Expresion::LiteralNulo;
+        }
+        let result = self.optimizar_expresion_inner(expr);
+        self.profundidad_expresion -= 1;
+        result
+    }
+
+    fn optimizar_expresion_inner(&mut self, expr: &Expresion) -> Expresion {
         match expr {
-            Expresion::Binaria { izquierda, operador, derecha } => {
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
                 let izq = self.optimizar_expresion(izquierda);
                 let der = self.optimizar_expresion(derecha);
-                if let (Some(a), Some(b)) = (self.literal_a_valor(&izq), self.literal_a_valor(&der)) {
+                if let (Some(a), Some(b)) = (self.literal_a_valor(&izq), self.literal_a_valor(&der))
+                {
                     if let Some(resultado) = self.evaluar_binaria(&a, operador, &b) {
                         self.cambios_realizados += 1;
                         return self.valor_a_expresion(&resultado);
                     }
                 }
-                Expresion::Binaria { izquierda: Box::new(izq), operador: operador.clone(), derecha: Box::new(der) }
+                Expresion::Binaria {
+                    izquierda: Box::new(izq),
+                    operador: operador.clone(),
+                    derecha: Box::new(der),
+                }
             }
             Expresion::Unaria { operador, expr: e } => {
                 let inner = self.optimizar_expresion(e);
@@ -234,114 +354,125 @@ impl Optimizer {
                         }
                     }
                 }
-                Expresion::Unaria { operador: operador.clone(), expr: Box::new(inner) }
+                Expresion::Unaria {
+                    operador: operador.clone(),
+                    expr: Box::new(inner),
+                }
             }
             Expresion::Grupo(expr) => {
                 let inner = self.optimizar_expresion(expr);
-                if self.es_literal(&inner) { self.cambios_realizados += 1; return inner; }
+                if self.es_literal(&inner) {
+                    self.cambios_realizados += 1;
+                    return inner;
+                }
                 Expresion::Grupo(Box::new(inner))
             }
-            Expresion::LlamadaFuncion { nombre, argumentos } => {
-                Expresion::LlamadaFuncion {
-                    nombre: nombre.clone(),
-                    argumentos: argumentos.iter().map(|a| self.optimizar_expresion(a)).collect(),
-                }
-            }
-            Expresion::AccesoMiembro { objeto, miembro } => {
-                Expresion::AccesoMiembro {
-                    objeto: Box::new(self.optimizar_expresion(objeto)),
-                    miembro: miembro.clone(),
-                }
-            }
-            Expresion::Instanciacion { clase, argumentos } => {
-                Expresion::Instanciacion {
-                    clase: clase.clone(),
-                    argumentos: argumentos.iter().map(|a| self.optimizar_expresion(a)).collect(),
-                }
-            }
-            Expresion::Referencia { expr: e, mutable } => {
-                Expresion::Referencia {
-                    expr: Box::new(self.optimizar_expresion(e)),
-                    mutable: *mutable,
-                }
-            }
-            Expresion::Arreglo(elementos) => {
-                Expresion::Arreglo(elementos.iter().map(|e| self.optimizar_expresion(e)).collect())
-            }
-            Expresion::Mapa(pares) => {
-                Expresion::Mapa(pares.iter().map(|(k, v)| (self.optimizar_expresion(k), self.optimizar_expresion(v))).collect())
-            }
-            Expresion::Index { objeto, indice } => {
-                Expresion::Index {
-                    objeto: Box::new(self.optimizar_expresion(objeto)),
-                    indice: Box::new(self.optimizar_expresion(indice)),
-                }
-            }
-            Expresion::Try(e) => {
-                Expresion::Try(Box::new(self.optimizar_expresion(e)))
-            }
-            Expresion::Asignacion { variable, valor } => {
-                Expresion::Asignacion {
-                    variable: variable.clone(),
-                    valor: Box::new(self.optimizar_expresion(valor)),
-                }
-            }
-            Expresion::AsignacionCampo { objeto, campo, valor } => {
-                Expresion::AsignacionCampo {
-                    objeto: Box::new(self.optimizar_expresion(objeto)),
-                    campo: campo.clone(),
-                    valor: Box::new(self.optimizar_expresion(valor)),
-                }
-            }
-            Expresion::ArraySet { array, valor } => {
-                Expresion::ArraySet {
-                    array: Box::new(self.optimizar_expresion(array)),
-                    valor: Box::new(self.optimizar_expresion(valor)),
-                }
-            }
-            Expresion::Ok(e) => {
-                Expresion::Ok(Box::new(self.optimizar_expresion(e)))
-            }
-            Expresion::Error(e) => {
-                Expresion::Error(Box::new(self.optimizar_expresion(e)))
-            }
-            Expresion::Algo(e) => {
-                Expresion::Algo(Box::new(self.optimizar_expresion(e)))
-            }
-            Expresion::Anterior(e) => {
-                Expresion::Anterior(Box::new(self.optimizar_expresion(e)))
-            }
+            Expresion::LlamadaFuncion { nombre, argumentos } => Expresion::LlamadaFuncion {
+                nombre: nombre.clone(),
+                argumentos: argumentos
+                    .iter()
+                    .map(|a| self.optimizar_expresion(a))
+                    .collect(),
+            },
+            Expresion::AccesoMiembro { objeto, miembro } => Expresion::AccesoMiembro {
+                objeto: Box::new(self.optimizar_expresion(objeto)),
+                miembro: miembro.clone(),
+            },
+            Expresion::Instanciacion { clase, argumentos } => Expresion::Instanciacion {
+                clase: clase.clone(),
+                argumentos: argumentos
+                    .iter()
+                    .map(|a| self.optimizar_expresion(a))
+                    .collect(),
+            },
+            Expresion::Referencia { expr: e, mutable } => Expresion::Referencia {
+                expr: Box::new(self.optimizar_expresion(e)),
+                mutable: *mutable,
+            },
+            Expresion::Arreglo(elementos) => Expresion::Arreglo(
+                elementos
+                    .iter()
+                    .map(|e| self.optimizar_expresion(e))
+                    .collect(),
+            ),
+            Expresion::Mapa(pares) => Expresion::Mapa(
+                pares
+                    .iter()
+                    .map(|(k, v)| (self.optimizar_expresion(k), self.optimizar_expresion(v)))
+                    .collect(),
+            ),
+            Expresion::Index { objeto, indice } => Expresion::Index {
+                objeto: Box::new(self.optimizar_expresion(objeto)),
+                indice: Box::new(self.optimizar_expresion(indice)),
+            },
+            Expresion::Try(e) => Expresion::Try(Box::new(self.optimizar_expresion(e))),
+            Expresion::Asignacion { variable, valor } => Expresion::Asignacion {
+                variable: variable.clone(),
+                valor: Box::new(self.optimizar_expresion(valor)),
+            },
+            Expresion::AsignacionCampo {
+                objeto,
+                campo,
+                valor,
+            } => Expresion::AsignacionCampo {
+                objeto: Box::new(self.optimizar_expresion(objeto)),
+                campo: campo.clone(),
+                valor: Box::new(self.optimizar_expresion(valor)),
+            },
+            Expresion::ArraySet { array, valor } => Expresion::ArraySet {
+                array: Box::new(self.optimizar_expresion(array)),
+                valor: Box::new(self.optimizar_expresion(valor)),
+            },
+            Expresion::Ok(e) => Expresion::Ok(Box::new(self.optimizar_expresion(e))),
+            Expresion::Error(e) => Expresion::Error(Box::new(self.optimizar_expresion(e))),
+            Expresion::Algo(e) => Expresion::Algo(Box::new(self.optimizar_expresion(e))),
+            Expresion::Anterior(e) => Expresion::Anterior(Box::new(self.optimizar_expresion(e))),
             Expresion::Coincidir { expr: e, brazos } => {
-                let brazos_opt = brazos.iter().map(|b| {
-                    BrazoMatch {
+                let brazos_opt = brazos
+                    .iter()
+                    .map(|b| BrazoMatch {
                         patron: b.patron.clone(),
-                        cuerpo: b.cuerpo.iter().map(|d| self.optimizar_declaracion(d)).collect(),
-                    }
-                }).collect();
+                        cuerpo: b
+                            .cuerpo
+                            .iter()
+                            .map(|d| self.optimizar_declaracion(d))
+                            .collect(),
+                    })
+                    .collect();
                 Expresion::Coincidir {
                     expr: Box::new(self.optimizar_expresion(e)),
                     brazos: brazos_opt,
                 }
             }
-            Expresion::Closure { parametros, cuerpo } => {
-                Expresion::Closure {
-                    parametros: parametros.clone(),
-                    cuerpo: cuerpo.iter().map(|d| self.optimizar_declaracion(d)).collect(),
-                }
-            }
-            Expresion::Hilo { cuerpo } => {
-                Expresion::Hilo {
-                    cuerpo: cuerpo.iter().map(|d| self.optimizar_declaracion(d)).collect(),
-                }
-            }
+            Expresion::Closure { parametros, cuerpo } => Expresion::Closure {
+                parametros: parametros.clone(),
+                cuerpo: cuerpo
+                    .iter()
+                    .map(|d| self.optimizar_declaracion(d))
+                    .collect(),
+            },
+            Expresion::Hilo { cuerpo } => Expresion::Hilo {
+                cuerpo: cuerpo
+                    .iter()
+                    .map(|d| self.optimizar_declaracion(d))
+                    .collect(),
+            },
             Expresion::Seleccionar { brazos } => {
-                let brazos_opt = brazos.iter().map(|b| {
-                    BrazoSeleccionar {
-                        recepcion: b.recepcion.as_ref().map(|(var, expr)| (var.clone(), self.optimizar_expresion(expr))),
+                let brazos_opt = brazos
+                    .iter()
+                    .map(|b| BrazoSeleccionar {
+                        recepcion: b
+                            .recepcion
+                            .as_ref()
+                            .map(|(var, expr)| (var.clone(), self.optimizar_expresion(expr))),
                         timeout_ms: b.timeout_ms,
-                        cuerpo: b.cuerpo.iter().map(|d| self.optimizar_declaracion(d)).collect(),
-                    }
-                }).collect();
+                        cuerpo: b
+                            .cuerpo
+                            .iter()
+                            .map(|d| self.optimizar_declaracion(d))
+                            .collect(),
+                    })
+                    .collect();
                 Expresion::Seleccionar { brazos: brazos_opt }
             }
             _ => expr.clone(),
@@ -349,7 +480,15 @@ impl Optimizer {
     }
 
     fn es_literal(&self, expr: &Expresion) -> bool {
-        matches!(expr, Expresion::LiteralNumero(_) | Expresion::LiteralDecimal(_) | Expresion::LiteralExacto(_, _) | Expresion::LiteralTexto(_) | Expresion::LiteralBooleano(_) | Expresion::LiteralNulo)
+        matches!(
+            expr,
+            Expresion::LiteralNumero(_)
+                | Expresion::LiteralDecimal(_)
+                | Expresion::LiteralExacto(_, _)
+                | Expresion::LiteralTexto(_)
+                | Expresion::LiteralBooleano(_)
+                | Expresion::LiteralNulo
+        )
     }
 
     fn literal_a_valor(&self, expr: &Expresion) -> Option<ValorConstante> {
@@ -375,7 +514,12 @@ impl Optimizer {
         }
     }
 
-    fn evaluar_binaria(&self, a: &ValorConstante, op: &Operador, b: &ValorConstante) -> Option<ValorConstante> {
+    fn evaluar_binaria(
+        &self,
+        a: &ValorConstante,
+        op: &Operador,
+        b: &ValorConstante,
+    ) -> Option<ValorConstante> {
         use Operador::*;
         match (a, b) {
             (ValorConstante::Entero(a), ValorConstante::Entero(b)) => match op {
@@ -467,12 +611,18 @@ pub struct DeadCodeEliminator {
 
 impl DeadCodeEliminator {
     pub fn new() -> Self {
-        DeadCodeEliminator { eliminados: 0, variables_usadas: HashSet::new(), funciones_llamadas: HashSet::new() }
+        DeadCodeEliminator {
+            eliminados: 0,
+            variables_usadas: HashSet::new(),
+            funciones_llamadas: HashSet::new(),
+        }
     }
 
     pub fn eliminar(&mut self, programa: &Programa) -> Programa {
         self.recolectar_usos(&programa.declaraciones);
-        let declaraciones: Vec<Declaracion> = programa.declaraciones.iter()
+        let declaraciones: Vec<Declaracion> = programa
+            .declaraciones
+            .iter()
             .filter(|d| !self.es_muerto(d))
             .cloned()
             .collect();
@@ -500,7 +650,12 @@ impl DeadCodeEliminator {
                     self.recolectar_en_expresion(objeto);
                     self.recolectar_en_expresion(valor);
                 }
-                Declaracion::AsignacionIndex { nombre, indice, valor, .. } => {
+                Declaracion::AsignacionIndex {
+                    nombre,
+                    indice,
+                    valor,
+                    ..
+                } => {
                     self.variables_usadas.insert(nombre.clone());
                     self.recolectar_en_expresion(indice);
                     self.recolectar_en_expresion(valor);
@@ -513,7 +668,9 @@ impl DeadCodeEliminator {
                         let var_name = &nombre[..dot_pos];
                         self.variables_usadas.insert(var_name.to_string());
                     }
-                    for arg in argumentos { self.recolectar_en_expresion(arg); }
+                    for arg in argumentos {
+                        self.recolectar_en_expresion(arg);
+                    }
                 }
                 Declaracion::Expresion(expr) => self.recolectar_en_expresion(expr),
                 Declaracion::AccesoMiembro { objeto, .. } => {
@@ -525,16 +682,24 @@ impl DeadCodeEliminator {
                     }
                 }
                 Declaracion::Enum { .. } | Declaracion::Importar(_) => {}
-                Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+                Declaracion::Si {
+                    condicion,
+                    bloque_verdadero,
+                    bloque_falso,
+                } => {
                     self.recolectar_en_expresion(condicion);
                     self.recolectar_usos(bloque_verdadero);
-                    if let Some(bf) = bloque_falso { self.recolectar_usos(bf); }
+                    if let Some(bf) = bloque_falso {
+                        self.recolectar_usos(bf);
+                    }
                 }
                 Declaracion::Mientras { condicion, bloque } => {
                     self.recolectar_en_expresion(condicion);
                     self.recolectar_usos(bloque);
                 }
-                Declaracion::Cuando { condicion, cuerpo, .. } => {
+                Declaracion::Cuando {
+                    condicion, cuerpo, ..
+                } => {
                     self.recolectar_en_expresion(condicion);
                     self.recolectar_usos(cuerpo);
                 }
@@ -542,7 +707,12 @@ impl DeadCodeEliminator {
                     self.recolectar_en_expresion(cantidad);
                     self.recolectar_usos(bloque);
                 }
-                Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
+                Declaracion::Para {
+                    inicializacion,
+                    condicion,
+                    incremento,
+                    bloque,
+                } => {
                     if let Some(init) = inicializacion {
                         self.recolectar_usos(&[init.as_ref().clone()]);
                     }
@@ -554,7 +724,9 @@ impl DeadCodeEliminator {
                     }
                     self.recolectar_usos(bloque);
                 }
-                Declaracion::Funcion { nombre: _, cuerpo, .. } => self.recolectar_usos(cuerpo),
+                Declaracion::Funcion {
+                    nombre: _, cuerpo, ..
+                } => self.recolectar_usos(cuerpo),
                 Declaracion::Clase { metodos, .. } => {
                     for m in metodos {
                         self.recolectar_usos(&m.cuerpo);
@@ -575,8 +747,15 @@ impl DeadCodeEliminator {
 
     fn recolectar_en_expresion(&mut self, expr: &Expresion) {
         match expr {
-            Expresion::Identificador { nombre, .. } => { self.variables_usadas.insert(nombre.clone()); }
-            Expresion::Binaria { izquierda, derecha, .. } => { self.recolectar_en_expresion(izquierda); self.recolectar_en_expresion(derecha); }
+            Expresion::Identificador { nombre, .. } => {
+                self.variables_usadas.insert(nombre.clone());
+            }
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => {
+                self.recolectar_en_expresion(izquierda);
+                self.recolectar_en_expresion(derecha);
+            }
             Expresion::LlamadaFuncion { nombre, argumentos } => {
                 self.funciones_llamadas.insert(nombre.clone());
                 // Si el nombre es "objeto.metodo", extraer la variable receptora
@@ -584,19 +763,43 @@ impl DeadCodeEliminator {
                     let var_name = &nombre[..dot_pos];
                     self.variables_usadas.insert(var_name.to_string());
                 }
-                for arg in argumentos { self.recolectar_en_expresion(arg); }
+                for arg in argumentos {
+                    self.recolectar_en_expresion(arg);
+                }
             }
-            Expresion::AccesoMiembro { objeto, .. } => { self.recolectar_en_expresion(objeto); }
-            Expresion::Index { objeto, indice } => { self.recolectar_en_expresion(objeto); self.recolectar_en_expresion(indice); }
-            Expresion::Arreglo(elementos) => { for e in elementos { self.recolectar_en_expresion(e); } }
-            Expresion::Mapa(pares) => { for (k, v) in pares { self.recolectar_en_expresion(k); self.recolectar_en_expresion(v); } }
-            Expresion::Unaria { expr: e, .. } => { self.recolectar_en_expresion(e); }
-            Expresion::Grupo(expr) => { self.recolectar_en_expresion(expr); }
+            Expresion::AccesoMiembro { objeto, .. } => {
+                self.recolectar_en_expresion(objeto);
+            }
+            Expresion::Index { objeto, indice } => {
+                self.recolectar_en_expresion(objeto);
+                self.recolectar_en_expresion(indice);
+            }
+            Expresion::Arreglo(elementos) => {
+                for e in elementos {
+                    self.recolectar_en_expresion(e);
+                }
+            }
+            Expresion::Mapa(pares) => {
+                for (k, v) in pares {
+                    self.recolectar_en_expresion(k);
+                    self.recolectar_en_expresion(v);
+                }
+            }
+            Expresion::Unaria { expr: e, .. } => {
+                self.recolectar_en_expresion(e);
+            }
+            Expresion::Grupo(expr) => {
+                self.recolectar_en_expresion(expr);
+            }
             Expresion::Coincidir { expr, brazos } => {
                 self.recolectar_en_expresion(expr);
-                for b in brazos { self.recolectar_usos(&b.cuerpo); }
+                for b in brazos {
+                    self.recolectar_usos(&b.cuerpo);
+                }
             }
-            Expresion::Closure { cuerpo, .. } => { self.recolectar_usos(cuerpo); }
+            Expresion::Closure { cuerpo, .. } => {
+                self.recolectar_usos(cuerpo);
+            }
             _ => {}
         }
     }
@@ -610,12 +813,29 @@ impl DeadCodeEliminator {
 }
 
 enum ValorConstante {
-    Entero(i64), Decimal(f64), Exacto(i128, u32), Texto(String), Booleano(bool), Nulo,
+    Entero(i64),
+    Decimal(f64),
+    Exacto(i128, u32),
+    Texto(String),
+    Booleano(bool),
+    Nulo,
 }
 
 impl ValorConstante {
-    fn as_entero(&self) -> Option<i64> { if let ValorConstante::Entero(n) = self { Some(*n) } else { None } }
-    fn as_booleano(&self) -> Option<bool> { if let ValorConstante::Booleano(b) = self { Some(*b) } else { None } }
+    fn as_entero(&self) -> Option<i64> {
+        if let ValorConstante::Entero(n) = self {
+            Some(*n)
+        } else {
+            None
+        }
+    }
+    fn as_booleano(&self) -> Option<bool> {
+        if let ValorConstante::Booleano(b) = self {
+            Some(*b)
+        } else {
+            None
+        }
+    }
 }
 
 /// Homogeneiza dos valores Exacto a la misma escala.
@@ -656,29 +876,50 @@ mod tests {
     #[test]
     fn test_constant_folding_suma() {
         let prog = optimizar_source("variable x = 2 + 3");
-        if let Declaracion::Variable { valor: Some(Expresion::LiteralNumero(5)), .. } = &prog.declaraciones[0] {}
-        else { panic!("No se plegó 2+3"); }
+        if let Declaracion::Variable {
+            valor: Some(Expresion::LiteralNumero(5)),
+            ..
+        } = &prog.declaraciones[0]
+        {
+        } else {
+            panic!("No se plegó 2+3");
+        }
     }
 
     #[test]
     fn test_constant_folding_multi() {
         let prog = optimizar_source("variable x = 6 * 7");
-        if let Declaracion::Variable { valor: Some(Expresion::LiteralNumero(42)), .. } = &prog.declaraciones[0] {}
-        else { panic!("No se plegó 6*7"); }
+        if let Declaracion::Variable {
+            valor: Some(Expresion::LiteralNumero(42)),
+            ..
+        } = &prog.declaraciones[0]
+        {
+        } else {
+            panic!("No se plegó 6*7");
+        }
     }
 
     #[test]
     fn test_constant_folding_comparacion() {
         let prog = optimizar_source("variable x = 5 > 3");
-        if let Declaracion::Variable { valor: Some(Expresion::LiteralBooleano(true)), .. } = &prog.declaraciones[0] {}
-        else { panic!("No se plegó 5>3"); }
+        if let Declaracion::Variable {
+            valor: Some(Expresion::LiteralBooleano(true)),
+            ..
+        } = &prog.declaraciones[0]
+        {
+        } else {
+            panic!("No se plegó 5>3");
+        }
     }
 
     #[test]
     fn test_constant_folding_no_fold_variable() {
         let prog = optimizar_source("variable x = a + 3");
         match &prog.declaraciones[0] {
-            Declaracion::Variable { valor: Some(Expresion::Binaria { .. }), .. } => {}
+            Declaracion::Variable {
+                valor: Some(Expresion::Binaria { .. }),
+                ..
+            } => {}
             _ => panic!("Se plegó incorrectamente una expresión con variable"),
         }
     }

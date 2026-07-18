@@ -277,7 +277,9 @@ impl fmt::Display for TokenKind {
             TokenKind::Identificador(id) => write!(f, "identificador('{}')", id),
             TokenKind::Numero(n) => write!(f, "numero({})", n),
             TokenKind::Decimal(d) => write!(f, "decimal({})", d),
-            TokenKind::LiteralExacto(coeff, scale) => write!(f, "LiteralExacto({}, {})", coeff, scale),
+            TokenKind::LiteralExacto(coeff, scale) => {
+                write!(f, "LiteralExacto({}, {})", coeff, scale)
+            }
             TokenKind::Texto(s) => write!(f, "texto(\"{}\")", s),
             TokenKind::Caracter(c) => write!(f, "'{}'", c),
             TokenKind::DocComment(s) => write!(f, "///{}", s),
@@ -297,12 +299,20 @@ pub struct Token {
 
 impl Token {
     pub fn new(kind: TokenKind, linea: usize, columna: usize) -> Self {
-        Token { kind, linea, columna }
+        Token {
+            kind,
+            linea,
+            columna,
+        }
     }
 }
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Token({}, línea: {}, col: {})", self.kind, self.linea, self.columna)
+        write!(
+            f,
+            "Token({}, línea: {}, col: {})",
+            self.kind, self.linea, self.columna
+        )
     }
 }

@@ -5,44 +5,44 @@
 
 extern crate self as forja;
 
-pub mod token;
-pub mod lexer;
 pub mod ast;
-pub mod parser;
-pub mod error;
-pub mod semantics;
-pub mod transpiler;
+pub mod bytecode;
+pub mod class_descriptor;
 pub mod compiler_asm;
 pub mod compiler_llvm;
-pub mod bytecode;
-pub mod uops;
+pub mod error;
 pub mod fprofiler;
-pub mod vm;
-pub mod vm_jit;
-pub mod vm_fast;
-pub mod symbol_table;
-pub mod class_descriptor;
+pub mod lexer;
 pub mod native_registry;
+pub mod parser;
+pub mod semantics;
+pub mod symbol_table;
+pub mod token;
+pub mod transpiler;
+pub mod uops;
+pub mod vm;
+pub mod vm_fast;
+pub mod vm_jit;
 
 // Módulos que dependen del sistema de archivos o del SO
 // (no compilables a WASM)
 #[cfg(not(target_arch = "wasm32"))]
-pub mod repl;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod aot;
-
 #[cfg(not(target_arch = "wasm32"))]
-pub mod selfrun;
+pub mod repl;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub mod jit;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod module;
 #[cfg(not(target_arch = "wasm32"))]
-pub use module::{ModuleId, ModuleInfo, ModuleCache};
+pub mod selfrun;
 #[cfg(not(target_arch = "wasm32"))]
-pub mod prelude;
+pub use module::{ModuleCache, ModuleId, ModuleInfo};
 #[cfg(not(target_arch = "wasm32"))]
 pub mod package_resolver;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod prelude;
 
 // package_config usa serde/serde_json, compatible con WASM
 pub mod package_config;
@@ -50,8 +50,8 @@ pub mod package_config;
 // Módulos puramente algorítmicos (compatibles con WASM)
 // diagrama genera HTML, formatter y optimizer son puro AST
 pub mod diagrama;
-pub mod optimizer;
 pub mod formatter;
+pub mod optimizer;
 
 // Debugger (modo paso a paso con breakpoints)
 #[cfg(not(target_arch = "wasm32"))]
@@ -166,7 +166,9 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
     let mut final_decls = Vec::new();
     for decl in programa.declaraciones {
         if let ast::Declaracion::Importar(ref ruta) = decl {
-            let sub_prog = module_resolver.resolver(ruta).map_err(|e| format!("{}", e[0]))?;
+            let sub_prog = module_resolver
+                .resolver(ruta)
+                .map_err(|e| format!("{}", e[0]))?;
             if ruta != "gui" {
                 final_decls.extend(sub_prog.declaraciones);
             }
@@ -180,15 +182,20 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
 
 /// Compila código Forja a bytecode, resolviendo imports desde un directorio raíz.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn compilar_pipeline_completa_desde(source: &str, root_dir: &std::path::Path) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    use bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
+pub fn compilar_pipeline_completa_desde(
+    source: &str,
+    root_dir: &std::path::Path,
+) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
+    use bytecode::{fusionar_opcodes, optimizar_indices, BytecodeGenerator};
 
     // FASE 1-2: Resolver imports y obtener AST completo
     let programa = resolver_imports(source, root_dir)?;
 
     // FASE 3: Type Checker + Type Inference
     let mut type_checker = semantics::TypeChecker::new();
-    type_checker.analizar(&programa).map_err(|e| format!("{}", e[0]))?;
+    type_checker
+        .analizar(&programa)
+        .map_err(|e| format!("{}", e[0]))?;
     let tipos_inferidos = type_checker.obtener_tipos_inferidos();
 
     // FASE 4: Optimizador
@@ -202,7 +209,9 @@ pub fn compilar_pipeline_completa_desde(source: &str, root_dir: &std::path::Path
     // FASE 5: Generar bytecode con especialización por tipos
     let mut gen = BytecodeGenerator::new();
     gen.set_tipos_inferidos(tipos_inferidos);
-    let bytecode = gen.generar(&programa).map_err(|_| "Error generando bytecode".to_string())?;
+    let bytecode = gen
+        .generar(&programa)
+        .map_err(|_| "Error generando bytecode".to_string())?;
 
     // FASE 6: Optimizar bytecode: indices globales + fusion de opcodes
     let bytecode = optimizar_indices(&bytecode);
@@ -216,8 +225,10 @@ pub fn compilar_pipeline_completa_desde(source: &str, root_dir: &std::path::Path
 
 /// Compila código Forja a bytecode + tabla de contratos (Design by Contract)
 /// Sin resolución de imports (usa el source "plano").
-pub fn compilar_pipeline_completa(source: &str) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    use bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
+pub fn compilar_pipeline_completa(
+    source: &str,
+) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
+    use bytecode::{fusionar_opcodes, optimizar_indices, BytecodeGenerator};
 
     // FASE 1: Lexer
     let mut lexer = lexer::Lexer::new(source);
@@ -229,7 +240,9 @@ pub fn compilar_pipeline_completa(source: &str) -> Result<(Vec<bytecode::Opcode>
 
     // FASE 4: Type Checker + Type Inference
     let mut type_checker = semantics::TypeChecker::new();
-    type_checker.analizar(&programa).map_err(|e| format!("{}", e[0]))?;
+    type_checker
+        .analizar(&programa)
+        .map_err(|e| format!("{}", e[0]))?;
     let tipos_inferidos = type_checker.obtener_tipos_inferidos();
 
     // FASE 5: Optimizador
@@ -243,7 +256,9 @@ pub fn compilar_pipeline_completa(source: &str) -> Result<(Vec<bytecode::Opcode>
     // FASE 6: Generar bytecode con especialización por tipos
     let mut gen = BytecodeGenerator::new();
     gen.set_tipos_inferidos(tipos_inferidos);
-    let bytecode = gen.generar(&programa).map_err(|_| "Error generando bytecode".to_string())?;
+    let bytecode = gen
+        .generar(&programa)
+        .map_err(|_| "Error generando bytecode".to_string())?;
 
     // FASE 7: Optimizar bytecode: indices globales + fusion de opcodes
     let bytecode = optimizar_indices(&bytecode);
@@ -262,8 +277,11 @@ pub fn compilar_pipeline_completa(source: &str) -> Result<(Vec<bytecode::Opcode>
 /// Útil para hot-reload: se pasa el código fuente actualizado del módulo y su
 /// module_id, y se obtiene un ModuleBytecode listo para pasar a hot_swap_module().
 #[cfg(not(target_arch = "wasm32"))]
-pub fn compilar_modulo(source: &str, module_id: ModuleId) -> Result<bytecode::ModuleBytecode, String> {
-    use bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
+pub fn compilar_modulo(
+    source: &str,
+    module_id: ModuleId,
+) -> Result<bytecode::ModuleBytecode, String> {
+    use bytecode::{fusionar_opcodes, optimizar_indices, BytecodeGenerator};
 
     // FASE 1: Lexer
     let mut lexer = lexer::Lexer::new(source);
@@ -275,7 +293,9 @@ pub fn compilar_modulo(source: &str, module_id: ModuleId) -> Result<bytecode::Mo
 
     // FASE 3: Type Checker + Type Inference
     let mut type_checker = semantics::TypeChecker::new();
-    type_checker.analizar(&programa).map_err(|e| format!("{}", e[0]))?;
+    type_checker
+        .analizar(&programa)
+        .map_err(|e| format!("{}", e[0]))?;
     let tipos_inferidos = type_checker.obtener_tipos_inferidos();
 
     // FASE 4: Optimizador (constant folding)
@@ -289,7 +309,8 @@ pub fn compilar_modulo(source: &str, module_id: ModuleId) -> Result<bytecode::Mo
     // FASE 5: Generar ModuleBytecode con generar_para_modulo()
     let mut gen = BytecodeGenerator::new();
     gen.set_tipos_inferidos(tipos_inferidos);
-    let mut module_bc = gen.generar_para_modulo(&programa, module_id)
+    let mut module_bc = gen
+        .generar_para_modulo(&programa, module_id)
         .map_err(|_| "Error generando bytecode para módulo".to_string())?;
 
     // FASE 6: Optimizar bytecode interno (índices globales + fusión de opcodes)
@@ -312,7 +333,10 @@ pub fn ejecutar_desde(source: &str, root_dir: &std::path::Path) -> Result<Vec<St
 
 /// Compila y ejecuta código Forja en ForjaFast con opciones
 /// - `verificar_contratos`: si true, verifica pre/post condiciones en runtime
-pub fn ejecutar_con_opciones(source: &str, verificar_contratos: bool) -> Result<Vec<String>, String> {
+pub fn ejecutar_con_opciones(
+    source: &str,
+    verificar_contratos: bool,
+) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
     let (bytecode, contratos) = compilar_pipeline_completa(source)?;
     let mut vm = ForjaFast::new();
@@ -326,7 +350,11 @@ pub fn ejecutar_con_opciones(source: &str, verificar_contratos: bool) -> Result<
 
 /// Compila y ejecuta código Forja en ForjaFast con opciones y resolución de imports.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn ejecutar_con_opciones_desde(source: &str, root_dir: &std::path::Path, verificar_contratos: bool) -> Result<Vec<String>, String> {
+pub fn ejecutar_con_opciones_desde(
+    source: &str,
+    root_dir: &std::path::Path,
+    verificar_contratos: bool,
+) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
     let (bytecode, contratos) = compilar_pipeline_completa_desde(source, root_dir)?;
     let mut vm = ForjaFast::new();
@@ -384,19 +412,45 @@ pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
 
     // FASE 7: Backend LLVM (generación de texto IR)
     let mut backend = compiler_llvm::LlvmBackend::new("", "forja_module");
-    backend
-        .compile(&programa.declaraciones)
-        .map_err(|e| vec![error::ErrorForja::new(
+    backend.compile(&programa.declaraciones).map_err(|e| {
+        vec![error::ErrorForja::new(
             error::ErrorTipo::ErrorInterno,
             0,
             0,
             &format!("Error en backend LLVM: {}", e),
             "Revisa que el código Forja sea compatible con el backend LLVM",
-        )])?;
+        )]
+    })?;
 
     let ir = backend.emit_ir();
     Ok(ir)
 }
+
+/// Lee un archivo de código fuente verificando que no supere el límite de tamaño.
+///
+/// - `ruta`: ruta al archivo .fa
+/// - `max_mb`: tamaño máximo en megabytes (ej: 10 = 10 MB)
+///
+/// Devuelve el contenido del archivo o un error con mensaje descriptivo en español.
+pub fn leer_archivo_con_limite(ruta: &str, max_mb: u64) -> Result<String, String> {
+    let metadata =
+        std::fs::metadata(ruta).map_err(|e| format!("Error al leer '{}': {}", ruta, e))?;
+    let tamano = metadata.len();
+    let limite = max_mb * 1024 * 1024;
+    if tamano > limite {
+        return Err(format!(
+            "Error: El archivo '{}' excede el límite de tamaño de {} MB (tamaño actual: {:.2} MB).\n\
+             Usa --max-archivo <MB> para aumentar el límite.",
+            ruta,
+            max_mb,
+            tamano as f64 / (1024.0 * 1024.0)
+        ));
+    }
+    std::fs::read_to_string(ruta).map_err(|e| format!("Error al leer '{}': {}", ruta, e))
+}
+
+/// Constante con el límite por defecto (10 MB)
+pub const MAX_ARCHIVO_DEFAULT_MB: u64 = 10;
 
 /// Formatea código Forja usando el formatter interno
 /// Devuelve el código formateado, o el original si hay errores de sintaxis
@@ -416,4 +470,3 @@ pub fn formatear(codigo: &str) -> String {
     let mut f = formatter::Formatter::new();
     f.formatear(&programa)
 }
-

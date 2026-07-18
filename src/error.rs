@@ -13,15 +13,31 @@ pub mod color {
     pub const GRIS: &str = "\x1b[90m";
     pub const RESET: &str = "\x1b[0m";
     pub const NEGRITA: &str = "\x1b[1m";
-    
-    pub fn rojo(s: &str) -> String { format!("{}{}{}", ROJO, s, RESET) }
-    pub fn verde(s: &str) -> String { format!("{}{}{}", VERDE, s, RESET) }
-    pub fn amarillo(s: &str) -> String { format!("{}{}{}", AMARILLO, s, RESET) }
-    pub fn azul(s: &str) -> String { format!("{}{}{}", AZUL, s, RESET) }
-    pub fn magenta(s: &str) -> String { format!("{}{}{}", MAGENTA, s, RESET) }
-    pub fn cyan(s: &str) -> String { format!("{}{}{}", CYAN, s, RESET) }
-    pub fn gris(s: &str) -> String { format!("{}{}{}", GRIS, s, RESET) }
-    pub fn negrita(s: &str) -> String { format!("{}{}{}", NEGRITA, s, RESET) }
+
+    pub fn rojo(s: &str) -> String {
+        format!("{}{}{}", ROJO, s, RESET)
+    }
+    pub fn verde(s: &str) -> String {
+        format!("{}{}{}", VERDE, s, RESET)
+    }
+    pub fn amarillo(s: &str) -> String {
+        format!("{}{}{}", AMARILLO, s, RESET)
+    }
+    pub fn azul(s: &str) -> String {
+        format!("{}{}{}", AZUL, s, RESET)
+    }
+    pub fn magenta(s: &str) -> String {
+        format!("{}{}{}", MAGENTA, s, RESET)
+    }
+    pub fn cyan(s: &str) -> String {
+        format!("{}{}{}", CYAN, s, RESET)
+    }
+    pub fn gris(s: &str) -> String {
+        format!("{}{}{}", GRIS, s, RESET)
+    }
+    pub fn negrita(s: &str) -> String {
+        format!("{}{}{}", NEGRITA, s, RESET)
+    }
 }
 
 /// Tipo de error de Forja
@@ -33,6 +49,16 @@ pub enum ErrorTipo {
     ErrorDeTipo,
     ErrorSemantico,
     ErrorInterno,
+    /// El archivo de código fuente excede el límite de tamaño permitido
+    LimiteArchivo {
+        ruta: String,
+        max: u64,
+        actual: u64,
+    },
+    /// El programa excede la profundidad máxima de anidación permitida
+    DemasiadaAnidacion {
+        max: u32,
+    },
 }
 
 impl fmt::Display for ErrorTipo {
@@ -44,6 +70,8 @@ impl fmt::Display for ErrorTipo {
             ErrorTipo::ErrorDeTipo => write!(f, "ErrorDeTipo"),
             ErrorTipo::ErrorSemantico => write!(f, "ErrorSemantico"),
             ErrorTipo::ErrorInterno => write!(f, "ErrorInterno"),
+            ErrorTipo::LimiteArchivo { .. } => write!(f, "LimiteArchivo"),
+            ErrorTipo::DemasiadaAnidacion { .. } => write!(f, "DemasiadaAnidacion"),
         }
     }
 }
@@ -59,7 +87,13 @@ pub struct ErrorForja {
 }
 
 impl ErrorForja {
-    pub fn new(tipo: ErrorTipo, linea: usize, columna: usize, mensaje: &str, sugerencia: &str) -> Self {
+    pub fn new(
+        tipo: ErrorTipo,
+        linea: usize,
+        columna: usize,
+        mensaje: &str,
+        sugerencia: &str,
+    ) -> Self {
         ErrorForja {
             tipo,
             linea,
@@ -74,14 +108,23 @@ impl ErrorForja {
         let mut result = String::new();
         let lines: Vec<&str> = source.lines().collect();
         let idx = if self.linea > 0 { self.linea - 1 } else { 0 };
-        
+
         if idx > 0 && idx - 1 < lines.len() {
             result.push_str(&format!(" {:>4} │ {}\n", idx, lines[idx - 1]));
         }
         if idx < lines.len() {
             result.push_str(&format!(" {:>4} │ {}\n", idx + 1, lines[idx]));
-            let indent = if self.columna > 0 { self.columna - 1 } else { 0 };
-            result.push_str(&format!("     │ {:indent$}↑ {}\n", "", self.mensaje, indent = indent));
+            let indent = if self.columna > 0 {
+                self.columna - 1
+            } else {
+                0
+            };
+            result.push_str(&format!(
+                "     │ {:indent$}↑ {}\n",
+                "",
+                self.mensaje,
+                indent = indent
+            ));
         } else {
             result.push_str(&format!(" {:>4} │ (fin del archivo)\n", self.linea));
         }
@@ -133,6 +176,8 @@ pub fn emoji_para(tipo: &ErrorTipo) -> &'static str {
         ErrorTipo::ErrorDePropiedad => "🏷️",
         ErrorTipo::ErrorSemantico => "🧠",
         ErrorTipo::ErrorInterno => "⚙️",
+        ErrorTipo::LimiteArchivo { .. } => "📦",
+        ErrorTipo::DemasiadaAnidacion { .. } => "🔄",
     }
 }
 
@@ -145,6 +190,8 @@ pub fn categoria_educativa(tipo: &ErrorTipo) -> &'static str {
         ErrorTipo::ErrorDePropiedad => "Pertenencia",
         ErrorTipo::ErrorSemantico => "Significado",
         ErrorTipo::ErrorInterno => "Interno",
+        ErrorTipo::LimiteArchivo { .. } => "Tamaño",
+        ErrorTipo::DemasiadaAnidacion { .. } => "Anidación",
     }
 }
 

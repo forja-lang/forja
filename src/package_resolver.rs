@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 pub struct PackageResolver {
     /// Directorio del proyecto actual
@@ -31,7 +31,9 @@ impl PackageResolver {
 
         // 1. Ruta absoluta o relativa directa
         if path.is_absolute() {
-            if path.exists() { return Some(path.to_path_buf()); }
+            if path.exists() {
+                return Some(path.to_path_buf());
+            }
         }
 
         // 2. Relativa al directorio del proyecto
@@ -79,7 +81,6 @@ impl PackageResolver {
             return Some(pkg);
         }
 
-
         None
     }
 
@@ -87,18 +88,21 @@ impl PackageResolver {
     pub fn instalar_dependencia(&mut self, nombre: &str, version: &str) -> Result<(), String> {
         let pkg_dir = self.global_cache.join(nombre).join(version);
         if pkg_dir.exists() {
-            self.installed.insert(nombre.to_string(), version.to_string());
+            self.installed
+                .insert(nombre.to_string(), version.to_string());
             return Ok(());
         }
 
-        fs::create_dir_all(&pkg_dir)
-            .map_err(|e| format!("Error creando directorio: {}", e))?;
+        fs::create_dir_all(&pkg_dir).map_err(|e| format!("Error creando directorio: {}", e))?;
 
         // Buscar paquete builtin en stdlib (ej: stdlib/gui/gui.fa)
         let mut base_dir = self.project_dir.clone();
         let mut builtin_src = None;
         loop {
-            let candidate = base_dir.join("stdlib").join(nombre).join(format!("{}.fa", nombre));
+            let candidate = base_dir
+                .join("stdlib")
+                .join(nombre)
+                .join(format!("{}.fa", nombre));
             if candidate.exists() {
                 builtin_src = Some(candidate);
                 break;
@@ -112,12 +116,14 @@ impl PackageResolver {
             let dest = pkg_dir.join(format!("{}.fa", nombre));
             fs::copy(&src, &dest)
                 .map_err(|e| format!("Error copiando paquete builtin '{}': {}", nombre, e))?;
-            self.installed.insert(nombre.to_string(), version.to_string());
+            self.installed
+                .insert(nombre.to_string(), version.to_string());
             return Ok(());
         }
 
         // Si no es builtin, simular descarga — en producción descargaría del registry
-        self.installed.insert(nombre.to_string(), version.to_string());
+        self.installed
+            .insert(nombre.to_string(), version.to_string());
         Ok(())
     }
 }

@@ -39,8 +39,7 @@ impl ForjaConfig {
     pub fn save(&self, path: &Path) -> Result<(), String> {
         let content = serde_json::to_string_pretty(self)
             .map_err(|e| format!("Error serializando config: {}", e))?;
-        fs::write(path, content)
-            .map_err(|e| format!("Error escribiendo {}: {}", path.display(), e))
+        fs::write(path, content).map_err(|e| format!("Error escribiendo {}: {}", path.display(), e))
     }
 
     pub fn new(nombre: &str, version: &str) -> Self {

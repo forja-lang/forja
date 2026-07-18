@@ -20,9 +20,18 @@ pub enum Uop {
     DeclareVar(usize),
 
     // === Arithmetic (ya especializados o atómicos) ===
-    Add, Sub, Mul, Div,
-    AddInt, AddFloat, SubInt, SubFloat,
-    MulInt, MulFloat, DivInt, DivFloat,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    AddInt,
+    AddFloat,
+    SubInt,
+    SubFloat,
+    MulInt,
+    MulFloat,
+    DivInt,
+    DivFloat,
 
     // === Control flow ===
     Jump(usize),
@@ -42,39 +51,51 @@ pub enum Uop {
 
     // === Array/Map operations ===
     ArrayNew(usize),
-    ArrayGet, ArraySet, ArrayLen,
-    MapNew(usize), MapGet, MapSet,
+    ArrayGet,
+    ArraySet,
+    ArrayLen,
+    MapNew(usize),
+    MapGet,
+    MapSet,
 
     // === Built-in functions (stdlib) ===
-    ParseInt,        // pop string, push i64
-    TiempoActual,    // push current unix timestamp
+    ParseInt,     // pop string, push i64
+    TiempoActual, // push current unix timestamp
 
     // === I/O ===
-    Print, ReadLine,
+    Print,
+    ReadLine,
 
     // === Propagación de errores ===
     Try,
 
     // === Comparison/Lógica ===
-    Igual, Diferente, Menor, Mayor, MenorIgual, MayorIgual,
-    Y, O, No,
+    Igual,
+    Diferente,
+    Menor,
+    Mayor,
+    MenorIgual,
+    MayorIgual,
+    Y,
+    O,
+    No,
 
     // === Label (marcador, no ejecuta) ===
     Label(usize),
 
     // === Micro-operaciones de expansión (NUEVAS) ===
     /// Prepara el frame para llamada a función
-    PrepCall(usize),       // usize = número de args
+    PrepCall(usize), // usize = número de args
     /// Resuelve método en objeto
     ResolveMethod(String),
     /// Carga self en tope de stack
     LoadSelf,
     /// Almacena un valor en variable por índice (con pop implícito)
-    StorePop(usize),       // pop + store en uno
+    StorePop(usize), // pop + store en uno
     /// Carga y deja en tope (load + push combinado)
-    LoadPush(usize),       // load + push fusionado
+    LoadPush(usize), // load + push fusionado
     /// Declara variable con valor inicial
-    DeclareInit(usize),    // declara y asigna en un solo uop
+    DeclareInit(usize), // declara y asigna en un solo uop
 
     // === Optimizaciones de uops ===
     /// vars[a] += 1
@@ -579,12 +600,8 @@ pub fn optimizar_uops(uops: &[Uop]) -> Vec<Uop> {
     while i < uops.len() {
         // Detectar patrones de 4 uops: LoadIdx(a), PushEntero(n), Add/Sub, StoreIdx(a)
         if i + 3 < uops.len() {
-            if let (
-                Uop::LoadIdx(a),
-                Uop::PushEntero(n),
-                Uop::Add,
-                Uop::StoreIdx(b),
-            ) = (&uops[i], &uops[i + 1], &uops[i + 2], &uops[i + 3])
+            if let (Uop::LoadIdx(a), Uop::PushEntero(n), Uop::Add, Uop::StoreIdx(b)) =
+                (&uops[i], &uops[i + 1], &uops[i + 2], &uops[i + 3])
             {
                 if a == b && *n == 1 {
                     // ¡Patrón detectado! Incremento en 1: i = i + 1
@@ -599,12 +616,8 @@ pub fn optimizar_uops(uops: &[Uop]) -> Vec<Uop> {
                 }
             }
             // Patrón: LoadIdx(a), PushEntero(n), Sub, StoreIdx(a) → i = i - n
-            if let (
-                Uop::LoadIdx(a),
-                Uop::PushEntero(n),
-                Uop::Sub,
-                Uop::StoreIdx(b),
-            ) = (&uops[i], &uops[i + 1], &uops[i + 2], &uops[i + 3])
+            if let (Uop::LoadIdx(a), Uop::PushEntero(n), Uop::Sub, Uop::StoreIdx(b)) =
+                (&uops[i], &uops[i + 1], &uops[i + 2], &uops[i + 3])
             {
                 if a == b {
                     optimizados.push(Uop::SubAssign(*a, *n));

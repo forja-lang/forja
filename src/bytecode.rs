@@ -1,8 +1,11 @@
 #![allow(dead_code)]
-use std::sync::Arc;
 use crate::ast::*;
 use crate::error::ErrorForja;
+use std::sync::Arc;
 
+/// Profundidad máxima de recursión para la generación de bytecode.
+/// Previene stack overflow al recorrer ASTs con expresiones muy anidadas.
+const MAX_AST_PROFUNDIDAD: u32 = 10000;
 
 /// Builtins conocidos de Forja — usados por CallBuiltin para evitar hash lookup
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -31,7 +34,7 @@ pub enum Opcode {
     PushNulo,
     Pop,
     Dup,
-    
+
     // === Pattern Matching (enum destructuring) ===
     /// Verifica que el tag del enum en tope de pila sea igual al índice
     /// No modifica la pila (solo empuja booleano)
@@ -55,9 +58,9 @@ pub enum Opcode {
     DeclareIdxGlobal(usize, bool), // (índice global, mutable)
 
     // === Opcodes fusionados (opcode fusion — eliminan push/pop) ===
-    DeclareEnteroOp(usize, i64),   // fusion: PushEntero(n) + DeclareIdx(idx, _)
+    DeclareEnteroOp(usize, i64), // fusion: PushEntero(n) + DeclareIdx(idx, _)
     DeclareBooleanoOp(usize, bool), // fusion: PushBooleano(b) + DeclareIdx(idx, _)
-    StoreEnteroOp(usize, i64),     // fusion: PushEntero(n) + StoreIdx(idx)
+    StoreEnteroOp(usize, i64),   // fusion: PushEntero(n) + StoreIdx(idx)
 
     // === Aritméticas ===
     Add,
@@ -87,10 +90,10 @@ pub enum Opcode {
     MayorIgualFloat,
 
     // === Opcodes de carga/guardado especializados por tipo ===
-    LoadIdxEntero(usize),    // La variable en idx siempre es entero
-    LoadIdxFloat(usize),     // La variable en idx siempre es float
-    StoreIdxEntero(usize),   // Guardar entero directo en idx
-    StoreIdxFloat(usize),    // Guardar float directo en idx
+    LoadIdxEntero(usize),  // La variable en idx siempre es entero
+    LoadIdxFloat(usize),   // La variable en idx siempre es float
+    StoreIdxEntero(usize), // Guardar entero directo en idx
+    StoreIdxFloat(usize),  // Guardar float directo en idx
 
     // === Comparaciones ===
     Igual,
@@ -120,32 +123,31 @@ pub enum Opcode {
     Return,
 
     // === POO ===
-    NewObject(Arc<str>),                // crear instancia de clase
-    SetField(Arc<str>),                 // este.campo = pop()
-    GetField(Arc<str>),                 // push(este.campo)
-    CallMethod(Arc<str>, usize),        // obj.metodo(args) - resuelve clase en runtime
+    NewObject(Arc<str>),         // crear instancia de clase
+    SetField(Arc<str>),          // este.campo = pop()
+    GetField(Arc<str>),          // push(este.campo)
+    CallMethod(Arc<str>, usize), // obj.metodo(args) - resuelve clase en runtime
 
     // === Arrays ===
-    ArrayNew(usize),                  // crear array con N elementos (pop N de la pila)
-    ArrayGet,                         // pop índice, pop array, push valor
-    ArraySet,                         // pop valor, pop índice, pop array (asigna)
-    ArrayLen,                         // pop array, push longitud
+    ArrayNew(usize), // crear array con N elementos (pop N de la pila)
+    ArrayGet,        // pop índice, pop array, push valor
+    ArraySet,        // pop valor, pop índice, pop array (asigna)
+    ArrayLen,        // pop array, push longitud
 
     // === Mapas ===
-    MapNew(usize),                    // crear mapa con N pares
-    MapGet,                           // pop clave, pop mapa, push valor
-    MapSet,                           // pop valor, pop clave, push mapa actualizado
+    MapNew(usize), // crear mapa con N pares
+    MapGet,        // pop clave, pop mapa, push valor
+    MapSet,        // pop valor, pop clave, push mapa actualizado
 
     // === Built-in functions (stdlib) ===
-    ParseInt,        // pop string from stack, push i64
-    TiempoActual,    // push current unix timestamp (i64)
+    ParseInt,     // pop string from stack, push i64
+    TiempoActual, // push current unix timestamp (i64)
 
     // === I/O ===
     Print,
     ReadLine,
 
     // === SUPERINSTRUCTIONS (Fase 1a — fusiones de pares de opcodes) ===
-
     /// LoadIdx(idx) + PushEntero(n) + Add → fusionado: carga var + suma entero constante
     LoadAddInt(usize, i64),
 
@@ -245,17 +247,17 @@ pub enum Opcode {
     // === CALL ESPECIALIZADOS (quickening) ===
     /// Llamada directa por índice de función (sin hash lookup)
     /// Creado en quickening, no serializable.
-    CallDirect(usize, usize),    // (función_index, nargs)
+    CallDirect(usize, usize), // (función_index, nargs)
 
     /// Llamada a built-in conocido (sin hash lookup por nombre)
     /// Creado en quickening, no serializable.
-    CallBuiltin(BuiltinKind, usize),  // (builtin_kind, nargs)
+    CallBuiltin(BuiltinKind, usize), // (builtin_kind, nargs)
 
     /// Llamada a método con inline cache
     /// El method_sym_id es el valor interno de SymId (u32) para comparación O(1);
     /// el IC (clase_id, método_idx) se maneja aparte en el vector ic_callmethod.
     /// Creado en quickening, no serializable.
-    CallMethodCached(u32, usize),   // (method_sym_id, nargs)
+    CallMethodCached(u32, usize), // (method_sym_id, nargs)
 
     // === Opcodes para Exacto (BigDecimal) ===
     /// Push valor Exacto al stack (coeff, scale)
@@ -320,7 +322,11 @@ pub enum Opcode {
 
 /// Design by Contract: tipo de contrato
 #[derive(Debug, Clone, PartialEq)]
-pub enum ContractType { Pre, Post, Inv }
+pub enum ContractType {
+    Pre,
+    Post,
+    Inv,
+}
 
 /// Contrato compilado a bytecode (condición expresada como micro-opcodes)
 #[derive(Debug, Clone)]
@@ -359,6 +365,10 @@ pub struct BytecodeGenerator {
     pub hilo_counter: usize,
     /// Clases que definen constructor
     clases_con_constructor: std::collections::HashSet<String>,
+
+    /// Profundidad actual de recursión al generar expresiones.
+    /// Previene stack overflow en ASTs con expresiones muy anidadas.
+    profundidad_actual: u32,
 }
 
 impl BytecodeGenerator {
@@ -375,6 +385,7 @@ impl BytecodeGenerator {
             channel_counter: 0,
             hilo_counter: 0,
             clases_con_constructor: std::collections::HashSet::new(),
+            profundidad_actual: 0,
         }
     }
 
@@ -428,40 +439,64 @@ impl BytecodeGenerator {
             // Aritméticas: Entero-Entero
             (Operador::Suma, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::AddInt),
             (Operador::Resta, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::SubInt),
-            (Operador::Multiplicacion, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::MulInt),
+            (Operador::Multiplicacion, Some(Tipo::Entero), Some(Tipo::Entero)) => {
+                Some(Opcode::MulInt)
+            }
             (Operador::Division, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::DivInt),
             // Aritméticas: Decimal-Decimal
             (Operador::Suma, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::AddFloat),
             (Operador::Resta, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::SubFloat),
-            (Operador::Multiplicacion, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MulFloat),
-            (Operador::Division, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::DivFloat),
+            (Operador::Multiplicacion, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
+                Some(Opcode::MulFloat)
+            }
+            (Operador::Division, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
+                Some(Opcode::DivFloat)
+            }
             // Aritméticas: mixto Entero-Decimal → Decimal
             (Operador::Suma, Some(Tipo::Entero), Some(Tipo::Decimal))
             | (Operador::Suma, Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Opcode::AddFloat),
             (Operador::Resta, Some(Tipo::Entero), Some(Tipo::Decimal))
             | (Operador::Resta, Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Opcode::SubFloat),
             (Operador::Multiplicacion, Some(Tipo::Entero), Some(Tipo::Decimal))
-            | (Operador::Multiplicacion, Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Opcode::MulFloat),
+            | (Operador::Multiplicacion, Some(Tipo::Decimal), Some(Tipo::Entero)) => {
+                Some(Opcode::MulFloat)
+            }
             (Operador::Division, Some(Tipo::Entero), Some(Tipo::Decimal))
-            | (Operador::Division, Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Opcode::DivFloat),
+            | (Operador::Division, Some(Tipo::Decimal), Some(Tipo::Entero)) => {
+                Some(Opcode::DivFloat)
+            }
             // Comparaciones: Entero-Entero
-            (Operador::IgualIgual, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::IgualInt),
+            (Operador::IgualIgual, Some(Tipo::Entero), Some(Tipo::Entero)) => {
+                Some(Opcode::IgualInt)
+            }
             (Operador::Menor, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::MenorInt),
             (Operador::Mayor, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::MayorInt),
             // Comparaciones: Decimal-Decimal
-            (Operador::IgualIgual, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::IgualFloat),
-            (Operador::Diferente, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::DiferenteFloat),
+            (Operador::IgualIgual, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
+                Some(Opcode::IgualFloat)
+            }
+            (Operador::Diferente, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
+                Some(Opcode::DiferenteFloat)
+            }
             (Operador::Menor, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MenorFloat),
             (Operador::Mayor, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MayorFloat),
-            (Operador::MenorIgual, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MenorIgualFloat),
-            (Operador::MayorIgual, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MayorIgualFloat),
+            (Operador::MenorIgual, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
+                Some(Opcode::MenorIgualFloat)
+            }
+            (Operador::MayorIgual, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
+                Some(Opcode::MayorIgualFloat)
+            }
             // Aritméticas: Exacto-Exacto
             (Operador::Suma, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::AddExact),
             (Operador::Resta, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::SubExact),
-            (Operador::Multiplicacion, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::MulExact),
+            (Operador::Multiplicacion, Some(Tipo::Exacto), Some(Tipo::Exacto)) => {
+                Some(Opcode::MulExact)
+            }
             (Operador::Division, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::DivExact),
             // Comparaciones: Exacto-Exacto
-            (Operador::IgualIgual, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::IgualExact),
+            (Operador::IgualIgual, Some(Tipo::Exacto), Some(Tipo::Exacto)) => {
+                Some(Opcode::IgualExact)
+            }
             (Operador::Menor, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::MenorExact),
             (Operador::Mayor, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::MayorExact),
             // Sin información de tipos → usar genérico
@@ -629,7 +664,10 @@ impl BytecodeGenerator {
     pub fn generar(&mut self, programa: &Programa) -> Result<Vec<Opcode>, Vec<ErrorForja>> {
         self.clases_con_constructor.clear();
         for decl in &programa.declaraciones {
-            if let Declaracion::Clase { nombre, metodos, .. } = decl {
+            if let Declaracion::Clase {
+                nombre, metodos, ..
+            } = decl
+            {
                 for metodo in metodos {
                     if metodo.nombre.is_empty() || metodo.nombre == "nuevo" {
                         self.clases_con_constructor.insert(nombre.clone());
@@ -648,24 +686,35 @@ impl BytecodeGenerator {
                 Declaracion::Funcion { .. } => {
                     nuevas_funciones.push(decl.clone());
                 }
-                Declaracion::Clase { nombre, metodos, .. } => {
+                Declaracion::Clase {
+                    nombre, metodos, ..
+                } => {
                     for metodo in metodos {
-                        let params: Vec<crate::ast::Parametro> = metodo.parametros.iter().map(|p| {
-                            crate::ast::Parametro {
+                        let params: Vec<crate::ast::Parametro> = metodo
+                            .parametros
+                            .iter()
+                            .map(|p| crate::ast::Parametro {
                                 nombre: p.nombre.clone(),
                                 prestado: p.prestado,
                                 mutable: p.mutable,
                                 tipo: None,
-                            }
-                        }).collect();
+                            })
+                            .collect();
                         // Si el método no tiene nombre (constructor), usar "nuevo"
-                        let nombre_metodo = if metodo.nombre.is_empty() { "nuevo" } else { &metodo.nombre };
+                        let nombre_metodo = if metodo.nombre.is_empty() {
+                            "nuevo"
+                        } else {
+                            &metodo.nombre
+                        };
                         let func_decl = Declaracion::Funcion {
                             nombre: format!("{}.{}", nombre, nombre_metodo),
                             parametros_tipo: vec![],
                             parametros: {
                                 let mut p = vec![crate::ast::Parametro {
-                                    nombre: "self".to_string(), prestado: false, mutable: false, tipo: None
+                                    nombre: "self".to_string(),
+                                    prestado: false,
+                                    mutable: false,
+                                    tipo: None,
                                 }];
                                 p.extend(params);
                                 p
@@ -683,23 +732,32 @@ impl BytecodeGenerator {
                     }
                     globales.push(decl);
                 }
-                Declaracion::Implementacion { clase_nombre, metodos, .. } => {
+                Declaracion::Implementacion {
+                    clase_nombre,
+                    metodos,
+                    ..
+                } => {
                     // Registrar métodos de implementación de rasgo como "Clase.metodo"
                     for metodo in metodos {
-                        let params: Vec<crate::ast::Parametro> = metodo.parametros.iter().map(|p| {
-                            crate::ast::Parametro {
+                        let params: Vec<crate::ast::Parametro> = metodo
+                            .parametros
+                            .iter()
+                            .map(|p| crate::ast::Parametro {
                                 nombre: p.nombre.clone(),
                                 prestado: p.prestado,
                                 mutable: p.mutable,
                                 tipo: None,
-                            }
-                        }).collect();
+                            })
+                            .collect();
                         let func_decl = Declaracion::Funcion {
                             nombre: format!("{}.{}", clase_nombre, metodo.nombre),
                             parametros_tipo: vec![],
                             parametros: {
                                 let mut p = vec![crate::ast::Parametro {
-                                    nombre: "self".to_string(), prestado: false, mutable: false, tipo: None
+                                    nombre: "self".to_string(),
+                                    prestado: false,
+                                    mutable: false,
+                                    tipo: None,
                                 }];
                                 p.extend(params);
                                 p
@@ -822,7 +880,13 @@ impl BytecodeGenerator {
 
     fn generar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { mutable, nombre, valor, tipo, .. } => {
+            Declaracion::Variable {
+                mutable,
+                nombre,
+                valor,
+                tipo,
+                ..
+            } => {
                 // Track variable index for contract compilation
                 self.var_indices.entry(nombre.clone()).or_insert_with(|| {
                     let idx = self.var_counter;
@@ -843,17 +907,18 @@ impl BytecodeGenerator {
                                 Expresion::LiteralNumero(_) => {
                                     self.emitir(Opcode::EnteroAExacto);
                                 }
-                                Expresion::Unaria { operador: OperadorUnario::Negar, expr } => {
-                                    match expr.as_ref() {
-                                        Expresion::LiteralDecimal(_) => {
-                                            self.emitir(Opcode::DecimalAExacto);
-                                        }
-                                        Expresion::LiteralNumero(_) => {
-                                            self.emitir(Opcode::EnteroAExacto);
-                                        }
-                                        _ => {}
+                                Expresion::Unaria {
+                                    operador: OperadorUnario::Negar,
+                                    expr,
+                                } => match expr.as_ref() {
+                                    Expresion::LiteralDecimal(_) => {
+                                        self.emitir(Opcode::DecimalAExacto);
                                     }
-                                }
+                                    Expresion::LiteralNumero(_) => {
+                                        self.emitir(Opcode::EnteroAExacto);
+                                    }
+                                    _ => {}
+                                },
                                 _ => {}
                             }
                         }
@@ -869,19 +934,29 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::Store(Arc::from(nombre.as_str())));
             }
 
-            Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } => {
+            Declaracion::AsignacionMiembro {
+                objeto,
+                miembro,
+                valor,
+                ..
+            } => {
                 // Generar el valor primero, luego el objeto, luego SetField
                 self.generar_expresion(valor);
                 self.generar_expresion(objeto);
                 self.emitir(Opcode::SetField(Arc::from(miembro.as_str())));
             }
 
-            Declaracion::AsignacionIndex { nombre, indice, valor, .. } => {
+            Declaracion::AsignacionIndex {
+                nombre,
+                indice,
+                valor,
+                ..
+            } => {
                 // arr[i] = val → push val, push Load(arr), push indice, ArraySet, Store(arr)
                 // Si nombre contiene un punto (ej: "self.elementos"), es acceso a miembro
                 if let Some(dot_pos) = nombre.find('.') {
                     let obj_nombre = &nombre[..dot_pos];
-                    let campo = &nombre[dot_pos+1..];
+                    let campo = &nombre[dot_pos + 1..];
                     // Generar: val, Load(obj), GetField(campo), indice, ArraySet, Load(obj), SetField(campo)
                     // Stack: [..., val] → [..., val, obj] → [..., val, array] → [..., val, array, indice]
                     // ArraySet: pops indice, array, val; set array[indice]=val; push modified_array
@@ -902,9 +977,19 @@ impl BytecodeGenerator {
                 }
             }
 
-            Declaracion::Funcion { nombre, parametros, cuerpo, precondiciones, postcondiciones, .. } => {
+            Declaracion::Funcion {
+                nombre,
+                parametros,
+                cuerpo,
+                precondiciones,
+                postcondiciones,
+                ..
+            } => {
                 // Emitir FunctionDef con nombres de parámetros
-                let param_names: Vec<Arc<str>> = parametros.iter().map(|p| Arc::from(p.nombre.as_str())).collect();
+                let param_names: Vec<Arc<str>> = parametros
+                    .iter()
+                    .map(|p| Arc::from(p.nombre.as_str()))
+                    .collect();
                 self.emitir(Opcode::FunctionDef(Arc::from(nombre.as_str()), param_names));
 
                 // Inicializar tracking de variables para compilación de contratos
@@ -962,15 +1047,22 @@ impl BytecodeGenerator {
             }
 
             Declaracion::Importar(_) => {}
-            Declaracion::Enum { nombre, variantes, .. } => {
+            Declaracion::Enum {
+                nombre, variantes, ..
+            } => {
                 // Almacenar información de variantes para pattern matching
-                let var_info: Vec<(String, Vec<Tipo>)> = variantes.iter()
+                let var_info: Vec<(String, Vec<Tipo>)> = variantes
+                    .iter()
                     .map(|v| (v.nombre.clone(), v.tipos.clone()))
                     .collect();
                 self.enum_variantes.insert(nombre.clone(), var_info);
             }
 
-            Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+            Declaracion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
                 let label_else = self.nueva_label();
                 let label_end = self.nueva_label();
 
@@ -1004,7 +1096,9 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::Label(label_fin));
             }
 
-            Declaracion::Cuando { condicion, cuerpo, .. } => {
+            Declaracion::Cuando {
+                condicion, cuerpo, ..
+            } => {
                 let label_end = self.nueva_label();
                 self.generar_expresion(condicion);
                 self.emitir(Opcode::JumpSiFalso(label_end));
@@ -1012,11 +1106,25 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::Label(label_end));
             }
 
-            Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
+            Declaracion::Para {
+                inicializacion,
+                condicion,
+                incremento,
+                bloque,
+            } => {
                 // Optimizar: for i in 0..N
                 if let Some(cond) = condicion {
-                    if let Expresion::Binaria { izquierda, operador: Operador::Menor, derecha } = cond.as_ref() {
-                        if let Expresion::Identificador { nombre: ref var_name, .. } = izquierda.as_ref() {
+                    if let Expresion::Binaria {
+                        izquierda,
+                        operador: Operador::Menor,
+                        derecha,
+                    } = cond.as_ref()
+                    {
+                        if let Expresion::Identificador {
+                            nombre: ref var_name,
+                            ..
+                        } = izquierda.as_ref()
+                        {
                             let label_inicio = self.nueva_label();
                             let label_fin = self.nueva_label();
 
@@ -1143,7 +1251,11 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::Pop);
             }
 
-            Declaracion::AsignacionMultiple { variables, mutable, valor } => {
+            Declaracion::AsignacionMultiple {
+                variables,
+                mutable,
+                valor,
+            } => {
                 // CASO ESPECIAL: canal() → crea canal mpsc real, asigna tx y rx
                 if let Expresion::CanalNuevo = valor.as_ref() {
                     // ChannelNew empuja [tx_obj, rx_obj] al stack
@@ -1171,12 +1283,26 @@ impl BytecodeGenerator {
     }
 
     fn generar_expresion(&mut self, expr: &Expresion) {
+        // Verificar profundidad para prevenir stack overflow
+        self.profundidad_actual += 1;
+        if self.profundidad_actual > MAX_AST_PROFUNDIDAD {
+            self.profundidad_actual -= 1;
+            self.errores.push(ErrorForja::new(
+                crate::error::ErrorTipo::ErrorSintactico, 0, 0,
+                "Expresión demasiado grande: se excedió la profundidad máxima en generación de bytecode.",
+                "Simplificá la expresión dividiéndola en partes más pequeñas.",
+            ));
+            self.emitir(Opcode::PushNulo);
+            return;
+        }
         match expr {
             Expresion::LiteralNumero(n) => self.emitir(Opcode::PushEntero(*n)),
             Expresion::LiteralDecimal(d) => self.emitir(Opcode::PushDecimal(*d)),
             Expresion::LiteralTexto(s) => self.emitir(Opcode::PushTexto(Arc::from(s.as_str()))),
             Expresion::LiteralBooleano(b) => self.emitir(Opcode::PushBooleano(*b)),
-            Expresion::LiteralExacto(coeff, scale) => self.emitir(Opcode::PushExacto(*coeff, *scale)),
+            Expresion::LiteralExacto(coeff, scale) => {
+                self.emitir(Opcode::PushExacto(*coeff, *scale))
+            }
             Expresion::LiteralNulo => self.emitir(Opcode::PushNulo),
 
             Expresion::Identificador { nombre, .. } => {
@@ -1186,7 +1312,8 @@ impl BytecodeGenerator {
                     "falso" => self.emitir(Opcode::PushBooleano(false)),
                     "None" => {
                         // None es Opcion con tipo="none": creamos NewObject y dejamos como resultado
-                        let tmp_nombre: Arc<str> = Arc::from(format!("__none_{}", self.label_counter).as_str());
+                        let tmp_nombre: Arc<str> =
+                            Arc::from(format!("__none_{}", self.label_counter).as_str());
                         self.label_counter += 1;
                         // Declarar temp var para el objeto
                         self.emitir(Opcode::NewObject(Arc::from("Opcion")));
@@ -1204,7 +1331,11 @@ impl BytecodeGenerator {
                 }
             }
 
-            Expresion::Binaria { izquierda, operador, derecha } => {
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
                 self.emitir_op_binaria(operador, izquierda, derecha);
             }
 
@@ -1294,7 +1425,6 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::Try);
             }
 
-
             Expresion::Referencia { expr: e, .. } => {
                 self.generar_expresion(e);
             }
@@ -1328,7 +1458,7 @@ impl BytecodeGenerator {
                             self.emitir(Opcode::Igual);
                             self.emitir(Opcode::JumpSiFalso(label_next));
                             self.emitir(Opcode::Pop); // remover input de la pila
-                            // Ejecutar cuerpo dejando el último valor en la pila
+                                                      // Ejecutar cuerpo dejando el último valor en la pila
                             self.generar_cuerpo_match(&brazo.cuerpo);
                             self.emitir(Opcode::Jump(label_end));
                             self.emitir(Opcode::Label(label_next));
@@ -1360,7 +1490,7 @@ impl BytecodeGenerator {
                             let tipo_field = match nombre_ctor.as_str() {
                                 "Some" | "Alguno" | "Algo" => Some("some"),
                                 "None" | "Ninguno" => Some("none"),
-                                "Ok"   => Some("ok"),
+                                "Ok" => Some("ok"),
                                 "Error" | "Err" => Some("error"),
                                 _ => None,
                             };
@@ -1399,13 +1529,16 @@ impl BytecodeGenerator {
                                     let label_next = self.nueva_label();
                                     self.emitir(Opcode::JumpSiFalso(label_next));
                                     // Matcheó: extraer "valor" del objeto original (stack: [obj])
-                                    if let Some(Patron::Variable(var_nombre)) = subpatrones.first() {
+                                    if let Some(Patron::Variable(var_nombre)) = subpatrones.first()
+                                    {
                                         self.emitir(Opcode::GetField(Arc::from("valor")));
-                                        self.var_indices.entry(var_nombre.clone()).or_insert_with(|| {
-                                            let idx = self.var_counter;
-                                            self.var_counter += 1;
-                                            idx
-                                        });
+                                        self.var_indices.entry(var_nombre.clone()).or_insert_with(
+                                            || {
+                                                let idx = self.var_counter;
+                                                self.var_counter += 1;
+                                                idx
+                                            },
+                                        );
                                         self.emitir(Opcode::Store(Arc::from(var_nombre.as_str())));
                                     } else {
                                         self.emitir(Opcode::Pop);
@@ -1426,14 +1559,13 @@ impl BytecodeGenerator {
                                 }
                             } else {
                                 // Constructor con subpatrones: extraer campos con CheckTag
-                                let tag = self.obtener_tag_constructor(nombre_ctor)
-                                    .unwrap_or(0);
-                                
+                                let tag = self.obtener_tag_constructor(nombre_ctor).unwrap_or(0);
+
                                 if !es_ultimo {
                                     self.emitir(Opcode::Dup);
                                 }
                                 self.emitir(Opcode::CheckTag(tag));
-                                
+
                                 if !es_ultimo {
                                     let label_next = self.nueva_label();
                                     self.emitir(Opcode::JumpSiFalso(label_next));
@@ -1459,7 +1591,10 @@ impl BytecodeGenerator {
                 // TODO: implementar bytecode para closures
                 let nombre = Arc::from(format!("__closure_{}", self.label_counter).as_str());
                 self.label_counter += 1;
-                let param_names: Vec<Arc<str>> = parametros.iter().map(|p| Arc::from(p.nombre.as_str())).collect();
+                let param_names: Vec<Arc<str>> = parametros
+                    .iter()
+                    .map(|p| Arc::from(p.nombre.as_str()))
+                    .collect();
                 self.emitir(Opcode::FunctionDef(nombre, param_names));
                 for d in cuerpo {
                     self.generar_declaracion(d);
@@ -1526,7 +1661,11 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::Dup);
                 self.emitir(Opcode::Store(Arc::from(variable.as_str())));
             }
-            Expresion::AsignacionCampo { objeto, campo, valor } => {
+            Expresion::AsignacionCampo {
+                objeto,
+                campo,
+                valor,
+            } => {
                 // obj.campo = valor → generar objeto, luego valor, luego SetField
                 // Duplicar valor para retornarlo como expresión
                 self.generar_expresion(valor);
@@ -1610,7 +1749,11 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::Load(tmp));
             }
             Expresion::Resultado => {
-                if self.var_indices.contains_key("resultado") || self.opcodes.iter().any(|op| matches!(op, Opcode::Declare(name, _) if name.as_ref() == "resultado")) {
+                if self.var_indices.contains_key("resultado")
+                    || self.opcodes.iter().any(
+                        |op| matches!(op, Opcode::Declare(name, _) if name.as_ref() == "resultado"),
+                    )
+                {
                     self.emitir(Opcode::Load(Arc::from("resultado")));
                 } else {
                     // resultado en postcondición - no implementado en bytecode
@@ -1622,6 +1765,7 @@ impl BytecodeGenerator {
                 self.generar_expresion(expr);
             }
         }
+        self.profundidad_actual -= 1;
     }
 
     // ─── Design by Contract ─────────────────────────────────────────────────
@@ -1637,7 +1781,9 @@ impl BytecodeGenerator {
                     _ => vars.push(n.clone()),
                 }
             }
-            Expresion::Binaria { izquierda, derecha, .. } => {
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => {
                 vars.extend(self.encontrar_variables_en_expr(izquierda));
                 vars.extend(self.encontrar_variables_en_expr(derecha));
             }
@@ -1669,13 +1815,15 @@ impl BytecodeGenerator {
         match expr {
             Expresion::Anterior(inner) => {
                 if let Expresion::Identificador { nombre: n, .. } = inner.as_ref() {
-                    if n == var_name { return true; }
+                    if n == var_name {
+                        return true;
+                    }
                 }
                 false
             }
-            Expresion::Binaria { izquierda, derecha, .. } => {
-                self.tiene_anterior(izquierda, var_name) || self.tiene_anterior(derecha, var_name)
-            }
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => self.tiene_anterior(izquierda, var_name) || self.tiene_anterior(derecha, var_name),
             Expresion::Unaria { expr: e, .. } => self.tiene_anterior(e, var_name),
             Expresion::LlamadaFuncion { argumentos, .. } => {
                 argumentos.iter().any(|a| self.tiene_anterior(a, var_name))
@@ -1721,7 +1869,11 @@ impl BytecodeGenerator {
                 }
             }
 
-            Expresion::Binaria { izquierda, operador, derecha } => {
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
                 self.expresion_a_uops_inner(izquierda, output);
                 self.expresion_a_uops_inner(derecha, output);
                 match operador {
@@ -1821,13 +1973,17 @@ pub struct ModuleBytecode {
     pub opcodes: Vec<Opcode>,
     pub module_id: SymId,
     pub global_var_indices: Vec<(String, bool)>, // nombres de vars globales
-    pub function_sym_ids: Vec<SymId>,           // SymIds de funciones definidas
+    pub function_sym_ids: Vec<SymId>,            // SymIds de funciones definidas
 }
 
 impl BytecodeGenerator {
     /// Genera bytecode para un módulo completo, identificando variables globales
     /// y funciones que pertenecen al módulo.
-    pub fn generar_para_modulo(&mut self, programa: &Programa, module_id: SymId) -> Result<ModuleBytecode, Vec<ErrorForja>> {
+    pub fn generar_para_modulo(
+        &mut self,
+        programa: &Programa,
+        module_id: SymId,
+    ) -> Result<ModuleBytecode, Vec<ErrorForja>> {
         // Reiniciar estado del generador para este módulo
         self.opcodes.clear();
         self.var_indices.clear();
@@ -1840,27 +1996,51 @@ impl BytecodeGenerator {
         // Primera pasada: identificar variables globales y funciones
         for decl in &programa.declaraciones {
             match decl {
-                Declaracion::Variable { nombre, mutable, .. } => {
+                Declaracion::Variable {
+                    nombre, mutable, ..
+                } => {
                     // Esta es una variable global del módulo
                     global_var_indices.push((nombre.clone(), *mutable));
                 }
                 Declaracion::Funcion { nombre, .. } => {
                     // Generar un SymId temporal para la función
-                    let temp_id = SymId(nombre.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)));
+                    let temp_id = SymId(
+                        nombre
+                            .bytes()
+                            .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
+                    );
                     function_sym_ids.push(temp_id);
                 }
-                Declaracion::Clase { nombre, metodos, .. } => {
+                Declaracion::Clase {
+                    nombre, metodos, ..
+                } => {
                     for metodo in metodos {
-                        let nombre_metodo = if metodo.nombre.is_empty() { "nuevo" } else { &metodo.nombre };
+                        let nombre_metodo = if metodo.nombre.is_empty() {
+                            "nuevo"
+                        } else {
+                            &metodo.nombre
+                        };
                         let full_name = format!("{}.{}", nombre, nombre_metodo);
-                        let temp_id = SymId(full_name.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)));
+                        let temp_id = SymId(
+                            full_name
+                                .bytes()
+                                .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
+                        );
                         function_sym_ids.push(temp_id);
                     }
                 }
-                Declaracion::Implementacion { clase_nombre, metodos, .. } => {
+                Declaracion::Implementacion {
+                    clase_nombre,
+                    metodos,
+                    ..
+                } => {
                     for metodo in metodos {
                         let full_name = format!("{}.{}", clase_nombre, metodo.nombre);
-                        let temp_id = SymId(full_name.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)));
+                        let temp_id = SymId(
+                            full_name
+                                .bytes()
+                                .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
+                        );
                         function_sym_ids.push(temp_id);
                     }
                 }
@@ -1876,7 +2056,9 @@ impl BytecodeGenerator {
         let mut global_idx = 0usize;
         for op in raw {
             match &op {
-                Opcode::Declare(nombre, mutable) if global_var_indices.iter().any(|(g, _)| g == nombre.as_ref()) => {
+                Opcode::Declare(nombre, mutable)
+                    if global_var_indices.iter().any(|(g, _)| g == nombre.as_ref()) =>
+                {
                     opcodes.push(Opcode::DeclareIdxGlobal(global_idx, *mutable));
                     global_idx += 1;
                 }
@@ -1920,32 +2102,62 @@ impl ModuleBytecode {
             for j in (*range_start + 1)..*range_end {
                 match &self.opcodes[j] {
                     Opcode::LoadIdx(idx) | Opcode::StoreIdx(idx) | Opcode::DeclareIdx(idx, _) => {
-                        if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                        if idx.saturating_add(1) > max_idx {
+                            max_idx = idx.saturating_add(1);
+                        }
                     }
-                    Opcode::DeclareEnteroOp(idx, _) | Opcode::DeclareBooleanoOp(idx, _) | Opcode::StoreEnteroOp(idx, _)
-                        | Opcode::DeclareFloatOp(idx, _) | Opcode::StoreFloatOp(idx, _) => {
-                        if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                    Opcode::DeclareEnteroOp(idx, _)
+                    | Opcode::DeclareBooleanoOp(idx, _)
+                    | Opcode::StoreEnteroOp(idx, _)
+                    | Opcode::DeclareFloatOp(idx, _)
+                    | Opcode::StoreFloatOp(idx, _) => {
+                        if idx.saturating_add(1) > max_idx {
+                            max_idx = idx.saturating_add(1);
+                        }
                     }
-                    Opcode::LoadIdxEntero(idx) | Opcode::LoadIdxFloat(idx) | Opcode::StoreIdxEntero(idx) | Opcode::StoreIdxFloat(idx) => {
-                        if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                    Opcode::LoadIdxEntero(idx)
+                    | Opcode::LoadIdxFloat(idx)
+                    | Opcode::StoreIdxEntero(idx)
+                    | Opcode::StoreIdxFloat(idx) => {
+                        if idx.saturating_add(1) > max_idx {
+                            max_idx = idx.saturating_add(1);
+                        }
                     }
                     Opcode::LoadAddInt(idx, _) | Opcode::LoadAddFloat(idx, _) => {
-                        if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                        if idx.saturating_add(1) > max_idx {
+                            max_idx = idx.saturating_add(1);
+                        }
                     }
                     Opcode::LoadIdx2(a, b) => {
-                        if *a + 1 > max_idx { max_idx = *a + 1; }
-                        if *b + 1 > max_idx { max_idx = *b + 1; }
+                        if a.saturating_add(1) > max_idx {
+                            max_idx = a.saturating_add(1);
+                        }
+                        if b.saturating_add(1) > max_idx {
+                            max_idx = b.saturating_add(1);
+                        }
                     }
                     Opcode::LoadStoreIdx(a, b) => {
-                        if *a + 1 > max_idx { max_idx = *a + 1; }
-                        if *b + 1 > max_idx { max_idx = *b + 1; }
+                        if a.saturating_add(1) > max_idx {
+                            max_idx = a.saturating_add(1);
+                        }
+                        if b.saturating_add(1) > max_idx {
+                            max_idx = b.saturating_add(1);
+                        }
                     }
-                    Opcode::AddStoreIdx(idx) | Opcode::SubStoreIdx(idx) | Opcode::MulStoreIdx(idx)
-                        | Opcode::AddStoreFloat(idx) | Opcode::SubStoreFloat(idx) | Opcode::MulStoreFloat(idx) => {
-                        if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                    Opcode::AddStoreIdx(idx)
+                    | Opcode::SubStoreIdx(idx)
+                    | Opcode::MulStoreIdx(idx)
+                    | Opcode::AddStoreFloat(idx)
+                    | Opcode::SubStoreFloat(idx)
+                    | Opcode::MulStoreFloat(idx) => {
+                        if idx.saturating_add(1) > max_idx {
+                            max_idx = idx.saturating_add(1);
+                        }
                     }
                     Opcode::LoadJumpSiFalso(idx, _) | Opcode::LoadJump(idx, _) => {
-                        if *idx + 1 > max_idx { max_idx = *idx + 1; }
+                        if idx.saturating_add(1) > max_idx {
+                            max_idx = idx.saturating_add(1);
+                        }
                     }
                     _ => {}
                 }
@@ -2028,13 +2240,21 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
 
     // Primero, recolectar todos los strings
     let mut string_pool: Vec<String> = Vec::new();
-    let mut string_indices: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    let mut string_indices: std::collections::HashMap<String, u32> =
+        std::collections::HashMap::new();
 
     for op in opcodes {
         match op {
-            Opcode::PushTexto(s) | Opcode::Load(s) | Opcode::Store(s) | Opcode::Declare(s, _)
-            | Opcode::Call(s, _) | Opcode::FunctionDef(s, _) | Opcode::NewObject(s)
-            | Opcode::SetField(s) | Opcode::GetField(s) | Opcode::CallMethod(s, _) => {
+            Opcode::PushTexto(s)
+            | Opcode::Load(s)
+            | Opcode::Store(s)
+            | Opcode::Declare(s, _)
+            | Opcode::Call(s, _)
+            | Opcode::FunctionDef(s, _)
+            | Opcode::NewObject(s)
+            | Opcode::SetField(s)
+            | Opcode::GetField(s)
+            | Opcode::CallMethod(s, _) => {
                 let s_str: &str = s.as_ref();
                 if !string_indices.contains_key(s_str) {
                     let idx = string_pool.len() as u32;
@@ -2152,7 +2372,9 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             Opcode::XorSign(idx) => {
                 bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
-            Opcode::AddStoreFloat(idx) | Opcode::SubStoreFloat(idx) | Opcode::MulStoreFloat(idx) => {
+            Opcode::AddStoreFloat(idx)
+            | Opcode::SubStoreFloat(idx)
+            | Opcode::MulStoreFloat(idx) => {
                 bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
             // Fase A: Modulo2(src)
@@ -2520,7 +2742,7 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         195 => Some(Opcode::ThreadSpawn(Arc::from(""), 0)),
         196 => Some(Opcode::CallNative(Arc::from(""), 0)),
         197 => Some(Opcode::SocketPoll(Arc::from(""))),
-       _ => None,
+        _ => None,
     }
 }
 
@@ -2553,36 +2775,43 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
     let mut pos = 0;
 
     // Magic header
-    if &data[pos..pos+4] != b"FBC\0" {
+    if &data[pos..pos + 4] != b"FBC\0" {
         return None;
     }
     pos += 4;
 
     // Version
-if pos + 4 > data.len() { return None; }
-let version = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]);
-pos += 4;
-
-// Verificar checksum CRC32 (V-07: integridad del bytecode)
-if version >= 2 {
-    if data.len() < 12 { return None; } // header(8) + checksum(4)
-    let stored_checksum = u32::from_le_bytes([
-        data[data.len() - 4],
-        data[data.len() - 3],
-        data[data.len() - 2],
-        data[data.len() - 1],
-    ]);
-    // Calcular checksum sobre los datos sin el footer de checksum
-    let data_without_checksum = &data[..data.len() - 4];
-    let computed = crc32(data_without_checksum);
-    if stored_checksum != computed {
-        return None; // Datos corruptos o manipulados
+    if pos + 4 > data.len() {
+        return None;
     }
-}
+    let version = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
+    pos += 4;
+
+    // Verificar checksum CRC32 (V-07: integridad del bytecode)
+    if version >= 2 {
+        if data.len() < 12 {
+            return None;
+        } // header(8) + checksum(4)
+        let stored_checksum = u32::from_le_bytes([
+            data[data.len() - 4],
+            data[data.len() - 3],
+            data[data.len() - 2],
+            data[data.len() - 1],
+        ]);
+        // Calcular checksum sobre los datos sin el footer de checksum
+        let data_without_checksum = &data[..data.len() - 4];
+        let computed = crc32(data_without_checksum);
+        if stored_checksum != computed {
+            return None; // Datos corruptos o manipulados
+        }
+    }
 
     // String pool - con límite de seguridad
-    if pos + 4 > data.len() { return None; }
-    let num_strings = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+    if pos + 4 > data.len() {
+        return None;
+    }
+    let num_strings =
+        u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
     pos += 4;
 
     if num_strings > MAX_STRINGS {
@@ -2591,19 +2820,29 @@ if version >= 2 {
 
     let mut string_pool: Vec<String> = Vec::new();
     for _ in 0..num_strings {
-        if pos + 4 > data.len() { return None; }
-        let s_len = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+        if pos + 4 > data.len() {
+            return None;
+        }
+        let s_len =
+            u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         pos += 4;
-        if s_len > MAX_STRING_LENGTH { return None; }
-        if pos + s_len > data.len() { return None; }
-        let s = String::from_utf8(data[pos..pos+s_len].to_vec()).ok()?;
+        if s_len > MAX_STRING_LENGTH {
+            return None;
+        }
+        if pos + s_len > data.len() {
+            return None;
+        }
+        let s = String::from_utf8(data[pos..pos + s_len].to_vec()).ok()?;
         pos += s_len;
         string_pool.push(s);
     }
 
     // Opcodes - con límite de seguridad
-    if pos + 4 > data.len() { return None; }
-    let num_opcodes = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+    if pos + 4 > data.len() {
+        return None;
+    }
+    let num_opcodes =
+        u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
     pos += 4;
 
     if num_opcodes > MAX_OPCODES {
@@ -2612,28 +2851,57 @@ if version >= 2 {
 
     let mut opcodes = Vec::with_capacity(num_opcodes.min(MAX_OPCODES));
     for _ in 0..num_opcodes {
-        if pos >= data.len() { return None; }
+        if pos >= data.len() {
+            return None;
+        }
         let byte = data[pos];
         pos += 1;
 
         match byte {
-            0 => { // PushEntero
-                if pos + 8 > data.len() { return None; }
-                let n = i64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
-                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+            0 => {
+                // PushEntero
+                if pos + 8 > data.len() {
+                    return None;
+                }
+                let n = i64::from_le_bytes([
+                    data[pos],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
+                ]);
                 pos += 8;
                 opcodes.push(Opcode::PushEntero(n));
             }
-            1 => { // PushDecimal
-                if pos + 8 > data.len() { return None; }
-                let d = f64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
-                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+            1 => {
+                // PushDecimal
+                if pos + 8 > data.len() {
+                    return None;
+                }
+                let d = f64::from_le_bytes([
+                    data[pos],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
+                ]);
                 pos += 8;
                 opcodes.push(Opcode::PushDecimal(d));
             }
-            2 | 10 | 11 => { // PushTexto | Load | Store
-                if pos + 4 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            2 | 10 | 11 => {
+                // PushTexto | Load | Store
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 // Validación de seguridad: el índice debe estar dentro del string_pool
                 let s = string_pool_get(&string_pool, idx)?;
@@ -2643,9 +2911,14 @@ if version >= 2 {
                     _ => Opcode::Store(s),
                 });
             }
-            12 => { // Declare
-                if pos + 5 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            12 => {
+                // Declare
+                if pos + 5 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 let mutable = data[pos] == 1;
                 pos += 1;
@@ -2653,9 +2926,14 @@ if version >= 2 {
                 let s = string_pool_get(&string_pool, idx)?;
                 opcodes.push(Opcode::Declare(s, mutable));
             }
-            13 | 14 | 163 | 164 | 165 | 168 | 169 | 170 | 171 => { // Opcodes con payload de 1x u32 (index)
-                if pos + 4 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            13 | 14 | 163 | 164 | 165 | 168 | 169 | 170 | 171 => {
+                // Opcodes con payload de 1x u32 (index)
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 opcodes.push(match byte {
                     13 => Opcode::LoadIdx(idx),
@@ -2669,28 +2947,51 @@ if version >= 2 {
                     _ => Opcode::StoreIdxFloat(idx),
                 });
             }
-            15 => { // DeclareIdx
-                if pos + 5 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            15 => {
+                // DeclareIdx
+                if pos + 5 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 let mutable = data[pos] == 1;
                 pos += 1;
                 opcodes.push(Opcode::DeclareIdx(idx, mutable));
             }
-            160 => { // LoadAddInt
-                if pos + 12 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            160 => {
+                // LoadAddInt
+                if pos + 12 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let n = i64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
-                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+                let n = i64::from_le_bytes([
+                    data[pos],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
+                ]);
                 pos += 8;
                 opcodes.push(Opcode::LoadAddInt(idx, n));
             }
-            161 | 162 | 166 | 167 => { // Opcodes con payload de 2x u32 (idx/dst, target/idx)
-                if pos + 8 > data.len() { return None; }
-                let a = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            161 | 162 | 166 | 167 => {
+                // Opcodes con payload de 2x u32 (idx/dst, target/idx)
+                if pos + 8 > data.len() {
+                    return None;
+                }
+                let a = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                    as usize;
                 pos += 4;
-                let b = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                let b = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                    as usize;
                 pos += 4;
                 opcodes.push(match byte {
                     161 => Opcode::LoadIdx2(a, b),
@@ -2699,68 +3000,146 @@ if version >= 2 {
                     _ => Opcode::LoadJump(a, b),
                 });
             }
-            3 => { // PushBooleano
-                if pos >= data.len() { return None; }
+            3 => {
+                // PushBooleano
+                if pos >= data.len() {
+                    return None;
+                }
                 let b = data[pos] == 1;
                 pos += 1;
                 opcodes.push(Opcode::PushBooleano(b));
             }
-            16 => { // DeclareEnteroOp
-                if pos + 12 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            16 => {
+                // DeclareEnteroOp
+                if pos + 12 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let n = i64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
-                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+                let n = i64::from_le_bytes([
+                    data[pos],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
+                ]);
                 pos += 8;
                 opcodes.push(Opcode::DeclareEnteroOp(idx, n));
             }
-            17 => { // DeclareBooleanoOp
-                if pos + 5 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            17 => {
+                // DeclareBooleanoOp
+                if pos + 5 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 let b = data[pos] == 1;
                 pos += 1;
                 opcodes.push(Opcode::DeclareBooleanoOp(idx, b));
             }
-            18 => { // StoreEnteroOp
-                if pos + 12 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            18 => {
+                // StoreEnteroOp
+                if pos + 12 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let n = i64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
-                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+                let n = i64::from_le_bytes([
+                    data[pos],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
+                ]);
                 pos += 8;
                 opcodes.push(Opcode::StoreEnteroOp(idx, n));
             }
-            19 => { // DeclareFloatOp
-                if pos + 12 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            19 => {
+                // DeclareFloatOp
+                if pos + 12 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let d = f64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
-                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+                let d = f64::from_le_bytes([
+                    data[pos],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
+                ]);
                 pos += 8;
                 opcodes.push(Opcode::DeclareFloatOp(idx, d));
             }
-            24 => { // StoreFloatOp
-                if pos + 12 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            24 => {
+                // StoreFloatOp
+                if pos + 12 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let d = f64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
-                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+                let d = f64::from_le_bytes([
+                    data[pos],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
+                ]);
                 pos += 8;
                 opcodes.push(Opcode::StoreFloatOp(idx, d));
             }
-            25 => { // LoadAddFloat
-                if pos + 12 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            25 => {
+                // LoadAddFloat
+                if pos + 12 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let d = f64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
-                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+                let d = f64::from_le_bytes([
+                    data[pos],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
+                ]);
                 pos += 8;
                 opcodes.push(Opcode::LoadAddFloat(idx, d));
             }
-            26 | 27 | 28 => { // AddStoreFloat | SubStoreFloat | MulStoreFloat
-                if pos + 4 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            26 | 27 | 28 => {
+                // AddStoreFloat | SubStoreFloat | MulStoreFloat
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 opcodes.push(match byte {
                     26 => Opcode::AddStoreFloat(idx),
@@ -2768,39 +3147,70 @@ if version >= 2 {
                     _ => Opcode::MulStoreFloat(idx),
                 });
             }
-            29 => { // XorSign
-                if pos + 4 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            29 => {
+                // XorSign
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 opcodes.push(Opcode::XorSign(idx));
             }
-            93 => { // Modulo2(src)
-                if pos + 4 > data.len() { return None; }
-                let src = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            93 => {
+                // Modulo2(src)
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let src =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 opcodes.push(Opcode::Modulo2(src));
             }
-            94 => { // ReduceAdd(dst, src)
-                if pos + 8 > data.len() { return None; }
-                let dst = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            94 => {
+                // ReduceAdd(dst, src)
+                if pos + 8 > data.len() {
+                    return None;
+                }
+                let dst =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let src = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                let src =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 opcodes.push(Opcode::ReduceAdd(dst, src));
             }
-            95 => { // LoadAddPacked(dst, src1, src2)
-                if pos + 12 > data.len() { return None; }
-                let dst = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            95 => {
+                // LoadAddPacked(dst, src1, src2)
+                if pos + 12 > data.len() {
+                    return None;
+                }
+                let dst =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let src1 = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                let src1 =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let src2 = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                let src2 =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 opcodes.push(Opcode::LoadAddPacked(dst, src1, src2));
             }
-            50 | 51 | 52 => { // Jump | JumpSiFalso | Label
-                if pos + 4 > data.len() { return None; }
-                let target = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            50 | 51 | 52 => {
+                // Jump | JumpSiFalso | Label
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let target =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 opcodes.push(match byte {
                     50 => Opcode::Jump(target),
@@ -2808,60 +3218,107 @@ if version >= 2 {
                     _ => Opcode::Label(target),
                 });
             }
-            55 => { // FunctionDef
-                if pos + 8 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            55 => {
+                // FunctionDef
+                if pos + 8 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let nparams = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                let nparams =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                if nparams > MAX_PARAMS_PER_FUNCTION { return None; }
+                if nparams > MAX_PARAMS_PER_FUNCTION {
+                    return None;
+                }
                 let name = string_pool_get(&string_pool, idx)?;
                 let mut params = Vec::with_capacity(nparams);
                 for _ in 0..nparams {
-                    if pos + 4 > data.len() { return None; }
-                    let p_len = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                    if pos + 4 > data.len() {
+                        return None;
+                    }
+                    let p_len = u32::from_le_bytes([
+                        data[pos],
+                        data[pos + 1],
+                        data[pos + 2],
+                        data[pos + 3],
+                    ]) as usize;
                     pos += 4;
-                    if p_len > MAX_STRING_LENGTH { return None; }
-                    if pos + p_len > data.len() { return None; }
-                    let p = String::from_utf8(data[pos..pos+p_len].to_vec()).ok()?;
+                    if p_len > MAX_STRING_LENGTH {
+                        return None;
+                    }
+                    if pos + p_len > data.len() {
+                        return None;
+                    }
+                    let p = String::from_utf8(data[pos..pos + p_len].to_vec()).ok()?;
                     pos += p_len;
                     params.push(Arc::from(p.as_str()));
                 }
                 opcodes.push(Opcode::FunctionDef(name, params));
             }
-            60 => { // Call
-                if pos + 8 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            60 => {
+                // Call
+                if pos + 8 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let nargs = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                let nargs =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 let s = string_pool_get(&string_pool, idx)?;
                 opcodes.push(Opcode::Call(s, nargs));
             }
-            65 => { // CallMethod
-                if pos + 8 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            65 => {
+                // CallMethod
+                if pos + 8 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let nargs = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                let nargs =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 let s = string_pool_get(&string_pool, idx)?;
                 opcodes.push(Opcode::CallMethod(s, nargs));
             }
-            90 => { // MapNew
-                if pos + 4 > data.len() { return None; }
-                let n = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            90 => {
+                // MapNew
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let n = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                    as usize;
                 pos += 4;
                 opcodes.push(Opcode::MapNew(n));
             }
-            80 => { // ArrayNew
-                if pos + 4 > data.len() { return None; }
-                let n = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            80 => {
+                // ArrayNew
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let n = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                    as usize;
                 pos += 4;
                 opcodes.push(Opcode::ArrayNew(n));
             }
-            62 | 63 | 64 => { // NewObject | SetField | GetField
-                if pos + 4 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+            62 | 63 | 64 => {
+                // NewObject | SetField | GetField
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 let s = string_pool_get(&string_pool, idx)?;
                 opcodes.push(match byte {
@@ -2872,12 +3329,20 @@ if version >= 2 {
             }
             // Fase 3a: Stack Bypass — 3 × u32 (dst, src1, src2)
             96 | 97 | 98 | 99 => {
-                if pos + 12 > data.len() { return None; }
-                let dst = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                if pos + 12 > data.len() {
+                    return None;
+                }
+                let dst =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let src1 = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                let src1 =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let src2 = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                let src2 =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 opcodes.push(match byte {
                     96 => Opcode::DivFloatDirect(dst, src1, src2),
@@ -2888,12 +3353,20 @@ if version >= 2 {
             }
             // Fase 3b: Super-fusión FusedDivAdd/FusedDivSub — 3 × u32 (dst, num_src, div_src)
             100 | 101 => {
-                if pos + 12 > data.len() { return None; }
-                let dst = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                if pos + 12 > data.len() {
+                    return None;
+                }
+                let dst =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let num_src = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                let num_src =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let div_src = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                let div_src =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 opcodes.push(match byte {
                     100 => Opcode::FusedDivAdd(dst, num_src, div_src),
@@ -2902,13 +3375,27 @@ if version >= 2 {
             }
             // Fase 3b Const: f64 + u32 + u32 = 16 bytes
             102 | 103 => {
-                if pos + 16 > data.len() { return None; }
-                let dst = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                if pos + 16 > data.len() {
+                    return None;
+                }
+                let dst =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let num = f64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
-                    data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
+                let num = f64::from_le_bytes([
+                    data[pos],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
+                ]);
                 pos += 8;
-                let div_src = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                let div_src =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 opcodes.push(match byte {
                     102 => Opcode::FusedDivAddConst(dst, num, div_src),
@@ -2917,45 +3404,85 @@ if version >= 2 {
             }
             // Opcodes para Exacto: PushExacto(coeff, scale) — 16 + 4 = 20 bytes payload
             110 => {
-                if pos + 20 > data.len() { return None; }
+                if pos + 20 > data.len() {
+                    return None;
+                }
                 let coeff = i128::from_le_bytes([
-                    data[pos], data[pos+1], data[pos+2], data[pos+3],
-                    data[pos+4], data[pos+5], data[pos+6], data[pos+7],
-                    data[pos+8], data[pos+9], data[pos+10], data[pos+11],
-                    data[pos+12], data[pos+13], data[pos+14], data[pos+15],
+                    data[pos],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
+                    data[pos + 8],
+                    data[pos + 9],
+                    data[pos + 10],
+                    data[pos + 11],
+                    data[pos + 12],
+                    data[pos + 13],
+                    data[pos + 14],
+                    data[pos + 15],
                 ]);
                 pos += 16;
-                let scale = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]);
+                let scale =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
                 pos += 4;
                 opcodes.push(Opcode::PushExacto(coeff, scale));
             }
             // Superinstructions Exacto: DeclareExactOp(idx, coeff, scale) — 4 + 16 + 4 = 24 bytes
             120 => {
-                if pos + 24 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                if pos + 24 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 let coeff = i128::from_le_bytes([
-                    data[pos], data[pos+1], data[pos+2], data[pos+3],
-                    data[pos+4], data[pos+5], data[pos+6], data[pos+7],
-                    data[pos+8], data[pos+9], data[pos+10], data[pos+11],
-                    data[pos+12], data[pos+13], data[pos+14], data[pos+15],
+                    data[pos],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
+                    data[pos + 8],
+                    data[pos + 9],
+                    data[pos + 10],
+                    data[pos + 11],
+                    data[pos + 12],
+                    data[pos + 13],
+                    data[pos + 14],
+                    data[pos + 15],
                 ]);
                 pos += 16;
-                let scale = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]);
+                let scale =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
                 pos += 4;
                 opcodes.push(Opcode::DeclareExactOp(idx, coeff, scale));
             }
             // AddStoreExact(idx) — 4 bytes payload
             121 => {
-                if pos + 4 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 opcodes.push(Opcode::AddStoreExact(idx));
             }
             // Pattern matching opcodes — 4 bytes payload (usize)
             140 | 141 => {
-                if pos + 4 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 opcodes.push(match byte {
                     140 => Opcode::CheckTag(idx),
@@ -2964,73 +3491,111 @@ if version >= 2 {
             }
             // Design by Contract opcodes — 4 bytes payload (usize)
             130 | 131 | 132 | 133 => {
-                if pos + 4 > data.len() { return None; }
-                let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 opcodes.push(match byte {
                     130 => Opcode::CheckPre(idx),
                     131 => Opcode::CheckPost(idx),
                     132 => Opcode::SaveAnterior(idx),
-                   _ => Opcode::CheckInv(idx),
-               });
-           }
-           // Fase 2: DeclareIdxGlobal(usize, bool) — 5 bytes payload (u32 idx + u8 mutable)
-           142 => {
-              if pos + 5 > data.len() { return None; }
-              let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
-              pos += 4;
-              let mutable = data[pos] == 1;
-              pos += 1;
-              opcodes.push(Opcode::DeclareIdxGlobal(idx, mutable));
-          }
-          // Debug: SetLine(line) — 4 bytes payload (u32 linea)
-          150 => {
-              if pos + 4 > data.len() { return None; }
-              let line = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
-              pos += 4;
-              opcodes.push(Opcode::SetLine(line));
-          }
-          // PushAddInt(i64) — 8 bytes payload
-          189 => {
-              if pos + 8 > data.len() { return None; }
-              let n = i64::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3],
-                  data[pos+4], data[pos+5], data[pos+6], data[pos+7]]);
-              pos += 8;
-              opcodes.push(Opcode::PushAddInt(n));
-          }
-          // ThreadSpawn(Arc<str>, usize) — string_idx(4) + nargs(4)
-          195 => {
-              if pos + 8 > data.len() { return None; }
-              let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
-              pos += 4;
-              let nargs = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
-              pos += 4;
-              let s = string_pool_get(&string_pool, idx)?;
-              opcodes.push(Opcode::ThreadSpawn(s, nargs));
-          }
-          // CallNative(Arc<str>, usize) — string_idx(4) + nargs(4)
-          196 => {
-              if pos + 8 > data.len() { return None; }
-              let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
-              pos += 4;
-              let nargs = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
-              pos += 4;
-              let s = string_pool_get(&string_pool, idx)?;
-              opcodes.push(Opcode::CallNative(s, nargs));
-          }
-          // SocketPoll(Arc<str>) — string_idx(4)
-          197 => {
-              if pos + 4 > data.len() { return None; }
-              let idx = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]) as usize;
-              pos += 4;
-              let s = string_pool_get(&string_pool, idx)?;
-              opcodes.push(Opcode::SocketPoll(s));
-          }
-          _ => {
-              // Opcodes sin payload
-              let template = byte_to_opcode(byte)?;
-              opcodes.push(template);
-          }
+                    _ => Opcode::CheckInv(idx),
+                });
+            }
+            // Fase 2: DeclareIdxGlobal(usize, bool) — 5 bytes payload (u32 idx + u8 mutable)
+            142 => {
+                if pos + 5 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
+                pos += 4;
+                let mutable = data[pos] == 1;
+                pos += 1;
+                opcodes.push(Opcode::DeclareIdxGlobal(idx, mutable));
+            }
+            // Debug: SetLine(line) — 4 bytes payload (u32 linea)
+            150 => {
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let line =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
+                pos += 4;
+                opcodes.push(Opcode::SetLine(line));
+            }
+            // PushAddInt(i64) — 8 bytes payload
+            189 => {
+                if pos + 8 > data.len() {
+                    return None;
+                }
+                let n = i64::from_le_bytes([
+                    data[pos],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
+                ]);
+                pos += 8;
+                opcodes.push(Opcode::PushAddInt(n));
+            }
+            // ThreadSpawn(Arc<str>, usize) — string_idx(4) + nargs(4)
+            195 => {
+                if pos + 8 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
+                pos += 4;
+                let nargs =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
+                pos += 4;
+                let s = string_pool_get(&string_pool, idx)?;
+                opcodes.push(Opcode::ThreadSpawn(s, nargs));
+            }
+            // CallNative(Arc<str>, usize) — string_idx(4) + nargs(4)
+            196 => {
+                if pos + 8 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
+                pos += 4;
+                let nargs =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
+                pos += 4;
+                let s = string_pool_get(&string_pool, idx)?;
+                opcodes.push(Opcode::CallNative(s, nargs));
+            }
+            // SocketPoll(Arc<str>) — string_idx(4)
+            197 => {
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
+                pos += 4;
+                let s = string_pool_get(&string_pool, idx)?;
+                opcodes.push(Opcode::SocketPoll(s));
+            }
+            _ => {
+                // Opcodes sin payload
+                let template = byte_to_opcode(byte)?;
+                opcodes.push(template);
+            }
         }
     }
 
@@ -3069,33 +3634,43 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
                     // Los parámetros de la función empiezan en índice 0 de este ámbito
                     for p in params {
                         var_indices.entry(p.to_string()).or_insert_with(|| {
-                            let idx = next_idx; next_idx += 1; idx
+                            let idx = next_idx;
+                            next_idx += 1;
+                            idx
                         });
                     }
                     result.push(op.clone());
                 }
                 Opcode::Load(name) => {
                     let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
-                        let i = next_idx; next_idx += 1; i
+                        let i = next_idx;
+                        next_idx += 1;
+                        i
                     });
                     result.push(Opcode::LoadIdx(idx));
                 }
                 Opcode::Store(name) => {
                     let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
-                        let i = next_idx; next_idx += 1; i
+                        let i = next_idx;
+                        next_idx += 1;
+                        i
                     });
                     result.push(Opcode::StoreIdx(idx));
                 }
                 Opcode::Declare(name, mutable) => {
                     let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
-                        let i = next_idx; next_idx += 1; i
+                        let i = next_idx;
+                        next_idx += 1;
+                        i
                     });
                     result.push(Opcode::DeclareIdx(idx, *mutable));
                 }
                 Opcode::Call(_, _) => {
                     result.push(op.clone());
                 }
-                _ => { result.push(op.clone()); }
+                _ => {
+                    result.push(op.clone());
+                }
             }
         }
 
@@ -3132,12 +3707,30 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
         // Fase A: detectar patrón i%2 → Modulo2(i) (7-op pattern)
         if i + 6 < bc.len() {
             // Patrón: LoadIdx(a), LoadIdx(a), PushEntero(2), Div/DivInt, PushEntero(2), Mul/MulInt, Sub/SubInt
-            if let (Opcode::LoadIdx(a1), Opcode::LoadIdx(a2), Opcode::PushEntero(n1), _, Opcode::PushEntero(n2), _, _) =
-                (&bc[i], &bc[i+1], &bc[i+2], &bc[i+3], &bc[i+4], &bc[i+5], &bc[i+6])
-            {
+            if let (
+                Opcode::LoadIdx(a1),
+                Opcode::LoadIdx(a2),
+                Opcode::PushEntero(n1),
+                _,
+                Opcode::PushEntero(n2),
+                _,
+                _,
+            ) = (
+                &bc[i],
+                &bc[i + 1],
+                &bc[i + 2],
+                &bc[i + 3],
+                &bc[i + 4],
+                &bc[i + 5],
+                &bc[i + 6],
+            ) {
                 if a1 == a2 && *n1 == 2 && *n2 == 2 {
-                    match (&bc[i+3], &bc[i+5], &bc[i+6]) {
-                        (Opcode::Div | Opcode::DivInt, Opcode::Mul | Opcode::MulInt, Opcode::Sub | Opcode::SubInt) => {
+                    match (&bc[i + 3], &bc[i + 5], &bc[i + 6]) {
+                        (
+                            Opcode::Div | Opcode::DivInt,
+                            Opcode::Mul | Opcode::MulInt,
+                            Opcode::Sub | Opcode::SubInt,
+                        ) => {
                             // Reemplazar 7 ops con Modulo2(a)
                             result.push(Opcode::Modulo2(*a1));
                             i += 7;
@@ -3314,7 +3907,7 @@ pub fn fusionar_direct_float_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
                 Opcode::LoadIdxFloat(b),
                 arith_op,
                 Opcode::StoreIdxFloat(dst),
-            ) = (&bc[i], &bc[i+1], &bc[i+2], &bc[i+3])
+            ) = (&bc[i], &bc[i + 1], &bc[i + 2], &bc[i + 3])
             {
                 match arith_op {
                     Opcode::DivFloat => {
@@ -3346,8 +3939,9 @@ pub fn fusionar_direct_float_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
         // → FusedDivAddConst(dst, num, div) o FusedDivSubConst(dst, num, div)
         // StoreIdx (no Float) es común porque quickening no especializa StoreIdx
         if i + 5 < bc.len() {
-            let store_is_float = matches!(&bc[i+5], Opcode::StoreIdxFloat(_b) | Opcode::StoreIdx(_b));
-            let store_idx = match &bc[i+5] {
+            let store_is_float =
+                matches!(&bc[i + 5], Opcode::StoreIdxFloat(_b) | Opcode::StoreIdx(_b));
+            let store_idx = match &bc[i + 5] {
                 Opcode::StoreIdxFloat(b) | Opcode::StoreIdx(b) => *b,
                 _ => usize::MAX,
             };
@@ -3355,11 +3949,18 @@ pub fn fusionar_direct_float_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
                 Opcode::LoadIdxFloat(dst_a),
                 Opcode::PushDecimal(num_val),
                 Opcode::LoadIdxFloat(div_b),
-                arith1 @ (Opcode::DivFloat | Opcode::AddFloat | Opcode::SubFloat | Opcode::MulFloat),
+                arith1
+                @ (Opcode::DivFloat | Opcode::AddFloat | Opcode::SubFloat | Opcode::MulFloat),
                 arith2 @ (Opcode::AddFloat | Opcode::SubFloat),
                 _,
-            ) = (&bc[i], &bc[i+1], &bc[i+2], &bc[i+3], &bc[i+4], &bc[i+5])
-            {
+            ) = (
+                &bc[i],
+                &bc[i + 1],
+                &bc[i + 2],
+                &bc[i + 3],
+                &bc[i + 4],
+                &bc[i + 5],
+            ) {
                 let is_div = matches!(arith1, Opcode::DivFloat);
                 let is_add = matches!(arith2, Opcode::AddFloat);
                 let is_sub = matches!(arith2, Opcode::SubFloat);
@@ -3481,12 +4082,15 @@ mod tests {
         let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
         let mut type_checker = TypeChecker::new();
-        type_checker.analizar(&programa).map_err(|e| format!("{}", e[0]))?;
+        type_checker
+            .analizar(&programa)
+            .map_err(|e| format!("{}", e[0]))?;
         let tipos_inferidos = type_checker.obtener_tipos_inferidos();
 
         let mut gen = BytecodeGenerator::new();
         gen.set_tipos_inferidos(tipos_inferidos);
-        gen.generar(&programa).map_err(|_| "Error generando bytecode".to_string())
+        gen.generar(&programa)
+            .map_err(|_| "Error generando bytecode".to_string())
     }
 
     #[test]
@@ -3563,7 +4167,10 @@ mod tests {
     // Hot Reload — Fase 2
     // ═════════════════════════════════════════════════════════════════════
 
-    fn generar_bytecode_para_modulo(source: &str, module_id: SymId) -> Result<ModuleBytecode, Vec<ErrorForja>> {
+    fn generar_bytecode_para_modulo(
+        source: &str,
+        module_id: SymId,
+    ) -> Result<ModuleBytecode, Vec<ErrorForja>> {
         use crate::lexer::Lexer;
         use crate::parser::Parser;
         use crate::semantics;
@@ -3603,10 +4210,16 @@ fun version() {
         // El ModuleBytecode debe tener el module_id correcto
         assert_eq!(module_bc.module_id, module_id);
         // Debe haber al menos un opcode
-        assert!(!module_bc.opcodes.is_empty(), "El bytecode no debe estar vacío");
+        assert!(
+            !module_bc.opcodes.is_empty(),
+            "El bytecode no debe estar vacío"
+        );
         // Debe tener 3 funciones registradas
-        assert_eq!(module_bc.function_sym_ids.len(), 3,
-            "Se esperaban 3 funciones (saludar, sumar, version)");
+        assert_eq!(
+            module_bc.function_sym_ids.len(),
+            3,
+            "Se esperaban 3 funciones (saludar, sumar, version)"
+        );
     }
 
     #[test]
@@ -3627,11 +4240,17 @@ fun obtener() {
         let module_bc = generar_bytecode_para_modulo(source, module_id).unwrap();
 
         // Debe tener al menos una variable global (contador, nombre)
-        assert!(!module_bc.global_var_indices.is_empty(),
-            "Debe haber al menos una variable global registrada");
+        assert!(
+            !module_bc.global_var_indices.is_empty(),
+            "Debe haber al menos una variable global registrada"
+        );
         // Cada entrada debe ser (nombre -> mutable)
         for (_nombre, mutable) in &module_bc.global_var_indices {
-            assert!(*mutable, "Las variables declaradas deben ser mutables, got {}", mutable);
+            assert!(
+                *mutable,
+                "Las variables declaradas deben ser mutables, got {}",
+                mutable
+            );
         }
     }
 
@@ -3652,42 +4271,74 @@ fun bar(x) {
         let funciones = module_bc.desglosar();
 
         // Debe encontrar exactamente 2 funciones
-        assert_eq!(funciones.len(), 2,
+        assert_eq!(
+            funciones.len(),
+            2,
             "desglosar() debe encontrar 2 funciones, encontró {}: {:?}",
-            funciones.len(), funciones.iter().map(|(n,_,_)| n.clone()).collect::<Vec<_>>());
+            funciones.len(),
+            funciones
+                .iter()
+                .map(|(n, _, _)| n.clone())
+                .collect::<Vec<_>>()
+        );
 
         // Verificar nombres
-        let nombres: Vec<&str> = funciones.iter().map(|(n,_,_)| n.as_str()).collect();
-        assert!(nombres.contains(&"foo"), "Debe contener 'foo', got {:?}", nombres);
-        assert!(nombres.contains(&"bar"), "Debe contener 'bar', got {:?}", nombres);
+        let nombres: Vec<&str> = funciones.iter().map(|(n, _, _)| n.as_str()).collect();
+        assert!(
+            nombres.contains(&"foo"),
+            "Debe contener 'foo', got {:?}",
+            nombres
+        );
+        assert!(
+            nombres.contains(&"bar"),
+            "Debe contener 'bar', got {:?}",
+            nombres
+        );
 
         // foo tiene 2 parámetros → vars_size >= 2
-        let (_name, _ip, vars_foo) = funciones.iter().find(|(n,_,_)| n == "foo").unwrap();
-        assert!(*vars_foo >= 2, "foo debe tener vars_size >= 2, got {}", vars_foo);
+        let (_name, _ip, vars_foo) = funciones.iter().find(|(n, _, _)| n == "foo").unwrap();
+        assert!(
+            *vars_foo >= 2,
+            "foo debe tener vars_size >= 2, got {}",
+            vars_foo
+        );
 
         // bar tiene 1 parámetro → vars_size >= 1
-        let (_name, _ip, vars_bar) = funciones.iter().find(|(n,_,_)| n == "bar").unwrap();
-        assert!(*vars_bar >= 1, "bar debe tener vars_size >= 1, got {}", vars_bar);
+        let (_name, _ip, vars_bar) = funciones.iter().find(|(n, _, _)| n == "bar").unwrap();
+        assert!(
+            *vars_bar >= 1,
+            "bar debe tener vars_size >= 1, got {}",
+            vars_bar
+        );
     }
 
     #[test]
     fn test_declare_idx_global_serializacion_roundtrip() {
         let opcodes = vec![
-            Opcode::DeclareIdxGlobal(0, true),    // idx 0, mutable
-            Opcode::DeclareIdxGlobal(5, false),   // idx 5, inmutable
-            Opcode::DeclareIdxGlobal(255, true),  // idx 255, mutable
+            Opcode::DeclareIdxGlobal(0, true),   // idx 0, mutable
+            Opcode::DeclareIdxGlobal(5, false),  // idx 5, inmutable
+            Opcode::DeclareIdxGlobal(255, true), // idx 255, mutable
         ];
 
         let serialized = serializar_bytecode(&opcodes);
         let deserialized = deserializar_bytecode(&serialized).unwrap();
 
         assert_eq!(deserialized.len(), 3, "Debe deserializar 3 opcodes");
-        assert_eq!(deserialized[0], Opcode::DeclareIdxGlobal(0, true),
-            "El primer opcode debe ser DeclareIdxGlobal(0, true)");
-        assert_eq!(deserialized[1], Opcode::DeclareIdxGlobal(5, false),
-            "El segundo opcode debe ser DeclareIdxGlobal(5, false)");
-        assert_eq!(deserialized[2], Opcode::DeclareIdxGlobal(255, true),
-            "El tercer opcode debe ser DeclareIdxGlobal(255, true)");
+        assert_eq!(
+            deserialized[0],
+            Opcode::DeclareIdxGlobal(0, true),
+            "El primer opcode debe ser DeclareIdxGlobal(0, true)"
+        );
+        assert_eq!(
+            deserialized[1],
+            Opcode::DeclareIdxGlobal(5, false),
+            "El segundo opcode debe ser DeclareIdxGlobal(5, false)"
+        );
+        assert_eq!(
+            deserialized[2],
+            Opcode::DeclareIdxGlobal(255, true),
+            "El tercer opcode debe ser DeclareIdxGlobal(255, true)"
+        );
     }
 
     #[test]
@@ -3708,7 +4359,11 @@ fun bar(x) {
         let serialized = serializar_bytecode(&opcodes);
         let deserialized = deserializar_bytecode(&serialized).unwrap();
 
-        assert_eq!(deserialized.len(), opcodes.len(), "La cantidad de opcodes debe coincidir");
+        assert_eq!(
+            deserialized.len(),
+            opcodes.len(),
+            "La cantidad de opcodes debe coincidir"
+        );
         assert_eq!(deserialized[0], Opcode::AddInt);
         assert_eq!(deserialized[1], Opcode::SubFloat);
         assert_eq!(deserialized[2], Opcode::PushAddInt(42));
@@ -3734,8 +4389,14 @@ fun probar() {
         let module_bc = generar_bytecode_para_modulo(source, module_id).unwrap();
 
         // Verificar que tiene DeclareIdxGlobal
-        let has_declare_idx = module_bc.opcodes.iter().any(|op| matches!(op, Opcode::DeclareIdxGlobal(_, _)));
-        assert!(has_declare_idx, "El bytecode del módulo debe contener DeclareIdxGlobal");
+        let has_declare_idx = module_bc
+            .opcodes
+            .iter()
+            .any(|op| matches!(op, Opcode::DeclareIdxGlobal(_, _)));
+        assert!(
+            has_declare_idx,
+            "El bytecode del módulo debe contener DeclareIdxGlobal"
+        );
 
         // Serialización round-trip
         let serialized = serializar_bytecode(&module_bc.opcodes);

@@ -29,7 +29,11 @@ impl AOTCompiler {
         // 5. Generar ejecutable autónomo (copiar forja.exe + apendar bytecode)
         Self::generar_ejecutable(&fbc_data, salida)?;
 
-        println!("✅ Ejecutable generado: {} ({} bytes)", salida, fbc_data.len());
+        println!(
+            "✅ Ejecutable generado: {} ({} bytes)",
+            salida,
+            fbc_data.len()
+        );
         Ok(())
     }
 
@@ -38,16 +42,18 @@ impl AOTCompiler {
         // 1. Obtener la ruta del compilador original (antes de shadow copy)
         let self_path = std::env::var("FORJA_ORIGINAL_EXE")
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| {
-                std::env::current_exe().unwrap_or_default()
-            });
+            .unwrap_or_else(|_| std::env::current_exe().unwrap_or_default());
 
         if self_path.as_os_str().is_empty() {
             return Err("No se pudo obtener la ruta del ejecutable compilador".to_string());
         }
 
         // 2. Intentar buscar el runtime autónomo (forja-rt) en el mismo directorio
-        let rt_name = if cfg!(target_os = "windows") { "forja-rt.exe" } else { "forja-rt" };
+        let rt_name = if cfg!(target_os = "windows") {
+            "forja-rt.exe"
+        } else {
+            "forja-rt"
+        };
         let rt_path = self_path.with_file_name(rt_name);
 
         let stub = if rt_path.exists() {
@@ -55,8 +61,13 @@ impl AOTCompiler {
                 .map_err(|e| format!("Error leyendo stub runtime '{}': {}", rt_path.display(), e))?
         } else {
             // Fallback en desarrollo: usar el ejecutable en ejecución como stub
-            fs::read(&self_path)
-                .map_err(|e| format!("Error leyendo stub de desarrollo '{}': {}", self_path.display(), e))?
+            fs::read(&self_path).map_err(|e| {
+                format!(
+                    "Error leyendo stub de desarrollo '{}': {}",
+                    self_path.display(),
+                    e
+                )
+            })?
         };
 
         // 3. Escribir stub + bytecode + footer
@@ -70,8 +81,7 @@ impl AOTCompiler {
         output.extend_from_slice(FBC_MAGIC);
 
         // 4. Escribir archivo de salida
-        fs::write(salida, &output)
-            .map_err(|e| format!("Error escribiendo '{}': {}", salida, e))?;
+        fs::write(salida, &output).map_err(|e| format!("Error escribiendo '{}': {}", salida, e))?;
 
         Ok(())
     }

@@ -7,7 +7,10 @@ pub struct Formatter {
 
 impl Formatter {
     pub fn new() -> Self {
-        Formatter { output: String::new(), indent: 0 }
+        Formatter {
+            output: String::new(),
+            indent: 0,
+        }
     }
 
     pub fn formatear(&mut self, programa: &Programa) -> String {
@@ -33,10 +36,19 @@ impl Formatter {
             Tipo::Clase(nombre) => nombre.clone(),
             Tipo::Arreglo(tipo_elem) => format!("Arreglo<{}>", self.tipo_a_string(tipo_elem)),
             Tipo::Funcion(params, retorno) => {
-                let params_str: Vec<String> = params.iter().map(|p| self.tipo_a_string(p)).collect();
-                format!("Funcion<{}; {}>", params_str.join(", "), self.tipo_a_string(retorno))
+                let params_str: Vec<String> =
+                    params.iter().map(|p| self.tipo_a_string(p)).collect();
+                format!(
+                    "Funcion<{}; {}>",
+                    params_str.join(", "),
+                    self.tipo_a_string(retorno)
+                )
             }
-            Tipo::Resultado(ok, err) => format!("Resultado<{}, {}>", self.tipo_a_string(ok), self.tipo_a_string(err)),
+            Tipo::Resultado(ok, err) => format!(
+                "Resultado<{}, {}>",
+                self.tipo_a_string(ok),
+                self.tipo_a_string(err)
+            ),
             Tipo::Opcion(val) => format!("Opcion<{}>", self.tipo_a_string(val)),
             Tipo::RasgoObjeto(nombre) => nombre.clone(),
             Tipo::Parametro(nombre) => nombre.clone(),
@@ -168,7 +180,13 @@ impl Formatter {
 
     fn formatear_declaracion(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { mutable, nombre, tipo, valor, .. } => {
+            Declaracion::Variable {
+                mutable,
+                nombre,
+                tipo,
+                valor,
+                ..
+            } => {
                 self.push(&self.indent_str());
                 let kw = if *mutable { "variable" } else { "constante" };
                 self.push(&format!("{} {}", kw, nombre));
@@ -187,33 +205,51 @@ impl Formatter {
                 self.formatear_expresion(valor);
                 self.push("\n");
             }
-            Declaracion::AsignacionMiembro { objeto, miembro, valor, .. } => {
+            Declaracion::AsignacionMiembro {
+                objeto,
+                miembro,
+                valor,
+                ..
+            } => {
                 self.push(&self.indent_str());
                 let obj_str = self.expresion_a_string(objeto);
                 self.push(&format!("{}.{} = ", obj_str, miembro));
                 self.formatear_expresion(valor);
                 self.push("\n");
             }
-            Declaracion::AsignacionIndex { nombre, indice, valor, .. } => {
+            Declaracion::AsignacionIndex {
+                nombre,
+                indice,
+                valor,
+                ..
+            } => {
                 self.push(&self.indent_str());
                 let ind_str = self.expresion_a_string(indice);
                 self.push(&format!("{}[{}] = ", nombre, ind_str));
                 self.formatear_expresion(valor);
                 self.push("\n");
             }
-            Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+            Declaracion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
                 self.push(&self.indent_str());
                 self.push("si (");
                 self.formatear_expresion(condicion);
                 self.push(") {\n");
                 self.indent += 1;
-                for d in bloque_verdadero { self.formatear_declaracion(d); }
+                for d in bloque_verdadero {
+                    self.formatear_declaracion(d);
+                }
                 self.indent -= 1;
                 self.push(&format!("{}}}", self.indent_str()));
                 if let Some(bf) = bloque_falso {
                     self.push(" sino {\n");
                     self.indent += 1;
-                    for d in bf { self.formatear_declaracion(d); }
+                    for d in bf {
+                        self.formatear_declaracion(d);
+                    }
                     self.indent -= 1;
                     self.push(&format!("{}}}", self.indent_str()));
                 }
@@ -225,21 +261,32 @@ impl Formatter {
                 self.formatear_expresion(condicion);
                 self.push(") {\n");
                 self.indent += 1;
-                for d in bloque { self.formatear_declaracion(d); }
+                for d in bloque {
+                    self.formatear_declaracion(d);
+                }
                 self.indent -= 1;
                 self.push(&format!("{}}}\n", self.indent_str()));
             }
-            Declaracion::Cuando { condicion, cuerpo, .. } => {
+            Declaracion::Cuando {
+                condicion, cuerpo, ..
+            } => {
                 self.push(&self.indent_str());
                 self.push("cuando (");
                 self.formatear_expresion(condicion);
                 self.push(") {\n");
                 self.indent += 1;
-                for d in cuerpo { self.formatear_declaracion(d); }
+                for d in cuerpo {
+                    self.formatear_declaracion(d);
+                }
                 self.indent -= 1;
                 self.push(&format!("{}}}\n", self.indent_str()));
             }
-            Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
+            Declaracion::Para {
+                inicializacion,
+                condicion,
+                incremento,
+                bloque,
+            } => {
                 self.push(&self.indent_str());
                 self.push("para (");
                 if let Some(init) = inicializacion {
@@ -258,7 +305,9 @@ impl Formatter {
                 }
                 self.push(") {\n");
                 self.indent += 1;
-                for d in bloque { self.formatear_declaracion(d); }
+                for d in bloque {
+                    self.formatear_declaracion(d);
+                }
                 self.indent -= 1;
                 self.push(&format!("{}}}\n", self.indent_str()));
             }
@@ -268,7 +317,9 @@ impl Formatter {
                 self.formatear_expresion(cantidad);
                 self.push(") {\n");
                 self.indent += 1;
-                for d in bloque { self.formatear_declaracion(d); }
+                for d in bloque {
+                    self.formatear_declaracion(d);
+                }
                 self.indent -= 1;
                 self.push(&format!("{}}}\n", self.indent_str()));
             }
@@ -302,7 +353,7 @@ impl Formatter {
                 self.push(nombre);
                 let gen_str = self.formatear_parametros_tipo(parametros_tipo);
                 self.push(&gen_str);
-                
+
                 let mut params_str = Vec::new();
                 for p in parametros {
                     params_str.push(self.formatear_parametro(p));
@@ -339,7 +390,9 @@ impl Formatter {
                         self.push(" {\n");
                     }
                     self.indent += 1;
-                    for d in cuerpo { self.formatear_declaracion(d); }
+                    for d in cuerpo {
+                        self.formatear_declaracion(d);
+                    }
                     self.indent -= 1;
                     self.push(&format!("{}}}\n", self.indent_str()));
                 }
@@ -386,8 +439,17 @@ impl Formatter {
                 self.indent -= 1;
                 self.push(&format!("{}}}\n", self.indent_str()));
             }
-            Declaracion::Implementacion { rasgo_nombre, clase_nombre, metodos } => {
-                self.push(&format!("{}implementa {} para {} {{\n", self.indent_str(), rasgo_nombre, clase_nombre));
+            Declaracion::Implementacion {
+                rasgo_nombre,
+                clase_nombre,
+                metodos,
+            } => {
+                self.push(&format!(
+                    "{}implementa {} para {} {{\n",
+                    self.indent_str(),
+                    rasgo_nombre,
+                    clase_nombre
+                ));
                 self.indent += 1;
                 for metodo in metodos {
                     self.formatear_metodo_struct(metodo);
@@ -395,7 +457,14 @@ impl Formatter {
                 self.indent -= 1;
                 self.push(&format!("{}}}\n", self.indent_str()));
             }
-            Declaracion::Clase { nombre, parametros_tipo, campos, metodos, atributos, invariantes } => {
+            Declaracion::Clase {
+                nombre,
+                parametros_tipo,
+                campos,
+                metodos,
+                atributos,
+                invariantes,
+            } => {
                 for attr in atributos {
                     let attr_str = self.formatear_atributo(attr);
                     self.push(&format!("{}{}\n", self.indent_str(), attr_str));
@@ -404,7 +473,7 @@ impl Formatter {
                 self.push(&format!("clase {}", nombre));
                 let gen_str = self.formatear_parametros_tipo(parametros_tipo);
                 self.push(&gen_str);
-                
+
                 if !invariantes.is_empty() {
                     self.push("\n");
                     self.indent += 1;
@@ -441,7 +510,11 @@ impl Formatter {
             Declaracion::Importar(s) => {
                 self.push(&format!("{}importar \"{}\"\n", self.indent_str(), s));
             }
-            Declaracion::Enum { nombre, variantes, atributos } => {
+            Declaracion::Enum {
+                nombre,
+                variantes,
+                atributos,
+            } => {
                 for attr in atributos {
                     let attr_str = self.formatear_atributo(attr);
                     self.push(&format!("{}{}\n", self.indent_str(), attr_str));
@@ -455,7 +528,11 @@ impl Formatter {
                 self.push(&vars_str.join(" | "));
                 self.push("\n");
             }
-            Declaracion::AsignacionMultiple { variables, mutable, valor } => {
+            Declaracion::AsignacionMultiple {
+                variables,
+                mutable,
+                valor,
+            } => {
                 self.push(&self.indent_str());
                 let kw = if *mutable { "variable" } else { "constante" };
                 self.push(&format!("{} {} = ", kw, variables.join(", ")));
@@ -484,15 +561,25 @@ impl Formatter {
             Expresion::LiteralBooleano(b) => (if *b { "verdadero" } else { "falso" }).to_string(),
             Expresion::LiteralNulo => "nulo".to_string(),
             Expresion::Identificador { nombre: n, .. } => n.clone(),
-            Expresion::Binaria { izquierda, operador, derecha } => {
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
                 let op = match operador {
-                    Operador::Suma => " + ", Operador::Resta => " - ",
-                    Operador::Multiplicacion => " * ", Operador::Division => " / ",
+                    Operador::Suma => " + ",
+                    Operador::Resta => " - ",
+                    Operador::Multiplicacion => " * ",
+                    Operador::Division => " / ",
                     Operador::Modulo => " % ",
-                    Operador::Mayor => " > ", Operador::Menor => " < ",
-                    Operador::MayorIgual => " >= ", Operador::MenorIgual => " <= ",
-                    Operador::IgualIgual => " == ", Operador::Diferente => " != ",
-                    Operador::Y => " && ", Operador::O => " || ",
+                    Operador::Mayor => " > ",
+                    Operador::Menor => " < ",
+                    Operador::MayorIgual => " >= ",
+                    Operador::MenorIgual => " <= ",
+                    Operador::IgualIgual => " == ",
+                    Operador::Diferente => " != ",
+                    Operador::Y => " && ",
+                    Operador::O => " || ",
                 };
                 let izq = self.expresion_a_string(izquierda);
                 let der = self.expresion_a_string(derecha);
@@ -599,9 +686,18 @@ impl Formatter {
                 for brazo in brazos {
                     if let Some((var, expr_recv)) = &brazo.recepcion {
                         let expr_str = self.expresion_a_string(expr_recv);
-                        out.push_str(&format!("{}caso {} = {} {{\n", self.indent_str(), var, expr_str));
+                        out.push_str(&format!(
+                            "{}caso {} = {} {{\n",
+                            self.indent_str(),
+                            var,
+                            expr_str
+                        ));
                     } else if brazo.timeout_ms > 0 {
-                        out.push_str(&format!("{}tiempo {} {{\n", self.indent_str(), brazo.timeout_ms));
+                        out.push_str(&format!(
+                            "{}tiempo {} {{\n",
+                            self.indent_str(),
+                            brazo.timeout_ms
+                        ));
                     } else {
                         out.push_str(&format!("{}otro {{\n", self.indent_str()));
                     }
@@ -628,7 +724,11 @@ impl Formatter {
                 let val_str = self.expresion_a_string(valor);
                 format!("{} = {}", variable, val_str)
             }
-            Expresion::AsignacionCampo { objeto, campo, valor } => {
+            Expresion::AsignacionCampo {
+                objeto,
+                campo,
+                valor,
+            } => {
                 let obj_str = self.expresion_a_string(objeto);
                 let val_str = self.expresion_a_string(valor);
                 format!("{}.{} = {}", obj_str, campo, val_str)
@@ -658,5 +758,7 @@ impl Formatter {
         }
     }
 
-    fn push(&mut self, s: &str) { self.output.push_str(s); }
+    fn push(&mut self, s: &str) {
+        self.output.push_str(s);
+    }
 }

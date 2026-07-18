@@ -3,6 +3,11 @@ use crate::ast::*;
 use crate::error::{ErrorForja, ErrorTipo};
 use std::collections::HashMap;
 
+/// Profundidad máxima de recursión para el análisis semántico.
+/// Previene stack overflow al recorrer ASTs con expresiones muy anidadas
+/// (ej: 0+1+2+...+99999 que crea un árbol binario de 100,000 niveles).
+const MAX_AST_PROFUNDIDAD: u32 = 10000;
+
 // ============================================================
 // Helpers para patrones de match
 // ============================================================
@@ -30,14 +35,21 @@ fn verificar_patron_duplicados(patron: &Patron) -> Result<(), ErrorForja> {
     verificar_duplicados_rec(patron, &mut vars)
 }
 
-fn verificar_duplicados_rec(patron: &Patron, vars: &mut std::collections::HashSet<String>) -> Result<(), ErrorForja> {
+fn verificar_duplicados_rec(
+    patron: &Patron,
+    vars: &mut std::collections::HashSet<String>,
+) -> Result<(), ErrorForja> {
     match patron {
         Patron::Variable(nombre) => {
             if vars.contains(nombre) {
                 return Err(ErrorForja::new(
                     ErrorTipo::ErrorSemantico,
-                    0, 0,
-                    &format!("La variable '{}' aparece más de una vez en el mismo patrón.", nombre),
+                    0,
+                    0,
+                    &format!(
+                        "La variable '{}' aparece más de una vez en el mismo patrón.",
+                        nombre
+                    ),
                     "Usá nombres distintos para cada variable en el patrón.",
                 ));
             }
@@ -99,7 +111,14 @@ impl TablaSimbolos {
         self.ambitos.pop();
     }
 
-    fn declarar(&mut self, nombre: &str, mutable: bool, linea: usize, columna: usize, tipo: Option<Tipo>) -> Result<(), ErrorForja> {
+    fn declarar(
+        &mut self,
+        nombre: &str,
+        mutable: bool,
+        linea: usize,
+        columna: usize,
+        tipo: Option<Tipo>,
+    ) -> Result<(), ErrorForja> {
         let ambito_actual = self.ambitos.last_mut().unwrap();
         if ambito_actual.contains_key(nombre) {
             return Err(ErrorForja::new(
@@ -142,7 +161,12 @@ impl TablaSimbolos {
         None
     }
 
-    fn mover_variable(&mut self, nombre: &str, linea: usize, columna: usize) -> Result<(), ErrorForja> {
+    fn mover_variable(
+        &mut self,
+        nombre: &str,
+        linea: usize,
+        columna: usize,
+    ) -> Result<(), ErrorForja> {
         let info = self.obtener_mut(nombre).ok_or_else(|| {
             ErrorForja::new(
                 ErrorTipo::ErrorSemantico,
@@ -181,7 +205,13 @@ impl TablaSimbolos {
         }
     }
 
-    fn prestar_variable(&mut self, nombre: &str, _mutable: bool, linea: usize, columna: usize) -> Result<(), ErrorForja> {
+    fn prestar_variable(
+        &mut self,
+        nombre: &str,
+        _mutable: bool,
+        linea: usize,
+        columna: usize,
+    ) -> Result<(), ErrorForja> {
         let info = self.obtener_mut(nombre).ok_or_else(|| {
             ErrorForja::new(
                 ErrorTipo::ErrorSemantico,
@@ -262,7 +292,12 @@ impl TablaSimbolos {
         }
     }
 
-    fn escribir_variable(&mut self, nombre: &str, linea: usize, columna: usize) -> Result<(), ErrorForja> {
+    fn escribir_variable(
+        &mut self,
+        nombre: &str,
+        linea: usize,
+        columna: usize,
+    ) -> Result<(), ErrorForja> {
         let info = self.obtener_mut(nombre).ok_or_else(|| {
             ErrorForja::new(
                 ErrorTipo::ErrorSemantico,
@@ -305,7 +340,10 @@ impl TablaSimbolos {
                 ErrorTipo::ErrorDePropiedad,
                 linea,
                 columna,
-                &format!("La variable '{}' fue movida y no puede ser modificada.", nombre),
+                &format!(
+                    "La variable '{}' fue movida y no puede ser modificada.",
+                    nombre
+                ),
                 "Usá la variable que ahora posee el valor.",
             )),
         }
@@ -315,7 +353,9 @@ impl TablaSimbolos {
     fn liberar_prestamo(&mut self, nombre: &str) {
         if let Some(info) = self.obtener_mut(nombre) {
             match info.estado {
-                EstadoVariable::Prestada(n) if n > 1 => info.estado = EstadoVariable::Prestada(n - 1),
+                EstadoVariable::Prestada(n) if n > 1 => {
+                    info.estado = EstadoVariable::Prestada(n - 1)
+                }
                 EstadoVariable::Prestada(_) => info.estado = EstadoVariable::Viva,
                 _ => {}
             }
@@ -372,24 +412,41 @@ impl BorrowChecker {
     fn es_copy(tipo: &Option<Tipo>) -> bool {
         match tipo {
             None => true, // Si no sabemos el tipo, asumimos Copy (seguro)
-            Some(Tipo::Entero) | Some(Tipo::Decimal) | Some(Tipo::Booleano) | Some(Tipo::Nulo) | Some(Tipo::Exacto) | Some(Tipo::Texto) => true,
+            Some(Tipo::Entero) | Some(Tipo::Decimal) | Some(Tipo::Booleano) | Some(Tipo::Nulo)
+            | Some(Tipo::Exacto) | Some(Tipo::Texto) => true,
             Some(Tipo::Clase(_)) | Some(Tipo::Arreglo(_)) | Some(Tipo::Funcion(_, _)) => false,
-            Some(Tipo::Resultado(_, _)) | Some(Tipo::Opcion(_)) | Some(Tipo::RasgoObjeto(_)) | Some(Tipo::Parametro(_)) => false,
+            Some(Tipo::Resultado(_, _))
+            | Some(Tipo::Opcion(_))
+            | Some(Tipo::RasgoObjeto(_))
+            | Some(Tipo::Parametro(_)) => false,
         }
     }
 
     fn analizar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { mutable, nombre, valor, linea, columna, .. } => {
+            Declaracion::Variable {
+                mutable,
+                nombre,
+                valor,
+                linea,
+                columna,
+                ..
+            } => {
                 let mut tipo_inferido = None;
 
                 if let Some(val) = valor {
                     tipo_inferido = self.analizar_expresion(val);
 
                     // Si el valor es un identificador, verificar si hay que moverlo
-                    if let Expresion::Identificador { nombre: id, linea: id_linea, columna: id_columna } = val {
+                    if let Expresion::Identificador {
+                        nombre: id,
+                        linea: id_linea,
+                        columna: id_columna,
+                    } = val
+                    {
                         // Obtener el tipo de la variable original
-                        let tipo_original = self.tabla.obtener(id).and_then(|info| info.tipo.clone());
+                        let tipo_original =
+                            self.tabla.obtener(id).and_then(|info| info.tipo.clone());
                         if !Self::es_copy(&tipo_original) {
                             if let Err(e) = self.tabla.mover_variable(id, *id_linea, *id_columna) {
                                 self.errores.push(e);
@@ -398,23 +455,43 @@ impl BorrowChecker {
                     }
                 }
 
-                if let Err(e) = self.tabla.declarar(nombre, *mutable, *linea, *columna, tipo_inferido) {
+                if let Err(e) =
+                    self.tabla
+                        .declarar(nombre, *mutable, *linea, *columna, tipo_inferido)
+                {
                     self.errores.push(e);
                 }
             }
 
-            Declaracion::Asignacion { nombre, valor, linea, columna } => {
+            Declaracion::Asignacion {
+                nombre,
+                valor,
+                linea,
+                columna,
+            } => {
                 if let Err(e) = self.tabla.escribir_variable(nombre, *linea, *columna) {
                     self.errores.push(e);
                 }
                 self.analizar_expresion(valor);
             }
-            Declaracion::AsignacionMiembro { objeto, miembro: _, valor, linea: _, columna: _ } => {
+            Declaracion::AsignacionMiembro {
+                objeto,
+                miembro: _,
+                valor,
+                linea: _,
+                columna: _,
+            } => {
                 self.analizar_expresion(objeto);
                 self.analizar_expresion(valor);
             }
 
-            Declaracion::AsignacionIndex { nombre, indice, valor, linea, columna } => {
+            Declaracion::AsignacionIndex {
+                nombre,
+                indice,
+                valor,
+                linea,
+                columna,
+            } => {
                 if let Err(e) = self.tabla.escribir_variable(nombre, *linea, *columna) {
                     self.errores.push(e);
                 }
@@ -422,8 +499,11 @@ impl BorrowChecker {
                 self.analizar_expresion(valor);
             }
 
-
-            Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+            Declaracion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
                 self.analizar_expresion(condicion);
                 self.tabla.entrar_ambito();
                 self.analizar_declaraciones(bloque_verdadero);
@@ -443,14 +523,21 @@ impl BorrowChecker {
                 self.tabla.salir_ambito();
             }
 
-            Declaracion::Cuando { condicion, cuerpo, .. } => {
+            Declaracion::Cuando {
+                condicion, cuerpo, ..
+            } => {
                 self.analizar_expresion(condicion);
                 self.tabla.entrar_ambito();
                 self.analizar_declaraciones(cuerpo);
                 self.tabla.salir_ambito();
             }
 
-            Declaracion::Para { inicializacion, condicion, incremento, bloque } => {
+            Declaracion::Para {
+                inicializacion,
+                condicion,
+                incremento,
+                bloque,
+            } => {
                 self.tabla.entrar_ambito();
                 if let Some(init) = inicializacion {
                     self.analizar_declaracion(init);
@@ -472,7 +559,13 @@ impl BorrowChecker {
                 self.tabla.salir_ambito();
             }
 
-            Declaracion::Funcion { nombre: _, parametros, cuerpo, atributos, .. } => {
+            Declaracion::Funcion {
+                nombre: _,
+                parametros,
+                cuerpo,
+                atributos,
+                ..
+            } => {
                 // Validar @test: funciones con @test no deben tener parámetros
                 if atributos.iter().any(|a| a.nombre == "test") && !parametros.is_empty() {
                     self.errores.push(ErrorForja::new(
@@ -486,7 +579,9 @@ impl BorrowChecker {
                 self.tabla.entrar_ambito();
                 for param in parametros {
                     let tipo_param = param.tipo.clone();
-                    let _ = self.tabla.declarar(&param.nombre, param.mutable, 0, 0, tipo_param);
+                    let _ = self
+                        .tabla
+                        .declarar(&param.nombre, param.mutable, 0, 0, tipo_param);
                 }
                 self.analizar_declaraciones(cuerpo);
                 self.tabla.salir_ambito();
@@ -499,14 +594,19 @@ impl BorrowChecker {
                     let _ = self.tabla.declarar("self", false, 0, 0, None);
                     for param in &metodo.parametros {
                         let tipo_param = param.tipo.clone();
-                        let _ = self.tabla.declarar(&param.nombre, param.mutable, 0, 0, tipo_param);
+                        let _ = self
+                            .tabla
+                            .declarar(&param.nombre, param.mutable, 0, 0, tipo_param);
                     }
                     self.analizar_declaraciones(&metodo.cuerpo);
                     self.tabla.salir_ambito();
                 }
             }
 
-            Declaracion::LlamadaFuncion { nombre: _, argumentos } => {
+            Declaracion::LlamadaFuncion {
+                nombre: _,
+                argumentos,
+            } => {
                 for arg in argumentos {
                     // Por ahora, pasar argumentos a funciones NO mueve (son Copy)
                     // En el futuro, si el tipo no implementa Copy, será un move
@@ -528,7 +628,9 @@ impl BorrowChecker {
             Declaracion::Implementacion { .. } => {}
 
             Declaracion::Importar(_) => {}
-            Declaracion::Enum { nombre, variantes, .. } => {
+            Declaracion::Enum {
+                nombre, variantes, ..
+            } => {
                 let var_names: Vec<String> = variantes.iter().map(|v| v.nombre.clone()).collect();
                 self.variantes_enum.insert(nombre.clone(), var_names);
             }
@@ -536,7 +638,9 @@ impl BorrowChecker {
             Declaracion::Expresion(expr) => {
                 self.analizar_expresion(expr);
             }
-            Declaracion::AsignacionMultiple { variables, valor, .. } => {
+            Declaracion::AsignacionMultiple {
+                variables, valor, ..
+            } => {
                 for var in variables {
                     let _ = self.tabla.declarar(var, false, 0, 0, None);
                 }
@@ -546,7 +650,21 @@ impl BorrowChecker {
     }
 
     /// Analiza una expresión y retorna el tipo inferido (None por ahora)
+    /// `depth` controla la profundidad de recursión para prevenir stack overflow.
     fn analizar_expresion(&mut self, expr: &Expresion) -> Option<Tipo> {
+        self.analizar_expresion_con_depth(expr, 0)
+    }
+
+    /// Versión interna con control de profundidad para prevenir stack overflow.
+    fn analizar_expresion_con_depth(&mut self, expr: &Expresion, depth: u32) -> Option<Tipo> {
+        if depth > MAX_AST_PROFUNDIDAD {
+            self.errores.push(ErrorForja::new(
+                ErrorTipo::ErrorSemantico, 0, 0,
+                "Expresión demasiado grande: se excedió la profundidad máxima de análisis semántico.",
+                "Simplificá la expresión dividiéndola en partes más pequeñas.",
+            ));
+            return None;
+        }
         match expr {
             Expresion::LiteralNumero(_) => Some(Tipo::Entero),
             Expresion::LiteralDecimal(_) => Some(Tipo::Decimal),
@@ -555,23 +673,31 @@ impl BorrowChecker {
             Expresion::LiteralNulo => Some(Tipo::Nulo),
             Expresion::LiteralExacto(_, _) => Some(Tipo::Exacto),
 
-            Expresion::Identificador { nombre, linea, columna } => {
+            Expresion::Identificador {
+                nombre,
+                linea,
+                columna,
+            } => {
                 if let Err(e) = self.tabla.leer_variable(nombre, *linea, *columna) {
                     self.errores.push(e);
                 }
                 // Retornar el tipo de la variable si está registrada
-                self.tabla.obtener(nombre).and_then(|info| info.tipo.clone())
+                self.tabla
+                    .obtener(nombre)
+                    .and_then(|info| info.tipo.clone())
             }
 
-            Expresion::Binaria { izquierda, derecha, .. } => {
-                let tipo_izq = self.analizar_expresion(izquierda);
-                self.analizar_expresion(derecha);
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => {
+                let tipo_izq = self.analizar_expresion_con_depth(izquierda, depth + 1);
+                self.analizar_expresion_con_depth(derecha, depth + 1);
                 // Para binarias, retornar el tipo del lado izquierdo (aproximación)
                 tipo_izq
             }
 
             Expresion::Unaria { expr: e, .. } => {
-                self.analizar_expresion(e);
+                self.analizar_expresion_con_depth(e, depth + 1);
                 None
             }
 
@@ -579,13 +705,20 @@ impl BorrowChecker {
                 if nombre == "escribir" {
                     // escribir() solo lee valores, no mueve
                     for arg in argumentos {
-                        self.analizar_expresion(arg);
+                        self.analizar_expresion_con_depth(arg, depth + 1);
                     }
                 } else {
                     for arg in argumentos {
-                        if let Expresion::Identificador { nombre: id, linea, columna } = arg {
+                        if let Expresion::Identificador {
+                            nombre: id,
+                            linea,
+                            columna,
+                        } = arg
+                        {
                             // Solo mover si el tipo NO es Copy
-                            let es_copy = self.tabla.obtener(id)
+                            let es_copy = self
+                                .tabla
+                                .obtener(id)
                                 .map(|info| Self::es_copy(&info.tipo))
                                 .unwrap_or(true);
                             if !es_copy {
@@ -594,68 +727,76 @@ impl BorrowChecker {
                                 }
                             }
                         }
-                        self.analizar_expresion(arg);
+                        self.analizar_expresion_con_depth(arg, depth + 1);
                     }
                 }
                 None
             }
 
             Expresion::AccesoMiembro { objeto, miembro: _ } => {
-                self.analizar_expresion(objeto);
+                self.analizar_expresion_con_depth(objeto, depth + 1);
                 None
             }
 
             Expresion::Instanciacion { argumentos, .. } => {
                 for arg in argumentos {
-                    self.analizar_expresion(arg);
+                    self.analizar_expresion_con_depth(arg, depth + 1);
                 }
                 None
             }
 
             Expresion::Referencia { expr: e, mutable } => {
-                if let Expresion::Identificador { nombre, linea, columna } = e.as_ref() {
+                if let Expresion::Identificador {
+                    nombre,
+                    linea,
+                    columna,
+                } = e.as_ref()
+                {
                     // Si es una función, permitir la referencia sin validar en tabla de variables
                     if !self.funciones.contains(nombre.as_str()) {
-                        if let Err(err) = self.tabla.prestar_variable(nombre, *mutable, *linea, *columna) {
+                        if let Err(err) = self
+                            .tabla
+                            .prestar_variable(nombre, *mutable, *linea, *columna)
+                        {
                             self.errores.push(err);
                         }
                         // Solo analizar recursivamente si NO es función (evitar error de variable no declarada)
-                        self.analizar_expresion(e);
+                        self.analizar_expresion_con_depth(e, depth + 1);
                     }
                 } else {
-                    self.analizar_expresion(e);
+                    self.analizar_expresion_con_depth(e, depth + 1);
                 }
                 None
             }
 
             Expresion::Arreglo(elementos) => {
                 for elem in elementos {
-                    self.analizar_expresion(elem);
+                    self.analizar_expresion_con_depth(elem, depth + 1);
                 }
                 None
             }
 
             Expresion::Grupo(expr) => {
-                self.analizar_expresion(expr);
+                self.analizar_expresion_con_depth(expr, depth + 1);
                 None
             }
 
             Expresion::Index { objeto, indice } => {
-                self.analizar_expresion(objeto);
-                self.analizar_expresion(indice);
+                self.analizar_expresion_con_depth(objeto, depth + 1);
+                self.analizar_expresion_con_depth(indice, depth + 1);
                 None
             }
 
             Expresion::Mapa(pares) => {
                 for (clave, valor) in pares {
-                    self.analizar_expresion(clave);
-                    self.analizar_expresion(valor);
+                    self.analizar_expresion_con_depth(clave, depth + 1);
+                    self.analizar_expresion_con_depth(valor, depth + 1);
                 }
                 None
             }
 
             Expresion::Coincidir { expr, brazos } => {
-                let tipo_expr = self.analizar_expresion(expr);
+                let tipo_expr = self.analizar_expresion_con_depth(expr, depth + 1);
                 for brazo in brazos {
                     for d in &brazo.cuerpo {
                         self.analizar_declaracion(d);
@@ -681,7 +822,8 @@ impl BorrowChecker {
                                 _ => {}
                             }
                         }
-                        let no_cubiertas: Vec<String> = variantes.iter()
+                        let no_cubiertas: Vec<String> = variantes
+                            .iter()
                             .enumerate()
                             .filter(|(i, _)| !cubiertas[*i])
                             .map(|(_, v)| v.clone())
@@ -701,12 +843,18 @@ impl BorrowChecker {
                 }
                 // Verificar brazos inalcanzables
                 if brazos.len() > 1 {
-                    for (i, brazo) in brazos[..brazos.len()-1].iter().enumerate() {
-                        if matches!(brazo.patron, Patron::Ignorar) || matches!(brazo.patron, Patron::Variable(_)) {
+                    for (i, brazo) in brazos[..brazos.len() - 1].iter().enumerate() {
+                        if matches!(brazo.patron, Patron::Ignorar)
+                            || matches!(brazo.patron, Patron::Variable(_))
+                        {
                             self.errores.push(ErrorForja::new(
                                 ErrorTipo::ErrorSemantico,
-                                0, 0,
-                                &format!("Brazo inalcanzable después del patrón comodín en posición {}", i),
+                                0,
+                                0,
+                                &format!(
+                                    "Brazo inalcanzable después del patrón comodín en posición {}",
+                                    i
+                                ),
                                 "Mové el patrón comodín al final del match.",
                             ));
                             break;
@@ -734,7 +882,9 @@ impl BorrowChecker {
             Expresion::Closure { parametros, cuerpo } => {
                 self.tabla.entrar_ambito();
                 for param in parametros {
-                    let _ = self.tabla.declarar(&param.nombre, param.mutable, 0, 0, param.tipo.clone());
+                    let _ =
+                        self.tabla
+                            .declarar(&param.nombre, param.mutable, 0, 0, param.tipo.clone());
                 }
                 for d in cuerpo {
                     self.analizar_declaracion(d);
@@ -767,7 +917,7 @@ impl BorrowChecker {
             }
             Expresion::CanalNuevo => None,
             Expresion::Try(expr) => {
-                self.analizar_expresion(expr);
+                self.analizar_expresion_con_depth(expr, depth + 1);
                 None
             }
             Expresion::Asignacion { variable, valor } => {
@@ -775,21 +925,25 @@ impl BorrowChecker {
                 if let Err(e) = self.tabla.escribir_variable(variable, 0, 0) {
                     self.errores.push(e);
                 }
-                self.analizar_expresion(valor);
+                self.analizar_expresion_con_depth(valor, depth + 1);
                 None
             }
-            Expresion::AsignacionCampo { objeto, campo: _, valor } => {
-                self.analizar_expresion(objeto);
-                self.analizar_expresion(valor);
+            Expresion::AsignacionCampo {
+                objeto,
+                campo: _,
+                valor,
+            } => {
+                self.analizar_expresion_con_depth(objeto, depth + 1);
+                self.analizar_expresion_con_depth(valor, depth + 1);
                 None
             }
             Expresion::ArraySet { array, valor } => {
-                self.analizar_expresion(array);
-                self.analizar_expresion(valor);
+                self.analizar_expresion_con_depth(array, depth + 1);
+                self.analizar_expresion_con_depth(valor, depth + 1);
                 None
             }
             Expresion::Ok(expr) | Expresion::Error(expr) | Expresion::Algo(expr) => {
-                self.analizar_expresion(expr);
+                self.analizar_expresion_con_depth(expr, depth + 1);
                 None
             }
             Expresion::Resultado | Expresion::Anterior(_) => None,
@@ -807,7 +961,8 @@ pub struct TypeChecker {
     tabla: TablaSimbolos,
     errores: Vec<ErrorForja>,
     /// Mapa de función -> (tipos_param (None si no tiene tipo explícito), tipo_retorno, parametros_tipo)
-    funciones: std::collections::HashMap<String, (Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>,
+    funciones:
+        std::collections::HashMap<String, (Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>,
     /// Tipos inferidos para cada variable (nombre -> tipo)
     tipos: HashMap<String, Tipo>,
     /// Definiciones de rasgos: nombre -> lista de firmas de métodos
@@ -850,7 +1005,7 @@ impl TypeChecker {
         self.recolectar_funciones(&programa.declaraciones);
         // Pasada 2: inferir tipos en declaraciones
         self.analizar_declaraciones(&programa.declaraciones);
-        
+
         if self.errores.is_empty() {
             Ok(())
         } else {
@@ -865,13 +1020,22 @@ impl TypeChecker {
 
     fn recolectar_funciones(&mut self, declaraciones: &[Declaracion]) {
         for decl in declaraciones {
-            if let Declaracion::Funcion { nombre, parametros, tipo_retorno, parametros_tipo, .. } = decl {
+            if let Declaracion::Funcion {
+                nombre,
+                parametros,
+                tipo_retorno,
+                parametros_tipo,
+                ..
+            } = decl
+            {
                 // Guardamos los tipos explícitos de parámetros, pero contamos todos
                 // los parámetros (aunque no tengan tipo explícito)
-                let tipos_param: Vec<Option<Tipo>> = parametros.iter()
-                    .map(|p| p.tipo.clone())
-                    .collect();
-                self.funciones.insert(nombre.clone(), (tipos_param, tipo_retorno.clone(), parametros_tipo.clone()));
+                let tipos_param: Vec<Option<Tipo>> =
+                    parametros.iter().map(|p| p.tipo.clone()).collect();
+                self.funciones.insert(
+                    nombre.clone(),
+                    (tipos_param, tipo_retorno.clone(), parametros_tipo.clone()),
+                );
             }
         }
     }
@@ -881,7 +1045,8 @@ impl TypeChecker {
             if let Declaracion::Rasgo { nombre, metodos } = decl {
                 self.rasgos.insert(nombre.clone(), metodos.clone());
                 // Registrar el rasgo como tipo conocido
-                self.tipos.insert(nombre.clone(), Tipo::RasgoObjeto(nombre.clone()));
+                self.tipos
+                    .insert(nombre.clone(), Tipo::RasgoObjeto(nombre.clone()));
             }
         }
     }
@@ -894,22 +1059,36 @@ impl TypeChecker {
 
     fn analizar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { mutable, nombre, valor, tipo, linea, columna } => {
+            Declaracion::Variable {
+                mutable,
+                nombre,
+                valor,
+                tipo,
+                linea,
+                columna,
+            } => {
                 self.linea_actual = *linea;
                 self.columna_actual = *columna;
                 // La anotación explícita de tipo tiene prioridad sobre la inferencia
                 let tipo_inferido = match (tipo, valor) {
-                    (Some(t), _) => Some(t.clone()),    // Anotación explícita gana
+                    (Some(t), _) => Some(t.clone()), // Anotación explícita gana
                     (None, Some(val)) => self.inferir_tipo(val), // Inferir del valor
-                    (None, None) => None,               // Sin tipo ni valor
+                    (None, None) => None,            // Sin tipo ni valor
                 };
                 if let Some(ref tipo) = tipo_inferido {
                     self.tipos.insert(nombre.clone(), tipo.clone());
                 }
-                let _ = self.tabla.declarar(nombre, *mutable, *linea, *columna, tipo_inferido);
+                let _ = self
+                    .tabla
+                    .declarar(nombre, *mutable, *linea, *columna, tipo_inferido);
             }
 
-            Declaracion::Asignacion { nombre, valor, linea, columna } => {
+            Declaracion::Asignacion {
+                nombre,
+                valor,
+                linea,
+                columna,
+            } => {
                 self.linea_actual = *linea;
                 self.columna_actual = *columna;
                 let tipo_valor = self.inferir_tipo(valor);
@@ -938,7 +1117,11 @@ impl TypeChecker {
                 self.inferir_tipo(valor);
             }
 
-            Declaracion::Si { condicion, bloque_verdadero, bloque_falso } => {
+            Declaracion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
                 let _tipo_cond = self.inferir_tipo(condicion);
                 // Permitir cualquier tipo como condición (se evalúa como verdadero/falso en runtime)
                 self.tabla.entrar_ambito();
@@ -959,19 +1142,35 @@ impl TypeChecker {
                 self.tabla.salir_ambito();
             }
 
-            Declaracion::Cuando { condicion, cuerpo, linea: _, columna: _ } => {
+            Declaracion::Cuando {
+                condicion,
+                cuerpo,
+                linea: _,
+                columna: _,
+            } => {
                 let _tipo_cond = self.inferir_tipo(condicion);
                 self.tabla.entrar_ambito();
                 self.analizar_declaraciones(cuerpo);
                 self.tabla.salir_ambito();
             }
 
-            Declaracion::Funcion { nombre: _, parametros_tipo: _, parametros, cuerpo, tipo_retorno, precondiciones, postcondiciones, .. } => {
+            Declaracion::Funcion {
+                nombre: _,
+                parametros_tipo: _,
+                parametros,
+                cuerpo,
+                tipo_retorno,
+                precondiciones,
+                postcondiciones,
+                ..
+            } => {
                 self.tabla.entrar_ambito();
                 // Los parámetros de tipo no se declaran en la tabla de variables,
                 // se manejan durante la inferencia de tipos
                 for param in parametros {
-                    let _ = self.tabla.declarar(&param.nombre, param.mutable, 0, 0, param.tipo.clone());
+                    let _ =
+                        self.tabla
+                            .declarar(&param.nombre, param.mutable, 0, 0, param.tipo.clone());
                 }
                 // Guardar tipo de retorno para resolver 'resultado' en postcondiciones
                 let tipo_retorno_anterior = self.tipo_retorno_actual.clone();
@@ -984,7 +1183,8 @@ impl TypeChecker {
                         if *t != Tipo::Booleano {
                             self.errores.push(ErrorForja::new(
                                 ErrorTipo::ErrorDeTipo,
-                                self.linea_actual, self.columna_actual,
+                                self.linea_actual,
+                                self.columna_actual,
                                 &format!("La precondición debe ser Booleano, no {:?}", t),
                                 "Usá una expresión booleana en la precondición (ej: x > 0)",
                             ));
@@ -1014,7 +1214,11 @@ impl TypeChecker {
                 self.tipo_retorno_actual = tipo_retorno_anterior;
             }
 
-            Declaracion::Clase { metodos, invariantes, .. } => {
+            Declaracion::Clase {
+                metodos,
+                invariantes,
+                ..
+            } => {
                 // Verificar invariantes de clase: deben ser Booleanas
                 for inv in invariantes {
                     let tipo = self.inferir_tipo(&inv.condicion);
@@ -1034,7 +1238,13 @@ impl TypeChecker {
                     self.tabla.entrar_ambito();
                     let _ = self.tabla.declarar("self", false, 0, 0, None);
                     for param in &metodo.parametros {
-                        let _ = self.tabla.declarar(&param.nombre, param.mutable, 0, 0, param.tipo.clone());
+                        let _ = self.tabla.declarar(
+                            &param.nombre,
+                            param.mutable,
+                            0,
+                            0,
+                            param.tipo.clone(),
+                        );
                     }
                     // Guardar tipo de retorno para 'resultado' en postcondiciones del método
                     let tipo_retorno_anterior = self.tipo_retorno_actual.clone();
@@ -1078,7 +1288,13 @@ impl TypeChecker {
                 }
             }
 
-            Declaracion::AsignacionIndex { nombre, indice, valor, linea, columna } => {
+            Declaracion::AsignacionIndex {
+                nombre,
+                indice,
+                valor,
+                linea,
+                columna,
+            } => {
                 self.linea_actual = *linea;
                 self.columna_actual = *columna;
                 self.inferir_tipo(indice);
@@ -1089,7 +1305,9 @@ impl TypeChecker {
                         // OK
                     } else if info.tipo.is_some() {
                         self.errores.push(ErrorForja::new(
-                            ErrorTipo::ErrorDeTipo, *linea, *columna,
+                            ErrorTipo::ErrorDeTipo,
+                            *linea,
+                            *columna,
                             &format!("'{}' no es un arreglo", nombre),
                             "Usá un arreglo para acceder por índice.",
                         ));
@@ -1101,7 +1319,11 @@ impl TypeChecker {
                 // Los rasgos ya se recolectaron en recolectar_rasgos
             }
 
-            Declaracion::Implementacion { rasgo_nombre, clase_nombre, metodos } => {
+            Declaracion::Implementacion {
+                rasgo_nombre,
+                clase_nombre,
+                metodos,
+            } => {
                 // Verificar que el rasgo existe
                 if let Some(firmas) = self.rasgos.get(rasgo_nombre) {
                     // Verificar que todos los métodos del rasgo están implementados
@@ -1118,7 +1340,9 @@ impl TypeChecker {
                     }
                 } else {
                     self.errores.push(ErrorForja::new(
-                        ErrorTipo::ErrorSemantico, self.linea_actual, self.columna_actual,
+                        ErrorTipo::ErrorSemantico,
+                        self.linea_actual,
+                        self.columna_actual,
                         &format!("El rasgo '{}' no está definido.", rasgo_nombre),
                         "Definí el rasgo antes de usarlo con 'rasgo Nombre { ... }'.",
                     ));
@@ -1127,7 +1351,13 @@ impl TypeChecker {
                 for metodo in metodos {
                     self.tabla.entrar_ambito();
                     for param in &metodo.parametros {
-                        let _ = self.tabla.declarar(&param.nombre, param.mutable, 0, 0, param.tipo.clone());
+                        let _ = self.tabla.declarar(
+                            &param.nombre,
+                            param.mutable,
+                            0,
+                            0,
+                            param.tipo.clone(),
+                        );
                     }
                     self.analizar_declaraciones(&metodo.cuerpo);
                     self.tabla.salir_ambito();
@@ -1135,32 +1365,46 @@ impl TypeChecker {
             }
 
             Declaracion::Importar(_) => {}
-            Declaracion::Enum { nombre, variantes, .. } => {
+            Declaracion::Enum {
+                nombre, variantes, ..
+            } => {
                 let var_names: Vec<String> = variantes.iter().map(|v| v.nombre.clone()).collect();
                 self.variantes_enum.insert(nombre.clone(), var_names);
             }
 
             Declaracion::LlamadaFuncion { nombre, argumentos } => {
-                let tipos_args: Vec<Option<Tipo>> = argumentos.iter().map(|arg| self.inferir_tipo(arg)).collect();
+                let tipos_args: Vec<Option<Tipo>> = argumentos
+                    .iter()
+                    .map(|arg| self.inferir_tipo(arg))
+                    .collect();
                 // Verificar cantidad de argumentos si conocemos la función
                 if let Some((ref params, _, ref params_tipo)) = self.funciones.get(nombre) {
                     if argumentos.len() != params.len() {
                         self.errores.push(ErrorForja::new(
-                            ErrorTipo::ErrorDeTipo, self.linea_actual, self.columna_actual,
-                            &format!("La función '{}' espera {} argumentos, pero se pasaron {}",
-                                nombre, params.len(), argumentos.len()),
+                            ErrorTipo::ErrorDeTipo,
+                            self.linea_actual,
+                            self.columna_actual,
+                            &format!(
+                                "La función '{}' espera {} argumentos, pero se pasaron {}",
+                                nombre,
+                                params.len(),
+                                argumentos.len()
+                            ),
                             "Revisá la cantidad de argumentos.",
                         ));
                     }
                     // Inferir parámetros de tipo desde los argumentos
                     if !params_tipo.is_empty() {
                         // Mapa: nombre_param_tipo -> tipo concreto inferido
-                        let mut inferidos: std::collections::HashMap<String, Tipo> = std::collections::HashMap::new();
+                        let mut inferidos: std::collections::HashMap<String, Tipo> =
+                            std::collections::HashMap::new();
                         for (i, _param_tipo) in params_tipo.iter().enumerate() {
                             if i < params.len() {
                                 if let Some(ref param_decl) = params[i] {
                                     if let Tipo::Parametro(ref pnombre) = param_decl {
-                                        if let Some(ref arg_tipo) = tipos_args.get(i).and_then(|t| t.clone()) {
+                                        if let Some(ref arg_tipo) =
+                                            tipos_args.get(i).and_then(|t| t.clone())
+                                        {
                                             inferidos.insert(pnombre.clone(), arg_tipo.clone());
                                         }
                                     }
@@ -1179,6 +1423,19 @@ impl TypeChecker {
 
     /// Infiere el tipo de una expresión recursivamente
     pub fn inferir_tipo(&mut self, expr: &Expresion) -> Option<Tipo> {
+        self.inferir_tipo_con_depth(expr, 0)
+    }
+
+    /// Versión interna con control de profundidad para prevenir stack overflow.
+    fn inferir_tipo_con_depth(&mut self, expr: &Expresion, depth: u32) -> Option<Tipo> {
+        if depth > MAX_AST_PROFUNDIDAD {
+            self.errores.push(ErrorForja::new(
+                ErrorTipo::ErrorDeTipo, 0, 0,
+                "Expresión demasiado grande: se excedió la profundidad máxima de inferencia de tipos.",
+                "Simplificá la expresión dividiéndola en partes más pequeñas.",
+            ));
+            return None;
+        }
         match expr {
             Expresion::LiteralNumero(_) => Some(Tipo::Entero),
             Expresion::LiteralDecimal(_) => Some(Tipo::Decimal),
@@ -1187,26 +1444,34 @@ impl TypeChecker {
             Expresion::LiteralNulo => Some(Tipo::Nulo),
             Expresion::LiteralExacto(_, _) => Some(Tipo::Exacto),
 
-            Expresion::Identificador { nombre, .. } => {
-                match nombre.as_str() {
-                    "verdadero" | "falso" => Some(Tipo::Booleano),
-                    _ => self.tabla.obtener(nombre).and_then(|info| info.tipo.clone()),
-                }
-            }
+            Expresion::Identificador { nombre, .. } => match nombre.as_str() {
+                "verdadero" | "falso" => Some(Tipo::Booleano),
+                _ => self
+                    .tabla
+                    .obtener(nombre)
+                    .and_then(|info| info.tipo.clone()),
+            },
 
-            Expresion::Binaria { izquierda, operador, derecha } => {
-                let t_izq = self.inferir_tipo(izquierda);
-                let t_der = self.inferir_tipo(derecha);
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
+                let t_izq = self.inferir_tipo_con_depth(izquierda, depth + 1);
+                let t_der = self.inferir_tipo_con_depth(derecha, depth + 1);
                 self.verificar_binaria(t_izq, t_der, operador)
             }
 
             Expresion::Unaria { operador, expr: e } => {
-                let t = self.inferir_tipo(e);
+                let t = self.inferir_tipo_con_depth(e, depth + 1);
                 match operador {
                     OperadorUnario::No => {
                         // Permitir ! en cualquier tipo (no-booleano → Nulo en runtime)
-                        if let Some(Tipo::Booleano) = t { Some(Tipo::Booleano) }
-                        else { Some(Tipo::Nulo) }
+                        if let Some(Tipo::Booleano) = t {
+                            Some(Tipo::Booleano)
+                        } else {
+                            Some(Tipo::Nulo)
+                        }
                     }
                     OperadorUnario::Negar => {
                         match t {
@@ -1225,17 +1490,25 @@ impl TypeChecker {
             }
 
             Expresion::LlamadaFuncion { nombre, argumentos } => {
-                let tipos_args: Vec<Option<Tipo>> = argumentos.iter().map(|arg| self.inferir_tipo(arg)).collect();
+                let tipos_args: Vec<Option<Tipo>> = argumentos
+                    .iter()
+                    .map(|arg| self.inferir_tipo_con_depth(arg, depth + 1))
+                    .collect();
                 // Determinar tipo de retorno si conocemos la función
-                if let Some((ref params, ref retorno, ref params_tipo)) = self.funciones.get(nombre).cloned() {
+                if let Some((ref params, ref retorno, ref params_tipo)) =
+                    self.funciones.get(nombre).cloned()
+                {
                     // Inferir parámetros de tipo desde los argumentos
                     if !params_tipo.is_empty() && argumentos.len() == params.len() {
-                        let mut inferidos: std::collections::HashMap<String, Tipo> = std::collections::HashMap::new();
+                        let mut inferidos: std::collections::HashMap<String, Tipo> =
+                            std::collections::HashMap::new();
                         for (i, param_decl) in params.iter().enumerate() {
                             if i < argumentos.len() {
                                 if let Some(ref p_tipo) = param_decl {
                                     if let Tipo::Parametro(ref pnombre) = p_tipo {
-                                        if let Some(ref arg_tipo) = tipos_args.get(i).and_then(|t| t.clone()) {
+                                        if let Some(ref arg_tipo) =
+                                            tipos_args.get(i).and_then(|t| t.clone())
+                                        {
                                             inferidos.insert(pnombre.clone(), arg_tipo.clone());
                                         }
                                     }
@@ -1255,13 +1528,13 @@ impl TypeChecker {
             }
 
             Expresion::AccesoMiembro { objeto, miembro: _ } => {
-                self.inferir_tipo(objeto);
+                self.inferir_tipo_con_depth(objeto, depth + 1);
                 None // No sabemos el tipo del miembro sin contexto de clase
             }
 
             Expresion::Instanciacion { clase, argumentos } => {
                 for arg in argumentos {
-                    self.inferir_tipo(arg);
+                    self.inferir_tipo_con_depth(arg, depth + 1);
                 }
                 // Si el nombre es un rasgo, devolver RasgoObjeto
                 if self.rasgos.contains_key(clase) {
@@ -1271,12 +1544,13 @@ impl TypeChecker {
                 }
             }
 
-            Expresion::Referencia { expr: e, .. } => {
-                self.inferir_tipo(e)
-            }
+            Expresion::Referencia { expr: e, .. } => self.inferir_tipo_con_depth(e, depth + 1),
 
             Expresion::Arreglo(elementos) => {
-                let tipos: Vec<Option<Tipo>> = elementos.iter().map(|e| self.inferir_tipo(e)).collect();
+                let tipos: Vec<Option<Tipo>> = elementos
+                    .iter()
+                    .map(|e| self.inferir_tipo_con_depth(e, depth + 1))
+                    .collect();
                 if let Some(primer_tipo) = tipos.first().and_then(|t| t.clone()) {
                     Some(Tipo::Arreglo(Box::new(primer_tipo)))
                 } else {
@@ -1284,22 +1558,20 @@ impl TypeChecker {
                 }
             }
 
-            Expresion::Grupo(expr) => self.inferir_tipo(expr),
+            Expresion::Grupo(expr) => self.inferir_tipo_con_depth(expr, depth + 1),
 
-            Expresion::Index { objeto, .. } => {
-                self.inferir_tipo(objeto)
-            }
+            Expresion::Index { objeto, .. } => self.inferir_tipo_con_depth(objeto, depth + 1),
 
             Expresion::Mapa(pares) => {
                 for (clave, valor) in pares {
-                    self.inferir_tipo(clave);
-                    self.inferir_tipo(valor);
+                    self.inferir_tipo_con_depth(clave, depth + 1);
+                    self.inferir_tipo_con_depth(valor, depth + 1);
                 }
                 None
             }
 
             Expresion::Coincidir { expr, brazos } => {
-                let tipo_expr = self.inferir_tipo(expr);
+                let tipo_expr = self.inferir_tipo_con_depth(expr, depth + 1);
                 for brazo in brazos {
                     for d in &brazo.cuerpo {
                         self.analizar_declaracion(d);
@@ -1325,7 +1597,8 @@ impl TypeChecker {
                                 _ => {}
                             }
                         }
-                        let no_cubiertas: Vec<String> = variantes.iter()
+                        let no_cubiertas: Vec<String> = variantes
+                            .iter()
                             .enumerate()
                             .filter(|(i, _)| !cubiertas[*i])
                             .map(|(_, v)| v.clone())
@@ -1345,12 +1618,18 @@ impl TypeChecker {
                 }
                 // Verificar brazos inalcanzables
                 if brazos.len() > 1 {
-                    for (i, brazo) in brazos[..brazos.len()-1].iter().enumerate() {
-                        if matches!(brazo.patron, Patron::Ignorar) || matches!(brazo.patron, Patron::Variable(_)) {
+                    for (i, brazo) in brazos[..brazos.len() - 1].iter().enumerate() {
+                        if matches!(brazo.patron, Patron::Ignorar)
+                            || matches!(brazo.patron, Patron::Variable(_))
+                        {
                             self.errores.push(ErrorForja::new(
                                 ErrorTipo::ErrorDeTipo,
-                                0, 0,
-                                &format!("Brazo inalcanzable después del patrón comodín en posición {}", i),
+                                0,
+                                0,
+                                &format!(
+                                    "Brazo inalcanzable después del patrón comodín en posición {}",
+                                    i
+                                ),
                                 "Mové el patrón comodín al final del match.",
                             ));
                             break;
@@ -1382,7 +1661,9 @@ impl TypeChecker {
             Expresion::Closure { parametros, cuerpo } => {
                 self.tabla.entrar_ambito();
                 for param in parametros {
-                    let _ = self.tabla.declarar(&param.nombre, param.mutable, 0, 0, param.tipo.clone());
+                    let _ =
+                        self.tabla
+                            .declarar(&param.nombre, param.mutable, 0, 0, param.tipo.clone());
                 }
                 for d in cuerpo {
                     self.analizar_declaracion(d);
@@ -1400,7 +1681,7 @@ impl TypeChecker {
             }
             Expresion::CanalNuevo => None,
             Expresion::Try(expr) => {
-                let tipo_expr = self.inferir_tipo(expr);
+                let tipo_expr = self.inferir_tipo_con_depth(expr, depth + 1);
                 match tipo_expr {
                     Some(Tipo::Resultado(ok_tipo, _)) => Some(*ok_tipo),
                     Some(Tipo::Opcion(inner_tipo)) => Some(*inner_tipo),
@@ -1424,14 +1705,19 @@ impl TypeChecker {
                 None
             }
             Expresion::Asignacion { variable, valor } => {
-                let tipo_valor = self.inferir_tipo(valor);
+                let tipo_valor = self.inferir_tipo_con_depth(valor, depth + 1);
                 // Verificar compatibilidad de tipos
                 if let Some(info) = self.tabla.obtener(variable) {
                     if let (Some(t_dest), Some(t_src)) = (&info.tipo, &tipo_valor) {
                         if t_dest != t_src && t_dest != &Tipo::Nulo {
                             self.errores.push(ErrorForja::new(
-                                crate::error::ErrorTipo::ErrorDeTipo, self.linea_actual, self.columna_actual,
-                                &format!("No se puede asignar {:?} a variable de tipo {:?}", t_src, t_dest),
+                                crate::error::ErrorTipo::ErrorDeTipo,
+                                self.linea_actual,
+                                self.columna_actual,
+                                &format!(
+                                    "No se puede asignar {:?} a variable de tipo {:?}",
+                                    t_src, t_dest
+                                ),
                                 "Usá el tipo correcto para la asignación.",
                             ));
                         }
@@ -1439,30 +1725,40 @@ impl TypeChecker {
                 }
                 tipo_valor // La asignación retorna el valor asignado
             }
-            Expresion::AsignacionCampo { objeto, campo: _, valor } => {
-                let _tipo_objeto = self.inferir_tipo(objeto);
-                let tipo_valor = self.inferir_tipo(valor);
+            Expresion::AsignacionCampo {
+                objeto,
+                campo: _,
+                valor,
+            } => {
+                let _tipo_objeto = self.inferir_tipo_con_depth(objeto, depth + 1);
+                let tipo_valor = self.inferir_tipo_con_depth(valor, depth + 1);
                 // La asignación de campo retorna el valor asignado
                 tipo_valor
             }
             Expresion::ArraySet { array, valor } => {
-                let _tipo_array = self.inferir_tipo(array);
-                let tipo_valor = self.inferir_tipo(valor);
+                let _tipo_array = self.inferir_tipo_con_depth(array, depth + 1);
+                let tipo_valor = self.inferir_tipo_con_depth(valor, depth + 1);
                 // arr[i] = val retorna el valor asignado
                 tipo_valor
             }
             Expresion::Ok(expr) => {
-                let tipo = self.inferir_tipo(expr);
+                let tipo = self.inferir_tipo_con_depth(expr, depth + 1);
                 // Ok(valor) → Resultado<Tipo, Texto>
-                Some(Tipo::Resultado(Box::new(tipo.unwrap_or(Tipo::Entero)), Box::new(Tipo::Texto)))
+                Some(Tipo::Resultado(
+                    Box::new(tipo.unwrap_or(Tipo::Entero)),
+                    Box::new(Tipo::Texto),
+                ))
             }
             Expresion::Error(expr) => {
-                let tipo = self.inferir_tipo(expr);
+                let tipo = self.inferir_tipo_con_depth(expr, depth + 1);
                 // Error(valor) → Resultado<Entero, Tipo>
-                Some(Tipo::Resultado(Box::new(Tipo::Entero), Box::new(tipo.unwrap_or(Tipo::Texto))))
+                Some(Tipo::Resultado(
+                    Box::new(Tipo::Entero),
+                    Box::new(tipo.unwrap_or(Tipo::Texto)),
+                ))
             }
             Expresion::Algo(expr) => {
-                let tipo = self.inferir_tipo(expr);
+                let tipo = self.inferir_tipo_con_depth(expr, depth + 1);
                 // Algo(valor) → Opcion<Tipo>
                 Some(Tipo::Opcion(Box::new(tipo.unwrap_or(Tipo::Entero))))
             }
@@ -1475,7 +1771,8 @@ impl TypeChecker {
                 if !self.en_postcondicion {
                     self.errores.push(ErrorForja::new(
                         ErrorTipo::ErrorSemantico,
-                        0, 0,
+                        0,
+                        0,
                         "'resultado' solo se puede usar en postcondiciones (asegura)",
                         "Usá 'resultado' dentro de un bloque 'asegura ...'",
                     ));
@@ -1486,7 +1783,8 @@ impl TypeChecker {
                 } else {
                     self.errores.push(ErrorForja::new(
                         ErrorTipo::ErrorSemantico,
-                        0, 0,
+                        0,
+                        0,
                         "'resultado' solo se puede usar en funciones con tipo de retorno",
                         "Agregá '-> Tipo' a la función o usá 'retornar expr'",
                     ));
@@ -1498,7 +1796,8 @@ impl TypeChecker {
                 if !self.en_postcondicion {
                     self.errores.push(ErrorForja::new(
                         ErrorTipo::ErrorSemantico,
-                        0, 0,
+                        0,
+                        0,
                         "'anterior()' solo se puede usar en postcondiciones (asegura)",
                         "Mové la expresión dentro de un 'asegura ...'",
                     ));
@@ -1511,60 +1810,76 @@ impl TypeChecker {
                     _ => {
                         self.errores.push(ErrorForja::new(
                             ErrorTipo::ErrorSemantico,
-                            0, 0,
+                            0,
+                            0,
                             "'anterior()' solo acepta variables o accesos a campo (este.campo)",
                             "Usá 'anterior(variable)' o 'anterior(este.campo)'",
                         ));
                     }
                 }
                 // El tipo de anterior(expr) es el tipo de expr
-                self.inferir_tipo(expr)
+                self.inferir_tipo_con_depth(expr, depth + 1)
             }
         }
     }
 
     /// Sustituye parámetros de tipo (T, U) por tipos concretos en un tipo
-    fn sustituir_parametros_tipo(&self, tipo: &Tipo, inferidos: &std::collections::HashMap<String, Tipo>) -> Tipo {
+    fn sustituir_parametros_tipo(
+        &self,
+        tipo: &Tipo,
+        inferidos: &std::collections::HashMap<String, Tipo>,
+    ) -> Tipo {
         match tipo {
-            Tipo::Parametro(nombre) => {
-                inferidos.get(nombre).cloned().unwrap_or_else(|| Tipo::Parametro(nombre.clone()))
-            }
+            Tipo::Parametro(nombre) => inferidos
+                .get(nombre)
+                .cloned()
+                .unwrap_or_else(|| Tipo::Parametro(nombre.clone())),
             Tipo::Arreglo(inner) => {
                 Tipo::Arreglo(Box::new(self.sustituir_parametros_tipo(inner, inferidos)))
             }
-            Tipo::Resultado(ok, err) => {
-                Tipo::Resultado(
-                    Box::new(self.sustituir_parametros_tipo(ok, inferidos)),
-                    Box::new(self.sustituir_parametros_tipo(err, inferidos)),
-                )
-            }
+            Tipo::Resultado(ok, err) => Tipo::Resultado(
+                Box::new(self.sustituir_parametros_tipo(ok, inferidos)),
+                Box::new(self.sustituir_parametros_tipo(err, inferidos)),
+            ),
             Tipo::Opcion(inner) => {
                 Tipo::Opcion(Box::new(self.sustituir_parametros_tipo(inner, inferidos)))
             }
             Tipo::Funcion(params, ret) => {
-                let nuevos_params: Vec<Tipo> = params.iter()
+                let nuevos_params: Vec<Tipo> = params
+                    .iter()
                     .map(|p| self.sustituir_parametros_tipo(p, inferidos))
                     .collect();
-                Tipo::Funcion(nuevos_params, Box::new(self.sustituir_parametros_tipo(ret, inferidos)))
+                Tipo::Funcion(
+                    nuevos_params,
+                    Box::new(self.sustituir_parametros_tipo(ret, inferidos)),
+                )
             }
             other => other.clone(),
         }
     }
 
-    fn verificar_binaria(&mut self, t_izq: Option<Tipo>, t_der: Option<Tipo>, operador: &Operador) -> Option<Tipo> {
+    fn verificar_binaria(
+        &mut self,
+        t_izq: Option<Tipo>,
+        t_der: Option<Tipo>,
+        operador: &Operador,
+    ) -> Option<Tipo> {
         match operador {
             Operador::Suma => {
                 match (&t_izq, &t_der) {
                     (Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Tipo::Entero),
                     (Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Tipo::Decimal),
                     (Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
-                    (Some(Tipo::Entero), Some(Tipo::Decimal)) | (Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Tipo::Decimal),
-                    (Some(Tipo::Exacto), Some(Tipo::Entero)) | (Some(Tipo::Entero), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
-                    (Some(Tipo::Exacto), Some(Tipo::Decimal)) | (Some(Tipo::Decimal), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
-                    (Some(Tipo::Texto), _) => Some(Tipo::Texto),  // texto + cualquier cosa = texto
+                    (Some(Tipo::Entero), Some(Tipo::Decimal))
+                    | (Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Tipo::Decimal),
+                    (Some(Tipo::Exacto), Some(Tipo::Entero))
+                    | (Some(Tipo::Entero), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
+                    (Some(Tipo::Exacto), Some(Tipo::Decimal))
+                    | (Some(Tipo::Decimal), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
+                    (Some(Tipo::Texto), _) => Some(Tipo::Texto), // texto + cualquier cosa = texto
                     (_, Some(Tipo::Texto)) => Some(Tipo::Texto),
-                    (None, _) | (_, None) => None,  // tipo genérico / desconocido
-                    _ => Some(Tipo::Texto),  // tipos incompatibles → convertir a string y concatenar
+                    (None, _) | (_, None) => None, // tipo genérico / desconocido
+                    _ => Some(Tipo::Texto), // tipos incompatibles → convertir a string y concatenar
                 }
             }
             Operador::Resta | Operador::Multiplicacion | Operador::Division | Operador::Modulo => {
@@ -1572,10 +1887,13 @@ impl TypeChecker {
                     (Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Tipo::Entero),
                     (Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Tipo::Decimal),
                     (Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
-                    (Some(Tipo::Entero), Some(Tipo::Decimal)) | (Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Tipo::Decimal),
-                    (Some(Tipo::Exacto), Some(Tipo::Entero)) | (Some(Tipo::Entero), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
-                    (Some(Tipo::Exacto), Some(Tipo::Decimal)) | (Some(Tipo::Decimal), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
-                    (None, _) | (_, None) => None,  // tipo genérico / desconocido
+                    (Some(Tipo::Entero), Some(Tipo::Decimal))
+                    | (Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Tipo::Decimal),
+                    (Some(Tipo::Exacto), Some(Tipo::Entero))
+                    | (Some(Tipo::Entero), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
+                    (Some(Tipo::Exacto), Some(Tipo::Decimal))
+                    | (Some(Tipo::Decimal), Some(Tipo::Exacto)) => Some(Tipo::Exacto),
+                    (None, _) | (_, None) => None, // tipo genérico / desconocido
                     (Some(Tipo::Entero), _) | (_, Some(Tipo::Entero)) => Some(Tipo::Entero),
                     (Some(Tipo::Decimal), _) | (_, Some(Tipo::Decimal)) => Some(Tipo::Decimal),
                     (Some(Tipo::Exacto), _) | (_, Some(Tipo::Exacto)) => Some(Tipo::Exacto),
@@ -1592,16 +1910,21 @@ impl TypeChecker {
                 }
             }
             // Comparaciones: retornan Booleano (tipos diferentes → false)
-            Operador::Mayor | Operador::Menor | Operador::MayorIgual
-            | Operador::MenorIgual | Operador::IgualIgual | Operador::Diferente => {
-                Some(Tipo::Booleano)
-            }
+            Operador::Mayor
+            | Operador::Menor
+            | Operador::MayorIgual
+            | Operador::MenorIgual
+            | Operador::IgualIgual
+            | Operador::Diferente => Some(Tipo::Booleano),
         }
     }
 
     fn error_tipo(&mut self, msg: &str) {
         self.errores.push(ErrorForja::new(
-            ErrorTipo::ErrorDeTipo, self.linea_actual, self.columna_actual, msg,
+            ErrorTipo::ErrorDeTipo,
+            self.linea_actual,
+            self.columna_actual,
+            msg,
             "Revisá los tipos de las expresiones.",
         ));
     }
@@ -1609,7 +1932,9 @@ impl TypeChecker {
 
 /// Función pública: infiere los tipos de todo un programa
 /// y retorna un HashMap<String, Tipo> con los tipos de cada variable.
-pub fn inferir_tipos_programa(declaraciones: &[Declaracion]) -> Result<HashMap<String, Tipo>, Vec<ErrorForja>> {
+pub fn inferir_tipos_programa(
+    declaraciones: &[Declaracion],
+) -> Result<HashMap<String, Tipo>, Vec<ErrorForja>> {
     use crate::ast::Programa;
     let mut type_checker = TypeChecker::new();
     let programa = Programa {
@@ -1702,28 +2027,44 @@ mod tests {
     fn test_columna_escribir_literal() {
         let source = "importar \"gui\"\nfuncion main() {\n    columna(escribir(\"texto\"))\n}";
         let result = analizar_source(source);
-        assert!(result.is_ok(), "columna(escribir(\"texto\")) debería funcionar: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "columna(escribir(\"texto\")) debería funcionar: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_columna_escribir_variable() {
         let source = "importar \"gui\"\nfuncion main() {\n    variable resultado = \"\"\n    columna(escribir(resultado))\n}";
         let result = analizar_source(source);
-        assert!(result.is_ok(), "columna(escribir(variable)) debería funcionar: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "columna(escribir(variable)) debería funcionar: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_columna_boton_referencia_funcion() {
         let source = "importar \"gui\"\nfuncion validar(u: Texto, p: Texto) -> Texto { retornar \"ok\" }\nfuncion main() {\n    columna(escribir(\"texto\"), boton(\"Ingresar\", &validar))\n}";
         let result = analizar_source(source);
-        assert!(result.is_ok(), "columna con boton(&fn) debería funcionar: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "columna con boton(&fn) debería funcionar: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_columna_escribir_variable_con_boton() {
         let source = "importar \"gui\"\nfuncion validar(u: Texto, p: Texto) -> Texto { retornar \"ok\" }\nfuncion main() {\n    variable resultado = \"\"\n    columna(escribir(resultado), boton(\"Ingresar\", &validar))\n}";
         let result = analizar_source(source);
-        assert!(result.is_ok(), "columna con escribir(variable) + boton(&fn) debería funcionar: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "columna con escribir(variable) + boton(&fn) debería funcionar: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -1731,20 +2072,32 @@ mod tests {
         // Test que escribir(variable) funciona fuera de columna
         let source = "importar \"gui\"\nfuncion main() {\n    variable resultado = \"\"\n    escribir(resultado)\n}";
         let result = analizar_source(source);
-        assert!(result.is_ok(), "escribir(variable) fuera de columna debería funcionar: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "escribir(variable) fuera de columna debería funcionar: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_columna_multiple_escribir_con_variable() {
         let source = "importar \"gui\"\nfuncion main() {\n    variable resultado = \"\"\n    columna(\n        escribir(\"A\"),\n        escribir(resultado),\n        escribir(\"B\")\n    )\n}";
         let result = analizar_source(source);
-        assert!(result.is_ok(), "columna con múltiples escribir, uno con variable, debería funcionar: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "columna con múltiples escribir, uno con variable, debería funcionar: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_si_sin_paren() {
         let result = analizar_source("funcion main() {\n    variable x = 1\n    si x == 1 {\n        escribir(\"uno\")\n    }\n}");
-        assert!(result.is_ok(), "si sin parentesis deberia funcionar: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "si sin parentesis deberia funcionar: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -1756,13 +2109,21 @@ mod tests {
     #[test]
     fn test_sino_si_con_paren() {
         let result = analizar_source("funcion main() {\n    variable x = 2\n    si (x == 1) {\n        escribir(\"uno\")\n    } sino si (x == 2) {\n        escribir(\"dos\")\n    } sino {\n        escribir(\"otro\")\n    }\n}");
-        assert!(result.is_ok(), "sino si con parentesis deberia funcionar: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "sino si con parentesis deberia funcionar: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_sino_si_sin_else() {
         let result = analizar_source("funcion main() {\n    variable x = 2\n    si x == 1 {\n        escribir(\"uno\")\n    } sino si x == 2 {\n        escribir(\"dos\")\n    }\n}");
-        assert!(result.is_ok(), "sino si sin else final deberia funcionar: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "sino si sin else final deberia funcionar: {:?}",
+            result
+        );
     }
 }
 

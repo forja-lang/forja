@@ -346,12 +346,16 @@ impl Lexer {
                         Ok(Some(Token::new(TokenKind::Caracter('\r'), linea, columna)))
                     }
                     Some(c) => Err(ErrorForja::new(
-                        ErrorTipo::ErrorLexico, linea, columna,
+                        ErrorTipo::ErrorLexico,
+                        linea,
+                        columna,
                         &format!("Secuencia de escape desconocida: '\\{}'", c),
                         "Usá una de: \\n, \\t, \\\\, \\', \\r",
                     )),
                     None => Err(ErrorForja::new(
-                        ErrorTipo::ErrorLexico, linea, columna,
+                        ErrorTipo::ErrorLexico,
+                        linea,
+                        columna,
                         "Caracter literal sin cerrar después de \\",
                         "Agregá la comilla simple de cierre, ej: '\\n'",
                     )),
@@ -378,7 +382,9 @@ impl Lexer {
                 }
             }
             None => Err(ErrorForja::new(
-                ErrorTipo::ErrorLexico, linea, columna,
+                ErrorTipo::ErrorLexico,
+                linea,
+                columna,
                 "Caracter literal vacío (solo ' sin contenido)",
                 "Usá: 'a' para un caracter literal.",
             )),
@@ -405,11 +411,26 @@ impl Lexer {
                 Some('\\') => {
                     self.advance(); // consume \
                     match self.current() {
-                        Some('n') => { self.advance(); s.push('\n'); }
-                        Some('t') => { self.advance(); s.push('\t'); }
-                        Some('\\') => { self.advance(); s.push('\\'); }
-                        Some('"') => { self.advance(); s.push('"'); }
-                        Some('r') => { self.advance(); s.push('\r'); }
+                        Some('n') => {
+                            self.advance();
+                            s.push('\n');
+                        }
+                        Some('t') => {
+                            self.advance();
+                            s.push('\t');
+                        }
+                        Some('\\') => {
+                            self.advance();
+                            s.push('\\');
+                        }
+                        Some('"') => {
+                            self.advance();
+                            s.push('"');
+                        }
+                        Some('r') => {
+                            self.advance();
+                            s.push('\r');
+                        }
                         Some('$') => {
                             // \${  →  $ literal (escape de interpolación)
                             self.advance(); // consume $
@@ -491,11 +512,8 @@ impl Lexer {
         if let Some(primero) = primer_fragmento {
             // Hubo interpolación: el último fragmento (s) va a tokens_pendientes
             let (linea_act, col_act) = (self.linea, self.columna);
-            self.tokens_pendientes.push(Token::new(
-                TokenKind::Texto(s),
-                linea_act,
-                col_act,
-            ));
+            self.tokens_pendientes
+                .push(Token::new(TokenKind::Texto(s), linea_act, col_act));
             // Devolvemos el primer fragmento
             Ok(TokenKind::Texto(primero))
         } else {
@@ -543,123 +561,189 @@ impl Lexer {
                 Some('(') => {
                     paren_depth += 1;
                     self.advance();
-                    self.tokens_pendientes
-                        .push(Token::new(TokenKind::ParenAbrir, self.linea, self.columna));
+                    self.tokens_pendientes.push(Token::new(
+                        TokenKind::ParenAbrir,
+                        self.linea,
+                        self.columna,
+                    ));
                 }
                 Some(')') => {
                     paren_depth -= 1;
                     self.advance();
-                    self.tokens_pendientes
-                        .push(Token::new(TokenKind::ParenCerrar, self.linea, self.columna));
+                    self.tokens_pendientes.push(Token::new(
+                        TokenKind::ParenCerrar,
+                        self.linea,
+                        self.columna,
+                    ));
                 }
                 Some('[') => {
                     bracket_depth += 1;
                     self.advance();
-                    self.tokens_pendientes
-                        .push(Token::new(TokenKind::CorcheteAbrir, self.linea, self.columna));
+                    self.tokens_pendientes.push(Token::new(
+                        TokenKind::CorcheteAbrir,
+                        self.linea,
+                        self.columna,
+                    ));
                 }
                 Some(']') => {
                     bracket_depth -= 1;
                     self.advance();
-                    self.tokens_pendientes
-                        .push(Token::new(TokenKind::CorcheteCerrar, self.linea, self.columna));
+                    self.tokens_pendientes.push(Token::new(
+                        TokenKind::CorcheteCerrar,
+                        self.linea,
+                        self.columna,
+                    ));
                 }
                 Some('+') => {
                     self.advance();
-                    self.tokens_pendientes
-                        .push(Token::new(TokenKind::Mas, self.linea, self.columna));
+                    self.tokens_pendientes.push(Token::new(
+                        TokenKind::Mas,
+                        self.linea,
+                        self.columna,
+                    ));
                 }
                 Some('-') => {
                     self.advance();
-                    self.tokens_pendientes
-                        .push(Token::new(TokenKind::Menos, self.linea, self.columna));
+                    self.tokens_pendientes.push(Token::new(
+                        TokenKind::Menos,
+                        self.linea,
+                        self.columna,
+                    ));
                 }
                 Some('*') => {
                     self.advance();
-                    self.tokens_pendientes
-                        .push(Token::new(TokenKind::Por, self.linea, self.columna));
+                    self.tokens_pendientes.push(Token::new(
+                        TokenKind::Por,
+                        self.linea,
+                        self.columna,
+                    ));
                 }
                 Some('%') => {
                     self.advance();
-                    self.tokens_pendientes
-                        .push(Token::new(TokenKind::Porcentaje, self.linea, self.columna));
+                    self.tokens_pendientes.push(Token::new(
+                        TokenKind::Porcentaje,
+                        self.linea,
+                        self.columna,
+                    ));
                 }
                 Some('/') => {
                     self.advance();
-                    self.tokens_pendientes
-                        .push(Token::new(TokenKind::Dividido, self.linea, self.columna));
+                    self.tokens_pendientes.push(Token::new(
+                        TokenKind::Dividido,
+                        self.linea,
+                        self.columna,
+                    ));
                 }
                 Some('.') => {
                     self.advance();
-                    self.tokens_pendientes
-                        .push(Token::new(TokenKind::Punto, self.linea, self.columna));
+                    self.tokens_pendientes.push(Token::new(
+                        TokenKind::Punto,
+                        self.linea,
+                        self.columna,
+                    ));
                 }
                 Some(',') => {
                     self.advance();
-                    self.tokens_pendientes
-                        .push(Token::new(TokenKind::Coma, self.linea, self.columna));
+                    self.tokens_pendientes.push(Token::new(
+                        TokenKind::Coma,
+                        self.linea,
+                        self.columna,
+                    ));
                 }
                 Some('=') => {
                     self.advance();
                     if self.current() == Some('=') {
                         self.advance();
-                        self.tokens_pendientes
-                            .push(Token::new(TokenKind::IgualIgual, self.linea, self.columna));
+                        self.tokens_pendientes.push(Token::new(
+                            TokenKind::IgualIgual,
+                            self.linea,
+                            self.columna,
+                        ));
                     } else {
-                        self.tokens_pendientes
-                            .push(Token::new(TokenKind::Igual, self.linea, self.columna));
+                        self.tokens_pendientes.push(Token::new(
+                            TokenKind::Igual,
+                            self.linea,
+                            self.columna,
+                        ));
                     }
                 }
                 Some('!') => {
                     self.advance();
                     if self.current() == Some('=') {
                         self.advance();
-                        self.tokens_pendientes
-                            .push(Token::new(TokenKind::Diferente, self.linea, self.columna));
+                        self.tokens_pendientes.push(Token::new(
+                            TokenKind::Diferente,
+                            self.linea,
+                            self.columna,
+                        ));
                     } else {
-                        self.tokens_pendientes
-                            .push(Token::new(TokenKind::No, self.linea, self.columna));
+                        self.tokens_pendientes.push(Token::new(
+                            TokenKind::No,
+                            self.linea,
+                            self.columna,
+                        ));
                     }
                 }
                 Some('>') => {
                     self.advance();
                     if self.current() == Some('=') {
                         self.advance();
-                        self.tokens_pendientes
-                            .push(Token::new(TokenKind::MayorIgual, self.linea, self.columna));
+                        self.tokens_pendientes.push(Token::new(
+                            TokenKind::MayorIgual,
+                            self.linea,
+                            self.columna,
+                        ));
                     } else {
-                        self.tokens_pendientes
-                            .push(Token::new(TokenKind::Mayor, self.linea, self.columna));
+                        self.tokens_pendientes.push(Token::new(
+                            TokenKind::Mayor,
+                            self.linea,
+                            self.columna,
+                        ));
                     }
                 }
                 Some('<') => {
                     self.advance();
                     if self.current() == Some('=') {
                         self.advance();
-                        self.tokens_pendientes
-                            .push(Token::new(TokenKind::MenorIgual, self.linea, self.columna));
+                        self.tokens_pendientes.push(Token::new(
+                            TokenKind::MenorIgual,
+                            self.linea,
+                            self.columna,
+                        ));
                     } else {
-                        self.tokens_pendientes
-                            .push(Token::new(TokenKind::Menor, self.linea, self.columna));
+                        self.tokens_pendientes.push(Token::new(
+                            TokenKind::Menor,
+                            self.linea,
+                            self.columna,
+                        ));
                     }
                 }
                 Some('&') => {
                     self.advance();
                     if self.current() == Some('&') {
                         self.advance();
-                        self.tokens_pendientes
-                            .push(Token::new(TokenKind::Y, self.linea, self.columna));
+                        self.tokens_pendientes.push(Token::new(
+                            TokenKind::Y,
+                            self.linea,
+                            self.columna,
+                        ));
                     } else {
-                        self.tokens_pendientes
-                            .push(Token::new(TokenKind::Amp, self.linea, self.columna));
+                        self.tokens_pendientes.push(Token::new(
+                            TokenKind::Amp,
+                            self.linea,
+                            self.columna,
+                        ));
                     }
                 }
                 Some('|') => {
                     self.advance();
                     if self.current() == Some('|') {
                         self.advance();
-                        self.tokens_pendientes
-                            .push(Token::new(TokenKind::O, self.linea, self.columna));
+                        self.tokens_pendientes.push(Token::new(
+                            TokenKind::O,
+                            self.linea,
+                            self.columna,
+                        ));
                     } else {
                         return Err(ErrorForja::new(
                             ErrorTipo::ErrorLexico,
@@ -672,13 +756,19 @@ impl Lexer {
                 }
                 Some(':') => {
                     self.advance();
-                    self.tokens_pendientes
-                        .push(Token::new(TokenKind::DosPuntos, self.linea, self.columna));
+                    self.tokens_pendientes.push(Token::new(
+                        TokenKind::DosPuntos,
+                        self.linea,
+                        self.columna,
+                    ));
                 }
                 Some('?') => {
                     self.advance();
-                    self.tokens_pendientes
-                        .push(Token::new(TokenKind::Interrogacion, self.linea, self.columna));
+                    self.tokens_pendientes.push(Token::new(
+                        TokenKind::Interrogacion,
+                        self.linea,
+                        self.columna,
+                    ));
                 }
                 Some('\'') => {
                     // String entre comillas simples dentro de interpolación: 'texto'
@@ -697,16 +787,20 @@ impl Lexer {
                             }
                             None => {
                                 return Err(ErrorForja::new(
-                                    ErrorTipo::ErrorLexico, linea_act, col_act,
+                                    ErrorTipo::ErrorLexico,
+                                    linea_act,
+                                    col_act,
                                     "String entre comillas simples sin cerrar",
                                     "Agregá ' al final del texto.",
                                 ));
                             }
                         }
                     }
-                    self.tokens_pendientes.push(
-                        Token::new(TokenKind::Texto(contenido), linea_act, col_act)
-                    );
+                    self.tokens_pendientes.push(Token::new(
+                        TokenKind::Texto(contenido),
+                        linea_act,
+                        col_act,
+                    ));
                 }
                 Some('"') => {
                     // String literal anidado dentro de interpolación
@@ -735,11 +829,17 @@ impl Lexer {
                             }
                         }
                         if ident == "este" {
-                            self.tokens_pendientes
-                                .push(Token::new(TokenKind::Este, self.linea, self.columna));
+                            self.tokens_pendientes.push(Token::new(
+                                TokenKind::Este,
+                                self.linea,
+                                self.columna,
+                            ));
                         } else {
-                            self.tokens_pendientes
-                                .push(Token::new(TokenKind::Identificador(ident), self.linea, self.columna));
+                            self.tokens_pendientes.push(Token::new(
+                                TokenKind::Identificador(ident),
+                                self.linea,
+                                self.columna,
+                            ));
                         }
                     } else {
                         // Carácter desconocido, avanzar
@@ -747,10 +847,7 @@ impl Lexer {
                             ErrorTipo::ErrorLexico,
                             self.linea,
                             self.columna,
-                            &format!(
-                                "Carácter no reconocido dentro de interpolación: '{}'",
-                                ch
-                            ),
+                            &format!("Carácter no reconocido dentro de interpolación: '{}'", ch),
                             "Revisá que la expresión dentro de ${} sea válida.",
                         ));
                     }
@@ -785,39 +882,89 @@ impl Lexer {
 
         let kind = match ch {
             // Símbolos de un solo caracter
-            '{' => { self.advance(); TokenKind::LlaveAbrir }
-            '}' => { self.advance(); TokenKind::LlaveCerrar }
-            '(' => { self.advance(); TokenKind::ParenAbrir }
-            ')' => { self.advance(); TokenKind::ParenCerrar }
-            '[' => { self.advance(); TokenKind::CorcheteAbrir }
-            ']' => { self.advance(); TokenKind::CorcheteCerrar }
-            ',' => { self.advance(); TokenKind::Coma }
-            '.' => { self.advance(); TokenKind::Punto }
-            ':' => { self.advance(); TokenKind::DosPuntos }
-            ';' => { self.advance(); TokenKind::PuntoComa }
+            '{' => {
+                self.advance();
+                TokenKind::LlaveAbrir
+            }
+            '}' => {
+                self.advance();
+                TokenKind::LlaveCerrar
+            }
+            '(' => {
+                self.advance();
+                TokenKind::ParenAbrir
+            }
+            ')' => {
+                self.advance();
+                TokenKind::ParenCerrar
+            }
+            '[' => {
+                self.advance();
+                TokenKind::CorcheteAbrir
+            }
+            ']' => {
+                self.advance();
+                TokenKind::CorcheteCerrar
+            }
+            ',' => {
+                self.advance();
+                TokenKind::Coma
+            }
+            '.' => {
+                self.advance();
+                TokenKind::Punto
+            }
+            ':' => {
+                self.advance();
+                TokenKind::DosPuntos
+            }
+            ';' => {
+                self.advance();
+                TokenKind::PuntoComa
+            }
 
             // & (referencia)
             '&' => self.leer_ampersand(),
 
             // Operadores aritméticos
-            '+' => { self.advance(); TokenKind::Mas }
-            '-' => { self.advance(); TokenKind::Menos }
-            '*' => { self.advance(); TokenKind::Por }
-            '%' => { self.advance(); TokenKind::Porcentaje }
+            '+' => {
+                self.advance();
+                TokenKind::Mas
+            }
+            '-' => {
+                self.advance();
+                TokenKind::Menos
+            }
+            '*' => {
+                self.advance();
+                TokenKind::Por
+            }
+            '%' => {
+                self.advance();
+                TokenKind::Porcentaje
+            }
             '/' => {
                 // Detectar doc comment: ///
-                if self.source.get(self.pos + 1) == Some(&'/') && self.source.get(self.pos + 2) == Some(&'/') {
+                if self.source.get(self.pos + 1) == Some(&'/')
+                    && self.source.get(self.pos + 2) == Some(&'/')
+                {
                     self.advance(); // consume primer /
                     self.advance(); // consume segundo /
                     self.advance(); // consume tercer /
-                    // Leer contenido del doc comment hasta nueva línea
+                                    // Leer contenido del doc comment hasta nueva línea
                     let mut doc = String::new();
                     while let Some(ch) = self.current() {
-                        if ch == '\n' || ch == '\r' { break; }
+                        if ch == '\n' || ch == '\r' {
+                            break;
+                        }
                         self.advance();
                         doc.push(ch);
                     }
-                    return Ok(Some(Token::new(TokenKind::DocComment(doc.trim().to_string()), linea, columna)));
+                    return Ok(Some(Token::new(
+                        TokenKind::DocComment(doc.trim().to_string()),
+                        linea,
+                        columna,
+                    )));
                 }
                 // Si es // es comentario, pero skip_comentarios ya lo maneja
                 // Aquí llegamos si es un / como operador
@@ -887,7 +1034,9 @@ impl Lexer {
             // Comentario estilo Python/Raven: # hasta nueva línea
             '#' => {
                 while let Some(c) = self.current() {
-                    if c == '\n' || c == '\r' { break; }
+                    if c == '\n' || c == '\r' {
+                        break;
+                    }
                     self.advance();
                 }
                 // Consumir whitespace (incluye el salto de línea) y continuar
@@ -904,8 +1053,8 @@ impl Lexer {
             // Comilla simple: puede ser caracter literal 'a' o string 'hola'
             '\'' => {
                 self.advance(); // consumir comilla de apertura '
-                // Verificar si es string de varios caracteres o caracter literal
-                // 'a' → 1 char, siguiente es '. 'hola' → múltiples chars
+                                // Verificar si es string de varios caracteres o caracter literal
+                                // 'a' → 1 char, siguiente es '. 'hola' → múltiples chars
                 if self.current().map_or(true, |c| c == '\'') {
                     // ' vacío o '' → tratar como caracter
                     return self.leer_caracter(linea, columna);
@@ -928,7 +1077,9 @@ impl Lexer {
                         self.advance(); // consumir comilla de cierre '
                         return Ok(Some(Token::new(TokenKind::Texto(content), linea, columna)));
                     }
-                    if ch == '\n' || ch == '\r' { break; }
+                    if ch == '\n' || ch == '\r' {
+                        break;
+                    }
                     content.push(ch);
                     self.advance();
                     is_multi = true;
@@ -942,9 +1093,9 @@ impl Lexer {
 
             // Texto (strings) con comillas dobles
             '"' => {
-                return self.leer_texto().map(|kind| {
-                    Some(Token::new(kind, linea, columna))
-                });
+                return self
+                    .leer_texto()
+                    .map(|kind| Some(Token::new(kind, linea, columna)));
             }
 
             // Carácter desconocido
@@ -1036,7 +1187,10 @@ mod tests {
         let mut lexer = Lexer::new(source);
         let tokens = lexer.tokenize().unwrap();
         assert_eq!(tokens[0].kind, TokenKind::Clase);
-        assert_eq!(tokens[1].kind, TokenKind::Identificador("Persona".to_string()));
+        assert_eq!(
+            tokens[1].kind,
+            TokenKind::Identificador("Persona".to_string())
+        );
     }
 
     #[test]
@@ -1070,6 +1224,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_tokenize_numeros() {
         let source = "42 3.14";
         let mut lexer = Lexer::new(source);
@@ -1109,7 +1264,10 @@ mod tests {
         assert_eq!(tokens[0].kind, TokenKind::Escribir);
         assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
         assert_eq!(tokens[2].kind, TokenKind::Texto("Hola ".to_string()));
-        assert_eq!(tokens[3].kind, TokenKind::Identificador("nombre".to_string()));
+        assert_eq!(
+            tokens[3].kind,
+            TokenKind::Identificador("nombre".to_string())
+        );
         assert_eq!(tokens[4].kind, TokenKind::Texto("".to_string()));
         assert_eq!(tokens[5].kind, TokenKind::ParenCerrar);
         assert_eq!(tokens[6].kind, TokenKind::EOF);
@@ -1123,7 +1281,10 @@ mod tests {
         assert_eq!(tokens[0].kind, TokenKind::Escribir);
         assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
         assert_eq!(tokens[2].kind, TokenKind::Texto("Hola ".to_string()));
-        assert_eq!(tokens[3].kind, TokenKind::Identificador("nombre".to_string()));
+        assert_eq!(
+            tokens[3].kind,
+            TokenKind::Identificador("nombre".to_string())
+        );
         assert_eq!(tokens[4].kind, TokenKind::Texto(", edad ".to_string()));
         assert_eq!(tokens[5].kind, TokenKind::Identificador("edad".to_string()));
         assert_eq!(tokens[6].kind, TokenKind::Texto("".to_string()));
@@ -1149,7 +1310,10 @@ mod tests {
         // \${ debe tratarse como literal ${, sin interpolar
         assert_eq!(tokens[0].kind, TokenKind::Escribir);
         assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
-        assert_eq!(tokens[2].kind, TokenKind::Texto("Hola ${nombre}".to_string()));
+        assert_eq!(
+            tokens[2].kind,
+            TokenKind::Texto("Hola ${nombre}".to_string())
+        );
         assert_eq!(tokens[3].kind, TokenKind::ParenCerrar);
     }
 
@@ -1162,7 +1326,10 @@ mod tests {
         assert_eq!(tokens[0].kind, TokenKind::Escribir);
         assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
         assert_eq!(tokens[2].kind, TokenKind::Texto("$".to_string()));
-        assert_eq!(tokens[3].kind, TokenKind::Identificador("nombre".to_string()));
+        assert_eq!(
+            tokens[3].kind,
+            TokenKind::Identificador("nombre".to_string())
+        );
         assert_eq!(tokens[4].kind, TokenKind::Texto("".to_string()));
         assert_eq!(tokens[5].kind, TokenKind::ParenCerrar);
     }
@@ -1190,9 +1357,15 @@ mod tests {
         assert_eq!(tokens[0].kind, TokenKind::Escribir);
         assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
         assert_eq!(tokens[2].kind, TokenKind::Texto("".to_string()));
-        assert_eq!(tokens[3].kind, TokenKind::Identificador("persona".to_string()));
+        assert_eq!(
+            tokens[3].kind,
+            TokenKind::Identificador("persona".to_string())
+        );
         assert_eq!(tokens[4].kind, TokenKind::Punto);
-        assert_eq!(tokens[5].kind, TokenKind::Identificador("nombre".to_string()));
+        assert_eq!(
+            tokens[5].kind,
+            TokenKind::Identificador("nombre".to_string())
+        );
         assert_eq!(tokens[6].kind, TokenKind::Texto("".to_string()));
         assert_eq!(tokens[7].kind, TokenKind::ParenCerrar);
     }
@@ -1205,9 +1378,15 @@ mod tests {
         assert_eq!(tokens[0].kind, TokenKind::Escribir);
         assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
         assert_eq!(tokens[2].kind, TokenKind::Texto("".to_string()));
-        assert_eq!(tokens[3].kind, TokenKind::Identificador("saludar".to_string()));
+        assert_eq!(
+            tokens[3].kind,
+            TokenKind::Identificador("saludar".to_string())
+        );
         assert_eq!(tokens[4].kind, TokenKind::ParenAbrir);
-        assert_eq!(tokens[5].kind, TokenKind::Identificador("nombre".to_string()));
+        assert_eq!(
+            tokens[5].kind,
+            TokenKind::Identificador("nombre".to_string())
+        );
         assert_eq!(tokens[6].kind, TokenKind::ParenCerrar);
         assert_eq!(tokens[7].kind, TokenKind::Texto("".to_string()));
         assert_eq!(tokens[8].kind, TokenKind::ParenCerrar);

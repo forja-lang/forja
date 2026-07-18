@@ -1,17 +1,17 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+use crate::ast::*;
+use crate::bytecode::Opcode;
+use crate::error::ErrorForja;
+use crate::lexer::Lexer;
+use crate::package_resolver::PackageResolver;
+use crate::parser::Parser;
+use crate::symbol_table::SymId;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
 use std::path::PathBuf;
-use crate::ast::*;
-use crate::lexer::Lexer;
-use crate::parser::Parser;
-use crate::error::ErrorForja;
-use crate::package_resolver::PackageResolver;
-use crate::symbol_table::SymId;
-use crate::bytecode::Opcode;
 
 /// Identificador único de módulo = SymId de su ruta canónica
 pub type ModuleId = SymId;
@@ -81,12 +81,12 @@ impl ModuleResolver {
 
     /// Resuelve un módulo y retorna su ModuleId junto con el Programa
     pub fn resolver_con_id(&mut self, ruta: &str) -> Result<(Programa, ModuleId), Vec<ErrorForja>> {
-        let ruta_limpia = ruta.replace('\\', "/")
-            .trim_start_matches('/')
-            .to_string();
+        let ruta_limpia = ruta.replace('\\', "/").trim_start_matches('/').to_string();
         if ruta_limpia.contains("..") || ruta_limpia.starts_with('/') || ruta_limpia.contains(':') {
             return Err(vec![ErrorForja::new(
-                crate::error::ErrorTipo::ErrorSemantico, 0, 0,
+                crate::error::ErrorTipo::ErrorSemantico,
+                0,
+                0,
                 &format!("Ruta de módulo inválida: '{}'", ruta),
                 "Las rutas de módulo no pueden contener '..' ni rutas absolutas.",
             )]);
@@ -97,7 +97,10 @@ impl ModuleResolver {
 
         // Intentar obtener del cache primero
         if let Some(prog) = self.cache.get(&ruta_limpia) {
-            let module_id = self.module_cache.por_ruta.get(&ruta_limpia)
+            let module_id = self
+                .module_cache
+                .por_ruta
+                .get(&ruta_limpia)
                 .copied()
                 .unwrap_or_else(|| SymId(0));
             return Ok((prog.clone(), module_id));
@@ -107,16 +110,51 @@ impl ModuleResolver {
         if let Ok(canonical) = path.canonicalize() {
             let canonical_str = canonical.to_str().unwrap_or("").to_string();
             let module_id = SymId(
-                canonical_str.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32))
+                canonical_str
+                    .bytes()
+                    .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
             );
 
-            if canonical.starts_with(&self.root_dir.canonicalize().unwrap_or(self.root_dir.clone())) {
-                let source = std::fs::read_to_string(&canonical)
-                    .map_err(|e| vec![ErrorForja::new(
-                        crate::error::ErrorTipo::ErrorSemantico, 0, 0,
+            if canonical.starts_with(
+                &self
+                    .root_dir
+                    .canonicalize()
+                    .unwrap_or(self.root_dir.clone()),
+            ) {
+                // Verificar límite de tamaño antes de leer
+                let meta = std::fs::metadata(&canonical).map_err(|e| {
+                    vec![ErrorForja::new(
+                        crate::error::ErrorTipo::ErrorSemantico,
+                        0,
+                        0,
                         &format!("No se pudo leer el módulo '{}': {}", ruta, e),
                         "Verificá que el archivo exista.",
-                    )])?;
+                    )]
+                })?;
+                let tamano = meta.len();
+                let max_bytes = forja::MAX_ARCHIVO_DEFAULT_MB * 1024 * 1024;
+                if tamano > max_bytes {
+                    return Err(vec![ErrorForja::new(
+                        crate::error::ErrorTipo::LimiteArchivo {
+                            ruta: canonical.to_string_lossy().to_string(),
+                            max: forja::MAX_ARCHIVO_DEFAULT_MB,
+                            actual: tamano,
+                        },
+                        0, 0,
+                        &format!("El módulo importado '{}' excede el límite de tamaño de {} MB (tamaño actual: {:.2} MB)",
+                            ruta, forja::MAX_ARCHIVO_DEFAULT_MB, tamano as f64 / (1024.0 * 1024.0)),
+                        "Usa --max-archivo <MB> para aumentar el límite al compilar el archivo principal.",
+                    )]);
+                }
+                let source = std::fs::read_to_string(&canonical).map_err(|e| {
+                    vec![ErrorForja::new(
+                        crate::error::ErrorTipo::ErrorSemantico,
+                        0,
+                        0,
+                        &format!("No se pudo leer el módulo '{}': {}", ruta, e),
+                        "Verificá que el archivo exista.",
+                    )]
+                })?;
                 let mut lexer = Lexer::new(&source);
                 let tokens = lexer.tokenize()?;
                 let mut parser = Parser::new(tokens);
@@ -141,7 +179,9 @@ impl ModuleResolver {
                 return Ok((programa, module_id));
             }
             return Err(vec![ErrorForja::new(
-                crate::error::ErrorTipo::ErrorSemantico, 0, 0,
+                crate::error::ErrorTipo::ErrorSemantico,
+                0,
+                0,
                 "Intento de path traversal detectado",
                 "Los módulos deben estar dentro del directorio del proyecto.",
             )]);
@@ -150,12 +190,40 @@ impl ModuleResolver {
         // Si no se encuentra localmente, preguntar al package_resolver
         if let Some(ref resolver) = self.package_resolver {
             if let Some(ruta_resuelta) = resolver.resolver_modulo(ruta) {
-                let source = std::fs::read_to_string(&ruta_resuelta)
-                    .map_err(|e| vec![ErrorForja::new(
-                        crate::error::ErrorTipo::ErrorSemantico, 0, 0,
+                // Verificar límite de tamaño antes de leer
+                let meta = std::fs::metadata(&ruta_resuelta).map_err(|e| {
+                    vec![ErrorForja::new(
+                        crate::error::ErrorTipo::ErrorSemantico,
+                        0,
+                        0,
                         &format!("No se pudo leer el módulo desde paquete '{}': {}", ruta, e),
                         "Verificá que el paquete esté instalado.",
-                    )])?;
+                    )]
+                })?;
+                let tamano = meta.len();
+                let max_bytes = forja::MAX_ARCHIVO_DEFAULT_MB * 1024 * 1024;
+                if tamano > max_bytes {
+                    return Err(vec![ErrorForja::new(
+                        crate::error::ErrorTipo::LimiteArchivo {
+                            ruta: ruta_resuelta.to_string_lossy().to_string(),
+                            max: forja::MAX_ARCHIVO_DEFAULT_MB,
+                            actual: tamano,
+                        },
+                        0, 0,
+                        &format!("El módulo importado '{}' excede el límite de tamaño de {} MB (tamaño actual: {:.2} MB)",
+                            ruta, forja::MAX_ARCHIVO_DEFAULT_MB, tamano as f64 / (1024.0 * 1024.0)),
+                        "Usa --max-archivo <MB> para aumentar el límite al compilar el archivo principal.",
+                    )]);
+                }
+                let source = std::fs::read_to_string(&ruta_resuelta).map_err(|e| {
+                    vec![ErrorForja::new(
+                        crate::error::ErrorTipo::ErrorSemantico,
+                        0,
+                        0,
+                        &format!("No se pudo leer el módulo desde paquete '{}': {}", ruta, e),
+                        "Verificá que el paquete esté instalado.",
+                    )]
+                })?;
                 let mut lexer = Lexer::new(&source);
                 let tokens = lexer.tokenize()?;
                 let mut parser = Parser::new(tokens);
@@ -163,7 +231,9 @@ impl ModuleResolver {
 
                 let ruta_str_resuelta = ruta_resuelta.to_str().unwrap_or(ruta).to_string();
                 let module_id = SymId(
-                    ruta_str_resuelta.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32))
+                    ruta_str_resuelta
+                        .bytes()
+                        .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
                 );
 
                 // Resolver imports anidados
@@ -185,7 +255,9 @@ impl ModuleResolver {
         }
 
         Err(vec![ErrorForja::new(
-            crate::error::ErrorTipo::ErrorSemantico, 0, 0,
+            crate::error::ErrorTipo::ErrorSemantico,
+            0,
+            0,
             &format!("No se pudo resolver la ruta del módulo '{}'", ruta),
             "Verificá que el archivo exista o que el paquete esté instalado.",
         )])
@@ -200,23 +272,33 @@ impl ModuleResolver {
     /// Recompila un módulo desde disco y retorna el nuevo Programa
     pub fn recargar(&mut self, module_id: ModuleId) -> Result<Programa, Vec<ErrorForja>> {
         // Buscar la ruta del módulo por su ModuleId
-        let ruta = self.module_cache.por_id.get(&module_id)
+        let ruta = self
+            .module_cache
+            .por_id
+            .get(&module_id)
             .map(|info| info.source_path.clone());
 
         let ruta = match ruta {
             Some(r) => r,
             None => {
                 // Buscar inversamente en por_ruta
-                let ruta_opt = self.module_cache.por_ruta.iter()
+                let ruta_opt = self
+                    .module_cache
+                    .por_ruta
+                    .iter()
                     .find(|(_, &id)| id == module_id)
                     .map(|(ruta, _)| ruta.clone());
                 match ruta_opt {
                     Some(r) => r,
-                    None => return Err(vec![ErrorForja::new(
-                        crate::error::ErrorTipo::ErrorSemantico, 0, 0,
-                        "Módulo no encontrado en cache",
-                        "El módulo debe estar registrado antes de recargarse.",
-                    )]),
+                    None => {
+                        return Err(vec![ErrorForja::new(
+                            crate::error::ErrorTipo::ErrorSemantico,
+                            0,
+                            0,
+                            "Módulo no encontrado en cache",
+                            "El módulo debe estar registrado antes de recargarse.",
+                        )])
+                    }
                 }
             }
         };
@@ -264,14 +346,18 @@ impl ModuleResolver {
 
     /// Agrega un módulo al cache con su información completa
     pub fn registrar_modulo(&mut self, module_id: ModuleId, info: ModuleInfo) {
-        self.module_cache.por_ruta.insert(info.source_path.clone(), module_id);
+        self.module_cache
+            .por_ruta
+            .insert(info.source_path.clone(), module_id);
         self.module_cache.por_id.insert(module_id, info.clone());
         for import in &info.imports {
-            self.module_cache.grafo_importaciones
+            self.module_cache
+                .grafo_importaciones
                 .entry(module_id)
                 .or_insert_with(Vec::new)
                 .push(*import);
-            self.module_cache.grafo_dependientes
+            self.module_cache
+                .grafo_dependientes
                 .entry(*import)
                 .or_insert_with(Vec::new)
                 .push(module_id);
@@ -280,13 +366,17 @@ impl ModuleResolver {
 
     /// Retorna los dependientes directos de un módulo
     pub fn dependientes_de(&self, module_id: ModuleId) -> Option<&[ModuleId]> {
-        self.module_cache.grafo_dependientes.get(&module_id)
+        self.module_cache
+            .grafo_dependientes
+            .get(&module_id)
             .map(|v| v.as_slice())
     }
 
     /// Retorna las importaciones directas de un módulo
     pub fn importaciones_de(&self, module_id: ModuleId) -> Option<&[ModuleId]> {
-        self.module_cache.grafo_importaciones.get(&module_id)
+        self.module_cache
+            .grafo_importaciones
+            .get(&module_id)
             .map(|v| v.as_slice())
     }
 }
