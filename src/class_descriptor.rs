@@ -1,6 +1,6 @@
 #![allow(dead_code)]
-use std::collections::HashMap;
 use crate::symbol_table::SymId;
+use std::collections::HashMap;
 
 /// Shape: la estructura de campos compartida por todas las instancias de una clase
 #[derive(Debug, Clone)]
@@ -13,7 +13,10 @@ pub struct Shape {
 
 impl Shape {
     pub fn new() -> Self {
-        Self { campo_a_indice: HashMap::new(), indice_a_campo: Vec::new() }
+        Self {
+            campo_a_indice: HashMap::new(),
+            indice_a_campo: Vec::new(),
+        }
     }
 
     pub fn add_campo(&mut self, nombre: SymId) -> usize {
@@ -37,7 +40,7 @@ impl Shape {
 pub struct ClassDescriptor {
     pub nombre: SymId,
     pub shape: Shape,
-    pub mro: Vec<SymId>,    // Orden de resolución: [clase, padre, ...]
-    pub metodos: HashMap<SymId, SymId>,  // nombre_método → nombre_función (SymId de "Clase.metodo")
-    pub rasgos: Vec<SymId>,              // NUEVO: rasgos que implementa esta clase
+    pub mro: Vec<SymId>, // Orden de resolución: [clase, padre, ...]
+    pub metodos: HashMap<SymId, SymId>, // nombre_método → nombre_función (SymId de "Clase.metodo")
+    pub rasgos: Vec<SymId>, // NUEVO: rasgos que implementa esta clase
 }

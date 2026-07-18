@@ -160,7 +160,10 @@ impl DAPState {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.iter().any(|a| a == "--version" || a == "-v" || a == "version") {
+    if args
+        .iter()
+        .any(|a| a == "--version" || a == "-v" || a == "version")
+    {
         println!("forja-dap v{}", env!("CARGO_PKG_VERSION"));
         return;
     }
@@ -387,7 +390,9 @@ fn handle_configuration_done(state: &mut DAPState, seq: i64) {
 }
 
 fn ejecutar_programa(state: &mut DAPState) {
-    loop {
+    // El loop nunca iteraba más de una vez porque todas las ramas
+    // hacen return. Se reemplaza por un bloque simple.
+    {
         // Verificar comandos pendientes
         if let Ok(cmd) = state.cmd_rx.try_recv() {
             match cmd {
@@ -635,8 +640,9 @@ fn handle_pause(state: &mut DAPState, seq: i64) {
 
 fn handle_stack_trace(state: &mut DAPState, seq: i64, _args: serde_json::Value) {
     let frames = state.debugger.get_stack_trace();
-    let stack_frames: Vec<DAPStackFrame> = frames.iter().map(|f| {
-        DAPStackFrame {
+    let stack_frames: Vec<DAPStackFrame> = frames
+        .iter()
+        .map(|f| DAPStackFrame {
             id: f.id,
             name: f.name.clone(),
             line: f.line,
@@ -645,8 +651,8 @@ fn handle_stack_trace(state: &mut DAPState, seq: i64, _args: serde_json::Value) 
                 name: Some(path.rsplit('/').next().unwrap_or(path).to_string()),
                 path: Some(path.clone()),
             }),
-        }
-    }).collect();
+        })
+        .collect();
 
     let resp = RPCResponse {
         seq: state.next_seq(),
@@ -692,26 +698,40 @@ fn handle_scopes(state: &mut DAPState, seq: i64, _args: serde_json::Value) {
 }
 
 fn handle_variables(state: &mut DAPState, seq: i64, args: serde_json::Value) {
-    let vars_ref = args.get("variablesReference").and_then(|v| v.as_u64()).unwrap_or(0);
+    let vars_ref = args
+        .get("variablesReference")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     let variables: Vec<DAPVariable> = if vars_ref == 1 {
         // Variables locales del frame actual
         let frames = state.debugger.get_stack_trace();
-        frames.first().map(|f| {
-            f.vars.iter().map(|v| DAPVariable {
+        frames
+            .first()
+            .map(|f| {
+                f.vars
+                    .iter()
+                    .map(|v| DAPVariable {
+                        name: v.name.clone(),
+                        value: v.value.clone(),
+                        tipo: v.tipo.clone(),
+                        variablesReference: 0,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else if vars_ref == 2 {
+        // Variables globales
+        state
+            .debugger
+            .obtener_variables_globales()
+            .iter()
+            .map(|v| DAPVariable {
                 name: v.name.clone(),
                 value: v.value.clone(),
                 tipo: v.tipo.clone(),
                 variablesReference: 0,
-            }).collect()
-        }).unwrap_or_default()
-    } else if vars_ref == 2 {
-        // Variables globales
-        state.debugger.obtener_variables_globales().iter().map(|v| DAPVariable {
-            name: v.name.clone(),
-            value: v.value.clone(),
-            tipo: v.tipo.clone(),
-            variablesReference: 0,
-        }).collect()
+            })
+            .collect()
     } else {
         Vec::new()
     };
@@ -731,7 +751,10 @@ fn handle_variables(state: &mut DAPState, seq: i64, args: serde_json::Value) {
 }
 
 fn handle_evaluate(state: &mut DAPState, seq: i64, args: serde_json::Value) {
-    let expr = args.get("expression").and_then(|v| v.as_str()).unwrap_or("");
+    let expr = args
+        .get("expression")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let result = state.debugger.evaluar(expr);
 
     match result {
@@ -785,6 +808,11 @@ fn handle_disconnect(state: &mut DAPState, seq: i64) {
 fn send_json<T: serde::Serialize>(val: &T) {
     let json_str = serde_json::to_string(val).unwrap_or_default();
     let mut stdout = io::stdout();
-    let _ = writeln!(stdout, "Content-Length: {}\r\n\r\n{}", json_str.len(), json_str);
+    let _ = writeln!(
+        stdout,
+        "Content-Length: {}\r\n\r\n{}",
+        json_str.len(),
+        json_str
+    );
     let _ = stdout.flush();
 }

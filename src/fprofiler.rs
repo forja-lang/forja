@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 /// Profiler de operaciones f64 para ForjaFast
 /// Contadores atómicos para medir frecuencia de opcodes float y type-checking overhead
-
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Flag global para habilitar/deshabilitar profiling
@@ -12,7 +11,9 @@ pub static PROFILER_ENABLED: AtomicU64 = AtomicU64::new(0);
 macro_rules! prof_count {
     ($field:ident) => {
         if $crate::fprofiler::PROFILER_ENABLED.load(std::sync::atomic::Ordering::Relaxed) != 0 {
-            $crate::fprofiler::PROFILER_DATA.$field.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            $crate::fprofiler::PROFILER_DATA
+                .$field
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
     };
 }
@@ -128,46 +129,123 @@ pub static PROFILER_DATA: FloatProfilerData = FloatProfilerData::new();
 
 /// Imprime el reporte del profiler
 pub fn print_profiler_report() {
-    if PROFILER_ENABLED.load(Ordering::Relaxed) == 0 { return; }
+    if PROFILER_ENABLED.load(Ordering::Relaxed) == 0 {
+        return;
+    }
     let d = &PROFILER_DATA;
     println!("\n======================================================================");
     println!("  🔬 ForjaFast f64 Profiler Report");
     println!("======================================================================");
     println!("  OPCODES FLOAT:");
-    println!("    PushDecimal:     {:>12}", d.push_decimal.load(Ordering::Relaxed));
-    println!("    AddFloat:        {:>12}", d.add_float.load(Ordering::Relaxed));
-    println!("    SubFloat:        {:>12}", d.sub_float.load(Ordering::Relaxed));
-    println!("    MulFloat:        {:>12}", d.mul_float.load(Ordering::Relaxed));
-    println!("    DivFloat:        {:>12}", d.div_float.load(Ordering::Relaxed));
-    println!("    LoadIdxFloat:    {:>12}", d.load_idx_float.load(Ordering::Relaxed));
-    println!("    StoreIdxFloat:   {:>12}", d.store_idx_float.load(Ordering::Relaxed));
-    println!("    AddStoreFloat:   {:>12}", d.add_store_float.load(Ordering::Relaxed));
-    println!("    LoadAddFloat:    {:>12}", d.load_add_float.load(Ordering::Relaxed));
-    println!("    DeclareFloatOp:  {:>12}", d.declare_float_op.load(Ordering::Relaxed));
-    println!("    StoreFloatOp:    {:>12}", d.store_float_op.load(Ordering::Relaxed));
-    println!("    XorSign:         {:>12}", d.xor_sign.load(Ordering::Relaxed));
+    println!(
+        "    PushDecimal:     {:>12}",
+        d.push_decimal.load(Ordering::Relaxed)
+    );
+    println!(
+        "    AddFloat:        {:>12}",
+        d.add_float.load(Ordering::Relaxed)
+    );
+    println!(
+        "    SubFloat:        {:>12}",
+        d.sub_float.load(Ordering::Relaxed)
+    );
+    println!(
+        "    MulFloat:        {:>12}",
+        d.mul_float.load(Ordering::Relaxed)
+    );
+    println!(
+        "    DivFloat:        {:>12}",
+        d.div_float.load(Ordering::Relaxed)
+    );
+    println!(
+        "    LoadIdxFloat:    {:>12}",
+        d.load_idx_float.load(Ordering::Relaxed)
+    );
+    println!(
+        "    StoreIdxFloat:   {:>12}",
+        d.store_idx_float.load(Ordering::Relaxed)
+    );
+    println!(
+        "    AddStoreFloat:   {:>12}",
+        d.add_store_float.load(Ordering::Relaxed)
+    );
+    println!(
+        "    LoadAddFloat:    {:>12}",
+        d.load_add_float.load(Ordering::Relaxed)
+    );
+    println!(
+        "    DeclareFloatOp:  {:>12}",
+        d.declare_float_op.load(Ordering::Relaxed)
+    );
+    println!(
+        "    StoreFloatOp:    {:>12}",
+        d.store_float_op.load(Ordering::Relaxed)
+    );
+    println!(
+        "    XorSign:         {:>12}",
+        d.xor_sign.load(Ordering::Relaxed)
+    );
     println!();
     println!("  OPCODES GENERICOS (caída a genérico):");
-    println!("    Add(generic):    {:>12}", d.add_generic.load(Ordering::Relaxed));
-    println!("    Sub(generic):    {:>12}", d.sub_generic.load(Ordering::Relaxed));
-    println!("    Mul(generic):    {:>12}", d.mul_generic.load(Ordering::Relaxed));
-    println!("    Div(generic):    {:>12}", d.div_generic.load(Ordering::Relaxed));
+    println!(
+        "    Add(generic):    {:>12}",
+        d.add_generic.load(Ordering::Relaxed)
+    );
+    println!(
+        "    Sub(generic):    {:>12}",
+        d.sub_generic.load(Ordering::Relaxed)
+    );
+    println!(
+        "    Mul(generic):    {:>12}",
+        d.mul_generic.load(Ordering::Relaxed)
+    );
+    println!(
+        "    Div(generic):    {:>12}",
+        d.div_generic.load(Ordering::Relaxed)
+    );
     println!();
     println!("  TYPE CHECKS (cada operación aritmética):");
-    println!("    es_flotante():   {:>12}", d.es_flotante_calls.load(Ordering::Relaxed));
-    println!("    es_entero():     {:>12}", d.es_entero_calls.load(Ordering::Relaxed));
-    println!("    type_tag():      {:>12}", d.tipo_tag_calls.load(Ordering::Relaxed));
+    println!(
+        "    es_flotante():   {:>12}",
+        d.es_flotante_calls.load(Ordering::Relaxed)
+    );
+    println!(
+        "    es_entero():     {:>12}",
+        d.es_entero_calls.load(Ordering::Relaxed)
+    );
+    println!(
+        "    type_tag():      {:>12}",
+        d.tipo_tag_calls.load(Ordering::Relaxed)
+    );
     println!();
     println!("  STACK CACHING:");
-    println!("    push_valor():    {:>12}", d.push_valor_calls.load(Ordering::Relaxed));
-    println!("    pop_valor():     {:>12}", d.pop_valor_calls.load(Ordering::Relaxed));
+    println!(
+        "    push_valor():    {:>12}",
+        d.push_valor_calls.load(Ordering::Relaxed)
+    );
+    println!(
+        "    pop_valor():     {:>12}",
+        d.pop_valor_calls.load(Ordering::Relaxed)
+    );
     println!();
     println!("  ESPECIALIZACION ADAPTATIVA:");
-    println!("    Hits (patch):    {:>12}", d.specializer_hits.load(Ordering::Relaxed));
-    println!("    Misses (reset):  {:>12}", d.specializer_misses.load(Ordering::Relaxed));
+    println!(
+        "    Hits (patch):    {:>12}",
+        d.specializer_hits.load(Ordering::Relaxed)
+    );
+    println!(
+        "    Misses (reset):  {:>12}",
+        d.specializer_misses.load(Ordering::Relaxed)
+    );
     println!();
     println!("  FAST/SLOW PATH (AddFloat con cache de tipo):");
-    println!("    Fast-path:       {:>12}", d.add_float_fastpath.load(Ordering::Relaxed));
-    println!("    Slow-path:       {:>12}", d.add_float_slowpath.load(Ordering::Relaxed));
+    println!(
+        "    Fast-path:       {:>12}",
+        d.add_float_fastpath.load(Ordering::Relaxed)
+    );
+    println!(
+        "    Slow-path:       {:>12}",
+        d.add_float_slowpath.load(Ordering::Relaxed)
+    );
     println!("======================================================================\n");
 }

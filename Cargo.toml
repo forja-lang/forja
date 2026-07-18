@@ -41,6 +41,10 @@ name = "forja-dap"
 path = "src/bin/forja_dap.rs"
 required-features = ["dap"]
 
+[[bin]]
+name = "fuzz_simple"
+path = "src/bin/fuzz_simple.rs"
+
 [[bench]]
 name = "bench-fa"
 path = "benchmarks/bench_fa.rs"
@@ -104,7 +108,7 @@ members = [
     "crates/forja-rt",
     "crates/forja-android-rt",
 ]
-exclude = [".forja_gui_cache"]
+exclude = [".forja_gui_cache", "fuzz"]
 
 [patch.crates-io]
 xilem = { git = "https://github.com/forja-lang/patches.git", branch = "xilem" }

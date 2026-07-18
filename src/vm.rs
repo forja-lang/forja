@@ -1,13 +1,15 @@
 #![allow(dead_code)]
-use std::collections::HashMap;
-use std::rc::Rc;
+use crate::bytecode::Opcode;
+use crate::native_registry::SocketState;
+use crate::uops::{
+    expandir_a_uops, optimizar_uops, remapear_saltos_uops, tiene_opcodes_compuestos, Uop,
+};
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::ToSocketAddrs;
-use crate::bytecode::Opcode;
-use crate::uops::{Uop, expandir_a_uops, optimizar_uops, remapear_saltos_uops, tiene_opcodes_compuestos};
-use crate::native_registry::SocketState;
+use std::rc::Rc;
+use std::sync::Arc;
 
 /// Un objeto en la VM (instancia de clase) con referencia compartida
 #[derive(Debug, Clone)]
@@ -35,7 +37,9 @@ pub struct StringPool {
 #[allow(dead_code)]
 impl StringPool {
     pub fn new() -> Self {
-        StringPool { pool: std::cell::RefCell::new(std::collections::HashMap::new()) }
+        StringPool {
+            pool: std::cell::RefCell::new(std::collections::HashMap::new()),
+        }
     }
     pub fn intern(&self, s: &str) -> String {
         let mut pool = self.pool.borrow_mut();
@@ -73,7 +77,6 @@ pub fn get_small_int_vm(n: i64) -> ValorVM {
         ValorVM::Entero(n)
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub enum ValorVM {
@@ -171,7 +174,8 @@ impl ValorVM {
                 format!("[{}]", elems.join(", "))
             }
             ValorVM::Mapa(pares) => {
-                let entries: Vec<String> = pares.iter()
+                let entries: Vec<String> = pares
+                    .iter()
                     .map(|(k, v)| format!("\"{}\": {}", k, v.mostrar()))
                     .collect();
                 format!("{{{}}}", entries.join(", "))
@@ -181,9 +185,7 @@ impl ValorVM {
 
     pub fn sumar(&self, other: &ValorVM) -> Result<ValorVM, ErrorVM> {
         match (self, other) {
-            (ValorVM::Entero(a), ValorVM::Entero(b)) => {
-                Ok(ValorVM::Entero(a.wrapping_add(*b)))
-            }
+            (ValorVM::Entero(a), ValorVM::Entero(b)) => Ok(ValorVM::Entero(a.wrapping_add(*b))),
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(a + b)),
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 + b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a + *b as f64)),
@@ -223,9 +225,7 @@ impl ValorVM {
 
     pub fn restar(&self, other: &ValorVM) -> Result<ValorVM, ErrorVM> {
         match (self, other) {
-            (ValorVM::Entero(a), ValorVM::Entero(b)) => {
-                Ok(ValorVM::Entero(a.wrapping_sub(*b)))
-            }
+            (ValorVM::Entero(a), ValorVM::Entero(b)) => Ok(ValorVM::Entero(a.wrapping_sub(*b))),
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(a - b)),
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 - b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a - *b as f64)),
@@ -259,14 +259,13 @@ impl ValorVM {
 
     pub fn multiplicar(&self, other: &ValorVM) -> Result<ValorVM, ErrorVM> {
         match (self, other) {
-            (ValorVM::Entero(a), ValorVM::Entero(b)) => {
-                Ok(ValorVM::Entero(a.wrapping_mul(*b)))
-            }
+            (ValorVM::Entero(a), ValorVM::Entero(b)) => Ok(ValorVM::Entero(a.wrapping_mul(*b))),
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(a * b)),
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 * b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a * *b as f64)),
             (ValorVM::Exacto(a_coeff, a_scale), ValorVM::Exacto(b_coeff, b_scale)) => {
-                let (coeff, scale) = normalizar_exacto(a_coeff.wrapping_mul(*b_coeff), a_scale + b_scale);
+                let (coeff, scale) =
+                    normalizar_exacto(a_coeff.wrapping_mul(*b_coeff), a_scale + b_scale);
                 Ok(ValorVM::Exacto(coeff, scale))
             }
             (ValorVM::Exacto(coeff, scale), ValorVM::Entero(n)) => {
@@ -278,13 +277,15 @@ impl ValorVM {
             (ValorVM::Exacto(coeff, scale), ValorVM::Decimal(d)) => {
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
-                let (new_coeff, new_scale) = normalizar_exacto(coeff.wrapping_mul(d_coeff), scale + d_scale);
+                let (new_coeff, new_scale) =
+                    normalizar_exacto(coeff.wrapping_mul(d_coeff), scale + d_scale);
                 Ok(ValorVM::Exacto(new_coeff, new_scale))
             }
             (ValorVM::Decimal(d), ValorVM::Exacto(coeff, scale)) => {
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
-                let (new_coeff, new_scale) = normalizar_exacto(coeff.wrapping_mul(d_coeff), scale + d_scale);
+                let (new_coeff, new_scale) =
+                    normalizar_exacto(coeff.wrapping_mul(d_coeff), scale + d_scale);
                 Ok(ValorVM::Exacto(new_coeff, new_scale))
             }
             _ => Ok(ValorVM::Nulo),
@@ -294,14 +295,14 @@ impl ValorVM {
     pub fn dividir(&self, other: &ValorVM) -> Result<ValorVM, ErrorVM> {
         match (self, other) {
             (_, ValorVM::Entero(0)) | (_, ValorVM::Decimal(0.0)) => Ok(ValorVM::Nulo),
-            (ValorVM::Entero(a), ValorVM::Entero(b)) => {
-                Ok(ValorVM::Entero(a.wrapping_div(*b)))
-            }
+            (ValorVM::Entero(a), ValorVM::Entero(b)) => Ok(ValorVM::Entero(a.wrapping_div(*b))),
             (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(a / b)),
             (ValorVM::Entero(a), ValorVM::Decimal(b)) => Ok(ValorVM::Decimal(*a as f64 / b)),
             (ValorVM::Decimal(a), ValorVM::Entero(b)) => Ok(ValorVM::Decimal(a / *b as f64)),
             (ValorVM::Exacto(a_coeff, a_scale), ValorVM::Exacto(b_coeff, b_scale)) => {
-                if *b_coeff == 0 { return Ok(ValorVM::Nulo); }
+                if *b_coeff == 0 {
+                    return Ok(ValorVM::Nulo);
+                }
                 let extra = 38u32;
                 let dividendo = a_coeff.wrapping_mul(10_i128.wrapping_pow(extra));
                 let escala = a_scale + extra - b_scale;
@@ -309,7 +310,9 @@ impl ValorVM {
                 Ok(ValorVM::Exacto(cociente, escala))
             }
             (ValorVM::Exacto(coeff, scale), ValorVM::Entero(n)) => {
-                if *n == 0 { return Ok(ValorVM::Nulo); }
+                if *n == 0 {
+                    return Ok(ValorVM::Nulo);
+                }
                 let extra = 38u32;
                 let dividendo = coeff.wrapping_mul(10_i128.wrapping_pow(extra));
                 let escala = scale + extra - 0;
@@ -317,7 +320,9 @@ impl ValorVM {
                 Ok(ValorVM::Exacto(cociente, escala))
             }
             (ValorVM::Entero(n), ValorVM::Exacto(coeff, scale)) => {
-                if *coeff == 0 { return Ok(ValorVM::Nulo); }
+                if *coeff == 0 {
+                    return Ok(ValorVM::Nulo);
+                }
                 let extra = 38u32;
                 let n_coeff = *n as i128;
                 let dividendo = n_coeff.wrapping_mul(10_i128.wrapping_pow(extra));
@@ -328,7 +333,9 @@ impl ValorVM {
             (ValorVM::Exacto(coeff, scale), ValorVM::Decimal(d)) => {
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
-                if d_coeff == 0 { return Ok(ValorVM::Nulo); }
+                if d_coeff == 0 {
+                    return Ok(ValorVM::Nulo);
+                }
                 let extra = 38u32;
                 let dividendo = coeff.wrapping_mul(10_i128.wrapping_pow(extra));
                 let escala = scale + extra - d_scale;
@@ -336,7 +343,9 @@ impl ValorVM {
                 Ok(ValorVM::Exacto(cociente, escala))
             }
             (ValorVM::Decimal(d), ValorVM::Exacto(coeff, scale)) => {
-                if *coeff == 0 { return Ok(ValorVM::Nulo); }
+                if *coeff == 0 {
+                    return Ok(ValorVM::Nulo);
+                }
                 let d_scale = 10u32;
                 let d_coeff = (d * 10_f64.powi(d_scale as i32)) as i128;
                 let extra = 38u32;
@@ -352,7 +361,9 @@ impl ValorVM {
     pub fn comparar(&self, other: &ValorVM) -> Result<i64, ErrorVM> {
         match (self, other) {
             (ValorVM::Entero(a), ValorVM::Entero(b)) => Ok(a.cmp(b) as i64),
-            (ValorVM::Decimal(a), ValorVM::Decimal(b)) => Ok(a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i64),
+            (ValorVM::Decimal(a), ValorVM::Decimal(b)) => {
+                Ok(a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i64)
+            }
             (ValorVM::Exacto(a_coeff, a_scale), ValorVM::Exacto(b_coeff, b_scale)) => {
                 let (a, b, _) = homogeneizar_exacto(*a_coeff, *a_scale, *b_coeff, *b_scale);
                 Ok(a.cmp(&b) as i64)
@@ -426,7 +437,9 @@ impl std::fmt::Display for ErrorVM {
             ErrorVM::LabelNoEncontrada(l) => write!(f, "Label no encontrada: {}", l),
             ErrorVM::FuncionNoDefinida(fn_name) => write!(f, "Función '{}' no definida", fn_name),
             ErrorVM::StackOverflow(msg) => write!(f, "Desbordamiento de pila: {}", msg),
-            ErrorVM::LimiteDeEjecucion => write!(f, "Límite de instrucciones alcanzado (1,000,000)"),
+            ErrorVM::LimiteDeEjecucion => {
+                write!(f, "Límite de instrucciones alcanzado (1,000,000)")
+            }
             ErrorVM::ErrorPropagado(_) => write!(f, "Error propagado con el operador ?"),
         }
     }
@@ -501,23 +514,50 @@ impl ForjaVM {
     /// Registra las funciones nativas disponibles para la VM clásica
     fn registrar_nativas(&mut self) {
         // TCP Cliente
-        self.native_funcs.insert("_socket_tcp_conectar".to_string(), clasica_socket_tcp_conectar);
-        self.native_funcs.insert("_socket_enviar".to_string(), clasica_socket_enviar);
-        self.native_funcs.insert("_socket_recibir".to_string(), clasica_socket_recibir);
-        self.native_funcs.insert("_socket_cerrar".to_string(), clasica_socket_cerrar);
-        self.native_funcs.insert("_socket_activo".to_string(), clasica_socket_activo);
-        self.native_funcs.insert("_socket_fijar_timeout".to_string(), clasica_socket_fijar_timeout);
-        self.native_funcs.insert("_socket_direccion_local".to_string(), clasica_socket_direccion_local);
-        self.native_funcs.insert("_socket_direccion_remota".to_string(), clasica_socket_direccion_remota);
+        self.native_funcs.insert(
+            "_socket_tcp_conectar".to_string(),
+            clasica_socket_tcp_conectar,
+        );
+        self.native_funcs
+            .insert("_socket_enviar".to_string(), clasica_socket_enviar);
+        self.native_funcs
+            .insert("_socket_recibir".to_string(), clasica_socket_recibir);
+        self.native_funcs
+            .insert("_socket_cerrar".to_string(), clasica_socket_cerrar);
+        self.native_funcs
+            .insert("_socket_activo".to_string(), clasica_socket_activo);
+        self.native_funcs.insert(
+            "_socket_fijar_timeout".to_string(),
+            clasica_socket_fijar_timeout,
+        );
+        self.native_funcs.insert(
+            "_socket_direccion_local".to_string(),
+            clasica_socket_direccion_local,
+        );
+        self.native_funcs.insert(
+            "_socket_direccion_remota".to_string(),
+            clasica_socket_direccion_remota,
+        );
 
         // TCP Servidor
-        self.native_funcs.insert("_socket_tcp_escuchar".to_string(), clasica_socket_tcp_escuchar);
-        self.native_funcs.insert("_socket_aceptar".to_string(), clasica_socket_aceptar);
+        self.native_funcs.insert(
+            "_socket_tcp_escuchar".to_string(),
+            clasica_socket_tcp_escuchar,
+        );
+        self.native_funcs
+            .insert("_socket_aceptar".to_string(), clasica_socket_aceptar);
 
         // UDP
-        self.native_funcs.insert("_socket_udp_escuchar".to_string(), clasica_socket_udp_escuchar);
-        self.native_funcs.insert("_socket_udp_enviar".to_string(), clasica_socket_udp_enviar);
-        self.native_funcs.insert("_socket_udp_recibir".to_string(), clasica_socket_udp_recibir);
+        self.native_funcs.insert(
+            "_socket_udp_escuchar".to_string(),
+            clasica_socket_udp_escuchar,
+        );
+        self.native_funcs
+            .insert("_socket_udp_enviar".to_string(), clasica_socket_udp_enviar);
+        self.native_funcs.insert(
+            "_socket_udp_recibir".to_string(),
+            clasica_socket_udp_recibir,
+        );
     }
 
     pub fn set_max_instrucciones(&mut self, n: usize) {
@@ -541,7 +581,10 @@ impl ForjaVM {
                 Opcode::FunctionDef(nombre, params) => {
                     // La función empieza EN la siguiente instrucción
                     self.funciones.insert(nombre.to_string(), i + 1);
-                    func_params.insert(nombre.to_string(), params.iter().map(|s| s.to_string()).collect());
+                    func_params.insert(
+                        nombre.to_string(),
+                        params.iter().map(|s| s.to_string()).collect(),
+                    );
                 }
                 _ => {}
             }
@@ -553,7 +596,9 @@ impl ForjaVM {
             match &new_bytecode[i] {
                 Opcode::Jump(target) | Opcode::JumpSiFalso(target) => {
                     let pos = *label_positions.get(target).unwrap_or(target);
-                    if std::mem::discriminant(&new_bytecode[i]) == std::mem::discriminant(&Opcode::Jump(0)) {
+                    if std::mem::discriminant(&new_bytecode[i])
+                        == std::mem::discriminant(&Opcode::Jump(0))
+                    {
                         new_bytecode[i] = Opcode::Jump(pos);
                     } else {
                         new_bytecode[i] = Opcode::JumpSiFalso(pos);
@@ -571,7 +616,9 @@ impl ForjaVM {
         self.stack.clear();
         self.call_stack.clear();
         self.output.clear(); // V-11: limpiar output entre ejecuciones
-        self.contador_especializacion.iter_mut().for_each(|c| *c = 0);
+        self.contador_especializacion
+            .iter_mut()
+            .for_each(|c| *c = 0);
         // No reseteamos variables (persisten entre líneas en REPL)
     }
 
@@ -637,7 +684,9 @@ impl ForjaVM {
         match val {
             ValorVM::Entero(n) => Ok(*n),
             ValorVM::Decimal(d) => Ok(*d as i64),
-            _ => Err(ErrorVM::TipoIncompatible("se esperaba un número entero".into())),
+            _ => Err(ErrorVM::TipoIncompatible(
+                "se esperaba un número entero".into(),
+            )),
         }
     }
 
@@ -647,9 +696,12 @@ impl ForjaVM {
         if let Ok(addr) = addr_str.parse::<std::net::SocketAddr>() {
             return Ok(addr);
         }
-        let addrs = (direccion, puerto).to_socket_addrs()
+        let addrs = (direccion, puerto)
+            .to_socket_addrs()
             .map_err(|e| format!("no se pudo resolver '{}': {}", addr_str, e))?;
-        addrs.into_iter().next()
+        addrs
+            .into_iter()
+            .next()
             .ok_or_else(|| format!("no se encontraron direcciones para '{}'", addr_str))
     }
 
@@ -684,8 +736,7 @@ impl ForjaVM {
             self.instrucciones_ejecutadas += 1;
 
             if self.stack.len() > self.max_stack {
-                let err = ErrorVM::StackOverflow(
-                    "Límite de pila alcanzado".to_string());
+                let err = ErrorVM::StackOverflow("Límite de pila alcanzado".to_string());
                 self.reset(); // V-06: reset automático en error de stack
                 return Err(err);
             }
@@ -693,13 +744,33 @@ impl ForjaVM {
             let opcode = self.bytecode[self.ip].clone();
 
             match opcode {
-                Opcode::PushEntero(n) => { self.stack.push(get_small_int_vm(n)); self.ip += 1; }
-                Opcode::PushDecimal(d) => { self.stack.push(ValorVM::Decimal(d)); self.ip += 1; }
-                Opcode::PushTexto(s) => { self.stack.push(ValorVM::Texto(s.to_string())); self.ip += 1; }
-                Opcode::PushBooleano(b) => { self.stack.push(ValorVM::Booleano(b)); self.ip += 1; }
-                Opcode::PushNulo => { self.stack.push(ValorVM::Nulo); self.ip += 1; }
+                Opcode::PushEntero(n) => {
+                    self.stack.push(get_small_int_vm(n));
+                    self.ip += 1;
+                }
+                Opcode::PushDecimal(d) => {
+                    self.stack.push(ValorVM::Decimal(d));
+                    self.ip += 1;
+                }
+                Opcode::PushTexto(s) => {
+                    self.stack.push(ValorVM::Texto(s.to_string()));
+                    self.ip += 1;
+                }
+                Opcode::PushBooleano(b) => {
+                    self.stack.push(ValorVM::Booleano(b));
+                    self.ip += 1;
+                }
+                Opcode::PushNulo => {
+                    self.stack.push(ValorVM::Nulo);
+                    self.ip += 1;
+                }
 
-                Opcode::Pop => { self.stack.pop().ok_or(ErrorVM::StackUnderflow("Pop".to_string()))?; self.ip += 1; }
+                Opcode::Pop => {
+                    self.stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Pop".to_string()))?;
+                    self.ip += 1;
+                }
                 Opcode::Dup => {
                     let val = self.stack.last().cloned().unwrap_or(ValorVM::Nulo);
                     self.stack.push(val);
@@ -714,13 +785,19 @@ impl ForjaVM {
                 }
 
                 Opcode::Store(nombre) => {
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Store".to_string()))?;
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Store".to_string()))?;
                     self.asignar_variable(nombre.as_ref(), val)?;
                     self.ip += 1;
                 }
 
                 Opcode::Declare(nombre, _mutable) => {
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Declare".to_string()))?;
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Declare".to_string()))?;
                     let ambito = self.ambito_actual();
                     let idx = self.variables[ambito].len();
                     self.nombre_a_indice[ambito].insert(nombre.to_string(), idx);
@@ -740,14 +817,20 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Opcode::StoreIdx(idx) => {
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("StoreIdx".to_string()))?;
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("StoreIdx".to_string()))?;
                     let ambito = self.ambito_actual();
                     self.asegurar_indice(ambito, idx);
                     self.variables[ambito][idx] = val;
                     self.ip += 1;
                 }
                 Opcode::DeclareIdx(idx, _mutable) => {
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DeclareIdx".to_string()))?;
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DeclareIdx".to_string()))?;
                     let ambito = self.ambito_actual();
                     self.asegurar_indice(ambito, idx);
                     self.variables[ambito][idx] = val;
@@ -783,7 +866,8 @@ impl ForjaVM {
                         let ta = Self::tipo_tag_valor(a);
                         let tb = Self::tipo_tag_valor(b);
                         if ta != 0 && tb != 0 && ta == tb && (ta == 1 || ta == 2) {
-                            self.contador_especializacion[ip] = self.contador_especializacion[ip].saturating_add(1);
+                            self.contador_especializacion[ip] =
+                                self.contador_especializacion[ip].saturating_add(1);
                             if self.contador_especializacion[ip] >= self.umbral_especializacion {
                                 self.bytecode[ip] = match ta {
                                     1 => Opcode::AddInt,
@@ -795,8 +879,14 @@ impl ForjaVM {
                             self.contador_especializacion[ip] = 0;
                         }
                     }
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
                     self.stack.push(a.sumar(&b)?);
                     self.ip += 1;
                 }
@@ -809,7 +899,8 @@ impl ForjaVM {
                         let ta = Self::tipo_tag_valor(a);
                         let tb = Self::tipo_tag_valor(b);
                         if ta != 0 && tb != 0 && ta == tb && (ta == 1 || ta == 2) {
-                            self.contador_especializacion[ip] = self.contador_especializacion[ip].saturating_add(1);
+                            self.contador_especializacion[ip] =
+                                self.contador_especializacion[ip].saturating_add(1);
                             if self.contador_especializacion[ip] >= self.umbral_especializacion {
                                 self.bytecode[ip] = match ta {
                                     1 => Opcode::SubInt,
@@ -821,8 +912,14 @@ impl ForjaVM {
                             self.contador_especializacion[ip] = 0;
                         }
                     }
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Sub".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Sub".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Sub".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Sub".to_string()))?;
                     self.stack.push(a.restar(&b)?);
                     self.ip += 1;
                 }
@@ -835,7 +932,8 @@ impl ForjaVM {
                         let ta = Self::tipo_tag_valor(a);
                         let tb = Self::tipo_tag_valor(b);
                         if ta != 0 && tb != 0 && ta == tb && (ta == 1 || ta == 2) {
-                            self.contador_especializacion[ip] = self.contador_especializacion[ip].saturating_add(1);
+                            self.contador_especializacion[ip] =
+                                self.contador_especializacion[ip].saturating_add(1);
                             if self.contador_especializacion[ip] >= self.umbral_especializacion {
                                 self.bytecode[ip] = match ta {
                                     1 => Opcode::MulInt,
@@ -847,8 +945,14 @@ impl ForjaVM {
                             self.contador_especializacion[ip] = 0;
                         }
                     }
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Mul".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Mul".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Mul".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Mul".to_string()))?;
                     self.stack.push(a.multiplicar(&b)?);
                     self.ip += 1;
                 }
@@ -861,7 +965,8 @@ impl ForjaVM {
                         let ta = Self::tipo_tag_valor(a);
                         let tb = Self::tipo_tag_valor(b);
                         if ta != 0 && tb != 0 && ta == tb && (ta == 1 || ta == 2) {
-                            self.contador_especializacion[ip] = self.contador_especializacion[ip].saturating_add(1);
+                            self.contador_especializacion[ip] =
+                                self.contador_especializacion[ip].saturating_add(1);
                             if self.contador_especializacion[ip] >= self.umbral_especializacion {
                                 self.bytecode[ip] = match ta {
                                     1 => Opcode::DivInt,
@@ -873,16 +978,28 @@ impl ForjaVM {
                             self.contador_especializacion[ip] = 0;
                         }
                     }
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Div".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Div".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Div".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Div".to_string()))?;
                     self.stack.push(a.dividir(&b)?);
                     self.ip += 1;
                 }
 
                 // === HANDLERS ESPECIALIZADOS (PEP 659) ===
                 Opcode::AddInt => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
                     match (&a, &b) {
                         (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
                             self.stack.push(ValorVM::Entero(av.wrapping_add(*bv)));
@@ -891,16 +1008,28 @@ impl ForjaVM {
                             self.bytecode[self.ip] = Opcode::Add;
                             self.stack.push(a);
                             self.stack.push(b);
-                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
-                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
+                            let b2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
+                            let a2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
                             self.stack.push(a2.sumar(&b2)?);
                         }
                     }
                     self.ip += 1;
                 }
                 Opcode::AddFloat => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
                     match (&a, &b) {
                         (ValorVM::Decimal(av), ValorVM::Decimal(bv)) => {
                             self.stack.push(ValorVM::Decimal(av + bv));
@@ -909,16 +1038,28 @@ impl ForjaVM {
                             self.bytecode[self.ip] = Opcode::Add;
                             self.stack.push(a);
                             self.stack.push(b);
-                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
-                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
+                            let b2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
+                            let a2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
                             self.stack.push(a2.sumar(&b2)?);
                         }
                     }
                     self.ip += 1;
                 }
                 Opcode::SubInt => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
                     match (&a, &b) {
                         (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
                             self.stack.push(ValorVM::Entero(av.wrapping_sub(*bv)));
@@ -927,16 +1068,28 @@ impl ForjaVM {
                             self.bytecode[self.ip] = Opcode::Sub;
                             self.stack.push(a);
                             self.stack.push(b);
-                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
-                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
+                            let b2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
+                            let a2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
                             self.stack.push(a2.restar(&b2)?);
                         }
                     }
                     self.ip += 1;
                 }
                 Opcode::SubFloat => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
                     match (&a, &b) {
                         (ValorVM::Decimal(av), ValorVM::Decimal(bv)) => {
                             self.stack.push(ValorVM::Decimal(av - bv));
@@ -945,16 +1098,28 @@ impl ForjaVM {
                             self.bytecode[self.ip] = Opcode::Sub;
                             self.stack.push(a);
                             self.stack.push(b);
-                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
-                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
+                            let b2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
+                            let a2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
                             self.stack.push(a2.restar(&b2)?);
                         }
                     }
                     self.ip += 1;
                 }
                 Opcode::MulInt => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
                     match (&a, &b) {
                         (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
                             self.stack.push(ValorVM::Entero(av.wrapping_mul(*bv)));
@@ -963,16 +1128,28 @@ impl ForjaVM {
                             self.bytecode[self.ip] = Opcode::Mul;
                             self.stack.push(a);
                             self.stack.push(b);
-                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
-                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
+                            let b2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
+                            let a2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
                             self.stack.push(a2.multiplicar(&b2)?);
                         }
                     }
                     self.ip += 1;
                 }
                 Opcode::MulFloat => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
                     match (&a, &b) {
                         (ValorVM::Decimal(av), ValorVM::Decimal(bv)) => {
                             self.stack.push(ValorVM::Decimal(av * bv));
@@ -981,54 +1158,96 @@ impl ForjaVM {
                             self.bytecode[self.ip] = Opcode::Mul;
                             self.stack.push(a);
                             self.stack.push(b);
-                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
-                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
+                            let b2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
+                            let a2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
                             self.stack.push(a2.multiplicar(&b2)?);
                         }
                     }
                     self.ip += 1;
                 }
                 Opcode::DivInt => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
                     match (&a, &b) {
                         (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
-                            if *bv == 0 { self.stack.push(ValorVM::Nulo); }
-                            else { self.stack.push(ValorVM::Entero(av.wrapping_div(*bv))); }
+                            if *bv == 0 {
+                                self.stack.push(ValorVM::Nulo);
+                            } else {
+                                self.stack.push(ValorVM::Entero(av.wrapping_div(*bv)));
+                            }
                         }
                         _ => {
                             self.bytecode[self.ip] = Opcode::Div;
                             self.stack.push(a);
                             self.stack.push(b);
-                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
-                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
+                            let b2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
+                            let a2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
                             self.stack.push(a2.dividir(&b2)?);
                         }
                     }
                     self.ip += 1;
                 }
                 Opcode::DivFloat => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
                     match (&a, &b) {
                         (ValorVM::Decimal(av), ValorVM::Decimal(bv)) => {
-                            if *bv == 0.0 { self.stack.push(ValorVM::Nulo); }
-                            else { self.stack.push(ValorVM::Decimal(av / bv)); }
+                            if *bv == 0.0 {
+                                self.stack.push(ValorVM::Nulo);
+                            } else {
+                                self.stack.push(ValorVM::Decimal(av / bv));
+                            }
                         }
                         _ => {
                             self.bytecode[self.ip] = Opcode::Div;
                             self.stack.push(a);
                             self.stack.push(b);
-                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
-                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
+                            let b2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
+                            let a2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
                             self.stack.push(a2.dividir(&b2)?);
                         }
                     }
                     self.ip += 1;
                 }
                 Opcode::IgualInt => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualInt".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualInt".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("IgualInt".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("IgualInt".to_string()))?;
                     match (&a, &b) {
                         (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
                             self.stack.push(ValorVM::Booleano(av == bv));
@@ -1037,8 +1256,14 @@ impl ForjaVM {
                             self.bytecode[self.ip] = Opcode::Igual;
                             self.stack.push(a);
                             self.stack.push(b);
-                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualInt".to_string()))?;
-                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualInt".to_string()))?;
+                            let b2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("IgualInt".to_string()))?;
+                            let a2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("IgualInt".to_string()))?;
                             let cmp = a2.comparar(&b2)?;
                             self.stack.push(ValorVM::Booleano(cmp == 0));
                         }
@@ -1046,8 +1271,14 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Opcode::MenorInt => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorInt".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorInt".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MenorInt".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MenorInt".to_string()))?;
                     match (&a, &b) {
                         (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
                             self.stack.push(ValorVM::Booleano(av < bv));
@@ -1056,8 +1287,14 @@ impl ForjaVM {
                             self.bytecode[self.ip] = Opcode::Menor;
                             self.stack.push(a);
                             self.stack.push(b);
-                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorInt".to_string()))?;
-                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorInt".to_string()))?;
+                            let b2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("MenorInt".to_string()))?;
+                            let a2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("MenorInt".to_string()))?;
                             let cmp = a2.comparar(&b2)?;
                             self.stack.push(ValorVM::Booleano(cmp == -1));
                         }
@@ -1065,8 +1302,14 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Opcode::MayorInt => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorInt".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorInt".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MayorInt".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MayorInt".to_string()))?;
                     match (&a, &b) {
                         (ValorVM::Entero(av), ValorVM::Entero(bv)) => {
                             self.stack.push(ValorVM::Booleano(av > bv));
@@ -1075,8 +1318,14 @@ impl ForjaVM {
                             self.bytecode[self.ip] = Opcode::Mayor;
                             self.stack.push(a);
                             self.stack.push(b);
-                            let b2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorInt".to_string()))?;
-                            let a2 = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorInt".to_string()))?;
+                            let b2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("MayorInt".to_string()))?;
+                            let a2 = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("MayorInt".to_string()))?;
                             let cmp = a2.comparar(&b2)?;
                             self.stack.push(ValorVM::Booleano(cmp == 1));
                         }
@@ -1116,7 +1365,10 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Opcode::StoreIdxEntero(idx) => {
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("StoreIdxEntero".to_string()))?;
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("StoreIdxEntero".to_string()))?;
                     let ambito = self.ambito_actual();
                     match &val {
                         ValorVM::Entero(_) => {
@@ -1132,7 +1384,10 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Opcode::StoreIdxFloat(idx) => {
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("StoreIdxFloat".to_string()))?;
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("StoreIdxFloat".to_string()))?;
                     let ambito = self.ambito_actual();
                     match &val {
                         ValorVM::Decimal(_) => {
@@ -1149,69 +1404,122 @@ impl ForjaVM {
                 }
 
                 Opcode::Igual => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Igual".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Igual".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Igual".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Igual".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp == 0));
                     self.ip += 1;
                 }
 
                 Opcode::Diferente => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Diferente".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Diferente".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Diferente".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Diferente".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp != 0));
                     self.ip += 1;
                 }
 
                 Opcode::Menor => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Menor".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Menor".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Menor".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Menor".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp == -1));
                     self.ip += 1;
                 }
 
                 Opcode::Mayor => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Mayor".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Mayor".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Mayor".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Mayor".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp == 1));
                     self.ip += 1;
                 }
 
                 Opcode::MenorIgual => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorIgual".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorIgual".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MenorIgual".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MenorIgual".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp != 1));
                     self.ip += 1;
                 }
 
                 Opcode::MayorIgual => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorIgual".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorIgual".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MayorIgual".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MayorIgual".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp != -1));
                     self.ip += 1;
                 }
 
                 Opcode::Y => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Y".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Y".to_string()))?;
-                    self.stack.push(ValorVM::Booleano(a.es_verdadero() && b.es_verdadero()));
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Y".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Y".to_string()))?;
+                    self.stack
+                        .push(ValorVM::Booleano(a.es_verdadero() && b.es_verdadero()));
                     self.ip += 1;
                 }
 
                 Opcode::O => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("O".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("O".to_string()))?;
-                    self.stack.push(ValorVM::Booleano(a.es_verdadero() || b.es_verdadero()));
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("O".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("O".to_string()))?;
+                    self.stack
+                        .push(ValorVM::Booleano(a.es_verdadero() || b.es_verdadero()));
                     self.ip += 1;
                 }
 
                 Opcode::No => {
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("No".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("No".to_string()))?;
                     match a {
                         ValorVM::Booleano(b) => self.stack.push(ValorVM::Booleano(!b)),
                         _ => self.stack.push(ValorVM::Nulo),
@@ -1224,7 +1532,10 @@ impl ForjaVM {
                 }
 
                 Opcode::JumpSiFalso(target) => {
-                    let cond = self.stack.pop().ok_or(ErrorVM::StackUnderflow("JumpSiFalso".to_string()))?;
+                    let cond = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("JumpSiFalso".to_string()))?;
                     if !cond.es_verdadero() {
                         self.ip = target;
                     } else {
@@ -1257,18 +1568,29 @@ impl ForjaVM {
                         self.call_stack.push(frame);
 
                         // Obtener nombres de parámetros del bytecode
-                        let param_names: Vec<String> = self.bytecode.iter()
+                        let param_names: Vec<String> = self
+                            .bytecode
+                            .iter()
                             .find_map(|op| {
                                 if let Opcode::FunctionDef(n, params) = op {
-                                    if n.as_ref() == nombre.as_ref() { Some(params.iter().map(|s| s.to_string()).collect()) } else { None }
-                                } else { None }
+                                    if n.as_ref() == nombre.as_ref() {
+                                        Some(params.iter().map(|s| s.to_string()).collect())
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
                             })
                             .unwrap_or_default();
 
                         // Pop args en orden inverso y asignar a nombres de parámetros
                         let mut args = Vec::new();
                         for _ in 0..nargs {
-                            let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Call args".to_string()))?;
+                            let val = self
+                                .stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("Call args".to_string()))?;
                             args.push(val);
                         }
                         args.reverse();
@@ -1291,9 +1613,9 @@ impl ForjaVM {
                                 // Recopilar args de la pila (ya están al revés del caller)
                                 let mut args: Vec<ValorVM> = Vec::with_capacity(nargs);
                                 for _ in 0..nargs {
-                                    args.push(self.stack.pop().ok_or(
-                                        ErrorVM::StackUnderflow("Call nativo args".to_string())
-                                    )?);
+                                    args.push(self.stack.pop().ok_or(ErrorVM::StackUnderflow(
+                                        "Call nativo args".to_string(),
+                                    ))?);
                                 }
                                 args.reverse();
                                 match func(self, &args) {
@@ -1323,7 +1645,10 @@ impl ForjaVM {
                 }
 
                 Opcode::Print => {
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Print".to_string()))?;
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Print".to_string()))?;
                     let texto = val.mostrar();
                     println!("{}", texto);
                     self.output.push(texto);
@@ -1336,7 +1661,8 @@ impl ForjaVM {
                         clase: clase.to_string(),
                         campos: HashMap::new(),
                     };
-                    self.stack.push(ValorVM::Objeto(ObjetoRef(Rc::new(RefCell::new(obj)))));
+                    self.stack
+                        .push(ValorVM::Objeto(ObjetoRef(Rc::new(RefCell::new(obj)))));
                     self.ip += 1;
                 }
 
@@ -1350,10 +1676,17 @@ impl ForjaVM {
                         // Pop args, pop objeto, buscar {clase}.{metodo} y llamar
                         let mut args = Vec::new();
                         for _ in 0..nargs {
-                            args.push(self.stack.pop().ok_or(ErrorVM::StackUnderflow("CallMethod args".to_string()))?);
+                            args.push(
+                                self.stack.pop().ok_or(ErrorVM::StackUnderflow(
+                                    "CallMethod args".to_string(),
+                                ))?,
+                            );
                         }
                         args.reverse();
-                        let obj_val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("CallMethod obj".to_string()))?;
+                        let obj_val = self
+                            .stack
+                            .pop()
+                            .ok_or(ErrorVM::StackUnderflow("CallMethod obj".to_string()))?;
                         if let ValorVM::Objeto(obj_ref) = &obj_val {
                             let clase = obj_ref.0.borrow().clase.clone();
                             let func_name = format!("{}.{}", clase, metodo);
@@ -1362,14 +1695,26 @@ impl ForjaVM {
                                 self.variables.push(Vec::new());
                                 self.nombre_a_indice.push(HashMap::new());
 
-                                let frame = Frame { ip_retorno: call_ip + 1, nombre: func_name.clone(), ambito };
+                                let frame = Frame {
+                                    ip_retorno: call_ip + 1,
+                                    nombre: func_name.clone(),
+                                    ambito,
+                                };
                                 self.call_stack.push(frame);
 
-                                let param_names: Vec<String> = self.bytecode.iter()
+                                let param_names: Vec<String> = self
+                                    .bytecode
+                                    .iter()
                                     .find_map(|op| {
                                         if let Opcode::FunctionDef(n, params) = op {
-                                            if n.as_ref() == func_name.as_str() { Some(params.iter().map(|s| s.to_string()).collect()) } else { None }
-                                        } else { None }
+                                            if n.as_ref() == func_name.as_str() {
+                                                Some(params.iter().map(|s| s.to_string()).collect())
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        }
                                     })
                                     .unwrap_or_default();
 
@@ -1377,7 +1722,8 @@ impl ForjaVM {
                                 all_args.extend(args);
                                 for (i, val) in all_args.into_iter().enumerate() {
                                     if i < param_names.len() {
-                                        self.nombre_a_indice[ambito].insert(param_names[i].clone(), i);
+                                        self.nombre_a_indice[ambito]
+                                            .insert(param_names[i].clone(), i);
                                         self.asegurar_indice(ambito, i);
                                         self.variables[ambito][i] = val;
                                     }
@@ -1398,10 +1744,20 @@ impl ForjaVM {
 
                 Opcode::SetField(campo) => {
                     // Stack: [valor, objeto] (objeto en top)
-                    let obj_val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SetField obj".to_string()))?;
-                    let valor = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SetField val".to_string()))?;
+                    let obj_val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SetField obj".to_string()))?;
+                    let valor = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SetField val".to_string()))?;
                     if let ValorVM::Objeto(obj_ref) = obj_val {
-                        obj_ref.0.borrow_mut().campos.insert(campo.to_string(), valor);
+                        obj_ref
+                            .0
+                            .borrow_mut()
+                            .campos
+                            .insert(campo.to_string(), valor);
                         // Objeto modificado in-place, no need to push back
                     } else {
                         self.stack.push(ValorVM::Nulo);
@@ -1411,7 +1767,10 @@ impl ForjaVM {
 
                 Opcode::GetField(campo) => {
                     // Pop objeto, push campo
-                    let obj_val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("GetField".to_string()))?;
+                    let obj_val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("GetField".to_string()))?;
                     if let ValorVM::Objeto(obj_ref) = obj_val {
                         let obj = obj_ref.0.borrow();
                         if let Some(val) = obj.campos.get(campo.as_ref()) {
@@ -1428,7 +1787,9 @@ impl ForjaVM {
                 Opcode::ArrayNew(n) => {
                     let mut elementos = Vec::with_capacity(n);
                     for _ in 0..n {
-                        let val = self.stack.pop()
+                        let val = self
+                            .stack
+                            .pop()
                             .ok_or(ErrorVM::StackUnderflow("ArrayNew".to_string()))?;
                         elementos.push(val);
                     }
@@ -1438,9 +1799,13 @@ impl ForjaVM {
                 }
 
                 Opcode::ArrayGet => {
-                    let idx = self.stack.pop()
+                    let idx = self
+                        .stack
+                        .pop()
                         .ok_or(ErrorVM::StackUnderflow("ArrayGet idx".to_string()))?;
-                    let obj = self.stack.pop()
+                    let obj = self
+                        .stack
+                        .pop()
                         .ok_or(ErrorVM::StackUnderflow("ArrayGet obj".to_string()))?;
                     match (&obj, &idx) {
                         (ValorVM::Arreglo(elementos), ValorVM::Entero(i)) => {
@@ -1460,11 +1825,17 @@ impl ForjaVM {
                 }
 
                 Opcode::ArraySet => {
-                    let idx = self.stack.pop()
+                    let idx = self
+                        .stack
+                        .pop()
                         .ok_or(ErrorVM::StackUnderflow("ArraySet idx".to_string()))?;
-                    let arr = self.stack.pop()
+                    let arr = self
+                        .stack
+                        .pop()
                         .ok_or(ErrorVM::StackUnderflow("ArraySet arr".to_string()))?;
-                    let valor = self.stack.pop()
+                    let valor = self
+                        .stack
+                        .pop()
                         .ok_or(ErrorVM::StackUnderflow("ArraySet val".to_string()))?;
                     match (arr, idx) {
                         (ValorVM::Arreglo(mut elementos), ValorVM::Entero(i)) => {
@@ -1480,7 +1851,9 @@ impl ForjaVM {
                 }
 
                 Opcode::ArrayLen => {
-                    let arr = self.stack.pop()
+                    let arr = self
+                        .stack
+                        .pop()
                         .ok_or(ErrorVM::StackUnderflow("ArrayLen".to_string()))?;
                     match arr {
                         ValorVM::Arreglo(elementos) => {
@@ -1494,9 +1867,13 @@ impl ForjaVM {
                 Opcode::MapNew(n) => {
                     let mut mapa = std::collections::HashMap::new();
                     for _ in 0..n {
-                        let valor = self.stack.pop()
+                        let valor = self
+                            .stack
+                            .pop()
                             .ok_or(ErrorVM::StackUnderflow("MapNew val".to_string()))?;
-                        let clave = self.stack.pop()
+                        let clave = self
+                            .stack
+                            .pop()
                             .ok_or(ErrorVM::StackUnderflow("MapNew key".to_string()))?;
                         if let ValorVM::Texto(k) = clave {
                             mapa.insert(k, valor);
@@ -1507,9 +1884,13 @@ impl ForjaVM {
                 }
 
                 Opcode::MapGet => {
-                    let clave = self.stack.pop()
+                    let clave = self
+                        .stack
+                        .pop()
                         .ok_or(ErrorVM::StackUnderflow("MapGet key".to_string()))?;
-                    let mapa = self.stack.pop()
+                    let mapa = self
+                        .stack
+                        .pop()
                         .ok_or(ErrorVM::StackUnderflow("MapGet map".to_string()))?;
                     match (mapa, clave) {
                         (ValorVM::Mapa(m), ValorVM::Texto(k)) => {
@@ -1522,11 +1903,17 @@ impl ForjaVM {
                 }
 
                 Opcode::MapSet => {
-                    let valor = self.stack.pop()
+                    let valor = self
+                        .stack
+                        .pop()
                         .ok_or(ErrorVM::StackUnderflow("MapSet val".to_string()))?;
-                    let clave = self.stack.pop()
+                    let clave = self
+                        .stack
+                        .pop()
                         .ok_or(ErrorVM::StackUnderflow("MapSet key".to_string()))?;
-                    let mapa = self.stack.pop()
+                    let mapa = self
+                        .stack
+                        .pop()
                         .ok_or(ErrorVM::StackUnderflow("MapSet map".to_string()))?;
                     match (mapa, clave) {
                         (ValorVM::Mapa(mut m), ValorVM::Texto(k)) => {
@@ -1539,7 +1926,10 @@ impl ForjaVM {
                 }
 
                 Opcode::ParseInt => {
-                    let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ParseInt".to_string()))?;
+                    let v = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("ParseInt".to_string()))?;
                     let n = match &v {
                         ValorVM::Texto(s) => s.parse::<i64>().unwrap_or(0),
                         ValorVM::Entero(n) => *n,
@@ -1582,7 +1972,10 @@ impl ForjaVM {
                 }
 
                 Opcode::Try => {
-                    let valor = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Try".to_string()))?;
+                    let valor = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Try".to_string()))?;
                     let es_error = match &valor {
                         ValorVM::Objeto(obj) => {
                             let obj_ref = obj.0.borrow();
@@ -1624,52 +2017,97 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Opcode::AddExact => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddExact".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddExact".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("AddExact".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("AddExact".to_string()))?;
                     self.stack.push(a.sumar(&b)?);
                     self.ip += 1;
                 }
                 Opcode::SubExact => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubExact".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubExact".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SubExact".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SubExact".to_string()))?;
                     self.stack.push(a.restar(&b)?);
                     self.ip += 1;
                 }
                 Opcode::MulExact => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulExact".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulExact".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MulExact".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MulExact".to_string()))?;
                     self.stack.push(a.multiplicar(&b)?);
                     self.ip += 1;
                 }
                 Opcode::DivExact => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivExact".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivExact".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DivExact".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DivExact".to_string()))?;
                     self.stack.push(a.dividir(&b)?);
                     self.ip += 1;
                 }
                 Opcode::IgualExact => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualExact".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualExact".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("IgualExact".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("IgualExact".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp == 0));
                     self.ip += 1;
                 }
                 Opcode::MenorExact => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorExact".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorExact".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MenorExact".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MenorExact".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp == -1));
                     self.ip += 1;
                 }
                 Opcode::MayorExact => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorExact".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorExact".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MayorExact".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MayorExact".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp == 1));
                     self.ip += 1;
                 }
                 Opcode::EnteroAExacto => {
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("EnteroAExacto".to_string()))?;
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("EnteroAExacto".to_string()))?;
                     match val {
                         ValorVM::Entero(n) => self.stack.push(ValorVM::Exacto(n as i128, 0)),
                         _ => self.stack.push(val),
@@ -1677,7 +2115,10 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Opcode::DecimalAExacto => {
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DecimalAExacto".to_string()))?;
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DecimalAExacto".to_string()))?;
                     match val {
                         ValorVM::Decimal(d) => {
                             let scale = 10u32;
@@ -1732,19 +2173,19 @@ impl ForjaVM {
                 Opcode::CallNative(nombre, nargs) => {
                     let mut args: Vec<ValorVM> = Vec::with_capacity(nargs);
                     for _ in 0..nargs {
-                        args.push(self.stack.pop().ok_or(
-                            ErrorVM::StackUnderflow("CallNative args".to_string())
-                        )?);
+                        args.push(
+                            self.stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("CallNative args".to_string()))?,
+                        );
                     }
                     args.reverse();
 
                     match self.native_funcs.get(&nombre.to_string()) {
-                        Some(func) => {
-                            match func(self, &args) {
-                                Ok(val) => self.stack.push(val),
-                                Err(e) => return Err(e),
-                            }
-                        }
+                        Some(func) => match func(self, &args) {
+                            Ok(val) => self.stack.push(val),
+                            Err(e) => return Err(e),
+                        },
                         None => {
                             self.stack.push(ValorVM::Nulo);
                         }
@@ -1816,7 +2257,11 @@ impl ForjaVM {
     fn asignar_variable(&mut self, nombre: &str, valor: ValorVM) -> Result<(), ErrorVM> {
         for (ambito_idx, nombre_map) in self.nombre_a_indice.iter().enumerate().rev() {
             if let Some(&idx) = nombre_map.get(nombre) {
-                if let Some(slot) = self.variables.get_mut(ambito_idx).and_then(|v| v.get_mut(idx)) {
+                if let Some(slot) = self
+                    .variables
+                    .get_mut(ambito_idx)
+                    .and_then(|v| v.get_mut(idx))
+                {
                     *slot = valor;
                     return Ok(());
                 }
@@ -1857,7 +2302,9 @@ impl ForjaVM {
         self.ip = 0;
 
         loop {
-            if self.ip >= len { break; }
+            if self.ip >= len {
+                break;
+            }
             if self.instrucciones_ejecutadas > self.max_instrucciones {
                 return Err(ErrorVM::LimiteDeEjecucion);
             }
@@ -1873,12 +2320,32 @@ impl ForjaVM {
 
             match uop {
                 // === STACK OPERATIONS ===
-                Uop::PushEntero(n) => { self.stack.push(get_small_int_vm(n)); self.ip += 1; }
-                Uop::PushDecimal(d) => { self.stack.push(ValorVM::Decimal(d)); self.ip += 1; }
-                Uop::PushTexto(s) => { self.stack.push(ValorVM::Texto(s.to_string())); self.ip += 1; }
-                Uop::PushBooleano(b) => { self.stack.push(ValorVM::Booleano(b)); self.ip += 1; }
-                Uop::PushNulo => { self.stack.push(ValorVM::Nulo); self.ip += 1; }
-                Uop::Pop => { self.stack.pop().ok_or(ErrorVM::StackUnderflow("Pop".to_string()))?; self.ip += 1; }
+                Uop::PushEntero(n) => {
+                    self.stack.push(get_small_int_vm(n));
+                    self.ip += 1;
+                }
+                Uop::PushDecimal(d) => {
+                    self.stack.push(ValorVM::Decimal(d));
+                    self.ip += 1;
+                }
+                Uop::PushTexto(s) => {
+                    self.stack.push(ValorVM::Texto(s.to_string()));
+                    self.ip += 1;
+                }
+                Uop::PushBooleano(b) => {
+                    self.stack.push(ValorVM::Booleano(b));
+                    self.ip += 1;
+                }
+                Uop::PushNulo => {
+                    self.stack.push(ValorVM::Nulo);
+                    self.ip += 1;
+                }
+                Uop::Pop => {
+                    self.stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Pop".to_string()))?;
+                    self.ip += 1;
+                }
                 Uop::Dup => {
                     let v = self.stack.last().cloned().unwrap_or(ValorVM::Nulo);
                     self.stack.push(v);
@@ -1896,7 +2363,10 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::StoreIdx(idx) => {
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("StoreIdx".to_string()))?;
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("StoreIdx".to_string()))?;
                     let ambito = self.ambito_actual();
                     self.asegurar_indice(ambito, idx);
                     self.variables[ambito][idx] = val;
@@ -1910,7 +2380,10 @@ impl ForjaVM {
 
                 // === MICRO-OP FUSIONADOS ===
                 Uop::StorePop(idx) => {
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("StorePop".to_string()))?;
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("StorePop".to_string()))?;
                     let ambito = self.ambito_actual();
                     self.asegurar_indice(ambito, idx);
                     self.variables[ambito][idx] = val;
@@ -1927,7 +2400,10 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::DeclareInit(idx) => {
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DeclareInit".to_string()))?;
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DeclareInit".to_string()))?;
                     let ambito = self.ambito_actual();
                     self.asegurar_indice(ambito, idx);
                     self.variables[ambito][idx] = val;
@@ -1970,8 +2446,12 @@ impl ForjaVM {
                 }
 
                 // === PREP CALL / RESOLVE METHOD / LOAD SELF ===
-                Uop::PrepCall(_nargs) => { self.ip += 1; }
-                Uop::ResolveMethod(_name) => { self.ip += 1; }
+                Uop::PrepCall(_nargs) => {
+                    self.ip += 1;
+                }
+                Uop::ResolveMethod(_name) => {
+                    self.ip += 1;
+                }
                 Uop::LoadSelf => {
                     let ambito = self.ambito_actual();
                     let val = if !self.variables[ambito].is_empty() {
@@ -1985,32 +2465,62 @@ impl ForjaVM {
 
                 // === ARITHMETIC ===
                 Uop::Add => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Add".to_string()))?;
                     self.stack.push(a.sumar(&b)?);
                     self.ip += 1;
                 }
                 Uop::Sub => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Sub".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Sub".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Sub".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Sub".to_string()))?;
                     self.stack.push(a.restar(&b)?);
                     self.ip += 1;
                 }
                 Uop::Mul => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Mul".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Mul".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Mul".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Mul".to_string()))?;
                     self.stack.push(a.multiplicar(&b)?);
                     self.ip += 1;
                 }
                 Uop::Div => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Div".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Div".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Div".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Div".to_string()))?;
                     self.stack.push(a.dividir(&b)?);
                     self.ip += 1;
                 }
                 Uop::AddInt => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("AddInt".to_string()))?;
                     if let (ValorVM::Entero(av), ValorVM::Entero(bv)) = (&a, &b) {
                         self.stack.push(ValorVM::Entero(av.wrapping_add(*bv)));
                     } else {
@@ -2019,8 +2529,14 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::AddFloat => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("AddFloat".to_string()))?;
                     if let (ValorVM::Decimal(av), ValorVM::Decimal(bv)) = (&a, &b) {
                         self.stack.push(ValorVM::Decimal(av + bv));
                     } else {
@@ -2029,8 +2545,14 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::SubInt => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SubInt".to_string()))?;
                     if let (ValorVM::Entero(av), ValorVM::Entero(bv)) = (&a, &b) {
                         self.stack.push(ValorVM::Entero(av.wrapping_sub(*bv)));
                     } else {
@@ -2039,8 +2561,14 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::SubFloat => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SubFloat".to_string()))?;
                     if let (ValorVM::Decimal(av), ValorVM::Decimal(bv)) = (&a, &b) {
                         self.stack.push(ValorVM::Decimal(av - bv));
                     } else {
@@ -2049,8 +2577,14 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::MulInt => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MulInt".to_string()))?;
                     if let (ValorVM::Entero(av), ValorVM::Entero(bv)) = (&a, &b) {
                         self.stack.push(ValorVM::Entero(av.wrapping_mul(*bv)));
                     } else {
@@ -2059,8 +2593,14 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::MulFloat => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MulFloat".to_string()))?;
                     if let (ValorVM::Decimal(av), ValorVM::Decimal(bv)) = (&a, &b) {
                         self.stack.push(ValorVM::Decimal(av * bv));
                     } else {
@@ -2069,22 +2609,40 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::DivInt => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DivInt".to_string()))?;
                     if let (ValorVM::Entero(av), ValorVM::Entero(bv)) = (&a, &b) {
-                        if *bv == 0 { self.stack.push(ValorVM::Nulo); }
-                        else { self.stack.push(ValorVM::Entero(av.wrapping_div(*bv))); }
+                        if *bv == 0 {
+                            self.stack.push(ValorVM::Nulo);
+                        } else {
+                            self.stack.push(ValorVM::Entero(av.wrapping_div(*bv)));
+                        }
                     } else {
                         self.stack.push(ValorVM::Nulo);
                     }
                     self.ip += 1;
                 }
                 Uop::DivFloat => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DivFloat".to_string()))?;
                     if let (ValorVM::Decimal(av), ValorVM::Decimal(bv)) = (&a, &b) {
-                        if *bv == 0.0 { self.stack.push(ValorVM::Nulo); }
-                        else { self.stack.push(ValorVM::Decimal(av / bv)); }
+                        if *bv == 0.0 {
+                            self.stack.push(ValorVM::Nulo);
+                        } else {
+                            self.stack.push(ValorVM::Decimal(av / bv));
+                        }
                     } else {
                         self.stack.push(ValorVM::Nulo);
                     }
@@ -2093,62 +2651,130 @@ impl ForjaVM {
 
                 // === COMPARACIONES ===
                 Uop::Igual => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("==".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("==".to_string()))?;
-                    self.stack.push(ValorVM::Booleano(a.comparar(&b).map(|c| c == 0).unwrap_or(false)));
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("==".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("==".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(
+                        a.comparar(&b).map(|c| c == 0).unwrap_or(false),
+                    ));
                     self.ip += 1;
                 }
                 Uop::Diferente => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("!=".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("!=".to_string()))?;
-                    self.stack.push(ValorVM::Booleano(a.comparar(&b).map(|c| c != 0).unwrap_or(true)));
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("!=".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("!=".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(
+                        a.comparar(&b).map(|c| c != 0).unwrap_or(true),
+                    ));
                     self.ip += 1;
                 }
                 Uop::Menor => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("<".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("<".to_string()))?;
-                    self.stack.push(ValorVM::Booleano(a.comparar(&b).map(|c| c < 0).unwrap_or(false)));
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("<".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("<".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(
+                        a.comparar(&b).map(|c| c < 0).unwrap_or(false),
+                    ));
                     self.ip += 1;
                 }
                 Uop::Mayor => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow(">".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow(">".to_string()))?;
-                    self.stack.push(ValorVM::Booleano(a.comparar(&b).map(|c| c > 0).unwrap_or(false)));
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow(">".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow(">".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(
+                        a.comparar(&b).map(|c| c > 0).unwrap_or(false),
+                    ));
                     self.ip += 1;
                 }
                 Uop::MenorIgual => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("<=".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("<=".to_string()))?;
-                    self.stack.push(ValorVM::Booleano(a.comparar(&b).map(|c| c <= 0).unwrap_or(false)));
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("<=".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("<=".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(
+                        a.comparar(&b).map(|c| c <= 0).unwrap_or(false),
+                    ));
                     self.ip += 1;
                 }
                 Uop::MayorIgual => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow(">=".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow(">=".to_string()))?;
-                    self.stack.push(ValorVM::Booleano(a.comparar(&b).map(|c| c >= 0).unwrap_or(false)));
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow(">=".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow(">=".to_string()))?;
+                    self.stack.push(ValorVM::Booleano(
+                        a.comparar(&b).map(|c| c >= 0).unwrap_or(false),
+                    ));
                     self.ip += 1;
                 }
                 Uop::Y => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Y".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Y".to_string()))?;
-                    self.stack.push(ValorVM::Booleano(a.es_verdadero() && b.es_verdadero()));
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Y".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Y".to_string()))?;
+                    self.stack
+                        .push(ValorVM::Booleano(a.es_verdadero() && b.es_verdadero()));
                     self.ip += 1;
                 }
                 Uop::O => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("O".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("O".to_string()))?;
-                    self.stack.push(ValorVM::Booleano(a.es_verdadero() || b.es_verdadero()));
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("O".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("O".to_string()))?;
+                    self.stack
+                        .push(ValorVM::Booleano(a.es_verdadero() || b.es_verdadero()));
                     self.ip += 1;
                 }
                 Uop::No => {
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("No".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("No".to_string()))?;
                     self.stack.push(ValorVM::Booleano(!a.es_verdadero()));
                     self.ip += 1;
                 }
 
                 // === PROPAGACIÓN DE ERRORES ===
                 Uop::Try => {
-                    let valor = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Try".to_string()))?;
+                    let valor = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Try".to_string()))?;
                     let es_error = match &valor {
                         ValorVM::Objeto(obj) => {
                             let obj_ref = obj.0.borrow();
@@ -2185,22 +2811,38 @@ impl ForjaVM {
                 }
 
                 // === CONTROL FLOW ===
-                Uop::Jump(target) => { self.ip = target; }
-                Uop::JumpSiFalso(target) => {
-                    let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("JumpSiFalso".to_string()))?;
-                    if !v.es_verdadero() { self.ip = target; }
-                    else { self.ip += 1; }
+                Uop::Jump(target) => {
+                    self.ip = target;
                 }
-                Uop::Label(_) => { self.ip += 1; }
+                Uop::JumpSiFalso(target) => {
+                    let v = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("JumpSiFalso".to_string()))?;
+                    if !v.es_verdadero() {
+                        self.ip = target;
+                    } else {
+                        self.ip += 1;
+                    }
+                }
+                Uop::Label(_) => {
+                    self.ip += 1;
+                }
                 Uop::Halt => break,
 
                 // === FUNCTIONS ===
-                Uop::FunctionDef(_, _) => { self.ip += 1; }
+                Uop::FunctionDef(_, _) => {
+                    self.ip += 1;
+                }
                 Uop::Call(nombre, nargs) => {
                     if let Some(&func_ip) = self.funciones.get(&nombre) {
                         let mut args: Vec<ValorVM> = Vec::with_capacity(nargs);
                         for _ in 0..nargs {
-                            args.push(self.stack.pop().ok_or(ErrorVM::StackUnderflow("Call".to_string()))?);
+                            args.push(
+                                self.stack
+                                    .pop()
+                                    .ok_or(ErrorVM::StackUnderflow("Call".to_string()))?,
+                            );
                         }
                         args.reverse();
                         let nuevo_ambito = self.variables.len();
@@ -2233,12 +2875,17 @@ impl ForjaVM {
                         self.variables.truncate(frame.ambito + 1);
                         self.nombre_a_indice.truncate(frame.ambito + 1);
                         self.ip = frame.ip_retorno;
-                    } else { break; }
+                    } else {
+                        break;
+                    }
                 }
 
                 // === Built-in functions (stdlib) ===
                 Uop::ParseInt => {
-                    let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ParseInt".to_string()))?;
+                    let v = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("ParseInt".to_string()))?;
                     let n = match &v {
                         ValorVM::Texto(s) => s.parse::<i64>().unwrap_or(0),
                         ValorVM::Entero(n) => *n,
@@ -2267,7 +2914,10 @@ impl ForjaVM {
 
                 // === I/O ===
                 Uop::Print => {
-                    let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Print".to_string()))?;
+                    let v = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("Print".to_string()))?;
                     self.output.push(v.mostrar());
                     self.ip += 1;
                 }
@@ -2288,14 +2938,25 @@ impl ForjaVM {
 
                 // === OBJECT OPERATIONS ===
                 Uop::NewObject(c) => {
-                    self.stack.push(ValorVM::Objeto(ObjetoRef(Rc::new(RefCell::new(ObjetoVM {
-                        clase: c, campos: HashMap::new(),
-                    })))));
+                    self.stack
+                        .push(ValorVM::Objeto(ObjetoRef(Rc::new(RefCell::new(
+                            ObjetoVM {
+                                clase: c,
+                                campos: HashMap::new(),
+                            },
+                        )))));
                     self.ip += 1;
                 }
                 Uop::SetField(c) => {
-                    if let ValorVM::Objeto(o) = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SetField".to_string()))? {
-                        let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SetField".to_string()))?;
+                    if let ValorVM::Objeto(o) = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SetField".to_string()))?
+                    {
+                        let v = self
+                            .stack
+                            .pop()
+                            .ok_or(ErrorVM::StackUnderflow("SetField".to_string()))?;
                         o.0.borrow_mut().campos.insert(c, v);
                     } else {
                         self.stack.push(ValorVM::Nulo);
@@ -2303,9 +2964,14 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::GetField(c) => {
-                    if let ValorVM::Objeto(o) = self.stack.pop().ok_or(ErrorVM::StackUnderflow("GetField".to_string()))? {
+                    if let ValorVM::Objeto(o) = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("GetField".to_string()))?
+                    {
                         let b = o.0.borrow();
-                        self.stack.push(b.campos.get(&c).cloned().unwrap_or(ValorVM::Nulo));
+                        self.stack
+                            .push(b.campos.get(&c).cloned().unwrap_or(ValorVM::Nulo));
                     } else {
                         self.stack.push(ValorVM::Nulo);
                     }
@@ -2319,10 +2985,17 @@ impl ForjaVM {
                     }
                     let mut args: Vec<ValorVM> = Vec::with_capacity(nargs);
                     for _ in 0..nargs {
-                        args.push(self.stack.pop().ok_or(ErrorVM::StackUnderflow("CallMethod".to_string()))?);
+                        args.push(
+                            self.stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("CallMethod".to_string()))?,
+                        );
                     }
                     args.reverse();
-                    let obj = self.stack.pop().ok_or(ErrorVM::StackUnderflow("CallMethod".to_string()))?;
+                    let obj = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("CallMethod".to_string()))?;
                     if let ValorVM::Objeto(o) = obj {
                         let clase = o.0.borrow().clase.clone();
                         let fn_name = format!("{}.{}", clase, m);
@@ -2361,15 +3034,25 @@ impl ForjaVM {
                 Uop::ArrayNew(n) => {
                     let mut e = Vec::with_capacity(n);
                     for _ in 0..n {
-                        e.push(self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArrayNew".to_string()))?);
+                        e.push(
+                            self.stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("ArrayNew".to_string()))?,
+                        );
                     }
                     e.reverse();
                     self.stack.push(ValorVM::Arreglo(e));
                     self.ip += 1;
                 }
                 Uop::ArrayGet => {
-                    let i = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArrayGet".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArrayGet".to_string()))?;
+                    let i = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("ArrayGet".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("ArrayGet".to_string()))?;
                     match (&a, &i) {
                         (ValorVM::Arreglo(e), ValorVM::Entero(i)) => {
                             if *i >= 0 && (*i as usize) < e.len() {
@@ -2383,9 +3066,18 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::ArraySet => {
-                    let i = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArraySet".to_string()))?;
-                    let mut a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArraySet".to_string()))?;
-                    let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArraySet".to_string()))?;
+                    let i = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("ArraySet".to_string()))?;
+                    let mut a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("ArraySet".to_string()))?;
+                    let v = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("ArraySet".to_string()))?;
                     if let (ValorVM::Arreglo(ref mut e), ValorVM::Entero(i)) = (&mut a, &i) {
                         if *i >= 0 && (*i as usize) < e.len() {
                             e[*i as usize] = v;
@@ -2399,7 +3091,11 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::ArrayLen => {
-                    if let ValorVM::Arreglo(e) = self.stack.pop().ok_or(ErrorVM::StackUnderflow("ArrayLen".to_string()))? {
+                    if let ValorVM::Arreglo(e) = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("ArrayLen".to_string()))?
+                    {
                         self.stack.push(get_small_int_vm(e.len() as i64));
                     } else {
                         self.stack.push(ValorVM::Nulo);
@@ -2409,8 +3105,14 @@ impl ForjaVM {
                 Uop::MapNew(n) => {
                     let mut m = HashMap::with_capacity(n);
                     for _ in 0..n {
-                        let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MapNew".to_string()))?;
-                        let k = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MapNew".to_string()))?;
+                        let v = self
+                            .stack
+                            .pop()
+                            .ok_or(ErrorVM::StackUnderflow("MapNew".to_string()))?;
+                        let k = self
+                            .stack
+                            .pop()
+                            .ok_or(ErrorVM::StackUnderflow("MapNew".to_string()))?;
                         if let ValorVM::Texto(k) = k {
                             m.insert(k, v);
                         }
@@ -2419,8 +3121,14 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::MapGet => {
-                    let k = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MapGet".to_string()))?;
-                    let m = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MapGet".to_string()))?;
+                    let k = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MapGet".to_string()))?;
+                    let m = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MapGet".to_string()))?;
                     match (&m, &k) {
                         (ValorVM::Mapa(m), ValorVM::Texto(k)) => {
                             self.stack.push(m.get(k).cloned().unwrap_or(ValorVM::Nulo));
@@ -2430,9 +3138,18 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::MapSet => {
-                    let v = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MapSet".to_string()))?;
-                    let k = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MapSet".to_string()))?;
-                    let mut m = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MapSet".to_string()))?;
+                    let v = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MapSet".to_string()))?;
+                    let k = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MapSet".to_string()))?;
+                    let mut m = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MapSet".to_string()))?;
                     if let (ValorVM::Mapa(ref mut mm), ValorVM::Texto(k)) = (&mut m, k) {
                         mm.insert(k, v);
                         self.stack.push(m);
@@ -2442,54 +3159,102 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 // === Exacto operations (BigDecimal) ===
-                Uop::PushExacto(coeff, scale) => { self.stack.push(ValorVM::Exacto(coeff, scale)); self.ip += 1; }
+                Uop::PushExacto(coeff, scale) => {
+                    self.stack.push(ValorVM::Exacto(coeff, scale));
+                    self.ip += 1;
+                }
                 Uop::AddExact => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddExact".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("AddExact".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("AddExact".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("AddExact".to_string()))?;
                     self.stack.push(a.sumar(&b)?);
                     self.ip += 1;
                 }
                 Uop::SubExact => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubExact".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("SubExact".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SubExact".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("SubExact".to_string()))?;
                     self.stack.push(a.restar(&b)?);
                     self.ip += 1;
                 }
                 Uop::MulExact => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulExact".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MulExact".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MulExact".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MulExact".to_string()))?;
                     self.stack.push(a.multiplicar(&b)?);
                     self.ip += 1;
                 }
                 Uop::DivExact => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivExact".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DivExact".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DivExact".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DivExact".to_string()))?;
                     self.stack.push(a.dividir(&b)?);
                     self.ip += 1;
                 }
                 Uop::IgualExact => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualExact".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("IgualExact".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("IgualExact".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("IgualExact".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp == 0));
                     self.ip += 1;
                 }
                 Uop::MenorExact => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorExact".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MenorExact".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MenorExact".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MenorExact".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp == -1));
                     self.ip += 1;
                 }
                 Uop::MayorExact => {
-                    let b = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorExact".to_string()))?;
-                    let a = self.stack.pop().ok_or(ErrorVM::StackUnderflow("MayorExact".to_string()))?;
+                    let b = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MayorExact".to_string()))?;
+                    let a = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("MayorExact".to_string()))?;
                     let cmp = a.comparar(&b)?;
                     self.stack.push(ValorVM::Booleano(cmp == 1));
                     self.ip += 1;
                 }
                 Uop::EnteroAExacto => {
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("EnteroAExacto".to_string()))?;
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("EnteroAExacto".to_string()))?;
                     match val {
                         ValorVM::Entero(n) => self.stack.push(ValorVM::Exacto(n as i128, 0)),
                         _ => self.stack.push(val),
@@ -2497,7 +3262,10 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::DecimalAExacto => {
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("DecimalAExacto".to_string()))?;
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("DecimalAExacto".to_string()))?;
                     match val {
                         ValorVM::Decimal(d) => {
                             let scale = 10u32;
@@ -2514,20 +3282,20 @@ impl ForjaVM {
                     // Recopilar argumentos de la pila
                     let mut args: Vec<ValorVM> = Vec::with_capacity(nargs);
                     for _ in 0..nargs {
-                        args.push(self.stack.pop().ok_or(
-                            ErrorVM::StackUnderflow("CallNative args".to_string())
-                        )?);
+                        args.push(
+                            self.stack
+                                .pop()
+                                .ok_or(ErrorVM::StackUnderflow("CallNative args".to_string()))?,
+                        );
                     }
                     args.reverse();
 
                     // Buscar y ejecutar la función nativa
                     match self.native_funcs.get(&nombre.to_string()) {
-                        Some(func) => {
-                            match func(self, &args) {
-                                Ok(val) => self.stack.push(val),
-                                Err(e) => return Err(e),
-                            }
-                        }
+                        Some(func) => match func(self, &args) {
+                            Ok(val) => self.stack.push(val),
+                            Err(e) => return Err(e),
+                        },
                         None => {
                             self.stack.push(ValorVM::Nulo);
                         }
@@ -2554,7 +3322,7 @@ impl ForjaVM {
 fn clasica_socket_tcp_conectar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
     if args.len() < 2 {
         return Err(ErrorVM::TipoIncompatible(
-            "_socket_tcp_conectar requiere 2 argumentos: direccion (texto), puerto (entero)".into()
+            "_socket_tcp_conectar requiere 2 argumentos: direccion (texto), puerto (entero)".into(),
         ));
     }
 
@@ -2563,13 +3331,19 @@ fn clasica_socket_tcp_conectar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<Val
 
     if puerto < 1 || puerto > 65535 {
         return Err(ErrorVM::TipoIncompatible(format!(
-            "direccion_invalida: puerto {} fuera de rango (1-65535)", puerto
+            "direccion_invalida: puerto {} fuera de rango (1-65535)",
+            puerto
         )));
     }
 
     let addr = match ForjaVM::resolver_direccion_vm(&direccion, puerto as u16) {
         Ok(a) => a,
-        Err(msg) => return Err(ErrorVM::TipoIncompatible(format!("direccion_invalida: {}", msg))),
+        Err(msg) => {
+            return Err(ErrorVM::TipoIncompatible(format!(
+                "direccion_invalida: {}",
+                msg
+            )))
+        }
     };
 
     match std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(30)) {
@@ -2598,7 +3372,7 @@ fn clasica_socket_tcp_conectar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<Val
 fn clasica_socket_enviar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
     if args.len() < 2 {
         return Err(ErrorVM::TipoIncompatible(
-            "_socket_enviar requiere 2 argumentos: socket, datos (texto)".into()
+            "_socket_enviar requiere 2 argumentos: socket, datos (texto)".into(),
         ));
     }
 
@@ -2606,12 +3380,18 @@ fn clasica_socket_enviar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, 
     let datos = ForjaVM::obtener_texto_vm(&args[1])?;
 
     if socket_idx as usize >= vm.socket_heap.len() || !vm.socket_get(socket_idx).connected {
-        return Err(ErrorVM::TipoIncompatible("socket_cerrado: el socket no está conectado".into()));
+        return Err(ErrorVM::TipoIncompatible(
+            "socket_cerrado: el socket no está conectado".into(),
+        ));
     }
 
     let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
         Some(arc) => Arc::clone(arc),
-        None => return Err(ErrorVM::TipoIncompatible("error_interno: el socket no es TCP".into())),
+        None => {
+            return Err(ErrorVM::TipoIncompatible(
+                "error_interno: el socket no es TCP".into(),
+            ))
+        }
     };
 
     let mut stream = stream_arc.lock().unwrap();
@@ -2625,7 +3405,7 @@ fn clasica_socket_enviar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, 
 fn clasica_socket_recibir(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
     if args.len() < 2 {
         return Err(ErrorVM::TipoIncompatible(
-            "_socket_recibir requiere 2 argumentos: socket, buffer_tamano (entero)".into()
+            "_socket_recibir requiere 2 argumentos: socket, buffer_tamano (entero)".into(),
         ));
     }
 
@@ -2634,12 +3414,18 @@ fn clasica_socket_recibir(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM,
     let buffer_tamano = buffer_tamano.max(1).min(65536) as usize;
 
     if socket_idx as usize >= vm.socket_heap.len() || !vm.socket_get(socket_idx).connected {
-        return Err(ErrorVM::TipoIncompatible("socket_cerrado: el socket no está conectado".into()));
+        return Err(ErrorVM::TipoIncompatible(
+            "socket_cerrado: el socket no está conectado".into(),
+        ));
     }
 
     let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
         Some(arc) => Arc::clone(arc),
-        None => return Err(ErrorVM::TipoIncompatible("error_interno: el socket no es TCP".into())),
+        None => {
+            return Err(ErrorVM::TipoIncompatible(
+                "error_interno: el socket no es TCP".into(),
+            ))
+        }
     };
 
     let mut stream = stream_arc.lock().unwrap();
@@ -2653,9 +3439,7 @@ fn clasica_socket_recibir(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM,
             let datos = String::from_utf8_lossy(&buffer[..n]).to_string();
             Ok(ValorVM::Texto(datos))
         }
-        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-            Ok(ValorVM::Texto(String::new()))
-        }
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(ValorVM::Texto(String::new())),
         Err(e) => Err(ErrorVM::TipoIncompatible(format!("error_interno: {}", e))),
     }
 }
@@ -2663,7 +3447,9 @@ fn clasica_socket_recibir(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM,
 /// Cierra un socket.
 fn clasica_socket_cerrar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
     if args.is_empty() {
-        return Err(ErrorVM::TipoIncompatible("_socket_cerrar requiere 1 argumento: socket".into()));
+        return Err(ErrorVM::TipoIncompatible(
+            "_socket_cerrar requiere 1 argumento: socket".into(),
+        ));
     }
     let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
     vm.socket_cerrar(socket_idx);
@@ -2673,7 +3459,9 @@ fn clasica_socket_cerrar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, 
 /// Verifica si un socket está activo/conectado.
 fn clasica_socket_activo(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
     if args.is_empty() {
-        return Err(ErrorVM::TipoIncompatible("_socket_activo requiere 1 argumento: socket".into()));
+        return Err(ErrorVM::TipoIncompatible(
+            "_socket_activo requiere 1 argumento: socket".into(),
+        ));
     }
     let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
     if socket_idx as usize >= vm.socket_heap.len() {
@@ -2686,7 +3474,7 @@ fn clasica_socket_activo(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, 
 fn clasica_socket_fijar_timeout(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
     if args.len() < 2 {
         return Err(ErrorVM::TipoIncompatible(
-            "_socket_fijar_timeout requiere 2 argumentos: socket, tiempo_ms (entero)".into()
+            "_socket_fijar_timeout requiere 2 argumentos: socket, tiempo_ms (entero)".into(),
         ));
     }
 
@@ -2699,7 +3487,9 @@ fn clasica_socket_fijar_timeout(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<Va
     };
 
     if socket_idx as usize >= vm.socket_heap.len() {
-        return Err(ErrorVM::TipoIncompatible("socket_invalido: índice fuera de rango".into()));
+        return Err(ErrorVM::TipoIncompatible(
+            "socket_invalido: índice fuera de rango".into(),
+        ));
     }
 
     // Aplicar timeout al stream subyacente si existe
@@ -2709,37 +3499,53 @@ fn clasica_socket_fijar_timeout(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<Va
         let _ = stream.set_write_timeout(timeout);
     }
 
-    vm.socket_get_mut(socket_idx).timeout_ms = if tiempo_ms > 0 { Some(tiempo_ms as u64) } else { None };
+    vm.socket_get_mut(socket_idx).timeout_ms = if tiempo_ms > 0 {
+        Some(tiempo_ms as u64)
+    } else {
+        None
+    };
     Ok(ValorVM::Nulo)
 }
 
 /// Obtiene la dirección local del socket.
 fn clasica_socket_direccion_local(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
     if args.is_empty() {
-        return Err(ErrorVM::TipoIncompatible("_socket_direccion_local requiere 1 argumento: socket".into()));
+        return Err(ErrorVM::TipoIncompatible(
+            "_socket_direccion_local requiere 1 argumento: socket".into(),
+        ));
     }
     let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
     if socket_idx as usize >= vm.socket_heap.len() {
-        return Err(ErrorVM::TipoIncompatible("socket_invalido: índice fuera de rango".into()));
+        return Err(ErrorVM::TipoIncompatible(
+            "socket_invalido: índice fuera de rango".into(),
+        ));
     }
     match &vm.socket_get(socket_idx).local_addr {
         Some(addr) => Ok(ValorVM::Texto(addr.clone())),
-        None => Err(ErrorVM::TipoIncompatible("error_interno: no se pudo obtener la dirección local".into())),
+        None => Err(ErrorVM::TipoIncompatible(
+            "error_interno: no se pudo obtener la dirección local".into(),
+        )),
     }
 }
 
 /// Obtiene la dirección remota del socket.
 fn clasica_socket_direccion_remota(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
     if args.is_empty() {
-        return Err(ErrorVM::TipoIncompatible("_socket_direccion_remota requiere 1 argumento: socket".into()));
+        return Err(ErrorVM::TipoIncompatible(
+            "_socket_direccion_remota requiere 1 argumento: socket".into(),
+        ));
     }
     let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
     if socket_idx as usize >= vm.socket_heap.len() {
-        return Err(ErrorVM::TipoIncompatible("socket_invalido: índice fuera de rango".into()));
+        return Err(ErrorVM::TipoIncompatible(
+            "socket_invalido: índice fuera de rango".into(),
+        ));
     }
     match &vm.socket_get(socket_idx).peer_addr {
         Some(addr) => Ok(ValorVM::Texto(addr.clone())),
-        None => Err(ErrorVM::TipoIncompatible("error_interno: el socket no tiene dirección remota".into())),
+        None => Err(ErrorVM::TipoIncompatible(
+            "error_interno: el socket no tiene dirección remota".into(),
+        )),
     }
 }
 
@@ -2751,20 +3557,26 @@ fn clasica_socket_direccion_remota(vm: &mut ForjaVM, args: &[ValorVM]) -> Result
 fn clasica_socket_tcp_escuchar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
     if args.len() < 1 {
         return Err(ErrorVM::TipoIncompatible(
-            "_socket_tcp_escuchar requiere al menos 1 argumento: puerto (entero)".into()
+            "_socket_tcp_escuchar requiere al menos 1 argumento: puerto (entero)".into(),
         ));
     }
 
     let puerto = ForjaVM::obtener_entero_vm(&args[0])?;
     if puerto < 1 || puerto > 65535 {
         return Err(ErrorVM::TipoIncompatible(format!(
-            "direccion_invalida: puerto {} fuera de rango (1-65535)", puerto
+            "direccion_invalida: puerto {} fuera de rango (1-65535)",
+            puerto
         )));
     }
 
     let addr: std::net::SocketAddr = match format!("0.0.0.0:{}", puerto).parse() {
         Ok(a) => a,
-        Err(e) => return Err(ErrorVM::TipoIncompatible(format!("direccion_invalida: {}", e))),
+        Err(e) => {
+            return Err(ErrorVM::TipoIncompatible(format!(
+                "direccion_invalida: {}",
+                e
+            )))
+        }
     };
 
     match std::net::TcpListener::bind(addr) {
@@ -2788,20 +3600,24 @@ fn clasica_socket_tcp_escuchar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<Val
 fn clasica_socket_aceptar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
     if args.is_empty() {
         return Err(ErrorVM::TipoIncompatible(
-            "_socket_aceptar requiere 1 argumento: socket".into()
+            "_socket_aceptar requiere 1 argumento: socket".into(),
         ));
     }
 
     let socket_idx = ForjaVM::obtener_entero_vm(&args[0])? as u32;
     if socket_idx as usize >= vm.socket_heap.len() {
-        return Err(ErrorVM::TipoIncompatible("socket_invalido: índice fuera de rango".into()));
+        return Err(ErrorVM::TipoIncompatible(
+            "socket_invalido: índice fuera de rango".into(),
+        ));
     }
 
     let listener_arc = match &vm.socket_get(socket_idx).tcp_listener {
         Some(arc) => Arc::clone(arc),
-        None => return Err(ErrorVM::TipoIncompatible(
-            "error_interno: el socket no es un TcpListener".into()
-        )),
+        None => {
+            return Err(ErrorVM::TipoIncompatible(
+                "error_interno: el socket no es un TcpListener".into(),
+            ))
+        }
     };
 
     let listener = listener_arc.lock().unwrap();
@@ -2817,9 +3633,7 @@ fn clasica_socket_aceptar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM,
             // No hay conexiones pendientes → retornar -1 (señal no-bloqueante)
             Ok(ValorVM::Entero(-1))
         }
-        Err(e) => {
-            Err(ErrorVM::TipoIncompatible(format!("error_interno: {}", e)))
-        }
+        Err(e) => Err(ErrorVM::TipoIncompatible(format!("error_interno: {}", e))),
     }
 }
 
@@ -2831,20 +3645,26 @@ fn clasica_socket_aceptar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM,
 fn clasica_socket_udp_escuchar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
     if args.len() < 1 {
         return Err(ErrorVM::TipoIncompatible(
-            "_socket_udp_escuchar requiere al menos 1 argumento: puerto (entero)".into()
+            "_socket_udp_escuchar requiere al menos 1 argumento: puerto (entero)".into(),
         ));
     }
 
     let puerto = ForjaVM::obtener_entero_vm(&args[0])?;
     if puerto < 1 || puerto > 65535 {
         return Err(ErrorVM::TipoIncompatible(format!(
-            "direccion_invalida: puerto {} fuera de rango (1-65535)", puerto
+            "direccion_invalida: puerto {} fuera de rango (1-65535)",
+            puerto
         )));
     }
 
     let addr: std::net::SocketAddr = match format!("0.0.0.0:{}", puerto).parse() {
         Ok(a) => a,
-        Err(e) => return Err(ErrorVM::TipoIncompatible(format!("direccion_invalida: {}", e))),
+        Err(e) => {
+            return Err(ErrorVM::TipoIncompatible(format!(
+                "direccion_invalida: {}",
+                e
+            )))
+        }
     };
 
     match std::net::UdpSocket::bind(addr) {
@@ -2870,7 +3690,7 @@ fn clasica_socket_udp_escuchar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<Val
 fn clasica_socket_udp_enviar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
     if args.len() < 4 {
         return Err(ErrorVM::TipoIncompatible(
-            "_socket_udp_enviar requiere 4 argumentos: socket, datos, direccion, puerto".into()
+            "_socket_udp_enviar requiere 4 argumentos: socket, datos, direccion, puerto".into(),
         ));
     }
 
@@ -2881,24 +3701,34 @@ fn clasica_socket_udp_enviar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<Valor
 
     if puerto < 1 || puerto > 65535 {
         return Err(ErrorVM::TipoIncompatible(format!(
-            "direccion_invalida: puerto {} fuera de rango (1-65535)", puerto
+            "direccion_invalida: puerto {} fuera de rango (1-65535)",
+            puerto
         )));
     }
 
     if socket_idx as usize >= vm.socket_heap.len() {
-        return Err(ErrorVM::TipoIncompatible("socket_invalido: índice fuera de rango".into()));
+        return Err(ErrorVM::TipoIncompatible(
+            "socket_invalido: índice fuera de rango".into(),
+        ));
     }
 
     let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
         Some(arc) => Arc::clone(arc),
-        None => return Err(ErrorVM::TipoIncompatible(
-            "error_interno: el socket no es UDP".into()
-        )),
+        None => {
+            return Err(ErrorVM::TipoIncompatible(
+                "error_interno: el socket no es UDP".into(),
+            ))
+        }
     };
 
     let destino = match ForjaVM::resolver_direccion_vm(&direccion, puerto as u16) {
         Ok(a) => a,
-        Err(msg) => return Err(ErrorVM::TipoIncompatible(format!("direccion_invalida: {}", msg))),
+        Err(msg) => {
+            return Err(ErrorVM::TipoIncompatible(format!(
+                "direccion_invalida: {}",
+                msg
+            )))
+        }
     };
 
     let socket = socket_arc.lock().unwrap();
@@ -2912,7 +3742,7 @@ fn clasica_socket_udp_enviar(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<Valor
 fn clasica_socket_udp_recibir(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<ValorVM, ErrorVM> {
     if args.len() < 2 {
         return Err(ErrorVM::TipoIncompatible(
-            "_socket_udp_recibir requiere 2 argumentos: socket, buffer_tamano (entero)".into()
+            "_socket_udp_recibir requiere 2 argumentos: socket, buffer_tamano (entero)".into(),
         ));
     }
 
@@ -2921,14 +3751,18 @@ fn clasica_socket_udp_recibir(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<Valo
     let buffer_tamano = buffer_tamano.max(1).min(65536) as usize;
 
     if socket_idx as usize >= vm.socket_heap.len() {
-        return Err(ErrorVM::TipoIncompatible("socket_invalido: índice fuera de rango".into()));
+        return Err(ErrorVM::TipoIncompatible(
+            "socket_invalido: índice fuera de rango".into(),
+        ));
     }
 
     let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
         Some(arc) => Arc::clone(arc),
-        None => return Err(ErrorVM::TipoIncompatible(
-            "error_interno: el socket no es UDP".into()
-        )),
+        None => {
+            return Err(ErrorVM::TipoIncompatible(
+                "error_interno: el socket no es UDP".into(),
+            ))
+        }
     };
 
     let socket = socket_arc.lock().unwrap();
@@ -2939,9 +3773,7 @@ fn clasica_socket_udp_recibir(vm: &mut ForjaVM, args: &[ValorVM]) -> Result<Valo
             let datos = String::from_utf8_lossy(&buffer[..n]).to_string();
             Ok(ValorVM::Texto(datos))
         }
-        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-            Ok(ValorVM::Texto(String::new()))
-        }
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(ValorVM::Texto(String::new())),
         Err(e) => Err(ErrorVM::TipoIncompatible(format!("error_interno: {}", e))),
     }
 }
@@ -2975,23 +3807,23 @@ enum BuiltinMethod {
 /// Resuelve un nombre de método a un BuiltinMethod si es conocido
 fn resolver_builtin(metodo: &str) -> Option<BuiltinMethod> {
     match metodo {
-        "length"|"longitud" => Some(BuiltinMethod::Length),
+        "length" | "longitud" => Some(BuiltinMethod::Length),
         "to_upper" => Some(BuiltinMethod::ToUpper),
         "to_lower" => Some(BuiltinMethod::ToLower),
-        "contains"|"contiene" => Some(BuiltinMethod::Contains),
-        "split"|"dividir" => Some(BuiltinMethod::Split),
-        "trim"|"recortar" => Some(BuiltinMethod::Trim),
-        "reverse"|"invertir" => Some(BuiltinMethod::Reverse),
-        "starts_with"|"empieza_con" => Some(BuiltinMethod::StartsWith),
-        "ends_with"|"termina_con" => Some(BuiltinMethod::EndsWith),
-        "char_at"|"caracter_en" => Some(BuiltinMethod::CharAt),
-        "index_of"|"indice_de" => Some(BuiltinMethod::IndexOf),
-        "substr"|"subcadena" => Some(BuiltinMethod::Substr),
-        "replace"|"reemplazar" => Some(BuiltinMethod::Replace),
-        "parse_entero"|"a_entero" => Some(BuiltinMethod::ParseEntero),
-        "parse_flotante"|"a_flotante" => Some(BuiltinMethod::ParseFlotante),
-        "repetir"|"repeat" => Some(BuiltinMethod::Repetir),
-        "join"|"unir_elementos" => Some(BuiltinMethod::Join),
+        "contains" | "contiene" => Some(BuiltinMethod::Contains),
+        "split" | "dividir" => Some(BuiltinMethod::Split),
+        "trim" | "recortar" => Some(BuiltinMethod::Trim),
+        "reverse" | "invertir" => Some(BuiltinMethod::Reverse),
+        "starts_with" | "empieza_con" => Some(BuiltinMethod::StartsWith),
+        "ends_with" | "termina_con" => Some(BuiltinMethod::EndsWith),
+        "char_at" | "caracter_en" => Some(BuiltinMethod::CharAt),
+        "index_of" | "indice_de" => Some(BuiltinMethod::IndexOf),
+        "substr" | "subcadena" => Some(BuiltinMethod::Substr),
+        "replace" | "reemplazar" => Some(BuiltinMethod::Replace),
+        "parse_entero" | "a_entero" => Some(BuiltinMethod::ParseEntero),
+        "parse_flotante" | "a_flotante" => Some(BuiltinMethod::ParseFlotante),
+        "repetir" | "repeat" => Some(BuiltinMethod::Repetir),
+        "join" | "unir_elementos" => Some(BuiltinMethod::Join),
         _ => None,
     }
 }
@@ -3001,7 +3833,9 @@ impl ForjaVM {
     fn ejecutar_builtin(&mut self, builtin: BuiltinMethod, nargs: usize) -> Result<(), ErrorVM> {
         match builtin {
             BuiltinMethod::Length => {
-                let val = self.stack.pop()
+                let val = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Length".to_string()))?;
                 match val {
                     ValorVM::Texto(s) => self.stack.push(get_small_int_vm(s.len() as i64)),
@@ -3010,7 +3844,9 @@ impl ForjaVM {
                 }
             }
             BuiltinMethod::ToUpper => {
-                let val = self.stack.pop()
+                let val = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("ToUpper".to_string()))?;
                 match val {
                     ValorVM::Texto(s) => self.stack.push(ValorVM::Texto(s.to_uppercase())),
@@ -3018,7 +3854,9 @@ impl ForjaVM {
                 }
             }
             BuiltinMethod::ToLower => {
-                let val = self.stack.pop()
+                let val = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("ToLower".to_string()))?;
                 match val {
                     ValorVM::Texto(s) => self.stack.push(ValorVM::Texto(s.to_lowercase())),
@@ -3029,9 +3867,13 @@ impl ForjaVM {
                 if nargs < 1 {
                     return Err(ErrorVM::StackUnderflow("Contains args".to_string()));
                 }
-                let sub = self.stack.pop()
+                let sub = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Contains sub".to_string()))?;
-                let s = self.stack.pop()
+                let s = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Contains str".to_string()))?;
                 match (s, sub) {
                     (ValorVM::Texto(t), ValorVM::Texto(sub)) => {
@@ -3044,13 +3886,18 @@ impl ForjaVM {
                 if nargs < 1 {
                     return Err(ErrorVM::StackUnderflow("Split args".to_string()));
                 }
-                let sep = self.stack.pop()
+                let sep = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Split sep".to_string()))?;
-                let s = self.stack.pop()
+                let s = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Split str".to_string()))?;
                 match (s, sep) {
                     (ValorVM::Texto(t), ValorVM::Texto(sep)) => {
-                        let partes: Vec<ValorVM> = t.split(&sep)
+                        let partes: Vec<ValorVM> = t
+                            .split(&sep)
                             .map(|p| ValorVM::Texto(p.to_string()))
                             .collect();
                         self.stack.push(ValorVM::Arreglo(partes));
@@ -3059,7 +3906,9 @@ impl ForjaVM {
                 }
             }
             BuiltinMethod::Trim => {
-                let val = self.stack.pop()
+                let val = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Trim".to_string()))?;
                 match val {
                     ValorVM::Texto(s) => self.stack.push(ValorVM::Texto(s.trim().to_string())),
@@ -3067,7 +3916,9 @@ impl ForjaVM {
                 }
             }
             BuiltinMethod::Reverse => {
-                let val = self.stack.pop()
+                let val = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Reverse".to_string()))?;
                 match val {
                     ValorVM::Texto(s) => {
@@ -3081,9 +3932,13 @@ impl ForjaVM {
                 if nargs < 1 {
                     return Err(ErrorVM::StackUnderflow("StartsWith args".to_string()));
                 }
-                let prefix = self.stack.pop()
+                let prefix = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("StartsWith prefix".to_string()))?;
-                let s = self.stack.pop()
+                let s = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("StartsWith str".to_string()))?;
                 match (s, prefix) {
                     (ValorVM::Texto(t), ValorVM::Texto(p)) => {
@@ -3096,9 +3951,13 @@ impl ForjaVM {
                 if nargs < 1 {
                     return Err(ErrorVM::StackUnderflow("EndsWith args".to_string()));
                 }
-                let suffix = self.stack.pop()
+                let suffix = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("EndsWith suffix".to_string()))?;
-                let s = self.stack.pop()
+                let s = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("EndsWith str".to_string()))?;
                 match (s, suffix) {
                     (ValorVM::Texto(t), ValorVM::Texto(suf)) => {
@@ -3111,9 +3970,13 @@ impl ForjaVM {
                 if nargs < 1 {
                     return Err(ErrorVM::StackUnderflow("CharAt args".to_string()));
                 }
-                let idx = self.stack.pop()
+                let idx = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("CharAt idx".to_string()))?;
-                let s = self.stack.pop()
+                let s = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("CharAt str".to_string()))?;
                 match (s, idx) {
                     (ValorVM::Texto(t), ValorVM::Entero(i)) => {
@@ -3131,13 +3994,18 @@ impl ForjaVM {
                 if nargs < 1 {
                     return Err(ErrorVM::StackUnderflow("IndexOf args".to_string()));
                 }
-                let needle = self.stack.pop()
+                let needle = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("IndexOf needle".to_string()))?;
-                let s = self.stack.pop()
+                let s = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("IndexOf str".to_string()))?;
                 match (s, needle) {
                     (ValorVM::Texto(t), ValorVM::Texto(n)) => {
-                        let pos: i64 = t.find(&n)
+                        let pos: i64 = t
+                            .find(&n)
                             .map(|b| t[..b].chars().count() as i64)
                             .unwrap_or(-1);
                         self.stack.push(get_small_int_vm(pos));
@@ -3149,11 +4017,17 @@ impl ForjaVM {
                 if nargs < 2 {
                     return Err(ErrorVM::StackUnderflow("Substr args".to_string()));
                 }
-                let len_val = self.stack.pop()
+                let len_val = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Substr len".to_string()))?;
-                let start_val = self.stack.pop()
+                let start_val = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Substr start".to_string()))?;
-                let s = self.stack.pop()
+                let s = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Substr str".to_string()))?;
                 match (s, start_val, len_val) {
                     (ValorVM::Texto(t), ValorVM::Entero(start), ValorVM::Entero(len)) => {
@@ -3175,11 +4049,17 @@ impl ForjaVM {
                 if nargs < 2 {
                     return Err(ErrorVM::StackUnderflow("Replace args".to_string()));
                 }
-                let new_val = self.stack.pop()
+                let new_val = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Replace new".to_string()))?;
-                let old_val = self.stack.pop()
+                let old_val = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Replace old".to_string()))?;
-                let s = self.stack.pop()
+                let s = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Replace str".to_string()))?;
                 match (s, old_val, new_val) {
                     (ValorVM::Texto(t), ValorVM::Texto(old), ValorVM::Texto(new)) => {
@@ -3189,39 +4069,43 @@ impl ForjaVM {
                 }
             }
             BuiltinMethod::ParseEntero => {
-                let val = self.stack.pop()
+                let val = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("ParseEntero".to_string()))?;
                 match val {
-                    ValorVM::Texto(s) => {
-                        match s.trim().parse::<i64>() {
-                            Ok(n) => self.stack.push(get_small_int_vm(n)),
-                            Err(_) => self.stack.push(ValorVM::Nulo),
-                        }
-                    }
+                    ValorVM::Texto(s) => match s.trim().parse::<i64>() {
+                        Ok(n) => self.stack.push(get_small_int_vm(n)),
+                        Err(_) => self.stack.push(ValorVM::Nulo),
+                    },
                     ValorVM::Entero(n) => self.stack.push(get_small_int_vm(n)),
                     ValorVM::Decimal(f) => self.stack.push(get_small_int_vm(f as i64)),
                     _ => self.stack.push(ValorVM::Nulo),
                 }
             }
             BuiltinMethod::ParseFlotante => {
-                let val = self.stack.pop()
+                let val = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("ParseFlotante".to_string()))?;
                 match val {
-                    ValorVM::Texto(s) => {
-                        match s.trim().parse::<f64>() {
-                            Ok(f) => self.stack.push(ValorVM::Decimal(f)),
-                            Err(_) => self.stack.push(ValorVM::Nulo),
-                        }
-                    }
+                    ValorVM::Texto(s) => match s.trim().parse::<f64>() {
+                        Ok(f) => self.stack.push(ValorVM::Decimal(f)),
+                        Err(_) => self.stack.push(ValorVM::Nulo),
+                    },
                     ValorVM::Decimal(f) => self.stack.push(ValorVM::Decimal(f)),
                     ValorVM::Entero(n) => self.stack.push(ValorVM::Decimal(n as f64)),
                     _ => self.stack.push(ValorVM::Nulo),
                 }
             }
             BuiltinMethod::Repetir => {
-                let count_val = self.stack.pop()
+                let count_val = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Repetir count".to_string()))?;
-                let v = self.stack.pop()
+                let v = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Repetir str".to_string()))?;
                 match (v, count_val) {
                     (ValorVM::Texto(t), ValorVM::Entero(n)) => {
@@ -3236,9 +4120,13 @@ impl ForjaVM {
                 if nargs < 1 {
                     return Err(ErrorVM::StackUnderflow("Join args".to_string()));
                 }
-                let sep_val = self.stack.pop()
+                let sep_val = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Join sep".to_string()))?;
-                let arr_val = self.stack.pop()
+                let arr_val = self
+                    .stack
+                    .pop()
                     .ok_or(ErrorVM::StackUnderflow("Join arr".to_string()))?;
                 match (arr_val, sep_val) {
                     (ValorVM::Arreglo(arr), ValorVM::Texto(sep)) => {
@@ -3257,19 +4145,25 @@ impl ForjaVM {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bytecode::fusionar_opcodes;
+    use crate::bytecode::optimizar_indices;
+    use crate::bytecode::BytecodeGenerator;
     use crate::lexer::Lexer;
     use crate::parser::Parser;
-    use crate::bytecode::BytecodeGenerator;
-    use crate::bytecode::optimizar_indices;
-    use crate::bytecode::fusionar_opcodes;
 
     fn ejecutar_source(source: &str) -> Result<ForjaVM, ErrorVM> {
         let mut lexer = Lexer::new(source);
-        let tokens = lexer.tokenize().map_err(|_| ErrorVM::StackUnderflow("Lexer".to_string()))?;
+        let tokens = lexer
+            .tokenize()
+            .map_err(|_| ErrorVM::StackUnderflow("Lexer".to_string()))?;
         let mut parser = Parser::new(tokens);
-        let programa = parser.parse().map_err(|_| ErrorVM::StackUnderflow("Parser".to_string()))?;
+        let programa = parser
+            .parse()
+            .map_err(|_| ErrorVM::StackUnderflow("Parser".to_string()))?;
         let mut gen = BytecodeGenerator::new();
-        let bytecode = gen.generar(&programa).map_err(|_| ErrorVM::StackUnderflow("Bytecode".to_string()))?;
+        let bytecode = gen
+            .generar(&programa)
+            .map_err(|_| ErrorVM::StackUnderflow("Bytecode".to_string()))?;
         // Aplicar optimización de índices y fusión (como hace lib.rs)
         let bytecode = optimizar_indices(&bytecode);
         let bytecode = fusionar_opcodes(&bytecode);
@@ -3299,19 +4193,22 @@ mod tests {
 
     #[test]
     fn test_vm_si_verdadero() {
-        let vm = ejecutar_source("si (verdadero) { escribir(\"si\") } sino { escribir(\"no\") }").unwrap();
+        let vm = ejecutar_source("si (verdadero) { escribir(\"si\") } sino { escribir(\"no\") }")
+            .unwrap();
         assert_eq!(vm.obtener_output(), &["si"]);
     }
 
     #[test]
     fn test_vm_si_falso() {
-        let vm = ejecutar_source("si (falso) { escribir(\"si\") } sino { escribir(\"no\") }").unwrap();
+        let vm =
+            ejecutar_source("si (falso) { escribir(\"si\") } sino { escribir(\"no\") }").unwrap();
         assert_eq!(vm.obtener_output(), &["no"]);
     }
 
     #[test]
     fn test_vm_mientras() {
-        let vm = ejecutar_source("variable x = 0\nmientras (x < 3) { escribir(x)\nx = x + 1 }").unwrap();
+        let vm =
+            ejecutar_source("variable x = 0\nmientras (x < 3) { escribir(x)\nx = x + 1 }").unwrap();
         assert_eq!(vm.obtener_output(), &["0", "1", "2"]);
     }
 
@@ -3333,4 +4230,3 @@ mod tests {
         assert_eq!(vm.obtener_output(), &["verdadero", "falso"]);
     }
 }
-

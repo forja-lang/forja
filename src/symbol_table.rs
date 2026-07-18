@@ -11,13 +11,16 @@ pub struct SymId(pub u32);
 /// Tabla de símbolos global con interning
 #[derive(Clone)]
 pub struct SymbolTable {
-    strings: Vec<Arc<str>>,              // ID → string
-    lookup: HashMap<Arc<str>, SymId>,    // string → ID
+    strings: Vec<Arc<str>>,           // ID → string
+    lookup: HashMap<Arc<str>, SymId>, // string → ID
 }
 
 impl SymbolTable {
     pub fn new() -> Self {
-        Self { strings: Vec::new(), lookup: HashMap::new() }
+        Self {
+            strings: Vec::new(),
+            lookup: HashMap::new(),
+        }
     }
 
     /// Interna un string y devuelve su SymId (reusa si ya existe)
@@ -49,5 +52,7 @@ impl SymbolTable {
     }
 
     /// Número de símbolos internados
-    pub fn len(&self) -> usize { self.strings.len() }
+    pub fn len(&self) -> usize {
+        self.strings.len()
+    }
 }

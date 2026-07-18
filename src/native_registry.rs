@@ -1,19 +1,18 @@
 #![allow(dead_code)]
+#[cfg(not(target_arch = "wasm32"))]
+use crate::bytecode::BytecodeGenerator;
+use crate::symbol_table::{SymId, SymbolTable};
+use crate::vm_fast::{ErrFast, ForjaFast, ValorFast};
+use base64::Engine;
+use sha2::Digest;
 /// Registro de funciones nativas para la VM Forja
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::ToSocketAddrs;
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::symbol_table::{SymbolTable, SymId};
-use crate::vm_fast::{ForjaFast, ValorFast, ErrFast};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::bytecode::BytecodeGenerator;
-use base64::Engine;
-use sha2::Digest;
-
 
 // ═════════════════════════════════════════════════════════════════════════
 // Tipos
@@ -151,7 +150,9 @@ impl NativeRegistry {
     /// Retorna la función (copia de un fn pointer) para que el caller
     /// pueda ejecutarla sin mantener un borrow sobre la NativeRegistry.
     pub fn buscar_fn(&self, sym: SymId) -> Result<NativeFn, ErrFast> {
-        self.funciones.get(&sym).copied()
+        self.funciones
+            .get(&sym)
+            .copied()
             .ok_or_else(|| ErrFast::FnNoDef(format!("función nativa sym={:?} no encontrada", sym)))
     }
 
@@ -162,13 +163,23 @@ impl NativeRegistry {
 
     /// Ejecuta una función nativa por SymId — seguro contra borrow checker
     /// Primero busca el fn pointer (copia), luego lo ejecuta sin borrow activo
-    pub fn ejecutar_sym(&mut self, sym: SymId, vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    pub fn ejecutar_sym(
+        &mut self,
+        sym: SymId,
+        vm: &mut ForjaFast,
+        args: &[ValorFast],
+    ) -> Result<ValorFast, ErrFast> {
         let func = self.buscar_fn(sym)?;
         func(vm, args)
     }
 
     /// Ejecuta una función nativa por nombre (legacy, menos eficiente)
-    pub fn ejecutar(&mut self, vm: &mut ForjaFast, nombre: &str, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    pub fn ejecutar(
+        &mut self,
+        vm: &mut ForjaFast,
+        nombre: &str,
+        args: &[ValorFast],
+    ) -> Result<ValorFast, ErrFast> {
         let sym = self.sym_table.intern(nombre);
         self.ejecutar_sym(sym, vm, args)
     }
@@ -275,17 +286,50 @@ impl NativeRegistry {
         #[cfg(not(target_arch = "wasm32"))]
         {
             self.registrar("_h2_preface", crate::native_h2_core::native_h2_preface);
-            self.registrar("_h2_escribir_frame", crate::native_h2_core::native_h2_escribir_frame);
-            self.registrar("_h2_leer_frame", crate::native_h2_core::native_h2_leer_frame);
-            self.registrar("_hpack_codificar", crate::native_h2_core::native_hpack_codificar);
-            self.registrar("_hpack_decodificar", crate::native_h2_core::native_hpack_decodificar);
-            self.registrar("_h2_settings_default", crate::native_h2_core::native_h2_settings_default);
-            self.registrar("_h2_enviar_goaway", crate::native_h2_core::native_h2_enviar_goaway);
-            self.registrar("_h2_enviar_rst_stream", crate::native_h2_core::native_h2_enviar_rst_stream);
-            self.registrar("_h2_enviar_window_update", crate::native_h2_core::native_h2_enviar_window_update);
-            self.registrar("_h2_enviar_ping", crate::native_h2_core::native_h2_enviar_ping);
-            self.registrar("_h2_enviar_bytes_raw", crate::native_h2_core::native_h2_enviar_bytes_raw);
-            self.registrar("_h2_negociar_h2c", crate::native_h2_core::native_h2_negociar_h2c);
+            self.registrar(
+                "_h2_escribir_frame",
+                crate::native_h2_core::native_h2_escribir_frame,
+            );
+            self.registrar(
+                "_h2_leer_frame",
+                crate::native_h2_core::native_h2_leer_frame,
+            );
+            self.registrar(
+                "_hpack_codificar",
+                crate::native_h2_core::native_hpack_codificar,
+            );
+            self.registrar(
+                "_hpack_decodificar",
+                crate::native_h2_core::native_hpack_decodificar,
+            );
+            self.registrar(
+                "_h2_settings_default",
+                crate::native_h2_core::native_h2_settings_default,
+            );
+            self.registrar(
+                "_h2_enviar_goaway",
+                crate::native_h2_core::native_h2_enviar_goaway,
+            );
+            self.registrar(
+                "_h2_enviar_rst_stream",
+                crate::native_h2_core::native_h2_enviar_rst_stream,
+            );
+            self.registrar(
+                "_h2_enviar_window_update",
+                crate::native_h2_core::native_h2_enviar_window_update,
+            );
+            self.registrar(
+                "_h2_enviar_ping",
+                crate::native_h2_core::native_h2_enviar_ping,
+            );
+            self.registrar(
+                "_h2_enviar_bytes_raw",
+                crate::native_h2_core::native_h2_enviar_bytes_raw,
+            );
+            self.registrar(
+                "_h2_negociar_h2c",
+                crate::native_h2_core::native_h2_negociar_h2c,
+            );
         }
     }
 
@@ -345,11 +389,15 @@ pub(crate) fn extraer_indice_socket(vm: &mut ForjaFast, val: ValorFast) -> Resul
     let obj_idx = val.indice_objeto();
     let obj = vm.get_obj(obj_idx);
     if obj.campos_vec.is_empty() {
-        return Err(ErrFast::TipoInv("socket inválido: no tiene campo _idx".into()));
+        return Err(ErrFast::TipoInv(
+            "socket inválido: no tiene campo _idx".into(),
+        ));
     }
     let idx_val = obj.campos_vec[0];
     if !idx_val.es_entero() {
-        return Err(ErrFast::TipoInv("socket inválido: campo _idx no es entero".into()));
+        return Err(ErrFast::TipoInv(
+            "socket inválido: campo _idx no es entero".into(),
+        ));
     }
     Ok(idx_val.a_entero() as u32)
 }
@@ -375,14 +423,20 @@ pub(crate) fn crear_valor_socket(vm: &mut ForjaFast, socket_idx: u32) -> ValorFa
 }
 
 /// Resuelve una dirección de host:puerto a SocketAddr
-pub(crate) fn resolver_direccion(direccion: &str, puerto: u16) -> Result<std::net::SocketAddr, String> {
+pub(crate) fn resolver_direccion(
+    direccion: &str,
+    puerto: u16,
+) -> Result<std::net::SocketAddr, String> {
     let addr_str = format!("{}:{}", direccion, puerto);
     if let Ok(addr) = addr_str.parse::<std::net::SocketAddr>() {
         return Ok(addr);
     }
-    let addrs = (direccion, puerto).to_socket_addrs()
+    let addrs = (direccion, puerto)
+        .to_socket_addrs()
         .map_err(|e| format!("no se pudo resolver '{}': {}", addr_str, e))?;
-    addrs.into_iter().next()
+    addrs
+        .into_iter()
+        .next()
         .ok_or_else(|| format!("no se encontraron direcciones para '{}'", addr_str))
 }
 
@@ -390,10 +444,13 @@ pub(crate) fn resolver_direccion(direccion: &str, puerto: u16) -> Result<std::ne
 // Funciones Nativas - TCP
 // ═════════════════════════════════════════════════════════════════════════
 
-fn native_socket_tcp_conectar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_socket_tcp_conectar(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
-            "_socket_tcp_conectar requiere 2 argumentos: direccion (texto), puerto (entero)".into()
+            "_socket_tcp_conectar requiere 2 argumentos: direccion (texto), puerto (entero)".into(),
         ));
     }
 
@@ -402,7 +459,8 @@ fn native_socket_tcp_conectar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<
 
     if puerto < 1 || puerto > 65535 {
         return Err(ErrFast::TipoInv(format!(
-            "direccion_invalida: puerto {} fuera de rango (1-65535)", puerto
+            "direccion_invalida: puerto {} fuera de rango (1-65535)",
+            puerto
         )));
     }
 
@@ -437,7 +495,7 @@ fn native_socket_tcp_conectar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<
 fn native_socket_enviar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
-            "_socket_enviar requiere 2 argumentos: socket, datos (texto)".into()
+            "_socket_enviar requiere 2 argumentos: socket, datos (texto)".into(),
         ));
     }
 
@@ -445,12 +503,18 @@ fn native_socket_enviar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
     let datos = obtener_texto(vm, args[1])?;
 
     if !vm.socket_get(socket_idx).connected {
-        return Err(ErrFast::TipoInv("socket_cerrado: el socket no está conectado".into()));
+        return Err(ErrFast::TipoInv(
+            "socket_cerrado: el socket no está conectado".into(),
+        ));
     }
 
     let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
         Some(arc) => Arc::clone(arc),
-        None => return Err(ErrFast::TipoInv("error_interno: el socket no es TCP".into())),
+        None => {
+            return Err(ErrFast::TipoInv(
+                "error_interno: el socket no es TCP".into(),
+            ))
+        }
     };
 
     let mut stream = stream_arc.lock().unwrap();
@@ -463,7 +527,7 @@ fn native_socket_enviar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
 fn native_socket_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
-            "_socket_recibir requiere 2 argumentos: socket, buffer_tamano (entero)".into()
+            "_socket_recibir requiere 2 argumentos: socket, buffer_tamano (entero)".into(),
         ));
     }
 
@@ -472,12 +536,18 @@ fn native_socket_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
     let buffer_tamano = buffer_tamano.max(1).min(65536) as usize;
 
     if !vm.socket_get(socket_idx).connected {
-        return Err(ErrFast::TipoInv("socket_cerrado: el socket no está conectado".into()));
+        return Err(ErrFast::TipoInv(
+            "socket_cerrado: el socket no está conectado".into(),
+        ));
     }
 
     let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
         Some(arc) => Arc::clone(arc),
-        None => return Err(ErrFast::TipoInv("error_interno: el socket no es TCP".into())),
+        None => {
+            return Err(ErrFast::TipoInv(
+                "error_interno: el socket no es TCP".into(),
+            ))
+        }
     };
 
     let mut stream = stream_arc.lock().unwrap();
@@ -505,7 +575,9 @@ fn native_socket_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
 
 fn native_socket_cerrar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_socket_cerrar requiere 1 argumento: socket".into()));
+        return Err(ErrFast::TipoInv(
+            "_socket_cerrar requiere 1 argumento: socket".into(),
+        ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
     vm.socket_cerrar(socket_idx);
@@ -514,17 +586,22 @@ fn native_socket_cerrar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
 
 fn native_socket_activo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_socket_activo requiere 1 argumento: socket".into()));
+        return Err(ErrFast::TipoInv(
+            "_socket_activo requiere 1 argumento: socket".into(),
+        ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
     let state = vm.socket_get(socket_idx);
     Ok(ValorFast::booleano(state.connected))
 }
 
-fn native_socket_fijar_timeout(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_socket_fijar_timeout(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
-            "_socket_fijar_timeout requiere 2 argumentos: socket, tiempo_ms (entero)".into()
+            "_socket_fijar_timeout requiere 2 argumentos: socket, tiempo_ms (entero)".into(),
         ));
     }
 
@@ -540,7 +617,11 @@ fn native_socket_fijar_timeout(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
     let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
         Some(arc) => Some(Arc::clone(arc)),
         None => {
-            vm.socket_get_mut(socket_idx).timeout_ms = if tiempo_ms > 0 { Some(tiempo_ms as u64) } else { None };
+            vm.socket_get_mut(socket_idx).timeout_ms = if tiempo_ms > 0 {
+                Some(tiempo_ms as u64)
+            } else {
+                None
+            };
             return Ok(ValorFast::nulo());
         }
     };
@@ -552,13 +633,22 @@ fn native_socket_fijar_timeout(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
         drop(stream);
     }
 
-    vm.socket_get_mut(socket_idx).timeout_ms = if tiempo_ms > 0 { Some(tiempo_ms as u64) } else { None };
+    vm.socket_get_mut(socket_idx).timeout_ms = if tiempo_ms > 0 {
+        Some(tiempo_ms as u64)
+    } else {
+        None
+    };
     Ok(ValorFast::nulo())
 }
 
-fn native_socket_direccion_local(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_socket_direccion_local(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_socket_direccion_local requiere 1 argumento: socket".into()));
+        return Err(ErrFast::TipoInv(
+            "_socket_direccion_local requiere 1 argumento: socket".into(),
+        ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
     let state = vm.socket_get(socket_idx);
@@ -567,13 +657,20 @@ fn native_socket_direccion_local(vm: &mut ForjaFast, args: &[ValorFast]) -> Resu
             let idx = vm.alloc_str(Arc::from(addr.as_str()));
             Ok(ValorFast::texto(idx))
         }
-        None => Err(ErrFast::TipoInv("error_interno: no se pudo obtener la dirección local".into())),
+        None => Err(ErrFast::TipoInv(
+            "error_interno: no se pudo obtener la dirección local".into(),
+        )),
     }
 }
 
-fn native_socket_direccion_remota(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_socket_direccion_remota(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_socket_direccion_remota requiere 1 argumento: socket".into()));
+        return Err(ErrFast::TipoInv(
+            "_socket_direccion_remota requiere 1 argumento: socket".into(),
+        ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
     let state = vm.socket_get(socket_idx);
@@ -582,7 +679,9 @@ fn native_socket_direccion_remota(vm: &mut ForjaFast, args: &[ValorFast]) -> Res
             let idx = vm.alloc_str(Arc::from(addr.as_str()));
             Ok(ValorFast::texto(idx))
         }
-        None => Err(ErrFast::TipoInv("error_interno: el socket no tiene dirección remota".into())),
+        None => Err(ErrFast::TipoInv(
+            "error_interno: el socket no tiene dirección remota".into(),
+        )),
     }
 }
 
@@ -594,17 +693,21 @@ fn native_socket_direccion_remota(vm: &mut ForjaFast, args: &[ValorFast]) -> Res
 /// args[0]: puerto (Entero)
 /// args[1]: backlog (Entero, opcional, default 128)
 /// Retorna: el índice del socket (Entero) encapsulado en objeto @Socket
-fn native_socket_tcp_escuchar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_socket_tcp_escuchar(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
         return Err(ErrFast::TipoInv(
-            "_socket_tcp_escuchar requiere al menos 1 argumento: puerto (entero)".into()
+            "_socket_tcp_escuchar requiere al menos 1 argumento: puerto (entero)".into(),
         ));
     }
 
     let puerto = obtener_entero(args[0])?;
     if puerto < 1 || puerto > 65535 {
         return Err(ErrFast::TipoInv(format!(
-            "direccion_invalida: puerto {} fuera de rango (1-65535)", puerto
+            "direccion_invalida: puerto {} fuera de rango (1-65535)",
+            puerto
         )));
     }
 
@@ -638,7 +741,7 @@ fn native_socket_tcp_escuchar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<
 fn native_socket_aceptar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
-            "_socket_aceptar requiere 1 argumento: socket".into()
+            "_socket_aceptar requiere 1 argumento: socket".into(),
         ));
     }
 
@@ -647,9 +750,11 @@ fn native_socket_aceptar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
     // Verificar que sea un TcpListener
     let listener_arc = match &vm.socket_get(socket_idx).tcp_listener {
         Some(arc) => Arc::clone(arc),
-        None => return Err(ErrFast::TipoInv(
-            "error_interno: el socket no es un TcpListener".into()
-        )),
+        None => {
+            return Err(ErrFast::TipoInv(
+                "error_interno: el socket no es un TcpListener".into(),
+            ))
+        }
     };
 
     let listener = listener_arc.lock().unwrap();
@@ -662,12 +767,8 @@ fn native_socket_aceptar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
             let val = crear_valor_socket(vm, nuevo_idx);
             Ok(val)
         }
-        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-            Ok(ValorFast::entero(-1i64))
-        }
-        Err(e) => {
-            Err(ErrFast::TipoInv(format!("error_interno: {}", e)))
-        }
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(ValorFast::entero(-1i64)),
+        Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
     }
 }
 
@@ -676,17 +777,21 @@ fn native_socket_aceptar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
 // ═════════════════════════════════════════════════════════════════════════
 
 /// Crea un socket UDP a la escucha (bind) en el puerto especificado.
-fn native_socket_udp_escuchar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_socket_udp_escuchar(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
         return Err(ErrFast::TipoInv(
-            "_socket_udp_escuchar requiere al menos 1 argumento: puerto (entero)".into()
+            "_socket_udp_escuchar requiere al menos 1 argumento: puerto (entero)".into(),
         ));
     }
 
     let puerto = obtener_entero(args[0])?;
     if puerto < 1 || puerto > 65535 {
         return Err(ErrFast::TipoInv(format!(
-            "direccion_invalida: puerto {} fuera de rango (1-65535)", puerto
+            "direccion_invalida: puerto {} fuera de rango (1-65535)",
+            puerto
         )));
     }
 
@@ -719,7 +824,7 @@ fn native_socket_udp_escuchar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<
 fn native_socket_udp_enviar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 4 {
         return Err(ErrFast::TipoInv(
-            "_socket_udp_enviar requiere 4 argumentos: socket, datos, direccion, puerto".into()
+            "_socket_udp_enviar requiere 4 argumentos: socket, datos, direccion, puerto".into(),
         ));
     }
 
@@ -730,15 +835,18 @@ fn native_socket_udp_enviar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
 
     if puerto < 1 || puerto > 65535 {
         return Err(ErrFast::TipoInv(format!(
-            "direccion_invalida: puerto {} fuera de rango (1-65535)", puerto
+            "direccion_invalida: puerto {} fuera de rango (1-65535)",
+            puerto
         )));
     }
 
     let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
         Some(arc) => Arc::clone(arc),
-        None => return Err(ErrFast::TipoInv(
-            "error_interno: el socket no es UDP".into()
-        )),
+        None => {
+            return Err(ErrFast::TipoInv(
+                "error_interno: el socket no es UDP".into(),
+            ))
+        }
     };
 
     let destino = match resolver_direccion(&direccion, puerto as u16) {
@@ -757,7 +865,7 @@ fn native_socket_udp_enviar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
 fn native_socket_udp_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
-            "_socket_udp_recibir requiere 2 argumentos: socket, buffer_tamano (entero)".into()
+            "_socket_udp_recibir requiere 2 argumentos: socket, buffer_tamano (entero)".into(),
         ));
     }
 
@@ -767,9 +875,11 @@ fn native_socket_udp_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 
     let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
         Some(arc) => Arc::clone(arc),
-        None => return Err(ErrFast::TipoInv(
-            "error_interno: el socket no es UDP".into()
-        )),
+        None => {
+            return Err(ErrFast::TipoInv(
+                "error_interno: el socket no es UDP".into(),
+            ))
+        }
     };
 
     let socket = socket_arc.lock().unwrap();
@@ -795,39 +905,57 @@ fn native_socket_udp_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 
 fn native_archivo_leer(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
-        return Err(ErrFast::TipoInv("_archivo_leer requiere 1 argumento: ruta (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_archivo_leer requiere 1 argumento: ruta (texto)".into(),
+        ));
     }
     let ruta = obtener_texto(vm, args[0])?;
     if ruta.trim().is_empty() {
-        return Err(ErrFast::TipoInv("ruta_invalida: la ruta no puede estar vacía".into()));
+        return Err(ErrFast::TipoInv(
+            "ruta_invalida: la ruta no puede estar vacía".into(),
+        ));
     }
     match std::fs::read_to_string(&ruta) {
         Ok(contenido) => {
             let idx = vm.alloc_str(Arc::from(contenido.as_str()));
             Ok(ValorFast::texto(idx))
         }
-        Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
+        Err(e) => Err(ErrFast::TipoInv(format!(
+            "{}: {}",
+            codigo_error_archivo(&e),
+            e
+        ))),
     }
 }
 
 fn native_archivo_escribir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
-        return Err(ErrFast::TipoInv("_archivo_escribir requiere 2 argumentos: ruta (texto), contenido (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_archivo_escribir requiere 2 argumentos: ruta (texto), contenido (texto)".into(),
+        ));
     }
     let ruta = obtener_texto(vm, args[0])?;
     let contenido = obtener_texto(vm, args[1])?;
     if ruta.trim().is_empty() {
-        return Err(ErrFast::TipoInv("ruta_invalida: la ruta no puede estar vacía".into()));
+        return Err(ErrFast::TipoInv(
+            "ruta_invalida: la ruta no puede estar vacía".into(),
+        ));
     }
     match std::fs::write(&ruta, contenido.as_bytes()) {
         Ok(()) => Ok(ValorFast::entero(0i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
+        Err(e) => Err(ErrFast::TipoInv(format!(
+            "{}: {}",
+            codigo_error_archivo(&e),
+            e
+        ))),
     }
 }
 
 fn native_archivo_existe(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
-        return Err(ErrFast::TipoInv("_archivo_existe requiere 1 argumento: ruta (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_archivo_existe requiere 1 argumento: ruta (texto)".into(),
+        ));
     }
     let ruta = obtener_texto(vm, args[0])?;
     Ok(ValorFast::booleano(std::path::Path::new(&ruta).exists()))
@@ -835,100 +963,155 @@ fn native_archivo_existe(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
 
 fn native_archivo_eliminar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
-        return Err(ErrFast::TipoInv("_archivo_eliminar requiere 1 argumento: ruta (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_archivo_eliminar requiere 1 argumento: ruta (texto)".into(),
+        ));
     }
     let ruta = obtener_texto(vm, args[0])?;
     if ruta.trim().is_empty() {
-        return Err(ErrFast::TipoInv("ruta_invalida: la ruta no puede estar vacía".into()));
+        return Err(ErrFast::TipoInv(
+            "ruta_invalida: la ruta no puede estar vacía".into(),
+        ));
     }
     match std::fs::remove_file(&ruta) {
         Ok(()) => Ok(ValorFast::entero(0i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
+        Err(e) => Err(ErrFast::TipoInv(format!(
+            "{}: {}",
+            codigo_error_archivo(&e),
+            e
+        ))),
     }
 }
 
 fn native_archivo_copiar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
-        return Err(ErrFast::TipoInv("_archivo_copiar requiere 2 argumentos: origen (texto), destino (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_archivo_copiar requiere 2 argumentos: origen (texto), destino (texto)".into(),
+        ));
     }
     let origen = obtener_texto(vm, args[0])?;
     let destino = obtener_texto(vm, args[1])?;
     if origen.trim().is_empty() || destino.trim().is_empty() {
-        return Err(ErrFast::TipoInv("ruta_invalida: las rutas no pueden estar vacías".into()));
+        return Err(ErrFast::TipoInv(
+            "ruta_invalida: las rutas no pueden estar vacías".into(),
+        ));
     }
     match std::fs::copy(&origen, &destino) {
         Ok(_) => Ok(ValorFast::entero(0i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
+        Err(e) => Err(ErrFast::TipoInv(format!(
+            "{}: {}",
+            codigo_error_archivo(&e),
+            e
+        ))),
     }
 }
 
 fn native_archivo_mover(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
-        return Err(ErrFast::TipoInv("_archivo_mover requiere 2 argumentos: origen (texto), destino (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_archivo_mover requiere 2 argumentos: origen (texto), destino (texto)".into(),
+        ));
     }
     let origen = obtener_texto(vm, args[0])?;
     let destino = obtener_texto(vm, args[1])?;
     if origen.trim().is_empty() || destino.trim().is_empty() {
-        return Err(ErrFast::TipoInv("ruta_invalida: las rutas no pueden estar vacías".into()));
+        return Err(ErrFast::TipoInv(
+            "ruta_invalida: las rutas no pueden estar vacías".into(),
+        ));
     }
     match std::fs::rename(&origen, &destino) {
         Ok(()) => Ok(ValorFast::entero(0i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
+        Err(e) => Err(ErrFast::TipoInv(format!(
+            "{}: {}",
+            codigo_error_archivo(&e),
+            e
+        ))),
     }
 }
 
 fn native_archivo_tamano(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
-        return Err(ErrFast::TipoInv("_archivo_tamano requiere 1 argumento: ruta (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_archivo_tamano requiere 1 argumento: ruta (texto)".into(),
+        ));
     }
     let ruta = obtener_texto(vm, args[0])?;
     if ruta.trim().is_empty() {
-        return Err(ErrFast::TipoInv("ruta_invalida: la ruta no puede estar vacía".into()));
+        return Err(ErrFast::TipoInv(
+            "ruta_invalida: la ruta no puede estar vacía".into(),
+        ));
     }
     match std::fs::metadata(&ruta) {
         Ok(meta) => {
             let tamano = meta.len() as i64;
             Ok(ValorFast::entero(tamano))
         }
-        Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
+        Err(e) => Err(ErrFast::TipoInv(format!(
+            "{}: {}",
+            codigo_error_archivo(&e),
+            e
+        ))),
     }
 }
 
 fn native_directorio_crear(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
-        return Err(ErrFast::TipoInv("_directorio_crear requiere 1 argumento: ruta (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_directorio_crear requiere 1 argumento: ruta (texto)".into(),
+        ));
     }
     let ruta = obtener_texto(vm, args[0])?;
     if ruta.trim().is_empty() {
-        return Err(ErrFast::TipoInv("ruta_invalida: la ruta no puede estar vacía".into()));
+        return Err(ErrFast::TipoInv(
+            "ruta_invalida: la ruta no puede estar vacía".into(),
+        ));
     }
     match std::fs::create_dir_all(&ruta) {
         Ok(()) => Ok(ValorFast::entero(0i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
+        Err(e) => Err(ErrFast::TipoInv(format!(
+            "{}: {}",
+            codigo_error_archivo(&e),
+            e
+        ))),
     }
 }
 
-fn native_directorio_eliminar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_directorio_eliminar(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
-        return Err(ErrFast::TipoInv("_directorio_eliminar requiere 1 argumento: ruta (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_directorio_eliminar requiere 1 argumento: ruta (texto)".into(),
+        ));
     }
     let ruta = obtener_texto(vm, args[0])?;
     if ruta.trim().is_empty() {
-        return Err(ErrFast::TipoInv("ruta_invalida: la ruta no puede estar vacía".into()));
+        return Err(ErrFast::TipoInv(
+            "ruta_invalida: la ruta no puede estar vacía".into(),
+        ));
     }
     match std::fs::remove_dir_all(&ruta) {
         Ok(()) => Ok(ValorFast::entero(0i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
+        Err(e) => Err(ErrFast::TipoInv(format!(
+            "{}: {}",
+            codigo_error_archivo(&e),
+            e
+        ))),
     }
 }
 
 fn native_directorio_listar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
-        return Err(ErrFast::TipoInv("_directorio_listar requiere 1 argumento: ruta (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_directorio_listar requiere 1 argumento: ruta (texto)".into(),
+        ));
     }
     let ruta = obtener_texto(vm, args[0])?;
     if ruta.trim().is_empty() {
-        return Err(ErrFast::TipoInv("ruta_invalida: la ruta no puede estar vacía".into()));
+        return Err(ErrFast::TipoInv(
+            "ruta_invalida: la ruta no puede estar vacía".into(),
+        ));
     }
     match std::fs::read_dir(&ruta) {
         Ok(entradas) => {
@@ -942,37 +1125,56 @@ fn native_directorio_listar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
             let idx = vm.alloc_str(Arc::from(resultado.as_str()));
             Ok(ValorFast::texto(idx))
         }
-        Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
+        Err(e) => Err(ErrFast::TipoInv(format!(
+            "{}: {}",
+            codigo_error_archivo(&e),
+            e
+        ))),
     }
 }
 
 fn native_archivo_info(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
-        return Err(ErrFast::TipoInv("_archivo_info requiere 1 argumento: ruta (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_archivo_info requiere 1 argumento: ruta (texto)".into(),
+        ));
     }
     let ruta = obtener_texto(vm, args[0])?;
     if ruta.trim().is_empty() {
-        return Err(ErrFast::TipoInv("ruta_invalida: la ruta no puede estar vacía".into()));
+        return Err(ErrFast::TipoInv(
+            "ruta_invalida: la ruta no puede estar vacía".into(),
+        ));
     }
     match std::fs::metadata(&ruta) {
         Ok(meta) => {
-            let modificado = meta.modified()
-                .map(|t| t.duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs().to_string())
-                    .unwrap_or_else(|_| "0".to_string()))
+            let modificado = meta
+                .modified()
+                .map(|t| {
+                    t.duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs().to_string())
+                        .unwrap_or_else(|_| "0".to_string())
+                })
                 .unwrap_or_else(|_| "0".to_string());
             let info = format!(
                 "tamano:{};es_directorio:{};es_archivo:{};permisos:{};modificado:{}",
                 meta.len(),
                 meta.is_dir(),
                 meta.is_file(),
-                if meta.permissions().readonly() { "solo_lectura" } else { "lectura_escritura" },
+                if meta.permissions().readonly() {
+                    "solo_lectura"
+                } else {
+                    "lectura_escritura"
+                },
                 modificado
             );
             let idx = vm.alloc_str(Arc::from(info.as_str()));
             Ok(ValorFast::texto(idx))
         }
-        Err(e) => Err(ErrFast::TipoInv(format!("{}: {}", codigo_error_archivo(&e), e))),
+        Err(e) => Err(ErrFast::TipoInv(format!(
+            "{}: {}",
+            codigo_error_archivo(&e),
+            e
+        ))),
     }
 }
 
@@ -1016,20 +1218,39 @@ fn day_of_week(y: i64, m: u32, d: u32) -> u32 {
 }
 
 const NOMBRES_DIA: [&str; 7] = [
-    "domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado",
+    "domingo",
+    "lunes",
+    "martes",
+    "miércoles",
+    "jueves",
+    "viernes",
+    "sábado",
 ];
 
 const NOMBRES_MES: [&str; 12] = [
-    "enero", "febrero", "marzo", "abril", "mayo", "junio",
-    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
 ];
 
 /// Convierte un timestamp Unix (segundos desde epoch) a un texto JSON con
 /// los componentes de fecha: año, mes, dia, hora, minuto, segundo, nombre_dia, nombre_mes
-fn native_fecha_desde_timestamp(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_fecha_desde_timestamp(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
         return Err(ErrFast::TipoInv(
-            "_fecha_desde_timestamp requiere 1 argumento: timestamp (entero)".into()
+            "_fecha_desde_timestamp requiere 1 argumento: timestamp (entero)".into(),
         ));
     }
     let ts = obtener_entero(args[0])?;
@@ -1060,7 +1281,7 @@ fn native_fecha_desde_timestamp(vm: &mut ForjaFast, args: &[ValorFast]) -> Resul
 fn native_fecha_a_timestamp(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 6 {
         return Err(ErrFast::TipoInv(
-            "_fecha_a_timestamp requiere 6 argumentos: año, mes, dia, hora, minuto, segundo".into()
+            "_fecha_a_timestamp requiere 6 argumentos: año, mes, dia, hora, minuto, segundo".into(),
         ));
     }
     let año = obtener_entero(args[0])?;
@@ -1099,7 +1320,7 @@ static _ESTADO_ALEATORIO: AtomicI32 = AtomicI32::new(123456789);
 fn native_aleatorio_semilla(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
         return Err(ErrFast::TipoInv(
-            "_aleatorio_semilla requiere 1 argumento: valor (entero)".into()
+            "_aleatorio_semilla requiere 1 argumento: valor (entero)".into(),
         ));
     }
     let valor = obtener_entero(args[0])?;
@@ -1111,12 +1332,14 @@ fn native_aleatorio_semilla(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 fn native_aleatorio_entero(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
         return Err(ErrFast::TipoInv(
-            "_aleatorio_entero requiere 1 argumento: max (entero)".into()
+            "_aleatorio_entero requiere 1 argumento: max (entero)".into(),
         ));
     }
     let max = obtener_entero(args[0])?;
     if max <= 0 {
-        return Err(ErrFast::TipoInv("_aleatorio_entero: max debe ser > 0".into()));
+        return Err(ErrFast::TipoInv(
+            "_aleatorio_entero: max debe ser > 0".into(),
+        ));
     }
 
     // xorshift32
@@ -1154,7 +1377,7 @@ fn codigo_error_archivo(error: &std::io::Error) -> &'static str {
 fn native_base64_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
-            "_base64_codificar requiere 1 argumento: texto (texto)".into()
+            "_base64_codificar requiere 1 argumento: texto (texto)".into(),
         ));
     }
 
@@ -1170,7 +1393,7 @@ fn native_base64_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
 fn native_base64_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
-            "_base64_decodificar requiere 1 argumento: texto (texto)".into()
+            "_base64_decodificar requiere 1 argumento: texto (texto)".into(),
         ));
     }
 
@@ -1200,13 +1423,14 @@ fn native_base64_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 fn native_sha256(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
-            "_sha256 requiere 1 argumento: datos (texto)".into()
+            "_sha256 requiere 1 argumento: datos (texto)".into(),
         ));
     }
 
     let data = obtener_texto(vm, args[0])?;
     let hash = sha2::Sha256::digest(data.as_bytes());
-    let hex_str = hash.iter()
+    let hex_str = hash
+        .iter()
         .map(|b| format!("{:02x}", b))
         .collect::<String>();
     let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
@@ -1244,9 +1468,14 @@ fn parsear_mapa_texto(texto: &str) -> HashMap<String, String> {
 
 /// Parsea una solicitud HTTP raw y retorna sus componentes como mapa textual
 /// Formato retorno: "metodo|GET|ruta|/hola|cabeceras|Host: ejemplo.com\nUser-Agent: curl|cuerpo|"
-fn native_http_parsear_solicitud(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_http_parsear_solicitud(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_http_parsear_solicitud requiere 1 argumento: texto".into()));
+        return Err(ErrFast::TipoInv(
+            "_http_parsear_solicitud requiere 1 argumento: texto".into(),
+        ));
     }
     let texto = obtener_texto(vm, args[0])?;
 
@@ -1259,7 +1488,9 @@ fn native_http_parsear_solicitud(vm: &mut ForjaFast, args: &[ValorFast]) -> Resu
 
     let partes: Vec<&str> = primera.split_whitespace().collect();
     if partes.len() < 2 {
-        return Err(ErrFast::TipoInv("http_invalido: línea de solicitud mal formada".into()));
+        return Err(ErrFast::TipoInv(
+            "http_invalido: línea de solicitud mal formada".into(),
+        ));
     }
 
     let metodo = partes[0];
@@ -1298,9 +1529,14 @@ fn native_http_parsear_solicitud(vm: &mut ForjaFast, args: &[ValorFast]) -> Resu
 
 /// Parsea una respuesta HTTP raw
 /// Formato retorno: "codigo|200|status|OK|cabeceras|Content-Type: text/plain\n|cuerpo|..."
-fn native_http_parsear_respuesta(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_http_parsear_respuesta(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_http_parsear_respuesta requiere 1 argumento: texto".into()));
+        return Err(ErrFast::TipoInv(
+            "_http_parsear_respuesta requiere 1 argumento: texto".into(),
+        ));
     }
     let texto = obtener_texto(vm, args[0])?;
 
@@ -1313,7 +1549,9 @@ fn native_http_parsear_respuesta(vm: &mut ForjaFast, args: &[ValorFast]) -> Resu
     // HTTP/1.1 200 OK
     let partes: Vec<&str> = primera.splitn(3, ' ').collect();
     if partes.len() < 2 {
-        return Err(ErrFast::TipoInv("http_invalido: línea de status mal formada".into()));
+        return Err(ErrFast::TipoInv(
+            "http_invalido: línea de status mal formada".into(),
+        ));
     }
 
     let codigo = partes[1];
@@ -1350,9 +1588,14 @@ fn native_http_parsear_respuesta(vm: &mut ForjaFast, args: &[ValorFast]) -> Resu
 }
 
 /// Parsea cabeceras HTTP (texto separado por \n) a mapa textual "|"
-fn native_http_parsear_cabeceras(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_http_parsear_cabeceras(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_http_parsear_cabeceras requiere 1 argumento: texto".into()));
+        return Err(ErrFast::TipoInv(
+            "_http_parsear_cabeceras requiere 1 argumento: texto".into(),
+        ));
     }
     let texto = obtener_texto(vm, args[0])?;
     let mut mapa = Vec::new();
@@ -1374,7 +1617,9 @@ fn native_http_parsear_cabeceras(vm: &mut ForjaFast, args: &[ValorFast]) -> Resu
 /// Retorna el texto descriptivo de un código de status HTTP
 fn native_http_texto_status(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_http_texto_status requiere 1 argumento: codigo (entero)".into()));
+        return Err(ErrFast::TipoInv(
+            "_http_texto_status requiere 1 argumento: codigo (entero)".into(),
+        ));
     }
     let codigo = obtener_entero(args[0])?;
     let texto = match codigo {
@@ -1408,7 +1653,10 @@ fn native_http_texto_status(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 /// Retorna la fecha actual en formato RFC 7231 (HTTP-date)
 fn native_http_fecha_texto(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let timestamp = if args.is_empty() {
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64
     } else {
         obtener_entero(args[0])?
     };
@@ -1438,17 +1686,27 @@ fn native_http_fecha_texto(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
             let m = if mp < 10 { mp + 3 } else { mp - 9 };
             let y = if m <= 2 { y + 1 } else { y };
 
-            let meses = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-            let dias_semana = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+            let meses = [
+                "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+            ];
+            let dias_semana = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
             // Día de la semana (Zeller-like)
             let tm = if m < 3 { y - 1 } else { y };
             let td = if m < 3 { m + 12 } else { m };
-            let dow = ((tm as i64 + tm / 4 - tm / 100 + tm / 400 + (13 * td as i64 + 8) / 5 + d as i64) % 7) as usize;
+            let dow =
+                ((tm as i64 + tm / 4 - tm / 100 + tm / 400 + (13 * td as i64 + 8) / 5 + d as i64)
+                    % 7) as usize;
 
             format!(
                 "{}, {:02} {} {} {:02}:{:02}:{:02} GMT",
-                dias_semana[dow.min(6)], d, meses[(m as usize - 1).min(11)], y, horas, minutos, segs
+                dias_semana[dow.min(6)],
+                d,
+                meses[(m as usize - 1).min(11)],
+                y,
+                horas,
+                minutos,
+                segs
             )
         }
         Err(_) => "Thu, 01 Jan 1970 00:00:00 GMT".to_string(),
@@ -1463,7 +1721,9 @@ fn native_http_fecha_texto(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
 /// Decodifica una URL (percent-encoding)
 fn native_url_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_url_decodificar requiere 1 argumento: texto".into()));
+        return Err(ErrFast::TipoInv(
+            "_url_decodificar requiere 1 argumento: texto".into(),
+        ));
     }
     let texto = obtener_texto(vm, args[0])?;
 
@@ -1493,7 +1753,9 @@ fn native_url_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valo
 /// Codifica una URL (percent-encoding)
 fn native_url_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_url_codificar requiere 1 argumento: texto".into()));
+        return Err(ErrFast::TipoInv(
+            "_url_codificar requiere 1 argumento: texto".into(),
+        ));
     }
     let texto = obtener_texto(vm, args[0])?;
 
@@ -1516,7 +1778,9 @@ fn native_url_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
 /// Parsea una query string a mapa textual "|"
 fn native_query_parsear(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_query_parsear requiere 1 argumento: texto".into()));
+        return Err(ErrFast::TipoInv(
+            "_query_parsear requiere 1 argumento: texto".into(),
+        ));
     }
     let texto = obtener_texto(vm, args[0])?;
 
@@ -1610,12 +1874,15 @@ static MIME_TABLE: &[(&str, &str)] = &[
 /// Retorna el Content-Type para una extensión de archivo
 fn native_mime_tipo_archivo(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_mime_tipo_archivo requiere 1 argumento: extension (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_mime_tipo_archivo requiere 1 argumento: extension (texto)".into(),
+        ));
     }
     let ext = obtener_texto(_vm, args[0])?.to_lowercase();
     let ext = ext.trim_start_matches('.');
 
-    let mime = MIME_TABLE.iter()
+    let mime = MIME_TABLE
+        .iter()
         .find(|(k, _)| *k == ext)
         .map(|(_, v)| *v)
         .unwrap_or("application/octet-stream");
@@ -1625,13 +1892,19 @@ fn native_mime_tipo_archivo(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 }
 
 /// Retorna la extensión sugerida para un Content-Type
-fn native_mime_extension_por_tipo(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_mime_extension_por_tipo(
+    _vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_mime_extension_por_tipo requiere 1 argumento: tipo (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_mime_extension_por_tipo requiere 1 argumento: tipo (texto)".into(),
+        ));
     }
     let tipo = obtener_texto(_vm, args[0])?.to_lowercase();
 
-    let ext = MIME_TABLE.iter()
+    let ext = MIME_TABLE
+        .iter()
         .find(|(_, v)| v.starts_with(&tipo) || **v == tipo)
         .map(|(k, _)| *k)
         .unwrap_or("bin");
@@ -1644,9 +1917,14 @@ fn native_mime_extension_por_tipo(_vm: &mut ForjaFast, args: &[ValorFast]) -> Re
 
 /// Genera el Accept key para WebSocket handshake (RFC 6455)
 /// key: el valor del header Sec-WebSocket-Key
-fn native_ws_handshake_aceptar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_ws_handshake_aceptar(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_ws_handshake_aceptar requiere 1 argumento: key (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_ws_handshake_aceptar requiere 1 argumento: key (texto)".into(),
+        ));
     }
     let key = obtener_texto(vm, args[0])?;
     const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-5AB9DC11B85B";
@@ -1665,7 +1943,9 @@ fn native_ws_handshake_aceptar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
 /// args[2]: enmascarado (Booleano, opcional, default falso)
 fn native_ws_frame_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
-        return Err(ErrFast::TipoInv("_ws_frame_codificar requiere 2 argumentos: datos, opcode".into()));
+        return Err(ErrFast::TipoInv(
+            "_ws_frame_codificar requiere 2 argumentos: datos, opcode".into(),
+        ));
     }
     let datos = obtener_texto(vm, args[0])?;
     let opcode = obtener_entero(args[1])? as u8;
@@ -1679,8 +1959,14 @@ fn native_ws_frame_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
     let len = payload.len();
 
     // Calcular tamaño del frame
-    let header_size = 2 + if len > 125 && len <= 65535 { 2 } else if len > 65535 { 8 } else { 0 }
-        + if enmascarado { 4 } else { 0 };
+    let header_size =
+        2 + if len > 125 && len <= 65535 {
+            2
+        } else if len > 65535 {
+            8
+        } else {
+            0
+        } + if enmascarado { 4 } else { 0 };
 
     let mut frame = Vec::with_capacity(header_size + len);
 
@@ -1689,7 +1975,11 @@ fn native_ws_frame_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 
     // Byte 2+: length
     if len < 126 {
-        frame.push(if enmascarado { 0x80 | len as u8 } else { len as u8 });
+        frame.push(if enmascarado {
+            0x80 | len as u8
+        } else {
+            len as u8
+        });
     } else if len <= 65535 {
         frame.push(if enmascarado { 0xFE } else { 126 });
         frame.extend_from_slice(&(len as u16).to_be_bytes());
@@ -1702,9 +1992,13 @@ fn native_ws_frame_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
     let mask_key = if enmascarado {
         let key: [u8; 4] = [
             (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH).unwrap_or_default()
-                .as_nanos() & 0xFF) as u8,
-            0xFA, 0x5E, 0x2B,
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+                & 0xFF) as u8,
+            0xFA,
+            0x5E,
+            0x2B,
         ];
         frame.extend_from_slice(&key);
         key
@@ -1728,15 +2022,22 @@ fn native_ws_frame_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 
 /// Decodifica un frame WebSocket
 /// Retorna: "opcode|1|datos|...|fin|true|longitud|5"
-fn native_ws_frame_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_ws_frame_decodificar(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_ws_frame_decodificar requiere 1 argumento: frame (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_ws_frame_decodificar requiere 1 argumento: frame (texto)".into(),
+        ));
     }
     let frame_texto = obtener_texto(vm, args[0])?;
     let frame = frame_texto.as_bytes();
 
     if frame.len() < 2 {
-        return Err(ErrFast::TipoInv("ws_frame_invalido: frame demasiado corto".into()));
+        return Err(ErrFast::TipoInv(
+            "ws_frame_invalido: frame demasiado corto".into(),
+        ));
     }
 
     let fin = (frame[0] & 0x80) != 0;
@@ -1746,16 +2047,23 @@ fn native_ws_frame_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
 
     let len = match frame[1] & 0x7F {
         126 => {
-            if frame.len() < 4 { return Err(ErrFast::TipoInv("ws_frame_invalido: longitud mal formada".into())); }
+            if frame.len() < 4 {
+                return Err(ErrFast::TipoInv(
+                    "ws_frame_invalido: longitud mal formada".into(),
+                ));
+            }
             let l = u16::from_be_bytes([frame[2], frame[3]]) as usize;
             offset += 2;
             l
         }
         127 => {
-            if frame.len() < 10 { return Err(ErrFast::TipoInv("ws_frame_invalido: longitud extendida mal formada".into())); }
+            if frame.len() < 10 {
+                return Err(ErrFast::TipoInv(
+                    "ws_frame_invalido: longitud extendida mal formada".into(),
+                ));
+            }
             let l = u64::from_be_bytes([
-                frame[2], frame[3], frame[4], frame[5],
-                frame[6], frame[7], frame[8], frame[9],
+                frame[2], frame[3], frame[4], frame[5], frame[6], frame[7], frame[8], frame[9],
             ]) as usize;
             offset += 8;
             l
@@ -1765,9 +2073,16 @@ fn native_ws_frame_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
 
     let mask_key = if enmascarado {
         if frame.len() < offset + 4 {
-            return Err(ErrFast::TipoInv("ws_frame_invalido: máscara mal formada".into()));
+            return Err(ErrFast::TipoInv(
+                "ws_frame_invalido: máscara mal formada".into(),
+            ));
         }
-        let key = [frame[offset], frame[offset+1], frame[offset+2], frame[offset+3]];
+        let key = [
+            frame[offset],
+            frame[offset + 1],
+            frame[offset + 2],
+            frame[offset + 3],
+        ];
         offset += 4;
         key
     } else {
@@ -1775,11 +2090,17 @@ fn native_ws_frame_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
     };
 
     if frame.len() < offset + len {
-        return Err(ErrFast::TipoInv("ws_frame_invalido: payload truncado".into()));
+        return Err(ErrFast::TipoInv(
+            "ws_frame_invalido: payload truncado".into(),
+        ));
     }
 
     let payload_decodificado: Vec<u8> = if enmascarado {
-        frame[offset..offset + len].iter().enumerate().map(|(i, &b)| b ^ mask_key[i % 4]).collect()
+        frame[offset..offset + len]
+            .iter()
+            .enumerate()
+            .map(|(i, &b)| b ^ mask_key[i % 4])
+            .collect()
     } else {
         frame[offset..offset + len].to_vec()
     };
@@ -1802,7 +2123,9 @@ fn native_ws_frame_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
 /// Codifica datos en chunked transfer encoding
 fn native_chunked_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_chunked_codificar requiere 1 argumento: datos (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_chunked_codificar requiere 1 argumento: datos (texto)".into(),
+        ));
     }
     let datos = obtener_texto(vm, args[0])?;
     let bytes = datos.as_bytes();
@@ -1828,9 +2151,14 @@ fn native_chunked_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
 }
 
 /// Decodifica chunked transfer encoding
-fn native_chunked_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_chunked_decodificar(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_chunked_decodificar requiere 1 argumento: datos (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_chunked_decodificar requiere 1 argumento: datos (texto)".into(),
+        ));
     }
     let datos = obtener_texto(vm, args[0])?;
 
@@ -1847,7 +2175,10 @@ fn native_chunked_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<
         // Parsear tamaño del chunk (hex)
         let tamano = match usize::from_str_radix(trimmed, 16) {
             Ok(t) => t,
-            Err(_) => { error = true; break; }
+            Err(_) => {
+                error = true;
+                break;
+            }
         };
 
         if tamano == 0 {
@@ -1890,14 +2221,25 @@ fn native_chunked_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<
 
 /// Construye una solicitud HTTP raw a partir de componentes
 /// args: metodo, ruta, cabeceras (mapa textual "|"), cuerpo
-fn native_http_crear_solicitud_raw(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_http_crear_solicitud_raw(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv("_http_crear_solicitud_raw requiere 2+ argumentos: metodo, ruta, [cabeceras_texto], [cuerpo]".into()));
     }
     let metodo = obtener_texto(vm, args[0])?;
     let ruta = obtener_texto(vm, args[1])?;
-    let cabeceras_texto = if args.len() >= 3 { obtener_texto(vm, args[2])? } else { String::new() };
-    let cuerpo = if args.len() >= 4 { obtener_texto(vm, args[3])? } else { String::new() };
+    let cabeceras_texto = if args.len() >= 3 {
+        obtener_texto(vm, args[2])?
+    } else {
+        String::new()
+    };
+    let cuerpo = if args.len() >= 4 {
+        obtener_texto(vm, args[3])?
+    } else {
+        String::new()
+    };
 
     let mut solicitud = format!("{} {} HTTP/1.1\r\n", metodo, ruta);
 
@@ -1923,22 +2265,40 @@ fn native_http_crear_solicitud_raw(vm: &mut ForjaFast, args: &[ValorFast]) -> Re
 
 /// Construye una respuesta HTTP raw a partir de componentes
 /// args: codigo, cabeceras_texto, cuerpo
-fn native_http_crear_respuesta_raw(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_http_crear_respuesta_raw(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
-        return Err(ErrFast::TipoInv("_http_crear_respuesta_raw requiere 1+ argumentos: codigo, [cabeceras_texto], [cuerpo]".into()));
+        return Err(ErrFast::TipoInv(
+            "_http_crear_respuesta_raw requiere 1+ argumentos: codigo, [cabeceras_texto], [cuerpo]"
+                .into(),
+        ));
     }
     let codigo = obtener_entero(args[0])?;
 
     // Obtener texto del status
     let status_texto = match codigo {
-        100 => "Continue", 101 => "Switching Protocols",
-        200 => "OK", 201 => "Created", 204 => "No Content",
-        301 => "Moved Permanently", 302 => "Found", 304 => "Not Modified",
-        400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden",
-        404 => "Not Found", 405 => "Method Not Allowed", 408 => "Request Timeout",
-        413 => "Payload Too Large", 429 => "Too Many Requests",
-        500 => "Internal Server Error", 501 => "Not Implemented",
-        502 => "Bad Gateway", 503 => "Service Unavailable",
+        100 => "Continue",
+        101 => "Switching Protocols",
+        200 => "OK",
+        201 => "Created",
+        204 => "No Content",
+        301 => "Moved Permanently",
+        302 => "Found",
+        304 => "Not Modified",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        408 => "Request Timeout",
+        413 => "Payload Too Large",
+        429 => "Too Many Requests",
+        500 => "Internal Server Error",
+        501 => "Not Implemented",
+        502 => "Bad Gateway",
+        503 => "Service Unavailable",
         _ => "Unknown",
     };
 
@@ -1978,7 +2338,9 @@ fn native_http_crear_respuesta_raw(vm: &mut ForjaFast, args: &[ValorFast]) -> Re
 /// Retorna: texto "ok" si se recargó correctamente, o texto con el error.
 fn native_recargar_modulo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Ok(ValorFast::texto(vm.alloc_str(Arc::from("error: se requiere nombre del módulo"))));
+        return Ok(ValorFast::texto(
+            vm.alloc_str(Arc::from("error: se requiere nombre del módulo")),
+        ));
     }
 
     let nombre_modulo = crate::native_registry::obtener_texto(vm, args[0])?;
@@ -1986,7 +2348,10 @@ fn native_recargar_modulo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valo
 
     // Verificar que el módulo está registrado
     if !vm.module_registry.contains_key(&module_id) {
-        return Ok(ValorFast::texto(vm.alloc_str(Arc::from(format!("error: módulo '{}' no está cargado", nombre_modulo)))));
+        return Ok(ValorFast::texto(vm.alloc_str(Arc::from(format!(
+            "error: módulo '{}' no está cargado",
+            nombre_modulo
+        )))));
     }
 
     // Verificar si el módulo cambió en disco
@@ -1998,8 +2363,14 @@ fn native_recargar_modulo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valo
     let programa = match vm.module_resolver.recargar(module_id) {
         Ok(p) => p,
         Err(e) => {
-            let msg = e.iter().map(|err| format!("{}", err)).collect::<Vec<_>>().join(", ");
-            return Ok(ValorFast::texto(vm.alloc_str(Arc::from(format!("error: {}", msg)))));
+            let msg = e
+                .iter()
+                .map(|err| format!("{}", err))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Ok(ValorFast::texto(
+                vm.alloc_str(Arc::from(format!("error: {}", msg))),
+            ));
         }
     };
 
@@ -2008,15 +2379,29 @@ fn native_recargar_modulo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valo
     let module_bc = match gen.generar_para_modulo(&programa, module_id) {
         Ok(mbc) => mbc,
         Err(e) => {
-            let msg = e.iter().map(|err| format!("{}", err)).collect::<Vec<_>>().join(", ");
-            return Ok(ValorFast::texto(vm.alloc_str(Arc::from(format!("error: {}", msg)))));
+            let msg = e
+                .iter()
+                .map(|err| format!("{}", err))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Ok(ValorFast::texto(
+                vm.alloc_str(Arc::from(format!("error: {}", msg))),
+            ));
         }
     };
 
     // Hot-swap: reemplazar bytecode en caliente
     match vm.hot_swap_module(module_id, &module_bc) {
-        Ok(()) => Ok(ValorFast::texto(vm.alloc_str(Arc::from(format!("ok: recargado (v{})", vm.module_registry.get(&module_id).map(|i| i.version).unwrap_or(0)))))),
-        Err(e) => Ok(ValorFast::texto(vm.alloc_str(Arc::from(format!("error: {}", e))))),
+        Ok(()) => Ok(ValorFast::texto(vm.alloc_str(Arc::from(format!(
+                "ok: recargado (v{})",
+                vm.module_registry
+                    .get(&module_id)
+                    .map(|i| i.version)
+                    .unwrap_or(0)
+            ))))),
+        Err(e) => Ok(ValorFast::texto(
+            vm.alloc_str(Arc::from(format!("error: {}", e))),
+        )),
     }
 }
 
@@ -2032,7 +2417,9 @@ fn native_version_modulo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
     let nombre_modulo = crate::native_registry::obtener_texto(vm, args[0])?;
     let module_id = SymId(vm.sym_table.intern(&nombre_modulo).0);
 
-    let version = vm.module_registry.get(&module_id)
+    let version = vm
+        .module_registry
+        .get(&module_id)
         .map(|info| info.version as i64)
         .unwrap_or(-1i64);
 
@@ -2056,7 +2443,11 @@ fn native_recargar_todo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
         let programa = match vm.module_resolver.recargar(*module_id) {
             Ok(p) => p,
             Err(e) => {
-                let msg = e.iter().map(|err| format!("{}", err)).collect::<Vec<_>>().join(", ");
+                let msg = e
+                    .iter()
+                    .map(|err| format!("{}", err))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 recargados.push(format!("{}: error: {}", ruta, msg));
                 continue;
             }
@@ -2067,7 +2458,11 @@ fn native_recargar_todo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
         let module_bc = match gen.generar_para_modulo(&programa, *module_id) {
             Ok(mbc) => mbc,
             Err(e) => {
-                let msg = e.iter().map(|err| format!("{}", err)).collect::<Vec<_>>().join(", ");
+                let msg = e
+                    .iter()
+                    .map(|err| format!("{}", err))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 recargados.push(format!("{}: error: {}", ruta, msg));
                 continue;
             }
@@ -2076,7 +2471,11 @@ fn native_recargar_todo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
         // Hot-swap
         match vm.hot_swap_module(*module_id, &module_bc) {
             Ok(()) => {
-                let version = vm.module_registry.get(module_id).map(|i| i.version).unwrap_or(0);
+                let version = vm
+                    .module_registry
+                    .get(module_id)
+                    .map(|i| i.version)
+                    .unwrap_or(0);
                 recargados.push(format!("{}: v{}", ruta, version));
             }
             Err(e) => {
@@ -2137,7 +2536,9 @@ fn native_env(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFa
 /// _ejecutar(cmd: Texto) → Texto  (o nulo si error)
 fn native_ejecutar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_ejecutar requiere un argumento: comando (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_ejecutar requiere un argumento: comando (texto)".into(),
+        ));
     }
     let cmd = obtener_texto(vm, args[0])?;
 
@@ -2147,9 +2548,7 @@ fn native_ejecutar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, 
         .output();
 
     #[cfg(not(target_os = "windows"))]
-    let resultado = std::process::Command::new("sh")
-        .args(["-c", &cmd])
-        .output();
+    let resultado = std::process::Command::new("sh").args(["-c", &cmd]).output();
 
     match resultado {
         Ok(out) => {
@@ -2170,8 +2569,12 @@ fn native_leer_linea(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFas
     match stdin.lock().read_line(&mut line) {
         Ok(_) => {
             // Eliminar el salto de línea final
-            if line.ends_with('\n') { line.pop(); }
-            if line.ends_with('\r') { line.pop(); }
+            if line.ends_with('\n') {
+                line.pop();
+            }
+            if line.ends_with('\r') {
+                line.pop();
+            }
             let idx = vm.alloc_str(Arc::from(line.as_str()));
             Ok(ValorFast::texto(idx))
         }
@@ -2223,25 +2626,39 @@ fn native_codigo_char(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFas
 
 /// Convierte un entero a texto en la base dada (2-36).
 /// _numero_a_texto_base(n: Entero, base: Entero) → Texto
-fn native_numero_a_texto_base(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_numero_a_texto_base(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
-        return Err(ErrFast::TipoInv("_numero_a_texto_base requiere 2 argumentos: numero, base".into()));
+        return Err(ErrFast::TipoInv(
+            "_numero_a_texto_base requiere 2 argumentos: numero, base".into(),
+        ));
     }
     let n = obtener_entero(args[0])?;
     let base = obtener_entero(args[1])?;
 
     if !(2..=36).contains(&base) {
-        return Err(ErrFast::TipoInv(format!("_numero_a_texto_base: base {} fuera de rango (2-36)", base)));
+        return Err(ErrFast::TipoInv(format!(
+            "_numero_a_texto_base: base {} fuera de rango (2-36)",
+            base
+        )));
     }
 
     let base = base as u32;
     let result = if n < 0 {
         let mut digits = Vec::new();
         let mut val = (n as i128).unsigned_abs();
-        if val == 0 { digits.push(b'0'); }
+        if val == 0 {
+            digits.push(b'0');
+        }
         while val > 0 {
             let d = (val % base as u128) as u32;
-            digits.push(if d < 10 { b'0' + d as u8 } else { b'a' + (d - 10) as u8 });
+            digits.push(if d < 10 {
+                b'0' + d as u8
+            } else {
+                b'a' + (d - 10) as u8
+            });
             val /= base as u128;
         }
         digits.reverse();
@@ -2249,10 +2666,16 @@ fn native_numero_a_texto_base(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<
     } else {
         let mut digits = Vec::new();
         let mut val = n as u64;
-        if val == 0 { digits.push(b'0'); }
+        if val == 0 {
+            digits.push(b'0');
+        }
         while val > 0 {
             let d = (val % base as u64) as u32;
-            digits.push(if d < 10 { b'0' + d as u8 } else { b'a' + (d - 10) as u8 });
+            digits.push(if d < 10 {
+                b'0' + d as u8
+            } else {
+                b'a' + (d - 10) as u8
+            });
             val /= base as u64;
         }
         digits.reverse();

@@ -15,6 +15,8 @@ temp_gui_project/
 temp_gui_android_project/
 examples/android/
 patches/
+fuzz/
+src/bin/fuzz_simple.rs
 
 # ── Ejecutables ──
 *.exe
@@ -28,6 +30,7 @@ installer.iss
 logo.png
 forja_history.txt
 test_resultados.txt
+SECURITY_TESTING.md
 
 # ── Wildcards peligrosos ──
 *test*
