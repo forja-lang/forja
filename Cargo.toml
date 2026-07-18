@@ -44,10 +44,6 @@ name = "forja-dap"
 path = "src/bin/forja_dap.rs"
 required-features = ["dap"]
 
-[[bin]]
-name = "fuzz_simple"
-path = "src/bin/fuzz_simple.rs"
-
 [[bench]]
 name = "bench-fa"
 path = "benchmarks/bench_fa.rs"
