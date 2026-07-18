@@ -8,7 +8,6 @@
 //   --allow-net localhost,127.0.0.1  → solo esos hosts
 //   --allow-net "*"                  → todos los hosts
 //   --allow-port 80,443              → solo esos puertos
-
 /// Control de acceso a red para programas Forja.
 ///
 /// # Air-gapped por defecto
