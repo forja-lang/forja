@@ -15,6 +15,7 @@ pub mod fprofiler;
 pub mod lexer;
 pub mod native_registry;
 pub mod parser;
+pub mod sandbox;
 pub mod semantics;
 pub mod symbol_table;
 pub mod token;
@@ -321,21 +322,24 @@ pub fn compilar_modulo(
 }
 
 /// Compila y ejecuta código Forja en ForjaFast (VM ultra-rápida)
+/// Usa sandbox air-gapped por defecto.
 pub fn ejecutar(source: &str) -> Result<Vec<String>, String> {
-    ejecutar_con_opciones(source, true)
+    ejecutar_con_opciones(source, true, None)
 }
 
 /// Compila y ejecuta código Forja en ForjaFast con opciones y resolución de imports.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn ejecutar_desde(source: &str, root_dir: &std::path::Path) -> Result<Vec<String>, String> {
-    ejecutar_con_opciones_desde(source, root_dir, true)
+    ejecutar_con_opciones_desde(source, root_dir, true, None)
 }
 
 /// Compila y ejecuta código Forja en ForjaFast con opciones
 /// - `verificar_contratos`: si true, verifica pre/post condiciones en runtime
+/// - `sandbox`: configuración opcional de sandbox de red (None = air-gapped)
 pub fn ejecutar_con_opciones(
     source: &str,
     verificar_contratos: bool,
+    sandbox: Option<crate::sandbox::SandboxRed>,
 ) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
     let (bytecode, contratos) = compilar_pipeline_completa(source)?;
@@ -343,17 +347,22 @@ pub fn ejecutar_con_opciones(
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
     vm.set_max_inst(10_000_000); // límite de seguridad para evitar bucles infinitos
+    if let Some(sb) = sandbox {
+        vm.sandbox = sb;
+    }
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
     Ok(vm.obtener_output().to_vec())
 }
 
 /// Compila y ejecuta código Forja en ForjaFast con opciones y resolución de imports.
+/// - `sandbox`: configuración opcional de sandbox de red (None = air-gapped)
 #[cfg(not(target_arch = "wasm32"))]
 pub fn ejecutar_con_opciones_desde(
     source: &str,
     root_dir: &std::path::Path,
     verificar_contratos: bool,
+    sandbox: Option<crate::sandbox::SandboxRed>,
 ) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
     let (bytecode, contratos) = compilar_pipeline_completa_desde(source, root_dir)?;
@@ -361,6 +370,9 @@ pub fn ejecutar_con_opciones_desde(
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
     vm.set_max_inst(10_000_000); // límite de seguridad para evitar bucles infinitos
+    if let Some(sb) = sandbox {
+        vm.sandbox = sb;
+    }
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
     Ok(vm.obtener_output().to_vec())

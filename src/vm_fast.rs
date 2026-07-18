@@ -350,7 +350,8 @@ pub fn mostrar_exacto(coeff: i128, scale: u32) -> String {
 
 /// Homogeneiza dos valores Exacto a la misma escala.
 /// Retorna (a_ajustado, b_ajustado, escala_comun).
-/// Usa wrapping_* para evitar panics por overflow.
+/// Retorna (a_ajustado, b_ajustado, escala_comun).
+/// NOTA: Los factores de escala son potencias de 10 que caben en i128 para escalas ≤ 38.
 fn homogeneizar_exacto_fast(a: i128, sa: u32, b: i128, sb: u32) -> (i128, i128, u32) {
     if sa == sb {
         (a, b, sa)
@@ -563,6 +564,9 @@ pub struct ForjaFast {
 
     // ─── Socket Heap (TCP/UDP) ──────────────────────────────────────────
     pub socket_heap: Vec<SocketState>,
+
+    // ─── Sandbox de Red ────────────────────────────────────────────────
+    pub sandbox: forja::sandbox::SandboxRed,
 }
 
 // Flat Var Stack frame: guarda solo base_ptr_previo y num_vars (O(1)),
@@ -583,6 +587,7 @@ pub enum ErrFast {
     VarNoDecl(String),
     TipoInv(String),
     DivCero,
+    OverflowArit,
     FnNoDef(String),
     Limite,
     IdxOut(String),
@@ -596,6 +601,7 @@ impl std::fmt::Display for ErrFast {
             ErrFast::VarNoDecl(v) => write!(f, "'{}'?", v),
             ErrFast::TipoInv(m) => write!(f, "Tipo:{}", m),
             ErrFast::DivCero => write!(f, "Div/0"),
+            ErrFast::OverflowArit => write!(f, "Overflow aritmético"),
             ErrFast::FnNoDef(fn_name) => write!(f, "Fn '{}'?", fn_name),
             ErrFast::Limite => write!(f, "Límite"),
             ErrFast::IdxOut(m) => write!(f, "Idx:{}", m),
@@ -698,6 +704,7 @@ impl ForjaFast {
             verificar_contratos: true,
             native_registry: NativeRegistry::new(),
             socket_heap: Vec::new(),
+            sandbox: forja::sandbox::SandboxRed::new(), // air-gapped por defecto
             // Canales mpsc
             chan_tx_heap: Vec::new(),
             chan_rx_heap: Vec::new(),
@@ -736,6 +743,13 @@ impl ForjaFast {
 
     pub fn set_max_inst(&mut self, n: usize) {
         self.max_inst = n;
+    }
+
+    /// Configura el sandbox de red para esta VM.
+    /// Por defecto está en modo air-gapped (sin red).
+    pub fn con_sandbox(mut self, sandbox: forja::sandbox::SandboxRed) -> Self {
+        self.sandbox = sandbox;
+        self
     }
 
     /// Habilita/deshabilita verificación de contratos (debug/release)
@@ -2432,7 +2446,8 @@ impl ForjaFast {
                             be.coeficiente,
                             be.escala,
                         );
-                        let v = self.exacto_valor(a_adj.wrapping_add(b_adj), escala);
+                        let r = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
+                        let v = self.exacto_valor(r, escala);
                         self.push_valor(v);
                     } else if a.es_exacto() && b.es_entero() {
                         let ae = self.get_exacto(a.indice_exacto());
@@ -2442,7 +2457,8 @@ impl ForjaFast {
                             b.a_entero() as i128,
                             0,
                         );
-                        let v = self.exacto_valor(a_adj.wrapping_add(b_adj), escala);
+                        let r = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
+                        let v = self.exacto_valor(r, escala);
                         self.push_valor(v);
                     } else if a.es_entero() && b.es_exacto() {
                         let be = self.get_exacto(b.indice_exacto());
@@ -2452,7 +2468,8 @@ impl ForjaFast {
                             be.coeficiente,
                             be.escala,
                         );
-                        let v = self.exacto_valor(a_adj.wrapping_add(b_adj), escala);
+                        let r = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
+                        let v = self.exacto_valor(r, escala);
                         self.push_valor(v);
                     } else if a.es_texto() {
                         let s = format!(
@@ -2546,7 +2563,8 @@ impl ForjaFast {
                             be.coeficiente,
                             be.escala,
                         );
-                        let v = self.exacto_valor(a_adj.wrapping_sub(b_adj), escala);
+                        let r = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
+                        let v = self.exacto_valor(r, escala);
                         self.push_valor(v);
                     } else if a.es_exacto() && b.es_entero() {
                         let ae = self.get_exacto(a.indice_exacto());
@@ -2556,7 +2574,8 @@ impl ForjaFast {
                             b.a_entero() as i128,
                             0,
                         );
-                        let v = self.exacto_valor(a_adj.wrapping_sub(b_adj), escala);
+                        let r = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
+                        let v = self.exacto_valor(r, escala);
                         self.push_valor(v);
                     } else if a.es_entero() && b.es_exacto() {
                         let be = self.get_exacto(b.indice_exacto());
@@ -2566,7 +2585,8 @@ impl ForjaFast {
                             be.coeficiente,
                             be.escala,
                         );
-                        let v = self.exacto_valor(a_adj.wrapping_sub(b_adj), escala);
+                        let r = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
+                        let v = self.exacto_valor(r, escala);
                         self.push_valor(v);
                     } else {
                         self.push_valor(ValorFast::nulo());
@@ -2634,18 +2654,26 @@ impl ForjaFast {
                     } else if a.es_exacto() && b.es_exacto() {
                         let ae = self.get_exacto(a.indice_exacto());
                         let be = self.get_exacto(b.indice_exacto());
-                        let result = ae.coeficiente.wrapping_mul(be.coeficiente);
-                        let v = self.exacto_valor(result, ae.escala.wrapping_add(be.escala));
+                        let mul = ae
+                            .coeficiente
+                            .checked_mul(be.coeficiente)
+                            .ok_or(ErrFast::OverflowArit)?;
+                        let v = self.exacto_valor(mul, ae.escala.wrapping_add(be.escala));
                         self.push_valor(v);
                     } else if a.es_exacto() && b.es_entero() {
                         let ae = self.get_exacto(a.indice_exacto());
-                        let result = ae.coeficiente.wrapping_mul(b.a_entero() as i128);
-                        let v = self.exacto_valor(result, ae.escala);
+                        let mul = ae
+                            .coeficiente
+                            .checked_mul(b.a_entero() as i128)
+                            .ok_or(ErrFast::OverflowArit)?;
+                        let v = self.exacto_valor(mul, ae.escala);
                         self.push_valor(v);
                     } else if a.es_entero() && b.es_exacto() {
                         let be = self.get_exacto(b.indice_exacto());
-                        let result = (a.a_entero() as i128).wrapping_mul(be.coeficiente);
-                        let v = self.exacto_valor(result, be.escala);
+                        let mul = (a.a_entero() as i128)
+                            .checked_mul(be.coeficiente)
+                            .ok_or(ErrFast::OverflowArit)?;
+                        let v = self.exacto_valor(mul, be.escala);
                         self.push_valor(v);
                     } else {
                         self.push_valor(ValorFast::nulo());
@@ -2737,8 +2765,11 @@ impl ForjaFast {
                                 be.escala,
                             );
                             // Luego agregar precisión extra solo al dividendo
-                            let dividendo = a_adj.wrapping_mul(10_i128.wrapping_pow(extra));
-                            let cociente = dividendo.wrapping_div(b_adj);
+                            let factor = 10_i128.wrapping_pow(extra);
+                            let dividendo =
+                                a_adj.checked_mul(factor).ok_or(ErrFast::OverflowArit)?;
+                            let cociente =
+                                dividendo.checked_div(b_adj).ok_or(ErrFast::OverflowArit)?;
                             let v = self.exacto_valor(cociente, extra);
                             self.push_valor(v);
                         }
@@ -2754,8 +2785,11 @@ impl ForjaFast {
                                 b.a_entero() as i128,
                                 0,
                             );
-                            let dividendo = a_adj.wrapping_mul(10_i128.wrapping_pow(extra));
-                            let cociente = dividendo.wrapping_div(b_adj);
+                            let factor = 10_i128.wrapping_pow(extra);
+                            let dividendo =
+                                a_adj.checked_mul(factor).ok_or(ErrFast::OverflowArit)?;
+                            let cociente =
+                                dividendo.checked_div(b_adj).ok_or(ErrFast::OverflowArit)?;
                             let v = self.exacto_valor(cociente, extra);
                             self.push_valor(v);
                         }
@@ -2771,8 +2805,11 @@ impl ForjaFast {
                                 be.coeficiente,
                                 be.escala,
                             );
-                            let dividendo = a_adj.wrapping_mul(10_i128.wrapping_pow(extra));
-                            let cociente = dividendo.wrapping_div(b_adj);
+                            let factor = 10_i128.wrapping_pow(extra);
+                            let dividendo =
+                                a_adj.checked_mul(factor).ok_or(ErrFast::OverflowArit)?;
+                            let cociente =
+                                dividendo.checked_div(b_adj).ok_or(ErrFast::OverflowArit)?;
                             let v = self.exacto_valor(cociente, extra);
                             self.push_valor(v);
                         }
@@ -5062,7 +5099,7 @@ impl ForjaFast {
                             be.coeficiente,
                             be.escala,
                         );
-                        let result = a_adj.wrapping_add(b_adj);
+                        let result = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
                         self.exacto_valor(result, escala)
                     } else if a.es_entero() && b.es_exacto() {
                         let be = self.get_exacto(b.indice_exacto());
@@ -5072,7 +5109,7 @@ impl ForjaFast {
                             be.coeficiente,
                             be.escala,
                         );
-                        let result = a_adj.wrapping_add(b_adj);
+                        let result = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
                         self.exacto_valor(result, escala)
                     } else if a.es_exacto() && b.es_entero() {
                         let ae = self.get_exacto(a.indice_exacto());
@@ -5082,7 +5119,7 @@ impl ForjaFast {
                             b.a_entero() as i128,
                             0,
                         );
-                        let result = a_adj.wrapping_add(b_adj);
+                        let result = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
                         self.exacto_valor(result, escala)
                     } else {
                         ValorFast::nulo()
@@ -5102,7 +5139,7 @@ impl ForjaFast {
                             be.coeficiente,
                             be.escala,
                         );
-                        let result = a_adj.wrapping_sub(b_adj);
+                        let result = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
                         self.exacto_valor(result, escala)
                     } else if a.es_entero() && b.es_exacto() {
                         let be = self.get_exacto(b.indice_exacto());
@@ -5112,7 +5149,7 @@ impl ForjaFast {
                             be.coeficiente,
                             be.escala,
                         );
-                        let result = a_adj.wrapping_sub(b_adj);
+                        let result = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
                         self.exacto_valor(result, escala)
                     } else if a.es_exacto() && b.es_entero() {
                         let ae = self.get_exacto(a.indice_exacto());
@@ -5122,7 +5159,7 @@ impl ForjaFast {
                             b.a_entero() as i128,
                             0,
                         );
-                        let result = a_adj.wrapping_sub(b_adj);
+                        let result = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
                         self.exacto_valor(result, escala)
                     } else {
                         ValorFast::nulo()
@@ -5136,16 +5173,24 @@ impl ForjaFast {
                     let val = if a.es_exacto() && b.es_exacto() {
                         let ae = self.get_exacto(a.indice_exacto());
                         let be = self.get_exacto(b.indice_exacto());
-                        let result = ae.coeficiente.wrapping_mul(be.coeficiente);
+                        let result = ae
+                            .coeficiente
+                            .checked_mul(be.coeficiente)
+                            .ok_or(ErrFast::OverflowArit)?;
                         let escala = ae.escala + be.escala;
                         self.exacto_valor(result, escala)
                     } else if a.es_entero() && b.es_exacto() {
                         let be = self.get_exacto(b.indice_exacto());
-                        let result = (a.a_entero() as i128).wrapping_mul(be.coeficiente);
+                        let result = (a.a_entero() as i128)
+                            .checked_mul(be.coeficiente)
+                            .ok_or(ErrFast::OverflowArit)?;
                         self.exacto_valor(result, be.escala)
                     } else if a.es_exacto() && b.es_entero() {
                         let ae = self.get_exacto(a.indice_exacto());
-                        let result = ae.coeficiente.wrapping_mul(b.a_entero() as i128);
+                        let result = ae
+                            .coeficiente
+                            .checked_mul(b.a_entero() as i128)
+                            .ok_or(ErrFast::OverflowArit)?;
                         self.exacto_valor(result, ae.escala)
                     } else {
                         ValorFast::nulo()
@@ -5171,8 +5216,11 @@ impl ForjaFast {
                                 be.escala,
                             );
                             // Luego agregar precisión extra solo al dividendo
-                            let dividendo = a_adj.wrapping_mul(10_i128.wrapping_pow(extra));
-                            let cociente = dividendo.wrapping_div(b_adj);
+                            let factor = 10_i128.wrapping_pow(extra);
+                            let dividendo =
+                                a_adj.checked_mul(factor).ok_or(ErrFast::OverflowArit)?;
+                            let cociente =
+                                dividendo.checked_div(b_adj).ok_or(ErrFast::OverflowArit)?;
                             self.exacto_valor(cociente, extra)
                         }
                     } else if a.es_entero() && b.es_exacto() {
@@ -5187,8 +5235,11 @@ impl ForjaFast {
                                 be.coeficiente,
                                 be.escala,
                             );
-                            let dividendo = a_adj.wrapping_mul(10_i128.wrapping_pow(extra));
-                            let cociente = dividendo.wrapping_div(b_adj);
+                            let factor = 10_i128.wrapping_pow(extra);
+                            let dividendo =
+                                a_adj.checked_mul(factor).ok_or(ErrFast::OverflowArit)?;
+                            let cociente =
+                                dividendo.checked_div(b_adj).ok_or(ErrFast::OverflowArit)?;
                             self.exacto_valor(cociente, extra)
                         }
                     } else if a.es_exacto() && b.es_entero() {
@@ -5203,8 +5254,11 @@ impl ForjaFast {
                                 b.a_entero() as i128,
                                 0,
                             );
-                            let dividendo = a_adj.wrapping_mul(10_i128.wrapping_pow(extra));
-                            let cociente = dividendo.wrapping_div(b_adj);
+                            let factor = 10_i128.wrapping_pow(extra);
+                            let dividendo =
+                                a_adj.checked_mul(factor).ok_or(ErrFast::OverflowArit)?;
+                            let cociente =
+                                dividendo.checked_div(b_adj).ok_or(ErrFast::OverflowArit)?;
                             self.exacto_valor(cociente, extra)
                         }
                     } else {
@@ -5322,7 +5376,7 @@ impl ForjaFast {
                                 be.coeficiente,
                                 be.escala,
                             );
-                            let result = a_adj.wrapping_add(b_adj);
+                            let result = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
                             let v = self.exacto_valor(result, escala);
                             self.flat_vars[idx] = v;
                         } else if b.es_entero() {
@@ -5332,7 +5386,7 @@ impl ForjaFast {
                                 b.a_entero() as i128,
                                 0,
                             );
-                            let result = a_adj.wrapping_add(b_adj);
+                            let result = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
                             let v = self.exacto_valor(result, escala);
                             self.flat_vars[idx] = v;
                         }
@@ -6514,7 +6568,8 @@ impl ForjaFast {
                             be.coeficiente,
                             be.escala,
                         );
-                        self.exacto_valor(a_adj.wrapping_add(b_adj), escala)
+                        let r = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
+                        self.exacto_valor(r, escala)
                     } else if a.es_entero() && b.es_exacto() {
                         let be = self.get_exacto(b.indice_exacto());
                         let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
@@ -6523,7 +6578,8 @@ impl ForjaFast {
                             be.coeficiente,
                             be.escala,
                         );
-                        self.exacto_valor(a_adj.wrapping_add(b_adj), escala)
+                        let r = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
+                        self.exacto_valor(r, escala)
                     } else if a.es_exacto() && b.es_entero() {
                         let ae = self.get_exacto(a.indice_exacto());
                         let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
@@ -6532,7 +6588,8 @@ impl ForjaFast {
                             b.a_entero() as i128,
                             0,
                         );
-                        self.exacto_valor(a_adj.wrapping_add(b_adj), escala)
+                        let r = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
+                        self.exacto_valor(r, escala)
                     } else {
                         ValorFast::nulo()
                     };
@@ -6551,7 +6608,8 @@ impl ForjaFast {
                             be.coeficiente,
                             be.escala,
                         );
-                        self.exacto_valor(a_adj.wrapping_sub(b_adj), escala)
+                        let r = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
+                        self.exacto_valor(r, escala)
                     } else if a.es_entero() && b.es_exacto() {
                         let be = self.get_exacto(b.indice_exacto());
                         let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
@@ -6560,7 +6618,8 @@ impl ForjaFast {
                             be.coeficiente,
                             be.escala,
                         );
-                        self.exacto_valor(a_adj.wrapping_sub(b_adj), escala)
+                        let r = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
+                        self.exacto_valor(r, escala)
                     } else if a.es_exacto() && b.es_entero() {
                         let ae = self.get_exacto(a.indice_exacto());
                         let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
@@ -6569,7 +6628,8 @@ impl ForjaFast {
                             b.a_entero() as i128,
                             0,
                         );
-                        self.exacto_valor(a_adj.wrapping_sub(b_adj), escala)
+                        let r = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
+                        self.exacto_valor(r, escala)
                     } else {
                         ValorFast::nulo()
                     };
@@ -6582,22 +6642,24 @@ impl ForjaFast {
                     let val = if a.es_exacto() && b.es_exacto() {
                         let ae = self.get_exacto(a.indice_exacto());
                         let be = self.get_exacto(b.indice_exacto());
-                        self.exacto_valor(
-                            ae.coeficiente.wrapping_mul(be.coeficiente),
-                            ae.escala + be.escala,
-                        )
+                        let mul = ae
+                            .coeficiente
+                            .checked_mul(be.coeficiente)
+                            .ok_or(ErrFast::OverflowArit)?;
+                        self.exacto_valor(mul, ae.escala + be.escala)
                     } else if a.es_entero() && b.es_exacto() {
                         let be = self.get_exacto(b.indice_exacto());
-                        self.exacto_valor(
-                            (a.a_entero() as i128).wrapping_mul(be.coeficiente),
-                            be.escala,
-                        )
+                        let mul = (a.a_entero() as i128)
+                            .checked_mul(be.coeficiente)
+                            .ok_or(ErrFast::OverflowArit)?;
+                        self.exacto_valor(mul, be.escala)
                     } else if a.es_exacto() && b.es_entero() {
                         let ae = self.get_exacto(a.indice_exacto());
-                        self.exacto_valor(
-                            ae.coeficiente.wrapping_mul(b.a_entero() as i128),
-                            ae.escala,
-                        )
+                        let mul = ae
+                            .coeficiente
+                            .checked_mul(b.a_entero() as i128)
+                            .ok_or(ErrFast::OverflowArit)?;
+                        self.exacto_valor(mul, ae.escala)
                     } else {
                         ValorFast::nulo()
                     };
@@ -6614,17 +6676,28 @@ impl ForjaFast {
                             ValorFast::nulo()
                         } else {
                             let extra = 20;
-                            let dividendo =
-                                ae.coeficiente.wrapping_mul(10_i128.wrapping_pow(extra));
+                            let factor_base = 10_i128.wrapping_pow(extra);
+                            let dividendo = ae
+                                .coeficiente
+                                .checked_mul(factor_base)
+                                .ok_or(ErrFast::OverflowArit)?;
                             let escala = ae.escala + extra;
                             let (div_adj, b_adj, escala_final) = if escala >= be.escala {
                                 let factor = 10_i128.wrapping_pow(escala - be.escala);
-                                (dividendo, be.coeficiente.wrapping_mul(factor), escala)
+                                let b_adj = be
+                                    .coeficiente
+                                    .checked_mul(factor)
+                                    .ok_or(ErrFast::OverflowArit)?;
+                                (dividendo, b_adj, escala)
                             } else {
                                 let factor = 10_i128.wrapping_pow(be.escala - escala);
-                                (dividendo.wrapping_mul(factor), be.coeficiente, be.escala)
+                                let div_adj =
+                                    dividendo.checked_mul(factor).ok_or(ErrFast::OverflowArit)?;
+                                (div_adj, be.coeficiente, be.escala)
                             };
-                            self.exacto_valor(div_adj.wrapping_div(b_adj), escala_final)
+                            let cociente =
+                                div_adj.checked_div(b_adj).ok_or(ErrFast::OverflowArit)?;
+                            self.exacto_valor(cociente, escala_final)
                         }
                     } else if a.es_entero() && b.es_exacto() {
                         let be = self.get_exacto(b.indice_exacto());
@@ -6632,9 +6705,13 @@ impl ForjaFast {
                             ValorFast::nulo()
                         } else {
                             let extra = 20;
-                            let dividendo =
-                                (a.a_entero() as i128).wrapping_mul(10_i128.wrapping_pow(extra));
-                            let cociente = dividendo.wrapping_div(be.coeficiente);
+                            let factor_base = 10_i128.wrapping_pow(extra);
+                            let dividendo = (a.a_entero() as i128)
+                                .checked_mul(factor_base)
+                                .ok_or(ErrFast::OverflowArit)?;
+                            let cociente = dividendo
+                                .checked_div(be.coeficiente)
+                                .ok_or(ErrFast::OverflowArit)?;
                             self.exacto_valor(cociente, extra.wrapping_sub(be.escala))
                         }
                     } else if a.es_exacto() && b.es_entero() {
@@ -6642,10 +6719,11 @@ impl ForjaFast {
                         if b.a_entero() == 0 {
                             ValorFast::nulo()
                         } else {
-                            self.exacto_valor(
-                                ae.coeficiente.wrapping_div(b.a_entero() as i128),
-                                ae.escala,
-                            )
+                            let cociente = ae
+                                .coeficiente
+                                .checked_div(b.a_entero() as i128)
+                                .ok_or(ErrFast::OverflowArit)?;
+                            self.exacto_valor(cociente, ae.escala)
                         }
                     } else {
                         ValorFast::nulo()
