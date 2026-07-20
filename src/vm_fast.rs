@@ -1254,7 +1254,7 @@ impl ForjaFast {
             let muestra: Vec<String> = self
                 .bytecode
                 .iter()
-                .take(20)
+                .take(60)
                 .map(|op| format!("{:?}", op))
                 .collect();
             eprintln!(
@@ -2096,8 +2096,8 @@ impl ForjaFast {
                 // cuando sea posible, eliminando el hash lookup.
                 Opcode::Call(nombre, nargs) => {
                     let sym = self.sym_table.intern(nombre.as_ref());
-                    // Buscar por índice en self.funciones (posición en HashMap)
-                    if let Some(func_idx) = self.funciones.iter().position(|(k, _)| *k == sym) {
+                    // Buscar por índice usando sym_to_func_idx (mapeo correcto a function_table)
+                    if let Some(&func_idx) = self.sym_to_func_idx.get(&sym) {
                         self.bytecode[i] = Opcode::CallDirect(func_idx, nargs);
                     } else if sym == self.sym_escribir {
                         self.bytecode[i] = Opcode::CallBuiltin(BuiltinKind::Escribir, nargs);
@@ -3343,6 +3343,9 @@ impl ForjaFast {
                             be.escala,
                         );
                         aa == bb
+                    } else if a.es_nulo() && b.es_nulo() {
+                        // dos valores nulos son iguales
+                        true
                     } else {
                         false
                     }));
@@ -3354,6 +3357,10 @@ impl ForjaFast {
                         a.a_entero() != b.a_entero()
                     } else if a.es_flotante() && b.es_flotante() {
                         a.a_flotante() != b.a_flotante()
+                    } else if a.es_texto() && b.es_texto() {
+                        self.get_str(a.indice_texto()) != self.get_str(b.indice_texto())
+                    } else if a.es_booleano() && b.es_booleano() {
+                        a.a_booleano() != b.a_booleano()
                     } else if a.es_exacto() && b.es_exacto() {
                         let ae = self.get_exacto(a.indice_exacto());
                         let be = self.get_exacto(b.indice_exacto());
@@ -3382,8 +3389,13 @@ impl ForjaFast {
                             be.escala,
                         );
                         aa != bb
-                    } else {
+                    } else if a.es_nulo() && b.es_nulo() {
+                        // nulo == nulo → iguales, así que NO son diferentes
                         false
+                    } else {
+                        // Tipos diferentes o no comparables directamente:
+                        // si no podemos probar que son iguales, entonces son diferentes
+                        true
                     }));
                     self.ip += 1;
                 }
@@ -3585,6 +3597,21 @@ impl ForjaFast {
                 Opcode::Call(nombre, nargs) => {
                     let call_ip = self.ip;
                     let sym_id = self.sym_table.intern(nombre.as_ref());
+                    if self.show_bytecode {
+                        eprintln!("[DEBUG Call] nombre={}, nargs={}, self.stack.len={}, top_len={}, base_ptr={}, frame_count={}",
+                            nombre, nargs, self.stack.len(), self.top_len, self.base_ptr, self.frame_count);
+                        if self.top_len > 0 {
+                            eprintln!("[DEBUG Call] stack_top[0..top_len] = [{}, {}, {}, {}]",
+                                self.mostrar_valor(&self.stack_top[0]),
+                                if self.top_len > 1 { self.mostrar_valor(&self.stack_top[1]) } else { "?".to_string() },
+                                if self.top_len > 2 { self.mostrar_valor(&self.stack_top[2]) } else { "?".to_string() },
+                                if self.top_len > 3 { self.mostrar_valor(&self.stack_top[3]) } else { "?".to_string() });
+                        } else if !self.stack.is_empty() {
+                            let top_idx = self.stack.len() - 1;
+                            let top = &self.stack[top_idx];
+                            eprintln!("[DEBUG Call] stack_top_value = {}", self.mostrar_valor(top));
+                        }
+                    }
                     if let Some(entry) = self.lookup_func_entry(sym_id) {
                         // Tail Call Elimination: si el próximo opcode es Return,
                         // no creamos un nuevo frame — reemplazamos args en el scope actual
@@ -3653,9 +3680,27 @@ impl ForjaFast {
                                 self.flat_vars[self.base_ptr + i] = arg;
                             }
 
+                            if self.show_bytecode {
+                                eprintln!("[DEBUG Call] frame saved, entering func. base_ptr={}, flat_vars.len={}",
+                                    self.base_ptr, self.flat_vars.len());
+                                if self.top_len > 0 || !self.stack.is_empty() {
+                                    let val = if self.top_len > 0 { self.stack_top[self.top_len-1] } else { self.stack[self.stack.len()-1] };
+                                    eprintln!("[DEBUG Call] stack top after frame setup = {}", self.mostrar_valor(&val));
+                                }
+                            }
+
                             self.ip = entry.ip;
                         }
                     } else {
+                        // Intentar builtin (ej: dividir() como standalone)
+                        let nombre_str = nombre.to_string();
+                        if let Some(b) = resolver_builtin_fast(&nombre_str) {
+                            // Los args están en el stack, exec_builtin los popea
+                            self.exec_builtin(b, nargs)?;
+                            self.ip += 1;
+                            continue;
+                        }
+
                         // Fallback: buscar en funciones nativas
                         self.flush_stack();
                         let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
@@ -3664,14 +3709,14 @@ impl ForjaFast {
                         }
                         args.reverse();
 
-                        let nombre_str = nombre.to_string();
                         let func = self.native_registry.obtener_fn(&nombre_str);
                         if let Some(func) = func {
                             match func(self, &args) {
                                 Ok(val) => {
                                     self.push_valor(val);
                                 }
-                                Err(_) => {
+                                Err(e) => {
+                                    eprintln!("[DEBUG] Native '{}' failed: {}", nombre_str, e);
                                     self.push_valor(ValorFast::nulo());
                                 }
                             }
@@ -3912,6 +3957,13 @@ impl ForjaFast {
                 }
 
                 Opcode::Return => {
+                    if self.show_bytecode {
+                        eprintln!("[DEBUG Return] frame_count={}, self.stack.len={}, top_len={}, base_ptr={}",
+                            self.frame_count, self.stack.len(), self.top_len, self.base_ptr);
+                        if !self.stack.is_empty() {
+                            eprintln!("[DEBUG Return] stack_top_value={}", self.mostrar_valor(self.stack.last().unwrap()));
+                        }
+                    }
                     if self.frame_count == 0 {
                         break;
                     }
@@ -3919,6 +3971,12 @@ impl ForjaFast {
                     let frame = self.frame_buffer[self.frame_count];
                     // Liberar vars de la función que termina (O(1))
                     self.flush_stack();
+                    if self.show_bytecode {
+                        eprintln!("[DEBUG Return] after flush: self.stack.len={}, top_len={}", self.stack.len(), self.top_len);
+                        if !self.stack.is_empty() {
+                            eprintln!("[DEBUG Return] stack_top_value after flush={}", self.mostrar_valor(self.stack.last().unwrap()));
+                        }
+                    }
                     self.flat_vars.truncate(self.base_ptr);
                     self.base_ptr = frame.base_ptr_previo;
                     self.ip = frame.ip_ret;
@@ -4026,6 +4084,9 @@ impl ForjaFast {
                                     // Cache HIT! Acceso directo por índice
                                     let _ = self.pop_valor()?; // objeto
                                     let v = self.pop_valor()?; // valor
+                                    if self.show_bytecode {
+                                        eprintln!("[SetField] CACHE HIT idx={}, valor={}", idx_cache, self.mostrar_valor(&v));
+                                    }
                                     self.get_obj_mut(obj_idx).campos_vec[*idx_cache] = v;
                                     self.ip += 1;
                                     continue;
@@ -4043,10 +4104,17 @@ impl ForjaFast {
                         let _ = self.pop_valor()?; // objeto
                         let v = self.pop_valor()?; // valor
                         let clase_sym = self.obj_shapes[obj_idx as usize];
+                        if self.show_bytecode {
+                            let clase_str = self.sym_table.get(clase_sym);
+                            eprintln!("[SetField] FALLBACK clase={}, valor v={}", clase_str, self.mostrar_valor(&v));
+                        }
                         if let Some(desc) = self.class_descriptors.get(&clase_sym) {
                             let shape_idx = desc.shape.get_idx(field_sym);
                             if let Some(sidx) = shape_idx {
                                 // Campo conocido en el shape — asignar directamente
+                                if self.show_bytecode {
+                                    eprintln!("[SetField] known field sidx={}, campos_vec.len={}", sidx, self.obj_heap[obj_idx as usize].campos_vec.len());
+                                }
                                 if sidx < self.obj_heap[obj_idx as usize].campos_vec.len() {
                                     self.obj_heap[obj_idx as usize].campos_vec[sidx] = v;
                                 } else {
@@ -4056,6 +4124,9 @@ impl ForjaFast {
                                 self.ic_setfield[self.ip] = Some((clase_sym, sidx));
                             } else {
                                 // Campo nuevo — expandir shape y asignar
+                                if self.show_bytecode {
+                                    eprintln!("[SetField] new field, expanding shape");
+                                }
                                 let desc_mut = self.class_descriptors.get_mut(&clase_sym).unwrap();
                                 let sidx = desc_mut.shape.add_campo(field_sym);
                                 if sidx < self.obj_heap[obj_idx as usize].campos_vec.len() {
@@ -4067,6 +4138,9 @@ impl ForjaFast {
                             }
                         } else {
                             // Sin descriptor — expandir vectores directamente
+                            if self.show_bytecode {
+                                eprintln!("[SetField] no class descriptor, using raw field_sym");
+                            }
                             if (field_sym.0 as usize)
                                 < self.obj_heap[obj_idx as usize].campos_vec.len()
                             {
@@ -4077,11 +4151,23 @@ impl ForjaFast {
                             }
                         }
                     } else { /* No es un objeto real, ignorar silenciosamente */
+                        if self.show_bytecode {
+                            eprintln!("[SetField] not an object, ignoring");
+                        }
                     }
                     self.ip += 1;
                 }
                 Opcode::GetField(c) => {
                     let obj_val = *self.peek_valor(0);
+                    if self.show_bytecode {
+                        eprintln!(
+                            "[GetField] campo={:?}, es_objeto={}, top_len={}, stack.len={}",
+                            c,
+                            obj_val.es_objeto(),
+                            self.top_len,
+                            self.stack.len()
+                        );
+                    }
                     if obj_val.es_objeto() {
                         let field_sym = self.sym_table.intern(c.as_ref());
                         // Intentar inline cache
@@ -4094,6 +4180,13 @@ impl ForjaFast {
                                 if *idx_cache < campos_len {
                                     // Cache HIT! Acceso directo por índice
                                     let valor = self.get_obj(obj_idx).campos_vec[*idx_cache];
+                                    if self.show_bytecode {
+                                        eprintln!(
+                                            "[GetField] CACHE HIT idx={}, valor={}",
+                                            idx_cache,
+                                            self.mostrar_valor(&valor)
+                                        );
+                                    }
                                     self.pop_valor()?; // pop del objeto
                                     self.push_valor(valor);
                                     self.ip += 1;
@@ -4112,17 +4205,44 @@ impl ForjaFast {
                         let obj = self.pop_valor()?;
                         let idx = obj.indice_objeto();
                         let clase_sym = self.obj_shapes[idx as usize];
+                        if self.show_bytecode {
+                            let clase_str = self.sym_table.get(clase_sym);
+                            eprintln!(
+                                "[GetField] FALLBACK obj_idx={}, clase={}, field_sym={:?}",
+                                idx, clase_str, field_sym
+                            );
+                        }
                         let valor = if let Some(desc) = self.class_descriptors.get(&clase_sym) {
+                            if self.show_bytecode {
+                                let campos_nombres: Vec<&str> = desc.shape.indice_a_campo.iter().map(|&s| self.sym_table.get(s)).collect();
+                                eprintln!("[GetField] shape campos: {:?}", campos_nombres);
+                            }
                             if let Some(sidx) = desc.shape.get_idx(field_sym) {
+                                if self.show_bytecode {
+                                    eprintln!("[GetField] sidx={}, campos_vec.len={}", sidx, self.obj_heap[idx as usize].campos_vec.len());
+                                }
                                 if sidx < self.obj_heap[idx as usize].campos_vec.len() {
-                                    self.obj_heap[idx as usize].campos_vec[sidx]
+                                    let v = self.obj_heap[idx as usize].campos_vec[sidx];
+                                    if self.show_bytecode {
+                                        eprintln!("[GetField] valor={}", self.mostrar_valor(&v));
+                                    }
+                                    v
                                 } else {
+                                    if self.show_bytecode {
+                                        eprintln!("[GetField] sidx >= campos_vec.len, returning nulo");
+                                    }
                                     ValorFast::nulo()
                                 }
                             } else {
+                                if self.show_bytecode {
+                                    eprintln!("[GetField] field not in shape");
+                                }
                                 ValorFast::nulo()
                             }
                         } else {
+                            if self.show_bytecode {
+                                eprintln!("[GetField] no class descriptor");
+                            }
                             ValorFast::nulo()
                         };
                         self.push_valor(valor);
@@ -4133,6 +4253,9 @@ impl ForjaFast {
                             }
                         }
                     } else {
+                        if self.show_bytecode {
+                            eprintln!("[GetField] not an object, pushing nulo");
+                        }
                         self.push_valor(ValorFast::nulo());
                     }
                     self.ip += 1;
@@ -5909,8 +6032,14 @@ impl ForjaFast {
                         a.a_entero() != b.a_entero()
                     } else if a.es_flotante() && b.es_flotante() {
                         a.a_flotante() != b.a_flotante()
-                    } else {
+                    } else if a.es_texto() && b.es_texto() {
+                        self.get_str(a.indice_texto()) != self.get_str(b.indice_texto())
+                    } else if a.es_booleano() && b.es_booleano() {
+                        a.a_booleano() != b.a_booleano()
+                    } else if a.es_nulo() && b.es_nulo() {
                         false
+                    } else {
+                        true
                     }));
                     self.ip += 1;
                 }
@@ -6049,6 +6178,14 @@ impl ForjaFast {
                             self.ip = entry.ip;
                         }
                     } else {
+                        // Intentar builtin (ej: dividir() como standalone)
+                        let nombre_str = nombre.to_string();
+                        if let Some(b) = resolver_builtin_fast(&nombre_str) {
+                            self.exec_builtin(b, nargs)?;
+                            self.ip += 1;
+                            continue;
+                        }
+
                         // Fallback a funciones nativas
                         self.flush_stack();
                         let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
@@ -6057,7 +6194,6 @@ impl ForjaFast {
                         }
                         args.reverse();
 
-                        let nombre_str = nombre.to_string();
                         let func = self.native_registry.obtener_fn(&nombre_str);
                         if let Some(func) = func {
                             match func(self, &args) {
