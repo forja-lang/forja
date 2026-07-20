@@ -6,12 +6,8 @@ use crate::token::{Token, TokenKind};
 /// Profundidad máxima de anidación permitida para el parser recursivo.
 /// Previene stack overflow (STATUS_STACK_OVERFLOW 0xc00000fd)
 /// en programas con anidación excesiva.
-/// En modo debug cada frame puede usar ~4KB, por lo que con un stack
-/// de 1MB solo caben ~230 frames. Como cada nivel de `(` usa ~12
-/// frames, MAX_PROFUNDIDAD = 20 permite ~15 niveles (~200 frames),
-/// suficiente para código real y seguro contra stack overflow.
-/// En release mode (frames ~200 bytes) permite ~400 niveles.
-const MAX_PROFUNDIDAD: u32 = 20;
+/// Aumentado a 200 para soportar programas más grandes.
+const MAX_PROFUNDIDAD: u32 = 200;
 
 /// Parser recursivo descendente para Forja (fa)
 pub struct Parser {
