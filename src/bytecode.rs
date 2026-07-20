@@ -879,6 +879,7 @@ impl BytecodeGenerator {
     }
 
     fn generar_declaracion(&mut self, decl: &Declaracion) {
+        // eprintln!("[DEBUG] generar_declaracion: {:?}", decl);
         match decl {
             Declaracion::Variable {
                 mutable,
@@ -1215,10 +1216,27 @@ impl BytecodeGenerator {
                     // Built-in function handled
                 } else if nombre.contains('.') {
                     // Método: objeto.metodo(args) → load objeto, push args, CallMethod
-                    let parts: Vec<&str> = nombre.splitn(2, '.').collect();
-                    let obj_name = Arc::from(parts[0]);
-                    let method_name = Arc::from(parts[1]);
-                    self.emitir(Opcode::Load(obj_name));
+                    // Usamos rsplitn para encontrar el ÚLTIMO '.' que separa
+                    // el objeto del método. Para cadenas multi-nivel como
+                    // s.enrutador.get(...), primero cargamos s, luego GetField enrutador,
+                    // luego los argumentos, y finalmente CallMethod("get", ...).
+                    let parts: Vec<&str> = nombre.rsplitn(2, '.').collect();
+                    let method_name = Arc::from(parts[0]);
+                    let obj_expr = parts[1];
+                    // Si el objeto contiene puntos, es una cadena de accesos multi-nivel
+                    // Ej: "s.enrutador.get" → obj_expr = "s.enrutador"
+                    if obj_expr.contains('.') {
+                        // Cadena multi-nivel: cargar primer identificador,
+                        // luego GetField para cada nivel
+                        let obj_parts: Vec<&str> = obj_expr.split('.').collect();
+                        self.emitir(Opcode::Load(Arc::from(obj_parts[0])));
+                        for field in &obj_parts[1..] {
+                            self.emitir(Opcode::GetField(Arc::from(*field)));
+                        }
+                    } else {
+                        // Simple: solo cargar la variable
+                        self.emitir(Opcode::Load(Arc::from(obj_expr)));
+                    }
                     for arg in argumentos {
                         self.generar_expresion(arg);
                     }
@@ -1228,6 +1246,11 @@ impl BytecodeGenerator {
                         self.generar_expresion(arg);
                     }
                     self.emitir(Opcode::Call(Arc::from(nombre.as_str()), argumentos.len()));
+                    // Las funciones nativas (como _imprimir_error) dejan su valor de retorno
+                    // en la pila. Para llamadas a nivel de declaración, descartamos ese valor.
+                    // Forja functions are balanced (no return value pushed), so Pop is safe
+                    // even when empty (pop_valor returns nulo instead of underflow).
+                    self.emitir(Opcode::Pop);
                 }
             }
 
@@ -1376,12 +1399,22 @@ impl BytecodeGenerator {
                     let parts: Vec<&str> = nombre.rsplitn(2, '.').collect();
                     let method_name = Arc::from(parts[0]);
                     let obj_name = parts[1];
-                    // Si el objeto es un literal, lo generamos como expresión
+                    // Si el objeto es un literal string, lo generamos directamente
                     if obj_name.starts_with('"') {
                         // Es un literal string: "texto".metodo()
                         let texto = obj_name.trim_matches('"');
                         self.emitir(Opcode::PushTexto(Arc::from(texto)));
+                    } else if obj_name.contains('.') {
+                        // Cadena multi-nivel: cargar primer identificador,
+                        // luego GetField para cada nivel
+                        // Ej: "s.enrutador.get" → obj_name = "s.enrutador"
+                        let obj_parts: Vec<&str> = obj_name.split('.').collect();
+                        self.emitir(Opcode::Load(Arc::from(obj_parts[0])));
+                        for field in &obj_parts[1..] {
+                            self.emitir(Opcode::GetField(Arc::from(*field)));
+                        }
                     } else {
+                        // Simple: cargar la variable
                         self.emitir(Opcode::Load(Arc::from(obj_name)));
                     }
                     for arg in argumentos {
@@ -1413,9 +1446,8 @@ impl BytecodeGenerator {
                     // Llamar a "Clase.nuevo" con nargs+1 (incluyendo self)
                     let constructor = Arc::from(format!("{}.{}", clase, "nuevo"));
                     self.emitir(Opcode::Call(constructor, argumentos.len() + 1));
-                    // Descartar el valor retornado por el constructor (siempre nulo)
-                    // El objeto original queda en el stack debajo
-                    self.emitir(Opcode::Pop);
+                    // El constructor NO pushea valor de retorno (Return no modifica el stack),
+                    // así que NO hacemos Pop — el objeto original de NewObject queda arriba.
                 }
                 // El objeto queda en el stack para ser asignado a una variable
             }
