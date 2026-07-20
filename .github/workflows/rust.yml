@@ -182,6 +182,8 @@ jobs:
           targets: wasm32-unknown-unknown
       - name: Install wasm-bindgen
         run: cargo install wasm-bindgen-cli
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
       - name: Build forja-wasm
         run: cargo build --package forja-wasm --target wasm32-unknown-unknown --release
       - name: Generate WASM bindings
@@ -194,6 +196,14 @@ jobs:
         run: sudo apt-get install -y binaryen
       - name: Optimize WASM with wasm-opt
         run: wasm-opt --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext -O3 wasm-output/forja_wasm_bg.wasm -o wasm-output/forja_wasm_bg.wasm
+      - name: Build forja-wasm-gui with wasm-pack
+        run: |
+          mkdir -p wasm-output-gui
+          wasm-pack build crates/forja-wasm-gui --target web --out-dir wasm-output-gui --out-name forja_wasm_gui
+      - name: Optimize GUI WASM with wasm-opt
+        run: wasm-opt --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext -O3 wasm-output-gui/forja_wasm_gui_bg.wasm -o wasm-output-gui/forja_wasm_gui_bg.wasm
+      - name: Copy GUI WASM files to output
+        run: cp wasm-output-gui/* wasm-output/
       - name: Upload WASM artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -242,6 +252,9 @@ jobs:
           # WASM
           cp artifacts/forja-wasm/forja_wasm.js binaries/forja_wasm.js
           cp artifacts/forja-wasm/forja_wasm_bg.wasm binaries/forja_wasm_bg.wasm
+          # WASM GUI
+          cp artifacts/forja-wasm/forja_wasm_gui.js binaries/forja_wasm_gui.js
+          cp artifacts/forja-wasm/forja_wasm_gui_bg.wasm binaries/forja_wasm_gui_bg.wasm
           # Android AAR
           cp artifacts/forja-android-aar/forja-android-rt-*.aar binaries/
       - name: Generate artifact attestation
