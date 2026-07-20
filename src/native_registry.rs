@@ -4,7 +4,7 @@ use crate::bytecode::BytecodeGenerator;
 use crate::symbol_table::{SymId, SymbolTable};
 use crate::vm_fast::{ErrFast, ForjaFast, ValorFast};
 use base64::Engine;
-use sha2::Digest;
+use sha1::Digest as Sha1Digest;
 /// Registro de funciones nativas para la VM Forja
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -196,6 +196,7 @@ impl NativeRegistry {
         self.registrar("_socket_tcp_conectar", native_socket_tcp_conectar);
         self.registrar("_socket_enviar", native_socket_enviar);
         self.registrar("_socket_recibir", native_socket_recibir);
+        self.registrar("_socket_recibir_binario", native_socket_recibir_binario);
         self.registrar("_socket_cerrar", native_socket_cerrar);
         self.registrar("_socket_activo", native_socket_activo);
         self.registrar("_socket_fijar_timeout", native_socket_fijar_timeout);
@@ -210,6 +211,11 @@ impl NativeRegistry {
         self.registrar("_socket_udp_escuchar", native_socket_udp_escuchar);
         self.registrar("_socket_udp_enviar", native_socket_udp_enviar);
         self.registrar("_socket_udp_recibir", native_socket_udp_recibir);
+
+        // ─── BitTorrent P2P ──────────────────────────────────────────────
+        self.registrar("_bt_handshake", native_bt_handshake);
+        self.registrar("_bt_recibir_mensaje", native_bt_recibir_mensaje);
+        self.registrar("_bt_enviar_mensaje", native_bt_enviar_mensaje);
     }
 
     fn registrar_archivos(&mut self) {
@@ -222,6 +228,9 @@ impl NativeRegistry {
         self.registrar("_archivo_mover", native_archivo_mover);
         self.registrar("_archivo_tamano", native_archivo_tamano);
         self.registrar("_archivo_info", native_archivo_info);
+        // ─── Archivos Binarios ───────────────────────────────────────────
+        self.registrar("_archivo_leer_binario", native_archivo_leer_binario);
+        self.registrar("_archivo_escribir_binario", native_archivo_escribir_binario);
 
         // ─── Directorios ─────────────────────────────────────────────────
         self.registrar("_directorio_crear", native_directorio_crear);
@@ -250,6 +259,10 @@ impl NativeRegistry {
     fn registrar_hash(&mut self) {
         // ─── Hash SHA-256 ─────────────────────────────────────────────────
         self.registrar("_sha256", native_sha256);
+        // ─── Hash SHA-1 ───────────────────────────────────────────────────
+        self.registrar("_sha1", native_sha1);
+        // ─── BitTorrent (verificación de piezas) ──────────────────────────
+        self.registrar("_bt_verificar_pieza", native_bt_verificar_pieza);
     }
 
     fn registrar_web(&mut self) {
@@ -264,6 +277,9 @@ impl NativeRegistry {
         self.registrar("_url_decodificar", native_url_decodificar);
         self.registrar("_url_codificar", native_url_codificar);
         self.registrar("_query_parsear", native_query_parsear);
+
+        // ─── URL Encoding Binario ─────────────────────────────────────────
+        self.registrar("_url_encode_binario", native_url_encode_binario);
 
         // ─── MIME ─────────────────────────────────────────────────────────
         self.registrar("_mime_tipo_archivo", native_mime_tipo_archivo);
@@ -440,6 +456,21 @@ pub(crate) fn resolver_direccion(
         .ok_or_else(|| format!("no se encontraron direcciones para '{}'", addr_str))
 }
 
+/// Decodifica un string hexadecimal a bytes.
+/// Retorna Vec vacío si el hex es inválido.
+pub(crate) fn hex_a_bytes(hex: &str) -> Vec<u8> {
+    (0..hex.len())
+        .step_by(2)
+        .filter_map(|i| {
+            if i + 1 < hex.len() {
+                u8::from_str_radix(&hex[i..i + 2], 16).ok()
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 // ═════════════════════════════════════════════════════════════════════════
 // Funciones Nativas - TCP
 // ═════════════════════════════════════════════════════════════════════════
@@ -573,6 +604,59 @@ fn native_socket_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
         Ok(n) => {
             let datos = String::from_utf8_lossy(&buffer[..n]).to_string();
             let idx = vm.alloc_str(Arc::from(datos.as_str()));
+            Ok(ValorFast::texto(idx))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+            drop(stream);
+            let idx = vm.alloc_str(Arc::from(""));
+            Ok(ValorFast::texto(idx))
+        }
+        Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
+    }
+}
+
+/// Recibe datos raw de un socket TCP y retorna como hexadecimal (sin pérdida UTF-8)
+/// args[0]: socket
+/// args[1]: buffer_tamano (entero)
+/// Retorna: datos en hexadecimal (Texto), cadena vacía si conexión cerrada
+fn native_socket_recibir_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 2 {
+        return Err(ErrFast::TipoInv(
+            "_socket_recibir_binario requiere 2 argumentos: socket, buffer_tamano (entero)".into(),
+        ));
+    }
+
+    let socket_idx = extraer_indice_socket(vm, args[0])?;
+    let buffer_tamano = obtener_entero(args[1])?;
+    let buffer_tamano = buffer_tamano.max(1).min(65536) as usize;
+
+    if !vm.socket_get(socket_idx).connected {
+        return Err(ErrFast::TipoInv(
+            "socket_cerrado: el socket no está conectado".into(),
+        ));
+    }
+
+    let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
+        Some(arc) => Arc::clone(arc),
+        None => {
+            return Err(ErrFast::TipoInv(
+                "error_interno: el socket no es TCP".into(),
+            ))
+        }
+    };
+
+    let mut stream = stream_arc.lock().unwrap();
+    let mut buffer = vec![0u8; buffer_tamano];
+    match stream.read(&mut buffer) {
+        Ok(0) => {
+            drop(stream);
+            vm.socket_get_mut(socket_idx).connected = false;
+            let idx = vm.alloc_str(Arc::from(""));
+            Ok(ValorFast::texto(idx))
+        }
+        Ok(n) => {
+            let hex_str = buffer[..n].iter().map(|b| format!("{:02x}", b)).collect::<String>();
+            let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
             Ok(ValorFast::texto(idx))
         }
         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -732,7 +816,9 @@ fn native_socket_tcp_escuchar(
 
     match std::net::TcpListener::bind(addr) {
         Ok(listener) => {
-            let _ = listener.set_nonblocking(true);
+            // Listener en modo bloqueante para que _socket_aceptar
+            // espere hasta que llegue una conexión real
+            let _ = listener.set_nonblocking(false);
 
             let socket_idx = vm.socket_alloc(SocketState::new_tcp_listener(listener));
             let val = crear_valor_socket(vm, socket_idx);
@@ -1198,6 +1284,75 @@ fn native_archivo_info(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
     }
 }
 
+// ─── Archivos Binarios ─────────────────────────────────────────────
+
+/// Lee un archivo como bytes y retorna su contenido como hexadecimal
+/// args[0]: ruta (Texto)
+/// Retorna: contenido del archivo en hexadecimal (Texto)
+fn native_archivo_leer_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 1 {
+        return Err(ErrFast::TipoInv(
+            "_archivo_leer_binario requiere 1 argumento: ruta (texto)".into(),
+        ));
+    }
+    let ruta = obtener_texto(vm, args[0])?;
+    if ruta.trim().is_empty() {
+        return Err(ErrFast::TipoInv(
+            "ruta_invalida: la ruta no puede estar vacía".into(),
+        ));
+    }
+    match std::fs::read(&ruta) {
+        Ok(bytes) => {
+            let hex_str = bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+            let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
+            Ok(ValorFast::texto(idx))
+        }
+        Err(e) => Err(ErrFast::TipoInv(format!(
+            "{}: {}",
+            codigo_error_archivo(&e),
+            e
+        ))),
+    }
+}
+
+/// Escribe bytes (desde hexadecimal) a un archivo
+/// args[0]: ruta (Texto)
+/// args[1]: contenido_hex (Texto) - datos en hexadecimal
+/// Retorna: 0 si éxito, -1 si error
+fn native_archivo_escribir_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 2 {
+        return Err(ErrFast::TipoInv(
+            "_archivo_escribir_binario requiere 2 argumentos: ruta (texto), contenido_hex (texto)".into(),
+        ));
+    }
+    let ruta = obtener_texto(vm, args[0])?;
+    let hex_str = obtener_texto(vm, args[1])?;
+    if ruta.trim().is_empty() {
+        return Err(ErrFast::TipoInv(
+            "ruta_invalida: la ruta no puede estar vacía".into(),
+        ));
+    }
+    // Decodificar hex a bytes
+    let bytes: Vec<u8> = (0..hex_str.len())
+        .step_by(2)
+        .filter_map(|i| {
+            if i + 1 < hex_str.len() {
+                u8::from_str_radix(&hex_str[i..i + 2], 16).ok()
+            } else {
+                None
+            }
+        })
+        .collect();
+    match std::fs::write(&ruta, &bytes) {
+        Ok(()) => Ok(ValorFast::entero(0i64)),
+        Err(e) => Err(ErrFast::TipoInv(format!(
+            "{}: {}",
+            codigo_error_archivo(&e),
+            e
+        ))),
+    }
+}
+
 // ═════════════════════════════════════════════════════════════════════════
 // Funciones Nativas - Fechas
 // ═════════════════════════════════════════════════════════════════════════
@@ -1449,6 +1604,26 @@ fn native_sha256(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, Er
 
     let data = obtener_texto(vm, args[0])?;
     let hash = sha2::Sha256::digest(data.as_bytes());
+    let hex_str = hash
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
+    let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
+    Ok(ValorFast::texto(idx))
+}
+
+/// Calcula SHA-1 de un texto y retorna el hash como hexadecimal (40 caracteres)
+/// args[0]: datos a hashear (Texto)
+/// Retorna: hash hexadecimal en minúsculas (40 caracteres)
+fn native_sha1(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Err(ErrFast::TipoInv(
+            "_sha1 requiere 1 argumento: datos (texto)".into(),
+        ));
+    }
+
+    let data = obtener_texto(vm, args[0])?;
+    let hash = sha1::Sha1::digest(data.as_bytes());
     let hex_str = hash
         .iter()
         .map(|b| format!("{:02x}", b))
@@ -2703,5 +2878,271 @@ fn native_numero_a_texto_base(
     };
 
     let idx = vm.alloc_str(Arc::from(result.as_str()));
+    Ok(ValorFast::texto(idx))
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Funciones Nativas - BitTorrent P2P
+// ═════════════════════════════════════════════════════════════════════════
+
+/// Realiza el handshake del protocolo BitTorrent.
+/// args[0]: socket
+/// args[1]: info_hash_hex (40 caracteres hex = 20 bytes)
+/// args[2]: peer_id_hex (40 caracteres hex = 20 bytes)
+/// Retorna: handshake recibido como hex (136 caracteres), o "" si error
+fn native_bt_handshake(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 3 {
+        return Err(ErrFast::TipoInv(
+            "_bt_handshake requiere 3 argumentos: socket, info_hash_hex, peer_id_hex".into(),
+        ));
+    }
+
+    let socket_idx = extraer_indice_socket(vm, args[0])?;
+    let info_hash_hex = obtener_texto(vm, args[1])?;
+    let peer_id_hex = obtener_texto(vm, args[2])?;
+
+    // Validar longitud de hex strings (40 chars = 20 bytes)
+    if info_hash_hex.len() != 40 {
+        let idx = vm.alloc_str(Arc::from(""));
+        return Ok(ValorFast::texto(idx));
+    }
+    if peer_id_hex.len() != 40 {
+        let idx = vm.alloc_str(Arc::from(""));
+        return Ok(ValorFast::texto(idx));
+    }
+
+    // Decodificar hex a bytes
+    let info_hash = hex_a_bytes(&info_hash_hex);
+    let peer_id = hex_a_bytes(&peer_id_hex);
+
+    if info_hash.len() != 20 || peer_id.len() != 20 {
+        let idx = vm.alloc_str(Arc::from(""));
+        return Ok(ValorFast::texto(idx));
+    }
+
+    // Construir handshake: 19 + "BitTorrent protocol" + 8 reserved + info_hash + peer_id
+    let mut handshake = Vec::with_capacity(68);
+    handshake.push(19); // 1 byte: longitud del protocolo
+    handshake.extend_from_slice(b"BitTorrent protocol"); // 19 bytes
+    handshake.extend_from_slice(&[0u8; 8]); // 8 bytes reserved (ceros)
+    handshake.extend_from_slice(&info_hash); // 20 bytes info_hash
+    handshake.extend_from_slice(&peer_id); // 20 bytes peer_id
+
+    // Verificar socket conectado
+    if !vm.socket_get(socket_idx).connected {
+        return Err(ErrFast::TipoInv(
+            "socket_cerrado: el socket no está conectado".into(),
+        ));
+    }
+
+    // Clonar Arc del stream TCP
+    let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
+        Some(arc) => Arc::clone(arc),
+        None => {
+            return Err(ErrFast::TipoInv(
+                "error_interno: el socket no es TCP".into(),
+            ))
+        }
+    };
+
+    let mut stream = stream_arc.lock().unwrap();
+
+    // Enviar handshake (raw bytes)
+    if let Err(_e) = stream.write_all(&handshake) {
+        // Error al enviar, retornar vacío
+        let idx = vm.alloc_str(Arc::from(""));
+        return Ok(ValorFast::texto(idx));
+    }
+
+    // Recibir respuesta de exactamente 68 bytes
+    let mut buf = [0u8; 68];
+    match stream.read_exact(&mut buf) {
+        Ok(()) => {
+            let hex_str = buf.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+            let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
+            Ok(ValorFast::texto(idx))
+        }
+        Err(_e) => {
+            // Timeout o desconexión, retornar vacío
+            let idx = vm.alloc_str(Arc::from(""));
+            Ok(ValorFast::texto(idx))
+        }
+    }
+}
+
+/// Recibe un mensaje del protocolo BitTorrent.
+/// Formato: 4 bytes de longitud (big-endian) + payload
+/// args[0]: socket
+/// Retorna: hex del mensaje completo (longitud + payload), "keepalive" si longitud=0, o "" si error
+fn native_bt_recibir_mensaje(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Err(ErrFast::TipoInv(
+            "_bt_recibir_mensaje requiere 1 argumento: socket".into(),
+        ));
+    }
+
+    let socket_idx = extraer_indice_socket(vm, args[0])?;
+
+    if !vm.socket_get(socket_idx).connected {
+        return Err(ErrFast::TipoInv(
+            "socket_cerrado: el socket no está conectado".into(),
+        ));
+    }
+
+    let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
+        Some(arc) => Arc::clone(arc),
+        None => {
+            return Err(ErrFast::TipoInv(
+                "error_interno: el socket no es TCP".into(),
+            ))
+        }
+    };
+
+    let mut stream = stream_arc.lock().unwrap();
+
+    // Leer 4 bytes de longitud (big-endian)
+    let mut len_buf = [0u8; 4];
+    if let Err(_e) = stream.read_exact(&mut len_buf) {
+        let idx = vm.alloc_str(Arc::from(""));
+        return Ok(ValorFast::texto(idx));
+    }
+
+    let payload_len = u32::from_be_bytes(len_buf) as usize;
+
+    if payload_len == 0 {
+        // Keepalive
+        let idx = vm.alloc_str(Arc::from("keepalive"));
+        return Ok(ValorFast::texto(idx));
+    }
+
+    // Leer payload
+    let mut payload = vec![0u8; payload_len];
+    if let Err(_e) = stream.read_exact(&mut payload) {
+        let idx = vm.alloc_str(Arc::from(""));
+        return Ok(ValorFast::texto(idx));
+    }
+
+    // Construir mensaje completo: 4 bytes de longitud + payload, retornar como hex
+    let mut msg_bytes = Vec::with_capacity(4 + payload_len);
+    msg_bytes.extend_from_slice(&len_buf);
+    msg_bytes.extend_from_slice(&payload);
+
+    let hex_str = msg_bytes
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
+    let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
+    Ok(ValorFast::texto(idx))
+}
+
+/// Envía un mensaje del protocolo BitTorrent.
+/// Construye: 4 bytes de longitud (big-endian) + payload
+/// args[0]: socket
+/// args[1]: hex_payload (payload en hex para enviar)
+/// Retorna: número de bytes enviados (incluyendo longitud)
+fn native_bt_enviar_mensaje(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 2 {
+        return Err(ErrFast::TipoInv(
+            "_bt_enviar_mensaje requiere 2 argumentos: socket, hex_payload".into(),
+        ));
+    }
+
+    let socket_idx = extraer_indice_socket(vm, args[0])?;
+    let hex_payload = obtener_texto(vm, args[1])?;
+
+    let payload = hex_a_bytes(&hex_payload);
+    let payload_len = payload.len();
+
+    if !vm.socket_get(socket_idx).connected {
+        return Err(ErrFast::TipoInv(
+            "socket_cerrado: el socket no está conectado".into(),
+        ));
+    }
+
+    let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
+        Some(arc) => Arc::clone(arc),
+        None => {
+            return Err(ErrFast::TipoInv(
+                "error_interno: el socket no es TCP".into(),
+            ))
+        }
+    };
+
+    let mut stream = stream_arc.lock().unwrap();
+
+    // Construir mensaje: 4 bytes de longitud (big-endian) + payload
+    let mut msg = Vec::with_capacity(4 + payload_len);
+    msg.extend_from_slice(&(payload_len as u32).to_be_bytes());
+    msg.extend_from_slice(&payload);
+
+    match stream.write_all(&msg) {
+        Ok(()) => Ok(ValorFast::entero(msg.len() as i64)),
+        Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
+    }
+}
+
+/// Verifica el hash SHA-1 de una pieza de datos.
+/// args[0]: data_hex (datos en hex)
+/// args[1]: expected_hash_hex (hash SHA-1 esperado en hex, 40 caracteres)
+/// Retorna: "true" si coincide, "false" si no
+fn native_bt_verificar_pieza(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 2 {
+        return Err(ErrFast::TipoInv(
+            "_bt_verificar_pieza requiere 2 argumentos: data_hex, expected_hash_hex".into(),
+        ));
+    }
+
+    let data_hex = obtener_texto(vm, args[0])?;
+    let expected_hash_hex = obtener_texto(vm, args[1])?;
+
+    let data = hex_a_bytes(&data_hex);
+    let hash = sha1::Sha1::digest(&data);
+    let computed_hex = hash
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
+
+    let result = if computed_hex == expected_hash_hex {
+        "true"
+    } else {
+        "false"
+    };
+
+    let idx = vm.alloc_str(Arc::from(result));
+    Ok(ValorFast::texto(idx))
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Funciones Nativas - URL Encoding Binario
+// ═════════════════════════════════════════════════════════════════════════
+
+/// Codifica bytes (desde hex) a URL encoding (percent-encoding).
+/// Los caracteres alfanuméricos y . - _ ~ se dejan como están.
+/// Los demás se convierten a %XX (hex mayúscula).
+/// args[0]: hex_str (datos en hex a codificar)
+/// Retorna: string URL-encoded
+fn native_url_encode_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Err(ErrFast::TipoInv(
+            "_url_encode_binario requiere 1 argumento: hex_str".into(),
+        ));
+    }
+
+    let hex_str = obtener_texto(vm, args[0])?;
+    let bytes = hex_a_bytes(&hex_str);
+
+    let mut resultado = String::with_capacity(bytes.len() * 3);
+    for &b in &bytes {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'.' | b'-' | b'_' | b'~' => {
+                resultado.push(b as char);
+            }
+            _ => {
+                resultado.push_str(&format!("%{:02X}", b));
+            }
+        }
+    }
+
+    let idx = vm.alloc_str(Arc::from(resultado.as_str()));
     Ok(ValorFast::texto(idx))
 }
