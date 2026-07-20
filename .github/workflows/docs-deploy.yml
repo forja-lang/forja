@@ -31,30 +31,53 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: docs/package-lock.json
 
       - name: Download WASM playground from latest release
         continue-on-error: true
         run: |
-          curl -sL \
+          curl -sL --fail \
             https://github.com/forja-lang/forja/releases/latest/download/forja_wasm_bg.wasm \
             -o src/wasm/forja_wasm_bg.wasm
-          curl -sL \
+          curl -sL --fail \
             https://github.com/forja-lang/forja/releases/latest/download/forja_wasm.js \
             -o src/wasm/forja_wasm.js
-      - name: Verify WASM files (fallback to local if download failed)
+          curl -sL --fail \
+            https://github.com/forja-lang/forja/releases/latest/download/forja_wasm_gui_bg.wasm \
+            -o src/wasm/forja_wasm_gui_bg.wasm
+          curl -sL --fail \
+            https://github.com/forja-lang/forja/releases/latest/download/forja_wasm_gui.js \
+            -o src/wasm/forja_wasm_gui.js
+      - name: Verify WASM files (restore from git if download failed)
         run: |
-          if grep -q "Not Found" src/wasm/forja_wasm.js 2>/dev/null; then
-            echo "⚠️  Download failed (404), restoring local files..."
+          ANY_FAILURE=0
+          # Core WASM
+          if [ ! -f src/wasm/forja_wasm.js ] || ! head -1 src/wasm/forja_wasm.js | grep -q "wasm-bindgen" 2>/dev/null; then
+            echo "⚠️  Core download failed, restoring from git..."
             git checkout -- src/wasm/forja_wasm.js src/wasm/forja_wasm_bg.wasm 2>/dev/null || true
           fi
-          if [ ! -f src/wasm/forja_wasm.js ] || [ ! -f src/wasm/forja_wasm_bg.wasm ]; then
-            echo "❌ Missing WASM files — build will fail"
+          # GUI WASM
+          if [ ! -f src/wasm/forja_wasm_gui.js ] || ! head -1 src/wasm/forja_wasm_gui.js | grep -q "wasm-bindgen" 2>/dev/null; then
+            echo "⚠️  GUI download failed, restoring from git..."
+            git checkout -- src/wasm/forja_wasm_gui.js src/wasm/forja_wasm_gui_bg.wasm 2>/dev/null || true
+          fi
+          # Verify all files present
+          for f in src/wasm/forja_wasm.js src/wasm/forja_wasm_bg.wasm \
+                   src/wasm/forja_wasm_gui.js src/wasm/forja_wasm_gui_bg.wasm; do
+            if [ ! -f "$f" ]; then
+              echo "❌ Missing: $f"
+              ANY_FAILURE=1
+            fi
+          done
+          if [ "$ANY_FAILURE" -eq 1 ]; then
+            echo "❌ Some WASM files are missing — build may fail"
           else
-            echo "✅ WASM files ready"
+            echo "✅ All WASM files ready"
           fi
 
       - run: npm ci
+        env:
+          npm_config_audit: false
+          npm_config_fund: false
       - run: npm run build
 
       - uses: actions/upload-pages-artifact@v3
