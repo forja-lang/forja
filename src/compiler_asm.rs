@@ -1962,6 +1962,7 @@ impl CompilerAsm {
             }
 
             Declaracion::AccesoMiembro { .. } => {}
+            Declaracion::Romper | Declaracion::Continuar => {}
 
             Declaracion::Retornar { valor } => {
                 if self.postcondiciones_activas {
@@ -2196,6 +2197,17 @@ impl CompilerAsm {
                         self.emit_line(&a.neg_reg(ret));
                     }
                 }
+                ret.to_string()
+            }
+
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                self.compilar_expresion_asm(condicion);
+                self.compilar_expresion_asm(si_verdadero);
+                self.compilar_expresion_asm(si_falso);
                 ret.to_string()
             }
 
@@ -2807,6 +2819,15 @@ impl CompilerAsm {
             Expresion::Binaria {
                 izquierda, derecha, ..
             } => self.expr_llama_a(izquierda, nombre) || self.expr_llama_a(derecha, nombre),
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                self.expr_llama_a(condicion, nombre)
+                    || self.expr_llama_a(si_verdadero, nombre)
+                    || self.expr_llama_a(si_falso, nombre)
+            }
             Expresion::Unaria { expr: e, .. } => self.expr_llama_a(e, nombre),
             Expresion::AccesoMiembro { objeto, .. } => self.expr_llama_a(objeto, nombre),
             Expresion::Instanciacion { argumentos, .. } => {

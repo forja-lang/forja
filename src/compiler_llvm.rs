@@ -238,6 +238,16 @@ impl LlvmBackend {
                 self.recolectar_anterior_temps(derecha)?;
                 Ok(())
             }
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                self.recolectar_anterior_temps(condicion)?;
+                self.recolectar_anterior_temps(si_verdadero)?;
+                self.recolectar_anterior_temps(si_falso)?;
+                Ok(())
+            }
             Expresion::Unaria { expr: e, .. } => self.recolectar_anterior_temps(e),
             Expresion::Grupo(e) => self.recolectar_anterior_temps(e),
             Expresion::LlamadaFuncion { argumentos: _, .. } => Ok(()),
@@ -640,6 +650,7 @@ impl LlvmBackend {
             Declaracion::LlamadaFuncion { nombre, argumentos } => {
                 self.llamar(nombre, argumentos, false)?;
             }
+            Declaracion::Romper | Declaracion::Continuar => {}
             Declaracion::AccesoMiembro { .. } => {}
             Declaracion::Retornar { valor, .. } => {
                 if self.postcondiciones_activas {
@@ -1336,6 +1347,29 @@ impl LlvmBackend {
                 } else {
                     self.expr(expr) // Outside postcondiciones, just evaluate
                 }
+            }
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                let cond_val = self.expr(condicion)?;
+                let cond_bool = self.r();
+                line!(self.out, "{} = icmp ne i64 {}, 0", cond_bool, cond_val);
+                let l_v = format!("tern_v_{}", self.r().trim_start_matches('%'));
+                let l_f = format!("tern_f_{}", self.r().trim_start_matches('%'));
+                let l_end = format!("tern_end_{}", self.r().trim_start_matches('%'));
+                line!(self.out, "br i1 {}, label %{}, label %{}", cond_bool, l_v, l_f);
+                raw!(self.out, "{}:", l_v);
+                let v_res = self.expr(si_verdadero)?;
+                line!(self.out, "br label %{}", l_end);
+                raw!(self.out, "{}:", l_f);
+                let f_res = self.expr(si_falso)?;
+                line!(self.out, "br label %{}", l_end);
+                raw!(self.out, "{}:", l_end);
+                let phi_reg = self.r();
+                line!(self.out, "{} = phi i64 [ {}, %{} ], [ {}, %{} ]", phi_reg, v_res, l_v, f_res, l_f);
+                Ok(phi_reg)
             }
         }
     }

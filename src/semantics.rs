@@ -623,6 +623,7 @@ impl BorrowChecker {
                     self.analizar_expresion(val);
                 }
             }
+            Declaracion::Romper | Declaracion::Continuar => {}
 
             Declaracion::Rasgo { .. } => {}
             Declaracion::Implementacion { .. } => {}
@@ -699,6 +700,17 @@ impl BorrowChecker {
             Expresion::Unaria { expr: e, .. } => {
                 self.analizar_expresion_con_depth(e, depth + 1);
                 None
+            }
+
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                self.analizar_expresion_con_depth(condicion, depth + 1);
+                let t_v = self.analizar_expresion_con_depth(si_verdadero, depth + 1);
+                self.analizar_expresion_con_depth(si_falso, depth + 1);
+                t_v
             }
 
             Expresion::LlamadaFuncion { nombre, argumentos } => {
@@ -1489,6 +1501,17 @@ impl TypeChecker {
                 }
             }
 
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                self.inferir_tipo_con_depth(condicion, depth + 1);
+                let t_v = self.inferir_tipo_con_depth(si_verdadero, depth + 1);
+                let t_f = self.inferir_tipo_con_depth(si_falso, depth + 1);
+                t_v.or(t_f)
+            }
+
             Expresion::LlamadaFuncion { nombre, argumentos } => {
                 let tipos_args: Vec<Option<Tipo>> = argumentos
                     .iter()
@@ -2124,6 +2147,12 @@ mod tests {
             "sino si sin else final deberia funcionar: {:?}",
             result
         );
+    }
+
+    #[test]
+    fn test_o_si() {
+        let result = analizar_source("funcion main() {\n    variable x = 2\n    si x == 1 {\n        escribir(\"uno\")\n    } o si x == 2 {\n        escribir(\"dos\")\n    } sino {\n        escribir(\"otro\")\n    }\n}");
+        assert!(result.is_ok(), "o si deberia funcionar: {:?}", result);
     }
 }
 

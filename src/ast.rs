@@ -183,6 +183,12 @@ pub enum Expresion {
         operador: OperadorUnario,
         expr: Box<Expresion>,
     },
+    /// Operador ternario (ej: condicion ? verdadero : falso)
+    Ternario {
+        condicion: Box<Expresion>,
+        si_verdadero: Box<Expresion>,
+        si_falso: Box<Expresion>,
+    },
     /// Llamada a función (ej: escribir("hola"))
     LlamadaFuncion {
         nombre: String,
@@ -361,6 +367,10 @@ pub enum Declaracion {
     },
     /// Retornar valor
     Retornar { valor: Option<Expresion> },
+    /// Romper bucle
+    Romper,
+    /// Continuar bucle
+    Continuar,
     /// Importar módulo: importar "ruta"
     Importar(String),
     /// Definición de enum: tipo Nombre = Variante1 | Variante2(Tipo)

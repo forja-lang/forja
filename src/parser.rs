@@ -164,6 +164,14 @@ impl Parser {
             TokenKind::Repetir => self.parse_repetir(),
             TokenKind::Cuando => self.parse_cuando(),
             TokenKind::Retornar => self.parse_retornar(),
+            TokenKind::Romper => {
+                self.avanzar();
+                Ok(Some(Declaracion::Romper))
+            }
+            TokenKind::Continuar => {
+                self.avanzar();
+                Ok(Some(Declaracion::Continuar))
+            }
             TokenKind::Importar => self.parse_importar(),
             TokenKind::Hilo => self.parse_hilo(),
             TokenKind::Canal => self.parse_canal(),
@@ -976,7 +984,7 @@ impl Parser {
         )?;
         let bloque_verdadero = self.parse_bloque()?;
 
-        // Manejar sino / sino si
+        // Manejar sino / o si / sino si
         let bloque_falso = if self.coincide(TokenKind::Sino) {
             self.avanzar(); // consume 'sino'
             if self.coincide(TokenKind::Si) {
@@ -994,6 +1002,15 @@ impl Parser {
                     "Se esperaba '{' para el bloque del 'sino'.",
                 )?;
                 Some(self.parse_bloque()?)
+            }
+        } else if self.coincide(TokenKind::O) && self.peek_siguiente().map(|t| &t.kind) == Some(&TokenKind::Si) {
+            self.avanzar(); // consume 'o'
+            self.avanzar(); // consume 'si'
+            let o_si = self.parse_si_desde_condicion()?;
+            if let Some(decl) = o_si {
+                Some(vec![decl])
+            } else {
+                None
             }
         } else {
             None
@@ -1748,7 +1765,7 @@ impl Parser {
     /// Asignación como expresión (precedencia más baja): x = 5, a = b = 3
     /// La asignación es asociativa a la derecha.
     fn parse_expresion_asignacion(&mut self) -> Result<Expresion, ErrorForja> {
-        let expr = self.parse_expresion_logica()?;
+        let expr = self.parse_expresion_ternario()?;
         if self.coincide(TokenKind::Igual) {
             match &expr {
                 Expresion::Identificador { .. } => {
@@ -1793,6 +1810,27 @@ impl Parser {
             }
         }
         Ok(expr)
+    }
+
+    /// Expresiones ternarias: cond ? verdadero : falso
+    fn parse_expresion_ternario(&mut self) -> Result<Expresion, ErrorForja> {
+        let cond = self.parse_expresion_logica()?;
+        if self.coincide(TokenKind::Interrogacion) {
+            self.avanzar(); // consumir ?
+            let si_verdadero = self.parse_expresion()?;
+            self.esperar(
+                TokenKind::DosPuntos,
+                "Se esperaba ':' en la expresión ternaria (condición ? verdadero : falso).",
+            )?;
+            let si_falso = self.parse_expresion_ternario()?;
+            Ok(Expresion::Ternario {
+                condicion: Box::new(cond),
+                si_verdadero: Box::new(si_verdadero),
+                si_falso: Box::new(si_falso),
+            })
+        } else {
+            Ok(cond)
+        }
     }
 
     /// Expresiones lógicas: || (O)
@@ -2400,14 +2438,61 @@ impl Parser {
                 }
             } else if self.coincide(TokenKind::CorcheteAbrir) {
                 expr = self.parse_index(expr)?;
-            } else if self.coincide(TokenKind::Interrogacion) {
-                self.avanzar(); // consumir ?
+            } else if self.coincide(TokenKind::Interrogacion) && !self.hay_dos_puntos_adelante() {
+                self.avanzar(); // consumir ? (operador postfix Try)
                 expr = Expresion::Try(Box::new(expr));
             } else {
                 break;
             }
         }
         Ok(expr)
+    }
+
+    /// Verifica si hay un ':' adelante en el mismo nivel sintáctico para distinguir ternario de Try
+    fn hay_dos_puntos_adelante(&self) -> bool {
+        let mut idx = self.pos + 1;
+        let mut depth_paren = 0;
+        let mut depth_corchete = 0;
+        let mut depth_llave = 0;
+        while idx < self.tokens.len() {
+            match &self.tokens[idx].kind {
+                TokenKind::PuntoComa | TokenKind::EOF => break,
+                TokenKind::DosPuntos
+                    if depth_paren == 0 && depth_corchete == 0 && depth_llave == 0 =>
+                {
+                    return true;
+                }
+                TokenKind::ParenAbrir => depth_paren += 1,
+                TokenKind::ParenCerrar => {
+                    if depth_paren == 0 {
+                        break;
+                    }
+                    depth_paren -= 1;
+                }
+                TokenKind::CorcheteAbrir => depth_corchete += 1,
+                TokenKind::CorcheteCerrar => {
+                    if depth_corchete == 0 {
+                        break;
+                    }
+                    depth_corchete -= 1;
+                }
+                TokenKind::LlaveAbrir => depth_llave += 1,
+                TokenKind::LlaveCerrar => {
+                    if depth_llave == 0 {
+                        break;
+                    }
+                    depth_llave -= 1;
+                }
+                TokenKind::Coma
+                    if depth_paren == 0 && depth_corchete == 0 && depth_llave == 0 =>
+                {
+                    break;
+                }
+                _ => {}
+            }
+            idx += 1;
+        }
+        false
     }
 
     /// Parsea acceso por índice: expr[índice]
@@ -2554,9 +2639,35 @@ impl Parser {
             }
         }
 
+        if self.coincide(TokenKind::LlaveAbrir) {
+            self.avanzar(); // consume '{'
+            let mut pares = Vec::new();
+            if !self.coincide(TokenKind::LlaveCerrar) {
+                loop {
+                    let campo = self.esperar_identificador("Se esperaba nombre de campo")?;
+                    self.esperar(TokenKind::DosPuntos, "Se esperaba ':' después del campo")?;
+                    let val = self.parse_expresion()?;
+                    pares.push((Expresion::LiteralTexto(campo), val));
+                    if self.coincide(TokenKind::Coma) {
+                        self.avanzar();
+                        if self.coincide(TokenKind::LlaveCerrar) {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+            self.esperar(TokenKind::LlaveCerrar, "Se esperaba '}' al cerrar struct-literal")?;
+            return Ok(Expresion::Instanciacion {
+                clase,
+                argumentos: vec![Expresion::Mapa(pares)],
+            });
+        }
+
         self.esperar(
             TokenKind::ParenAbrir,
-            "Se esperaba '(' después del nombre de la clase.",
+            "Se esperaba '(' o '{' después del nombre de la clase.",
         )?;
         let argumentos = self.parse_argumentos()?;
         self.esperar(
@@ -2889,6 +3000,15 @@ impl Parser {
             &self.tokens[self.tokens.len() - 1] // EOF
         } else {
             &self.tokens[self.pos]
+        }
+    }
+
+    /// Obtiene el token siguiente al actual sin consumirlo
+    fn peek_siguiente(&self) -> Option<&Token> {
+        if self.pos + 1 < self.tokens.len() {
+            Some(&self.tokens[self.pos + 1])
+        } else {
+            None
         }
     }
 

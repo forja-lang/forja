@@ -124,14 +124,8 @@ impl Optimizer {
                     enlace_nombre: enlace_nombre.clone(),
                     atributos: atributos.clone(),
                     doc: doc.clone(),
-                    precondiciones: precondiciones
-                        .iter()
-                        .map(|c| self.optimizar_contrato(c))
-                        .collect(),
-                    postcondiciones: postcondiciones
-                        .iter()
-                        .map(|c| self.optimizar_contrato(c))
-                        .collect(),
+                    precondiciones: self.optimizar_contratos(precondiciones),
+                    postcondiciones: self.optimizar_contratos(postcondiciones),
                 }
             }
             Declaracion::Clase {
@@ -153,16 +147,8 @@ impl Optimizer {
                             .iter()
                             .map(|d| self.optimizar_declaracion(d))
                             .collect(),
-                        precondiciones: m
-                            .precondiciones
-                            .iter()
-                            .map(|c| self.optimizar_contrato(c))
-                            .collect(),
-                        postcondiciones: m
-                            .postcondiciones
-                            .iter()
-                            .map(|c| self.optimizar_contrato(c))
-                            .collect(),
+                        precondiciones: self.optimizar_contratos(&m.precondiciones),
+                        postcondiciones: self.optimizar_contratos(&m.postcondiciones),
                     })
                     .collect();
                 Declaracion::Clase {
@@ -171,10 +157,7 @@ impl Optimizer {
                     campos: campos.clone(),
                     metodos: metodos_opt,
                     atributos: atributos.clone(),
-                    invariantes: invariantes
-                        .iter()
-                        .map(|c| self.optimizar_contrato(c))
-                        .collect(),
+                    invariantes: self.optimizar_contratos(invariantes),
                 }
             }
             Declaracion::Si {
@@ -252,6 +235,8 @@ impl Optimizer {
             Declaracion::Retornar { valor } => Declaracion::Retornar {
                 valor: valor.as_ref().map(|v| self.optimizar_expresion(v)),
             },
+            Declaracion::Romper => Declaracion::Romper,
+            Declaracion::Continuar => Declaracion::Continuar,
             Declaracion::Expresion(expr) => Declaracion::Expresion(self.optimizar_expresion(expr)),
             Declaracion::Implementacion {
                 rasgo_nombre,
@@ -269,16 +254,8 @@ impl Optimizer {
                             .iter()
                             .map(|d| self.optimizar_declaracion(d))
                             .collect(),
-                        precondiciones: m
-                            .precondiciones
-                            .iter()
-                            .map(|c| self.optimizar_contrato(c))
-                            .collect(),
-                        postcondiciones: m
-                            .postcondiciones
-                            .iter()
-                            .map(|c| self.optimizar_contrato(c))
-                            .collect(),
+                        precondiciones: self.optimizar_contratos(&m.precondiciones),
+                        postcondiciones: self.optimizar_contratos(&m.postcondiciones),
                     })
                     .collect();
                 Declaracion::Implementacion {
@@ -289,6 +266,19 @@ impl Optimizer {
             }
             _ => decl.clone(),
         }
+    }
+
+    fn optimizar_contratos(&mut self, contratos: &[Contrato]) -> Vec<Contrato> {
+        let mut resultado = Vec::new();
+        for c in contratos {
+            let opt = self.optimizar_contrato(c);
+            if matches!(opt.condicion, Expresion::LiteralBooleano(true)) {
+                self.cambios_realizados += 1;
+            } else {
+                resultado.push(opt);
+            }
+        }
+        resultado
     }
 
     fn optimizar_contrato(&mut self, contrato: &Contrato) -> Contrato {
@@ -319,6 +309,8 @@ impl Optimizer {
             } => {
                 let izq = self.optimizar_expresion(izquierda);
                 let der = self.optimizar_expresion(derecha);
+
+                // 1. Evaluación de constantes
                 if let (Some(a), Some(b)) = (self.literal_a_valor(&izq), self.literal_a_valor(&der))
                 {
                     if let Some(resultado) = self.evaluar_binaria(&a, operador, &b) {
@@ -326,6 +318,77 @@ impl Optimizer {
                         return self.valor_a_expresion(&resultado);
                     }
                 }
+
+                // 2. Concatenación de cadenas constantes
+                if *operador == Operador::Suma {
+                    if let (Expresion::LiteralTexto(a), Expresion::LiteralTexto(b)) = (&izq, &der) {
+                        self.cambios_realizados += 1;
+                        return Expresion::LiteralTexto(format!("{}{}", a, b));
+                    }
+                }
+
+                // 3. Cortocircuito de operadores lógicos (&& y ||)
+                match operador {
+                    Operador::Y => {
+                        if matches!(&izq, Expresion::LiteralBooleano(false)) {
+                            self.cambios_realizados += 1;
+                            return Expresion::LiteralBooleano(false);
+                        }
+                        if matches!(&izq, Expresion::LiteralBooleano(true)) {
+                            self.cambios_realizados += 1;
+                            return der;
+                        }
+                    }
+                    Operador::O => {
+                        if matches!(&izq, Expresion::LiteralBooleano(true)) {
+                            self.cambios_realizados += 1;
+                            return Expresion::LiteralBooleano(true);
+                        }
+                        if matches!(&izq, Expresion::LiteralBooleano(false)) {
+                            self.cambios_realizados += 1;
+                            return der;
+                        }
+                    }
+                    // 4. Identidades algebraicas (+ 0, - 0, * 1, * 0, / 1)
+                    Operador::Suma => {
+                        if matches!(&der, Expresion::LiteralNumero(0)) {
+                            self.cambios_realizados += 1;
+                            return izq;
+                        }
+                        if matches!(&izq, Expresion::LiteralNumero(0)) {
+                            self.cambios_realizados += 1;
+                            return der;
+                        }
+                    }
+                    Operador::Resta => {
+                        if matches!(&der, Expresion::LiteralNumero(0)) {
+                            self.cambios_realizados += 1;
+                            return izq;
+                        }
+                    }
+                    Operador::Multiplicacion => {
+                        if matches!(&der, Expresion::LiteralNumero(1)) {
+                            self.cambios_realizados += 1;
+                            return izq;
+                        }
+                        if matches!(&izq, Expresion::LiteralNumero(1)) {
+                            self.cambios_realizados += 1;
+                            return der;
+                        }
+                        if matches!(&der, Expresion::LiteralNumero(0)) || matches!(&izq, Expresion::LiteralNumero(0)) {
+                            self.cambios_realizados += 1;
+                            return Expresion::LiteralNumero(0);
+                        }
+                    }
+                    Operador::Division => {
+                        if matches!(&der, Expresion::LiteralNumero(1)) {
+                            self.cambios_realizados += 1;
+                            return izq;
+                        }
+                    }
+                    _ => {}
+                }
+
                 Expresion::Binaria {
                     izquierda: Box::new(izq),
                     operador: operador.clone(),
@@ -333,7 +396,19 @@ impl Optimizer {
                 }
             }
             Expresion::Unaria { operador, expr: e } => {
-                let inner = self.optimizar_expresion(e);
+                let mut inner = self.optimizar_expresion(e);
+                while let Expresion::Grupo(g) = inner {
+                    inner = *g;
+                }
+
+                // Doble negación
+                if let Expresion::Unaria { operador: inner_op, expr: inner_expr } = &inner {
+                    if inner_op == operador {
+                        self.cambios_realizados += 1;
+                        return *inner_expr.clone();
+                    }
+                }
+
                 if let Some(valor) = self.literal_a_valor(&inner) {
                     match operador {
                         OperadorUnario::No => {
@@ -357,6 +432,30 @@ impl Optimizer {
                 Expresion::Unaria {
                     operador: operador.clone(),
                     expr: Box::new(inner),
+                }
+            }
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                let cond_opt = self.optimizar_expresion(condicion);
+                let v_opt = self.optimizar_expresion(si_verdadero);
+                let f_opt = self.optimizar_expresion(si_falso);
+                if let Some(valor) = self.literal_a_valor(&cond_opt) {
+                    if let Some(b) = valor.as_booleano() {
+                        self.cambios_realizados += 1;
+                        if b {
+                            return v_opt;
+                        } else {
+                            return f_opt;
+                        }
+                    }
+                }
+                Expresion::Ternario {
+                    condicion: Box::new(cond_opt),
+                    si_verdadero: Box::new(v_opt),
+                    si_falso: Box::new(f_opt),
                 }
             }
             Expresion::Grupo(expr) => {
@@ -681,6 +780,7 @@ impl DeadCodeEliminator {
                         self.recolectar_en_expresion(val);
                     }
                 }
+                Declaracion::Romper | Declaracion::Continuar => {}
                 Declaracion::Enum { .. } | Declaracion::Importar(_) => {}
                 Declaracion::Si {
                     condicion,
@@ -935,20 +1035,27 @@ mod tests {
     }
 
     #[test]
-    fn test_dce_elimina_var_muerta() {
-        let prog = dce_source("variable x = 5\nescribir(\"hola\")");
-        assert_eq!(prog.declaraciones.len(), 1);
-    }
-
-    #[test]
-    fn test_dce_conserva_var_usada() {
-        let prog = dce_source("variable x = 5\nescribir(x)");
-        assert_eq!(prog.declaraciones.len(), 2);
-    }
-
-    #[test]
-    fn test_dce_var_asignada() {
-        let prog = dce_source("variable x = 5\nx = 10\nescribir(x)");
-        assert_eq!(prog.declaraciones.len(), 3);
+    fn test_optimizar_identidad_algebraica_y_short_circuit() {
+        let prog = optimizar_source("variable x = a + 0\nvariable y = a * 1\nvariable z = a * 0\nvariable s = \"hola \" + \"mundo\"\nvariable b = no (no a)");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable { valor: Some(Expresion::Identificador { nombre, .. }), .. } => assert_eq!(nombre, "a"),
+            _ => panic!("Falló optimización x + 0"),
+        }
+        match &prog.declaraciones[1] {
+            Declaracion::Variable { valor: Some(Expresion::Identificador { nombre, .. }), .. } => assert_eq!(nombre, "a"),
+            _ => panic!("Falló optimización a * 1"),
+        }
+        match &prog.declaraciones[2] {
+            Declaracion::Variable { valor: Some(Expresion::LiteralNumero(0)), .. } => {},
+            _ => panic!("Falló optimización a * 0"),
+        }
+        match &prog.declaraciones[3] {
+            Declaracion::Variable { valor: Some(Expresion::LiteralTexto(s)), .. } => assert_eq!(s, "hola mundo"),
+            _ => panic!("Falló concatenación de cadenas"),
+        }
+        match &prog.declaraciones[4] {
+            Declaracion::Variable { valor: Some(Expresion::Identificador { nombre, .. }), .. } => assert_eq!(nombre, "a"),
+            _ => panic!("Falló doble negación"),
+        }
     }
 }

@@ -420,6 +420,14 @@ impl Formatter {
                     self.push("retornar\n");
                 }
             }
+            Declaracion::Romper => {
+                self.push(&self.indent_str());
+                self.push("romper\n");
+            }
+            Declaracion::Continuar => {
+                self.push(&self.indent_str());
+                self.push("continuar\n");
+            }
             Declaracion::Rasgo { nombre, metodos } => {
                 self.push(&format!("{}rasgo {} {{\n", self.indent_str(), nombre));
                 self.indent += 1;
@@ -584,6 +592,16 @@ impl Formatter {
                 let izq = self.expresion_a_string(izquierda);
                 let der = self.expresion_a_string(derecha);
                 format!("{}{}{}", izq, op, der)
+            }
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                let cond = self.expresion_a_string(condicion);
+                let v = self.expresion_a_string(si_verdadero);
+                let f = self.expresion_a_string(si_falso);
+                format!("{} ? {} : {}", cond, v, f)
             }
             Expresion::LlamadaFuncion { nombre, argumentos } => {
                 let mut args = Vec::new();

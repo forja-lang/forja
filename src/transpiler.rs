@@ -2196,6 +2196,13 @@ impl Transpiler {
                 }
             }
 
+            Declaracion::Romper => {
+                self.emit_line("break;");
+            }
+            Declaracion::Continuar => {
+                self.emit_line("continue;");
+            }
+
             Declaracion::AsignacionMultiple {
                 variables,
                 mutable,
@@ -2340,6 +2347,17 @@ impl Transpiler {
                     OperadorUnario::No => "!",
                 };
                 format!("{}{}", op_str, e_str)
+            }
+
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                let cond = self.transpilar_expresion(condicion);
+                let v = self.transpilar_expresion(si_verdadero);
+                let f = self.transpilar_expresion(si_falso);
+                format!("(if {} {{ {} }} else {{ {} }})", cond, v, f)
             }
 
             Expresion::LlamadaFuncion { nombre, argumentos } => {
@@ -2983,6 +3001,18 @@ impl Transpiler {
                         OperadorUnario::No => "OperadorUnario::No",
                     },
                     self.generar_ast_expresion(e)
+                )
+            }
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                format!(
+                    "Expresion::Ternario {{ condicion: Box::new({}), si_verdadero: Box::new({}), si_falso: Box::new({}) }}",
+                    self.generar_ast_expresion(condicion),
+                    self.generar_ast_expresion(si_verdadero),
+                    self.generar_ast_expresion(si_falso)
                 )
             }
             Expresion::LlamadaFuncion { nombre, argumentos } => {

@@ -369,6 +369,8 @@ pub struct BytecodeGenerator {
     /// Profundidad actual de recursión al generar expresiones.
     /// Previene stack overflow en ASTs con expresiones muy anidadas.
     profundidad_actual: u32,
+    /// Pila de (label_inicio, label_fin) de bucles activos para romper/continuar
+    loop_stack: Vec<(usize, usize)>,
 }
 
 impl BytecodeGenerator {
@@ -386,6 +388,7 @@ impl BytecodeGenerator {
             hilo_counter: 0,
             clases_con_constructor: std::collections::HashSet::new(),
             profundidad_actual: 0,
+            loop_stack: Vec::new(),
         }
     }
 
@@ -1087,6 +1090,8 @@ impl BytecodeGenerator {
                 let label_inicio = self.nueva_label();
                 let label_fin = self.nueva_label();
 
+                self.loop_stack.push((label_inicio, label_fin));
+
                 self.emitir(Opcode::Label(label_inicio));
                 self.generar_expresion(condicion);
                 self.emitir(Opcode::JumpSiFalso(label_fin));
@@ -1095,6 +1100,7 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::Jump(label_inicio));
 
                 self.emitir(Opcode::Label(label_fin));
+                self.loop_stack.pop();
             }
 
             Declaracion::Cuando {
@@ -1129,6 +1135,8 @@ impl BytecodeGenerator {
                             let label_inicio = self.nueva_label();
                             let label_fin = self.nueva_label();
 
+                            self.loop_stack.push((label_inicio, label_fin));
+
                             if let Some(init) = inicializacion {
                                 self.generar_declaracion(init);
                             }
@@ -1148,6 +1156,7 @@ impl BytecodeGenerator {
 
                             self.emitir(Opcode::Jump(label_inicio));
                             self.emitir(Opcode::Label(label_fin));
+                            self.loop_stack.pop();
                             return;
                         }
                     }
@@ -1156,6 +1165,8 @@ impl BytecodeGenerator {
                 // Fallback: genérico
                 let label_inicio = self.nueva_label();
                 let label_fin = self.nueva_label();
+
+                self.loop_stack.push((label_inicio, label_fin));
 
                 if let Some(init) = inicializacion {
                     self.generar_declaracion(init);
@@ -1175,6 +1186,7 @@ impl BytecodeGenerator {
 
                 self.emitir(Opcode::Jump(label_inicio));
                 self.emitir(Opcode::Label(label_fin));
+                self.loop_stack.pop();
             }
 
             Declaracion::Repetir { cantidad, bloque } => {
@@ -1183,6 +1195,8 @@ impl BytecodeGenerator {
                 let var_contador = Arc::from("__repetir_counter");
                 let label_inicio = self.nueva_label();
                 let label_fin = self.nueva_label();
+
+                self.loop_stack.push((label_inicio, label_fin));
 
                 self.emitir(Opcode::PushEntero(0));
                 self.emitir(Opcode::Declare(Arc::clone(&var_contador), true));
@@ -1202,6 +1216,7 @@ impl BytecodeGenerator {
 
                 self.emitir(Opcode::Jump(label_inicio));
                 self.emitir(Opcode::Label(label_fin));
+                self.loop_stack.pop();
             }
 
             Declaracion::LlamadaFuncion { nombre, argumentos } => {
@@ -1265,6 +1280,18 @@ impl BytecodeGenerator {
                     self.emitir(Opcode::PushNulo);
                 }
                 self.emitir(Opcode::Return);
+            }
+
+            Declaracion::Romper => {
+                if let Some((_, label_fin)) = self.loop_stack.last() {
+                    self.emitir(Opcode::Jump(*label_fin));
+                }
+            }
+
+            Declaracion::Continuar => {
+                if let Some((label_inicio, _)) = self.loop_stack.last() {
+                    self.emitir(Opcode::Jump(*label_inicio));
+                }
             }
 
             Declaracion::Expresion(expr) => {
@@ -1379,6 +1406,26 @@ impl BytecodeGenerator {
                 }
             }
 
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                let label_else = self.nueva_label();
+                let label_end = self.nueva_label();
+
+                self.generar_expresion(condicion);
+                self.emitir(Opcode::JumpSiFalso(label_else));
+
+                self.generar_expresion(si_verdadero);
+                self.emitir(Opcode::Jump(label_end));
+
+                self.emitir(Opcode::Label(label_else));
+                self.generar_expresion(si_falso);
+
+                self.emitir(Opcode::Label(label_end));
+            }
+
             Expresion::LlamadaFuncion { nombre, argumentos } => {
                 if nombre == "escribir" {
                     for arg in argumentos {
@@ -1437,8 +1484,27 @@ impl BytecodeGenerator {
             Expresion::Instanciacion { clase, argumentos } => {
                 // Crear objeto
                 self.emitir(Opcode::NewObject(Arc::from(clase.as_str())));
+                if argumentos.len() == 1 {
+                    if let Expresion::Mapa(pares) = &argumentos[0] {
+                        // Struct-literal initializer: nuevo Clase { campo: valor, ... }
+                        // Declare a temp variable to hold the object while we set fields
+                        let tmp: Arc<str> = Arc::from("__struct_init_tmp__");
+                        self.emitir(Opcode::Declare(tmp.clone(), true));
+                        for (clave_expr, val_expr) in pares {
+                            if let Expresion::LiteralTexto(nombre_campo) = clave_expr {
+                                // Stack: push valor, push obj, SetField
+                                // SetField expects: [valor, obj] top=obj
+                                self.generar_expresion(val_expr);
+                                self.emitir(Opcode::Load(tmp.clone()));
+                                self.emitir(Opcode::SetField(Arc::from(nombre_campo.as_str())));
+                            }
+                        }
+                        // Leave the object on the stack
+                        self.emitir(Opcode::Load(tmp));
+                    }
+                }
                 // Si hay argumentos o la clase define un constructor, llamarlo con self + args
-                if !argumentos.is_empty() || self.clases_con_constructor.contains(clase) {
+                if (!argumentos.is_empty() && !matches!(&argumentos[0], Expresion::Mapa(_))) || self.clases_con_constructor.contains(clase) {
                     self.emitir(Opcode::Dup);
                     for arg in argumentos {
                         self.generar_expresion(arg);
@@ -1446,8 +1512,6 @@ impl BytecodeGenerator {
                     // Llamar a "Clase.nuevo" con nargs+1 (incluyendo self)
                     let constructor = Arc::from(format!("{}.{}", clase, "nuevo"));
                     self.emitir(Opcode::Call(constructor, argumentos.len() + 1));
-                    // El constructor NO pushea valor de retorno (Return no modifica el stack),
-                    // así que NO hacemos Pop — el objeto original de NewObject queda arriba.
                 }
                 // El objeto queda en el stack para ser asignado a una variable
             }

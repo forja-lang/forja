@@ -373,6 +373,14 @@ impl DiagramGenerator {
                 let node = self.add_node(&label, "[", "]");
                 (Some(node.clone()), Some(node))
             }
+            Declaracion::Romper => {
+                let node = self.add_node("romper", "[", "]");
+                (Some(node.clone()), Some(node))
+            }
+            Declaracion::Continuar => {
+                let node = self.add_node("continuar", "[", "]");
+                (Some(node.clone()), Some(node))
+            }
             Declaracion::Importar(r) => {
                 self.output
                     .push_str(&format!("    %% Importar \"{}\"\n", r));
@@ -487,6 +495,18 @@ impl DiagramGenerator {
                     OperadorUnario::No => "!",
                 };
                 format!("{}{}", op_str, self.ec(ex))
+            }
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                format!(
+                    "{} ? {} : {}",
+                    self.ec(condicion),
+                    self.ec(si_verdadero),
+                    self.ec(si_falso)
+                )
             }
             Expresion::LlamadaFuncion { nombre, argumentos } => {
                 let args: Vec<String> = argumentos.iter().map(|a| self.ec(a)).collect();
