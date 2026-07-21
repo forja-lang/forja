@@ -49,23 +49,59 @@ impl PackageResolver {
             return Some(local);
         }
 
-        // 3. En stdlib
+        // 3. En stdlib (relativo al directorio del proyecto y sus ancestros)
         let mut base_dir = self.project_dir.clone();
+        let mut found_stdlib = None;
         loop {
             let stdlib = base_dir.join("stdlib").join(path);
             if stdlib.with_extension("fa").is_file() {
-                return Some(stdlib.with_extension("fa"));
+                found_stdlib = Some(stdlib.with_extension("fa"));
+                break;
             }
             let dir_entrypoint = stdlib.join(format!("{}.fa", path.display()));
             if dir_entrypoint.is_file() {
-                return Some(dir_entrypoint);
+                found_stdlib = Some(dir_entrypoint);
+                break;
             }
             if stdlib.is_file() {
-                return Some(stdlib);
+                found_stdlib = Some(stdlib);
+                break;
             }
             if !base_dir.pop() {
                 break;
             }
+        }
+
+        // Fallback: Buscar stdlib relativo al ejecutable de Forja
+        if found_stdlib.is_none() {
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(exe_dir) = exe_path.parent() {
+                    let mut base_dir = exe_dir.to_path_buf();
+                    loop {
+                        let stdlib = base_dir.join("stdlib").join(path);
+                        if stdlib.with_extension("fa").is_file() {
+                            found_stdlib = Some(stdlib.with_extension("fa"));
+                            break;
+                        }
+                        let dir_entrypoint = stdlib.join(format!("{}.fa", path.display()));
+                        if dir_entrypoint.is_file() {
+                            found_stdlib = Some(dir_entrypoint);
+                            break;
+                        }
+                        if stdlib.is_file() {
+                            found_stdlib = Some(stdlib);
+                            break;
+                        }
+                        if !base_dir.pop() {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(p) = found_stdlib {
+            return Some(p);
         }
 
         // 4. En paquetes globales
@@ -109,6 +145,28 @@ impl PackageResolver {
             }
             if !base_dir.pop() {
                 break;
+            }
+        }
+
+        // Fallback para builtin: Buscar stdlib relativo al ejecutable de Forja
+        if builtin_src.is_none() {
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(exe_dir) = exe_path.parent() {
+                    let mut base_dir = exe_dir.to_path_buf();
+                    loop {
+                        let candidate = base_dir
+                            .join("stdlib")
+                            .join(nombre)
+                            .join(format!("{}.fa", nombre));
+                        if candidate.exists() {
+                            builtin_src = Some(candidate);
+                            break;
+                        }
+                        if !base_dir.pop() {
+                            break;
+                        }
+                    }
+                }
             }
         }
 
