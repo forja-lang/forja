@@ -21,6 +21,10 @@ pub enum TokenKind {
     Para,
     /// `repetir` - bucle de repetición
     Repetir,
+    /// `romper` - salir de un bucle (break)
+    Romper,
+    /// `continuar` - siguiente iteración de un bucle (continue)
+    Continuar,
     /// `clase` - definición de clase
     Clase,
     /// `constructor` - constructor de clase
@@ -205,6 +209,8 @@ impl fmt::Display for TokenKind {
             TokenKind::Mientras => write!(f, "mientras"),
             TokenKind::Para => write!(f, "para"),
             TokenKind::Repetir => write!(f, "repetir"),
+            TokenKind::Romper => write!(f, "romper"),
+            TokenKind::Continuar => write!(f, "continuar"),
             TokenKind::Clase => write!(f, "clase"),
             TokenKind::Constructor => write!(f, "constructor"),
             TokenKind::Este => write!(f, "este"),

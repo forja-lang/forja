@@ -182,6 +182,9 @@ const KEYWORDS_COMPLETION: &[(&str, CompletionItemKind)] = &[
     ("requiere", CompletionItemKind::KEYWORD),
     ("asegura", CompletionItemKind::KEYWORD),
     ("siempre", CompletionItemKind::KEYWORD),
+    ("cuando", CompletionItemKind::KEYWORD),
+    ("resultado", CompletionItemKind::KEYWORD),
+    ("anterior", CompletionItemKind::KEYWORD),
     ("BD", CompletionItemKind::KEYWORD),
     ("Texto", CompletionItemKind::TYPE_PARAMETER),
     ("Entero", CompletionItemKind::TYPE_PARAMETER),
@@ -523,19 +526,10 @@ impl LanguageServer for Backend {
             ..Default::default()
         }));
 
-        // 2. Code Actions basados en errores
+        let text = self._get_text(&_uri).await;
         for err in &analisis.errores {
             let diag = Diagnostic {
-                range: Range {
-                    start: Position {
-                        line: (err.linea as u32).saturating_sub(1),
-                        character: (err.columna as u32).saturating_sub(1),
-                    },
-                    end: Position {
-                        line: (err.linea as u32).saturating_sub(1),
-                        character: err.columna as u32,
-                    },
-                },
+                range: calcular_rango_error_palabra(&text, err.linea, err.columna),
                 severity: Some(DiagnosticSeverity::ERROR),
                 source: Some("forja".to_string()),
                 message: err.mensaje.clone(),
@@ -857,16 +851,7 @@ impl Backend {
                     }
 
                     diagnostics.push(Diagnostic {
-                        range: Range {
-                            start: Position {
-                                line: (err.linea as u32).saturating_sub(1),
-                                character: (err.columna as u32).saturating_sub(1),
-                            },
-                            end: Position {
-                                line: (err.linea as u32).saturating_sub(1),
-                                character: err.columna as u32,
-                            },
-                        },
+                        range: calcular_rango_error_palabra(texto, err.linea, err.columna),
                         severity: Some(DiagnosticSeverity::ERROR),
                         source: Some("forja".to_string()),
                         message: mensaje,
@@ -881,16 +866,7 @@ impl Backend {
         if let Err(lex_errors) = lexer.tokenize() {
             for err in lex_errors {
                 diagnostics.push(Diagnostic {
-                    range: Range {
-                        start: Position {
-                            line: (err.linea as u32).saturating_sub(1),
-                            character: (err.columna as u32).saturating_sub(1),
-                        },
-                        end: Position {
-                            line: (err.linea as u32).saturating_sub(1),
-                            character: err.columna as u32,
-                        },
-                    },
+                    range: calcular_rango_error_palabra(texto, err.linea, err.columna),
                     severity: Some(DiagnosticSeverity::ERROR),
                     source: Some("forja".to_string()),
                     message: err.mensaje,
@@ -1171,6 +1147,9 @@ fn generar_tokens_semanticos(source: &str) -> Vec<SemanticToken> {
     let mut prev_col: u32 = 0;
 
     for token in &tokens {
+        if token.kind == TokenKind::EOF {
+            continue;
+        }
         let (tipo_idx, modifier_bitset) = clasificar_token(token);
 
         let linea = token.linea as u32;
@@ -1207,6 +1186,7 @@ fn clasificar_token(token: &Token) -> (u32, u32) {
         | TokenKind::Mut
         | TokenKind::Si
         | TokenKind::Sino
+        | TokenKind::O
         | TokenKind::Mientras
         | TokenKind::Para
         | TokenKind::Repetir
@@ -1234,6 +1214,7 @@ fn clasificar_token(token: &Token) -> (u32, u32) {
         | TokenKind::Seleccionar
         | TokenKind::Tiempo
         | TokenKind::Otro
+        | TokenKind::Cuando
         | TokenKind::Hilo
         | TokenKind::Canal
         | TokenKind::Enviar
@@ -1275,7 +1256,6 @@ fn clasificar_token(token: &Token) -> (u32, u32) {
         | TokenKind::Menor
         | TokenKind::MenorIgual
         | TokenKind::Y
-        | TokenKind::O
         | TokenKind::No
         | TokenKind::Pipe => (5, 0), // operator
         // Comentarios doc
@@ -1409,6 +1389,51 @@ fn es_variable_de_patron(source: &str, linea: usize, var_name: &str) -> bool {
         }
     }
     false
+}
+
+/// Calcula el rango completo (Range) del token o palabra en la posición dada por linea/columna
+fn calcular_rango_error_palabra(texto: &str, linea: usize, columna: usize) -> Range {
+    let line_idx = (linea as u32).saturating_sub(1);
+    let start_col = (columna as u32).saturating_sub(1);
+
+    if let Some(line_str) = texto.lines().nth(line_idx as usize) {
+        let chars: Vec<char> = line_str.chars().collect();
+        let col_idx = start_col as usize;
+
+        if col_idx < chars.len() {
+            let mut end_col = col_idx;
+            // Si el caracter actual es parte de una palabra identificador, avanzar hasta el final de la palabra
+            if chars[col_idx].is_alphanumeric() || chars[col_idx] == '_' {
+                while end_col < chars.len() && (chars[end_col].is_alphanumeric() || chars[end_col] == '_') {
+                    end_col += 1;
+                }
+            } else {
+                end_col = col_idx + 1;
+            }
+
+            return Range {
+                start: Position {
+                    line: line_idx,
+                    character: start_col,
+                },
+                end: Position {
+                    line: line_idx,
+                    character: end_col as u32,
+                },
+            };
+        }
+    }
+
+    Range {
+        start: Position {
+            line: line_idx,
+            character: start_col,
+        },
+        end: Position {
+            line: line_idx,
+            character: start_col + 1,
+        },
+    }
 }
 
 // ======================================================================

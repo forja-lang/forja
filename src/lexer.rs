@@ -137,9 +137,12 @@ impl Lexer {
             "mut" => TokenKind::Mut,
             "si" => TokenKind::Si,
             "sino" => TokenKind::Sino,
+            "o" => TokenKind::O,
             "mientras" => TokenKind::Mientras,
             "para" => TokenKind::Para,
             "repetir" => TokenKind::Repetir,
+            "romper" | "break" => TokenKind::Romper,
+            "continuar" | "continue" => TokenKind::Continuar,
             "clase" => TokenKind::Clase,
             "constructor" => TokenKind::Constructor,
             "este" => TokenKind::Este,
@@ -434,7 +437,17 @@ impl Lexer {
                         Some('$') => {
                             // \${  →  $ literal (escape de interpolación)
                             self.advance(); // consume $
-                            s.push('$');
+                            if self.current() == Some('{') {
+                                self.advance(); // consume {
+                                s.push_str("${");
+                            } else {
+                                s.push('$');
+                            }
+                        }
+                        Some('{') => {
+                            // \{  →  { literal (escape de interpolación)
+                            self.advance(); // consume {
+                            s.push('{');
                         }
                         Some(c) => {
                             s.push(c);
@@ -450,6 +463,27 @@ impl Lexer {
                             ));
                         }
                     }
+                }
+                Some('{') => {
+                    // === INTERPOLACIÓN DIRECTA {expresion} ===
+                    let (linea_act, col_act) = (self.linea, self.columna);
+
+                    // Guardar el texto acumulado hasta ahora
+                    let texto_actual = std::mem::take(&mut s);
+
+                    if primer_fragmento.is_none() {
+                        primer_fragmento = Some(texto_actual);
+                    } else {
+                        self.tokens_pendientes.push(Token::new(
+                            TokenKind::Texto(texto_actual),
+                            linea_act,
+                            col_act,
+                        ));
+                    }
+
+                    self.advance(); // consume {
+                    self.escanear_expresion_interpolada()?;
+                    continue;
                 }
                 Some('$') => {
                     // Verificar si es ${ (interpolación) o $$ ($ literal)

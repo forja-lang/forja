@@ -4252,10 +4252,20 @@ impl ForjaFast {
                                 self.ic_getfield[self.ip] = Some((clase_sym, sidx));
                             }
                         }
+                    } else if obj_val.es_mapa() {
+                        let mapa_obj = self.pop_valor()?;
+                        let midx = mapa_obj.indice_mapa();
+                        let key_str = c.as_ref();
+                        let valor = self.map_heap[midx as usize]
+                            .get(key_str)
+                            .cloned()
+                            .unwrap_or_else(ValorFast::nulo);
+                        self.push_valor(valor);
                     } else {
                         if self.show_bytecode {
-                            eprintln!("[GetField] not an object, pushing nulo");
+                            eprintln!("[GetField] not an object or map, pushing nulo");
                         }
+                        let _ = self.pop_valor();
                         self.push_valor(ValorFast::nulo());
                     }
                     self.ip += 1;
@@ -4409,8 +4419,57 @@ impl ForjaFast {
                             self.push_valor(ValorFast::nulo());
                             self.ip += 1;
                         }
+                    } else if obj.es_texto() {
+                        let txt_idx = obj.indice_texto();
+                        let s = self.get_str(txt_idx);
+                        match m.as_ref() {
+                            "longitud" | "length" | "len" => {
+                                self.push_valor(ValorFast::entero(s.chars().count() as i64));
+                            }
+                            "a_mayusculas" | "to_upper" | "uppercase" => {
+                                let res = s.to_uppercase();
+                                let ridx = self.alloc_str(Arc::from(res.as_str()));
+                                self.push_valor(ValorFast::texto(ridx));
+                            }
+                            "a_minusculas" | "to_lower" | "lowercase" => {
+                                let res = s.to_lowercase();
+                                let ridx = self.alloc_str(Arc::from(res.as_str()));
+                                self.push_valor(ValorFast::texto(ridx));
+                            }
+                            "contiene" | "contains" => {
+                                if !args.is_empty() && args[0].es_texto() {
+                                    let sub_s = self.get_str(args[0].indice_texto());
+                                    self.push_valor(ValorFast::booleano(s.contains(sub_s.as_ref())));
+                                } else {
+                                    self.push_valor(ValorFast::booleano(false));
+                                }
+                            }
+                            _ => {
+                                self.push_valor(ValorFast::nulo());
+                            }
+                        }
+                        self.ip += 1;
+                    } else if obj.es_arreglo() {
+                        let arr_idx = obj.indice_arreglo();
+                        match m.as_ref() {
+                            "longitud" | "length" | "len" => {
+                                let len = self.array_heap[arr_idx as usize].len() as i64;
+                                self.push_valor(ValorFast::entero(len));
+                            }
+                            "empujar" | "push" => {
+                                if !args.is_empty() {
+                                    self.array_heap[arr_idx as usize].push(args[0]);
+                                }
+                                self.push_valor(ValorFast::nulo());
+                            }
+                            _ => {
+                                self.push_valor(ValorFast::nulo());
+                            }
+                        }
+                        self.ip += 1;
                     } else {
                         self.push_valor(ValorFast::nulo());
+                        self.ip += 1;
                     }
                 }
 
@@ -4640,8 +4699,59 @@ impl ForjaFast {
                             self.push_valor(ValorFast::nulo());
                             self.ip += 1;
                         }
+                    } else if obj.es_texto() {
+                        let txt_idx = obj.indice_texto();
+                        let s = self.get_str(txt_idx);
+                        let m = self.sym_table.get(SymId(method_sym_id));
+                        match m {
+                            "longitud" | "length" | "len" => {
+                                self.push_valor(ValorFast::entero(s.chars().count() as i64));
+                            }
+                            "a_mayusculas" | "to_upper" | "uppercase" => {
+                                let res = s.to_uppercase();
+                                let ridx = self.alloc_str(Arc::from(res.as_str()));
+                                self.push_valor(ValorFast::texto(ridx));
+                            }
+                            "a_minusculas" | "to_lower" | "lowercase" => {
+                                let res = s.to_lowercase();
+                                let ridx = self.alloc_str(Arc::from(res.as_str()));
+                                self.push_valor(ValorFast::texto(ridx));
+                            }
+                            "contiene" | "contains" => {
+                                if !args.is_empty() && args[0].es_texto() {
+                                    let sub_s = self.get_str(args[0].indice_texto());
+                                    self.push_valor(ValorFast::booleano(s.contains(sub_s.as_ref())));
+                                } else {
+                                    self.push_valor(ValorFast::booleano(false));
+                                }
+                            }
+                            _ => {
+                                self.push_valor(ValorFast::nulo());
+                            }
+                        }
+                        self.ip += 1;
+                    } else if obj.es_arreglo() {
+                        let arr_idx = obj.indice_arreglo();
+                        let m = self.sym_table.get(SymId(method_sym_id));
+                        match m {
+                            "longitud" | "length" | "len" => {
+                                let len = self.array_heap[arr_idx as usize].len() as i64;
+                                self.push_valor(ValorFast::entero(len));
+                            }
+                            "empujar" | "push" => {
+                                if !args.is_empty() {
+                                    self.array_heap[arr_idx as usize].push(args[0]);
+                                }
+                                self.push_valor(ValorFast::nulo());
+                            }
+                            _ => {
+                                self.push_valor(ValorFast::nulo());
+                            }
+                        }
+                        self.ip += 1;
                     } else {
                         self.push_valor(ValorFast::nulo());
+                        self.ip += 1;
                     }
                 }
 
@@ -7219,8 +7329,8 @@ enum BuiltinFast {
 fn resolver_builtin_fast(m: &str) -> Option<BuiltinFast> {
     match m {
         "length" | "longitud" => Some(BuiltinFast::Len),
-        "to_upper" => Some(BuiltinFast::Upper),
-        "to_lower" => Some(BuiltinFast::Lower),
+        "to_upper" | "a_mayusculas" => Some(BuiltinFast::Upper),
+        "to_lower" | "a_minusculas" => Some(BuiltinFast::Lower),
         "contains" | "contiene" => Some(BuiltinFast::Contains),
         "split" | "dividir" => Some(BuiltinFast::Split),
         "trim" | "recortar" => Some(BuiltinFast::Trim),

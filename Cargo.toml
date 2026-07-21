@@ -1,6 +1,6 @@
 [package]
 name = "forja"
-version = "0.8.6"
+version = "0.8.7"
 edition = "2021"
 description = "Forja (fa) - Lenguaje de programación educativo en español"
 authors = ["lococoi"]
