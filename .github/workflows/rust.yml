@@ -199,7 +199,7 @@ jobs:
       - name: Build forja-wasm-gui with wasm-pack
         run: |
           mkdir -p wasm-output-gui
-          wasm-pack build crates/forja-wasm-gui --target web --out-dir wasm-output-gui --out-name forja_wasm_gui
+          WASM_OPT=false wasm-pack build crates/forja-wasm-gui --target web --out-dir wasm-output-gui --out-name forja_wasm_gui --no-opt
       - name: Optimize GUI WASM with wasm-opt
         run: wasm-opt --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext -O3 wasm-output-gui/forja_wasm_gui_bg.wasm -o wasm-output-gui/forja_wasm_gui_bg.wasm
       - name: Copy GUI WASM files to output
