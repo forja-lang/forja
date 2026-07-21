@@ -63,7 +63,69 @@ para (variable i = 0; i < 5; i = i + 1) {
 }
 ```
 
-### 3. Funciones y Diseño por Contrato (Design by Contract)
+### 3. Interpolación de Cadenas
+Forja soporta interpolación directa con `{expresion}` y también con `${expresion}`:
+```forja
+variable nombre = "Mundo"
+variable edad = 25
+
+// Interpolación con llaves simples
+escribir("Hola {nombre}, tenés {edad} años")
+
+// Interpolación con dólar-llave (también soportado)
+escribir("Resultado: ${2 + 3}")
+
+// Escape de llaves literales
+escribir("JSON: \{\"clave\": \"valor\"\}")
+```
+
+### 4. Acceso a Mapas con Sintaxis de Punto
+```forja
+variable config = {"host": "localhost", "puerto": 8080}
+
+// Acceso con punto (equivale a config["host"])
+escribir(config.host)    // → "localhost"
+escribir(config.puerto)  // → 8080
+```
+
+### 5. Métodos Integrados en Tipos Primitivos
+```forja
+// Métodos de Texto
+variable txt = "hola mundo"
+escribir(txt.longitud())       // → 10
+escribir(txt.a_mayusculas())   // → "HOLA MUNDO"
+escribir(txt.a_minusculas())   // → "hola mundo"
+escribir(txt.contiene("mundo"))// → verdadero
+
+// Métodos de Arreglo
+variable nums = [1, 2, 3]
+nums.empujar(4)
+escribir(nums.longitud())      // → 4
+```
+
+### 6. Inicialización Struct-Literal
+```forja
+clase Persona {
+    nombre
+    edad
+}
+
+// Inicialización con llaves (sin constructor manual)
+variable p = nuevo Persona { nombre: "Ana", edad: 25 }
+escribir(p.nombre) // → "Ana"
+
+// También funciona la forma clásica con constructor
+variable q = nuevo Persona("Juan", 30)
+```
+
+### 7. Operador Ternario
+```forja
+variable edad = 20
+variable mensaje = edad >= 18 ? "Mayor" : "Menor"
+escribir(mensaje) // → "Mayor"
+```
+
+### 8. Funciones y Diseño por Contrato (Design by Contract)
 Forja implementa el paradigma de diseño por contrato directamente en la firma de las funciones:
 ```forja
 funcion dividir(a: Entero, b: Entero) -> Entero
