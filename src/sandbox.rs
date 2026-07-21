@@ -34,10 +34,10 @@ pub struct SandboxRed {
 }
 
 impl SandboxRed {
-    /// Crea un sandbox con toda la red permitida (modo desarrollo).
+    /// Crea un sandbox en modo air-gapped (ninguna conexión permitida por defecto).
     pub fn new() -> Self {
         SandboxRed {
-            hosts_permitidos: Some(vec!["*".to_string()]), // Toda la red permitida
+            hosts_permitidos: None,
             puertos_permitidos: None,
         }
     }
