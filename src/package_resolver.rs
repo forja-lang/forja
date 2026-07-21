@@ -72,9 +72,12 @@ impl PackageResolver {
             }
         }
 
-        // Fallback: Buscar stdlib relativo al ejecutable de Forja
+        // Fallback: Buscar stdlib relativo al ejecutable de Forja (usando FORJA_ORIGINAL_EXE si existe debido al shadow copy en Windows)
         if found_stdlib.is_none() {
-            if let Ok(exe_path) = std::env::current_exe() {
+            let exe_path_opt = std::env::var("FORJA_ORIGINAL_EXE")
+                .map(PathBuf::from)
+                .or_else(|_| std::env::current_exe());
+            if let Ok(exe_path) = exe_path_opt {
                 if let Some(exe_dir) = exe_path.parent() {
                     let mut base_dir = exe_dir.to_path_buf();
                     loop {
@@ -148,9 +151,12 @@ impl PackageResolver {
             }
         }
 
-        // Fallback para builtin: Buscar stdlib relativo al ejecutable de Forja
+        // Fallback para builtin: Buscar stdlib relativo al ejecutable de Forja (considerando shadow copy en Windows)
         if builtin_src.is_none() {
-            if let Ok(exe_path) = std::env::current_exe() {
+            let exe_path_opt = std::env::var("FORJA_ORIGINAL_EXE")
+                .map(PathBuf::from)
+                .or_else(|_| std::env::current_exe());
+            if let Ok(exe_path) = exe_path_opt {
                 if let Some(exe_dir) = exe_path.parent() {
                     let mut base_dir = exe_dir.to_path_buf();
                     loop {
