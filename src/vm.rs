@@ -830,9 +830,7 @@ impl ForjaVM {
                 }
 
                 Opcode::Pop => {
-                    self.stack
-                        .pop()
-                        .ok_or(ErrorVM::StackUnderflow("Pop".to_string()))?;
+                    self.safe_pop()?;
                     self.ip += 1;
                 }
                 Opcode::Dup => {
@@ -2405,9 +2403,7 @@ impl ForjaVM {
                     self.ip += 1;
                 }
                 Uop::Pop => {
-                    self.stack
-                        .pop()
-                        .ok_or(ErrorVM::StackUnderflow("Pop".to_string()))?;
+                    self.safe_pop()?;
                     self.ip += 1;
                 }
                 Uop::Dup => {

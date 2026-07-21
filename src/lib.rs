@@ -346,7 +346,10 @@ pub fn ejecutar_con_opciones(
     let mut vm = ForjaFast::new();
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
+    #[cfg(target_pointer_width = "64")]
     vm.set_max_inst(10_000_000_000); // límite de seguridad para evitar bucles infinitos
+    #[cfg(not(target_pointer_width = "64"))]
+    vm.set_max_inst(2_000_000_000); // límite más bajo para sistemas de 32 bits (como wasm)
     if let Some(sb) = sandbox {
         vm.sandbox = sb;
     }
@@ -369,7 +372,10 @@ pub fn ejecutar_con_opciones_desde(
     let mut vm = ForjaFast::new();
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
+    #[cfg(target_pointer_width = "64")]
     vm.set_max_inst(10_000_000_000); // límite de seguridad para evitar bucles infinitos
+    #[cfg(not(target_pointer_width = "64"))]
+    vm.set_max_inst(2_000_000_000); // límite más bajo para sistemas de 32 bits (como wasm)
     if let Some(sb) = sandbox {
         vm.sandbox = sb;
     }
