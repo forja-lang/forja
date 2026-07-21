@@ -261,6 +261,7 @@ impl NativeRegistry {
         self.registrar("_sha256", native_sha256);
         // ─── Hash SHA-1 ───────────────────────────────────────────────────
         self.registrar("_sha1", native_sha1);
+        self.registrar("_sha1_hex", native_sha1_hex);
         // ─── BitTorrent (verificación de piezas) ──────────────────────────
         self.registrar("_bt_verificar_pieza", native_bt_verificar_pieza);
     }
@@ -1627,6 +1628,27 @@ fn native_sha1(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrF
 
     let data = obtener_texto(vm, args[0])?;
     let hash = sha1::Sha1::digest(data.as_bytes());
+    let hex_str = hash
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
+    let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
+    Ok(ValorFast::texto(idx))
+}
+
+/// Calcula SHA-1 de un texto en formato hexadecimal (bytes decodificados) y retorna el hash hexadecimal
+/// args[0]: datos a hashear en hexadecimal (Texto)
+/// Retorna: hash hexadecimal en minúsculas (40 caracteres)
+fn native_sha1_hex(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Err(ErrFast::TipoInv(
+            "_sha1_hex requiere 1 argumento: datos_hex (texto)".into(),
+        ));
+    }
+
+    let data_hex = obtener_texto(vm, args[0])?;
+    let data = hex_a_bytes(&data_hex);
+    let hash = sha1::Sha1::digest(&data);
     let hex_str = hash
         .iter()
         .map(|b| format!("{:02x}", b))
