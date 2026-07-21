@@ -1018,17 +1018,12 @@ fn cmd_run(args: &[String]) {
 
     let result = match vm_mode {
         "fast" => {
-            if contratos_explicit {
-                forja::ejecutar_con_opciones_desde(
-                    &source,
-                    &root_dir,
-                    verificar_contratos,
-                    Some(sandbox),
-                )
-            } else {
-                forja::ejecutar_desde(&source, &root_dir)
-                // ejecutar_desde usa sandbox default (air-gapped)
-            }
+            forja::ejecutar_con_opciones_desde(
+                &source,
+                &root_dir,
+                verificar_contratos,
+                Some(sandbox),
+            )
         }
         "jit" => forja::ejecutar_jit(&source),
         _ => forja::ejecutar_vm(&source), // Default: VM original
