@@ -934,15 +934,19 @@ fn cmd_run(args: &[String]) {
                 }
             }
             "--allow-net" => {
-                i += 1;
-                if i < args.len() {
+                if i + 1 < args.len() && !args[i + 1].starts_with("--") {
+                    i += 1;
                     allow_net = Some(args[i].clone());
+                } else {
+                    allow_net = Some("*".to_string());
                 }
             }
             "--allow-port" => {
-                i += 1;
-                if i < args.len() {
+                if i + 1 < args.len() && !args[i + 1].starts_with("--") {
+                    i += 1;
                     allow_port = Some(args[i].clone());
+                } else {
+                    allow_port = Some("*".to_string());
                 }
             }
             _ => {
@@ -1055,17 +1059,24 @@ fn construir_sandbox(
 
     if let Some(hosts_str) = allow_net {
         let hosts: Vec<String> = hosts_str.split(',').map(|s| s.trim().to_string()).collect();
-        sandbox.hosts_permitidos = Some(hosts);
-        // Si hay --allow-net, habilitamos puertos (inicialmente vacío = ninguno)
-        sandbox.puertos_permitidos = Some(vec![]);
+        sandbox.hosts_permitidos = Some(hosts.clone());
+        if hosts.contains(&"*".to_string()) && allow_port.is_none() {
+            sandbox.puertos_permitidos = None;
+        } else {
+            sandbox.puertos_permitidos = Some(vec![]);
+        }
     }
 
     if let Some(puertos_str) = allow_port {
-        let puertos: Vec<u16> = puertos_str
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
-        sandbox.puertos_permitidos = Some(puertos);
+        if puertos_str == "*" || puertos_str.is_empty() {
+            sandbox.puertos_permitidos = None;
+        } else {
+            let puertos: Vec<u16> = puertos_str
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
+            sandbox.puertos_permitidos = Some(puertos);
+        }
         // Si hay --allow-port pero no --allow-net, habilitamos todos los hosts
         if sandbox.hosts_permitidos.is_none() {
             sandbox.hosts_permitidos = Some(vec!["*".to_string()]);
