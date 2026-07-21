@@ -3428,7 +3428,7 @@ fn native_bencode_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<
     let data = hex_a_bytes(&hex_bencode);
 
     if data.is_empty() {
-        let idx = vm.alloc_str(Arc::from(""));
+        let _idx = vm.alloc_str(Arc::from(""));
         let mut map = std::collections::HashMap::new();
         let nulo = ValorFast::nulo();
         map.insert("valor".to_string(), nulo);

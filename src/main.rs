@@ -897,7 +897,6 @@ fn cmd_run(args: &[String]) {
     let mut native_mode = false;
     let mut hot_reload = false;
     let mut verificar_contratos = true; // default: contratos activados
-    let mut contratos_explicit = false; // si el usuario explicitó la opción
     let mut max_archivo = forja::MAX_ARCHIVO_DEFAULT_MB;
     let mut path: &String = &args[0];
     let mut allow_net: Option<String> = None;
@@ -921,11 +920,9 @@ fn cmd_run(args: &[String]) {
             "--no-debug" => {}
             "--contratos" => {
                 verificar_contratos = true;
-                contratos_explicit = true;
             }
             "--no-contratos" => {
                 verificar_contratos = false;
-                contratos_explicit = true;
             }
             "--max-archivo" => {
                 i += 1;
