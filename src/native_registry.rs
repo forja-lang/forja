@@ -606,7 +606,10 @@ fn native_socket_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
             let idx = vm.alloc_str(Arc::from(datos.as_str()));
             Ok(ValorFast::texto(idx))
         }
-        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock
+              || e.kind() == std::io::ErrorKind::TimedOut
+              || e.kind() == std::io::ErrorKind::ConnectionReset
+              || e.kind() == std::io::ErrorKind::BrokenPipe => {
             drop(stream);
             let idx = vm.alloc_str(Arc::from(""));
             Ok(ValorFast::texto(idx))
