@@ -214,6 +214,8 @@ impl NativeRegistry {
         self.registrar("_socket_udp_escuchar", native_socket_udp_escuchar);
         self.registrar("_socket_udp_enviar", native_socket_udp_enviar);
         self.registrar("_socket_udp_recibir", native_socket_udp_recibir);
+        self.registrar("_socket_udp_enviar_binario", native_socket_udp_enviar_binario);
+        self.registrar("_socket_udp_recibir_binario", native_socket_udp_recibir_binario);
 
         // ─── BitTorrent P2P ──────────────────────────────────────────────
         self.registrar("_bt_handshake", native_bt_handshake);
@@ -1012,7 +1014,89 @@ fn native_socket_udp_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
             let idx = vm.alloc_str(Arc::from(datos.as_str()));
             Ok(ValorFast::texto(idx))
         }
-        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+            let idx = vm.alloc_str(Arc::from(""));
+            Ok(ValorFast::texto(idx))
+        }
+        Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
+    }
+}
+
+/// Envía datos binarios (hex string) a través de un socket UDP.
+fn native_socket_udp_enviar_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 4 {
+        return Err(ErrFast::TipoInv(
+            "_socket_udp_enviar_binario requiere 4 argumentos: socket, hex_datos, direccion, puerto".into(),
+        ));
+    }
+
+    let socket_idx = extraer_indice_socket(vm, args[0])?;
+    let hex_datos = obtener_texto(vm, args[1])?;
+    let direccion = obtener_texto(vm, args[2])?;
+    let puerto = obtener_entero(args[3])?;
+
+    if puerto < 1 || puerto > 65535 {
+        return Err(ErrFast::TipoInv(format!(
+            "direccion_invalida: puerto {} fuera de rango (1-65535)",
+            puerto
+        )));
+    }
+
+    verificar_sandbox_red(vm, &direccion, puerto as u16)?;
+
+    let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
+        Some(arc) => Arc::clone(arc),
+        None => {
+            return Err(ErrFast::TipoInv(
+                "error_interno: el socket no es UDP".into(),
+            ))
+        }
+    };
+
+    let destino = match resolver_direccion(&direccion, puerto as u16) {
+        Ok(a) => a,
+        Err(msg) => return Err(ErrFast::TipoInv(format!("direccion_invalida: {}", msg))),
+    };
+
+    let bytes = hex_a_bytes(&hex_datos);
+    let socket = socket_arc.lock().unwrap();
+    match socket.send_to(&bytes, destino) {
+        Ok(n) => Ok(ValorFast::entero(n as i64)),
+        Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
+    }
+}
+
+/// Recibe datos binarios de un socket UDP y los retorna codificados en hex string.
+fn native_socket_udp_recibir_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 2 {
+        return Err(ErrFast::TipoInv(
+            "_socket_udp_recibir_binario requiere 2 argumentos: socket, buffer_tamano (entero)".into(),
+        ));
+    }
+
+    let socket_idx = extraer_indice_socket(vm, args[0])?;
+    let buffer_tamano = obtener_entero(args[1])?;
+    let buffer_tamano = buffer_tamano.max(1).min(65536) as usize;
+
+    let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
+        Some(arc) => Arc::clone(arc),
+        None => {
+            return Err(ErrFast::TipoInv(
+                "error_interno: el socket no es UDP".into(),
+            ))
+        }
+    };
+
+    let socket = socket_arc.lock().unwrap();
+    let mut buffer = vec![0u8; buffer_tamano];
+
+    match socket.recv_from(&mut buffer) {
+        Ok((n, _origen)) => {
+            let hex_string: String = buffer[..n].iter().map(|b| format!("{:02x}", b)).collect();
+            let idx = vm.alloc_str(Arc::from(hex_string.as_str()));
+            Ok(ValorFast::texto(idx))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
             let idx = vm.alloc_str(Arc::from(""));
             Ok(ValorFast::texto(idx))
         }
