@@ -104,6 +104,7 @@ pub type NativeFn = fn(&mut ForjaFast, &[ValorFast]) -> Result<ValorFast, ErrFas
 // ═════════════════════════════════════════════════════════════════════════
 // NativeRegistry
 // ═════════════════════════════════════════════════════════════════════════
+
 pub struct NativeRegistry {
     /// SymbolTable local para internar nombres → SymId (lookup O(1))
     sym_table: SymbolTable,
