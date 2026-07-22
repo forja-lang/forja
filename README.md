@@ -1,5 +1,15 @@
 # 🔥 Forja (fa)
 
+<div align="center">
+
+[![Versión](https://img.shields.io/badge/dynamic/json?color=blue&label=versi%C3%B3n&query=version&url=https%3A%2F%2Fforja-lang.github.io%2Fforja%2Fmetrics%2Fmetrics.json&style=for-the-badge)](https://github.com/forja-lang/forja/releases)
+[![Tests](https://img.shields.io/badge/dynamic/json?color=green&label=tests&query=tests_passed&suffix=%20%E2%9C%85&url=https%3A%2F%2Fforja-lang.github.io%2Fforja%2Fmetrics%2Fmetrics.json&style=for-the-badge)]()
+[![Líneas Rust](https://img.shields.io/badge/dynamic/json?color=orange&label=c%C3%B3digo%20Rust&query=lines_of_rust&suffix=%20l%C3%ADneas&url=https%3A%2F%2Fforja-lang.github.io%2Fforja%2Fmetrics%2Fmetrics.json&style=for-the-badge)]()
+[![Ejemplos](https://img.shields.io/badge/dynamic/json?color=purple&label=ejemplos&query=fa_examples&suffix=%20.fa&url=https%3A%2F%2Fforja-lang.github.io%2Fforja%2Fmetrics%2Fmetrics.json&style=for-the-badge)](examples/)
+[![Try in Codespaces](https://img.shields.io/badge/Probar%20en-Codespaces-1f883d?style=for-the-badge&logo=github)](https://codespaces.new/forja-lang/forja)
+
+</div>
+
 Forja es un lenguaje de programación educativo moderno con sintaxis y palabras clave completamente en español. Está diseñado para enseñar conceptos de sistemas, teoría de lenguajes de programación y diseño por contrato sin la complejidad sintáctica de Rust. Incluye un compilador nativo, un compilador al vuelo (JIT) para arquitecturas x86-64, múltiples máquinas virtuales y soporte de interfaces gráficas.
 
 📖 **[Leé la documentación oficial aquí](https://forja-lang.github.io/docs)**
@@ -214,7 +224,7 @@ PS C:\forja> forja medir ejemplos/40_fibonacci.fa --vm todas --iters 100
 #### 4. Modo Interactivo (Consola de Lectura y Ejecución Directa)
 ```powershell
 PS C:\forja> forja interactivo
-🔨 Forja v0.8.7 — Escribí 'salir' para terminar
+🔨 Forja v0.8.8 — Escribí 'salir' para terminar
 > variable x = 10
 > x = x + 5
 > escribir(x)
