@@ -1,4 +1,4 @@
-name: 🤖 Forja Assistant
+name: 🤖 Asistente de Forja
 on:
   issues:
     types: [opened, labeled]
@@ -65,7 +65,7 @@ jobs:
             let comment = '';
 
             if (foundKeywords.length > 0) {
-              comment += '## 🤖 ¡Hola! Forja Assistant aquí\n\n';
+              comment += '## 🤖 ¡Hola! Asistente de Forja aquí\n\n';
               comment += 'Encontré estas palabras clave de Forja relacionadas con tu consulta:\n\n';
 
               for (let i = 0; i < foundKeywords.length; i++) {
@@ -90,7 +90,7 @@ jobs:
               comment += '📖 Consultá la documentación completa en [`INSTRUCCIONES.md`](INSTRUCCIONES.md)\n';
               comment += '💻 Probá los ejemplos en [`examples/`](examples/)\n';
             } else {
-              comment += '## 🤖 ¡Hola! Forja Assistant aquí\n\n';
+              comment += '## 🤖 ¡Hola! Asistente de Forja aquí\n\n';
               comment += 'No encontré una palabra clave específica en tu consulta. 😅\n\n';
               comment += 'Acá tenés algunos recursos que pueden ayudarte:\n\n';
               comment += '- 📖 **[Guía completa del lenguaje](INSTRUCCIONES.md)** — Todas las palabras clave con ejemplos\n';

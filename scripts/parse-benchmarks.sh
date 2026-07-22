@@ -12,7 +12,7 @@ SNAPSHOT_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 FORJA_VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
 
-echo "📊 Benchmark Dashboard - Snapshot $SNAPSHOT_DATE"
+echo " Métricas de benchmarks - Snapshot $SNAPSHOT_DATE"
 echo "   Versión: $FORJA_VERSION, Commit: $COMMIT_HASH"
 echo ""
 

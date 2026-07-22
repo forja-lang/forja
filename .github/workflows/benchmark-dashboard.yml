@@ -1,4 +1,4 @@
-name: 📈 Benchmark Dashboard
+name: Benchmarks
 on:
   push:
     branches: [ main, master ]
