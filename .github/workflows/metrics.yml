@@ -1,0 +1,38 @@
+name: 📊 Metrics & Badges
+on:
+  push:
+    branches: [ main, master ]
+  schedule:
+    - cron: '0 6 * * 1'  # Todos los lunes 6:00 UTC
+
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Cache Cargo
+        uses: swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Run tests and capture output
+        run: cargo test 2>&1 | tee test-output.txt
+
+      - name: Count lines of Rust code
+        run: |
+          echo "RUST_LINES=$(find src crates -name '*.rs' -exec cat {} + | wc -l)" >> $GITHUB_ENV
+
+      - name: Generate metrics.json
+        run: bash scripts/metrics.sh
+
+      - name: Deploy metrics to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./metrics-output
+          destination_dir: metrics
+          keep_files: true
