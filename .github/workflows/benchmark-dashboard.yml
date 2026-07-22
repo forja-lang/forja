@@ -1,0 +1,50 @@
+name: 📈 Benchmark Dashboard
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/benchmark-dashboard.yml'
+  schedule:
+    - cron: '0 6 * * 0'  # Todos los domingos 6:00 UTC
+  workflow_dispatch:  # Permitir ejecución manual
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Restore historical benchmark data
+        id: restore-history
+        uses: actions/cache/restore@v4
+        with:
+          path: benchmarks/dashboard/data
+          key: benchmark-history-${{ github.ref_name }}
+          restore-keys: |
+            benchmark-history-main
+            benchmark-history-master
+
+      - name: Run benchmarks and parse results
+        run: bash scripts/parse-benchmarks.sh
+
+      - name: Save historical benchmark data
+        uses: actions/cache/save@v4
+        with:
+          path: benchmarks/dashboard/data
+          key: benchmark-history-${{ github.ref_name }}-${{ github.sha }}
+
+      - name: Deploy dashboard to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./benchmarks/dashboard
+          destination_dir: benchmarks
+          keep_files: false
