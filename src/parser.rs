@@ -4,9 +4,8 @@ use crate::error::{ErrorForja, ErrorTipo};
 use crate::token::{Token, TokenKind};
 
 /// Profundidad máxima de anidación permitida para el parser recursivo.
-/// Previene stack overflow (STATUS_STACK_OVERFLOW 0xc00000fd)
-/// en programas con anidación excesiva.
-const MAX_PROFUNDIDAD: u32 = 50;
+/// Previene stack overflow en programas con anidación.
+const MAX_PROFUNDIDAD: u32 = 500;
 
 /// Parser recursivo descendente para Forja (fa)
 pub struct Parser {
