@@ -1,0 +1,29 @@
+{
+  "name": "Forja Development",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "onCreateCommand": "cargo build --release && echo '🔥 Forja compilado exitosamente'",
+  "postCreateCommand": "echo '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n  🔥 Forja listo para usar!\n  \n  Proba: forja ejecutar ejemplos/01_hola.fa\n  Docs:  forja ayuda\n  REPL:  forja interactivo\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "ms-ceintl.vscode-language-pack-es"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "bash"
+          }
+        }
+      }
+    }
+  },
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": {
+      "label": "Forja Playground",
+      "onAutoForward": "openPreview"
+    }
+  }
+}
