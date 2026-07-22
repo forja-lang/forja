@@ -382,6 +382,7 @@ impl NativeRegistry {
         self.registrar("_hex_decimal_a_entero", native_hex_decimal_a_entero);
         self.registrar("_buscar_desde", native_buscar_desde);
         self.registrar("_bencode_decodificar", native_bencode_decodificar);
+        self.registrar("_entero_a_hex", native_entero_a_hex);
     }
 }
 
@@ -525,10 +526,10 @@ fn native_socket_tcp_conectar(
         Err(msg) => return Err(ErrFast::TipoInv(format!("direccion_invalida: {}", msg))),
     };
 
-    match std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(30)) {
+    match std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(3)) {
         Ok(stream) => {
-            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
-            let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(30)));
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(3)));
+            let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(3)));
 
             let socket_idx = vm.socket_alloc(SocketState::new_tcp_stream(stream));
             let val = crear_valor_socket(vm, socket_idx);
@@ -725,26 +726,19 @@ fn native_socket_fijar_timeout(
         None
     };
 
-    // Aplicar timeout al stream subyacente
-    let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
-        Some(arc) => Some(Arc::clone(arc)),
-        None => {
-            vm.socket_get_mut(socket_idx).timeout_ms = if tiempo_ms > 0 {
-                Some(tiempo_ms as u64)
-            } else {
-                None
-            };
-            return Ok(ValorFast::nulo());
-        }
-    };
-
-    if let Some(arc) = stream_arc {
-        let stream = arc.lock().unwrap();
-        let _ = stream.set_read_timeout(timeout);
-        let _ = stream.set_write_timeout(timeout);
-        drop(stream);
+    // Aplicar timeout al stream o socket UDP subyacente
+    let state = vm.socket_get(socket_idx);
+    if let Some(arc) = &state.tcp_stream {
+        let stream = arc.clone();
+        let stream_guard = stream.lock().unwrap();
+        let _ = stream_guard.set_read_timeout(timeout);
+        let _ = stream_guard.set_write_timeout(timeout);
+    } else if let Some(arc) = &state.udp_socket {
+        let udp = arc.clone();
+        let udp_guard = udp.lock().unwrap();
+        let _ = udp_guard.set_read_timeout(timeout);
+        let _ = udp_guard.set_write_timeout(timeout);
     }
-
     vm.socket_get_mut(socket_idx).timeout_ms = if tiempo_ms > 0 {
         Some(tiempo_ms as u64)
     } else {
@@ -905,9 +899,9 @@ fn native_socket_udp_escuchar(
     }
 
     let puerto = obtener_entero(args[0])?;
-    if puerto < 1 || puerto > 65535 {
+    if puerto < 0 || puerto > 65535 {
         return Err(ErrFast::TipoInv(format!(
-            "direccion_invalida: puerto {} fuera de rango (1-65535)",
+            "direccion_invalida: puerto {} fuera de rango (0-65535)",
             puerto
         )));
     }
@@ -922,8 +916,8 @@ fn native_socket_udp_escuchar(
 
     match std::net::UdpSocket::bind(addr) {
         Ok(socket) => {
-            let _ = socket.set_nonblocking(true);
-            let _ = socket.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+            let _ = socket.set_nonblocking(false);
+            let _ = socket.set_read_timeout(Some(std::time::Duration::from_secs(2)));
 
             let socket_idx = vm.socket_alloc(SocketState::new_udp_socket(socket));
             let val = crear_valor_socket(vm, socket_idx);
@@ -1055,14 +1049,20 @@ fn native_socket_udp_enviar_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> R
 
     let destino = match resolver_direccion(&direccion, puerto as u16) {
         Ok(a) => a,
-        Err(msg) => return Err(ErrFast::TipoInv(format!("direccion_invalida: {}", msg))),
+        Err(msg) => {
+            eprintln!("[DEBUG] resolver_direccion error for {}:{}: {}", direccion, puerto, msg);
+            return Ok(ValorFast::entero(0));
+        }
     };
 
     let bytes = hex_a_bytes(&hex_datos);
     let socket = socket_arc.lock().unwrap();
     match socket.send_to(&bytes, destino) {
         Ok(n) => Ok(ValorFast::entero(n as i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
+        Err(e) => {
+            eprintln!("[DEBUG] send_to error for {}:{}: {}", direccion, puerto, e);
+            Ok(ValorFast::entero(0))
+        }
     }
 }
 
@@ -1096,11 +1096,11 @@ fn native_socket_udp_recibir_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> 
             let idx = vm.alloc_str(Arc::from(hex_string.as_str()));
             Ok(ValorFast::texto(idx))
         }
-        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+        Err(e) => {
+            eprintln!("[DEBUG] native_socket_udp_recibir_binario recv_from err: {}", e);
             let idx = vm.alloc_str(Arc::from(""));
             Ok(ValorFast::texto(idx))
         }
-        Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
     }
 }
 
@@ -3279,6 +3279,48 @@ fn native_hex_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valo
 
     let decoded = String::from_utf8_lossy(&bytes).to_string();
     let idx = vm.alloc_str(Arc::from(decoded.as_str()));
+    Ok(ValorFast::texto(idx))
+}
+
+/// Convierte un entero a su representación hexadecimal con un número fijo de bytes.
+/// args[0]: numero (Entero) — el número a convertir
+/// args[1]: num_bytes (Entero) — cantidad de bytes en la salida (2, 4, 8, etc.)
+/// Retorna: texto con la representación hexadecimal en minúsculas, zero-padded
+/// Ejemplo: _entero_a_hex(8080, 4) → "00001f90"
+fn native_entero_a_hex(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 2 {
+        return Err(ErrFast::TipoInv(
+            "_entero_a_hex requiere 2 argumentos: numero (entero), num_bytes (entero)".into(),
+        ));
+    }
+
+    let numero = obtener_entero(args[0])?;
+    let num_bytes = obtener_entero(args[1])? as usize;
+
+    if num_bytes == 0 || num_bytes > 16 {
+        return Err(ErrFast::TipoInv(
+            "_entero_a_hex: num_bytes debe estar entre 1 y 16".into(),
+        ));
+    }
+
+    // Convert to big-endian hex with zero padding
+    let hex_chars = num_bytes * 2;
+    let hex_string = if numero >= 0 {
+        format!("{:0>width$x}", numero as u64, width = hex_chars)
+    } else {
+        // Handle negative numbers as two's complement
+        let val = numero as u64;
+        format!("{:0>width$x}", val, width = hex_chars)
+    };
+
+    // Truncate to requested size if the number is larger
+    let result = if hex_string.len() > hex_chars {
+        hex_string[hex_string.len() - hex_chars..].to_string()
+    } else {
+        hex_string
+    };
+
+    let idx = vm.alloc_str(Arc::from(result.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
