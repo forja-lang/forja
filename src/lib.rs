@@ -66,6 +66,9 @@ pub mod jit_engine;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native_h2_core;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod native_sqlite;
+
 // HTTP/2 con TLS (rustls) — feature flag "h2-tls"
 #[cfg(all(feature = "h2-tls", not(target_arch = "wasm32")))]
 pub mod native_h2_tls;

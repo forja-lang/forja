@@ -127,10 +127,13 @@ impl NativeRegistry {
         reg.registrar_web();
         reg.registrar_sistema();
         reg.registrar_bencode();
+        reg.registrar_json();
         reg.registrar_red();
         reg.registrar_quic_h3();
         #[cfg(not(target_arch = "wasm32"))]
         reg.registrar_hot_reload();
+        #[cfg(not(target_arch = "wasm32"))]
+        crate::native_sqlite::registrar_sqlite(&mut reg);
         #[cfg(feature = "h2-tls")]
         crate::native_h2_tls::registrar_tls(&mut reg);
         reg
@@ -383,6 +386,10 @@ impl NativeRegistry {
         self.registrar("_buscar_desde", native_buscar_desde);
         self.registrar("_bencode_decodificar", native_bencode_decodificar);
         self.registrar("_entero_a_hex", native_entero_a_hex);
+    }
+
+    fn registrar_json(&mut self) {
+        self.registrar("_json_stringificar", native_json_stringificar);
     }
 }
 
@@ -3761,6 +3768,89 @@ fn native_quic_stream_recibir(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result
 /// Cierra una conexión QUIC.
 fn native_quic_cerrar(_vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     Ok(ValorFast::nulo())
+}
+
+/// Convierte un valor Forja a string JSON.
+/// args[0]: valor — el valor Forja a serializar
+/// Retorna: arreglo [codigo, resultado] donde código 0 = éxito, resultado es el JSON string
+fn native_json_stringificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Ok(ValorFast::nulo());
+    }
+    let val = args[0];
+    let resultado = json_stringificar_valor(vm, val);
+    let idx = vm.alloc_str(Arc::from(resultado.as_str()));
+    let mut arr = Vec::with_capacity(2);
+    arr.push(ValorFast::entero(0));
+    arr.push(ValorFast::texto(idx));
+    let aidx = vm.alloc_arr(arr);
+    Ok(ValorFast::arreglo(aidx))
+}
+
+fn json_stringificar_valor(vm: &ForjaFast, val: ValorFast) -> String {
+    if val.es_entero() {
+        return val.a_entero().to_string();
+    }
+    if val.es_flotante() {
+        let f = val.a_flotante();
+        if f.is_nan() || f.is_infinite() {
+            return "null".to_string();
+        }
+        return f.to_string();
+    }
+    if val.es_texto() {
+        let s = vm.get_str(val.indice_texto());
+        return json_escapar_string(s);
+    }
+    if val.es_booleano() {
+        return if val.a_booleano() { "true".to_string() } else { "false".to_string() };
+    }
+    if val.es_nulo() {
+        return "null".to_string();
+    }
+    if val.es_arreglo() {
+        let arr = vm.get_arr(val.indice_arreglo());
+        let elementos: Vec<String> = arr.iter().map(|v| json_stringificar_valor(vm, *v)).collect();
+        return format!("[{}]", elementos.join(","));
+    }
+    if val.es_mapa() {
+        let m = vm.get_map(val.indice_mapa());
+        let pares: Vec<String> = m.iter()
+            .map(|(k, v)| format!("\"{}\":{}", json_escapar_string_inner(k), json_stringificar_valor(vm, *v)))
+            .collect();
+        return format!("{{{}}}", pares.join(","));
+    }
+    "null".to_string()
+}
+
+fn json_escapar_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    json_escapar_string_inner_to(s, &mut out);
+    out.push('"');
+    out
+}
+
+fn json_escapar_string_inner(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    json_escapar_string_inner_to(s, &mut out);
+    out
+}
+
+fn json_escapar_string_inner_to(s: &str, out: &mut String) {
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => {
+                out.push_str(&format!("\\u{:04x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
 }
 
 /// Realiza una solicitud HTTP/3 nativa sobre QUIC.

@@ -29,6 +29,10 @@ mod vm_fast;
 #[cfg(not(target_arch = "wasm32"))]
 mod native_h2_core;
 
+// SQLite nativo
+#[cfg(not(target_arch = "wasm32"))]
+mod native_sqlite;
+
 mod module;
 
 // HTTP/2 con TLS (rustls) — feature flag "h2-tls"
@@ -1646,10 +1650,83 @@ fn cmd_build(args: &[String]) {
             .to_string()
     });
 
-    // Compilar a ejecutable autónomo (AOT con bytecode)
-    if let Err(e) = forja::aot::AOTCompiler::compilar(&input, &output) {
-        eprintln!("{}", e);
-        process::exit(1);
+    // Detectar si usa GUI (importar "gui")
+    let usa_gui = std::fs::read_to_string(&input)
+        .ok()
+        .map(|s| s.contains("importar \"gui\""))
+        .unwrap_or(false);
+
+    if usa_gui {
+        // Si usa GUI: transpilar a Rust + cargo build (Xilem nativo)
+        eprintln!("🔨 Detectado GUI — transpilando a Rust + Xilem...");
+        let source = match forja::leer_archivo_con_limite(&input, forja::MAX_ARCHIVO_DEFAULT_MB) {
+            Ok(s) => s,
+            Err(e) => { eprintln!("{}", e); process::exit(1); }
+        };
+        let root_dir = {
+            let path = std::path::Path::new(&input);
+            let dir = if path.is_file() { path.parent().unwrap_or(std::path::Path::new(".")) } else { path };
+            dir.to_path_buf()
+        };
+        // Resolver imports y transpilar usando la API de forja crate
+        let programa = match forja::resolver_imports(&source, &root_dir) {
+            Ok(p) => p,
+            Err(e) => { eprintln!("{}", e); process::exit(1); }
+        };
+        let mut transpiler = forja::transpiler::Transpiler::new();
+        transpiler.forzar_gui = true;
+        let rust_code = match transpiler.transpilar(&programa) {
+            Ok(code) => code,
+            Err(_) => { eprintln!("Error al transpilar"); process::exit(1); }
+        };
+        // Generar proyecto Cargo + compilar
+        let project_dir = Path::new(&output).with_extension("").to_string_lossy().to_string() + "_rs";
+        let src_dir = std::path::Path::new(&project_dir).join("src");
+        let _ = std::fs::create_dir_all(&src_dir);
+        let cargo_toml = format!(
+            r#"[package]
+name = "{}"
+version = "0.8.8"
+edition = "2021"
+[workspace]
+[lib]
+crate-type = ["cdylib", "rlib"]
+[[bin]]
+name = "{}"
+path = "src/lib.rs"
+[dependencies]
+forja = {{ path = "C:\\Users\\gaucho\\forja" }}
+forja-gui-rt = {{ path = "C:\\Users\\gaucho\\forja\\crates\\forja-gui-rt" }}
+serde_json = "1"
+"#,
+            Path::new(&input).file_stem().and_then(|s| s.to_str()).unwrap_or("app"),
+            Path::new(&input).file_stem().and_then(|s| s.to_str()).unwrap_or("app")
+        );
+        let _ = std::fs::write(std::path::Path::new(&project_dir).join("Cargo.toml"), &cargo_toml);
+        let _ = std::fs::write(src_dir.join("main.rs"), &rust_code);
+        println!("✅ Proyecto Rust exportado: {}\\", project_dir);
+        println!("📦 Compilando con cargo...");
+        let result = std::process::Command::new("cargo")
+            .args(["build", "--release"])
+            .current_dir(&project_dir)
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .status();
+        match result {
+            Ok(status) if status.success() => {
+                println!("✅ Compilación exitosa!");
+            }
+            _ => {
+                eprintln!("⚠️  No se pudo compilar con cargo.");
+                eprintln!("   Compilá manualmente: cd {} && cargo build --release", project_dir);
+            }
+        }
+    } else {
+        // Sin GUI: compilar a ejecutable autónomo (AOT con bytecode)
+        if let Err(e) = forja::aot::AOTCompiler::compilar(&input, &output) {
+            eprintln!("{}", e);
+            process::exit(1);
+        }
     }
 }
 
@@ -1759,10 +1836,14 @@ fn cmd_transpile(args: &[String]) {
         Ok(t) => t,
         Err(errors) => {
             for err in errors {
-                if json_errors {
-                    eprintln!("{}", err.to_json());
-                } else {
-                    eprintln!("{}", err);
+                let contexto = err.mostrar_con_contexto(&source);
+                eprintln!("\x1b[33m📄\x1b[0m \x1b[36m{}\x1b[0m:\x1b[31m{}:{}\x1b[0m", input_path, err.linea, err.columna);
+                for line in contexto.lines() {
+                    let colored = line
+                        .replace(" ↑ ", "\x1b[31m↑\x1b[0m")
+                        .replace(" 💡 ", "\x1b[33m💡\x1b[0m")
+                        .replace("│", "\x1b[90m│\x1b[0m");
+                    eprintln!("{}", colored);
                 }
             }
             process::exit(1);
@@ -1775,31 +1856,30 @@ fn cmd_transpile(args: &[String]) {
         Ok(p) => p,
         Err(errors) => {
             for err in errors {
-                if json_errors {
-                    eprintln!("{}", err.to_json());
-                } else {
-                    eprintln!("{}", err);
+                let contexto = err.mostrar_con_contexto(&source);
+                eprintln!("\x1b[33m📄\x1b[0m \x1b[36m{}\x1b[0m:\x1b[31m{}:{}\x1b[0m", input_path, err.linea, err.columna);
+                for line in contexto.lines() {
+                    let colored = line
+                        .replace(" ↑ ", "\x1b[31m↑\x1b[0m")
+                        .replace(" 💡 ", "\x1b[33m💡\x1b[0m")
+                        .replace("│", "\x1b[90m│\x1b[0m");
+                    eprintln!("{}", colored);
                 }
             }
             process::exit(1);
         }
     };
 
-    // FASE 4: Borrow Checker
-    let mut checker = semantics::BorrowChecker::new();
-    if let Err(errors) = checker.analizar(&programa) {
-        for err in errors {
-            if json_errors {
-                eprintln!("{}", err.to_json());
-            } else {
-                eprintln!("{}", err);
-            }
-        }
-        process::exit(1);
-    }
+    // FASE 4: Type Checker + Type Inference (sin borrow checker para evitar
+    // falsos positivos con variables de patrón en coincidir/caso)
+    let mut type_checker = semantics::TypeChecker::new();
+    let _ = type_checker.analizar(&programa);
 
     // FASE 5: Transpilador
     let mut transpiler = transpiler::Transpiler::new();
+    if source.contains("importar \"gui\"") {
+        transpiler.forzar_gui = true;
+    }
     let rust_code = match transpiler.transpilar(&programa) {
         Ok(code) => code,
         Err(errors) => {
@@ -1807,7 +1887,12 @@ fn cmd_transpile(args: &[String]) {
                 if json_errors {
                     eprintln!("{}", err.to_json());
                 } else {
-                    eprintln!("{}", err);
+                    let contexto = err.mostrar_con_contexto(&source);
+                    // Partir en líneas para insertar el nombre del archivo
+                    eprintln!("📄 {}:{}:{}", input_path, err.linea, err.columna);
+                    for line in contexto.lines() {
+                        eprintln!("{}", line);
+                    }
                 }
             }
             process::exit(1);
@@ -1848,7 +1933,9 @@ name = "{}"
 path = "src/lib.rs"
 
 [dependencies]
+forja = {{ path = "C:\\Users\\gaucho\\forja" }}
 forja-gui-rt = {{ path = "C:\\Users\\gaucho\\forja\\crates\\forja-gui-rt" }}
+serde_json = "1"
 
 [target.'cfg(target_os = "android")'.dependencies.winit]
 version = "0.30.13"

@@ -135,6 +135,11 @@ pub struct Transpiler {
     /// Profundidad actual de recursión al transpilar expresiones.
     /// Previene stack overflow en ASTs con expresiones muy anidadas.
     profundidad_expresion: u32,
+    /// Variables globales (declaradas a nivel de módulo, fuera de funciones).
+    /// Solo relevantes en modo GUI. Mapa: nombre -> tipo_rust_para_thread_local
+    variables_globales: HashMap<String, String>,
+    /// Forzar modo GUI (cuando el import "gui" se resuelve antes de transpilar)
+    pub forzar_gui: bool,
 }
 
 struct ClaseInfo {
@@ -196,12 +201,89 @@ impl Transpiler {
             modo_postcondiciones: false,
             tiene_resultado_var: false,
             profundidad_expresion: 0,
+            variables_globales: HashMap::new(),
+            forzar_gui: false,
         }
+    }
+
+    /// Detecta variables globales (declaradas a nivel de módulo, no dentro de funciones)
+    fn detectar_variables_globales(&mut self, decls: &[Declaracion]) {
+        for decl in decls {
+            if let Declaracion::Variable { nombre, tipo, valor, .. } = decl {
+                let tipo_rust = match tipo {
+                    Some(t) => self.tipo_a_rust(t),
+                    None => {
+                        match valor {
+                            Some(v) => self.inferir_tipo_expresion(v),
+                            None => "String".to_string(),
+                        }
+                    }
+                };
+                self.variables_globales.insert(nombre.clone(), tipo_rust);
+            }
+        }
+    }
+
+    /// Infiere el tipo Rust de una expresión
+    fn inferir_tipo_expresion(&self, expr: &Expresion) -> String {
+        match expr {
+            Expresion::LiteralNumero(_) => "i64".to_string(),
+            Expresion::LiteralDecimal(_) => "f64".to_string(),
+            Expresion::LiteralTexto(_) => "String".to_string(),
+            Expresion::LiteralBooleano(_) => "bool".to_string(),
+            Expresion::Arreglo(_) => "Vec<serde_json::Value>".to_string(),
+            Expresion::Mapa(_) => "HashMap<String, serde_json::Value>".to_string(),
+            Expresion::LiteralNulo => "serde_json::Value".to_string(),
+            _ => "String".to_string(),
+        }
+    }
+
+    /// Genera el valor inicial para una variable global
+    fn valor_inicial_global(&self, expr: Option<&Expresion>, tipo_rust: &str) -> String {
+        match expr {
+            Some(e) => {
+                match e {
+                    Expresion::LiteralNumero(n) => n.to_string(),
+                    Expresion::LiteralDecimal(f) => f.to_string(),
+                    Expresion::LiteralTexto(s) => format!("String::from(\"{}\")", s),
+                    Expresion::LiteralBooleano(b) => if *b { "true".to_string() } else { "false".to_string() },
+                    _ => match tipo_rust {
+                        "i64" => "0".to_string(),
+                        "f64" => "0.0".to_string(),
+                        "bool" => "false".to_string(),
+                        "String" => "String::new()".to_string(),
+                        _ => "serde_json::Value::Null".to_string(),
+                    }
+                }
+            }
+            None => match tipo_rust {
+                "i64" => "0".to_string(),
+                "f64" => "0.0".to_string(),
+                "bool" => "false".to_string(),
+                "String" => "String::new()".to_string(),
+                _ => "serde_json::Value::Null".to_string(),
+            },
+        }
+    }
+
+    /// Verifica si un nombre es una variable global
+    fn es_variable_global(&self, nombre: &str) -> bool {
+        self.variables_globales.contains_key(nombre)
+    }
+
+    /// Genera el código de acceso thread_local para una variable global
+    fn acceso_global(&self, nombre: &str) -> String {
+        format!("GLOBALS_{}.with(|g| g.borrow().clone())", nombre)
+    }
+
+    /// Genera el código de asignación thread_local para una variable global
+    fn asignacion_global(&self, nombre: &str, valor: &str) -> String {
+        format!("GLOBALS_{}.with(|g| *g.borrow_mut() = {});", nombre, valor)
     }
 
     /// Indica si el programa usa el paquete GUI
     pub fn usa_gui(&self) -> bool {
-        self.declaraciones_globales
+        self.forzar_gui || self.declaraciones_globales
             .iter()
             .any(|d| matches!(d, Declaracion::Importar(ruta) if ruta == "gui"))
     }
@@ -310,6 +392,9 @@ impl Transpiler {
         // Generar clases como struct + impl
         self.generar_clases(&programa.declaraciones);
 
+        // Detectar variables globales ANTES de transpilar funciones
+        self.detectar_variables_globales(&programa.declaraciones);
+
         // Generar funciones globales (saltar externas ya declaradas, y main si hay GUI)
         for decl in &programa.declaraciones {
             match decl {
@@ -339,6 +424,41 @@ impl Transpiler {
 
         // Si hay GUI: generar el AST completo como datos estáticos para el runtime
         if self.usa_gui() {
+            // Generar thread_local! para variables globales (accesibles desde callbacks)
+            if !self.variables_globales.is_empty() {
+                self.emit_line("use std::cell::RefCell;");
+                self.emit_line("");
+                let vars: Vec<(String, String, String)> = self.variables_globales
+                    .iter()
+                    .map(|(n, t)| {
+                        let default = match t.as_str() {
+                            "i64" => "0".to_string(),
+                            "f64" => "0.0".to_string(),
+                            "bool" => "false".to_string(),
+                            "String" => "String::new()".to_string(),
+                            _ => "serde_json::Value::Null".to_string(),
+                        };
+                        (n.clone(), t.clone(), default)
+                    })
+                    .collect();
+                for (nombre, tipo_rust, valor_default) in &vars {
+                    let tipo_safe = if tipo_rust.contains("serde_json") {
+                        format!("serde_json::Value")
+                    } else {
+                        tipo_rust.clone()
+                    };
+                    let val_safe = if tipo_rust.contains("serde_json") {
+                        format!("serde_json::Value::Null")
+                    } else {
+                        valor_default.clone()
+                    };
+                    self.emit_line(&format!(
+                        "thread_local! {{ static GLOBALS_{}: RefCell<{}> = RefCell::new({}); }}",
+                        nombre, tipo_safe, val_safe
+                    ));
+                }
+                self.emit_line("");
+            }
             // Generar el programa completo como datos estáticos de Rust
             // El runtime (forja_gui_rt) se encarga de todo: tema, estado, eventos, layout, bucle
             let ast_code = self.generar_ast_programa(&programa.declaraciones);
@@ -1706,7 +1826,11 @@ impl Transpiler {
 
             Declaracion::Asignacion { nombre, valor, .. } => {
                 let val_str = self.transpilar_expresion(valor);
-                self.emit_line(&format!("{} = {};", nombre, val_str));
+                if self.usa_gui() && self.es_variable_global(nombre) {
+                    self.emit_line(&format!("GLOBALS_{}.with(|g| *g.borrow_mut() = {});", nombre, val_str));
+                } else {
+                    self.emit_line(&format!("{} = {};", nombre, val_str));
+                }
             }
 
             Declaracion::AsignacionMiembro {
@@ -2286,6 +2410,8 @@ impl Transpiler {
                     "true".to_string()
                 } else if nombre == "falso" {
                     "false".to_string()
+                } else if self.usa_gui() && self.es_variable_global(nombre) {
+                    format!("GLOBALS_{}.with(|g| g.borrow().clone())", nombre)
                 } else {
                     nombre.clone()
                 }
@@ -2400,6 +2526,14 @@ impl Transpiler {
 
             Expresion::AccesoMiembro { objeto, miembro } => {
                 let obj_str = self.transpilar_expresion(objeto);
+                if self.usa_gui() && !miembro.contains("::") {
+                    // Extraer nombre base para ver si es global
+                    if let Expresion::Identificador { nombre, .. } = objeto.as_ref() {
+                        if self.es_variable_global(nombre) {
+                            return format!("GLOBALS_{}.with(|g| g.borrow_mut().{})", nombre, miembro);
+                        }
+                    }
+                }
                 format!("{}.{}", obj_str, miembro)
             }
 
@@ -2549,7 +2683,11 @@ impl Transpiler {
             }
             Expresion::Asignacion { variable, valor } => {
                 let val_str = self.transpilar_expresion(valor);
-                format!("{{ let __tmp = {}; {} = __tmp; __tmp }}", val_str, variable)
+                if self.usa_gui() && self.es_variable_global(variable) {
+                    format!("{{ let __tmp = {}; GLOBALS_{}.with(|g| *g.borrow_mut() = __tmp); __tmp }}", val_str, variable)
+                } else {
+                    format!("{{ let __tmp = {}; {} = __tmp; __tmp }}", val_str, variable)
+                }
             }
             Expresion::AsignacionCampo {
                 objeto,
@@ -2601,7 +2739,10 @@ impl Transpiler {
             Patron::Variable(n) => n.clone(),
             Patron::Constructor(n, ps) => {
                 let sub: Vec<String> = ps.iter().map(|p| self.patron_a_rust(p)).collect();
-                format!("{}({})", n, sub.join(", "))
+                // Forja usa "Ok" y "Error" como constructores de Resultado,
+                // Rust usa "Ok" y "Err"
+                let rust_name = if n == "Error" { "Err" } else { n };
+                format!("{}({})", rust_name, sub.join(", "))
             }
             Patron::Ignorar => "_".to_string(),
             Patron::Literal(lit) => self.transpilar_expresion(lit),
