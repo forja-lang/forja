@@ -17,7 +17,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: false
+      - name: Checkout submodules (benchmarks siempre al último commit via branch=main)
+        shell: bash
+        run: |
+          git submodule init
+          for sub in $(git config --file .gitmodules --get-regexp path | sed 's/.* //'); do
+            if [ "$sub" = "benchmarks" ]; then
+              git submodule update --init --remote --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
+            else
+              git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
+            fi
+          done
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
