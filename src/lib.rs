@@ -30,6 +30,8 @@ pub mod hash;
 pub mod base64;
 pub mod crypto;
 pub mod crypto_pq;
+pub mod mmap;
+pub mod terminal;
 
 // Módulos que dependen del sistema de archivos o del SO
 // (no compilables a WASM)
@@ -155,9 +157,9 @@ pub fn compilar_pipeline(source: &str) -> Result<Vec<bytecode::Opcode>, String> 
 /// Reemplaza nodos `Importar` con las declaraciones reales de los módulos.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast::Programa, String> {
-    use module::ModuleResolver;
-    use module::dedup_declaraciones;
-    use package_resolver::PackageResolver;
+    use crate::module::ModuleResolver;
+    use crate::module::dedup_declaraciones;
+    use crate::package_resolver::PackageResolver;
 
     // 1. Lexer + Parser del código fuente principal
     let mut lexer = lexer::Lexer::new(source);
@@ -217,9 +219,11 @@ pub fn compilar_pipeline_completa_desde(
     let mut dce = optimizer::DeadCodeEliminator::new();
     let programa = dce.eliminar(&programa);
 
-    // FASE 5: Generar bytecode con especialización por tipos
+    // FASE 5: Generar bytecode con especialización por tipos y sobrecarga
+    let funciones_overload = type_checker.obtener_funciones();
     let mut gen = BytecodeGenerator::new();
     gen.set_tipos_inferidos(tipos_inferidos);
+    gen.set_funciones_overload(funciones_overload);
     let bytecode = gen
         .generar(&programa)
         .map_err(|_| "Error generando bytecode".to_string())?;
@@ -264,9 +268,11 @@ pub fn compilar_pipeline_completa(
     let mut dce = optimizer::DeadCodeEliminator::new();
     let programa = dce.eliminar(&programa);
 
-    // FASE 6: Generar bytecode con especialización por tipos
+    // FASE 6: Generar bytecode con especialización por tipos y sobrecarga
+    let funciones_overload = type_checker.obtener_funciones();
     let mut gen = BytecodeGenerator::new();
     gen.set_tipos_inferidos(tipos_inferidos);
+    gen.set_funciones_overload(funciones_overload);
     let bytecode = gen
         .generar(&programa)
         .map_err(|_| "Error generando bytecode".to_string())?;
@@ -318,8 +324,10 @@ pub fn compilar_modulo(
     let programa = dce.eliminar(&programa);
 
     // FASE 5: Generar ModuleBytecode con generar_para_modulo()
+    let funciones_overload = type_checker.obtener_funciones();
     let mut gen = BytecodeGenerator::new();
     gen.set_tipos_inferidos(tipos_inferidos);
+    gen.set_funciones_overload(funciones_overload);
     let mut module_bc = gen
         .generar_para_modulo(&programa, module_id)
         .map_err(|_| "Error generando bytecode para módulo".to_string())?;

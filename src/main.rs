@@ -30,6 +30,8 @@ mod hash;
 mod base64;
 mod crypto;
 mod crypto_pq;
+mod mmap;
+mod terminal;
 
 // HTTP/2 nativo — h2c (cleartext), sin dependencias externas
 #[cfg(not(target_arch = "wasm32"))]
@@ -52,7 +54,7 @@ mod native_h2_tls {
 }
 
 use ast::Declaracion;
-use error::color;
+use error::{color, NivelVerbose, mostrar_errores};
 use package_config::ForjaConfig;
 use package_resolver::PackageResolver;
 use std::env;
@@ -61,18 +63,28 @@ use std::path::Path;
 use std::process;
 
 fn main() {
-    // Intentar self-run (modo ejecutable autónomo con bytecode incrustado)
     if selfrun::try_selfrun().is_some() {
-        return; // El bytecode se ejecutó, salir
+        return;
     }
-
-    // Evitar bloqueos de archivo en Windows copiando el ejecutable al directorio temporal
     selfrun::shadow_copy();
 
     let args: Vec<String> = env::args().collect();
 
+    // Parsear flags globales
+    for flag in &args {
+        match flag.as_str() {
+            "--verbose" | "-V" => error::establecer_nivel(NivelVerbose::Verbose),
+            "--debug" => error::establecer_nivel(NivelVerbose::Debug),
+            "--trace" => error::establecer_nivel(NivelVerbose::Trace),
+            "--json" | "--json-errors" => error::establecer_json_mode(true),
+            _ => {}
+        }
+    }
+    // Filtrar flags globales de los args de comando
+    let global_flags = ["--verbose", "-V", "--debug", "--trace", "--json", "--json-errors"];
+    let args: Vec<String> = args.into_iter().filter(|a| !global_flags.contains(&a.as_str())).collect();
+
     if args.len() < 2 {
-        // Doble click o sin argumentos → abrir REPL interactivo con ForjaFast 🏆
         let mut repl = repl::REPL::new("fast");
         repl.iniciar();
         return;
@@ -83,7 +95,7 @@ fn main() {
     match comando.as_str() {
         // Versión de Forja
         "version" | "--version" | "-v" => {
-            println!("forja v{}", env!("CARGO_PKG_VERSION"));
+            println!("{} forja v{}", color::verde("🔨"), color::negrita(env!("CARGO_PKG_VERSION")));
             std::process::exit(0);
         }
         // Benchmark / medición
@@ -1765,8 +1777,6 @@ fn cmd_transpile(args: &[String]) {
     } else {
         format!("{}_rs", input_stem)
     };
-    let json_errors = args.contains(&"--json-errors".to_string());
-
     let source = match forja::leer_archivo_con_limite(input_path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
@@ -1780,37 +1790,18 @@ fn cmd_transpile(args: &[String]) {
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(errors) => {
-            for err in errors {
-                let contexto = err.mostrar_con_contexto(&source);
-                eprintln!("\x1b[33m📄\x1b[0m \x1b[36m{}\x1b[0m:\x1b[31m{}:{}\x1b[0m", input_path, err.linea, err.columna);
-                for line in contexto.lines() {
-                    let colored = line
-                        .replace(" ↑ ", "\x1b[31m↑\x1b[0m")
-                        .replace(" 💡 ", "\x1b[33m💡\x1b[0m")
-                        .replace("│", "\x1b[90m│\x1b[0m");
-                    eprintln!("{}", colored);
-                }
-            }
+            eprintln!("{}", error::archivo(input_path));
+            mostrar_errores(&source, &errors, error::json_mode());
             process::exit(1);
         }
     };
 
-    // FASE 2-3: Parser
     let mut parser = parser::Parser::new(tokens);
     let programa = match parser.parse() {
         Ok(p) => p,
         Err(errors) => {
-            for err in errors {
-                let contexto = err.mostrar_con_contexto(&source);
-                eprintln!("\x1b[33m📄\x1b[0m \x1f36m{}\x1b[0m:\x1b[31m{}:{}\x1b[0m", input_path, err.linea, err.columna);
-                for line in contexto.lines() {
-                    let colored = line
-                        .replace(" ↑ ", "\x1b[31m↑\x1b[0m")
-                        .replace(" 💡 ", "\x1b[33m💡\x1b[0m")
-                        .replace("│", "\x1b[90m│\x1b[0m");
-                    eprintln!("{}", colored);
-                }
-            }
+            eprintln!("{}", error::archivo(input_path));
+            mostrar_errores(&source, &errors, error::json_mode());
             process::exit(1);
         }
     };
@@ -1844,17 +1835,11 @@ fn cmd_transpile(args: &[String]) {
     let rust_code = match transpiler.transpilar(&programa) {
         Ok(code) => code,
         Err(errors) => {
-            for err in errors {
-                if json_errors {
-                    eprintln!("{}", err.to_json());
-                } else {
-                    let contexto = err.mostrar_con_contexto(&source);
-                    // Partir en líneas para insertar el nombre del archivo
-                    eprintln!("📄 {}:{}:{}", input_path, err.linea, err.columna);
-                    for line in contexto.lines() {
-                        eprintln!("{}", line);
-                    }
-                }
+            if error::json_mode() {
+                for err in &errors { eprintln!("{}", err.to_json()); }
+            } else {
+                eprintln!("{}", error::archivo(input_path));
+                mostrar_errores(&source, &errors, false);
             }
             process::exit(1);
         }
@@ -2100,31 +2085,24 @@ fn cmd_build_asm(args: &[String]) {
         format!("{}.{}", input_stem, ext)
     });
 
-    // FASE 1: Lexer
     let mut lexer = lexer::Lexer::new(&source);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(errors) => {
-            for err in errors {
-                eprintln!("{}", err.mostrar_con_contexto(&source));
-            }
+            mostrar_errores(&source, &errors, error::json_mode());
             process::exit(1);
         }
     };
 
-    // FASE 2: Parser
     let mut parser = parser::Parser::new(tokens);
     let programa = match parser.parse() {
         Ok(p) => p,
         Err(errors) => {
-            for err in errors {
-                eprintln!("{}", err.mostrar_con_contexto(&source));
-            }
+            mostrar_errores(&source, &errors, error::json_mode());
             process::exit(1);
         }
     };
 
-    // FASE 3: Generar assembly
     let asm_code = match compiler_asm::compilar_a_asm_con_target(&programa, target) {
         Ok(code) => code,
         Err(errors) => {

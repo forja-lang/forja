@@ -1,4 +1,5 @@
 use crate::bytecode::{fusionar_opcodes, optimizar_indices, BytecodeGenerator};
+use crate::error::{self, color};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::symbol_table::SymId;
@@ -48,14 +49,14 @@ impl REPL {
             _ => "ForjaFast 🏆",
         };
 
-        println!(
-            "🔨 Forja v{} — Modo interactivo ({})",
-            env!("CARGO_PKG_VERSION"),
-            modo_desc
-        );
-        println!("    Escribí 'salir' para terminar  ·  ↑/↓ historial  ·  Tab autocompletado");
-        println!("    'variables' para ver estado  ·  'limpiar' para reiniciar  ·  '--vm <modo>' para cambiar VM");
-        println!("    ':reload' para recargar funciones (hot reload Fase 1)");
+        println!("{} Forja v{} — Modo interactivo ({})",
+            color::verde("🔨"), env!("CARGO_PKG_VERSION"), color::cyan(modo_desc));
+        println!("    {} Escribí '{}' para terminar  ·  ↑/↓ historial  ·  Tab autocompletado",
+            color::GRIS, color::amarillo("salir"));
+        println!("    'variables' para ver estado  ·  {} para reiniciar  ·  {} para cambiar VM",
+            color::amarillo("'limpiar'"), color::amarillo("--vm <modo>"));
+        println!("    {} para recargar funciones (hot reload Fase 1)",
+            color::amarillo("':reload'"));
         println!();
 
         REPL {
@@ -80,7 +81,7 @@ impl REPL {
                     match line.as_str() {
                         "salir" | "exit" | "quit" => {
                             let _ = self.rl.save_history("forja_history.txt");
-                            println!("👋 ¡Hasta luego!");
+                            println!("{} {}", color::magenta("👋"), color::negrita("¡Hasta luego!"));
                             break;
                         }
                         "variables" => {
@@ -90,7 +91,7 @@ impl REPL {
                         "limpiar" | "reset" => {
                             self.buffer.clear();
                             self.source_acumulado.clear();
-                            println!("✅ Todo reiniciado");
+                            println!("{}", error::ok("Todo reiniciado"));
                             continue;
                         }
                         "" => continue,
@@ -113,12 +114,12 @@ impl REPL {
                         }
                         "--debug" | "--debug on" => {
                             self.show_bytecode = true;
-                            println!("🔧 Modo debug activado — se mostrará el bytecode");
+                            println!("{}", error::info("Modo debug activado — se mostrará el bytecode"));
                             continue;
                         }
                         "--debug off" => {
                             self.show_bytecode = false;
-                            println!("🔧 Modo debug desactivado");
+                            println!("{}", error::info("Modo debug desactivado"));
                             continue;
                         }
                         cmd if cmd.starts_with(":reload") => {
@@ -128,13 +129,13 @@ impl REPL {
                                 if let Some(ref mut vm) = self.vm_fast {
                                     let full_source = self.source_acumulado.clone();
                                     if full_source.is_empty() {
-                                        println!("⚠️  No hay código cargado para recargar");
+                                        eprintln!("{}", error::warning("No hay código cargado para recargar"));
                                     } else {
                                         let mut lexer = Lexer::new(&full_source);
                                         let tokens = match lexer.tokenize() {
                                             Ok(t) => t,
                                             Err(e) => {
-                                                eprintln!("❌ Error de lexer: {}", e[0]);
+                                                eprintln!("{}", error::error(&format!("Error de lexer: {}", e[0])));
                                                 continue;
                                             }
                                         };
@@ -142,7 +143,7 @@ impl REPL {
                                         let programa = match parser.parse() {
                                             Ok(p) => p,
                                             Err(e) => {
-                                                eprintln!("❌ Error de parser: {}", e[0]);
+                                                eprintln!("{}", error::error(&format!("Error de parser: {}", e[0])));
                                                 continue;
                                             }
                                         };
@@ -150,7 +151,7 @@ impl REPL {
                                         let bytecode = match gen.generar(&programa) {
                                             Ok(b) => b,
                                             Err(_) => {
-                                                eprintln!("❌ Error generando bytecode");
+                                                eprintln!("{}", error::error("Error generando bytecode"));
                                                 continue;
                                             }
                                         };
@@ -158,13 +159,11 @@ impl REPL {
                                         let bytecode = fusionar_opcodes(&bytecode);
 
                                         vm.cargar_bytecode(bytecode);
-                                        println!(
-                                            "♻️  Hot reload completado — {} funciones recargadas",
-                                            vm.function_table.entries.len()
-                                        );
+                                        println!("{} {} funciones recargadas",
+                                            color::verde("♻️"), color::negrita(&vm.function_table.entries.len().to_string()));
                                     }
                                 } else {
-                                    println!("⚠️  No hay VM activa. Ejecutá código primero.");
+                                    eprintln!("{}", error::warning("No hay VM activa. Ejecutá código primero."));
                                 }
                             } else {
                                 // ── Hot-swap de módulo específico ──────────────────────
@@ -176,24 +175,22 @@ impl REPL {
                                             acc.wrapping_mul(31).wrapping_add(b as u32)
                                         }));
                                     if !vm.module_registry.contains_key(&module_sym) {
-                                        eprintln!("❌ Módulo '{}' no está registrado en la VM. Usá 'recargar_todo()' desde Forja.", nombre_modulo);
+                                        eprintln!("{}", error::error(&format!("Módulo '{}' no está registrado en la VM", nombre_modulo)));
                                         continue;
                                     }
-                                    // Recargar desde disco
                                     let programa = match vm.module_resolver.recargar(module_sym) {
                                         Ok(p) => p,
                                         Err(e) => {
-                                            eprintln!("❌ Error recargando módulo: {}", e[0]);
+                                            eprintln!("{}", error::error(&format!("Error recargando módulo: {}", e[0])));
                                             continue;
                                         }
                                     };
-                                    // Recompilar a ModuleBytecode
                                     let mut gen = BytecodeGenerator::new();
                                     let module_bc =
                                         match gen.generar_para_modulo(&programa, module_sym) {
                                             Ok(mbc) => mbc,
                                             Err(_) => {
-                                                eprintln!("❌ Error generando bytecode del módulo");
+                                                eprintln!("{}", error::error("Error generando bytecode del módulo"));
                                                 continue;
                                             }
                                         };
@@ -206,18 +203,17 @@ impl REPL {
                                     // Hacer hot-swap en la VM
                                     match vm.hot_swap_module(module_sym, &module_bc) {
                                         Ok(()) => {
-                                            println!(
-                                                "♻️  Módulo '{}' recargado (v{})",
-                                                nombre_modulo,
-                                                version + 1
-                                            );
+                                            println!("{} Módulo '{}' recargado (v{})",
+                                                color::verde("♻️"),
+                                                color::negrita(&nombre_modulo),
+                                                color::amarillo(&(version + 1).to_string()));
                                         }
                                         Err(e) => {
-                                            eprintln!("❌ Error en hot-swap: {}", e);
+                                            eprintln!("{}", error::error(&format!("Error en hot-swap: {}", e)));
                                         }
                                     }
                                 } else {
-                                    println!("⚠️  No hay VM activa. Ejecutá código primero.");
+                                    eprintln!("{}", error::warning("No hay VM activa. Ejecutá código primero."));
                                 }
                             }
                             continue;
@@ -244,7 +240,7 @@ impl REPL {
                             self.buffer.clear();
                         }
                         Err(err) => {
-                            eprintln!("❌ {}", err);
+                            eprintln!("{}", error::error(&err));
                             self.buffer.clear();
                         }
                     }

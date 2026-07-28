@@ -129,6 +129,18 @@ impl NativeRegistry {
         reg.registrar_json();
         reg.registrar_red();
         reg.registrar_quic_h3();
+        reg.registrar_ruta();
+        reg.registrar_proceso();
+        reg.registrar_temporizador();
+        reg.registrar_binario();
+        reg.registrar_csv();
+        reg.registrar_url();
+        reg.registrar_atomicos();
+        reg.registrar_log();
+        reg.registrar_perfilado();
+        reg.registrar_senales();
+        reg.registrar_env_ext();
+        reg.registrar_arg();
         #[cfg(not(target_arch = "wasm32"))]
         reg.registrar_hot_reload();
         #[cfg(not(target_arch = "wasm32"))]
@@ -289,6 +301,9 @@ impl NativeRegistry {
         // ─── AES-256-CBC ──────────────────────────────────────────────────
         self.registrar("_aes256_cbc_encrypt", native_aes256_cbc_encrypt);
         self.registrar("_aes256_cbc_decrypt", native_aes256_cbc_decrypt);
+        // ─── AES-256-GCM ─────────────────────────────────────────────────
+        self.registrar("_aes256_gcm_encrypt", native_aes256_gcm_encrypt);
+        self.registrar("_aes256_gcm_decrypt", native_aes256_gcm_decrypt);
         // ─── ChaCha20 ─────────────────────────────────────────────────────
         self.registrar("_chacha20_xor", native_chacha20_xor);
         // ─── ChaCha20-Poly1305 AEAD ───────────────────────────────────────
@@ -300,6 +315,18 @@ impl NativeRegistry {
         self.registrar("_verify_password", native_verify_password);
         // ─── scrypt ────────────────────────────────────────────────────────
         self.registrar("_scrypt", native_scrypt);
+        // ─── Memory-Mapped Files ───────────────────────────────────────────
+        self.registrar("_mmap_abrir", native_mmap_abrir);
+        self.registrar("_mmap_cerrar", native_mmap_cerrar);
+        self.registrar("_mmap_leer", native_mmap_leer);
+        self.registrar("_mmap_escribir", native_mmap_escribir);
+        self.registrar("_mmap_sincronizar", native_mmap_sincronizar);
+        self.registrar("_mmap_tamano", native_mmap_tamano);
+        self.registrar("_mmap_page_size", native_mmap_page_size);
+        // ─── Terminal (raw mode, tamaño, teclas) ──────────────────────────
+        self.registrar("_terminal_tamano", native_terminal_tamano);
+        self.registrar("_terminal_raw", native_terminal_raw);
+        self.registrar("_terminal_leer_tecla", native_terminal_leer_tecla);
         // ─── Post-cuántico ─────────────────────────────────────────────────
         self.registrar("_pq_keygen", native_pq_keygen);
         self.registrar("_pq_encaps", native_pq_encaps);
@@ -422,6 +449,788 @@ impl NativeRegistry {
 
     fn registrar_json(&mut self) {
         self.registrar("_json_stringificar", native_json_stringificar);
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Stdlib: ruta — path normalization
+// ═════════════════════════════════════════════════════════════════════════
+
+impl NativeRegistry {
+    fn registrar_ruta(&mut self) {
+        self.registrar("_ruta_normalizar", native_ruta_normalizar);
+        self.registrar("_ruta_unir", native_ruta_unir);
+        self.registrar("_ruta_extension", native_ruta_extension);
+        self.registrar("_ruta_sin_extension", native_ruta_sin_extension);
+        self.registrar("_ruta_nombre_archivo", native_ruta_nombre_archivo);
+        self.registrar("_ruta_dir_padre", native_ruta_dir_padre);
+        self.registrar("_ruta_absoluta", native_ruta_absoluta);
+        self.registrar("_ruta_es_absoluta", native_ruta_es_absoluta);
+        self.registrar("_ruta_separador", native_ruta_separador);
+    }
+}
+
+fn native_ruta_normalizar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let s = obtener_texto(vm, args[0])?;
+    let p = std::path::Path::new(&s);
+    let normalized = p.components().collect::<std::path::PathBuf>();
+    let out = normalized.to_string_lossy().replace('\\', "/");
+    Ok({ let idx = vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+}
+
+fn native_ruta_unir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let base = obtener_texto(vm, args[0])?;
+    let part = obtener_texto(vm, args[1])?;
+    let p = std::path::Path::new(&base).join(&part);
+    let out = p.to_string_lossy().replace('\\', "/");
+    Ok({ let idx = vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+}
+
+fn native_ruta_extension(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let s = obtener_texto(vm, args[0])?;
+    let ext = std::path::Path::new(&s).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+    Ok({ let idx = vm.alloc_str(Arc::from(ext.as_str())); ValorFast::texto(idx) })
+}
+
+fn native_ruta_sin_extension(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let s = obtener_texto(vm, args[0])?;
+    let p = std::path::Path::new(&s);
+    let out = p.with_extension("").to_string_lossy().replace('\\', "/");
+    Ok({ let idx = vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+}
+
+fn native_ruta_nombre_archivo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let s = obtener_texto(vm, args[0])?;
+    let name = std::path::Path::new(&s).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    Ok({ let idx = vm.alloc_str(Arc::from(name.as_str())); ValorFast::texto(idx) })
+}
+
+fn native_ruta_dir_padre(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let s = obtener_texto(vm, args[0])?;
+    let parent = std::path::Path::new(&s).parent().map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+    Ok({ let idx = vm.alloc_str(Arc::from(parent.as_str())); ValorFast::texto(idx) })
+}
+
+fn native_ruta_absoluta(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let s = obtener_texto(vm, args[0])?;
+    let p = std::path::Path::new(&s);
+    let abs = if p.is_absolute() { p.to_path_buf() } else {
+        match std::env::current_dir() { Ok(cwd) => cwd.join(p), Err(_) => return Ok(ValorFast::nulo()) }
+    };
+    let out = abs.to_string_lossy().replace('\\', "/");
+    Ok({ let idx = vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+}
+
+fn native_ruta_es_absoluta(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let s = obtener_texto(_vm, args[0])?;
+    Ok(ValorFast::booleano(std::path::Path::new(&s).is_absolute()))
+}
+
+fn native_ruta_separador(_vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let sep = std::path::MAIN_SEPARATOR.to_string();
+    Ok({ let idx = _vm.alloc_str(Arc::from(sep.as_str())); ValorFast::texto(idx) })
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Stdlib: proceso — subprocess execution
+// ═════════════════════════════════════════════════════════════════════════
+
+impl NativeRegistry {
+    fn registrar_proceso(&mut self) {
+        self.registrar("_proceso_ejecutar", native_proceso_ejecutar);
+    }
+}
+
+fn native_proceso_ejecutar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let cmd = obtener_texto(vm, args[0])?;
+    let stdin_input = if args.len() > 1 { obtener_texto(vm, args[1])? } else { String::new() };
+    let dir = if args.len() > 2 { obtener_texto(vm, args[2])? } else { String::new() };
+
+    let mut command = if cfg!(target_os = "windows") {
+        let mut c = std::process::Command::new("cmd");
+        c.arg("/C").arg(&cmd);
+        c
+    } else {
+        let mut c = std::process::Command::new("sh");
+        c.arg("-c").arg(&cmd);
+        c
+    };
+
+    if !dir.is_empty() {
+        command.current_dir(&dir);
+    }
+
+    if !stdin_input.is_empty() {
+        command.stdin(std::process::Stdio::piped());
+    }
+
+    let output = match command.output() {
+        Ok(o) => o,
+        Err(e) => return Err(ErrFast::TipoInv(format!("_proceso_ejecutar: {}", e))),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let code = output.status.code().unwrap_or(-1) as i64;
+
+    // Build result object: SalidaProceso { stdout, stderr, codigo_salida }
+    let sym = vm.sym_table.intern("SalidaProceso");
+    let mut obj = crate::vm_fast::ObjVal::new(sym);
+    obj.campos_vec = vec![
+        { let idx = vm.alloc_str(Arc::from(stdout.as_str())); ValorFast::texto(idx) },
+        { let idx = vm.alloc_str(Arc::from(stderr.as_str())); ValorFast::texto(idx) },
+        ValorFast::entero(code),
+    ];
+    let idx = vm.alloc_obj(obj);
+    Ok(ValorFast::objeto(idx))
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Stdlib: temporizador — timers and sleep
+// ═════════════════════════════════════════════════════════════════════════
+
+impl NativeRegistry {
+    fn registrar_temporizador(&mut self) {
+        self.registrar("_temporizador_nuevo", native_temporizador_nuevo);
+        self.registrar("_temporizador_dormir", native_temporizador_dormir);
+        self.registrar("_sistema_tiempo_ms", native_sistema_tiempo_ms);
+    }
+}
+
+fn native_sistema_tiempo_ms(_vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default().as_millis() as i64;
+    Ok(ValorFast::entero(ms))
+}
+
+fn native_temporizador_nuevo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let ms = obtener_entero(args[0])?;
+    let sym = vm.sym_table.intern("Timer");
+    let mut obj = crate::vm_fast::ObjVal::new(sym);
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    obj.campos_vec = vec![ValorFast::entero(id as i64), ValorFast::entero(ms), ValorFast::booleano(true)];
+    let idx = vm.alloc_obj(obj);
+    Ok(ValorFast::objeto(idx))
+}
+
+fn native_temporizador_dormir(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let ms = obtener_entero(args[0])? as u64;
+    std::thread::sleep(std::time::Duration::from_millis(ms));
+    Ok(ValorFast::nulo())
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Stdlib: binario — binary pack/unpack
+// ═════════════════════════════════════════════════════════════════════════
+
+impl NativeRegistry {
+    fn registrar_binario(&mut self) {
+        self.registrar("_binario_empaquetar", native_binario_empaquetar);
+        self.registrar("_binario_desempaquetar", native_binario_desempaquetar);
+        self.registrar("_binario_a_hex", native_binario_a_hex);
+        self.registrar("_binario_desde_hex", native_binario_desde_hex);
+        self.registrar("_binario_tamano", native_binario_tamano);
+    }
+}
+
+fn native_binario_empaquetar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let formato = obtener_texto(vm, args[0])?;
+    let arr_idx = args[1].indice_arreglo() as usize;
+    let arr = vm.get_arr(arr_idx as u32);
+    let mut buf: Vec<u8> = Vec::new();
+    let mut pos = 0usize;
+    let fmt_bytes = formato.as_bytes();
+    let mut i = 0;
+    while i < fmt_bytes.len() {
+        let endian: &str = if i + 1 < fmt_bytes.len() { std::str::from_utf8(&fmt_bytes[i..i+2]).unwrap_or("") } else { "" };
+        let (ch, skip) = if endian == "le" || endian == "be" { (fmt_bytes[i+2] as char, 3usize) } else { (fmt_bytes[i] as char, 1usize) };
+        let little = endian == "le" || endian == "be" && endian == "le";
+        let val = if pos < arr.len() { arr[pos].a_entero() as i64 } else { 0i64 };
+        match ch {
+            'b' => buf.push(val as i8 as u8),
+            'h' => buf.extend_from_slice(&(val as i16).to_le_bytes()),
+            'i' => buf.extend_from_slice(&(val as i32).to_le_bytes()),
+            'q' => buf.extend_from_slice(&(val as i64).to_le_bytes()),
+            _ => {}
+        }
+        if !little { let len = buf.len(); let last = len - (if ch == 'b' { 1 } else if ch == 'h' { 2 } else if ch == 'i' { 4 } else { 8 }); buf[last..].reverse(); }
+        pos += 1;
+        i += skip;
+    }
+    let out = String::from_utf8(buf).unwrap_or_default();
+    Ok({ let idx = vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+}
+
+fn native_binario_desempaquetar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let formato = obtener_texto(vm, args[0])?;
+    let datos = obtener_texto(vm, args[1])?;
+    let bytes = datos.as_bytes();
+    let mut vals: Vec<ValorFast> = Vec::new();
+    let mut byte_pos = 0usize;
+    let fmt_bytes = formato.as_bytes();
+    let mut i = 0;
+    while i < fmt_bytes.len() && byte_pos < bytes.len() {
+        let endian: &str = if i + 1 < fmt_bytes.len() { std::str::from_utf8(&fmt_bytes[i..i+2]).unwrap_or("") } else { "" };
+        let (ch, skip) = if endian == "le" || endian == "be" { (fmt_bytes[i+2] as char, 3usize) } else { (fmt_bytes[i] as char, 1usize) };
+        let little = endian != "be";
+        match ch {
+            'b' => { let v = bytes[byte_pos] as i64; vals.push(ValorFast::entero(v)); byte_pos += 1; }
+            'h' => { let mut arr = [0u8; 2]; let end = (byte_pos + 2).min(bytes.len()); arr[..end-byte_pos].copy_from_slice(&bytes[byte_pos..end]); let v = if little { i16::from_le_bytes(arr) } else { i16::from_be_bytes(arr) } as i64; vals.push(ValorFast::entero(v)); byte_pos += 2; }
+            'i' => { let mut arr = [0u8; 4]; let end = (byte_pos + 4).min(bytes.len()); arr[..end-byte_pos].copy_from_slice(&bytes[byte_pos..end]); let v = if little { i32::from_le_bytes(arr) } else { i32::from_be_bytes(arr) } as i64; vals.push(ValorFast::entero(v)); byte_pos += 4; }
+            'q' => { let mut arr = [0u8; 8]; let end = (byte_pos + 8).min(bytes.len()); arr[..end-byte_pos].copy_from_slice(&bytes[byte_pos..end]); let v = if little { i64::from_le_bytes(arr) } else { i64::from_be_bytes(arr) }; vals.push(ValorFast::entero(v)); byte_pos += 8; }
+            _ => {}
+        }
+        i += skip;
+    }
+    let arr_idx = vm.alloc_arr(vals);
+    Ok(ValorFast::arreglo(arr_idx))
+}
+
+fn native_binario_a_hex(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let datos = obtener_texto(vm, args[0])?;
+    let hex: String = datos.bytes().map(|b| format!("{:02x}", b)).collect();
+    Ok({ let idx = vm.alloc_str(Arc::from(hex.as_str())); ValorFast::texto(idx) })
+}
+
+fn native_binario_desde_hex(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let hex = obtener_texto(vm, args[0])?;
+    let bytes: Vec<u8> = (0..hex.len()).step_by(2).filter_map(|i| u8::from_str_radix(&hex[i..(i+2).min(hex.len())], 16).ok()).collect();
+    let out = String::from_utf8(bytes).unwrap_or_default();
+    Ok({ let idx = vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+}
+
+fn native_binario_tamano(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let formato = obtener_texto(_vm, args[0])?;
+    let mut size = 0i64;
+    for ch in formato.chars() { match ch { 'b' => size += 1, 'h' => size += 2, 'i' => size += 4, 'q' => size += 8, _ => {} } }
+    Ok(ValorFast::entero(size))
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Stdlib: csv — CSV parsing
+// ═════════════════════════════════════════════════════════════════════════
+
+impl NativeRegistry {
+    fn registrar_csv(&mut self) {
+        self.registrar("_csv_parsear", native_csv_parsear);
+        self.registrar("_csv_parsear_con_cabeceras", native_csv_parsear_con_cabeceras);
+        self.registrar("_csv_generar", native_csv_generar);
+        self.registrar("_csv_generar_con_cabeceras", native_csv_generar_con_cabeceras);
+    }
+}
+
+fn native_csv_parsear(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let texto = obtener_texto(vm, args[0])?;
+    let mut filas: Vec<ValorFast> = Vec::new();
+    for line in texto.lines() {
+        let campos: Vec<ValorFast> = line.split(',').map(|c| { let idx = vm.alloc_str(Arc::from(c.trim())); ValorFast::texto(idx) }).collect();
+        filas.push(ValorFast::arreglo(vm.alloc_arr(campos)));
+    }
+    let arr_idx = vm.alloc_arr(filas);
+    Ok(ValorFast::arreglo(arr_idx))
+}
+
+fn native_csv_parsear_con_cabeceras(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let texto = obtener_texto(vm, args[0])?;
+    let lines: Vec<&str> = texto.lines().collect();
+    if lines.len() < 2 { return Ok(ValorFast::arreglo(vm.alloc_arr(vec![]))); }
+    let headers: Vec<&str> = lines[0].split(',').map(|c| c.trim()).collect();
+    let mut filas: Vec<ValorFast> = Vec::new();
+    for line in &lines[1..] {
+        let vals: Vec<&str> = line.split(',').map(|c| c.trim()).collect();
+        let mut map = Vec::new();
+        for (i, h) in headers.iter().enumerate() {
+            let v = vals.get(i).copied().unwrap_or("");
+            let h_val = { let idx = vm.alloc_str(Arc::from(*h)); ValorFast::texto(idx) };
+            let v_val = { let idx = vm.alloc_str(Arc::from(v)); ValorFast::texto(idx) };
+            map.push(ValorFast::arreglo(vm.alloc_arr(vec![h_val, v_val])));
+        }
+        filas.push(ValorFast::arreglo(vm.alloc_arr(map)));
+    }
+    Ok(ValorFast::arreglo(vm.alloc_arr(filas)))
+}
+
+fn native_csv_generar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let arr_idx = args[0].indice_arreglo() as usize;
+    let filas_arr = _vm.get_arr(arr_idx as u32).clone();
+    let mut out = String::new();
+    for fila_val in filas_arr.iter() {
+        let f_idx = fila_val.indice_arreglo() as usize;
+        let campos = _vm.get_arr(f_idx as u32).clone();
+        let line: Vec<String> = campos.iter().map(|c| _vm.get_str(c.indice_texto()).to_string()).collect();
+        out.push_str(&line.join(","));
+        out.push('\n');
+    }
+    Ok({ let idx = _vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+}
+
+fn native_csv_generar_con_cabeceras(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let headers = obtener_texto(_vm, args[0])?;
+    let arr_idx = args[1].indice_arreglo() as usize;
+    let filas = _vm.get_arr(arr_idx as u32).clone();
+    let mut out = String::new();
+    out.push_str(&headers);
+    out.push('\n');
+    for fila_val in filas.iter() {
+        let f_idx = fila_val.indice_arreglo() as usize;
+        let campos = _vm.get_arr(f_idx as u32).clone();
+        let line: Vec<String> = campos.iter().map(|c| _vm.get_str(c.indice_texto()).to_string()).collect();
+        out.push_str(&line.join(","));
+        out.push('\n');
+    }
+    Ok({ let idx = _vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Stdlib: url — URL parsing
+// ═════════════════════════════════════════════════════════════════════════
+
+impl NativeRegistry {
+    fn registrar_url(&mut self) {
+        self.registrar("_url_parsear", native_url_parsear);
+        self.registrar("_url_construir", native_url_construir);
+    }
+}
+
+fn native_url_parsear(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let url_str = obtener_texto(vm, args[0])?;
+    let parts: Vec<&str> = url_str.split("://").collect();
+    let (esquema, resto) = if parts.len() == 2 { (parts[0], parts[1]) } else { ("", &url_str[..]) };
+    let q_pos = resto.find('?');
+    let (host_ruta, query) = if let Some(q) = q_pos { (&resto[..q], Some(&resto[q+1..])) } else { (resto, None) };
+    let slash_pos = host_ruta.find('/');
+    let (host, ruta) = if let Some(s) = slash_pos { (&host_ruta[..s], &host_ruta[s..]) } else { (host_ruta, "/") };
+    let puerto_idx = host.find(':');
+    let (hostname, puerto) = if let Some(p) = puerto_idx {
+        (&host[..p], &host[p+1..])
+    } else { (host, "") };
+
+    let sym = vm.sym_table.intern("URL");
+    let mut obj = crate::vm_fast::ObjVal::new(sym);
+    obj.campos_vec = vec![
+        { let idx = vm.alloc_str(Arc::from(esquema)); ValorFast::texto(idx) }, { let idx = vm.alloc_str(Arc::from(hostname)); ValorFast::texto(idx) }, { let idx = vm.alloc_str(Arc::from(puerto)); ValorFast::texto(idx) },
+        { let idx = vm.alloc_str(Arc::from(ruta)); ValorFast::texto(idx) }, { let idx = vm.alloc_str(Arc::from(query.unwrap_or(""))); ValorFast::texto(idx) },
+    ];
+    Ok(ValorFast::objeto(vm.alloc_obj(obj)))
+}
+
+fn native_url_construir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let esq = obtener_texto(vm, args[0])?;
+    let host = obtener_texto(vm, args[1])?;
+    let puerto = obtener_entero(args[2])?;
+    let ruta = obtener_texto(vm, args[3])?;
+    let query = obtener_texto(vm, args[4])?;
+    let port_str = if puerto > 0 { format!(":{}", puerto) } else { String::new() };
+    let qs = if query.is_empty() { String::new() } else { format!("?{}", query) };
+    let out = format!("{}://{}{}{}{}", esq, host, port_str, ruta, qs);
+    Ok({ let idx = vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Stdlib: atomicos — lock-free atomics
+// ═════════════════════════════════════════════════════════════════════════
+
+impl NativeRegistry {
+    fn registrar_atomicos(&mut self) {
+        self.registrar("_atomico_entero_nuevo", native_atomico_entero_nuevo);
+        self.registrar("_atomico_cargar", native_atomico_cargar);
+        self.registrar("_atomico_almacenar", native_atomico_almacenar);
+        self.registrar("_atomico_sumar", native_atomico_sumar);
+        self.registrar("_atomico_intercambiar", native_atomico_intercambiar);
+        self.registrar("_atomico_cas", native_atomico_cas);
+        self.registrar("_atomico_booleano_nuevo", native_atomico_booleano_nuevo);
+        self.registrar("_atomico_booleano_cargar", native_atomico_booleano_cargar);
+        self.registrar("_atomico_booleano_almacenar", native_atomico_booleano_almacenar);
+    }
+}
+
+use std::sync::atomic::{AtomicI64, AtomicBool};
+use std::sync::OnceLock;
+
+static ATOMICS: OnceLock<Mutex<Vec<AtomicI64>>> = OnceLock::new();
+static ATOMIC_BOOLS: OnceLock<Mutex<Vec<AtomicBool>>> = OnceLock::new();
+
+fn atomicos_mutex() -> &'static Mutex<Vec<AtomicI64>> {
+    ATOMICS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+fn atomic_bools_mutex() -> &'static Mutex<Vec<AtomicBool>> {
+    ATOMIC_BOOLS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+fn native_atomico_entero_nuevo(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let val = if args.is_empty() { 0i64 } else { obtener_entero(args[0])? };
+    let mut store = atomicos_mutex().lock().unwrap();
+    let idx = store.len();
+    store.push(AtomicI64::new(val));
+    Ok(ValorFast::entero(idx as i64))
+}
+
+fn native_atomico_cargar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let idx = obtener_entero(args[0])? as usize;
+    let store = atomicos_mutex().lock().unwrap();
+    let val = store.get(idx).map(|a| a.load(Ordering::Relaxed)).unwrap_or(0);
+    Ok(ValorFast::entero(val))
+}
+
+fn native_atomico_almacenar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let idx = obtener_entero(args[0])? as usize;
+    let val = obtener_entero(args[1])?;
+    let store = atomicos_mutex().lock().unwrap();
+    if let Some(a) = store.get(idx) { a.store(val, Ordering::Relaxed); }
+    Ok(ValorFast::nulo())
+}
+
+fn native_atomico_sumar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let idx = obtener_entero(args[0])? as usize;
+    let delta = obtener_entero(args[1])?;
+    let store = atomicos_mutex().lock().unwrap();
+    let prev = store.get(idx).map(|a| a.fetch_add(delta, Ordering::Relaxed)).unwrap_or(0);
+    Ok(ValorFast::entero(prev))
+}
+
+fn native_atomico_intercambiar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let idx = obtener_entero(args[0])? as usize;
+    let val = obtener_entero(args[1])?;
+    let store = atomicos_mutex().lock().unwrap();
+    let prev = store.get(idx).map(|a| a.swap(val, Ordering::Relaxed)).unwrap_or(0);
+    Ok(ValorFast::entero(prev))
+}
+
+fn native_atomico_cas(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let idx = obtener_entero(args[0])? as usize;
+    let esperado = obtener_entero(args[1])?;
+    let nuevo = obtener_entero(args[2])?;
+    let store = atomicos_mutex().lock().unwrap();
+    let ok = store.get(idx).map(|a| a.compare_exchange(esperado, nuevo, Ordering::Relaxed, Ordering::Relaxed).is_ok()).unwrap_or(false);
+    Ok(ValorFast::booleano(ok))
+}
+
+fn native_atomico_booleano_nuevo(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let val = if args.is_empty() { false } else { args[0].a_entero() != 0 };
+    let mut store = atomic_bools_mutex().lock().unwrap();
+    let idx = store.len();
+    store.push(AtomicBool::new(val));
+    Ok(ValorFast::entero(idx as i64))
+}
+
+fn native_atomico_booleano_cargar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let idx = obtener_entero(args[0])? as usize;
+    let store = atomic_bools_mutex().lock().unwrap();
+    let val = store.get(idx).map(|a| a.load(Ordering::Relaxed)).unwrap_or(false);
+    Ok(ValorFast::booleano(val))
+}
+
+fn native_atomico_booleano_almacenar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let idx = obtener_entero(args[0])? as usize;
+    let val = obtener_entero(args[1])? != 0;
+    let store = atomic_bools_mutex().lock().unwrap();
+    if let Some(a) = store.get(idx) { a.store(val, Ordering::Relaxed); }
+    Ok(ValorFast::nulo())
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Stdlib: log — structured logging
+// ═════════════════════════════════════════════════════════════════════════
+
+impl NativeRegistry {
+    fn registrar_log(&mut self) {
+        self.registrar("_log_escribir", native_log_escribir);
+        self.registrar("_log_configurar", native_log_configurar);
+    }
+}
+
+use std::fs::OpenOptions;
+static LOG_FILE: OnceLock<Mutex<String>> = OnceLock::new();
+static LOG_LEVEL: OnceLock<Mutex<String>> = OnceLock::new();
+
+fn log_nivel_min() -> i32 {
+    let nivel = LOG_LEVEL.get_or_init(|| Mutex::new("INFO".to_string())).lock().unwrap().clone();
+    match nivel.as_str() { "DEBUG" => 0, "INFO" => 1, "ADVERTENCIA" => 2, "ERROR" => 3, "CRITICAL" => 4, _ => 1 }
+}
+
+fn nivel_num(nivel: &str) -> i32 {
+    match nivel { "DEBUG" => 0, "INFO" => 1, "ADVERTENCIA" => 2, "ERROR" => 3, "CRITICAL" => 4, _ => 1 }
+}
+
+fn native_log_escribir(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let nivel = obtener_texto(_vm, args[0])?;
+    let mensaje = obtener_texto(_vm, args[1])?;
+    if nivel_num(&nivel) < log_nivel_min() { return Ok(ValorFast::nulo()); }
+    let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+    let line = format!("[{}] [{}] {}\n", timestamp, nivel, mensaje);
+    let ruta = LOG_FILE.get_or_init(|| Mutex::new(String::new())).lock().unwrap().clone();
+    if ruta.is_empty() {
+        eprint!("{}", line);
+    } else if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&ruta) {
+        let _ = f.write_all(line.as_bytes());
+    }
+    Ok(ValorFast::nulo())
+}
+
+fn native_log_configurar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let nivel = obtener_texto(_vm, args[0])?;
+    let archivo = obtener_texto(_vm, args[1])?;
+    *LOG_LEVEL.get_or_init(|| Mutex::new("INFO".to_string())).lock().unwrap() = nivel;
+    *LOG_FILE.get_or_init(|| Mutex::new(String::new())).lock().unwrap() = archivo;
+    Ok(ValorFast::nulo())
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Stdlib: perfilado — profiling and benchmarking
+// ═════════════════════════════════════════════════════════════════════════
+
+impl NativeRegistry {
+    fn registrar_perfilado(&mut self) {
+        self.registrar("_perfilado_iniciar", native_perfilado_iniciar);
+        self.registrar("_perfilado_detener", native_perfilado_detener);
+        self.registrar("_perfilado_reportes", native_perfilado_reportes);
+    }
+}
+
+use std::collections::HashMap as HashMap_collections;
+
+static PERFIL: OnceLock<Mutex<HashMap_collections<String, (u128, u64)>>> = OnceLock::new();
+static PERFIL_INICIOS: OnceLock<Mutex<HashMap_collections<String, u128>>> = OnceLock::new();
+
+fn perfil_map() -> &'static Mutex<HashMap_collections<String, (u128, u64)>> {
+    PERFIL.get_or_init(|| Mutex::new(HashMap_collections::new()))
+}
+
+fn perf_inicios() -> &'static Mutex<HashMap_collections<String, u128>> {
+    PERFIL_INICIOS.get_or_init(|| Mutex::new(HashMap_collections::new()))
+}
+
+fn now_ms() -> u128 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()
+}
+
+fn native_perfilado_iniciar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let etiqueta = obtener_texto(_vm, args[0])?;
+    perf_inicios().lock().unwrap().insert(etiqueta, now_ms());
+    Ok(ValorFast::nulo())
+}
+
+fn native_perfilado_detener(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let etiqueta = obtener_texto(vm, args[0])?;
+    let inicio = perf_inicios().lock().unwrap().remove(&etiqueta).unwrap_or(now_ms());
+    let total_ms = (now_ms() - inicio) as i64;
+    let mut map = perfil_map().lock().unwrap();
+    let entry = map.entry(etiqueta.clone()).or_insert((0, 0));
+    entry.0 += total_ms as u128;
+    entry.1 += 1;
+    // build ReportePerfilado object
+    let sym = vm.sym_table.intern("ReportePerfilado");
+    let mut obj = crate::vm_fast::ObjVal::new(sym);
+    obj.campos_vec = vec![
+        { let idx = vm.alloc_str(Arc::from(etiqueta.as_str())); ValorFast::texto(idx) },
+        ValorFast::entero(total_ms),
+        ValorFast::entero(entry.1 as i64),
+        ValorFast::entero(if entry.1 > 0 { (entry.0 / entry.1 as u128) as i64 } else { 0 }),
+    ];
+    Ok(ValorFast::objeto(vm.alloc_obj(obj)))
+}
+
+fn native_perfilado_reportes(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let map = perfil_map().lock().unwrap();
+    let mut reportes: Vec<ValorFast> = Vec::new();
+    for (etiqueta, (tiempo_total, iteraciones)) in map.iter() {
+        let sym = vm.sym_table.intern("ReportePerfilado");
+        let mut obj = crate::vm_fast::ObjVal::new(sym);
+        obj.campos_vec = vec![
+            { let idx = vm.alloc_str(Arc::from(etiqueta.as_str())); ValorFast::texto(idx) },
+            ValorFast::entero(*tiempo_total as i64),
+            ValorFast::entero(*iteraciones as i64),
+            ValorFast::entero(if *iteraciones > 0 { (*tiempo_total / *iteraciones as u128) as i64 } else { 0 }),
+        ];
+        reportes.push(ValorFast::objeto(vm.alloc_obj(obj)));
+    }
+    Ok(ValorFast::arreglo(vm.alloc_arr(reportes)))
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Stdlib: señales — signal handling
+// ═════════════════════════════════════════════════════════════════════════
+
+impl NativeRegistry {
+    fn registrar_senales(&mut self) {
+        self.registrar("_senal_manejar", native_senal_manejar);
+        self.registrar("_senal_ignorar", native_senal_ignorar);
+        self.registrar("_senal_enviar", native_senal_enviar);
+    }
+}
+
+fn native_senal_manejar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let senal = obtener_texto(_vm, args[0])?;
+    // En versiones actuales de Rust, signal_hook no está disponible.
+    // Implementación mínima: solo registrar la intención.
+    eprintln!("[señales] Handler registrado para {} (simulado)", senal);
+    Ok(ValorFast::nulo())
+}
+
+fn native_senal_ignorar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let _senal = obtener_texto(_vm, args[0])?;
+    Ok(ValorFast::nulo())
+}
+
+fn native_senal_enviar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let _pid = obtener_entero(args[0])?;
+    let _senal = obtener_texto(_vm, args[1])?;
+    Ok(ValorFast::nulo())
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Stdlib: env extended functions
+// ═════════════════════════════════════════════════════════════════════════
+
+impl NativeRegistry {
+    fn registrar_env_ext(&mut self) {
+        self.registrar("_env_establecer", native_env_establecer);
+        self.registrar("_env_todos", native_env_todos);
+        self.registrar("_env_cargar_desde_texto", native_env_cargar_desde_texto);
+        self.registrar("_env_expandir", native_env_expandir);
+        self.registrar("_env_parsear_entero", native_env_parsear_entero);
+        self.registrar("_env_parsear_booleano", native_env_parsear_booleano);
+    }
+}
+
+fn native_env_establecer(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let nombre = obtener_texto(_vm, args[0])?;
+    let valor = obtener_texto(_vm, args[1])?;
+    std::env::set_var(&nombre, &valor);
+    Ok(ValorFast::nulo())
+}
+
+fn native_env_todos(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let pairs: Vec<ValorFast> = std::env::vars().map(|(k, v)| {
+        let k_val = { let idx = vm.alloc_str(Arc::from(k.as_str())); ValorFast::texto(idx) };
+        let v_val = { let idx = vm.alloc_str(Arc::from(v.as_str())); ValorFast::texto(idx) };
+        let arr = vm.alloc_arr(vec![k_val, v_val]);
+        ValorFast::arreglo(arr)
+    }).collect();
+    Ok(ValorFast::arreglo(vm.alloc_arr(pairs)))
+}
+
+fn native_env_cargar_desde_texto(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let texto = obtener_texto(vm, args[0])?;
+    for line in texto.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') { continue; }
+        if let Some(eq) = line.find('=') {
+            let k = line[..eq].trim();
+            let v = line[eq+1..].trim();
+            if !k.is_empty() { std::env::set_var(k, v); }
+        }
+    }
+    Ok(ValorFast::nulo())
+}
+
+fn simple_env_expand(texto: &str) -> String {
+    let mut out = String::new();
+    let mut chars = texto.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '$' {
+            let mut var = String::new();
+            if chars.peek() == Some(&'{') {
+                chars.next();
+                while let Some(&ch) = chars.peek() {
+                    if ch == '}' { chars.next(); break; }
+                    var.push(ch); chars.next();
+                }
+            } else {
+                while let Some(&ch) = chars.peek() {
+                    if ch.is_alphanumeric() || ch == '_' { var.push(ch); chars.next(); } else { break; }
+                }
+            }
+            let val = std::env::var(&var).unwrap_or_default();
+            out.push_str(&val);
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+fn native_env_expandir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let texto = obtener_texto(vm, args[0])?;
+    let expanded = simple_env_expand(&texto);
+    Ok({ let idx = vm.alloc_str(Arc::from(expanded.as_str())); ValorFast::texto(idx) })
+}
+
+fn native_env_parsear_entero(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let s = obtener_texto(_vm, args[0])?;
+    match s.trim().parse::<i64>() {
+        Ok(n) => Ok(ValorFast::entero(n)),
+        Err(_) => Ok(ValorFast::nulo()),
+    }
+}
+
+fn native_env_parsear_booleano(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let s = obtener_texto(_vm, args[0])?.to_lowercase();
+    let val = matches!(s.as_str(), "true" | "1" | "yes" | "verdadero" | "si");
+    Ok(ValorFast::booleano(val))
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Stdlib: arg — argument parser helpers
+// ═════════════════════════════════════════════════════════════════════════
+
+impl NativeRegistry {
+    fn registrar_arg(&mut self) {
+        self.registrar("_arg_flag_presente", native_arg_flag_presente);
+        self.registrar("_arg_flag_texto", native_arg_flag_texto);
+        self.registrar("_arg_posicional", native_arg_posicional);
+        self.registrar("_arg_mostrar_ayuda", native_arg_mostrar_ayuda);
+        self.registrar("_arg_parsear_entero", native_arg_parsear_entero);
+    }
+}
+
+fn native_arg_flag_presente(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let nombre = obtener_texto(_vm, args[0])?;
+    let args_raw: Vec<String> = std::env::args().skip(1).collect();
+    let presente = args_raw.iter().any(|a| a == &format!("--{}", nombre) || a == &format!("-{}", nombre.chars().next().unwrap_or(' ')));
+    Ok(ValorFast::booleano(presente))
+}
+
+fn native_arg_flag_texto(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let nombre = obtener_texto(vm, args[0])?;
+    let args_raw: Vec<String> = std::env::args().collect();
+    let mut i = 1;
+    while i < args_raw.len() {
+        let a = &args_raw[i];
+        if a == &format!("--{}", nombre) || a == &format!("-{}", nombre.chars().next().unwrap_or(' ')) {
+            if i + 1 < args_raw.len() && !args_raw[i+1].starts_with('-') {
+                return Ok({ let idx = vm.alloc_str(Arc::from(args_raw[i+1].as_str())); ValorFast::texto(idx) });
+            }
+            return Ok({ let idx = vm.alloc_str(Arc::from("")); ValorFast::texto(idx) }); // flag presente sin valor
+        }
+        i += 1;
+    }
+    Ok(ValorFast::nulo()) // no presente
+}
+
+fn native_arg_posicional(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let idx = obtener_entero(args[0])? as usize;
+    let args_raw: Vec<String> = std::env::args().skip(1).collect();
+    let positional: Vec<&String> = args_raw.iter().filter(|a| !a.starts_with('-')).collect();
+    match positional.get(idx) {
+        Some(v) => Ok({ let idx = vm.alloc_str(Arc::from(v.as_str())); ValorFast::texto(idx) }),
+        None => Ok(ValorFast::nulo()),
+    }
+}
+
+fn native_arg_mostrar_ayuda(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let nombre = obtener_texto(_vm, args[0])?;
+    eprintln!("Uso: {} [opciones]", nombre);
+    Ok(ValorFast::nulo())
+}
+
+fn native_arg_parsear_entero(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let s = obtener_texto(_vm, args[0])?;
+    match s.trim().parse::<i64>() {
+        Ok(n) => Ok(ValorFast::entero(n)),
+        Err(_) => Ok(ValorFast::nulo()),
     }
 }
 
@@ -1898,6 +2707,42 @@ fn native_aes256_cbc_decrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
     }
 }
 
+fn native_aes256_gcm_encrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 4 { return Err(ErrFast::TipoInv("_aes256_gcm_encrypt requiere 4 args: clave(32), nonce(12), datos, ad".into())); }
+    let clave = obtener_texto(vm, args[0])?;
+    let nonce = obtener_texto(vm, args[1])?;
+    let datos = obtener_texto(vm, args[2])?;
+    let ad = obtener_texto(vm, args[3])?;
+    if clave.len() != 32 { return Err(ErrFast::TipoInv("AES-256-GCM: clave debe ser 32 bytes".into())); }
+    if nonce.len() != 12 { return Err(ErrFast::TipoInv("AES-256-GCM: nonce debe ser 12 bytes".into())); }
+    let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
+    let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
+    let result = crate::crypto::aes256_gcm_encrypt(&key, &non, datos.as_bytes(), ad.as_bytes());
+    let s = String::from_utf8_lossy(&result).to_string();
+    let idx = vm.alloc_str(Arc::from(s.as_str()));
+    Ok(ValorFast::texto(idx))
+}
+
+fn native_aes256_gcm_decrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 4 { return Err(ErrFast::TipoInv("_aes256_gcm_decrypt requiere 4 args: clave(32), nonce(12), cifrado, ad".into())); }
+    let clave = obtener_texto(vm, args[0])?;
+    let nonce = obtener_texto(vm, args[1])?;
+    let cifrado = obtener_texto(vm, args[2])?;
+    let ad = obtener_texto(vm, args[3])?;
+    if clave.len() != 32 { return Err(ErrFast::TipoInv("AES-256-GCM: clave debe ser 32 bytes".into())); }
+    if nonce.len() != 12 { return Err(ErrFast::TipoInv("AES-256-GCM: nonce debe ser 12 bytes".into())); }
+    let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
+    let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
+    match crate::crypto::aes256_gcm_decrypt(&key, &non, cifrado.as_bytes(), ad.as_bytes()) {
+        Ok(dec) => {
+            let s = String::from_utf8_lossy(&dec).to_string();
+            let idx = vm.alloc_str(Arc::from(s.as_str()));
+            Ok(ValorFast::texto(idx))
+        }
+        Err(e) => Err(ErrFast::TipoInv(e.into())),
+    }
+}
+
 fn native_chacha20_xor(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 { return Err(ErrFast::TipoInv("_chacha20_xor requiere 3 args: clave(32), nonce(12), datos".into())); }
     let clave = obtener_texto(vm, args[0])?;
@@ -1990,13 +2835,131 @@ fn native_scrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, Er
     Ok(ValorFast::texto(idx))
 }
 
+// ─── Memory-Mapped Files ─────────────────────────────────────────────────
+
+fn native_mmap_abrir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 4 {
+        return Err(ErrFast::TipoInv("_mmap_abrir requiere 4 args: ruta, offset, longitud, modo".into()));
+    }
+    let ruta = obtener_texto(vm, args[0])?;
+    let offset = obtener_entero(args[1])? as u64;
+    let len = obtener_entero(args[2])? as usize;
+    let modo = obtener_texto(vm, args[3])?;
+    let writable = modo == "rw";
+    match crate::mmap::mmap_abrir(&ruta, offset, len, writable) {
+        Ok(h) => Ok(ValorFast::entero(h)),
+        Err(e) => Err(ErrFast::TipoInv(e.into())),
+    }
+}
+
+fn native_mmap_cerrar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Err(ErrFast::TipoInv("_mmap_cerrar requiere 1 arg: handle".into()));
+    }
+    let handle = obtener_entero(args[0])?;
+    match crate::mmap::mmap_cerrar(handle) {
+        Ok(()) => Ok(ValorFast::entero(0)),
+        Err(e) => Err(ErrFast::TipoInv(e.into())),
+    }
+}
+
+fn native_mmap_leer(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 3 {
+        return Err(ErrFast::TipoInv("_mmap_leer requiere 3 args: handle, offset, longitud".into()));
+    }
+    let handle = obtener_entero(args[0])?;
+    let offset = obtener_entero(args[1])? as usize;
+    let len = obtener_entero(args[2])? as usize;
+    match crate::mmap::mmap_leer(handle, offset, len) {
+        Ok(bytes) => {
+            let s = String::from_utf8_lossy(&bytes).to_string();
+            let idx = vm.alloc_str(Arc::from(s.as_str()));
+            Ok(ValorFast::texto(idx))
+        }
+        Err(e) => Err(ErrFast::TipoInv(e.into())),
+    }
+}
+
+fn native_mmap_escribir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 3 {
+        return Err(ErrFast::TipoInv("_mmap_escribir requiere 3 args: handle, offset, datos".into()));
+    }
+    let handle = obtener_entero(args[0])?;
+    let offset = obtener_entero(args[1])? as usize;
+    let datos = obtener_texto(vm, args[2])?;
+    match crate::mmap::mmap_escribir(handle, offset, datos.as_bytes()) {
+        Ok(n) => Ok(ValorFast::entero(n as i64)),
+        Err(e) => Err(ErrFast::TipoInv(e.into())),
+    }
+}
+
+fn native_mmap_sincronizar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Err(ErrFast::TipoInv("_mmap_sincronizar requiere 1 arg: handle".into()));
+    }
+    let handle = obtener_entero(args[0])?;
+    match crate::mmap::mmap_sincronizar(handle) {
+        Ok(()) => Ok(ValorFast::entero(0)),
+        Err(e) => Err(ErrFast::TipoInv(e.into())),
+    }
+}
+
+fn native_mmap_tamano(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Err(ErrFast::TipoInv("_mmap_tamano requiere 1 arg: ruta".into()));
+    }
+    let ruta = obtener_texto(vm, args[0])?;
+    match std::fs::metadata(&ruta) {
+        Ok(meta) => Ok(ValorFast::entero(meta.len() as i64)),
+        Err(e) => Err(ErrFast::TipoInv(format!("Error: {}", e))),
+    }
+}
+
+fn native_mmap_page_size(_vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    Ok(ValorFast::entero(crate::mmap::page_size() as i64))
+}
+
+// ─── Terminal ────────────────────────────────────────────────────────────
+
+fn native_terminal_tamano(_vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    match crate::terminal::tamano_terminal() {
+        Ok((cols, rows)) => {
+            let s = format!("{},{}", cols, rows);
+            let ret = ValorFast::texto(_vm.alloc_str(Arc::from(s.as_str())));
+            Ok(ret)
+        }
+        Err(e) => Err(ErrFast::TipoInv(e.into())),
+    }
+}
+
+fn native_terminal_raw(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Err(ErrFast::TipoInv("_terminal_raw requiere 1 arg: 1=raw, 0=normal".into()));
+    }
+    let activar = obtener_entero(args[0])? != 0;
+    match crate::terminal::raw_mode(activar) {
+        Ok(()) => Ok(ValorFast::entero(0)),
+        Err(e) => Err(ErrFast::TipoInv(e.into())),
+    }
+}
+
+fn native_terminal_leer_tecla(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    match crate::terminal::leer_tecla() {
+        Ok(s) => {
+            let idx = vm.alloc_str(Arc::from(s.as_str()));
+            Ok(ValorFast::texto(idx))
+        }
+        Err(e) => Err(ErrFast::TipoInv(e.into())),
+    }
+}
+
 // ─── Post-cuántico ───────────────────────────────────────────────────────
 
 fn native_pq_keygen(_vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     match crate::crypto_pq::pq_keygen() {
         Ok(keys) => {
             let mut pk_hex = crate::hash::hex_encode(&keys.public);
-            let mut sk_hex = crate::hash::hex_encode(&keys.secret);
+            let sk_hex = crate::hash::hex_encode(&keys.secret);
             pk_hex.push('|');
             pk_hex.push_str(&sk_hex);
             let idx = _vm.alloc_str(Arc::from(pk_hex.as_str()));
