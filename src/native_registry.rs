@@ -298,6 +298,8 @@ impl NativeRegistry {
         self.registrar("_pbkdf2", native_pbkdf2);
         self.registrar("_hash_password", native_hash_password);
         self.registrar("_verify_password", native_verify_password);
+        // ─── scrypt ────────────────────────────────────────────────────────
+        self.registrar("_scrypt", native_scrypt);
     }
 
     fn registrar_web(&mut self) {
@@ -1969,6 +1971,19 @@ fn native_verify_password(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valo
     let password = obtener_texto(vm, args[0])?;
     let hash = obtener_texto(vm, args[1])?;
     Ok(ValorFast::booleano(crate::crypto::verify_password(&password, &hash)))
+}
+
+fn native_scrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.len() < 4 { return Err(ErrFast::TipoInv("_scrypt requiere 4 args: password, salt, n, r".into())); }
+    let password = obtener_texto(vm, args[0])?;
+    let salt = obtener_texto(vm, args[1])?;
+    let n = obtener_entero(args[2])? as usize;
+    let r = obtener_entero(args[3])? as usize;
+    let dk_len = if args.len() > 4 { obtener_entero(args[4])? as usize } else { 32 };
+    let result = crate::crypto::scrypt(password.as_bytes(), salt.as_bytes(), n, r, 1, dk_len);
+    let s = String::from_utf8_lossy(&result).to_string();
+    let idx = vm.alloc_str(Arc::from(s.as_str()));
+    Ok(ValorFast::texto(idx))
 }
 
 // ═════════════════════════════════════════════════════════════════════════

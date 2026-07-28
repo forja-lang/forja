@@ -852,6 +852,117 @@ pub fn verify_password(password: &str, hash_str: &str) -> bool {
     constant_time_equal(&computed, &expected_hash)
 }
 
+// ─── scrypt — memory-hard KDF (RFC 7914) ───────────────────────────────────
+
+fn salsa20_8_block(input: &[u8; 64]) -> [u8; 64] {
+    let mut x = [0u32; 16];
+    for i in 0..16 {
+        x[i] = u32::from_le_bytes([
+            input[i * 4], input[i * 4 + 1], input[i * 4 + 2], input[i * 4 + 3],
+        ]);
+    }
+    let mut y = x;
+    for _ in 0..4 {
+        // Column round
+        y[4] ^= (y[0].wrapping_add(y[12]).rotate_left(7));
+        y[8] ^= (y[4].wrapping_add(y[0]).rotate_left(9));
+        y[12] ^= (y[8].wrapping_add(y[4]).rotate_left(13));
+        y[0] ^= (y[12].wrapping_add(y[8]).rotate_left(18));
+        y[9] ^= (y[5].wrapping_add(y[1]).rotate_left(7));
+        y[13] ^= (y[9].wrapping_add(y[5]).rotate_left(9));
+        y[1] ^= (y[13].wrapping_add(y[9]).rotate_left(13));
+        y[5] ^= (y[1].wrapping_add(y[13]).rotate_left(18));
+        y[14] ^= (y[10].wrapping_add(y[6]).rotate_left(7));
+        y[2] ^= (y[14].wrapping_add(y[10]).rotate_left(9));
+        y[6] ^= (y[2].wrapping_add(y[14]).rotate_left(13));
+        y[10] ^= (y[6].wrapping_add(y[2]).rotate_left(18));
+        y[3] ^= (y[15].wrapping_add(y[11]).rotate_left(7));
+        y[7] ^= (y[3].wrapping_add(y[15]).rotate_left(9));
+        y[11] ^= (y[7].wrapping_add(y[3]).rotate_left(13));
+        y[15] ^= (y[11].wrapping_add(y[7]).rotate_left(18));
+        // Row round
+        y[1] ^= (y[0].wrapping_add(y[3]).rotate_left(7));
+        y[2] ^= (y[1].wrapping_add(y[0]).rotate_left(9));
+        y[3] ^= (y[2].wrapping_add(y[1]).rotate_left(13));
+        y[0] ^= (y[3].wrapping_add(y[2]).rotate_left(18));
+        y[6] ^= (y[5].wrapping_add(y[4]).rotate_left(7));
+        y[7] ^= (y[6].wrapping_add(y[5]).rotate_left(9));
+        y[4] ^= (y[7].wrapping_add(y[6]).rotate_left(13));
+        y[5] ^= (y[4].wrapping_add(y[7]).rotate_left(18));
+        y[11] ^= (y[10].wrapping_add(y[9]).rotate_left(7));
+        y[8] ^= (y[11].wrapping_add(y[10]).rotate_left(9));
+        y[9] ^= (y[8].wrapping_add(y[11]).rotate_left(13));
+        y[10] ^= (y[9].wrapping_add(y[8]).rotate_left(18));
+        y[12] ^= (y[15].wrapping_add(y[14]).rotate_left(7));
+        y[13] ^= (y[12].wrapping_add(y[15]).rotate_left(9));
+        y[14] ^= (y[13].wrapping_add(y[12]).rotate_left(13));
+        y[15] ^= (y[14].wrapping_add(y[13]).rotate_left(18));
+    }
+    for i in 0..16 {
+        x[i] = x[i].wrapping_add(y[i]);
+    }
+    let mut out = [0u8; 64];
+    for i in 0..16 {
+        out[i * 4..(i + 1) * 4].copy_from_slice(&x[i].to_le_bytes());
+    }
+    out
+}
+
+fn scrypt_blockmix(b: &[u8]) -> Vec<u8> {
+    let r = b.len() / 128;
+    let mut x = [0u8; 64];
+    x.copy_from_slice(&b[(2 * r - 1) * 64..][..64]);
+    let mut out = Vec::with_capacity(b.len());
+    for i in 0..2 * r {
+        for j in 0..64 { x[j] ^= b[i * 64 + j]; }
+        x = salsa20_8_block(&x);
+        out.extend_from_slice(&x);
+    }
+    out
+}
+
+fn scrypt_smix(b: &[u8], n: usize, r: usize) -> Vec<u8> {
+    let mut v: Vec<Vec<u8>> = Vec::with_capacity(n);
+    let mut x = b.to_vec();
+    for _ in 0..n {
+        v.push(x.clone());
+        x = scrypt_blockmix(&x);
+    }
+    for _ in 0..n {
+        let j = (x[x.len() - 64] as usize & (n - 1)) * 128 * r;
+        if j < v.len() * 128 * r {
+            for k in 0..x.len() {
+                x[k] ^= v[j / (128 * r)][k];
+            }
+        }
+        x = scrypt_blockmix(&x);
+    }
+    x
+}
+
+/// scrypt: memoria-hard KDF (RFC 7914)
+/// password: contraseña
+/// salt: salt
+/// n: costo de CPU/memoria (potencia de 2, ej: 16384)
+/// r: tamaño de bloque (ej: 8)
+/// p: paralelismo (ej: 1)
+/// dk_len: longitud de clave derivada en bytes
+pub fn scrypt(password: &[u8], salt: &[u8], n: usize, r: usize, p: usize, dk_len: usize) -> Vec<u8> {
+    // Paso 1: B = PBKDF2(P, S, 1, p * 128 * r)
+    let b = pbkdf2_hmac_sha256(password, salt, 1, p * 128 * r);
+
+    // Paso 2: ROMix cada bloque
+    let mut result = Vec::new();
+    for i in 0..p {
+        let bi = &b[i * 128 * r..(i + 1) * 128 * r];
+        let mixed = scrypt_smix(bi, n, r);
+        result.extend_from_slice(&mixed);
+    }
+
+    // Paso 3: DK = PBKDF2(P, B', 1, dkLen)
+    pbkdf2_hmac_sha256(password, &result, 1, dk_len)
+}
+
 fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
     if hex.len() % 2 != 0 { return None; }
     let mut bytes = Vec::with_capacity(hex.len() / 2);
