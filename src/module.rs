@@ -190,6 +190,13 @@ impl ModuleResolver {
         // Si no se encuentra localmente, preguntar al package_resolver
         if let Some(ref resolver) = self.package_resolver {
             if let Some(ruta_resuelta) = resolver.resolver_modulo(ruta) {
+                let ruta_str = ruta_resuelta.to_string_lossy().to_string();
+
+                // Detectar módulo embebido (prefijo "embedded://")
+                if ruta_str.starts_with("embedded://") {
+                    return self.resolver_con_id_embebido(&ruta_str);
+                }
+
                 // Verificar límite de tamaño antes de leer
                 let meta = std::fs::metadata(&ruta_resuelta).map_err(|e| {
                     vec![ErrorForja::new(
@@ -205,7 +212,7 @@ impl ModuleResolver {
                 if tamano > max_bytes {
                     return Err(vec![ErrorForja::new(
                         crate::error::ErrorTipo::LimiteArchivo {
-                            ruta: ruta_resuelta.to_string_lossy().to_string(),
+                            ruta: ruta_str,
                             max: forja::MAX_ARCHIVO_DEFAULT_MB,
                             actual: tamano,
                         },
@@ -229,9 +236,8 @@ impl ModuleResolver {
                 let mut parser = Parser::new(tokens);
                 let mut programa = parser.parse()?;
 
-                let ruta_str_resuelta = ruta_resuelta.to_str().unwrap_or(ruta).to_string();
                 let module_id = SymId(
-                    ruta_str_resuelta
+                    ruta_str
                         .bytes()
                         .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
                 );
@@ -378,6 +384,66 @@ impl ModuleResolver {
             .grafo_importaciones
             .get(&module_id)
             .map(|v| v.as_slice())
+    }
+
+    /// Resuelve un módulo desde la stdlib embebida (prefijo "embedded://").
+    fn resolver_con_id_embebido(&mut self, ruta_embedded: &str) -> Result<(Programa, ModuleId), Vec<ErrorForja>> {
+        // Extraer el nombre real del módulo: "embedded://std/io" → "std/io"
+        let nombre_modulo = ruta_embedded
+            .strip_prefix("embedded://")
+            .unwrap_or(ruta_embedded);
+
+        // Intentar obtener del cache primero
+        if let Some(prog) = self.cache.get(nombre_modulo) {
+            let module_id = self
+                .module_cache
+                .por_ruta
+                .get(nombre_modulo)
+                .copied()
+                .unwrap_or_else(|| SymId(0));
+            return Ok((prog.clone(), module_id));
+        }
+
+        // Obtener fuente desde stdlib embebida
+        let (source, _es_gui) = crate::stdlib_embedded::obtener(nombre_modulo)
+            .ok_or_else(|| vec![ErrorForja::new(
+                crate::error::ErrorTipo::ErrorSemantico,
+                0, 0,
+                &format!("Módulo embebido no encontrado: '{}'", nombre_modulo),
+                "Esto es un error interno del compilador. Reportalo en https://github.com/forja-lang/forja",
+            )])?;
+
+        // Generar ModuleId a partir del nombre
+        let module_id = SymId(
+            nombre_modulo
+                .bytes()
+                .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
+        );
+
+        // Parsear el código fuente
+        let mut lexer = crate::lexer::Lexer::new(source);
+        let tokens = lexer.tokenize()?;
+        let mut parser = crate::parser::Parser::new(tokens);
+        let mut programa = parser.parse()?;
+
+        // Resolver imports anidados (una stdlib puede importar otra)
+        let mut final_decls = Vec::new();
+        for decl in programa.declaraciones {
+            if let crate::ast::Declaracion::Importar(ref sub_ruta) = decl {
+                // Los módulos embebidos se resuelven recursivamente
+                let (sub, _sub_id) = self.resolver_con_id(sub_ruta)?;
+                final_decls.extend(sub.declaraciones);
+            } else {
+                final_decls.push(decl);
+            }
+        }
+        programa.declaraciones = dedup_declaraciones(final_decls);
+
+        // Cachear
+        self.cache.insert(nombre_modulo.to_string(), programa.clone());
+        self.module_cache.por_ruta.insert(nombre_modulo.to_string(), module_id);
+
+        Ok((programa, module_id))
     }
 }
 
