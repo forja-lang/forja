@@ -1657,76 +1657,15 @@ fn cmd_build(args: &[String]) {
         .unwrap_or(false);
 
     if usa_gui {
-        // Si usa GUI: transpilar a Rust + cargo build (Xilem nativo)
-        eprintln!("🔨 Detectado GUI — transpilando a Rust + Xilem...");
-        let source = match forja::leer_archivo_con_limite(&input, forja::MAX_ARCHIVO_DEFAULT_MB) {
-            Ok(s) => s,
-            Err(e) => { eprintln!("{}", e); process::exit(1); }
-        };
-        let root_dir = {
-            let path = std::path::Path::new(&input);
-            let dir = if path.is_file() { path.parent().unwrap_or(std::path::Path::new(".")) } else { path };
-            dir.to_path_buf()
-        };
-        // Resolver imports y transpilar usando la API de forja crate
-        let programa = match forja::resolver_imports(&source, &root_dir) {
-            Ok(p) => p,
-            Err(e) => { eprintln!("{}", e); process::exit(1); }
-        };
-        let mut transpiler = forja::transpiler::Transpiler::new();
-        transpiler.forzar_gui = true;
-        let rust_code = match transpiler.transpilar(&programa) {
-            Ok(code) => code,
-            Err(_) => { eprintln!("Error al transpilar"); process::exit(1); }
-        };
-        // Generar proyecto Cargo + compilar
-        let project_dir = Path::new(&output).with_extension("").to_string_lossy().to_string() + "_rs";
-        let src_dir = std::path::Path::new(&project_dir).join("src");
-        let _ = std::fs::create_dir_all(&src_dir);
-        let cargo_toml = format!(
-            r#"[package]
-name = "{}"
-version = "0.8.8"
-edition = "2021"
-[workspace]
-[lib]
-crate-type = ["cdylib", "rlib"]
-[[bin]]
-name = "{}"
-path = "src/lib.rs"
-[dependencies]
-forja = {{ path = "C:\\Users\\gaucho\\forja" }}
-forja-gui-rt = {{ path = "C:\\Users\\gaucho\\forja\\crates\\forja-gui-rt" }}
-serde_json = "1"
-"#,
-            Path::new(&input).file_stem().and_then(|s| s.to_str()).unwrap_or("app"),
-            Path::new(&input).file_stem().and_then(|s| s.to_str()).unwrap_or("app")
-        );
-        let _ = std::fs::write(std::path::Path::new(&project_dir).join("Cargo.toml"), &cargo_toml);
-        let _ = std::fs::write(src_dir.join("main.rs"), &rust_code);
-        println!("✅ Proyecto Rust exportado: {}\\", project_dir);
-        println!("📦 Compilando con cargo...");
-        let result = std::process::Command::new("cargo")
-            .args(["build", "--release"])
-            .current_dir(&project_dir)
-            .stdout(std::process::Stdio::inherit())
-            .stderr(std::process::Stdio::inherit())
-            .status();
-        match result {
-            Ok(status) if status.success() => {
-                println!("✅ Compilación exitosa!");
-            }
-            _ => {
-                eprintln!("⚠️  No se pudo compilar con cargo.");
-                eprintln!("   Compilá manualmente: cd {} && cargo build --release", project_dir);
-            }
-        }
-    } else {
-        // Sin GUI: compilar a ejecutable autónomo (AOT con bytecode)
-        if let Err(e) = forja::aot::AOTCompiler::compilar(&input, &output) {
-            eprintln!("{}", e);
-            process::exit(1);
-        }
+        eprintln!("🔨 Detectado GUI — compilando a binario nativo con forja-rt-gui...");
+    }
+
+    // Compilar a ejecutable autónomo (AOT con bytecode embebido)
+    // - Sin GUI: usa forja-rt.exe (VM sola)
+    // - Con GUI: usa forja-rt-gui.exe (VM + forja-gui-rt con Xilem/Vello)
+    if let Err(e) = forja::aot::AOTCompiler::compilar(&input, &output, usa_gui) {
+        eprintln!("{}", e);
+        process::exit(1);
     }
 }
 
@@ -1976,6 +1915,16 @@ edition = "2021"
     if let Err(e) = fs::write(&rs_path, &rust_code) {
         eprintln!("Error escribiendo '{}': {}", rs_path.display(), e);
         process::exit(1);
+    }
+
+    // Si usa GUI, serializar el AST a JSON (include_str! lo carga en build)
+    if usa_gui {
+        let ast_json = serde_json::to_string_pretty(&programa.declaraciones).unwrap();
+        let json_path = src_dir.join("programa.json");
+        if let Err(e) = fs::write(&json_path, &ast_json) {
+            eprintln!("Error escribiendo '{}': {}", json_path.display(), e);
+            process::exit(1);
+        }
     }
 
     println!("✅ Proyecto Rust exportado: {}\\", project_dir);

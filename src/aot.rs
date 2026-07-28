@@ -9,7 +9,8 @@ pub struct AOTCompiler;
 
 impl AOTCompiler {
     /// Compila un archivo .fa a un ejecutable autónomo
-    pub fn compilar(entrada: &str, salida: &str) -> Result<(), String> {
+    /// `gui`: si es true, usa el stub forja-rt-gui (con soporte GUI) en lugar de forja-rt
+    pub fn compilar(entrada: &str, salida: &str, gui: bool) -> Result<(), String> {
         let source = fs::read_to_string(entrada)
             .map_err(|e| format!("Error leyendo '{}': {}", entrada, e))?;
 
@@ -26,19 +27,21 @@ impl AOTCompiler {
         // 3. Serializar bytecode a binario
         let fbc_data = bytecode::serializar_bytecode(&opcodes);
 
-        // 5. Generar ejecutable autónomo (copiar forja.exe + apendar bytecode)
-        Self::generar_ejecutable(&fbc_data, salida)?;
+        // 5. Generar ejecutable autónomo (copiar stub + apendar bytecode)
+        Self::generar_ejecutable(&fbc_data, salida, gui)?;
 
+        let label = if gui { "🎨 GUI" } else { "⚡" };
         println!(
-            "✅ Ejecutable generado: {} ({} bytes)",
+            "✅ {} Ejecutable generado: {} ({} bytes de bytecode)",
+            label,
             salida,
             fbc_data.len()
         );
         Ok(())
     }
 
-    /// Genera un .exe autónomo copiando forja.exe y apendizándole el bytecode
-    fn generar_ejecutable(bytecode: &[u8], salida: &str) -> Result<(), String> {
+    /// Genera un .exe autónomo copiando el stub runtime y apendizándole el bytecode
+    fn generar_ejecutable(bytecode: &[u8], salida: &str, gui: bool) -> Result<(), String> {
         // 1. Obtener la ruta del compilador original (antes de shadow copy)
         let self_path = std::env::var("FORJA_ORIGINAL_EXE")
             .map(std::path::PathBuf::from)
@@ -48,11 +51,21 @@ impl AOTCompiler {
             return Err("No se pudo obtener la ruta del ejecutable compilador".to_string());
         }
 
-        // 2. Intentar buscar el runtime autónomo (forja-rt) en el mismo directorio
-        let rt_name = if cfg!(target_os = "windows") {
-            "forja-rt.exe"
+        // 2. Buscar el stub runtime adecuado en el mismo directorio
+        //    - GUI  → forja-rt-gui.exe (incluye forja-gui-rt + Xilem/Vello)
+        //    - No-GUI → forja-rt.exe (VM sola)
+        let rt_name = if gui {
+            if cfg!(target_os = "windows") {
+                "forja-rt-gui.exe"
+            } else {
+                "forja-rt-gui"
+            }
         } else {
-            "forja-rt"
+            if cfg!(target_os = "windows") {
+                "forja-rt.exe"
+            } else {
+                "forja-rt"
+            }
         };
         let rt_path = self_path.with_file_name(rt_name);
 
