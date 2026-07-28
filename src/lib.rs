@@ -25,9 +25,10 @@ pub mod vm;
 pub mod vm_fast;
 pub mod vm_jit;
 
-// Hash y codificación — implementaciones manuales sin dependencias externas
+// Hash, codificación y crypto — implementaciones manuales sin dependencias externas
 pub mod hash;
 pub mod base64;
+pub mod crypto;
 
 // Módulos que dependen del sistema de archivos o del SO
 // (no compilables a WASM)

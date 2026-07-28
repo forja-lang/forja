@@ -25,9 +25,10 @@ mod uops;
 mod vm;
 mod vm_fast;
 
-// Hash y codificación — implementaciones manuales sin dependencias externas
+// Hash, codificación y crypto — implementaciones manuales sin dependencias externas
 mod hash;
 mod base64;
+mod crypto;
 
 // HTTP/2 nativo — h2c (cleartext), sin dependencias externas
 #[cfg(not(target_arch = "wasm32"))]
@@ -1814,7 +1815,16 @@ fn cmd_transpile(args: &[String]) {
     };
 
     // Resolver imports para el JSON del runtime (AST completo con módulos)
-    let root_for_imports = std::path::Path::new(input_path).parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    // Usar el directorio actual como raíz para resolver imports (modulos/, stdlib/)
+    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
+    let input_parent = std::path::Path::new(input_path).parent().unwrap_or(std::path::Path::new("."));
+    // Si input_path es relativo, combinar con CWD. Si es absoluto, usar su parent.
+    let root_for_imports = if std::path::Path::new(input_path).is_absolute() {
+        input_parent.to_path_buf()
+    } else {
+        cwd.join(input_parent)
+    };
+    eprintln!("📂 Directorio raíz para imports: {}", root_for_imports.display());
     let programa_resuelto = match forja::resolver_imports(&source, &root_for_imports) {
         Ok(p) => { eprintln!("📦 Imports resueltos correctamente ({} declaraciones)", p.declaraciones.len()); Some(p) }
         Err(e) => { eprintln!("⚠️ No se pudieron resolver imports: {}. Usando AST sin módulos.", e); None }
@@ -1932,7 +1942,7 @@ edition = "2021"
     // Usar el programa con imports resueltos (incluye funciones de módulos)
     if usa_gui {
         let ast_json = match &programa_resuelto {
-            Some(p) => format!("{:#?}", p.declaraciones),
+            Some(p) => serde_json::to_string_pretty(&p.declaraciones).unwrap_or_else(|_| format!("{:#?}", p.declaraciones)),
             None => format!("{:#?}", programa.declaraciones),
         };
         let json_path = src_dir.join("programa.json");
