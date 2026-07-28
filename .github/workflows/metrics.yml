@@ -15,11 +15,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false  # No requerir submodules para métricas
+          submodules: false  # Nosotros manejamos los submodules manualmente
 
-      - name: Checkout examples submodule (si está disponible)
+      - name: Checkout submodules (excepto benchmarks que tiene commit huérfano)
+        shell: bash
         run: |
-          git submodule update --init examples 2>/dev/null || echo "⚠️ examples submodule no disponible, se usará 0"
+          git submodule init
+          # Inicializar todos los submodules excepto benchmarks
+          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
+            echo "📦 Inicializando $sub..."
+            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️  Saltando $sub"
+          done
 
       - name: Cache Cargo
         uses: swatinem/rust-cache@v2
