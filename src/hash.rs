@@ -254,7 +254,7 @@ pub struct Sha224(Sha256);
 
 impl Sha224 {
     pub fn new() -> Self {
-        let mut inner = Sha256 { h: IV224, buf: [0u8; 64], len: 0 };
+        let inner = Sha256 { h: IV224, buf: [0u8; 64], len: 0 };
         Self(inner)
     }
     pub fn update(&mut self, data: &[u8]) { self.0.update(data); }

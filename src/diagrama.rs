@@ -579,6 +579,15 @@ impl DiagramGenerator {
             Expresion::Algo(expr) => format!("Algo({})", self.ec(expr)),
             Expresion::Resultado => "resultado".to_string(),
             Expresion::Anterior(expr) => format!("anterior({})", self.ec(expr)),
+            Expresion::LlamadaMetodo {
+                objeto,
+                metodo,
+                argumentos,
+            } => {
+                let args: Vec<String> =
+                    argumentos.iter().map(|a| self.ec(a)).collect();
+                format!("{}.{}({})", self.ec(objeto), metodo, args.join(", "))
+            }
         }
     }
 

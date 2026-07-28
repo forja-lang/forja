@@ -3721,7 +3721,7 @@ impl ForjaFast {
                                 }
                             }
                         } else {
-                            self.push_valor(ValorFast::nulo());
+                            return Err(ErrFast::FnNoDef(nombre_str));
                         }
                         self.ip += 1;
                     }

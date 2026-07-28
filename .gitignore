@@ -17,6 +17,7 @@ examples/android/
 patches/
 fuzz/
 src/bin/fuzz_simple.rs
+forjanzas/
 # ── Ejecutables ──
 *.exe
 

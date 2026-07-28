@@ -3,18 +3,11 @@ use crate::ast::*;
 use crate::error::{ErrorForja, ErrorTipo};
 use crate::token::{Token, TokenKind};
 
-/// Profundidad máxima de anidación permitida para el parser recursivo.
-/// Previene stack overflow en programas con anidación.
-const MAX_PROFUNDIDAD: u32 = 500;
-
 /// Parser recursivo descendente para Forja (fa)
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     errores: Vec<ErrorForja>,
-    /// Contador de profundidad de recursión actual.
-    /// Se incrementa al entrar a una función recursiva y se decrementa al salir.
-    profundidad: u32,
 }
 
 impl Parser {
@@ -23,34 +16,7 @@ impl Parser {
             tokens,
             pos: 0,
             errores: Vec::new(),
-            profundidad: 0,
         }
-    }
-
-    /// Verifica que la profundidad actual no exceda el máximo permitido.
-    /// Incrementa la profundidad en 1. Debe llamarse al inicio de cada
-    /// función de parsing recursiva.
-    fn verificar_profundidad(&mut self) -> Result<(), ErrorForja> {
-        self.profundidad += 1;
-        if self.profundidad > MAX_PROFUNDIDAD {
-            return Err(ErrorForja::new(
-                ErrorTipo::DemasiadaAnidacion { max: MAX_PROFUNDIDAD },
-                self.linea_actual(),
-                self.columna_actual(),
-                &format!(
-                    "El programa excede la profundidad máxima de anidación de {} niveles.",
-                    MAX_PROFUNDIDAD
-                ),
-                "Simplifica la estructura del código (menos bucles/funciones/condicionales anidados).",
-            ));
-        }
-        Ok(())
-    }
-
-    /// Decrementa la profundidad de recursión al salir de una función de parsing.
-    /// Debe llamarse al final (o en el return) de cada función recursiva.
-    fn disminuir_profundidad(&mut self) {
-        self.profundidad = self.profundidad.saturating_sub(1);
     }
 
     /// Parsea el programa completo
@@ -120,9 +86,7 @@ impl Parser {
 
     /// Parsea una declaración. Retorna None si es EOF.
     fn parse_declaracion(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
-        self.verificar_profundidad()?;
         if self.es_eof() {
-            self.disminuir_profundidad();
             return Ok(None);
         }
 
@@ -240,7 +204,6 @@ impl Parser {
             }
         }
 
-        self.disminuir_profundidad();
         decl
     }
 
@@ -792,10 +755,19 @@ impl Parser {
         }))
     }
 
-    /// Parsea un campo dentro de una clase: <nombre> [= <expr>]
+    /// Parsea un campo dentro de una clase: <nombre> [: <tipo>]
     fn parse_campo_en_clase(&mut self, campos: &mut Vec<VariableClase>) -> Result<(), ErrorForja> {
         let nombre = self.esperar_identificador("Se esperaba un nombre de campo en la clase.")?;
-        campos.push(VariableClase { nombre, tipo: None });
+
+        // Tipo opcional: campo: Tipo
+        let tipo = if self.coincide(TokenKind::DosPuntos) {
+            self.avanzar();
+            Some(self.parse_tipo()?)
+        } else {
+            None
+        };
+
+        campos.push(VariableClase { nombre, tipo });
         Ok(())
     }
 
@@ -962,7 +934,6 @@ impl Parser {
     /// Parsea un `si`/`sino si` desde la condición (sin consumir 'si').
     /// Soporta tanto `si (cond)` con paréntesis como `si cond` sin paréntesis.
     fn parse_si_desde_condicion(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
-        self.verificar_profundidad()?;
         // Parse condition — puede llevar paréntesis o no
         let condicion = if self.coincide(TokenKind::ParenAbrir) {
             self.avanzar();
@@ -1015,7 +986,6 @@ impl Parser {
             None
         };
 
-        self.disminuir_profundidad();
         Ok(Some(Declaracion::Si {
             condicion: Box::new(condicion),
             bloque_verdadero,
@@ -2089,10 +2059,6 @@ impl Parser {
 
         if self.coincide(TokenKind::ParenAbrir) {
             self.avanzar();
-            // Verificar profundidad aquí también, ya que el paréntesis anidado
-            // es el caso más crítico de recursión (100,000 paréntesis anidados)
-            // que causa stack overflow a través de parse_expresion → ... → aquí.
-            self.verificar_profundidad()?;
             let first = self.parse_expresion()?;
             // Si después de la primera expresión hay coma, es una tupla (a, b, ...)
             if self.coincide(TokenKind::Coma) {
@@ -2108,14 +2074,12 @@ impl Parser {
                     TokenKind::ParenCerrar,
                     "Se esperaba ')' para cerrar la tupla.",
                 )?;
-                self.disminuir_profundidad();
                 return Ok(Expresion::Arreglo(elementos));
             }
             self.esperar(
                 TokenKind::ParenCerrar,
                 "Se esperaba ')' para cerrar la expresión.",
             )?;
-            self.disminuir_profundidad();
             return Ok(Expresion::Grupo(Box::new(first)));
         }
 
@@ -2140,11 +2104,19 @@ impl Parser {
             let (id_linea, id_columna) = (self.peek().linea, self.peek().columna);
             self.avanzar();
 
-            // Detectar Ok(), Error(), Algo() como constructores especiales
-            if (nombre == "Ok" || nombre == "Error" || nombre == "Algo")
+            // Detectar Ok(), Error(), Algo(), Some(), None() como constructores especiales
+            if (nombre == "Ok" || nombre == "Error" || nombre == "Algo" || nombre == "Some" || nombre == "None")
                 && self.coincide(TokenKind::ParenAbrir)
             {
                 self.avanzar(); // consume (
+                // None() no tiene argumentos
+                if nombre == "None" {
+                    self.esperar(
+                        TokenKind::ParenCerrar,
+                        "Se esperaba ')' después de None.",
+                    )?;
+                    return Ok(Expresion::Algo(Box::new(Expresion::LiteralNulo)));
+                }
                 let arg = self.parse_expresion()?;
                 self.esperar(
                     TokenKind::ParenCerrar,
@@ -2153,7 +2125,7 @@ impl Parser {
                 return match nombre.as_str() {
                     "Ok" => Ok(Expresion::Ok(Box::new(arg))),
                     "Error" => Ok(Expresion::Error(Box::new(arg))),
-                    "Algo" => Ok(Expresion::Algo(Box::new(arg))),
+                    "Algo" | "Some" => Ok(Expresion::Algo(Box::new(arg))),
                     _ => unreachable!(),
                 };
             }
@@ -2556,7 +2528,7 @@ impl Parser {
         let miembro =
             self.esperar_identificador("Se esperaba un nombre de miembro después de '.'.")?;
 
-        // Si sigue (, es llamada a método → generar LlamadaFuncion con nombre "objeto.metodo"
+        // Si sigue (, es llamada a método
         if self.coincide(TokenKind::ParenAbrir) {
             self.avanzar();
             let argumentos = self.parse_argumentos()?;
@@ -2565,14 +2537,10 @@ impl Parser {
                 "Se esperaba ')' después de los argumentos.",
             )?;
 
-            // Convertir el objeto a un nombre para construir "objeto.metodo"
-            let nombre_objeto = self
-                .expresion_a_nombre(&objeto)
-                .unwrap_or_else(|| "anon".to_string());
-            let nombre_compuesto = format!("{}.{}", nombre_objeto, miembro);
-
-            return Ok(Expresion::LlamadaFuncion {
-                nombre: nombre_compuesto,
+            // Preservar el objeto, método y argumentos en LlamadaMetodo
+            return Ok(Expresion::LlamadaMetodo {
+                objeto: Box::new(objeto),
+                metodo: miembro,
                 argumentos,
             });
         }
@@ -2606,6 +2574,8 @@ impl Parser {
                     None
                 }
             }
+            // Para llamadas a función, usar el nombre de la función como parte del compuesto
+            Expresion::LlamadaFuncion { nombre: n, .. } => Some(n.clone()),
             _ => None,
         }
     }
@@ -2786,10 +2756,7 @@ impl Parser {
 
     /// Parsea un tipo (para anotaciones de tipo)
     fn parse_tipo(&mut self) -> Result<Tipo, ErrorForja> {
-        self.verificar_profundidad()?;
-        let result = self.parse_tipo_interno();
-        self.disminuir_profundidad();
-        result
+        self.parse_tipo_interno()
     }
 
     /// Implementación interna de parse_tipo (profundidad ya verificada)
@@ -2908,7 +2875,6 @@ impl Parser {
 
     /// Parsea un bloque entre llaves
     fn parse_bloque(&mut self) -> Result<Vec<Declaracion>, ErrorForja> {
-        self.verificar_profundidad()?;
         let mut declaraciones = Vec::new();
 
         while !self.coincide(TokenKind::LlaveCerrar) && !self.es_eof() {
@@ -2935,7 +2901,6 @@ impl Parser {
             ));
         }
 
-        self.disminuir_profundidad();
         Ok(declaraciones)
     }
 

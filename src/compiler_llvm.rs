@@ -1371,6 +1371,12 @@ impl LlvmBackend {
                 line!(self.out, "{} = phi i64 [ {}, %{} ], [ {}, %{} ]", phi_reg, v_res, l_v, f_res, l_f);
                 Ok(phi_reg)
             }
+            Expresion::LlamadaMetodo { .. } => {
+                // No implementado en LLVM
+                let r = self.r();
+                line!(self.out, "{} = add i64 0, 0", r);
+                Ok(r)
+            }
         }
     }
 

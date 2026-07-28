@@ -850,9 +850,15 @@ impl Backend {
                         }
                     }
 
+                    // La anidación profunda se muestra como sugerencia, no como error
+                    let severity = match &err.tipo {
+                        forja::error::ErrorTipo::DemasiadaAnidacion { .. } => DiagnosticSeverity::INFORMATION,
+                        _ => DiagnosticSeverity::ERROR,
+                    };
+
                     diagnostics.push(Diagnostic {
                         range: calcular_rango_error_palabra(texto, err.linea, err.columna),
-                        severity: Some(DiagnosticSeverity::ERROR),
+                        severity: Some(severity),
                         source: Some("forja".to_string()),
                         message: mensaje,
                         ..Default::default()

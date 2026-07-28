@@ -1,4 +1,4 @@
-name: Benchmarks
+name: Forja CI/CD / Benchmarks
 on:
   push:
     branches: [ main, master ]

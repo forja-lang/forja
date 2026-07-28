@@ -1,8 +1,10 @@
 #![allow(dead_code)]
+
+use serde::{Deserialize, Serialize};
 /// Definiciones del Árbol de Sintaxis Abstracta (AST) para Forja (fa)
 
 /// Operadores binarios
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Operador {
     // Aritméticos
     Suma,
@@ -23,7 +25,7 @@ pub enum Operador {
 }
 
 /// Operador unario (prefijo)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum OperadorUnario {
     /// Negación numérica (-expr)
     Negar,
@@ -32,7 +34,7 @@ pub enum OperadorUnario {
 }
 
 /// Tipos de datos primitivos
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Tipo {
     Entero,
     Decimal,
@@ -58,13 +60,13 @@ pub enum Tipo {
 }
 
 /// Parámetro de tipo genérico (T, U, etc.)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParametroTipo {
     pub nombre: String,
 }
 
 /// Parámetro de función
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Parametro {
     pub nombre: String,
     pub prestado: bool,     // si es &T
@@ -73,7 +75,7 @@ pub struct Parametro {
 }
 
 /// Variable declarada dentro de una clase
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VariableClase {
     pub nombre: String,
     #[allow(dead_code)]
@@ -81,21 +83,21 @@ pub struct VariableClase {
 }
 
 /// Atributo/anotación (@derive, @test, etc.)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Atributo {
     pub nombre: String,
     pub argumentos: Vec<String>,
 }
 
 /// Variante de un enum
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Variante {
     pub nombre: String,
     pub tipos: Vec<Tipo>,
 }
 
 /// Patrón para match
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub enum Patron {
     Variable(String),
@@ -105,14 +107,14 @@ pub enum Patron {
 }
 
 /// Un contrato Design by Contract (precondición, postcondición o invariante)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Contrato {
     pub condicion: Expresion,
     pub mensaje: Option<String>,
 }
 
 /// Método dentro de una clase
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Metodo {
     pub nombre: String,
     pub parametros: Vec<Parametro>,
@@ -123,7 +125,7 @@ pub struct Metodo {
 }
 
 /// Firma de método en un rasgo (sin cuerpo)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FirmaMetodo {
     pub nombre: String,
     pub parametros: Vec<Parametro>,
@@ -131,14 +133,14 @@ pub struct FirmaMetodo {
 }
 
 /// Brazo de pattern matching: caso Patron -> { cuerpo }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrazoMatch {
     pub patron: Patron,
     pub cuerpo: Vec<Declaracion>,
 }
 
 /// Brazo de la construcción seleccionar
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrazoSeleccionar {
     /// Si es Some, es un caso de recepción: (variable, expresión_de_recepción)
     /// La expresión puede ser un identificador (canal) o algo como rx.recibir()
@@ -151,7 +153,7 @@ pub struct BrazoSeleccionar {
 }
 
 /// Expresiones del lenguaje
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Expresion {
     /// Literal numérico entero (ej: 42)
     LiteralNumero(i64),
@@ -192,6 +194,12 @@ pub enum Expresion {
     /// Llamada a función (ej: escribir("hola"))
     LlamadaFuncion {
         nombre: String,
+        argumentos: Vec<Expresion>,
+    },
+    /// Llamada a método sobre una expresión (ej: objeto.metodo(args))
+    LlamadaMetodo {
+        objeto: Box<Expresion>,
+        metodo: String,
         argumentos: Vec<Expresion>,
     },
     /// Acceso a miembro (ej: objeto.metodo(), objeto.campo)
@@ -267,7 +275,7 @@ pub enum Expresion {
 }
 
 /// Declaraciones del lenguaje
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Declaracion {
     /// Declaración de variable (ej: variable x = 5)
     Variable {
@@ -409,7 +417,7 @@ impl Declaracion {
 }
 
 /// Programa completo (raíz del AST)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Programa {
     pub declaraciones: Vec<Declaracion>,
 }

@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+﻿#![allow(dead_code)]
 use crate::ast::*;
 use crate::error::ErrorForja;
 use std::sync::Arc;
@@ -343,6 +343,10 @@ pub struct BytecodeGenerator {
     errores: Vec<ErrorForja>,
     /// Tipos inferidos por el TypeChecker (compile-time type information)
     tipos_inferidos: Option<std::collections::HashMap<String, Tipo>>,
+    /// Mapa de overloads de funciones (nombre -> Vec de overloads).
+    /// Usado para name mangling cuando hay funciones con mismo nombre pero diferentes tipos.
+    /// Cada overload: (tipos_param, tipo_retorno, parametros_tipo)
+    funciones_overload: Option<std::collections::HashMap<String, Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>>>,
 
     // === Design by Contract ===
     pub contratos: Vec<ContratoBytecode>,
@@ -389,12 +393,62 @@ impl BytecodeGenerator {
             clases_con_constructor: std::collections::HashSet::new(),
             profundidad_actual: 0,
             loop_stack: Vec::new(),
+            funciones_overload: None,
         }
     }
 
     /// Establece los tipos inferidos para usar en especialización de opcodes
     pub fn set_tipos_inferidos(&mut self, tipos: std::collections::HashMap<String, Tipo>) {
         self.tipos_inferidos = Some(tipos);
+    }
+
+    /// Establece el mapa de overloads de funciones para name mangling.
+    /// Permite que el generador distinga entre funciones con mismo nombre pero diferentes tipos.
+    pub fn set_funciones_overload(&mut self, funcs: std::collections::HashMap<String, Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>>) {
+        self.funciones_overload = Some(funcs);
+    }
+
+    /// Resuelve el nombre mangled para una llamada a función dados los tipos de argumento.
+    /// Para funciones sin overloads, retorna el nombre original.
+    /// Para funciones con overloads, retorna nombre$idx donde idx es el índice del overload que coincide.
+    fn resolver_nombre_mangled(&self, nombre: &str, tipos_args: &[Option<Tipo>]) -> String {
+        if let Some(ref overloads) = self.funciones_overload {
+            if let Some(ol) = overloads.get(nombre) {
+                if ol.len() <= 1 {
+                    return nombre.to_string();
+                }
+                // Buscar overload que coincida por aridad + tipos
+                for (i, (params, _, _)) in ol.iter().enumerate() {
+                    if params.len() == tipos_args.len() {
+                        if tipos_args.iter().enumerate().all(|(j, arg_t)| {
+                            params[j].as_ref().map_or(true, |p_t| {
+                                arg_t.as_ref().map_or(false, |a_t| self.tipos_coinciden_mangled(a_t, p_t))
+                            })
+                        }) {
+                            return format!("{}$ov{}", nombre, i);
+                        }
+                    }
+                }
+                // Fallback: usar primer overload que coincida en aridad
+                for (i, (params, _, _)) in ol.iter().enumerate() {
+                    if params.len() == tipos_args.len() {
+                        return format!("{}$ov{}", nombre, i);
+                    }
+                }
+                // Último recurso: overload 0
+                return format!("{}$ov{}", nombre, 0);
+            }
+        }
+        nombre.to_string()
+    }
+
+    /// Verifica si dos tipos concretos coinciden para resolución de mangling.
+    /// Si el tipo del parámetro es un genérico <T>, coincide con cualquier argumento.
+    fn tipos_coinciden_mangled(&self, arg: &Tipo, param: &Tipo) -> bool {
+        match param {
+            Tipo::Parametro(_) => true,
+            _ => std::mem::discriminant(arg) == std::mem::discriminant(param),
+        }
     }
 
     /// Dada una expresión, intenta inferir su tipo usando la información
@@ -989,12 +1043,41 @@ impl BytecodeGenerator {
                 postcondiciones,
                 ..
             } => {
+                // Determinar nombre mangled si hay overloads
+                let tipos_params: Vec<Option<Tipo>> = parametros
+                    .iter()
+                    .map(|p| p.tipo.clone())
+                    .collect();
+                let nombre_real = if let Some(ref overloads) = self.funciones_overload {
+                    if let Some(ol) = overloads.get(nombre.as_str()) {
+                        if ol.len() > 1 {
+                            // Buscar índice de este overload específico
+                            let mut encontrado = None;
+                            for (i, (params, _, _)) in ol.iter().enumerate() {
+                                if tipos_params == *params {
+                                    encontrado = Some(i);
+                                    break;
+                                }
+                            }
+                            match encontrado {
+                                Some(i) => format!("{}$ov{}", nombre, i),
+                                None => nombre.to_string(),
+                            }
+                        } else {
+                            nombre.to_string()
+                        }
+                    } else {
+                        nombre.to_string()
+                    }
+                } else {
+                    nombre.to_string()
+                };
                 // Emitir FunctionDef con nombres de parámetros
                 let param_names: Vec<Arc<str>> = parametros
                     .iter()
                     .map(|p| Arc::from(p.nombre.as_str()))
                     .collect();
-                self.emitir(Opcode::FunctionDef(Arc::from(nombre.as_str()), param_names));
+                self.emitir(Opcode::FunctionDef(Arc::from(nombre_real.as_str()), param_names));
 
                 // Inicializar tracking de variables para compilación de contratos
                 self.var_indices.clear();
@@ -1220,9 +1303,13 @@ impl BytecodeGenerator {
             }
 
             Declaracion::LlamadaFuncion { nombre, argumentos } => {
-                if nombre == "escribir" {
+                if nombre == "escribir" || nombre == "escribir_linea" {
                     for arg in argumentos {
                         self.generar_expresion(arg);
+                        self.emitir(Opcode::Print);
+                    }
+                    if nombre == "escribir_linea" {
+                        self.emitir(Opcode::PushTexto(Arc::from("\n")));
                         self.emitir(Opcode::Print);
                     }
                 } else if nombre == "BD" {
@@ -1260,7 +1347,13 @@ impl BytecodeGenerator {
                     for arg in argumentos {
                         self.generar_expresion(arg);
                     }
-                    self.emitir(Opcode::Call(Arc::from(nombre.as_str()), argumentos.len()));
+                    // Resolver nombre mangled para sobrecarga por tipo
+                    let tipos_args: Vec<Option<Tipo>> = argumentos
+                        .iter()
+                        .map(|arg| self.inferir_tipo_expresion(arg))
+                        .collect();
+                    let nombre_real = self.resolver_nombre_mangled(nombre, &tipos_args);
+                    self.emitir(Opcode::Call(Arc::from(nombre_real.as_str()), argumentos.len()));
                     // Las funciones nativas (como _imprimir_error) dejan su valor de retorno
                     // en la pila. Para llamadas a nivel de declaración, descartamos ese valor.
                     // Forja functions are balanced (no return value pushed), so Pop is safe
@@ -1427,9 +1520,13 @@ impl BytecodeGenerator {
             }
 
             Expresion::LlamadaFuncion { nombre, argumentos } => {
-                if nombre == "escribir" {
+                if nombre == "escribir" || nombre == "escribir_linea" {
                     for arg in argumentos {
                         self.generar_expresion(arg);
+                        self.emitir(Opcode::Print);
+                    }
+                    if nombre == "escribir_linea" {
+                        self.emitir(Opcode::PushTexto(Arc::from("\n")));
                         self.emitir(Opcode::Print);
                     }
                 } else if nombre == "leer" {
@@ -1472,7 +1569,13 @@ impl BytecodeGenerator {
                     for arg in argumentos {
                         self.generar_expresion(arg);
                     }
-                    self.emitir(Opcode::Call(Arc::from(nombre.as_str()), argumentos.len()));
+                    // Resolver nombre mangled para sobrecarga por tipo
+                    let tipos_args: Vec<Option<Tipo>> = argumentos
+                        .iter()
+                        .map(|arg| self.inferir_tipo_expresion(arg))
+                        .collect();
+                    let nombre_real = self.resolver_nombre_mangled(nombre, &tipos_args);
+                    self.emitir(Opcode::Call(Arc::from(nombre_real.as_str()), argumentos.len()));
                 }
             }
 
@@ -1860,6 +1963,21 @@ impl BytecodeGenerator {
                 // anterior(expr) - por ahora solo evaluar la expresión
                 self.generar_expresion(expr);
             }
+            Expresion::LlamadaMetodo {
+                objeto,
+                metodo,
+                argumentos,
+            } => {
+                // Llamada a método: evaluar objeto, luego args, llamar al método
+                self.generar_expresion(objeto);
+                for arg in argumentos {
+                    self.generar_expresion(arg);
+                }
+                self.emitir(Opcode::CallMethod(
+                    Arc::from(metodo.as_str()),
+                    argumentos.len(),
+                ));
+            }
         }
         self.profundidad_actual -= 1;
     }
@@ -2191,7 +2309,7 @@ impl ModuleBytecode {
         let mut resultado = Vec::new();
         for (range_start, range_end) in &func_ranges {
             let (nombre, params) = match &self.opcodes[*range_start] {
-                Opcode::FunctionDef(n, p) => (n.clone(), p.clone()),
+            Opcode::FunctionDef(n, p) => (n.clone(), p.clone()),
                 _ => unreachable!(),
             };
             let mut max_idx = params.len();
@@ -2379,12 +2497,12 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             Opcode::PushDecimal(d) => bytes.extend_from_slice(&d.to_le_bytes()),
             Opcode::PushTexto(s) | Opcode::Load(s) | Opcode::Store(s) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-                bytes.extend_from_slice(&idx.to_le_bytes());
+            bytes.extend_from_slice(&idx.to_le_bytes());
             }
             Opcode::Declare(s, mutable) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-                bytes.extend_from_slice(&idx.to_le_bytes());
-                bytes.push(if *mutable { 1 } else { 0 });
+            bytes.extend_from_slice(&idx.to_le_bytes());
+            bytes.push(if *mutable { 1 } else { 0 });
             }
             Opcode::LoadIdx(idx)
             | Opcode::StoreIdx(idx)
@@ -2395,31 +2513,31 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             | Opcode::AddStoreIdx(idx)
             | Opcode::SubStoreIdx(idx)
             | Opcode::MulStoreIdx(idx) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
             Opcode::DeclareIdx(idx, mutable) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-                bytes.push(if *mutable { 1 } else { 0 });
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.push(if *mutable { 1 } else { 0 });
             }
             Opcode::LoadAddInt(idx, n) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-                bytes.extend_from_slice(&n.to_le_bytes());
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.extend_from_slice(&n.to_le_bytes());
             }
             Opcode::LoadIdx2(a, b)
             | Opcode::LoadStoreIdx(a, b)
             | Opcode::LoadJumpSiFalso(a, b)
             | Opcode::LoadJump(a, b) => {
-                bytes.extend_from_slice(&(*a as u32).to_le_bytes());
-                bytes.extend_from_slice(&(*b as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*a as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*b as u32).to_le_bytes());
             }
             Opcode::PushBooleano(b) => bytes.push(if *b { 1 } else { 0 }),
             Opcode::Jump(target) | Opcode::JumpSiFalso(target) | Opcode::Label(target) => {
-                bytes.extend_from_slice(&(*target as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*target as u32).to_le_bytes());
             }
             Opcode::FunctionDef(s, params) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-                bytes.extend_from_slice(&idx.to_le_bytes());
-                bytes.extend_from_slice(&(params.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(&idx.to_le_bytes());
+            bytes.extend_from_slice(&(params.len() as u32).to_le_bytes());
                 for p in params {
                     let p_bytes = p.as_ref().as_bytes();
                     bytes.extend_from_slice(&(p_bytes.len() as u32).to_le_bytes());
@@ -2428,134 +2546,134 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             }
             Opcode::Call(s, n) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-                bytes.extend_from_slice(&idx.to_le_bytes());
-                bytes.extend_from_slice(&(*n as u32).to_le_bytes());
+            bytes.extend_from_slice(&idx.to_le_bytes());
+            bytes.extend_from_slice(&(*n as u32).to_le_bytes());
             }
             Opcode::CallMethod(s, n) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-                bytes.extend_from_slice(&idx.to_le_bytes());
-                bytes.extend_from_slice(&(*n as u32).to_le_bytes());
+            bytes.extend_from_slice(&idx.to_le_bytes());
+            bytes.extend_from_slice(&(*n as u32).to_le_bytes());
             }
             Opcode::NewObject(s) | Opcode::SetField(s) | Opcode::GetField(s) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-                bytes.extend_from_slice(&idx.to_le_bytes());
+            bytes.extend_from_slice(&idx.to_le_bytes());
             }
             Opcode::DeclareEnteroOp(idx, n) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-                bytes.extend_from_slice(&n.to_le_bytes());
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.extend_from_slice(&n.to_le_bytes());
             }
             Opcode::DeclareBooleanoOp(idx, b) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-                bytes.push(if *b { 1 } else { 0 });
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.push(if *b { 1 } else { 0 });
             }
             Opcode::StoreEnteroOp(idx, n) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-                bytes.extend_from_slice(&n.to_le_bytes());
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.extend_from_slice(&n.to_le_bytes());
             }
             // Nuevos opcodes float
             Opcode::DeclareFloatOp(idx, d) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-                bytes.extend_from_slice(&d.to_le_bytes());
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.extend_from_slice(&d.to_le_bytes());
             }
             Opcode::StoreFloatOp(idx, d) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-                bytes.extend_from_slice(&d.to_le_bytes());
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.extend_from_slice(&d.to_le_bytes());
             }
             Opcode::LoadAddFloat(idx, d) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-                bytes.extend_from_slice(&d.to_le_bytes());
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.extend_from_slice(&d.to_le_bytes());
             }
             Opcode::XorSign(idx) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
             Opcode::AddStoreFloat(idx)
             | Opcode::SubStoreFloat(idx)
             | Opcode::MulStoreFloat(idx) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
             // Fase A: Modulo2(src)
             Opcode::Modulo2(src) => {
-                bytes.extend_from_slice(&(*src as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*src as u32).to_le_bytes());
             }
             // Fase B: ReduceAdd(dst, src) — 2 × u32
             Opcode::ReduceAdd(dst, src) => {
-                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
-                bytes.extend_from_slice(&(*src as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*src as u32).to_le_bytes());
             }
             // Fase B: LoadAddPacked(dst, src1, src2) — 3 × u32
             Opcode::LoadAddPacked(dst, src1, src2) => {
-                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
-                bytes.extend_from_slice(&(*src1 as u32).to_le_bytes());
-                bytes.extend_from_slice(&(*src2 as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*src1 as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*src2 as u32).to_le_bytes());
             }
             // Fase 3a: Stack Bypass — 3 × u32 (dst, src1, src2)
             Opcode::DivFloatDirect(dst, src1, src2)
             | Opcode::MulFloatDirect(dst, src1, src2)
             | Opcode::AddFloatDirect(dst, src1, src2)
             | Opcode::SubFloatDirect(dst, src1, src2) => {
-                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
-                bytes.extend_from_slice(&(*src1 as u32).to_le_bytes());
-                bytes.extend_from_slice(&(*src2 as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*src1 as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*src2 as u32).to_le_bytes());
             }
             // Fase 3b: Super-fusión — 3 × u32 (dst, num_src, div_src)
             Opcode::FusedDivAdd(dst, num_src, div_src)
             | Opcode::FusedDivSub(dst, num_src, div_src) => {
-                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
-                bytes.extend_from_slice(&(*num_src as u32).to_le_bytes());
-                bytes.extend_from_slice(&(*div_src as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*num_src as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*div_src as u32).to_le_bytes());
             }
             // Fase 3b Const: f64 + usize + usize → 8 + 4 + 4 = 16 bytes
             Opcode::FusedDivAddConst(dst, num, div_src)
             | Opcode::FusedDivSubConst(dst, num, div_src) => {
-                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
-                bytes.extend_from_slice(&num.to_le_bytes());
-                bytes.extend_from_slice(&(*div_src as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+            bytes.extend_from_slice(&num.to_le_bytes());
+            bytes.extend_from_slice(&(*div_src as u32).to_le_bytes());
             }
             // Opcodes para Exacto (BigDecimal)
             Opcode::PushExacto(coeff, scale) => {
-                bytes.extend_from_slice(&coeff.to_le_bytes());
-                bytes.extend_from_slice(&scale.to_le_bytes());
+            bytes.extend_from_slice(&coeff.to_le_bytes());
+            bytes.extend_from_slice(&scale.to_le_bytes());
             }
             // Superinstructions Exacto
             Opcode::DeclareExactOp(idx, coeff, scale) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-                bytes.extend_from_slice(&coeff.to_le_bytes());
-                bytes.extend_from_slice(&scale.to_le_bytes());
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.extend_from_slice(&coeff.to_le_bytes());
+            bytes.extend_from_slice(&scale.to_le_bytes());
             }
             Opcode::AddStoreExact(idx) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
             // Pattern matching opcodes — payload: 4 bytes (usize)
             Opcode::CheckTag(idx) | Opcode::ExtractField(idx) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
             // Design by Contract opcodes — payload: 4 bytes (usize)
             Opcode::CheckPre(idx)
             | Opcode::CheckPost(idx)
             | Opcode::SaveAnterior(idx)
             | Opcode::CheckInv(idx) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
             // Fase 2: DeclareIdxGlobal(usize, bool)
             Opcode::DeclareIdxGlobal(idx, mutable) => {
-                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-                bytes.push(if *mutable { 1 } else { 0 });
+            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            bytes.push(if *mutable { 1 } else { 0 });
             }
             // Debug: SetLine(line) — payload: 4 bytes (u32)
             Opcode::SetLine(line) => {
-                bytes.extend_from_slice(&(*line as u32).to_le_bytes());
+            bytes.extend_from_slice(&(*line as u32).to_le_bytes());
             }
             Opcode::PushAddInt(n) => {
-                bytes.extend_from_slice(&n.to_le_bytes());
+            bytes.extend_from_slice(&n.to_le_bytes());
             }
             Opcode::ThreadSpawn(s, nargs) | Opcode::CallNative(s, nargs) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-                bytes.extend_from_slice(&idx.to_le_bytes());
-                bytes.extend_from_slice(&(*nargs as u32).to_le_bytes());
+            bytes.extend_from_slice(&idx.to_le_bytes());
+            bytes.extend_from_slice(&(*nargs as u32).to_le_bytes());
             }
             Opcode::SocketPoll(s) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-                bytes.extend_from_slice(&idx.to_le_bytes());
+            bytes.extend_from_slice(&idx.to_le_bytes());
             }
             _ => {} // Opcodes sin payload
         }
@@ -3726,7 +3844,7 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
         for i in scope_start..scope_end {
             let op = &bytecode[i];
             match op {
-                Opcode::FunctionDef(_name, params) => {
+            Opcode::FunctionDef(_name, params) => {
                     // Los parámetros de la función empiezan en índice 0 de este ámbito
                     for p in params {
                         var_indices.entry(p.to_string()).or_insert_with(|| {
@@ -3761,7 +3879,7 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
                     });
                     result.push(Opcode::DeclareIdx(idx, *mutable));
                 }
-                Opcode::Call(_, _) => {
+            Opcode::Call(_, _) => {
                     result.push(op.clone());
                 }
                 _ => {
@@ -4083,6 +4201,7 @@ mod tests {
     use super::*;
     use crate::lexer::Lexer;
     use crate::parser::Parser;
+    use crate::semantics::TypeChecker;
 
     fn generar_bytecode(source: &str) -> Result<Vec<Opcode>, Vec<ErrorForja>> {
         let mut lexer = Lexer::new(source);
@@ -4342,11 +4461,11 @@ fun obtener() {
         );
         // Cada entrada debe ser (nombre -> mutable)
         for (_nombre, mutable) in &module_bc.global_var_indices {
-            assert!(
+        assert!(
                 *mutable,
                 "Las variables declaradas deben ser mutables, got {}",
                 mutable
-            );
+        );
         }
     }
 
@@ -4508,5 +4627,170 @@ fun probar() {
                 assert!(*mutable, "global_x debe ser mutable, got {}", mutable);
             }
         }
+    
+    }
+    
+    // ═════════════════════════════════════════════════════════════════════
+    // Tests de sobrecarga automática por tipo
+    // ═════════════════════════════════════════════════════════════════════
+    
+    #[test]
+    fn test_sobrecarga_funciones_con_tipos_distintos() {
+        // Dos funciones con mismo nombre pero diferentes tipos de parámetros.
+        // TypeChecker debe recolectar ambos como overloads y el bytecode
+        // debe resolver el nombre mangled correcto para cada llamada.
+        let source = "\
+funcion mcd(a: Texto, b: Texto) -> Texto {
+    retornar a
+}
+funcion mcd(a, b) {
+    retornar a + b
+}
+variable x = mcd(\"a\", \"b\")
+variable y = mcd(10, 20)
+";
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let programa = parser.parse().unwrap();
+
+        let mut type_checker = TypeChecker::new();
+        // Debe analizar sin errores: ambas funciones deben coexistir
+        type_checker.analizar(&programa).unwrap();
+        let tipos_inferidos = type_checker.obtener_tipos_inferidos();
+        let funciones_overload = type_checker.obtener_funciones();
+
+        // Verificar que mcd tiene 2 overloads
+        let overloads = funciones_overload.get("mcd");
+        assert!(
+            overloads.is_some(),
+            "mcd debe estar en funciones_overload"
+        );
+        assert_eq!(
+            overloads.unwrap().len(),
+            2,
+            "mcd debe tener 2 overloads"
+        );
+
+        // Generar bytecode con overloads
+        let mut gen = BytecodeGenerator::new();
+        gen.set_tipos_inferidos(tipos_inferidos);
+        gen.set_funciones_overload(funciones_overload);
+        gen.generar(&programa).unwrap();
+
+        let bytecode = gen.opcodes.clone();
+
+        // Verificar que las definiciones/funciones con nombre mangled existen
+        let tiene_mcd_ov0 = bytecode.iter().any(|op| match op {
+            Opcode::FunctionDef(n, _) | Opcode::Call(n, _) => n.as_ref() == "mcd$ov0",
+            _ => false,
+        });
+        let tiene_mcd_ov1 = bytecode.iter().any(|op| match op {
+            Opcode::FunctionDef(n, _) | Opcode::Call(n, _) => n.as_ref() == "mcd$ov1",
+            _ => false,
+        });
+
+        assert!(
+            tiene_mcd_ov0,
+            "Se esperaba 'mcd$ov0' en FunctionDef o Call, bytecode: {:?}",
+            bytecode
+        );
+        assert!(
+            tiene_mcd_ov1,
+            "Se esperaba 'mcd$ov1' en FunctionDef o Call, bytecode: {:?}",
+            bytecode
+        );
+    }
+
+    #[test]
+    fn test_sobrecarga_sin_conflicto_con_nombre_sin_tipo() {
+        // Una función sin tipo y otra con tipo deben resolverse correctamente
+        // cuando se llaman con tipos que matchean exactamente.
+        let source = "\
+    funcion sumar(a: Texto, b: Texto) -> Texto {
+        retornar a + b
+    }
+    funcion sumar(a, b) {
+        retornar a + b
+    }
+    variable texto = sumar(\"hola \", \"mundo\")
+    variable entero = sumar(3, 4)
+    ";
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let programa = parser.parse().unwrap();
+    
+        let mut type_checker = TypeChecker::new();
+        type_checker.analizar(&programa).unwrap();
+        let funciones_overload = type_checker.obtener_funciones();
+    
+        let overloads = funciones_overload.get("sumar");
+        assert!(overloads.is_some(), "sumar debe estar en overloads");
+        assert_eq!(overloads.unwrap().len(), 2, "sumar debe tener 2 overloads");
+    
+        let mut gen = BytecodeGenerator::new();
+        gen.set_tipos_inferidos(type_checker.obtener_tipos_inferidos());
+        gen.set_funciones_overload(funciones_overload);
+        gen.generar(&programa).unwrap();
+    
+        let bytecode = gen.opcodes.clone();
+        let tiene_sumar_ov0 = bytecode.iter().any(|op| match op {
+            Opcode::FunctionDef(n, _) | Opcode::Call(n, _) => n.as_ref() == "sumar$ov0",
+            _ => false,
+        });
+        let tiene_sumar_ov1 = bytecode.iter().any(|op| match op {
+            Opcode::FunctionDef(n, _) | Opcode::Call(n, _) => n.as_ref() == "sumar$ov1",
+            _ => false,
+        });
+
+        assert!(tiene_sumar_ov0, "sumar$ov0 debe existir en bytecode, bytecode: {:?}", bytecode);
+        assert!(tiene_sumar_ov1, "sumar$ov1 debe existir en bytecode, bytecode: {:?}", bytecode);
+    }
+
+    #[test]
+    fn test_sobrecarga_funcion_unica_sin_mangling() {
+        // Una sola función sin overloads debe mantener su nombre original
+        // (sin sufijo $ov)
+        let source = "\
+    funcion saludar(nombre: Texto) {
+        escribir(nombre)
+    }
+    saludar(\"Pepe\")
+    ";
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let programa = parser.parse().unwrap();
+
+        let mut type_checker = TypeChecker::new();
+        type_checker.analizar(&programa).unwrap();
+        let funciones_overload = type_checker.obtener_funciones();
+
+        // Verificar que sigue teniendo solo 1 overload
+        let overloads = funciones_overload.get("saludar");
+        assert!(overloads.is_some());
+        assert_eq!(overloads.unwrap().len(), 1);
+
+        let mut gen = BytecodeGenerator::new();
+        gen.set_tipos_inferidos(type_checker.obtener_tipos_inferidos());
+        gen.set_funciones_overload(funciones_overload);
+        gen.generar(&programa).unwrap();
+
+        let bytecode = gen.opcodes.clone();
+
+        // Debe llamarse "saludar", no "saludar$ov0"
+        let tiene_saludar_ov0 = bytecode.iter().any(|op| match op {
+            Opcode::FunctionDef(n, _) | Opcode::Call(n, _) => n.as_ref() == "saludar$ov0",
+            _ => false,
+        });
+        let tiene_saludar_original = bytecode.iter().any(|op| match op {
+            Opcode::FunctionDef(n, _) => n.as_ref() == "saludar",
+            _ => false,
+        });
+
+        assert!(!tiene_saludar_ov0, "saludar no debe tener $ov0 porque no tiene overloads");
+        assert!(tiene_saludar_original, "saludar debe mantener su nombre original");
     }
 }
+

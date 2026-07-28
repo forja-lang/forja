@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use crate::ast::*;
-use crate::error::ErrorForja;
+use crate::error::{ErrorForja, ErrorTipo};
 use std::collections::HashMap;
 
 /// Profundidad máxima de recursión para la transpilación.
@@ -1266,6 +1266,19 @@ impl Transpiler {
                 self.indent();
 
                 for campo in campos {
+                    if campo.nombre.is_empty() || campo.nombre == ":" {
+                        self.errors.push(ErrorForja::new(
+                            ErrorTipo::ErrorSemantico,
+                            0,
+                            0,
+                            &format!(
+                                "Campo de clase sin nombre válido en '{}'.",
+                                nombre
+                            ),
+                            "Revisa la sintaxis de los campos: cada campo debe tener un nombre.",
+                        ));
+                        continue;
+                    }
                     let tipo = self.inferir_tipo_campo(campo);
                     self.emit_line(&format!("{}: {},", campo.nombre, tipo));
                 }
@@ -2524,6 +2537,33 @@ impl Transpiler {
                 }
             }
 
+            Expresion::LlamadaMetodo {
+                objeto,
+                metodo,
+                argumentos,
+            } => {
+                let obj_str = self.transpilar_expresion(objeto);
+                let args: Vec<String> = argumentos
+                    .iter()
+                    .map(|a| self.transpilar_expresion(a))
+                    .collect();
+                let metodo_lower = metodo.to_lowercase();
+                match metodo_lower.as_str() {
+                    "enviar" => {
+                        format!("{}.send({}).unwrap()", obj_str, args.join(", "))
+                    }
+                    "recibir" => {
+                        format!("{}.recv().unwrap()", obj_str)
+                    }
+                    "unir" => {
+                        format!("{}.join().unwrap()", obj_str)
+                    }
+                    _ => {
+                        format!("{}.{}({})", obj_str, metodo, args.join(", "))
+                    }
+                }
+            }
+
             Expresion::AccesoMiembro { objeto, miembro } => {
                 let obj_str = self.transpilar_expresion(objeto);
                 if self.usa_gui() && !miembro.contains("::") {
@@ -2796,6 +2836,12 @@ impl Transpiler {
                 self.recolectar_vars_anterior(e, vars);
             }
             Expresion::LlamadaFuncion { argumentos, .. } => {
+                for arg in argumentos {
+                    self.recolectar_vars_anterior(arg, vars);
+                }
+            }
+            Expresion::LlamadaMetodo { objeto, argumentos, .. } => {
+                self.recolectar_vars_anterior(objeto, vars);
                 for arg in argumentos {
                     self.recolectar_vars_anterior(arg, vars);
                 }
@@ -3122,9 +3168,9 @@ impl Transpiler {
             Expresion::LiteralExacto(coeff, scale) => {
                 format!("Expresion::LiteralExacto({}, {})", coeff, scale)
             }
-            Expresion::Identificador { nombre, .. } => format!(
-                "Expresion::Identificador(String::from(\"{}\"))",
-                self.esc_ast_string(nombre)
+            Expresion::Identificador { nombre, linea, columna } => format!(
+                "Expresion::Identificador {{ nombre: String::from(\"{}\"), linea: {}, columna: {} }}",
+                self.esc_ast_string(nombre), linea, columna
             ),
             Expresion::Binaria {
                 izquierda,
@@ -3163,6 +3209,22 @@ impl Transpiler {
                     .collect();
                 format!("Expresion::LlamadaFuncion {{ nombre: String::from(\"{}\"), argumentos: vec![{}] }}",
                     self.esc_ast_string(nombre), args.join(", "))
+            }
+            Expresion::LlamadaMetodo {
+                objeto,
+                metodo,
+                argumentos,
+            } => {
+                let args: Vec<String> = argumentos
+                    .iter()
+                    .map(|a| self.generar_ast_expresion(a))
+                    .collect();
+                format!(
+                    "Expresion::LlamadaMetodo {{ objeto: Box::new({}), metodo: String::from(\"{}\"), argumentos: vec![{}] }}",
+                    self.generar_ast_expresion(objeto),
+                    self.esc_ast_string(metodo),
+                    args.join(", ")
+                )
             }
             Expresion::AccesoMiembro { objeto, miembro } => {
                 format!("Expresion::AccesoMiembro {{ objeto: Box::new({}), miembro: String::from(\"{}\") }}",

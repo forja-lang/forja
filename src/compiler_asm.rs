@@ -2026,6 +2026,11 @@ impl CompilerAsm {
         let fp = a.fp_reg();
 
         match expr {
+            Expresion::LlamadaMetodo { .. } => {
+                self.emit_line("    // LlamadaMetodo no implementado en ASM");
+                self.emit_line(&a.xor_reg_reg(ret, ret));
+                ret.to_string()
+            }
             Expresion::LiteralExacto(_, _) => {
                 self.emit_line("    // LiteralExacto no implementado en ASM");
                 self.emit_line(&a.xor_reg_reg(ret, ret));

@@ -959,6 +959,16 @@ impl BorrowChecker {
                 None
             }
             Expresion::Resultado | Expresion::Anterior(_) => None,
+            Expresion::LlamadaMetodo {
+                objeto,
+                argumentos, ..
+            } => {
+                self.analizar_expresion_con_depth(objeto, depth + 1);
+                for arg in argumentos {
+                    self.analizar_expresion_con_depth(arg, depth + 1);
+                }
+                None
+            }
         }
     }
 }
@@ -972,9 +982,12 @@ impl BorrowChecker {
 pub struct TypeChecker {
     tabla: TablaSimbolos,
     errores: Vec<ErrorForja>,
-    /// Mapa de función -> (tipos_param (None si no tiene tipo explícito), tipo_retorno, parametros_tipo)
+    /// Mapa de función -> Vec de overloads.
+    /// Cada overload: (tipos_param, tipo_retorno, parametros_tipo)
+    /// Soportar múltiples overloads permite que funciones con el mismo nombre
+    /// pero diferentes tipos de parámetros coexistan (sobrecarga por tipo).
     funciones:
-        std::collections::HashMap<String, (Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>,
+        std::collections::HashMap<String, Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>>,
     /// Tipos inferidos para cada variable (nombre -> tipo)
     tipos: HashMap<String, Tipo>,
     /// Definiciones de rasgos: nombre -> lista de firmas de métodos
@@ -1006,6 +1019,92 @@ impl TypeChecker {
             tipo_retorno_actual: None,
             linea_actual: 1,
             columna_actual: 1,
+        }
+    }
+
+    /// Retorna un clon del mapa de funciones con sus overloads.
+    /// Usado por BytecodeGenerator para resolver sobrecarga en codegen.
+    pub fn obtener_funciones(&self) -> std::collections::HashMap<String, Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>> {
+        self.funciones.clone()
+    }
+
+    /// Resuelve qué overload de función usar dados los tipos de argumentos.
+    /// Orden de resolución:
+    ///   1. Coincidencia exacta de aridad + tipos
+    ///   2. Coincidencia de aridad + tipos compatibles (parámetro sin tipo = compatible con todo)
+    ///   3. Coincidencia de aridad solamente (fallback)
+    ///   4. Si no hay match, reporta error y retorna None
+    fn resolver_sobrecarga(
+        &mut self,
+        nombre: &str,
+        overloads: &[(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)],
+        tipos_args: &[Option<Tipo>],
+        linea: usize,
+        columna: usize,
+    ) -> Option<usize> {
+        if overloads.len() == 1 {
+            return Some(0);
+        }
+
+        // PASO 1: Match exacto de aridad + tipos
+        for (i, (params, _, _)) in overloads.iter().enumerate() {
+            if params.len() == tipos_args.len() {
+                if tipos_args.iter().enumerate().all(|(j, arg_t)| {
+                    params[j].as_ref().map_or(false, |p_t| {
+                        arg_t.as_ref().map_or(false, |a_t| self.tipos_coinciden_exacto(a_t, p_t))
+                    })
+                }) {
+                    return Some(i);
+                }
+            }
+        }
+
+        // PASO 2: Match por aridad + compatibilidad (tipo explícito ≠ None)
+        for (i, (params, _, _)) in overloads.iter().enumerate() {
+            if params.len() == tipos_args.len() {
+                if tipos_args.iter().enumerate().all(|(j, arg_t)| {
+                    match &params[j] {
+                        Some(p_t) => arg_t.as_ref().map_or(false, |a_t| self.tipos_son_compatibles(a_t, p_t)),
+                        None => true, // Sin tipo explícito = comodín
+                    }
+                }) {
+                    return Some(i);
+                }
+            }
+        }
+
+        // Error: no se pudo resolver la sobrecarga
+        self.errores.push(ErrorForja::new(
+            ErrorTipo::ErrorDeTipo,
+            linea, columna,
+            &format!(
+                "Llamada ambigua a '{}': no se encontró una función que coincida con los tipos de argumento. \
+                 Usá el prefijo del módulo para desambiguar (ej: hex.{}())",
+                nombre, nombre
+            ),
+            "Agregá tipos explícitos a los parámetros o usá el prefijo del módulo.",
+        ));
+        None
+    }
+
+    /// Verifica si dos tipos coinciden exactamente (mismo tipo concreto)
+    fn tipos_coinciden_exacto(&self, arg: &Tipo, param: &Tipo) -> bool {
+        match param {
+            Tipo::Parametro(_) => true, // Parámetro genérico <T> coincide con cualquier tipo
+            _ => std::mem::discriminant(arg) == std::mem::discriminant(param),
+        }
+    }
+
+    /// Verifica si un tipo de argumento es compatible con el tipo de parámetro declarado.
+    /// Compatibilidad significa que el argumento puede convertirse implícitamente al tipo esperado.
+    fn tipos_son_compatibles(&self, arg: &Tipo, param: &Tipo) -> bool {
+        match param {
+            Tipo::Parametro(_) => true, // Genérico <T> compatible con todo
+            Tipo::Decimal => matches!(arg, Tipo::Entero | Tipo::Decimal),
+            Tipo::Texto => matches!(arg, Tipo::Texto),
+            Tipo::Entero => matches!(arg, Tipo::Entero),
+            Tipo::Booleano => matches!(arg, Tipo::Booleano),
+            _ => arg == param,
         }
     }
 
@@ -1044,10 +1143,11 @@ impl TypeChecker {
                 // los parámetros (aunque no tengan tipo explícito)
                 let tipos_param: Vec<Option<Tipo>> =
                     parametros.iter().map(|p| p.tipo.clone()).collect();
-                self.funciones.insert(
-                    nombre.clone(),
-                    (tipos_param, tipo_retorno.clone(), parametros_tipo.clone()),
-                );
+                // Append a la lista de overloads para este nombre
+                self.funciones
+                    .entry(nombre.clone())
+                    .or_default()
+                    .push((tipos_param, tipo_retorno.clone(), parametros_tipo.clone()));
             }
         }
     }
@@ -1389,42 +1489,59 @@ impl TypeChecker {
                     .iter()
                     .map(|arg| self.inferir_tipo(arg))
                     .collect();
-                // Verificar cantidad de argumentos si conocemos la función
-                if let Some((ref params, _, ref params_tipo)) = self.funciones.get(nombre) {
-                    if argumentos.len() != params.len() {
+                // Verificar cantidad y tipos si conocemos la función
+                let overloads_clone = self.funciones.get(nombre).cloned();
+                if overloads_clone.is_none() {
+                    // Función no registrada — error, excepto builtins conocidos
+                    if nombre != "escribir" && nombre != "escribir_linea" && nombre != "leer" && nombre != "BD" {
                         self.errores.push(ErrorForja::new(
                             ErrorTipo::ErrorDeTipo,
                             self.linea_actual,
                             self.columna_actual,
-                            &format!(
-                                "La función '{}' espera {} argumentos, pero se pasaron {}",
-                                nombre,
-                                params.len(),
-                                argumentos.len()
-                            ),
-                            "Revisá la cantidad de argumentos.",
+                            &format!("La función '{}' no está definida.", nombre),
+                            "Verificá el nombre o importá el módulo necesario.",
                         ));
                     }
-                    // Inferir parámetros de tipo desde los argumentos
-                    if !params_tipo.is_empty() {
-                        // Mapa: nombre_param_tipo -> tipo concreto inferido
-                        let mut inferidos: std::collections::HashMap<String, Tipo> =
-                            std::collections::HashMap::new();
-                        for (i, _param_tipo) in params_tipo.iter().enumerate() {
-                            if i < params.len() {
-                                if let Some(ref param_decl) = params[i] {
-                                    if let Tipo::Parametro(ref pnombre) = param_decl {
-                                        if let Some(ref arg_tipo) =
-                                            tipos_args.get(i).and_then(|t| t.clone())
-                                        {
-                                            inferidos.insert(pnombre.clone(), arg_tipo.clone());
+                } else if let Some(overloads) = overloads_clone {
+                    // Determinar qué overload usar según los tipos de argumento
+                    if let Some(idx) = self.resolver_sobrecarga(nombre, &overloads, &tipos_args, self.linea_actual, self.columna_actual) {
+                        if let Some((ref params, _, ref params_tipo)) = overloads.get(idx) {
+                            if argumentos.len() != params.len() {
+                                self.errores.push(ErrorForja::new(
+                                    ErrorTipo::ErrorDeTipo,
+                                    self.linea_actual,
+                                    self.columna_actual,
+                                    &format!(
+                                        "La función '{}' espera {} argumentos, pero se pasaron {}",
+                                        nombre,
+                                        params.len(),
+                                        argumentos.len()
+                                    ),
+                                    "Revisá la cantidad de argumentos.",
+                                ));
+                            }
+                            // Inferir parámetros de tipo desde los argumentos
+                            if !params_tipo.is_empty() {
+                                // Mapa: nombre_param_tipo -> tipo concreto inferido
+                                let mut inferidos: std::collections::HashMap<String, Tipo> =
+                                    std::collections::HashMap::new();
+                                for (i, _param_tipo) in params_tipo.iter().enumerate() {
+                                    if i < params.len() {
+                                        if let Some(ref param_decl) = params[i] {
+                                            if let Tipo::Parametro(ref pnombre) = param_decl {
+                                                if let Some(ref arg_tipo) =
+                                                    tipos_args.get(i).and_then(|t| t.clone())
+                                                {
+                                                    inferidos.insert(pnombre.clone(), arg_tipo.clone());
+                                                }
+                                            }
                                         }
                                     }
                                 }
+                                // Almacenar los tipos inferidos para usarlos en inferir_tipo
+                                self.tipos_param_genericos = inferidos;
                             }
                         }
-                        // Almacenar los tipos inferidos para usarlos en inferir_tipo
-                        self.tipos_param_genericos = inferidos;
                     }
                 }
             }
@@ -1518,34 +1635,50 @@ impl TypeChecker {
                     .map(|arg| self.inferir_tipo_con_depth(arg, depth + 1))
                     .collect();
                 // Determinar tipo de retorno si conocemos la función
-                if let Some((ref params, ref retorno, ref params_tipo)) =
-                    self.funciones.get(nombre).cloned()
-                {
-                    // Inferir parámetros de tipo desde los argumentos
-                    if !params_tipo.is_empty() && argumentos.len() == params.len() {
-                        let mut inferidos: std::collections::HashMap<String, Tipo> =
-                            std::collections::HashMap::new();
-                        for (i, param_decl) in params.iter().enumerate() {
-                            if i < argumentos.len() {
-                                if let Some(ref p_tipo) = param_decl {
-                                    if let Tipo::Parametro(ref pnombre) = p_tipo {
-                                        if let Some(ref arg_tipo) =
-                                            tipos_args.get(i).and_then(|t| t.clone())
-                                        {
-                                            inferidos.insert(pnombre.clone(), arg_tipo.clone());
+                let overloads_clone = self.funciones.get(nombre).cloned();
+                if overloads_clone.is_none() {
+                    // Función no registrada — error, excepto builtins conocidos
+                    if nombre != "escribir" && nombre != "escribir_linea" && nombre != "leer" && nombre != "BD" {
+                        self.errores.push(ErrorForja::new(
+                            ErrorTipo::ErrorDeTipo,
+                            self.linea_actual,
+                            self.columna_actual,
+                            &format!("La función '{}' no está definida.", nombre),
+                            "Verificá el nombre o importá el módulo necesario.",
+                        ));
+                    }
+                    None
+                } else if let Some(overloads) = overloads_clone {
+                    let idx = self.resolver_sobrecarga(nombre, &overloads, &tipos_args, 0, 0);
+                    if let Some(idx) = idx {
+                        if let Some((ref params, ref retorno, ref params_tipo)) = overloads.get(idx) {
+                            // Inferir parámetros de tipo desde los argumentos
+                            if !params_tipo.is_empty() && argumentos.len() == params.len() {
+                                let mut inferidos: std::collections::HashMap<String, Tipo> =
+                                    std::collections::HashMap::new();
+                                for (i, param_decl) in params.iter().enumerate() {
+                                    if i < argumentos.len() {
+                                        if let Some(ref p_tipo) = param_decl {
+                                            if let Tipo::Parametro(ref pnombre) = p_tipo {
+                                                if let Some(ref arg_tipo) =
+                                                    tipos_args.get(i).and_then(|t| t.clone())
+                                                {
+                                                    inferidos.insert(pnombre.clone(), arg_tipo.clone());
+                                                }
+                                            }
                                         }
                                     }
                                 }
+                                // Sustituir parámetros de tipo en el tipo de retorno
+                                if let Some(ref ret) = retorno {
+                                    return Some(self.sustituir_parametros_tipo(ret, &inferidos));
+                                }
                             }
-                        }
-                        // Sustituir parámetros de tipo en el tipo de retorno
-                        if let Some(ref ret) = retorno {
-                            return Some(self.sustituir_parametros_tipo(ret, &inferidos));
+                            return retorno.clone();
                         }
                     }
-                    retorno.clone()
+                    None
                 } else {
-                    // escribir() no tiene tipo de retorno
                     None
                 }
             }
@@ -1842,6 +1975,18 @@ impl TypeChecker {
                 }
                 // El tipo de anterior(expr) es el tipo de expr
                 self.inferir_tipo_con_depth(expr, depth + 1)
+            }
+            Expresion::LlamadaMetodo {
+                objeto,
+                argumentos, ..
+            } => {
+                // Llamada a método: inferir tipo del objeto y argumentos
+                self.inferir_tipo_con_depth(objeto, depth + 1);
+                for arg in argumentos {
+                    self.inferir_tipo_con_depth(arg, depth + 1);
+                }
+                // No podemos inferir el tipo de retorno de un método genéricamente
+                None
             }
         }
     }

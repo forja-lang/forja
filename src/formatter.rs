@@ -773,6 +773,18 @@ impl Formatter {
                 let exp_str = self.expresion_a_string(expr);
                 format!("anterior({})", exp_str)
             }
+            Expresion::LlamadaMetodo {
+                objeto,
+                metodo,
+                argumentos,
+            } => {
+                let obj_str = self.expresion_a_string(objeto);
+                let args: Vec<String> = argumentos
+                    .iter()
+                    .map(|a| self.expresion_a_string(a))
+                    .collect();
+                format!("{}.{}({})", obj_str, metodo, args.join(", "))
+            }
         }
     }
 
