@@ -18,7 +18,17 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CRATE_DIR="$PROJECT_DIR/crates/forja-android-rt"
 
-VERSION="${1:-0.8.2}"
+# Si no se pasa versión como argumento, la lee automáticamente de Cargo.toml
+if [ $# -ge 1 ]; then
+    VERSION="$1"
+else
+    VERSION=$(grep '^version' "$PROJECT_DIR/Cargo.toml" | head -1 | cut -d'"' -f2)
+    if [ -z "$VERSION" ]; then
+        echo "❌ Error: No se pudo detectar versión desde Cargo.toml"
+        echo "   Especificala manualmente: $0 <version>"
+        exit 1
+    fi
+fi
 AAR_NAME="forja-android-rt-${VERSION}.aar"
 OUTPUT_DIR="$PROJECT_DIR/dist"
 
