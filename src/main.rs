@@ -5,6 +5,7 @@ mod ast;
 mod bytecode;
 mod class_descriptor;
 mod compiler_asm;
+mod stdlib_embedded;
 mod diagrama;
 mod error;
 mod formatter;
