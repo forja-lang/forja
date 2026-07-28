@@ -3,9 +3,9 @@
 <div align="center">
 
 [![Versión](https://img.shields.io/badge/dynamic/json?color=blue&label=versi%C3%B3n&query=version&url=https%3A%2F%2Fforja-lang.github.io%2Fforja%2Fmetrics%2Fmetrics.json&style=for-the-badge)](https://github.com/forja-lang/forja/releases)
-[![Tests](https://img.shields.io/badge/dynamic/json?color=green&label=tests&query=tests_passed&suffix=%20%E2%9C%85&url=https%3A%2F%2Fforja-lang.github.io%2Fforja%2Fmetrics%2Fmetrics.json&style=for-the-badge)]()
-[![Líneas Rust](https://img.shields.io/badge/dynamic/json?color=orange&label=c%C3%B3digo%20Rust&query=lines_of_rust&suffix=%20l%C3%ADneas&url=https%3A%2F%2Fforja-lang.github.io%2Fforja%2Fmetrics%2Fmetrics.json&style=for-the-badge)]()
-[![Ejemplos](https://img.shields.io/badge/dynamic/json?color=purple&label=ejemplos&query=fa_examples&suffix=%20.fa&url=https%3A%2F%2Fforja-lang.github.io%2Fforja%2Fmetrics%2Fmetrics.json&style=for-the-badge)](examples/)
+[![Tests](https://img.shields.io/badge/dynamic/json?color=green&label=tests&query=tests_passed&suffix=%20%E2%9C%85&url=https%3A%2F%2Fforja-lang.github.io%2Fforja%2Fmetrics%2Fmetrics.json&style=for-the-badge)](https://github.com/forja-lang/forja/actions)
+[![Líneas Rust](https://img.shields.io/badge/dynamic/json?color=orange&label=c%C3%B3digo%20Rust&query=lines_of_rust&suffix=%20l%C3%ADneas&url=https%3A%2F%2Fforja-lang.github.io%2Fforja%2Fmetrics%2Fmetrics.json&style=for-the-badge)](https://github.com/forja-lang/forja)
+[![Ejemplos](https://img.shields.io/badge/dynamic/json?color=purple&label=ejemplos&query=fa_examples&suffix=%20.fa&url=https%3A%2F%2Fforja-lang.github.io%2Fforja%2Fmetrics%2Fmetrics.json&style=for-the-badge)](https://github.com/forja-lang/forja/tree/main/examples)
 [![Try in Codespaces](https://img.shields.io/badge/Probar%20en-Codespaces-1f883d?style=for-the-badge&logo=github)](https://codespaces.new/forja-lang/forja)
 
 </div>
