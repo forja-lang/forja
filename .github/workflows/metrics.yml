@@ -1,9 +1,13 @@
-name: Métricas
+name: Forja CI/CD / Métricas
 on:
   push:
     branches: [ main, master ]
   schedule:
     - cron: '0 6 * * 1'  # Todos los lunes 6:00 UTC
+  workflow_dispatch:  # Permitir ejecución manual
+
+permissions:
+  contents: write
 
 jobs:
   metrics:
@@ -11,7 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: false  # No requerir submodules para métricas
+
+      - name: Checkout examples submodule (si está disponible)
+        run: |
+          git submodule update --init examples 2>/dev/null || echo "⚠️ examples submodule no disponible, se usará 0"
 
       - name: Cache Cargo
         uses: swatinem/rust-cache@v2
@@ -30,7 +38,7 @@ jobs:
         run: bash scripts/metrics.sh
 
       - name: Deploy metrics to gh-pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./metrics-output
