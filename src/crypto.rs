@@ -562,16 +562,22 @@ pub fn chacha20_xor(key: &[u8; 32], nonce: &[u8; 12], data: &[u8]) -> Vec<u8> {
 // Representación 130-bit: [u64; 3] donde h[0..1] = 128 bits bajos, h[2] = 2 bits altos
 // Mod p donde p = 2^130 - 5
 
-/// Reducción modular: si h >= p, restar p (2^130 - 5)
-/// p = 2^130 - 5 = 0x3FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB
+/// Reducción Poly1305: resta condicional p = 2^130-5 usando wrapping
 fn poly1305_reduce(h: &mut [u64; 3]) {
-    // Restar condicionalmente p = 2^130 - 5 (0xFFFFFFFFFFFFFFFB, 0xFFFFFFFFFFFFFFFF, 3)
-    // Si h >= p, entonces h -= p
-    while h[2] > 3 || (h[2] == 3 && (h[1] > 0xFFFFFFFFFFFFFFFF || h[0] > 0xFFFFFFFFFFFFFFFA - 1)) {
-        let (d0, c) = h[0].overflowing_sub(0xFFFFFFFFFFFFFFFB);
-        let (d1, c2) = h[1].overflowing_sub(c as u64);
-        let d2 = h[2].wrapping_sub(3 + (c2 as u64));
-        h[0] = d0; h[1] = d1; h[2] = d2;
+    // p = [lo:0xFFFFFFFFFFFFFFFB, hi:0xFFFFFFFFFFFFFFFF, top:3]
+    // Restar en 2 pasos para evitar overflow en 0xFFFFFFFFFFFFFFFF + carry
+    while h[2] > 3 || (h[2] == 3 && h[0] >= 0xFFFFFFFFFFFFFFFB) {
+        // Paso 1: h -= p, dividiendo p en componentes
+        let (d0, borrow) = h[0].overflowing_sub(0xFFFFFFFFFFFFFFFB);
+        h[0] = d0;
+        // Paso 2: restar h[1] partiendo de 0xFFFFFFFFFFFFFFFF (que es -1 en wrapping)
+        // Como restar 0xFFFFFFFFFFFFFFFF ≡ sumar 1 (wrapping), hacemos h[1] += 1
+        // Luego restamos el borrow (1 si borrow=true)
+        let h1_new = h[1].wrapping_add(1).wrapping_sub(if borrow { 1 } else { 0 });
+        // Verificar si h[1] era 0 y borrow=true → generate extra borrow
+        let extra_borrow = if borrow && h[1] == 0 { 1u64 } else { 0u64 };
+        h[1] = h1_new;
+        h[2] = h[2].wrapping_sub(3 + extra_borrow);
     }
 }
 
@@ -1087,7 +1093,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore] // TODO: depurar carry en reduccion 130-bit
     fn test_poly1305_known() {
         // RFC 8439 test vector
         let key = [
