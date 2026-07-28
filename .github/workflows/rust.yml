@@ -28,7 +28,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: false
+      - name: Checkout submodules (excepto benchmarks)
+        shell: bash
+        run: |
+          git submodule init
+          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
+            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
+          done
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
       - name: Build
@@ -50,7 +57,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: false
+      - name: Checkout submodules (excepto benchmarks)
+        shell: bash
+        run: |
+          git submodule init
+          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
+            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
+          done
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
       - name: Install Rust targets
@@ -99,7 +113,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: false
+      - name: Checkout submodules (excepto benchmarks)
+        shell: bash
+        run: |
+          git submodule init
+          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
+            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
+          done
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
       - name: Build
@@ -140,7 +161,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: false
+      - name: Checkout submodules (excepto benchmarks)
+        shell: bash
+        run: |
+          git submodule init
+          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
+            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
+          done
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@stable
@@ -175,7 +203,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: false
+      - name: Checkout submodules (excepto benchmarks)
+        shell: bash
+        run: |
+          git submodule init
+          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
+            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
+          done
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@stable
@@ -224,7 +259,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: false
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
