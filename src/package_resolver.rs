@@ -25,8 +25,21 @@ impl PackageResolver {
         }
     }
 
-    /// Resuelve la ruta de un módulo importado
+    /// Resuelve la ruta de un módulo importado.
+    ///
+    /// Prioridad:
+    ///   1. Stdlib embebida (compilada dentro del binario)
+    ///   2. Ruta absoluta o relativa directa
+    ///   3. Relativa al directorio del proyecto
+    ///   4. En stdlib/ del proyecto y sus ancestros
+    ///   5. En stdlib/ junto al ejecutable de Forja
+    ///   6. Cache global de paquetes
     pub fn resolver_modulo(&self, ruta: &str) -> Option<PathBuf> {
+        // 0. Stdlib embebida — SIEMPRE primero
+        if crate::stdlib_embedded::existe(ruta) {
+            return Some(PathBuf::from(format!("embedded://{}", ruta)));
+        }
+
         let path = Path::new(ruta);
 
         // 1. Ruta absoluta o relativa directa
