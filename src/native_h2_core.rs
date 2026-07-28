@@ -1108,20 +1108,15 @@ pub fn hpack_decodificar(
 //   - _h2_settings_default retorna en el mismo formato que leer_frame
 //   - Las funciones _h2_enviar_* escriben frames completos al socket
 
-use base64::engine::Engine as _;
-
 /// Helper: decodifica Base64 a Vec<u8>
 fn b64_decodificar(texto: &str) -> Result<Vec<u8>, ErrFast> {
-    let engine = base64::engine::general_purpose::STANDARD;
-    engine
-        .decode(texto)
+    crate::base64::b64_decode(texto)
         .map_err(|_| ErrFast::TipoInv("h2_b64_error: base64 inválido".into()))
 }
 
 /// Helper: codifica Vec<u8> a Base64 String
 fn b64_codificar(datos: &[u8]) -> String {
-    let engine = base64::engine::general_purpose::STANDARD;
-    engine.encode(datos)
+    crate::base64::b64_encode(datos)
 }
 
 /// Helper: escribe raw bytes a un socket TCP

@@ -3,8 +3,6 @@
 use crate::bytecode::BytecodeGenerator;
 use crate::symbol_table::{SymId, SymbolTable};
 use crate::vm_fast::{ErrFast, ForjaFast, ValorFast};
-use base64::Engine;
-use sha1::Digest as Sha1Digest;
 /// Registro de funciones nativas para la VM Forja
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -1663,7 +1661,7 @@ fn native_base64_codificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
     }
 
     let texto = obtener_texto(vm, args[0])?;
-    let codificado = base64::engine::general_purpose::STANDARD.encode(texto.as_bytes());
+    let codificado = crate::base64::b64_encode(texto.as_bytes());
     let idx = vm.alloc_str(Arc::from(codificado.as_str()));
     Ok(ValorFast::texto(idx))
 }
@@ -1679,7 +1677,7 @@ fn native_base64_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
     }
 
     let texto = obtener_texto(vm, args[0])?;
-    let resultado = base64::engine::general_purpose::STANDARD.decode(texto.as_bytes());
+    let resultado = crate::base64::b64_decode(&texto);
     match resultado {
         Ok(bytes) => {
             let decodificado = String::from_utf8_lossy(&bytes).to_string();
@@ -1709,11 +1707,8 @@ fn native_sha256(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, Er
     }
 
     let data = obtener_texto(vm, args[0])?;
-    let hash = sha2::Sha256::digest(data.as_bytes());
-    let hex_str = hash
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>();
+    let hash = crate::hash::Sha256::digest(data.as_bytes());
+    let hex_str = crate::hash::hex_encode(&hash);
     let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
     Ok(ValorFast::texto(idx))
 }
@@ -1729,11 +1724,8 @@ fn native_sha1(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrF
     }
 
     let data = obtener_texto(vm, args[0])?;
-    let hash = sha1::Sha1::digest(data.as_bytes());
-    let hex_str = hash
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>();
+    let hash = crate::hash::Sha1::digest(data.as_bytes());
+    let hex_str = crate::hash::hex_encode(&hash);
     let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
     Ok(ValorFast::texto(idx))
 }
@@ -1750,11 +1742,8 @@ fn native_sha1_hex(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, 
 
     let data_hex = obtener_texto(vm, args[0])?;
     let data = hex_a_bytes(&data_hex);
-    let hash = sha1::Sha1::digest(&data);
-    let hex_str = hash
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>();
+    let hash = crate::hash::Sha1::digest(&data);
+    let hex_str = crate::hash::hex_encode(&hash);
     let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
     Ok(ValorFast::texto(idx))
 }
@@ -2252,8 +2241,8 @@ fn native_ws_handshake_aceptar(
     const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-5AB9DC11B85B";
 
     let concatenado = format!("{}{}", key.trim(), WS_GUID);
-    let hash = sha2::Sha256::digest(concatenado.as_bytes());
-    let accept = base64::engine::general_purpose::STANDARD.encode(hash);
+    let hash = crate::hash::Sha256::digest(concatenado.as_bytes());
+    let accept = crate::base64::b64_encode(&hash);
 
     let idx = vm.alloc_str(Arc::from(accept.as_str()));
     Ok(ValorFast::texto(idx))
@@ -3223,11 +3212,8 @@ fn native_bt_verificar_pieza(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
     let expected_hash_hex = obtener_texto(vm, args[1])?;
 
     let data = hex_a_bytes(&data_hex);
-    let hash = sha1::Sha1::digest(&data);
-    let computed_hex = hash
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>();
+    let hash = crate::hash::Sha1::digest(&data);
+    let computed_hex = crate::hash::hex_encode(&hash);
 
     let result = if computed_hex == expected_hash_hex {
         "true"

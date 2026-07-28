@@ -25,6 +25,10 @@ mod uops;
 mod vm;
 mod vm_fast;
 
+// Hash y codificación — implementaciones manuales sin dependencias externas
+mod hash;
+mod base64;
+
 // HTTP/2 nativo — h2c (cleartext), sin dependencias externas
 #[cfg(not(target_arch = "wasm32"))]
 mod native_h2_core;
@@ -1796,7 +1800,7 @@ fn cmd_transpile(args: &[String]) {
         Err(errors) => {
             for err in errors {
                 let contexto = err.mostrar_con_contexto(&source);
-                eprintln!("\x1b[33m📄\x1b[0m \x1b[36m{}\x1b[0m:\x1b[31m{}:{}\x1b[0m", input_path, err.linea, err.columna);
+                eprintln!("\x1b[33m📄\x1b[0m \x1f36m{}\x1b[0m:\x1b[31m{}:{}\x1b[0m", input_path, err.linea, err.columna);
                 for line in contexto.lines() {
                     let colored = line
                         .replace(" ↑ ", "\x1b[31m↑\x1b[0m")
@@ -1807,6 +1811,13 @@ fn cmd_transpile(args: &[String]) {
             }
             process::exit(1);
         }
+    };
+
+    // Resolver imports para el JSON del runtime (AST completo con módulos)
+    let root_for_imports = std::path::Path::new(input_path).parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let programa_resuelto = match forja::resolver_imports(&source, &root_for_imports) {
+        Ok(p) => { eprintln!("📦 Imports resueltos correctamente ({} declaraciones)", p.declaraciones.len()); Some(p) }
+        Err(e) => { eprintln!("⚠️ No se pudieron resolver imports: {}. Usando AST sin módulos.", e); None }
     };
 
     // FASE 4: Type Checker + Type Inference (sin borrow checker para evitar
@@ -1918,8 +1929,12 @@ edition = "2021"
     }
 
     // Si usa GUI, guardar AST como JSON (para include_str! en build)
+    // Usar el programa con imports resueltos (incluye funciones de módulos)
     if usa_gui {
-        let ast_json = format!("{:#?}", programa.declaraciones);
+        let ast_json = match &programa_resuelto {
+            Some(p) => format!("{:#?}", p.declaraciones),
+            None => format!("{:#?}", programa.declaraciones),
+        };
         let json_path = src_dir.join("programa.json");
         if let Err(e) = fs::write(&json_path, &ast_json) {
             eprintln!("Error escribiendo '{}': {}", json_path.display(), e);
