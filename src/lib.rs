@@ -25,6 +25,10 @@ pub mod vm;
 pub mod vm_fast;
 pub mod vm_jit;
 
+// Hash y codificación — implementaciones manuales sin dependencias externas
+pub mod hash;
+pub mod base64;
+
 // Módulos que dependen del sistema de archivos o del SO
 // (no compilables a WASM)
 #[cfg(not(target_arch = "wasm32"))]
@@ -150,6 +154,7 @@ pub fn compilar_pipeline(source: &str) -> Result<Vec<bytecode::Opcode>, String> 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast::Programa, String> {
     use module::ModuleResolver;
+    use module::dedup_declaraciones;
     use package_resolver::PackageResolver;
 
     // 1. Lexer + Parser del código fuente principal
@@ -180,7 +185,7 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
             final_decls.push(decl);
         }
     }
-    programa.declaraciones = final_decls;
+    programa.declaraciones = dedup_declaraciones(final_decls);
     Ok(programa)
 }
 

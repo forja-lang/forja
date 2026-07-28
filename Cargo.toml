@@ -3,7 +3,7 @@ name = "forja"
 version = "0.8.8"
 edition = "2021"
 description = "Forja (fa) - Lenguaje de programación educativo en español"
-authors = ["lococoi"]
+authors = ["forja-lang"]
 license = "GPL-3.0-or-later"
 
 [features]
@@ -16,10 +16,7 @@ all = ["lsp", "dap", "gui", "crossbeam", "h2-tls"]
 
 [dependencies]
 # Sin dependencias externas para el núcleo - solo std de Rust
-# El JSON se genera manualmente en error.rs
-base64 = "0.22"
-sha1 = "0.10"
-sha2 = "0.10"
+# base64, sha1, sha2: implementaciones manuales en hash.rs y base64.rs
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
