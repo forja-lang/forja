@@ -6,6 +6,7 @@
 extern crate self as forja;
 
 pub mod ast;
+pub mod stdlib_embedded;
 pub mod bytecode;
 pub mod class_descriptor;
 pub mod compiler_asm;
@@ -69,6 +70,10 @@ pub mod debugger;
 // JIT Engine (orquestador con fallback)
 #[cfg(not(target_arch = "wasm32"))]
 pub mod jit_engine;
+
+// Módulo de autocompletado para LSP (feature-gated)
+#[cfg(feature = "lsp")]
+pub mod lsp;
 
 // HTTP/2 nativo — h2c (cleartext), sin dependencias externas
 #[cfg(not(target_arch = "wasm32"))]
