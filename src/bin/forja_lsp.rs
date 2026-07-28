@@ -11,6 +11,38 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 use forja::token::{Token, TokenKind};
+use forja::lsp::completado::{CompletionResolver, CompletionItem as ForjaCompletionItem, SymbolEntry, SymbolKind, fuzzy_score};
+use forja::lsp::index_stdlib::StdlibIndex;
+use forja::lsp::firma::SignatureResolver;
+
+fn completar_locales(analisis: &AnalisisDocumento) -> Vec<SymbolEntry> {
+    analisis.simbolos.iter().map(|s| {
+        SymbolEntry {
+            name: s.nombre.clone(),
+            kind: match s.tipo_simbolo {
+                SimboloTipo::Variable => SymbolKind::Variable,
+                SimboloTipo::Funcion => SymbolKind::Funcion,
+                SimboloTipo::Clase => SymbolKind::Clase,
+                SimboloTipo::Enum => SymbolKind::Enum,
+                SimboloTipo::Rasgo => SymbolKind::Rasgo,
+                SimboloTipo::Parametro => SymbolKind::Parametro,
+            },
+            params: Vec::new(),
+            doc: s.doc.clone().unwrap_or_default(),
+        }
+    }).collect()
+}
+    }).collect()
+}
+
+fn cached_stdlib() -> &'static StdlibIndex {
+    static INDEX: std::sync::OnceLock<StdlibIndex> = std::sync::OnceLock::new();
+    INDEX.get_or_init(|| {
+        let mut idx = StdlibIndex::new();
+        idx.cargar_stdlib("stdlib/std");
+        idx
+    })
+}
 
 // ======================================================================
 // Analysis Types
@@ -142,56 +174,20 @@ fn keyword_description(keyword: &str) -> Option<String> {
 // Keywords for Completion
 // ======================================================================
 
-const KEYWORDS_COMPLETION: &[(&str, CompletionItemKind)] = &[
-    ("variable", CompletionItemKind::KEYWORD),
-    ("constante", CompletionItemKind::KEYWORD),
-    ("mut", CompletionItemKind::KEYWORD),
-    ("si", CompletionItemKind::KEYWORD),
-    ("sino", CompletionItemKind::KEYWORD),
-    ("mientras", CompletionItemKind::KEYWORD),
-    ("para", CompletionItemKind::KEYWORD),
-    ("repetir", CompletionItemKind::KEYWORD),
-    ("funcion", CompletionItemKind::KEYWORD),
-    ("clase", CompletionItemKind::KEYWORD),
-    ("constructor", CompletionItemKind::KEYWORD),
-    ("este", CompletionItemKind::KEYWORD),
-    ("nuevo", CompletionItemKind::KEYWORD),
-    ("retornar", CompletionItemKind::KEYWORD),
-    ("importar", CompletionItemKind::KEYWORD),
-    ("prestado", CompletionItemKind::KEYWORD),
-    ("escribir", CompletionItemKind::FUNCTION),
-    ("leer", CompletionItemKind::FUNCTION),
-    ("verdadero", CompletionItemKind::KEYWORD),
-    ("falso", CompletionItemKind::KEYWORD),
-    ("nulo", CompletionItemKind::KEYWORD),
-    ("externo", CompletionItemKind::KEYWORD),
-    ("tipo", CompletionItemKind::KEYWORD),
-    ("coincidir", CompletionItemKind::KEYWORD),
-    ("caso", CompletionItemKind::KEYWORD),
-    ("rasgo", CompletionItemKind::KEYWORD),
-    ("implementa", CompletionItemKind::KEYWORD),
-    ("donde", CompletionItemKind::KEYWORD),
-    ("seleccionar", CompletionItemKind::KEYWORD),
-    ("tiempo", CompletionItemKind::KEYWORD),
-    ("otro", CompletionItemKind::KEYWORD),
-    ("hilo", CompletionItemKind::KEYWORD),
-    ("canal", CompletionItemKind::KEYWORD),
-    ("enviar", CompletionItemKind::KEYWORD),
-    ("recibir", CompletionItemKind::KEYWORD),
-    ("unir", CompletionItemKind::KEYWORD),
-    ("requiere", CompletionItemKind::KEYWORD),
-    ("asegura", CompletionItemKind::KEYWORD),
-    ("siempre", CompletionItemKind::KEYWORD),
-    ("cuando", CompletionItemKind::KEYWORD),
-    ("resultado", CompletionItemKind::KEYWORD),
-    ("anterior", CompletionItemKind::KEYWORD),
-    ("BD", CompletionItemKind::KEYWORD),
-    ("Texto", CompletionItemKind::TYPE_PARAMETER),
-    ("Entero", CompletionItemKind::TYPE_PARAMETER),
-    ("Decimal", CompletionItemKind::TYPE_PARAMETER),
-    ("Booleano", CompletionItemKind::TYPE_PARAMETER),
-    ("Exacto", CompletionItemKind::TYPE_PARAMETER),
-];
+/// Encuentra el índice del token más cercano a la posición del cursor
+fn encontrar_cursor_en_tokens(tokens: &[Token], pos: tower_lsp::lsp_types::Position) -> usize {
+    let line = pos.line as usize;
+    let col = pos.character as usize;
+    for (i, t) in tokens.iter().enumerate() {
+        if t.linea > line + 1 {
+            return i.saturating_sub(1);
+        }
+        if t.linea == line + 1 && t.columna > col {
+            return i.saturating_sub(1);
+        }
+    }
+    tokens.len().saturating_sub(1)
+}
 
 // ======================================================================
 // Backend
@@ -201,6 +197,8 @@ struct Backend {
     client: Client,
     documentos: Arc<Mutex<HashMap<Url, String>>>,
     analisis_cache: Arc<Mutex<HashMap<Url, AnalisisDocumento>>>,
+    completion_resolver: CompletionResolver,
+    signature_resolver: SignatureResolver,
 }
 
 #[tower_lsp::async_trait]
@@ -217,7 +215,11 @@ impl LanguageServer for Backend {
                 )),
                 document_formatting_provider: Some(OneOf::Left(true)),
                 completion_provider: Some(CompletionOptions {
-                    trigger_characters: Some(vec![".".to_string()]),
+                    trigger_characters: Some(vec![
+                        ".".to_string(),
+                        ":".to_string(),
+                        "\"".to_string(),
+                    ]),
                     ..Default::default()
                 }),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
@@ -645,58 +647,87 @@ impl LanguageServer for Backend {
     // Completion
     // ----------------------------------------------------------------
 
+    async fn completion_resolve(&self, item: CompletionItem) -> Result<CompletionItem> {
+        let label = item.label.clone();
+        let stdlib = cached_stdlib();
+
+        // Buscar documentación detallada en stdlib
+        if let Some(funcs) = stdlib.functions.get(&label.to_lowercase()) {
+            if let Some(f) = funcs.first() {
+                let mut doc = f.doc.clone();
+                if doc.is_empty() {
+                    let params_str: Vec<String> = f.params.iter()
+                        .map(|p| format!("- `{}`: {}", p.name, p.type_str)).collect();
+                    doc = format!("**{}**\n\nMódulo: `{}.fa`\n\nParámetros:\n{}",
+                        f.name, f.module, params_str.join("\n"));
+                    if !f.return_type.is_empty() {
+                        doc += &format!("\n\nRetorna: `{}`", f.return_type);
+                    }
+                }
+                return Ok(CompletionItem {
+                    documentation: Some(Documentation::String(doc)),
+                    ..item
+                });
+            }
+        }
+
+        // Doc de keyword
+        let keyword_doc = keyword_description(&label);
+        if let Some(doc) = keyword_doc {
+            return Ok(CompletionItem {
+                documentation: Some(Documentation::String(doc)),
+                ..item
+            });
+        }
+
+        Ok(item)
+    }
+
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
         let texto = self._get_text(&uri).await;
 
-        let mut items: Vec<CompletionItem> = Vec::new();
-
-        // 1. Keywords
-        for (keyword, kind) in KEYWORDS_COMPLETION {
-            items.push(CompletionItem {
-                label: keyword.to_string(),
-                kind: Some(*kind),
-                detail: Some("Palabra clave de Forja".to_string()),
-                insert_text: Some(keyword.to_string()),
-                ..Default::default()
-            });
-        }
-
-        // 2. Símbolos del usuario (variables, funciones, clases)
+        let tokens = tokenizar(&texto).unwrap_or_default();
+        let cursor = encontrar_cursor_en_tokens(&tokens, pos);
         let analisis = self._get_analisis(&uri).await;
-        for s in &analisis.simbolos {
-            let kind = match s.tipo_simbolo {
-                SimboloTipo::Variable => CompletionItemKind::VARIABLE,
-                SimboloTipo::Funcion => CompletionItemKind::FUNCTION,
-                SimboloTipo::Clase => CompletionItemKind::CLASS,
-                SimboloTipo::Parametro => CompletionItemKind::VARIABLE,
-                SimboloTipo::Enum => CompletionItemKind::ENUM,
-                SimboloTipo::Rasgo => CompletionItemKind::INTERFACE,
+        let locales = completar_locales(&analisis);
+
+        let forja_items = self.completion_resolver.resolver(&tokens, cursor, &locales);
+
+        let lsp_items: Vec<CompletionItem> = forja_items.iter().map(|fi| {
+            let kind = match fi.kind {
+                1 => Some(CompletionItemKind::TEXT),
+                3 => Some(CompletionItemKind::FUNCTION),
+                6 => Some(CompletionItemKind::VARIABLE),
+                7 => Some(CompletionItemKind::KEYWORD),
+                9 => Some(CompletionItemKind::MODULE),
+                12 => Some(CompletionItemKind::CLASS),
+                14 => Some(CompletionItemKind::SNIPPET),
+                15 => Some(CompletionItemKind::METHOD),
+                22 => Some(CompletionItemKind::STRUCT),
+                23 => Some(CompletionItemKind::ENUM),
+                _ => Some(CompletionItemKind::TEXT),
             };
-            items.push(CompletionItem {
-                label: s.nombre.clone(),
-                kind: Some(kind),
-                detail: Some(format!("{:?}", s.tipo_simbolo)),
+            let fmt = match fi.insert_text_format {
+                2 => Some(InsertTextFormat::SNIPPET),
+                _ => Some(InsertTextFormat::PLAIN_TEXT),
+            };
+            CompletionItem {
+                label: fi.label.clone(),
+                kind,
+                detail: Some(fi.detail.clone()),
+                documentation: if fi.documentation.is_empty() { None } else { Some(Documentation::String(fi.documentation.clone())) },
+                insert_text: Some(fi.insert_text.clone()),
+                insert_text_format: fmt,
+                sort_text: Some(fi.sort_text.clone()),
+                filter_text: Some(fi.filter_text.clone()),
+                preselect: if fi.preselect { Some(true) } else { None },
                 ..Default::default()
-            });
-        }
-
-        // 3. Contextual: después de `tipo` mostrar `=`
-        if let Ok(tokens) = tokenizar(&texto) {
-            if let Some(prev) = token_previo_en_linea(&tokens, pos) {
-                if prev == "tipo" {
-                    items.push(CompletionItem {
-                        label: "= ".to_string(),
-                        kind: Some(CompletionItemKind::OPERATOR),
-                        insert_text: Some("= ".to_string()),
-                        ..Default::default()
-                    });
-                }
             }
-        }
+        }).collect();
 
-        Ok(Some(CompletionResponse::Array(items)))
+        Ok(Some(CompletionResponse::Array(lsp_items)))
     }
 
     // ----------------------------------------------------------------
@@ -759,36 +790,33 @@ impl LanguageServer for Backend {
     // ----------------------------------------------------------------
 
     async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
-        let _uri = params.text_document_position_params.text_document.uri;
-        let _pos = params.text_document_position_params.position;
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+        let texto = self._get_text(&uri).await;
 
-        Ok(Some(SignatureHelp {
-            signatures: vec![
-                SignatureInformation {
-                    label: "escribir(valor: Texto)".to_string(),
-                    documentation: Some(Documentation::String(
-                        "Imprime un valor en la consola.".to_string(),
-                    )),
-                    parameters: Some(vec![ParameterInformation {
-                        label: ParameterLabel::Simple("valor: Texto".to_string()),
-                        documentation: Some(Documentation::String(
-                            "El valor a imprimir".to_string(),
-                        )),
-                    }]),
-                    active_parameter: Some(0),
-                },
-                SignatureInformation {
-                    label: "leer() -> Texto".to_string(),
-                    documentation: Some(Documentation::String(
-                        "Lee una línea de la entrada estándar.".to_string(),
-                    )),
-                    parameters: Some(vec![]),
-                    active_parameter: Some(0),
-                },
-            ],
-            active_signature: Some(0),
-            active_parameter: Some(0),
-        }))
+        let tokens = tokenizar(&texto).unwrap_or_default();
+        let cursor = encontrar_cursor_en_tokens(&tokens, pos);
+        let analisis = self._get_analisis(&uri).await;
+        let locales = completar_locales(&analisis);
+
+        if let Some(info) = self.signature_resolver.resolver(&tokens, cursor, &locales) {
+            let params: Vec<ParameterInformation> = info.params.iter().map(|p| ParameterInformation {
+                label: ParameterLabel::Simple(p.label.clone()),
+                documentation: if p.documentation.is_empty() { None } else { Some(Documentation::String(p.documentation.clone())) },
+            }).collect();
+            Ok(Some(SignatureHelp {
+                signatures: vec![SignatureInformation {
+                    label: info.label,
+                    documentation: if info.documentation.is_empty() { None } else { Some(Documentation::String(info.documentation)) },
+                    parameters: Some(params),
+                    active_parameter: Some(info.active_param as u32),
+                }],
+                active_signature: Some(0),
+                active_parameter: Some(info.active_param as u32),
+            }))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -1350,10 +1378,13 @@ async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
+    let stdlib = cached_stdlib().clone();
     let (service, socket) = LspService::new(|client| Backend {
         client,
         documentos: Arc::new(Mutex::new(HashMap::new())),
         analisis_cache: Arc::new(Mutex::new(HashMap::new())),
+        completion_resolver: CompletionResolver::new(stdlib.clone()),
+        signature_resolver: SignatureResolver::new(stdlib),
     });
 
     Server::new(stdin, stdout, socket).serve(service).await;
