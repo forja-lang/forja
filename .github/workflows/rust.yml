@@ -38,6 +38,8 @@ jobs:
           done
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - name: Build
         run: cargo build --verbose
       - name: Run tests

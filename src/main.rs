@@ -1917,9 +1917,9 @@ edition = "2021"
         process::exit(1);
     }
 
-    // Si usa GUI, serializar el AST a JSON (include_str! lo carga en build)
+    // Si usa GUI, guardar AST como JSON (para include_str! en build)
     if usa_gui {
-        let ast_json = serde_json::to_string_pretty(&programa.declaraciones).unwrap();
+        let ast_json = format!("{:#?}", programa.declaraciones);
         let json_path = src_dir.join("programa.json");
         if let Err(e) = fs::write(&json_path, &ast_json) {
             eprintln!("Error escribiendo '{}': {}", json_path.display(), e);
