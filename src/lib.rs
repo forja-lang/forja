@@ -29,6 +29,7 @@ pub mod vm_jit;
 pub mod hash;
 pub mod base64;
 pub mod crypto;
+pub mod crypto_pq;
 
 // Módulos que dependen del sistema de archivos o del SO
 // (no compilables a WASM)

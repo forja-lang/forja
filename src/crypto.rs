@@ -963,7 +963,7 @@ pub fn scrypt(password: &[u8], salt: &[u8], n: usize, r: usize, p: usize, dk_len
     pbkdf2_hmac_sha256(password, &result, 1, dk_len)
 }
 
-fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
+pub fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
     if hex.len() % 2 != 0 { return None; }
     let mut bytes = Vec::with_capacity(hex.len() / 2);
     for i in 0..hex.len() / 2 {

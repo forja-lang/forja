@@ -29,6 +29,7 @@ mod vm_fast;
 mod hash;
 mod base64;
 mod crypto;
+mod crypto_pq;
 
 // HTTP/2 nativo — h2c (cleartext), sin dependencias externas
 #[cfg(not(target_arch = "wasm32"))]
