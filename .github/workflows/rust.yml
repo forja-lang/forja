@@ -125,12 +125,14 @@ jobs:
           done
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
-      - name: Build
+      - name: Build (forja principal)
+        run: cargo build --release --bins --features all --verbose
+      - name: Build forja-rt (sin GUI)
+        run: cargo build -p forja-rt --release --verbose
+      - name: Build forja-rt-gui (con GUI, a directorio separado)
         run: |
-          cargo build --release --bins --features all --verbose
-          cargo build -p forja-rt --release --verbose
-          cargo build -p forja-rt --release --features gui --verbose
-          copy target\release\forja-rt.exe target\release\forja-rt-gui.exe 2>nul || cp target/release/forja-rt target/release/forja-rt-gui 2>/dev/null || true
+          cargo build -p forja-rt --release --features gui --target-dir target-gui --verbose
+          copy target-gui\release\forja-rt.exe target\release\forja-rt-gui.exe 2>nul || cp target-gui/release/forja-rt target/release/forja-rt-gui 2>/dev/null || true
       - name: Build Windows Installer (Inno Setup)
         if: matrix.os == 'windows-latest'
         run: |
@@ -143,12 +145,16 @@ jobs:
           copy target\release\forja-lsp.exe staging\
           copy target\release\forja-dap.exe staging\
           copy target\release\forja-rt.exe staging\
+          copy target\release\forja-rt-gui.exe staging\
+          xcopy /E /I stdlib staging\stdlib\
           copy forja-installer-x64.exe staging\
       - name: Stage Artifacts (Linux / macOS)
         if: matrix.os != 'windows-latest'
         run: |
           mkdir staging
-          cp target/release/forja target/release/forja-lsp target/release/forja-dap target/release/forja-rt staging/
+          cp target/release/forja target/release/forja-lsp target/release/forja-dap staging/
+          cp target/release/forja-rt target/release/forja-rt-gui staging/
+          cp -r stdlib staging/stdlib
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -273,29 +279,56 @@ jobs:
         run: |
           mkdir -p binaries
           # Linux
-          cp artifacts/forja-ubuntu-latest/forja binaries/forja-linux
-          cp artifacts/forja-ubuntu-latest/forja-lsp binaries/forja-lsp-linux
-          cp artifacts/forja-ubuntu-latest/forja-dap binaries/forja-dap-linux
-          cp artifacts/forja-ubuntu-latest/forja-rt binaries/forja-rt-linux
+          cp artifacts/forja-ubuntu-latest/forja                  binaries/forja-linux
+          cp artifacts/forja-ubuntu-latest/forja-lsp              binaries/forja-lsp-linux
+          cp artifacts/forja-ubuntu-latest/forja-dap              binaries/forja-dap-linux
+          cp artifacts/forja-ubuntu-latest/forja-rt               binaries/forja-rt-linux
+          cp artifacts/forja-ubuntu-latest/forja-rt-gui           binaries/forja-rt-gui-linux
           # macOS
-          cp artifacts/forja-macOS-latest/forja binaries/forja-macos
-          cp artifacts/forja-macOS-latest/forja-lsp binaries/forja-lsp-macos
-          cp artifacts/forja-macOS-latest/forja-dap binaries/forja-dap-macos
-          cp artifacts/forja-macOS-latest/forja-rt binaries/forja-rt-macos
+          cp artifacts/forja-macOS-latest/forja                   binaries/forja-macos
+          cp artifacts/forja-macOS-latest/forja-lsp               binaries/forja-lsp-macos
+          cp artifacts/forja-macOS-latest/forja-dap               binaries/forja-dap-macos
+          cp artifacts/forja-macOS-latest/forja-rt                binaries/forja-rt-macos
+          cp artifacts/forja-macOS-latest/forja-rt-gui            binaries/forja-rt-gui-macos
           # Windows
-          cp artifacts/forja-windows-latest/forja.exe binaries/forja.exe
-          cp artifacts/forja-windows-latest/forja-lsp.exe binaries/forja-lsp.exe
-          cp artifacts/forja-windows-latest/forja-dap.exe binaries/forja-dap.exe
-          cp artifacts/forja-windows-latest/forja-rt.exe binaries/forja-rt.exe
+          cp artifacts/forja-windows-latest/forja.exe             binaries/forja.exe
+          cp artifacts/forja-windows-latest/forja-lsp.exe         binaries/forja-lsp.exe
+          cp artifacts/forja-windows-latest/forja-dap.exe         binaries/forja-dap.exe
+          cp artifacts/forja-windows-latest/forja-rt.exe          binaries/forja-rt.exe
+          cp artifacts/forja-windows-latest/forja-rt-gui.exe      binaries/forja-rt-gui.exe
           cp artifacts/forja-windows-latest/forja-installer-x64.exe binaries/forja-installer-x64.exe
+          # Stdlib (desde el checkout del repo, misma para todas las plataformas)
+          cp -r stdlib                                            binaries/stdlib
           # WASM
-          cp artifacts/forja-wasm/forja_wasm.js binaries/forja_wasm.js
-          cp artifacts/forja-wasm/forja_wasm_bg.wasm binaries/forja_wasm_bg.wasm
+          cp artifacts/forja-wasm/forja_wasm.js                   binaries/forja_wasm.js
+          cp artifacts/forja-wasm/forja_wasm_bg.wasm              binaries/forja_wasm_bg.wasm
           # WASM GUI
-          cp artifacts/forja-wasm/forja_wasm_gui.js binaries/forja_wasm_gui.js
-          cp artifacts/forja-wasm/forja_wasm_gui_bg.wasm binaries/forja_wasm_gui_bg.wasm
+          cp artifacts/forja-wasm/forja_wasm_gui.js               binaries/forja_wasm_gui.js
+          cp artifacts/forja-wasm/forja_wasm_gui_bg.wasm          binaries/forja_wasm_gui_bg.wasm
           # Android AAR
-          cp artifacts/forja-android-aar/forja-android-rt-*.aar binaries/
+          cp artifacts/forja-android-aar/forja-android-rt-*.aar   binaries/
+      - name: Create compressed archives
+        shell: bash
+        run: |
+          cd binaries
+          # Windows: zip con stdlib incluida
+          cp forja.exe forja-lsp.exe forja-dap.exe forja-rt.exe forja-rt-gui.exe forja-installer-x64.exe forja-windows/
+          cp -r stdlib forja-windows/
+          zip -r ../forja-${{ env.VERSION }}-windows-x64.zip forja-windows/
+          # Linux: tar.gz con stdlib incluida
+          mkdir forja-linux
+          cp forja-linux forja-lsp-linux forja-dap-linux forja-rt-linux forja-rt-gui-linux forja-linux/
+          cp -r stdlib forja-linux/
+          tar czf ../forja-${{ env.VERSION }}-linux-x64.tar.gz forja-linux/
+          # macOS: tar.gz con stdlib incluida
+          mkdir forja-macos
+          cp forja-macos forja-lsp-macos forja-dap-macos forja-rt-macos forja-rt-gui-macos forja-macos/
+          cp -r stdlib forja-macos/
+          tar czf ../forja-${{ env.VERSION }}-macos-x64.tar.gz forja-macos/
+          # Portable stdlib (para actualizaciones manuales)
+          tar czf ../forja-${{ env.VERSION }}-stdlib.tar.gz stdlib/
+          cd ..
+          ls -la forja-*.zip forja-*.tar.gz
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
         with:
@@ -307,4 +340,9 @@ jobs:
           tag_name: v${{ env.VERSION }}
           name: v${{ env.VERSION }}
           generate_release_notes: true
-          files: binaries/*
+          files: |
+            forja-*.zip
+            forja-*.tar.gz
+            binaries/forja*
+            binaries/*.exe
+            binaries/*.aar
