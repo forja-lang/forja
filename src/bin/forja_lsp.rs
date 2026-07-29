@@ -137,7 +137,7 @@ fn keyword_description(keyword: &str) -> Option<String> {
         "este" => "Referencia al **objeto actual** (self/this).\n\nSe usa dentro de métodos de clase para acceder a campos o métodos propios.",
         "nuevo" => "Instancia una **nueva** clase.\n\nEjemplo:\n```fa\nvariable p = nuevo Persona(\"Ana\", 25)\n```",
         "retornar" => "**Retorna** un valor desde una función.\n\nEjemplo:\n```fa\nfuncion suma(a: Entero, b: Entero) -> Entero {\n    retornar a + b\n}\n```",
-        "importar" => "**Importa** un módulo.\n\nEjemplo:\n```fa\nimportar \"std/io\"\nimportar \"std/matematica\"\n```",
+        "importar" => "**Importa** un módulo.\n\nEjemplo:\n```fa\nimportar std/io\nimportar std/matematica\n```",
         "prestado" => "Indica un parámetro **prestado** (por referencia).\n\nSimilar a `&T` en Rust.\n\nEjemplo:\n```fa\nfuncion saludar(nombre: prestado Texto) { ... }\n```",
         "escribir" => "**Imprime** texto en la consola.\n\nEjemplo:\n```fa\nescribir(\"Hola mundo!\")\nescribir(\"El valor es: \" + x)\n```",
         "leer" => "**Lee** una línea de entrada del usuario.\n\nEjemplo:\n```fa\nvariable nombre = leer()\n```",
