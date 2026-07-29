@@ -51,7 +51,7 @@ pub static SNIPPETS: &[Snippet] = &[
         description: "Función principal del programa",
         context_hint: "decl" },
     Snippet { keyword: "importar", label: "importar — importar módulo",
-        insert_text: "importar \"std/${0}\"",
+        insert_text: "importar std/${0}",
         description: "Importa un módulo de la stdlib",
         context_hint: "decl" },
     Snippet { keyword: "coincidir", label: "coincidir — pattern matching",
