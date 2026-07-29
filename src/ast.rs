@@ -317,6 +317,7 @@ pub enum Declaracion {
         tipo_retorno: Option<Tipo>,
         cuerpo: Vec<Declaracion>,
         externa: bool,                  // si es función externa (FFI)
+        asincrona: bool,                // si es función asincrónica (async fn)
         enlace_nombre: Option<String>,  // nombre real en C (ej: "printf")
         atributos: Vec<Atributo>,       // atributos/anotaciones
         doc: Option<String>,            // doc comment (///)
@@ -379,8 +380,10 @@ pub enum Declaracion {
     Romper,
     /// Continuar bucle
     Continuar,
-    /// Importar módulo: importar "ruta"
+    /// Importar módulo: importar ruta (sin comillas) o importar "ruta/absoluta" (con comillas)
     Importar(String),
+    /// Importar librería externa (FFI): importar externa "ruta.dll"
+    ImportarExterna(String),
     /// Definición de enum: tipo Nombre = Variante1 | Variante2(Tipo)
     #[allow(dead_code)]
     Enum {
