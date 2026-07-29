@@ -50,6 +50,8 @@ pub enum TokenKind {
     Nulo,
     /// `retornar` - return
     Retornar,
+    /// `externo` / `externa` - importar librería externa (FFI)
+    Externo,
     /// `importar` - importar módulo
     Importar,
     /// `tipo` - definir tipo algebraico (enum)
@@ -58,8 +60,7 @@ pub enum TokenKind {
     Coincidir,
     /// `caso` - brazo de pattern matching
     Caso,
-    /// `externo` / `externa` - función externa (FFI)
-    Externo,
+
     /// `hilo` - lanzar un hilo ligero
     Hilo,
     /// `canal` - crear un canal de comunicación
@@ -84,6 +85,10 @@ pub enum TokenKind {
     Otro,
     /// `cuando` - bloque observador/reactivo
     Cuando,
+    /// `asincrona` - función asincrónica (async fn)
+    Asincrona,
+    /// `await` - esperar un Future
+    Await,
 
     // === Contratos (Design by Contract) ===
     /// `requiere` - precondición
@@ -224,11 +229,11 @@ impl fmt::Display for TokenKind {
             TokenKind::Falso => write!(f, "falso"),
             TokenKind::Nulo => write!(f, "nulo"),
             TokenKind::Retornar => write!(f, "retornar"),
+            TokenKind::Externo => write!(f, "externo"),
             TokenKind::Importar => write!(f, "importar"),
             TokenKind::Tipo => write!(f, "tipo"),
             TokenKind::Coincidir => write!(f, "coincidir"),
             TokenKind::Caso => write!(f, "caso"),
-            TokenKind::Externo => write!(f, "externo"),
             TokenKind::Hilo => write!(f, "hilo"),
             TokenKind::Canal => write!(f, "canal"),
             TokenKind::Enviar => write!(f, "enviar"),
@@ -241,6 +246,8 @@ impl fmt::Display for TokenKind {
             TokenKind::Tiempo => write!(f, "tiempo"),
             TokenKind::Otro => write!(f, "otro"),
             TokenKind::Cuando => write!(f, "cuando"),
+            TokenKind::Asincrona => write!(f, "asincrona"),
+            TokenKind::Await => write!(f, "await"),
             TokenKind::Requiere => write!(f, "requiere"),
             TokenKind::Asegura => write!(f, "asegura"),
             TokenKind::Siempre => write!(f, "siempre"),
