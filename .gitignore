@@ -27,6 +27,11 @@ fix_code_entities.py
 fix_debug.py
 fix_astro.py
 __pycache__/
+batch_commit.py
+ejemplo_imports.fa
+fix_await.py
+reorganizar_std_pages.py
+
 # ── Archivos de texto / resultados ──
 *.txt
 installer.iss
