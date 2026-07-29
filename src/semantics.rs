@@ -647,6 +647,7 @@ impl BorrowChecker {
                 }
                 self.analizar_expresion(valor);
             }
+            Declaracion::ImportarExterna(_) => {}
         }
     }
 
@@ -2193,7 +2194,7 @@ mod tests {
 
     #[test]
     fn test_columna_escribir_literal() {
-        let source = "importar \"gui\"\nfuncion main() {\n    columna(escribir(\"texto\"))\n}";
+        let source = "importar gui\nfuncion main() {\n    columna(escribir(\"texto\"))\n}";
         let result = analizar_source(source);
         assert!(
             result.is_ok(),
@@ -2204,7 +2205,7 @@ mod tests {
 
     #[test]
     fn test_columna_escribir_variable() {
-        let source = "importar \"gui\"\nfuncion main() {\n    variable resultado = \"\"\n    columna(escribir(resultado))\n}";
+        let source = "importar gui\nfuncion main() {\n    variable resultado = \"\"\n    columna(escribir(resultado))\n}";
         let result = analizar_source(source);
         assert!(
             result.is_ok(),
@@ -2215,7 +2216,7 @@ mod tests {
 
     #[test]
     fn test_columna_boton_referencia_funcion() {
-        let source = "importar \"gui\"\nfuncion validar(u: Texto, p: Texto) -> Texto { retornar \"ok\" }\nfuncion main() {\n    columna(escribir(\"texto\"), boton(\"Ingresar\", &validar))\n}";
+        let source = "importar gui\nfuncion validar(u: Texto, p: Texto) -> Texto { retornar \"ok\" }\nfuncion main() {\n    columna(escribir(\"texto\"), boton(\"Ingresar\", &validar))\n}";
         let result = analizar_source(source);
         assert!(
             result.is_ok(),
@@ -2226,7 +2227,7 @@ mod tests {
 
     #[test]
     fn test_columna_escribir_variable_con_boton() {
-        let source = "importar \"gui\"\nfuncion validar(u: Texto, p: Texto) -> Texto { retornar \"ok\" }\nfuncion main() {\n    variable resultado = \"\"\n    columna(escribir(resultado), boton(\"Ingresar\", &validar))\n}";
+        let source = "importar gui\nfuncion validar(u: Texto, p: Texto) -> Texto { retornar \"ok\" }\nfuncion main() {\n    variable resultado = \"\"\n    columna(escribir(resultado), boton(\"Ingresar\", &validar))\n}";
         let result = analizar_source(source);
         assert!(
             result.is_ok(),
@@ -2238,7 +2239,7 @@ mod tests {
     #[test]
     fn test_llamada_funcion_normal_con_variable() {
         // Test que escribir(variable) funciona fuera de columna
-        let source = "importar \"gui\"\nfuncion main() {\n    variable resultado = \"\"\n    escribir(resultado)\n}";
+        let source = "importar gui\nfuncion main() {\n    variable resultado = \"\"\n    escribir(resultado)\n}";
         let result = analizar_source(source);
         assert!(
             result.is_ok(),
@@ -2249,7 +2250,7 @@ mod tests {
 
     #[test]
     fn test_columna_multiple_escribir_con_variable() {
-        let source = "importar \"gui\"\nfuncion main() {\n    variable resultado = \"\"\n    columna(\n        escribir(\"A\"),\n        escribir(resultado),\n        escribir(\"B\")\n    )\n}";
+        let source = "importar gui\nfuncion main() {\n    variable resultado = \"\"\n    columna(\n        escribir(\"A\"),\n        escribir(resultado),\n        escribir(\"B\")\n    )\n}";
         let result = analizar_source(source);
         assert!(
             result.is_ok(),
