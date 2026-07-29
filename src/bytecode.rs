@@ -779,6 +779,7 @@ impl BytecodeGenerator {
                             tipo_retorno: metodo.tipo_retorno.clone(),
                             cuerpo: metodo.cuerpo.clone(),
                             externa: false,
+                            asincrona: false,
                             enlace_nombre: None,
                             atributos: vec![],
                             doc: None,
@@ -822,6 +823,7 @@ impl BytecodeGenerator {
                             tipo_retorno: metodo.tipo_retorno.clone(),
                             cuerpo: metodo.cuerpo.clone(),
                             externa: false,
+                            asincrona: false,
                             enlace_nombre: None,
                             atributos: vec![],
                             doc: None,
@@ -1422,6 +1424,7 @@ impl BytecodeGenerator {
                     }
                 }
             }
+            Declaracion::ImportarExterna(_) => {}
         }
     }
 
