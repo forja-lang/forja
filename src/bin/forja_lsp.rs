@@ -1,5 +1,5 @@
-// Forja LSP Server — Enhanced v0.4.0
-// Fase 1: Semantic tokens, go-to-def, references, hover with docs,
+// Forja LSP Server — Enhanced
+// Semantic tokens, go-to-def, references, hover with docs,
 //         code actions, rename, folding, completion, signature help
 // tower-lsp 0.20 + lsp-types 0.94.1
 
