@@ -2014,6 +2014,7 @@ impl CompilerAsm {
                 }
                 self.compilar_expresion_asm(valor);
             }
+            Declaracion::ImportarExterna(_) => {}
         }
     }
 
@@ -3301,6 +3302,7 @@ impl CompilerAsm {
             tipo_retorno: metodo.tipo_retorno.clone(),
             cuerpo: metodo.cuerpo.clone(),
             externa: false,
+            asincrona: false,
             enlace_nombre: None,
             atributos: vec![],
             doc: None,
