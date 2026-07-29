@@ -2361,6 +2361,7 @@ impl Transpiler {
                 let expr_str = self.transpilar_expresion(expr);
                 self.emit_line(&format!("{};", expr_str));
             }
+            Declaracion::ImportarExterna(_) => {}
         }
     }
 
@@ -2983,6 +2984,7 @@ impl Transpiler {
                 tipo_retorno,
                 cuerpo,
                 externa,
+                asincrona: _,
                 enlace_nombre,
                 atributos: _,
                 doc,
@@ -3022,7 +3024,7 @@ impl Transpiler {
                     Some(s) => format!("Some(String::from(\"{}\"))", self.esc_ast_string(s)),
                     None => "None".to_string(),
                 };
-                format!("Declaracion::Funcion {{ nombre: String::from(\"{}\"), parametros_tipo: vec![{}], parametros: vec![{}], tipo_retorno: {}, cuerpo: vec![{}], externa: {}, enlace_nombre: {}, atributos: vec![], doc: {}, precondiciones: vec![], postcondiciones: vec![] }}",
+                format!("Declaracion::Funcion {{ nombre: String::from(\"{}\"), parametros_tipo: vec![{}], parametros: vec![{}], tipo_retorno: {}, cuerpo: vec![{}], externa: {}, asincrona: false, enlace_nombre: {}, atributos: vec![], doc: {}, precondiciones: vec![], postcondiciones: vec![] }}",
                     self.esc_ast_string(nombre), params_tipo_str.join(", "), params_str.join(", "), ret_str, cuerpo_str.join(", "), externa, enlace_str, docs_str)
             }
             Declaracion::Expresion(expr) => {
@@ -3625,7 +3627,7 @@ mod tests {
 
     #[test]
     fn test_gui_genera_programa_estatico() {
-        let source = "importar \"gui\"\nfuncion main() {\n    escribir(\"hola\")\n}";
+        let source = "importar gui\nfuncion main() {\n    escribir(\"hola\")\n}";
         let result = transpilar_source(source).unwrap();
         // Ahora genera el programa como datos estaticos en vez de inline Xilem
         assert!(result.contains("static PROGRAMA: Programa"));
@@ -3637,7 +3639,7 @@ mod tests {
 
     #[test]
     fn test_gui_genera_ast_widgets() {
-        let source = "importar \"gui\"\nfuncion main() {\n    variable usuario = \"admin\"\n    variable contrasena = \"secreta\"\n    escribir(usuario)\n    escribir(contrasena)\n}";
+        let source = "importar gui\nfuncion main() {\n    variable usuario = \"admin\"\n    variable contrasena = \"secreta\"\n    escribir(usuario)\n    escribir(contrasena)\n}";
         let result = transpilar_source(source).unwrap();
         // Debe generar el AST con declaraciones de variables y llamadas a funcion
         assert!(result.contains("Declaracion::Variable"));
@@ -3649,7 +3651,7 @@ mod tests {
 
     #[test]
     fn test_gui_boton_con_callback() {
-        let source = "importar \"gui\"\nfuncion al_saludar() { escribir(\"Hola!\") }\nfuncion main() {\n    boton(\"Saludar\", &al_saludar)\n}";
+        let source = "importar gui\nfuncion al_saludar() { escribir(\"Hola!\") }\nfuncion main() {\n    boton(\"Saludar\", &al_saludar)\n}";
         let result = transpilar_source(source).unwrap();
         // Ahora genera el AST en vez de Layout::Button directamente
         assert!(result.contains("LlamadaFuncion"));
@@ -3660,7 +3662,7 @@ mod tests {
 
     #[test]
     fn test_gui_boton_sin_callback() {
-        let source = "importar \"gui\"\nfuncion main() {\n    boton(\"Cerrar\")\n}";
+        let source = "importar gui\nfuncion main() {\n    boton(\"Cerrar\")\n}";
         let result = transpilar_source(source).unwrap();
         assert!(result.contains("Cerrar"));
         assert!(result.contains("LlamadaFuncion"));
@@ -3668,7 +3670,7 @@ mod tests {
 
     #[test]
     fn test_gui_columna_basica() {
-        let source = "importar \"gui\"\nfuncion main() {\n    columna(escribir(\"Arriba\"), boton(\"Click\"))\n}";
+        let source = "importar gui\nfuncion main() {\n    columna(escribir(\"Arriba\"), boton(\"Click\"))\n}";
         let result = transpilar_source(source).unwrap();
         // Ahora genera el AST, no Layout::Column directamente
         assert!(result.contains("columna"));
@@ -3678,7 +3680,7 @@ mod tests {
 
     #[test]
     fn test_gui_entrada_texto() {
-        let source = "importar \"gui\"\nfuncion main() {\n    entrada_texto(\"Nombre\")\n}";
+        let source = "importar gui\nfuncion main() {\n    entrada_texto(\"Nombre\")\n}";
         let result = transpilar_source(source).unwrap();
         assert!(result.contains("entrada_texto"));
         assert!(result.contains("Nombre"));
@@ -3686,7 +3688,7 @@ mod tests {
 
     #[test]
     fn test_gui_multiple_widgets() {
-        let source = "importar \"gui\"\nfuncion main() {\n    escribir(\"Config\")\n    entrada_texto(\"Nombre\")\n    boton(\"Click\")\n}";
+        let source = "importar gui\nfuncion main() {\n    escribir(\"Config\")\n    entrada_texto(\"Nombre\")\n    boton(\"Click\")\n}";
         let result = transpilar_source(source).unwrap();
         // Verificar que aparecen todos los nombres de widgets en el AST
         assert!(result.contains("Config"));
