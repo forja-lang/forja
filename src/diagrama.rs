@@ -455,6 +455,7 @@ impl DiagramGenerator {
                 );
                 (Some(node.clone()), Some(node))
             }
+            Declaracion::ImportarExterna(_) => (None, None),
         }
     }
 
