@@ -104,6 +104,7 @@ impl Optimizer {
                 tipo_retorno,
                 cuerpo,
                 externa,
+                asincrona,
                 enlace_nombre,
                 atributos,
                 doc,
@@ -121,6 +122,7 @@ impl Optimizer {
                     tipo_retorno: tipo_retorno.clone(),
                     cuerpo: cuerpo_opt,
                     externa: *externa,
+                    asincrona: *asincrona,
                     enlace_nombre: enlace_nombre.clone(),
                     atributos: atributos.clone(),
                     doc: doc.clone(),
@@ -841,6 +843,7 @@ impl DeadCodeEliminator {
                 Declaracion::AsignacionMultiple { valor, .. } => {
                     self.recolectar_en_expresion(valor);
                 }
+                Declaracion::ImportarExterna(_) => {}
             }
         }
     }
