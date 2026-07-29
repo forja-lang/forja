@@ -23,7 +23,10 @@ forjanzas/
 
 # ── Scripts ──
 *.ps1
-
+fix_code_entities.py
+fix_debug.py
+fix_astro.py
+__pycache__/
 # ── Archivos de texto / resultados ──
 *.txt
 installer.iss
