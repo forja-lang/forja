@@ -62,9 +62,9 @@ pub const GUI: &str = include_str!("../stdlib/gui/gui.fa");
 /// Mapa descriptor: asocia cada nombre de importación (ej: "std/io", "gui")
 /// con el contenido fuente y un indicador de si es GUI.
 ///
-/// Los nombres son exactamente como se usan en `importar`:
-///   importar "std/io"       → nombre = "std/io"
-///   importar "gui"          → nombre = "gui"
+/// Los nombres son exactamente como se usan en `importar` (sin comillas):
+///   importar std/io         → nombre = "std/io"
+///   importar gui            → nombre = "gui"
 #[derive(Debug, Clone, Copy)]
 pub struct ModuloEmbebido {
     /// Nombre usado en `importar` (ej: "std/io", "gui")
