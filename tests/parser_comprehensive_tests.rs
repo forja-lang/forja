@@ -512,7 +512,7 @@ fn test_parse_try() {
 
 #[test]
 fn test_parse_importar() {
-    let prog = parse("importar \"std/io\"");
+    let prog = parse("importar std/io");
     match &prog.declaraciones[0] {
         Declaracion::Importar(ruta) => {
             assert_eq!(ruta, "std/io");

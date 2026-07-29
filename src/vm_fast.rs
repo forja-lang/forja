@@ -520,7 +520,7 @@ pub struct ForjaFast {
     /// Nombres de parámetros por función (necesario para mapear args en Call)
     func_params: HashMap<SymId, Vec<String>>,
     pub bytecode: Vec<Opcode>,
-    pub output: Vec<String>,
+    pub output: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 
     // ─── Hot Reload: Function Table (indirección) ──────────────────────────
     pub function_table: FunctionTable, // Tabla de indirección
@@ -694,7 +694,7 @@ impl ForjaFast {
             funciones: HashMap::new(),
             func_params: HashMap::new(),
             bytecode: Vec::new(),
-            output: Vec::new(),
+            output: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             max_inst: usize::MAX,
             ejecutadas: 0,
             fast_math: false,
@@ -1064,7 +1064,7 @@ impl ForjaFast {
         self.frame_count = 0;
         self.base_ptr = 0;
         self.top_len = 0;
-        self.output.clear();
+        self.output.lock().unwrap().clear();
         self.ejecutadas = 0;
     }
 
@@ -1293,7 +1293,7 @@ impl ForjaFast {
         self.ip = 0;
         self.stack.clear();
         self.frame_count = 0;
-        self.output.clear();
+        self.output.lock().unwrap().clear();
         self.flat_vars.clear();
         self.base_ptr = 0;
         self.stack_top = [
@@ -3791,7 +3791,7 @@ impl ForjaFast {
                         BuiltinKind::Escribir => {
                             for _ in 0..nargs {
                                 let v = self.pop_valor()?;
-                                self.output.push(self.mostrar_valor(&v));
+                                self.escribir_output(self.mostrar_valor(&v));
                             }
                         }
                         BuiltinKind::Longitud | BuiltinKind::Len => {
@@ -4017,7 +4017,7 @@ impl ForjaFast {
                 }
                 Opcode::Print => {
                     let v = self.pop_valor()?;
-                    self.output.push(self.mostrar_valor(&v));
+                    self.escribir_output(self.mostrar_valor(&v));
                     self.ip += 1;
                 }
                 Opcode::ReadLine => {
@@ -4291,19 +4291,25 @@ impl ForjaFast {
                         if clase_sym == self.sym_canal_emisor {
                             let chan_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            let method_str = self.sym_table.get(method_sym);
+                            eprintln!("[DBG] enviar#1: clase_sym={:?}, method_sym={:?}, chan_idx={}", self.sym_table.get(clase_sym), method_str, chan_idx);
                             if method_sym == self.sym_enviar
                                 || method_sym.0 == self.sym_table.intern("send").0
                             {
                                 if !args.is_empty() {
                                     let val = args[0];
+                                    let val_str = self.mostrar_valor(&val);
+                                    eprintln!("[DBG] enviar#1: enviando val={}", val_str);
                                     match self.chan_tx_heap[chan_idx].send(val) {
                                         Ok(_) => self.push_valor(ValorFast::booleano(true)),
                                         Err(_) => self.push_valor(ValorFast::booleano(false)),
                                     }
                                 } else {
+                                    eprintln!("[DBG] enviar#1: sin argumentos");
                                     self.push_valor(ValorFast::nulo());
                                 }
                             } else {
+                                eprintln!("[DBG] enviar#1: metodo no coincide");
                                 self.push_valor(ValorFast::nulo());
                             }
                             self.ip += 1;
@@ -4312,16 +4318,27 @@ impl ForjaFast {
                         if clase_sym == self.sym_canal_receptor {
                             let chan_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            let method_str = self.sym_table.get(method_sym);
+                            eprintln!("[DBG] recibir#1: clase_sym={:?}, method_sym={:?}, chan_idx={}", self.sym_table.get(clase_sym), method_str, chan_idx);
                             if method_sym == self.sym_recibir
                                 || method_sym.0 == self.sym_table.intern("recibir").0
                                 || method_sym.0 == self.sym_table.intern("receive").0
                                 || method_sym.0 == self.sym_table.intern("recv").0
                             {
-                                match self.chan_rx_heap[chan_idx].recv() {
-                                    Ok(val) => self.push_valor(val),
-                                    Err(_) => self.push_valor(ValorFast::nulo()),
+                                let res = self.chan_rx_heap[chan_idx].recv();
+                                match &res {
+                                    Ok(val) => {
+                                        let val_str = self.mostrar_valor(val);
+                                        eprintln!("[DBG] recibir#1: recv() OK => {}", val_str);
+                                        self.push_valor(val.clone())
+                                    },
+                                    Err(e) => {
+                                        eprintln!("[DBG] recibir#1: recv() ERROR => {:?}", e);
+                                        self.push_valor(ValorFast::nulo())
+                                    },
                                 }
                             } else {
+                                eprintln!("[DBG] recibir#1: metodo no coincide");
                                 self.push_valor(ValorFast::nulo());
                             }
                             self.ip += 1;
@@ -4564,19 +4581,25 @@ impl ForjaFast {
                         if clase_sym == self.sym_canal_emisor {
                             let chan_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            let method_str = self.sym_table.get(method_sym);
+                            eprintln!("[DBG] enviar#2: clase_sym={:?}, method_sym={:?}, chan_idx={}", self.sym_table.get(clase_sym), method_str, chan_idx);
                             if method_sym == self.sym_enviar
                                 || method_sym.0 == self.sym_table.intern("send").0
                             {
                                 if !args.is_empty() {
                                     let val = args[0];
+                                    let val_str = self.mostrar_valor(&val);
+                                    eprintln!("[DBG] enviar#2: enviando val={}", val_str);
                                     match self.chan_tx_heap[chan_idx].send(val) {
                                         Ok(_) => self.push_valor(ValorFast::booleano(true)),
                                         Err(_) => self.push_valor(ValorFast::booleano(false)),
                                     }
                                 } else {
+                                    eprintln!("[DBG] enviar#2: sin argumentos");
                                     self.push_valor(ValorFast::nulo());
                                 }
                             } else {
+                                eprintln!("[DBG] enviar#2: metodo no coincide");
                                 self.push_valor(ValorFast::nulo());
                             }
                             self.ip += 1;
@@ -4585,16 +4608,26 @@ impl ForjaFast {
                         if clase_sym == self.sym_canal_receptor {
                             let chan_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            let method_str = self.sym_table.get(method_sym);
+                            eprintln!("[DBG] recibir#2: clase_sym={:?}, method_sym={:?}, chan_idx={}", self.sym_table.get(clase_sym), method_str, chan_idx);
                             if method_sym == self.sym_recibir
                                 || method_sym.0 == self.sym_table.intern("recibir").0
                                 || method_sym.0 == self.sym_table.intern("receive").0
                                 || method_sym.0 == self.sym_table.intern("recv").0
                             {
                                 match self.chan_rx_heap[chan_idx].recv() {
-                                    Ok(val) => self.push_valor(val),
-                                    Err(_) => self.push_valor(ValorFast::nulo()),
+                                    Ok(val) => {
+                                        let val_str = self.mostrar_valor(&val);
+                                        eprintln!("[DBG] recibir#2: recv() OK => {}", val_str);
+                                        self.push_valor(val)
+                                    },
+                                    Err(e) => {
+                                        eprintln!("[DBG] recibir#2: recv() ERROR => {:?}", e);
+                                        self.push_valor(ValorFast::nulo())
+                                    },
                                 }
                             } else {
+                                eprintln!("[DBG] recibir#2: metodo no coincide");
                                 self.push_valor(ValorFast::nulo());
                             }
                             self.ip += 1;
@@ -5633,6 +5666,7 @@ impl ForjaFast {
                     let (tx, rx) = std::sync::mpsc::channel::<ValorFast>();
                     let tx_idx = self.alloc_chan_tx(tx);
                     let rx_idx = self.alloc_chan_rx(rx);
+                    eprintln!("[DBG] ChannelNew: tx_idx={}, rx_idx={}", tx_idx, rx_idx);
                     // Crear objeto CanalEmisor
                     let mut obj_tx = ObjVal::new(self.sym_canal_emisor);
                     obj_tx.campos_vec.push(ValorFast::entero(tx_idx as i64));
@@ -5649,12 +5683,17 @@ impl ForjaFast {
 
                 // ─── HILOS REALES con std::thread::spawn ─────────────────────────
                 Opcode::ThreadSpawn(func_name, captured_count) => {
+                    eprintln!("[DBG] ThreadSpawn: func_name={}, captured_count={}", func_name, captured_count);
                     // Pop valores capturados (argumentos para la función del hilo)
                     let mut captured: Vec<ValorFast> = Vec::with_capacity(captured_count);
                     for _ in 0..captured_count {
                         captured.push(self.pop_valor()?);
                     }
                     captured.reverse();
+                    for (i_cap, v_cap) in captured.iter().enumerate() {
+                        let s_cap = self.mostrar_valor(v_cap);
+                        eprintln!("[DBG] ThreadSpawn: captured[{}]={}", i_cap, s_cap);
+                    }
                     // Buscar función en la tabla
                     let fn_sym = self.sym_table.intern(func_name.as_ref());
                     if let Some(entry) = self.lookup_func_entry(fn_sym) {
@@ -5664,8 +5703,11 @@ impl ForjaFast {
                         let thread_sym_table = self.sym_table.clone();
                         let thread_funcs = self.funciones.clone();
                         let thread_func_params = self.func_params.clone();
+                        let thread_obj_heap = self.obj_heap.clone();
+                        let thread_chan_tx_heap = self.chan_tx_heap.clone();
+                        let thread_output = self.output.clone();
                         let thread_ip = entry.ip;
-                        let thread_vars_size = entry.vars_size.max(1 + nargs);
+                        let thread_vars_size = entry.vars_size.max(nargs);
                         // Canal para recibir el resultado del hilo
                         let (tx_result, rx_result) = std::sync::mpsc::channel::<ValorFast>();
                         // Spawn thread
@@ -5680,12 +5722,33 @@ impl ForjaFast {
                                 hilo_vm
                                     .flat_vars
                                     .resize(thread_vars_size, ValorFast::nulo());
-                                hilo_vm.flat_vars[0] = ValorFast::nulo();
                                 for (i, arg) in captured.into_iter().enumerate() {
-                                    hilo_vm.flat_vars[1 + i] = arg;
+                                    hilo_vm.flat_vars[i] = arg;
                                 }
                                 hilo_vm.base_ptr = 0;
-                                // Configurar frame inicial para que Return funcione correctamente
+                                // Inicializar vectores de especialización e inline caches
+                                hilo_vm.contador_especializacion = vec![0u8; hilo_vm.bytecode.len()];
+                                hilo_vm.ic_getfield = vec![None; hilo_vm.bytecode.len()];
+                                hilo_vm.ic_setfield = vec![None; hilo_vm.bytecode.len()];
+                                hilo_vm.ic_miss_count = vec![0u8; hilo_vm.bytecode.len()];
+                                hilo_vm.ic_callmethod = vec![None; hilo_vm.bytecode.len()];
+                                // Poblar function_table desde funciones clonadas
+                                for (&sym, func) in &hilo_vm.funciones {
+                                    let idx = hilo_vm.function_table.entries.len();
+                                    hilo_vm.function_table.entries.push(FuncVersion {
+                                        ip: func.ip,
+                                        vars_size: func.vars_size,
+                                        version: func.version,
+                                        module_id: None,
+                                    });
+                                    hilo_vm.sym_to_func_idx.insert(sym, idx);
+                                }
+                                    // Clonar heaps de objetos y canales (tx) para el hilo
+                                    hilo_vm.obj_heap = thread_obj_heap;
+                                    hilo_vm.chan_tx_heap = thread_chan_tx_heap;
+                                    // Compartir output con el hilo padre (mismo Arc<Mutex<...>>)
+                                    hilo_vm.output = thread_output;
+                                    // Configurar frame inicial para que Return funcione correctamente
                                 hilo_vm.frame_buffer[0] = FrmFast {
                                     ip_ret: hilo_vm.bytecode.len(), // después del último opcode
                                     base_ptr_previo: 0,
@@ -6373,7 +6436,7 @@ impl ForjaFast {
                 // === I/O ===
                 Uop::Print => {
                     let v = self.pop_valor()?;
-                    self.output.push(self.mostrar_valor(&v));
+                    self.escribir_output(self.mostrar_valor(&v));
                     self.ip += 1;
                 }
                 Uop::ReadLine => {
@@ -6551,19 +6614,25 @@ impl ForjaFast {
                         if clase_sym == self.sym_canal_emisor {
                             let chan_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            let method_str = self.sym_table.get(method_sym);
+                            eprintln!("[DBG] enviar#3: clase_sym={:?}, method_sym={:?}, chan_idx={}", self.sym_table.get(clase_sym), method_str, chan_idx);
                             if method_sym == self.sym_enviar
                                 || method_sym.0 == self.sym_table.intern("send").0
                             {
                                 if !args.is_empty() {
                                     let val = args[0];
+                                    let val_str = self.mostrar_valor(&val);
+                                    eprintln!("[DBG] enviar#3: enviando val={}", val_str);
                                     match self.chan_tx_heap[chan_idx].send(val) {
                                         Ok(_) => self.push_valor(ValorFast::booleano(true)),
                                         Err(_) => self.push_valor(ValorFast::booleano(false)),
                                     }
                                 } else {
+                                    eprintln!("[DBG] enviar#3: sin argumentos");
                                     self.push_valor(ValorFast::nulo());
                                 }
                             } else {
+                                eprintln!("[DBG] enviar#3: metodo no coincide");
                                 self.push_valor(ValorFast::nulo());
                             }
                             self.ip += 1;
@@ -6572,16 +6641,26 @@ impl ForjaFast {
                         if clase_sym == self.sym_canal_receptor {
                             let chan_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
+                            let method_str = self.sym_table.get(method_sym);
+                            eprintln!("[DBG] recibir#3: clase_sym={:?}, method_sym={:?}, chan_idx={}", self.sym_table.get(clase_sym), method_str, chan_idx);
                             if method_sym == self.sym_recibir
                                 || method_sym.0 == self.sym_table.intern("recibir").0
                                 || method_sym.0 == self.sym_table.intern("receive").0
                                 || method_sym.0 == self.sym_table.intern("recv").0
                             {
                                 match self.chan_rx_heap[chan_idx].recv() {
-                                    Ok(val) => self.push_valor(val),
-                                    Err(_) => self.push_valor(ValorFast::nulo()),
+                                    Ok(val) => {
+                                        let val_str = self.mostrar_valor(&val);
+                                        eprintln!("[DBG] recibir#3: recv() OK => {}", val_str);
+                                        self.push_valor(val)
+                                    },
+                                    Err(e) => {
+                                        eprintln!("[DBG] recibir#3: recv() ERROR => {:?}", e);
+                                        self.push_valor(ValorFast::nulo())
+                                    },
                                 }
                             } else {
+                                eprintln!("[DBG] recibir#3: metodo no coincide");
                                 self.push_valor(ValorFast::nulo());
                             }
                             self.ip += 1;
@@ -7298,8 +7377,13 @@ impl ForjaFast {
         Ok(())
     }
 
-    pub fn obtener_output(&self) -> &[String] {
-        &self.output
+    pub fn obtener_output(&self) -> Vec<String> {
+        self.output.lock().unwrap().clone()
+    }
+
+    /// Escribe un valor al output (a través del Arc<Mutex<...>> compartido entre hilos)
+    fn escribir_output(&mut self, s: String) {
+        self.output.lock().unwrap().push(s);
     }
 }
 
@@ -7325,6 +7409,7 @@ enum BuiltinFast {
     ParseFlotante,
     Repetir,
     Join,
+    Esperar,
 }
 fn resolver_builtin_fast(m: &str) -> Option<BuiltinFast> {
     match m {
@@ -7349,6 +7434,7 @@ fn resolver_builtin_fast(m: &str) -> Option<BuiltinFast> {
         "parse_flotante" | "a_flotante" => Some(BuiltinFast::ParseFlotante),
         "repetir" | "repeat" => Some(BuiltinFast::Repetir),
         "join" | "unir_elementos" => Some(BuiltinFast::Join),
+        "esperar" | "sleep" => Some(BuiltinFast::Esperar),
         _ => None,
     }
 }
@@ -7644,6 +7730,16 @@ impl ForjaFast {
                 } else {
                     self.push_valor(ValorFast::nulo());
                 }
+            }
+
+            BuiltinFast::Esperar => {
+                let ms_val = self.pop_valor()?;
+                if ms_val.es_entero() {
+                    let ms = ms_val.a_entero();
+                    let dur = std::time::Duration::from_millis(ms.max(0) as u64);
+                    std::thread::sleep(dur);
+                }
+                self.push_valor(ValorFast::nulo());
             }
         }
         Ok(())

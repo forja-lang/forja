@@ -344,7 +344,7 @@ impl Debugger {
             Opcode::Print => {
                 let val = self.vm.pop_valor()?;
                 let s = self.vm.mostrar_valor(&val);
-                self.vm.output.push(s);
+                self.vm.output.lock().unwrap().push(s);
                 self.vm.ip += 1;
             }
             Opcode::Igual => {

@@ -1,7 +1,6 @@
-use forja::bytecode::{self, Opcode};
+use forja::bytecode::Opcode;
 use forja::uops::{expandir_a_uops, optimizar_uops, remapear_saltos_uops, Uop};
 use std::sync::Arc;
-use std::collections::HashMap;
 
 fn expandir(opcodes: Vec<Opcode>) -> Vec<Uop> {
     expandir_a_uops(&opcodes)

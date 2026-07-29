@@ -63,7 +63,7 @@ pub fn cargar_libreria(ruta: &str) -> Result<i64, String> {
                 .collect();
             let h = LoadLibraryW(wide.as_ptr());
             if h.is_null() {
-                let err = unsafe { GetLastError() };
+                let err = GetLastError();
                 return Err(format!("LoadLibraryW falló: código {}", err));
             }
             h as *mut c_void

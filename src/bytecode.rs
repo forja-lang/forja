@@ -375,6 +375,10 @@ pub struct BytecodeGenerator {
     profundidad_actual: u32,
     /// Pila de (label_inicio, label_fin) de bucles activos para romper/continuar
     loop_stack: Vec<(usize, usize)>,
+
+    /// Nombres de funciones declaradas como `asincrona`.
+    /// Cuando se llama a una función en este set, se emite ThreadSpawn en vez de Call.
+    funciones_asincronas: std::collections::HashSet<String>,
 }
 
 impl BytecodeGenerator {
@@ -394,6 +398,7 @@ impl BytecodeGenerator {
             profundidad_actual: 0,
             loop_stack: Vec::new(),
             funciones_overload: None,
+            funciones_asincronas: std::collections::HashSet::new(),
         }
     }
 
@@ -737,6 +742,15 @@ impl BytecodeGenerator {
         // Vec de referencias al AST original + Vec de funciones nuevas
         let mut globales: Vec<&Declaracion> = Vec::new();
         let mut nuevas_funciones: Vec<Declaracion> = Vec::new();
+
+        // Primera pasada: recolectar nombres de funciones asincronas
+        for decl in &programa.declaraciones {
+            if let Declaracion::Funcion { nombre, asincrona, .. } = decl {
+                if *asincrona {
+                    self.funciones_asincronas.insert(nombre.clone());
+                }
+            }
+        }
 
         for decl in &programa.declaraciones {
             match decl {
@@ -1569,16 +1583,25 @@ impl BytecodeGenerator {
                     }
                     self.emitir(Opcode::CallMethod(method_name, argumentos.len()));
                 } else {
-                    for arg in argumentos {
-                        self.generar_expresion(arg);
+                    // Verificar si la función es asincrona → usar ThreadSpawn en vez de Call
+                    if self.funciones_asincronas.contains(nombre.as_str()) {
+                        for arg in argumentos {
+                            self.generar_expresion(arg);
+                        }
+                        let nargs = argumentos.len();
+                        self.emitir(Opcode::ThreadSpawn(Arc::from(nombre.as_str()), nargs));
+                    } else {
+                        for arg in argumentos {
+                            self.generar_expresion(arg);
+                        }
+                        // Resolver nombre mangled para sobrecarga por tipo
+                        let tipos_args: Vec<Option<Tipo>> = argumentos
+                            .iter()
+                            .map(|arg| self.inferir_tipo_expresion(arg))
+                            .collect();
+                        let nombre_real = self.resolver_nombre_mangled(nombre, &tipos_args);
+                        self.emitir(Opcode::Call(Arc::from(nombre_real.as_str()), argumentos.len()));
                     }
-                    // Resolver nombre mangled para sobrecarga por tipo
-                    let tipos_args: Vec<Option<Tipo>> = argumentos
-                        .iter()
-                        .map(|arg| self.inferir_tipo_expresion(arg))
-                        .collect();
-                    let nombre_real = self.resolver_nombre_mangled(nombre, &tipos_args);
-                    self.emitir(Opcode::Call(Arc::from(nombre_real.as_str()), argumentos.len()));
                 }
             }
 
