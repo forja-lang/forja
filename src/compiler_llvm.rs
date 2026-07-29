@@ -681,6 +681,7 @@ impl LlvmBackend {
             Declaracion::AsignacionMultiple { valor, .. } => {
                 self.expr(valor)?;
             }
+            Declaracion::ImportarExterna(_) => {}
         }
         Ok(())
     }
