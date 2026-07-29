@@ -330,6 +330,7 @@ impl Formatter {
                 tipo_retorno,
                 cuerpo,
                 externa,
+                asincrona: _,
                 enlace_nombre: _,
                 atributos,
                 doc,
@@ -346,10 +347,10 @@ impl Formatter {
                     self.push(&format!("{}{}\n", self.indent_str(), attr_str));
                 }
                 self.push(&self.indent_str());
-                if *externa {
-                    self.push("externo ");
-                }
                 self.push("funcion ");
+                if *externa {
+                    self.push("externa ");
+                }
                 self.push(nombre);
                 let gen_str = self.formatear_parametros_tipo(parametros_tipo);
                 self.push(&gen_str);
@@ -552,6 +553,7 @@ impl Formatter {
                 self.formatear_expresion(expr);
                 self.push("\n");
             }
+            Declaracion::ImportarExterna(_) => {}
         }
     }
 
