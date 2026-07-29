@@ -1169,22 +1169,54 @@ impl Parser {
         Ok(Some(Declaracion::Retornar { valor }))
     }
 
-    /// importar "ruta"
+    /// importar "ruta"  o  importar ruta/de/modulo
     fn parse_importar(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
         self.avanzar(); // consume 'importar'
+
         let ruta = match &self.peek().kind {
-            TokenKind::Texto(s) => s.clone(),
+            // importar "ruta/de/modulo"
+            TokenKind::Texto(s) => {
+                let ruta = s.clone();
+                self.avanzar();
+                ruta
+            }
+            // importar ruta/de/modulo  (sin comillas)
+            TokenKind::Identificador(_) => {
+                let mut partes: Vec<String> = Vec::new();
+                loop {
+                    match &self.peek().kind {
+                        TokenKind::Identificador(id) => {
+                            partes.push(id.clone());
+                            self.avanzar();
+                        }
+                        TokenKind::Dividido => {
+                            self.avanzar(); // consume /
+                            continue;
+                        }
+                        _ => break,
+                    }
+                }
+                if partes.is_empty() {
+                    return Err(ErrorForja::new(
+                        ErrorTipo::ErrorSintactico,
+                        self.linea_actual(),
+                        self.columna_actual(),
+                        "Se esperaba un nombre de módulo después de 'importar'.",
+                        "Ejemplo: importar std/io  o  importar \"std/io\"",
+                    ));
+                }
+                partes.join("/")
+            }
             _ => {
                 return Err(ErrorForja::new(
                     ErrorTipo::ErrorSintactico,
                     self.linea_actual(),
                     self.columna_actual(),
                     "Se esperaba una ruta después de 'importar'.",
-                    "Ejemplo: importar \"math\"",
+                    "Ejemplos: importar std/io  o  importar \"std/io\"",
                 ))
             }
         };
-        self.avanzar();
         Ok(Some(Declaracion::Importar(ruta)))
     }
 
