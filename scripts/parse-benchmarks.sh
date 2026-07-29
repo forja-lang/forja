@@ -21,36 +21,47 @@ RESULTS='[]'
 
 # Función para ejecutar un benchmark y parsear su output
 run_benchmark() {
-    local BENCH_NAME="$1"
-    local BENCH_BIN="$2"
+    local BENCH_BIN="$1"
     
-    echo "▶️  Ejecutando: $BENCH_NAME ($BENCH_BIN)..."
-    
-    # Ejecutar benchmark y capturar output
     local OUTPUT
     OUTPUT=$(cargo run --release --bin "$BENCH_BIN" 2>&1 || true)
     
-    # Parsear líneas con formato: nombre  valor  unidad  ratio
-    # Ejemplo: "  ForjaFast (hot)    1234.56 μs   4.80x ⚡"
     local BENCH_RESULTS='[]'
     
     while IFS= read -r line; do
-        # Ignorar líneas vacías o de encabezado
         [[ -z "$line" ]] && continue
         [[ "$line" =~ ^#{1,} ]] && continue
         [[ "$line" =~ ^[[:space:]]*$ ]] && continue
         
-        # Patrón: 2+ espacios separan nombre, valor, unidad, ratio
-        if [[ "$line" =~ ^[[:space:]]{2}(.+)[[:space:]]{2,}([0-9]+\.[0-9]+)[[:space:]]*(μs|us)[[:space:]]+([0-9]+\.[0-9]*)x ]]; then
-            local NAME="${BASH_REMATCH[1]}"
-            local VALUE="${BASH_REMATCH[2]}"
-            local UNIT="${BASH_REMATCH[3]}"
-            local RATIO="${BASH_REMATCH[4]}"
-            
-            # Limpiar nombre (quitar espacios extras)
+        local NAME="" VALUE="" UNIT="" RATIO=""
+        
+        # Pattern 1: bench-forjafast (cold, hot, ratio_vm, ratio_rust)
+        # name is left-aligned in 22-char field: "  ForjaFast                1234.56   ..."
+        if [[ "$line" =~ ^[[:space:]]{2}(.{22})[[:space:]]{2,}([0-9]+\.[0-9]+)[[:space:]]{2,}([0-9]+\.[0-9]+)[[:space:]]{2,}([0-9]+\.[0-9]+)x ]]; then
+            NAME="${BASH_REMATCH[1]}"
+            VALUE="${BASH_REMATCH[3]}"
+            UNIT="μs"
+            RATIO="${BASH_REMATCH[4]}"
+        
+        # Pattern 2: bench-jit (name, value, ratio)
+        # "  ForjaFast (vm_fast)        123.45 us        4x ⚡⚡"
+        elif [[ "$line" =~ ^[[:space:]]{2}(.+)[[:space:]]{2,}([0-9]+\.[0-9]+)[[:space:]]+(us|μs)[[:space:]]+([0-9]+(\.[0-9]+)?)x ]]; then
+            NAME="${BASH_REMATCH[1]}"
+            VALUE="${BASH_REMATCH[2]}"
+            UNIT="${BASH_REMATCH[3]}"
+            RATIO="${BASH_REMATCH[4]}"
+        
+        # Pattern 3: bench-vms (name, value, ratio in parens)
+        # "  VM Original                      123.45 μs/iter  (4.80x) ⭐"
+        elif [[ "$line" =~ ^[[:space:]]{2}(.+)[[:space:]]{2,}([0-9]+\.[0-9]+)[[:space:]]+(us|μs)/iter[[:space:]]+\(([0-9]+(\.[0-9]+)?)x\) ]]; then
+            NAME="${BASH_REMATCH[1]}"
+            VALUE="${BASH_REMATCH[2]}"
+            UNIT="${BASH_REMATCH[3]}"
+            RATIO="${BASH_REMATCH[4]}"
+        fi
+        
+        if [[ -n "$NAME" ]]; then
             NAME=$(echo "$NAME" | xargs)
-            
-            # Agregar a resultados
             BENCH_RESULTS=$(echo "$BENCH_RESULTS" | jq --arg name "$NAME" \
                 --arg value "$VALUE" \
                 --arg unit "$UNIT" \
@@ -62,15 +73,15 @@ run_benchmark() {
     echo "$BENCH_RESULTS"
 }
 
-# Ejecutar benchmarks (usar bench_forjafast como principal)
-echo "  → Ejecutando bench_forjafast (principal)..."
-FORJAFAST_RESULTS=$(run_benchmark "ForjaFast" "bench_forjafast")
+# Ejecutar benchmarks
+echo "  → Ejecutando bench-forjafast (principal)..."
+FORJAFAST_RESULTS=$(run_benchmark "bench-forjafast")
 
-echo "  → Ejecutando bench_jit..."
-JIT_RESULTS=$(run_benchmark "JIT" "bench_jit")
+echo "  → Ejecutando bench-jit..."
+JIT_RESULTS=$(run_benchmark "bench-jit")
 
-echo "  → Ejecutando bench_vms..."
-VMS_RESULTS=$(run_benchmark "VMs" "bench_vms")
+echo "  → Ejecutando bench-vms..."
+VMS_RESULTS=$(run_benchmark "bench-vms")
 
 echo ""
 echo "✅ Benchmarks completados"
