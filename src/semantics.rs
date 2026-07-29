@@ -1493,7 +1493,7 @@ impl TypeChecker {
                 let overloads_clone = self.funciones.get(nombre).cloned();
                 if overloads_clone.is_none() {
                     // Función no registrada — error, excepto builtins conocidos
-                    if nombre != "escribir" && nombre != "escribir_linea" && nombre != "leer" && nombre != "BD" {
+                    if nombre != "escribir" && nombre != "escribir_linea" && nombre != "leer" && nombre != "BD" && nombre != "longitud" && nombre != "len" {
                         self.errores.push(ErrorForja::new(
                             ErrorTipo::ErrorDeTipo,
                             self.linea_actual,
@@ -1638,7 +1638,7 @@ impl TypeChecker {
                 let overloads_clone = self.funciones.get(nombre).cloned();
                 if overloads_clone.is_none() {
                     // Función no registrada — error, excepto builtins conocidos
-                    if nombre != "escribir" && nombre != "escribir_linea" && nombre != "leer" && nombre != "BD" {
+                    if nombre != "escribir" && nombre != "escribir_linea" && nombre != "leer" && nombre != "BD" && nombre != "longitud" && nombre != "len" {
                         self.errores.push(ErrorForja::new(
                             ErrorTipo::ErrorDeTipo,
                             self.linea_actual,
