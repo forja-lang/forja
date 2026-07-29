@@ -380,7 +380,7 @@ fn test_bc_operaciones_mixtas() {
 
 #[test]
 fn test_bc_importar() {
-    assert!(check("importar \"std/io\"").is_ok());
+    assert!(check("importar std/io").is_ok());
 }
 
 // ============================================================
