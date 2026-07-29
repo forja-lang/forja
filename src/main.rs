@@ -54,6 +54,13 @@ mod native_h2_tls {
     pub struct SocketState;
 }
 
+// FFI — carga de librerías dinámicas (no WASM)
+#[cfg(not(target_arch = "wasm32"))]
+mod ffi;
+#[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
+mod ffi {}
+
 use ast::Declaracion;
 use error::{color, NivelVerbose, mostrar_errores};
 use package_config::ForjaConfig;
@@ -234,6 +241,8 @@ fn cmd_highlight(args: &[String]) {
         "tiempo",
         "otro",
         "cuando",
+        "asincrona",
+        "await",
         "requiere",
         "asegura",
         "siempre",
@@ -412,6 +421,8 @@ fn cmd_keywords() {
         ("arreglo", "Colección: [1, 2, 3]"),
         ("mapa", "Diccionario: {{\"k\": \"v\"}}"),
         ("cuando", "Bloque observador/reactivo (reactividad)"),
+        ("asincrona", "Función asincrónica (async fn)"),
+        ("await", "Esperar un Future (async/await)"),
     ];
     for (kw, desc) in &kws {
         println!("  {:<14} {}", kw, desc);
@@ -1669,10 +1680,10 @@ fn cmd_build(args: &[String]) {
             .to_string()
     });
 
-    // Detectar si usa GUI (importar "gui")
+    // Detectar si usa GUI (importar gui)
     let usa_gui = std::fs::read_to_string(&input)
         .ok()
-        .map(|s| s.contains("importar \"gui\""))
+        .map(|s| s.contains("importar gui"))
         .unwrap_or(false);
 
     if usa_gui {
@@ -1830,9 +1841,6 @@ fn cmd_transpile(args: &[String]) {
 
     // FASE 5: Transpilador
     let mut transpiler = transpiler::Transpiler::new();
-    if source.contains("importar \"gui\"") {
-        transpiler.forzar_gui = true;
-    }
     let rust_code = match transpiler.transpilar(&programa) {
         Ok(code) => code,
         Err(errors) => {
