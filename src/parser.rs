@@ -116,10 +116,6 @@ impl Parser {
                     self.parse_funcion()
                 }
             }
-            TokenKind::Externo => {
-                self.avanzar(); // consumir 'externo'
-                self.parse_funcion_externa()
-            }
             TokenKind::Clase => self.parse_clase(),
             TokenKind::Si => self.parse_si(),
             TokenKind::Mientras => self.parse_mientras(),
@@ -135,7 +131,19 @@ impl Parser {
                 self.avanzar();
                 Ok(Some(Declaracion::Continuar))
             }
-            TokenKind::Importar => self.parse_importar(),
+            TokenKind::Importar => {
+                // Detectar si es "importar externa" o "importar" normal
+                if self.pos + 1 < self.tokens.len() {
+                    let next = &self.tokens[self.pos + 1];
+                    if next.kind == TokenKind::Externo {
+                        self.parse_importar_externa()
+                    } else {
+                        self.parse_importar()
+                    }
+                } else {
+                    self.parse_importar()
+                }
+            }
             TokenKind::Hilo => self.parse_hilo(),
             TokenKind::Canal => self.parse_canal(),
             TokenKind::Seleccionar => self.parse_seleccionar(),
@@ -325,9 +333,23 @@ impl Parser {
         }))
     }
 
-    /// funcion <nombre>(<parametros>) [-> <tipo>] { <cuerpo> }
+    /// funcion [asincrona] <nombre>(<parametros>) [-> <tipo>] { <cuerpo> }
     fn parse_funcion(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
         self.avanzar(); // consume 'funcion'
+
+        // Verificar si es asincrónica: funcion asincrona nombre(...)
+        let mut asincrona = false;
+        if self.coincide(TokenKind::Asincrona) {
+            asincrona = true;
+            self.avanzar(); // consume 'asincrona'
+        }
+
+        // Verificar si es externa (FFI): funcion externa nombre(...) ;
+        let mut externa = false;
+        if self.coincide(TokenKind::Externo) {
+            externa = true;
+            self.avanzar(); // consume 'externo' o 'externa'
+        }
 
         let nombre = self.esperar_identificador("Se esperaba el nombre de la función.")?;
 
@@ -365,28 +387,52 @@ impl Parser {
             None
         };
 
-        // Parsear contratos Design by Contract
-        let (precondiciones, postcondiciones) = self.parse_contratos()?;
+        if externa {
+            // Función externa termina con ; NO con {}
+            self.esperar(
+                TokenKind::PuntoComa,
+                "Se esperaba ';' al final de la declaración externa.",
+            )?;
+            let enlace_nombre = Some(nombre.clone());
+            Ok(Some(Declaracion::Funcion {
+                nombre,
+                parametros_tipo: vec![],
+                parametros,
+                tipo_retorno,
+                cuerpo: vec![],
+                externa: true,
+                asincrona: false,
+                enlace_nombre,
+                atributos: vec![],
+                doc: None,
+                precondiciones: vec![],
+                postcondiciones: vec![],
+            }))
+        } else {
+            // Parsear contratos Design by Contract
+            let (precondiciones, postcondiciones) = self.parse_contratos()?;
 
-        self.esperar(
-            TokenKind::LlaveAbrir,
-            "Se esperaba '{' para el cuerpo de la función.",
-        )?;
-        let cuerpo = self.parse_bloque()?;
+            self.esperar(
+                TokenKind::LlaveAbrir,
+                "Se esperaba '{' para el cuerpo de la función.",
+            )?;
+            let cuerpo = self.parse_bloque()?;
 
-        Ok(Some(Declaracion::Funcion {
-            nombre,
-            parametros_tipo,
-            parametros,
-            tipo_retorno,
-            cuerpo,
-            externa: false,
-            enlace_nombre: None,
-            atributos: vec![],
-            doc: None,
-            precondiciones,
-            postcondiciones,
-        }))
+            Ok(Some(Declaracion::Funcion {
+                nombre,
+                parametros_tipo,
+                parametros,
+                tipo_retorno,
+                cuerpo,
+                externa: false,
+                asincrona,
+                enlace_nombre: None,
+                atributos: vec![],
+                doc: None,
+                precondiciones,
+                postcondiciones,
+            }))
+        }
     }
 
     /// Parsea contratos (requiere/asegura) entre la firma y el cuerpo de función.
@@ -445,70 +491,6 @@ impl Parser {
         }
 
         Ok(inv)
-    }
-
-    /// externo funcion <nombre>(<parametros>) [-> <Tipo>] ;
-    fn parse_funcion_externa(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
-        // Esperar 'funcion'
-        self.esperar(
-            TokenKind::Funcion,
-            "Se esperaba 'funcion' después de 'externo'.",
-        )?;
-        let nombre = self.esperar_identificador("Se esperaba el nombre de la función externa.")?;
-
-        // Parsear params como función normal
-        self.esperar(
-            TokenKind::ParenAbrir,
-            "Se esperaba '(' después del nombre de la función externa.",
-        )?;
-        let parametros = self.parse_parametros()?;
-        self.esperar(
-            TokenKind::ParenCerrar,
-            "Se esperaba ')' después de los parámetros.",
-        )?;
-
-        // Tipo de retorno opcional
-        let tipo_retorno = if self.coincide(TokenKind::Menos) {
-            let col = self.columna_actual();
-            self.avanzar();
-            if self.coincide(TokenKind::Mayor) {
-                self.avanzar();
-                Some(self.parse_tipo()?)
-            } else {
-                return Err(ErrorForja::new(
-                    ErrorTipo::ErrorSintactico,
-                    self.linea_actual(),
-                    col,
-                    "Se esperaba '->' para el tipo de retorno.",
-                    "Usá '-> Tipo' para indicar el tipo de retorno de la función externa.",
-                ));
-            }
-        } else {
-            None
-        };
-
-        // El enlace_nombre es el mismo nombre de la función (simplificación)
-        let enlace_nombre = Some(nombre.clone());
-
-        // Función externa termina con ; NO con {}
-        self.esperar(
-            TokenKind::PuntoComa,
-            "Se esperaba ';' al final de la declaración externa.",
-        )?;
-
-        Ok(Some(Declaracion::Funcion {
-            nombre,
-            parametros_tipo: vec![], // funciones externas no tienen genéricos
-            parametros,
-            tipo_retorno,
-            cuerpo: vec![], // sin cuerpo
-            externa: true,
-            enlace_nombre,
-            atributos: vec![],
-            doc: None,
-            precondiciones: vec![],
-            postcondiciones: vec![],
-        }))
     }
 
     /// clase <nombre> [<T>] { <campos> <metodos> }
@@ -1169,15 +1151,24 @@ impl Parser {
         Ok(Some(Declaracion::Retornar { valor }))
     }
 
-    /// importar "ruta"  o  importar ruta/de/modulo
+    /// importar ruta/de/modulo  (sin comillas)  o  importar "ruta/absoluta" (con comillas, obligatorio para absolutas)
     fn parse_importar(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
         self.avanzar(); // consume 'importar'
 
         let ruta = match &self.peek().kind {
-            // importar "ruta/de/modulo"
+            // importar "ruta/absoluta" — con comillas, SOLO rutas absolutas
             TokenKind::Texto(s) => {
                 let ruta = s.clone();
                 self.avanzar();
+                if !es_ruta_absoluta(&ruta) {
+                    return Err(ErrorForja::new(
+                        ErrorTipo::ErrorSintactico,
+                        self.linea_actual(),
+                        self.columna_actual(),
+                        "Las rutas con comillas solo se permiten para rutas absolutas del sistema de archivos.",
+                        "Usá importar ruta/sin/comillas para módulos. Ej: importar std/io",
+                    ));
+                }
                 ruta
             }
             // importar ruta/de/modulo  (sin comillas)
@@ -1202,10 +1193,20 @@ impl Parser {
                         self.linea_actual(),
                         self.columna_actual(),
                         "Se esperaba un nombre de módulo después de 'importar'.",
-                        "Ejemplo: importar std/io  o  importar \"std/io\"",
+                        "Ejemplo: importar std/io",
                     ));
                 }
-                partes.join("/")
+                let ruta = partes.join("/");
+                if es_ruta_absoluta(&ruta) {
+                    return Err(ErrorForja::new(
+                        ErrorTipo::ErrorSintactico,
+                        self.linea_actual(),
+                        self.columna_actual(),
+                        "Las rutas absolutas requieren comillas.",
+                        "Usá importar \"ruta/absoluta\" para rutas del sistema de archivos.",
+                    ));
+                }
+                ruta
             }
             _ => {
                 return Err(ErrorForja::new(
@@ -1213,11 +1214,35 @@ impl Parser {
                     self.linea_actual(),
                     self.columna_actual(),
                     "Se esperaba una ruta después de 'importar'.",
-                    "Ejemplos: importar std/io  o  importar \"std/io\"",
+                    "Ejemplos: importar std/io  o  importar \"/ruta/absoluta\"",
                 ))
             }
         };
         Ok(Some(Declaracion::Importar(ruta)))
+    }
+
+    /// importar externa "ruta.dll"  —  cargar librería compartida (FFI)
+    fn parse_importar_externa(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
+        self.avanzar(); // consume 'importar'
+        self.avanzar(); // consume 'externo'/'externa'
+
+        let ruta = match &self.peek().kind {
+            TokenKind::Texto(s) => {
+                let ruta = s.clone();
+                self.avanzar();
+                ruta
+            }
+            _ => {
+                return Err(ErrorForja::new(
+                    ErrorTipo::ErrorSintactico,
+                    self.linea_actual(),
+                    self.columna_actual(),
+                    "Se esperaba una ruta entre comillas después de 'importar externa'.",
+                    "Ejemplo: importar externa \"liberia.dll\"",
+                ))
+            }
+        };
+        Ok(Some(Declaracion::ImportarExterna(ruta)))
     }
 
     /// hilo { <cuerpo> }  → como declaración
@@ -3326,6 +3351,21 @@ fn extraer_numero(expr: &Expresion) -> u64 {
     }
 }
 
+/// Determina si una ruta es absoluta (Unix: /inicio, Windows: C:\ o C:/)
+fn es_ruta_absoluta(ruta: &str) -> bool {
+    if ruta.starts_with('/') {
+        return true;
+    }
+    // Windows: letra de unidad seguida de :\ o :/
+    if ruta.len() >= 3 {
+        let bytes = ruta.as_bytes();
+        if bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && (bytes[2] == b'/' || bytes[2] == b'\\') {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3486,6 +3526,86 @@ mod tests {
                 assert_eq!(argumentos.len(), 1);
             }
             _ => panic!("Se esperaba LlamadaFuncion"),
+        }
+    }
+
+    #[test]
+    fn test_importar_sin_comillas() {
+        let prog = parse_source("importar std/io").unwrap();
+        assert_eq!(prog.declaraciones.len(), 1);
+        match &prog.declaraciones[0] {
+            Declaracion::Importar(ruta) => assert_eq!(ruta, "std/io"),
+            _ => panic!("Se esperaba Declaracion::Importar"),
+        }
+    }
+
+    #[test]
+    fn test_importar_con_comillas_no_absoluta_error() {
+        let result = parse_source("importar \"gui\"");
+        assert!(result.is_err(), "importar con comillas para ruta no absoluta debe fallar");
+    }
+
+    #[test]
+    fn test_importar_con_comillas_absoluta() {
+        let prog = parse_source("importar \"/home/user/lib.fa\"").unwrap();
+        assert_eq!(prog.declaraciones.len(), 1);
+        match &prog.declaraciones[0] {
+            Declaracion::Importar(ruta) => assert_eq!(ruta, "/home/user/lib.fa"),
+            _ => panic!("Se esperaba Declaracion::Importar"),
+        }
+    }
+
+    #[test]
+    fn test_importar_absoluta_windows() {
+        let prog = parse_source("importar \"C:/Users/user/lib.fa\"").unwrap();
+        assert_eq!(prog.declaraciones.len(), 1);
+        match &prog.declaraciones[0] {
+            Declaracion::Importar(ruta) => assert_eq!(ruta, "C:/Users/user/lib.fa"),
+            _ => panic!("Se esperaba Declaracion::Importar"),
+        }
+    }
+
+    #[test]
+    fn test_funcion_externa() {
+        let prog = parse_source("funcion externa printf(formato: Texto, ...: Texto) -> Entero;").unwrap();
+        assert_eq!(prog.declaraciones.len(), 1);
+        match &prog.declaraciones[0] {
+            Declaracion::Funcion { nombre, externa: true, .. } => {
+                assert_eq!(nombre, "printf");
+            }
+            _ => panic!("Se esperaba Declaracion::Funcion con externa=true"),
+        }
+    }
+
+    #[test]
+    fn test_externo_funcion_vieja_sintaxis_error() {
+        let result = parse_source("externo funcion printf(formato: Texto) -> Entero;");
+        assert!(result.is_err(), "sintaxis 'externo funcion' ya no es válida");
+    }
+
+    #[test]
+    fn test_funcion_externa_sin_punto_coma_error() {
+        let result = parse_source("funcion externa printf() {}");
+        assert!(result.is_err(), "funcion externa debe terminar en ; no en llaves");
+    }
+
+    #[test]
+    fn test_importar_externa() {
+        let prog = parse_source("importar externa \"liberia.dll\"").unwrap();
+        assert_eq!(prog.declaraciones.len(), 1);
+        match &prog.declaraciones[0] {
+            Declaracion::ImportarExterna(ruta) => assert_eq!(ruta, "liberia.dll"),
+            _ => panic!("Se esperaba Declaracion::ImportarExterna"),
+        }
+    }
+
+    #[test]
+    fn test_importar_externa_variante() {
+        let prog = parse_source("importar externo \"liberia.so\"").unwrap();
+        assert_eq!(prog.declaraciones.len(), 1);
+        match &prog.declaraciones[0] {
+            Declaracion::ImportarExterna(ruta) => assert_eq!(ruta, "liberia.so"),
+            _ => panic!("Se esperaba Declaracion::ImportarExterna"),
         }
     }
 
