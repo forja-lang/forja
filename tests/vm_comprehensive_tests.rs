@@ -2,6 +2,7 @@ use forja::bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
 use forja::vm::ForjaVM;
+use forja::vm_fast::ForjaFast;
 
 fn ejecutar(source: &str) -> ForjaVM {
     let mut lexer = Lexer::new(source);
@@ -361,3 +362,50 @@ fn test_vm_concatenacion_con_numero() {
 fn test_vm_cuando_verdadero() {
     assert_eq!(output("variable x = 35\ncuando (x > 30) { escribir(\"Caliente\") }"), vec!["Caliente"]);
 }
+
+// ============================================================
+// ForjaFast — Async/Await runtime test
+// ============================================================
+
+fn output_fast(source: &str) -> Vec<String> {
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().unwrap();
+    let mut parser = Parser::new(tokens);
+    let programa = parser.parse().unwrap();
+    let mut gen = BytecodeGenerator::new();
+    let bc = gen.generar(&programa).unwrap();
+    let bc = optimizar_indices(&bc);
+    let bc = fusionar_opcodes(&bc);
+    let mut vm = ForjaFast::new();
+    vm.cargar_bytecode(bc);
+    // ForjaFast empieza en ip=0 (FunctionDef se skipean solos)
+    vm.set_max_inst(50000);
+    vm.ejecutar().unwrap();
+    vm.output
+}
+
+#[test]
+fn test_vm_fast_hola_mundo() {
+    let out = output_fast("escribir(\"hola fast\")");
+    assert_eq!(out, vec!["hola fast"]);
+}
+
+#[test]
+fn test_vm_fast_async_hilo_return_int() {
+    // Las strings no se pueden pasar entre threads (str_heap es local).
+    // Los enteros sí funcionan.
+    let out = output_fast(
+        "funcion asincrona foo() -> Entero {
+             retornar 42
+         }
+         funcion main() {
+             variable h = foo()
+             variable r = h.unir()
+             escribir(r)
+         }
+         main()",
+    );
+    assert_eq!(out, vec!["42"]);
+}
+
+// (Strings no se pueden pasar entre threads porque str_heap es local a cada VM)
