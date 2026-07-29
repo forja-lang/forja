@@ -156,11 +156,12 @@ impl Lexer {
             "falso" => TokenKind::Falso,
             "nulo" => TokenKind::Nulo,
             "retornar" => TokenKind::Retornar,
+            "externo" | "externa" => TokenKind::Externo,
             "importar" => TokenKind::Importar,
             "tipo" => TokenKind::Tipo,
             "coincidir" => TokenKind::Coincidir,
             "caso" => TokenKind::Caso,
-            "externo" | "externa" => TokenKind::Externo,
+
             "hilo" => TokenKind::Hilo,
             "canal" => TokenKind::Canal,
             "enviar" => TokenKind::Enviar,
@@ -172,6 +173,8 @@ impl Lexer {
             "seleccionar" => TokenKind::Seleccionar,
             "tiempo" => TokenKind::Tiempo,
             "otro" => TokenKind::Otro,
+            "asincrona" => TokenKind::Asincrona,
+            "await" => TokenKind::Await,
             "cuando" => TokenKind::Cuando,
             // Contratos Design by Contract
             "requiere" => TokenKind::Requiere,
