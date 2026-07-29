@@ -48,12 +48,17 @@ mod unix {
             if ret != 0 {
                 return Err("tcgetattr falló".into());
             }
+
+            // Guardar copia de la configuración original (Termios es POD)
+            unsafe {
+                let orig = std::ptr::read(&raw);
+                ORIG_TERMIOS = Some(orig);
+            }
+
             // Desactivar modo canónico, eco, señales, extensiones
             raw.c_lflag &= !(ICANON | ECHO | ISIG | IEXTEN);
             raw.c_cc[VMIN] = 1;  // leer mínimo 1 byte
             raw.c_cc[VTIME] = 0; // sin timeout
-
-            unsafe { ORIG_TERMIOS = Some(raw); }
 
             let ret = unsafe { tcsetattr(STDIN_FILENO, TCSANOW, &raw as *const Termios) };
             if ret != 0 {
