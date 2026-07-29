@@ -81,26 +81,37 @@ impl ModuleResolver {
 
     /// Resuelve un módulo y retorna su ModuleId junto con el Programa
     pub fn resolver_con_id(&mut self, ruta: &str) -> Result<(Programa, ModuleId), Vec<ErrorForja>> {
-        let ruta_limpia = ruta.replace('\\', "/").trim_start_matches('/').to_string();
-        if ruta_limpia.contains("..") || ruta_limpia.starts_with('/') || ruta_limpia.contains(':') {
+        let ruta_limpia = ruta.replace('\\', "/");
+        if ruta_limpia.contains("..") {
             return Err(vec![ErrorForja::new(
                 crate::error::ErrorTipo::ErrorSemantico,
                 0,
                 0,
                 &format!("Ruta de módulo inválida: '{}'", ruta),
-                "Las rutas de módulo no pueden contener '..' ni rutas absolutas.",
+                "Las rutas de módulo no pueden contener '..'.",
             )]);
         }
 
-        // Generar ModuleId de la ruta canónica
-        let path = self.root_dir.join(format!("{}.fa", ruta_limpia));
+        let es_absoluta = ruta_limpia.starts_with('/')
+            || (ruta_limpia.len() >= 3
+                && ruta_limpia.as_bytes()[0].is_ascii_alphabetic()
+                && ruta_limpia.as_bytes()[1] == b':'
+                && (ruta_limpia.as_bytes()[2] == b'/' || ruta_limpia.as_bytes()[2] == b'\\'));
+
+        let (ruta_key, path) = if es_absoluta {
+            (ruta_limpia.clone(), std::path::PathBuf::from(&ruta_limpia))
+        } else {
+            let clean = ruta_limpia.trim_start_matches('/');
+            let p = self.root_dir.join(format!("{}.fa", clean));
+            (clean.to_string(), p)
+        };
 
         // Intentar obtener del cache primero
-        if let Some(prog) = self.cache.get(&ruta_limpia) {
+        if let Some(prog) = self.cache.get(&ruta_key) {
             let module_id = self
                 .module_cache
                 .por_ruta
-                .get(&ruta_limpia)
+                .get(&ruta_key)
                 .copied()
                 .unwrap_or_else(|| SymId(0));
             return Ok((prog.clone(), module_id));
@@ -115,7 +126,7 @@ impl ModuleResolver {
                     .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
             );
 
-            if canonical.starts_with(
+            if es_absoluta || canonical.starts_with(
                 &self
                     .root_dir
                     .canonicalize()
@@ -166,25 +177,39 @@ impl ModuleResolver {
                     if let Declaracion::Importar(ref sub_ruta) = decl {
                         let (sub, _sub_id) = self.resolver_con_id(sub_ruta)?;
                         final_decls.extend(sub.declaraciones);
+                    } else if let Declaracion::ImportarExterna(ref ruta) = decl {
+                        // Cargar la librería externa en el registro FFI
+                        let ruta_clone = ruta.clone();
+                        crate::ffi::cargar_libreria(&ruta_clone).map_err(|e| {
+                            vec![ErrorForja::new(
+                                crate::error::ErrorTipo::ErrorSemantico,
+                                0, 0,
+                                &format!("Error cargando librería externa '{}': {}", ruta, e),
+                                "Verificá que la ruta sea correcta y que la librería exista.",
+                            )]
+                        })?;
+                        final_decls.push(decl);
                     } else {
                         final_decls.push(decl);
                     }
                 }
                 programa.declaraciones = dedup_declaraciones(final_decls);
-                self.cache.insert(ruta_limpia.clone(), programa.clone());
+                self.cache.insert(ruta_key.clone(), programa.clone());
 
                 // Registrar en module_cache
-                self.module_cache.por_ruta.insert(ruta_limpia, module_id);
+                self.module_cache.por_ruta.insert(ruta_key, module_id);
 
                 return Ok((programa, module_id));
             }
-            return Err(vec![ErrorForja::new(
-                crate::error::ErrorTipo::ErrorSemantico,
-                0,
-                0,
-                "Intento de path traversal detectado",
-                "Los módulos deben estar dentro del directorio del proyecto.",
-            )]);
+            if !es_absoluta {
+                return Err(vec![ErrorForja::new(
+                    crate::error::ErrorTipo::ErrorSemantico,
+                    0,
+                    0,
+                    "Intento de path traversal detectado",
+                    "Los módulos deben estar dentro del directorio del proyecto.",
+                )]);
+            }
         }
 
         // Si no se encuentra localmente, preguntar al package_resolver
@@ -248,13 +273,25 @@ impl ModuleResolver {
                     if let Declaracion::Importar(ref sub_ruta) = decl {
                         let (sub, _) = self.resolver_con_id(sub_ruta)?;
                         final_decls.extend(sub.declaraciones);
+                    } else if let Declaracion::ImportarExterna(ref ruta) = decl {
+                        // Cargar la librería externa en el registro FFI
+                        let ruta_clone = ruta.clone();
+                        crate::ffi::cargar_libreria(&ruta_clone).map_err(|e| {
+                            vec![ErrorForja::new(
+                                crate::error::ErrorTipo::ErrorSemantico,
+                                0, 0,
+                                &format!("Error cargando librería externa '{}': {}", ruta, e),
+                                "Verificá que la ruta sea correcta y que la librería exista.",
+                            )]
+                        })?;
+                        final_decls.push(decl);
                     } else {
                         final_decls.push(decl);
                     }
                 }
                 programa.declaraciones = dedup_declaraciones(final_decls);
-                self.cache.insert(ruta_limpia.clone(), programa.clone());
-                self.module_cache.por_ruta.insert(ruta_limpia, module_id);
+                self.cache.insert(ruta_key.clone(), programa.clone());
+                self.module_cache.por_ruta.insert(ruta_key, module_id);
 
                 return Ok((programa, module_id));
             }
@@ -433,6 +470,10 @@ impl ModuleResolver {
                 // Los módulos embebidos se resuelven recursivamente
                 let (sub, _sub_id) = self.resolver_con_id(sub_ruta)?;
                 final_decls.extend(sub.declaraciones);
+            } else if let crate::ast::Declaracion::ImportarExterna(ref ruta) = decl {
+                // Cargar la librería externa en el registro FFI (módulos embebidos)
+                let _ = crate::ffi::cargar_libreria(ruta);
+                final_decls.push(decl);
             } else {
                 final_decls.push(decl);
             }
