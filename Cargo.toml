@@ -55,7 +55,7 @@ path = "benchmarks/bench_vm.rs"
 name = "bench-compare"
 path = "benchmarks/bench_forja_vs_python.rs"
 
-[[bench]]
+[[bin]]
 name = "bench-vms"
 path = "benchmarks/bench_vms.rs"
 
@@ -67,7 +67,7 @@ path = "benchmarks/bench_clean.rs"
 name = "bench-completo"
 path = "benchmarks/bench_completo.rs"
 
-[[bench]]
+[[bin]]
 name = "bench-jit"
 path = "benchmarks/bench_jit.rs"
 
@@ -87,7 +87,7 @@ path = "benchmarks/bench_vs_python.rs"
 name = "bench-rust-native"
 path = "benchmarks/bench_rust_native.rs"
 
-[[bench]]
+[[bin]]
 name = "bench-forjafast"
 path = "benchmarks/bench_forjafast.rs"
 
