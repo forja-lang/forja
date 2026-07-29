@@ -695,15 +695,9 @@ pub fn poly1305_mac(key: &[u8; 32], data: &[u8]) -> [u8; 16] {
         h[4] = 0;
     }
 
-    // Si h[4] > 0xFFFFFF (bits 24-25 set), extraer el exceso como reducción
-    // (bits 24-25 = bits 128-129 del total = >2^128, se descartan al sumar con s mod 2^128)
-    // Pero para evitar que limbs_to_u128 trunque incorrectamente, reducimos:
-    let top = h[4] >> 24;
-    if top > 0 {
-        h[0] += (top * 5) << 4; // 2^128 ≡ 5*2^4 = 80 (mod 2^130-5)
-        h[4] &= 0xFFFFFF;
-        limb_carry(&mut h);
-    }
+    // Bits 128-129 de h[4] (bits 24-25) son >2^128, se descartan naturalmente
+    // al reconstruir u128 en limbs_to_u128. 2^128 ≡ 0 (mod 2^128) y no afecta
+    // al resultado final (h + s) mod 2^128, así que no requieren reducción.
 
     // h = (h + s) mod 2^128
     let h_val = limbs_to_u128(&h);
