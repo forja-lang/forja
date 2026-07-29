@@ -509,8 +509,8 @@ pub struct ForjaFast {
     sym_nuevo: SymId,
 
     // ─── SymId para canales e hilos ────────────────────────────────────
-    sym_canal_tx: SymId,
-    sym_canal_rx: SymId,
+    sym_canal_emisor: SymId,
+    sym_canal_receptor: SymId,
     sym_hilo: SymId,
     sym_enviar: SymId,
     sym_recibir: SymId,
@@ -685,8 +685,8 @@ impl ForjaFast {
             sym_obtener: SymId(0),
             sym_remover: SymId(0),
             sym_nuevo: SymId(0),
-            sym_canal_tx: SymId(0),
-            sym_canal_rx: SymId(0),
+            sym_canal_emisor: SymId(0),
+            sym_canal_receptor: SymId(0),
             sym_hilo: SymId(0),
             sym_enviar: SymId(0),
             sym_recibir: SymId(0),
@@ -1082,8 +1082,8 @@ impl ForjaFast {
         self.sym_obtener = self.sym_table.intern("obtener");
         self.sym_remover = self.sym_table.intern("remover");
         self.sym_nuevo = self.sym_table.intern("nuevo");
-        self.sym_canal_tx = self.sym_table.intern("CanalTx");
-        self.sym_canal_rx = self.sym_table.intern("CanalRx");
+        self.sym_canal_emisor = self.sym_table.intern("CanalEmisor");
+        self.sym_canal_receptor = self.sym_table.intern("CanalReceptor");
         self.sym_hilo = self.sym_table.intern("Hilo");
         self.sym_enviar = self.sym_table.intern("enviar");
         self.sym_recibir = self.sym_table.intern("recibir");
@@ -4287,8 +4287,8 @@ impl ForjaFast {
                         let idx = obj.indice_objeto();
                         let clase_sym = self.obj_shapes[idx as usize];
                         let method_sym = self.sym_table.intern(m.as_ref());
-                        // ── NATIVE DISPATCH: CanalTx / CanalRx / Hilo ───────────
-                        if clase_sym == self.sym_canal_tx {
+                        // ── NATIVE DISPATCH: CanalEmisor / CanalReceptor / Hilo ──
+                        if clase_sym == self.sym_canal_emisor {
                             let chan_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
                             if method_sym == self.sym_enviar
@@ -4309,7 +4309,7 @@ impl ForjaFast {
                             self.ip += 1;
                             continue;
                         }
-                        if clase_sym == self.sym_canal_rx {
+                        if clase_sym == self.sym_canal_receptor {
                             let chan_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
                             if method_sym == self.sym_recibir
@@ -4560,8 +4560,8 @@ impl ForjaFast {
                         let idx = obj.indice_objeto();
                         let clase_sym = self.obj_shapes[idx as usize];
                         let method_sym = SymId(method_sym_id);
-                        // ── NATIVE DISPATCH: CanalTx / CanalRx / Hilo ───────────
-                        if clase_sym == self.sym_canal_tx {
+                        // ── NATIVE DISPATCH: CanalEmisor / CanalReceptor / Hilo ──
+                        if clase_sym == self.sym_canal_emisor {
                             let chan_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
                             if method_sym == self.sym_enviar
@@ -4582,7 +4582,7 @@ impl ForjaFast {
                             self.ip += 1;
                             continue;
                         }
-                        if clase_sym == self.sym_canal_rx {
+                        if clase_sym == self.sym_canal_receptor {
                             let chan_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
                             if method_sym == self.sym_recibir
@@ -5633,12 +5633,12 @@ impl ForjaFast {
                     let (tx, rx) = std::sync::mpsc::channel::<ValorFast>();
                     let tx_idx = self.alloc_chan_tx(tx);
                     let rx_idx = self.alloc_chan_rx(rx);
-                    // Crear objeto CanalTx
-                    let mut obj_tx = ObjVal::new(self.sym_canal_tx);
+                    // Crear objeto CanalEmisor
+                    let mut obj_tx = ObjVal::new(self.sym_canal_emisor);
                     obj_tx.campos_vec.push(ValorFast::entero(tx_idx as i64));
                     let obj_tx_idx = self.alloc_obj(obj_tx);
-                    // Crear objeto CanalRx
-                    let mut obj_rx = ObjVal::new(self.sym_canal_rx);
+                    // Crear objeto CanalReceptor
+                    let mut obj_rx = ObjVal::new(self.sym_canal_receptor);
                     obj_rx.campos_vec.push(ValorFast::entero(rx_idx as i64));
                     let obj_rx_idx = self.alloc_obj(obj_rx);
                     // Push tx, luego rx (ArrayNew [tx, rx] — tx index 0, rx index 1)
@@ -6547,8 +6547,8 @@ impl ForjaFast {
                         let idx = obj.indice_objeto();
                         let clase_sym = self.obj_shapes[idx as usize];
                         let method_sym = self.sym_table.intern(&m);
-                        // ── NATIVE DISPATCH: CanalTx / CanalRx / Hilo ───────────
-                        if clase_sym == self.sym_canal_tx {
+                        // ── NATIVE DISPATCH: CanalEmisor / CanalReceptor / Hilo ──
+                        if clase_sym == self.sym_canal_emisor {
                             let chan_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
                             if method_sym == self.sym_enviar
@@ -6569,7 +6569,7 @@ impl ForjaFast {
                             self.ip += 1;
                             continue;
                         }
-                        if clase_sym == self.sym_canal_rx {
+                        if clase_sym == self.sym_canal_receptor {
                             let chan_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
                             if method_sym == self.sym_recibir
