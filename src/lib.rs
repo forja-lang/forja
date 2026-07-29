@@ -34,6 +34,10 @@ pub mod crypto_pq;
 pub mod mmap;
 pub mod terminal;
 
+// Módulos nativos que dependen del sistema de archivos o del SO
+// (no compilables a WASM)
+pub mod ffi;
+
 // Módulos que dependen del sistema de archivos o del SO
 // (no compilables a WASM)
 #[cfg(not(target_arch = "wasm32"))]
@@ -190,6 +194,11 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
             if ruta != "gui" {
                 final_decls.extend(sub_prog.declaraciones);
             }
+        } else if let ast::Declaracion::ImportarExterna(ref ruta) = decl {
+            // Cargar la librería externa en el registro FFI
+            crate::ffi::cargar_libreria(ruta)
+                .map_err(|e| format!("Error cargando librería externa '{}': {}", ruta, e))?;
+            final_decls.push(decl);
         } else {
             final_decls.push(decl);
         }
