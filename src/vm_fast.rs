@@ -515,6 +515,11 @@ pub struct ForjaFast {
     sym_enviar: SymId,
     sym_recibir: SymId,
     sym_unir: SymId,
+    sym_send: SymId,
+    sym_receive: SymId,
+    sym_recv: SymId,
+    sym_join: SymId,
+    sym_valor: SymId,
 
     pub(crate) funciones: HashMap<SymId, FuncFast>,
     /// Nombres de parámetros por función (necesario para mapear args en Call)
@@ -691,6 +696,11 @@ impl ForjaFast {
             sym_enviar: SymId(0),
             sym_recibir: SymId(0),
             sym_unir: SymId(0),
+            sym_send: SymId(0),
+            sym_receive: SymId(0),
+            sym_recv: SymId(0),
+            sym_join: SymId(0),
+            sym_valor: SymId(0),
             funciones: HashMap::new(),
             func_params: HashMap::new(),
             bytecode: Vec::new(),
@@ -1088,6 +1098,11 @@ impl ForjaFast {
         self.sym_enviar = self.sym_table.intern("enviar");
         self.sym_recibir = self.sym_table.intern("recibir");
         self.sym_unir = self.sym_table.intern("unir");
+        self.sym_send = self.sym_table.intern("send");
+        self.sym_receive = self.sym_table.intern("receive");
+        self.sym_recv = self.sym_table.intern("recv");
+        self.sym_join = self.sym_table.intern("join");
+        self.sym_valor = self.sym_table.intern("valor");
     }
 
     fn init_ic(&mut self) {
@@ -4294,7 +4309,7 @@ impl ForjaFast {
                             let method_str = self.sym_table.get(method_sym);
                             eprintln!("[DBG] enviar#1: clase_sym={:?}, method_sym={:?}, chan_idx={}", self.sym_table.get(clase_sym), method_str, chan_idx);
                             if method_sym == self.sym_enviar
-                                || method_sym.0 == self.sym_table.intern("send").0
+                                || method_sym.0 == self.sym_send.0
                             {
                                 if !args.is_empty() {
                                     let val = args[0];
@@ -4321,9 +4336,9 @@ impl ForjaFast {
                             let method_str = self.sym_table.get(method_sym);
                             eprintln!("[DBG] recibir#1: clase_sym={:?}, method_sym={:?}, chan_idx={}", self.sym_table.get(clase_sym), method_str, chan_idx);
                             if method_sym == self.sym_recibir
-                                || method_sym.0 == self.sym_table.intern("recibir").0
-                                || method_sym.0 == self.sym_table.intern("receive").0
-                                || method_sym.0 == self.sym_table.intern("recv").0
+                                || method_sym.0 == self.sym_recibir.0
+                                || method_sym.0 == self.sym_receive.0
+                                || method_sym.0 == self.sym_recv.0
                             {
                                 let res = self.chan_rx_heap[chan_idx].recv();
                                 match &res {
@@ -4348,8 +4363,8 @@ impl ForjaFast {
                             let thread_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
                             if method_sym == self.sym_unir
-                                || method_sym.0 == self.sym_table.intern("unir").0
-                                || method_sym.0 == self.sym_table.intern("join").0
+                                || method_sym.0 == self.sym_unir.0
+                                || method_sym.0 == self.sym_join.0
                             {
                                 // Si hay receiver pendiente, recibir resultado del hilo
                                 if thread_idx < self.thread_rx.len() {
@@ -4584,7 +4599,7 @@ impl ForjaFast {
                             let method_str = self.sym_table.get(method_sym);
                             eprintln!("[DBG] enviar#2: clase_sym={:?}, method_sym={:?}, chan_idx={}", self.sym_table.get(clase_sym), method_str, chan_idx);
                             if method_sym == self.sym_enviar
-                                || method_sym.0 == self.sym_table.intern("send").0
+                                || method_sym.0 == self.sym_send.0
                             {
                                 if !args.is_empty() {
                                     let val = args[0];
@@ -4611,9 +4626,9 @@ impl ForjaFast {
                             let method_str = self.sym_table.get(method_sym);
                             eprintln!("[DBG] recibir#2: clase_sym={:?}, method_sym={:?}, chan_idx={}", self.sym_table.get(clase_sym), method_str, chan_idx);
                             if method_sym == self.sym_recibir
-                                || method_sym.0 == self.sym_table.intern("recibir").0
-                                || method_sym.0 == self.sym_table.intern("receive").0
-                                || method_sym.0 == self.sym_table.intern("recv").0
+                                || method_sym.0 == self.sym_recibir.0
+                                || method_sym.0 == self.sym_receive.0
+                                || method_sym.0 == self.sym_recv.0
                             {
                                 match self.chan_rx_heap[chan_idx].recv() {
                                     Ok(val) => {
@@ -4637,8 +4652,8 @@ impl ForjaFast {
                             let thread_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
                             if method_sym == self.sym_unir
-                                || method_sym.0 == self.sym_table.intern("unir").0
-                                || method_sym.0 == self.sym_table.intern("join").0
+                                || method_sym.0 == self.sym_unir.0
+                                || method_sym.0 == self.sym_join.0
                             {
                                 if thread_idx < self.thread_rx.len() {
                                     if let Some(rx) = self.thread_rx[thread_idx as usize].take() {
@@ -5324,11 +5339,10 @@ impl ForjaFast {
                             continue;
                         }
                         // Extraer valor interno
-                        let sym_valor = self.sym_table.intern("valor");
                         let valor_interno = if let Some(desc) =
                             self.class_descriptors.get(&clase_sym)
                         {
-                            if let Some(valor_idx) = desc.shape.get_idx(sym_valor) {
+                            if let Some(valor_idx) = desc.shape.get_idx(self.sym_valor) {
                                 if valor_idx < self.obj_heap[obj_idx as usize].campos_vec.len() {
                                     self.obj_heap[obj_idx as usize].campos_vec[valor_idx]
                                 } else {
@@ -5698,13 +5712,15 @@ impl ForjaFast {
                     let fn_sym = self.sym_table.intern(func_name.as_ref());
                     if let Some(entry) = self.lookup_func_entry(fn_sym) {
                         let nargs = captured.len();
-                        // Clonar estado para el hilo
+                        // Clonar TODO el estado necesario para el hilo
                         let thread_bytecode = self.bytecode.clone();
                         let thread_sym_table = self.sym_table.clone();
                         let thread_funcs = self.funciones.clone();
                         let thread_func_params = self.func_params.clone();
                         let thread_obj_heap = self.obj_heap.clone();
+                        let thread_obj_shapes = self.obj_shapes.clone();
                         let thread_chan_tx_heap = self.chan_tx_heap.clone();
+                        // Nota: Receiver no implementa Clone, el hilo solo necesita chan_tx_heap
                         let thread_output = self.output.clone();
                         let thread_ip = entry.ip;
                         let thread_vars_size = entry.vars_size.max(nargs);
@@ -5717,6 +5733,35 @@ impl ForjaFast {
                                 let mut hilo_vm = ForjaFast::new();
                                 hilo_vm.bytecode = thread_bytecode;
                                 hilo_vm.sym_table = thread_sym_table;
+                                // La sym_table ya fue clonada con todos los símbolos; NO llamar
+                                // init_symbols() porque re-internaría strings builtin y podría
+                                // corromper los SymId de funciones de usuario (ej: "cuadrado").
+                                // En su lugar, sincronizamos los SymId builtin post-facto:
+                                hilo_vm.sym_escribir = hilo_vm.sym_table.intern("escribir");
+                                hilo_vm.sym_retornar = hilo_vm.sym_table.intern("retornar");
+                                hilo_vm.sym_hilo = hilo_vm.sym_table.intern("Hilo");
+                                hilo_vm.sym_unir = hilo_vm.sym_table.intern("unir");
+                                hilo_vm.sym_enviar = hilo_vm.sym_table.intern("enviar");
+                                hilo_vm.sym_recibir = hilo_vm.sym_table.intern("recibir");
+                                hilo_vm.sym_send = hilo_vm.sym_table.intern("send");
+                                hilo_vm.sym_receive = hilo_vm.sym_table.intern("receive");
+                                hilo_vm.sym_recv = hilo_vm.sym_table.intern("recv");
+                                hilo_vm.sym_join = hilo_vm.sym_table.intern("join");
+                                hilo_vm.sym_longitud = hilo_vm.sym_table.intern("longitud");
+                                hilo_vm.sym_len = hilo_vm.sym_table.intern("len");
+                                hilo_vm.sym_tipo = hilo_vm.sym_table.intern("tipo");
+                                hilo_vm.sym_a_texto = hilo_vm.sym_table.intern("a_texto");
+                                hilo_vm.sym_es_numero = hilo_vm.sym_table.intern("es_numero");
+                                hilo_vm.sym_es_texto = hilo_vm.sym_table.intern("es_texto");
+                                hilo_vm.sym_empujar = hilo_vm.sym_table.intern("empujar");
+                                hilo_vm.sym_obtener = hilo_vm.sym_table.intern("obtener");
+                                hilo_vm.sym_remover = hilo_vm.sym_table.intern("remover");
+                                hilo_vm.sym_nuevo = hilo_vm.sym_table.intern("nuevo");
+                                hilo_vm.sym_canal_emisor = hilo_vm.sym_table.intern("CanalEmisor");
+                                hilo_vm.sym_canal_receptor = hilo_vm.sym_table.intern("CanalReceptor");
+                                hilo_vm.sym_valor = hilo_vm.sym_table.intern("valor");
+                                // Poner límite de instrucciones para prevenir hilos colgados
+                                hilo_vm.set_max_inst(100_000);
                                 hilo_vm.funciones = thread_funcs;
                                 hilo_vm.func_params = thread_func_params;
                                 hilo_vm
@@ -5743,8 +5788,9 @@ impl ForjaFast {
                                     });
                                     hilo_vm.sym_to_func_idx.insert(sym, idx);
                                 }
-                                    // Clonar heaps de objetos y canales (tx) para el hilo
+                                    // Clonar heaps de objetos, shapes y canales para el hilo
                                     hilo_vm.obj_heap = thread_obj_heap;
+                                    hilo_vm.obj_shapes = thread_obj_shapes;
                                     hilo_vm.chan_tx_heap = thread_chan_tx_heap;
                                     // Compartir output con el hilo padre (mismo Arc<Mutex<...>>)
                                     hilo_vm.output = thread_output;
@@ -5757,7 +5803,12 @@ impl ForjaFast {
                                 };
                                 hilo_vm.frame_count = 1;
                                 hilo_vm.ip = thread_ip;
-                                let _ = hilo_vm.ejecutar();
+                                let result = hilo_vm.ejecutar();
+                                if let Err(ref e) = result {
+                                    use std::io::Write;
+                                    eprintln!("[DBG] Hilo: error en ejecución: {:?}", e);
+                                    std::io::stderr().flush().ok();
+                                }
                                 let ret =
                                     hilo_vm.stack.first().copied().unwrap_or(ValorFast::nulo());
                                 tx_result.send(ret).ok();
@@ -6617,7 +6668,7 @@ impl ForjaFast {
                             let method_str = self.sym_table.get(method_sym);
                             eprintln!("[DBG] enviar#3: clase_sym={:?}, method_sym={:?}, chan_idx={}", self.sym_table.get(clase_sym), method_str, chan_idx);
                             if method_sym == self.sym_enviar
-                                || method_sym.0 == self.sym_table.intern("send").0
+                                || method_sym.0 == self.sym_send.0
                             {
                                 if !args.is_empty() {
                                     let val = args[0];
@@ -6644,9 +6695,9 @@ impl ForjaFast {
                             let method_str = self.sym_table.get(method_sym);
                             eprintln!("[DBG] recibir#3: clase_sym={:?}, method_sym={:?}, chan_idx={}", self.sym_table.get(clase_sym), method_str, chan_idx);
                             if method_sym == self.sym_recibir
-                                || method_sym.0 == self.sym_table.intern("recibir").0
-                                || method_sym.0 == self.sym_table.intern("receive").0
-                                || method_sym.0 == self.sym_table.intern("recv").0
+                                || method_sym.0 == self.sym_recibir.0
+                                || method_sym.0 == self.sym_receive.0
+                                || method_sym.0 == self.sym_recv.0
                             {
                                 match self.chan_rx_heap[chan_idx].recv() {
                                     Ok(val) => {
@@ -6670,8 +6721,8 @@ impl ForjaFast {
                             let thread_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
                             if method_sym == self.sym_unir
-                                || method_sym.0 == self.sym_table.intern("unir").0
-                                || method_sym.0 == self.sym_table.intern("join").0
+                                || method_sym.0 == self.sym_unir.0
+                                || method_sym.0 == self.sym_join.0
                             {
                                 if thread_idx < self.thread_rx.len() {
                                     if let Some(rx) = self.thread_rx[thread_idx as usize].take() {
