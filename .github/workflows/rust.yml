@@ -82,22 +82,30 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          # Agregar NDK al PATH para que cc-rs (libsqlite3-sys) encuentre el compilador C
+          export PATH="$NDK_BIN:$PATH"
           case "${{ matrix.target }}" in
             aarch64-linux-android)
               LINKER="$NDK_BIN/aarch64-linux-android23-clang"
+              CC_TARGET="aarch64-linux-android23-clang"
               ;;
             x86_64-linux-android)
               LINKER="$NDK_BIN/x86_64-linux-android23-clang"
+              CC_TARGET="x86_64-linux-android23-clang"
               ;;
             armv7-linux-androideabi)
               LINKER="$NDK_BIN/armv7a-linux-androideabi23-clang"
+              CC_TARGET="armv7a-linux-androideabi23-clang"
               ;;
             i686-linux-android)
               LINKER="$NDK_BIN/i686-linux-android23-clang"
+              CC_TARGET="i686-linux-android23-clang"
               ;;
           esac
           echo "Using linker: $LINKER"
           export "CARGO_TARGET_$(echo ${{ matrix.target }} | tr '[:lower:]-' '[:upper:]_')_LINKER=$LINKER"
+          # cc-rs necesita CC_<TARGET> para compilar C nativo (libsqlite3-sys)
+          export "CC_$(echo ${{ matrix.target }} | tr '[:lower:]-' '[:upper:]_')=$CC_TARGET"
           cargo build --target ${{ matrix.target }} --features gui --release --verbose
       - name: Upload artifact (${{ matrix.target }})
         uses: actions/upload-artifact@v4
