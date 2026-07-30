@@ -17,7 +17,6 @@ all = ["lsp", "dap", "gui", "crossbeam", "h2-tls"]
 [dependencies]
 # Sin dependencias externas para el núcleo - solo std de Rust
 # base64, sha1, sha2: implementaciones manuales en hash.rs y base64.rs
-rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 crossbeam = { version = "0.8", optional = true }
@@ -29,6 +28,7 @@ webpki-roots = { version = "0.26", optional = true }
 proptest = "1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rusqlite = { version = "0.31", features = ["bundled"] }
 rustyline = "14"
 tower-lsp = { version = "0.20", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
