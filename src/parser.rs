@@ -2172,10 +2172,8 @@ impl Parser {
         }
 
         if self.coincide(TokenKind::ParenAbrir) {
-            eprintln!("[DBG PARSER] Paren: profundidad={}, MAX={}", self.profundidad_paren + 1, MAX_ANIDAMIENTO_PAREN);
             self.profundidad_paren += 1;
             if self.profundidad_paren > MAX_ANIDAMIENTO_PAREN {
-                eprintln!("[DBG PARSER] ¡Límite de profundidad alcanzado! retornando error.");
                 self.profundidad_paren -= 1;
                 return Err(ErrorForja::new(
                     ErrorTipo::DemasiadaAnidacion { max: MAX_ANIDAMIENTO_PAREN as u32 },

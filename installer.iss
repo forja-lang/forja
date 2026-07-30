@@ -1,6 +1,6 @@
 ; Inno Setup Script for Forja Language Toolchain
 #define MyAppName "Forja"
-#define MyAppVersion "0.8.4"
+#define MyAppVersion "0.8.8"
 #define MyAppPublisher "Forja Lang"
 #define MyAppURL "https://github.com/forja-lang/forja"
 #define MyAppExeName "forja.exe"

@@ -761,6 +761,8 @@ pub struct DeadCodeEliminator {
     pub eliminados: usize,
     variables_usadas: HashSet<String>,
     funciones_llamadas: HashSet<String>,
+    clases_usadas: HashSet<String>,
+    rasgos_usados: HashSet<String>,
 }
 
 impl DeadCodeEliminator {
@@ -769,6 +771,8 @@ impl DeadCodeEliminator {
             eliminados: 0,
             variables_usadas: HashSet::new(),
             funciones_llamadas: HashSet::new(),
+            clases_usadas: HashSet::new(),
+            rasgos_usados: HashSet::new(),
         }
     }
 
@@ -816,8 +820,6 @@ impl DeadCodeEliminator {
                 }
                 Declaracion::LlamadaFuncion { nombre, argumentos } => {
                     self.funciones_llamadas.insert(nombre.clone());
-                    // Si el nombre es "objeto.metodo", la parte antes del punto
-                    // es una variable que se está usando (el receptor del método)
                     if let Some(dot_pos) = nombre.find('.') {
                         let var_name = &nombre[..dot_pos];
                         self.variables_usadas.insert(var_name.to_string());
@@ -887,8 +889,12 @@ impl DeadCodeEliminator {
                         self.recolectar_usos(&m.cuerpo);
                     }
                 }
-                Declaracion::Rasgo { .. } => {}
-                Declaracion::Implementacion { metodos, .. } => {
+                Declaracion::Rasgo { nombre, .. } => {
+                    self.rasgos_usados.insert(nombre.clone());
+                }
+                Declaracion::Implementacion { rasgo_nombre, clase_nombre, metodos } => {
+                    self.rasgos_usados.insert(rasgo_nombre.clone());
+                    self.clases_usadas.insert(clase_nombre.clone());
                     for m in metodos {
                         self.recolectar_usos(&m.cuerpo);
                     }
@@ -914,11 +920,23 @@ impl DeadCodeEliminator {
             }
             Expresion::LlamadaFuncion { nombre, argumentos } => {
                 self.funciones_llamadas.insert(nombre.clone());
-                // Si el nombre es "objeto.metodo", extraer la variable receptora
                 if let Some(dot_pos) = nombre.find('.') {
                     let var_name = &nombre[..dot_pos];
                     self.variables_usadas.insert(var_name.to_string());
                 }
+                for arg in argumentos {
+                    self.recolectar_en_expresion(arg);
+                }
+            }
+            Expresion::LlamadaMetodo { objeto, metodo, argumentos } => {
+                self.funciones_llamadas.insert(metodo.clone());
+                self.recolectar_en_expresion(objeto);
+                for arg in argumentos {
+                    self.recolectar_en_expresion(arg);
+                }
+            }
+            Expresion::Instanciacion { clase, argumentos } => {
+                self.clases_usadas.insert(clase.clone());
                 for arg in argumentos {
                     self.recolectar_en_expresion(arg);
                 }
@@ -963,6 +981,23 @@ impl DeadCodeEliminator {
     fn es_muerto(&self, decl: &Declaracion) -> bool {
         match decl {
             Declaracion::Variable { nombre, .. } => !self.variables_usadas.contains(nombre),
+            Declaracion::Funcion { nombre, .. } => {
+                // main siempre se conserva, funciones externas (FFI) tambien
+                nombre != "main" && !self.funciones_llamadas.contains(nombre)
+            }
+            Declaracion::Clase { nombre, .. } => !self.clases_usadas.contains(nombre),
+            Declaracion::Rasgo { nombre, .. } => !self.rasgos_usados.contains(nombre),
+            Declaracion::Enum { nombre, .. } => {
+                // Un enum se considera usado si su nombre aparece
+                // en alguna expresion (identificador, match, etc.)
+                !self.variables_usadas.contains(nombre)
+                    && !self.funciones_llamadas.contains(nombre)
+            }
+            Declaracion::Implementacion { rasgo_nombre, clase_nombre, .. } => {
+                // Si el rasgo y la clase no se usan, la implementacion es muerta
+                !self.rasgos_usados.contains(rasgo_nombre)
+                    && !self.clases_usadas.contains(clase_nombre)
+            }
             _ => false,
         }
     }
@@ -1088,6 +1123,39 @@ mod tests {
         let programa = parser.parse().unwrap();
         let mut dce = DeadCodeEliminator::new();
         dce.eliminar(&programa)
+    }
+
+    // ─── Dead Function/Class Elimination tests ───────────────────────────
+    #[test]
+    fn test_dce_funcion_no_llamada_eliminada() {
+        let prog = dce_source("funcion aux() { retornar 1 }\nfuncion main() { retornar 0 }");
+        assert_eq!(prog.declaraciones.len(), 1);
+        assert!(matches!(&prog.declaraciones[0], Declaracion::Funcion { nombre, .. } if nombre == "main"));
+    }
+
+    #[test]
+    fn test_dce_funcion_llamada_conservada() {
+        let prog = dce_source("funcion suma(a, b) { retornar a + b }\nfuncion main() { variable x = suma(1, 2) }");
+        assert_eq!(prog.declaraciones.len(), 2);
+    }
+
+    #[test]
+    fn test_dce_funcion_main_siempre_conservada() {
+        let prog = dce_source("funcion main() { retornar 0 }");
+        assert_eq!(prog.declaraciones.len(), 1);
+    }
+
+    #[test]
+    fn test_dce_clase_no_instanciada_eliminada() {
+        let prog = dce_source("clase Aux { x: Entero }\nfuncion main() { retornar 0 }");
+        assert_eq!(prog.declaraciones.len(), 1);
+        assert!(matches!(&prog.declaraciones[0], Declaracion::Funcion { nombre, .. } if nombre == "main"));
+    }
+
+    #[test]
+    fn test_dce_clase_instanciada_conservada() {
+        let prog = dce_source("clase Punto { x: Entero, y: Entero }\nfuncion main() { variable p = nuevo Punto { x: 1, y: 2 } }");
+        assert_eq!(prog.declaraciones.len(), 2);
     }
 
     // ─── Strength Reduction tests ─────────────────────────────────────────

@@ -490,6 +490,12 @@ pub struct ForjaFast {
     // y el índice de la función resuelta dentro de self.funciones para acceso directo.
     ic_callmethod: Vec<Option<(SymId, usize)>>,
 
+    // Inline Caches para ArrayGet/ArraySet (Option<bool>: None=no-cache, Some(true)=array, Some(false)=map)
+    ic_arrayget: Vec<Option<bool>>,
+    ic_arrayset: Vec<Option<bool>>,
+    ic_mapget: Vec<bool>,
+    ic_mapset: Vec<bool>,
+
     // ─── String Interning (SymbolTable) ────────────────────────────────────
     /// Tabla de símbolos: mapea strings únicos a SymId para comparaciones O(1)
     pub sym_table: SymbolTable,
@@ -677,6 +683,10 @@ impl ForjaFast {
             ic_setfield: Vec::new(),
             ic_miss_count: Vec::new(),
             ic_callmethod: Vec::new(),
+            ic_arrayget: Vec::new(),
+            ic_arrayset: Vec::new(),
+            ic_mapget: Vec::new(),
+            ic_mapset: Vec::new(),
             sym_table: SymbolTable::new(),
             sym_escribir: SymId(0),
             sym_retornar: SymId(0),
@@ -1111,6 +1121,10 @@ impl ForjaFast {
         self.ic_setfield = vec![None; len];
         self.ic_miss_count = vec![0u8; len];
         self.ic_callmethod = vec![None; len];
+        self.ic_arrayget = vec![None; len];
+        self.ic_arrayset = vec![None; len];
+        self.ic_mapget = vec![false; len];
+        self.ic_mapset = vec![false; len];
     }
 
     pub fn cargar_bytecode(&mut self, bc: Vec<Opcode>) {
@@ -1330,6 +1344,10 @@ impl ForjaFast {
         self.ic_setfield.iter_mut().for_each(|c| *c = None);
         self.ic_miss_count.iter_mut().for_each(|c| *c = 0);
         self.ic_callmethod.iter_mut().for_each(|c| *c = None);
+        self.ic_arrayget.iter_mut().for_each(|c| *c = None);
+        self.ic_arrayset.iter_mut().for_each(|c| *c = None);
+        self.ic_mapget.iter_mut().for_each(|c| *c = false);
+        self.ic_mapset.iter_mut().for_each(|c| *c = false);
         // Clear class descriptors + shapes
         self.class_descriptors.clear();
         self.obj_shapes.clear();
@@ -4814,49 +4832,113 @@ impl ForjaFast {
                     self.ip += 1;
                 }
                 Opcode::ArrayGet => {
-                    let i = self.pop_valor()?;
-                    let a = self.pop_valor()?;
-                    if a.es_arreglo() && i.es_entero() {
-                        let arr_idx = a.indice_arreglo();
-                        let arr = self.get_arr(arr_idx);
-                        let ii = i.a_entero();
-                        if ii >= 0 && (ii as usize) < arr.len() {
-                            self.push_valor(arr[ii as usize]);
-                        } else {
-                            self.push_valor(ValorFast::nulo());
+                    let ip = self.ip;
+                    match self.ic_arrayget[ip] {
+                        Some(true) => {
+                            let i = self.pop_valor()?;
+                            let a = self.pop_valor()?;
+                            let arr = self.get_arr(a.indice_arreglo());
+                            let ii = i.a_entero();
+                            let val = if ii >= 0 && (ii as usize) < arr.len() {
+                                arr[ii as usize]
+                            } else {
+                                ValorFast::nulo()
+                            };
+                            self.push_valor(val);
                         }
-                    } else if a.es_mapa() && i.es_texto() {
-                        let map_idx = a.indice_mapa();
-                        let map = self.get_map(map_idx);
-                        let ks = self.get_str(i.indice_texto());
-                        self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
-                    } else {
-                        self.push_valor(ValorFast::nulo());
+                        Some(false) => {
+                            let k = self.pop_valor()?;
+                            let m = self.pop_valor()?;
+                            let map = self.get_map(m.indice_mapa());
+                            let ks = self.get_str(k.indice_texto());
+                            self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
+                        }
+                        None => {
+                            let i = self.pop_valor()?;
+                            let a = self.pop_valor()?;
+                            if a.es_arreglo() && i.es_entero() {
+                                let arr = self.get_arr(a.indice_arreglo());
+                                let ii = i.a_entero();
+                                let val = if ii >= 0 && (ii as usize) < arr.len() {
+                                    arr[ii as usize]
+                                } else {
+                                    ValorFast::nulo()
+                                };
+                                self.push_valor(val);
+                                self.ic_arrayget[ip] = Some(true);
+                                self.ic_miss_count[ip] = 0;
+                            } else if a.es_mapa() && i.es_texto() {
+                                let map = self.get_map(a.indice_mapa());
+                                let ks = self.get_str(i.indice_texto());
+                                self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
+                                self.ic_arrayget[ip] = Some(false);
+                                self.ic_miss_count[ip] = 0;
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                                self.ic_miss_count[ip] = self.ic_miss_count[ip].saturating_add(1);
+                                if self.ic_miss_count[ip] >= 3 {
+                                    self.ic_arrayget[ip] = None;
+                                    self.ic_miss_count[ip] = 0;
+                                }
+                            }
+                        }
                     }
                     self.ip += 1;
                 }
                 Opcode::ArraySet => {
-                    let i = self.pop_valor()?;
-                    let a = self.pop_valor()?;
-                    let v = self.pop_valor()?;
-                    if a.es_arreglo() && i.es_entero() {
-                        let arr_idx = a.indice_arreglo();
-                        let ii = i.a_entero();
-                        let arr = self.get_arr_mut(arr_idx);
-                        if ii >= 0 && (ii as usize) < arr.len() {
-                            arr[ii as usize] = v;
-                            self.push_valor(a);
-                        } else {
-                            self.push_valor(ValorFast::nulo());
+                    let ip = self.ip;
+                    match self.ic_arrayset[ip] {
+                        Some(true) => {
+                            let i = self.pop_valor()?;
+                            let a = self.pop_valor()?;
+                            let v = self.pop_valor()?;
+                            let arr = self.get_arr_mut(a.indice_arreglo());
+                            let ii = i.a_entero();
+                            if ii >= 0 && (ii as usize) < arr.len() {
+                                arr[ii as usize] = v;
+                                self.push_valor(a);
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                            }
                         }
-                    } else if a.es_mapa() && i.es_texto() {
-                        let map_idx = a.indice_mapa();
-                        let ks = self.get_str(i.indice_texto()).to_string();
-                        let map = self.get_map_mut(map_idx);
-                        map.insert(ks, v);
-                        self.push_valor(a);
-                    } else {
-                        self.push_valor(ValorFast::nulo());
+                        Some(false) => {
+                            let k = self.pop_valor()?;
+                            let m = self.pop_valor()?;
+                            let v = self.pop_valor()?;
+                            let ks = self.get_str(k.indice_texto()).to_string();
+                            self.get_map_mut(m.indice_mapa()).insert(ks, v);
+                            self.push_valor(m);
+                        }
+                        None => {
+                            let i = self.pop_valor()?;
+                            let a = self.pop_valor()?;
+                            let v = self.pop_valor()?;
+                            if a.es_arreglo() && i.es_entero() {
+                                let arr = self.get_arr_mut(a.indice_arreglo());
+                                let ii = i.a_entero();
+                                if ii >= 0 && (ii as usize) < arr.len() {
+                                    arr[ii as usize] = v;
+                                    self.push_valor(a);
+                                } else {
+                                    self.push_valor(ValorFast::nulo());
+                                }
+                                self.ic_arrayset[ip] = Some(true);
+                                self.ic_miss_count[ip] = 0;
+                            } else if a.es_mapa() && i.es_texto() {
+                                let ks = self.get_str(i.indice_texto()).to_string();
+                                self.get_map_mut(a.indice_mapa()).insert(ks, v);
+                                self.push_valor(a);
+                                self.ic_arrayset[ip] = Some(false);
+                                self.ic_miss_count[ip] = 0;
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                                self.ic_miss_count[ip] = self.ic_miss_count[ip].saturating_add(1);
+                                if self.ic_miss_count[ip] >= 3 {
+                                    self.ic_arrayset[ip] = None;
+                                    self.ic_miss_count[ip] = 0;
+                                }
+                            }
+                        }
                     }
                     self.ip += 1;
                 }
@@ -4885,29 +4967,60 @@ impl ForjaFast {
                     self.ip += 1;
                 }
                 Opcode::MapGet => {
-                    let k = self.pop_valor()?;
-                    let m = self.pop_valor()?;
-                    if m.es_mapa() && k.es_texto() {
-                        let map_idx = m.indice_mapa();
-                        let map = self.get_map(map_idx);
+                    let ip = self.ip;
+                    if self.ic_mapget[ip] {
+                        let k = self.pop_valor()?;
+                        let m = self.pop_valor()?;
+                        let map = self.get_map(m.indice_mapa());
                         let ks = self.get_str(k.indice_texto());
                         self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
                     } else {
-                        self.push_valor(ValorFast::nulo());
+                        let k = self.pop_valor()?;
+                        let m = self.pop_valor()?;
+                        if m.es_mapa() && k.es_texto() {
+                            let map = self.get_map(m.indice_mapa());
+                            let ks = self.get_str(k.indice_texto());
+                            self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
+                            self.ic_mapget[ip] = true;
+                            self.ic_miss_count[ip] = 0;
+                        } else {
+                            self.push_valor(ValorFast::nulo());
+                            self.ic_miss_count[ip] = self.ic_miss_count[ip].saturating_add(1);
+                            if self.ic_miss_count[ip] >= 3 {
+                                self.ic_mapget[ip] = false;
+                                self.ic_miss_count[ip] = 0;
+                            }
+                        }
                     }
                     self.ip += 1;
                 }
                 Opcode::MapSet => {
-                    let v = self.pop_valor()?;
-                    let k = self.pop_valor()?;
-                    let m = self.pop_valor()?;
-                    if m.es_mapa() && k.es_texto() {
-                        let map_idx = m.indice_mapa();
+                    let ip = self.ip;
+                    if self.ic_mapset[ip] {
+                        let v = self.pop_valor()?;
+                        let k = self.pop_valor()?;
+                        let m = self.pop_valor()?;
                         let ks = self.get_str(k.indice_texto()).to_string();
-                        self.get_map_mut(map_idx).insert(ks, v);
+                        self.get_map_mut(m.indice_mapa()).insert(ks, v);
                         self.push_valor(m);
                     } else {
-                        self.push_valor(ValorFast::nulo());
+                        let v = self.pop_valor()?;
+                        let k = self.pop_valor()?;
+                        let m = self.pop_valor()?;
+                        if m.es_mapa() && k.es_texto() {
+                            let ks = self.get_str(k.indice_texto()).to_string();
+                            self.get_map_mut(m.indice_mapa()).insert(ks, v);
+                            self.push_valor(m);
+                            self.ic_mapset[ip] = true;
+                            self.ic_miss_count[ip] = 0;
+                        } else {
+                            self.push_valor(ValorFast::nulo());
+                            self.ic_miss_count[ip] = self.ic_miss_count[ip].saturating_add(1);
+                            if self.ic_miss_count[ip] >= 3 {
+                                self.ic_mapset[ip] = false;
+                                self.ic_miss_count[ip] = 0;
+                            }
+                        }
                     }
                     self.ip += 1;
                 }
@@ -5733,35 +5846,10 @@ impl ForjaFast {
                                 let mut hilo_vm = ForjaFast::new();
                                 hilo_vm.bytecode = thread_bytecode;
                                 hilo_vm.sym_table = thread_sym_table;
-                                // La sym_table ya fue clonada con todos los símbolos; NO llamar
-                                // init_symbols() porque re-internaría strings builtin y podría
-                                // corromper los SymId de funciones de usuario (ej: "cuadrado").
-                                // En su lugar, sincronizamos los SymId builtin post-facto:
-                                hilo_vm.sym_escribir = hilo_vm.sym_table.intern("escribir");
-                                hilo_vm.sym_retornar = hilo_vm.sym_table.intern("retornar");
-                                hilo_vm.sym_hilo = hilo_vm.sym_table.intern("Hilo");
-                                hilo_vm.sym_unir = hilo_vm.sym_table.intern("unir");
-                                hilo_vm.sym_enviar = hilo_vm.sym_table.intern("enviar");
-                                hilo_vm.sym_recibir = hilo_vm.sym_table.intern("recibir");
-                                hilo_vm.sym_send = hilo_vm.sym_table.intern("send");
-                                hilo_vm.sym_receive = hilo_vm.sym_table.intern("receive");
-                                hilo_vm.sym_recv = hilo_vm.sym_table.intern("recv");
-                                hilo_vm.sym_join = hilo_vm.sym_table.intern("join");
-                                hilo_vm.sym_longitud = hilo_vm.sym_table.intern("longitud");
-                                hilo_vm.sym_len = hilo_vm.sym_table.intern("len");
-                                hilo_vm.sym_tipo = hilo_vm.sym_table.intern("tipo");
-                                hilo_vm.sym_a_texto = hilo_vm.sym_table.intern("a_texto");
-                                hilo_vm.sym_es_numero = hilo_vm.sym_table.intern("es_numero");
-                                hilo_vm.sym_es_texto = hilo_vm.sym_table.intern("es_texto");
-                                hilo_vm.sym_empujar = hilo_vm.sym_table.intern("empujar");
-                                hilo_vm.sym_obtener = hilo_vm.sym_table.intern("obtener");
-                                hilo_vm.sym_remover = hilo_vm.sym_table.intern("remover");
-                                hilo_vm.sym_nuevo = hilo_vm.sym_table.intern("nuevo");
-                                hilo_vm.sym_canal_emisor = hilo_vm.sym_table.intern("CanalEmisor");
-                                hilo_vm.sym_canal_receptor = hilo_vm.sym_table.intern("CanalReceptor");
-                                hilo_vm.sym_valor = hilo_vm.sym_table.intern("valor");
-                                // Poner límite de instrucciones para prevenir hilos colgados
-                                hilo_vm.set_max_inst(100_000);
+                                // Inicializar símbolos builtin (sym_table clonada retorna mismos SymId)
+                                hilo_vm.init_symbols();
+                                // DEBUG: límite bajo para detectar loops
+                                hilo_vm.set_max_inst(1000);
                                 hilo_vm.funciones = thread_funcs;
                                 hilo_vm.func_params = thread_func_params;
                                 hilo_vm
@@ -5777,6 +5865,10 @@ impl ForjaFast {
                                 hilo_vm.ic_setfield = vec![None; hilo_vm.bytecode.len()];
                                 hilo_vm.ic_miss_count = vec![0u8; hilo_vm.bytecode.len()];
                                 hilo_vm.ic_callmethod = vec![None; hilo_vm.bytecode.len()];
+                                hilo_vm.ic_arrayget = vec![None; hilo_vm.bytecode.len()];
+                                hilo_vm.ic_arrayset = vec![None; hilo_vm.bytecode.len()];
+                                hilo_vm.ic_mapget = vec![false; hilo_vm.bytecode.len()];
+                                hilo_vm.ic_mapset = vec![false; hilo_vm.bytecode.len()];
                                 // Poblar function_table desde funciones clonadas
                                 for (&sym, func) in &hilo_vm.funciones {
                                     let idx = hilo_vm.function_table.entries.len();
@@ -5803,12 +5895,25 @@ impl ForjaFast {
                                 };
                                 hilo_vm.frame_count = 1;
                                 hilo_vm.ip = thread_ip;
+                                eprintln!("[DBG] Hilo: ANTES de ejecutar: ip={}, bytecode.len={}, funciones={:?}, max_inst={}",
+                                    thread_ip, hilo_vm.bytecode.len(),
+                                    hilo_vm.funciones.keys().map(|k| hilo_vm.sym_table.get(*k)).collect::<Vec<_>>(),
+                                    hilo_vm.max_inst);
+                                // Mostrar los primeros 5 opcodes alrededor de thread_ip
+                                for offset in 0..5 {
+                                    let idx = thread_ip + offset;
+                                    if idx < hilo_vm.bytecode.len() {
+                                        eprintln!("[DBG] Hilo: bytecode[{}] = {:?}", idx, hilo_vm.bytecode[idx]);
+                                    }
+                                }
                                 let result = hilo_vm.ejecutar();
                                 if let Err(ref e) = result {
                                     use std::io::Write;
                                     eprintln!("[DBG] Hilo: error en ejecución: {:?}", e);
                                     std::io::stderr().flush().ok();
                                 }
+                                eprintln!("[DBG] Hilo: DESPUÉS de ejecutar: ip={}, ejecutadas={}, stack.len={}",
+                                    hilo_vm.ip, hilo_vm.ejecutadas, hilo_vm.stack.len());
                                 let ret =
                                     hilo_vm.stack.first().copied().unwrap_or(ValorFast::nulo());
                                 tx_result.send(ret).ok();
@@ -6825,48 +6930,113 @@ impl ForjaFast {
                     self.ip += 1;
                 }
                 Uop::ArrayGet => {
-                    let i = self.pop_valor()?;
-                    let a = self.pop_valor()?;
-                    if a.es_arreglo() && i.es_entero() {
-                        let arr = self.get_arr(a.indice_arreglo());
-                        let ii = i.a_entero();
-                        if ii >= 0 && (ii as usize) < arr.len() {
-                            self.push_valor(arr[ii as usize]);
-                        } else {
-                            self.push_valor(ValorFast::nulo());
+                    let ip = self.ip;
+                    match self.ic_arrayget[ip] {
+                        Some(true) => {
+                            let i = self.pop_valor()?;
+                            let a = self.pop_valor()?;
+                            let arr = self.get_arr(a.indice_arreglo());
+                            let ii = i.a_entero();
+                            let val = if ii >= 0 && (ii as usize) < arr.len() {
+                                arr[ii as usize]
+                            } else {
+                                ValorFast::nulo()
+                            };
+                            self.push_valor(val);
                         }
-                    } else if a.es_mapa() && i.es_texto() {
-                        let map_idx = a.indice_mapa();
-                        let map = self.get_map(map_idx);
-                        let ks = self.get_str(i.indice_texto());
-                        self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
-                    } else {
-                        self.push_valor(ValorFast::nulo());
+                        Some(false) => {
+                            let k = self.pop_valor()?;
+                            let m = self.pop_valor()?;
+                            let map = self.get_map(m.indice_mapa());
+                            let ks = self.get_str(k.indice_texto());
+                            self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
+                        }
+                        None => {
+                            let i = self.pop_valor()?;
+                            let a = self.pop_valor()?;
+                            if a.es_arreglo() && i.es_entero() {
+                                let arr = self.get_arr(a.indice_arreglo());
+                                let ii = i.a_entero();
+                                let val = if ii >= 0 && (ii as usize) < arr.len() {
+                                    arr[ii as usize]
+                                } else {
+                                    ValorFast::nulo()
+                                };
+                                self.push_valor(val);
+                                self.ic_arrayget[ip] = Some(true);
+                                self.ic_miss_count[ip] = 0;
+                            } else if a.es_mapa() && i.es_texto() {
+                                let map = self.get_map(a.indice_mapa());
+                                let ks = self.get_str(i.indice_texto());
+                                self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
+                                self.ic_arrayget[ip] = Some(false);
+                                self.ic_miss_count[ip] = 0;
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                                self.ic_miss_count[ip] = self.ic_miss_count[ip].saturating_add(1);
+                                if self.ic_miss_count[ip] >= 3 {
+                                    self.ic_arrayget[ip] = None;
+                                    self.ic_miss_count[ip] = 0;
+                                }
+                            }
+                        }
                     }
                     self.ip += 1;
                 }
                 Uop::ArraySet => {
-                    let i = self.pop_valor()?;
-                    let a = self.pop_valor()?;
-                    let v = self.pop_valor()?;
-                    if a.es_arreglo() && i.es_entero() {
-                        let arr_idx = a.indice_arreglo();
-                        let ii = i.a_entero();
-                        let arr = self.get_arr_mut(arr_idx);
-                        if ii >= 0 && (ii as usize) < arr.len() {
-                            arr[ii as usize] = v;
-                            self.push_valor(a);
-                        } else {
-                            self.push_valor(ValorFast::nulo());
+                    let ip = self.ip;
+                    match self.ic_arrayset[ip] {
+                        Some(true) => {
+                            let i = self.pop_valor()?;
+                            let a = self.pop_valor()?;
+                            let v = self.pop_valor()?;
+                            let arr = self.get_arr_mut(a.indice_arreglo());
+                            let ii = i.a_entero();
+                            if ii >= 0 && (ii as usize) < arr.len() {
+                                arr[ii as usize] = v;
+                                self.push_valor(a);
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                            }
                         }
-                    } else if a.es_mapa() && i.es_texto() {
-                        let map_idx = a.indice_mapa();
-                        let ks = self.get_str(i.indice_texto()).to_string();
-                        let map = self.get_map_mut(map_idx);
-                        map.insert(ks, v);
-                        self.push_valor(a);
-                    } else {
-                        self.push_valor(ValorFast::nulo());
+                        Some(false) => {
+                            let k = self.pop_valor()?;
+                            let m = self.pop_valor()?;
+                            let v = self.pop_valor()?;
+                            let ks = self.get_str(k.indice_texto()).to_string();
+                            self.get_map_mut(m.indice_mapa()).insert(ks, v);
+                            self.push_valor(m);
+                        }
+                        None => {
+                            let i = self.pop_valor()?;
+                            let a = self.pop_valor()?;
+                            let v = self.pop_valor()?;
+                            if a.es_arreglo() && i.es_entero() {
+                                let arr = self.get_arr_mut(a.indice_arreglo());
+                                let ii = i.a_entero();
+                                if ii >= 0 && (ii as usize) < arr.len() {
+                                    arr[ii as usize] = v;
+                                    self.push_valor(a);
+                                } else {
+                                    self.push_valor(ValorFast::nulo());
+                                }
+                                self.ic_arrayset[ip] = Some(true);
+                                self.ic_miss_count[ip] = 0;
+                            } else if a.es_mapa() && i.es_texto() {
+                                let ks = self.get_str(i.indice_texto()).to_string();
+                                self.get_map_mut(a.indice_mapa()).insert(ks, v);
+                                self.push_valor(a);
+                                self.ic_arrayset[ip] = Some(false);
+                                self.ic_miss_count[ip] = 0;
+                            } else {
+                                self.push_valor(ValorFast::nulo());
+                                self.ic_miss_count[ip] = self.ic_miss_count[ip].saturating_add(1);
+                                if self.ic_miss_count[ip] >= 3 {
+                                    self.ic_arrayset[ip] = None;
+                                    self.ic_miss_count[ip] = 0;
+                                }
+                            }
+                        }
                     }
                     self.ip += 1;
                 }
@@ -6894,31 +7064,60 @@ impl ForjaFast {
                     self.ip += 1;
                 }
                 Uop::MapGet => {
-                    let k = self.pop_valor()?;
-                    let m = self.pop_valor()?;
-                    if m.es_mapa() && k.es_texto() {
+                    let ip = self.ip;
+                    if self.ic_mapget[ip] {
+                        let k = self.pop_valor()?;
+                        let m = self.pop_valor()?;
                         let map = self.get_map(m.indice_mapa());
-                        self.push_valor(
-                            map.get(self.get_str(k.indice_texto()).as_ref())
-                                .copied()
-                                .unwrap_or(ValorFast::nulo()),
-                        );
+                        let ks = self.get_str(k.indice_texto());
+                        self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
                     } else {
-                        self.push_valor(ValorFast::nulo());
+                        let k = self.pop_valor()?;
+                        let m = self.pop_valor()?;
+                        if m.es_mapa() && k.es_texto() {
+                            let map = self.get_map(m.indice_mapa());
+                            let ks = self.get_str(k.indice_texto());
+                            self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
+                            self.ic_mapget[ip] = true;
+                            self.ic_miss_count[ip] = 0;
+                        } else {
+                            self.push_valor(ValorFast::nulo());
+                            self.ic_miss_count[ip] = self.ic_miss_count[ip].saturating_add(1);
+                            if self.ic_miss_count[ip] >= 3 {
+                                self.ic_mapget[ip] = false;
+                                self.ic_miss_count[ip] = 0;
+                            }
+                        }
                     }
                     self.ip += 1;
                 }
                 Uop::MapSet => {
-                    let v = self.pop_valor()?;
-                    let k = self.pop_valor()?;
-                    let m = self.pop_valor()?;
-                    if m.es_mapa() && k.es_texto() {
-                        let map_idx = m.indice_mapa();
+                    let ip = self.ip;
+                    if self.ic_mapset[ip] {
+                        let v = self.pop_valor()?;
+                        let k = self.pop_valor()?;
+                        let m = self.pop_valor()?;
                         let ks = self.get_str(k.indice_texto()).to_string();
-                        self.get_map_mut(map_idx).insert(ks, v);
+                        self.get_map_mut(m.indice_mapa()).insert(ks, v);
                         self.push_valor(m);
                     } else {
-                        self.push_valor(ValorFast::nulo());
+                        let v = self.pop_valor()?;
+                        let k = self.pop_valor()?;
+                        let m = self.pop_valor()?;
+                        if m.es_mapa() && k.es_texto() {
+                            let ks = self.get_str(k.indice_texto()).to_string();
+                            self.get_map_mut(m.indice_mapa()).insert(ks, v);
+                            self.push_valor(m);
+                            self.ic_mapset[ip] = true;
+                            self.ic_miss_count[ip] = 0;
+                        } else {
+                            self.push_valor(ValorFast::nulo());
+                            self.ic_miss_count[ip] = self.ic_miss_count[ip].saturating_add(1);
+                            if self.ic_miss_count[ip] >= 3 {
+                                self.ic_mapset[ip] = false;
+                                self.ic_miss_count[ip] = 0;
+                            }
+                        }
                     }
                     self.ip += 1;
                 }
@@ -7418,6 +7617,10 @@ impl ForjaFast {
         self.ic_setfield = vec![None; self.bytecode.len()];
         self.ic_miss_count = vec![0u8; self.bytecode.len()];
         self.ic_callmethod = vec![None; self.bytecode.len()];
+        self.ic_arrayget = vec![None; self.bytecode.len()];
+        self.ic_arrayset = vec![None; self.bytecode.len()];
+        self.ic_mapget = vec![false; self.bytecode.len()];
+        self.ic_mapset = vec![false; self.bytecode.len()];
 
         // 9. Aplicar quickening (especialización estática)
         self.quickening();
