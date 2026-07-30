@@ -106,7 +106,7 @@ jobs:
           path: target/${{ matrix.target }}/release/forja
 
   build:
-    name: "Build (${{ matrix.os }})"
+    name: "Compilar (${{ matrix.os }})"
     needs: test
     runs-on: ${{ matrix.os }}
     strategy:

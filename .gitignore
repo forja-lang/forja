@@ -32,6 +32,7 @@ ejemplo_imports.fa
 fix_await.py
 reorganizar_std_pages.py
 fix_astro_braces.py
+fix_astro_braces
 
 # ── Archivos de texto / resultados ──
 *.txt
@@ -40,6 +41,8 @@ logo.png
 forja_history.txt
 test_resultados.txt
 SECURITY_TESTING.md
+plans/
+
 
 # ── Wildcards peligrosos ──
 *test*

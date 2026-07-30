@@ -165,7 +165,7 @@ PS C:\forja> cargo build --release --features all
 | Comando en Consola | Comando Alternativo | Propósito |
 | :--- | :--- | :--- |
 | **`ejecutar <archivo.fa>`** | `correr` | Compila y ejecuta el script en la máquina virtual *ForjaFast* (por defecto). |
-| **`compilar <archivo.fa>`** | `construir` | Genera un ejecutable autónomo nativo. Si usa `importar "gui"`, usa `forja-rt-gui` (VM + Xilem/Vello). Sin transpilación a Rust. |
+| **`compilar <archivo.fa>`** | `construir` | Genera un ejecutable autónomo nativo. Si usa `importar gui`, usa `forja-rt-gui` (VM + Xilem/Vello). Sin transpilación a Rust. |
 | **`interactivo`** | `repl` | Inicia la consola de lectura e interpretación línea por línea. |
 | **`probar [archivo.fa]`** | `test` | Corre los módulos de prueba unitaria marcados con `@test`. |
 | **`medir <archivo.fa>`** | `benchmark` | Analiza el rendimiento del código (mediciones en frío y en caliente). |
@@ -250,7 +250,7 @@ Forja incluye múltiples opciones de interpretación y generación de código:
 
 Forja permite crear complejas aplicaciones de escritorio reactivas e interactivas gracias a la librería de interfaces gráficas (**Xilem + Vello**). Las interfaces siguen la guía de estilo de **Material Design 3 (Material You)**, con soporte automático para modo oscuro y claro según el sistema operativo.
 
-Al compilar un programa que usa GUI (`importar "gui"`), Forja genera un ejecutable autónomo nativo usando el stub `forja-rt-gui` (VM + runtime gráfico), sin necesidad de transpilar a Rust ni tener Cargo instalado.
+Al compilar un programa que usa GUI (`importar gui`), Forja genera un ejecutable autónomo nativo usando el stub `forja-rt-gui` (VM + runtime gráfico), sin necesidad de transpilar a Rust ni tener Cargo instalado.
 
 ```powershell
 # Ejecutar un script con GUI (modo nativo)
