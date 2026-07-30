@@ -1921,6 +1921,20 @@ impl ForjaFast {
     /// Útil antes de operaciones que manipulan self.stack directamente
     /// (como Call/Return argument passing).
     #[inline(always)]
+    /// Convierte los string builders activos a Arc<str> y los guarda en flat_vars.
+    /// Se llama al salir de una función para persistir los buffers acumulados.
+    fn flush_string_builders(&mut self) {
+        let keys: Vec<usize> = self.str_builders.keys().copied().collect();
+        for idx in keys {
+            if let Some(buf) = self.str_builders.remove(&idx) {
+                if !buf.is_empty() && idx < self.flat_vars.len() {
+                    let str_idx = self.alloc_str(Arc::from(buf.as_str()));
+                    self.flat_vars[idx] = ValorFast::texto(str_idx);
+                }
+            }
+        }
+    }
+
     pub(crate) fn flush_stack(&mut self) {
         for i in 0..self.top_len {
             self.stack.push(self.stack_top[i]);
@@ -6553,6 +6567,7 @@ impl ForjaFast {
                     self.frame_count -= 1;
                     let frame = self.frame_buffer[self.frame_count];
                     self.flush_stack();
+                    self.flush_string_builders();
                     self.flat_vars.truncate(self.base_ptr);
                     self.base_ptr = frame.base_ptr_previo;
                     self.ip = frame.ip_ret;

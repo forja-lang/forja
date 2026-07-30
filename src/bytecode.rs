@@ -260,6 +260,11 @@ pub enum Opcode {
     /// Creado en quickening, no serializable.
     CallMethodCached(u32, usize), // (method_sym_id, nargs)
 
+    // === String Builder (concat optimizado) ===
+    /// StrAppend(idx): pop valor del stack, convertir a string, append al buffer de vars[idx].
+    /// El buffer se crea lazy en el primer StrAppend. Reemplaza LoadIdx+Add+StoreIdx para strings.
+    StrAppend(usize),
+
     // === Opcodes para Exacto (BigDecimal) ===
     /// Push valor Exacto al stack (coeff, scale)
     PushExacto(i128, u32),
