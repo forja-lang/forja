@@ -1,7 +1,8 @@
-﻿#![allow(dead_code)]
+#![allow(dead_code)]
 use crate::ast::*;
 use crate::error::ErrorForja;
 use std::sync::Arc;
+use std::collections::HashSet;
 
 /// Profundidad máxima de recursión para la generación de bytecode.
 /// Previene stack overflow al recorrer ASTs con expresiones muy anidadas.
@@ -367,6 +368,11 @@ pub struct BytecodeGenerator {
     pub channel_counter: i64,
     /// Contador para IDs únicos de hilos
     pub hilo_counter: usize,
+    /// Buffer de funciones de hilo para emitir después de Halt
+    /// Cada entrada: (nombre, parámetros_capturados, cuerpo bytecode)
+    /// Almacenar aquí evita que optimizar_indices mezcle índices del ámbito
+    /// exterior con los del ámbito de la función del hilo.
+    hilo_funciones: Vec<(Arc<str>, Vec<Arc<str>>, Vec<Opcode>)>,
     /// Clases que definen constructor
     clases_con_constructor: std::collections::HashSet<String>,
 
@@ -394,6 +400,7 @@ impl BytecodeGenerator {
             enum_variantes: std::collections::HashMap::new(),
             channel_counter: 0,
             hilo_counter: 0,
+            hilo_funciones: Vec::new(),
             clases_con_constructor: std::collections::HashSet::new(),
             profundidad_actual: 0,
             loop_stack: Vec::new(),
@@ -861,6 +868,12 @@ impl BytecodeGenerator {
         // Después las funciones (incluyendo métodos de clase)
         for decl in &nuevas_funciones {
             self.generar_declaracion(decl);
+        }
+
+        // Finalmente, emitir funciones de hilo (hilo { ... }) después de Halt y funciones normales
+        // para que optimizar_indices les asigne ámbitos separados.
+        for (_func_name, _params, body) in self.hilo_funciones.drain(..) {
+            self.opcodes.extend(body);
         }
 
         if self.errores.is_empty() {
@@ -1839,30 +1852,63 @@ impl BytecodeGenerator {
             }
 
             Expresion::Hilo { cuerpo } => {
-                // Compilar el cuerpo como función separada con forward jump
-                //   Jump(over_N)          ← salta la función del hilo
-                //   FunctionDef(__hilo_N) ← registra la función
+                // ── Detectar variables capturadas del entorno ──
+                let mut declaradas: HashSet<String> = HashSet::new();
+                let mut usadas: HashSet<String> = HashSet::new();
+                eprintln!("[DBG] Hilo: procesando {} declaraciones en cuerpo", cuerpo.len());
+                for d in cuerpo.iter() {
+                    Self::extraer_ids_decl(d, &mut declaradas, &mut usadas);
+                }
+                eprintln!("[DBG] Hilo: declaradas={:?}, usadas={:?}", declaradas, usadas);
+                // Capturadas = usadas - declaradas (ordenado para consistencia)
+                let mut capturadas: Vec<String> = usadas
+                    .difference(&declaradas)
+                    .cloned()
+                    .collect();
+                capturadas.sort();
+                let captured_count = capturadas.len();
+
+                // Estrategia: compilar el cuerpo del hilo como una función separada,
+                // pero NO emitirla inline. En su lugar, almacenarla en hilo_funciones
+                // para emitirla después de Halt (como las funciones normales).
+                // Esto evita que optimizar_indices confunda los índices de variables
+                // del ámbito exterior con los del ámbito de la función del hilo.
+                //
+                // Bytecode generado inline (ámbito exterior):
+                //   [Load(cap_0), ..., Load(cap_N)] ← push variables capturadas
+                //   ThreadSpawn(__hilo_N, N)         ← lanza el hilo (pop capturadas del stack)
+                //
+                // Bytecode emitido después de Halt (ámbito propio):
+                //   FunctionDef(__hilo_N, [caps])
                 //   [body opcodes]
                 //   Return
-                //   Label(over_N)
-                //   ThreadSpawn(__hilo_N) ← lanza el hilo REAL
                 let hilo_id = self.hilo_counter;
                 self.hilo_counter += 1;
                 let func_name: Arc<str> = Arc::from(format!("__hilo_{}", hilo_id).as_str());
-                let label_over = self.nueva_label();
-                // Forward jump para saltar la función del hilo
-                self.emitir(Opcode::Jump(label_over));
-                // Definición de la función del hilo
+                // Empujar valores capturados en la pila (ámbito exterior)
+                for cap in &capturadas {
+                    self.emitir(Opcode::Load(Arc::from(cap.as_str())));
+                }
+                // ThreadSpawn: lanza el hilo REAL con std::thread::spawn
                 let func_name_clone = func_name.clone();
-                self.emitir(Opcode::FunctionDef(func_name_clone, Vec::new()));
+                self.emitir(Opcode::ThreadSpawn(func_name_clone, captured_count));
+                // Generar el cuerpo de la función del hilo en un buffer separado
+                let params: Vec<Arc<str>> = capturadas
+                    .iter()
+                    .map(|s| Arc::from(s.as_str()))
+                    .collect();
+                // Guardar opcodes actuales y reemplazar por buffer temporal
+                let opcodes_previos = std::mem::replace(&mut self.opcodes, Vec::new());
+                // Emitir FunctionDef + cuerpo + Return en el buffer temporal
+                let func_name_for_def = func_name.clone();
+                self.emitir(Opcode::FunctionDef(func_name_for_def, params));
                 for d in cuerpo {
                     self.generar_declaracion(d);
                 }
                 self.emitir(Opcode::Return);
-                // Label destino del forward jump
-                self.emitir(Opcode::Label(label_over));
-                // ThreadSpawn: lanza el hilo REAL con std::thread::spawn
-                self.emitir(Opcode::ThreadSpawn(func_name, 0));
+                // Guardar el cuerpo generado
+                let body = std::mem::replace(&mut self.opcodes, opcodes_previos);
+                self.hilo_funciones.push((func_name, vec![], body));
             }
 
             Expresion::CanalNuevo => {
@@ -2201,6 +2247,293 @@ impl BytecodeGenerator {
             tipo,
         });
         idx
+    }
+
+    // ─── Helpers para detectar variables capturadas en hilo { } ──────────
+
+    /// Extrae todos los identificadores (usos de variable) de una expresión recursivamente.
+    fn extraer_ids_expr(expr: &Expresion, usadas: &mut HashSet<String>) {
+        match expr {
+            Expresion::Identificador { nombre, .. } => {
+                // Keywords que NO son variables
+                if nombre != "verdadero" && nombre != "falso" && nombre != "nulo" {
+                    usadas.insert(nombre.clone());
+                }
+            }
+            Expresion::Binaria { izquierda, derecha, .. } => {
+                Self::extraer_ids_expr(izquierda, usadas);
+                Self::extraer_ids_expr(derecha, usadas);
+            }
+            Expresion::Unaria { expr: e, .. } => {
+                Self::extraer_ids_expr(e, usadas);
+            }
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                Self::extraer_ids_expr(condicion, usadas);
+                Self::extraer_ids_expr(si_verdadero, usadas);
+                Self::extraer_ids_expr(si_falso, usadas);
+            }
+            Expresion::LlamadaFuncion { argumentos, .. } => {
+                for arg in argumentos {
+                    Self::extraer_ids_expr(arg, usadas);
+                }
+            }
+            Expresion::LlamadaMetodo {
+                objeto, argumentos, ..
+            } => {
+                Self::extraer_ids_expr(objeto, usadas);
+                for arg in argumentos {
+                    Self::extraer_ids_expr(arg, usadas);
+                }
+            }
+            Expresion::AccesoMiembro { objeto, .. } => {
+                Self::extraer_ids_expr(objeto, usadas);
+            }
+            Expresion::Instanciacion { argumentos, .. } => {
+                for arg in argumentos {
+                    Self::extraer_ids_expr(arg, usadas);
+                }
+            }
+            Expresion::Referencia { expr: e, .. } => {
+                Self::extraer_ids_expr(e, usadas);
+            }
+            Expresion::Arreglo(elementos) => {
+                for elem in elementos {
+                    Self::extraer_ids_expr(elem, usadas);
+                }
+            }
+            Expresion::Mapa(pares) => {
+                for (clave, valor) in pares {
+                    Self::extraer_ids_expr(clave, usadas);
+                    Self::extraer_ids_expr(valor, usadas);
+                }
+            }
+            Expresion::Coincidir { expr: e, brazos } => {
+                Self::extraer_ids_expr(e, usadas);
+                for brazo in brazos {
+                    for d in &brazo.cuerpo {
+                        Self::extraer_ids_decl(d, &mut HashSet::new(), usadas);
+                    }
+                }
+            }
+            Expresion::Index { objeto, indice } => {
+                Self::extraer_ids_expr(objeto, usadas);
+                Self::extraer_ids_expr(indice, usadas);
+            }
+            Expresion::Closure { parametros, cuerpo } => {
+                // Los parámetros del closure NO se capturan del hilo (son locales al closure)
+                let mut closure_locales: HashSet<String> = HashSet::new();
+                for p in parametros {
+                    closure_locales.insert(p.nombre.clone());
+                }
+                for d in cuerpo {
+                    Self::extraer_ids_decl(d, &mut closure_locales, usadas);
+                }
+            }
+            Expresion::Grupo(expr) => {
+                Self::extraer_ids_expr(expr, usadas);
+            }
+            Expresion::Hilo { cuerpo, .. } => {
+                // Hilos anidados: sus capturas se manejan por separado
+                for d in cuerpo {
+                    Self::extraer_ids_decl(d, &mut HashSet::new(), usadas);
+                }
+            }
+            Expresion::Try(expr) => {
+                Self::extraer_ids_expr(expr, usadas);
+            }
+            Expresion::Seleccionar { brazos } => {
+                for brazo in brazos {
+                    if let Some((_var, expr_recv)) = &brazo.recepcion {
+                        // variable de recepción es local al brazo
+                        Self::extraer_ids_expr(expr_recv, usadas);
+                    }
+                    for d in &brazo.cuerpo {
+                        Self::extraer_ids_decl(d, &mut HashSet::new(), usadas);
+                    }
+                }
+            }
+            Expresion::Asignacion { variable: _, valor } => {
+                Self::extraer_ids_expr(valor, usadas);
+            }
+            Expresion::AsignacionCampo { objeto, valor, .. } => {
+                Self::extraer_ids_expr(objeto, usadas);
+                Self::extraer_ids_expr(valor, usadas);
+            }
+            Expresion::ArraySet { array, valor } => {
+                Self::extraer_ids_expr(array, usadas);
+                Self::extraer_ids_expr(valor, usadas);
+            }
+            Expresion::Ok(expr)
+            | Expresion::Error(expr)
+            | Expresion::Algo(expr)
+            | Expresion::Anterior(expr) => {
+                Self::extraer_ids_expr(expr, usadas);
+            }
+            Expresion::LiteralNumero(_)
+            | Expresion::LiteralDecimal(_)
+            | Expresion::LiteralTexto(_)
+            | Expresion::LiteralBooleano(_)
+            | Expresion::LiteralNulo
+            | Expresion::LiteralExacto(_, _)
+            | Expresion::CanalNuevo
+            | Expresion::Resultado => {}
+        }
+    }
+
+    /// Extrae variables declaradas e identificadores usados en una declaración recursivamente.
+    fn extraer_ids_decl(
+        decl: &Declaracion,
+        declaradas: &mut HashSet<String>,
+        usadas: &mut HashSet<String>,
+    ) {
+        match decl {
+            Declaracion::Variable { nombre, valor, .. } => {
+                declaradas.insert(nombre.clone());
+                if let Some(val) = valor {
+                    Self::extraer_ids_expr(val, usadas);
+                }
+            }
+            Declaracion::Asignacion { nombre: _, valor, .. } => {
+                Self::extraer_ids_expr(valor, usadas);
+            }
+            Declaracion::AsignacionMiembro { objeto, valor, .. } => {
+                Self::extraer_ids_expr(objeto, usadas);
+                Self::extraer_ids_expr(valor, usadas);
+            }
+            Declaracion::AsignacionIndex { nombre: _, indice, valor, .. } => {
+                Self::extraer_ids_expr(indice, usadas);
+                Self::extraer_ids_expr(valor, usadas);
+            }
+            Declaracion::Funcion { parametros, cuerpo, .. } => {
+                // Función declarada dentro del hilo: sus parámetros son locales
+                let mut fn_locales: HashSet<String> = HashSet::new();
+                for p in parametros {
+                    fn_locales.insert(p.nombre.clone());
+                }
+                for d in cuerpo {
+                    Self::extraer_ids_decl(d, &mut fn_locales, usadas);
+                }
+            }
+            Declaracion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+                ..
+            } => {
+                Self::extraer_ids_expr(condicion, usadas);
+                for d in bloque_verdadero {
+                    Self::extraer_ids_decl(d, declaradas, usadas);
+                }
+                if let Some(bf) = bloque_falso {
+                    for d in bf {
+                        Self::extraer_ids_decl(d, declaradas, usadas);
+                    }
+                }
+            }
+            Declaracion::Mientras { condicion, bloque, .. } => {
+                Self::extraer_ids_expr(condicion, usadas);
+                for d in bloque {
+                    Self::extraer_ids_decl(d, declaradas, usadas);
+                }
+            }
+            Declaracion::Para {
+                inicializacion,
+                condicion,
+                incremento,
+                bloque,
+                ..
+            } => {
+                if let Some(init) = inicializacion {
+                    Self::extraer_ids_decl(init, declaradas, usadas);
+                }
+                if let Some(cond) = condicion {
+                    Self::extraer_ids_expr(cond, usadas);
+                }
+                if let Some(inc) = incremento {
+                    Self::extraer_ids_decl(inc, declaradas, usadas);
+                }
+                for d in bloque {
+                    Self::extraer_ids_decl(d, declaradas, usadas);
+                }
+            }
+            Declaracion::Repetir { cantidad, bloque, .. } => {
+                Self::extraer_ids_expr(cantidad, usadas);
+                for d in bloque {
+                    Self::extraer_ids_decl(d, declaradas, usadas);
+                }
+            }
+            Declaracion::Cuando {
+                condicion, cuerpo, ..
+            } => {
+                Self::extraer_ids_expr(condicion, usadas);
+                for d in cuerpo {
+                    Self::extraer_ids_decl(d, declaradas, usadas);
+                }
+            }
+            Declaracion::LlamadaFuncion { nombre, argumentos } => {
+                // Si el nombre contiene '.', es una llamada a método (ej: tx.enviar(42))
+                // Extraer el objeto (la parte antes del último '.')
+                if let Some(dot_pos) = nombre.rfind('.') {
+                    let obj = &nombre[..dot_pos];
+                    usadas.insert(obj.to_string());
+                }
+                for arg in argumentos {
+                    Self::extraer_ids_expr(arg, usadas);
+                }
+            }
+            Declaracion::AccesoMiembro { objeto, .. } => {
+                Self::extraer_ids_expr(objeto, usadas);
+            }
+            Declaracion::Retornar { valor } => {
+                if let Some(val) = valor {
+                    Self::extraer_ids_expr(val, usadas);
+                }
+            }
+            Declaracion::Expresion(expr) => {
+                Self::extraer_ids_expr(expr, usadas);
+            }
+            Declaracion::AsignacionMultiple { variables, valor, .. } => {
+                for v in variables {
+                    declaradas.insert(v.clone());
+                }
+                Self::extraer_ids_expr(valor, usadas);
+            }
+            Declaracion::Clase { metodos, .. } => {
+                for m in metodos {
+                    let mut metodo_locales: HashSet<String> = HashSet::new();
+                    metodo_locales.insert("self".to_string());
+                    for p in &m.parametros {
+                        metodo_locales.insert(p.nombre.clone());
+                    }
+                    for d in &m.cuerpo {
+                        Self::extraer_ids_decl(d, &mut metodo_locales, usadas);
+                    }
+                }
+            }
+            Declaracion::Implementacion { metodos, .. } => {
+                for m in metodos {
+                    let mut impl_locales: HashSet<String> = HashSet::new();
+                    impl_locales.insert("self".to_string());
+                    for p in &m.parametros {
+                        impl_locales.insert(p.nombre.clone());
+                    }
+                    for d in &m.cuerpo {
+                        Self::extraer_ids_decl(d, &mut impl_locales, usadas);
+                    }
+                }
+            }
+            // Las siguientes declaraciones no declaran variables ni referencian variables runtime
+            Declaracion::Romper
+            | Declaracion::Continuar
+            | Declaracion::Importar(_)
+            | Declaracion::ImportarExterna(_)
+            | Declaracion::Enum { .. }
+            | Declaracion::Rasgo { .. } => {}
+        }
     }
 }
 
