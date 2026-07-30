@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# build-aar.sh — Build forja-android-rt as an .aar package
+# build-aar.sh — Compila forja-android-rt como un paquete .aar
 #
 # Compiles libforja_android_rt.so for all Android targets
 # and packages it with the Kotlin API into an .aar file.

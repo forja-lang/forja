@@ -2,8 +2,8 @@
 
 <div align="center">
 
-[![Build](https://img.shields.io/github/actions/workflow/status/forja-lang/forja/rust.yml?style=flat-square&logo=github&label=build)](https://github.com/forja-lang/forja/actions)
-[![Docs](https://img.shields.io/badge/docs-forja--lang.github.io-blue?style=flat-square&logo=readthedocs)](https://forja-lang.github.io/docs)
+[![Compilación](https://img.shields.io/github/actions/workflow/status/forja-lang/forja/rust.yml?style=flat-square&logo=github&label=build)](https://github.com/forja-lang/forja/actions)
+[![Documentación](https://img.shields.io/badge/docs-forja--lang.github.io-blue?style=flat-square&logo=readthedocs)](https://forja-lang.github.io/docs)
 
 </div>
 

@@ -118,6 +118,10 @@ pub fn compilar(source: &str) -> Result<String, Vec<ErrorForja>> {
     let mut dce = optimizer::DeadCodeEliminator::new();
     let programa = dce.eliminar(&programa);
 
+    // FASE 6c: ConstProp (propagación de constantes entre declaraciones)
+    let mut const_prop = optimizer::ConstPropagator::new();
+    let programa = const_prop.propagar(&programa);
+
     // FASE 7: Transpilador
     let mut transpiler = transpiler::Transpiler::new();
     let rust_code = transpiler.transpilar(&programa)?;
@@ -150,6 +154,10 @@ pub fn compilar_con_ast(source: &str) -> Result<(Vec<ast::Declaracion>, String),
     // FASE 6b: Dead Code Elimination
     let mut dce = optimizer::DeadCodeEliminator::new();
     let programa = dce.eliminar(&programa);
+
+    // FASE 6c: ConstProp (propagación de constantes entre declaraciones)
+    let mut const_prop = optimizer::ConstPropagator::new();
+    let programa = const_prop.propagar(&programa);
 
     // FASE 7: Transpilador
     let mut transpiler = transpiler::Transpiler::new();
@@ -233,6 +241,10 @@ pub fn compilar_pipeline_completa_desde(
     let mut dce = optimizer::DeadCodeEliminator::new();
     let programa = dce.eliminar(&programa);
 
+    // FASE 4c: ConstProp (propagación de constantes entre declaraciones)
+    let mut const_prop = optimizer::ConstPropagator::new();
+    let programa = const_prop.propagar(&programa);
+
     // FASE 5: Generar bytecode con especialización por tipos y sobrecarga
     let funciones_overload = type_checker.obtener_funciones();
     let mut gen = BytecodeGenerator::new();
@@ -281,6 +293,10 @@ pub fn compilar_pipeline_completa(
     // FASE 5b: Dead Code Elimination
     let mut dce = optimizer::DeadCodeEliminator::new();
     let programa = dce.eliminar(&programa);
+
+    // FASE 5c: ConstProp (propagación de constantes entre declaraciones)
+    let mut const_prop = optimizer::ConstPropagator::new();
+    let programa = const_prop.propagar(&programa);
 
     // FASE 6: Generar bytecode con especialización por tipos y sobrecarga
     let funciones_overload = type_checker.obtener_funciones();
@@ -336,6 +352,10 @@ pub fn compilar_modulo(
     // FASE 4b: Dead Code Elimination
     let mut dce = optimizer::DeadCodeEliminator::new();
     let programa = dce.eliminar(&programa);
+
+    // FASE 4c: ConstProp (propagación de constantes entre declaraciones)
+    let mut const_prop = optimizer::ConstPropagator::new();
+    let programa = const_prop.propagar(&programa);
 
     // FASE 5: Generar ModuleBytecode con generar_para_modulo()
     let funciones_overload = type_checker.obtener_funciones();
@@ -459,6 +479,10 @@ pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
     // FASE 6b: Dead Code Elimination
     let mut dce = optimizer::DeadCodeEliminator::new();
     let programa = dce.eliminar(&programa);
+
+    // FASE 6c: ConstProp (propagación de constantes entre declaraciones)
+    let mut const_prop = optimizer::ConstPropagator::new();
+    let programa = const_prop.propagar(&programa);
 
     // FASE 7: Backend LLVM (generación de texto IR)
     let mut backend = compiler_llvm::LlvmBackend::new("", "forja_module");

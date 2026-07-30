@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# build-android.sh — Build Forja for Android (one-command)
+# build-android.sh — Compilar Forja para Android (one-command)
 #
 # Detects NDK, installs missing rustup targets, and builds.
 # Usage:
@@ -41,8 +41,8 @@ build_target() {
     local target="$1"
     echo ""
     echo "=========================================="
-    echo "  Building for ${target}"
-    echo "  Profile:   ${PROFILE}"
+    echo "  Compilando para ${target}"
+    echo "  Perfil:   ${PROFILE}"
     echo "  Features:  ${FEATURES}"
     echo "=========================================="
     cargo build --target "$target" --features "$FEATURES" --profile "$PROFILE"

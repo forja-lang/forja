@@ -570,6 +570,9 @@ pub struct ForjaFast {
     pub anterior_stack: HashMap<usize, ValorFast>,
     pub verificar_contratos: bool,
 
+    // ─── String Builders (concat optimizado) ────────────────────────────
+    pub str_builders: HashMap<usize, String>,
+
     // ─── Native Functions Registry ──────────────────────────────────────
     pub native_registry: NativeRegistry,
 
@@ -722,6 +725,7 @@ impl ForjaFast {
             contratos: Vec::new(),
             anterior_stack: HashMap::new(),
             verificar_contratos: true,
+            str_builders: HashMap::new(),
             native_registry: NativeRegistry::new(),
             socket_heap: Vec::new(),
             sandbox: forja::sandbox::SandboxRed::new(), // air-gapped por defecto
@@ -2063,16 +2067,6 @@ impl ForjaFast {
                     }
                 }
 
-                // ── Opcodes aritméticos binarios ──
-                Opcode::Add => {
-                    if let Some((t1, t2)) = self.inferir_tipos_binarios(i, &tipos_var) {
-                        if t1 == TipoInferido::Entero && t2 == TipoInferido::Entero {
-                            self.bytecode[i] = Opcode::AddInt;
-                        } else if t1 == TipoInferido::Flotante && t2 == TipoInferido::Flotante {
-                            self.bytecode[i] = Opcode::AddFloat;
-                        }
-                    }
-                }
                 Opcode::Sub => {
                     if let Some((t1, t2)) = self.inferir_tipos_binarios(i, &tipos_var) {
                         if t1 == TipoInferido::Entero && t2 == TipoInferido::Entero {
@@ -2097,6 +2091,32 @@ impl ForjaFast {
                             self.bytecode[i] = Opcode::DivInt;
                         } else if t1 == TipoInferido::Flotante && t2 == TipoInferido::Flotante {
                             self.bytecode[i] = Opcode::DivFloat;
+                        }
+                    }
+                }
+
+                // ── STRING BUILDER: fusionar LoadIdx + Add(texto) + StoreIdx ──
+                Opcode::Add => {
+                    if let Some((t1, t2)) = self.inferir_tipos_binarios(i, &tipos_var) {
+                        if t1 == TipoInferido::Entero && t2 == TipoInferido::Entero {
+                            self.bytecode[i] = Opcode::AddInt;
+                        } else if t1 == TipoInferido::Flotante && t2 == TipoInferido::Flotante {
+                            self.bytecode[i] = Opcode::AddFloat;
+                        } else if t1 == TipoInferido::Texto && t2 == TipoInferido::Texto
+                            && i + 1 < self.bytecode.len()
+                        {
+                            // Detectar s = s + x → StrAppend(idx)
+                            if let Opcode::StoreIdx(idx) = &self.bytecode[i + 1] {
+                                if i >= 2 {
+                                    if let Opcode::LoadIdx(prev_idx) = &self.bytecode[i - 2] {
+                                        if prev_idx == idx {
+                                            self.bytecode[i - 2] = Opcode::Pop; // eliminar LoadIdx
+                                            self.bytecode[i] = Opcode::StrAppend(*idx);
+                                            self.bytecode[i + 1] = Opcode::Pop; // eliminar StoreIdx
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -4010,6 +4030,9 @@ impl ForjaFast {
                             eprintln!("[DEBUG Return] stack_top_value after flush={}", self.mostrar_valor(self.stack.last().unwrap()));
                         }
                     }
+                    // Flush string builders: convertir buffers a Arc<str> en flat_vars
+                    self.flush_string_builders();
+
                     self.flat_vars.truncate(self.base_ptr);
                     self.base_ptr = frame.base_ptr_previo;
                     self.ip = frame.ip_ret;
@@ -5474,6 +5497,14 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
+                // ── String Builder ──────────────────────────────────────────
+                Opcode::StrAppend(idx) => {
+                    let val = self.pop_valor()?;
+                    let s = self.mostrar_valor(&val);
+                    let buf = self.str_builders.entry(idx).or_insert_with(String::new);
+                    buf.push_str(&s);
+                    self.ip += 1;
+                }
                 // ── Exacto operations (BigDecimal) ─────────────────────────
                 Opcode::PushExacto(coeff, scale) => {
                     let v = self.exacto_valor(coeff, scale);
@@ -5809,113 +5840,89 @@ impl ForjaFast {
                 }
 
                 // ─── HILOS REALES con std::thread::spawn ─────────────────────────
+                // ─── HILOS REALES con std::thread::spawn ─────────────────────────
                 Opcode::ThreadSpawn(func_name, captured_count) => {
-                    eprintln!("[DBG] ThreadSpawn: func_name={}, captured_count={}", func_name, captured_count);
-                    // Pop valores capturados (argumentos para la función del hilo)
+                    // Pop valores capturados
                     let mut captured: Vec<ValorFast> = Vec::with_capacity(captured_count);
                     for _ in 0..captured_count {
                         captured.push(self.pop_valor()?);
                     }
                     captured.reverse();
-                    for (i_cap, v_cap) in captured.iter().enumerate() {
-                        let s_cap = self.mostrar_valor(v_cap);
-                        eprintln!("[DBG] ThreadSpawn: captured[{}]={}", i_cap, s_cap);
-                    }
                     // Buscar función en la tabla
                     let fn_sym = self.sym_table.intern(func_name.as_ref());
                     if let Some(entry) = self.lookup_func_entry(fn_sym) {
                         let nargs = captured.len();
-                        // Clonar TODO el estado necesario para el hilo
+                        // Clonar estado necesario para el hilo
                         let thread_bytecode = self.bytecode.clone();
                         let thread_sym_table = self.sym_table.clone();
                         let thread_funcs = self.funciones.clone();
                         let thread_func_params = self.func_params.clone();
+                        // Clonar function_table para preservar índices de CallDirect
+                        let thread_function_table = self.function_table.entries.clone();
+                        let thread_sym_to_func_idx = self.sym_to_func_idx.clone();
                         let thread_obj_heap = self.obj_heap.clone();
                         let thread_obj_shapes = self.obj_shapes.clone();
                         let thread_chan_tx_heap = self.chan_tx_heap.clone();
-                        // Nota: Receiver no implementa Clone, el hilo solo necesita chan_tx_heap
                         let thread_output = self.output.clone();
                         let thread_ip = entry.ip;
                         let thread_vars_size = entry.vars_size.max(nargs);
-                        // Canal para recibir el resultado del hilo
+                        // Canal para recibir resultado del hilo
                         let (tx_result, rx_result) = std::sync::mpsc::channel::<ValorFast>();
                         // Spawn thread
                         let spawn_result = std::thread::Builder::new()
                             .name(format!("forja-hilo-{}", func_name))
                             .spawn(move || {
-                                let mut hilo_vm = ForjaFast::new();
-                                hilo_vm.bytecode = thread_bytecode;
-                                hilo_vm.sym_table = thread_sym_table;
-                                // Inicializar símbolos builtin (sym_table clonada retorna mismos SymId)
-                                hilo_vm.init_symbols();
-                                // DEBUG: límite bajo para detectar loops
-                                hilo_vm.set_max_inst(1000);
-                                hilo_vm.funciones = thread_funcs;
-                                hilo_vm.func_params = thread_func_params;
-                                hilo_vm
-                                    .flat_vars
-                                    .resize(thread_vars_size, ValorFast::nulo());
-                                for (i, arg) in captured.into_iter().enumerate() {
-                                    hilo_vm.flat_vars[i] = arg;
-                                }
-                                hilo_vm.base_ptr = 0;
-                                // Inicializar vectores de especialización e inline caches
-                                hilo_vm.contador_especializacion = vec![0u8; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_getfield = vec![None; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_setfield = vec![None; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_miss_count = vec![0u8; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_callmethod = vec![None; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_arrayget = vec![None; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_arrayset = vec![None; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_mapget = vec![false; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_mapset = vec![false; hilo_vm.bytecode.len()];
-                                // Poblar function_table desde funciones clonadas
-                                for (&sym, func) in &hilo_vm.funciones {
-                                    let idx = hilo_vm.function_table.entries.len();
-                                    hilo_vm.function_table.entries.push(FuncVersion {
-                                        ip: func.ip,
-                                        vars_size: func.vars_size,
-                                        version: func.version,
-                                        module_id: None,
-                                    });
-                                    hilo_vm.sym_to_func_idx.insert(sym, idx);
-                                }
-                                    // Clonar heaps de objetos, shapes y canales para el hilo
+                                // catch_unwind para evitar que panics (ej: index out of bounds
+                                // en flat_vars) maten el thread sin enviar resultado.
+                                let ret = std::panic::catch_unwind(|| {
+                                    let mut hilo_vm = ForjaFast::new();
+                                    hilo_vm.bytecode = thread_bytecode;
+                                    hilo_vm.sym_table = thread_sym_table;
+                                    hilo_vm.init_symbols();
+                                    // Límite de instrucciones para prevenir hilos colgados
+                                    hilo_vm.set_max_inst(500_000);
+                                    hilo_vm.funciones = thread_funcs;
+                                    hilo_vm.func_params = thread_func_params;
+                                    hilo_vm.flat_vars.resize(thread_vars_size, ValorFast::nulo());
+                                    for (i, arg) in captured.into_iter().enumerate() {
+                                        hilo_vm.flat_vars[i] = arg;
+                                    }
+                                    hilo_vm.base_ptr = 0;
+                                    hilo_vm.contador_especializacion = vec![0u8; hilo_vm.bytecode.len()];
+                                    hilo_vm.ic_getfield = vec![None; hilo_vm.bytecode.len()];
+                                    hilo_vm.ic_setfield = vec![None; hilo_vm.bytecode.len()];
+                                    hilo_vm.ic_miss_count = vec![0u8; hilo_vm.bytecode.len()];
+                                    hilo_vm.ic_callmethod = vec![None; hilo_vm.bytecode.len()];
+                                    hilo_vm.ic_arrayget = vec![None; hilo_vm.bytecode.len()];
+                                    hilo_vm.ic_arrayset = vec![None; hilo_vm.bytecode.len()];
+                                    hilo_vm.ic_mapget = vec![false; hilo_vm.bytecode.len()];
+                                    hilo_vm.ic_mapset = vec![false; hilo_vm.bytecode.len()];
+                                    // function_table clonada → mismo orden de índices
+                                    hilo_vm.function_table.entries = thread_function_table;
+                                    hilo_vm.sym_to_func_idx = thread_sym_to_func_idx;
                                     hilo_vm.obj_heap = thread_obj_heap;
                                     hilo_vm.obj_shapes = thread_obj_shapes;
                                     hilo_vm.chan_tx_heap = thread_chan_tx_heap;
-                                    // Compartir output con el hilo padre (mismo Arc<Mutex<...>>)
                                     hilo_vm.output = thread_output;
-                                    // Configurar frame inicial para que Return funcione correctamente
-                                hilo_vm.frame_buffer[0] = FrmFast {
-                                    ip_ret: hilo_vm.bytecode.len(), // después del último opcode
-                                    base_ptr_previo: 0,
-                                    num_vars: 0,
-                                    func_version: 0,
-                                };
-                                hilo_vm.frame_count = 1;
-                                hilo_vm.ip = thread_ip;
-                                eprintln!("[DBG] Hilo: ANTES de ejecutar: ip={}, bytecode.len={}, funciones={:?}, max_inst={}",
-                                    thread_ip, hilo_vm.bytecode.len(),
-                                    hilo_vm.funciones.keys().map(|k| hilo_vm.sym_table.get(*k)).collect::<Vec<_>>(),
-                                    hilo_vm.max_inst);
-                                // Mostrar los primeros 5 opcodes alrededor de thread_ip
-                                for offset in 0..5 {
-                                    let idx = thread_ip + offset;
-                                    if idx < hilo_vm.bytecode.len() {
-                                        eprintln!("[DBG] Hilo: bytecode[{}] = {:?}", idx, hilo_vm.bytecode[idx]);
+                                    hilo_vm.frame_buffer[0] = FrmFast {
+                                        ip_ret: hilo_vm.bytecode.len(),
+                                        base_ptr_previo: 0,
+                                        num_vars: 0,
+                                        func_version: 0,
+                                    };
+                                    hilo_vm.frame_count = 1;
+                                    hilo_vm.ip = thread_ip;
+                                    let result = hilo_vm.ejecutar();
+                                    if let Err(ref e) = result {
+                                        use std::io::Write;
+                                        eprintln!("[WARN] Hilo '{}': {:?}", func_name, e);
+                                        std::io::stderr().flush().ok();
                                     }
-                                }
-                                let result = hilo_vm.ejecutar();
-                                if let Err(ref e) = result {
-                                    use std::io::Write;
-                                    eprintln!("[DBG] Hilo: error en ejecución: {:?}", e);
-                                    std::io::stderr().flush().ok();
-                                }
-                                eprintln!("[DBG] Hilo: DESPUÉS de ejecutar: ip={}, ejecutadas={}, stack.len={}",
-                                    hilo_vm.ip, hilo_vm.ejecutadas, hilo_vm.stack.len());
-                                let ret =
-                                    hilo_vm.stack.first().copied().unwrap_or(ValorFast::nulo());
+                                    hilo_vm.stack.first().copied().unwrap_or(ValorFast::nulo())
+                                }).unwrap_or_else(|_| {
+                                    eprintln!("[WARN] Hilo '{}': panic capturado", func_name);
+                                    ValorFast::nulo()
+                                });
                                 tx_result.send(ret).ok();
                             });
                         match spawn_result {
