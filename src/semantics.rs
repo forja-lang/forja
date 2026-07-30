@@ -1111,7 +1111,9 @@ impl TypeChecker {
 
     /// Analiza el AST completo: infiere tipos y verifica compatibilidad
     pub fn analizar(&mut self, programa: &Programa) -> Result<(), Vec<ErrorForja>> {
-        // Pasada 0: recolectar definiciones de rasgos
+        // Pasada 0: registrar funciones nativas/built-in
+        self.registrar_funciones_nativas();
+        // Pasada 0b: recolectar definiciones de rasgos
         self.recolectar_rasgos(&programa.declaraciones);
         // Pasada 1: recolectar firmas de funciones
         self.recolectar_funciones(&programa.declaraciones);
@@ -1128,6 +1130,43 @@ impl TypeChecker {
     /// Retorna el mapa de nombres de variables a sus tipos inferidos
     pub fn obtener_tipos_inferidos(&self) -> HashMap<String, Tipo> {
         self.tipos.clone()
+    }
+
+    /// Registra funciones nativas de la stdlib que no tienen declaración en el AST
+    /// pero que son conocidas por la VM. Esto permite que el type checker no falle
+    /// cuando la stdlib las usa (ej: a_codigo, a_caracter en std/texto).
+    fn registrar_funciones_nativas(&mut self) {
+        // Funciones built-in de la stdlib (conocidas por la VM)
+        let nativas: Vec<(&str, Vec<Option<Tipo>>, Option<Tipo>)> = vec![
+            // Funciones de conversión carácter ↔ código
+            ("a_codigo", vec![Some(Tipo::Texto)], Some(Tipo::Entero)),
+            ("a_caracter", vec![Some(Tipo::Entero)], Some(Tipo::Texto)),
+            // Funciones de manipulación de texto
+            ("longitud", vec![Some(Tipo::Texto)], Some(Tipo::Entero)),
+            ("subcadena", vec![Some(Tipo::Texto), Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Texto)),
+            // Funciones nativas de red (usadas por std/red)
+            ("_net_dns_resolver", vec![Some(Tipo::Texto), Some(Tipo::Texto)], Some(Tipo::Arreglo(Box::new(Tipo::Texto)))),
+            ("_net_doh_query", vec![Some(Tipo::Texto), Some(Tipo::Texto), Some(Tipo::Texto)], Some(Tipo::Arreglo(Box::new(Tipo::Texto)))),
+            ("_net_ping", vec![Some(Tipo::Texto), Some(Tipo::Entero)], Some(Tipo::Clase("RespuestaPing".to_string()))),
+            ("_net_interfaces", vec![], Some(Tipo::Arreglo(Box::new(Tipo::Clase("InterfazRed".to_string()))))),
+            ("_net_dns_resolver_tipo", vec![Some(Tipo::Texto), Some(Tipo::Texto)], Some(Tipo::Arreglo(Box::new(Tipo::Texto)))),
+            // Funciones nativas QUIC (usadas por std/quic)
+            ("_quic_conectar", vec![Some(Tipo::Texto), Some(Tipo::Entero)], Some(Tipo::Entero)),
+            ("_quic_abrir_stream", vec![Some(Tipo::Entero)], Some(Tipo::Entero)),
+            ("_quic_stream_enviar", vec![Some(Tipo::Entero), Some(Tipo::Texto)], Some(Tipo::Entero)),
+            ("_quic_stream_recibir", vec![Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Texto)),
+            ("_quic_cerrar", vec![Some(Tipo::Entero)], Some(Tipo::Nulo)),
+            // Funciones nativas HTTP/3 (usadas por std/cliente_h3)
+            ("_h3_solicitud", vec![
+                Some(Tipo::Texto), Some(Tipo::Entero), Some(Tipo::Texto),
+                Some(Tipo::Texto), Some(Tipo::Texto), Some(Tipo::Texto),
+            ], Some(Tipo::Clase("RespuestaH3".to_string()))),
+        ];
+        for (nombre, params, retorno) in nativas {
+            self.funciones.entry(nombre.to_string()).or_default().push((
+                params, retorno, vec![],
+            ));
+        }
     }
 
     fn recolectar_funciones(&mut self, declaraciones: &[Declaracion]) {
@@ -1494,7 +1533,9 @@ impl TypeChecker {
                 let overloads_clone = self.funciones.get(nombre).cloned();
                 if overloads_clone.is_none() {
                     // Función no registrada — error, excepto builtins conocidos
-                    if nombre != "escribir" && nombre != "escribir_linea" && nombre != "leer" && nombre != "BD" && nombre != "longitud" && nombre != "len" {
+                    // Si el nombre contiene '.', es una llamada a método (ej: arr.empujar(30))
+                    // que se validará en runtime, no en análisis estático.
+                    if !nombre.contains('.') && nombre != "escribir" && nombre != "escribir_linea" && nombre != "leer" && nombre != "BD" && nombre != "longitud" && nombre != "len" {
                         self.errores.push(ErrorForja::new(
                             ErrorTipo::ErrorDeTipo,
                             self.linea_actual,
@@ -1639,7 +1680,9 @@ impl TypeChecker {
                 let overloads_clone = self.funciones.get(nombre).cloned();
                 if overloads_clone.is_none() {
                     // Función no registrada — error, excepto builtins conocidos
-                    if nombre != "escribir" && nombre != "escribir_linea" && nombre != "leer" && nombre != "BD" && nombre != "longitud" && nombre != "len" {
+                    // Si el nombre contiene '.', es una llamada a método (ej: arr.empujar(30))
+                    // que se validará en runtime, no en análisis estático.
+                    if !nombre.contains('.') && nombre != "escribir" && nombre != "escribir_linea" && nombre != "leer" && nombre != "BD" && nombre != "longitud" && nombre != "len" {
                         self.errores.push(ErrorForja::new(
                             ErrorTipo::ErrorDeTipo,
                             self.linea_actual,
