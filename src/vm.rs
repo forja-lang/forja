@@ -3862,15 +3862,21 @@ enum BuiltinMethod {
     ParseFlotante,
     Repetir,
     Join,
+    Empujar,
+    Obtener,
+    Remover,
 }
 
 /// Resuelve un nombre de método a un BuiltinMethod si es conocido
 fn resolver_builtin(metodo: &str) -> Option<BuiltinMethod> {
     match metodo {
         "length" | "longitud" => Some(BuiltinMethod::Length),
-        "to_upper" => Some(BuiltinMethod::ToUpper),
-        "to_lower" => Some(BuiltinMethod::ToLower),
+        "to_upper" | "a_mayusculas" | "uppercase" => Some(BuiltinMethod::ToUpper),
+        "to_lower" | "a_minusculas" | "lowercase" => Some(BuiltinMethod::ToLower),
         "contains" | "contiene" => Some(BuiltinMethod::Contains),
+        "empujar" | "push" => Some(BuiltinMethod::Empujar),
+        "obtener" | "get" => Some(BuiltinMethod::Obtener),
+        "remover" | "remove" => Some(BuiltinMethod::Remover),
         "split" | "dividir" => Some(BuiltinMethod::Split),
         "trim" | "recortar" => Some(BuiltinMethod::Trim),
         "reverse" | "invertir" => Some(BuiltinMethod::Reverse),
@@ -4193,6 +4199,55 @@ impl ForjaVM {
                         let parts: Vec<String> = arr.iter().map(|v| v.mostrar()).collect();
                         let result = parts.join(&sep);
                         self.stack.push(ValorVM::Texto(result));
+                    }
+                    _ => self.stack.push(ValorVM::Nulo),
+                }
+            }
+            BuiltinMethod::Empujar => {
+                if nargs < 1 {
+                    return Err(ErrorVM::StackUnderflow("Empujar args".to_string()));
+                }
+                let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Empujar val".to_string()))?;
+                let arr = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Empujar arr".to_string()))?;
+                match arr {
+                    ValorVM::Arreglo(mut vec) => {
+                        vec.push(val);
+                        self.stack.push(ValorVM::Nulo);
+                    }
+                    _ => self.stack.push(ValorVM::Nulo),
+                }
+            }
+            BuiltinMethod::Obtener => {
+                if nargs < 1 {
+                    return Err(ErrorVM::StackUnderflow("Obtener args".to_string()));
+                }
+                let idx = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Obtener idx".to_string()))?;
+                let arr = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Obtener arr".to_string()))?;
+                match (arr, idx) {
+                    (ValorVM::Arreglo(vec), ValorVM::Entero(i)) => {
+                        let i = i.max(0) as usize;
+                        if i < vec.len() {
+                            self.stack.push(vec[i].clone());
+                        } else {
+                            self.stack.push(ValorVM::Nulo);
+                        }
+                    }
+                    _ => self.stack.push(ValorVM::Nulo),
+                }
+            }
+            BuiltinMethod::Remover => {
+                if nargs < 1 {
+                    return Err(ErrorVM::StackUnderflow("Remover args".to_string()));
+                }
+                let idx = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Remover idx".to_string()))?;
+                let arr = self.stack.pop().ok_or(ErrorVM::StackUnderflow("Remover arr".to_string()))?;
+                match (arr, idx) {
+                    (ValorVM::Arreglo(mut vec), ValorVM::Entero(i)) => {
+                        let i = i.max(0) as usize;
+                        if i < vec.len() {
+                            vec.remove(i);
+                        }
+                        self.stack.push(ValorVM::Nulo);
                     }
                     _ => self.stack.push(ValorVM::Nulo),
                 }
