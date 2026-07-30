@@ -32,8 +32,6 @@ fn completar_locales(analisis: &AnalisisDocumento) -> Vec<SymbolEntry> {
         }
     }).collect()
 }
-    }).collect()
-}
 
 fn cached_stdlib() -> &'static StdlibIndex {
     static INDEX: std::sync::OnceLock<StdlibIndex> = std::sync::OnceLock::new();
