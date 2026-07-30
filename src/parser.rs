@@ -8,7 +8,20 @@ pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     errores: Vec<ErrorForja>,
+    /// Profundidad de recursión global del parser (previene stack overflow).
+    /// Se incrementa al entrar a parse_declaracion y se decrementa al salir.
+    profundidad: usize,
+    /// Profundidad de anidamiento de paréntesis (para mensaje de error específico).
+    profundidad_paren: usize,
 }
+
+/// Límite máximo de profundidad de recursión global del parser.
+/// Cada llamada recursiva en parse_declaracion consume ~2KB de stack en debug mode.
+/// Con 2MB de stack, 512 es seguro. Lo ponemos en 256 para ser conservadores.
+const MAX_PROFUNDIDAD: usize = 256;
+
+/// Límite máximo de anidamiento de paréntesis dentro de una expresión.
+const MAX_ANIDAMIENTO_PAREN: usize = 32;
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
@@ -16,6 +29,8 @@ impl Parser {
             tokens,
             pos: 0,
             errores: Vec::new(),
+            profundidad: 0,
+            profundidad_paren: 0,
         }
     }
 
@@ -86,7 +101,21 @@ impl Parser {
 
     /// Parsea una declaración. Retorna None si es EOF.
     fn parse_declaracion(&mut self) -> Result<Option<Declaracion>, ErrorForja> {
+        // Prevenir stack overflow en recursión profunda (ej: 100k paréntesis anidados +
+        // el bucle de reintento en parse_declaracion).
+        self.profundidad += 1;
+        if self.profundidad > MAX_PROFUNDIDAD {
+            self.profundidad -= 1;
+            return Err(ErrorForja::new(
+                ErrorTipo::DemasiadaAnidacion { max: MAX_PROFUNDIDAD as u32 },
+                self.linea_actual(),
+                self.columna_actual(),
+                "El parser ha alcanzado el límite de profundidad de recursión",
+                "El programa tiene una anidación demasiado profunda. Refactoriza la expresión.",
+            ));
+        }
         if self.es_eof() {
+            self.profundidad -= 1;
             return Ok(None);
         }
 
@@ -179,6 +208,7 @@ impl Parser {
                 }
             }
         };
+        self.profundidad -= 1;
 
         // Asignar atributos a las declaraciones que los soportan
         if !atributos.is_empty() {
@@ -1172,12 +1202,39 @@ impl Parser {
                 ruta
             }
             // importar ruta/de/modulo  (sin comillas)
-            TokenKind::Identificador(_) => {
+            TokenKind::Identificador(_) | TokenKind::ResultadoKw
+            | TokenKind::TipoTexto | TokenKind::TipoEntero
+            | TokenKind::TipoDecimal | TokenKind::TipoBooleano
+            | TokenKind::TipoExacto => {
                 let mut partes: Vec<String> = Vec::new();
                 loop {
                     match &self.peek().kind {
                         TokenKind::Identificador(id) => {
                             partes.push(id.clone());
+                            self.avanzar();
+                        }
+                        TokenKind::ResultadoKw => {
+                            partes.push("resultado".to_string());
+                            self.avanzar();
+                        }
+                        TokenKind::TipoTexto => {
+                            partes.push("Texto".to_string());
+                            self.avanzar();
+                        }
+                        TokenKind::TipoEntero => {
+                            partes.push("Entero".to_string());
+                            self.avanzar();
+                        }
+                        TokenKind::TipoDecimal => {
+                            partes.push("Decimal".to_string());
+                            self.avanzar();
+                        }
+                        TokenKind::TipoBooleano => {
+                            partes.push("Booleano".to_string());
+                            self.avanzar();
+                        }
+                        TokenKind::TipoExacto => {
+                            partes.push("Exacto".to_string());
                             self.avanzar();
                         }
                         TokenKind::Dividido => {
@@ -2115,8 +2172,23 @@ impl Parser {
         }
 
         if self.coincide(TokenKind::ParenAbrir) {
+            eprintln!("[DBG PARSER] Paren: profundidad={}, MAX={}", self.profundidad_paren + 1, MAX_ANIDAMIENTO_PAREN);
+            self.profundidad_paren += 1;
+            if self.profundidad_paren > MAX_ANIDAMIENTO_PAREN {
+                eprintln!("[DBG PARSER] ¡Límite de profundidad alcanzado! retornando error.");
+                self.profundidad_paren -= 1;
+                return Err(ErrorForja::new(
+                    ErrorTipo::DemasiadaAnidacion { max: MAX_ANIDAMIENTO_PAREN as u32 },
+                    self.peek().linea,
+                    self.peek().columna,
+                    "Demasiados paréntesis anidados",
+                    &format!("El parser permite máximo {} niveles de anidamiento de paréntesis para evitar stack overflow. Refactoriza la expresión.",
+                        MAX_ANIDAMIENTO_PAREN),
+                ));
+            }
             self.avanzar();
             let first = self.parse_expresion()?;
+            self.profundidad_paren -= 1;
             // Si después de la primera expresión hay coma, es una tupla (a, b, ...)
             if self.coincide(TokenKind::Coma) {
                 let mut elementos = vec![first];
