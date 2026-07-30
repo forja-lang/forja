@@ -13,7 +13,7 @@ scratch/
 dist/
 temp_gui_project/
 temp_gui_android_project/
-examples/android/
+ejemplos/android/
 patches/
 fuzz/
 src/bin/fuzz_simple.rs
@@ -31,6 +31,7 @@ batch_commit.py
 ejemplo_imports.fa
 fix_await.py
 reorganizar_std_pages.py
+fix_astro_braces.py
 
 # ── Archivos de texto / resultados ──
 *.txt

@@ -88,13 +88,13 @@ jobs:
 
               comment += '---\n';
               comment += '📖 Consultá la documentación completa en [`INSTRUCCIONES.md`](INSTRUCCIONES.md)\n';
-              comment += '💻 Probá los ejemplos en [`examples/`](examples/)\n';
+              comment += '💻 Probá los ejemplos en [`ejemplos/`](ejemplos/)\n';
             } else {
               comment += '## 🤖 ¡Hola! Asistente de Forja aquí\n\n';
               comment += 'No encontré una palabra clave específica en tu consulta. 😅\n\n';
               comment += 'Acá tenés algunos recursos que pueden ayudarte:\n\n';
               comment += '- 📖 **[Guía completa del lenguaje](INSTRUCCIONES.md)** — Todas las palabras clave con ejemplos\n';
-              comment += '- 💻 **[Ejemplos prácticos](examples/)** — Más de 190 ejemplos listos para ejecutar\n';
+              comment += '- 💻 **[Ejemplos prácticos](ejemplos/)** — Más de 190 ejemplos listos para ejecutar\n';
               comment += '- 📚 **[Documentación oficial](https://forja-lang.github.io/docs)** — Sitio web con documentación\n';
               comment += '- 🔧 **Probá en el playground**: `forja ejecutar ejemplos/01_hola.fa`\n\n';
               comment += 'Si tenés una pregunta específica sobre alguna palabra clave, mencionala en el issue y voy a poder ayudarte mejor. 🙌\n';

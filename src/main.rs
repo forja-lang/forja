@@ -663,13 +663,13 @@ fn mostrar_ayuda() {
     println!("Los comandos también aceptan su nombre en inglés:");
     println!("  run, build, transpile, build-asm, asm, new, init, add, remove, install, learn, keywords, explain, help, test\n");
     println!("EJEMPLOS:");
-    println!("  forja ejecutar examples/hola_mundo.fa");
-    println!("  forja compilar examples/hola_mundo.fa -o programa.exe");
-    println!("  forja compilar-asm examples/hola_mundo.fa");
-    println!("  forja compilar-asm examples/hola_mundo.fa --target arm64 -o programa");
-    println!("  forja formatear examples/hola_mundo.fa");
-    println!("  forja test examples/mis_pruebas.fa");
-    println!("  forja test                  (ejecuta todos los .fa en examples/)");
+    println!("  forja ejecutar ejemplos/hola_mundo.fa");
+    println!("  forja compilar ejemplos/hola_mundo.fa -o programa.exe");
+    println!("  forja compilar-asm ejemplos/hola_mundo.fa");
+    println!("  forja compilar-asm ejemplos/hola_mundo.fa --target arm64 -o programa");
+    println!("  forja formatear ejemplos/hola_mundo.fa");
+    println!("  forja test ejemplos/mis_pruebas.fa");
+    println!("  forja test                  (ejecuta todos los .fa en ejemplos/)");
     println!("  forja palabras");
     println!("  forja explicar variable\n");
 }
@@ -2167,11 +2167,11 @@ fn cmd_build_asm(args: &[String]) {
 }
 
 /// forja test [archivo.fa] — Ejecuta tests (funciones marcadas con @test)
-/// Si no se especifica archivo, busca todos los .fa en examples/
+/// Si no se especifica archivo, busca todos los .fa en ejemplos/
 fn cmd_test(args: &[String]) {
     let archivos: Vec<String> = if args.is_empty() {
-        // Buscar todos los .fa en examples/
-        let dir = Path::new("examples");
+        // Buscar todos los .fa en ejemplos/
+        let dir = Path::new("ejemplos");
         if dir.is_dir() {
             match std::fs::read_dir(dir) {
                 Ok(entries) => entries
@@ -2180,12 +2180,12 @@ fn cmd_test(args: &[String]) {
                     .map(|e| e.path().to_string_lossy().to_string())
                     .collect(),
                 Err(_) => {
-                    eprintln!("No se pudo leer el directorio examples/");
+                    eprintln!("No se pudo leer el directorio ejemplos/");
                     process::exit(1);
                 }
             }
         } else {
-            eprintln!("No se encontró el directorio examples/");
+            eprintln!("No se encontró el directorio ejemplos/");
             process::exit(1);
         }
     } else {
