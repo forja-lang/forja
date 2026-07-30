@@ -123,6 +123,7 @@ pub enum Uop {
 
     /// Polling no bloqueante de socket
     SocketPoll(Arc<str>),
+    StrAppend(usize),
 }
 
 /// Convierte un Opcode atómico (no compuesto) a su Uop equivalente
@@ -365,6 +366,9 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
 
         // Debug: SetLine es ignorado en uops (la info de línea se maneja aparte)
         Opcode::SetLine(_) => Uop::Label(0),
+
+        // String Builder
+        Opcode::StrAppend(idx) => Uop::StrAppend(*idx),
     }
 }
 

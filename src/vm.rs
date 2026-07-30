@@ -3368,6 +3368,12 @@ impl ForjaVM {
                     self.stack.push(ValorVM::Booleano(false));
                     self.ip += 1;
                 }
+                Uop::StrAppend(_idx) => {
+                    // String builder no implementado en VM clásica, concatenar normalmente
+                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("StrAppend".to_string()))?;
+                    self.stack.push(val);
+                    self.ip += 1;
+                }
             }
         }
         Ok(())

@@ -2120,13 +2120,15 @@ impl ForjaFast {
                             && i + 1 < self.bytecode.len()
                         {
                             // Detectar s = s + x → StrAppend(idx)
-                            if let Opcode::StoreIdx(idx) = &self.bytecode[i + 1] {
+                            let next = self.bytecode[i + 1].clone();
+                            if let Opcode::StoreIdx(idx) = &next {
                                 if i >= 2 {
-                                    if let Opcode::LoadIdx(prev_idx) = &self.bytecode[i - 2] {
+                                    let prev = self.bytecode[i - 2].clone();
+                                    if let Opcode::LoadIdx(prev_idx) = &prev {
                                         if prev_idx == idx {
-                                            self.bytecode[i - 2] = Opcode::Pop; // eliminar LoadIdx
+                                            self.bytecode[i - 2] = Opcode::Pop;
                                             self.bytecode[i] = Opcode::StrAppend(*idx);
-                                            self.bytecode[i + 1] = Opcode::Pop; // eliminar StoreIdx
+                                            self.bytecode[i + 1] = Opcode::Pop;
                                         }
                                     }
                                 }
@@ -6608,6 +6610,15 @@ impl ForjaFast {
                         .unwrap_or_default()
                         .as_secs() as i64;
                     self.push_valor(ValorFast::entero(ts));
+                    self.ip += 1;
+                }
+
+                // === String Builder ===
+                Uop::StrAppend(idx) => {
+                    let val = self.pop_valor()?;
+                    let s = self.mostrar_valor(&val);
+                    let buf = self.str_builders.entry(idx).or_insert_with(String::new);
+                    buf.push_str(&s);
                     self.ip += 1;
                 }
 
