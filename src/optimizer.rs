@@ -351,41 +351,94 @@ impl Optimizer {
                             return der;
                         }
                     }
-                    // 4. Identidades algebraicas (+ 0, - 0, * 1, * 0, / 1)
+                    // 4. Identidades algebraicas (+ 0, - 0, * 1, * 0, / 1, * 2, % 1, x-x, 0-x)
                     Operador::Suma => {
-                        if matches!(&der, Expresion::LiteralNumero(0)) {
+                        if matches!(&der, Expresion::LiteralNumero(0))
+                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 0.0)
+                        {
                             self.cambios_realizados += 1;
                             return izq;
                         }
-                        if matches!(&izq, Expresion::LiteralNumero(0)) {
+                        if matches!(&izq, Expresion::LiteralNumero(0))
+                            || matches!(&izq, Expresion::LiteralDecimal(d) if *d == 0.0)
+                        {
                             self.cambios_realizados += 1;
                             return der;
                         }
                     }
                     Operador::Resta => {
-                        if matches!(&der, Expresion::LiteralNumero(0)) {
+                        if matches!(&der, Expresion::LiteralNumero(0))
+                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 0.0)
+                        {
                             self.cambios_realizados += 1;
                             return izq;
+                        }
+                        // x - x → 0  (mismo identificador)
+                        if let (Expresion::Identificador { nombre: n1, .. },
+                                 Expresion::Identificador { nombre: n2, .. }) = (&izq, &der)
+                        {
+                            if n1 == n2 {
+                                self.cambios_realizados += 1;
+                                return Expresion::LiteralNumero(0);
+                            }
+                        }
+                        // 0 - x → -x
+                        if matches!(&izq, Expresion::LiteralNumero(0))
+                            || matches!(&izq, Expresion::LiteralDecimal(d) if *d == 0.0)
+                        {
+                            self.cambios_realizados += 1;
+                            return Expresion::Unaria {
+                                operador: OperadorUnario::Negar,
+                                expr: Box::new(der),
+                            };
                         }
                     }
                     Operador::Multiplicacion => {
-                        if matches!(&der, Expresion::LiteralNumero(1)) {
+                        if matches!(&der, Expresion::LiteralNumero(1))
+                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 1.0)
+                        {
                             self.cambios_realizados += 1;
                             return izq;
                         }
-                        if matches!(&izq, Expresion::LiteralNumero(1)) {
+                        if matches!(&izq, Expresion::LiteralNumero(1))
+                            || matches!(&izq, Expresion::LiteralDecimal(d) if *d == 1.0)
+                        {
                             self.cambios_realizados += 1;
                             return der;
                         }
-                        if matches!(&der, Expresion::LiteralNumero(0)) || matches!(&izq, Expresion::LiteralNumero(0)) {
+                        if matches!(&der, Expresion::LiteralNumero(0))
+                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 0.0)
+                            || matches!(&izq, Expresion::LiteralNumero(0))
+                            || matches!(&izq, Expresion::LiteralDecimal(d) if *d == 0.0)
+                        {
                             self.cambios_realizados += 1;
                             return Expresion::LiteralNumero(0);
                         }
+                        // x * 2 → x + x  (strength reduction)
+                        if matches!(&der, Expresion::LiteralNumero(2)) {
+                            self.cambios_realizados += 1;
+                            return Expresion::Binaria {
+                                izquierda: Box::new(izq.clone()),
+                                operador: Operador::Suma,
+                                derecha: Box::new(izq),
+                            };
+                        }
                     }
                     Operador::Division => {
-                        if matches!(&der, Expresion::LiteralNumero(1)) {
+                        if matches!(&der, Expresion::LiteralNumero(1))
+                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 1.0)
+                        {
                             self.cambios_realizados += 1;
                             return izq;
+                        }
+                    }
+                    Operador::Modulo => {
+                        // x % 1 → 0
+                        if matches!(&der, Expresion::LiteralNumero(1))
+                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 1.0)
+                        {
+                            self.cambios_realizados += 1;
+                            return Expresion::LiteralNumero(0);
                         }
                     }
                     _ => {}
@@ -1035,6 +1088,105 @@ mod tests {
         let programa = parser.parse().unwrap();
         let mut dce = DeadCodeEliminator::new();
         dce.eliminar(&programa)
+    }
+
+    // ─── Strength Reduction tests ─────────────────────────────────────────
+    #[test]
+    fn test_strength_reduce_x_por_2() {
+        let prog = optimizar_source("variable y = x * 2");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor: Some(Expresion::Binaria { operador: Operador::Suma, .. }),
+                ..
+            } => {}
+            _ => panic!("x * 2 no se redujo a x + x"),
+        }
+    }
+
+    #[test]
+    fn test_strength_reduce_x_menos_x() {
+        let prog = optimizar_source("variable y = x - x");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralNumero(0)),
+                ..
+            } => {}
+            _ => panic!("x - x no se redujo a 0"),
+        }
+    }
+
+    #[test]
+    fn test_strength_reduce_0_menos_x() {
+        let prog = optimizar_source("variable y = 0 - x");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor: Some(Expresion::Unaria { operador: OperadorUnario::Negar, .. }),
+                ..
+            } => {}
+            _ => panic!("0 - x no se redujo a -x"),
+        }
+    }
+
+    #[test]
+    fn test_strength_reduce_modulo_1() {
+        let prog = optimizar_source("variable y = x % 1");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralNumero(0)),
+                ..
+            } => {}
+            _ => panic!("x % 1 no se redujo a 0"),
+        }
+    }
+
+    #[test]
+    fn test_strength_reduce_decimal_identities() {
+        let prog = optimizar_source("variable a = x + 0.0\nvariable b = x * 1.0\nvariable c = x * 0.0");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor: Some(Expresion::Identificador { nombre, .. }),
+                ..
+            } => assert_eq!(nombre, "x"),
+            _ => panic!("x + 0.0 no se redujo"),
+        }
+        match &prog.declaraciones[1] {
+            Declaracion::Variable {
+                valor: Some(Expresion::Identificador { nombre, .. }),
+                ..
+            } => assert_eq!(nombre, "x"),
+            _ => panic!("x * 1.0 no se redujo"),
+        }
+        match &prog.declaraciones[2] {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralNumero(0)),
+                ..
+            } => {}
+            _ => panic!("x * 0.0 no se redujo a 0"),
+        }
+    }
+
+    #[test]
+    fn test_strength_reduce_division_por_1_decimal() {
+        let prog = optimizar_source("variable y = x / 1.0");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor: Some(Expresion::Identificador { nombre, .. }),
+                ..
+            } => assert_eq!(nombre, "x"),
+            _ => panic!("x / 1.0 no se redujo"),
+        }
+    }
+
+    #[test]
+    fn test_strength_reduce_0_menos_x_decimal() {
+        let prog = optimizar_source("variable y = 0.0 - x");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor: Some(Expresion::Unaria { operador: OperadorUnario::Negar, .. }),
+                ..
+            } => {}
+            _ => panic!("0.0 - x no se redujo a -x"),
+        }
     }
 
     #[test]
