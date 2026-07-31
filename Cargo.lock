@@ -1387,6 +1387,7 @@ version = "0.8.8"
 dependencies = [
  "crossbeam",
  "proptest",
+ "rayon",
  "rusqlite",
  "rustls",
  "rustls-pki-types",
