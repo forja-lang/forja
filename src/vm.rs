@@ -2931,9 +2931,53 @@ impl ForjaVM {
                     }
                 }
                 Uop::TailCall(nombre, nargs) => {
-                    // Tail Call en VM clásica: no optimizado, simular como Call normal
-                    self.stack.push(ValorVM::Nulo);
-                    self.ip += 1;
+                    // Tail Call Optimization: la llamada reutiliza el frame actual
+                    // en lugar de apilar uno nuevo. La función llamada retorna
+                    // directamente al caller original de la función actual.
+                    if let Some(&func_ip) = self.funciones.get(&nombre) {
+                        let mut args: Vec<ValorVM> = Vec::with_capacity(nargs);
+                        for _ in 0..nargs {
+                            args.push(
+                                self.stack
+                                    .pop()
+                                    .ok_or(ErrorVM::StackUnderflow("TailCall".to_string()))?,
+                            );
+                        }
+                        args.reverse();
+                        let nuevo_ambito = self.variables.len();
+                        self.variables.push(Vec::new());
+                        self.nombre_a_indice.push(HashMap::new());
+
+                        // Asignar args a variables por índice
+                        for (i, arg) in args.into_iter().enumerate() {
+                            if i < self.variables[nuevo_ambito].len() {
+                                self.variables[nuevo_ambito][i] = arg;
+                            } else {
+                                self.variables[nuevo_ambito].push(arg);
+                            }
+                        }
+
+                        // Reemplazar el frame actual: heredar su ip_retorno (el
+                        // caller original). Si no hay frame (llamada desde main),
+                        // el retorno de la función terminará el programa.
+                        let ip_retorno = self
+                            .call_stack
+                            .last()
+                            .map(|f| f.ip_retorno)
+                            .unwrap_or(self.ip + 1);
+                        if self.call_stack.last().is_some() {
+                            self.call_stack.pop();
+                        }
+                        self.call_stack.push(Frame {
+                            ip_retorno,
+                            nombre: nombre.clone(),
+                            ambito: nuevo_ambito,
+                        });
+                        self.ip = func_ip;
+                    } else {
+                        self.stack.push(ValorVM::Nulo);
+                        self.ip += 1;
+                    }
                 }
                 Uop::Return => {
                     if let Some(frame) = self.call_stack.pop() {

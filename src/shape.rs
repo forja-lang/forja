@@ -69,7 +69,7 @@ impl ShapeRegistry {
     }
 
     pub fn get_or_create(&mut self, clase: SymId) -> ShapeId {
-        if let Some(&sid) = self.clase_a_shape.get(&clase) {
+        if let Some(sid) = self.shape_of_clase(clase) {
             return sid;
         }
         let id = ShapeId(self.next_id);
@@ -117,8 +117,8 @@ impl ShapeRegistry {
         new_shape.parent = Some(shape_id);
 
         // Copiar campos existentes
-        for &name in &parent.indice_a_campo {
-            new_shape.add_campo(name);
+        for i in 0..parent.len() {
+            new_shape.add_campo(parent.indice_a_campo[i]);
         }
         // Agregar el nuevo campo
         let idx = new_shape.add_campo(campo);

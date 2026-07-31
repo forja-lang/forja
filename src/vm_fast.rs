@@ -64,7 +64,7 @@ impl Pic {
             }
             Pic::Poly(arr, _) => {
                 // Reemplazar LRU: desplazar y poner nuevo al final
-                let mut new_arr = [arr[1], arr[2], arr[3], (clase, idx)];
+                let new_arr = [arr[1], arr[2], arr[3], (clase, idx)];
                 Pic::Poly(new_arr, 4)
             }
             Pic::Mega => Pic::Mega,
@@ -1405,6 +1405,7 @@ impl ForjaFast {
         // Clear class descriptors + shapes
         self.class_descriptors.clear();
         self.obj_shapes.clear();
+        self.shape_registry.reset();
         // Reset GC state
         self.obj_marked.clear();
         self.str_marked.clear();
@@ -2252,7 +2253,7 @@ impl ForjaFast {
                 }
                 Opcode::TailCall(nombre, nargs) => {
                     let sym = self.sym_table.intern(nombre.as_ref());
-                    if let Some(&func_idx) = self.sym_to_func_idx.get(&sym) {
+                    if self.sym_to_func_idx.contains_key(&sym) {
                         self.bytecode[i] = Opcode::TailCall(Arc::from(nombre.as_ref()), nargs);
                     }
                 }
@@ -4285,6 +4286,13 @@ impl ForjaFast {
                                 }
                                 let desc_mut = self.class_descriptors.get_mut(&clase_sym).unwrap();
                                 let sidx = desc_mut.shape.add_campo(field_sym);
+                                // Transición de shape del objeto (ShapeRegistry) para
+                                // inline caches basados en ShapeId.
+                                let shape_id = self.obj_shapes[obj_idx as usize];
+                                let (nuevo_shape, _) = self
+                                    .shape_registry
+                                    .add_campo_dinamico(shape_id, field_sym);
+                                self.obj_shapes[obj_idx as usize] = nuevo_shape;
                                 if sidx < self.obj_heap[obj_idx as usize].campos_vec.len() {
                                     self.obj_heap[obj_idx as usize].campos_vec[sidx] = v;
                                 } else {
@@ -6775,6 +6783,12 @@ impl ForjaFast {
                             } else {
                                 let desc_mut = self.class_descriptors.get_mut(&clase_sym).unwrap();
                                 let sidx = desc_mut.shape.add_campo(field_sym);
+                                // Transición de shape del objeto (ShapeRegistry)
+                                let shape_id = self.obj_shapes[idx as usize];
+                                let (nuevo_shape, _) = self
+                                    .shape_registry
+                                    .add_campo_dinamico(shape_id, field_sym);
+                                self.obj_shapes[idx as usize] = nuevo_shape;
                                 if sidx < self.obj_heap[idx as usize].campos_vec.len() {
                                     self.obj_heap[idx as usize].campos_vec[sidx] = v;
                                 } else {
