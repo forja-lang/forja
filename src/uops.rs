@@ -18,6 +18,9 @@ pub enum Uop {
     LoadIdx(usize),
     StoreIdx(usize),
     DeclareVar(usize),
+    // Acceso directo a variables globales de módulo (global_var_persist)
+    LoadIdxGlobal(usize),
+    StoreIdxGlobal(usize),
 
     // === Arithmetic (ya especializados o atómicos) ===
     Add,
@@ -146,6 +149,9 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         // DeclareIdx hace POP del stack (el valor a asignar), igual que Declare
         Opcode::DeclareIdx(idx, _) => Uop::DeclareInit(*idx),
         Opcode::DeclareIdxGlobal(idx, _) => Uop::DeclareInit(*idx),
+        // Acceso directo a globales (no usan base_ptr)
+        Opcode::LoadIdxGlobal(idx) => Uop::LoadIdxGlobal(*idx),
+        Opcode::StoreIdxGlobal(idx) => Uop::StoreIdxGlobal(*idx),
 
         // Opcodes compuestos (que se expandirán)
         Opcode::DeclareEnteroOp(idx, _n) => {

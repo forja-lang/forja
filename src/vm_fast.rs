@@ -2456,6 +2456,29 @@ impl ForjaFast {
                     self.flat_vars[idx] = self.global_var_persist[idx];
                     self.ip += 1;
                 }
+                // Acceso directo a variables globales de módulo (no usan base_ptr):
+                // evita la colisión de índices con las locales de las funciones.
+                Opcode::LoadIdxGlobal(idx) => {
+                    if idx < self.global_var_persist.len() {
+                        self.push_valor(self.global_var_persist[idx]);
+                    } else {
+                        self.push_valor(ValorFast::nulo());
+                    }
+                    self.ip += 1;
+                }
+                Opcode::StoreIdxGlobal(idx) => {
+                    let val = self.pop_valor()?;
+                    if idx >= self.global_var_persist.len() {
+                        self.global_var_persist.resize(idx + 1, ValorFast::nulo());
+                    }
+                    self.global_var_persist[idx] = val;
+                    // Sincronizar flat_vars (compatibilidad con hot_swap_module)
+                    if idx >= self.flat_vars.len() {
+                        self.flat_vars.resize(idx + 1, ValorFast::nulo());
+                    }
+                    self.flat_vars[idx] = val;
+                    self.ip += 1;
+                }
 
                 // === OPCODES FUSIONADOS (sin push/pop — asignación directa) ===
                 Opcode::DeclareEnteroOp(idx, n) => {

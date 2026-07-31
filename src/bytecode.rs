@@ -57,6 +57,10 @@ pub enum Opcode {
     // === Variables Globales de Módulo (persistentes entre recargas) ===
     /// Declara una variable global de módulo que persiste entre recargas
     DeclareIdxGlobal(usize, bool), // (índice global, mutable)
+    /// Carga una variable global de módulo (acceso directo a global_var_persist)
+    LoadIdxGlobal(usize),
+    /// Escribe una variable global de módulo (acceso directo a global_var_persist)
+    StoreIdxGlobal(usize),
 
     // === Opcodes fusionados (opcode fusion — eliminan push/pop) ===
     DeclareEnteroOp(usize, i64), // fusion: PushEntero(n) + DeclareIdx(idx, _)
@@ -2644,16 +2648,40 @@ impl BytecodeGenerator {
         // Generar bytecode con el generador estándar
         let raw = self.generar(programa)?;
 
-        // Post-procesar: reemplazar Declare para variables globales con DeclareIdxGlobal
+        // Post-procesar: reemplazar TODO acceso a variables globales por opcodes
+        // globales dedicados (DeclareIdxGlobal / LoadIdxGlobal / StoreIdxGlobal).
+        // Antes los Load/Store de globales se convertían a LoadIdx/StoreIdx con
+        // índices desde 0 por ámbito, colisionando con las locales de las
+        // funciones (mismo flat_vars + base_ptr) → las globales se perdían.
         let mut opcodes = Vec::with_capacity(raw.len());
-        let mut global_idx = 0usize;
         for op in raw {
             match &op {
                 Opcode::Declare(nombre, mutable)
                     if global_var_indices.iter().any(|(g, _)| g == nombre.as_ref()) =>
                 {
-                    opcodes.push(Opcode::DeclareIdxGlobal(global_idx, *mutable));
-                    global_idx += 1;
+                    let g = global_var_indices
+                        .iter()
+                        .position(|(n, _)| n == nombre.as_ref())
+                        .unwrap();
+                    opcodes.push(Opcode::DeclareIdxGlobal(g, *mutable));
+                }
+                Opcode::Load(nombre)
+                    if global_var_indices.iter().any(|(g, _)| g == nombre.as_ref()) =>
+                {
+                    let g = global_var_indices
+                        .iter()
+                        .position(|(n, _)| n == nombre.as_ref())
+                        .unwrap();
+                    opcodes.push(Opcode::LoadIdxGlobal(g));
+                }
+                Opcode::Store(nombre)
+                    if global_var_indices.iter().any(|(g, _)| g == nombre.as_ref()) =>
+                {
+                    let g = global_var_indices
+                        .iter()
+                        .position(|(n, _)| n == nombre.as_ref())
+                        .unwrap();
+                    opcodes.push(Opcode::StoreIdxGlobal(g));
                 }
                 _ => {
                     opcodes.push(op);
@@ -2886,6 +2914,8 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             }
             Opcode::LoadIdx(idx)
             | Opcode::StoreIdx(idx)
+            | Opcode::LoadIdxGlobal(idx)
+            | Opcode::StoreIdxGlobal(idx)
             | Opcode::LoadIdxEntero(idx)
             | Opcode::LoadIdxFloat(idx)
             | Opcode::StoreIdxEntero(idx)
@@ -3082,6 +3112,8 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::StoreIdx(_) => 14,
         Opcode::DeclareIdx(_, _) => 15,
         Opcode::DeclareIdxGlobal(_, _) => 142,
+        Opcode::LoadIdxGlobal(_) => 143,
+        Opcode::StoreIdxGlobal(_) => 144,
         Opcode::DeclareEnteroOp(_, _) => 16,
         Opcode::DeclareBooleanoOp(_, _) => 17,
         Opcode::StoreEnteroOp(_, _) => 18,
@@ -3295,6 +3327,8 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         140 => Some(Opcode::CheckTag(0)),
         141 => Some(Opcode::ExtractField(0)),
         142 => Some(Opcode::DeclareIdxGlobal(0, false)),
+        143 => Some(Opcode::LoadIdxGlobal(0)),
+        144 => Some(Opcode::StoreIdxGlobal(0)),
         // Debug: SetLine opcode
         150 => Some(Opcode::SetLine(0)),
         // Nuevas plantillas de opcodes de optimización (para deserializador)
@@ -4132,6 +4166,20 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 let mutable = data[pos] == 1;
                 pos += 1;
                 opcodes.push(Opcode::DeclareIdxGlobal(idx, mutable));
+            }
+            // LoadIdxGlobal / StoreIdxGlobal — 4 bytes payload (u32 idx)
+            143 | 144 => {
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
+                pos += 4;
+                opcodes.push(match byte {
+                    143 => Opcode::LoadIdxGlobal(idx),
+                    _ => Opcode::StoreIdxGlobal(idx),
+                });
             }
             // Debug: SetLine(line) — 4 bytes payload (u32 linea)
             150 => {
