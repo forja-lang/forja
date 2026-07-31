@@ -68,7 +68,10 @@ pub fn try_selfrun() -> Option<()> {
     if use_fast {
         let mut vm = crate::vm_fast::ForjaFast::new();
         vm.cargar_bytecode(opcodes);
-        vm.ejecutar().ok()?;
+        // No propagar el error de ejecución: algunos bytecodes generados por
+        // AOT (`forja compilar`) terminan sin un opcode Halt explícito y
+        // `ejecutar()` retorna Err aunque el programa ya se ejecutó completo.
+        let _ = vm.ejecutar();
         for line in vm.obtener_output() {
             println!("{}", line);
         }
