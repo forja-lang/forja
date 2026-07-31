@@ -11,7 +11,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 use forja::token::{Token, TokenKind};
-use forja::lsp::completado::{CompletionResolver, CompletionItem as ForjaCompletionItem, SymbolEntry, SymbolKind, fuzzy_score};
+use forja::lsp::completado::{CompletionResolver, CompletionItem as ForjaCompletionItem, SymbolEntry, SymbolKind as ForjaSymbolKind, fuzzy_score};
 use forja::lsp::index_stdlib::StdlibIndex;
 use forja::lsp::firma::SignatureResolver;
 
@@ -20,12 +20,12 @@ fn completar_locales(analisis: &AnalisisDocumento) -> Vec<SymbolEntry> {
         SymbolEntry {
             name: s.nombre.clone(),
             kind: match s.tipo_simbolo {
-                SimboloTipo::Variable => SymbolKind::Variable,
-                SimboloTipo::Funcion => SymbolKind::Funcion,
-                SimboloTipo::Clase => SymbolKind::Clase,
-                SimboloTipo::Enum => SymbolKind::Enum,
-                SimboloTipo::Rasgo => SymbolKind::Rasgo,
-                SimboloTipo::Parametro => SymbolKind::Parametro,
+                SimboloTipo::Variable => ForjaSymbolKind::Variable,
+                SimboloTipo::Funcion => ForjaSymbolKind::Funcion,
+                SimboloTipo::Clase => ForjaSymbolKind::Clase,
+                SimboloTipo::Enum => ForjaSymbolKind::Enum,
+                SimboloTipo::Rasgo => ForjaSymbolKind::Rasgo,
+                SimboloTipo::Parametro => ForjaSymbolKind::Parametro,
             },
             params: Vec::new(),
             doc: s.doc.clone().unwrap_or_default(),
