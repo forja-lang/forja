@@ -40,6 +40,7 @@ pub enum Uop {
 
     // === Function operations ===
     Call(String, usize),
+    TailCall(String, usize),
     Return,
     FunctionDef(String, Vec<String>),
 
@@ -180,6 +181,7 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
 
         // Funciones
         Opcode::Call(n, a) => Uop::Call(n.to_string(), *a),
+        Opcode::TailCall(n, a) => Uop::TailCall(n.to_string(), *a),
         Opcode::Return => Uop::Return,
         Opcode::FunctionDef(n, p) => Uop::FunctionDef(n.to_string(), p.iter().map(|s| s.to_string()).collect()),
 

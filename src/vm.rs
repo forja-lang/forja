@@ -2930,6 +2930,11 @@ impl ForjaVM {
                         self.ip += 1;
                     }
                 }
+                Uop::TailCall(nombre, nargs) => {
+                    // Tail Call en VM clásica: no optimizado, simular como Call normal
+                    self.stack.push(ValorVM::Nulo);
+                    self.ip += 1;
+                }
                 Uop::Return => {
                     if let Some(frame) = self.call_stack.pop() {
                         self.variables.truncate(frame.ambito + 1);

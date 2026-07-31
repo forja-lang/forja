@@ -254,6 +254,10 @@ pub enum Opcode {
     /// Creado en quickening, no serializable.
     CallBuiltin(BuiltinKind, usize), // (builtin_kind, nargs)
 
+    /// Tail Call Optimization: retornar f(args) reutilizando el frame actual.
+    /// Emitido por el bytecode generator cuando retornar f() está en tail position.
+    TailCall(Arc<str>, usize), // (nombre_funcion, nargs)
+
     /// Llamada a método con inline cache
     /// El method_sym_id es el valor interno de SymId (u32) para comparación O(1);
     /// el IC (clase_id, método_idx) se maneja aparte en el vector ic_callmethod.
@@ -1401,12 +1405,23 @@ impl BytecodeGenerator {
             }
 
             Declaracion::Retornar { valor } => {
-                if let Some(val) = valor {
-                    self.generar_expresion(val);
-                } else {
-                    self.emitir(Opcode::PushNulo);
+                match valor {
+                    Some(Expresion::LlamadaFuncion { nombre, argumentos }) => {
+                        // Tail Call Optimization: emitir argumentos + TailCall en lugar de Call + Return
+                        for arg in argumentos.iter().rev() {
+                            self.generar_expresion(arg);
+                        }
+                        self.emitir(Opcode::TailCall(Arc::from(nombre.as_str()), argumentos.len()));
+                    }
+                    Some(expr) => {
+                        self.generar_expresion(expr);
+                        self.emitir(Opcode::Return);
+                    }
+                    None => {
+                        self.emitir(Opcode::PushNulo);
+                        self.emitir(Opcode::Return);
+                    }
                 }
-                self.emitir(Opcode::Return);
             }
 
             Declaracion::Romper => {
@@ -2828,6 +2843,7 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             | Opcode::Store(s)
             | Opcode::Declare(s, _)
             | Opcode::Call(s, _)
+            | Opcode::TailCall(s, _)
             | Opcode::FunctionDef(s, _)
             | Opcode::NewObject(s)
             | Opcode::SetField(s)
@@ -2908,7 +2924,7 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
                     bytes.extend_from_slice(p_bytes);
                 }
             }
-            Opcode::Call(s, n) => {
+            Opcode::Call(s, n) | Opcode::TailCall(s, n) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
             bytes.extend_from_slice(&idx.to_le_bytes());
             bytes.extend_from_slice(&(*n as u32).to_le_bytes());
@@ -3090,10 +3106,7 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::FunctionDef(_, _) => 55,
         Opcode::Call(_, _) => 60,
         Opcode::Return => 61,
-        Opcode::NewObject(_) => 62,
-        Opcode::SetField(_) => 63,
-        Opcode::GetField(_) => 64,
-        Opcode::CallMethod(_, _) => 65,
+        Opcode::TailCall(_, _) => 255,
         Opcode::ArrayNew(_) => 80,
         Opcode::ArrayGet => 81,
         Opcode::ArraySet => 82,
@@ -3238,11 +3251,12 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         53 => Some(Opcode::Halt),
         55 => Some(Opcode::FunctionDef(Arc::from(""), Vec::new())),
         60 => Some(Opcode::Call(Arc::from(""), 0)),
-        61 => Some(Opcode::Return),
-        62 => Some(Opcode::NewObject(Arc::from(""))),
-        63 => Some(Opcode::SetField(Arc::from(""))),
-        64 => Some(Opcode::GetField(Arc::from(""))),
-        65 => Some(Opcode::CallMethod(Arc::from(""), 0)),
+        61 => Some(Opcode::TailCall(Arc::from(""), 0)),
+        62 => Some(Opcode::Return),
+        63 => Some(Opcode::NewObject(Arc::from(""))),
+        64 => Some(Opcode::SetField(Arc::from(""))),
+        65 => Some(Opcode::GetField(Arc::from(""))),
+        66 => Some(Opcode::CallMethod(Arc::from(""), 0)),
         80 => Some(Opcode::ArrayNew(0)),
         81 => Some(Opcode::ArrayGet),
         82 => Some(Opcode::ArraySet),
@@ -4168,6 +4182,18 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 pos += 4;
                 let s = string_pool_get(&string_pool, idx)?;
                 opcodes.push(Opcode::SocketPoll(s));
+            }
+            // TailCall (255): igual formato que Call
+            255 => {
+                if pos + 8 > data.len() {
+                    return None;
+                }
+                let idx = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+                pos += 4;
+                let nargs = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+                pos += 4;
+                let s = string_pool_get(&string_pool, idx)?;
+                opcodes.push(Opcode::TailCall(s, nargs));
             }
             _ => {
                 // Opcodes sin payload
