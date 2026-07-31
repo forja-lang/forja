@@ -44,7 +44,13 @@ pub fn try_selfrun() -> Option<()> {
     file.read_exact(&mut bytecode_data).ok()?;
 
     // Deserializar bytecode
-    let opcodes = crate::bytecode::deserializar_bytecode(&bytecode_data)?;
+    let opcodes = match crate::bytecode::deserializar_bytecode(&bytecode_data) {
+        Some(o) => o,
+        None => {
+            eprintln!("[SELFRUN] error deserializando bytecode ({} bytes)", bc_size);
+            return None;
+        }
+    };
 
     if std::env::var("FORJA_DEBUG_BC").is_ok() {
         println!("OPCODES: {:?}", opcodes);

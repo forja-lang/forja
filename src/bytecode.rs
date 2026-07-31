@@ -3397,6 +3397,12 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
         let data_without_checksum = &data[..data.len() - 4];
         let computed = crc32(data_without_checksum);
         if stored_checksum != computed {
+            eprintln!(
+                "[BC] checksum falla: stored={:08X} computed={:08X} len={}",
+                stored_checksum,
+                computed,
+                data.len()
+            );
             return None; // Datos corruptos o manipulados
         }
     }
@@ -3414,23 +3420,33 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
     }
 
     let mut string_pool: Vec<String> = Vec::new();
-    for _ in 0..num_strings {
+    for si in 0..num_strings {
         if pos + 4 > data.len() {
+            eprintln!("[BC] string pool: pos+4 > len en string {}", si);
             return None;
         }
         let s_len =
             u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         pos += 4;
         if s_len > MAX_STRING_LENGTH {
+            eprintln!("[BC] string pool: s_len {} > MAX en string {}", s_len, si);
             return None;
         }
         if pos + s_len > data.len() {
+            eprintln!("[BC] string pool: pos+s_len > len en string {}", si);
             return None;
         }
-        let s = String::from_utf8(data[pos..pos + s_len].to_vec()).ok()?;
+        let s = match String::from_utf8(data[pos..pos + s_len].to_vec()) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[BC] string pool: utf8 invalido en string {}: {}", si, e);
+                return None;
+            }
+        };
         pos += s_len;
         string_pool.push(s);
     }
+    eprintln!("[BC] string pool OK: {} strings, pos={}", num_strings, pos);
 
     // Opcodes - con límite de seguridad
     if pos + 4 > data.len() {
@@ -3445,12 +3461,16 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
     }
 
     let mut opcodes = Vec::with_capacity(num_opcodes.min(MAX_OPCODES));
-    for _ in 0..num_opcodes {
+    for oi in 0..num_opcodes {
         if pos >= data.len() {
+            eprintln!("[BC] opcodes truncado en i={} pos={} len={}", oi, pos, data.len());
             return None;
         }
         let byte = data[pos];
         pos += 1;
+        if byte > 200 {
+            eprintln!("[BC] opcode byte alto: {} en i={} pos={}", byte, oi, pos - 1);
+        }
 
         match byte {
             0 => {
