@@ -60,6 +60,7 @@ path = "benchmarks/bench_forja_vs_python.rs"
 [[bench]]
 name = "bench-vms"
 path = "benchmarks/bench_vms.rs"
+harness = false
 
 [[bench]]
 name = "bench-clean"
@@ -72,6 +73,7 @@ path = "benchmarks/bench_completo.rs"
 [[bench]]
 name = "bench-jit"
 path = "benchmarks/bench_jit.rs"
+harness = false
 
 [[bench]]
 name = "bench-jit-100k"
@@ -92,6 +94,7 @@ path = "benchmarks/bench_rust_native.rs"
 [[bench]]
 name = "bench-forjafast"
 path = "benchmarks/bench_forjafast.rs"
+harness = false
 
 [[bench]]
 name = "debug-bytecode"

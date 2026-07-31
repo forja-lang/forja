@@ -22,9 +22,28 @@ RESULTS='[]'
 # Función para ejecutar un benchmark y parsear su output
 run_benchmark() {
     local BENCH_BIN="$1"
-    
+
+    # Los benchmarks están definidos como [[bench]] (harness = false), no como
+    # [[bin]], así que se compilan con --bench y se ejecuta el binario resultante.
+    local BENCH_EXE
+    if [ -x "./target/release/$BENCH_BIN" ]; then
+        BENCH_EXE="./target/release/$BENCH_BIN"
+    elif [ -x "./target/release/${BENCH_BIN}.exe" ]; then
+        BENCH_EXE="./target/release/${BENCH_BIN}.exe"
+    else
+        cargo build --release --bench "$BENCH_BIN" >/dev/null 2>&1 || true
+        if [ -x "./target/release/$BENCH_BIN" ]; then
+            BENCH_EXE="./target/release/$BENCH_BIN"
+        elif [ -x "./target/release/${BENCH_BIN}.exe" ]; then
+            BENCH_EXE="./target/release/${BENCH_BIN}.exe"
+        else
+            echo "[]"
+            return 0
+        fi
+    fi
+
     local OUTPUT
-    OUTPUT=$(cargo run --release --bin "$BENCH_BIN" 2>&1 || true)
+    OUTPUT=$("$BENCH_EXE" 2>&1 || true)
     
     local BENCH_RESULTS='[]'
     
