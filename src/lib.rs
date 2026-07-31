@@ -9,6 +9,7 @@ pub mod ast;
 pub mod stdlib_embedded;
 pub mod bytecode;
 pub mod class_descriptor;
+pub mod shape;
 pub mod compiler_asm;
 pub mod compiler_llvm;
 pub mod error;
@@ -37,6 +38,16 @@ pub mod terminal;
 // Módulos nativos que dependen del sistema de archivos o del SO
 // (no compilables a WASM)
 pub mod ffi;
+
+// Funciones nativas de procesos de Windows (PID, módulos, R/W de memoria)
+#[cfg(not(target_arch = "wasm32"))]
+pub mod native_proceso_win;
+#[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
+pub mod native_proceso_win {
+    // stub vacío: las funciones de proceso no aplican en WASM
+    pub fn stub() {}
+}
 
 // Módulos que dependen del sistema de archivos o del SO
 // (no compilables a WASM)
@@ -233,6 +244,12 @@ pub fn compilar_pipeline_completa_desde(
         .map_err(|e| format!("{}", e[0]))?;
     let tipos_inferidos = type_checker.obtener_tipos_inferidos();
 
+    // FASE 3b: Borrow Checker (verificación de ownership y préstamos)
+    let mut borrow_checker = semantics::BorrowChecker::new();
+    borrow_checker
+        .analizar(&programa)
+        .map_err(|e| format!("{}", e[0]))?;
+
     // FASE 4: Optimizador
     let mut optimizer = optimizer::Optimizer::new();
     let programa = optimizer.optimizar(&programa);
@@ -285,6 +302,12 @@ pub fn compilar_pipeline_completa(
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
     let tipos_inferidos = type_checker.obtener_tipos_inferidos();
+
+    // FASE 4b: Borrow Checker (verificación de ownership y préstamos)
+    let mut borrow_checker = semantics::BorrowChecker::new();
+    borrow_checker
+        .analizar(&programa)
+        .map_err(|e| format!("{}", e[0]))?;
 
     // FASE 5: Optimizador
     let mut optimizer = optimizer::Optimizer::new();
@@ -345,6 +368,12 @@ pub fn compilar_modulo(
         .map_err(|e| format!("{}", e[0]))?;
     let tipos_inferidos = type_checker.obtener_tipos_inferidos();
 
+    // FASE 3b: Borrow Checker (verificación de ownership y préstamos)
+    let mut borrow_checker = semantics::BorrowChecker::new();
+    borrow_checker
+        .analizar(&programa)
+        .map_err(|e| format!("{}", e[0]))?;
+
     // FASE 4: Optimizador (constant folding)
     let mut optimizer = optimizer::Optimizer::new();
     let programa = optimizer.optimizar(&programa);
@@ -371,6 +400,23 @@ pub fn compilar_modulo(
     module_bc.opcodes = fusionar_opcodes(&module_bc.opcodes);
 
     Ok(module_bc)
+}
+
+/// Compila múltiples módulos en paralelo usando rayon.
+/// Cada elemento de `modulos` es `(source_code, module_id)`.
+/// Los módulos deben ser independientes entre sí (sin dependencias mutuas).
+#[cfg(feature = "parallel")]
+pub fn compilar_modulos_paralelo(
+    modulos: Vec<(String, ModuleId)>,
+) -> Result<Vec<bytecode::ModuleBytecode>, String> {
+    use rayon::prelude::*;
+
+    let resultados: Vec<Result<bytecode::ModuleBytecode, String>> = modulos
+        .into_par_iter()
+        .map(|(source, module_id)| compilar_modulo(&source, module_id))
+        .collect();
+
+    resultados.into_iter().collect()
 }
 
 /// Compila y ejecuta código Forja en ForjaFast (VM ultra-rápida)

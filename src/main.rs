@@ -19,6 +19,7 @@ mod parser;
 mod repl;
 mod selfrun;
 mod semantics;
+mod shape;
 mod symbol_table;
 mod token;
 mod transpiler;
@@ -60,6 +61,13 @@ mod ffi;
 #[cfg(target_arch = "wasm32")]
 #[allow(dead_code)]
 mod ffi {}
+
+// Funciones nativas de procesos de Windows (PID, módulos, R/W de memoria)
+#[cfg(not(target_arch = "wasm32"))]
+mod native_proceso_win;
+#[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
+mod native_proceso_win {}
 
 use ast::Declaracion;
 use error::{color, NivelVerbose, mostrar_errores};
@@ -1834,10 +1842,13 @@ fn cmd_transpile(args: &[String]) {
         Err(e) => { eprintln!("⚠️ No se pudieron resolver imports: {}. Usando AST sin módulos.", e); None }
     };
 
-    // FASE 4: Type Checker + Type Inference (sin borrow checker para evitar
-    // falsos positivos con variables de patrón en coincidir/caso)
+    // FASE 4: Type Checker + Type Inference
     let mut type_checker = semantics::TypeChecker::new();
     let _ = type_checker.analizar(&programa);
+    // FASE 4b: Borrow Checker — verifica ownership y préstamos
+    // (con los nuevos fixes de scope tracking ya no hay falsos positivos)
+    let mut borrow_checker = semantics::BorrowChecker::new();
+    let _ = borrow_checker.analizar(&programa);
 
     // FASE 5: Transpilador
     let mut transpiler = transpiler::Transpiler::new();
