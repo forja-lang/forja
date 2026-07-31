@@ -22,7 +22,55 @@
 #[cfg(not(target_arch = "wasm32"))]
 use crate::bytecode::ModuleBytecode;
 use crate::bytecode::{self, BuiltinKind, ContratoBytecode, Opcode};
-use crate::class_descriptor::{ClassDescriptor, Shape};
+use crate::class_descriptor::{ClassDescriptor, Shape as ClassShape};
+use crate::shape::{ShapeId, ShapeRegistry};
+
+/// Entrada de Polymorphic Inline Cache (PIC).
+/// Transición: Empty → Mono → Poly(2-4) → Mega
+#[derive(Debug, Clone, Copy)]
+enum Pic {
+    Empty,
+    Mono(SymId, usize),
+    Poly([(SymId, usize); 4], u8),
+    Mega,
+}
+
+impl Pic {
+    fn hit(&self, clase: SymId) -> Option<usize> {
+        match self {
+            Pic::Mono(c, idx) if *c == clase => Some(*idx),
+            Pic::Poly(arr, _) => arr.iter().find_map(|&(c, idx)| if c == clase { Some(idx) } else { None }),
+            _ => None,
+        }
+    }
+
+    fn record_miss(self, clase: SymId, idx: usize) -> Self {
+        match self {
+            Pic::Empty => Pic::Mono(clase, idx),
+            Pic::Mono(c, i) if c == clase => Pic::Mono(c, i),
+            Pic::Mono(c, i) => {
+                Pic::Poly([(c, i), (clase, idx), (SymId(0), 0), (SymId(0), 0)], 2)
+            }
+            Pic::Poly(mut arr, count) if count < 4 => {
+                if arr.iter().any(|&(c, _)| c == clase) {
+                    // ya existe, solo actualizar idx
+                    if let Some(slot) = arr.iter_mut().find(|(c, _)| *c == clase) {
+                        *slot = (clase, idx);
+                    }
+                    return Pic::Poly(arr, count);
+                }
+                arr[count as usize] = (clase, idx);
+                Pic::Poly(arr, count + 1)
+            }
+            Pic::Poly(arr, _) => {
+                // Reemplazar LRU: desplazar y poner nuevo al final
+                let mut new_arr = [arr[1], arr[2], arr[3], (clase, idx)];
+                Pic::Poly(new_arr, 4)
+            }
+            Pic::Mega => Pic::Mega,
+        }
+    }
+}
 #[cfg(not(target_arch = "wasm32"))]
 use crate::module::{ModuleId, ModuleInfo, ModuleResolver};
 use crate::native_registry::{NativeRegistry, SocketState};
@@ -299,14 +347,16 @@ impl ValorFast {
 
 #[derive(Clone)]
 pub struct ObjVal {
-    pub clase: SymId,               // SymId de la clase (comparación O(1))
-    pub campos_vec: Vec<ValorFast>, // índice → valor (shape compartido)
+    pub clase: SymId,                 // SymId de la clase (comparación O(1))
+    pub shape_id: ShapeId,            // ShapeId actual (puede cambiar por transiciones)
+    pub campos_vec: Vec<ValorFast>,   // índice → valor (shape compartido)
 }
 
 impl ObjVal {
-    pub fn new(clase: SymId) -> Self {
+    pub fn new(clase: SymId, shape_id: ShapeId) -> Self {
         ObjVal {
             clase,
+            shape_id,
             campos_vec: Vec::new(),
         }
     }
@@ -426,9 +476,11 @@ pub struct ForjaFast {
     // ─── Class Descriptors + Shape ─────────────────────────────────────────
     /// Cache de descriptores de clase (clase SymId → ClassDescriptor)
     pub class_descriptors: HashMap<SymId, ClassDescriptor>,
+    /// Shape Registry (maneja shapes y transiciones)
+    pub shape_registry: ShapeRegistry,
     /// Shape de cada objeto (por índice en obj_heap)
-    /// obj_shapes[idx] = clase SymId del objeto en obj_heap[idx]
-    pub obj_shapes: Vec<SymId>,
+    /// obj_shapes[idx] = ShapeId del objeto en obj_heap[idx]
+    pub obj_shapes: Vec<ShapeId>,
 
     map_marked: Vec<bool>, // marcas GC para mapas
     obj_free: Vec<u32>,    // free list objetos
@@ -479,16 +531,13 @@ pub struct ForjaFast {
     contador_especializacion: Vec<u8>, // contadores por IP de bytecode
     umbral_especializacion: u8,        // típicamente 2-5
 
-    // Inline Caches para GetField/SetField
-    // Indexados por IP, Option<(clase_id, indice_del_campo_en_vector)>
-    ic_getfield: Vec<Option<(SymId, usize)>>,
-    ic_setfield: Vec<Option<(SymId, usize)>>,
-    ic_miss_count: Vec<u8>, // contador de misses por IP, para des-especialización
+    // Inline Caches para GetField/SetField (Polymorphic: Empty → Mono → Poly → Mega)
+    ic_getfield: Vec<Pic>,
+    ic_setfield: Vec<Pic>,
+    ic_miss_count: Vec<u8>,
 
-    // Inline Cache para CallMethod
-    // Indexado por IP, Option<(clase_id, método_index)> — cachea la clase del objeto
-    // y el índice de la función resuelta dentro de self.funciones para acceso directo.
-    ic_callmethod: Vec<Option<(SymId, usize)>>,
+    // Inline Cache para CallMethod (Polymorphic)
+    ic_callmethod: Vec<Pic>,
 
     // Inline Caches para ArrayGet/ArraySet (Option<bool>: None=no-cache, Some(true)=array, Some(false)=map)
     ic_arrayget: Vec<Option<bool>>,
@@ -665,6 +714,7 @@ impl ForjaFast {
             str_marked: Vec::new(),
             array_marked: Vec::new(),
             class_descriptors: HashMap::new(),
+            shape_registry: ShapeRegistry::new(),
             obj_shapes: Vec::new(),
             map_marked: Vec::new(),
             obj_free: Vec::new(),
@@ -1121,10 +1171,10 @@ impl ForjaFast {
 
     fn init_ic(&mut self) {
         let len = self.bytecode.len();
-        self.ic_getfield = vec![None; len];
-        self.ic_setfield = vec![None; len];
+        self.ic_getfield = vec![Pic::Empty; len];
+        self.ic_setfield = vec![Pic::Empty; len];
         self.ic_miss_count = vec![0u8; len];
-        self.ic_callmethod = vec![None; len];
+        self.ic_callmethod = vec![Pic::Empty; len];
         self.ic_arrayget = vec![None; len];
         self.ic_arrayset = vec![None; len];
         self.ic_mapget = vec![false; len];
@@ -1344,10 +1394,10 @@ impl ForjaFast {
             .iter_mut()
             .for_each(|c| *c = 0);
         // Reset inline caches
-        self.ic_getfield.iter_mut().for_each(|c| *c = None);
-        self.ic_setfield.iter_mut().for_each(|c| *c = None);
+        self.ic_getfield.iter_mut().for_each(|c| *c = Pic::Empty);
+        self.ic_setfield.iter_mut().for_each(|c| *c = Pic::Empty);
         self.ic_miss_count.iter_mut().for_each(|c| *c = 0);
-        self.ic_callmethod.iter_mut().for_each(|c| *c = None);
+        self.ic_callmethod.iter_mut().for_each(|c| *c = Pic::Empty);
         self.ic_arrayget.iter_mut().for_each(|c| *c = None);
         self.ic_arrayset.iter_mut().for_each(|c| *c = None);
         self.ic_mapget.iter_mut().for_each(|c| *c = false);
@@ -1395,16 +1445,16 @@ impl ForjaFast {
             self.gc_collect();
             self.gc_allocs_since_last = 0;
         }
-        let clase = obj.clase;
+        let shape_id = obj.shape_id;
         if let Some(idx) = self.obj_free.pop() {
             self.obj_heap[idx as usize] = obj;
-            self.obj_shapes[idx as usize] = clase;
+            self.obj_shapes[idx as usize] = shape_id;
             idx
         } else {
             let idx = self.obj_heap.len() as u32;
             self.obj_heap.push(obj);
             self.obj_marked.push(false);
-            self.obj_shapes.push(clase);
+            self.obj_shapes.push(shape_id);
             idx
         }
     }
@@ -1591,10 +1641,11 @@ impl ForjaFast {
 
         // --- FASE SWEEP ---
         // Objetos no marcados → free list
+        let default_shape = self.shape_registry.get_or_create(SymId(0));
         for i in 0..self.obj_heap.len() {
             if !self.obj_marked[i] {
-                self.obj_heap[i] = ObjVal::new(SymId(0));
-                self.obj_shapes[i] = SymId(0);
+                self.obj_heap[i] = ObjVal::new(SymId(0), default_shape);
+                self.obj_shapes[i] = default_shape;
                 self.obj_free.push(i as u32);
             }
         }
@@ -1923,6 +1974,15 @@ impl ForjaFast {
     #[inline(always)]
     /// Convierte los string builders activos a Arc<str> y los guarda en flat_vars.
     /// Se llama al salir de una función para persistir los buffers acumulados.
+    /// Extrae la primera entrada válida de un PIC para el inline cache de CallMethod.
+    fn extract_pic_entry(&self, pic: Pic) -> Option<(SymId, usize)> {
+        match pic {
+            Pic::Mono(c, idx) => Some((c, idx)),
+            Pic::Poly(arr, _) => Some(arr[0]),
+            _ => None,
+        }
+    }
+
     fn flush_string_builders(&mut self) {
         let keys: Vec<usize> = self.str_builders.keys().copied().collect();
         for idx in keys {
@@ -2188,6 +2248,12 @@ impl ForjaFast {
                         self.bytecode[i] = Opcode::CallBuiltin(BuiltinKind::Remover, nargs);
                     } else if sym == self.sym_nuevo {
                         self.bytecode[i] = Opcode::CallBuiltin(BuiltinKind::Nuevo, nargs);
+                    }
+                }
+                Opcode::TailCall(nombre, nargs) => {
+                    let sym = self.sym_table.intern(nombre.as_ref());
+                    if let Some(&func_idx) = self.sym_to_func_idx.get(&sym) {
+                        self.bytecode[i] = Opcode::TailCall(Arc::from(nombre.as_ref()), nargs);
                     }
                 }
 
@@ -3796,6 +3862,51 @@ impl ForjaFast {
                     }
                 }
 
+                // ─── TAIL CALL ────────────────────────────────────────────────
+                Opcode::TailCall(nombre, nargs) => {
+                    let sym_id = self.sym_table.intern(nombre.as_ref());
+                    if let Some(entry) = self.lookup_func_entry(sym_id) {
+                        self.flush_stack();
+                        let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                        for _ in 0..nargs {
+                            args.push(self.pop_valor()?);
+                        }
+                        args.reverse();
+                        self.flat_vars.truncate(self.base_ptr);
+                        self.flat_vars.resize(self.base_ptr + nargs, ValorFast::nulo());
+                        for (i, arg) in args.into_iter().enumerate() {
+                            self.flat_vars[self.base_ptr + i] = arg;
+                        }
+                        self.ip = entry.ip;
+                    } else {
+                        let nombre_str = nombre.to_string();
+                        if let Some(b) = resolver_builtin_fast(&nombre_str) {
+                            self.exec_builtin(b, nargs)?;
+                            self.ip += 1;
+                            continue;
+                        }
+                        self.flush_stack();
+                        let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                        for _ in 0..nargs {
+                            args.push(self.pop_valor()?);
+                        }
+                        args.reverse();
+                        let func = self.native_registry.obtener_fn(&nombre_str);
+                        if let Some(func) = func {
+                            match func(self, &args) {
+                                Ok(val) => self.push_valor(val),
+                                Err(e) => {
+                                    eprintln!("[DEBUG] Native '{}' failed: {}", nombre_str, e);
+                                    self.push_valor(ValorFast::nulo());
+                                }
+                            }
+                        } else {
+                            return Err(ErrFast::FnNoDef(nombre_str));
+                        }
+                        self.ip += 1;
+                    }
+                }
+
                 // ─── CALLDIRECT (Fase 2b) — llama por índice de función, directo a function_table ───
                 Opcode::CallDirect(func_idx, nargs) => {
                     // Obtener la función de la function_table por índice
@@ -4111,9 +4222,8 @@ impl ForjaFast {
 
                 Opcode::NewObject(c) => {
                     let clase_sym = self.sym_table.intern(c.as_ref());
-                    // Crear o reusar ClassDescriptor
                     if !self.class_descriptors.contains_key(&clase_sym) {
-                        let shape = Shape::new();
+                        let shape = ClassShape::new();
                         let desc = ClassDescriptor {
                             nombre: clase_sym,
                             shape,
@@ -4123,59 +4233,35 @@ impl ForjaFast {
                         };
                         self.class_descriptors.insert(clase_sym, desc);
                     }
-                    let obj = ObjVal::new(clase_sym);
+                    let shape_id = self.shape_registry.get_or_create(clase_sym);
+                    let obj = ObjVal::new(clase_sym, shape_id);
                     let idx = self.alloc_obj(obj);
                     self.push_valor(ValorFast::objeto(idx));
                     self.ip += 1;
                 }
                 Opcode::SetField(c) => {
-                    // Stack: [valor, valor_dup, objeto] (top = objeto)
                     let obj_val = *self.peek_valor(0);
-                    if self.show_bytecode {
-                        eprintln!(
-                            "[SetField] campo={:?}, obj_val.es_objeto={}, top_len={}, stack.len={}",
-                            c,
-                            obj_val.es_objeto(),
-                            self.top_len,
-                            self.stack.len()
-                        );
-                    }
                     if obj_val.es_objeto() {
                         let obj_idx = obj_val.indice_objeto();
-                        if self.show_bytecode {
-                            eprintln!("[SetField] obj_idx={}", obj_idx);
-                        }
                         let field_sym = self.sym_table.intern(c.as_ref());
-                        // Intentar inline cache
-                        let cache = &self.ic_setfield[self.ip].clone();
-                        if let Some((clase_cache, idx_cache)) = cache {
-                            let clase_actual = self.obj_shapes[obj_idx as usize];
-                            if clase_actual == *clase_cache {
-                                let campos_len = self.get_obj(obj_idx).campos_vec.len();
-                                if *idx_cache < campos_len {
-                                    // Cache HIT! Acceso directo por índice
-                                    let _ = self.pop_valor()?; // objeto
-                                    let v = self.pop_valor()?; // valor
-                                    if self.show_bytecode {
-                                        eprintln!("[SetField] CACHE HIT idx={}, valor={}", idx_cache, self.mostrar_valor(&v));
-                                    }
-                                    self.get_obj_mut(obj_idx).campos_vec[*idx_cache] = v;
+                        let ip = self.ip;
+                        let cache = self.ic_setfield[ip];
+                        if !matches!(cache, Pic::Mega) {
+                            let clase_actual = self.obj_heap[obj_idx as usize].clase;
+                            if let Some(idx_cache) = cache.hit(clase_actual) {
+                                if idx_cache < self.get_obj(obj_idx).campos_vec.len() {
+                                    let _ = self.pop_valor()?;
+                                    let v = self.pop_valor()?;
+                                    self.get_obj_mut(obj_idx).campos_vec[idx_cache] = v;
                                     self.ip += 1;
                                     continue;
                                 }
                             }
-                            // Cache miss
-                            self.ic_miss_count[self.ip] =
-                                self.ic_miss_count[self.ip].saturating_add(1);
-                            if self.ic_miss_count[self.ip] >= 3 {
-                                self.ic_setfield[self.ip] = None;
-                                self.ic_miss_count[self.ip] = 0;
-                            }
                         }
-                        // Fallback: pop objeto, luego valor
+                        // Fallback
                         let _ = self.pop_valor()?; // objeto
                         let v = self.pop_valor()?; // valor
-                        let clase_sym = self.obj_shapes[obj_idx as usize];
+                        let clase_sym = self.obj_heap[obj_idx as usize].clase;
                         if self.show_bytecode {
                             let clase_str = self.sym_table.get(clase_sym);
                             eprintln!("[SetField] FALLBACK clase={}, valor v={}", clase_str, self.mostrar_valor(&v));
@@ -4192,10 +4278,8 @@ impl ForjaFast {
                                 } else {
                                     self.obj_heap[obj_idx as usize].campos_vec.push(v);
                                 }
-                                // Actualizar cache
-                                self.ic_setfield[self.ip] = Some((clase_sym, sidx));
+                                self.ic_setfield[self.ip] = self.ic_setfield[self.ip].record_miss(clase_sym, sidx);
                             } else {
-                                // Campo nuevo — expandir shape y asignar
                                 if self.show_bytecode {
                                     eprintln!("[SetField] new field, expanding shape");
                                 }
@@ -4206,7 +4290,7 @@ impl ForjaFast {
                                 } else {
                                     self.obj_heap[obj_idx as usize].campos_vec.push(v);
                                 }
-                                self.ic_setfield[self.ip] = Some((clase_sym, sidx));
+                                self.ic_setfield[self.ip] = self.ic_setfield[self.ip].record_miss(clase_sym, sidx);
                             }
                         } else {
                             // Sin descriptor — expandir vectores directamente
@@ -4242,86 +4326,50 @@ impl ForjaFast {
                     }
                     if obj_val.es_objeto() {
                         let field_sym = self.sym_table.intern(c.as_ref());
-                        // Intentar inline cache
-                        let cache = &self.ic_getfield[self.ip].clone();
-                        if let Some((clase_cache, idx_cache)) = cache {
+                        let ip = self.ip;
+                        let cache = self.ic_getfield[ip];
+                        if let Pic::Mega = cache {
+                            // Megamórfico: ir directo al fallback
+                        } else {
                             let obj_idx = obj_val.indice_objeto();
-                            let clase_sym = self.obj_shapes[obj_idx as usize];
-                            if clase_sym == *clase_cache {
-                                let campos_len = self.get_obj(obj_idx).campos_vec.len();
-                                if *idx_cache < campos_len {
-                                    // Cache HIT! Acceso directo por índice
-                                    let valor = self.get_obj(obj_idx).campos_vec[*idx_cache];
-                                    if self.show_bytecode {
-                                        eprintln!(
-                                            "[GetField] CACHE HIT idx={}, valor={}",
-                                            idx_cache,
-                                            self.mostrar_valor(&valor)
-                                        );
-                                    }
-                                    self.pop_valor()?; // pop del objeto
+                            let clase_sym = self.obj_heap[obj_idx as usize].clase;
+                            if let Some(idx_cache) = cache.hit(clase_sym) {
+                                if idx_cache < self.get_obj(obj_idx).campos_vec.len() {
+                                    let valor = self.get_obj(obj_idx).campos_vec[idx_cache];
+                                    self.pop_valor()?;
                                     self.push_valor(valor);
                                     self.ip += 1;
                                     continue;
                                 }
                             }
-                            // Cache miss
-                            self.ic_miss_count[self.ip] =
-                                self.ic_miss_count[self.ip].saturating_add(1);
-                            if self.ic_miss_count[self.ip] >= 3 {
-                                self.ic_getfield[self.ip] = None;
-                                self.ic_miss_count[self.ip] = 0;
-                            }
                         }
                         // Fallback: búsqueda con Shape
                         let obj = self.pop_valor()?;
                         let idx = obj.indice_objeto();
-                        let clase_sym = self.obj_shapes[idx as usize];
+                        let clase_sym = self.obj_heap[idx as usize].clase;
                         if self.show_bytecode {
                             let clase_str = self.sym_table.get(clase_sym);
-                            eprintln!(
-                                "[GetField] FALLBACK obj_idx={}, clase={}, field_sym={:?}",
-                                idx, clase_str, field_sym
-                            );
+                            eprintln!("[GetField] FALLBACK obj_idx={}, clase={}, field_sym={:?}", idx, clase_str, field_sym);
                         }
                         let valor = if let Some(desc) = self.class_descriptors.get(&clase_sym) {
-                            if self.show_bytecode {
-                                let campos_nombres: Vec<&str> = desc.shape.indice_a_campo.iter().map(|&s| self.sym_table.get(s)).collect();
-                                eprintln!("[GetField] shape campos: {:?}", campos_nombres);
-                            }
                             if let Some(sidx) = desc.shape.get_idx(field_sym) {
-                                if self.show_bytecode {
-                                    eprintln!("[GetField] sidx={}, campos_vec.len={}", sidx, self.obj_heap[idx as usize].campos_vec.len());
-                                }
                                 if sidx < self.obj_heap[idx as usize].campos_vec.len() {
-                                    let v = self.obj_heap[idx as usize].campos_vec[sidx];
-                                    if self.show_bytecode {
-                                        eprintln!("[GetField] valor={}", self.mostrar_valor(&v));
-                                    }
-                                    v
+                                    self.obj_heap[idx as usize].campos_vec[sidx]
                                 } else {
-                                    if self.show_bytecode {
-                                        eprintln!("[GetField] sidx >= campos_vec.len, returning nulo");
-                                    }
                                     ValorFast::nulo()
                                 }
                             } else {
-                                if self.show_bytecode {
-                                    eprintln!("[GetField] field not in shape");
-                                }
                                 ValorFast::nulo()
                             }
                         } else {
-                            if self.show_bytecode {
-                                eprintln!("[GetField] no class descriptor");
-                            }
                             ValorFast::nulo()
                         };
                         self.push_valor(valor);
-                        // Actualizar cache
+                        // Actualizar PIC
+                        let ip = self.ip;
                         if let Some(desc) = self.class_descriptors.get(&clase_sym) {
                             if let Some(sidx) = desc.shape.get_idx(field_sym) {
-                                self.ic_getfield[self.ip] = Some((clase_sym, sidx));
+                                self.ic_getfield[ip] = self.ic_getfield[ip].record_miss(clase_sym, sidx);
                             }
                         }
                     } else if obj_val.es_mapa() {
@@ -4357,7 +4405,7 @@ impl ForjaFast {
                     let obj = self.pop_valor()?;
                     if obj.es_objeto() {
                         let idx = obj.indice_objeto();
-                        let clase_sym = self.obj_shapes[idx as usize];
+                        let clase_sym = self.obj_heap[idx as usize].clase;
                         let method_sym = self.sym_table.intern(m.as_ref());
                         // ── NATIVE DISPATCH: CanalEmisor / CanalReceptor / Hilo ──
                         if clase_sym == self.sym_canal_emisor {
@@ -4572,61 +4620,49 @@ impl ForjaFast {
                         continue;
                     }
                     // Intentar inline cache primero
-                    let cache = &self.ic_callmethod[self.ip].clone();
-                    if let Some((clase_id_cache, func_idx_cache)) = cache {
-                        if let Some(entry) =
-                            self.function_table.entries.get(*func_idx_cache).copied()
-                        {
-                            // Cache candidate — verificar flush_stack
-                            self.flush_stack();
-                            let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
-                            for _ in 0..nargs {
-                                args.push(self.pop_valor()?);
-                            }
-                            args.reverse();
-                            let obj = self.pop_valor()?;
-                            if obj.es_objeto() {
-                                let obj_idx = obj.indice_objeto();
-                                let clase_id = self.obj_shapes[obj_idx as usize];
-                                if clase_id == *clase_id_cache {
-                                    // Cache HIT! Llamada directa sin resolver clase otra vez
-                                    let max_frames = self.frame_buffer.len();
-                                    if self.frame_count >= max_frames {
-                                        return Err(ErrFast::StackUnder(
-                                            "Stack overflow: demasiadas llamadas anidadas".into(),
-                                        ));
-                                    }
-                                    let num_vars_actual = self.flat_vars.len() - self.base_ptr;
-                                    self.frame_buffer[self.frame_count] = FrmFast {
-                                        ip_ret: self.ip + 1,
-                                        base_ptr_previo: self.base_ptr,
-                                        num_vars: num_vars_actual,
-                                        func_version: entry.version,
-                                    };
-                                    self.frame_count += 1;
-                                    self.base_ptr = self.flat_vars.len();
-                                    let total_vars = 1 + nargs;
-                                    let vars_size = entry.vars_size.max(total_vars);
-                                    self.flat_vars
-                                        .resize(self.base_ptr + vars_size, ValorFast::nulo());
-                                    self.flat_vars[self.base_ptr] = ValorFast::objeto(obj_idx);
-                                    for (i, arg) in args.into_iter().enumerate() {
-                                        self.flat_vars[self.base_ptr + 1 + i] = arg;
-                                    }
-                                    self.ip = entry.ip;
-                                    continue;
+                    let ip = self.ip;
+                    if !matches!(self.ic_callmethod[ip], Pic::Mega) {
+                        if let Some((clase_id_cache, func_idx_cache)) = self.extract_pic_entry(self.ic_callmethod[ip]) {
+                            if let Some(entry) = self.function_table.entries.get(func_idx_cache).copied() {
+                                self.flush_stack();
+                                let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                                for _ in 0..nargs {
+                                    args.push(self.pop_valor()?);
                                 }
-                            }
-                            // Cache miss: reponer stack y caer al fallback
-                            self.push_valor(obj);
-                            for arg in args.into_iter().rev() {
-                                self.push_valor(arg);
-                            }
-                            self.ic_miss_count[self.ip] =
-                                self.ic_miss_count[self.ip].saturating_add(1);
-                            if self.ic_miss_count[self.ip] >= 3 {
-                                self.ic_callmethod[self.ip] = None;
-                                self.ic_miss_count[self.ip] = 0;
+                                args.reverse();
+                                let obj = self.pop_valor()?;
+                                if obj.es_objeto() {
+                                    let obj_idx = obj.indice_objeto();
+                                    let clase_id = self.obj_heap[obj_idx as usize].clase;
+                                    if clase_id == clase_id_cache {
+                                        let max_frames = self.frame_buffer.len();
+                                        if self.frame_count >= max_frames {
+                                            return Err(ErrFast::StackUnder("Stack overflow: demasiadas llamadas anidadas".into()));
+                                        }
+                                        let num_vars_actual = self.flat_vars.len() - self.base_ptr;
+                                        self.frame_buffer[self.frame_count] = FrmFast {
+                                            ip_ret: self.ip + 1,
+                                            base_ptr_previo: self.base_ptr,
+                                            num_vars: num_vars_actual,
+                                            func_version: entry.version,
+                                        };
+                                        self.frame_count += 1;
+                                        self.base_ptr = self.flat_vars.len();
+                                        let total_vars = 1 + nargs;
+                                        let vars_size = entry.vars_size.max(total_vars);
+                                        self.flat_vars.resize(self.base_ptr + vars_size, ValorFast::nulo());
+                                        self.flat_vars[self.base_ptr] = ValorFast::objeto(obj_idx);
+                                        for (i, arg) in args.into_iter().enumerate() {
+                                            self.flat_vars[self.base_ptr + 1 + i] = arg;
+                                        }
+                                        self.ip = entry.ip;
+                                        continue;
+                                    }
+                                }
+                                self.push_valor(obj);
+                                for arg in args.into_iter().rev() {
+                                    self.push_valor(arg);
+                                }
                             }
                         }
                     }
@@ -4647,7 +4683,7 @@ impl ForjaFast {
                     }
                     if obj.es_objeto() {
                         let idx = obj.indice_objeto();
-                        let clase_sym = self.obj_shapes[idx as usize];
+                        let clase_sym = self.obj_heap[idx as usize].clase;
                         let method_sym = SymId(method_sym_id);
                         // ── NATIVE DISPATCH: CanalEmisor / CanalReceptor / Hilo ──
                         if clase_sym == self.sym_canal_emisor {
@@ -4759,10 +4795,9 @@ impl ForjaFast {
                                 for (i, arg) in args.into_iter().enumerate() {
                                     self.flat_vars[self.base_ptr + 1 + i] = arg;
                                 }
-                                // Actualizar inline cache con índice de function_table
                                 let func_idx =
                                     self.sym_to_func_idx.get(&fn_sym).copied().unwrap_or(0);
-                                self.ic_callmethod[self.ip] = Some((clase_sym, func_idx));
+                                self.ic_callmethod[ip] = self.ic_callmethod[ip].record_miss(clase_sym, func_idx);
                                 self.ip = entry.ip;
                                 continue;
                             }
@@ -4796,9 +4831,8 @@ impl ForjaFast {
                             for (i, arg) in args.into_iter().enumerate() {
                                 self.flat_vars[self.base_ptr + 1 + i] = arg;
                             }
-                            // Actualizar inline cache
                             let func_idx = self.sym_to_func_idx.get(&fn_sym).copied().unwrap_or(0);
-                            self.ic_callmethod[self.ip] = Some((clase_sym, func_idx));
+                            self.ic_callmethod[ip] = self.ic_callmethod[ip].record_miss(clase_sym, func_idx);
                             self.ip = entry.ip;
                         } else {
                             self.push_valor(ValorFast::nulo());
@@ -5464,7 +5498,7 @@ impl ForjaFast {
                     let valor = self.pop_valor()?;
                     if valor.es_objeto() {
                         let obj_idx = valor.indice_objeto();
-                        let clase_sym = self.obj_shapes[obj_idx as usize];
+                        let clase_sym = self.obj_heap[obj_idx as usize].clase;
                         let es_error = if let Some(desc) = self.class_descriptors.get(&clase_sym) {
                             if let Some(tipo_idx) = desc.shape.get_idx(self.sym_tipo) {
                                 if tipo_idx < self.obj_heap[obj_idx as usize].campos_vec.len() {
@@ -5842,11 +5876,12 @@ impl ForjaFast {
                     let rx_idx = self.alloc_chan_rx(rx);
                     eprintln!("[DBG] ChannelNew: tx_idx={}, rx_idx={}", tx_idx, rx_idx);
                     // Crear objeto CanalEmisor
-                    let mut obj_tx = ObjVal::new(self.sym_canal_emisor);
+                    let shape_tx = self.shape_registry.get_or_create(self.sym_canal_emisor);
+                    let mut obj_tx = ObjVal::new(self.sym_canal_emisor, shape_tx);
                     obj_tx.campos_vec.push(ValorFast::entero(tx_idx as i64));
                     let obj_tx_idx = self.alloc_obj(obj_tx);
-                    // Crear objeto CanalReceptor
-                    let mut obj_rx = ObjVal::new(self.sym_canal_receptor);
+                    let shape_rx = self.shape_registry.get_or_create(self.sym_canal_receptor);
+                    let mut obj_rx = ObjVal::new(self.sym_canal_receptor, shape_rx);
                     obj_rx.campos_vec.push(ValorFast::entero(rx_idx as i64));
                     let obj_rx_idx = self.alloc_obj(obj_rx);
                     // Push tx, luego rx (ArrayNew [tx, rx] — tx index 0, rx index 1)
@@ -5905,10 +5940,10 @@ impl ForjaFast {
                                     }
                                     hilo_vm.base_ptr = 0;
                                     hilo_vm.contador_especializacion = vec![0u8; hilo_vm.bytecode.len()];
-                                    hilo_vm.ic_getfield = vec![None; hilo_vm.bytecode.len()];
-                                    hilo_vm.ic_setfield = vec![None; hilo_vm.bytecode.len()];
-                                    hilo_vm.ic_miss_count = vec![0u8; hilo_vm.bytecode.len()];
-                                    hilo_vm.ic_callmethod = vec![None; hilo_vm.bytecode.len()];
+                                hilo_vm.ic_getfield = vec![Pic::Empty; hilo_vm.bytecode.len()];
+                                hilo_vm.ic_setfield = vec![Pic::Empty; hilo_vm.bytecode.len()];
+                                hilo_vm.ic_miss_count = vec![0u8; hilo_vm.bytecode.len()];
+                                hilo_vm.ic_callmethod = vec![Pic::Empty; hilo_vm.bytecode.len()];
                                     hilo_vm.ic_arrayget = vec![None; hilo_vm.bytecode.len()];
                                     hilo_vm.ic_arrayset = vec![None; hilo_vm.bytecode.len()];
                                     hilo_vm.ic_mapget = vec![false; hilo_vm.bytecode.len()];
@@ -5945,7 +5980,8 @@ impl ForjaFast {
                             Ok(_join_handle) => {
                                 // Almacenar receiver y crear objeto Hilo
                                 let thread_idx = self.alloc_thread(None, Some(rx_result));
-                                let mut obj = ObjVal::new(self.sym_hilo);
+                                let shape_hilo = self.shape_registry.get_or_create(self.sym_hilo);
+                                let mut obj = ObjVal::new(self.sym_hilo, shape_hilo);
                                 obj.campos_vec.push(ValorFast::entero(thread_idx as i64));
                                 let obj_idx = self.alloc_obj(obj);
                                 self.push_valor(ValorFast::objeto(obj_idx));
@@ -6562,6 +6598,49 @@ impl ForjaFast {
                         self.ip += 1;
                     }
                 }
+                Uop::TailCall(nombre, nargs) => {
+                    let sym_id = self.sym_table.intern(&nombre);
+                    if let Some(entry) = self.lookup_func_entry(sym_id) {
+                        self.flush_stack();
+                        let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                        for _ in 0..nargs {
+                            args.push(self.pop_valor()?);
+                        }
+                        args.reverse();
+                        self.flat_vars.truncate(self.base_ptr);
+                        self.flat_vars.resize(self.base_ptr + nargs, ValorFast::nulo());
+                        for (i, arg) in args.into_iter().enumerate() {
+                            self.flat_vars[self.base_ptr + i] = arg;
+                        }
+                        self.ip = entry.ip;
+                    } else {
+                        let nombre_str = nombre.to_string();
+                        if let Some(b) = resolver_builtin_fast(&nombre_str) {
+                            self.exec_builtin(b, nargs)?;
+                            self.ip += 1;
+                            continue;
+                        }
+                        self.flush_stack();
+                        let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
+                        for _ in 0..nargs {
+                            args.push(self.pop_valor()?);
+                        }
+                        args.reverse();
+                        let func = self.native_registry.obtener_fn(&nombre_str);
+                        if let Some(func) = func {
+                            match func(self, &args) {
+                                Ok(val) => self.push_valor(val),
+                                Err(e) => {
+                                    eprintln!("[DEBUG] Native '{}' failed: {}", nombre_str, e);
+                                    self.push_valor(ValorFast::nulo());
+                                }
+                            }
+                        } else {
+                            self.push_valor(ValorFast::nulo());
+                        }
+                        self.ip += 1;
+                    }
+                }
                 Uop::Return => {
                     if self.frame_count == 0 {
                         break;
@@ -6645,9 +6724,8 @@ impl ForjaFast {
                 // === OBJECT OPERATIONS ===
                 Uop::NewObject(c) => {
                     let clase_sym = self.sym_table.intern(&c);
-                    // Crear o reusar ClassDescriptor
                     if !self.class_descriptors.contains_key(&clase_sym) {
-                        let shape = Shape::new();
+                        let shape = ClassShape::new();
                         let desc = ClassDescriptor {
                             nombre: clase_sym,
                             shape,
@@ -6657,7 +6735,8 @@ impl ForjaFast {
                         };
                         self.class_descriptors.insert(clase_sym, desc);
                     }
-                    let obj = ObjVal::new(clase_sym);
+                    let shape_id = self.shape_registry.get_or_create(clase_sym);
+                    let obj = ObjVal::new(clase_sym, shape_id);
                     let idx = self.alloc_obj(obj);
                     self.push_valor(ValorFast::objeto(idx));
                     self.ip += 1;
@@ -6666,44 +6745,33 @@ impl ForjaFast {
                     let obj_val = *self.peek_valor(1);
                     if obj_val.es_objeto() {
                         let field_sym = self.sym_table.intern(&c);
-                        // Intentar inline cache
-                        let cache = &self.ic_setfield[self.ip].clone();
-                        if let Some((clase_cache, idx_cache)) = cache {
+                        let ip = self.ip;
+                        if !matches!(self.ic_setfield[ip], Pic::Mega) {
                             let obj_idx = obj_val.indice_objeto();
-                            let clase_actual = self.obj_shapes[obj_idx as usize];
-                            if clase_actual == *clase_cache {
-                                let campos_len = self.get_obj(obj_idx).campos_vec.len();
-                                if *idx_cache < campos_len {
-                                    // Cache HIT! Acceso directo por índice
+                            let clase_actual = self.obj_heap[obj_idx as usize].clase;
+                            if let Some(idx_cache) = self.ic_setfield[ip].hit(clase_actual) {
+                                if idx_cache < self.get_obj(obj_idx).campos_vec.len() {
                                     let v = self.pop_valor()?;
                                     let _ = self.pop_valor()?;
-                                    self.get_obj_mut(obj_idx).campos_vec[*idx_cache] = v;
+                                    self.get_obj_mut(obj_idx).campos_vec[idx_cache] = v;
                                     self.ip += 1;
                                     continue;
                                 }
                             }
-                            // Cache miss
-                            self.ic_miss_count[self.ip] =
-                                self.ic_miss_count[self.ip].saturating_add(1);
-                            if self.ic_miss_count[self.ip] >= 3 {
-                                self.ic_setfield[self.ip] = None;
-                                self.ic_miss_count[self.ip] = 0;
-                            }
                         }
-                        // Fallback
                         let v = self.pop_valor()?;
                         let obj = self.pop_valor()?;
                         let idx = obj.indice_objeto();
-                        let clase_sym = self.obj_shapes[idx as usize];
+                        let clase_sym = self.obj_heap[idx as usize].clase;
+                        let ip = self.ip;
                         if let Some(desc) = self.class_descriptors.get(&clase_sym) {
-                            let shape_idx = desc.shape.get_idx(field_sym);
-                            if let Some(sidx) = shape_idx {
+                            if let Some(sidx) = desc.shape.get_idx(field_sym) {
                                 if sidx < self.obj_heap[idx as usize].campos_vec.len() {
                                     self.obj_heap[idx as usize].campos_vec[sidx] = v;
                                 } else {
                                     self.obj_heap[idx as usize].campos_vec.push(v);
                                 }
-                                self.ic_setfield[self.ip] = Some((clase_sym, sidx));
+                                self.ic_setfield[ip] = self.ic_setfield[ip].record_miss(clase_sym, sidx);
                             } else {
                                 let desc_mut = self.class_descriptors.get_mut(&clase_sym).unwrap();
                                 let sidx = desc_mut.shape.add_campo(field_sym);
@@ -6712,17 +6780,15 @@ impl ForjaFast {
                                 } else {
                                     self.obj_heap[idx as usize].campos_vec.push(v);
                                 }
-                                self.ic_setfield[self.ip] = Some((clase_sym, sidx));
+                                self.ic_setfield[ip] = self.ic_setfield[ip].record_miss(clase_sym, sidx);
                             }
                         } else {
-                            if (field_sym.0 as usize) < self.obj_heap[idx as usize].campos_vec.len()
-                            {
+                            if (field_sym.0 as usize) < self.obj_heap[idx as usize].campos_vec.len() {
                                 self.obj_heap[idx as usize].campos_vec[field_sym.0 as usize] = v;
                             } else {
                                 self.obj_heap[idx as usize].campos_vec.push(v);
                             }
                         }
-                    } else { /* No es un objeto real, ignorar silenciosamente */
                     }
                     self.ip += 1;
                 }
@@ -6730,34 +6796,24 @@ impl ForjaFast {
                     let obj_val = *self.peek_valor(0);
                     if obj_val.es_objeto() {
                         let field_sym = self.sym_table.intern(&c);
-                        // Intentar inline cache
-                        let cache = &self.ic_getfield[self.ip].clone();
-                        if let Some((clase_cache, idx_cache)) = cache {
+                        let ip = self.ip;
+                        let cache = self.ic_getfield[ip];
+                        if !matches!(cache, Pic::Mega) {
                             let obj_idx = obj_val.indice_objeto();
-                            let clase_sym = self.obj_shapes[obj_idx as usize];
-                            if clase_sym == *clase_cache {
-                                let campos_len = self.get_obj(obj_idx).campos_vec.len();
-                                if *idx_cache < campos_len {
-                                    // Cache HIT! Acceso directo por índice
-                                    let valor = self.get_obj(obj_idx).campos_vec[*idx_cache];
+                            let clase_sym = self.obj_heap[obj_idx as usize].clase;
+                            if let Some(idx_cache) = cache.hit(clase_sym) {
+                                if idx_cache < self.get_obj(obj_idx).campos_vec.len() {
+                                    let valor = self.get_obj(obj_idx).campos_vec[idx_cache];
                                     self.pop_valor()?;
                                     self.push_valor(valor);
                                     self.ip += 1;
                                     continue;
                                 }
                             }
-                            // Cache miss
-                            self.ic_miss_count[self.ip] =
-                                self.ic_miss_count[self.ip].saturating_add(1);
-                            if self.ic_miss_count[self.ip] >= 3 {
-                                self.ic_getfield[self.ip] = None;
-                                self.ic_miss_count[self.ip] = 0;
-                            }
                         }
-                        // Fallback: búsqueda con Shape
                         let obj = self.pop_valor()?;
                         let idx = obj.indice_objeto();
-                        let clase_sym = self.obj_shapes[idx as usize];
+                        let clase_sym = self.obj_heap[idx as usize].clase;
                         let valor = if let Some(desc) = self.class_descriptors.get(&clase_sym) {
                             if let Some(sidx) = desc.shape.get_idx(field_sym) {
                                 if sidx < self.obj_heap[idx as usize].campos_vec.len() {
@@ -6772,9 +6828,10 @@ impl ForjaFast {
                             ValorFast::nulo()
                         };
                         self.push_valor(valor);
+                        let ip = self.ip;
                         if let Some(desc) = self.class_descriptors.get(&clase_sym) {
                             if let Some(sidx) = desc.shape.get_idx(field_sym) {
-                                self.ic_getfield[self.ip] = Some((clase_sym, sidx));
+                                self.ic_getfield[ip] = self.ic_getfield[ip].record_miss(clase_sym, sidx);
                             }
                         }
                     } else {
@@ -6797,7 +6854,7 @@ impl ForjaFast {
                     let obj = self.pop_valor()?;
                     if obj.es_objeto() {
                         let idx = obj.indice_objeto();
-                        let clase_sym = self.obj_shapes[idx as usize];
+                        let clase_sym = self.obj_heap[idx as usize].clase;
                         let method_sym = self.sym_table.intern(&m);
                         // ── NATIVE DISPATCH: CanalEmisor / CanalReceptor / Hilo ──
                         if clase_sym == self.sym_canal_emisor {
@@ -7646,10 +7703,10 @@ impl ForjaFast {
 
         // 8. Re-inicializar inline caches (el tamaño de self.bytecode pudo cambiar)
         self.contador_especializacion = vec![0u8; self.bytecode.len()];
-        self.ic_getfield = vec![None; self.bytecode.len()];
-        self.ic_setfield = vec![None; self.bytecode.len()];
+        self.ic_getfield = vec![Pic::Empty; self.bytecode.len()];
+        self.ic_setfield = vec![Pic::Empty; self.bytecode.len()];
         self.ic_miss_count = vec![0u8; self.bytecode.len()];
-        self.ic_callmethod = vec![None; self.bytecode.len()];
+        self.ic_callmethod = vec![Pic::Empty; self.bytecode.len()];
         self.ic_arrayget = vec![None; self.bytecode.len()];
         self.ic_arrayset = vec![None; self.bytecode.len()];
         self.ic_mapget = vec![false; self.bytecode.len()];

@@ -131,6 +131,9 @@ impl NativeRegistry {
         reg.registrar_quic_h3();
         reg.registrar_ruta();
         reg.registrar_proceso();
+        // Funciones nativas de procesos de Windows (PID, módulos, R/W de memoria)
+        #[cfg(not(target_arch = "wasm32"))]
+        reg.registrar_proceso_win();
         reg.registrar_temporizador();
         reg.registrar_binario();
         reg.registrar_csv();
@@ -575,7 +578,8 @@ fn native_proceso_ejecutar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
 
     // Build result object: SalidaProceso { stdout, stderr, codigo_salida }
     let sym = vm.sym_table.intern("SalidaProceso");
-    let mut obj = crate::vm_fast::ObjVal::new(sym);
+    let shape_id = vm.shape_registry.get_or_create(sym);
+    let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
     obj.campos_vec = vec![
         { let idx = vm.alloc_str(Arc::from(stdout.as_str())); ValorFast::texto(idx) },
         { let idx = vm.alloc_str(Arc::from(stderr.as_str())); ValorFast::texto(idx) },
@@ -606,7 +610,8 @@ fn native_sistema_tiempo_ms(_vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<
 fn native_temporizador_nuevo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let ms = obtener_entero(args[0])?;
     let sym = vm.sym_table.intern("Timer");
-    let mut obj = crate::vm_fast::ObjVal::new(sym);
+    let shape_id = vm.shape_registry.get_or_create(sym);
+    let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     obj.campos_vec = vec![ValorFast::entero(id as i64), ValorFast::entero(ms), ValorFast::booleano(true)];
@@ -807,7 +812,8 @@ fn native_url_parsear(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFas
     } else { (host, "") };
 
     let sym = vm.sym_table.intern("URL");
-    let mut obj = crate::vm_fast::ObjVal::new(sym);
+    let shape_id = vm.shape_registry.get_or_create(sym);
+    let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
     obj.campos_vec = vec![
         { let idx = vm.alloc_str(Arc::from(esquema)); ValorFast::texto(idx) }, { let idx = vm.alloc_str(Arc::from(hostname)); ValorFast::texto(idx) }, { let idx = vm.alloc_str(Arc::from(puerto)); ValorFast::texto(idx) },
         { let idx = vm.alloc_str(Arc::from(ruta)); ValorFast::texto(idx) }, { let idx = vm.alloc_str(Arc::from(query.unwrap_or(""))); ValorFast::texto(idx) },
@@ -1022,7 +1028,8 @@ fn native_perfilado_detener(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
     entry.1 += 1;
     // build ReportePerfilado object
     let sym = vm.sym_table.intern("ReportePerfilado");
-    let mut obj = crate::vm_fast::ObjVal::new(sym);
+    let shape_id = vm.shape_registry.get_or_create(sym);
+    let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
     obj.campos_vec = vec![
         { let idx = vm.alloc_str(Arc::from(etiqueta.as_str())); ValorFast::texto(idx) },
         ValorFast::entero(total_ms),
@@ -1037,7 +1044,8 @@ fn native_perfilado_reportes(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<
     let mut reportes: Vec<ValorFast> = Vec::new();
     for (etiqueta, (tiempo_total, iteraciones)) in map.iter() {
         let sym = vm.sym_table.intern("ReportePerfilado");
-        let mut obj = crate::vm_fast::ObjVal::new(sym);
+        let shape_id = vm.shape_registry.get_or_create(sym);
+    let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
         obj.campos_vec = vec![
             { let idx = vm.alloc_str(Arc::from(etiqueta.as_str())); ValorFast::texto(idx) },
             ValorFast::entero(*tiempo_total as i64),
@@ -1294,10 +1302,11 @@ pub(crate) fn crear_valor_socket(vm: &mut ForjaFast, socket_idx: u32) -> ValorFa
         };
         vm.class_descriptors.insert(sym_socket, desc);
     }
-    let mut obj = crate::vm_fast::ObjVal::new(sym_socket);
+    let shape_id = vm.shape_registry.get_or_create(sym_socket);
+    let mut obj = crate::vm_fast::ObjVal::new(sym_socket, shape_id);
     obj.campos_vec.push(ValorFast::entero(socket_idx as i64));
     let obj_idx = vm.alloc_obj(obj);
-    vm.obj_shapes[obj_idx as usize] = sym_socket;
+    vm.obj_shapes[obj_idx as usize] = shape_id;
     ValorFast::objeto(obj_idx)
 }
 
