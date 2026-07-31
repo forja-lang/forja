@@ -73,8 +73,10 @@ enum EstadoVariable {
     Viva,
     /// Fue movida a otra variable (transferencia de ownership)
     Movida,
-    /// Tiene préstamos activos
-    Prestada(usize), // cantidad de préstamos activos
+    /// Tiene préstamos inmutables activos (&T)
+    PrestadaInmutable(usize),
+    /// Tiene un préstamo mutable activo (&mut T) — solo uno permitido
+    PrestadaMutable,
 }
 
 /// Información de una variable en la tabla de símbolos
@@ -94,12 +96,16 @@ struct InfoVariable {
 /// Tabla de símbolos con soporte para scoping
 struct TablaSimbolos {
     ambitos: Vec<HashMap<String, InfoVariable>>,
+    /// Mapa: nombre_prestatario → (nombre_variable_original, es_mutable)
+    /// Permite liberar préstamos automáticamente al salir de ámbito
+    prestatarios: HashMap<String, (String, bool)>,
 }
 
 impl TablaSimbolos {
     fn new() -> Self {
         TablaSimbolos {
             ambitos: vec![HashMap::new()],
+            prestatarios: HashMap::new(),
         }
     }
 
@@ -108,7 +114,13 @@ impl TablaSimbolos {
     }
 
     fn salir_ambito(&mut self) {
-        self.ambitos.pop();
+        if let Some(ambito) = self.ambitos.pop() {
+            for nombre in ambito.keys() {
+                if let Some((original, es_mutable)) = self.prestatarios.remove(nombre) {
+                    self.liberar_prestamo(&original, es_mutable);
+                }
+            }
+        }
     }
 
     fn declarar(
@@ -178,7 +190,11 @@ impl TablaSimbolos {
         })?;
 
         match info.estado {
-            EstadoVariable::Viva | EstadoVariable::Prestada(0) => {
+            EstadoVariable::Viva => {
+                info.estado = EstadoVariable::Movida;
+                Ok(())
+            }
+            EstadoVariable::PrestadaInmutable(0) => {
                 info.estado = EstadoVariable::Movida;
                 Ok(())
             }
@@ -192,15 +208,25 @@ impl TablaSimbolos {
                 ),
                 "Si solo querías leer sus datos, intentá pasarla como un préstamo usando '&'.",
             )),
-            EstadoVariable::Prestada(n) => Err(ErrorForja::new(
+            EstadoVariable::PrestadaInmutable(n) => Err(ErrorForja::new(
                 ErrorTipo::ErrorDePropiedad,
                 linea,
                 columna,
                 &format!(
-                    "No se puede mover '{}' porque tiene {} préstamo(s) activo(s).",
+                    "No se puede mover '{}' porque tiene {} préstamo(s) inmutable(s) activo(s).",
                     nombre, n
                 ),
                 "Esperá a que los préstamos terminen antes de mover la variable.",
+            )),
+            EstadoVariable::PrestadaMutable => Err(ErrorForja::new(
+                ErrorTipo::ErrorDePropiedad,
+                linea,
+                columna,
+                &format!(
+                    "No se puede mover '{}' porque tiene un préstamo mutable activo.",
+                    nombre
+                ),
+                "Esperá a que el préstamo mutable termine antes de mover la variable.",
             )),
         }
     }
@@ -208,7 +234,7 @@ impl TablaSimbolos {
     fn prestar_variable(
         &mut self,
         nombre: &str,
-        _mutable: bool,
+        es_mutable: bool,
         linea: usize,
         columna: usize,
     ) -> Result<(), ErrorForja> {
@@ -222,36 +248,52 @@ impl TablaSimbolos {
             )
         })?;
 
+        if es_mutable && !info.mutable {
+            return Err(ErrorForja::new(
+                ErrorTipo::ErrorDePropiedad,
+                linea,
+                columna,
+                &format!("No se puede mutar '{}' porque es inmutable.", nombre),
+                "Declará la variable como 'variable mut' si necesitas modificarla.",
+            ));
+        }
+
         match info.estado {
             EstadoVariable::Viva => {
-                if !info.mutable && _mutable {
-                    return Err(ErrorForja::new(
-                        ErrorTipo::ErrorDePropiedad,
-                        linea,
-                        columna,
-                        &format!("No se puede mutar '{}' porque es inmutable.", nombre),
-                        "Declará la variable como 'variable mut' si necesitas modificarla.",
-                    ));
+                if es_mutable {
+                    info.estado = EstadoVariable::PrestadaMutable;
+                } else {
+                    info.estado = EstadoVariable::PrestadaInmutable(1);
                 }
-                info.estado = EstadoVariable::Prestada(1);
                 Ok(())
             }
-            EstadoVariable::Prestada(_n) => {
-                if !info.mutable && _mutable {
+            EstadoVariable::PrestadaInmutable(n) => {
+                if es_mutable {
                     return Err(ErrorForja::new(
                         ErrorTipo::ErrorDePropiedad,
                         linea,
                         columna,
-                        &format!("No se puede mutar '{}' porque es inmutable.", nombre),
-                        "Declará la variable como 'variable mut' si necesitas modificarla.",
+                        &format!(
+                            "No se puede prestar '{}' como mutable porque tiene {} préstamo(s) inmutable(s) activo(s).",
+                            nombre, n
+                        ),
+                        "Usá solo préstamos inmutables (&T) o asegurate de que no haya otros préstamos activos.",
                     ));
                 }
-                let n = match info.estado {
-                    EstadoVariable::Prestada(n) => n,
-                    _ => 0,
-                };
-                info.estado = EstadoVariable::Prestada(n + 1);
+                info.estado = EstadoVariable::PrestadaInmutable(n + 1);
                 Ok(())
+            }
+            EstadoVariable::PrestadaMutable => {
+                Err(ErrorForja::new(
+                    ErrorTipo::ErrorDePropiedad,
+                    linea,
+                    columna,
+                    &format!(
+                        "No se puede prestar '{}' porque ya tiene un préstamo mutable activo.",
+                        nombre
+                    ),
+                    "Usá un préstamo inmutable (&T) o esperá a que el préstamo mutable termine.",
+                ))
             }
             EstadoVariable::Movida => Err(ErrorForja::new(
                 ErrorTipo::ErrorDePropiedad,
@@ -278,7 +320,7 @@ impl TablaSimbolos {
         })?;
 
         match info.estado {
-            EstadoVariable::Viva | EstadoVariable::Prestada(_) => Ok(()),
+            EstadoVariable::Viva | EstadoVariable::PrestadaInmutable(_) | EstadoVariable::PrestadaMutable => Ok(()),
             EstadoVariable::Movida => Err(ErrorForja::new(
                 ErrorTipo::ErrorDePropiedad,
                 linea,
@@ -320,21 +362,30 @@ impl TablaSimbolos {
 
         match info.estado {
             EstadoVariable::Viva => Ok(()),
-            EstadoVariable::Prestada(n) => {
-                if n > 0 {
-                    Err(ErrorForja::new(
-                        ErrorTipo::ErrorDePropiedad,
-                        linea,
-                        columna,
-                        &format!(
-                            "No se puede modificar '{}' porque tiene {} préstamo(s) activo(s).",
-                            nombre, n
-                        ),
-                        "Esperá a que los préstamos terminen antes de modificar la variable.",
-                    ))
-                } else {
-                    Ok(())
-                }
+            EstadoVariable::PrestadaInmutable(n) if n > 0 => {
+                Err(ErrorForja::new(
+                    ErrorTipo::ErrorDePropiedad,
+                    linea,
+                    columna,
+                    &format!(
+                        "No se puede modificar '{}' porque tiene {} préstamo(s) inmutable(s) activo(s).",
+                        nombre, n
+                    ),
+                    "Esperá a que los préstamos terminen antes de modificar la variable.",
+                ))
+            }
+            EstadoVariable::PrestadaInmutable(_) => Ok(()), // n == 0, caso transitorio
+            EstadoVariable::PrestadaMutable => {
+                Err(ErrorForja::new(
+                    ErrorTipo::ErrorDePropiedad,
+                    linea,
+                    columna,
+                    &format!(
+                        "No se puede modificar '{}' porque tiene un préstamo mutable activo.",
+                        nombre
+                    ),
+                    "Esperá a que el préstamo mutable termine antes de modificar la variable.",
+                ))
             }
             EstadoVariable::Movida => Err(ErrorForja::new(
                 ErrorTipo::ErrorDePropiedad,
@@ -349,14 +400,18 @@ impl TablaSimbolos {
         }
     }
 
-    #[allow(dead_code)]
-    fn liberar_prestamo(&mut self, nombre: &str) {
+    fn liberar_prestamo(&mut self, nombre: &str, era_mutable: bool) {
         if let Some(info) = self.obtener_mut(nombre) {
             match info.estado {
-                EstadoVariable::Prestada(n) if n > 1 => {
-                    info.estado = EstadoVariable::Prestada(n - 1)
+                EstadoVariable::PrestadaInmutable(n) if n > 1 => {
+                    info.estado = EstadoVariable::PrestadaInmutable(n - 1);
                 }
-                EstadoVariable::Prestada(_) => info.estado = EstadoVariable::Viva,
+                EstadoVariable::PrestadaInmutable(_) => {
+                    info.estado = EstadoVariable::Viva;
+                }
+                EstadoVariable::PrestadaMutable if era_mutable => {
+                    info.estado = EstadoVariable::Viva;
+                }
                 _ => {}
             }
         }
@@ -373,6 +428,8 @@ pub struct BorrowChecker {
     variantes_enum: HashMap<String, Vec<String>>,
     /// Nombres de funciones declaradas en el programa
     funciones: std::collections::HashSet<String>,
+    /// Contador de ámbito actual para tracking de préstamos
+    ambito_actual: usize,
 }
 
 impl BorrowChecker {
@@ -383,6 +440,7 @@ impl BorrowChecker {
             contador_temporal: 0,
             variantes_enum: HashMap::new(),
             funciones: std::collections::HashSet::new(),
+            ambito_actual: 0,
         }
     }
 
@@ -877,6 +935,7 @@ impl BorrowChecker {
                 // Analizar cuerpos con variables de patrón declaradas en ámbito propio
                 for brazo in brazos {
                     self.tabla.entrar_ambito();
+                    self.ambito_actual += 1;
                     let vars = extraer_variables_patron(&brazo.patron);
                     for nombre in &vars {
                         // Las variables de patrón son inmutables
@@ -894,6 +953,7 @@ impl BorrowChecker {
 
             Expresion::Closure { parametros, cuerpo } => {
                 self.tabla.entrar_ambito();
+                self.ambito_actual += 1;
                 for param in parametros {
                     let _ =
                         self.tabla
@@ -907,6 +967,7 @@ impl BorrowChecker {
             }
             Expresion::Hilo { cuerpo } => {
                 self.tabla.entrar_ambito();
+                self.ambito_actual += 1;
                 for d in cuerpo {
                     self.analizar_declaracion(d);
                 }
@@ -917,6 +978,7 @@ impl BorrowChecker {
                 for brazo in brazos {
                     // Cada brazo tiene su propio ámbito
                     self.tabla.entrar_ambito();
+                    self.ambito_actual += 1;
                     // Si el brazo tiene recepción, declarar la variable local
                     if let Some((var, _)) = &brazo.recepcion {
                         let _ = self.tabla.declarar(var, false, 0, 0, None);
@@ -1161,6 +1223,25 @@ impl TypeChecker {
                 Some(Tipo::Texto), Some(Tipo::Entero), Some(Tipo::Texto),
                 Some(Tipo::Texto), Some(Tipo::Texto), Some(Tipo::Texto),
             ], Some(Tipo::Clase("RespuestaH3".to_string()))),
+            // Funciones nativas de temporizador (usadas por std/temporizador)
+            ("_temporizador_nuevo", vec![Some(Tipo::Entero)], Some(Tipo::Clase("Timer".to_string()))),
+            ("_temporizador_dormir", vec![Some(Tipo::Entero)], Some(Tipo::Nulo)),
+            ("_sistema_tiempo_ms", vec![], Some(Tipo::Entero)),
+            // Funciones nativas de procesos de Windows (forjaX — inyector)
+            ("_proceso_obtener_pid", vec![Some(Tipo::Texto)], Some(Tipo::Entero)),
+            ("_proceso_abrir_pid", vec![Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Entero)),
+            ("_proceso_ultimo_error", vec![], Some(Tipo::Entero)),
+            ("_proceso_cerrar", vec![Some(Tipo::Entero)], Some(Tipo::Booleano)),
+            ("_proceso_modulo_base", vec![Some(Tipo::Entero), Some(Tipo::Texto)], Some(Tipo::Entero)),
+            ("_proceso_modulo_tamano", vec![Some(Tipo::Entero), Some(Tipo::Texto)], Some(Tipo::Entero)),
+            ("_proceso_leer_bytes", vec![Some(Tipo::Entero), Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Arreglo(Box::new(Tipo::Entero)))),
+            ("_proceso_escribir_bytes", vec![Some(Tipo::Entero), Some(Tipo::Entero), Some(Tipo::Arreglo(Box::new(Tipo::Entero)))], Some(Tipo::Booleano)),
+            ("_buscar_firma", vec![Some(Tipo::Arreglo(Box::new(Tipo::Entero))), Some(Tipo::Arreglo(Box::new(Tipo::Entero))), Some(Tipo::Arreglo(Box::new(Tipo::Entero)))], Some(Tipo::Entero)),
+            ("_tecla_presionada", vec![Some(Tipo::Entero)], Some(Tipo::Booleano)),
+            ("_consola_ocultar", vec![Some(Tipo::Booleano)], Some(Tipo::Booleano)),
+            ("_restaurar_al_salir", vec![Some(Tipo::Entero), Some(Tipo::Entero), Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Booleano)),
+            ("_imprimir_stdout", vec![Some(Tipo::Texto)], Some(Tipo::Nulo)),
+            ("_entero_a_hex", vec![Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Texto)),
         ];
         for (nombre, params, retorno) in nativas {
             self.funciones.entry(nombre.to_string()).or_default().push((
