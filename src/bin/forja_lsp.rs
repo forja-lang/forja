@@ -11,7 +11,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 use forja::token::{Token, TokenKind};
-use forja::lsp::completado::{CompletionResolver, CompletionItem as ForjaCompletionItem, SymbolEntry, SymbolKind as ForjaSymbolKind, fuzzy_score};
+use forja::lsp::completado::{CompletionResolver, SymbolEntry, SymbolKind as ForjaSymbolKind};
 use forja::lsp::index_stdlib::StdlibIndex;
 use forja::lsp::firma::SignatureResolver;
 
@@ -1152,16 +1152,6 @@ fn token_en_posicion(tokens: &[Token], pos: Position) -> Option<&Token> {
     tokens.iter().find(|t| {
         t.linea == linea && col >= t.columna && col < t.columna + t.kind.to_string().len()
     })
-}
-
-fn token_previo_en_linea(tokens: &[Token], pos: Position) -> Option<String> {
-    let linea = pos.line as usize;
-    let col = pos.character as usize;
-    tokens
-        .iter()
-        .filter(|t| t.linea == linea && t.columna < col)
-        .last()
-        .map(|t| t.kind.to_string())
 }
 
 // ======================================================================

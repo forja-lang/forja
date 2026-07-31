@@ -1,5 +1,3 @@
-use crate::token::{Token, TokenKind};
-
 #[derive(Debug, Clone)]
 pub struct Snippet {
     pub keyword: &'static str,

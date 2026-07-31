@@ -7,6 +7,7 @@
 #[cfg(unix)]
 mod unix {
     use std::os::unix::io::RawFd;
+    use std::sync::Mutex;
 
     extern "C" {
         fn tcgetattr(fd: RawFd, termios: *mut Termios) -> i32;
@@ -16,6 +17,7 @@ mod unix {
     }
 
     #[repr(C)]
+    #[derive(Clone, Copy)]
     struct Termios {
         c_iflag: u32,
         c_oflag: u32,
@@ -36,7 +38,7 @@ mod unix {
     const VMIN: usize = 6;
     const VTIME: usize = 5;
 
-    static mut ORIG_TERMIOS: Option<Termios> = None;
+    static ORIG_TERMIOS: Mutex<Option<Termios>> = Mutex::new(None);
 
     pub fn raw_mode(activar: bool) -> Result<(), String> {
         if activar {
@@ -50,10 +52,7 @@ mod unix {
             }
 
             // Guardar copia de la configuración original (Termios es POD)
-            unsafe {
-                let orig = std::ptr::read(&raw);
-                ORIG_TERMIOS = Some(orig);
-            }
+            *ORIG_TERMIOS.lock().unwrap() = Some(raw);
 
             // Desactivar modo canónico, eco, señales, extensiones
             raw.c_lflag &= !(ICANON | ECHO | ISIG | IEXTEN);
@@ -66,7 +65,7 @@ mod unix {
             }
             Ok(())
         } else {
-            if let Some(orig) = unsafe { ORIG_TERMIOS.take() } {
+            if let Some(orig) = ORIG_TERMIOS.lock().unwrap().take() {
                 let ret = unsafe { tcsetattr(STDIN_FILENO, TCSANOW, &orig as *const Termios) };
                 if ret != 0 {
                     return Err("tcsetattr (restaurar) falló".into());
