@@ -187,6 +187,7 @@ impl crate::native_registry::NativeRegistry {
         self.registrar("_consola_ocultar", native_consola_ocultar);
         self.registrar("_restaurar_al_salir", native_restaurar_al_salir);
         self.registrar("_imprimir_stdout", native_imprimir_stdout);
+        self.registrar("_flanco_tecla", native_flanco_tecla);
     }
 }
 
@@ -541,6 +542,41 @@ pub fn native_buscar_firma(
 // _tecla_presionada(vk: Entero) -> Booleano
 // Devuelve verdadero si la tecla virtual (VK code) está presionada.
 // ═════════════════════════════════════════════════════════════════════════
+
+// ═════════════════════════════════════════════════════════════════════════
+// _flanco_tecla(vk: Entero) -> Booleano
+// Devuelve verdadero SOLO en la transición no-presionada → presionada
+// (flanco de subida). El estado anterior se guarda en Rust (no depende de
+// variables de Forja, que ForjaFast puede corromper en bucles).
+// ═════════════════════════════════════════════════════════════════════════
+
+static ESTADO_TECLA_ANTERIOR: Mutex<Option<(i32, bool)>> = Mutex::new(None);
+
+pub fn native_flanco_tecla(
+    _vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let vk = obtener_entero(args[0])? as i32;
+
+    #[cfg(target_os = "windows")]
+    {
+        let state = unsafe { GetAsyncKeyState(vk) };
+        let presionada = ((state as u16) & 0x8000) != 0;
+        let mut guard = ESTADO_TECLA_ANTERIOR.lock().unwrap();
+        let flanco = match *guard {
+            Some((vk_prev, prev)) if vk_prev == vk => presionada && !prev,
+            _ => presionada,
+        };
+        *guard = Some((vk, presionada));
+        return Ok(ValorFast::booleano(flanco));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = vk;
+        Ok(ValorFast::booleano(false))
+    }
+}
 
 pub fn native_tecla_presionada(
     _vm: &mut ForjaFast,

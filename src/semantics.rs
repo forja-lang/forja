@@ -1241,6 +1241,7 @@ impl TypeChecker {
             ("_consola_ocultar", vec![Some(Tipo::Booleano)], Some(Tipo::Booleano)),
             ("_restaurar_al_salir", vec![Some(Tipo::Entero), Some(Tipo::Entero), Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Booleano)),
             ("_imprimir_stdout", vec![Some(Tipo::Texto)], Some(Tipo::Nulo)),
+            ("_flanco_tecla", vec![Some(Tipo::Entero)], Some(Tipo::Booleano)),
             ("_entero_a_hex", vec![Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Texto)),
         ];
         for (nombre, params, retorno) in nativas {
