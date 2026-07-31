@@ -202,21 +202,28 @@ Your NDK may be incomplete or corrupted. Reinstall the NDK (r25+ recommended)."
         # Agregar NDK al PATH para que cc-rs (libsqlite3-sys) encuentre el compilador C
         export PATH="${LLVM_BIN}:${PATH}"
 
+        # cc-rs busca CC_<target> en MINÚSCULAS (con guiones y con guiones bajos),
+        # p.ej. CC_aarch64-linux-android o CC_aarch64_linux_android. Las variables
+        # en mayúsculas (CC_AARCH64_LINUX_ANDROID) NO son leídas por cc-rs.
+        export CC_aarch64-linux-android="${LLVM_BIN}/${_LINKER_MAP[aarch64-linux-android]}${_LINKER_EXT}"
+        export CC_aarch64_linux_android="${LLVM_BIN}/${_LINKER_MAP[aarch64-linux-android]}${_LINKER_EXT}"
         export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${LLVM_BIN}/${_LINKER_MAP[aarch64-linux-android]}${_LINKER_EXT}"
         export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=-Wl,--no-undefined"
-        export CC_AARCH64_LINUX_ANDROID="${LLVM_BIN}/${_LINKER_MAP[aarch64-linux-android]}${_LINKER_EXT}"
 
+        export CC_x86_64-linux-android="${LLVM_BIN}/${_LINKER_MAP[x86_64-linux-android]}${_LINKER_EXT}"
+        export CC_x86_64_linux_android="${LLVM_BIN}/${_LINKER_MAP[x86_64-linux-android]}${_LINKER_EXT}"
         export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="${LLVM_BIN}/${_LINKER_MAP[x86_64-linux-android]}${_LINKER_EXT}"
         export CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=-Wl,--no-undefined"
-        export CC_X86_64_LINUX_ANDROID="${LLVM_BIN}/${_LINKER_MAP[x86_64-linux-android]}${_LINKER_EXT}"
 
+        export CC_armv7-linux-androideabi="${LLVM_BIN}/${_LINKER_MAP[armv7-linux-androideabi]}${_LINKER_EXT}"
+        export CC_armv7_linux_androideabi="${LLVM_BIN}/${_LINKER_MAP[armv7-linux-androideabi]}${_LINKER_EXT}"
         export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="${LLVM_BIN}/${_LINKER_MAP[armv7-linux-androideabi]}${_LINKER_EXT}"
         export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_RUSTFLAGS="-C link-arg=-Wl,--no-undefined"
-        export CC_ARMV7_LINUX_ANDROIDEABI="${LLVM_BIN}/${_LINKER_MAP[armv7-linux-androideabi]}${_LINKER_EXT}"
 
+        export CC_i686-linux-android="${LLVM_BIN}/${_LINKER_MAP[i686-linux-android]}${_LINKER_EXT}"
+        export CC_i686_linux_android="${LLVM_BIN}/${_LINKER_MAP[i686-linux-android]}${_LINKER_EXT}"
         export CARGO_TARGET_I686_LINUX_ANDROID_LINKER="${LLVM_BIN}/${_LINKER_MAP[i686-linux-android]}${_LINKER_EXT}"
         export CARGO_TARGET_I686_LINUX_ANDROID_RUSTFLAGS="-C link-arg=-Wl,--no-undefined"
-        export CC_I686_LINUX_ANDROID="${LLVM_BIN}/${_LINKER_MAP[i686-linux-android]}${_LINKER_EXT}"
 
         echo "Done. Android toolchain is ready."
         echo "Run: cargo build --target <target> --features gui --release"
