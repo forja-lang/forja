@@ -104,10 +104,9 @@ jobs:
           esac
           echo "Using linker: $LINKER"
           export "CARGO_TARGET_$(echo ${{ matrix.target }} | tr '[:lower:]-' '[:upper:]_')_LINKER=$LINKER"
-          # cc-rs necesita CC_<target> en minúsculas (con guiones y con guiones bajos)
-          # para compilar C nativo (libsqlite3-sys bundled). El NDK expone
-          # <triple>23-clang, así que apuntamos CC a ese compilador.
-          export "CC_${{ matrix.target }}=$CC_TARGET"
+          # cc-rs necesita CC_<target> en minúsculas con guiones bajos (los guiones
+          # no son identificadores válidos de shell) para compilar C nativo
+          # (libsqlite3-sys bundled). El NDK expone <triple>23-clang.
           export "CC_$(echo ${{ matrix.target }} | tr '-' '_')=$CC_TARGET"
           export "TARGET_CC=$CC_TARGET"
           cargo build --target ${{ matrix.target }} --features gui --release --verbose
