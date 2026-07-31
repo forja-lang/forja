@@ -264,6 +264,8 @@ pub fn mmap_abrir(ruta: &str, offset: u64, len: usize, writable: bool) -> Result
 
     #[cfg(unix)] { unix::abrir(ruta, aligned, map_len, writable) }
     #[cfg(windows)] { windows_impl::abrir(ruta, aligned, map_len, writable) }
+    #[cfg(target_arch = "wasm32")]
+    { Err("mmap no soportado en WASM".to_string()) }
 }
 
 /// Lee bytes de la región mapeada.
@@ -295,6 +297,8 @@ pub fn mmap_sincronizar(handle: i64) -> Result<(), String> {
     let region = obtener(handle).ok_or_else(|| "Handle inválido".to_string())?;
     #[cfg(unix)] { unix::sincronizar(&region) }
     #[cfg(windows)] { windows_impl::sincronizar(&region) }
+    #[cfg(target_arch = "wasm32")]
+    { Err("mmap no soportado en WASM".to_string()) }
 }
 
 /// Cierra el mapping y libera el handle.
@@ -302,4 +306,6 @@ pub fn mmap_cerrar(handle: i64) -> Result<(), String> {
     let region = eliminar(handle).ok_or_else(|| "Handle inválido".to_string())?;
     #[cfg(unix)] { unix::cerrar(&region) }
     #[cfg(windows)] { windows_impl::cerrar(&region) }
+    #[cfg(target_arch = "wasm32")]
+    { Err("mmap no soportado en WASM".to_string()) }
 }

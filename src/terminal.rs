@@ -247,16 +247,22 @@ mod windows_impl {
 pub fn raw_mode(activar: bool) -> Result<(), String> {
     #[cfg(unix)] { unix::raw_mode(activar) }
     #[cfg(windows)] { windows_impl::raw_mode(activar) }
+    #[cfg(target_arch = "wasm32")]
+    { Err("terminal raw mode no soportado en WASM".to_string()) }
 }
 
 /// Retorna el tamaño de la terminal como (columnas, filas).
 pub fn tamano_terminal() -> Result<(i64, i64), String> {
     #[cfg(unix)] { unix::tamano_terminal() }
     #[cfg(windows)] { windows_impl::tamano_terminal() }
+    #[cfg(target_arch = "wasm32")]
+    { Err("tamaño de terminal no soportado en WASM".to_string()) }
 }
 
 /// Lee una tecla de la terminal (requiere raw mode activado).
 pub fn leer_tecla() -> Result<String, String> {
     #[cfg(unix)] { unix::leer_tecla() }
     #[cfg(windows)] { windows_impl::leer_tecla() }
+    #[cfg(target_arch = "wasm32")]
+    { Err("lectura de teclas no soportada en WASM".to_string()) }
 }

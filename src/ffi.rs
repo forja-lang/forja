@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::ffi::{CString, c_void};
+use std::os::raw::c_char;
 use std::sync::{Mutex, OnceLock};
 
 // ─────────────────────────────────────────────────────────────────────
@@ -167,17 +168,17 @@ pub fn ruta_libreria_sistema(nombre: &str) -> String {
 #[cfg(target_os = "windows")]
 extern "system" {
     fn LoadLibraryW(lpFileName: *const u16) -> *mut c_void;
-    fn GetProcAddress(hModule: *mut c_void, lpProcName: *const i8) -> *mut c_void;
+    fn GetProcAddress(hModule: *mut c_void, lpProcName: *const c_char) -> *mut c_void;
     fn FreeLibrary(hModule: *mut c_void) -> i32;
     fn GetLastError() -> u32;
 }
 
 #[cfg(not(target_os = "windows"))]
 extern "C" {
-    fn dlopen(filename: *const i8, flags: i32) -> *mut c_void;
-    fn dlsym(handle: *mut c_void, symbol: *const i8) -> *mut c_void;
+    fn dlopen(filename: *const c_char, flags: i32) -> *mut c_void;
+    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
     fn dlclose(handle: *mut c_void) -> i32;
-    fn dlerror() -> *mut i8;
+    fn dlerror() -> *mut c_char;
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -232,31 +233,35 @@ pub fn native_ffi_llamar_entero(vm: &mut ForjaFast, args: &[ValorFast]) -> Resul
     let arr = vm.get_arr(arr_idx as u32);
     let call_args: Vec<i64> = arr.iter().map(|v| v.a_entero() as i64).collect();
 
-    // Llamar a la función externa con cantidad variable de argumentos
+    // Llamar a la función externa con cantidad variable de argumentos.
+    // fn_ptr_val viaja como i64 pero el puntero real es del tamaño de un
+    // puntero nativo (32 bits en wasm32); convertimos a usize + *const ()
+    // para que el transmute sea válido en todas las arquitecturas.
+    let fn_ptr: *const () = fn_ptr_val as usize as *const ();
     let result: i64 = unsafe {
         match call_args.len() {
             0 => {
-                let f: extern "C" fn() -> i64 = std::mem::transmute(fn_ptr_val);
+                let f: extern "C" fn() -> i64 = std::mem::transmute(fn_ptr);
                 f()
             }
             1 => {
-                let f: extern "C" fn(i64) -> i64 = std::mem::transmute(fn_ptr_val);
+                let f: extern "C" fn(i64) -> i64 = std::mem::transmute(fn_ptr);
                 f(call_args[0])
             }
             2 => {
-                let f: extern "C" fn(i64, i64) -> i64 = std::mem::transmute(fn_ptr_val);
+                let f: extern "C" fn(i64, i64) -> i64 = std::mem::transmute(fn_ptr);
                 f(call_args[0], call_args[1])
             }
             3 => {
-                let f: extern "C" fn(i64, i64, i64) -> i64 = std::mem::transmute(fn_ptr_val);
+                let f: extern "C" fn(i64, i64, i64) -> i64 = std::mem::transmute(fn_ptr);
                 f(call_args[0], call_args[1], call_args[2])
             }
             4 => {
-                let f: extern "C" fn(i64, i64, i64, i64) -> i64 = std::mem::transmute(fn_ptr_val);
+                let f: extern "C" fn(i64, i64, i64, i64) -> i64 = std::mem::transmute(fn_ptr);
                 f(call_args[0], call_args[1], call_args[2], call_args[3])
             }
             5 => {
-                let f: extern "C" fn(i64, i64, i64, i64, i64) -> i64 = std::mem::transmute(fn_ptr_val);
+                let f: extern "C" fn(i64, i64, i64, i64, i64) -> i64 = std::mem::transmute(fn_ptr);
                 f(call_args[0], call_args[1], call_args[2], call_args[3], call_args[4])
             }
             _ => {
@@ -288,21 +293,22 @@ pub fn native_ffi_llamar_texto(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
         })
         .collect();
 
-    let result_ptr: *mut i8 = unsafe {
+    let fn_ptr: *const () = fn_ptr_val as usize as *const ();
+    let result_ptr: *mut c_char = unsafe {
         match call_args.len() {
             0 => {
-                let f: extern "C" fn() -> *mut i8 = std::mem::transmute(fn_ptr_val);
+                let f: extern "C" fn() -> *mut c_char = std::mem::transmute(fn_ptr);
                 f()
             }
             1 => {
                 let c_arg0 = CString::new(call_args[0].as_str()).unwrap_or_default();
-                let f: extern "C" fn(*const i8) -> *mut i8 = std::mem::transmute(fn_ptr_val);
+                let f: extern "C" fn(*const c_char) -> *mut c_char = std::mem::transmute(fn_ptr);
                 f(c_arg0.as_ptr())
             }
             2 => {
                 let c_arg0 = CString::new(call_args[0].as_str()).unwrap_or_default();
                 let c_arg1 = CString::new(call_args[1].as_str()).unwrap_or_default();
-                let f: extern "C" fn(*const i8, *const i8) -> *mut i8 = std::mem::transmute(fn_ptr_val);
+                let f: extern "C" fn(*const c_char, *const c_char) -> *mut c_char = std::mem::transmute(fn_ptr);
                 f(c_arg0.as_ptr(), c_arg1.as_ptr())
             }
             _ => {
