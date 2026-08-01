@@ -323,6 +323,7 @@ jobs:
         run: |
           cd binaries
           # Windows: zip con stdlib incluida
+          mkdir forja-windows
           cp forja.exe forja-lsp.exe forja-dap.exe forja-rt.exe forja-rt-gui.exe forja-installer-x64.exe forja-windows/
           cp -r stdlib forja-windows/
           zip -r ../forja-${{ env.VERSION }}-windows-x64.zip forja-windows/
