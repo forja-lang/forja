@@ -271,6 +271,22 @@ pub fn compilar_pipeline_completa_desde(
         .generar(&programa)
         .map_err(|_| "Error generando bytecode".to_string())?;
 
+    // FASE 5b: Separar variables globales de módulo en un espacio de índices
+    // propio (DeclareIdxGlobal/LoadIdxGlobal/StoreIdxGlobal). Sin esto, los
+    // Load/Store de globales se numeraban desde 0 en cada ámbito y colisionaban
+    // con las locales → globales nulas/corruptas en bucles y funciones.
+    let globales: Vec<(String, bool)> = programa
+        .declaraciones
+        .iter()
+        .filter_map(|d| match d {
+            crate::ast::Declaracion::Variable { nombre, mutable, .. } => {
+                Some((nombre.clone(), *mutable))
+            }
+            _ => None,
+        })
+        .collect();
+    let bytecode = bytecode::postprocesar_globales(bytecode, &globales);
+
     // FASE 6: Optimizar bytecode: indices globales + fusion de opcodes
     let bytecode = optimizar_indices(&bytecode);
     let bytecode = fusionar_opcodes(&bytecode);
@@ -329,6 +345,22 @@ pub fn compilar_pipeline_completa(
     let bytecode = gen
         .generar(&programa)
         .map_err(|_| "Error generando bytecode".to_string())?;
+
+    // FASE 6b: Separar variables globales de módulo en un espacio de índices
+    // propio (DeclareIdxGlobal/LoadIdxGlobal/StoreIdxGlobal). Sin esto, los
+    // Load/Store de globales se numeraban desde 0 en cada ámbito y colisionaban
+    // con las locales → globales nulas/corruptas en bucles y funciones.
+    let globales: Vec<(String, bool)> = programa
+        .declaraciones
+        .iter()
+        .filter_map(|d| match d {
+            crate::ast::Declaracion::Variable { nombre, mutable, .. } => {
+                Some((nombre.clone(), *mutable))
+            }
+            _ => None,
+        })
+        .collect();
+    let bytecode = bytecode::postprocesar_globales(bytecode, &globales);
 
     // FASE 7: Optimizar bytecode: indices globales + fusion de opcodes
     let bytecode = optimizar_indices(&bytecode);

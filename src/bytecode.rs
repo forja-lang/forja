@@ -2653,41 +2653,7 @@ impl BytecodeGenerator {
         // Antes los Load/Store de globales se convertían a LoadIdx/StoreIdx con
         // índices desde 0 por ámbito, colisionando con las locales de las
         // funciones (mismo flat_vars + base_ptr) → las globales se perdían.
-        let mut opcodes = Vec::with_capacity(raw.len());
-        for op in raw {
-            match &op {
-                Opcode::Declare(nombre, mutable)
-                    if global_var_indices.iter().any(|(g, _)| g == nombre.as_ref()) =>
-                {
-                    let g = global_var_indices
-                        .iter()
-                        .position(|(n, _)| n == nombre.as_ref())
-                        .unwrap();
-                    opcodes.push(Opcode::DeclareIdxGlobal(g, *mutable));
-                }
-                Opcode::Load(nombre)
-                    if global_var_indices.iter().any(|(g, _)| g == nombre.as_ref()) =>
-                {
-                    let g = global_var_indices
-                        .iter()
-                        .position(|(n, _)| n == nombre.as_ref())
-                        .unwrap();
-                    opcodes.push(Opcode::LoadIdxGlobal(g));
-                }
-                Opcode::Store(nombre)
-                    if global_var_indices.iter().any(|(g, _)| g == nombre.as_ref()) =>
-                {
-                    let g = global_var_indices
-                        .iter()
-                        .position(|(n, _)| n == nombre.as_ref())
-                        .unwrap();
-                    opcodes.push(Opcode::StoreIdxGlobal(g));
-                }
-                _ => {
-                    opcodes.push(op);
-                }
-            }
-        }
+        let opcodes = postprocesar_globales(raw, &global_var_indices);
 
         Ok(ModuleBytecode {
             opcodes,
@@ -2696,6 +2662,50 @@ impl BytecodeGenerator {
             function_sym_ids,
         })
     }
+}
+
+/// Post-procesa bytecode reemplazando el acceso a variables globales de módulo
+/// (emitidas por nombre como Declare/Load/Store) por opcodes globales dedicados:
+/// Declare → DeclareIdxGlobal, Load → LoadIdxGlobal, Store → StoreIdxGlobal.
+///
+/// Esto separa el espacio de índices de las globales (global_var_persist) del
+/// de las locales de cada función (flat_vars + base_ptr, índices desde 0).
+/// Sin esta separación, una local con idx bajo pisa a la global y los accesos
+/// desde funciones leen posiciones equivocadas (valores nulos o corruptos).
+pub fn postprocesar_globales(
+    opcodes: Vec<Opcode>,
+    globales: &[(String, bool)],
+) -> Vec<Opcode> {
+    let mut result = Vec::with_capacity(opcodes.len());
+    for op in opcodes {
+        match &op {
+            Opcode::Declare(nombre, mutable)
+                if globales.iter().any(|(g, _)| g == nombre.as_ref()) =>
+            {
+                let g = globales
+                    .iter()
+                    .position(|(n, _)| n == nombre.as_ref())
+                    .unwrap();
+                result.push(Opcode::DeclareIdxGlobal(g, *mutable));
+            }
+            Opcode::Load(nombre) if globales.iter().any(|(g, _)| g == nombre.as_ref()) => {
+                let g = globales
+                    .iter()
+                    .position(|(n, _)| n == nombre.as_ref())
+                    .unwrap();
+                result.push(Opcode::LoadIdxGlobal(g));
+            }
+            Opcode::Store(nombre) if globales.iter().any(|(g, _)| g == nombre.as_ref()) => {
+                let g = globales
+                    .iter()
+                    .position(|(n, _)| n == nombre.as_ref())
+                    .unwrap();
+                result.push(Opcode::StoreIdxGlobal(g));
+            }
+            _ => result.push(op),
+        }
+    }
+    result
 }
 
 impl ModuleBytecode {

@@ -2432,6 +2432,24 @@ impl ForjaVM {
                     self.variables[ambito][idx] = val;
                     self.ip += 1;
                 }
+                // Acceso directo a variables globales: ámbito 0 (global) de la VM clásica
+                Uop::LoadIdxGlobal(idx) => {
+                    if idx < self.variables[0].len() {
+                        self.stack.push(self.variables[0][idx].clone());
+                    } else {
+                        self.stack.push(ValorVM::Nulo);
+                    }
+                    self.ip += 1;
+                }
+                Uop::StoreIdxGlobal(idx) => {
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("StoreIdxGlobal".to_string()))?;
+                    self.asegurar_indice(0, idx);
+                    self.variables[0][idx] = val;
+                    self.ip += 1;
+                }
                 Uop::DeclareVar(idx) => {
                     let ambito = self.ambito_actual();
                     self.asegurar_indice(ambito, idx);
