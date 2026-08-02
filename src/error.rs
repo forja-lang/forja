@@ -180,24 +180,36 @@ impl ErrorForja {
         let color_lin = color::GRIS;
         let color_arrow = self.tipo.color_ansi();
 
+        // Ancho del margen según el número de línea más largo (mínimo 4),
+        // para que el │ y el ↑ queden siempre alineados con el código.
+        let ancho_num = lines.len().to_string().len().max(4);
+
+        // Línea de código: " <n> │ código"
+        let linea_ctx = |n: usize| {
+            format!(" {} {:>ancho$} {}│{} ", color::DIM, n, color_lin, color::RESET, ancho = ancho_num)
+        };
+
         if idx > 0 && idx - 1 < lines.len() {
-            result.push_str(&format!(" {} {:>4} {}│{} {}\n",
-                color::DIM, idx, color_lin, color::RESET, lines[idx - 1]));
+            result.push_str(&format!("{}{}\n", linea_ctx(idx), lines[idx - 1]));
         }
         if idx < lines.len() {
-            result.push_str(&format!(" {} {:>4} {}│{} {}\n",
-                color::DIM, idx + 1, color_lin, color::RESET, lines[idx]));
+            result.push_str(&format!("{}{}\n", linea_ctx(idx + 1), lines[idx]));
             let indent = if self.columna > 0 { self.columna - 1 } else { 0 };
-            result.push_str(&format!(" {}     {}│{} {:indent$}{}↑{} {} {indent}\n",
-                color::DIM, color_lin, color::RESET, "",
-                color_arrow, color::RESET, self.mensaje));
+            // Mismo margen que las líneas de código, pero con el número
+            // reemplazado por espacios; el ↑ apunta a la columna del error.
+            let margen = format!(" {} {:>ancho$} {}│{} ", color::DIM, "", color_lin, color::RESET, ancho = ancho_num);
+            result.push_str(&format!("{}{}{}↑{} {}\n",
+                margen,
+                " ".repeat(indent),
+                color_arrow,
+                color::RESET,
+                self.mensaje));
         } else {
-            result.push_str(&format!(" {} {:>4} {}│{} (fin del archivo)\n",
-                color::DIM, self.linea, color_lin, color::RESET));
+            result.push_str(&format!(" {} {:>ancho$} {}│{} (fin del archivo)\n",
+                color::DIM, self.linea, color_lin, color::RESET, ancho = ancho_num));
         }
         if idx + 1 < lines.len() && idx + 1 > 0 {
-            result.push_str(&format!(" {} {:>4} {}│{} {}\n",
-                color::DIM, idx + 2, color_lin, color::RESET, lines[idx + 1]));
+            result.push_str(&format!("{}{}\n", linea_ctx(idx + 2), lines[idx + 1]));
         }
         if !self.sugerencia.is_empty() {
             result.push_str(&format!(" {} {}💡{} {}\n",

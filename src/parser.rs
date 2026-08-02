@@ -1189,12 +1189,14 @@ impl Parser {
             // importar "ruta/absoluta" — con comillas, SOLO rutas absolutas
             TokenKind::Texto(s) => {
                 let ruta = s.clone();
+                let linea = self.linea_actual();
+                let columna = self.columna_actual();
                 self.avanzar();
                 if !es_ruta_absoluta(&ruta) {
                     return Err(ErrorForja::new(
                         ErrorTipo::ErrorSintactico,
-                        self.linea_actual(),
-                        self.columna_actual(),
+                        linea,
+                        columna,
                         "Las rutas con comillas solo se permiten para rutas absolutas del sistema de archivos.",
                         "Usá importar ruta/sin/comillas para módulos. Ej: importar std/io",
                     ));

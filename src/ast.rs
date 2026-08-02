@@ -316,12 +316,19 @@ pub enum Declaracion {
         parametros: Vec<Parametro>,
         tipo_retorno: Option<Tipo>,
         cuerpo: Vec<Declaracion>,
-        externa: bool,                  // si es función externa (FFI)
-        asincrona: bool,                // si es función asincrónica (async fn)
-        enlace_nombre: Option<String>,  // nombre real en C (ej: "printf")
-        atributos: Vec<Atributo>,       // atributos/anotaciones
-        doc: Option<String>,            // doc comment (///)
-        precondiciones: Vec<Contrato>,  // precondiciones (requiere)
+        #[serde(default)]
+        externa: bool, // si es función externa (FFI)
+        #[serde(default)]
+        asincrona: bool, // si es función asincrónica (async fn)
+        #[serde(default)]
+        enlace_nombre: Option<String>, // nombre real en C (ej: "printf")
+        #[serde(default)]
+        atributos: Vec<Atributo>, // atributos/anotaciones
+        #[serde(default)]
+        doc: Option<String>, // doc comment (///)
+        #[serde(default)]
+        precondiciones: Vec<Contrato>, // precondiciones (requiere)
+        #[serde(default)]
         postcondiciones: Vec<Contrato>, // postcondiciones (asegura)
     },
     /// Definición de clase (ej: clase Persona { ... })
