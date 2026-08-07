@@ -13,8 +13,26 @@ use std::collections::HashMap;
 enum Operand {
     /// Registro físico
     Reg(PhysReg),
-    /// Slot de spill en el stack (offset desde RSP post-prologue)
+    /// Slot de spill en el stack (offset desde RBP: accedido como [RBP - (off+8)])
     Stack(usize),
+}
+
+/// Tabla de llamadas vacía (para codegen sin resolución de funciones)
+static EMPTY_CALL_TABLE: std::sync::OnceLock<HashMap<String, u64>> = std::sync::OnceLock::new();
+fn empty_call_table() -> &'static HashMap<String, u64> {
+    EMPTY_CALL_TABLE.get_or_init(HashMap::new)
+}
+
+/// Stub para `Call` sin dirección resuelta: retorna 0 sin efectos.
+/// Es una función real con dirección estable (convención fn(vars_ptr, output)).
+extern "C" fn call_stub_nop(_vars: *mut i64, _output: *mut ()) -> i64 {
+    0
+}
+
+/// Dirección del stub que se usa cuando un `Call` no encuentra la función
+/// en la tabla de direcciones. Previene saltos a direcciones inválidas.
+pub fn stub_nop_addr() -> u64 {
+    call_stub_nop as *const () as u64
 }
 
 /// Codegen register-based: genera x86-64 desde RegProgram + asignaciones
@@ -25,6 +43,15 @@ pub struct CodegenReg<'a> {
     label_offsets: HashMap<usize, usize>,
     /// Pendientes: (label, byte_offset donde escribir rel32)
     fixups: Vec<(usize, usize)>,
+    /// Registro base de variables (se carga desde RCX en el prólogo).
+    /// Los helpers de vars emiten `[base + idx*8]` con este registro.
+    vars_ptr: PhysReg,
+    /// Frame de spill en bytes (se reserva con `sub rsp` en el prólogo y se
+    /// libera con `add rsp` en el epílogo para que `[rsp+slot]` sea válido).
+    spill_frame: i32,
+    /// Direcciones de funciones compiladas para resolver `Call`.
+    /// key = nombre de función, value = dirección de código máquina.
+    call_addresses: &'a HashMap<String, u64>,
 }
 
 impl<'a> CodegenReg<'a> {
@@ -34,6 +61,25 @@ impl<'a> CodegenReg<'a> {
             bytes: Vec::with_capacity(1024),
             label_offsets: HashMap::new(),
             fixups: Vec::new(),
+            vars_ptr: PhysReg::RBX,
+            spill_frame: 0,
+            call_addresses: empty_call_table(),
+        }
+    }
+
+    /// Crea un codegen con una tabla de direcciones de funciones para `Call`.
+    pub fn with_call_addresses(
+        assignments: &'a HashMap<VirtReg, Location>,
+        call_addresses: &'a HashMap<String, u64>,
+    ) -> Self {
+        CodegenReg {
+            assignments,
+            bytes: Vec::with_capacity(1024),
+            label_offsets: HashMap::new(),
+            fixups: Vec::new(),
+            vars_ptr: PhysReg::RBX,
+            spill_frame: 0,
+            call_addresses,
         }
     }
 
@@ -50,8 +96,24 @@ impl<'a> CodegenReg<'a> {
         }
     }
 
-    /// Emit el programa completo
+    /// Emit el programa completo (prólogo + bloques + resolución de saltos)
     pub fn emit_program(&mut self, prog: &RegProgram, vars_ptr: PhysReg, spill_frame: i32) {
+        self.vars_ptr = vars_ptr;
+        self.spill_frame = spill_frame;
+
+        // Prólogo: frame pointer + preservar callee-saved + reservar frame de spill.
+        // Stack layout: [rbp+16]=ret_addr, [rbp+8]=saved_r14, [rbp]=saved_rbx,
+        //               saved_rbp, [rbp-8]=spill_slot_0, [rbp-16]=spill_slot_1, ...
+        self.bytes.push(0x55);                            // push rbp
+        self.bytes.extend_from_slice(&[0x53, 0x41, 0x56]); // push rbx; push r14
+        self.bytes.extend_from_slice(&[0x48, 0x89, 0xE5]); // mov rbp, rsp
+        self.emit_mov_reg_reg(vars_ptr, PhysReg::RCX);     // mov vars_ptr, rcx
+        self.bytes.extend_from_slice(&[0x49, 0x89, 0xd6]); // mov r14, rdx (output ptr)
+        if spill_frame > 0 {
+            self.bytes.extend_from_slice(&[0x48, 0x81, 0xEC]); // sub rsp, imm32
+            self.u32(spill_frame as u32);
+        }
+
         for block in &prog.blocks {
             // Emit label
             self.label_offsets.insert(block.label, self.bytes.len());
@@ -256,16 +318,101 @@ impl<'a> CodegenReg<'a> {
                 } else {
                     self.emit_mov_to_rax(&s);
                 }
-                // Epilogue: pop r14; pop rbx; ret
-                self.bytes.extend_from_slice(&[0x41, 0x5E]); // pop r14
-                self.bytes.extend_from_slice(&[0x5B]);        // pop rbx
-                self.bytes.push(0xC3);                        // ret
+                // Epilogue: restaurar frame pointer, callee-saved y retornar
+                // Orden inverso al prologue: push rbp; push rbx; push r14
+                self.bytes.extend_from_slice(&[0x48, 0x89, 0xEC]); // mov rsp, rbp
+                self.bytes.extend_from_slice(&[0x41, 0x5E]);       // pop r14
+                self.bytes.extend_from_slice(&[0x5B]);              // pop rbx
+                self.bytes.push(0x5D);                              // pop rbp
+                self.bytes.push(0xC3);                              // ret
             }
 
-            RegInstruction::Call { .. } => {
-                // Call no soportado en register-based (requiere stack frame completo)
-                // Por ahora, emitir nop
-                self.bytes.push(0x90); // nop
+            RegInstruction::Call { func_name, args } => {
+                // Llamada a función compilada.
+                //
+                // Convención usada por el JIT (consistente con jit.rs::execute):
+                //   fn(vars_ptr: *mut i64 en RCX, output: *mut Vec<String> en RDX) -> i64
+                // Los argumentos de la función se pasan a través del array de
+                // variables: vars[0..nargs] = args (el callee los lee vía LoadVar).
+                //
+                // Para preservar el estado del caller alrededor de la llamada,
+                // guardamos los registros caller-saved (RAX, RCX, RDX, R8-R11,
+                // XMM0-XMM7) en slots temporales del frame, llamamos, y luego
+                // restauramos. El resultado llega en RAX.
+
+                let num_args = args.len();
+
+                // 1. Guardar caller-saved GPRs en slots de temporales en el stack.
+                //    Usamos [rsp + off] apuntando a memoria justo debajo del frame.
+                let save_offsets: [(PhysReg, u32); 7] = [
+                    (PhysReg::RAX, 0),
+                    (PhysReg::RCX, 8),
+                    (PhysReg::RDX, 16),
+                    (PhysReg::R8, 24),
+                    (PhysReg::R9, 32),
+                    (PhysReg::R10, 40),
+                    (PhysReg::R11, 48),
+                ];
+                // Reservar 8 slots (56 bytes) alineados a 8 → 56 no es múltiplo de
+                // 16; reservamos 64 para mantener alineación de 16 bytes.
+                let call_frame = 64u32;
+                self.bytes.extend_from_slice(&[0x48, 0x81, 0xEC]); // sub rsp, imm32
+                self.u32(call_frame);
+                for (reg, off) in save_offsets {
+                    self.emit_store_gpr_to_rsp(reg, off);
+                }
+                // XMM0-XMM7 (16 bytes cada uno no necesario — solo 64 bits por valor)
+                for i in 0..8 {
+                    self.emit_store_xmm_to_rsp(i, 56 + (i as u32) * 8);
+                }
+
+                // 2. Escribir args en vars[0..nargs] (callee los lee con LoadVar).
+                for (i, arg) in args.iter().enumerate() {
+                    let a = self.resolve(*arg);
+                    // carga el arg en RAX y lo escribe en vars_ptr + i*8
+                    match a {
+                        Operand::Reg(PhysReg::RAX) => {}
+                        Operand::Reg(r) => self.emit_mov_reg_reg(PhysReg::RAX, r),
+                        Operand::Stack(off) => self.emit_load_rax_stack(off),
+                    }
+                    self.emit_store_to_vars(PhysReg::RAX, (i as i32) * 8);
+                }
+
+                // 3. Pasar vars_ptr (RBX) → RCX y output (R14) → RDX.
+                self.emit_mov_reg_reg(PhysReg::RCX, self.vars_ptr);
+                self.emit_mov_reg_reg(PhysReg::RDX, PhysReg::R14);
+
+                // 4. Cargar dirección de la función y llamar.
+                //    Si no está en la tabla, llamar a un stub que retorna 0.
+                let target = self
+                    .call_addresses
+                    .get(func_name)
+                    .copied()
+                    .unwrap_or_else(|| stub_nop_addr());
+                self.emit_mov_rax_imm64(target as i64);
+                self.bytes.push(0xFF); // call rax
+                self.bytes.push(0xD0);
+
+                // 5. Guardar el resultado (RAX) temporalmente para restaurar regs.
+                self.emit_store_rax_to_rsp(0);
+
+                // 6. Restaurar caller-saved GPRs.
+                for (reg, off) in save_offsets.into_iter().rev() {
+                    if reg != PhysReg::RAX {
+                        self.emit_load_gpr_from_rsp(reg, off);
+                    }
+                }
+                // Restaurar XMM0-XMM7
+                for i in 0..8 {
+                    self.emit_load_xmm_from_rsp(i, 56 + (i as u32) * 8);
+                }
+
+                // 7. Re-cargar el resultado en RAX y liberar el frame de llamada.
+                self.emit_load_rax_from_rsp(0);
+                self.bytes.extend_from_slice(&[0x48, 0x81, 0xC4]); // add rsp, imm32
+                self.u32(call_frame);
+
+                let _ = num_args;
             }
 
             RegInstruction::Nop => {
@@ -276,14 +423,10 @@ impl<'a> CodegenReg<'a> {
 
     // === Helper: mov reg, imm64 ===
     fn emit_mov_reg_imm64(&mut self, reg: PhysReg, value: i64) {
-        let rex = if (reg as u8) >= PhysReg::R8 as u8 { 0x49 } else { 0x48 };
-        let reg_code = if (reg as u8) >= PhysReg::R8 as u8 {
-            (reg as u8) - PhysReg::R8 as u8
-        } else {
-            reg as u8
-        };
-        // REX.W + REX.B, mov r64, imm64 = 0xB8 + reg
-        self.bytes.extend_from_slice(&[rex, 0xB8 + reg_code]);
+        let idx = reg.rex_index();
+        let rex = 0x48 | if idx >= 8 { 0x01 } else { 0 }; // REX.W + REX.B
+        // REX + mov r64, imm64 = 0xB8 + reg (low 3 bits)
+        self.bytes.extend_from_slice(&[rex, 0xB8 + (idx & 7)]);
         self.i64(value);
     }
 
@@ -301,22 +444,76 @@ impl<'a> CodegenReg<'a> {
         self.bytes.push(0xC0 | xmm_idx); // ModRM: mod=11, reg=xmm, rm=rax
     }
 
-    // === Helper: store rax → [rsp + off] ===
+    // === Helper: store rax → [rbp - (off+8)] ===
     fn emit_store_rax_stack(&mut self, off: usize) {
-        self.bytes.extend_from_slice(&[0x48, 0x89, 0x84, 0x24]);
-        self.u32(off as u32); // mov [rsp+off], rax
+        let abs_off = (off + 8) as i32;
+        self.bytes.extend_from_slice(&[0x48, 0x89, 0x85]); // mov [rbp + disp32], rax
+        self.i32(-abs_off);
     }
 
-    // === Helper: load [rsp + off] → rax ===
+    // === Helper: load [rbp - (off+8)] → rax ===
     fn emit_load_rax_stack(&mut self, off: usize) {
-        self.bytes.extend_from_slice(&[0x48, 0x8B, 0x84, 0x24]);
-        self.u32(off as u32); // mov rax, [rsp+off]
+        let abs_off = (off + 8) as i32;
+        self.bytes.extend_from_slice(&[0x48, 0x8B, 0x85]); // mov rax, [rbp + disp32]
+        self.i32(-abs_off);
     }
 
-    // === Helper: store xmm0 → [rsp + off] ===
+    // === Helper: store xmm0 → [rbp - (off+8)] ===
     fn emit_store_xmm0_stack(&mut self, off: usize) {
+        let abs_off = (off + 8) as i32;
+        self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x11, 0x85]); // movsd [rbp + disp32], xmm0
+        self.i32(-abs_off);
+    }
+
+    // ─── Helpers para el frame temporal de Call (acceso vía RSP) ───────────
+
+    /// store rax → [rsp + off]
+    fn emit_store_rax_to_rsp(&mut self, off: u32) {
+        self.bytes.extend_from_slice(&[0x48, 0x89, 0x84, 0x24]);
+        self.u32(off); // mov [rsp+off], rax
+    }
+
+    /// load [rsp + off] → rax
+    fn emit_load_rax_from_rsp(&mut self, off: u32) {
+        self.bytes.extend_from_slice(&[0x48, 0x8B, 0x84, 0x24]);
+        self.u32(off); // mov rax, [rsp+off]
+    }
+
+    /// store GPR (enteros) → [rsp + off]
+    fn emit_store_gpr_to_rsp(&mut self, reg: PhysReg, off: u32) {
+        let r_code = reg.rex_index() & 7;
+        let rex = 0x48 | if reg.rex_index() >= 8 { 0x04 } else { 0 }; // REX.W + REX.R
+        // mov [rsp+disp32], reg → ModRM mod=10, reg=r_code, rm=100(SIB); SIB base=rsp
+        self.bytes.extend_from_slice(&[rex, 0x89, 0x80 | (r_code << 3) | 4, 0x24]);
+        self.u32(off);
+    }
+
+    /// load [rsp + off] → GPR (enteros)
+    fn emit_load_gpr_from_rsp(&mut self, reg: PhysReg, off: u32) {
+        let r_code = reg.rex_index() & 7;
+        let rex = 0x48 | if reg.rex_index() >= 8 { 0x04 } else { 0 }; // REX.W + REX.R
+        self.bytes.extend_from_slice(&[rex, 0x8B, 0x80 | (r_code << 3) | 4, 0x24]);
+        self.u32(off); // mov reg, [rsp+off]
+    }
+
+    /// store xmm_idx → [rsp + off]
+    fn emit_store_xmm_to_rsp(&mut self, xmm_idx: u8, off: u32) {
+        // movsd [rsp+disp32], xmm_idx — ModRM reg field = xmm_idx (0-7, sin REX.R)
+        // 66 0F 11 /r movsd r/m64, xmm (opcode real: F2 0F 11)
         self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x11, 0x84, 0x24]);
-        self.u32(off as u32); // movsd [rsp+off], xmm0
+        self.u32(off); // ModRM 0x84 = mod10, reg=000 (xmm0-7), rm=100(SIB); SIB 0x24 = base rsp
+        let len = self.bytes.len();
+        // fijar el campo reg del ModRM al xmm_idx real
+        self.bytes[len - 6] = 0x84 | ((xmm_idx & 7) << 3);
+    }
+
+    /// load [rsp + off] → xmm_idx
+    fn emit_load_xmm_from_rsp(&mut self, xmm_idx: u8, off: u32) {
+        // movsd xmm_idx, [rsp+disp32] — F2 0F 10 /r
+        self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x10, 0x84, 0x24]);
+        self.u32(off);
+        let len = self.bytes.len();
+        self.bytes[len - 6] = 0x84 | ((xmm_idx & 7) << 3);
     }
 
     // === Helper: mov operand → operand ===
@@ -350,83 +547,78 @@ impl<'a> CodegenReg<'a> {
             self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x10]);
             self.bytes.push(0xC0 | (d_idx << 3) | s_idx);
         } else {
-            let rex = self.rex_for_two(dst, src);
+            let rex = self.rex_w_r_b(src, dst); // mov r/m64, r64: src=reg, dst=rm
             self.bytes.push(rex);
             self.bytes.push(0x89); // mov r/m64, r64
-            self.bytes.push(0xC0 | ((src as u8 & 7) << 3) | (dst as u8 & 7));
+            self.bytes.push(0xC0 | ((src.rex_index() & 7) << 3) | (dst.rex_index() & 7));
         }
     }
 
-    // === Helper: load [rsp+off] → reg ===
+    // === Helper: load [rbp-(off+8)] → reg ===
     fn emit_load_reg_stack(&mut self, reg: PhysReg, off: usize) {
+        let abs_off = (off + 8) as i32;
         if reg.is_xmm() {
+            // movsd xmm, [rbp + disp32]
             let r_idx = (reg as u8) - PhysReg::XMM0 as u8;
-            self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x10, 0x84, 0x24]);
-            self.u32(off as u32);
-            // Corregir ModRM para el registro XMM
-            let len = self.bytes.len();
-            self.bytes[len - 5] = 0xF2;
-            self.bytes[len - 4] = 0x0F;
-            self.bytes[len - 3] = 0x10;
-            self.bytes[len - 2] = 0x80 | (r_idx << 3) | 4; // SIB
+            self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x10]);
+            self.bytes.push(0x80 | (r_idx << 3) | 5); // mod=10, reg=xmm, rm=rbp
+            self.i32(-abs_off);
         } else {
-            // mov reg, [rsp+off]
-            let r_code = reg as u8 & 7;
-            let rex = if (reg as u8) >= 8 { 0x49 } else { 0x48 };
-            self.bytes.extend_from_slice(&[rex, 0x8B, 0x84, 0x24]);
-            self.u32(off as u32);
-            // Corregir ModRM
-            let len = self.bytes.len();
-            self.bytes[len - 5] = rex;
-            self.bytes[len - 4] = 0x8B;
-            self.bytes[len - 3] = 0x80 | (r_code << 3) | 4; // SIB needed for RSP
+            // mov reg, [rbp + disp32]
+            let r_code = reg.rex_index() & 7;
+            let rex = 0x48 | if reg.rex_index() >= 8 { 0x04 } else { 0 }; // REX.W + REX.R
+            self.bytes.extend_from_slice(&[rex, 0x8B]);
+            self.bytes.push(0x80 | (r_code << 3) | 5); // mod=10, reg, rm=rbp
+            self.i32(-abs_off);
         }
     }
 
-    // === Helper: store reg → [rsp+off] ===
+    // === Helper: store reg → [rbp-(off+8)] ===
     fn emit_store_reg_stack(&mut self, reg: PhysReg, off: usize) {
+        let abs_off = (off + 8) as i32;
         if reg.is_xmm() {
+            // movsd [rbp + disp32], xmm
             let r_idx = (reg as u8) - PhysReg::XMM0 as u8;
-            self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x11, 0x84, 0x24]);
-            self.u32(off as u32);
-            let len = self.bytes.len();
-            self.bytes[len - 3] = 0x80 | (r_idx << 3) | 4;
+            self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x11]);
+            self.bytes.push(0x80 | (r_idx << 3) | 5); // mod=10, reg=xmm, rm=rbp
+            self.i32(-abs_off);
         } else {
-            let r_code = reg as u8 & 7;
-            let rex = if (reg as u8) >= 8 { 0x49 } else { 0x48 };
-            self.bytes.extend_from_slice(&[rex, 0x89, 0x84, 0x24]);
-            self.u32(off as u32);
-            let len = self.bytes.len();
-            self.bytes[len - 5] = rex;
-            self.bytes[len - 4] = 0x89;
-            self.bytes[len - 3] = 0x80 | (r_code << 3) | 4;
+            // mov [rbp + disp32], reg
+            let r_code = reg.rex_index() & 7;
+            let rex = 0x48 | if reg.rex_index() >= 8 { 0x04 } else { 0 }; // REX.W + REX.R
+            self.bytes.extend_from_slice(&[rex, 0x89]);
+            self.bytes.push(0x80 | (r_code << 3) | 5); // mod=10, reg, rm=rbp
+            self.i32(-abs_off);
         }
     }
 
     // === Helper: mov [vars_ptr+offset], reg ===
     fn emit_store_to_vars(&mut self, reg: PhysReg, offset: i32) {
+        let base_rm = self.vars_ptr.rex_index() & 7;
         if reg.is_xmm() {
             let r_idx = (reg as u8) - PhysReg::XMM0 as u8;
-            // movsd [rbx+offset], xmm
+            // movsd [vars_ptr+offset], xmm
             self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x11]);
             if offset >= -128 && offset <= 127 {
-                self.bytes.push(0x43); // ModRM: mod=01, reg=xmm, rm=rbx
+                self.bytes.push(0x40 | ((r_idx & 7) << 3) | base_rm); // mod=01, rm=vars_ptr
                 self.bytes.push(offset as u8);
             } else {
-                self.bytes.push(0x83); // ModRM: mod=10, reg=xmm, rm=rbx
+                self.bytes.push(0x80 | ((r_idx & 7) << 3) | base_rm); // mod=10, rm=vars_ptr
                 self.i32(offset);
             }
         } else {
-            let r_code = reg as u8 & 7;
-            let rex = if (reg as u8) >= 8 { 0x49 } else { 0x48 };
-            // mov [rbx+offset], reg
+            let r_code = reg.rex_index() & 7;
+            let mut rex = 0x48; // REX.W
+            if reg.rex_index() >= 8 { rex |= 0x04; } // REX.R
+            if self.vars_ptr.rex_index() >= 8 { rex |= 0x01; } // REX.B
+            // mov [vars_ptr+offset], reg
             self.bytes.push(rex);
             self.bytes.push(0x89);
             if offset >= -128 && offset <= 127 {
-                self.bytes.push(0x43 | ((r_code & 7) << 3));
+                self.bytes.push(0x40 | ((r_code & 7) << 3) | base_rm); // mod=01, rm=vars_ptr
                 self.bytes.push(offset as u8);
             } else {
-                self.bytes.push(0x83 | ((r_code & 7) << 3));
+                self.bytes.push(0x80 | ((r_code & 7) << 3) | base_rm); // mod=10, rm=vars_ptr
                 self.i32(offset);
             }
         }
@@ -434,28 +626,31 @@ impl<'a> CodegenReg<'a> {
 
     // === Helper: mov reg, [vars_ptr+offset] ===
     fn emit_load_from_vars(&mut self, reg: PhysReg, offset: i32) {
+        let base_rm = self.vars_ptr.rex_index() & 7;
         if reg.is_xmm() {
             let r_idx = (reg as u8) - PhysReg::XMM0 as u8;
-            // movsd xmm, [rbx+offset]
+            // movsd xmm, [vars_ptr+offset]
             self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x10]);
             if offset >= -128 && offset <= 127 {
-                self.bytes.push(0x43 | ((r_idx & 7) << 3));
+                self.bytes.push(0x40 | ((r_idx & 7) << 3) | base_rm); // mod=01, rm=vars_ptr
                 self.bytes.push(offset as u8);
             } else {
-                self.bytes.push(0x83 | ((r_idx & 7) << 3));
+                self.bytes.push(0x80 | ((r_idx & 7) << 3) | base_rm); // mod=10, rm=vars_ptr
                 self.i32(offset);
             }
         } else {
-            let r_code = reg as u8 & 7;
-            let rex = if (reg as u8) >= 8 { 0x49 } else { 0x48 };
-            // mov reg, [rbx+offset]
+            let r_code = reg.rex_index() & 7;
+            let mut rex = 0x48; // REX.W
+            if reg.rex_index() >= 8 { rex |= 0x04; } // REX.R
+            if self.vars_ptr.rex_index() >= 8 { rex |= 0x01; } // REX.B
+            // mov reg, [vars_ptr+offset]
             self.bytes.push(rex);
             self.bytes.push(0x8B);
             if offset >= -128 && offset <= 127 {
-                self.bytes.push(0x43 | ((r_code & 7) << 3));
+                self.bytes.push(0x40 | ((r_code & 7) << 3) | base_rm); // mod=01, rm=vars_ptr
                 self.bytes.push(offset as u8);
             } else {
-                self.bytes.push(0x83 | ((r_code & 7) << 3));
+                self.bytes.push(0x80 | ((r_code & 7) << 3) | base_rm); // mod=10, rm=vars_ptr
                 self.i32(offset);
             }
         }
@@ -494,9 +689,10 @@ impl<'a> CodegenReg<'a> {
             self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x58]);
             self.bytes.push(0xC0 | (d_idx << 3) | s_idx);
         } else {
-            self.bytes.push(0x48);
-            self.bytes.push(0x01);
-            self.bytes.push(0xC0 | ((src as u8 & 7) << 3) | (dst as u8 & 7));
+            let rex = self.rex_w_r_b(src, dst);
+            self.bytes.push(rex);
+            self.bytes.push(0x01); // add r/m64, r64 (src=reg, dst=rm)
+            self.bytes.push(0xC0 | ((src.rex_index() & 7) << 3) | (dst.rex_index() & 7));
         }
     }
 
@@ -524,9 +720,10 @@ impl<'a> CodegenReg<'a> {
             self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x5C]);
             self.bytes.push(0xC0 | (d_idx << 3) | s_idx);
         } else {
-            self.bytes.push(0x48);
-            self.bytes.push(0x29);
-            self.bytes.push(0xC0 | ((src as u8 & 7) << 3) | (dst as u8 & 7));
+            let rex = self.rex_w_r_b(src, dst);
+            self.bytes.push(rex);
+            self.bytes.push(0x29); // sub r/m64, r64 (src=reg, dst=rm)
+            self.bytes.push(0xC0 | ((src.rex_index() & 7) << 3) | (dst.rex_index() & 7));
         }
     }
 
@@ -548,25 +745,28 @@ impl<'a> CodegenReg<'a> {
     }
 
     fn emit_imul_reg_reg(&mut self, dst: PhysReg, src: PhysReg) {
-        self.bytes.push(0x48);
+        let rex = self.rex_w_r_b(dst, src);
+        self.bytes.push(rex);
         self.bytes.push(0x0F);
-        self.bytes.push(0xAF);
-        self.bytes.push(0xC0 | ((dst as u8 & 7) << 3) | (src as u8 & 7));
+        self.bytes.push(0xAF); // imul r64, r/m64 (dst=reg, src=rm)
+        self.bytes.push(0xC0 | ((dst.rex_index() & 7) << 3) | (src.rex_index() & 7));
     }
 
     // === Helper: idiv operand ===
     fn emit_idiv_operand(&mut self, op: &Operand) {
         match op {
             Operand::Reg(r) => {
-                self.bytes.push(0x48);
+                let rex = 0x48 | if r.rex_index() >= 8 { 0x01 } else { 0 }; // REX.W + REX.B
+                self.bytes.push(rex);
                 self.bytes.push(0xF7);
                 self.bytes.push(0xF8 | (r.rex_index() & 7));
             }
             Operand::Stack(off) => {
                 self.emit_load_reg_stack(PhysReg::R10, *off);
-                self.bytes.push(0x48);
+                let rex = 0x48 | if PhysReg::R10.rex_index() >= 8 { 0x01 } else { 0 };
+                self.bytes.push(rex);
                 self.bytes.push(0xF7);
-                self.bytes.push(0xFA); // idiv r10
+                self.bytes.push(0xF8 | (PhysReg::R10.rex_index() & 7)); // idiv r10
             }
         }
     }
@@ -594,26 +794,21 @@ impl<'a> CodegenReg<'a> {
     }
 
     fn emit_cmp_reg_reg(&mut self, a: PhysReg, b: PhysReg) {
-        self.bytes.push(0x48);
+        let rex = self.rex_w_r_b(b, a); // cmp r/m64, r64: b=reg, a=rm
+        self.bytes.push(rex);
         self.bytes.push(0x39);
-        self.bytes.push(0xC0 | ((b as u8 & 7) << 3) | (a as u8 & 7));
+        self.bytes.push(0xC0 | ((b.rex_index() & 7) << 3) | (a.rex_index() & 7));
     }
 
     // === Helper: cmp operand, 0 ===
     fn emit_cmp_zero(&mut self, op: &Operand) {
         match op {
             Operand::Reg(r) => {
-                if r.is_xmm() {
-                    // xorpd xmm, xmm (no aplica para integer)
-                    // Para enteros: test reg, reg
-                    self.bytes.push(0x48);
-                    self.bytes.push(0x85);
-                    self.bytes.push(0xC0 | ((r.rex_index() & 7) << 3) | (r.rex_index() & 7));
-                } else {
-                    self.bytes.push(0x48);
-                    self.bytes.push(0x85);
-                    self.bytes.push(0xC0 | ((r.rex_index() & 7) << 3) | (r.rex_index() & 7));
-                }
+                // test reg, reg (igual para enteros y flotantes-por-bits)
+                let rex = 0x48 | if r.rex_index() >= 8 { 0x04 } else { 0 }; // REX.W + REX.R
+                self.bytes.push(rex);
+                self.bytes.push(0x85);
+                self.bytes.push(0xC0 | ((r.rex_index() & 7) << 3) | (r.rex_index() & 7));
             }
             Operand::Stack(off) => {
                 self.emit_load_rax_stack(*off);
@@ -631,14 +826,15 @@ impl<'a> CodegenReg<'a> {
     fn emit_and_operands(&mut self, dst: &Operand, src: &Operand) {
         match (dst, src) {
             (Operand::Reg(d), Operand::Reg(s)) => {
-                self.bytes.push(0x48);
+                let rex = self.rex_w_r_b(*s, *d); // and r/m64, r64: s=reg, d=rm
+                self.bytes.push(rex);
                 self.bytes.push(0x21);
                 self.bytes.push(0xC0 | ((s.rex_index() & 7) << 3) | (d.rex_index() & 7));
             }
             _ => {
                 self.emit_mov_operands(&Operand::Reg(PhysReg::R10), src);
                 self.emit_mov_operands(dst, &Operand::Reg(PhysReg::RAX));
-                self.bytes.extend_from_slice(&[0x48, 0x21, 0xD0]); // and rax, rdx
+                self.bytes.extend_from_slice(&[0x4C, 0x21, 0xD0]); // and rax, r10
                 self.emit_mov_operands(dst, &Operand::Reg(PhysReg::RAX));
             }
         }
@@ -648,14 +844,15 @@ impl<'a> CodegenReg<'a> {
     fn emit_or_operands(&mut self, dst: &Operand, src: &Operand) {
         match (dst, src) {
             (Operand::Reg(d), Operand::Reg(s)) => {
-                self.bytes.push(0x48);
+                let rex = self.rex_w_r_b(*s, *d); // or r/m64, r64: s=reg, d=rm
+                self.bytes.push(rex);
                 self.bytes.push(0x09);
                 self.bytes.push(0xC0 | ((s.rex_index() & 7) << 3) | (d.rex_index() & 7));
             }
             _ => {
                 self.emit_mov_operands(&Operand::Reg(PhysReg::R10), src);
                 self.emit_mov_operands(dst, &Operand::Reg(PhysReg::RAX));
-                self.bytes.extend_from_slice(&[0x48, 0x09, 0xD0]); // or rax, rdx
+                self.bytes.extend_from_slice(&[0x4C, 0x09, 0xD0]); // or rax, r10
                 self.emit_mov_operands(dst, &Operand::Reg(PhysReg::RAX));
             }
         }
@@ -735,10 +932,20 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === REX prefix para dos registros ===
+    /// REX.W + REX.R (para el campo `reg` del ModRM) + REX.B (para el `rm`).
     fn rex_for_two(&self, a: PhysReg, b: PhysReg) -> u8 {
+        self.rex_w_r_b(a, b)
+    }
+
+    /// REX.W + REX.R (para `reg_field`) + REX.B (para `rm_field`).
+    fn rex_w_r_b(&self, reg_field: PhysReg, rm_field: PhysReg) -> u8 {
         let mut rex = 0x48; // REX.W
-        if (a as u8) >= 8 { rex |= 0x04; } // REX.R
-        if (b as u8) >= 8 { rex |= 0x01; } // REX.B
+        if reg_field.rex_index() >= 8 {
+            rex |= 0x04; // REX.R
+        }
+        if rm_field.rex_index() >= 8 {
+            rex |= 0x01; // REX.B
+        }
         rex
     }
 
@@ -769,6 +976,7 @@ impl<'a> CodegenReg<'a> {
 /// * `prog` - Programa en IR register-based
 /// * `assignments` - Asignaciones de VirtReg → Location (del allocador)
 /// * `spill_count` - Número de slots de spill
+/// * `call_addresses` - Tabla nombre de función → dirección de código (para Call)
 ///
 /// # Returns
 /// Vector de bytes con el código máquina x86-64 (sin prologue/epilogue)
@@ -777,8 +985,18 @@ pub fn emit_program(
     assignments: &HashMap<VirtReg, Location>,
     spill_count: usize,
 ) -> Vec<u8> {
+    emit_program_with_calls(prog, assignments, spill_count, empty_call_table())
+}
+
+/// Igual que `emit_program` pero permite resolver `Call` a direcciones reales.
+pub fn emit_program_with_calls(
+    prog: &RegProgram,
+    assignments: &HashMap<VirtReg, Location>,
+    spill_count: usize,
+    call_addresses: &HashMap<String, u64>,
+) -> Vec<u8> {
     let spill_frame = (spill_count * 8) as i32;
-    let mut codegen = CodegenReg::new(assignments);
+    let mut codegen = CodegenReg::with_call_addresses(assignments, call_addresses);
     codegen.emit_program(prog, PhysReg::RBX, spill_frame);
     codegen.finish()
 }
@@ -813,5 +1031,142 @@ mod tests {
 
         let code = emit_program(&prog, &assignments, 0);
         assert!(!code.is_empty());
+    }
+
+    #[test]
+    fn test_codegen_prologue_y_epilogo() {
+        let mut prog = RegProgram::new();
+        let v0 = prog.alloc_vreg();
+        let block = crate::register_ir::BasicBlock {
+            label: 0,
+            instructions: vec![RegInstruction::LoadImm { dst: v0, value: 42 }],
+            terminator: RegInstruction::Return { src: v0 },
+        };
+        prog.blocks.push(block);
+
+        let mut assignments = HashMap::new();
+        // v0 en un slot de spill → exige frame (sub rsp) y epílogo
+        assignments.insert(v0, Location::Stack(0));
+
+        let code = emit_program(&prog, &assignments, 1);
+        assert!(!code.is_empty());
+
+        // Prólogo: push rbp; push rbx; push r14; mov rbp, rsp; mov rbx, rcx; mov r14, rdx
+        assert_eq!(&code[0..1], &[0x55]);                     // push rbp
+        assert_eq!(&code[1..4], &[0x53, 0x41, 0x56]);         // push rbx; push r14
+        assert_eq!(&code[4..7], &[0x48, 0x89, 0xE5]);         // mov rbp, rsp
+        assert_eq!(&code[7..10], &[0x48, 0x89, 0xcb]);        // mov rbx, rcx
+        assert_eq!(&code[10..13], &[0x49, 0x89, 0xd6]);       // mov r14, rdx
+        // sub rsp, 8 (frame de spill) = 48 81 EC + imm32
+        assert_eq!(&code[13..16], &[0x48, 0x81, 0xec]);
+        assert_eq!(&code[16..20], &8u32.to_le_bytes());
+
+        // Epílogo final: mov rsp, rbp; pop r14; pop rbx; pop rbp; ret
+        // Layout: [48 89 EC] [41 5E] [5B] [5D] [C3] = 8 bytes
+        let len = code.len();
+        assert_eq!(&code[len - 8..len - 5], &[0x48, 0x89, 0xEC]); // mov rsp, rbp
+        assert_eq!(&code[len - 5..len - 3], &[0x41, 0x5E]);       // pop r14
+        assert_eq!(code[len - 3], 0x5B);                           // pop rbx
+        assert_eq!(code[len - 2], 0x5D);                           // pop rbp
+        assert_eq!(code[len - 1], 0xC3);                           // ret
+    }
+
+    #[test]
+    fn test_codegen_sin_spill_no_reserva_frame() {
+        let mut prog = RegProgram::new();
+        let v0 = prog.alloc_vreg();
+        let block = crate::register_ir::BasicBlock {
+            label: 0,
+            instructions: vec![RegInstruction::LoadImm { dst: v0, value: 7 }],
+            terminator: RegInstruction::Return { src: v0 },
+        };
+        prog.blocks.push(block);
+
+        let mut assignments = HashMap::new();
+        assignments.insert(v0, Location::Reg(PhysReg::RAX));
+
+        // Sin spills: no debe haber sub rsp
+        let code = emit_program(&prog, &assignments, 0);
+        // Prólogo: push rbp; push rbx; push r14; mov rbp, rsp; mov rbx, rcx; mov r14, rdx
+        assert_eq!(&code[0..1], &[0x55]);                     // push rbp
+        assert_eq!(&code[1..4], &[0x53, 0x41, 0x56]);         // push rbx; push r14
+        assert_eq!(&code[4..7], &[0x48, 0x89, 0xE5]);         // mov rbp, rsp
+        // Epílogo: mov rsp, rbp; pop r14; pop rbx; pop rbp; ret
+        let len = code.len();
+        assert_eq!(&code[len - 8..len - 5], &[0x48, 0x89, 0xEC]); // mov rsp, rbp
+        assert_eq!(&code[len - 5..len - 3], &[0x41, 0x5E]);       // pop r14
+        assert_eq!(code[len - 3], 0x5B);                           // pop rbx
+        assert_eq!(code[len - 2], 0x5D);                           // pop rbp
+        assert_eq!(code[len - 1], 0xC3);                           // ret
+    }
+
+    #[test]
+    fn test_codegen_call_emite_call_rax() {
+        let mut prog = RegProgram::new();
+        let v0 = prog.alloc_vreg();
+        let block = crate::register_ir::BasicBlock {
+            label: 0,
+            instructions: vec![RegInstruction::Call {
+                func_name: "foo".into(),
+                args: vec![v0],
+            }],
+            terminator: RegInstruction::Return { src: v0 },
+        };
+        prog.blocks.push(block);
+
+        let mut assignments = HashMap::new();
+        assignments.insert(v0, Location::Reg(PhysReg::RAX));
+
+        // Con tabla de direcciones vacía → usa stub (call rax tras mov rax, imm64)
+        let mut addresses = HashMap::new();
+        addresses.insert("foo".to_string(), 0x1234u64);
+        let code = emit_program_with_calls(&prog, &assignments, 0, &addresses);
+
+        // Buscar la secuencia "mov rax, imm64(0x1234); call rax"
+        // mov rax, imm64 = 48 B8 + 8 bytes
+        let mut found_call = false;
+        for i in 0..code.len().saturating_sub(10) {
+            if code[i] == 0x48 && code[i + 1] == 0xB8 {
+                let imm = u64::from_le_bytes(code[i + 2..i + 10].try_into().unwrap());
+                if imm == 0x1234 {
+                    // call rax = FF D0
+                    if code[i + 10] == 0xFF && code[i + 11] == 0xD0 {
+                        found_call = true;
+                        break;
+                    }
+                }
+            }
+        }
+        assert!(found_call, "se esperaba mov rax, imm64(0x1234) + call rax");
+    }
+
+    #[test]
+    fn test_codegen_call_sin_tabla_usa_stub() {
+        let mut prog = RegProgram::new();
+        let v0 = prog.alloc_vreg();
+        let block = crate::register_ir::BasicBlock {
+            label: 0,
+            instructions: vec![RegInstruction::Call {
+                func_name: "desconocida".into(),
+                args: vec![v0],
+            }],
+            terminator: RegInstruction::Return { src: v0 },
+        };
+        prog.blocks.push(block);
+
+        let mut assignments = HashMap::new();
+        assignments.insert(v0, Location::Reg(PhysReg::RAX));
+
+        let code = emit_program(&prog, &assignments, 0);
+
+        // Debe existir un call rax (FF D0) en el código generado
+        let found_call = code
+            .windows(2)
+            .any(|w| w[0] == 0xFF && w[1] == 0xD0);
+        assert!(found_call, "se esperaba una instrucción call rax");
+
+        // El stub debe tener dirección válida y retornar 0 al ser invocado.
+        // (no se ejecuta el código aquí — solo se verifica la emisión)
+        assert_ne!(stub_nop_addr(), 0);
     }
 }
