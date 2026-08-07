@@ -2173,6 +2173,26 @@ impl Parser {
             return Ok(Expresion::LiteralNulo);
         }
 
+        // Closure: func(param) { cuerpo } — función anónima como valor
+        if self.coincide(TokenKind::Funcion) {
+            self.avanzar();
+            self.esperar(
+                TokenKind::ParenAbrir,
+                "Se esperaba '(' después de 'func' en el closure.",
+            )?;
+            let parametros = self.parse_parametros()?;
+            self.esperar(
+                TokenKind::ParenCerrar,
+                "Se esperaba ')' después de los parámetros del closure.",
+            )?;
+            self.esperar(
+                TokenKind::LlaveAbrir,
+                "Se esperaba '{' para el cuerpo del closure.",
+            )?;
+            let cuerpo = self.parse_bloque()?;
+            return Ok(Expresion::Closure { parametros, cuerpo });
+        }
+
         if self.coincide(TokenKind::ParenAbrir) {
             self.profundidad_paren += 1;
             if self.profundidad_paren > MAX_ANIDAMIENTO_PAREN {
