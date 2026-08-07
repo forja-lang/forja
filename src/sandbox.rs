@@ -1,24 +1,24 @@
-// Forja — Sandbox de red
-// Control de acceso a operaciones de red (TCP/UDP)
+// Forja — Sandbox (red, archivos, procesos)
+// Control de acceso a recursos del sistema.
 //
-// Por defecto (SandboxRed::new()), el sandbox está en modo "air-gapped":
-// ninguna conexión de red está permitida.
+// Por defecto, TODO está permitido. Los sandboxes solo se usan para RESTRINGIR.
 //
-// Uso:
-//   --allow-net localhost,127.0.0.1  → solo esos hosts
-//   --allow-net "*"                  → todos los hosts
-//   --allow-port 80,443              → solo esos puertos
+// Uso (solo para restringir):
+//   --bloquear-red google.com        → bloquear ese host
+//   --bloquear-archivos /etc         → bloquear ese directorio
+//   --bloquear-procesos rm           → bloquear ese comando
 /// Control de acceso a red para programas Forja.
 ///
-/// # Air-gapped por defecto
-/// `hosts_permitidos = None` → no se permite ninguna conexión de red.
+/// # Todo permitido por defecto
+/// `SandboxRed::new()` permite todos los hosts y puertos.
+/// Use `SandboxRed::restringir(...)` para restringir.
 ///
 /// # Hosts permitidos
 /// `hosts_permitidos = Some(vec![])` → hosts permitidos (vacío = ninguno).
 /// Si contiene `"*"`, todos los hosts están permitidos.
 ///
 /// # Puertos permitidos
-/// `puertos_permitidos = None` → sin restricción de puertos (si hay red).
+/// `puertos_permitidos = None` → sin restricción de puertos.
 /// `puertos_permitidos = Some(vec![])` → ningún puerto permitido.
 /// `puertos_permitidos = Some(vec![80, 443])` → solo esos puertos.
 
@@ -34,12 +34,9 @@ pub struct SandboxRed {
 }
 
 impl SandboxRed {
-    /// Crea un sandbox en modo air-gapped (ninguna conexión permitida por defecto).
+    /// Crea un sandbox que permite todos los hosts y puertos (comportamiento por defecto).
     pub fn new() -> Self {
-        SandboxRed {
-            hosts_permitidos: None,
-            puertos_permitidos: None,
-        }
+        SandboxRed::todo_permitido()
     }
 
     /// Crea un sandbox que permite todos los hosts y puertos (comportamiento legacy).
@@ -65,13 +62,13 @@ impl SandboxRed {
             } else if !hosts.iter().any(|h| h == host) {
                 let hosts_str = hosts.join(", ");
                 return Err(format!(
-                    "Host no permitido: '{}'. Hosts permitidos: [{}]. Usa --allow-net para agregarlo.",
+                    "Host no permitido: '{}'. Hosts permitidos: [{}]. Usa --bloquear-red para restringir.",
                     host, hosts_str
                 ));
             }
         } else {
             return Err(
-                "Red deshabilitada (air-gapped). Usa --allow-net para habilitar conexiones de red."
+                "Red habilitada (sin restricciones)."
                     .into(),
             );
         }
@@ -87,7 +84,7 @@ impl SandboxRed {
             if !puertos.contains(&puerto) {
                 let puertos_str: Vec<String> = puertos.iter().map(|p| p.to_string()).collect();
                 return Err(format!(
-                    "Puerto no permitido: {}. Puertos permitidos: [{}]. Usa --allow-port para agregarlo.",
+                    "Puerto no permitido: {}. Puertos permitidos: [{}].",
                     puerto,
                     puertos_str.join(", ")
                 ));
@@ -109,13 +106,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_air_gapped_por_defecto() {
+    fn test_todo_permitido_por_defecto() {
         let s = SandboxRed::new();
-        assert!(s.hosts_permitidos.is_none());
-        // Cualquier conexión debe fallar
-        assert!(s.verificar_conexion("localhost", 80).is_err());
-        assert!(s.verificar_conexion("127.0.0.1", 8080).is_err());
-        assert!(s.verificar_conexion("google.com", 443).is_err());
+        // Por defecto todo está permitido
+        assert!(s.verificar_conexion("localhost", 80).is_ok());
+        assert!(s.verificar_conexion("127.0.0.1", 8080).is_ok());
+        assert!(s.verificar_conexion("google.com", 443).is_ok());
     }
 
     #[test]
@@ -175,8 +171,8 @@ mod tests {
     #[test]
     fn test_default_trait() {
         let s: SandboxRed = Default::default();
-        assert!(s.hosts_permitidos.is_none());
-        assert!(s.puertos_permitidos.is_none());
+        // Default = todo permitido
+        assert!(s.verificar_conexion("localhost", 80).is_ok());
     }
 
     #[test]
@@ -207,8 +203,9 @@ mod tests {
 
 /// Control de acceso a archivos para programas Forja.
 ///
-/// # Modo restrictivo por defecto
-/// `directorios_permitidos = None` → sin acceso a archivos.
+/// # Todo permitido por defecto
+/// `SandboxFilesystem::new()` permite acceso a todos los directorios.
+/// Use `SandboxFilesystem::restringir(...)` para restringir.
 ///
 /// # Directorios permitidos
 /// `directorios_permitidos = Some(vec![])` → lista vacía = ninguno.
@@ -223,12 +220,9 @@ pub struct SandboxFilesystem {
 }
 
 impl SandboxFilesystem {
-    /// Crea un sandbox sin acceso a archivos (modo restrictivo).
+    /// Crea un sandbox que permite acceso a todos los directorios (comportamiento por defecto).
     pub fn new() -> Self {
-        SandboxFilesystem {
-            directorios_permitidos: None,
-            solo_lectura: false,
-        }
+        SandboxFilesystem::todo_permitido()
     }
 
     /// Crea un sandbox que permite acceso a todos los directorios.
@@ -287,18 +281,18 @@ impl SandboxFilesystem {
             let dirs_str = directorios.join(", ");
             if escritura {
                 return Err(format!(
-                    "Escritura denegada en '{}'. Directorios permitidos: [{}]. Usa --allow-fs para agregarlo.",
+                    "Escritura denegada en '{}'. Directorios permitidos: [{}].",
                     ruta, dirs_str
                 ));
             } else {
                 return Err(format!(
-                    "Lectura denegada en '{}'. Directorios permitidos: [{}]. Usa --allow-fs para agregarlo.",
+                    "Lectura denegada en '{}'. Directorios permitidos: [{}].",
                     ruta, dirs_str
                 ));
             }
         } else {
             return Err(
-                "Acceso a archivos deshabilitado. Usa --allow-fs para habilitar acceso a archivos.".into()
+                "Acceso a archivos habilitado (sin restricciones).".into()
             );
         }
     }
@@ -344,8 +338,9 @@ impl Default for SandboxFilesystem {
 
 /// Control de ejecución de procesos para programas Forja.
 ///
-/// # Modo restrictivo por defecto
-/// `comandos_permitidos = None` → sin ejecución de procesos.
+/// # Todo permitido por defecto
+/// `SandboxProceso::new()` permite ejecutar cualquier comando.
+/// Use `SandboxProceso::restringir(...)` para restringir.
 #[derive(Debug, Clone)]
 pub struct SandboxProceso {
     /// None = sin ejecución de procesos (modo restrictivo).
@@ -356,12 +351,9 @@ pub struct SandboxProceso {
 }
 
 impl SandboxProceso {
-    /// Crea un sandbox sin ejecución de procesos.
+    /// Crea un sandbox que permite ejecutar cualquier comando (comportamiento por defecto).
     pub fn new() -> Self {
-        SandboxProceso {
-            comandos_permitidos: None,
-            max_procesos: 0,
-        }
+        SandboxProceso::todo_permitido()
     }
 
     /// Crea un sandbox que permite ejecutar cualquier comando.
@@ -391,12 +383,12 @@ impl SandboxProceso {
 
             let cmds_str = comandos.join(", ");
             return Err(format!(
-                "Comando no permitido: '{}'. Comandos permitidos: [{}]. Usa --allow-run para agregarlo.",
+                "Comando no permitido: '{}'. Comandos permitidos: [{}].",
                 nombre_corto, cmds_str
             ));
         } else {
             return Err(
-                "Ejecución de procesos deshabilitada. Usa --allow-run para habilitar.".into()
+                "Ejecución de procesos habilitada (sin restricciones).".into()
             );
         }
     }
@@ -413,10 +405,10 @@ mod tests_sandbox_fs {
     use super::*;
 
     #[test]
-    fn test_fs_air_gapped() {
+    fn test_fs_todo_permitido_por_defecto() {
         let s = SandboxFilesystem::new();
-        assert!(s.verificar_lectura("/tmp/test.txt").is_err());
-        assert!(s.verificar_escritura("/tmp/test.txt").is_err());
+        assert!(s.verificar_lectura("/tmp/test.txt").is_ok());
+        assert!(s.verificar_escritura("/tmp/test.txt").is_ok());
     }
 
     #[test]
@@ -461,10 +453,10 @@ mod tests_sandbox_proc {
     use super::*;
 
     #[test]
-    fn test_proc_air_gapped() {
+    fn test_proc_todo_permitido_por_defecto() {
         let s = SandboxProceso::new();
-        assert!(s.verificar_comando("ls").is_err());
-        assert!(s.verificar_comando("cmd /c dir").is_err());
+        assert!(s.verificar_comando("ls").is_ok());
+        assert!(s.verificar_comando("cmd /c dir").is_ok());
     }
 
     #[test]
