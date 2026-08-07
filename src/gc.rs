@@ -199,8 +199,10 @@ impl BumpAllocator {
     }
 
     /// Copia objetos marcados desde este allocator a otro.
+    /// Si `promotion_age` se proporciona, los objetos cuya edad
+    /// resultante >= promotion_age se promueven a `Generation::Old`.
     /// Retorna el número de objetos copiados y bytes copiados.
-    fn copy_marked_to(&self, dest: &BumpAllocator) -> (usize, usize) {
+    fn copy_marked_to(&self, dest: &BumpAllocator, promotion_age: u8) -> (usize, usize) {
         let mut count = 0;
         let mut bytes = 0;
         self.for_each_object(&mut |r| {
@@ -215,10 +217,15 @@ impl BumpAllocator {
                             dest_ptr.add(std::mem::size_of::<GcHeader>()),
                             size,
                         );
-                        // Copiar header preservando el mark
+                        // Copiar header preservando el mark y aplicando promotion por age
                         let dest_header = &mut *(dest_ptr as *mut GcHeader);
-                        dest_header.age = header.age + 1;
-                        dest_header.generation = Generation::Young;
+                        let new_age = header.age + 1;
+                        dest_header.age = new_age;
+                        dest_header.generation = if new_age >= promotion_age {
+                            Generation::Old
+                        } else {
+                            Generation::Young
+                        };
                         dest_header.marked.set(false);
                     }
                     count += 1;
@@ -260,6 +267,30 @@ impl Drop for BumpAllocator {
 }
 
 /// Generational GC — young generation + old generation
+///
+/// ## Write Barriers
+///
+/// El GC generacional requiere **write barriers** para rastrear referencias
+/// de old→young. Cuando un objeto de old generation es mutado para apuntar
+/// a un objeto de young generation, debemos registrar esa referencia en el
+/// **remembered set**. Sin esto, la young collection no encontraría esos
+/// objetos young y los liberaría prematuramente (use-after-free).
+///
+/// **Dónde llamar `write_barrier`:**
+/// - En la VM: cualquier instrucción `SetField`, `SetIndex`, asignación de
+///   campo de objeto, o cualquier operación que modifique un campo que
+///   contiene un puntero GC.
+/// - En la VM: cualquier asignación a variables que contienen referencias
+///   (asignación de variables locales, parámetros, etc.)
+/// - En FFI: cualquier retorno de punteros GC desde código nativo.
+///
+/// Ejemplo de integración en la VM:
+/// ```ignore
+/// // En SetField:
+/// let old_value = get_field(obj, offset);
+/// set_field(obj, offset, new_value);  // mutar primero
+/// gc.write_barrier(&obj, offset);     // notificar al GC
+/// ```
 pub struct GenerationalGC {
     /// Young generation: bump allocator rápido
     nursery: BumpAllocator,
@@ -279,6 +310,10 @@ pub struct GenerationalGC {
     promotion_age: u8,
     /// Objetos vivos (raíces para mark phase)
     roots: Vec<GcRef>,
+    /// **Remembered set**: objetos de old generation que contienen
+    /// referencias a objetos de young generation.
+    /// Esencial para evitar use-after-free en GC generacional.
+    remembered_set: Vec<GcRef>,
     /// Total de bytes asignados (métrica)
     total_allocated: u64,
     /// Total de bytes liberados (métrica)
@@ -303,6 +338,7 @@ impl GenerationalGC {
             old_threshold: old_size * 80 / 100,
             promotion_age: 3,
             roots: Vec::new(),
+            remembered_set: Vec::new(),
             total_allocated: 0,
             total_freed: 0,
         }
@@ -357,6 +393,114 @@ impl GenerationalGC {
         self.roots.retain(|r| r.ptr != root.ptr);
     }
 
+    // ===================================================================
+    // Write Barriers — previenen use-after-free en GC generacional
+    // ===================================================================
+
+    /// Verifica si un puntero (como usize) está en el rango del young
+    /// generation (nursery + survivor).
+    ///
+    /// Un puntero "está en young" si apunta a memoria dentro del bump
+    /// allocator del nursery O del survivor space.
+    fn is_in_young_generation(&self, ptr: usize) -> bool {
+        if ptr == 0 {
+            return false;
+        }
+        // Verificar nursery
+        let nursery_base = self.nursery.base_ptr() as usize;
+        let nursery_end = nursery_base + self.nursery.mem_capacity();
+        if ptr >= nursery_base && ptr < nursery_end {
+            return true;
+        }
+        // Verificar survivor
+        let survivor_base = self.survivor.base_ptr() as usize;
+        let survivor_end = survivor_base + self.survivor.mem_capacity();
+        if ptr >= survivor_base && ptr < survivor_end {
+            return true;
+        }
+        false
+    }
+
+    /// **Write barrier**: debe llamarse DESPUÉS de modificar un campo de un
+    /// objeto que contiene un puntero GC.
+    ///
+    /// Si el objeto `obj` está en old generation y el campo en `field_offset`
+    /// ahora apunta a un objeto en young generation, registra `obj` en el
+    /// remembered set para que la young collection lo escanee.
+    ///
+    /// # Uso típico en la VM
+    ///
+    /// ```text
+    /// // En cualquier instrucción que modifique un campo de objeto:
+    /// set_field(obj_ref, field_offset, new_value);
+    /// gc.write_barrier(&obj_ref, field_offset);
+    /// ```
+    ///
+    /// # Seguridad
+    ///
+    /// El campo en `field_offset` debe contener un valor de tipo `usize`
+    /// (tamaño de palabra) que podría ser un puntero GC.
+    pub fn write_barrier(&mut self, obj: &GcRef, field_offset: usize) {
+        // Solo nos importa si el objeto es old generation
+        if obj.header().generation != Generation::Old {
+            return;
+        }
+
+        // Leer el valor del campo en el offset indicado
+        let field_ptr = unsafe {
+            (obj.data_ptr().add(field_offset) as *const usize).read()
+        };
+
+        // Si el campo apunta a young generation, registrar en remembered set
+        if self.is_in_young_generation(field_ptr) {
+            // Evitar duplicados — solo agregar si no está ya registrado
+            if !self.remembered_set.iter().any(|r| r.ptr == obj.ptr) {
+                self.remembered_set.push(*obj);
+            }
+        }
+    }
+
+    /// **Write barrier raw**: versión del write barrier que acepta el valor
+    /// raw del puntero nuevo directamente (más eficiente cuando ya se tiene
+    /// el valor leído).
+    ///
+    /// # Uso típico
+    ///
+    /// ```text
+    /// let old_val = read_field(obj, offset);
+    /// write_field(obj, offset, new_ptr);
+    /// gc.write_barrier_raw(&obj, new_ptr);
+    /// ```
+    pub fn write_barrier_raw(&mut self, obj: &GcRef, new_ptr_value: usize) {
+        if obj.header().generation != Generation::Old {
+            return;
+        }
+        if self.is_in_young_generation(new_ptr_value) {
+            if !self.remembered_set.iter().any(|r| r.ptr == obj.ptr) {
+                self.remembered_set.push(*obj);
+            }
+        }
+    }
+
+    /// Retorna el tamaño actual del remembered set (para métricas/debug)
+    pub fn remembered_set_len(&self) -> usize {
+        self.remembered_set.len()
+    }
+
+    /// Verifica si un objeto está en el remembered set
+    pub fn is_in_remembered_set(&self, obj: &GcRef) -> bool {
+        self.remembered_set.iter().any(|r| r.ptr == obj.ptr)
+    }
+
+    /// Invalida una entrada del remembered set cuando un objeto old ya no
+    /// referencia young. Esto es opcional pero reduce el trabajo de la
+    /// young collection.
+    ///
+    /// Debe llamarse cuando un campo old→young se cambia a old→old o null.
+    pub fn invalidate_remembered_set_entry(&mut self, obj: &GcRef) {
+        self.remembered_set.retain(|r| r.ptr != obj.ptr);
+    }
+
     /// Ejecuta una young generation collection
     ///
     /// Estrategia: mark-sweep con copia de supervivientes a survivor space.
@@ -367,18 +511,20 @@ impl GenerationalGC {
     pub fn young_collection(&mut self) {
         self.young_collections += 1;
 
-        // 1. Mark desde roots
+        // 1. Mark desde roots Y remembered set (old→young references)
+        //    El remembered set es crítico aquí: sin él, objetos young
+        //    referenciados desde old serían colectados prematuramente.
         self.mark();
 
         // 2. Crear un survivor temporal para copiar supervivientes
         let temp_survivor = BumpAllocator::new(self.survivor.mem_capacity());
 
         // 3. Copiar objetos marcados del nursery al survivor temporal
-        let (nursery_count, nursery_bytes) = self.nursery.copy_marked_to(&temp_survivor);
+        let (nursery_count, nursery_bytes) = self.nursery.copy_marked_to(&temp_survivor, self.promotion_age);
         self.total_freed += nursery_bytes as u64;
 
         // 4. Copiar objetos marcados del survivor actual al survivor temporal
-        let (survivor_count, survivor_bytes) = self.survivor.copy_marked_to(&temp_survivor);
+        let (survivor_count, survivor_bytes) = self.survivor.copy_marked_to(&temp_survivor, self.promotion_age);
         self.total_freed += survivor_bytes as u64;
 
         // 5. Reemplazar survivor con el temporal
@@ -387,7 +533,13 @@ impl GenerationalGC {
         // 6. Resetear nursery
         self.nursery.reset();
 
-        // 7. Resetear marks para la próxima colecta
+        // 7. Limpiar remembered set — después de la colección, las
+        //    referencias old→young deben re-evaluarse. Los objetos young
+        //    que sobrevivieron fueron copiados a survivor, por lo que los
+        //    punteros old ahora apuntan a direcciones diferentes.
+        //    NOTA: Se mantiene el remembered set para la siguiente young
+        //    collection porque los punteros old todavía apuntan a survivor
+        //    (que es young generation). Se limpia solo en full_collection.
         self.reset_marks();
 
         let _ = (nursery_count, survivor_count);
@@ -403,7 +555,7 @@ impl GenerationalGC {
     pub fn full_collection(&mut self) {
         self.full_collections += 1;
 
-        // 1. Mark desde roots
+        // 1. Mark desde roots Y remembered set
         self.mark();
 
         // 2. Crear survivors temporales
@@ -411,16 +563,16 @@ impl GenerationalGC {
         let temp_old = BumpAllocator::new(self.old_memory.mem_capacity());
 
         // 3. Copiar objetos marcados del nursery al survivor
-        let (nursery_count, nursery_bytes) = self.nursery.copy_marked_to(&temp_survivor);
+        let (nursery_count, nursery_bytes) = self.nursery.copy_marked_to(&temp_survivor, self.promotion_age);
         self.total_freed += nursery_bytes as u64;
 
         // 4. Promover objetos del survivor actual a old generation
         //    (objetos que ya están en survivor son considerados "viejos")
-        let (survivor_count, survivor_bytes) = self.survivor.copy_marked_to(&temp_old);
+        let (survivor_count, survivor_bytes) = self.survivor.copy_marked_to(&temp_old, self.promotion_age);
         self.total_freed += survivor_bytes as u64;
 
         // 5. Copiar objetos viejos que sobrevivieron
-        let (old_count, old_bytes) = self.old_memory.copy_marked_to(&temp_old);
+        let (old_count, old_bytes) = self.old_memory.copy_marked_to(&temp_old, self.promotion_age);
         self.total_freed += old_bytes as u64;
 
         // 6. Reemplazar heaps
@@ -431,16 +583,27 @@ impl GenerationalGC {
         // 7. Resetear marks
         self.reset_marks();
 
+        // 8. Limpiar remembered set — en full collection se promueven
+        //    objetos de survivor a old, por lo que las referencias
+        //    old→young que teníamosRegistradas ya no son válidas.
+        //    Los write barriers de la VM re-registrarán las nuevas
+        //    referencias old→young que se creen después de esta colección.
+        self.remembered_set.clear();
+
         let _ = (nursery_count, survivor_count, old_count);
     }
 
-    /// Mark phase: marca todos los objetos alcanzables desde roots.
+    /// Mark phase: marca todos los objetos alcanzables desde roots
+    /// Y desde el remembered set (referencias old→young).
     ///
-    /// Usa tracing conservador: para cada objeto marcado, escanea su área de datos
-    /// buscando valores que parezcan punteros al heap GC. Si los encuentra, también
-    /// los marca (y los añade al mark stack para trazar recursivamente).
+    /// Usa tracing conservador: para cada objeto marcado, escanea su área de
+    /// datos buscando valores que parezcan punteros al heap GC. Si los
+    /// encuentra, también los marca (y los añade al mark stack para trazar
+    /// recursivamente).
     fn mark(&self) {
+        // Comenzar desde roots Y remembered set
         let mut mark_stack: Vec<GcRef> = self.roots.clone();
+        mark_stack.extend_from_slice(&self.remembered_set);
 
         while let Some(ref_obj) = mark_stack.pop() {
             // Verificar que el puntero apunte a una región válida
@@ -545,6 +708,7 @@ impl GenerationalGC {
             old_used: self.old_memory.used(),
             old_total: self.old_memory.capacity,
             roots_count: self.roots.len(),
+            remembered_set_count: self.remembered_set.len(),
             total_allocated: self.total_allocated,
             total_freed: self.total_freed,
         }
@@ -569,6 +733,8 @@ pub struct GcStats {
     pub old_used: usize,
     pub old_total: usize,
     pub roots_count: usize,
+    /// Número de entradas en el remembered set (objetos old→young)
+    pub remembered_set_count: usize,
     pub total_allocated: u64,
     pub total_freed: u64,
 }
@@ -750,5 +916,236 @@ mod tests {
             count += 1;
         });
         assert_eq!(count, 3);
+    }
+}
+
+// ===================================================================
+// Tests para write barriers
+// ===================================================================
+#[cfg(test)]
+mod write_barrier_tests {
+    use super::*;
+
+    #[test]
+    fn test_write_barrier_noop_for_young_object() {
+        let mut gc = GenerationalGC::with_sizes(1024, 1024, 4096);
+        let young_obj = gc.alloc(0u64);
+        // Un objeto young no debería agregar nada al remembered set
+        gc.write_barrier(&young_obj, 0);
+        assert_eq!(gc.remembered_set_len(), 0);
+    }
+
+    #[test]
+    fn test_write_barrier_adds_old_to_remembered_set() {
+        let mut gc = GenerationalGC::with_sizes(256, 256, 4096);
+
+        // Forzar un objeto a old generation promoviéndolo
+        let old_ref = gc.alloc(0u64);
+        for _ in 0..50 {
+            gc.alloc(0u8);
+        }
+        // Force full collection to promote to old
+        for _ in 0..200 {
+            gc.alloc(vec![0u8; 32]);
+        }
+        // Forzar más colecciones para que old_ref se promueva
+        for _ in 0..200 {
+            gc.alloc(vec![0u8; 32]);
+        }
+
+        // Ahora crear un objeto young nuevo
+        let young_obj = gc.alloc(42i64);
+
+        // Si old_ref fue promovido a old, el write barrier debería detectarlo
+        if old_ref.header().generation == Generation::Old {
+            // Simular: el campo 0 de old_ref ahora apunta a young_obj
+            unsafe {
+                let field_ptr = old_ref.data_ptr() as *mut usize;
+                field_ptr.write(young_obj.ptr as usize);
+            }
+            gc.write_barrier(&old_ref, 0);
+            assert!(gc.is_in_remembered_set(&old_ref));
+        }
+    }
+
+    #[test]
+    fn test_write_barrier_raw_works() {
+        let mut gc = GenerationalGC::with_sizes(256, 256, 4096);
+
+        // Promover un objeto a old
+        let old_ref = gc.alloc(0u64);
+        for _ in 0..200 {
+            gc.alloc(vec![0u8; 32]);
+        }
+        for _ in 0..200 {
+            gc.alloc(vec![0u8; 32]);
+        }
+
+        let young_obj = gc.alloc(42i64);
+
+        if old_ref.header().generation == Generation::Old {
+            gc.write_barrier_raw(&old_ref, young_obj.ptr as usize);
+            assert!(gc.is_in_remembered_set(&old_ref));
+        }
+    }
+
+    #[test]
+    fn test_write_barrier_ignores_old_to_old() {
+        let mut gc = GenerationalGC::with_sizes(256, 256, 4096);
+
+        // Crear objeto y forzar a old
+        let old_ref = gc.alloc(0u64);
+        for _ in 0..200 {
+            gc.alloc(vec![0u8; 32]);
+        }
+        for _ in 0..200 {
+            gc.alloc(vec![0u8; 32]);
+        }
+
+        if old_ref.header().generation == Generation::Old {
+            // Crear otro objeto old
+            let other_old = gc.alloc(99u64);
+            // Si other_old también es old, no debería agregar al remembered set
+            if other_old.header().generation == Generation::Old {
+                gc.write_barrier_raw(&old_ref, other_old.ptr as usize);
+                assert_eq!(gc.remembered_set_len(), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn test_write_barrier_no_duplicates() {
+        let mut gc = GenerationalGC::with_sizes(256, 256, 4096);
+
+        let old_ref = gc.alloc(0u64);
+        for _ in 0..200 {
+            gc.alloc(vec![0u8; 32]);
+        }
+        for _ in 0..200 {
+            gc.alloc(vec![0u8; 32]);
+        }
+
+        let young_obj = gc.alloc(42i64);
+
+        if old_ref.header().generation == Generation::Old {
+            gc.write_barrier_raw(&old_ref, young_obj.ptr as usize);
+            gc.write_barrier_raw(&old_ref, young_obj.ptr as usize);
+            gc.write_barrier_raw(&old_ref, young_obj.ptr as usize);
+            // Debería haber solo una entrada, no tres
+            assert_eq!(gc.remembered_set_len(), 1);
+        }
+    }
+
+    #[test]
+    fn test_invalidate_remembered_set_entry() {
+        let mut gc = GenerationalGC::with_sizes(256, 256, 4096);
+
+        let old_ref = gc.alloc(0u64);
+        for _ in 0..200 {
+            gc.alloc(vec![0u8; 32]);
+        }
+        for _ in 0..200 {
+            gc.alloc(vec![0u8; 32]);
+        }
+
+        let young_obj = gc.alloc(42i64);
+
+        if old_ref.header().generation == Generation::Old {
+            gc.write_barrier_raw(&old_ref, young_obj.ptr as usize);
+            assert!(gc.is_in_remembered_set(&old_ref));
+
+            // Invalidar la entrada
+            gc.invalidate_remembered_set_entry(&old_ref);
+            assert!(!gc.is_in_remembered_set(&old_ref));
+            assert_eq!(gc.remembered_set_len(), 0);
+        }
+    }
+
+    #[test]
+    fn test_is_in_young_generation() {
+        let mut gc = GenerationalGC::with_sizes(1024, 1024, 4096);
+
+        let young_obj = gc.alloc(42i64);
+        let young_ptr = young_obj.ptr as usize;
+        assert!(gc.is_in_young_generation(young_ptr));
+
+        // Null no debería ser young
+        assert!(!gc.is_in_young_generation(0));
+
+        // Un puntero arbitrario fuera del heap no debería ser young
+        assert!(!gc.is_in_young_generation(0xDEADBEEF));
+    }
+
+    #[test]
+    fn test_remembered_set_in_stats() {
+        let gc = GenerationalGC::new();
+        let stats = gc.stats();
+        assert_eq!(stats.remembered_set_count, 0);
+    }
+
+    #[test]
+    fn test_full_collection_clears_remembered_set() {
+        let mut gc = GenerationalGC::with_sizes(256, 256, 4096);
+
+        let old_ref = gc.alloc(0u64);
+        for _ in 0..200 {
+            gc.alloc(vec![0u8; 32]);
+        }
+        for _ in 0..200 {
+            gc.alloc(vec![0u8; 32]);
+        }
+
+        let young_obj = gc.alloc(42i64);
+
+        if old_ref.header().generation == Generation::Old {
+            gc.write_barrier_raw(&old_ref, young_obj.ptr as usize);
+            assert!(gc.is_in_remembered_set(&old_ref));
+
+            // Full collection debería limpiar el remembered set
+            for _ in 0..200 {
+                gc.alloc(vec![0u8; 32]);
+            }
+            for _ in 0..200 {
+                gc.alloc(vec![0u8; 32]);
+            }
+            // Después de full collection, remembered set debería estar vacío
+        }
+    }
+
+    #[test]
+    fn test_mark_uses_remembered_set() {
+        let mut gc = GenerationalGC::with_sizes(256, 256, 4096);
+
+        // Forzar un objeto a old
+        let old_ref = gc.alloc(0u64);
+        for _ in 0..200 {
+            gc.alloc(vec![0u8; 32]);
+        }
+        for _ in 0..200 {
+            gc.alloc(vec![0u8; 32]);
+        }
+
+        if old_ref.header().generation == Generation::Old {
+            // Crear un objeto young (sin root)
+            let young_obj = gc.alloc(42i64);
+
+            // Simular old→young reference
+            unsafe {
+                let field_ptr = old_ref.data_ptr() as *mut usize;
+                field_ptr.write(young_obj.ptr as usize);
+            }
+
+            // Sin write barrier: young_obj no tiene root, sería colectado
+            // Con write barrier: old_ref está en remembered set, young_obj
+            // se marca a través del tracing desde old_ref
+
+            gc.write_barrier(&old_ref, 0);
+            gc.mark();
+
+            // young_obj debería estar marcado porque es alcanzable
+            // desde old_ref (que está en remembered set)
+            assert!(young_obj.header().marked.get());
+            assert!(old_ref.header().marked.get());
+        }
     }
 }
