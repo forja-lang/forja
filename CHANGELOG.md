@@ -2,7 +2,7 @@
 
 Todas las versiones notables de **Forja (fa)** serán documentadas en este archivo.
 
-## [0.8.8] - 2025-??
+## [9.0.0]
 
 ### Agregado
 - Soporte de diseño por contrato (`requiere` / `asegura`) en funciones
@@ -32,7 +32,7 @@ Todas las versiones notables de **Forja (fa)** serán documentadas en este archi
 - Múltiples correcciones en el parser y generación de bytecode
 - Correcciones en el manejo de errores y panic en Android
 
-## [0.8.7] - 2025-??
+## [0.8.7]
 
 ### Agregado
 - Primer soporte de compilación JIT experimental
@@ -46,7 +46,7 @@ Todas las versiones notables de **Forja (fa)** serán documentadas en este archi
 - Correcciones en el lexer para cadenas multilínea
 - Correcciones en el módulo de concurrencia
 
-## [0.8.6] - 2025-??
+## [0.8.6]
 
 ### Agregado
 - Palabras clave en español completas
@@ -59,7 +59,7 @@ Todas las versiones notables de **Forja (fa)** serán documentadas en este archi
 - Mejoras en la máquina virtual original
 - Documentación extendida
 
-## [0.8.5] - 2025-??
+## [0.8.5]
 
 ### Agregado
 - Primer release público del compilador
