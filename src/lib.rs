@@ -792,7 +792,7 @@ pub fn ejecutar_con_pgo(source: &str) -> Result<Vec<String>, String> {
     vm.cargar_bytecode(bytecode.clone());
 
     // Contar llamadas a cada función del bytecode
-    for (i, op) in bytecode.iter().enumerate() {
+    for op in &bytecode {
         if let bytecode::Opcode::FunctionDef(name, _) = op {
             profile.record_call(&format!("func_{}", name));
         }
@@ -809,7 +809,8 @@ pub fn ejecutar_con_pgo(source: &str) -> Result<Vec<String>, String> {
     let _ = mgr.save(&profile);
 
     // 5. Generar decisiones PGO
-    let decisions = pgo::ProfileGuidedDecisions::from_profile(&profile);
+    let _decisions = pgo::ProfileGuidedDecisions::from_profile(&profile);
+    // NOTA: las decisiones aún no se aplican al optimizer (pendiente de implementar).
 
     // 6. Log de decisiones (en una implementación real, se aplicarían al optimizer)
     let output = vm.obtener_output().to_vec();
