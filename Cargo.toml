@@ -29,6 +29,7 @@ webpki-roots = { version = "0.26", optional = true }
 
 [dev-dependencies]
 proptest = "1"
+criterion = "0.5"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rusqlite = { version = "0.31", features = ["bundled"] }
@@ -100,6 +101,11 @@ harness = false
 [[bench]]
 name = "debug-bytecode"
 path = "benchmarks/debug_bytecode.rs"
+
+[[bench]]
+name = "bench-criterion"
+path = "benchmarks/bench_criterion.rs"
+harness = false
 
 [target.'cfg(not(target_arch = "wasm32"))'.build-dependencies]
 winresource = "0.1"
