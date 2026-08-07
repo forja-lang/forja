@@ -37,6 +37,7 @@ pub const PERFILADO: &str = include_str!("../stdlib/std/perfilado.fa");
 pub const PROCESO: &str = include_str!("../stdlib/std/proceso.fa");
 pub const PRUEBA: &str = include_str!("../stdlib/std/prueba.fa");
 pub const QUIC: &str = include_str!("../stdlib/std/quic.fa");
+pub const SANDBOX: &str = include_str!("../stdlib/std/sandbox.fa");
 pub const RED: &str = include_str!("../stdlib/std/red.fa");
 pub const RESULTADO: &str = include_str!("../stdlib/std/resultado.fa");
 pub const RUTA: &str = include_str!("../stdlib/std/ruta.fa");
@@ -105,6 +106,7 @@ pub const MODULOS: &[ModuloEmbebido] = &[
     ModuloEmbebido { nombre: "std/proceso",       fuente: PROCESO,       es_gui: false },
     ModuloEmbebido { nombre: "std/prueba",        fuente: PRUEBA,        es_gui: false },
     ModuloEmbebido { nombre: "std/quic",          fuente: QUIC,          es_gui: false },
+    ModuloEmbebido { nombre: "std/sandbox",       fuente: SANDBOX,       es_gui: false },
     ModuloEmbebido { nombre: "std/red",           fuente: RED,           es_gui: false },
     ModuloEmbebido { nombre: "std/resultado",     fuente: RESULTADO,     es_gui: false },
     ModuloEmbebido { nombre: "std/ruta",          fuente: RUTA,          es_gui: false },
