@@ -20,6 +20,9 @@ pub fn has_avx2() -> bool {
     false
 }
 use crate::bytecode::Opcode;
+use crate::register_alloc::RegisterAllocator;
+use crate::register_ir::compute_live_intervals;
+use crate::stack_to_reg;
 use crate::vm_fast::ValorFast;
 
 /// Convierte un ValorFast a String para output (igual que ForjaFast::mostrar_valor)
@@ -49,6 +52,7 @@ pub extern "C" fn jit_print_output(output: &mut Vec<String>, val: i64) {
     output.push(val.to_string());
 }
 use std::collections::HashMap;
+use crate::jit_tiered::{TieredJit, ShouldCompile, Tier, DeoptFrame, CompiledCode as TieredCompiledCode};
 
 #[cfg(target_os = "windows")]
 mod mem {
@@ -434,6 +438,11 @@ impl CodeBuf {
 
 pub struct NativeJIT {
     compiled: HashMap<String, CompiledCode>,
+    /// Tiered JIT: hotness counters, OSR, deoptimization
+    tiered: Option<TieredJit>,
+    /// Habilita register allocation como paso previo a la generación de código.
+    /// Cuando está activo, compile() usa compile_with_reg_alloc() internamente.
+    use_register_alloc: bool,
 }
 struct CompiledCode {
     ptr: *mut u8,
@@ -451,10 +460,101 @@ impl NativeJIT {
     pub fn new() -> Self {
         NativeJIT {
             compiled: HashMap::new(),
+            tiered: Some(TieredJit::new()),
+            use_register_alloc: false,
         }
     }
 
+    /// Habilita o deshabilita register allocation para compilaciones futuras.
+    /// Cuando está habilitado, `compile()` ejecuta el pipeline de reg alloc antes
+    /// de generar código nativo.
+    pub fn set_register_alloc(&mut self, enabled: bool) {
+        self.use_register_alloc = enabled;
+    }
+
+    /// Retorna si register allocation está habilitado.
+    pub fn is_register_alloc_enabled(&self) -> bool {
+        self.use_register_alloc
+    }
+
+    /// Notifica una ejecución de función al tiered JIT.
+    /// Retorna Some(Tier) si la función debería compilarse al tier indicado.
+    pub fn on_function_call(&mut self, name: &str) -> Option<Tier> {
+        if let Some(ref mut tiered) = self.tiered {
+            match tiered.on_function_call(name) {
+                ShouldCompile::Yes(tier) => Some(tier),
+                ShouldCompile::No => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Registra una función en el sistema tiered.
+    pub fn register_function(&mut self, name: &str) {
+        if let Some(ref mut tiered) = self.tiered {
+            tiered.register_function(name);
+        }
+    }
+
+    /// Marca una función como compilada al tier dado en el tiered JIT.
+    pub fn mark_compiled(&mut self, name: &str, tier: Tier) {
+        if let Some(ref mut tiered) = self.tiered {
+            tiered.mark_compiled(name, tier, TieredCompiledCode {
+                code_ptr: std::ptr::null(), // placeholder — el código real está en self.compiled
+                code_size: 0,
+                tier,
+            });
+        }
+    }
+
+    /// Ejecuta deoptimización: devuelve la función al intérprete.
+    pub fn deoptimize(&mut self, name: &str, frame: DeoptFrame) {
+        if let Some(ref mut tiered) = self.tiered {
+            tiered.deoptimize(name, frame);
+            // También remover del cache compilado
+            self.compiled.remove(name);
+        }
+    }
+
+    /// Notifica una iteración de loop para OSR.
+    pub fn on_loop_iteration(&mut self, func_id: &str, loop_pc: usize) -> bool {
+        if let Some(ref mut tiered) = self.tiered {
+            tiered.on_loop_iteration(func_id, loop_pc)
+        } else {
+            false
+        }
+    }
+
+    /// Retorna el tier actual de una función.
+    pub fn tier_of(&self, name: &str) -> Tier {
+        if let Some(ref tiered) = self.tiered {
+            tiered.tier_of(name)
+        } else {
+            Tier::Interpret
+        }
+    }
+
+    /// Habilita/deshabilita el tiered JIT.
+    pub fn set_tiered(&mut self, enabled: bool) {
+        if enabled {
+            self.tiered = Some(TieredJit::new());
+        } else {
+            self.tiered = None;
+        }
+    }
+
+    /// Retorna estadísticas del tiered JIT (si está habilitado).
+    pub fn tier_stats(&self) -> Option<&crate::jit_tiered::JitStats> {
+        self.tiered.as_ref().map(|t| t.stats())
+    }
+
     pub fn compile(&mut self, name: &str, ops: &[Opcode]) -> Result<*mut u8, String> {
+        // Si register allocation está habilitado, usar el pipeline mejorado
+        if self.use_register_alloc {
+            return self.compile_with_reg_alloc(name, ops);
+        }
+
         let mut c = CodeBuf::new();
 
         // prologue: push rbx; push r14
@@ -1703,6 +1803,9 @@ impl NativeJIT {
         mem::make_exec(ptr, size)?;
         self.compiled
             .insert(name.to_string(), CompiledCode { ptr, size });
+        // Registrar compilación en el tiered JIT
+        self.register_function(name);
+        self.mark_compiled(name, Tier::JitSimple);
         Ok(ptr)
     }
 
@@ -1730,6 +1833,54 @@ impl NativeJIT {
         self.compiled
             .insert(name.to_string(), CompiledCode { ptr, size });
         existed
+    }
+
+    /// Compila con register allocation (pipeline mejorado).
+    ///
+    /// Fases:
+    /// 1. Bytecode stack-based → IR register-based (stack_to_reg)
+    /// 2. Cálculo de live intervals
+    /// 3. Linear Scan Register Allocation
+    /// 4. Generación de código nativo (actualmente delega al compilador stack-based)
+    pub fn compile_with_reg_alloc(
+        &mut self,
+        name: &str,
+        ops: &[Opcode],
+    ) -> Result<*mut u8, String> {
+        // 1. Convertir bytecode a register IR
+        let reg_prog = stack_to_reg::stack_to_reg(ops);
+
+        // 2. Calcular live intervals
+        let intervals = compute_live_intervals(&reg_prog);
+
+        // 3. Ejecutar Linear Scan Register Allocation
+        let mut allocator = RegisterAllocator::new();
+        for interval in intervals {
+            allocator.add_interval(interval);
+        }
+        let assignments = allocator.allocate();
+        let spill_count = allocator.spill_count();
+
+        // 4. Generar código nativo usando las asignaciones
+        // TODO: generar código con registros en vez de stack (codegen_reg.rs)
+        // Por ahora, delegar al compilador stack-based existente
+        // Usamos un flag temporal para evitar recursión infinita cuando
+        // compile() detecta use_register_alloc y llama a compile_with_reg_alloc()
+        // Usamos un flag temporal para evitar recursión infinita cuando
+        // compile() detecta use_register_alloc y llama a compile_with_reg_alloc()
+        let saved_flag = self.use_register_alloc;
+        self.use_register_alloc = false;
+        let result = self.compile(name, ops);
+        self.use_register_alloc = saved_flag;
+
+        eprintln!(
+            "[JIT-RegAlloc] {} assigns, {} spills for '{}'",
+            assignments.len(),
+            spill_count,
+            name
+        );
+
+        result
     }
 }
 
