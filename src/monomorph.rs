@@ -126,6 +126,21 @@ pub struct ClaseGenerica {
     pub metodos: Vec<Metodo>,
 }
 
+/// Verifica si un tipo AST utiliza un parámetro de tipo con el nombre dado.
+/// Por ejemplo, `tipo_usa_parametro(&Tipo::Parametro("T"), "T")` retorna true,
+/// y `tipo_usa_parametro(&Tipo::Arreglo(Box::new(Tipo::Parametro("T"))), "T")` también.
+fn tipo_usa_parametro(tipo: &Tipo, param_name: &str) -> bool {
+    match tipo {
+        Tipo::Parametro(nombre) => nombre == param_name,
+        Tipo::Arreglo(inner) => tipo_usa_parametro(inner, param_name),
+        Tipo::Opcion(inner) => tipo_usa_parametro(inner, param_name),
+        Tipo::Resultado(ok, err) => {
+            tipo_usa_parametro(ok, param_name) || tipo_usa_parametro(err, param_name)
+        }
+        _ => false,
+    }
+}
+
 impl Monomorphizer {
     pub fn new() -> Self {
         Monomorphizer {
@@ -216,22 +231,61 @@ impl Monomorphizer {
     fn collect_from_expr(&mut self, expr: &Expresion) {
         match expr {
             Expresion::LlamadaFuncion { nombre, argumentos } => {
-                // Detectar si la función es genérica
+                // Recolectar argumentos recursivamente
+                for arg in argumentos {
+                    self.collect_from_expr(arg);
+                }
+                // Detectar si la función es genérica y crear instanciación
                 if let Some(generic) = self.generic_functions.get(nombre) {
-                    // Intentar inferir tipos de los argumentos
                     if !generic.parametros_tipo.is_empty() {
-                        // Recolectar argumentos para inferir tipos
-                        for arg in argumentos {
-                            self.collect_from_expr(arg);
+                        let type_args = self.infer_type_args_for_fn(generic, argumentos);
+                        if !type_args.is_empty() {
+                            let specialized_name = format!(
+                                "{}_{}",
+                                nombre,
+                                type_args.iter()
+                                    .map(|(_, ct)| ct.name())
+                                    .collect::<Vec<_>>()
+                                    .join("_")
+                            );
+                            // Evitar duplicados
+                            if !self.instantiations.iter().any(|i| i.specialized_name == specialized_name) {
+                                self.instantiations.push(GenericInstantiation {
+                                    original_name: nombre.clone(),
+                                    type_args,
+                                    specialized_name,
+                                });
+                            }
                         }
                     }
                 }
             }
             Expresion::Instanciacion { clase, argumentos } => {
+                // Recolectar argumentos recursivamente
+                for arg in argumentos {
+                    self.collect_from_expr(arg);
+                }
+                // Detectar si la clase es genérica y crear instanciación
                 if let Some(generic_class) = self.generic_classes.get(clase) {
                     if !generic_class.parametros_tipo.is_empty() {
-                        for arg in argumentos {
-                            self.collect_from_expr(arg);
+                        let type_args = self.infer_type_args_for_class(generic_class, argumentos);
+                        if !type_args.is_empty() {
+                            let specialized_name = format!(
+                                "{}_{}",
+                                clase,
+                                type_args.iter()
+                                    .map(|(_, ct)| ct.name())
+                                    .collect::<Vec<_>>()
+                                    .join("_")
+                            );
+                            // Evitar duplicados
+                            if !self.instantiations.iter().any(|i| i.specialized_name == specialized_name) {
+                                self.instantiations.push(GenericInstantiation {
+                                    original_name: clase.clone(),
+                                    type_args,
+                                    specialized_name,
+                                });
+                            }
                         }
                     }
                 }
@@ -240,7 +294,115 @@ impl Monomorphizer {
                 self.collect_from_expr(izquierda);
                 self.collect_from_expr(derecha);
             }
+            Expresion::Unaria { expr, .. } => {
+                self.collect_from_expr(expr);
+            }
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                self.collect_from_expr(condicion);
+                self.collect_from_expr(si_verdadero);
+                self.collect_from_expr(si_falso);
+            }
+            Expresion::Arreglo(elementos) => {
+                for elem in elementos {
+                    self.collect_from_expr(elem);
+                }
+            }
+            Expresion::Index { objeto, indice } => {
+                self.collect_from_expr(objeto);
+                self.collect_from_expr(indice);
+            }
+            Expresion::AccesoMiembro { objeto, .. } => {
+                self.collect_from_expr(objeto);
+            }
+            Expresion::Grupo(inner) => {
+                self.collect_from_expr(inner);
+            }
             _ => {}
+        }
+    }
+
+    /// Infiere tipos concretos para los parámetros de tipo de una función genérica,
+    /// basándose en los argumentos concretos pasados en la llamada.
+    fn infer_type_args_for_fn(
+        &self,
+        generic: &FuncionGenerica,
+        argumentos: &[Expresion],
+    ) -> Vec<(String, ConcreteType)> {
+        let mut type_args = Vec::new();
+        // Para cada parámetro de tipo, intentar inferir su tipo concreto
+        for param_tipo in &generic.parametros_tipo {
+            // Buscar un parámetro de función que use este parámetro de tipo
+            for (i, param) in generic.parametros.iter().enumerate() {
+                if let Some(ref tipo) = param.tipo {
+                    if tipo_usa_parametro(tipo, &param_tipo.nombre) {
+                        // Intentar inferir del argumento correspondiente
+                        if let Some(arg) = argumentos.get(i) {
+                            if let Some(concrete) = self.infer_concrete_from_expr(arg) {
+                                type_args.push((param_tipo.nombre.clone(), concrete));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        type_args
+    }
+
+    /// Infiere tipos concretos para los parámetros de tipo de una clase genérica.
+    fn infer_type_args_for_class(
+        &self,
+        generic: &ClaseGenerica,
+        argumentos: &[Expresion],
+    ) -> Vec<(String, ConcreteType)> {
+        let mut type_args = Vec::new();
+        // Para construcciones de clase, intentar inferir de los campos
+        // Simplificación: si solo hay un parámetro de tipo, infiere del primer argumento
+        if generic.parametros_tipo.len() == 1 {
+            if let Some(arg) = argumentos.first() {
+                if let Some(concrete) = self.infer_concrete_from_expr(arg) {
+                    type_args.push((generic.parametros_tipo[0].nombre.clone(), concrete));
+                }
+            }
+        }
+        // Para múltiples parámetros de tipo, intentar mapear por posición
+        else {
+            for (i, param_tipo) in generic.parametros_tipo.iter().enumerate() {
+                if let Some(arg) = argumentos.get(i) {
+                    if let Some(concrete) = self.infer_concrete_from_expr(arg) {
+                        type_args.push((param_tipo.nombre.clone(), concrete));
+                    }
+                }
+            }
+        }
+        type_args
+    }
+
+    /// Intenta inferir un ConcreteType a partir de una expresión.
+    /// Funciona directamente para literales; para variables y otras expresiones
+    /// retorna None (requiere type checker para inferencia completa).
+    fn infer_concrete_from_expr(&self, expr: &Expresion) -> Option<ConcreteType> {
+        match expr {
+            Expresion::LiteralNumero(_) => Some(ConcreteType::Entero),
+            Expresion::LiteralDecimal(_) => Some(ConcreteType::Decimal),
+            Expresion::LiteralTexto(_) => Some(ConcreteType::Texto),
+            Expresion::LiteralBooleano(_) => Some(ConcreteType::Booleano),
+            Expresion::LiteralNulo => Some(ConcreteType::Nulo),
+            Expresion::LiteralExacto(_, _) => Some(ConcreteType::Exacto),
+            Expresion::Arreglo(elementos) => {
+                // Inferir tipo del primer elemento
+                if let Some(first) = elementos.first() {
+                    let inner = self.infer_concrete_from_expr(first)?;
+                    Some(ConcreteType::Arreglo(Box::new(inner)))
+                } else {
+                    None
+                }
+            }
+            _ => None,
         }
     }
 
