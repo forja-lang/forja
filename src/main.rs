@@ -701,6 +701,9 @@ fn mostrar_ayuda() {
     println!("  forja test                  (ejecuta todos los .fa en ejemplos/)");
     println!("  forja palabras");
     println!("  forja explicar variable\n");
+    println!("PGO (Profile-Guided Optimization):");
+    println!("  forja ejecutar programa.fa --pgo            Recolectar perfil (.forjaprof)");
+    println!("  forja ejecutar programa.fa --pgo=usar       Aplicar perfil existente");
 }
 
 /// forja medir|bench|medicion|benchmark <archivo.fa> [--iters N]
@@ -964,7 +967,7 @@ fn cmd_bench(args: &[String]) {
 /// --asm            : compila a ASM nativo y ejecuta (requiere gcc)
 fn cmd_run(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native] [--fast-math] [--debug|--console|--no-debug] [--contratos|--no-contratos] [--max-archivo <MB>] [--allow-net <hosts>] [--allow-port <puertos>]");
+        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native] [--fast-math] [--pgo|--pgo=recoger|--pgo=usar] [--debug|--console|--no-debug] [--contratos|--no-contratos] [--max-archivo <MB>] [--allow-net <hosts>] [--allow-port <puertos>]");
         process::exit(1);
     }
 
@@ -978,6 +981,7 @@ fn cmd_run(args: &[String]) {
     let mut path: &String = &args[0];
     let mut allow_net: Option<String> = None;
     let mut allow_port: Option<String> = None;
+    let mut pgo_modo: Option<String> = None; // Some("recoger") | Some("usar")
 
     // Escanear todos los args: flags + archivo .fa en cualquier orden
     let mut i = 0;
@@ -994,6 +998,10 @@ fn cmd_run(args: &[String]) {
             "--native" => native_mode = true,
             "--hot-reload" | "--hot" => hot_reload = true,
             "--fast-math" => fast_math_flag = true,
+            "--pgo" => pgo_modo = Some("recoger".to_string()),
+            _ if arg.starts_with("--pgo=") => {
+                pgo_modo = Some(arg.trim_start_matches("--pgo=").to_string());
+            }
             "--debug" | "--console" => {}
             "--no-debug" => {}
             "--contratos" => {
@@ -1093,7 +1101,13 @@ fn cmd_run(args: &[String]) {
 
     let result = match vm_mode {
         "fast" => {
-            if fast_math_flag {
+            if let Some(modo) = &pgo_modo {
+                if modo == "usar" {
+                    forja::ejecutar_con_pgo_usar(&source, &root_dir)
+                } else {
+                    forja::ejecutar_con_pgo_desde(&source, &root_dir)
+                }
+            } else if fast_math_flag {
                 forja::ejecutar_con_opciones_desde_fast_math(
                     &source,
                     &root_dir,
