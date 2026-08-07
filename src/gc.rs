@@ -333,52 +333,170 @@ impl GenerationalGC {
         self.roots.retain(|r| r.ptr != root.ptr);
     }
 
-    /// Ejecuta una young generation collection (copying collector)
+    /// Ejecuta una young generation collection
+    ///
+    /// Estrategia: mark-sweep con copia de supervivientes a survivor space.
+    /// 1. Mark desde roots (tracing conservador)
+    /// 2. Copiar objetos marcados del nursery al survivor space
+    /// 3. Copiar objetos marcados del survivor al survivor (compactar)
+    /// 4. Resetear nursery
     pub fn young_collection(&mut self) {
         self.young_collections += 1;
 
-        // 1. Mark phase: marcar objetos alcanzables desde roots
+        // 1. Mark desde roots
         self.mark();
 
-        // 2. Evacuate: copiar objetos marcados a survivor space
-        // (simplificación: resetear nursery y survivor)
-        // En una implementación real, copiaríamos los objetos marcados
-        self.nursery.reset();
-        self.survivor.reset();
+        // 2. Crear un survivor temporal para copiar supervivientes
+        let temp_survivor = BumpAllocator::new(self.survivor.mem_capacity());
 
-        // 3. Actualizar edad de objetos que sobrevivieron
-        // (simplificación: no hacemos tracking individual en esta versión base)
+        // 3. Copiar objetos marcados del nursery al survivor temporal
+        let (nursery_count, nursery_bytes) = self.nursery.copy_marked_to(&temp_survivor);
+        self.total_freed += nursery_bytes as u64;
+
+        // 4. Copiar objetos marcados del survivor actual al survivor temporal
+        let (survivor_count, survivor_bytes) = self.survivor.copy_marked_to(&temp_survivor);
+        self.total_freed += survivor_bytes as u64;
+
+        // 5. Reemplazar survivor con el temporal
+        self.survivor = temp_survivor;
+
+        // 6. Resetear nursery
+        self.nursery.reset();
+
+        // 7. Resetear marks para la próxima colecta
+        self.reset_marks();
+
+        let _ = (nursery_count, survivor_count);
     }
 
-    /// Ejecuta una full collection (mark-sweep)
+    /// Ejecuta una full collection (mark-sweep + promoción a old generation)
+    ///
+    /// Estrategia:
+    /// 1. Mark desde roots (tracing conservador)
+    /// 2. Copiar supervivientes del nursery al survivor
+    /// 3. Promover objetos viejos del survivor a old generation
+    /// 4. Resetear nursery y survivor
     pub fn full_collection(&mut self) {
         self.full_collections += 1;
 
         // 1. Mark desde roots
         self.mark();
 
-        // 2. Sweep: eliminar objetos no marcados
-        // En una implementación real, recorreríamos el heap
-        // Por ahora, resetear todo (simplificación)
+        // 2. Crear survivors temporales
+        let temp_survivor = BumpAllocator::new(self.survivor.mem_capacity());
+        let temp_old = BumpAllocator::new(self.old_memory.mem_capacity());
+
+        // 3. Copiar objetos marcados del nursery al survivor
+        let (nursery_count, nursery_bytes) = self.nursery.copy_marked_to(&temp_survivor);
+        self.total_freed += nursery_bytes as u64;
+
+        // 4. Promover objetos del survivor actual a old generation
+        //    (objetos que ya están en survivor son considerados "viejos")
+        let (survivor_count, survivor_bytes) = self.survivor.copy_marked_to(&temp_old);
+        self.total_freed += survivor_bytes as u64;
+
+        // 5. Copiar objetos viejos que sobrevivieron
+        let (old_count, old_bytes) = self.old_memory.copy_marked_to(&temp_old);
+        self.total_freed += old_bytes as u64;
+
+        // 6. Reemplazar heaps
         self.nursery.reset();
-        self.survivor.reset();
+        self.survivor = temp_survivor;
+        self.old_memory = temp_old;
 
-        // 3. Resetear marks
+        // 7. Resetear marks
         self.reset_marks();
+
+        let _ = (nursery_count, survivor_count, old_count);
     }
 
-    /// Mark phase: marca todos los objetos alcanzables
+    /// Mark phase: marca todos los objetos alcanzables desde roots.
+    ///
+    /// Usa tracing conservador: para cada objeto marcado, escanea su área de datos
+    /// buscando valores que parezcan punteros al heap GC. Si los encuentra, también
+    /// los marca (y los añade al mark stack para trazar recursivamente).
     fn mark(&self) {
-        // En una implementación real, seguiríamos punteros desde roots
-        // hasta encontrar todos los objetos alcanzables.
-        // Por ahora, marcar todo como alcanzable (conservador).
-        // El GC real usaría trace desde roots siguiendo campos de puntero.
+        let mut mark_stack: Vec<GcRef> = self.roots.clone();
+
+        while let Some(ref_obj) = mark_stack.pop() {
+            // Verificar que el puntero apunte a una región válida
+            if !self.is_valid_gc_ptr(&ref_obj) {
+                continue;
+            }
+
+            let header = ref_obj.header();
+            if header.marked.get() {
+                continue; // ya marcado
+            }
+
+            // Marcar el objeto
+            header.marked.set(true);
+
+            // Escanear el área de datos buscando punteros a otros objetos GC
+            let data = ref_obj.data_ptr();
+            let size = header.size;
+            let word_size = std::mem::size_of::<usize>();
+
+            let mut i = 0;
+            while i + word_size <= size {
+                let word = unsafe { *(data.add(i) as *const usize) };
+                if self.is_valid_gc_ptr_value(word) {
+                    let child = unsafe { GcRef::from_raw(word as *mut u8) };
+                    if !child.header().marked.get() {
+                        mark_stack.push(child);
+                    }
+                }
+                i += word_size;
+            }
+        }
     }
 
-    /// Resetea todos los marks
+    /// Resetea todos los marks en todos los objetos de todas las generaciones
     fn reset_marks(&self) {
-        // En una implementación real, recorreríamos todos los objetos
-        // y resetearíamos el bit de mark.
+        self.nursery.for_each_object(&mut |r| {
+            r.header().marked.set(false);
+        });
+        self.survivor.for_each_object(&mut |r| {
+            r.header().marked.set(false);
+        });
+        self.old_memory.for_each_object(&mut |r| {
+            r.header().marked.set(false);
+        });
+    }
+
+    /// Verifica si un GcRef apunta a una región válida del heap GC
+    fn is_valid_gc_ptr(&self, r: &GcRef) -> bool {
+        self.is_valid_gc_ptr_value(r.ptr as usize)
+    }
+
+    /// Verifica si un valor numérico podría ser un puntero al heap GC
+    fn is_valid_gc_ptr_value(&self, val: usize) -> bool {
+        if val == 0 {
+            return false;
+        }
+        let base = self.nursery.base_ptr() as usize;
+        let end = base + self.nursery.mem_capacity();
+        if val >= base && val < end {
+            return true;
+        }
+        let base = self.survivor.base_ptr() as usize;
+        let end = base + self.survivor.mem_capacity();
+        if val >= base && val < end {
+            return true;
+        }
+        let base = self.old_memory.base_ptr() as usize;
+        let end = base + self.old_memory.mem_capacity();
+        if val >= base && val < end {
+            return true;
+        }
+        false
+    }
+
+    /// Retorna el número total de objetos en todas las generaciones
+    pub fn total_object_count(&self) -> usize {
+        self.nursery.object_count()
+            + self.survivor.object_count()
+            + self.old_memory.object_count()
     }
 
     /// Verifica si el nursery necesita colección
