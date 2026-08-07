@@ -146,11 +146,7 @@ impl TargetArch {
     fn mov_reg_imm(&self, dst: &str, val: i64) -> String {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
-                if dst == "eax" || dst.len() == 3 {
-                    format!("    mov {}, {}", dst, val)
-                } else {
-                    format!("    mov {}, {}", dst, val)
-                }
+                format!("    mov {}, {}", dst, val)
             }
             TargetArch::AArch64 => {
                 if val == 0 {
@@ -1370,6 +1366,12 @@ impl CompilerAsm {
         self.emit_line("");
 
         // forja_print_float
+        // TODO: El double se recibe en xmm0/d0. Antes de llamar a printf, xmm0
+        // podría ser clobbered. Actualmente no se preserva porque printf usa
+        // xmm0 como arg de punto flotante (System V AMD64 ABI y AArch64 AAPCS),
+        // por lo que el valor se mantiene en xmm0 hasta la llamada a printf.
+        // Si en el futuro se agregan más calls antes de printf aquí, se debe
+        // preservar xmm0 con push/pop o usando un stack slot.
         self.emit_line("forja_print_float:");
         for line in &a.push_fp_lr() {
             self.emit_line(line);
@@ -1378,7 +1380,7 @@ impl CompilerAsm {
         if ss > 0 {
             self.emit_line(&a.sub_sp(ss));
         }
-        // Pasar el double (que viene en xmm0/d0 a través de x0)
+        // El double viene en xmm0 (x86_64) o d0 (AArch64) — printf lo consume directamente
         self.emit_line(&a.lea_label(tmp, "fmt_float"));
         self.emit_line(&a.call("printf"));
         self.emit_line(&a.mov_sp_fp());
@@ -1600,19 +1602,46 @@ impl CompilerAsm {
                 valor,
                 ..
             } => {
-                let _idx = self.compilar_expresion_asm(indice);
-                let _val = self.compilar_expresion_asm(valor);
-                // Cargar el puntero del array (desde registro o stack)
+                // Compilar índice primero → ret (rax/x0)
+                self.compilar_expresion_asm(indice);
+                // Multiplicar índice por 8 para obtener byte offset
+                match a {
+                    TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
+                        self.emit_line(&format!("    shl rax, 3"));
+                    }
+                    TargetArch::AArch64 => {
+                        self.emit_line(&format!("    lsl x0, x0, #3"));
+                    }
+                }
+                // Guardar byte offset del índice en tmp2
+                self.emit_line(&a.mov_reg_reg(a.tmp2_reg(), ret));
+                // Compilar valor → ret (rax/x0)
+                self.compilar_expresion_asm(valor);
+                // Mover valor a un registro temporal para no perderlo
+                self.emit_line(&a.push_reg(ret));
+                // Cargar puntero del array (desde registro o stack) → tmp
                 if let Some(&reg) = self.var_reg_map.get(nombre) {
-                    // Array en registro calle-saved
                     self.emit_line(&a.mov_reg_reg(tmp, reg));
                 } else if let Some(var) = self.variables.get(nombre) {
                     let oa = -var.offset;
                     self.emit_line(&a.ldr_reg_mem(tmp, fp, oa));
                 } else {
+                    self.emit_line(&a.pop_reg(ret)); // limpiar pila
                     return;
                 }
-                self.emit_line(&a.str_mem_index(tmp, ret, 8, a.tmp2_reg()));
+                // Calcular dirección: base + byte_offset
+                self.emit_line(&a.add_reg_reg(tmp, a.tmp2_reg()));
+                // Restaurar valor del array
+                self.emit_line(&a.pop_reg(ret));
+                // Almacenar: [base + byte_offset] = valor
+                match a {
+                    TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
+                        self.emit_line(&format!("    mov [{}], {}", tmp, ret));
+                    }
+                    TargetArch::AArch64 => {
+                        self.emit_line(&format!("    str {}, [{}]", ret, tmp));
+                    }
+                }
             }
 
             Declaracion::Funcion {
@@ -2028,13 +2057,11 @@ impl CompilerAsm {
 
         match expr {
             Expresion::LlamadaMetodo { .. } => {
-                self.emit_line("    // LlamadaMetodo no implementado en ASM");
-                self.emit_line(&a.xor_reg_reg(ret, ret));
+                self.emit_fault("LlamadaMetodo");
                 ret.to_string()
             }
             Expresion::LiteralExacto(_, _) => {
-                self.emit_line("    // LiteralExacto no implementado en ASM");
-                self.emit_line(&a.xor_reg_reg(ret, ret));
+                self.emit_fault("LiteralExacto");
                 ret.to_string()
             }
             Expresion::LiteralNumero(n) => {
@@ -2182,8 +2209,44 @@ impl CompilerAsm {
                     Operador::Diferente => {
                         vec![a.cmp_reg_reg(ret, tmp), a.set_ne(ret), a.movzx(ret, ret)]
                     }
-                    Operador::Y => vec![a.test_reg(ret), a.mov_reg_imm(a.ret_reg_32(), 0)],
-                    Operador::O => vec![a.test_reg(ret), a.mov_reg_imm(a.ret_reg_32(), 0)],
+                    // AND lógico: normalizar ambos operandos a 0/1 y hacer AND bit a bit
+                    Operador::Y => {
+                        let mut lines = Vec::new();
+                        // Normalizar lhs (ret/rax) a booleano 0/1
+                        lines.push(a.test_reg(ret));
+                        lines.push(format!("    setnz al"));
+                        lines.push(a.movzx(a.ret_reg_32(), a.ret_reg_32()));
+                        // Guardar lhs booleano en pila
+                        lines.push(a.push_reg(a.ret_reg()));
+                        // Normalizar rhs (tmp/rcx) a booleano 0/1
+                        lines.push(a.test_reg(tmp));
+                        lines.push(format!("    setnz cl"));
+                        lines.push(a.movzx(tmp, tmp));
+                        // Recuperar lhs, combinar con AND
+                        lines.push(a.pop_reg(ret));
+                        lines.push(format!("    and eax, ecx"));
+                        lines.push(a.movzx(a.ret_reg_32(), a.ret_reg_32()));
+                        lines
+                    }
+                    // OR lógico: normalizar ambos operandos a 0/1 y hacer OR bit a bit
+                    Operador::O => {
+                        let mut lines = Vec::new();
+                        // Normalizar lhs (ret/rax) a booleano 0/1
+                        lines.push(a.test_reg(ret));
+                        lines.push(format!("    setnz al"));
+                        lines.push(a.movzx(a.ret_reg_32(), a.ret_reg_32()));
+                        // Guardar lhs booleano en pila
+                        lines.push(a.push_reg(a.ret_reg()));
+                        // Normalizar rhs (tmp/rcx) a booleano 0/1
+                        lines.push(a.test_reg(tmp));
+                        lines.push(format!("    setnz cl"));
+                        lines.push(a.movzx(tmp, tmp));
+                        // Recuperar lhs, combinar con OR
+                        lines.push(a.pop_reg(ret));
+                        lines.push(format!("    or eax, ecx"));
+                        lines.push(a.movzx(a.ret_reg_32(), a.ret_reg_32()));
+                        lines
+                    }
                 };
 
                 for line in &op_lines {
@@ -2195,9 +2258,11 @@ impl CompilerAsm {
             Expresion::Unaria { operador, expr: e } => {
                 self.compilar_expresion_asm(e);
                 match operador {
+                    // NOT lógico: invertir el valor booleano (0→1, no-0→0)
                     OperadorUnario::No => {
                         self.emit_line(&a.test_reg(ret));
-                        self.emit_line(&a.mov_reg_imm(a.ret_reg_32(), 0));
+                        self.emit_line(&format!("    sete al"));
+                        self.emit_line(&a.movzx(a.ret_reg_32(), a.ret_reg_32()));
                     }
                     OperadorUnario::Negar => {
                         self.emit_line(&a.neg_reg(ret));
@@ -2211,9 +2276,20 @@ impl CompilerAsm {
                 si_verdadero,
                 si_falso,
             } => {
+                // Compilar condición y generar salto condicional
                 self.compilar_expresion_asm(condicion);
+                self.emit_line(&a.test_reg(ret));
+                let l_false = self.nueva_etiqueta("tern_f");
+                let l_end = self.nueva_etiqueta("tern_end");
+                self.emit_line(&a.jump_if_zero(&l_false));
+                // Rama verdadera
                 self.compilar_expresion_asm(si_verdadero);
+                self.emit_line(&a.jump(&l_end));
+                // Rama falsa
+                self.emit_line(&format!("{}:", l_false));
                 self.compilar_expresion_asm(si_falso);
+                // Fin del ternario
+                self.emit_line(&format!("{}:", l_end));
                 ret.to_string()
             }
 
@@ -2284,27 +2360,50 @@ impl CompilerAsm {
                 let count = elementos.len();
                 self.emit_line(&a.mov_reg_imm(tmp, (count * 8) as i64));
                 self.emit_line(&a.call("malloc"));
-                for (_i, elem) in elementos.iter().enumerate() {
+                // ret (rax/x0) ahora tiene el puntero al array allocado
+                for (i, elem) in elementos.iter().enumerate() {
+                    // Salvar puntero del array
                     self.emit_line(&a.push_reg(ret));
+                    // Compilar elemento → resultado en ret (rax/x0)
                     self.compilar_expresion_asm(elem);
+                    // Mover valor del elemento a tmp2 (rdx/x2) para no perderlo
+                    self.emit_line(&a.mov_reg_reg(a.tmp2_reg(), ret));
+                    // Restaurar puntero del array en tmp
                     self.emit_line(&a.pop_reg(tmp));
-                    self.emit_line(&a.str_mem_index(tmp, ret, 8, ret));
+                    // Calcular dirección destino: base + i * 8
+                    // Usar str_mem_index que genera: [tmp + i*8]
+                    self.emit_line(&a.str_mem_index(tmp, &format!("{}", i), 8, a.tmp2_reg()));
                 }
                 ret.to_string()
             }
 
             Expresion::Index { objeto, indice } => {
+                // Compilar objeto → puntero al array en ret (rax/x0)
                 self.compilar_expresion_asm(objeto);
+                // Guardar base en pila
                 self.emit_line(&a.push_reg(ret));
+                // Compilar índice → índice en ret (rax/x0)
                 self.compilar_expresion_asm(indice);
+                // Calcular byte offset: index * 8 (cada elemento = 8 bytes)
+                match a {
+                    TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
+                        self.emit_line(&format!("    shl rax, 3"));
+                    }
+                    TargetArch::AArch64 => {
+                        self.emit_line(&format!("    lsl x0, x0, #3"));
+                    }
+                }
+                // Restaurar base del array desde pila (rsp + 0 después del push)
                 self.emit_line(&a.pop_reg(tmp));
+                // Calcular dirección final: base + index*8
+                self.emit_line(&a.add_reg_reg(tmp, ret));
+                // Cargar valor desde [tmp]
                 self.emit_line(&a.ldr_reg_mem(ret, tmp, 0));
                 ret.to_string()
             }
 
             Expresion::Mapa(_) => {
-                self.emit_line("    // mapas no implementados en assembly");
-                self.emit_line(&a.xor_reg_reg(ret, ret));
+                self.emit_fault("mapas");
                 ret.to_string()
             }
 
@@ -2409,8 +2508,7 @@ impl CompilerAsm {
             }
 
             Expresion::Closure { .. } => {
-                self.emit_line("    // closures no implementados en assembly");
-                self.emit_line(&a.xor_reg_reg(ret, ret));
+                self.emit_fault("closures");
                 ret.to_string()
             }
 
@@ -2424,7 +2522,7 @@ impl CompilerAsm {
 
             Expresion::Hilo { cuerpo } => {
                 // Concurrencia no implementada en ASM
-                self.emit_line("    // hilo { ... } no implementado en ASM");
+                self.emit_fault("hilo");
                 for d in cuerpo {
                     self.compilar_declaracion(d);
                 }
@@ -2433,12 +2531,12 @@ impl CompilerAsm {
 
             Expresion::CanalNuevo => {
                 // Concurrencia no implementada en ASM
-                self.emit_line("    // canal() no implementado en ASM");
+                self.emit_fault("canal");
                 String::new()
             }
             Expresion::Seleccionar { brazos } => {
-                // No implementado en ASM - compilar cuerpos secuencialmente
-                self.emit_line("    // seleccionar no implementado en ASM");
+                // No implementado en ASM - falla explícita
+                self.emit_fault("seleccionar");
                 for brazo in brazos {
                     for d in &brazo.cuerpo {
                         self.compilar_declaracion(d);
@@ -2447,8 +2545,9 @@ impl CompilerAsm {
                 String::new()
             }
             Expresion::Try(expr) => {
-                let expr_str = self.compilar_expresion_asm(expr);
-                self.emit_line(&format!("    // ? en ASM no implementado: {}?", expr_str));
+                // Try/errores no soportado en ASM - falla explícita
+                self.emit_fault("Try");
+                self.compilar_expresion_asm(expr);
                 String::new()
             }
             Expresion::Asignacion { variable, valor } => {
@@ -3365,6 +3464,21 @@ impl CompilerAsm {
     fn emit_line(&mut self, texto: impl AsRef<str>) {
         self.output.push_str(texto.as_ref());
         self.output.push('\n');
+    }
+
+    /// Emite una falla explícita (instrucción ilegal) para expresiones no
+    /// soportadas por el backend ASM, en vez de devolver 0 silenciosamente.
+    /// El programa generado aborta (SIGILL) al ejecutar el código no soportado.
+    fn emit_fault(&mut self, mensaje: &str) {
+        self.emit_line(&format!("    // no soportado en ASM: {}", mensaje));
+        match self.arch {
+            TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
+                self.emit_line("    ud2"); // instrucción ilegal x86
+            }
+            TargetArch::AArch64 => {
+                self.emit_line("    udf #0"); // instrucción indefinida ARM
+            }
+        }
     }
 }
 
