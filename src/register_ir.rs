@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn test_compute_live_intervals_simple() {
         let mut prog = RegProgram::new();
-        let mut block = BasicBlock {
+        let block = BasicBlock {
             label: 0,
             instructions: vec![
                 RegInstruction::LoadImm { dst: 0, value: 5 },    // idx 0: def v0
