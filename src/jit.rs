@@ -292,7 +292,7 @@ impl CodeBuf {
     /// Emite: vmovupd ymm1, [rbx + idx*8]
     fn vmovapd_load_ymm1(&mut self, idx: usize) {
         let d = (idx as i32) * 8;
-        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x10]); // vmovupd
+        self.bytes.extend_from_slice(&[0xc5, 0xfe, 0x10]); // vmovupd ymm1 (vvvv=1110=NOT(0001))
         if d >= -128 && d <= 127 {
             self.bytes.extend_from_slice(&[0x4b, d as u8]);
         } else {
@@ -303,7 +303,7 @@ impl CodeBuf {
     /// Emite: vmovupd [rbx + idx*8], ymm1
     fn vmovapd_store_ymm1(&mut self, idx: usize) {
         let d = (idx as i32) * 8;
-        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x11]); // vmovupd
+        self.bytes.extend_from_slice(&[0xc5, 0xfe, 0x11]); // vmovupd ymm1 (vvvv=1110)
         if d >= -128 && d <= 127 {
             self.bytes.extend_from_slice(&[0x4b, d as u8]);
         } else {
@@ -359,7 +359,7 @@ impl CodeBuf {
     /// Emite: vaddpd ymm1, ymm1, [rbx + idx*8]  → ymm1 += [rbx+idx*8]
     fn vaddpd_ymm1_from(&mut self, idx: usize) {
         let d = (idx as i32) * 8;
-        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x58]);
+        self.bytes.extend_from_slice(&[0xc5, 0xfe, 0x58]); // vaddpd ymm1 (vvvv=1110)
         if d >= -128 && d <= 127 {
             self.bytes.extend_from_slice(&[0x4b, d as u8]);
         } else {
@@ -370,7 +370,7 @@ impl CodeBuf {
     /// Emite: vsubpd ymm1, ymm1, [rbx + idx*8]  → ymm1 -= [rbx+idx*8]
     fn vsubpd_ymm1_from(&mut self, idx: usize) {
         let d = (idx as i32) * 8;
-        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x5c]);
+        self.bytes.extend_from_slice(&[0xc5, 0xfe, 0x5c]); // vsubpd ymm1 (vvvv=1110)
         if d >= -128 && d <= 127 {
             self.bytes.extend_from_slice(&[0x4b, d as u8]);
         } else {
@@ -381,7 +381,7 @@ impl CodeBuf {
     /// Emite: vmulpd ymm1, ymm1, [rbx + idx*8]  → ymm1 *= [rbx+idx*8]
     fn vmulpd_ymm1_from(&mut self, idx: usize) {
         let d = (idx as i32) * 8;
-        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x59]);
+        self.bytes.extend_from_slice(&[0xc5, 0xfe, 0x59]); // vmulpd ymm1 (vvvv=1110)
         if d >= -128 && d <= 127 {
             self.bytes.extend_from_slice(&[0x4b, d as u8]);
         } else {
@@ -392,7 +392,7 @@ impl CodeBuf {
     /// Emite: vdivpd ymm1, ymm1, [rbx + idx*8]  → ymm1 /= [rbx+idx*8]
     fn vdivpd_ymm1_from(&mut self, idx: usize) {
         let d = (idx as i32) * 8;
-        self.bytes.extend_from_slice(&[0xc5, 0xfd, 0x5e]);
+        self.bytes.extend_from_slice(&[0xc5, 0xfe, 0x5e]); // vdivpd ymm1 (vvvv=1110)
         if d >= -128 && d <= 127 {
             self.bytes.extend_from_slice(&[0x4b, d as u8]);
         } else {
@@ -1375,6 +1375,7 @@ impl NativeJIT {
                     c.bytes.extend_from_slice(&[0x66, 0x48, 0x0f, 0x6e, 0xc0]); // movq xmm0,rax
                     c.bytes.extend_from_slice(&[0x48, 0x83, 0xec, 0x08]); // sub rsp,8
                     c.bytes.extend_from_slice(&[0xf2, 0x0f, 0x11, 0x04, 0x24]); // movsd [rsp],xmm0
+                    xmm0_valid = true; // xmm0 contiene el valor float correcto
                     sd += 1;
                 }
                 Opcode::PushNulo => {
@@ -1426,8 +1427,8 @@ impl NativeJIT {
                 Opcode::SubStoreIdx(idx) => {
                     // pop b; pop a; vars[idx] = a - b
                     if sd >= 2 {
-                        c.pop_r(0); // pop TOS (b) -> rax
-                        c.pop_r(1); // pop next (a) -> rcx
+                        c.pop_r(1); // pop TOS (b) -> rcx
+                        c.pop_r(0); // pop next (a) -> rax
                         c.bytes.extend_from_slice(&[0x48, 0x29, 0xc8]); // sub rax,rcx -> rax = a-b
                         c.store_var(*idx);
                         sd -= 2;
@@ -1861,26 +1862,39 @@ impl NativeJIT {
         let assignments = allocator.allocate();
         let spill_count = allocator.spill_count();
 
-        // 4. Generar código nativo usando las asignaciones
-        // TODO: generar código con registros en vez de stack (codegen_reg.rs)
-        // Por ahora, delegar al compilador stack-based existente
-        // Usamos un flag temporal para evitar recursión infinita cuando
-        // compile() detecta use_register_alloc y llama a compile_with_reg_alloc()
-        // Usamos un flag temporal para evitar recursión infinita cuando
-        // compile() detecta use_register_alloc y llama a compile_with_reg_alloc()
-        let saved_flag = self.use_register_alloc;
-        self.use_register_alloc = false;
-        let result = self.compile(name, ops);
-        self.use_register_alloc = saved_flag;
+        // 4. Generar código nativo usando las asignaciones de registros
+        let reg_code = crate::codegen_reg::emit_program(
+            &reg_prog,
+            allocator.get_assignments(),
+            spill_count,
+        );
+
+        let code_size = reg_code.len();
+        if code_size == 0 {
+            // Fallback al codegen stack-based si el register codegen produce código vacío
+            let saved_flag = self.use_register_alloc;
+            self.use_register_alloc = false;
+            let result = self.compile(name, ops);
+            self.use_register_alloc = saved_flag;
+            return result;
+        }
+
+        // 5. Alocar memoria RW, copiar código, proteger como RX
+        let ptr = mem::alloc_exec(code_size)?;
+        unsafe {
+            std::ptr::copy_nonoverlapping(reg_code.as_ptr(), ptr, code_size);
+        }
+        mem::make_exec(ptr, code_size)?;
 
         eprintln!(
-            "[JIT-RegAlloc] {} assigns, {} spills for '{}'",
+            "[JIT-RegAlloc] {} assigns, {} spills, {} bytes for '{}'",
             assignments.len(),
             spill_count,
+            code_size,
             name
         );
 
-        result
+        Ok(ptr)
     }
 }
 
@@ -1913,12 +1927,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn push42() {
         assert_eq!(run(&[Opcode::PushEntero(42), Opcode::Halt]), 42);
     }
     #[test]
-    #[ignore]
     fn add1_2() {
         assert_eq!(
             run(&[
@@ -1931,7 +1943,6 @@ mod tests {
         );
     }
     #[test]
-    #[ignore]
     fn mul6_7() {
         assert_eq!(
             run(&[
