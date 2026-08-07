@@ -8162,10 +8162,53 @@ impl ForjaFast {
 mod tests {
     use super::*;
 
+    /// Compila un programa con el pipeline local del crate (lexer → parser →
+    /// type checker → bytecode + optimizaciones), replicando
+    /// `forja::compilar_pipeline`. Usa los módulos del crate actual para que el
+    /// tipo `bytecode::Opcode` coincida con el que consume la VM (válido tanto
+    /// en la lib como en el binario, que declara sus propios módulos).
+    fn compilar_programa(source: &str) -> Vec<bytecode::Opcode> {
+        use bytecode::{fusionar_opcodes, optimizar_indices, BytecodeGenerator};
+
+        let mut lexer = crate::lexer::Lexer::new(source);
+        let tokens = lexer.tokenize().expect("el programa debe tokenizar");
+        let mut parser = crate::parser::Parser::new(tokens);
+        let programa = parser.parse().expect("el programa debe parsear");
+
+        let mut type_checker = crate::semantics::TypeChecker::new();
+        type_checker
+            .analizar(&programa)
+            .expect("el programa debe pasar el type checker");
+        let tipos_inferidos = type_checker.obtener_tipos_inferidos();
+        let funciones_overload = type_checker.obtener_funciones();
+
+        let mut gen = BytecodeGenerator::new();
+        gen.set_tipos_inferidos(tipos_inferidos);
+        gen.set_funciones_overload(funciones_overload);
+        let bytecode = gen
+            .generar(&programa)
+            .expect("el programa debe generar bytecode");
+
+        let globales: Vec<(String, bool)> = programa
+            .declaraciones
+            .iter()
+            .filter_map(|d| match d {
+                crate::ast::Declaracion::Variable {
+                    nombre, mutable, ..
+                } => Some((nombre.clone(), *mutable)),
+                _ => None,
+            })
+            .collect();
+        let bytecode = bytecode::postprocesar_globales(bytecode, &globales);
+
+        let bytecode = optimizar_indices(&bytecode);
+        fusionar_opcodes(&bytecode)
+    }
+
     /// Compila, carga y ejecuta un programa con fast-math configurado
     /// (`None` = modo automático). Retorna (output, fast_math_activo).
     fn ejecutar_con_fast_math(source: &str, fast_math: Option<bool>) -> (Vec<String>, bool) {
-        let bytecode = crate::compilar_pipeline(source).expect("el programa debe compilar");
+        let bytecode = compilar_programa(source);
         let mut vm = ForjaFast::new();
         if let Some(b) = fast_math {
             vm.set_fast_math(b);
@@ -8271,7 +8314,7 @@ mod tests {
             let contenido =
                 std::fs::read_to_string(format!("{}/{}", env!("CARGO_MANIFEST_DIR"), ruta))
                     .expect("leer archivo");
-            let bc = crate::compilar_pipeline(&contenido).expect("compila");
+            let bc = compilar_programa(&contenido);
             let mut out = String::new();
             for (i, op) in bc.iter().enumerate() {
                 out.push_str(&format!("{:3} {:?}\n", i, op));
@@ -8292,7 +8335,7 @@ mod tests {
             let contenido =
                 std::fs::read_to_string(format!("{}/{}", env!("CARGO_MANIFEST_DIR"), ruta))
                     .expect("leer archivo");
-            let bc = crate::compilar_pipeline(&contenido).expect("compila");
+            let bc = compilar_programa(&contenido);
             let mut vm = ForjaFast::new();
             vm.show_bytecode = true;
             vm.cargar_bytecode(bc);
@@ -8319,7 +8362,7 @@ mod tests {
             let contenido =
                 std::fs::read_to_string(format!("{}/{}", env!("CARGO_MANIFEST_DIR"), ruta))
                     .expect("leer archivo");
-            let bc = crate::compilar_pipeline(&contenido).expect("compila");
+            let bc = compilar_programa(&contenido);
             let mut vm = ForjaFast::new();
             vm.show_bytecode = true;
             vm.cargar_bytecode(bc);
@@ -8336,7 +8379,7 @@ mod tests {
 
     #[test]
     fn fast_math_override_manual_persiste_despues_de_reset() {
-        let bytecode = crate::compilar_pipeline("escribir(1)\n").expect("compila");
+        let bytecode = compilar_programa("escribir(1)\n");
         let mut vm = ForjaFast::new();
         vm.set_fast_math(true);
         vm.cargar_bytecode(bytecode);
