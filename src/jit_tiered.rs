@@ -212,12 +212,11 @@ impl TieredJit {
 
     /// Notifica una ejecución de función y retorna si debe compilarse
     pub fn on_function_call(&mut self, name: &str) -> ShouldCompile {
-        let thresholds = self.thresholds.clone();
         let state = self
             .functions
             .entry(name.to_string())
             .or_insert_with(FunctionState::new);
-        state.tick(&thresholds)
+        state.tick(&self.thresholds)
     }
 
     /// Notifica una iteración de loop para OSR
