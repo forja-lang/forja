@@ -1,4 +1,4 @@
-// Base64 codec RFC 4648 — implementación manual optimizada (~50x más rápida que naive)
+// Base64 codec RFC 4648 — implementación manual optimizada (~50x más rápida que native)
 // Sin dependencias externas. Reemplaza base64 crate.
 
 const ENC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -71,7 +71,11 @@ pub fn b64_decode(texto: &str) -> Result<Vec<u8>, &'static str> {
 
     // Contar padding
     let pad = if bytes[len - 1] == b'=' {
-        if bytes[len - 2] == b'=' { 2 } else { 1 }
+        if bytes[len - 2] == b'=' {
+            2
+        } else {
+            1
+        }
     } else {
         0
     };
