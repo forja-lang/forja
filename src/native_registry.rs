@@ -546,6 +546,12 @@ impl NativeRegistry {
 
 fn native_proceso_ejecutar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let cmd = obtener_texto(vm, args[0])?;
+
+    // Verificar sandbox de procesos
+    if let Err(e) = vm.sandbox_proc.verificar_comando(&cmd) {
+        return Err(ErrFast::TipoInv(format!("Sandbox: {}", e)));
+    }
+
     let stdin_input = if args.len() > 1 { obtener_texto(vm, args[1])? } else { String::new() };
     let dir = if args.len() > 2 { obtener_texto(vm, args[2])? } else { String::new() };
 
@@ -1977,6 +1983,10 @@ fn native_archivo_leer(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
             "ruta_invalida: la ruta no puede estar vacía".into(),
         ));
     }
+    // Verificar sandbox de filesystem (lectura)
+    if let Err(e) = vm.sandbox_fs.verificar_lectura(&ruta) {
+        return Err(ErrFast::TipoInv(format!("Sandbox: {}", e)));
+    }
     match std::fs::read_to_string(&ruta) {
         Ok(contenido) => {
             let idx = vm.alloc_str(Arc::from(contenido.as_str()));
@@ -2002,6 +2012,10 @@ fn native_archivo_escribir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
         return Err(ErrFast::TipoInv(
             "ruta_invalida: la ruta no puede estar vacía".into(),
         ));
+    }
+    // Verificar sandbox de filesystem (escritura)
+    if let Err(e) = vm.sandbox_fs.verificar_escritura(&ruta) {
+        return Err(ErrFast::TipoInv(format!("Sandbox: {}", e)));
     }
     match std::fs::write(&ruta, contenido.as_bytes()) {
         Ok(()) => Ok(ValorFast::entero(0i64)),
