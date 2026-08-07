@@ -73,16 +73,11 @@ impl IrConstructor {
                     Operador::Multiplicacion => builder.emit_mul(l, r),
                     Operador::Division => builder.emit_div(l, r),
                     Operador::IgualIgual => builder.emit_eq(l, r),
-                    Operador::Diferente => {
-                        let eq = builder.emit_eq(l, r);
-                        let v = builder.emit_const_bool(true);
-                        let _ = v;
-                        eq // Simplificación: retornar eq sin not
-                    }
+                    Operador::Diferente => builder.emit_neq(l, r),
                     Operador::Menor => builder.emit_lt(l, r),
-                    Operador::Mayor => builder.emit_lt(r, r), // a > b → b < a (simplificado)
-                    Operador::MenorIgual => builder.emit_lt(l, r),
-                    Operador::MayorIgual => builder.emit_lt(r, l),
+                    Operador::Mayor => builder.emit_gt(l, r),
+                    Operador::MenorIgual => builder.emit_lte(l, r),
+                    Operador::MayorIgual => builder.emit_gte(l, r),
                     _ => builder.emit_add(l, r),
                 }
             }
@@ -94,12 +89,7 @@ impl IrConstructor {
                         let zero = builder.emit_const_int(0);
                         builder.emit_sub(zero, val)
                     }
-                    OperadorUnario::No => {
-                        let v = builder.emit_const_bool(true);
-                        let eq = builder.emit_eq(val, v);
-                        let _ = eq;
-                        builder.emit_const_bool(false) // fallback simplificado
-                    }
+                    OperadorUnario::No => builder.emit_not(val),
                 }
             }
 
