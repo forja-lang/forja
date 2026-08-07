@@ -503,13 +503,14 @@ impl BytecodeGenerator {
         // Para módulo, siempre usamos la descomposición genérica (no hay ModInt/ModFloat)
         if let Operador::Modulo = op {
             // a % b = a - (a/b)*b
-            self.generar_expresion(izquierda);
-            self.generar_expresion(izquierda);
-            self.generar_expresion(derecha);
-            self.emitir(Opcode::Div);
-            self.generar_expresion(derecha);
-            self.emitir(Opcode::Mul);
-            self.emitir(Opcode::Sub);
+            // Usamos Dup para evitar doble evaluación de izquierda
+            self.generar_expresion(izquierda);  // [a]
+            self.emitir(Opcode::Dup);            // [a, a]
+            self.generar_expresion(derecha);     // [a, a, b]
+            self.emitir(Opcode::Div);            // [a, a/b]
+            self.generar_expresion(derecha);     // [a, a/b, b]
+            self.emitir(Opcode::Mul);            // [a, (a/b)*b]
+            self.emitir(Opcode::Sub);            // [a % b]
             return;
         }
 
@@ -2193,15 +2194,13 @@ impl BytecodeGenerator {
                     Operador::Division => output.push(Uop::Div),
                     Operador::Modulo => {
                         // a % b = a - (a/b)*b
-                        // Duplicamos izquierda
-                        self.expresion_a_uops_inner(izquierda, output);
-                        output.push(Uop::Dup);
-                        self.expresion_a_uops_inner(izquierda, output);
-                        self.expresion_a_uops_inner(derecha, output);
-                        output.push(Uop::Div);
-                        self.expresion_a_uops_inner(derecha, output);
-                        output.push(Uop::Mul);
-                        output.push(Uop::Sub);
+                        self.expresion_a_uops_inner(izquierda, output);  // [a]
+                        output.push(Uop::Dup);                           // [a, a]
+                        self.expresion_a_uops_inner(derecha, output);    // [a, a, b]
+                        output.push(Uop::Div);                           // [a, a/b]
+                        self.expresion_a_uops_inner(derecha, output);    // [a, a/b, b]
+                        output.push(Uop::Mul);                           // [a, (a/b)*b]
+                        output.push(Uop::Sub);                           // [a % b]
                     }
                     Operador::IgualIgual => output.push(Uop::Igual),
                     Operador::Diferente => output.push(Uop::Diferente),
