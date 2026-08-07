@@ -322,24 +322,26 @@ jobs:
         shell: bash
         run: |
           cd binaries
+          # Los binarios quedan en binaries/ (forja-linux, forja-macos...),
+          # así que los paquetes se ensamblan en pack/ para evitar colisiones de nombres.
+          mkdir -p pack/forja-windows pack/forja-linux pack/forja-macos
           # Windows: zip con stdlib incluida
-          mkdir forja-windows
-          cp forja.exe forja-lsp.exe forja-dap.exe forja-rt.exe forja-rt-gui.exe forja-installer-x64.exe forja-windows/
-          cp -r stdlib forja-windows/
-          zip -r ../forja-${{ env.VERSION }}-windows-x64.zip forja-windows/
+          cp forja.exe forja-lsp.exe forja-dap.exe forja-rt.exe forja-rt-gui.exe forja-installer-x64.exe pack/forja-windows/
+          cp -r stdlib pack/forja-windows/
           # Linux: tar.gz con stdlib incluida
-          mkdir forja-linux
-          cp forja-linux forja-lsp-linux forja-dap-linux forja-rt-linux forja-rt-gui-linux forja-linux/
-          cp -r stdlib forja-linux/
-          tar czf ../forja-${{ env.VERSION }}-linux-x64.tar.gz forja-linux/
+          cp forja-linux forja-lsp-linux forja-dap-linux forja-rt-linux forja-rt-gui-linux pack/forja-linux/
+          cp -r stdlib pack/forja-linux/
           # macOS: tar.gz con stdlib incluida
-          mkdir forja-macos
-          cp forja-macos forja-lsp-macos forja-dap-macos forja-rt-macos forja-rt-gui-macos forja-macos/
-          cp -r stdlib forja-macos/
-          tar czf ../forja-${{ env.VERSION }}-macos-x64.tar.gz forja-macos/
+          cp forja-macos forja-lsp-macos forja-dap-macos forja-rt-macos forja-rt-gui-macos pack/forja-macos/
+          cp -r stdlib pack/forja-macos/
           # Portable stdlib (para actualizaciones manuales)
           tar czf ../forja-${{ env.VERSION }}-stdlib.tar.gz stdlib/
-          cd ..
+          cd pack
+          zip -r ../../forja-${{ env.VERSION }}-windows-x64.zip forja-windows/
+          tar czf ../../forja-${{ env.VERSION }}-linux-x64.tar.gz forja-linux/
+          tar czf ../../forja-${{ env.VERSION }}-macos-x64.tar.gz forja-macos/
+          cd ../..
+          rm -rf binaries/pack
           ls -la forja-*.zip forja-*.tar.gz
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
