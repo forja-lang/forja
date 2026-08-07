@@ -26,6 +26,7 @@ pub mod lexer;
 pub mod monomorph;
 pub mod native_registry;
 pub mod parser;
+pub mod codegen_reg;
 pub mod pgo;
 pub mod register_alloc;
 pub mod register_ir;
@@ -776,45 +777,94 @@ pub fn ejecutar_jit(source: &str) -> Result<Vec<String>, String> {
     jit.ejecutar(&bytecode)
 }
 
-/// Ejecuta con Profile-Guided Optimization: recolecta perfil en una corrida,
-/// lo guarda a disco, y lo reutiliza en la siguiente corrida.
+/// Ejecuta con Profile-Guided Optimization: recolecta perfil durante la
+/// ejecución, lo guarda a disco (`.forjaprof`), y en corridas posteriores
+/// lo aplica para pre-especializar los IPs calientes.
+///
+/// El flujo conecta los componentes de `pgo` con la VM `ForjaFast`:
+/// `ProfileManager` (persistencia) → `aplicar_pgo` (guía la ejecución) →
+/// instrumentación de la VM (recolección) → `ProfileManager::save` (merge).
 pub fn ejecutar_con_pgo(source: &str) -> Result<Vec<String>, String> {
+    ejecutar_con_pgo_impl(source, std::path::Path::new("."), false)
+}
+
+/// Igual que `ejecutar_con_pgo` pero con directorio raíz explícito (ahí se
+/// lee/escribe `.forjaprof`).
+pub fn ejecutar_con_pgo_desde(
+    source: &str,
+    root_dir: &std::path::Path,
+) -> Result<Vec<String>, String> {
+    ejecutar_con_pgo_impl(source, root_dir, false)
+}
+
+/// Ejecuta aplicando un perfil existente (`.forjaprof`) sin volver a
+/// recolectar: las decisiones del perfil guían la ejecución actual.
+pub fn ejecutar_con_pgo_usar(
+    source: &str,
+    root_dir: &std::path::Path,
+) -> Result<Vec<String>, String> {
+    ejecutar_con_pgo_impl(source, root_dir, true)
+}
+
+fn ejecutar_con_pgo_impl(
+    source: &str,
+    root_dir: &std::path::Path,
+    solo_usar: bool,
+) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
 
     // 1. Compilar
     let (bytecode, contratos) = compilar_pipeline_completa(source)?;
 
-    // 2. Recolectar perfil durante la ejecución
-    let mut profile = pgo::ProfileData::new();
+    // 2. Cargar perfil previo si existe
+    let mgr = pgo::ProfileManager::new(root_dir);
+    let perfil_previo = mgr.load();
+
     let mut vm = ForjaFast::new();
     vm.contratos = contratos;
     vm.set_max_inst(10_000_000_000);
-    vm.cargar_bytecode(bytecode.clone());
+    vm.cargar_bytecode(bytecode);
 
-    // Contar llamadas a cada función del bytecode
-    for op in &bytecode {
-        if let bytecode::Opcode::FunctionDef(name, _) = op {
-            profile.record_call(&format!("func_{}", name));
-        }
-        if let bytecode::Opcode::Call(name, _) = op {
-            profile.record_call(&format!("call_{}", name));
+    // 3. Aplicar perfil previo (si existe) y habilitar recolección
+    if let Some(perfil) = &perfil_previo {
+        vm.aplicar_pgo(perfil);
+        eprintln!(
+            "[PGO] Perfil aplicado: {} funciones calientes, {} IPs calientes",
+            vm.funciones_calientes().len(),
+            perfil.hot_ips.len()
+        );
+    }
+    if !solo_usar {
+        vm.habilitar_pgo();
+    }
+
+    // 4. Ejecutar
+    vm.ejecutar().map_err(|e| format!("{}", e))?;
+
+    // 5. Merge con el perfil previo y guardar
+    if !solo_usar {
+        if let Some(recolectado) = vm.finalizar_pgo() {
+            let mut perfil = perfil_previo.clone().unwrap_or_default();
+            for (f, c) in recolectado.function_hotness {
+                *perfil.function_hotness.entry(f).or_insert(0) += c;
+            }
+            for (b, c) in recolectado.branch_counts {
+                let e = perfil.branch_counts.entry(b).or_insert((0, 0));
+                e.0 += c.0;
+                e.1 += c.1;
+            }
+            for (l, c) in recolectado.loop_iterations {
+                *perfil.loop_iterations.entry(l).or_insert(0) += c;
+            }
+            for (ip, c) in recolectado.hot_ips {
+                *perfil.hot_ips.entry(ip).or_insert(0) += c;
+            }
+            let _ = mgr.save(&perfil);
+            eprintln!("[PGO] Perfil guardado en {}", mgr.profile_path().display());
         }
     }
 
-    // 3. Ejecutar
-    vm.ejecutar().map_err(|e| format!("{}", e))?;
-
-    // 4. Guardar perfil
-    let mgr = pgo::ProfileManager::new(std::path::Path::new("."));
-    let _ = mgr.save(&profile);
-
-    // 5. Generar decisiones PGO
-    let _decisions = pgo::ProfileGuidedDecisions::from_profile(&profile);
-    // NOTA: las decisiones aún no se aplican al optimizer (pendiente de implementar).
-
-    // 6. Log de decisiones (en una implementación real, se aplicarían al optimizer)
-    let output = vm.obtener_output().to_vec();
-    Ok(output)
+    Ok(vm.obtener_output().to_vec())
 }
 
 /// Compila código Forja a LLVM IR usando el backend generador de texto LLVM
