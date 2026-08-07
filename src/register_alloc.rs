@@ -53,7 +53,7 @@ pub enum PhysReg {
 
 impl PhysReg {
     /// Índice para REX encoding (0-15)
-    fn rex_index(self) -> u8 {
+    pub fn rex_index(self) -> u8 {
         match self {
             PhysReg::RAX => 0,
             PhysReg::RCX => 1,
