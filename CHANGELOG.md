@@ -2,9 +2,6 @@
 
 Todas las versiones notables de **Forja (fa)** serán documentadas en este archivo.
 
-Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/),
-y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
 ## [0.8.8] - 2025-??
 
 ### Agregado
