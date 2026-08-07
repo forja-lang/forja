@@ -28,31 +28,6 @@ impl PartialEq for ObjetoRef {
     }
 }
 
-/// String interning cache (reservado para uso futuro)
-#[allow(dead_code)]
-pub struct StringPool {
-    pool: std::cell::RefCell<std::collections::HashMap<String, std::rc::Rc<str>>>,
-}
-
-#[allow(dead_code)]
-impl StringPool {
-    pub fn new() -> Self {
-        StringPool {
-            pool: std::cell::RefCell::new(std::collections::HashMap::new()),
-        }
-    }
-    pub fn intern(&self, s: &str) -> String {
-        let mut pool = self.pool.borrow_mut();
-        if let Some(cached) = pool.get(s) {
-            cached.as_ref().to_string()
-        } else {
-            let interned: std::rc::Rc<str> = std::rc::Rc::from(s);
-            let result = interned.as_ref().to_string();
-            pool.insert(s.to_string(), interned);
-            result
-        }
-    }
-}
 // Small Integer Cache [-5, 256] — thread_local! porque ValorVM no es Send/Sync
 use std::cell::OnceCell;
 thread_local! {
@@ -527,9 +502,6 @@ pub struct ForjaVM {
     max_stack: usize,
     max_instrucciones: usize,
     instrucciones_ejecutadas: usize,
-    #[allow(dead_code)]
-    string_pool: StringPool,
-    #[allow(dead_code)]
     inline_cache: HashMap<String, usize>,
     /// Sistema de especialización adaptativa (PEP 659)
     contador_especializacion: Vec<u8>,
@@ -540,6 +512,9 @@ pub struct ForjaVM {
     native_funcs: HashMap<String, NativeFnVM>,
     /// Heap de sockets (compartido con native_registry::SocketState)
     socket_heap: Vec<SocketState>,
+    /// String builders (StrAppend): buffers por índice de variable local.
+    /// Se convierten a Texto en el flush (Return / fin de programa).
+    str_builders: HashMap<usize, String>,
 }
 
 struct Frame {
@@ -564,12 +539,12 @@ impl ForjaVM {
             max_stack: 10000,
             max_instrucciones: 100_000_000,
             instrucciones_ejecutadas: 0,
-            string_pool: StringPool::new(),
             inline_cache: HashMap::new(),
             contador_especializacion: Vec::new(),
             umbral_especializacion: 3,
             native_funcs: HashMap::new(),
             socket_heap: Vec::new(),
+            str_builders: HashMap::new(),
         };
         vm.registrar_nativas();
         vm
@@ -703,6 +678,21 @@ impl ForjaVM {
         self.call_stack.last().map(|f| f.ambito).unwrap_or(0)
     }
 
+    /// Convierte los buffers de string builder en Texto y los guarda en las
+    /// variables del ámbito actual (se llama en Return / fin de programa).
+    fn flush_string_builders(&mut self) {
+        let keys: Vec<usize> = self.str_builders.keys().copied().collect();
+        for idx in keys {
+            if let Some(buf) = self.str_builders.remove(&idx) {
+                if !buf.is_empty() {
+                    let ambito = self.ambito_actual();
+                    self.asegurar_indice(ambito, idx);
+                    self.variables[ambito][idx] = ValorVM::Texto(buf);
+                }
+            }
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // Gestión de Sockets (Socket Heap)
     // ═══════════════════════════════════════════════════════════════════
@@ -717,6 +707,30 @@ impl ForjaVM {
     /// Obtiene referencia al estado de un socket por índice
     fn socket_get(&self, idx: u32) -> &SocketState {
         &self.socket_heap[idx as usize]
+    }
+
+    /// Poll no bloqueante: retorna verdadero si el socket referenciado por la
+    /// variable `var_nombre` (un entero con el índice en socket_heap) tiene
+    /// datos disponibles para leer. Retorna falso ante cualquier error o
+    /// ausencia de datos.
+    fn socket_poll(&self, var_nombre: &str) -> bool {
+        let val = self.buscar_variable(var_nombre).ok();
+        if let Some(ValorVM::Entero(idx)) = val {
+            if let Some(socket) = self.socket_heap.get(*idx as usize) {
+                if let Some(stream) = &socket.tcp_stream {
+                    if let Ok(stream) = stream.lock() {
+                        let mut buf = [0u8; 1];
+                        let _ = stream.set_nonblocking(true);
+                        match stream.peek(&mut buf) {
+                            Ok(n) => return n > 0,
+                            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => return false,
+                            Err(_) => return false,
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Obtiene referencia mutable al estado de un socket
@@ -836,6 +850,15 @@ impl ForjaVM {
                 Opcode::Dup => {
                     let val = self.stack.last().cloned().unwrap_or(ValorVM::Nulo);
                     self.stack.push(val);
+                    self.ip += 1;
+                }
+                Opcode::StrAppend(idx) => {
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("StrAppend".to_string()))?;
+                    let s = val.mostrar();
+                    self.str_builders.entry(idx).or_insert_with(String::new).push_str(&s);
                     self.ip += 1;
                 }
 
@@ -1695,6 +1718,7 @@ impl ForjaVM {
                 }
 
                 Opcode::Return => {
+                    self.flush_string_builders();
                     if let Some(frame) = self.call_stack.pop() {
                         // Pop del ámbito (variables y nombre_a_indice)
                         self.variables.pop();
@@ -1704,6 +1728,26 @@ impl ForjaVM {
                         // Return global → fin
                         break;
                     }
+                }
+
+                Opcode::CallClosure(var_idx, nargs) => {
+                    // Llamada indirecta a closure: la variable local contiene el
+                    // nombre de la función. Reescribir a Call y reprocesar.
+                    let ambito = self.ambito_actual();
+                    let nombre = if var_idx < self.variables[ambito].len() {
+                        match &self.variables[ambito][var_idx] {
+                            ValorVM::Texto(s) => s.clone(),
+                            _ => String::new(),
+                        }
+                    } else {
+                        String::new()
+                    };
+                    if !nombre.is_empty() {
+                        self.bytecode[self.ip] = Opcode::Call(Arc::from(nombre.as_str()), nargs);
+                        continue;
+                    }
+                    self.stack.push(ValorVM::Nulo);
+                    self.ip += 1;
                 }
 
                 Opcode::Print => {
@@ -2255,8 +2299,9 @@ impl ForjaVM {
                     self.ip += 1;
                 }
 
-                Opcode::SocketPoll(_) => {
-                    self.stack.push(ValorVM::Booleano(false));
+                Opcode::SocketPoll(nombre) => {
+                    let disponible = self.socket_poll(nombre.as_ref());
+                    self.stack.push(ValorVM::Booleano(disponible));
                     self.ip += 1;
                 }
 
@@ -2264,6 +2309,7 @@ impl ForjaVM {
                 _ => self.stack.push(ValorVM::Nulo),
             }
         }
+        self.flush_string_builders();
         Ok(())
     }
 
@@ -2912,6 +2958,24 @@ impl ForjaVM {
                 Uop::FunctionDef(_, _) => {
                     self.ip += 1;
                 }
+                Uop::CallClosure(var_idx, nargs) => {
+                    // Llamada indirecta a closure: reescribir a Uop::Call
+                    let ambito = self.ambito_actual();
+                    let nombre = if var_idx < self.variables[ambito].len() {
+                        match &self.variables[ambito][var_idx] {
+                            ValorVM::Texto(s) => s.clone(),
+                            _ => String::new(),
+                        }
+                    } else {
+                        String::new()
+                    };
+                    if !nombre.is_empty() {
+                        uops[self.ip] = Uop::Call(nombre, nargs);
+                        continue;
+                    }
+                    self.stack.push(ValorVM::Nulo);
+                    self.ip += 1;
+                }
                 Uop::Call(nombre, nargs) => {
                     if let Some(&func_ip) = self.funciones.get(&nombre) {
                         let mut args: Vec<ValorVM> = Vec::with_capacity(nargs);
@@ -2998,6 +3062,7 @@ impl ForjaVM {
                     }
                 }
                 Uop::Return => {
+                    self.flush_string_builders();
                     if let Some(frame) = self.call_stack.pop() {
                         self.variables.truncate(frame.ambito + 1);
                         self.nombre_a_indice.truncate(frame.ambito + 1);
@@ -3085,6 +3150,27 @@ impl ForjaVM {
                             .pop()
                             .ok_or(ErrorVM::StackUnderflow("SetField".to_string()))?;
                         o.0.borrow_mut().campos.insert(c, v);
+                    } else {
+                        self.stack.push(ValorVM::Nulo);
+                    }
+                    self.ip += 1;
+                }
+                Uop::SetFieldIdx(idx) => {
+                    // Asignación posicional de variante de enum: [valor, objeto].
+                    // Posición 0 = tag (clave "tag"), resto = "_i".
+                    if let ValorVM::Objeto(o) = self.stack.pop().ok_or(
+                        ErrorVM::StackUnderflow("SetFieldIdx".to_string()),
+                    )? {
+                        let v = self
+                            .stack
+                            .pop()
+                            .ok_or(ErrorVM::StackUnderflow("SetFieldIdx".to_string()))?;
+                        let mut obj = o.0.borrow_mut();
+                        if idx == 0 {
+                            obj.campos.insert("tag".to_string(), v);
+                        } else {
+                            obj.campos.insert(format!("_{}", idx), v);
+                        }
                     } else {
                         self.stack.push(ValorVM::Nulo);
                     }
@@ -3430,19 +3516,25 @@ impl ForjaVM {
                     self.ip += 1;
                 }
 
-                Uop::SocketPoll(_) => {
-                    // SocketPoll no implementado en VM clásica, retorna falso
-                    self.stack.push(ValorVM::Booleano(false));
+                Uop::SocketPoll(nombre) => {
+                    // Poll no bloqueante: true si hay datos disponibles
+                    let disponible = self.socket_poll(nombre.as_ref());
+                    self.stack.push(ValorVM::Booleano(disponible));
                     self.ip += 1;
                 }
-                Uop::StrAppend(_idx) => {
-                    // String builder no implementado en VM clásica, concatenar normalmente
-                    let val = self.stack.pop().ok_or(ErrorVM::StackUnderflow("StrAppend".to_string()))?;
-                    self.stack.push(val);
+                Uop::StrAppend(idx) => {
+                    // String builder: pop valor, convertir a string y append
+                    let val = self
+                        .stack
+                        .pop()
+                        .ok_or(ErrorVM::StackUnderflow("StrAppend".to_string()))?;
+                    let s = val.mostrar();
+                    self.str_builders.entry(idx).or_insert_with(String::new).push_str(&s);
                     self.ip += 1;
                 }
             }
         }
+        self.flush_string_builders();
         Ok(())
     }
 }
