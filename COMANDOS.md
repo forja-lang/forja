@@ -44,7 +44,7 @@ cargo run --release --bin forja -- ejemplos/01_hola.fa
 cargo run --release --bin forja -- ejemplos/40_fibonacci.fa
 ```
 
-### `forja run|ejecutar|correr <archivo> [--vm fast|vm|jit] [--asm] [--native]`
+### `forja run|ejecutar|correr <archivo> [--vm fast|vm|jit] [--asm] [--native] [--fast-math]`
 
 Compila y ejecuta en la VM seleccionada. No necesitás Rust.
 
@@ -60,6 +60,13 @@ cargo run --release --bin forja -- run ejemplos/07_funciones.fa --vm jit
 
 # Assembly nativo (⚡ más rápido, requiere gcc)
 cargo run --release --bin forja -- run ejemplos/01_hola.fa --asm
+
+# Fast-Math: omite verificaciones aritméticas (solo con --vm fast)
+# - En programas 100% Decimal se activa SOLO automáticamente (sin flag):
+#   omite el check de división por cero float (x / 0.0 → inf en vez de nulo)
+# - Con --fast-math se fuerza además sin checks de tipo (modo unsafe,
+#   puede producir valores indefinidos en código con tipos mixtos)
+cargo run --release --bin forja -- run benchmarks/leibniz_test.fa --fast-math
 ```
 
 ### `forja build|compilar|construir <archivo> -o <salida>` — Ejecutable autónomo
@@ -130,7 +137,7 @@ cargo run --release --bin forja -- repl --vm vm    # VM Original
 cargo run --release --bin forja -- repl --vm jit   # VM JIT (Direct Threading)
 ```
 
-### `forja medir|bench|medicion|benchmark <archivo> [--iters N] [--vm fast|vm|jit|todas] [--asm]`
+### `forja medir|bench|medicion|benchmark <archivo> [--iters N] [--vm fast|vm|jit|todas] [--asm] [--fast-math]`
 
 Mide tiempos de ejecución: cold (primera ejecución) + hot (promedio de N iteraciones).
 
@@ -146,6 +153,9 @@ cargo run --release --bin forja -- medir ejemplos/40_fibonacci.fa --iters 100 --
 
 # Medir en ASM nativo (requiere gcc)
 cargo run --release --bin forja -- medir benchmarks/speed_comparison.fa --asm --iters 10
+
+# Medir ForjaFast con fast-math forzado (modo unsafe)
+cargo run --release --bin forja -- medir benchmarks/leibniz_test.fa --iters 50 --vm fast --fast-math
 ```
 
 ### `forja diagrama|grafico|diagram <archivo>` — Generar diagrama HTML
