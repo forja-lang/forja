@@ -593,9 +593,9 @@ funcion saludar(nombre: Texto) {
 ### Arreglos (Listas)
 ```
 variable frutas = ["manzana", "banana", "naranja"]
-escribir(frutas[0])       // manzana
+escribir(frutas[0])            // manzana
 frutas[1] = "pera"
-escribir(frutas.length()) // 3
+escribir(frutas.longitud())    // 3  (alias: .length(), .len())
 ```
 
 ### Mapas (Diccionarios)
@@ -609,15 +609,15 @@ persona["edad"] = 26
 
 ## 🧵 Métodos de Texto
 
-Los strings tienen métodos incorporados:
+Los strings tienen métodos incorporados (nombres en español con alias en inglés):
 
 ```
 variable texto = "  Hola, Forja!  "
-escribir(texto.length())          // 15
-escribir(texto.trim())            // "Hola, Forja!"
-escribir(texto.to_upper())        // "  HOLA, FORJA!  "
-escribir(texto.to_lower())        // "  hola, forja!  "
-escribir(texto.contains("Forja")) // verdadero
+escribir(texto.longitud())              // 15  (alias: .length(), .len())
+escribir(texto.recortar())              // "Hola, Forja!"  (alias: .trim())
+escribir(texto.a_mayusculas())          // "  HOLA, FORJA!  "  (alias: .to_upper(), .uppercase())
+escribir(texto.a_minusculas())          // "  hola, forja!  "  (alias: .to_lower(), .lowercase())
+escribir(texto.contiene("Forja"))       // verdadero  (alias: .contains())
 ```
 
 ---
