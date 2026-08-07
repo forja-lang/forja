@@ -85,8 +85,11 @@ pub enum Opcode {
 
     // === Opcodes de comparación especializados ===
     IgualInt,
+    DiferenteInt,
     MenorInt,
+    MenorIgualInt,
     MayorInt,
+    MayorIgualInt,
     IgualFloat,
     DiferenteFloat,
     MenorFloat,
@@ -125,12 +128,18 @@ pub enum Opcode {
     // === Funciones ===
     FunctionDef(Arc<str>, Vec<Arc<str>>), // (nombre, parámetros)
     Call(Arc<str>, usize),
+    /// Llamada indirecta a closure: la variable local `var_idx` contiene el
+    /// nombre de la función a llamar (el valor del closure). (var_idx, nargs)
+    CallClosure(usize, usize),
     Return,
 
     // === POO ===
     NewObject(Arc<str>),         // crear instancia de clase
     SetField(Arc<str>),          // este.campo = pop()
     GetField(Arc<str>),          // push(este.campo)
+    /// Asigna el campo i-ésimo por posición (usado para construir variantes de
+    /// enum: campos_vec = [tag, campo0, campo1, ...]). Pop valor, pop objeto.
+    SetFieldIdx(usize),
     CallMethod(Arc<str>, usize), // obj.metodo(args) - resuelve clase en runtime
 
     // === Arrays ===
@@ -503,14 +512,20 @@ impl BytecodeGenerator {
         // Para módulo, siempre usamos la descomposición genérica (no hay ModInt/ModFloat)
         if let Operador::Modulo = op {
             // a % b = a - (a/b)*b
-            // Usamos Dup para evitar doble evaluación de izquierda
-            self.generar_expresion(izquierda);  // [a]
-            self.emitir(Opcode::Dup);            // [a, a]
-            self.generar_expresion(derecha);     // [a, a, b]
-            self.emitir(Opcode::Div);            // [a, a/b]
-            self.generar_expresion(derecha);     // [a, a/b, b]
-            self.emitir(Opcode::Mul);            // [a, (a/b)*b]
-            self.emitir(Opcode::Sub);            // [a % b]
+            // FIX: Usamos variable temporal para evitar doble evaluación de b.
+            // El patrón anterior evaluaba derecha dos veces (bug si tiene side effects).
+            let temp_name = Arc::from(format!("__mod_t{}", self.label_counter));
+            self.label_counter += 1;
+            self.generar_expresion(izquierda);                    // [a]
+            self.generar_expresion(derecha);                      // [a, b]
+            self.emitir(Opcode::Declare(Arc::clone(&temp_name), false)); // declara temp
+            self.emitir(Opcode::Store(Arc::clone(&temp_name)));   // [a] (b guardado en temp)
+            self.emitir(Opcode::Dup);                             // [a, a]
+            self.emitir(Opcode::Load(Arc::clone(&temp_name)));    // [a, a, b]
+            self.emitir(Opcode::Div);                             // [a, a/b]
+            self.emitir(Opcode::Load(Arc::clone(&temp_name)));    // [a, a/b, b]
+            self.emitir(Opcode::Mul);                             // [a, (a/b)*b]
+            self.emitir(Opcode::Sub);                             // [a % b]
             return;
         }
 
@@ -552,8 +567,17 @@ impl BytecodeGenerator {
             (Operador::IgualIgual, Some(Tipo::Entero), Some(Tipo::Entero)) => {
                 Some(Opcode::IgualInt)
             }
+            (Operador::Diferente, Some(Tipo::Entero), Some(Tipo::Entero)) => {
+                Some(Opcode::DiferenteInt)
+            }
             (Operador::Menor, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::MenorInt),
+            (Operador::MenorIgual, Some(Tipo::Entero), Some(Tipo::Entero)) => {
+                Some(Opcode::MenorIgualInt)
+            }
             (Operador::Mayor, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::MayorInt),
+            (Operador::MayorIgual, Some(Tipo::Entero), Some(Tipo::Entero)) => {
+                Some(Opcode::MayorIgualInt)
+            },
             // Comparaciones: Decimal-Decimal
             (Operador::IgualIgual, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
                 Some(Opcode::IgualFloat)
@@ -943,13 +967,45 @@ impl BytecodeGenerator {
         None
     }
 
-    /// Emite bytecode para extraer campos de un constructor según subpatrones
-    fn emitir_subpatrones_constructor(&mut self, subpatrones: &[Patron]) {
+    /// Busca (nombre_enum, tag) de una variante de enum por su nombre.
+    /// Usado para construir valores de enum: `Heroe("Iron", 90)`.
+    fn buscar_variante_enum(&self, nombre_constructor: &str) -> Option<(String, usize)> {
+        for (enum_nombre, variantes) in &self.enum_variantes {
+            for (i, (vname, _)) in variantes.iter().enumerate() {
+                if vname == nombre_constructor {
+                    return Some((enum_nombre.clone(), i));
+                }
+            }
+        }
+        None
+    }
+
+    /// Emite la llamada final: si `nombre` es una variable local (closure o
+    /// callback recibido como parámetro), emite `CallClosure(var_idx, nargs)`;
+    /// si es una función conocida, emite `Call(nombre_real, nargs)`.
+    fn emitir_llamada_despacho(&mut self, nombre: &str, nombre_real: &str, nargs: usize) {
+        if let Some(&var_idx) = self.var_indices.get(nombre) {
+            self.emitir(Opcode::CallClosure(var_idx, nargs));
+        } else {
+            self.emitir(Opcode::Call(Arc::from(nombre_real), nargs));
+        }
+    }
+
+    /// Emite bytecode para extraer campos de un constructor según subpatrones.
+    ///
+    /// Preserva el objeto original en la pila (Dup por cada extracción) para
+    /// que un literal que no coincida salte a `label_fail` con la pila en
+    /// `[objeto]` (así el siguiente brazo del match puede intentar matchear).
+    fn emitir_subpatrones_constructor(&mut self, subpatrones: &[Patron], label_fail: usize) {
         for (i, sub) in subpatrones.iter().enumerate() {
+            // La posición 0 del objeto de enum guarda el tag; los campos
+            // empiezan en 1 (convención de CheckTag).
+            let campo = i + 1;
             match sub {
                 Patron::Variable(nombre) => {
-                    // Extraer campo i-ésimo y asignar a variable
-                    self.emitir(Opcode::ExtractField(i));
+                    // Duplicar el objeto, extraer campo i-ésimo y asignar a variable
+                    self.emitir(Opcode::Dup);
+                    self.emitir(Opcode::ExtractField(campo));
                     self.var_indices.entry(nombre.clone()).or_insert_with(|| {
                         let idx = self.var_counter;
                         self.var_counter += 1;
@@ -959,20 +1015,29 @@ impl BytecodeGenerator {
                 }
                 Patron::Ignorar => {
                     // Extraer campo i-ésimo y descartar
-                    self.emitir(Opcode::ExtractField(i));
+                    self.emitir(Opcode::Dup);
+                    self.emitir(Opcode::ExtractField(campo));
                     self.emitir(Opcode::Pop);
                 }
                 Patron::Constructor(_, sub_sub) => {
-                    // Constructor anidado: extraer campo y luego procesar recursivamente
-                    self.emitir(Opcode::ExtractField(i));
-                    self.emitir_subpatrones_constructor(sub_sub);
-                    // Pop del objeto extraído
+                    // Constructor anidado: duplicar, extraer campo y procesar recursivamente
+                    self.emitir(Opcode::Dup);
+                    self.emitir(Opcode::ExtractField(campo));
+                    self.emitir_subpatrones_constructor(sub_sub, label_fail);
+                    // Pop del objeto extraído (el original queda preservado por el Dup)
                     self.emitir(Opcode::Pop);
                 }
-                Patron::Literal(_) => {
-                    // Patrón literal en subpatrón: extraer campo y descartar (no implementado completamente)
-                    self.emitir(Opcode::ExtractField(i));
-                    self.emitir(Opcode::Pop);
+                Patron::Literal(valor) => {
+                    // Verificar que el campo i-ésimo coincida con el literal.
+                    // Pila: [obj] → Dup → [obj, obj'] → ExtractField → [obj, campo]
+                    // → literal → [obj, campo, lit] → Igual → [obj, bool].
+                    self.emitir(Opcode::Dup);
+                    self.emitir(Opcode::ExtractField(campo));
+                    self.generar_expresion(valor);
+                    self.emitir(Opcode::Igual);
+                    // JumpSiFalso consume el bool: si no coincide salta a
+                    // label_fail dejando [obj] (el original preservado por el Dup).
+                    self.emitir(Opcode::JumpSiFalso(label_fail));
                 }
             }
         }
@@ -1356,7 +1421,12 @@ impl BytecodeGenerator {
                         self.emitir(Opcode::Print);
                     }
                 } else if nombre == "BD" {
-                    // No implementado
+                    // BD(especificación) → abrir conexión SQLite (nativa "BD").
+                    // Ej: BD("sqlite:memoria") abre una base en memoria.
+                    for arg in argumentos {
+                        self.generar_expresion(arg);
+                    }
+                    self.emitir(Opcode::Call(Arc::from("BD"), argumentos.len()));
                 } else if self.generar_builtin(nombre, argumentos) {
                     // Built-in function handled
                 } else if nombre.contains('.') {
@@ -1396,7 +1466,7 @@ impl BytecodeGenerator {
                         .map(|arg| self.inferir_tipo_expresion(arg))
                         .collect();
                     let nombre_real = self.resolver_nombre_mangled(nombre, &tipos_args);
-                    self.emitir(Opcode::Call(Arc::from(nombre_real.as_str()), argumentos.len()));
+                    self.emitir_llamada_despacho(nombre, &nombre_real, argumentos.len());
                     // Las funciones nativas (como _imprimir_error) dejan su valor de retorno
                     // en la pila. Para llamadas a nivel de declaración, descartamos ese valor.
                     // Forja functions are balanced (no return value pushed), so Pop is safe
@@ -1620,6 +1690,30 @@ impl BytecodeGenerator {
                         self.generar_expresion(arg);
                     }
                     self.emitir(Opcode::CallMethod(method_name, argumentos.len()));
+                } else if let Some((enum_nombre, tag)) = self.buscar_variante_enum(nombre) {
+                    // Construcción de variante de enum con datos:
+                    //   Heroe("Iron", 90) → objeto con campos_vec = [tag, campo0, campo1]
+                    let tmp: Arc<str> =
+                        Arc::from(format!("__enum_{}_{}", enum_nombre, self.label_counter).as_str());
+                    self.label_counter += 1;
+                    self.emitir(Opcode::NewObject(Arc::from(enum_nombre.as_str())));
+                    self.emitir(Opcode::Declare(tmp.clone(), true));
+                    // tag en posición 0 (convención de CheckTag)
+                    self.emitir(Opcode::PushEntero(tag as i64));
+                    self.emitir(Opcode::Dup);
+                    self.emitir(Opcode::Load(tmp.clone()));
+                    self.emitir(Opcode::SetFieldIdx(0));
+                    self.emitir(Opcode::Pop);
+                    // campos en posiciones 1..N
+                    for (i, arg) in argumentos.iter().enumerate() {
+                        self.generar_expresion(arg);
+                        self.emitir(Opcode::Dup);
+                        self.emitir(Opcode::Load(tmp.clone()));
+                        self.emitir(Opcode::SetFieldIdx(i + 1));
+                        self.emitir(Opcode::Pop);
+                    }
+                    // Dejar el objeto en el stack
+                    self.emitir(Opcode::Load(tmp));
                 } else {
                     // Verificar si la función es asincrona → usar ThreadSpawn en vez de Call
                     if self.funciones_asincronas.contains(nombre.as_str()) {
@@ -1638,7 +1732,7 @@ impl BytecodeGenerator {
                             .map(|arg| self.inferir_tipo_expresion(arg))
                             .collect();
                         let nombre_real = self.resolver_nombre_mangled(nombre, &tipos_args);
-                        self.emitir(Opcode::Call(Arc::from(nombre_real.as_str()), argumentos.len()));
+                        self.emitir_llamada_despacho(nombre, &nombre_real, argumentos.len());
                     }
                 }
             }
@@ -1826,22 +1920,27 @@ impl BytecodeGenerator {
 
                                 if !es_ultimo {
                                     self.emitir(Opcode::Dup);
-                                }
-                                self.emitir(Opcode::CheckTag(tag));
-
-                                if !es_ultimo {
+                                    self.emitir(Opcode::CheckTag(tag));
                                     let label_next = self.nueva_label();
                                     self.emitir(Opcode::JumpSiFalso(label_next));
-                                    self.emitir_subpatrones_constructor(subpatrones);
+                                    self.emitir_subpatrones_constructor(subpatrones, label_next);
                                     self.emitir(Opcode::Pop);
                                     self.generar_cuerpo_match(&brazo.cuerpo);
                                     self.emitir(Opcode::Jump(label_end));
                                     self.emitir(Opcode::Label(label_next));
                                 } else {
-                                    // Último brazo: extraer campos y ejecutar cuerpo
-                                    self.emitir_subpatrones_constructor(subpatrones);
+                                    // Último brazo (fallback): sin CheckTag para no
+                                    // consumir el objeto; extraer campos verificando
+                                    // literales. Si un literal no coincide, el match
+                                    // produce Nulo.
+                                    let label_nomatch = self.nueva_label();
+                                    self.emitir_subpatrones_constructor(subpatrones, label_nomatch);
                                     self.emitir(Opcode::Pop);
                                     self.generar_cuerpo_match(&brazo.cuerpo);
+                                    self.emitir(Opcode::Jump(label_end));
+                                    self.emitir(Opcode::Label(label_nomatch));
+                                    self.emitir(Opcode::Pop);
+                                    self.emitir(Opcode::PushNulo);
                                 }
                             }
                         }
@@ -1851,18 +1950,23 @@ impl BytecodeGenerator {
             }
 
             Expresion::Closure { parametros, cuerpo } => {
-                // TODO: implementar bytecode para closures
-                let nombre = Arc::from(format!("__closure_{}", self.label_counter).as_str());
+                // Función anónima: se define como FunctionDef y el VALOR del
+                // closure es el nombre de la función (para llamadas indirectas
+                // como mapa(lista, func(x) { ... }) → callback(...)).
+                let nombre: Arc<str> =
+                    Arc::from(format!("__closure_{}", self.label_counter).as_str());
                 self.label_counter += 1;
                 let param_names: Vec<Arc<str>> = parametros
                     .iter()
                     .map(|p| Arc::from(p.nombre.as_str()))
                     .collect();
-                self.emitir(Opcode::FunctionDef(nombre, param_names));
+                self.emitir(Opcode::FunctionDef(nombre.clone(), param_names));
                 for d in cuerpo {
                     self.generar_declaracion(d);
                 }
                 self.emitir(Opcode::Return);
+                // El valor del closure: el nombre de la función como Texto
+                self.emitir(Opcode::PushTexto(nombre));
             }
 
             Expresion::Index { objeto, indice } => {
@@ -3066,6 +3170,9 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             Opcode::CheckTag(idx) | Opcode::ExtractField(idx) => {
             bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
+            Opcode::SetFieldIdx(idx) => {
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+            }
             // Design by Contract opcodes — payload: 4 bytes (usize)
             Opcode::CheckPre(idx)
             | Opcode::CheckPost(idx)
@@ -3089,6 +3196,10 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
             bytes.extend_from_slice(&idx.to_le_bytes());
             bytes.extend_from_slice(&(*nargs as u32).to_le_bytes());
+            }
+            Opcode::CallClosure(var_idx, nargs) => {
+                bytes.extend_from_slice(&(*var_idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*nargs as u32).to_le_bytes());
             }
             Opcode::SocketPoll(s) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
@@ -3151,6 +3262,8 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::SetField(_) => 63,
         Opcode::GetField(_) => 64,
         Opcode::CallMethod(_, _) => 65,
+        Opcode::SetFieldIdx(_) => 66,
+        Opcode::CallClosure(_, _) => 67,
         Opcode::TailCall(_, _) => 255,
         Opcode::ArrayNew(_) => 80,
         Opcode::ArrayGet => 81,
@@ -3227,8 +3340,11 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::MulFloat => 178,
         Opcode::DivFloat => 179,
         Opcode::IgualInt => 180,
+        Opcode::DiferenteInt => 198,
         Opcode::MenorInt => 181,
+        Opcode::MenorIgualInt => 199,
         Opcode::MayorInt => 182,
+        Opcode::MayorIgualInt => 200,
         Opcode::IgualFloat => 183,
         Opcode::DiferenteFloat => 184,
         Opcode::MenorFloat => 185,
@@ -3301,6 +3417,8 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         63 => Some(Opcode::SetField(Arc::from(""))),
         64 => Some(Opcode::GetField(Arc::from(""))),
         65 => Some(Opcode::CallMethod(Arc::from(""), 0)),
+        66 => Some(Opcode::SetFieldIdx(0)),
+        67 => Some(Opcode::CallClosure(0, 0)),
         80 => Some(Opcode::ArrayNew(0)),
         81 => Some(Opcode::ArrayGet),
         82 => Some(Opcode::ArraySet),
@@ -3380,6 +3498,10 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         195 => Some(Opcode::ThreadSpawn(Arc::from(""), 0)),
         196 => Some(Opcode::CallNative(Arc::from(""), 0)),
         197 => Some(Opcode::SocketPoll(Arc::from(""))),
+        // Opcodes de comparación Entero-Entero especializados (FASE 6A)
+        198 => Some(Opcode::DiferenteInt),
+        199 => Some(Opcode::MenorIgualInt),
+        200 => Some(Opcode::MayorIgualInt),
         _ => None,
     }
 }
@@ -4146,6 +4268,32 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                     140 => Opcode::CheckTag(idx),
                     _ => Opcode::ExtractField(idx),
                 });
+            }
+            // SetFieldIdx (construcción de variantes de enum) — 4 bytes payload
+            66 => {
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
+                pos += 4;
+                opcodes.push(Opcode::SetFieldIdx(idx));
+            }
+            // CallClosure (var_idx, nargs) — 8 bytes payload (2 × u32)
+            67 => {
+                if pos + 8 > data.len() {
+                    return None;
+                }
+                let var_idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
+                pos += 4;
+                let nargs =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
+                pos += 4;
+                opcodes.push(Opcode::CallClosure(var_idx, nargs));
             }
             // Design by Contract opcodes — 4 bytes payload (usize)
             130 | 131 | 132 | 133 => {
