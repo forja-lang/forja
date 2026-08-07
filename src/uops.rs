@@ -51,6 +51,10 @@ pub enum Uop {
     NewObject(String),
     SetField(String),
     GetField(String),
+    /// Asigna campo i-ésimo por posición (construcción de variantes de enum)
+    SetFieldIdx(usize),
+    /// Llamada indirecta a closure: variable local con el nombre de la función
+    CallClosure(usize, usize),
     CallMethod(String, usize),
 
     // === Array/Map operations ===
@@ -195,6 +199,8 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::NewObject(c) => Uop::NewObject(c.to_string()),
         Opcode::SetField(c) => Uop::SetField(c.to_string()),
         Opcode::GetField(c) => Uop::GetField(c.to_string()),
+        Opcode::SetFieldIdx(idx) => Uop::SetFieldIdx(*idx),
+        Opcode::CallClosure(var_idx, nargs) => Uop::CallClosure(*var_idx, *nargs),
         Opcode::CallMethod(m, n) => Uop::CallMethod(m.to_string(), *n),
 
         // Arrays & Maps
@@ -227,8 +233,11 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
 
         // Opcodes especializados
         Opcode::IgualInt => Uop::Igual,
+        Opcode::DiferenteInt => Uop::Diferente,
         Opcode::MenorInt => Uop::Menor,
+        Opcode::MenorIgualInt => Uop::MenorIgual,
         Opcode::MayorInt => Uop::Mayor,
+        Opcode::MayorIgualInt => Uop::MayorIgual,
         Opcode::IgualFloat => Uop::Igual,
         Opcode::DiferenteFloat => Uop::Diferente,
         Opcode::MenorFloat => Uop::Menor,
