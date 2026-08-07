@@ -1273,6 +1273,35 @@ pub(crate) fn obtener_texto(vm: &mut ForjaFast, val: ValorFast) -> Result<String
     }
 }
 
+/// Convierte un carácter (texto de 1 char) a su código Unicode (entero).
+/// args[0]: texto de un solo carácter
+fn native_a_codigo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Err(ErrFast::TipoInv("a_codigo requiere 1 argumento: carácter (texto)".into()));
+    }
+    let texto = obtener_texto(vm, args[0])?;
+    let ch = texto.chars().next().ok_or_else(|| {
+        ErrFast::TipoInv("a_codigo: cadena vacía, se esperaba un carácter".into())
+    })?;
+    Ok(ValorFast::entero(ch as i64))
+}
+
+/// Convierte un código Unicode (entero) a su carácter correspondiente (texto).
+/// args[0]: entero con el código Unicode
+fn native_a_caracter(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Err(ErrFast::TipoInv("a_caracter requiere 1 argumento: código (entero)".into()));
+    }
+    let codigo = obtener_entero(args[0])?;
+    let ch = char::from_u32(codigo as u32).ok_or_else(|| {
+        ErrFast::TipoInv(format!("a_caracter: código Unicode inválido: {}", codigo))
+    })?;
+    let mut buf = [0u8; 4];
+    let s = ch.encode_utf8(&mut buf);
+    let idx = vm.alloc_str(Arc::from(s));
+    Ok(ValorFast::texto(idx))
+}
+
 pub(crate) fn obtener_entero(val: ValorFast) -> Result<i64, ErrFast> {
     if val.es_entero() {
         Ok(val.a_entero() as i64)
