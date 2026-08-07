@@ -125,13 +125,15 @@ pub fn get_uses_defs(instr: &RegInstruction) -> (Vec<(VirtReg, RegClass)>, Vec<V
     }
 }
 
-/// Calcula live intervals desde el IR register-based
+/// Calcula live intervals desde el IR register-based.
+/// También registra las posiciones de uso de cada variable para soportar interval splitting.
 pub fn compute_live_intervals(prog: &RegProgram) -> Vec<crate::register_alloc::LiveInterval> {
     use crate::register_alloc::LiveInterval;
     use crate::register_alloc::RegClass as RClass;
     use std::collections::HashMap;
 
-    let mut intervals: HashMap<VirtReg, (usize, usize, RClass)> = HashMap::new();
+    // (start, end, class, posiciones_de_uso)
+    let mut intervals: HashMap<VirtReg, (usize, usize, RClass, Vec<usize>)> = HashMap::new();
     let mut instr_idx = 0;
 
     for block in &prog.blocks {
@@ -140,15 +142,16 @@ pub fn compute_live_intervals(prog: &RegProgram) -> Vec<crate::register_alloc::L
             for vreg in defs {
                 intervals
                     .entry(vreg)
-                    .or_insert_with(|| (instr_idx, instr_idx, RClass::Integer))
+                    .or_insert_with(|| (instr_idx, instr_idx, RClass::Integer, Vec::new()))
                     .1 = instr_idx;
             }
             for (vreg, class) in uses {
                 let entry = intervals
                     .entry(vreg)
-                    .or_insert_with(|| (instr_idx, instr_idx, class));
+                    .or_insert_with(|| (instr_idx, instr_idx, class, Vec::new()));
                 entry.0 = entry.0.min(instr_idx);
                 entry.1 = instr_idx;
+                entry.3.push(instr_idx);
             }
             instr_idx += 1;
         }
@@ -157,26 +160,28 @@ pub fn compute_live_intervals(prog: &RegProgram) -> Vec<crate::register_alloc::L
         for vreg in defs {
             intervals
                 .entry(vreg)
-                .or_insert_with(|| (instr_idx, instr_idx, RClass::Integer))
+                .or_insert_with(|| (instr_idx, instr_idx, RClass::Integer, Vec::new()))
                 .1 = instr_idx;
         }
         for (vreg, class) in uses {
             let entry = intervals
                 .entry(vreg)
-                .or_insert_with(|| (instr_idx, instr_idx, class));
+                .or_insert_with(|| (instr_idx, instr_idx, class, Vec::new()));
             entry.0 = entry.0.min(instr_idx);
             entry.1 = instr_idx;
+            entry.3.push(instr_idx);
         }
         instr_idx += 1;
     }
 
     intervals
         .into_iter()
-        .map(|(vreg, (start, end, class))| LiveInterval {
+        .map(|(vreg, (start, end, class, uses))| LiveInterval {
             virt_reg: vreg,
             start,
             end: end + 1,
             reg_class: class,
+            uses,
         })
         .collect()
 }
