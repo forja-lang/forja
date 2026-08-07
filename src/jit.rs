@@ -110,7 +110,65 @@ mod mem {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), target_os = "linux"))]
+mod mem {
+    extern "C" {
+        fn mmap(
+            addr: *mut u8,
+            length: usize,
+            prot: i32,
+            flags: i32,
+            fd: i32,
+            offset: i64,
+        ) -> *mut u8;
+        fn mprotect(addr: *mut u8, length: usize, prot: i32) -> i32;
+        fn munmap(addr: *mut u8, length: usize) -> i32;
+    }
+    const PROT_NONE: i32 = 0;
+    const PROT_READ: i32 = 1;
+    const PROT_WRITE: i32 = 2;
+    const PROT_EXEC: i32 = 4;
+    const MAP_PRIVATE: i32 = 0x02;
+    const MAP_ANONYMOUS: i32 = 0x20;
+    pub fn alloc_exec(size: usize) -> Result<*mut u8, String> {
+        if size == 0 || size > 1048576 {
+            return Err("bad size".into());
+        }
+        // SAFETY: mmap con MAP_PRIVATE|MAP_ANONYMOUS reserva memoria rw sin vincular a un archivo.
+        unsafe {
+            let p = mmap(
+                std::ptr::null_mut(),
+                size,
+                PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS,
+                -1,
+                0,
+            );
+            if p == (-1isize as *mut u8) {
+                return Err("mmap failed".into());
+            }
+            Ok(p)
+        }
+    }
+    /// Cambia la protección a PROT_READ | PROT_EXEC después de escribir el código.
+    pub fn make_exec(p: *mut u8, size: usize) -> Result<(), String> {
+        // SAFETY: mprotect cambia los permisos de una región mapeada con mmap.
+        unsafe {
+            if mprotect(p, size, PROT_READ | PROT_EXEC) != 0 {
+                return Err("mprotect failed".into());
+            }
+            Ok(())
+        }
+    }
+    pub fn free_exec(p: *mut u8, size: usize) {
+        // SAFETY: munmap libera memoria mapeada con mmap; el tamaño debe coincidir.
+        unsafe {
+            munmap(p, size);
+        }
+    }
+}
+
+#[cfg(all(not(target_os = "windows"), not(target_os = "linux")))]
 mod mem {
     pub fn alloc_exec(_: usize) -> Result<*mut u8, String> {
         Err("no JIT".into())

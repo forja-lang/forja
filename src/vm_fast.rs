@@ -8855,22 +8855,52 @@ mod tests {
         assert_eq!(out[0], "inf");
     }
 
+    // Programa de diagnóstico: aproximación de pi por la serie de Leibniz (50 términos).
+    const LB50_SRC: &str = "variable suma = 0.0
+variable divisor = 1.0
+variable i = 0
+mientras (i < 50) {
+    suma = suma + 1.0 / divisor
+    divisor = divisor + 4.0
+    i = i + 1
+}
+variable pi = suma * 4.0
+escribir(pi)
+";
+
+    // Programa de diagnóstico: variante de la serie de Leibniz con términos alternados.
+    const LEIBNIZ_TEST_SRC: &str = "constante N = 100
+
+variable suma = 0.0
+variable divisor_pos = 1.0
+variable divisor_neg = 3.0
+variable i = 0
+
+mientras (i < 50) {
+    suma = suma + 1.0 / divisor_pos
+    suma = suma - 1.0 / divisor_neg
+    divisor_pos = divisor_pos + 4.0
+    divisor_neg = divisor_neg + 4.0
+    i = i + 1
+}
+
+variable pi = suma * 4.0
+escribir(pi)
+";
+
     #[test]
     fn dump_bytecode_leibniz_variants() {
         use std::io::Write;
-        for (nombre, ruta) in [
-            ("lb50", "scratch/lb.fa"),
-            ("leibniz_test", "benchmarks/leibniz_test.fa"),
-        ] {
-            let contenido =
-                std::fs::read_to_string(format!("{}/{}", env!("CARGO_MANIFEST_DIR"), ruta))
-                    .expect("leer archivo");
-            let bc = compilar_programa(&contenido);
+        for (nombre, contenido) in [("lb50", LB50_SRC), ("leibniz_test", LEIBNIZ_TEST_SRC)] {
+            let bc = compilar_programa(contenido);
             let mut out = String::new();
             for (i, op) in bc.iter().enumerate() {
                 out.push_str(&format!("{:3} {:?}\n", i, op));
             }
             let destino = format!("{}/scratch/{}_bc.txt", env!("CARGO_MANIFEST_DIR"), nombre);
+            if let Some(dir) = std::path::Path::new(&destino).parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
             let mut f = std::fs::File::create(&destino).expect("crear dump");
             f.write_all(out.as_bytes()).expect("escribir");
         }
@@ -8879,14 +8909,8 @@ mod tests {
     #[test]
     fn dump_bytecode_post_quickening() {
         use std::io::Write;
-        for (nombre, ruta) in [
-            ("lb50", "scratch/lb.fa"),
-            ("leibniz_test", "benchmarks/leibniz_test.fa"),
-        ] {
-            let contenido =
-                std::fs::read_to_string(format!("{}/{}", env!("CARGO_MANIFEST_DIR"), ruta))
-                    .expect("leer archivo");
-            let bc = compilar_programa(&contenido);
+        for (nombre, contenido) in [("lb50", LB50_SRC), ("leibniz_test", LEIBNIZ_TEST_SRC)] {
+            let bc = compilar_programa(contenido);
             let mut vm = ForjaFast::new();
             vm.show_bytecode = true;
             vm.cargar_bytecode(bc);
@@ -8899,6 +8923,9 @@ mod tests {
                 env!("CARGO_MANIFEST_DIR"),
                 nombre
             );
+            if let Some(dir) = std::path::Path::new(&destino).parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
             let mut f = std::fs::File::create(&destino).expect("crear dump");
             f.write_all(out.as_bytes()).expect("escribir");
         }
@@ -8906,14 +8933,8 @@ mod tests {
 
     #[test]
     fn trace_lb50_vs_leibniz_test() {
-        for (nombre, ruta) in [
-            ("lb50", "scratch/lb.fa"),
-            ("leibniz_test", "benchmarks/leibniz_test.fa"),
-        ] {
-            let contenido =
-                std::fs::read_to_string(format!("{}/{}", env!("CARGO_MANIFEST_DIR"), ruta))
-                    .expect("leer archivo");
-            let bc = compilar_programa(&contenido);
+        for (nombre, contenido) in [("lb50", LB50_SRC), ("leibniz_test", LEIBNIZ_TEST_SRC)] {
+            let bc = compilar_programa(contenido);
             let mut vm = ForjaFast::new();
             vm.show_bytecode = true;
             vm.cargar_bytecode(bc);
