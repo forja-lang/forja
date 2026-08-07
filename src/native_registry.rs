@@ -151,6 +151,7 @@ impl NativeRegistry {
         crate::native_sqlite::registrar_sqlite(&mut reg);
         #[cfg(feature = "h2-tls")]
         crate::native_h2_tls::registrar_tls(&mut reg);
+        reg.registrar_caracter_conversion();
         reg
     }
 
@@ -277,6 +278,12 @@ impl NativeRegistry {
         // ─── Codificación Base64 ─────────────────────────────────────────
         self.registrar("_base64_codificar", native_base64_codificar);
         self.registrar("_base64_decodificar", native_base64_decodificar);
+    }
+
+    fn registrar_caracter_conversion(&mut self) {
+        // ─── Conversión carácter ↔ código Unicode ────────────────────────
+        self.registrar("a_codigo", native_a_codigo);
+        self.registrar("a_caracter", native_a_caracter);
     }
 
     fn registrar_hash(&mut self) {
