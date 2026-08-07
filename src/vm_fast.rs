@@ -2469,24 +2469,32 @@ impl ForjaFast {
         );
         let mut tipos_var: Vec<Option<TipoInferido>> = vec![None; n_vars];
 
+        // Conjunto de índices que son variables GLOBALES (DeclareIdxGlobal).
+        // Solo estos cuentan para la auto-detección de fast-math.
+        let mut global_indices = std::collections::HashSet::new();
+
         for i in 0..self.bytecode.len() {
             // Clonamos para evitar borrow conflicts con self.bytecode[i]
             let op = self.bytecode[i].clone();
 
             match op {
                 // ── Asignaciones literales: inferir tipo exacto ─────────────
+                // NOTA: Los opcodes fusionados (DeclareEnteroOp, etc.) solo se
+                // generan para variables LOCALES (DeclareIdx). Las variables
+                // GLOBALES usan DeclareIdxGlobal y nunca se fusionan. Por eso,
+                // solo escribimos tipos_var si el índice NO es global.
                 Opcode::DeclareEnteroOp(idx, _) | Opcode::StoreEnteroOp(idx, _) => {
-                    if idx < tipos_var.len() {
+                    if idx < tipos_var.len() && !global_indices.contains(&idx) {
                         tipos_var[idx] = Some(TipoInferido::Entero);
                     }
                 }
                 Opcode::DeclareBooleanoOp(idx, _) => {
-                    if idx < tipos_var.len() {
+                    if idx < tipos_var.len() && !global_indices.contains(&idx) {
                         tipos_var[idx] = Some(TipoInferido::Booleano);
                     }
                 }
                 Opcode::DeclareFloatOp(idx, _) | Opcode::StoreFloatOp(idx, _) => {
-                    if idx < tipos_var.len() {
+                    if idx < tipos_var.len() && !global_indices.contains(&idx) {
                         tipos_var[idx] = Some(TipoInferido::Flotante);
                     }
                 }
@@ -2543,8 +2551,33 @@ impl ForjaFast {
 
                 // ── DeclareIdx → inferir tipo desde opcode anterior ──
                 // NOTA: No fusionamos opcodes aquí (eso ya lo hace optimizar_indices).
-                // Incluye DeclareIdxGlobal (variables de módulo).
-                Opcode::DeclareIdx(idx, _) | Opcode::DeclareIdxGlobal(idx, _) => {
+                Opcode::DeclareIdx(idx, _) => {
+                    if idx < tipos_var.len() && !global_indices.contains(&idx) {
+                        let prev_tipo = if i > 0 {
+                            match &self.bytecode[i - 1] {
+                                Opcode::PushEntero(_)
+                                | Opcode::LoadIdxEntero(_)
+                                | Opcode::StoreEnteroOp(_, _) => Some(TipoInferido::Entero),
+                                Opcode::PushDecimal(_)
+                                | Opcode::LoadIdxFloat(_)
+                                | Opcode::DeclareFloatOp(_, _)
+                                | Opcode::StoreFloatOp(_, _) => Some(TipoInferido::Flotante),
+                                Opcode::PushBooleano(_) | Opcode::DeclareBooleanoOp(_, _) => {
+                                    Some(TipoInferido::Booleano)
+                                }
+                                Opcode::PushTexto(_) => Some(TipoInferido::Texto),
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        };
+                        if let Some(tipo) = prev_tipo {
+                            tipos_var[idx] = Some(tipo);
+                        }
+                    }
+                }
+                Opcode::DeclareIdxGlobal(idx, _) => {
+                    global_indices.insert(idx);
                     if idx < tipos_var.len() {
                         let prev_tipo = if i > 0 {
                             match &self.bytecode[i - 1] {
@@ -2722,23 +2755,23 @@ impl ForjaFast {
 
         // ── Fast-Math automático ─────────────────────────────────────────────
         // Si el usuario no forzó un override manual, activar fast-math cuando
-        // TODAS las variables con tipo inferido son flotantes (Decimal). Con esa
-        // garantía, quickening especializó todos los Load/Store/aritmética a las
-        // variantes float, así que los handlers fast-path son seguros.
+        // TODAS las variables GLOBALES con tipo inferido son flotantes (Decimal).
+        // Solo se revisan los índices de DeclareIdxGlobal (variables del
+        // programa); las variables locales/temps (DeclareIdx) comparten el
+        // mismo espacio numérico pero están en frames separados y no deben
+        // influir en la decisión de fast-math.
         if self.fast_math_manual.is_none() {
             let mut todo_float = false;
-            for t in &tipos_var {
-                match t {
-                    // Solo los tipos conocidos cuentan: si algún tipo conocido
-                    // NO es flotante, fast-math no aplica. Los índices
-                    // desconocidos (sin asignación literal analizable) se
-                    // ignoran (tipos_var se rellena a 64+ entradas).
-                    Some(TipoInferido::Flotante) => todo_float = true,
-                    Some(_) => {
-                        todo_float = false;
-                        break;
+            for &idx in &global_indices {
+                if let Some(t) = tipos_var.get(idx) {
+                    match t {
+                        Some(TipoInferido::Flotante) => todo_float = true,
+                        Some(_) => {
+                            todo_float = false;
+                            break;
+                        }
+                        None => {}
                     }
-                    None => {}
                 }
             }
             self.fast_math = todo_float;
