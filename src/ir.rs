@@ -373,6 +373,12 @@ impl IrBuilder {
         v
     }
 
+    pub fn emit_mod(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::Mod(lhs, rhs));
+        v
+    }
+
     pub fn emit_or(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
         let v = self.next_value();
         self.current_insts.push(Inst::Or(lhs, rhs));
@@ -423,7 +429,8 @@ impl IrBuilder {
         params: Vec<(SymId, IrType)>,
     ) -> SsaFunction {
         self.flush_block();
-        let entry = if self.blocks.is_empty() { 0 } else { 0 };
+        // El entry block siempre es el primero (índice 0)
+        let entry = 0;
         SsaFunction {
             name,
             return_type,
