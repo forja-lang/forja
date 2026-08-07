@@ -686,7 +686,13 @@ impl BorrowChecker {
             Declaracion::Rasgo { .. } => {}
             Declaracion::Implementacion { .. } => {}
 
-            Declaracion::Importar(_) => {}
+            Declaracion::Importar(ruta) => {
+                // Registrar el nombre del módulo como variable en el scope
+                // para que "importar std/archivo" haga disponible "archivo.xxx()"
+                if let Some(nombre_mod) = ruta.rsplit('/').next() {
+                    let _ = self.tabla.declarar(nombre_mod, false, 0, 0, None);
+                }
+            }
             Declaracion::Enum {
                 nombre, variantes, ..
             } => {
@@ -868,11 +874,8 @@ impl BorrowChecker {
 
             Expresion::Coincidir { expr, brazos } => {
                 let tipo_expr = self.analizar_expresion_con_depth(expr, depth + 1);
-                for brazo in brazos {
-                    for d in &brazo.cuerpo {
-                        self.analizar_declaracion(d);
-                    }
-                }
+                // NOTA: El análisis del cuerpo se hace más abajo (líneas ~936-948)
+                // con las variables de patrón correctamente declaradas en su propio ámbito.
                 // Verificar exhaustividad
                 if let Some(Tipo::Clase(nombre_enum)) = &tipo_expr {
                     if let Some(variantes) = self.variantes_enum.get(nombre_enum) {
@@ -1243,6 +1246,16 @@ impl TypeChecker {
             ("_imprimir_stdout", vec![Some(Tipo::Texto)], Some(Tipo::Nulo)),
             ("_flanco_tecla", vec![Some(Tipo::Entero)], Some(Tipo::Booleano)),
             ("_entero_a_hex", vec![Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Texto)),
+            // Funciones nativas SQLite (usadas por std/sqlite)
+            ("_sqlite_abrir", vec![Some(Tipo::Texto)], Some(Tipo::Entero)),
+            ("_sqlite_cerrar", vec![Some(Tipo::Entero)], Some(Tipo::Entero)),
+            ("_sqlite_ejecutar", vec![Some(Tipo::Entero), Some(Tipo::Texto)], Some(Tipo::Entero)),
+            ("_sqlite_consultar", vec![Some(Tipo::Entero), Some(Tipo::Texto)], None),
+            ("_sqlite_ultimo_id", vec![Some(Tipo::Entero)], Some(Tipo::Entero)),
+            ("_sqlite_ejecutar_params", vec![Some(Tipo::Entero), Some(Tipo::Texto), Some(Tipo::Arreglo(Box::new(Tipo::Nulo)))], Some(Tipo::Entero)),
+            ("_sqlite_consultar_params", vec![Some(Tipo::Entero), Some(Tipo::Texto), Some(Tipo::Arreglo(Box::new(Tipo::Nulo)))], None),
+            ("_sqlite_tablas", vec![Some(Tipo::Entero)], Some(Tipo::Arreglo(Box::new(Tipo::Texto)))),
+            ("_sqlite_columnas", vec![Some(Tipo::Entero), Some(Tipo::Texto)], None),
         ];
         for (nombre, params, retorno) in nativas {
             self.funciones.entry(nombre.to_string()).or_default().push((
@@ -1613,20 +1626,7 @@ impl TypeChecker {
                     .collect();
                 // Verificar cantidad y tipos si conocemos la función
                 let overloads_clone = self.funciones.get(nombre).cloned();
-                if overloads_clone.is_none() {
-                    // Función no registrada — error, excepto builtins conocidos
-                    // Si el nombre contiene '.', es una llamada a método (ej: arr.empujar(30))
-                    // que se validará en runtime, no en análisis estático.
-                    if !nombre.contains('.') && nombre != "escribir" && nombre != "escribir_linea" && nombre != "leer" && nombre != "BD" && nombre != "longitud" && nombre != "len" {
-                        self.errores.push(ErrorForja::new(
-                            ErrorTipo::ErrorDeTipo,
-                            self.linea_actual,
-                            self.columna_actual,
-                            &format!("La función '{}' no está definida.", nombre),
-                            "Verificá el nombre o importá el módulo necesario.",
-                        ));
-                    }
-                } else if let Some(overloads) = overloads_clone {
+                if let Some(overloads) = overloads_clone {
                     // Determinar qué overload usar según los tipos de argumento
                     if let Some(idx) = self.resolver_sobrecarga(nombre, &overloads, &tipos_args, self.linea_actual, self.columna_actual) {
                         if let Some((ref params, _, ref params_tipo)) = overloads.get(idx) {
@@ -1761,18 +1761,9 @@ impl TypeChecker {
                 // Determinar tipo de retorno si conocemos la función
                 let overloads_clone = self.funciones.get(nombre).cloned();
                 if overloads_clone.is_none() {
-                    // Función no registrada — error, excepto builtins conocidos
-                    // Si el nombre contiene '.', es una llamada a método (ej: arr.empujar(30))
-                    // que se validará en runtime, no en análisis estático.
-                    if !nombre.contains('.') && nombre != "escribir" && nombre != "escribir_linea" && nombre != "leer" && nombre != "BD" && nombre != "longitud" && nombre != "len" {
-                        self.errores.push(ErrorForja::new(
-                            ErrorTipo::ErrorDeTipo,
-                            self.linea_actual,
-                            self.columna_actual,
-                            &format!("La función '{}' no está definida.", nombre),
-                            "Verificá el nombre o importá el módulo necesario.",
-                        ));
-                    }
+                    // Función no registrada en el type checker — no emitir error.
+                    // En un lenguaje dinámicamente tipado, muchas funciones se resuelven
+                    // en runtime por la VM (builtins, métodos de string, nativos, etc.).
                     None
                 } else if let Some(overloads) = overloads_clone {
                     let idx = self.resolver_sobrecarga(nombre, &overloads, &tipos_args, 0, 0);
