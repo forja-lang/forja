@@ -1,13 +1,10 @@
-use crate::arena::Arena;
 use crate::error::{ErrorForja, ErrorTipo};
 use crate::token::{Token, TokenKind};
 
 /// Tokenizador/Lexer para el lenguaje Forja (fa)
 ///
-/// Integra un `Arena` allocator para reducir overhead de heap allocations
-/// en hot paths del lexer. Un `string_buf` reutilizable evita crear/destruir
-/// Strings temporales en cada llamada a `leer_identificador_o_keyword()` y
-/// `leer_numero()`.
+/// Un `string_buf` reutilizable evita crear/destruir Strings temporales en
+/// cada llamada a `leer_identificador_o_keyword()` y `leer_numero()`.
 pub struct Lexer {
     source: Vec<char>,
     pos: usize,
@@ -15,8 +12,6 @@ pub struct Lexer {
     columna: usize,
     /// Buffer de tokens pendientes para interpolación de strings
     tokens_pendientes: Vec<Token>,
-    /// Arena allocator para reducir allocations individuales de heap
-    arena: Arena,
     /// Buffer reutilizable para construir strings de tokens (evita allocations
     /// repetidas de String en hot paths como identificadores y números)
     string_buf: String,
@@ -33,14 +28,8 @@ impl Lexer {
             linea: 1,
             columna: 1,
             tokens_pendientes: Vec::with_capacity(estimated_tokens / 4),
-            arena: Arena::new(),
             string_buf: String::with_capacity(64),
         }
-    }
-
-    /// Retorna una referencia a la arena del lexer (para uso externo si necesario)
-    pub fn arena(&self) -> &Arena {
-        &self.arena
     }
 
     /// Procesa todo el código fuente y devuelve un Vec de Tokens
