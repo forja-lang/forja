@@ -516,7 +516,12 @@ pub fn target_triple() -> &'static str {
 }
 
 fn escape_string(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\0A")
+    s.replace('\\', "\\\\")
+     .replace('"', "\\\"")
+     .replace('\n', "\\0A")
+     .replace('\r', "\\0D")
+     .replace('\t', "\\09")
+     .replace('\0', "\\00")
 }
 
 // === 20G: Enums ===
