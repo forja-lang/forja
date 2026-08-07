@@ -557,8 +557,10 @@ impl NativeJIT {
 
         let mut c = CodeBuf::new();
 
-        // prologue: push rbx; push r14
-        c.bytes.extend_from_slice(&[0x53, 0x41, 0x56]);
+        // prologue: push rbp; push rbx; push r14; mov rbp, rsp
+        c.bytes.push(0x55);                                // push rbp
+        c.bytes.extend_from_slice(&[0x53, 0x41, 0x56]);    // push rbx; push r14
+        c.bytes.extend_from_slice(&[0x48, 0x89, 0xE5]);    // mov rbp, rsp
         // mov rbx, rcx (vars ptr)
         c.bytes.extend_from_slice(&[0x48, 0x89, 0xcb]);
         // mov r14, rdx (output ptr)
@@ -1778,13 +1780,17 @@ impl NativeJIT {
             i += 1;
         }
 
-        // epilogue
+        // epilogue: restaurar frame pointer + callee-saved + ret
+        // Orden inverso al prologue: push rbp; push rbx; push r14
         if sd > 0 {
             c.pop_r(0);
         } else {
-            c.bytes.extend_from_slice(&[0x48, 0x31, 0xc0]);
-        } // xor rax,rax
-        c.bytes.extend_from_slice(&[0x41, 0x5e, 0x5b]); // pop r14; pop rbx
+            c.bytes.extend_from_slice(&[0x48, 0x31, 0xc0]); // xor rax, rax
+        }
+        c.bytes.extend_from_slice(&[0x48, 0x89, 0xEC]);    // mov rsp, rbp
+        c.bytes.extend_from_slice(&[0x41, 0x5e]);           // pop r14
+        c.bytes.extend_from_slice(&[0x5b]);                 // pop rbx
+        c.bytes.push(0x5d);                                 // pop rbp
         c.ret();
 
         let code = c.finish();
@@ -1863,10 +1869,16 @@ impl NativeJIT {
         let spill_count = allocator.spill_count();
 
         // 4. Generar código nativo usando las asignaciones de registros
-        let reg_code = crate::codegen_reg::emit_program(
+        let call_addresses: HashMap<String, u64> = self
+            .compiled
+            .iter()
+            .map(|(n, cc)| (n.clone(), cc.ptr as u64))
+            .collect();
+        let reg_code = crate::codegen_reg::emit_program_with_calls(
             &reg_prog,
             allocator.get_assignments(),
             spill_count,
+            &call_addresses,
         );
 
         let code_size = reg_code.len();
@@ -1893,6 +1905,11 @@ impl NativeJIT {
             code_size,
             name
         );
+
+        self.compiled
+            .insert(name.to_string(), CompiledCode { ptr, size: code_size });
+        self.register_function(name);
+        self.mark_compiled(name, Tier::JitSimple);
 
         Ok(ptr)
     }
