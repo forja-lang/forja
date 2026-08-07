@@ -167,6 +167,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - Traducción del comando `Build` → `Compilar`
 
 ### Cambiado
+- **Eliminada la VM v1 original** (`src/vm.rs`, `ForjaVM`): ForjaFast (v5) es ahora la única VM de interpretación junto con la VM Direct Threading (`vm_jit.rs`). Se eliminaron la opción `--vm vm` y la VM original del benchmark `medir`; `ejecutar_vm`, `repl` y `selfrun` ahora usan ForjaFast, y `homogeneizar_exacto` se movió a `vm_jit.rs`
 - Versión bump a **9.0.0** en `Cargo.toml`, Cargo.lock y los runtimes (forja, forja-rt, forja-rt-gui)
 - `vm_fast` integra GC generacional, frames stack-based, fast-math y bump allocator
 - Integración de PGO en `vm_fast` (recolección en ejecución, aplicación con pre-especialización)

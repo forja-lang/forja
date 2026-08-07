@@ -2,7 +2,6 @@
 // Opcodes como u8 planos con operandos en arrays paralelos
 // Label resolution simplificada
 
-use crate::vm::homogeneizar_exacto;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -1612,5 +1611,27 @@ impl ForjaDT {
             },
         }
         Ok(())
+    }
+}
+
+/// Homogeneiza dos valores Exacto a la misma escala.
+/// Retorna (a_ajustado, b_ajustado, escala_comun).
+/// Retorna OverflowAritmetico si ocurre desbordamiento al homogeneizar escalas.
+pub fn homogeneizar_exacto(
+    a: i128,
+    sa: u32,
+    b: i128,
+    sb: u32,
+) -> Result<(i128, i128, u32), ErrorDT> {
+    if sa == sb {
+        Ok((a, b, sa))
+    } else if sa < sb {
+        let factor = 10_i128.wrapping_pow(sb - sa);
+        let a_adj = a.checked_mul(factor).ok_or(ErrorDT::OverflowAritmetico)?;
+        Ok((a_adj, b, sb))
+    } else {
+        let factor = 10_i128.wrapping_pow(sa - sb);
+        let b_adj = b.checked_mul(factor).ok_or(ErrorDT::OverflowAritmetico)?;
+        Ok((a, b_adj, sa))
     }
 }

@@ -1,6 +1,5 @@
 /// Detección de bytecode incrustado o código fuente GUI al final del ejecutable
 /// Permite que forja.exe funcione como runtime autónomo
-use crate::vm::ForjaVM;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 
@@ -56,35 +55,15 @@ pub fn try_selfrun() -> Option<()> {
         println!("OPCODES: {:?}", opcodes);
     }
 
-    // Detectar si se especificó el modo de VM mediante --vm (por defecto es ForjaFast)
-    let args: Vec<String> = std::env::args().collect();
-    let mut use_fast = true;
-    let mut i = 0;
-    while i < args.len() {
-        if args[i] == "--vm" && i + 1 < args.len() {
-            if args[i + 1] == "vm" {
-                use_fast = false;
-            }
-            break;
-        }
-        i += 1;
-    }
-
-    // Ejecutar en la VM seleccionada
-    if use_fast {
-        let mut vm = crate::vm_fast::ForjaFast::new();
-        vm.cargar_bytecode(opcodes);
-        // No propagar el error de ejecución: algunos bytecodes generados por
-        // AOT (`forja compilar`) terminan sin un opcode Halt explícito y
-        // `ejecutar()` retorna Err aunque el programa ya se ejecutó completo.
-        let _ = vm.ejecutar();
-        for line in vm.obtener_output() {
-            println!("{}", line);
-        }
-    } else {
-        let mut vm = ForjaVM::new();
-        vm.cargar_bytecode(opcodes);
-        vm.ejecutar().ok()?;
+    // Ejecutar en ForjaFast (la VM de producción; la VM original fue removida)
+    let mut vm = crate::vm_fast::ForjaFast::new();
+    vm.cargar_bytecode(opcodes);
+    // No propagar el error de ejecución: algunos bytecodes generados por
+    // AOT (`forja compilar`) terminan sin un opcode Halt explícito y
+    // `ejecutar()` retorna Err aunque el programa ya se ejecutó completo.
+    let _ = vm.ejecutar();
+    for line in vm.obtener_output() {
+        println!("{}", line);
     }
 
     Some(())

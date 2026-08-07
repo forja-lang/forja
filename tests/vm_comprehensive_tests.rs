@@ -1,10 +1,9 @@
 use forja::bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
-use forja::vm::ForjaVM;
 use forja::vm_fast::ForjaFast;
 
-fn ejecutar(source: &str) -> ForjaVM {
+fn ejecutar(source: &str) -> ForjaFast {
     let mut lexer = Lexer::new(source);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
@@ -13,7 +12,7 @@ fn ejecutar(source: &str) -> ForjaVM {
     let mut bc = gen.generar(&programa).unwrap();
     bc = optimizar_indices(&bc);
     bc = fusionar_opcodes(&bc);
-    let mut vm = ForjaVM::new();
+    let mut vm = ForjaFast::new();
     vm.cargar_bytecode(bc);
     vm.ejecutar().unwrap();
     vm
