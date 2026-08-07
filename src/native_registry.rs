@@ -144,6 +144,7 @@ impl NativeRegistry {
         reg.registrar_senales();
         reg.registrar_env_ext();
         reg.registrar_arg();
+        reg.registrar_sandbox();
         #[cfg(not(target_arch = "wasm32"))]
         reg.registrar_hot_reload();
         #[cfg(not(target_arch = "wasm32"))]
@@ -1381,13 +1382,17 @@ fn native_socket_tcp_conectar(
         )));
     }
 
-    // Verificar sandbox antes de conectar
+    // Verificar sandbox con el hostname ANTES de DNS
     verificar_sandbox_red(vm, &direccion, puerto as u16)?;
 
     let addr = match resolver_direccion(&direccion, puerto as u16) {
         Ok(a) => a,
         Err(msg) => return Err(ErrFast::TipoInv(format!("direccion_invalida: {}", msg))),
     };
+
+    // Verificar sandbox con la IP resuelta DESPUÉS de DNS (evita DNS rebinding)
+    let ip_resuelta = addr.ip().to_string();
+    verificar_sandbox_red(vm, &ip_resuelta, puerto as u16)?;
 
     match std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(3)) {
         Ok(stream) => {
@@ -1817,7 +1822,7 @@ fn native_socket_udp_enviar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
         )));
     }
 
-    // Verificar sandbox antes de enviar UDP
+    // Verificar sandbox antes de enviar UDP (hostname)
     verificar_sandbox_red(vm, &direccion, puerto as u16)?;
 
     let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
@@ -1833,6 +1838,10 @@ fn native_socket_udp_enviar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
         Ok(a) => a,
         Err(msg) => return Err(ErrFast::TipoInv(format!("direccion_invalida: {}", msg))),
     };
+
+    // Verificar sandbox con la IP resuelta (evita DNS rebinding)
+    let ip_resuelta = destino.ip().to_string();
+    verificar_sandbox_red(vm, &ip_resuelta, puerto as u16)?;
 
     let socket = socket_arc.lock().unwrap();
     match socket.send_to(datos.as_bytes(), destino) {
@@ -1917,6 +1926,10 @@ fn native_socket_udp_enviar_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> R
             return Ok(ValorFast::entero(0));
         }
     };
+
+    // Verificar sandbox con la IP resuelta (evita DNS rebinding)
+    let ip_resuelta = destino.ip().to_string();
+    verificar_sandbox_red(vm, &ip_resuelta, puerto as u16)?;
 
     let bytes = hex_a_bytes(&hex_datos);
     let socket = socket_arc.lock().unwrap();
@@ -5127,6 +5140,132 @@ fn native_h3_solicitud(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorF
     map.insert("cabeceras".to_string(), ValorFast::mapa(c_idx));
 
     map.insert("cuerpo".to_string(), ValorFast::texto(vm.alloc_str(Arc::from("<h1>HTTP/3 sobre QUIC OK</h1>"))));
+
+    let midx = vm.alloc_map(map);
+    Ok(ValorFast::mapa(midx))
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Sandbox: funciones nativas para configurar desde Forja
+// ══════════════════════════════════════════════════════════════════════
+
+impl NativeRegistry {
+    fn registrar_sandbox(&mut self) {
+        // Restringir host de red
+        self.registrar("_sandbox_restringir_host", native_sandbox_restringir_host);
+        // Restringir puerto de red
+        self.registrar("_sandbox_restringir_puerto", native_sandbox_restringir_puerto);
+        // Restringir directorio de archivos
+        self.registrar("_sandbox_restringir_directorio", native_sandbox_restringir_directorio);
+        // Restringir comando de procesos
+        self.registrar("_sandbox_restringir_comando", native_sandbox_restringir_comando);
+        // Consultar estado del sandbox
+        self.registrar("_sandbox_estado", native_sandbox_estado);
+    }
+}
+
+/// Restringe un host de red. Uso: _sandbox_restringir_host("google.com")
+fn native_sandbox_restringir_host(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let host = obtener_texto(vm, args[0])?;
+    match &mut vm.sandbox.hosts_permitidos {
+        Some(hosts) => {
+            // Si contiene "*", empezar con lista vacía
+            if hosts.iter().any(|h| h == "*") {
+                hosts.clear();
+            }
+            hosts.push(host.clone());
+            // Si el host ya estaba en la lista, no duplicar
+            hosts.sort();
+            hosts.dedup();
+        }
+        None => {
+            vm.sandbox.hosts_permitidos = Some(vec![host.clone()]);
+        }
+    }
+    Ok(ValorFast::nulo())
+}
+
+/// Restringe un puerto de red. Uso: _sandbox_restringir_puerto(80)
+fn native_sandbox_restringir_puerto(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let puerto = obtener_entero(args[0])? as u16;
+    match &mut vm.sandbox.puertos_permitidos {
+        Some(puertos) => {
+            puertos.push(puerto);
+            puertos.sort();
+            puertos.dedup();
+        }
+        None => {
+            vm.sandbox.puertos_permitidos = Some(vec![puerto]);
+        }
+    }
+    Ok(ValorFast::nulo())
+}
+
+/// Restringe un directorio de archivos. Uso: _sandbox_restringir_directorio("/etc")
+fn native_sandbox_restringir_directorio(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let dir = obtener_texto(vm, args[0])?;
+    match &mut vm.sandbox_fs.directorios_permitidos {
+        Some(directorios) => {
+            if directorios.iter().any(|d| d == "*") {
+                directorios.clear();
+            }
+            directorios.push(dir.clone());
+            directorios.sort();
+            directorios.dedup();
+        }
+        None => {
+            vm.sandbox_fs.directorios_permitidos = Some(vec![dir.clone()]);
+        }
+    }
+    Ok(ValorFast::nulo())
+}
+
+/// Restringe un comando de procesos. Uso: _sandbox_restringir_comando("rm")
+fn native_sandbox_restringir_comando(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let cmd = obtener_texto(vm, args[0])?;
+    match &mut vm.sandbox_proc.comandos_permitidos {
+        Some(comandos) => {
+            if comandos.iter().any(|c| c == "*") {
+                comandos.clear();
+            }
+            comandos.push(cmd.clone());
+            comandos.sort();
+            comandos.dedup();
+        }
+        None => {
+            vm.sandbox_proc.comandos_permitidos = Some(vec![cmd.clone()]);
+        }
+    }
+    Ok(ValorFast::nulo())
+}
+
+/// Retorna el estado actual del sandbox como mapa. Uso: _sandbox_estado()
+fn native_sandbox_estado(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    let mut map = std::collections::HashMap::new();
+
+    // Estado de red
+    let red = match &vm.sandbox.hosts_permitidos {
+        Some(hosts) if hosts.iter().any(|h| h == "*") => "abierto",
+        Some(_) => "restringido",
+        None => "restringido",
+    };
+    map.insert("red".to_string(), ValorFast::texto(vm.alloc_str(Arc::from(red))));
+
+    // Estado de archivos
+    let archivos = match &vm.sandbox_fs.directorios_permitidos {
+        Some(dirs) if dirs.iter().any(|d| d == "*") => "abierto",
+        Some(_) => "restringido",
+        None => "restringido",
+    };
+    map.insert("archivos".to_string(), ValorFast::texto(vm.alloc_str(Arc::from(archivos))));
+
+    // Estado de procesos
+    let procesos = match &vm.sandbox_proc.comandos_permitidos {
+        Some(cmds) if cmds.iter().any(|c| c == "*") => "abierto",
+        Some(_) => "restringido",
+        None => "restringido",
+    };
+    map.insert("procesos".to_string(), ValorFast::texto(vm.alloc_str(Arc::from(procesos))));
 
     let midx = vm.alloc_map(map);
     Ok(ValorFast::mapa(midx))
