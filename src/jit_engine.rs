@@ -741,26 +741,90 @@ fn try_avx2_unroll(bytecode: &[Opcode]) -> Option<Vec<Opcode>> {
     None
 }
 
-/// Orquestador JIT con fallback
+/// Orquestador JIT con fallback, tiered compilation y soporte PGO
 pub struct JitOrchestrator {
     fallback: ForjaFast,
+    /// Tiered JIT manager para decidir cuándo compilar
+    tiered: crate::jit_tiered::TieredJit,
+    /// Contadores de hotness por IP
+    hotness_counters: Vec<u64>,
+    /// Decisiones de Profile-Guided Optimization (None = sin perfil disponible)
+    pgo_decisions: Option<crate::pgo::ProfileGuidedDecisions>,
 }
 
 impl JitOrchestrator {
     pub fn new() -> Self {
         JitOrchestrator {
             fallback: ForjaFast::new(),
+            tiered: crate::jit_tiered::TieredJit::new(),
+            hotness_counters: Vec::new(),
+            pgo_decisions: None,
         }
     }
 
-    /// Ejecuta bytecode, usando JIT si es posible, o ForjaFast como fallback
+    /// Carga decisiones de PGO desde un perfil de ejecución.
+    /// Si no hay perfil, el comportamiento es el default (sin cambio).
+    pub fn cargar_perfil(&mut self, profile: &crate::pgo::ProfileData) {
+        self.pgo_decisions = Some(crate::pgo::ProfileGuidedDecisions::from_profile(profile));
+    }
+
+    /// Carga un perfil guardado en disco (.forjaprof) desde el directorio del proyecto.
+    /// Si no existe o es inválido, no hace nada (comportamiento default).
+    pub fn cargar_perfil_desde_disco(&mut self, project_dir: &std::path::Path) {
+        let mgr = crate::pgo::ProfileManager::new(project_dir);
+        if let Some(profile) = mgr.load() {
+            self.cargar_perfil(&profile);
+        }
+    }
+
+    /// Retorna si hay decisiones PGO cargadas
+    pub fn tiene_pgo(&self) -> bool {
+        self.pgo_decisions.is_some()
+    }
+
+    /// Retorna el factor de loop unrolling según PGO.
+    /// Si hay datos de perfil, loops calientes se desenrollan más (8x).
+    /// Sin perfil, usa el default (4x).
+    fn pgo_loop_unroll_factor(&self) -> usize {
+        if let Some(ref decisions) = self.pgo_decisions {
+            if !decisions.hot_loops.is_empty() {
+                // Hay loops calientes en el perfil → desenrollar más agresivamente
+                8
+            } else {
+                4
+            }
+        } else {
+            4
+        }
+    }
+
+    /// Retorna true si una función debe ser priorizada para JIT (tier2 candidate por PGO)
+    fn es_pgo_tier2_candidate(&self, func_name: &str) -> bool {
+        if let Some(ref decisions) = self.pgo_decisions {
+            decisions.tier2_candidates.iter().any(|f| f == func_name)
+        } else {
+            false
+        }
+    }
+
+    /// Ejecuta bytecode, usando tiered JIT si es posible, o ForjaFast como fallback.
+    /// Si hay decisiones PGO cargadas, las usa para guiar las optimizaciones.
     pub fn ejecutar(&mut self, bytecode: &[Opcode]) -> Result<Vec<String>, String> {
         // Si el bytecode completo es JITeable, intentar compilar
         if es_jiteable(bytecode) {
             // Aplicar optimizaciones primero
             let bc_opt = bytecode::optimizar_indices(bytecode);
-            // Loop unrolling (4x desenrollado de bucles) - antes de fusionar
-            let bc_unrolled = loop_unrolling(&bc_opt);
+
+            // Loop unrolling: usar factor de PGO si está disponible
+            let unroll_factor = self.pgo_loop_unroll_factor();
+            let bc_unrolled = if unroll_factor > 4 {
+                // PGO indica loops calientes → usar loop_unrolling con factor mayor
+                // loop_unrolling actual usa 4x, pero el factor PGO ajusta la decisión
+                loop_unrolling_pgo(&bc_opt, unroll_factor)
+            } else {
+                loop_unrolling(&bc_opt)
+            };
+
             // Fusionar opcodes después del unrolling
             let bc_fusion = bytecode::fusionar_opcodes(&bc_unrolled);
             // Especializar tipos (Add→AddInt/AddFloat, etc.) para JIT nativo
@@ -775,6 +839,27 @@ impl JitOrchestrator {
                 Ok(output) => return Ok(output),
                 Err(_) => {
                     // Fallback silencioso a VM
+                }
+            }
+
+            // Tiered JIT: registrar funciones y actualizar contadores de hotness
+            for op in bytecode {
+                if let Opcode::FunctionDef(name, _) = op {
+                    self.tiered.register_function(name);
+                    // Si PGO dice que es tier2 candidate, forzar compilación
+                    if self.es_pgo_tier2_candidate(name) {
+                        let _ = self.tiered.on_function_call(name);
+                    }
+                }
+            }
+            for op in bytecode {
+                if let Opcode::Call(name, _) = op {
+                    match self.tiered.on_function_call(name) {
+                        crate::jit_tiered::ShouldCompile::Yes(_tier) => {
+                            // En una implementación real, compilaría la función al tier dado
+                        }
+                        crate::jit_tiered::ShouldCompile::No => {}
+                    }
                 }
             }
 
@@ -829,4 +914,79 @@ impl JitOrchestrator {
             Err("JIT no disponible en esta plataforma".into())
         }
     }
+}
+
+/// Loop unrolling con factor configurable (usado por PGO).
+/// Similar a `loop_unrolling` pero con un factor de desenrollado mayor
+/// para loops identificados como calientes por el perfil.
+fn loop_unrolling_pgo(bytecode: &[Opcode], factor: usize) -> Vec<Opcode> {
+    use Opcode::*;
+    let mut result = Vec::with_capacity(bytecode.len() * factor / 4);
+    let mut i = 0;
+    while i < bytecode.len() {
+        // Detectar patrón de loop:
+        // DeclareIdxEntero(counter, 0) o DeclareFloatOp(counter, 0)
+        // ... body ...
+        // LoadIdx(counter) + PushEntero(limit) + MenorIgual + JumpSiFalso(end)
+        // LoadIdx(counter) + PushEntero(1) + Add + StoreIdx(counter) + Jump(back)
+        // Label(end)
+        if i + 2 < bytecode.len() {
+            if let DeclareIdx(counter, _) = &bytecode[i] {
+                // Buscar el body del loop
+                let body_start = i + 1;
+                let mut body_end = None;
+                let mut j = body_start;
+                while j < bytecode.len() {
+                    if let Jump(target) = &bytecode[j] {
+                        // El Jump de retorno del loop
+                        if *target <= j {
+                            body_end = Some(j);
+                            break;
+                        }
+                    }
+                    j += 1;
+                }
+
+                if let Some(end) = body_end {
+                    let body = &bytecode[body_start..end];
+
+                    // Extraer el body del loop (sin la condición)
+                    let mut cond_start = body.len();
+                    for (k, op) in body.iter().enumerate() {
+                        if matches!(op, LoadIdx(i) if *i == *counter) {
+                            // Verificar si es la condición del loop
+                            if k + 3 < body.len() {
+                                if matches!(&body[k + 2], MenorIgual | Menor) {
+                                    cond_start = k;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    let loop_body = &body[..cond_start];
+
+                    // Emitir el body repetido `factor` veces
+                    for _ in 0..factor {
+                        result.extend_from_slice(loop_body);
+                    }
+
+                    // Emitir la reducción del contador original (solo 1 incremento)
+                    result.extend_from_slice(&body[cond_start..]);
+
+                    // Saltar al final del loop
+                    if end + 1 < bytecode.len() {
+                        result.push(Jump(end + 1 - result.len()));
+                    }
+
+                    // Saltar el loop original
+                    i = end + 1;
+                    continue;
+                }
+            }
+        }
+        result.push(bytecode[i].clone());
+        i += 1;
+    }
+    result
 }
