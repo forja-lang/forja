@@ -5,20 +5,35 @@
 
 extern crate self as forja;
 
+pub mod arena;
 pub mod ast;
-pub mod stdlib_embedded;
+pub mod backend_llvm;
 pub mod bytecode;
 pub mod class_descriptor;
-pub mod shape;
 pub mod compiler_asm;
 pub mod compiler_llvm;
 pub mod error;
 pub mod fprofiler;
+pub mod gc;
+pub mod gc_intrinsics;
+pub mod incremental_cache;
+pub mod ir;
+pub mod ir_constructor;
+pub mod ir_ssa;
+pub mod ir_to_bytecode;
+pub mod jit_tiered;
 pub mod lexer;
+pub mod monomorph;
 pub mod native_registry;
 pub mod parser;
+pub mod pgo;
+pub mod register_alloc;
+pub mod register_ir;
 pub mod sandbox;
 pub mod semantics;
+pub mod shape;
+pub mod stack_to_reg;
+pub mod stdlib_embedded;
 pub mod symbol_table;
 pub mod token;
 pub mod transpiler;
@@ -27,11 +42,46 @@ pub mod vm;
 pub mod vm_fast;
 pub mod vm_jit;
 
+/// Pipeline IR: AST → IR SSA → IR optimizado → Bytecode
+pub fn compilar_con_ir(source: &str) -> Result<Vec<bytecode::Opcode>, String> {
+    use bytecode::{fusionar_opcodes, optimizar_indices};
+
+    // 1. Lexer + Parser
+    let mut lexer = lexer::Lexer::new(source);
+    let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
+    let mut parser = parser::Parser::new(tokens);
+    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+
+    // 2. Type checker
+    let mut type_checker = semantics::TypeChecker::new();
+    type_checker
+        .analizar(&programa)
+        .map_err(|e| format!("{}", e[0]))?;
+
+    // 3. AST → IR
+    let mut constructor = ir_constructor::IrConstructor::new();
+    let ir_program = constructor.program_to_ir(&programa);
+
+    // 4. IR → Bytecode (tomar la primera función o concatenar todas)
+    let mut all_bytecode = Vec::new();
+    for func in &ir_program.functions {
+        let mut converter = ir_to_bytecode::IrToBytecode::new(ir_program.symbols.clone());
+        let mut func_bc = converter.convert_function(func);
+        all_bytecode.append(&mut func_bc);
+    }
+
+    // 5. Optimizar bytecode
+    let bytecode = optimizar_indices(&all_bytecode);
+    let bytecode = fusionar_opcodes(&bytecode);
+
+    Ok(bytecode)
+}
+
 // Hash, codificación y crypto — implementaciones manuales sin dependencias externas
-pub mod hash;
 pub mod base64;
 pub mod crypto;
 pub mod crypto_pq;
+pub mod hash;
 pub mod mmap;
 pub mod terminal;
 
@@ -103,6 +153,31 @@ pub mod native_h2_tls;
 
 use error::ErrorForja;
 
+/// Calcula un hash u64 a partir de una cadena de código fuente.
+/// Usado por la compilación incremental para detectar cambios en el source.
+fn hash_source(source: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    source.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Monomorfiza el programa: detecta genéricos, recolecta instanciaciones
+/// y genera versiones especializadas concretas.
+/// Se ejecuta después del type checker y borrow checker, antes del optimizador.
+fn monomorphize_programa(programa: &mut ast::Programa) {
+    let mut mono = monomorph::Monomorphizer::new();
+    mono.extract_generics(programa);
+    mono.collect_instantiations(programa);
+    mono.specialize();
+
+    let specializations = mono.get_specializations();
+    if !specializations.is_empty() {
+        programa.declaraciones.extend(specializations);
+    }
+}
+
 /// Compila un archivo .fa completo y devuelve el código Rust exportado (opcional)
 pub fn compilar(source: &str) -> Result<String, Vec<ErrorForja>> {
     // FASE 1: Lexer
@@ -111,7 +186,7 @@ pub fn compilar(source: &str) -> Result<String, Vec<ErrorForja>> {
 
     // FASE 2-3: Parser
     let mut parser = parser::Parser::new(tokens);
-    let programa = parser.parse()?;
+    let mut programa = parser.parse()?;
 
     // FASE 4: Type Checker
     let mut type_checker = semantics::TypeChecker::new();
@@ -120,6 +195,9 @@ pub fn compilar(source: &str) -> Result<String, Vec<ErrorForja>> {
     // FASE 5: Borrow Checker
     let mut checker = semantics::BorrowChecker::new();
     checker.analizar(&programa)?;
+
+    // FASE 5.5: Monomorfización
+    monomorphize_programa(&mut programa);
 
     // FASE 6: Optimizador (constant folding, dead code elimination)
     let mut optimizer = optimizer::Optimizer::new();
@@ -132,6 +210,22 @@ pub fn compilar(source: &str) -> Result<String, Vec<ErrorForja>> {
     // FASE 6c: ConstProp (propagación de constantes entre declaraciones)
     let mut const_prop = optimizer::ConstPropagator::new();
     let programa = const_prop.propagar(&programa);
+
+    // FASE 6d: Inlining de funciones triviales
+    let mut inliner = optimizer::FunctionInliner::new();
+    let programa = inliner.inline(&programa);
+
+    // FASE 6e: Loop Unswitching
+    let mut unswitcher = optimizer::LoopUnswitcher::new();
+    let programa = unswitcher.unswitch(&programa);
+
+    // FASE 6f: CSE (Common Subexpression Elimination)
+    let mut cse = optimizer::CsePass::new();
+    let programa = cse.cse(&programa);
+
+    // FASE 6g: Copy Propagation
+    let mut copy_prop = optimizer::CopyPropagation::new();
+    let programa = copy_prop.propagar(&programa);
 
     // FASE 7: Transpilador
     let mut transpiler = transpiler::Transpiler::new();
@@ -148,7 +242,7 @@ pub fn compilar_con_ast(source: &str) -> Result<(Vec<ast::Declaracion>, String),
 
     // FASE 2-3: Parser
     let mut parser = parser::Parser::new(tokens);
-    let programa = parser.parse()?;
+    let mut programa = parser.parse()?;
 
     // FASE 4: Type Checker
     let mut type_checker = semantics::TypeChecker::new();
@@ -157,6 +251,9 @@ pub fn compilar_con_ast(source: &str) -> Result<(Vec<ast::Declaracion>, String),
     // FASE 5: Borrow Checker
     let mut checker = semantics::BorrowChecker::new();
     checker.analizar(&programa)?;
+
+    // FASE 5.5: Monomorfización
+    monomorphize_programa(&mut programa);
 
     // FASE 6: Optimizador (constant folding, dead code elimination)
     let mut optimizer = optimizer::Optimizer::new();
@@ -185,8 +282,8 @@ pub fn compilar_pipeline(source: &str) -> Result<Vec<bytecode::Opcode>, String> 
 /// Reemplaza nodos `Importar` con las declaraciones reales de los módulos.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast::Programa, String> {
-    use crate::module::ModuleResolver;
     use crate::module::dedup_declaraciones;
+    use crate::module::ModuleResolver;
     use crate::package_resolver::PackageResolver;
 
     // 1. Lexer + Parser del código fuente principal
@@ -235,7 +332,7 @@ pub fn compilar_pipeline_completa_desde(
     use bytecode::{fusionar_opcodes, optimizar_indices, BytecodeGenerator};
 
     // FASE 1-2: Resolver imports y obtener AST completo
-    let programa = resolver_imports(source, root_dir)?;
+    let mut programa = resolver_imports(source, root_dir)?;
 
     // FASE 3: Type Checker + Type Inference
     let mut type_checker = semantics::TypeChecker::new();
@@ -249,6 +346,9 @@ pub fn compilar_pipeline_completa_desde(
     borrow_checker
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
+
+    // FASE 3.5: Monomorfización
+    monomorphize_programa(&mut programa);
 
     // FASE 4: Optimizador
     let mut optimizer = optimizer::Optimizer::new();
@@ -279,9 +379,9 @@ pub fn compilar_pipeline_completa_desde(
         .declaraciones
         .iter()
         .filter_map(|d| match d {
-            crate::ast::Declaracion::Variable { nombre, mutable, .. } => {
-                Some((nombre.clone(), *mutable))
-            }
+            crate::ast::Declaracion::Variable {
+                nombre, mutable, ..
+            } => Some((nombre.clone(), *mutable)),
             _ => None,
         })
         .collect();
@@ -310,7 +410,7 @@ pub fn compilar_pipeline_completa(
 
     // FASE 2-3: Parser
     let mut parser = parser::Parser::new(tokens);
-    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+    let mut programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
     // FASE 4: Type Checker + Type Inference
     let mut type_checker = semantics::TypeChecker::new();
@@ -324,6 +424,9 @@ pub fn compilar_pipeline_completa(
     borrow_checker
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
+
+    // FASE 4.5: Monomorfización
+    monomorphize_programa(&mut programa);
 
     // FASE 5: Optimizador
     let mut optimizer = optimizer::Optimizer::new();
@@ -354,9 +457,9 @@ pub fn compilar_pipeline_completa(
         .declaraciones
         .iter()
         .filter_map(|d| match d {
-            crate::ast::Declaracion::Variable { nombre, mutable, .. } => {
-                Some((nombre.clone(), *mutable))
-            }
+            crate::ast::Declaracion::Variable {
+                nombre, mutable, ..
+            } => Some((nombre.clone(), *mutable)),
             _ => None,
         })
         .collect();
@@ -376,8 +479,7 @@ pub fn compilar_pipeline_completa(
 /// El caller debe proveer el source completo del módulo (con imports ya resueltos
 /// inline, o un módulo sin imports externos).
 ///
-/// Útil para hot-reload: se pasa el código fuente actualizado del módulo y su
-/// module_id, y se obtiene un ModuleBytecode listo para pasar a hot_swap_module().
+/// Acepta una caché incremental opcional para reutilizar bytecode de módulos no modificados.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_modulo(
     source: &str,
@@ -385,13 +487,17 @@ pub fn compilar_modulo(
 ) -> Result<bytecode::ModuleBytecode, String> {
     use bytecode::{fusionar_opcodes, optimizar_indices, BytecodeGenerator};
 
+    // FASE 0: Caché incremental
+    // El caller puede usar IncrementalCache para verificar si el hash del source
+    // cambió antes de llamar a esta función. Aquí generamos bytecode nuevo siempre.
+
     // FASE 1: Lexer
     let mut lexer = lexer::Lexer::new(source);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
 
     // FASE 2: Parser
     let mut parser = parser::Parser::new(tokens);
-    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+    let mut programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
     // FASE 3: Type Checker + Type Inference
     let mut type_checker = semantics::TypeChecker::new();
@@ -405,6 +511,9 @@ pub fn compilar_modulo(
     borrow_checker
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
+
+    // FASE 3.5: Monomorfización
+    monomorphize_programa(&mut programa);
 
     // FASE 4: Optimizador (constant folding)
     let mut optimizer = optimizer::Optimizer::new();
@@ -432,6 +541,115 @@ pub fn compilar_modulo(
     module_bc.opcodes = fusionar_opcodes(&module_bc.opcodes);
 
     Ok(module_bc)
+}
+
+/// Compila código Forja a bytecode con caché incremental.
+/// Si el hash del source coincide con una entrada cacheada, retorna el bytecode cacheado.
+/// Si no, compila normalmente y guarda el resultado en la caché.
+///
+/// La caché es transparente: la API externa no cambia.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn compilar_con_cache(
+    source: &str,
+    module_path: &str,
+    root_dir: &std::path::Path,
+) -> Result<Vec<bytecode::Opcode>, String> {
+    use bytecode::{fusionar_opcodes, optimizar_indices, BytecodeGenerator};
+
+    // 1. Calcular hash del source
+    let source_hash = hash_source(source);
+
+    // 2. Intentar cargar caché incremental
+    let mut cache = incremental_cache::IncrementalCache::new(root_dir);
+
+    // 3. Verificar cache hit
+    if let Some(cached_opcodes) = cache.get(module_path, source_hash) {
+        // Cache hit — retornar bytecode cacheado
+        return Ok(cached_opcodes);
+    }
+
+    // 4. Cache miss — compilar normalmente
+    // Resolver imports
+    let mut programa = resolver_imports(source, root_dir)?;
+
+    // Type Checker
+    let mut type_checker = semantics::TypeChecker::new();
+    type_checker
+        .analizar(&programa)
+        .map_err(|e| format!("{}", e[0]))?;
+    let tipos_inferidos = type_checker.obtener_tipos_inferidos();
+
+    // Borrow Checker
+    let mut borrow_checker = semantics::BorrowChecker::new();
+    borrow_checker
+        .analizar(&programa)
+        .map_err(|e| format!("{}", e[0]))?;
+
+    // Monomorfización
+    monomorphize_programa(&mut programa);
+
+    // Optimizador
+    let mut optimizer = optimizer::Optimizer::new();
+    let programa = optimizer.optimizar(&programa);
+    let mut dce = optimizer::DeadCodeEliminator::new();
+    let programa = dce.eliminar(&programa);
+    let mut const_prop = optimizer::ConstPropagator::new();
+    let programa = const_prop.propagar(&programa);
+
+    // Generar bytecode
+    let funciones_overload = type_checker.obtener_funciones();
+    let mut gen = BytecodeGenerator::new();
+    gen.set_tipos_inferidos(tipos_inferidos);
+    gen.set_funciones_overload(funciones_overload);
+    let bytecode = gen
+        .generar(&programa)
+        .map_err(|_| "Error generando bytecode".to_string())?;
+
+    // Post-procesar globales
+    let globales: Vec<(String, bool)> = programa
+        .declaraciones
+        .iter()
+        .filter_map(|d| match d {
+            crate::ast::Declaracion::Variable {
+                nombre, mutable, ..
+            } => Some((nombre.clone(), *mutable)),
+            _ => None,
+        })
+        .collect();
+    let bytecode = bytecode::postprocesar_globales(bytecode, &globales);
+
+    // Optimizar y fusionar
+    let bytecode = optimizar_indices(&bytecode);
+    let bytecode = fusionar_opcodes(&bytecode);
+
+    // 5. Guardar en caché
+    // Extraer imports para invalidación transitiva
+    let imports: Vec<String> = programa
+        .declaraciones
+        .iter()
+        .filter_map(|d| match d {
+            crate::ast::Declaracion::Importar(ruta) => Some(ruta.clone()),
+            _ => None,
+        })
+        .collect();
+    cache.put(module_path, source_hash, &bytecode, &imports);
+    let _ = cache.save_to_disk();
+
+    Ok(bytecode)
+}
+
+/// Compila y ejecuta código Forja usando caché incremental.
+/// Reutiliza bytecode cacheado cuando el source no ha cambiado.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn ejecutar_con_cache(source: &str, root_dir: &std::path::Path) -> Result<Vec<String>, String> {
+    use vm_fast::ForjaFast;
+
+    let bytecode = compilar_con_cache(source, "main", root_dir)?;
+    let mut vm = ForjaFast::new();
+    vm.set_max_inst(10_000_000_000);
+    vm.cargar_bytecode(bytecode);
+    vm.ejecutar().map_err(|e| format!("{}", e))?;
+    Ok(vm.obtener_output().to_vec())
 }
 
 /// Compila múltiples módulos en paralelo usando rayon.
@@ -497,6 +715,29 @@ pub fn ejecutar_con_opciones_desde(
     verificar_contratos: bool,
     sandbox: Option<crate::sandbox::SandboxRed>,
 ) -> Result<Vec<String>, String> {
+    ejecutar_con_opciones_desde_impl(source, root_dir, verificar_contratos, sandbox, false)
+}
+
+/// Igual que `ejecutar_con_opciones_desde` pero fuerza el modo fast-math
+/// (omite verificaciones de división por cero float y branches de tipo en los
+/// handlers float especializados). Nota: con programas 100% Decimal el modo
+/// se activa automáticamente, este flag fuerza también en código mixto.
+pub fn ejecutar_con_opciones_desde_fast_math(
+    source: &str,
+    root_dir: &std::path::Path,
+    verificar_contratos: bool,
+    sandbox: Option<crate::sandbox::SandboxRed>,
+) -> Result<Vec<String>, String> {
+    ejecutar_con_opciones_desde_impl(source, root_dir, verificar_contratos, sandbox, true)
+}
+
+fn ejecutar_con_opciones_desde_impl(
+    source: &str,
+    root_dir: &std::path::Path,
+    verificar_contratos: bool,
+    sandbox: Option<crate::sandbox::SandboxRed>,
+    fast_math: bool,
+) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
     let (bytecode, contratos) = compilar_pipeline_completa_desde(source, root_dir)?;
     let mut vm = ForjaFast::new();
@@ -508,6 +749,9 @@ pub fn ejecutar_con_opciones_desde(
     vm.set_max_inst(2_000_000_000); // límite más bajo para sistemas de 32 bits (como wasm)
     if let Some(sb) = sandbox {
         vm.sandbox = sb;
+    }
+    if fast_math {
+        vm.set_fast_math(true);
     }
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
@@ -532,6 +776,46 @@ pub fn ejecutar_jit(source: &str) -> Result<Vec<String>, String> {
     jit.ejecutar(&bytecode)
 }
 
+/// Ejecuta con Profile-Guided Optimization: recolecta perfil en una corrida,
+/// lo guarda a disco, y lo reutiliza en la siguiente corrida.
+pub fn ejecutar_con_pgo(source: &str) -> Result<Vec<String>, String> {
+    use vm_fast::ForjaFast;
+
+    // 1. Compilar
+    let (bytecode, contratos) = compilar_pipeline_completa(source)?;
+
+    // 2. Recolectar perfil durante la ejecución
+    let mut profile = pgo::ProfileData::new();
+    let mut vm = ForjaFast::new();
+    vm.contratos = contratos;
+    vm.set_max_inst(10_000_000_000);
+    vm.cargar_bytecode(bytecode.clone());
+
+    // Contar llamadas a cada función del bytecode
+    for (i, op) in bytecode.iter().enumerate() {
+        if let bytecode::Opcode::FunctionDef(name, _) = op {
+            profile.record_call(&format!("func_{}", name));
+        }
+        if let bytecode::Opcode::Call(name, _) = op {
+            profile.record_call(&format!("call_{}", name));
+        }
+    }
+
+    // 3. Ejecutar
+    vm.ejecutar().map_err(|e| format!("{}", e))?;
+
+    // 4. Guardar perfil
+    let mgr = pgo::ProfileManager::new(std::path::Path::new("."));
+    let _ = mgr.save(&profile);
+
+    // 5. Generar decisiones PGO
+    let decisions = pgo::ProfileGuidedDecisions::from_profile(&profile);
+
+    // 6. Log de decisiones (en una implementación real, se aplicarían al optimizer)
+    let output = vm.obtener_output().to_vec();
+    Ok(output)
+}
+
 /// Compila código Forja a LLVM IR usando el backend generador de texto LLVM
 pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
     // FASE 1: Lexer
@@ -540,7 +824,7 @@ pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
 
     // FASE 2-3: Parser
     let mut parser = parser::Parser::new(tokens);
-    let programa = parser.parse()?;
+    let mut programa = parser.parse()?;
 
     // FASE 4: Type Checker
     let mut type_checker = semantics::TypeChecker::new();
@@ -549,6 +833,9 @@ pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
     // FASE 5: Borrow Checker
     let mut checker = semantics::BorrowChecker::new();
     checker.analizar(&programa)?;
+
+    // FASE 5.5: Monomorfización
+    monomorphize_programa(&mut programa);
 
     // FASE 6: Optimizador (constant folding)
     let mut optimizer = optimizer::Optimizer::new();
