@@ -19,6 +19,13 @@
 //! | RBX | General | **Sí** |
 //! | RBP | Frame pointer | **Sí** |
 //! | R12-R15 | General | **Sí** |
+//!
+//! ## Interval Splitting
+//!
+//! Cuando un intervalo tiene un "gap" donde no se usa (usos separados por más
+//! de `GAP_THRESHOLD` instrucciones), se divide en sub-intervalos independientes.
+//! Esto permite que cada sub-intervalo tenga su propia asignación (registro o stack),
+//! reduciendo spills innecesarios en intervalos largos con uso esporádico.
 
 use std::collections::HashMap;
 
@@ -52,24 +59,24 @@ pub enum PhysReg {
 }
 
 impl PhysReg {
-    /// Índice para REX encoding (0-15)
+    /// Índice para REX encoding (0-15) — encoding real de x86-64.
     pub fn rex_index(self) -> u8 {
         match self {
             PhysReg::RAX => 0,
             PhysReg::RCX => 1,
             PhysReg::RDX => 2,
-            PhysReg::RSI => 3,
-            PhysReg::RDI => 4,
-            PhysReg::R8 => 5,
-            PhysReg::R9 => 6,
-            PhysReg::R10 => 7,
-            PhysReg::R11 => 8,
-            PhysReg::RBX => 9,
-            PhysReg::RBP => 10,
-            PhysReg::R12 => 11,
-            PhysReg::R13 => 12,
-            PhysReg::R14 => 13,
-            PhysReg::R15 => 14,
+            PhysReg::RBX => 3,
+            PhysReg::RBP => 5,
+            PhysReg::RSI => 6,
+            PhysReg::RDI => 7,
+            PhysReg::R8 => 8,
+            PhysReg::R9 => 9,
+            PhysReg::R10 => 10,
+            PhysReg::R11 => 11,
+            PhysReg::R12 => 12,
+            PhysReg::R13 => 13,
+            PhysReg::R14 => 14,
+            PhysReg::R15 => 15,
             _ => 0xFF, // XMM registers no usan REX de la misma forma
         }
     }
@@ -131,6 +138,13 @@ pub const TEMP_REGS: &[PhysReg] = &[
     PhysReg::RAX, PhysReg::RCX, PhysReg::RDX, PhysReg::R8, PhysReg::R9, PhysReg::R10, PhysReg::R11,
 ];
 
+/// Registros extendidos (callee-saved disponibles para asignación).
+/// RBX se usa como puntero a variables, R14 como puntero a output, RBP como frame pointer,
+/// por lo que no están incluidos aquí. R12, R13 y R15 quedan libres para el allocador.
+pub const EXTENDED_REGS: &[PhysReg] = &[
+    PhysReg::R12, PhysReg::R13, PhysReg::R15,
+];
+
 /// Variables virtuales (temporales del compilador)
 pub type VirtReg = usize;
 
@@ -141,6 +155,51 @@ pub struct LiveInterval {
     pub start: usize,   // primera instrucción donde se usa
     pub end: usize,     // última instrucción donde se usa (exclusive)
     pub reg_class: RegClass,
+    /// Posiciones donde se usa esta variable (para interval splitting).
+    /// Si está vacío, se comporta como si todos los puntos entre start y end fueran usos.
+    pub uses: Vec<usize>,
+}
+
+/// Umbral de gap (en instrucciones) para decidir si un intervalo se parte.
+/// Si la distancia entre dos usos consecutivos supera este valor, se genera un split.
+const GAP_THRESHOLD: usize = 10;
+
+/// Divide un intervalo en sub-intervalos cuando hay gaps significativos entre usos.
+/// Retorna un vector de sub-intervalos, cada uno con un rango continuo de uso.
+fn split_interval(interval: &LiveInterval) -> Vec<LiveInterval> {
+    // Si no hay información de usos explícitos, no splittear
+    if interval.uses.is_empty() {
+        return vec![interval.clone()];
+    }
+
+    let uses = &interval.uses;
+    let mut sub_intervals = Vec::new();
+    let mut current_start = interval.start;
+    let mut last_use = uses[0];
+
+    for &use_pos in uses.iter().skip(1) {
+        if use_pos - last_use > GAP_THRESHOLD {
+            // Gap significativo — crear sub-intervalo hasta el último uso
+            sub_intervals.push(LiveInterval {
+                virt_reg: interval.virt_reg,
+                start: current_start,
+                end: last_use + 1,
+                reg_class: interval.reg_class,
+                uses: Vec::new(), // sub-intervalos derivados no necesitan usos internos
+            });
+            current_start = use_pos;
+        }
+        last_use = use_pos;
+    }
+    // Sub-intervalo final (desde el último start hasta el final original)
+    sub_intervals.push(LiveInterval {
+        virt_reg: interval.virt_reg,
+        start: current_start,
+        end: interval.end,
+        reg_class: interval.reg_class,
+        uses: Vec::new(),
+    });
+    sub_intervals
 }
 
 /// Clase de registro
@@ -184,7 +243,14 @@ impl RegisterAllocator {
             intervals: Vec::new(),
             assignments: HashMap::new(),
             spill_slots: 0,
-            active_regs: TEMP_REGS.iter().map(|&r| (r, 0)).collect(),
+            active_regs: {
+                let mut map: HashMap<PhysReg, VirtReg> = TEMP_REGS.iter().map(|&r| (r, 0)).collect();
+                // Registrar registros extendidos (callee-saved) como disponibles
+                for &r in EXTENDED_REGS {
+                    map.insert(r, 0);
+                }
+                map
+            },
             active_intervals: Vec::new(),
         }
     }
@@ -196,10 +262,16 @@ impl RegisterAllocator {
 
     /// Ejecuta el algoritmo de Linear Scan
     pub fn allocate(&mut self) -> Vec<AssignResult> {
-        // 1. Ordenar intervalos por punto de inicio
+        // 1. Aplicar interval splitting: partir intervalos con gaps significativos
+        let original: Vec<LiveInterval> = self.intervals.drain(..).collect();
+        for interval in &original {
+            self.intervals.extend(split_interval(interval));
+        }
+
+        // 2. Ordenar intervalos por punto de inicio
         self.intervals.sort_by_key(|i| i.start);
 
-        // 2. Resetear estado
+        // 3. Resetear estado
         self.active_intervals.clear();
         self.assignments.clear();
         self.spill_slots = 0;
@@ -275,7 +347,14 @@ impl RegisterAllocator {
     fn find_free_reg(&self, class: RegClass) -> Option<PhysReg> {
         match class {
             RegClass::Integer => {
+                // Primero buscar en registros temporales (caller-saved, preferidos)
                 for &reg in TEMP_REGS {
+                    if self.active_regs.get(&reg) == Some(&0) {
+                        return Some(reg);
+                    }
+                }
+                // Luego buscar en registros extendidos (callee-saved, R12/R13/R15)
+                for &reg in EXTENDED_REGS {
                     if self.active_regs.get(&reg) == Some(&0) {
                         return Some(reg);
                     }
@@ -338,12 +417,14 @@ mod tests {
             start: 0,
             end: 5,
             reg_class: RegClass::Integer,
+            uses: Vec::new(),
         });
         ra.add_interval(LiveInterval {
             virt_reg: 1,
             start: 6,
             end: 10,
             reg_class: RegClass::Integer,
+            uses: Vec::new(),
         });
 
         let results = ra.allocate();
@@ -364,6 +445,7 @@ mod tests {
                 start: 0,
                 end: 10,
                 reg_class: RegClass::Integer,
+                uses: Vec::new(),
             });
         }
 
@@ -383,18 +465,21 @@ mod tests {
             start: 0,
             end: 3,
             reg_class: RegClass::Integer,
+            uses: Vec::new(),
         });
         ra.add_interval(LiveInterval {
             virt_reg: 1,
             start: 3,
             end: 6,
             reg_class: RegClass::Integer,
+            uses: Vec::new(),
         });
         ra.add_interval(LiveInterval {
             virt_reg: 2,
             start: 6,
             end: 9,
             reg_class: RegClass::Integer,
+            uses: Vec::new(),
         });
 
         let results = ra.allocate();
@@ -421,6 +506,7 @@ mod tests {
             start: 0,
             end: 10,
             reg_class: RegClass::Integer,
+            uses: Vec::new(),
         });
         // Variable flotante con vida superpuesta
         ra.add_interval(LiveInterval {
@@ -428,6 +514,7 @@ mod tests {
             start: 0,
             end: 10,
             reg_class: RegClass::Float,
+            uses: Vec::new(),
         });
 
         let results = ra.allocate();
