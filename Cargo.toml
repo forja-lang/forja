@@ -1,6 +1,6 @@
 [package]
 name = "forja"
-version = "0.8.8"
+version = "9.0.0"
 edition = "2021"
 description = "Forja (fa) - Lenguaje de programación educativo en español"
 authors = ["forja-lang"]
@@ -12,6 +12,7 @@ lsp = ["tower-lsp", "tokio"]
 dap = []
 gui = []
 parallel = ["rayon"]
+ir = []
 h2-tls = ["rustls", "rustls-pki-types", "webpki-roots"]
 all = ["lsp", "dap", "gui", "crossbeam", "h2-tls", "parallel"]
 
