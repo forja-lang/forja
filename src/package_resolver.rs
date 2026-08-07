@@ -198,9 +198,16 @@ impl PackageResolver {
             return Ok(());
         }
 
-        // Si no es builtin, simular descarga — en producción descargaría del registry
-        self.installed
-            .insert(nombre.to_string(), version.to_string());
-        Ok(())
+        // No es builtin ni existe localmente: la descarga desde un registry
+        // remoto aún no está implementada. Falla explícito en vez de fingir
+        // que el paquete quedó instalado.
+        Err(format!(
+            "Paquete '{}' versión '{}' no encontrado localmente. La descarga \
+             desde un registry remoto aún no está implementada; instala el \
+             paquete manualmente en {}",
+            nombre,
+            version,
+            pkg_dir.display()
+        ))
     }
 }
