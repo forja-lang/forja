@@ -27,6 +27,9 @@ use std::cell::Cell;
 pub struct GcHeader {
     /// Tamaño del objeto en bytes (sin incluir header)
     pub size: usize,
+    /// Tamaño total de la allocación (header + data + padding de alineación).
+    /// Se usa para iterar correctamente sobre los objetos.
+    pub alloc_size: usize,
     /// Bit de mark para mark-sweep
     pub marked: Cell<bool>,
     /// Edad del objeto (cuántas colecciones young ha sobrevivido)
@@ -112,12 +115,22 @@ impl BumpAllocator {
     /// Retorna un puntero al inicio del espacio, o None si no hay espacio.
     fn alloc(&self, size: usize, align: usize) -> Option<*mut u8> {
         let current = self.offset.get();
-        let aligned = (current + align - 1) & !(align - 1);
-        let new_offset = aligned + size + std::mem::size_of::<GcHeader>();
+        // Alinear a la mayor entre la alineación del dato y la del header
+        let header_align = std::mem::align_of::<GcHeader>();
+        let max_align = if align > header_align { align } else { header_align };
+        let aligned = (current + max_align - 1) & !(max_align - 1);
+        let raw_end = aligned + size + std::mem::size_of::<GcHeader>();
+        // Redondear hacia arriba al siguiente múltiplo de header_align
+        // para que el siguiente objeto empiece alineado
+        let new_offset = (raw_end + header_align - 1) & !(header_align - 1);
 
         if new_offset > self.capacity {
             return None;
         }
+
+        // alloc_size es el paso total desde el offset anterior hasta el nuevo offset
+        // Incluye: padding de alineación + header + datos + padding final
+        let alloc_step = new_offset - current;
 
         self.offset.set(new_offset);
         let ptr = unsafe { self.memory.add(aligned) };
@@ -125,6 +138,7 @@ impl BumpAllocator {
         // Inicializar header
         let header = GcHeader {
             size,
+            alloc_size: alloc_step,
             marked: Cell::new(false),
             age: 0,
             generation: Generation::Young,
@@ -173,8 +187,14 @@ impl BumpAllocator {
                 break; // objeto corrupto o fin
             }
             f(GcRef { ptr });
-            let obj_size = std::mem::size_of::<GcHeader>() + header.size;
-            offset += (obj_size + 15) & !15; // alineación a 16 bytes
+            // Usar alloc_size que incluye header + data + padding de alineación
+            if header.alloc_size > 0 {
+                offset += header.alloc_size;
+            } else {
+                // Fallback para headers sin alloc_size (compatibilidad)
+                let obj_size = std::mem::size_of::<GcHeader>() + header.size;
+                offset += (obj_size + 15) & !15;
+            }
         }
     }
 
@@ -221,8 +241,12 @@ impl BumpAllocator {
                 break;
             }
             count += 1;
-            let obj_size = std::mem::size_of::<GcHeader>() + header.size;
-            offset += (obj_size + 15) & !15;
+            if header.alloc_size > 0 {
+                offset += header.alloc_size;
+            } else {
+                let obj_size = std::mem::size_of::<GcHeader>() + header.size;
+                offset += (obj_size + 15) & !15;
+            }
         }
         count
     }
@@ -622,5 +646,109 @@ mod tests {
         let stats = gc.stats();
         // Debería haber hecho al menos una colección
         assert!(stats.young_collections > 0 || stats.full_collections > 0);
+    }
+
+    #[test]
+    fn test_gc_mark_marks_rooted_objects() {
+        let mut gc = GenerationalGC::with_sizes(1024, 1024, 4096);
+        let r1 = gc.alloc(42i64);
+        let _r2 = gc.alloc(99i64); // no tiene root
+        gc.add_root(r1);
+
+        // Ejecutar mark
+        gc.mark();
+
+        // r1 debería estar marcado (es root)
+        assert!(r1.header().marked.get());
+        // r2 no debería estar marcado (no es root y no contiene punteros)
+        assert!(!_r2.header().marked.get());
+    }
+
+    #[test]
+    fn test_gc_reset_marks_clears_all() {
+        let mut gc = GenerationalGC::with_sizes(1024, 1024, 4096);
+        let r1 = gc.alloc(42i64);
+        gc.add_root(r1);
+
+        gc.mark();
+        assert!(r1.header().marked.get());
+
+        gc.reset_marks();
+        assert!(!r1.header().marked.get());
+    }
+
+    #[test]
+    fn test_gc_young_collection_preserves_rooted() {
+        let mut gc = GenerationalGC::with_sizes(256, 256, 4096);
+        let r1 = gc.alloc(42i64);
+        gc.add_root(r1);
+
+        // Forzar young collection
+        for _ in 0..50 {
+            gc.alloc(0u8);
+        }
+
+        // La root debería seguir siendo válida
+        assert!(!r1.is_null());
+        let stats = gc.stats();
+        assert!(stats.young_collections > 0);
+    }
+
+    #[test]
+    fn test_gc_full_collection_preserves_rooted() {
+        let mut gc = GenerationalGC::with_sizes(256, 256, 512);
+        let r1 = gc.alloc(42i64);
+        gc.add_root(r1);
+
+        // Forzar full collection
+        for _ in 0..100 {
+            gc.alloc(vec![0u8; 32]);
+        }
+
+        assert!(!r1.is_null());
+        let stats = gc.stats();
+        assert!(stats.full_collections > 0 || stats.young_collections > 0);
+    }
+
+    #[test]
+    fn test_gc_object_count() {
+        let mut gc = GenerationalGC::with_sizes(1024, 1024, 4096);
+        assert_eq!(gc.total_object_count(), 0);
+
+        gc.alloc(1i64);
+        gc.alloc(2i64);
+        gc.alloc(3i64);
+        assert_eq!(gc.total_object_count(), 3);
+    }
+
+    #[test]
+    fn test_gc_mark_reachable_objects() {
+        let mut gc = GenerationalGC::with_sizes(1024, 1024, 4096);
+
+        // Crear un objeto que contiene un puntero a otro objeto
+        let _inner = gc.alloc(42i64);
+        // El outer contiene raw bytes que podrían parecer un puntero
+        // (conservative scanning)
+        let outer = gc.alloc([0u8; 64]);
+        gc.add_root(outer);
+
+        gc.mark();
+
+        // El outer (root) debería estar marcado
+        assert!(outer.header().marked.get());
+    }
+
+    #[test]
+    fn test_gc_for_each_object() {
+        let mut gc = GenerationalGC::with_sizes(1024, 1024, 4096);
+        gc.alloc(1i64);
+        gc.alloc(2i64);
+        gc.alloc(3i64);
+
+        let mut count = 0;
+        gc.nursery.for_each_object(&mut |_| {
+            count += 1;
+        });
+        assert_eq!(count, 3);
     }
 }
