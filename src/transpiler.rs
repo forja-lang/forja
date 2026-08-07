@@ -2251,9 +2251,18 @@ impl Transpiler {
                         self.emit_line(&format!("{}.len();", args[0]));
                     }
                 } else if nombre == "BD" {
-                    // BD("sqlite:memoria") -> rusqlite::Connection::open_in_memory()
-                    self.emit_line("// TODO: Implementar conexión BD");
-                    self.emit_line("// usar rusqlite::Connection::open_in_memory()");
+                    // BD(especificación) → abrir conexión SQLite.
+                    // "sqlite:memoria" usa open_in_memory(); el resto como archivo.
+                    let args: Vec<String> = argumentos
+                        .iter()
+                        .map(|a| self.transpilar_expresion(a))
+                        .collect();
+                    if let Some(spec) = args.first() {
+                        self.emit_line(&format!(
+                            "let _conexion_bd: rusqlite::Connection = {{ let espec = {}; if espec == \"sqlite:memoria\" {{ rusqlite::Connection::open_in_memory().expect(\"BD: no se pudo abrir la BD en memoria\") }} else {{ rusqlite::Connection::open(espec).expect(\"BD: no se pudo abrir la BD\") }} }};",
+                            spec
+                        ));
+                    }
                 } else if self.es_funcion_externa(nombre) {
                     let args: Vec<String> = argumentos
                         .iter()
