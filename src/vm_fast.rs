@@ -1004,7 +1004,6 @@ impl ForjaFast {
         self.sandbox_proc = sandbox;
         self
     }
-    }
 
     /// Habilita/deshabilita verificación de contratos (debug/release)
     pub fn con_contratos(mut self, activo: bool) -> Self {
