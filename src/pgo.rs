@@ -36,6 +36,9 @@ pub struct ProfileData {
     pub loop_iterations: HashMap<BlockId, u64>,
     /// Distribución de tipos en ICs: (función, ip) → tipo → conteo
     pub type_distribution: HashMap<BlockId, HashMap<String, u64>>,
+    /// Hotness por instruction pointer del bytecode (para pre-especialización
+    /// adaptativa: los IPs calientes se especializan en el primer run)
+    pub hot_ips: HashMap<usize, u64>,
 }
 
 impl ProfileData {
@@ -44,8 +47,8 @@ impl ProfileData {
     }
 
     /// Registra una llamada a función
-    pub fn record_call(&mut self, func: &FuncId) {
-        *self.function_hotness.entry(func.clone()).or_insert(0) += 1;
+    pub fn record_call(&mut self, func: &str) {
+        *self.function_hotness.entry(func.to_string()).or_insert(0) += 1;
     }
 
     /// Registra un branch taken/not-taken
@@ -67,6 +70,11 @@ impl ProfileData {
     pub fn record_type_at_ic(&mut self, block: &BlockId, tipo: &str) {
         let dist = self.type_distribution.entry(block.clone()).or_insert_with(HashMap::new);
         *dist.entry(tipo.to_string()).or_insert(0) += 1;
+    }
+
+    /// Registra una ejecución en el IP dado (hotness de bytecode)
+    pub fn record_ip(&mut self, ip: usize) {
+        *self.hot_ips.entry(ip).or_insert(0) += 1;
     }
 
     /// Serializa el perfil a bytes (formato binario simple)
@@ -284,9 +292,9 @@ mod tests {
     #[test]
     fn test_profile_call_recording() {
         let mut profile = ProfileData::new();
-        profile.record_call(&"main".to_string());
-        profile.record_call(&"main".to_string());
-        profile.record_call(&"foo".to_string());
+        profile.record_call("main");
+        profile.record_call("main");
+        profile.record_call("foo");
         assert_eq!(profile.function_hotness["main"], 2);
         assert_eq!(profile.function_hotness["foo"], 1);
     }
@@ -307,9 +315,9 @@ mod tests {
     #[test]
     fn test_hottest_function() {
         let mut profile = ProfileData::new();
-        profile.record_call(&"foo".to_string()); // 1
+        profile.record_call("foo"); // 1
         for _ in 0..10 {
-            profile.record_call(&"bar".to_string()); // 10
+            profile.record_call("bar"); // 10
         }
         let (name, count) = profile.hottest_function().unwrap();
         assert_eq!(name, "bar");
@@ -319,9 +327,9 @@ mod tests {
     #[test]
     fn test_hot_functions() {
         let mut profile = ProfileData::new();
-        profile.record_call(&"cold".to_string());
+        profile.record_call("cold");
         for _ in 0..100 {
-            profile.record_call(&"hot".to_string());
+            profile.record_call("hot");
         }
         let hot = profile.hot_functions(50);
         assert_eq!(hot.len(), 1);
@@ -331,7 +339,7 @@ mod tests {
     #[test]
     fn test_serialize_deserialize() {
         let mut profile = ProfileData::new();
-        profile.record_call(&"main".to_string());
+        profile.record_call("main");
         profile.record_branch(&"b0".to_string(), true);
 
         let bytes = profile.serialize();
@@ -344,7 +352,7 @@ mod tests {
     fn test_pgo_decisions() {
         let mut profile = ProfileData::new();
         for _ in 0..5000 {
-            profile.record_call(&"hot_fn".to_string());
+            profile.record_call("hot_fn");
         }
         for _ in 0..100 {
             profile.record_branch(&"b0".to_string(), true);
