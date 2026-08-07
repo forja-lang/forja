@@ -4482,11 +4482,22 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
                     result.push(Opcode::LoadIdx(idx));
                 }
                 Opcode::Store(name) => {
+                    // En el bytecode original, `Declare` NO hace pop (solo declara
+                    // la variable) y `Store` hace pop del valor y lo guarda. Al
+                    // optimizar, Declare→DeclareIdx y Store→StoreIdx, pero en la
+                    // VM ForjaFast DeclareIdx SÍ hace pop. Por lo tanto, el patrón
+                    // `Push, Declare(name), Store(name)` debe convertirse a un solo
+                    // `DeclareIdx` (que popea y guarda); un StoreIdx extra popeiría
+                    // un valor de más y rompería patrones como `a % b` (que usa una
+                    // variable temporal __mod_t*).
                     let idx = *var_indices.entry(name.to_string()).or_insert_with(|| {
                         let i = next_idx;
                         next_idx += 1;
                         i
                     });
+                    if matches!(result.last(), Some(Opcode::DeclareIdx(last, _)) if *last == idx) {
+                        continue; // DeclareIdx ya hizo pop y store; no duplicar
+                    }
                     result.push(Opcode::StoreIdx(idx));
                 }
                 Opcode::Declare(name, mutable) => {
