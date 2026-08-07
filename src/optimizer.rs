@@ -748,10 +748,13 @@ impl Optimizer {
         use Operador::*;
         match (a, b) {
             (ValorConstante::Entero(a), ValorConstante::Entero(b)) => match op {
-                Suma => Some(ValorConstante::Entero(a + b)),
-                Resta => Some(ValorConstante::Entero(a - b)),
-                Multiplicacion => Some(ValorConstante::Entero(a * b)),
-                Division if *b != 0 => Some(ValorConstante::Entero(a / b)),
+                Suma => a.checked_add(*b).map(|v| ValorConstante::Entero(v)),
+                Resta => a.checked_sub(*b).map(|v| ValorConstante::Entero(v)),
+                Multiplicacion => a.checked_mul(*b).map(|v| ValorConstante::Entero(v)),
+                Division => {
+                    if *b == 0 { None }
+                    else { a.checked_div(*b).map(|v| ValorConstante::Entero(v)) }
+                }
                 IgualIgual => Some(ValorConstante::Booleano(a == b)),
                 Diferente => Some(ValorConstante::Booleano(a != b)),
                 Mayor => Some(ValorConstante::Booleano(a > b)),
@@ -1045,24 +1048,52 @@ impl DeadCodeEliminator {
             Expresion::Closure { cuerpo, .. } => {
                 self.recolectar_usos(cuerpo);
             }
+            Expresion::Try(expr) => {
+                // El operador ? envuelve una llamada: los usos internos (y las
+                // funciones llamadas) deben recolectarse o el DCE los elimina.
+                self.recolectar_en_expresion(expr);
+            }
+            Expresion::Anterior(expr) => {
+                self.recolectar_en_expresion(expr);
+            }
+            Expresion::Ok(expr) | Expresion::Error(expr) | Expresion::Algo(expr) => {
+                self.recolectar_en_expresion(expr);
+            }
             _ => {}
         }
     }
 
     fn es_muerto(&self, decl: &Declaracion) -> bool {
         match decl {
-            Declaracion::Variable { nombre, .. } => !self.variables_usadas.contains(nombre),
+            Declaracion::Variable { nombre, valor, .. } => {
+                if !self.variables_usadas.contains(nombre) {
+                    // No eliminar si la expresión inicializadora tiene efectos secundarios
+                    if let Some(val) = valor {
+                        return !self.tiene_side_effects(val);
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
             Declaracion::Funcion { nombre, .. } => {
                 // main siempre se conserva, funciones externas (FFI) tambien
                 nombre != "main" && !self.funciones_llamadas.contains(nombre)
             }
             Declaracion::Clase { nombre, .. } => !self.clases_usadas.contains(nombre),
             Declaracion::Rasgo { nombre, .. } => !self.rasgos_usados.contains(nombre),
-            Declaracion::Enum { nombre, .. } => {
-                // Un enum se considera usado si su nombre aparece
-                // en alguna expresion (identificador, match, etc.)
+            Declaracion::Enum { nombre, variantes, .. } => {
+                // Un enum se considera usado si su nombre aparece en alguna
+                // expresion, o si CUALQUIERA de sus variantes se usa (la
+                // construcción Heroe(...) y el match caso Heroe(...) referencian
+                // la variante, no el nombre del enum).
+                let variante_usada = variantes.iter().any(|v| {
+                    self.funciones_llamadas.contains(&v.nombre)
+                        || self.variables_usadas.contains(&v.nombre)
+                });
                 !self.variables_usadas.contains(nombre)
                     && !self.funciones_llamadas.contains(nombre)
+                    && !variante_usada
             }
             Declaracion::Implementacion { rasgo_nombre, clase_nombre, .. } => {
                 // Si el rasgo y la clase no se usan, la implementacion es muerta
@@ -1071,6 +1102,18 @@ impl DeadCodeEliminator {
             }
             _ => false,
         }
+    }
+
+    /// Determina si una expresión tiene efectos secundarios que impiden su eliminación.
+    /// Las llamadas a funciones, métodos e instanciaciones tienen efectos colaterales
+    /// (pueden modificar estado externo, asignar memoria, producir I/O, etc.).
+    fn tiene_side_effects(&self, expr: &Expresion) -> bool {
+        matches!(
+            expr,
+            Expresion::LlamadaFuncion { .. }
+                | Expresion::LlamadaMetodo { .. }
+                | Expresion::Instanciacion { .. }
+        )
     }
 }
 
@@ -1146,14 +1189,40 @@ impl ConstPropagator {
                     columna: 0,
                 }]
             }
-            Declaracion::Funcion { cuerpo, .. } => {
+            Declaracion::Funcion {
+                nombre,
+                parametros_tipo,
+                parametros,
+                tipo_retorno,
+                cuerpo,
+                externa,
+                asincrona,
+                enlace_nombre,
+                atributos,
+                doc,
+                precondiciones,
+                postcondiciones,
+            } => {
                 let saved = std::mem::take(&mut self.constantes);
-                let _: Vec<Declaracion> = cuerpo
+                let new_cuerpo: Vec<Declaracion> = cuerpo
                     .iter()
                     .flat_map(|d| self.propagar_declaracion(d))
                     .collect();
                 self.constantes = saved;
-                vec![decl.clone()]
+                vec![Declaracion::Funcion {
+                    nombre: nombre.clone(),
+                    parametros_tipo: parametros_tipo.clone(),
+                    parametros: parametros.clone(),
+                    tipo_retorno: tipo_retorno.clone(),
+                    cuerpo: new_cuerpo,
+                    externa: *externa,
+                    asincrona: *asincrona,
+                    enlace_nombre: enlace_nombre.clone(),
+                    atributos: atributos.clone(),
+                    doc: doc.clone(),
+                    precondiciones: precondiciones.clone(),
+                    postcondiciones: postcondiciones.clone(),
+                }]
             }
             _ => {
                 vec![self.clonar_y_propagar(decl)]
@@ -1161,7 +1230,7 @@ impl ConstPropagator {
         }
     }
 
-    fn clonar_y_propagar(&self, decl: &Declaracion) -> Declaracion {
+    fn clonar_y_propagar(&mut self, decl: &Declaracion) -> Declaracion {
         match decl {
             Declaracion::Variable {
                 mutable,
@@ -1205,26 +1274,47 @@ impl ConstPropagator {
                 condicion,
                 bloque_verdadero,
                 bloque_falso,
-            } => Declaracion::Si {
-                condicion: Box::new(self.propagar_expresion(condicion)),
-                bloque_verdadero: bloque_verdadero.clone(),
-                bloque_falso: bloque_falso.clone(),
-            },
-            Declaracion::Mientras { condicion, bloque } => Declaracion::Mientras {
-                condicion: Box::new(self.propagar_expresion(condicion)),
-                bloque: bloque.clone(),
-            },
+            } => {
+                let new_verdadero: Vec<Declaracion> = bloque_verdadero.iter()
+                    .flat_map(|d| self.propagar_declaracion(d))
+                    .collect();
+                let new_falso: Option<Vec<Declaracion>> = bloque_falso.as_ref().map(|bf| {
+                    bf.iter().flat_map(|d| self.propagar_declaracion(d)).collect()
+                });
+                Declaracion::Si {
+                    condicion: Box::new(self.propagar_expresion(condicion)),
+                    bloque_verdadero: new_verdadero,
+                    bloque_falso: new_falso,
+                }
+            }
+            Declaracion::Mientras { condicion, bloque } => {
+                let new_bloque: Vec<Declaracion> = bloque.iter()
+                    .flat_map(|d| self.propagar_declaracion(d))
+                    .collect();
+                Declaracion::Mientras {
+                    condicion: Box::new(self.propagar_expresion(condicion)),
+                    bloque: new_bloque,
+                }
+            }
             Declaracion::Para {
                 inicializacion,
                 condicion,
                 incremento,
                 bloque,
-            } => Declaracion::Para {
-                inicializacion: inicializacion.clone(),
-                condicion: condicion.as_ref().map(|c| Box::new(self.propagar_expresion(c))),
-                incremento: incremento.clone(),
-                bloque: bloque.clone(),
-            },
+            } => {
+                let new_inicializacion = inicializacion.as_ref().map(|ini| {
+                    Box::new(self.clonar_y_propagar(ini))
+                });
+                let new_bloque: Vec<Declaracion> = bloque.iter()
+                    .flat_map(|d| self.propagar_declaracion(d))
+                    .collect();
+                Declaracion::Para {
+                    inicializacion: new_inicializacion,
+                    condicion: condicion.as_ref().map(|c| Box::new(self.propagar_expresion(c))),
+                    incremento: incremento.clone(),
+                    bloque: new_bloque,
+                }
+            }
             _ => decl.clone(),
         }
     }
@@ -1342,10 +1432,13 @@ impl ConstPropagator {
         use Operador::*;
         match (a, b) {
             (ValorConstante::Entero(a), ValorConstante::Entero(b)) => match op {
-                Suma => Some(ValorConstante::Entero(a + b)),
-                Resta => Some(ValorConstante::Entero(a - b)),
-                Multiplicacion => Some(ValorConstante::Entero(a * b)),
-                Division if *b != 0 => Some(ValorConstante::Entero(a / b)),
+                Suma => a.checked_add(*b).map(|v| ValorConstante::Entero(v)),
+                Resta => a.checked_sub(*b).map(|v| ValorConstante::Entero(v)),
+                Multiplicacion => a.checked_mul(*b).map(|v| ValorConstante::Entero(v)),
+                Division => {
+                    if *b == 0 { None }
+                    else { a.checked_div(*b).map(|v| ValorConstante::Entero(v)) }
+                }
                 IgualIgual => Some(ValorConstante::Booleano(a == b)),
                 Diferente => Some(ValorConstante::Booleano(a != b)),
                 Mayor => Some(ValorConstante::Booleano(a > b)),
@@ -1628,6 +1721,91 @@ impl FunctionInliner {
                 inlined.extend(body.clone());
                 inlined
             }
+            // Expresión suelta que es una llamada inlineable
+            Declaracion::Expresion(Expresion::LlamadaFuncion { nombre, argumentos })
+                if candidates.contains_key(nombre) =>
+            {
+                let (params, body) = &candidates[nombre];
+                let mut inlined = Vec::new();
+                for (i, param) in params.iter().enumerate() {
+                    if let Some(arg) = argumentos.get(i) {
+                        inlined.push(Declaracion::Variable {
+                            mutable: false,
+                            nombre: param.nombre.clone(),
+                            tipo: param.tipo.clone(),
+                            valor: Some(arg.clone()),
+                            linea: 0,
+                            columna: 0,
+                        });
+                    }
+                }
+                inlined.extend(body.clone());
+                inlined
+            }
+            // Declaración de llamada a función como statement
+            Declaracion::LlamadaFuncion { nombre, argumentos }
+                if candidates.contains_key(nombre) =>
+            {
+                let (params, body) = &candidates[nombre];
+                let mut inlined = Vec::new();
+                for (i, param) in params.iter().enumerate() {
+                    if let Some(arg) = argumentos.get(i) {
+                        inlined.push(Declaracion::Variable {
+                            mutable: false,
+                            nombre: param.nombre.clone(),
+                            tipo: param.tipo.clone(),
+                            valor: Some(arg.clone()),
+                            linea: 0,
+                            columna: 0,
+                        });
+                    }
+                }
+                inlined.extend(body.clone());
+                inlined
+            }
+            // Si/Mientras/Para: inline recursivo en el interior de bloques
+            Declaracion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
+                let new_verdadero: Vec<Declaracion> = bloque_verdadero.iter()
+                    .flat_map(|d| self.inline_en_decl(d, candidates))
+                    .collect();
+                let new_falso: Option<Vec<Declaracion>> = bloque_falso.as_ref().map(|bf| {
+                    bf.iter().flat_map(|d| self.inline_en_decl(d, candidates)).collect()
+                });
+                vec![Declaracion::Si {
+                    condicion: condicion.clone(),
+                    bloque_verdadero: new_verdadero,
+                    bloque_falso: new_falso,
+                }]
+            }
+            Declaracion::Mientras { condicion, bloque } => {
+                let new_bloque: Vec<Declaracion> = bloque.iter()
+                    .flat_map(|d| self.inline_en_decl(d, candidates))
+                    .collect();
+                vec![Declaracion::Mientras {
+                    condicion: condicion.clone(),
+                    bloque: new_bloque,
+                }]
+            }
+            Declaracion::Para {
+                inicializacion,
+                condicion,
+                incremento,
+                bloque,
+            } => {
+                let new_bloque: Vec<Declaracion> = bloque.iter()
+                    .flat_map(|d| self.inline_en_decl(d, candidates))
+                    .collect();
+                vec![Declaracion::Para {
+                    inicializacion: inicializacion.clone(),
+                    condicion: condicion.clone(),
+                    incremento: incremento.clone(),
+                    bloque: new_bloque,
+                }]
+            }
             _ => vec![decl.clone()],
         }
     }
@@ -1676,7 +1854,7 @@ impl LoopUnswitcher {
                     bloque_falso,
                 }) = bloque.first()
                 {
-                    if self.es_invariante_en_loop(si_cond, condicion) {
+                    if self.es_invariante_en_loop(si_cond, condicion, bloque) {
                         self.unswitches_realizados += 1;
                         // Crear dos loops: uno para verdadero, otro para falso
                         let loop_verdadero = Declaracion::Mientras {
@@ -1755,13 +1933,59 @@ impl LoopUnswitcher {
 
     /// Verifica si una expresión es invariante dentro de un loop.
     /// Una expresión es invariante si no depende de variables que cambien en el loop.
-    fn es_invariante_en_loop(&self, expr: &Expresion, loop_cond: &Expresion) -> bool {
-        // Heurística simple: si la expresión no contiene identificadores
-        // que aparecen como variables del loop (detectados por el cond del while)
+    /// Considera tanto las variables de la condición del loop como las modificadas en el body.
+    fn es_invariante_en_loop(&self, expr: &Expresion, loop_cond: &Expresion, cuerpo_loop: &[Declaracion]) -> bool {
+        // 1. La variable no debe aparecer en la condición del loop
         let vars_loop = self.extraer_identificadores(loop_cond);
         let vars_expr = self.extraer_identificadores(expr);
-        // Si ninguna variable de la expresión está en las variables del loop
-        !vars_expr.iter().any(|v| vars_loop.contains(v))
+        if vars_expr.iter().any(|v| vars_loop.contains(v)) {
+            return false;
+        }
+        // 2. La variable no debe ser modificada en el body del loop
+        for v in &vars_expr {
+            if self.body_modifica_var(cuerpo_loop, v) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Verifica si una variable es modificada dentro de un bloque de declaraciones.
+    /// Busca recursivamente en bloques anidados (si, mientras, para, repetir).
+    fn body_modifica_var(&self, body: &[Declaracion], var: &str) -> bool {
+        for decl in body {
+            match decl {
+                Declaracion::Variable { nombre, .. } if nombre == var => return true,
+                Declaracion::Asignacion { nombre, .. } if nombre == var => return true,
+                Declaracion::AsignacionIndex { nombre, .. } if nombre == var => return true,
+                Declaracion::AsignacionMiembro { objeto, .. } => {
+                    if let Expresion::Identificador { nombre, .. } = objeto.as_ref() {
+                        if nombre == var { return true; }
+                    }
+                }
+                // Recursivo en bloques anidados
+                Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
+                    if self.body_modifica_var(bloque_verdadero, var) { return true; }
+                    if let Some(falso) = bloque_falso {
+                        if self.body_modifica_var(falso, var) { return true; }
+                    }
+                }
+                Declaracion::Mientras { bloque, .. } => {
+                    if self.body_modifica_var(bloque, var) { return true; }
+                }
+                Declaracion::Para { bloque, .. } => {
+                    if self.body_modifica_var(bloque, var) { return true; }
+                }
+                Declaracion::Repetir { bloque, .. } => {
+                    if self.body_modifica_var(bloque, var) { return true; }
+                }
+                Declaracion::Cuando { cuerpo, .. } => {
+                    if self.body_modifica_var(cuerpo, var) { return true; }
+                }
+                _ => {}
+            }
+        }
+        false
     }
 
     fn extraer_identificadores(&self, expr: &Expresion) -> Vec<String> {
@@ -1911,18 +2135,99 @@ impl CsePass {
 
     fn expr_hash_key(expr: &Expresion) -> String {
         match expr {
-            Expresion::Binaria { izquierda, operador, derecha } => {
-                format!("bin:{:?}:{}:{}", operador,
-                    Self::expr_hash_key(izquierda),
-                    Self::expr_hash_key(derecha))
-            }
-            Expresion::Identificador { nombre, .. } => format!("id:{}", nombre),
+            // Literales
             Expresion::LiteralNumero(n) => format!("num:{}", n),
             Expresion::LiteralDecimal(d) => format!("dec:{}", d),
             Expresion::LiteralTexto(s) => format!("txt:{}", s),
             Expresion::LiteralBooleano(b) => format!("bool:{}", b),
             Expresion::LiteralNulo => "nulo".to_string(),
-            _ => format!("expr:{:?}", expr as *const _),
+            // Identificador
+            Expresion::Identificador { nombre, .. } => format!("id:{}", nombre),
+            // Binaria — recursivo
+            Expresion::Binaria { izquierda, operador, derecha } => {
+                format!("bin:{:?}:{}:{}", operador,
+                    Self::expr_hash_key(izquierda),
+                    Self::expr_hash_key(derecha))
+            }
+            // Unaria — recursivo
+            Expresion::Unaria { operador, expr } => {
+                format!("unary:{:?}:{}", operador,
+                    Self::expr_hash_key(expr))
+            }
+            // Llamada a función — recursivo en argumentos
+            Expresion::LlamadaFuncion { nombre, argumentos } => {
+                let args_hash: Vec<String> = argumentos.iter()
+                    .map(|a| Self::expr_hash_key(a)).collect();
+                format!("call:{}:{}", nombre, args_hash.join(","))
+            }
+            // Llamada a método — recursivo en objeto y argumentos
+            Expresion::LlamadaMetodo { objeto, metodo, argumentos } => {
+                let args_hash: Vec<String> = argumentos.iter()
+                    .map(|a| Self::expr_hash_key(a)).collect();
+                format!("meth:{}:{}:{}", Self::expr_hash_key(objeto), metodo, args_hash.join(","))
+            }
+            // Arreglo literal — recursivo en elementos
+            Expresion::Arreglo(elementos) => {
+                let elems: Vec<String> = elementos.iter()
+                    .map(|e| Self::expr_hash_key(e)).collect();
+                format!("arr:[{}]", elems.join(","))
+            }
+            // Index — recursivo en objeto e índice
+            Expresion::Index { objeto, indice } => {
+                format!("idx:{}:{}", Self::expr_hash_key(objeto), Self::expr_hash_key(indice))
+            }
+            // AccesoMiembro — recursivo en objeto
+            Expresion::AccesoMiembro { objeto, miembro } => {
+                format!("dot:{}:{}", Self::expr_hash_key(objeto), miembro)
+            }
+            // Instanciación — recursivo en argumentos
+            Expresion::Instanciacion { clase, argumentos } => {
+                let args_hash: Vec<String> = argumentos.iter()
+                    .map(|a| Self::expr_hash_key(a)).collect();
+                format!("new:{}:{}", clase, args_hash.join(","))
+            }
+            // Grupo (paréntesis) — recursivo
+            Expresion::Grupo(expr) => {
+                format!("grp:{}", Self::expr_hash_key(expr))
+            }
+            // Mapa literal — recursivo en claves y valores
+            Expresion::Mapa(pares) => {
+                let pairs: Vec<String> = pares.iter()
+                    .map(|(k, v)| format!("{}={}", Self::expr_hash_key(k), Self::expr_hash_key(v)))
+                    .collect();
+                format!("map:[{}]", pairs.join(","))
+            }
+            // Ternario — recursivo
+            Expresion::Ternario { condicion, si_verdadero, si_falso } => {
+                format!("tern:{}:{}:{}",
+                    Self::expr_hash_key(condicion),
+                    Self::expr_hash_key(si_verdadero),
+                    Self::expr_hash_key(si_falso))
+            }
+            // Referencia — recursivo
+            Expresion::Referencia { expr, mutable } => {
+                format!("ref:{}:{}", mutable, Self::expr_hash_key(expr))
+            }
+            // Ok/Error/Algo — recursivo
+            Expresion::Ok(expr) => format!("ok:{}", Self::expr_hash_key(expr)),
+            Expresion::Error(expr) => format!("err:{}", Self::expr_hash_key(expr)),
+            Expresion::Algo(expr) => format!("algo:{}", Self::expr_hash_key(expr)),
+            // Try — recursivo
+            Expresion::Try(expr) => format!("try:{}", Self::expr_hash_key(expr)),
+            // Asignación como expresión — recursivo
+            Expresion::Asignacion { variable, valor } => {
+                format!("asgn:{}:{}", variable, Self::expr_hash_key(valor))
+            }
+            // Asignación a campo — recursivo
+            Expresion::AsignacionCampo { objeto, campo, valor } => {
+                format!("asgnf:{}:{}:{}", Self::expr_hash_key(objeto), campo, Self::expr_hash_key(valor))
+            }
+            // ArraySet — recursivo
+            Expresion::ArraySet { array, valor } => {
+                format!("arrset:{}:{}", Self::expr_hash_key(array), Self::expr_hash_key(valor))
+            }
+            // Fallback: usar Debug sin puntero (hash determinista del contenido)
+            _ => format!("other:{:?}", expr),
         }
     }
 
@@ -2010,6 +2315,9 @@ impl CopyPropagation {
                 Declaracion::Asignacion { nombre, valor, .. } => {
                     // Si se asigna a una variable que es copia, invalidar la copia
                     copies.remove(nombre);
+                    // También invalidar entradas cuyo VALOR apunte a este nombre
+                    // (porque "nombre" acaba de cambiar de valor)
+                    copies.retain(|_, v| v != nombre);
                     let new_val = self.reemplazar_copias_expr(valor, &copies);
                     let mut new_decl = decl.clone();
                     if let Declaracion::Asignacion { valor, .. } = &mut new_decl {
