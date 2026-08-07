@@ -3282,6 +3282,18 @@ impl Parser {
             let cuerpo = if self.coincide(TokenKind::LlaveAbrir) {
                 self.avanzar(); // consume {
                 self.parse_bloque()? // parse_bloque consume el }
+            } else if self.coincide(TokenKind::Retornar) {
+                // Si la expresión es 'retornar', parsear la declaración completa
+                let decl = self.parse_declaracion()?.ok_or_else(|| {
+                    ErrorForja::new(
+                        ErrorTipo::ErrorSintactico,
+                        self.linea_actual(),
+                        self.columna_actual(),
+                        "Se esperaba una declaración después de 'retornar'.",
+                        "Usá: retornar expresión",
+                    )
+                })?;
+                vec![decl]
             } else {
                 // Expresión simple después de ->
                 let expr = self.parse_expresion()?;
