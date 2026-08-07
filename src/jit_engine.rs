@@ -39,9 +39,6 @@ pub fn es_jiteable(opcodes: &[Opcode]) -> bool {
             Opcode::XorSign(_) |
             Opcode::AddStoreFloat(_) | Opcode::SubStoreFloat(_) | Opcode::MulStoreFloat(_) |
             // Fase 3b: Direct fused float opcodes (JITeables)
-            Opcode::DivFloatDirect(_, _, _) | Opcode::MulFloatDirect(_, _, _) |
-            Opcode::AddFloatDirect(_, _, _) | Opcode::SubFloatDirect(_, _, _) |
-            Opcode::FusedDivAdd(_, _, _) | Opcode::FusedDivSub(_, _, _) |
             Opcode::FusedDivAddConst(_, _, _) | Opcode::FusedDivSubConst(_, _, _) |
             Opcode::Jump(_) | Opcode::JumpSiFalso(_) |
             // Superinstructions — expandibles en JIT
