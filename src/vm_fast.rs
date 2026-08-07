@@ -585,6 +585,19 @@ pub struct ForjaFast {
     contador_especializacion: Vec<u8>, // contadores por IP de bytecode
     umbral_especializacion: u8,        // típicamente 2-5
 
+    // ─── PGO (Profile-Guided Optimization) ────────────────────────────────
+    /// Perfil en recolección durante la ejecución (None = sin profiling).
+    /// Conecta el `pgo::ProfileData` existente al runtime de la VM.
+    pub perfil_pgo: Option<crate::pgo::ProfileData>,
+    /// Muestreador de IPs calientes (contadores por instruction pointer).
+    pub instrumenter_pgo: Option<crate::pgo::Instrumenter>,
+    /// Nombres de función por índice de `function_table` (para profiling de
+    /// `CallDirect`, que solo tiene el índice).
+    func_names_pgo: Vec<String>,
+    /// Funciones calientes detectadas por un perfil aplicado (candidatas a
+    /// tiered JIT / inlining). Expuestas para el orquestador JIT y reportes.
+    pub funciones_calientes_pgo: Vec<String>,
+
     // Inline Caches para GetField/SetField (Polymorphic: Empty → Mono → Poly → Mega)
     ic_getfield: Vec<Pic>,
     ic_setfield: Vec<Pic>,
@@ -686,6 +699,10 @@ pub struct ForjaFast {
 
     // ─── Sandbox de Red ────────────────────────────────────────────────
     pub sandbox: forja::sandbox::SandboxRed,
+    // ─── Sandbox de Filesystem ─────────────────────────────────────────
+    pub sandbox_fs: forja::sandbox::SandboxFilesystem,
+    // ─── Sandbox de Procesos ───────────────────────────────────────────
+    pub sandbox_proc: forja::sandbox::SandboxProceso,
 }
 
 // Stack-Based frame: guarda solo ip_ret y versión (O(1)).
@@ -781,6 +798,10 @@ impl ForjaFast {
             cache_div_type: None,
             contador_especializacion: Vec::new(),
             umbral_especializacion: 3,
+            perfil_pgo: None,
+            instrumenter_pgo: None,
+            func_names_pgo: Vec::new(),
+            funciones_calientes_pgo: Vec::new(),
             ic_getfield: Vec::new(),
             ic_setfield: Vec::new(),
             ic_miss_count: Vec::new(),
@@ -829,6 +850,8 @@ impl ForjaFast {
             native_registry: NativeRegistry::new(),
             socket_heap: Vec::new(),
             sandbox: forja::sandbox::SandboxRed::new(), // air-gapped por defecto
+            sandbox_fs: forja::sandbox::SandboxFilesystem::new(), // sin archivos por defecto
+            sandbox_proc: forja::sandbox::SandboxProceso::new(), // sin procesos por defecto
             // Canales mpsc
             chan_tx_heap: Vec::new(),
             chan_rx_heap: Vec::new(),
@@ -898,11 +921,89 @@ impl ForjaFast {
         matches!(self.fast_math_manual, Some(true))
     }
 
+    // ─── PGO (Profile-Guided Optimization) ─────────────────────────────────
+
+    /// Habilita la recolección de perfil durante la ejecución.
+    ///
+    /// Conecta `pgo::ProfileData` e `pgo::Instrumenter` al runtime: cada
+    /// llamada, branch y back-edge de loop se registra en el perfil, y el
+    /// instrumenter muestrea los IPs calientes (para pre-especializar la
+    /// siguiente corrida).
+    pub fn habilitar_pgo(&mut self) {
+        let len = self.bytecode.len().max(1);
+        self.perfil_pgo = Some(crate::pgo::ProfileData::new());
+        self.instrumenter_pgo = Some(crate::pgo::Instrumenter::with_sample_rate(len, 8));
+    }
+
+    /// Finaliza la recolección: vuelca los contadores del instrumenter al
+    /// perfil (hot_ips) y devuelve el perfil recolectado (None si no estaba
+    /// habilitado). Deja la VM lista para otra ejecución sin profiling.
+    pub fn finalizar_pgo(&mut self) -> Option<crate::pgo::ProfileData> {
+        if let Some(inst) = self.instrumenter_pgo.take() {
+            if let Some(perfil) = self.perfil_pgo.as_mut() {
+                for (ip, count) in inst.counters.iter().enumerate() {
+                    if *count > 0 {
+                        *perfil.hot_ips.entry(ip).or_insert(0) += *count as u64;
+                    }
+                }
+            }
+        }
+        self.perfil_pgo.take()
+    }
+
+    /// Aplica un perfil recolectado previamente para acelerar la ejecución:
+    ///
+    /// 1. **Pre-especialización adaptativa**: los IPs calientes del perfil
+    ///    llevan el contador de especialización directo al umbral, así el
+    ///    primer run ya usa los handlers especializados (Add → AddInt, etc.).
+    /// 2. **Funciones calientes**: expone `tier2_candidates` + `inline_candidates`
+    ///    en `funciones_calientes_pgo` para el orquestador JIT tiered y reportes.
+    pub fn aplicar_pgo(&mut self, perfil: &crate::pgo::ProfileData) {
+        let decisiones = crate::pgo::ProfileGuidedDecisions::from_profile(perfil);
+
+        // 1. Pre-especializar IPs calientes
+        for (ip, count) in &perfil.hot_ips {
+            if *count > 0 && *ip < self.contador_especializacion.len() {
+                self.contador_especializacion[*ip] = self.umbral_especializacion;
+            }
+        }
+
+        // 2. Exponer funciones calientes
+        self.funciones_calientes_pgo.clear();
+        self.funciones_calientes_pgo
+            .extend(decisiones.tier2_candidates);
+        self.funciones_calientes_pgo
+            .extend(decisiones.inline_candidates);
+        self.funciones_calientes_pgo.sort();
+        self.funciones_calientes_pgo.dedup();
+    }
+
+    /// Retorna las funciones calientes del perfil aplicado (vacío si no se
+    /// aplicó ningún perfil). Útil para el tiered JIT.
+    pub fn funciones_calientes(&self) -> &[String] {
+        &self.funciones_calientes_pgo
+    }
+
     /// Configura el sandbox de red para esta VM.
     /// Por defecto está en modo air-gapped (sin red).
     pub fn con_sandbox(mut self, sandbox: forja::sandbox::SandboxRed) -> Self {
         self.sandbox = sandbox;
         self
+    }
+
+    /// Configura el sandbox de filesystem para esta VM.
+    /// Por defecto no se permite acceso a archivos.
+    pub fn con_sandbox_fs(mut self, sandbox: forja::sandbox::SandboxFilesystem) -> Self {
+        self.sandbox_fs = sandbox;
+        self
+    }
+
+    /// Configura el sandbox de procesos para esta VM.
+    /// Por defecto no se permite ejecutar procesos.
+    pub fn con_sandbox_proc(mut self, sandbox: forja::sandbox::SandboxProceso) -> Self {
+        self.sandbox_proc = sandbox;
+        self
+    }
     }
 
     /// Habilita/deshabilita verificación de contratos (debug/release)
@@ -2409,6 +2510,15 @@ impl ForjaFast {
                 );
             }
         }
+
+        // ── PGO: mapeo de nombre de función por índice (para profiling) ─────
+        let mut func_names = vec![String::new(); self.function_table.entries.len()];
+        for (sym, idx) in &self.sym_to_func_idx {
+            if *idx < func_names.len() {
+                func_names[*idx] = self.sym_table.get(*sym).to_string();
+            }
+        }
+        self.func_names_pgo = func_names;
     }
 
     /// Inferencia de tipos para operandos binarios en el stack.
@@ -2513,6 +2623,11 @@ impl ForjaFast {
             let op = self.bytecode[self.ip].clone();
             let ip = self.ip;
             let mut patch_op: Option<Opcode> = None;
+
+            // PGO: muestrear el IP ejecutado (costo ~1 branch cuando está deshabilitado)
+            if let Some(inst) = self.instrumenter_pgo.as_mut() {
+                inst.record(ip);
+            }
 
             match op {
                 Opcode::PushEntero(n) => {
@@ -3778,10 +3893,21 @@ impl ForjaFast {
                 }
 
                 Opcode::Jump(target) => {
+                    // PGO: un salto hacia atrás es un back-edge de loop
+                    if target < ip {
+                        if let Some(p) = self.perfil_pgo.as_mut() {
+                            p.record_loop(&ip.to_string(), 1);
+                        }
+                    }
                     self.ip = target;
                 }
                 Opcode::JumpSiFalso(target) => {
-                    if !self.pop_valor()?.es_verdadero() {
+                    let cond = self.pop_valor()?.es_verdadero();
+                    // PGO: registrar el branch taken/not-taken
+                    if let Some(p) = self.perfil_pgo.as_mut() {
+                        p.record_branch(&ip.to_string(), !cond);
+                    }
+                    if !cond {
                         self.ip = target;
                     } else {
                         self.ip += 1;
@@ -3795,6 +3921,10 @@ impl ForjaFast {
                 }
 
                 Opcode::Call(nombre, nargs) => {
+                    // PGO: registrar la llamada a función
+                    if let Some(p) = self.perfil_pgo.as_mut() {
+                        p.record_call(nombre.as_ref());
+                    }
                     let call_ip = self.ip;
                     let sym_id = self.sym_table.intern(nombre.as_ref());
                     if self.show_bytecode {
@@ -3979,6 +4109,14 @@ impl ForjaFast {
 
                 // ─── CALLDIRECT (Fase 2b) — llama por índice de función, directo a function_table ───
                 Opcode::CallDirect(func_idx, nargs) => {
+                    // PGO: registrar la llamada directa (por nombre de función)
+                    if let Some(p) = self.perfil_pgo.as_mut() {
+                        if let Some(nombre) = self.func_names_pgo.get(func_idx) {
+                            if !nombre.is_empty() {
+                                p.record_call(nombre);
+                            }
+                        }
+                    }
                     // Obtener la función de la function_table por índice
                     if let Some(entry) = self.function_table.entries.get(func_idx).copied() {
                         let next_ip = self.ip + 1;
@@ -4662,20 +4800,20 @@ impl ForjaFast {
                         let txt_idx = obj.indice_texto();
                         let s = self.get_str(txt_idx);
                         match m.as_ref() {
-                            "longitud" | "length" | "len" => {
+                            "longitud" => {
                                 self.push_valor(ValorFast::entero(s.chars().count() as i64));
                             }
-                            "a_mayusculas" | "to_upper" | "uppercase" => {
+                            "a_mayusculas" => {
                                 let res = s.to_uppercase();
                                 let ridx = self.alloc_str(Arc::from(res.as_str()));
                                 self.push_valor(ValorFast::texto(ridx));
                             }
-                            "a_minusculas" | "to_lower" | "lowercase" => {
+                            "a_minusculas" => {
                                 let res = s.to_lowercase();
                                 let ridx = self.alloc_str(Arc::from(res.as_str()));
                                 self.push_valor(ValorFast::texto(ridx));
                             }
-                            "contiene" | "contains" => {
+                            "contiene" => {
                                 if !args.is_empty() && args[0].es_texto() {
                                     let sub_s = self.get_str(args[0].indice_texto());
                                     self.push_valor(ValorFast::booleano(
@@ -4693,11 +4831,11 @@ impl ForjaFast {
                     } else if obj.es_arreglo() {
                         let arr_idx = obj.indice_arreglo();
                         match m.as_ref() {
-                            "longitud" | "length" | "len" => {
+                            "longitud" => {
                                 let len = self.array_heap[arr_idx as usize].len() as i64;
                                 self.push_valor(ValorFast::entero(len));
                             }
-                            "empujar" | "push" => {
+                            "empujar" => {
                                 if !args.is_empty() {
                                     self.array_heap[arr_idx as usize].push(args[0]);
                                 }
@@ -4953,20 +5091,20 @@ impl ForjaFast {
                         let s = self.get_str(txt_idx);
                         let m = self.sym_table.get(SymId(method_sym_id));
                         match m {
-                            "longitud" | "length" | "len" => {
+                            "longitud" => {
                                 self.push_valor(ValorFast::entero(s.chars().count() as i64));
                             }
-                            "a_mayusculas" | "to_upper" | "uppercase" => {
+                            "a_mayusculas" => {
                                 let res = s.to_uppercase();
                                 let ridx = self.alloc_str(Arc::from(res.as_str()));
                                 self.push_valor(ValorFast::texto(ridx));
                             }
-                            "a_minusculas" | "to_lower" | "lowercase" => {
+                            "a_minusculas" => {
                                 let res = s.to_lowercase();
                                 let ridx = self.alloc_str(Arc::from(res.as_str()));
                                 self.push_valor(ValorFast::texto(ridx));
                             }
-                            "contiene" | "contains" => {
+                            "contiene" => {
                                 if !args.is_empty() && args[0].es_texto() {
                                     let sub_s = self.get_str(args[0].indice_texto());
                                     self.push_valor(ValorFast::booleano(
@@ -4985,11 +5123,11 @@ impl ForjaFast {
                         let arr_idx = obj.indice_arreglo();
                         let m = self.sym_table.get(SymId(method_sym_id));
                         match m {
-                            "longitud" | "length" | "len" => {
+                            "longitud" => {
                                 let len = self.array_heap[arr_idx as usize].len() as i64;
                                 self.push_valor(ValorFast::entero(len));
                             }
-                            "empujar" | "push" => {
+                            "empujar" => {
                                 if !args.is_empty() {
                                     self.array_heap[arr_idx as usize].push(args[0]);
                                 }
@@ -7825,28 +7963,28 @@ enum BuiltinFast {
 }
 fn resolver_builtin_fast(m: &str) -> Option<BuiltinFast> {
     match m {
-        "length" | "longitud" => Some(BuiltinFast::Len),
-        "to_upper" | "a_mayusculas" => Some(BuiltinFast::Upper),
-        "to_lower" | "a_minusculas" => Some(BuiltinFast::Lower),
-        "contains" | "contiene" => Some(BuiltinFast::Contains),
-        "split" | "dividir" => Some(BuiltinFast::Split),
-        "trim" | "recortar" => Some(BuiltinFast::Trim),
-        "reverse" | "invertir" => Some(BuiltinFast::Reverse),
-        "obtener" | "get" => Some(BuiltinFast::Obtener),
-        "empujar" | "push" => Some(BuiltinFast::Empujar),
-        "remover" | "remove" => Some(BuiltinFast::Remover),
+        "longitud" => Some(BuiltinFast::Len),
+        "a_mayusculas" => Some(BuiltinFast::Upper),
+        "a_minusculas" => Some(BuiltinFast::Lower),
+        "contiene" => Some(BuiltinFast::Contains),
+        "dividir" => Some(BuiltinFast::Split),
+        "recortar" => Some(BuiltinFast::Trim),
+        "invertir" => Some(BuiltinFast::Reverse),
+        "obtener" => Some(BuiltinFast::Obtener),
+        "empujar" => Some(BuiltinFast::Empujar),
+        "remover" => Some(BuiltinFast::Remover),
         // Self-hosting string ops
-        "starts_with" | "empieza_con" => Some(BuiltinFast::StartsWith),
-        "ends_with" | "termina_con" => Some(BuiltinFast::EndsWith),
-        "char_at" | "caracter_en" => Some(BuiltinFast::CharAt),
-        "index_of" | "indice_de" => Some(BuiltinFast::IndexOf),
-        "substr" | "subcadena" => Some(BuiltinFast::Substr),
-        "replace" | "reemplazar" => Some(BuiltinFast::Replace),
-        "parse_entero" | "a_entero" => Some(BuiltinFast::ParseEntero),
-        "parse_flotante" | "a_flotante" => Some(BuiltinFast::ParseFlotante),
-        "repetir" | "repeat" => Some(BuiltinFast::Repetir),
-        "join" | "unir_elementos" => Some(BuiltinFast::Join),
-        "esperar" | "sleep" => Some(BuiltinFast::Esperar),
+        "empieza_con" => Some(BuiltinFast::StartsWith),
+        "termina_con" => Some(BuiltinFast::EndsWith),
+        "caracter_en" => Some(BuiltinFast::CharAt),
+        "indice_de" => Some(BuiltinFast::IndexOf),
+        "subcadena" => Some(BuiltinFast::Substr),
+        "reemplazar" => Some(BuiltinFast::Replace),
+        "a_entero" => Some(BuiltinFast::ParseEntero),
+        "a_flotante" => Some(BuiltinFast::ParseFlotante),
+        "repetir" => Some(BuiltinFast::Repetir),
+        "unir_elementos" => Some(BuiltinFast::Join),
+        "esperar" => Some(BuiltinFast::Esperar),
         _ => None,
     }
 }
@@ -8388,6 +8526,87 @@ mod tests {
         assert!(
             vm.fast_math(),
             "el override manual debe persistir tras reset()"
+        );
+    }
+
+    #[test]
+    fn pgo_recolecta_perfil_de_ejecucion() {
+        let src = r#"
+funcion fib(n) {
+    si (n <= 1) { retornar n }
+    variable a = 0
+    variable b = 1
+    variable i = 2
+    mientras (i <= n) {
+        variable t = a + b
+        a = b
+        b = t
+        i = i + 1
+    }
+    retornar b
+}
+variable r = fib(20)
+"#;
+        let bc = compilar_programa(src);
+        let mut vm = ForjaFast::new();
+        vm.set_max_inst(1_000_000_000);
+        vm.cargar_bytecode(bc);
+        vm.habilitar_pgo();
+        vm.ejecutar().expect("el programa debe ejecutar");
+
+        let perfil = vm.finalizar_pgo().expect("debe recolectar un perfil");
+        // fib(20) se llama 1 vez + el while itera 18 veces → hay branches y loops
+        assert!(
+            !perfil.function_hotness.is_empty(),
+            "debe registrar llamadas a funciones"
+        );
+        assert!(
+            !perfil.branch_counts.is_empty(),
+            "debe registrar branches (si/mientras)"
+        );
+        assert!(
+            !perfil.loop_iterations.is_empty(),
+            "debe registrar iteraciones de loop (back-edge del mientras)"
+        );
+        assert!(
+            !perfil.hot_ips.is_empty(),
+            "el instrumenter debe muestrear IPs calientes"
+        );
+    }
+
+    #[test]
+    fn pgo_aplica_perfil_pre_especializando_ips_calientes() {
+        let src = "variable s = 0\nvariable i = 0\nmientras (i < 10000) {\n    s = s + i\n    i = i + 1\n}\nescribir(s)\n";
+        let bc = compilar_programa(src);
+        let mut vm = ForjaFast::new();
+        vm.set_max_inst(1_000_000_000);
+        vm.cargar_bytecode(bc);
+        vm.habilitar_pgo();
+        vm.ejecutar().expect("el programa debe ejecutar");
+        let perfil = vm.finalizar_pgo().expect("perfil recolectado");
+
+        // Nueva VM: aplicar el perfil pre-especializa los IPs calientes
+        let bc2 = compilar_programa(src);
+        let mut vm2 = ForjaFast::new();
+        vm2.set_max_inst(1_000_000_000);
+        vm2.cargar_bytecode(bc2);
+        let len_before = vm2.contador_especializacion.len();
+        vm2.aplicar_pgo(&perfil);
+        assert_eq!(vm2.contador_especializacion.len(), len_before);
+        // Algunos IPs calientes deben quedar al umbral (listos para especializar)
+        let preespecializados = vm2
+            .contador_especializacion
+            .iter()
+            .filter(|&&c| c == vm2.umbral_especializacion)
+            .count();
+        assert!(
+            preespecializados > 0,
+            "los IPs calientes deben quedar pre-especializados"
+        );
+        vm2.ejecutar().expect("el programa debe ejecutar con perfil aplicado");
+        assert!(
+            !vm2.obtener_output().is_empty(),
+            "debe producir salida"
         );
     }
 }
