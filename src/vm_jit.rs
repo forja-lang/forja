@@ -1126,7 +1126,7 @@ impl ForjaDT {
                     if let Some(b) = resolver_builtin_dt(&metodo) {
                         self.ejecutar_builtin_dt(b, nargs)?;
                         self.ip += 1;
-                        return Ok(());
+                        continue;
                     }
                     let mut args: Vec<ValorDT> = Vec::with_capacity(nargs);
                     for _ in 0..nargs {
