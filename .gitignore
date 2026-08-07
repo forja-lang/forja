@@ -19,6 +19,7 @@ fuzz/
 src/bin/fuzz_simple.rs
 main_rs/
 forjanzas/
+forjaX/
 tmp/
 
 # ── Ejecutables ──
