@@ -134,6 +134,59 @@ impl DominatorTree {
         b1
     }
 
+    /// Calcula la dominance frontier (DF) de cada bloque usando el algoritmo
+    /// one-pass de Cooper-Harvey-Kennedy:
+    ///
+    /// ```text
+    /// para cada bloque b con ≥ 2 predecessors:
+    ///     para cada predecessor p de b:
+    ///         runner = p
+    ///         mientras runner != idom[b]:
+    ///             DF[runner] += b
+    ///             runner = idom[runner]
+    /// ```
+    ///
+    /// DF[x] contiene los bloques `b` que x domina estrictamente pero cuyo
+    /// dominador inmediato no domina (es decir, donde el control flow de x
+    /// puede "escapar" y juntarse con otro).
+    pub fn dominance_frontier(
+        &self,
+        blocks: &[BasicBlock],
+    ) -> HashMap<BlockId, HashSet<BlockId>> {
+        let n = blocks.len();
+        let mut preds: Vec<Vec<BlockId>> = vec![Vec::new(); n];
+        for block in blocks {
+            for &s in &Self::successors(&block.terminator) {
+                if s < n {
+                    preds[s].push(block.id);
+                }
+            }
+        }
+
+        let mut df: HashMap<BlockId, HashSet<BlockId>> = HashMap::new();
+        for block in blocks {
+            if preds[block.id].len() < 2 {
+                continue;
+            }
+            let idom_b = self
+                .idom
+                .get(block.id)
+                .and_then(|x| *x)
+                .unwrap_or(block.id);
+            for &p in &preds[block.id] {
+                let mut runner = p;
+                while runner != idom_b {
+                    df.entry(runner).or_default().insert(block.id);
+                    match self.idom.get(runner).and_then(|x| *x) {
+                        Some(idom) if idom != runner => runner = idom,
+                        _ => break, // raíz alcanzada (idom[root] == root)
+                    }
+                }
+            }
+        }
+        df
+    }
+
     /// Retorna los sucesores directos de un terminador
     fn successors(term: &Terminator) -> Vec<BlockId> {
         match term {
@@ -237,14 +290,36 @@ impl SsaBuilder {
         self.defs.insert((block, mem), val);
     }
 
-    /// Analiza qué variables necesitan φ-nodes basándose en el dominator tree
+    /// Analiza qué variables necesitan φ-nodes basándose en el dominator tree.
+    ///
+    /// Implementa el phi-placement clásico (Cytron et al. / pruned SSA):
+    /// para cada variable, propaga sus bloques de definición a través de la
+    /// **iterated dominance frontier** (IDF) y coloca un φ en cada bloque de
+    /// la IDF. Los argumentos de cada φ se resuelven como las *reaching
+    /// definitions* de la variable en cada predecessor del bloque.
     pub fn compute_phi_nodes(
         &mut self,
         domtree: &DominatorTree,
         blocks: &[BasicBlock],
     ) {
-        // Para cada variable mutable, encontrar dónde necesitamos φ-nodes
-        // usando el algoritmo iterativo de computación de phi-placement
+        // Dominance frontier de cada bloque (DF[runner] → bloques join)
+        let df = domtree.dominance_frontier(blocks);
+
+        // Predecessors por bloque (para resolver los argumentos de los φ)
+        let mut block_predecessors: Vec<Vec<BlockId>> = vec![Vec::new(); blocks.len()];
+        for blk in blocks {
+            let targets = match &blk.terminator {
+                Terminator::Jump(t) => vec![*t],
+                Terminator::Branch(_, t, e) => vec![*t, *e],
+                _ => vec![],
+            };
+            for t in targets {
+                if t < block_predecessors.len() {
+                    block_predecessors[t].push(blk.id);
+                }
+            }
+        }
+
         for &var in &self.phi_vars.clone() {
             let def_blocks: HashSet<BlockId> = self
                 .defs
@@ -252,72 +327,64 @@ impl SsaBuilder {
                 .filter(|(_, m)| *m == var)
                 .map(|(b, _)| *b)
                 .collect();
+            if def_blocks.is_empty() {
+                continue;
+            }
 
-            let mut phi_candidates: HashSet<BlockId> = HashSet::new();
+            // Iterated Dominance Frontier: los φ se colocan en el cierre de la
+            // DF de los bloques con definición.
+            let mut has_phi: HashSet<BlockId> = HashSet::new();
             let mut worklist: Vec<BlockId> = def_blocks.iter().copied().collect();
-
             while let Some(block) = worklist.pop() {
-                // Para cada bloque en the iterated dominance frontier
-                if let Some(idom) = domtree.idom.get(block).and_then(|x| *x) {
-                    if !phi_candidates.contains(&idom) && !def_blocks.contains(&idom) {
-                        phi_candidates.insert(idom);
-                        worklist.push(idom);
+                if let Some(frontier) = df.get(&block) {
+                    for &y in frontier {
+                        if !has_phi.contains(&y) {
+                            has_phi.insert(y);
+                            if !def_blocks.contains(&y) {
+                                worklist.push(y);
+                            }
+                        }
                     }
                 }
             }
 
-            // Insertar φ-nodes en los candidatos
-            // Pre-computar predecessors para cada bloque
-            let mut block_predecessors: Vec<Vec<BlockId>> = vec![Vec::new(); blocks.len()];
-            for blk in blocks {
-                let targets = match &blk.terminator {
-                    Terminator::Jump(t) => vec![*t],
-                    Terminator::Branch(_, t, e) => vec![*t, *e],
-                    _ => vec![],
-                };
-                for t in targets {
-                    if t < block_predecessors.len() {
-                        block_predecessors[t].push(blk.id);
-                    }
-                }
-            }
-
-            for phi_block in phi_candidates {
-                let entry = self.phi_nodes.entry(phi_block).or_default();
-
-                // Obtener predecessors pre-computados
+            // Insertar φ-nodes con sus argumentos (reaching definitions)
+            for phi_block in has_phi {
                 let empty_preds: Vec<BlockId> = Vec::new();
                 let preds = if phi_block < block_predecessors.len() {
                     &block_predecessors[phi_block]
                 } else {
                     &empty_preds
                 };
+                // Collect reaching defs first to avoid borrow conflict
+                let reaching: Vec<(usize, usize)> = preds.iter()
+                    .map(|&pred| {
+                        let val = self.reaching_def(pred, var, domtree).unwrap_or(0);
+                        (var, val)
+                    })
+                    .collect();
+                let entry = self.phi_nodes.entry(phi_block).or_default();
+                entry.extend(reaching);
+            }
+        }
+    }
 
-                // Para cada predecessor, obtener el reaching definition de la variable
-                for &pred in preds {
-                    if let Some(&val) = self.defs.get(&(pred, var)) {
-                        entry.push((var, val));
-                    } else {
-                        // Buscar reaching definition subiendo por el dominator tree
-                        let mut current = pred;
-                        let mut found = false;
-                        while let Some(Some(idom)) = domtree.idom.get(current) {
-                            if *idom == current {
-                                break; // reached root
-                            }
-                            if let Some(&val) = self.defs.get(&(*idom, var)) {
-                                entry.push((var, val));
-                                found = true;
-                                break;
-                            }
-                            current = *idom;
-                        }
-                        if !found {
-                            // Fallback: usar 0 (nil)
-                            entry.push((var, 0));
-                        }
-                    }
-                }
+    /// Resuelve la *reaching definition* de `var` en `block`: la definición
+    /// más cercana en el camino `block → idom → idom → ...` hacia la raíz.
+    fn reaching_def(
+        &self,
+        block: BlockId,
+        var: MemIdx,
+        domtree: &DominatorTree,
+    ) -> Option<ValueId> {
+        let mut current = block;
+        loop {
+            if let Some(&val) = self.defs.get(&(current, var)) {
+                return Some(val);
+            }
+            match domtree.idom.get(current).and_then(|x| *x) {
+                Some(idom) if idom != current => current = idom,
+                _ => return None, // raíz alcanzada sin definición
             }
         }
     }
@@ -408,6 +475,8 @@ mod tests {
         let mut builder = SsaBuilder::new();
         builder.mark_phi_variable(0);
 
+        // Diamante: 0 → {1, 2}, 1 → 3, 2 → 3. La variable se define en 1 y 2
+        // (los brazos del branch) y converge en 3 → ahí va el φ.
         let blocks = vec![
             BasicBlock { id: 0, instructions: vec![], terminator: Terminator::Branch(0, 1, 2) },
             BasicBlock { id: 1, instructions: vec![], terminator: Terminator::Jump(3) },
@@ -421,9 +490,64 @@ mod tests {
         let dt = DominatorTree::compute(&blocks);
         builder.compute_phi_nodes(&dt, &blocks);
 
-        // Verificar que se detectó al menos un phi node candidato
-        // (el algoritmo puede necesitar más iteraciones para converger completamente)
+        // El φ debe colocarse en el join (bloque 3), con un argumento por
+        // predecessor (1 → 10, 2 → 20).
+        let phis = builder
+            .phi_nodes
+            .get(&3)
+            .expect("debe haber un φ en el join (bloque 3)");
+        assert_eq!(phis.len(), 2, "el φ debe tener 2 argumentos (uno por predecessor)");
+        let mut vals: Vec<ValueId> = phis.iter().map(|&(_, v)| v).collect();
+        vals.sort_unstable();
+        assert_eq!(vals, vec![10, 20]);
+        assert!(
+            !builder.phi_nodes.contains_key(&0),
+            "el dominador común (bloque 0) no necesita φ"
+        );
+    }
+
+    #[test]
+    fn test_ssa_builder_no_phi_en_cadena_lineal() {
+        let mut builder = SsaBuilder::new();
+        builder.mark_phi_variable(0);
+
+        // Cadena lineal 0 → 1 → 2: el def en 0 domina todo, no hace falta φ.
+        let blocks = vec![
+            BasicBlock { id: 0, instructions: vec![], terminator: Terminator::Jump(1) },
+            BasicBlock { id: 1, instructions: vec![], terminator: Terminator::Jump(2) },
+            BasicBlock { id: 2, instructions: vec![], terminator: Terminator::Return(None) },
+        ];
+        builder.record_def(0, 0, 7);
+
+        let dt = DominatorTree::compute(&blocks);
+        builder.compute_phi_nodes(&dt, &blocks);
+
         let total_phis: usize = builder.phi_nodes.values().map(|v| v.len()).sum();
-        assert!(total_phis >= 1, "Expected at least 1 phi node, got {}", total_phis);
+        assert_eq!(total_phis, 0, "no debe haber φ en una cadena lineal");
+    }
+
+    #[test]
+    fn test_ssa_builder_phi_en_header_de_loop() {
+        let mut builder = SsaBuilder::new();
+        builder.mark_phi_variable(0);
+
+        // Loop: 0 → 1 (header) → {2, 3}, 2 → 1 (back edge). La variable se
+        // define en el cuerpo (bloque 2) → el header (bloque 1) necesita φ.
+        let blocks = vec![
+            BasicBlock { id: 0, instructions: vec![], terminator: Terminator::Jump(1) },
+            BasicBlock { id: 1, instructions: vec![], terminator: Terminator::Branch(0, 2, 3) },
+            BasicBlock { id: 2, instructions: vec![], terminator: Terminator::Jump(1) },
+            BasicBlock { id: 3, instructions: vec![], terminator: Terminator::Return(None) },
+        ];
+        builder.record_def(2, 0, 42);
+
+        let dt = DominatorTree::compute(&blocks);
+        builder.compute_phi_nodes(&dt, &blocks);
+
+        let phis = builder
+            .phi_nodes
+            .get(&1)
+            .expect("el header del loop (bloque 1) debe tener un φ");
+        assert!(!phis.is_empty(), "el φ del header debe tener argumentos");
     }
 }
