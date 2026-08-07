@@ -72,13 +72,15 @@ impl IrConstructor {
                     Operador::Resta => builder.emit_sub(l, r),
                     Operador::Multiplicacion => builder.emit_mul(l, r),
                     Operador::Division => builder.emit_div(l, r),
+                    Operador::Modulo => builder.emit_mod(l, r),
                     Operador::IgualIgual => builder.emit_eq(l, r),
                     Operador::Diferente => builder.emit_neq(l, r),
                     Operador::Menor => builder.emit_lt(l, r),
                     Operador::Mayor => builder.emit_gt(l, r),
                     Operador::MenorIgual => builder.emit_lte(l, r),
                     Operador::MayorIgual => builder.emit_gte(l, r),
-                    _ => builder.emit_add(l, r),
+                    Operador::Y => builder.emit_and(l, r),
+                    Operador::O => builder.emit_or(l, r),
                 }
             }
 
@@ -93,7 +95,16 @@ impl IrConstructor {
                 }
             }
 
-            _ => builder.emit_const_nil(),
+            _ => {
+                // TODO: Estas expresiones necesitan implementación en el constructor IR:
+                // - LlamadaFuncion (expresión, no declaración)
+                // - LlamadaMetodo
+                // - Cierre (Closure)
+                // - Instanciacion (new Clase())
+                // - AccesoCampo / AccesoMetodo
+                // Actualmente caen a nil silenciosamente.
+                builder.emit_const_nil()
+            }
         }
     }
 
@@ -188,6 +199,7 @@ impl IrConstructor {
     }
 
     pub fn function_to_ir(&mut self, func: &Declaracion) -> Option<SsaFunction> {
+        self.var_map.clear(); // Resetear mapa de variables para cada función
         if let Declaracion::Funcion {
             nombre,
             parametros,
