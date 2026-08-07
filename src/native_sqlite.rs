@@ -17,6 +17,7 @@ static SQLITE_HEAP: Mutex<Vec<Option<Arc<Mutex<Connection>>>>> = Mutex::new(Vec:
 // ═══════════════════════════════════════════════════════════════════════
 
 pub fn registrar_sqlite(reg: &mut NativeRegistry) {
+    reg.registrar("BD", native_bd);
     reg.registrar("_sqlite_abrir", native_sqlite_abrir);
     reg.registrar("_sqlite_cerrar", native_sqlite_cerrar);
     reg.registrar("_sqlite_ejecutar", native_sqlite_ejecutar);
@@ -26,6 +27,43 @@ pub fn registrar_sqlite(reg: &mut NativeRegistry) {
     reg.registrar("_sqlite_consultar_params", native_sqlite_consultar_params);
     reg.registrar("_sqlite_tablas", native_sqlite_tablas);
     reg.registrar("_sqlite_columnas", native_sqlite_columnas);
+}
+
+/// `BD(especificación)` — abre una conexión SQLite y retorna su manejador.
+///
+/// Especificaciones soportadas:
+/// - `"sqlite:memoria"` → base en memoria (`:memory:`)
+/// - `"sqlite:<ruta>"` → archivo en `<ruta>`
+/// - cualquier otra ruta → se abre como archivo SQLite
+fn native_bd(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+    if args.is_empty() {
+        return Err(ErrFast::TipoInv(
+            "BD requiere 1 argumento: especificación (texto), ej. BD(\"sqlite:memoria\")".into(),
+        ));
+    }
+    let spec = obtener_texto(vm, args[0])?;
+    let ruta = if spec.starts_with("sqlite:") {
+        let resto = &spec["sqlite:".len()..];
+        if resto == "memoria" || resto.is_empty() {
+            ":memory:".to_string()
+        } else {
+            resto.to_string()
+        }
+    } else {
+        spec
+    };
+
+    match Connection::open(&ruta) {
+        Ok(conn) => {
+            let mut heap = SQLITE_HEAP
+                .lock()
+                .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
+            let idx = heap.len() as u32;
+            heap.push(Some(Arc::new(Mutex::new(conn))));
+            Ok(ValorFast::entero(idx as i64))
+        }
+        Err(e) => Err(ErrFast::TipoInv(format!("BD: no se pudo abrir '{}': {}", ruta, e))),
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
