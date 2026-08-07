@@ -1,5 +1,15 @@
 #![allow(dead_code)]
 use std::fmt;
+use std::sync::atomic::{AtomicU8, AtomicBool, Ordering};
+
+// ══════════════════════════════════════════════════════════════════════
+// Variables globales thread-safe (reemplazan static mut)
+// ══════════════════════════════════════════════════════════════════════
+
+/// Nivel de verbose global (0=Normal, 1=Verbose, 2=Debug, 3=Trace)
+static NIVEL_VERBOSE_ATOMIC: AtomicU8 = AtomicU8::new(0);
+/// Modo JSON global
+static JSON_MODE_ATOMIC: AtomicBool = AtomicBool::new(false);
 
 /// Colores ANSI para terminal
 #[allow(dead_code)]
@@ -63,23 +73,26 @@ pub enum NivelVerbose {
     Trace = 4,
 }
 
-static mut NIVEL_VERBOSE_GLOBAL: NivelVerbose = NivelVerbose::Normal;
-static mut JSON_MODE_GLOBAL: bool = false;
-
 pub fn establecer_nivel(nivel: NivelVerbose) {
-    unsafe { NIVEL_VERBOSE_GLOBAL = nivel; }
+    NIVEL_VERBOSE_ATOMIC.store(nivel as u8, Ordering::Relaxed);
 }
 
 pub fn nivel_actual() -> NivelVerbose {
-    unsafe { NIVEL_VERBOSE_GLOBAL }
+    match NIVEL_VERBOSE_ATOMIC.load(Ordering::Relaxed) {
+        0 => NivelVerbose::Normal,
+        1 => NivelVerbose::Verbose,
+        2 => NivelVerbose::Debug,
+        3 => NivelVerbose::Trace,
+        _ => NivelVerbose::Normal,
+    }
 }
 
 pub fn establecer_json_mode(activo: bool) {
-    unsafe { JSON_MODE_GLOBAL = activo; }
+    JSON_MODE_ATOMIC.store(activo, Ordering::Relaxed);
 }
 
 pub fn json_mode() -> bool {
-    unsafe { JSON_MODE_GLOBAL }
+    JSON_MODE_ATOMIC.load(Ordering::Relaxed)
 }
 
 pub fn log_info(msg: &str) {
