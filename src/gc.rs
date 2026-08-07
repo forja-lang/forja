@@ -150,6 +150,82 @@ impl BumpAllocator {
     fn available(&self) -> usize {
         self.capacity - self.offset.get()
     }
+
+    /// Retorna la dirección base de la memoria
+    fn base_ptr(&self) -> *mut u8 {
+        self.memory
+    }
+
+    /// Retorna la capacidad total
+    fn mem_capacity(&self) -> usize {
+        self.capacity
+    }
+
+    /// Itera sobre todos los objetos allocated en este allocator.
+    /// Cada objeto es visitado como un `GcRef` válido.
+    fn for_each_object<F: FnMut(GcRef)>(&self, f: &mut F) {
+        let mut offset = 0;
+        let used = self.offset.get();
+        while offset + std::mem::size_of::<GcHeader>() <= used {
+            let ptr = unsafe { self.memory.add(offset) };
+            let header = unsafe { &*(ptr as *const GcHeader) };
+            if header.size == 0 {
+                break; // objeto corrupto o fin
+            }
+            f(GcRef { ptr });
+            let obj_size = std::mem::size_of::<GcHeader>() + header.size;
+            offset += (obj_size + 15) & !15; // alineación a 16 bytes
+        }
+    }
+
+    /// Copia objetos marcados desde este allocator a otro.
+    /// Retorna el número de objetos copiados y bytes copiados.
+    fn copy_marked_to(&self, dest: &BumpAllocator) -> (usize, usize) {
+        let mut count = 0;
+        let mut bytes = 0;
+        self.for_each_object(&mut |r| {
+            if r.header().marked.get() {
+                let header = r.header();
+                let size = header.size;
+                let align = 16; // alineación estándar del GC
+                if let Some(dest_ptr) = dest.alloc(size, align) {
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(
+                            r.data_ptr(),
+                            dest_ptr.add(std::mem::size_of::<GcHeader>()),
+                            size,
+                        );
+                        // Copiar header preservando el mark
+                        let dest_header = &mut *(dest_ptr as *mut GcHeader);
+                        dest_header.age = header.age + 1;
+                        dest_header.generation = Generation::Young;
+                        dest_header.marked.set(false);
+                    }
+                    count += 1;
+                    bytes += size + std::mem::size_of::<GcHeader>();
+                }
+            }
+        });
+        (count, bytes)
+    }
+
+    /// Cuenta el número de objetos allocated
+    fn object_count(&self) -> usize {
+        let mut count = 0;
+        let mut offset = 0;
+        let used = self.offset.get();
+        while offset + std::mem::size_of::<GcHeader>() <= used {
+            let ptr = unsafe { self.memory.add(offset) };
+            let header = unsafe { &*(ptr as *const GcHeader) };
+            if header.size == 0 {
+                break;
+            }
+            count += 1;
+            let obj_size = std::mem::size_of::<GcHeader>() + header.size;
+            offset += (obj_size + 15) & !15;
+        }
+        count
+    }
 }
 
 impl Drop for BumpAllocator {
