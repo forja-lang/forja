@@ -1,25 +1,32 @@
 // #![allow(dead_code)]
 // #![allow(unused_imports)]
 
+mod arena;
 mod ast;
 mod bytecode;
 mod class_descriptor;
 mod compiler_asm;
-mod stdlib_embedded;
 mod diagrama;
 mod error;
 mod formatter;
 mod fprofiler;
+mod gc;
+mod gc_intrinsics;
+mod jit_tiered;
 mod lexer;
+mod monomorph;
 mod native_registry;
 mod optimizer;
 mod package_config;
 mod package_resolver;
 mod parser;
+mod pgo;
+mod register_alloc;
 mod repl;
 mod selfrun;
 mod semantics;
 mod shape;
+mod stdlib_embedded;
 mod symbol_table;
 mod token;
 mod transpiler;
@@ -28,10 +35,10 @@ mod vm;
 mod vm_fast;
 
 // Hash, codificación y crypto — implementaciones manuales sin dependencias externas
-mod hash;
 mod base64;
 mod crypto;
 mod crypto_pq;
+mod hash;
 mod mmap;
 mod terminal;
 
@@ -70,7 +77,7 @@ mod native_proceso_win;
 mod native_proceso_win {}
 
 use ast::Declaracion;
-use error::{color, NivelVerbose, mostrar_errores};
+use error::{color, mostrar_errores, NivelVerbose};
 use package_config::ForjaConfig;
 use package_resolver::PackageResolver;
 use std::env;
@@ -97,8 +104,18 @@ fn main() {
         }
     }
     // Filtrar flags globales de los args de comando
-    let global_flags = ["--verbose", "-V", "--debug", "--trace", "--json", "--json-errors"];
-    let args: Vec<String> = args.into_iter().filter(|a| !global_flags.contains(&a.as_str())).collect();
+    let global_flags = [
+        "--verbose",
+        "-V",
+        "--debug",
+        "--trace",
+        "--json",
+        "--json-errors",
+    ];
+    let args: Vec<String> = args
+        .into_iter()
+        .filter(|a| !global_flags.contains(&a.as_str()))
+        .collect();
 
     if args.len() < 2 {
         let mut repl = repl::REPL::new("fast");
@@ -111,7 +128,11 @@ fn main() {
     match comando.as_str() {
         // Versión de Forja
         "version" | "--version" | "-v" => {
-            println!("{} forja v{}", color::verde("🔨"), color::negrita(env!("CARGO_PKG_VERSION")));
+            println!(
+                "{} forja v{}",
+                color::verde("🔨"),
+                color::negrita(env!("CARGO_PKG_VERSION"))
+            );
             std::process::exit(0);
         }
         // Benchmark / medición
@@ -686,13 +707,14 @@ fn mostrar_ayuda() {
 /// Mide tiempos de todas las VMs: creación, carga, ejecución (cold + hot)
 fn cmd_bench(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja medir|bench|medicion|benchmark <archivo.fa> [--iters N] [--vm fast|vm|jit|todas] [--asm] [--max-archivo <MB>]");
+        eprintln!("Uso: forja medir|bench|medicion|benchmark <archivo.fa> [--iters N] [--vm fast|vm|jit|todas] [--asm] [--fast-math] [--max-archivo <MB>]");
         process::exit(1);
     }
 
     let mut path = &args[0];
     let mut iters = 100;
     let mut asm_mode = false;
+    let mut fast_math_flag = false;
     let mut vm_selected = "todas";
     let mut max_archivo = forja::MAX_ARCHIVO_DEFAULT_MB;
     let mut i = 0;
@@ -714,6 +736,7 @@ fn cmd_bench(args: &[String]) {
                 }
             }
             "--asm" => asm_mode = true,
+            "--fast-math" => fast_math_flag = true,
             "--max-archivo" => {
                 i += 1;
                 if i < args.len() {
@@ -846,7 +869,18 @@ fn cmd_bench(args: &[String]) {
         // Activar profiling de f64
         forja::fprofiler::PROFILER_ENABLED.store(1, std::sync::atomic::Ordering::Relaxed);
         forja::fprofiler::PROFILER_DATA.reset();
-        medir_vm!("ForjaFast 🏆", forja::vm_fast::ForjaFast::new());
+        let nombre_fast = if fast_math_flag {
+            "ForjaFast FM 🏆"
+        } else {
+            "ForjaFast 🏆"
+        };
+        medir_vm!(nombre_fast, {
+            let mut v = forja::vm_fast::ForjaFast::new();
+            if fast_math_flag {
+                v.set_fast_math(true);
+            }
+            v
+        });
         forja::fprofiler::print_profiler_report();
         forja::fprofiler::PROFILER_ENABLED.store(0, std::sync::atomic::Ordering::Relaxed);
     }
@@ -930,7 +964,7 @@ fn cmd_bench(args: &[String]) {
 /// --asm            : compila a ASM nativo y ejecuta (requiere gcc)
 fn cmd_run(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native] [--debug|--console|--no-debug] [--contratos|--no-contratos] [--max-archivo <MB>] [--allow-net <hosts>] [--allow-port <puertos>]");
+        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native] [--fast-math] [--debug|--console|--no-debug] [--contratos|--no-contratos] [--max-archivo <MB>] [--allow-net <hosts>] [--allow-port <puertos>]");
         process::exit(1);
     }
 
@@ -938,6 +972,7 @@ fn cmd_run(args: &[String]) {
     let mut asm_mode = false;
     let mut native_mode = false;
     let mut hot_reload = false;
+    let mut fast_math_flag = false;
     let mut verificar_contratos = true; // default: contratos activados
     let mut max_archivo = forja::MAX_ARCHIVO_DEFAULT_MB;
     let mut path: &String = &args[0];
@@ -958,6 +993,7 @@ fn cmd_run(args: &[String]) {
             "--asm" => asm_mode = true,
             "--native" => native_mode = true,
             "--hot-reload" | "--hot" => hot_reload = true,
+            "--fast-math" => fast_math_flag = true,
             "--debug" | "--console" => {}
             "--no-debug" => {}
             "--contratos" => {
@@ -1057,12 +1093,21 @@ fn cmd_run(args: &[String]) {
 
     let result = match vm_mode {
         "fast" => {
-            forja::ejecutar_con_opciones_desde(
-                &source,
-                &root_dir,
-                verificar_contratos,
-                Some(sandbox),
-            )
+            if fast_math_flag {
+                forja::ejecutar_con_opciones_desde_fast_math(
+                    &source,
+                    &root_dir,
+                    verificar_contratos,
+                    Some(sandbox),
+                )
+            } else {
+                forja::ejecutar_con_opciones_desde(
+                    &source,
+                    &root_dir,
+                    verificar_contratos,
+                    Some(sandbox),
+                )
+            }
         }
         "jit" => forja::ejecutar_jit(&source),
         _ => forja::ejecutar_vm(&source), // Default: VM original
@@ -1829,17 +1874,34 @@ fn cmd_transpile(args: &[String]) {
     // Resolver imports para el JSON del runtime (AST completo con módulos)
     // Usar el directorio actual como raíz para resolver imports (modulos/, stdlib/)
     let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
-    let input_parent = std::path::Path::new(input_path).parent().unwrap_or(std::path::Path::new("."));
+    let input_parent = std::path::Path::new(input_path)
+        .parent()
+        .unwrap_or(std::path::Path::new("."));
     // Si input_path es relativo, combinar con CWD. Si es absoluto, usar su parent.
     let root_for_imports = if std::path::Path::new(input_path).is_absolute() {
         input_parent.to_path_buf()
     } else {
         cwd.join(input_parent)
     };
-    eprintln!("📂 Directorio raíz para imports: {}", root_for_imports.display());
+    eprintln!(
+        "📂 Directorio raíz para imports: {}",
+        root_for_imports.display()
+    );
     let programa_resuelto = match forja::resolver_imports(&source, &root_for_imports) {
-        Ok(p) => { eprintln!("📦 Imports resueltos correctamente ({} declaraciones)", p.declaraciones.len()); Some(p) }
-        Err(e) => { eprintln!("⚠️ No se pudieron resolver imports: {}. Usando AST sin módulos.", e); None }
+        Ok(p) => {
+            eprintln!(
+                "📦 Imports resueltos correctamente ({} declaraciones)",
+                p.declaraciones.len()
+            );
+            Some(p)
+        }
+        Err(e) => {
+            eprintln!(
+                "⚠️ No se pudieron resolver imports: {}. Usando AST sin módulos.",
+                e
+            );
+            None
+        }
     };
 
     // FASE 4: Type Checker + Type Inference
@@ -1856,7 +1918,9 @@ fn cmd_transpile(args: &[String]) {
         Ok(code) => code,
         Err(errors) => {
             if error::json_mode() {
-                for err in &errors { eprintln!("{}", err.to_json()); }
+                for err in &errors {
+                    eprintln!("{}", err.to_json());
+                }
             } else {
                 eprintln!("{}", error::archivo(input_path));
                 mostrar_errores(&source, &errors, false);
@@ -1886,7 +1950,7 @@ fn cmd_transpile(args: &[String]) {
         format!(
             r#"[package]
 name = "{}"
-version = "0.8.8"
+version = "9.0.0"
 edition = "2021"
 
 [workspace]
@@ -1913,7 +1977,7 @@ features = ["android-native-activity"]
         format!(
             r#"[package]
 name = "{}"
-version = "0.8.8"
+version = "9.0.0"
 edition = "2021"
 
 # Exportado por Forja (fa) desde {} (podés ejecutar directo con 'forja ejecutar')
@@ -1948,7 +2012,8 @@ edition = "2021"
     // Usar el programa con imports resueltos (incluye funciones de módulos)
     if usa_gui {
         let ast_json = match &programa_resuelto {
-            Some(p) => serde_json::to_string_pretty(&p.declaraciones).unwrap_or_else(|_| format!("{:#?}", p.declaraciones)),
+            Some(p) => serde_json::to_string_pretty(&p.declaraciones)
+                .unwrap_or_else(|_| format!("{:#?}", p.declaraciones)),
             None => format!("{:#?}", programa.declaraciones),
         };
         let json_path = src_dir.join("programa.json");
