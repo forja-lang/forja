@@ -246,7 +246,7 @@ impl SsaBuilder {
         // Para cada variable mutable, encontrar dónde necesitamos φ-nodes
         // usando el algoritmo iterativo de computación de phi-placement
         for &var in &self.phi_vars.clone() {
-            let mut def_blocks: HashSet<BlockId> = self
+            let def_blocks: HashSet<BlockId> = self
                 .defs
                 .keys()
                 .filter(|(_, m)| *m == var)
@@ -267,11 +267,57 @@ impl SsaBuilder {
             }
 
             // Insertar φ-nodes en los candidatos
+            // Pre-computar predecessors para cada bloque
+            let mut block_predecessors: Vec<Vec<BlockId>> = vec![Vec::new(); blocks.len()];
+            for blk in blocks {
+                let targets = match &blk.terminator {
+                    Terminator::Jump(t) => vec![*t],
+                    Terminator::Branch(_, t, e) => vec![*t, *e],
+                    _ => vec![],
+                };
+                for t in targets {
+                    if t < block_predecessors.len() {
+                        block_predecessors[t].push(blk.id);
+                    }
+                }
+            }
+
             for phi_block in phi_candidates {
                 let entry = self.phi_nodes.entry(phi_block).or_default();
-                // El valor del φ se resolverá después (por ahora placeholder)
-                let placeholder = self.defs.values().next().copied().unwrap_or(0);
-                entry.push((var, placeholder));
+
+                // Obtener predecessors pre-computados
+                let empty_preds: Vec<BlockId> = Vec::new();
+                let preds = if phi_block < block_predecessors.len() {
+                    &block_predecessors[phi_block]
+                } else {
+                    &empty_preds
+                };
+
+                // Para cada predecessor, obtener el reaching definition de la variable
+                for &pred in preds {
+                    if let Some(&val) = self.defs.get(&(pred, var)) {
+                        entry.push((var, val));
+                    } else {
+                        // Buscar reaching definition subiendo por el dominator tree
+                        let mut current = pred;
+                        let mut found = false;
+                        while let Some(Some(idom)) = domtree.idom.get(current) {
+                            if *idom == current {
+                                break; // reached root
+                            }
+                            if let Some(&val) = self.defs.get(&(*idom, var)) {
+                                entry.push((var, val));
+                                found = true;
+                                break;
+                            }
+                            current = *idom;
+                        }
+                        if !found {
+                            // Fallback: usar 0 (nil)
+                            entry.push((var, 0));
+                        }
+                    }
+                }
             }
         }
     }
