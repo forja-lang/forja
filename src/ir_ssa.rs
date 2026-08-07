@@ -115,6 +115,12 @@ impl DominatorTree {
 
     /// LCA en el dominator tree (least common ancestor)
     fn intersect(idom: &[Option<BlockId>], mut b1: BlockId, mut b2: BlockId) -> BlockId {
+        // Nota: Usamos BlockId directamente en vez de semi-dominator ordering
+        // (DFS numbering de Cooper et al.). Esto es correcto cuando los BlockIds
+        // son secuenciales sin huecos (que es siempre el caso en Forja: los bloques
+        // se crean secuencialmente via `new_block()`). Si en el futuro se soportaran
+        // huecos en IDs (por ejemplo, para dead-code elimination con reasignación),
+        // se necesitaría implementar DFS numbering y comparar por ese ordering.
         while b1 != b2 {
             while b1 > b2 {
                 if let Some(d) = idom[b1] {
