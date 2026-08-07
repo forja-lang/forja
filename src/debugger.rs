@@ -273,28 +273,17 @@ impl Debugger {
                 self.vm.ip += 1;
             }
             Opcode::LoadIdx(idx) => {
-                let actual = self.vm.base_ptr + idx;
-                if actual < self.vm.flat_vars.len() {
-                    self.vm.push_valor(self.vm.flat_vars[actual]);
-                } else {
-                    self.vm.push_valor(ValorFast::nulo());
-                }
+                self.vm.push_valor(self.vm.load_local(*idx));
                 self.vm.ip += 1;
             }
             Opcode::StoreIdx(idx) => {
                 let val = self.vm.pop_valor()?;
-                let actual = self.vm.base_ptr + idx;
-                if actual >= self.vm.flat_vars.len() {
-                    self.vm.flat_vars.resize(actual + 1, ValorFast::nulo());
-                }
-                self.vm.flat_vars[actual] = val;
+                self.vm.store_local(*idx, val);
                 self.vm.ip += 1;
             }
             Opcode::DeclareIdx(idx, _mutable) => {
-                let actual = self.vm.base_ptr + idx;
-                if actual >= self.vm.flat_vars.len() {
-                    self.vm.flat_vars.resize(actual + 1, ValorFast::nulo());
-                }
+                // Ensure local slot exists
+                self.vm.store_local(*idx, self.vm.load_local(*idx));
                 self.vm.ip += 1;
             }
             Opcode::Add => {
@@ -431,26 +420,20 @@ impl Debugger {
     /// Obtener variables locales de un frame dado
     pub fn obtener_variables_locales(&self, frame_idx: usize) -> Vec<VarDebug> {
         let mut vars = Vec::new();
-        if frame_idx >= self.vm.frame_count {
+        if frame_idx >= self.vm.frame_locals.len() {
             return vars;
         }
-        let f = &self.vm.frame_buffer[frame_idx];
-        let base = f.base_ptr_previo;
-        let num_vars = f.num_vars;
+        let local_frame = &self.vm.frame_locals[frame_idx];
 
-        for i in 0..num_vars {
-            let idx = base + i;
+        for (i, val) in local_frame.iter().enumerate() {
             let name = format!("var_{}", i);
-            if idx < self.vm.flat_vars.len() {
-                let val = self.vm.flat_vars[idx];
-                let (valor_str, tipo) = self.formatear_valor(val);
-                vars.push(VarDebug {
-                    name,
-                    value: valor_str,
-                    tipo,
-                    referencia: None,
-                });
-            }
+            let (valor_str, tipo) = self.formatear_valor(*val);
+            vars.push(VarDebug {
+                name,
+                value: valor_str,
+                tipo,
+                referencia: None,
+            });
         }
         vars
     }
@@ -458,7 +441,8 @@ impl Debugger {
     /// Obtener variables globales (ámbito global)
     pub fn obtener_variables_globales(&self) -> Vec<VarDebug> {
         let mut vars = Vec::new();
-        for (i, val) in self.vm.flat_vars.iter().enumerate() {
+        // En stack-based execution, las globales están en global_var_persist
+        for (i, val) in self.vm.global_var_persist.iter().enumerate() {
             let (valor_str, tipo) = self.formatear_valor(*val);
             vars.push(VarDebug {
                 name: format!("global_{}", i),
@@ -689,13 +673,13 @@ fn ejecutar_o(dbg: &mut Debugger) -> Result<(), ErrFast> {
 ///
 /// Usa el mismo mecanismo que ForjaFast::ejecutar para Call:
 /// 1. Lookup de función via `lookup_func_entry` (soporta hot-reload)
-/// 2. Creación de FrmFast con ip_ret, base_ptr_previo, num_vars, func_version
-/// 3. Expansión de flat_vars para el nuevo ámbito
-/// 4. Paso de argumentos por flat_vars[base_ptr..base_ptr+nargs]
+/// 2. Creación de FrmFast con ip_ret, func_version
+/// 3. Push de nuevo frame_locals Vec para el nuevo ámbito
+/// 4. Paso de argumentos en los índices 0, 1, 2...
 fn ejecutar_call_debug(dbg: &mut Debugger, nombre: &str, nargs: usize) -> Result<(), ErrFast> {
     let sym = dbg.vm.sym_table.intern(nombre);
     if let Some(entry) = dbg.vm.lookup_func_entry(sym) {
-        // Sincronizar cache stack → stack real antes de manipular flat_vars
+        // Sincronizar cache stack → stack real
         dbg.vm.flush_stack();
 
         let max_frames = dbg.vm.frame_buffer.len();
@@ -706,17 +690,11 @@ fn ejecutar_call_debug(dbg: &mut Debugger, nombre: &str, nargs: usize) -> Result
         }
 
         // Guardar frame actual
-        let num_vars_actual = dbg.vm.flat_vars.len() - dbg.vm.base_ptr;
         dbg.vm.frame_buffer[dbg.vm.frame_count] = FrmFast {
             ip_ret: dbg.vm.ip, // ip ya incrementado por Call handler
-            base_ptr_previo: dbg.vm.base_ptr,
-            num_vars: num_vars_actual,
             func_version: entry.version,
         };
         dbg.vm.frame_count += 1;
-
-        // Nuevo base_ptr al final del flat_vars actual
-        dbg.vm.base_ptr = dbg.vm.flat_vars.len();
 
         // Pop args del stack de valores y revesarlos (orden normal)
         let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
@@ -725,16 +703,13 @@ fn ejecutar_call_debug(dbg: &mut Debugger, nombre: &str, nargs: usize) -> Result
         }
         args.reverse();
 
-        // Reservar espacio para todas las variables de la función
+        // Crear nuevo frame con variables locales
         let vars_size = entry.vars_size.max(nargs);
-        dbg.vm
-            .flat_vars
-            .resize(dbg.vm.base_ptr + vars_size, ValorFast::nulo());
-
-        // Copiar args a flat_vars en índices 0, 1, 2...
+        let mut locals = vec![ValorFast::nulo(); vars_size];
         for (i, arg) in args.into_iter().enumerate() {
-            dbg.vm.flat_vars[dbg.vm.base_ptr + i] = arg;
+            locals[i] = arg;
         }
+        dbg.vm.frame_locals.push(locals);
 
         // Saltar al código de la función
         dbg.vm.ip = entry.ip;
@@ -754,8 +729,7 @@ fn ejecutar_call_debug(dbg: &mut Debugger, nombre: &str, nargs: usize) -> Result
 /// - NO toca el stack de valores (el valor de retorno ya está ahí)
 /// - frame_count -= 1
 /// - flush_stack (sincroniza cache)
-/// - truncate flat_vars a base_ptr (libera vars de la función que termina)
-/// - restaura base_ptr desde el frame
+/// - pop frame_locals (libera vars de la función que termina)
 /// - restaura ip desde el frame
 fn ejecutar_return_debug(dbg: &mut Debugger) -> Result<(), ErrFast> {
     if dbg.vm.frame_count == 0 {
@@ -763,11 +737,10 @@ fn ejecutar_return_debug(dbg: &mut Debugger) -> Result<(), ErrFast> {
     }
     dbg.vm.frame_count -= 1;
     let frame = dbg.vm.frame_buffer[dbg.vm.frame_count];
-    // Sincronizar cache antes de truncar flat_vars
+    // Sincronizar cache
     dbg.vm.flush_stack();
-    // Liberar vars de la función que termina (O(1))
-    dbg.vm.flat_vars.truncate(dbg.vm.base_ptr);
-    dbg.vm.base_ptr = frame.base_ptr_previo;
+    // Liberar vars de la función que termina
+    dbg.vm.frame_locals.pop();
     dbg.vm.ip = frame.ip_ret;
     Ok(())
 }
