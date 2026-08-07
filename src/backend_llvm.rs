@@ -570,9 +570,11 @@ impl EnumLayout {
 }
 
 /// Result[T,E] — tipo genérico popular en Forja
-pub fn result_type(ok_type: LlvmType, err_type: LlvmType) -> LlvmType {
+pub fn result_type(_ok_type: LlvmType, _err_type: LlvmType) -> LlvmType {
     // Result se implementa como: { i8 (tag), max(T,E) (payload) }
     // Tag: 0 = Ok, 1 = Error
+    // NOTA: por ahora el payload es un array fijo; el cálculo real de max(T,E)
+    // requiere metadata de tamaño por tipo (pendiente de implementar).
     LlvmType::Struct("Result".to_string(), vec![
         ("tag".to_string(), LlvmType::I8),
         ("payload".to_string(), LlvmType::Array(Box::new(LlvmType::I1), 512)),
@@ -712,7 +714,6 @@ impl LlvmOptPipeline {
 
     /// Aplica optimizaciones simples a un módulo LLVM
     pub fn optimize_module(&mut self, module: &mut LlvmModule) {
-        let passes = self.passes();
         for func in &mut module.functions {
             if !func.is_declaration {
                 self.stats.functions_optimized += 1;
