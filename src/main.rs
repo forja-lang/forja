@@ -31,7 +31,6 @@ mod symbol_table;
 mod token;
 mod transpiler;
 mod uops;
-mod vm;
 mod vm_fast;
 
 // Hash, codificación y crypto — implementaciones manuales sin dependencias externas
@@ -139,7 +138,7 @@ fn main() {
         "medir" | "bench" | "medicion" | "benchmark" => cmd_bench(&args[2..]),
         // Ejecutar en VM
         "run" | "ejecutar" | "correr" => cmd_run(&args[2..]),
-        // REPL interactivo (con --vm opcional: fast|vm|opt|jit)
+        // REPL interactivo (con --vm opcional: fast|jit)
         "repl" | "interactivo" => {
             if args.len() >= 4 && args[2] == "--vm" {
                 let mut repl = repl::REPL::new(&args[3]);
@@ -710,7 +709,7 @@ fn mostrar_ayuda() {
 /// Mide tiempos de todas las VMs: creación, carga, ejecución (cold + hot)
 fn cmd_bench(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja medir|bench|medicion|benchmark <archivo.fa> [--iters N] [--vm fast|vm|jit|todas] [--asm] [--fast-math] [--max-archivo <MB>]");
+        eprintln!("Uso: forja medir|bench|medicion|benchmark <archivo.fa> [--iters N] [--vm fast|jit|todas] [--asm] [--fast-math] [--max-archivo <MB>]");
         process::exit(1);
     }
 
@@ -865,9 +864,6 @@ fn cmd_bench(args: &[String]) {
     }
 
     let todas = vm_selected == "todas";
-    if todas || vm_selected == "vm" {
-        medir_vm!("VM Original", forja::vm::ForjaVM::new());
-    }
     if todas || vm_selected == "fast" {
         // Activar profiling de f64
         forja::fprofiler::PROFILER_ENABLED.store(1, std::sync::atomic::Ordering::Relaxed);
@@ -942,11 +938,9 @@ fn cmd_bench(args: &[String]) {
 
     // Speedups
     println!();
-    println!("  🔥 Speedup hot vs Original:");
+    println!("  🔥 Speedup hot (vs la más lenta):");
     for r in &resultados {
-        if r.nombre != "VM Original" {
-            println!("    {:<20} {:.2}x", r.nombre, baseline / r.hot_ns);
-        }
+        println!("    {:<20} {:.2}x", r.nombre, baseline / r.hot_ns);
     }
 
     // Hot/Cold ratio
@@ -961,13 +955,13 @@ fn cmd_bench(args: &[String]) {
     println!();
 }
 
-/// forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|vmopt]
+/// forja run|ejecutar|correr <archivo.fa> [--vm fast|jit]
 /// Ejecuta un archivo .fa en la VM seleccionada (default: ForjaFast)
-/// --vm fast|vm|jit : selecciona la VM (default: fast)
+/// --vm fast|jit : selecciona la VM (default: fast)
 /// --asm            : compila a ASM nativo y ejecuta (requiere gcc)
 fn cmd_run(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|vm|jit] [--asm] [--native] [--fast-math] [--pgo|--pgo=recoger|--pgo=usar] [--debug|--console|--no-debug] [--contratos|--no-contratos] [--max-archivo <MB>] [--allow-net <hosts>] [--allow-port <puertos>]");
+        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|jit] [--asm] [--native] [--fast-math] [--pgo|--pgo=recoger|--pgo=usar] [--debug|--console|--no-debug] [--contratos|--no-contratos] [--max-archivo <MB>] [--allow-net <hosts>] [--allow-port <puertos>]");
         process::exit(1);
     }
 
@@ -1124,7 +1118,7 @@ fn cmd_run(args: &[String]) {
             }
         }
         "jit" => forja::ejecutar_jit(&source),
-        _ => forja::ejecutar_vm(&source), // Default: VM original
+        _ => forja::ejecutar_vm(&source), // Default: ForjaFast
     };
 
     match result {

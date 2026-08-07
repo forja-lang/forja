@@ -289,7 +289,8 @@ impl REPL {
                 }
             }
             _ => {
-                let mut vm = crate::vm::ForjaVM::new();
+                let mut vm = crate::vm_fast::ForjaFast::new();
+                vm.show_bytecode = self.show_bytecode;
                 vm.cargar_bytecode(bytecode);
                 vm.reset();
                 vm.ejecutar().map_err(|e| format!("{}", e))?;

@@ -39,7 +39,6 @@ pub mod symbol_table;
 pub mod token;
 pub mod transpiler;
 pub mod uops;
-pub mod vm;
 pub mod vm_fast;
 pub mod vm_jit;
 
@@ -759,11 +758,12 @@ fn ejecutar_con_opciones_desde_impl(
     Ok(vm.obtener_output().to_vec())
 }
 
-/// Compila y ejecuta código Forja en la VM original
+/// Compila y ejecuta código Forja en la VM ForjaFast (v5, la de producción).
+/// Antes de la v9.0.0 este era el modo "VM original"; la VM v1 fue removida.
 pub fn ejecutar_vm(source: &str) -> Result<Vec<String>, String> {
-    use vm::ForjaVM;
+    use vm_fast::ForjaFast;
     let bytecode = compilar_pipeline(source)?;
-    let mut vm = ForjaVM::new();
+    let mut vm = ForjaFast::new();
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
     Ok(vm.obtener_output().to_vec())
