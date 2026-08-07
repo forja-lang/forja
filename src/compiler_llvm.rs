@@ -1,3 +1,7 @@
+// DEPRECATED: Usar backend_llvm.rs para nuevos desarrollos.
+// Este módulo genera LLVM IR como texto y usa sintaxis obsoleta (i64*, solo declare).
+// Se mantiene por compatibilidad; no agregar nuevas funcionalidades aquí.
+//
 // Forja (fa) — Backend LLVM-IR (generación de texto)
 // Genera código LLVM IR como texto sin dependencias externas.
 //
@@ -45,7 +49,16 @@ impl LlvmBackend {
     pub fn new(_ctx: &str, module: &str) -> Self {
         let mut o = String::new();
         raw!(o, "; LLVM IR - Forja (fa) - Modulo: {}", module);
-        raw!(o, "target triple = \"x86_64-pc-windows-msvc\"");
+        let target_triple = if cfg!(target_os = "windows") {
+            "x86_64-pc-windows-msvc"
+        } else if cfg!(target_os = "linux") {
+            "x86_64-unknown-linux-gnu"
+        } else if cfg!(target_os = "macos") {
+            "aarch64-apple-darwin"
+        } else {
+            "x86_64-unknown-linux-gnu"
+        };
+        raw!(o, "target triple = \"{}\"", target_triple);
         raw!(o, "");
         raw!(o, "declare i32 @printf(i8*, ...)");
         raw!(o, "declare i8* @malloc(i64)");
@@ -82,9 +95,8 @@ impl LlvmBackend {
                     .collect();
                 if *externa {
                     raw!(self.out, "declare i64 @{}({})", nombre, ps.join(", "));
-                } else {
-                    raw!(self.out, "declare i64 @{}({})", nombre, ps.join(", "));
                 }
+                // Funciones no-externas se generan como `define` en el segundo pase (self.funcion())
                 self.funcs.push(nombre.clone());
             }
         }
@@ -100,8 +112,16 @@ impl LlvmBackend {
         Ok(())
     }
 
-    pub fn emit_bitcode(&self, path: &str) -> Result<(), String> {
+    /// ADVERTENCIA: Este método escribe texto IR, NO bitcode real de LLVM.
+    /// El nombre es engañoso — usar `emit_ir()` para obtener el texto directamente.
+    pub fn emit_ir_text(&self, path: &str) -> Result<(), String> {
         std::fs::write(path, &self.out).map_err(|e| format!("Error: {}", e))
+    }
+
+    /// Alias deprecado — usar `emit_ir_text` en su lugar.
+    #[deprecated(note = "Renombrado a emit_ir_text. Este método escribe texto IR, no bitcode.")]
+    pub fn emit_bitcode(&self, path: &str) -> Result<(), String> {
+        self.emit_ir_text(path)
     }
 
     pub fn emit_ir(&self) -> String {
@@ -1035,8 +1055,7 @@ impl LlvmBackend {
                 Ok(i)
             }
             Expresion::LiteralExacto(_, _) => {
-                // No implementado en LLVM
-                Ok("0".into())
+                Err("LiteralExacto (BigDecimal) no soportado en el backend LLVM".into())
             }
             Expresion::LiteralTexto(s) => {
                 let lbl = self.sl();
@@ -1272,22 +1291,20 @@ impl LlvmBackend {
                 Ok("0".into())
             }
             Expresion::CanalNuevo => {
-                // Concurrencia no implementada en LLVM
-                Ok("0".into())
+                Err("canal() (concurrencia) no soportado en el backend LLVM".into())
             }
             Expresion::Seleccionar { brazos } => {
-                // No implementado en LLVM
+                // No implementado en LLVM: falla explícita
                 for brazo in brazos {
                     for d in &brazo.cuerpo {
                         self.decl(d)?;
                     }
                 }
-                Ok("0".into())
+                Err("seleccionar no soportado en el backend LLVM".into())
             }
             Expresion::Try(expr) => {
                 let _expr_str = self.expr(expr)?;
-                // ? no implementado en LLVM aún
-                Ok("0".into())
+                Err("Try/errores no soportado en el backend LLVM aún".into())
             }
             Expresion::Asignacion { variable, valor } => {
                 let val_reg = self.expr(valor)?;
@@ -1307,10 +1324,10 @@ impl LlvmBackend {
                 Ok(val_reg)
             }
             Expresion::ArraySet { array, valor } => {
-                // No implementado completamente en LLVM; evaluar array y valor
+                // No implementado completamente en LLVM: falla explícita
                 let _arr_reg = self.expr(array)?;
-                let val_reg = self.expr(valor)?;
-                Ok(val_reg)
+                let _val_reg = self.expr(valor)?;
+                Err("ArraySet no soportado en el backend LLVM".into())
             }
             Expresion::Ok(expr) | Expresion::Error(expr) | Expresion::Algo(expr) => {
                 // No implementado en LLVM - evaluar la expresión interna
@@ -1373,10 +1390,7 @@ impl LlvmBackend {
                 Ok(phi_reg)
             }
             Expresion::LlamadaMetodo { .. } => {
-                // No implementado en LLVM
-                let r = self.r();
-                line!(self.out, "{} = add i64 0, 0", r);
-                Ok(r)
+                Err("LlamadaMetodo no soportado en el backend LLVM".into())
             }
         }
     }
