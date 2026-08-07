@@ -77,9 +77,24 @@ impl ProfileData {
         *self.hot_ips.entry(ip).or_insert(0) += 1;
     }
 
-    /// Serializa el perfil a bytes (formato binario simple)
+    /// Serializa el perfil a bytes.
+    ///
+    /// TODO: Optimización de rendimiento — actualmente usa JSON via serde_json
+    /// que genera archivos grandes (~2-5x el tamaño de una serialización binaria)
+    /// y es más lento en serializar/deserializar. Para mejorar esto:
+    ///
+    /// Opción A: Usar `bincode` (crate) — serialización binaria compacta y rápida.
+    ///   Ventaja: ~3-5x más rápido, ~60% menos espacio. Desventaja: otro dependency.
+    ///
+    /// Opción B: Serialización binaria manual con endian fijo (LE).
+    ///   Formato propuesto: [magic:4][version:4][hotness_len:4][pairs...]
+    ///   Ventaja: sin dependencies extra. Desventaja: más código, fragile ante cambios.
+    ///
+    /// Opción C: Usar `postcard` (no_std friendly, compacto).
+    ///   Ventaja: más pequeño que bincode. Desventaja: menos popular.
+    ///
+    /// Se mantiene JSON por ahora para compatibilidad y simplicidad.
     pub fn serialize(&self) -> Vec<u8> {
-        // Usar serde_json para simplicidad (serialización binaria real usaría bincode)
         serde_json::to_vec(self).unwrap_or_default()
     }
 
@@ -183,6 +198,33 @@ impl ProfileGuidedDecisions {
         }
 
         decisions
+    }
+
+    /// Retorna un conjunto de IPs que corresponden a branches hot.
+    /// Útil para que la VM priorice quickening en esos IPs.
+    pub fn hot_branch_ips(&self) -> std::collections::HashSet<usize> {
+        self.hot_branches
+            .iter()
+            .filter_map(|(block_id, _)| {
+                // BlockId tiene formato "función+offset" o "offset"
+                block_id
+                    .rsplit_once('+')
+                    .and_then(|(_, offset_str)| offset_str.parse::<usize>().ok())
+            })
+            .collect()
+    }
+
+    /// Retorna un conjunto de IPs que corresponden a back-edges de loops hot.
+    /// La VM puede usar esto para priorizar quickening en estos IPs.
+    pub fn hot_loop_back_edges(&self) -> std::collections::HashSet<usize> {
+        self.hot_loops
+            .iter()
+            .filter_map(|(block_id, _)| {
+                block_id
+                    .rsplit_once('+')
+                    .and_then(|(_, offset_str)| offset_str.parse::<usize>().ok())
+            })
+            .collect()
     }
 }
 
