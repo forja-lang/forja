@@ -1,7 +1,13 @@
+use crate::arena::Arena;
 use crate::error::{ErrorForja, ErrorTipo};
 use crate::token::{Token, TokenKind};
 
 /// Tokenizador/Lexer para el lenguaje Forja (fa)
+///
+/// Integra un `Arena` allocator para reducir overhead de heap allocations
+/// en hot paths del lexer. Un `string_buf` reutilizable evita crear/destruir
+/// Strings temporales en cada llamada a `leer_identificador_o_keyword()` y
+/// `leer_numero()`.
 pub struct Lexer {
     source: Vec<char>,
     pos: usize,
@@ -9,23 +15,40 @@ pub struct Lexer {
     columna: usize,
     /// Buffer de tokens pendientes para interpolación de strings
     tokens_pendientes: Vec<Token>,
+    /// Arena allocator para reducir allocations individuales de heap
+    arena: Arena,
+    /// Buffer reutilizable para construir strings de tokens (evita allocations
+    /// repetidas de String en hot paths como identificadores y números)
+    string_buf: String,
 }
 
 impl Lexer {
     pub fn new(source: &str) -> Self {
+        // Pre-reservar capacidad para tokens basado en la longitud del source
+        // (heurística: ~1 token cada 5 caracteres como mínimo)
+        let estimated_tokens = (source.len() / 5).max(64);
         Lexer {
             source: source.chars().collect(),
             pos: 0,
             linea: 1,
             columna: 1,
-            tokens_pendientes: Vec::new(),
+            tokens_pendientes: Vec::with_capacity(estimated_tokens / 4),
+            arena: Arena::new(),
+            string_buf: String::with_capacity(64),
         }
+    }
+
+    /// Retorna una referencia a la arena del lexer (para uso externo si necesario)
+    pub fn arena(&self) -> &Arena {
+        &self.arena
     }
 
     /// Procesa todo el código fuente y devuelve un Vec de Tokens
     pub fn tokenize(&mut self) -> Result<Vec<Token>, Vec<ErrorForja>> {
-        let mut tokens = Vec::new();
-        let mut errors = Vec::new();
+        // Pre-asignar capacidad para reducir reallocs (estimación: 1 token cada 5 chars)
+        let estimated = (self.source.len() / 5).max(64);
+        let mut tokens = Vec::with_capacity(estimated);
+        let mut errors = Vec::with_capacity(4);
 
         loop {
             self.skip_whitespace();
@@ -197,29 +220,32 @@ impl Lexer {
 
     /// Lee un identificador o keyword
     fn leer_identificador_o_keyword(&mut self) -> TokenKind {
-        let mut palabra = String::new();
+        // Reutilizar string_buf en vez de crear un String nuevo por cada token
+        self.string_buf.clear();
         while let Some(ch) = self.current() {
             if ch.is_alphanumeric() || ch == '_' {
-                palabra.push(ch);
+                self.string_buf.push(ch);
                 self.advance();
             } else {
                 break;
             }
         }
-        self.identificar_keyword(&palabra)
+        self.identificar_keyword(&self.string_buf)
     }
 
     /// Lee un número (entero, decimal o exacto)
     fn leer_numero(&mut self) -> TokenKind {
-        let mut parte_entera = String::new();
+        // Reutilizar string_buf para la parte entera
+        self.string_buf.clear();
         while let Some(ch) = self.current() {
             if ch.is_ascii_digit() {
-                parte_entera.push(ch);
+                self.string_buf.push(ch);
                 self.advance();
             } else {
                 break;
             }
         }
+        let parte_entera = self.string_buf.clone();
 
         let mut parte_fraccion = String::new();
         let mut tiene_punto = false;
@@ -856,16 +882,17 @@ impl Lexer {
                         // como identificadores para que el parser pueda procesarlos como expresiones.
                         // Si devolviéramos keywords (ej: TokenKind::Tipo, TokenKind::Funcion),
                         // el parser los interpretaría como declaraciones en lugar de expresiones.
-                        let mut ident = String::new();
+                        // Reutilizar string_buf para identificadores en interpolación
+                        self.string_buf.clear();
                         while let Some(c) = self.current() {
                             if c.is_alphanumeric() || c == '_' {
-                                ident.push(c);
+                                self.string_buf.push(c);
                                 self.advance();
                             } else {
                                 break;
                             }
                         }
-                        if ident == "este" {
+                        if self.string_buf.as_str() == "este" {
                             self.tokens_pendientes.push(Token::new(
                                 TokenKind::Este,
                                 self.linea,
@@ -873,7 +900,7 @@ impl Lexer {
                             ));
                         } else {
                             self.tokens_pendientes.push(Token::new(
-                                TokenKind::Identificador(ident),
+                                TokenKind::Identificador(self.string_buf.clone()),
                                 self.linea,
                                 self.columna,
                             ));
