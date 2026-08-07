@@ -337,6 +337,48 @@ impl IrBuilder {
         v
     }
 
+    pub fn emit_neq(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::Neq(lhs, rhs));
+        v
+    }
+
+    pub fn emit_gt(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::Gt(lhs, rhs));
+        v
+    }
+
+    pub fn emit_lte(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::Lte(lhs, rhs));
+        v
+    }
+
+    pub fn emit_gte(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::Gte(lhs, rhs));
+        v
+    }
+
+    pub fn emit_not(&mut self, val: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::Not(val));
+        v
+    }
+
+    pub fn emit_and(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::And(lhs, rhs));
+        v
+    }
+
+    pub fn emit_or(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::Or(lhs, rhs));
+        v
+    }
+
     pub fn emit_load(&mut self, mem: MemIdx) -> ValueId {
         let v = self.next_value();
         self.current_insts.push(Inst::Load(mem));
