@@ -196,6 +196,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - `selfrun`: no propaga error de ejecución cuando el bytecode AOT no tiene Halt explícito
 - `ffi`: uso de `c_char` + transmute vía `*const ()` para compilar en wasm32 y android
 - `vm_fast`: helper de compilación local en tests (arregla E0425), fix de borrow conflict
+- `optimizer`: fix del operador módulo (`%`) — el patrón `Push, Declare, Store` se optimizaba a `DeclareIdx` + `StoreIdx` (ambos hacen pop) y perdía el operando, devolviendo siempre 0 en `a % b`
 - `lsp`: eliminada llave `}` duplicada en `completar_locales`
 - `crypto`: aritmética modular en `crypto_pq`, reducción de Poly1305 con aritmética 130-bit, ChaCha20-Poly1305 AEAD funcional, `wrapping_add` en el carry de poly1305 (tests crypto 11/11)
 - `transpiler`: reemplazo de `serde_json::to_string_pretty` por debug format en `cmd_transpile`

@@ -236,22 +236,22 @@ fn test_vm_concatenacion_texto() {
 
 #[test]
 fn test_vm_string_length() {
-    assert_eq!(output("escribir(\"hola\".length())"), vec!["4"]);
+    assert_eq!(output("escribir(\"hola\".longitud())"), vec!["4"]);
 }
 
 #[test]
 fn test_vm_string_to_upper() {
-    assert_eq!(output("escribir(\"hola\".to_upper())"), vec!["HOLA"]);
+    assert_eq!(output("escribir(\"hola\".a_mayusculas())"), vec!["HOLA"]);
 }
 
 #[test]
 fn test_vm_string_to_lower() {
-    assert_eq!(output("escribir(\"HOLA\".to_lower())"), vec!["hola"]);
+    assert_eq!(output("escribir(\"HOLA\".a_minusculas())"), vec!["hola"]);
 }
 
 #[test]
 fn test_vm_string_trim() {
-    assert_eq!(output("escribir(\"  hola  \".trim())"), vec!["hola"]);
+    assert_eq!(output("escribir(\"  hola  \".recortar())"), vec!["hola"]);
 }
 
 // ============================================================
@@ -260,7 +260,7 @@ fn test_vm_string_trim() {
 
 #[test]
 fn test_vm_array_literal() {
-    assert_eq!(output("variable arr = [1, 2, 3]\nescribir(arr)"), vec!["[1, 2, 3]"]);
+    assert_eq!(output("variable arr = [1, 2, 3]\nescribir(arr)"), vec!["[1,2,3]"]);
 }
 
 #[test]
