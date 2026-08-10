@@ -1,0 +1,272 @@
+[
+  {
+    "date": "2026-07-31T23:34:21Z",
+    "version": "0.8.8",
+    "commit": "70bacab",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-07-31T23:49:13Z",
+    "version": "0.8.8",
+    "commit": "d26af95",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-01T00:29:07Z",
+    "version": "0.8.8",
+    "commit": "c72d9be",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-02T08:14:08Z",
+    "version": "0.8.8",
+    "commit": "47c90be",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T00:08:11Z",
+    "version": "9.0.0",
+    "commit": "db3ec6d",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T00:39:40Z",
+    "version": "9.0.0",
+    "commit": "d86b9a9",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T01:04:13Z",
+    "version": "9.0.0",
+    "commit": "00e04b5",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T01:37:26Z",
+    "version": "9.0.0",
+    "commit": "c335d68",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T06:31:00Z",
+    "version": "9.0.0",
+    "commit": "0d2ef76",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T06:31:27Z",
+    "version": "9.0.0",
+    "commit": "d2eea11",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T06:32:04Z",
+    "version": "9.0.0",
+    "commit": "d99edf8",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T06:32:33Z",
+    "version": "9.0.0",
+    "commit": "26a781b",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T06:33:21Z",
+    "version": "9.0.0",
+    "commit": "95e8504",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T06:34:05Z",
+    "version": "9.0.0",
+    "commit": "5d48296",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T06:34:41Z",
+    "version": "9.0.0",
+    "commit": "8723424",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T06:35:23Z",
+    "version": "9.0.0",
+    "commit": "4bf0cc6",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T07:31:33Z",
+    "version": "9.0.0",
+    "commit": "ef7a882",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T07:33:02Z",
+    "version": "9.0.0",
+    "commit": "d00dd6f",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T07:33:17Z",
+    "version": "9.0.0",
+    "commit": "84f1613",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T07:33:41Z",
+    "version": "9.0.0",
+    "commit": "c4226ca",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T07:34:04Z",
+    "version": "9.0.0",
+    "commit": "c425b22",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T07:34:32Z",
+    "version": "9.0.0",
+    "commit": "b853c68",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T08:00:07Z",
+    "version": "9.0.0",
+    "commit": "bd24fe7",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T08:13:34Z",
+    "version": "9.0.0",
+    "commit": "f5d7537",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-07T08:22:11Z",
+    "version": "9.0.0",
+    "commit": "3979993",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-09T06:47:27Z",
+    "version": "9.0.0",
+    "commit": "b2caab6",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  },
+  {
+    "date": "2026-08-10T23:23:55Z",
+    "version": "9.0.0",
+    "commit": "edc5abe",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
+  }
+]
