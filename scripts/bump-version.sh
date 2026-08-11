@@ -157,6 +157,14 @@ for vsc_file in vscode/README.md vscode/forja-syntax/package.json vscode/forja-s
     fi
 done
 
+# 8. installer.iss (Inno Setup)
+iss_file="installer.iss"
+if [ -f "$iss_file" ]; then
+    sed -i "s/#define MyAppVersion \"$OLD_VERSION\"/#define MyAppVersion \"$NEW_VERSION\"/g" "$iss_file"
+    print_ok "$iss_file"
+    COUNT=$((COUNT + 1))
+fi
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  ✅  Versión actualizada: $OLD_VERSION → $NEW_VERSION"

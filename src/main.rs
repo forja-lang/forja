@@ -1958,7 +1958,7 @@ fn cmd_transpile(args: &[String]) {
         format!(
             r#"[package]
 name = "{}"
-version = "9.0.0"
+version = "0.9.0"
 edition = "2021"
 
 [workspace]
@@ -1985,7 +1985,7 @@ features = ["android-native-activity"]
         format!(
             r#"[package]
 name = "{}"
-version = "9.0.0"
+version = "0.9.0"
 edition = "2021"
 
 # Exportado por Forja (fa) desde {} (podés ejecutar directo con 'forja ejecutar')
