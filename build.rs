@@ -35,9 +35,9 @@ fn main() {
         println!("cargo:warning=━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     }
 
-    // ── 2. Incrustar ícono (solo Windows, excluyendo WASM) ──
+    // ── 2. Incrustar ícono (solo cuando el TARGET es Windows) ──
     let target = std::env::var("TARGET").unwrap_or_default();
-    if target.contains("wasm32") {
+    if !target.contains("windows") {
         return;
     }
 

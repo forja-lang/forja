@@ -765,7 +765,7 @@ fn ejecutar_con_opciones_desde_impl(
 }
 
 /// Compila y ejecuta código Forja en la VM ForjaFast (v5, la de producción).
-/// Antes de la v9.0.0 este era el modo "VM original"; la VM v1 fue removida.
+/// Antes de la v0.9.0 este era el modo "VM original"; la VM v1 fue removida.
 pub fn ejecutar_vm(source: &str) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
     let bytecode = compilar_pipeline(source)?;

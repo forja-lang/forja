@@ -1,11 +1,11 @@
 /// Detección de bytecode incrustado o código fuente GUI al final del ejecutable
-/// Permite que forja.exe funcione como runtime autónomo
+/// Permite que forja.exe o forja-rt.exe funcionen como runtime autónomo de producción
 use std::fs;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 
 const FBC_MAGIC: &[u8; 4] = b"FBC\0";
 
-/// Intenta cargar bytecode incrustado al final del propio .exe
+/// Intenta cargar y ejecutar bytecode incrustado al final del propio .exe
 /// Formato: [...stub.exe...][...bytecode...][4 bytes: size u32 LE][4 bytes: magic "FBC\0"]
 pub fn try_selfrun() -> Option<()> {
     let exe_path = std::env::current_exe().ok()?;
@@ -24,7 +24,7 @@ pub fn try_selfrun() -> Option<()> {
     let mut footer = [0u8; 8];
     file.read_exact(&mut footer).ok()?;
 
-    // Verificar magic
+    // Verificar magic header FBC\0
     if &footer[4..8] != FBC_MAGIC {
         return None; // No hay bytecode incrustado
     }
@@ -36,7 +36,7 @@ pub fn try_selfrun() -> Option<()> {
         return None;
     }
 
-    // Leer bytecode (está antes del footer, al final del archivo)
+    // Leer bytecode (ubicado justo antes del footer, al final del archivo)
     let bc_start = file_len - 8 - bc_size;
     file.seek(SeekFrom::Start(bc_start)).ok()?;
     let mut bytecode_data = vec![0u8; bc_size as usize];
@@ -46,7 +46,7 @@ pub fn try_selfrun() -> Option<()> {
     let opcodes = match crate::bytecode::deserializar_bytecode(&bytecode_data) {
         Some(o) => o,
         None => {
-            eprintln!("[SELFRUN] error deserializando bytecode ({} bytes)", bc_size);
+            eprintln!("[SELFRUN] Error al deserializar bytecode ({} bytes)", bc_size);
             return None;
         }
     };
@@ -55,15 +55,41 @@ pub fn try_selfrun() -> Option<()> {
         println!("OPCODES: {:?}", opcodes);
     }
 
-    // Ejecutar en ForjaFast (la VM de producción; la VM original fue removida)
+    // Inicializar VM ForjaFast de producción
     let mut vm = crate::vm_fast::ForjaFast::new();
+
+    // Habilitar Fast-Math por defecto en el ejecutable autónomo (desactivable con FORJA_FAST_MATH=0)
+    let fast_math = std::env::var("FORJA_FAST_MATH")
+        .map(|v| v != "0" && v != "false")
+        .unwrap_or(true);
+    vm.set_fast_math(fast_math);
+
+    // Habilitar verificación de contratos si la variable de entorno está activa
+    if std::env::var("FORJA_VERIFY_CONTRACTS").is_ok() {
+        vm.verificar_contratos = true;
+    }
+
     vm.cargar_bytecode(opcodes);
-    // No propagar el error de ejecución: algunos bytecodes generados por
-    // AOT (`forja compilar`) terminan sin un opcode Halt explícito y
-    // `ejecutar()` retorna Err aunque el programa ya se ejecutó completo.
-    let _ = vm.ejecutar();
+
+    // Ejecutar la VM
+    let exec_res = vm.ejecutar();
+
+    // Salida mediante I/O con buffer para máximo rendimiento
+    let stdout = std::io::stdout();
+    let mut handle = BufWriter::new(stdout.lock());
     for line in vm.obtener_output() {
-        println!("{}", line);
+        let _ = writeln!(handle, "{}", line);
+    }
+    let _ = handle.flush();
+
+    // Gestión de errores de runtime
+    if let Err(e) = exec_res {
+        let err_str = format!("{}", e);
+        // Algunos bytecodes de AOT finalizan sin un opcode Halt explícito (retornan fin de instrucciones)
+        if !err_str.contains("Fin de instrucciones") && !err_str.contains("Halt") {
+            eprintln!("\n❌ [Error de Ejecución]: {}", err_str);
+            std::process::exit(1);
+        }
     }
 
     Some(())
@@ -71,6 +97,7 @@ pub fn try_selfrun() -> Option<()> {
 
 /// Si estamos en Windows, copia el ejecutable actual al directorio temporal (%TEMP%)
 /// y lo ejecuta desde allí para liberar el ejecutable original (evita bloqueos de archivo).
+/// Al finalizar la ejecución, elimina automáticamente el ejecutable temporal generado.
 pub fn shadow_copy() {
     #[cfg(target_os = "windows")]
     {
@@ -101,11 +128,15 @@ pub fn shadow_copy() {
             Ok(_) => {
                 // Ejecutar la copia pasando todos los argumentos originales y el path original en env var
                 let args: Vec<String> = env::args().skip(1).collect();
-                match Command::new(&temp_exe)
+                let status_res = Command::new(&temp_exe)
                     .env("FORJA_ORIGINAL_EXE", &exe_path)
                     .args(&args)
-                    .status()
-                {
+                    .status();
+
+                // Intentar limpiar el ejecutable temporal al terminar
+                let _ = fs::remove_file(&temp_exe);
+
+                match status_res {
                     Ok(status) => {
                         let exit_code = status.code().unwrap_or(0);
                         std::process::exit(exit_code);
@@ -119,8 +150,8 @@ pub fn shadow_copy() {
                 }
             }
             Err(e) => {
-                // Si falla la copia (por ejemplo, porque run_forja.exe ya está en ejecución y bloqueado),
-                // no hacemos nada y permitimos que el binario original continúe su ejecución normal.
+                // Si falla la copia (por ejemplo, porque el archivo ya está en ejecución y bloqueado),
+                // permitimos que el binario original continúe su ejecución normal.
                 eprintln!(
                     "Warning [shadow_copy]: No se pudo crear la copia temporal: {}",
                     e
