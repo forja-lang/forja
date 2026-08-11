@@ -5,6 +5,16 @@ Todas las versiones notables de **Forja (fa)** serán documentadas en este archi
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/),
 y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-08-11
+
+### Mejorado
+
+- Se ha mejorado el rendimiento de la compilación y ejecución de programas en Forja.
+
+### Agregado
+
+
+
 ## [0.9.0] - 2026-08-07
 
 ### Nuevos archivos (32 en `src/`)
