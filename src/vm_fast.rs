@@ -336,8 +336,7 @@ impl ValorFast {
             self.a_flotante() != 0.0
         } else if self.es_texto() {
             true // ⚠️ Sin str_heap no se puede verificar si el string está vacío. Usar es_verdadero_con_heap() para verificación precisa.
-        }
-        else if self.es_exacto() {
+        } else if self.es_exacto() {
             true
         }
         // Exacto siempre es verdadero (coeff != 0 es verdadero)
@@ -1332,7 +1331,7 @@ impl ForjaFast {
                     } else if a.es_flotante() && b.es_flotante() {
                         a.a_flotante() != b.a_flotante()
                     } else {
-                        true  // Diferentes tipos → diferentes
+                        true // Diferentes tipos → diferentes
                     }));
                 }
                 Uop::Menor => {
@@ -1381,17 +1380,25 @@ impl ForjaFast {
                 }
                 Uop::No => {
                     let a = stack.pop().unwrap_or(ValorFast::nulo());
-                    stack.push(ValorFast::booleano(!a.es_verdadero_con_heap(&self.str_heap)));
+                    stack.push(ValorFast::booleano(
+                        !a.es_verdadero_con_heap(&self.str_heap),
+                    ));
                 }
                 Uop::Y => {
                     let b = stack.pop().unwrap_or(ValorFast::nulo());
                     let a = stack.pop().unwrap_or(ValorFast::nulo());
-                    stack.push(ValorFast::booleano(a.es_verdadero_con_heap(&self.str_heap) && b.es_verdadero_con_heap(&self.str_heap)));
+                    stack.push(ValorFast::booleano(
+                        a.es_verdadero_con_heap(&self.str_heap)
+                            && b.es_verdadero_con_heap(&self.str_heap),
+                    ));
                 }
                 Uop::O => {
                     let b = stack.pop().unwrap_or(ValorFast::nulo());
                     let a = stack.pop().unwrap_or(ValorFast::nulo());
-                    stack.push(ValorFast::booleano(a.es_verdadero_con_heap(&self.str_heap) || b.es_verdadero_con_heap(&self.str_heap)));
+                    stack.push(ValorFast::booleano(
+                        a.es_verdadero_con_heap(&self.str_heap)
+                            || b.es_verdadero_con_heap(&self.str_heap),
+                    ));
                 }
 
                 // Saltos (no deberían aparecer en contratos simples)
@@ -4184,13 +4191,19 @@ impl ForjaFast {
                 Opcode::Y => {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
-                    self.push_valor(ValorFast::booleano(a.es_verdadero_con_heap(&self.str_heap) && b.es_verdadero_con_heap(&self.str_heap)));
+                    self.push_valor(ValorFast::booleano(
+                        a.es_verdadero_con_heap(&self.str_heap)
+                            && b.es_verdadero_con_heap(&self.str_heap),
+                    ));
                     self.ip += 1;
                 }
                 Opcode::O => {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
-                    self.push_valor(ValorFast::booleano(a.es_verdadero_con_heap(&self.str_heap) || b.es_verdadero_con_heap(&self.str_heap)));
+                    self.push_valor(ValorFast::booleano(
+                        a.es_verdadero_con_heap(&self.str_heap)
+                            || b.es_verdadero_con_heap(&self.str_heap),
+                    ));
                     self.ip += 1;
                 }
                 Opcode::No => {
@@ -4375,7 +4388,11 @@ impl ForjaFast {
                 // llamar (el valor de un closure). Reescribe el opcode a Call y
                 // reprocesa la misma posición.
                 Opcode::CallClosure(var_idx, nargs) => {
-                    let nombre_val = self.locals().get(*var_idx).copied().unwrap_or(ValorFast::nulo());
+                    let nombre_val = self
+                        .locals()
+                        .get(*var_idx)
+                        .copied()
+                        .unwrap_or(ValorFast::nulo());
                     if nombre_val.es_texto() {
                         let nombre = self.str_heap[nombre_val.indice_texto() as usize].clone();
                         self.bytecode[self.ip] = Opcode::Call(nombre, *nargs);
@@ -5017,7 +5034,9 @@ impl ForjaFast {
                                     // Resolver valor a ChannelValue: strings se envían como
                                     // Arc<str> real para que el receptor pueda re-indexarlos
                                     let msg = if val.es_texto() {
-                                        ChannelValue::Texto(Arc::clone(self.get_str(val.indice_texto())))
+                                        ChannelValue::Texto(Arc::clone(
+                                            self.get_str(val.indice_texto()),
+                                        ))
                                     } else {
                                         ChannelValue::Valor(val)
                                     };
@@ -5319,7 +5338,9 @@ impl ForjaFast {
                                     let val_str = self.mostrar_valor(&val);
                                     eprintln!("[DBG] enviar#2: enviando val={}", val_str);
                                     let msg = if val.es_texto() {
-                                        ChannelValue::Texto(Arc::clone(self.get_str(val.indice_texto())))
+                                        ChannelValue::Texto(Arc::clone(
+                                            self.get_str(val.indice_texto()),
+                                        ))
                                     } else {
                                         ChannelValue::Valor(val)
                                     };
@@ -6523,11 +6544,14 @@ impl ForjaFast {
                                         eprintln!("[WARN] Hilo '{}': {:?}", func_name, e);
                                         std::io::stderr().flush().ok();
                                     }
-                                    let ret = hilo_vm.stack.first().copied().unwrap_or(ValorFast::nulo());
+                                    let ret =
+                                        hilo_vm.stack.first().copied().unwrap_or(ValorFast::nulo());
                                     // Resolver valor de retorno a ChannelValue para
                                     // que el padre pueda re-indexar strings
                                     if ret.es_texto() {
-                                        ChannelValue::Texto(Arc::clone(hilo_vm.get_str(ret.indice_texto())))
+                                        ChannelValue::Texto(Arc::clone(
+                                            hilo_vm.get_str(ret.indice_texto()),
+                                        ))
                                     } else {
                                         ChannelValue::Valor(ret)
                                     }
@@ -7020,18 +7044,26 @@ impl ForjaFast {
                 Uop::Y => {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
-                    self.push_valor(ValorFast::booleano(a.es_verdadero_con_heap(&self.str_heap) && b.es_verdadero_con_heap(&self.str_heap)));
+                    self.push_valor(ValorFast::booleano(
+                        a.es_verdadero_con_heap(&self.str_heap)
+                            && b.es_verdadero_con_heap(&self.str_heap),
+                    ));
                     self.ip += 1;
                 }
                 Uop::O => {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
-                    self.push_valor(ValorFast::booleano(a.es_verdadero_con_heap(&self.str_heap) || b.es_verdadero_con_heap(&self.str_heap)));
+                    self.push_valor(ValorFast::booleano(
+                        a.es_verdadero_con_heap(&self.str_heap)
+                            || b.es_verdadero_con_heap(&self.str_heap),
+                    ));
                     self.ip += 1;
                 }
                 Uop::No => {
                     let a = self.pop_valor()?;
-                    self.push_valor(ValorFast::booleano(!a.es_verdadero_con_heap(&self.str_heap)));
+                    self.push_valor(ValorFast::booleano(
+                        !a.es_verdadero_con_heap(&self.str_heap),
+                    ));
                     self.ip += 1;
                 }
 
@@ -7055,7 +7087,11 @@ impl ForjaFast {
                 Uop::CallClosure(var_idx, nargs) => {
                     // La variable local var_idx contiene el nombre de la función
                     // del closure: reescribir a Uop::Call y reprocesar.
-                    let nombre_val = self.locals().get(var_idx).copied().unwrap_or(ValorFast::nulo());
+                    let nombre_val = self
+                        .locals()
+                        .get(var_idx)
+                        .copied()
+                        .unwrap_or(ValorFast::nulo());
                     if nombre_val.es_texto() {
                         let nombre = self.str_heap[nombre_val.indice_texto() as usize].clone();
                         uops[self.ip] = Uop::Call(nombre.to_string(), nargs);
@@ -7067,17 +7103,16 @@ impl ForjaFast {
                 Uop::Call(nombre, nargs) => {
                     // Opcode::CallDirect se expande a Uop::Call("%direct_{idx}"):
                     // resolver el índice directamente contra function_table.
-                    let entry_opt: Option<FuncVersion> = if let Some(idx_str) =
-                        nombre.strip_prefix("%direct_")
-                    {
-                        match idx_str.parse::<usize>() {
-                            Ok(idx) => self.function_table.entries.get(idx).copied(),
-                            Err(_) => None,
-                        }
-                    } else {
-                        let sym_id = self.sym_table.intern(&nombre);
-                        self.lookup_func_entry(sym_id)
-                    };
+                    let entry_opt: Option<FuncVersion> =
+                        if let Some(idx_str) = nombre.strip_prefix("%direct_") {
+                            match idx_str.parse::<usize>() {
+                                Ok(idx) => self.function_table.entries.get(idx).copied(),
+                                Err(_) => None,
+                            }
+                        } else {
+                            let sym_id = self.sym_table.intern(&nombre);
+                            self.lookup_func_entry(sym_id)
+                        };
                     if let Some(entry) = entry_opt {
                         let next_ip = self.ip + 1;
                         let is_tail =
@@ -7467,7 +7502,9 @@ impl ForjaFast {
                                     let val_str = self.mostrar_valor(&val);
                                     eprintln!("[DBG] enviar#3: enviando val={}", val_str);
                                     let msg = if val.es_texto() {
-                                        ChannelValue::Texto(Arc::clone(self.get_str(val.indice_texto())))
+                                        ChannelValue::Texto(Arc::clone(
+                                            self.get_str(val.indice_texto()),
+                                        ))
                                     } else {
                                         ChannelValue::Valor(val)
                                     };
@@ -9037,11 +9074,9 @@ variable r = fib(20)
             preespecializados > 0,
             "los IPs calientes deben quedar pre-especializados"
         );
-        vm2.ejecutar().expect("el programa debe ejecutar con perfil aplicado");
-        assert!(
-            !vm2.obtener_output().is_empty(),
-            "debe producir salida"
-        );
+        vm2.ejecutar()
+            .expect("el programa debe ejecutar con perfil aplicado");
+        assert!(!vm2.obtener_output().is_empty(), "debe producir salida");
     }
 
     #[test]

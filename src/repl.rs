@@ -49,14 +49,26 @@ impl REPL {
             _ => "ForjaFast 🏆",
         };
 
-        println!("{} Forja v{} — Modo interactivo ({})",
-            color::verde("🔨"), env!("CARGO_PKG_VERSION"), color::cyan(modo_desc));
-        println!("    {} Escribí '{}' para terminar  ·  ↑/↓ historial  ·  Tab autocompletado",
-            color::GRIS, color::amarillo("salir"));
-        println!("    'variables' para ver estado  ·  {} para reiniciar  ·  {} para cambiar VM",
-            color::amarillo("'limpiar'"), color::amarillo("--vm <modo>"));
-        println!("    {} para recargar funciones (hot reload Fase 1)",
-            color::amarillo("':reload'"));
+        println!(
+            "{} Forja v{} — Modo interactivo ({})",
+            color::verde("🔨"),
+            env!("CARGO_PKG_VERSION"),
+            color::cyan(modo_desc)
+        );
+        println!(
+            "    {} Escribí '{}' para terminar  ·  ↑/↓ historial  ·  Tab autocompletado",
+            color::GRIS,
+            color::amarillo("salir")
+        );
+        println!(
+            "    'variables' para ver estado  ·  {} para reiniciar  ·  {} para cambiar VM",
+            color::amarillo("'limpiar'"),
+            color::amarillo("--vm <modo>")
+        );
+        println!(
+            "    {} para recargar funciones (hot reload Fase 1)",
+            color::amarillo("':reload'")
+        );
         println!();
 
         REPL {
@@ -81,7 +93,11 @@ impl REPL {
                     match line.as_str() {
                         "salir" | "exit" | "quit" => {
                             let _ = self.rl.save_history("forja_history.txt");
-                            println!("{} {}", color::magenta("👋"), color::negrita("¡Hasta luego!"));
+                            println!(
+                                "{} {}",
+                                color::magenta("👋"),
+                                color::negrita("¡Hasta luego!")
+                            );
                             break;
                         }
                         "variables" => {
@@ -114,7 +130,10 @@ impl REPL {
                         }
                         "--debug" | "--debug on" => {
                             self.show_bytecode = true;
-                            println!("{}", error::info("Modo debug activado — se mostrará el bytecode"));
+                            println!(
+                                "{}",
+                                error::info("Modo debug activado — se mostrará el bytecode")
+                            );
                             continue;
                         }
                         "--debug off" => {
@@ -129,13 +148,22 @@ impl REPL {
                                 if let Some(ref mut vm) = self.vm_fast {
                                     let full_source = self.source_acumulado.clone();
                                     if full_source.is_empty() {
-                                        eprintln!("{}", error::warning("No hay código cargado para recargar"));
+                                        eprintln!(
+                                            "{}",
+                                            error::warning("No hay código cargado para recargar")
+                                        );
                                     } else {
                                         let mut lexer = Lexer::new(&full_source);
                                         let tokens = match lexer.tokenize() {
                                             Ok(t) => t,
                                             Err(e) => {
-                                                eprintln!("{}", error::error(&format!("Error de lexer: {}", e[0])));
+                                                eprintln!(
+                                                    "{}",
+                                                    error::error(&format!(
+                                                        "Error de lexer: {}",
+                                                        e[0]
+                                                    ))
+                                                );
                                                 continue;
                                             }
                                         };
@@ -143,7 +171,13 @@ impl REPL {
                                         let programa = match parser.parse() {
                                             Ok(p) => p,
                                             Err(e) => {
-                                                eprintln!("{}", error::error(&format!("Error de parser: {}", e[0])));
+                                                eprintln!(
+                                                    "{}",
+                                                    error::error(&format!(
+                                                        "Error de parser: {}",
+                                                        e[0]
+                                                    ))
+                                                );
                                                 continue;
                                             }
                                         };
@@ -151,7 +185,10 @@ impl REPL {
                                         let bytecode = match gen.generar(&programa) {
                                             Ok(b) => b,
                                             Err(_) => {
-                                                eprintln!("{}", error::error("Error generando bytecode"));
+                                                eprintln!(
+                                                    "{}",
+                                                    error::error("Error generando bytecode")
+                                                );
                                                 continue;
                                             }
                                         };
@@ -159,11 +196,19 @@ impl REPL {
                                         let bytecode = fusionar_opcodes(&bytecode);
 
                                         vm.cargar_bytecode(bytecode);
-                                        println!("{} {} funciones recargadas",
-                                            color::verde("♻️"), color::negrita(&vm.function_table.entries.len().to_string()));
+                                        println!(
+                                            "{} {} funciones recargadas",
+                                            color::verde("♻️"),
+                                            color::negrita(
+                                                &vm.function_table.entries.len().to_string()
+                                            )
+                                        );
                                     }
                                 } else {
-                                    eprintln!("{}", error::warning("No hay VM activa. Ejecutá código primero."));
+                                    eprintln!(
+                                        "{}",
+                                        error::warning("No hay VM activa. Ejecutá código primero.")
+                                    );
                                 }
                             } else {
                                 // ── Hot-swap de módulo específico ──────────────────────
@@ -175,25 +220,41 @@ impl REPL {
                                             acc.wrapping_mul(31).wrapping_add(b as u32)
                                         }));
                                     if !vm.module_registry.contains_key(&module_sym) {
-                                        eprintln!("{}", error::error(&format!("Módulo '{}' no está registrado en la VM", nombre_modulo)));
+                                        eprintln!(
+                                            "{}",
+                                            error::error(&format!(
+                                                "Módulo '{}' no está registrado en la VM",
+                                                nombre_modulo
+                                            ))
+                                        );
                                         continue;
                                     }
                                     let programa = match vm.module_resolver.recargar(module_sym) {
                                         Ok(p) => p,
                                         Err(e) => {
-                                            eprintln!("{}", error::error(&format!("Error recargando módulo: {}", e[0])));
+                                            eprintln!(
+                                                "{}",
+                                                error::error(&format!(
+                                                    "Error recargando módulo: {}",
+                                                    e[0]
+                                                ))
+                                            );
                                             continue;
                                         }
                                     };
                                     let mut gen = BytecodeGenerator::new();
-                                    let module_bc =
-                                        match gen.generar_para_modulo(&programa, module_sym) {
-                                            Ok(mbc) => mbc,
-                                            Err(_) => {
-                                                eprintln!("{}", error::error("Error generando bytecode del módulo"));
-                                                continue;
-                                            }
-                                        };
+                                    let module_bc = match gen
+                                        .generar_para_modulo(&programa, module_sym)
+                                    {
+                                        Ok(mbc) => mbc,
+                                        Err(_) => {
+                                            eprintln!(
+                                                "{}",
+                                                error::error("Error generando bytecode del módulo")
+                                            );
+                                            continue;
+                                        }
+                                    };
                                     // Obtener versión desde el registro
                                     let version = vm
                                         .module_registry
@@ -203,17 +264,25 @@ impl REPL {
                                     // Hacer hot-swap en la VM
                                     match vm.hot_swap_module(module_sym, &module_bc) {
                                         Ok(()) => {
-                                            println!("{} Módulo '{}' recargado (v{})",
+                                            println!(
+                                                "{} Módulo '{}' recargado (v{})",
                                                 color::verde("♻️"),
                                                 color::negrita(&nombre_modulo),
-                                                color::amarillo(&(version + 1).to_string()));
+                                                color::amarillo(&(version + 1).to_string())
+                                            );
                                         }
                                         Err(e) => {
-                                            eprintln!("{}", error::error(&format!("Error en hot-swap: {}", e)));
+                                            eprintln!(
+                                                "{}",
+                                                error::error(&format!("Error en hot-swap: {}", e))
+                                            );
                                         }
                                     }
                                 } else {
-                                    eprintln!("{}", error::warning("No hay VM activa. Ejecutá código primero."));
+                                    eprintln!(
+                                        "{}",
+                                        error::warning("No hay VM activa. Ejecutá código primero.")
+                                    );
                                 }
                             }
                             continue;

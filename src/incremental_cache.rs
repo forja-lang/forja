@@ -121,9 +121,8 @@ impl IncrementalCache {
             .iter()
             .filter(|(path, entry)| {
                 let archivo = self.root_dir.join(path);
-                let nuevo_hash = crate::module::ModuleResolver::hash_fuente(
-                    archivo.to_str().unwrap_or(path),
-                );
+                let nuevo_hash =
+                    crate::module::ModuleResolver::hash_fuente(archivo.to_str().unwrap_or(path));
                 nuevo_hash != 0 && nuevo_hash != entry.source_hash
             })
             .map(|(k, _)| k.clone())

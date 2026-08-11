@@ -155,10 +155,7 @@ impl DominatorTree {
     /// DF[x] contiene los bloques `b` que x domina estrictamente pero cuyo
     /// dominador inmediato no domina (es decir, donde el control flow de x
     /// puede "escapar" y juntarse con otro).
-    pub fn dominance_frontier(
-        &self,
-        blocks: &[BasicBlock],
-    ) -> HashMap<BlockId, HashSet<BlockId>> {
+    pub fn dominance_frontier(&self, blocks: &[BasicBlock]) -> HashMap<BlockId, HashSet<BlockId>> {
         let n = blocks.len();
         let mut preds: Vec<Vec<BlockId>> = vec![Vec::new(); n];
         for block in blocks {
@@ -174,11 +171,7 @@ impl DominatorTree {
             if preds[block.id].len() < 2 {
                 continue;
             }
-            let idom_b = self
-                .idom
-                .get(block.id)
-                .and_then(|x| *x)
-                .unwrap_or(block.id);
+            let idom_b = self.idom.get(block.id).and_then(|x| *x).unwrap_or(block.id);
             for &p in &preds[block.id] {
                 let mut runner = p;
                 while runner != idom_b {
@@ -238,7 +231,11 @@ impl LoopInfo {
     }
 
     /// Calcula el cuerpo del loop dado un back edge (tail, header)
-    fn compute_loop_body(tail: BlockId, header: BlockId, blocks: &[BasicBlock]) -> HashSet<BlockId> {
+    fn compute_loop_body(
+        tail: BlockId,
+        header: BlockId,
+        blocks: &[BasicBlock],
+    ) -> HashSet<BlockId> {
         let mut body = HashSet::new();
         body.insert(header);
         if tail != header {
@@ -303,11 +300,7 @@ impl SsaBuilder {
     /// **iterated dominance frontier** (IDF) y coloca un φ en cada bloque de
     /// la IDF. Los argumentos de cada φ se resuelven como las *reaching
     /// definitions* de la variable en cada predecessor del bloque.
-    pub fn compute_phi_nodes(
-        &mut self,
-        domtree: &DominatorTree,
-        blocks: &[BasicBlock],
-    ) {
+    pub fn compute_phi_nodes(&mut self, domtree: &DominatorTree, blocks: &[BasicBlock]) {
         // Dominance frontier de cada bloque (DF[runner] → bloques join)
         let df = domtree.dominance_frontier(blocks);
 
@@ -363,7 +356,8 @@ impl SsaBuilder {
                     &empty_preds
                 };
                 // Collect reaching defs first to avoid borrow conflict
-                let reaching: Vec<(usize, usize)> = preds.iter()
+                let reaching: Vec<(usize, usize)> = preds
+                    .iter()
                     .map(|&pred| {
                         let val = self.reaching_def(pred, var, domtree).unwrap_or(0);
                         (var, val)
@@ -421,9 +415,21 @@ mod tests {
     fn test_dominator_tree_linear() {
         // Block 0 → Block 1 → Block 2
         let blocks = vec![
-            BasicBlock { id: 0, instructions: vec![], terminator: Terminator::Jump(1) },
-            BasicBlock { id: 1, instructions: vec![], terminator: Terminator::Jump(2) },
-            BasicBlock { id: 2, instructions: vec![], terminator: Terminator::Return(None) },
+            BasicBlock {
+                id: 0,
+                instructions: vec![],
+                terminator: Terminator::Jump(1),
+            },
+            BasicBlock {
+                id: 1,
+                instructions: vec![],
+                terminator: Terminator::Jump(2),
+            },
+            BasicBlock {
+                id: 2,
+                instructions: vec![],
+                terminator: Terminator::Return(None),
+            },
         ];
         let dt = DominatorTree::compute(&blocks);
         assert_eq!(dt.idom[0], Some(0));
@@ -435,10 +441,26 @@ mod tests {
     fn test_dominator_tree_diamond() {
         // 0 → 1, 0 → 2, 1 → 3, 2 → 3
         let blocks = vec![
-            BasicBlock { id: 0, instructions: vec![], terminator: Terminator::Branch(0, 1, 2) },
-            BasicBlock { id: 1, instructions: vec![], terminator: Terminator::Jump(3) },
-            BasicBlock { id: 2, instructions: vec![], terminator: Terminator::Jump(3) },
-            BasicBlock { id: 3, instructions: vec![], terminator: Terminator::Return(None) },
+            BasicBlock {
+                id: 0,
+                instructions: vec![],
+                terminator: Terminator::Branch(0, 1, 2),
+            },
+            BasicBlock {
+                id: 1,
+                instructions: vec![],
+                terminator: Terminator::Jump(3),
+            },
+            BasicBlock {
+                id: 2,
+                instructions: vec![],
+                terminator: Terminator::Jump(3),
+            },
+            BasicBlock {
+                id: 3,
+                instructions: vec![],
+                terminator: Terminator::Return(None),
+            },
         ];
         let dt = DominatorTree::compute(&blocks);
         assert_eq!(dt.idom[0], Some(0));
@@ -450,9 +472,21 @@ mod tests {
     #[test]
     fn test_dominator_dominates() {
         let blocks = vec![
-            BasicBlock { id: 0, instructions: vec![], terminator: Terminator::Jump(1) },
-            BasicBlock { id: 1, instructions: vec![], terminator: Terminator::Jump(2) },
-            BasicBlock { id: 2, instructions: vec![], terminator: Terminator::Return(None) },
+            BasicBlock {
+                id: 0,
+                instructions: vec![],
+                terminator: Terminator::Jump(1),
+            },
+            BasicBlock {
+                id: 1,
+                instructions: vec![],
+                terminator: Terminator::Jump(2),
+            },
+            BasicBlock {
+                id: 2,
+                instructions: vec![],
+                terminator: Terminator::Return(None),
+            },
         ];
         let dt = DominatorTree::compute(&blocks);
         assert!(dt.dominates(0, 1));
@@ -465,10 +499,26 @@ mod tests {
     fn test_loop_detection() {
         // Loop: 0 → 1 → 2 → 1 (back edge 2→1)
         let blocks = vec![
-            BasicBlock { id: 0, instructions: vec![], terminator: Terminator::Jump(1) },
-            BasicBlock { id: 1, instructions: vec![], terminator: Terminator::Branch(0, 2, 3) },
-            BasicBlock { id: 2, instructions: vec![], terminator: Terminator::Jump(1) },
-            BasicBlock { id: 3, instructions: vec![], terminator: Terminator::Return(None) },
+            BasicBlock {
+                id: 0,
+                instructions: vec![],
+                terminator: Terminator::Jump(1),
+            },
+            BasicBlock {
+                id: 1,
+                instructions: vec![],
+                terminator: Terminator::Branch(0, 2, 3),
+            },
+            BasicBlock {
+                id: 2,
+                instructions: vec![],
+                terminator: Terminator::Jump(1),
+            },
+            BasicBlock {
+                id: 3,
+                instructions: vec![],
+                terminator: Terminator::Return(None),
+            },
         ];
         let dt = DominatorTree::compute(&blocks);
         let loops = LoopInfo::detect(&blocks, &dt);
@@ -484,10 +534,26 @@ mod tests {
         // Diamante: 0 → {1, 2}, 1 → 3, 2 → 3. La variable se define en 1 y 2
         // (los brazos del branch) y converge en 3 → ahí va el φ.
         let blocks = vec![
-            BasicBlock { id: 0, instructions: vec![], terminator: Terminator::Branch(0, 1, 2) },
-            BasicBlock { id: 1, instructions: vec![], terminator: Terminator::Jump(3) },
-            BasicBlock { id: 2, instructions: vec![], terminator: Terminator::Jump(3) },
-            BasicBlock { id: 3, instructions: vec![], terminator: Terminator::Return(None) },
+            BasicBlock {
+                id: 0,
+                instructions: vec![],
+                terminator: Terminator::Branch(0, 1, 2),
+            },
+            BasicBlock {
+                id: 1,
+                instructions: vec![],
+                terminator: Terminator::Jump(3),
+            },
+            BasicBlock {
+                id: 2,
+                instructions: vec![],
+                terminator: Terminator::Jump(3),
+            },
+            BasicBlock {
+                id: 3,
+                instructions: vec![],
+                terminator: Terminator::Return(None),
+            },
         ];
 
         builder.record_def(1, 0, 10);
@@ -502,7 +568,11 @@ mod tests {
             .phi_nodes
             .get(&3)
             .expect("debe haber un φ en el join (bloque 3)");
-        assert_eq!(phis.len(), 2, "el φ debe tener 2 argumentos (uno por predecessor)");
+        assert_eq!(
+            phis.len(),
+            2,
+            "el φ debe tener 2 argumentos (uno por predecessor)"
+        );
         let mut vals: Vec<ValueId> = phis.iter().map(|&(_, v)| v).collect();
         vals.sort_unstable();
         assert_eq!(vals, vec![10, 20]);
@@ -519,9 +589,21 @@ mod tests {
 
         // Cadena lineal 0 → 1 → 2: el def en 0 domina todo, no hace falta φ.
         let blocks = vec![
-            BasicBlock { id: 0, instructions: vec![], terminator: Terminator::Jump(1) },
-            BasicBlock { id: 1, instructions: vec![], terminator: Terminator::Jump(2) },
-            BasicBlock { id: 2, instructions: vec![], terminator: Terminator::Return(None) },
+            BasicBlock {
+                id: 0,
+                instructions: vec![],
+                terminator: Terminator::Jump(1),
+            },
+            BasicBlock {
+                id: 1,
+                instructions: vec![],
+                terminator: Terminator::Jump(2),
+            },
+            BasicBlock {
+                id: 2,
+                instructions: vec![],
+                terminator: Terminator::Return(None),
+            },
         ];
         builder.record_def(0, 0, 7);
 
@@ -540,10 +622,26 @@ mod tests {
         // Loop: 0 → 1 (header) → {2, 3}, 2 → 1 (back edge). La variable se
         // define en el cuerpo (bloque 2) → el header (bloque 1) necesita φ.
         let blocks = vec![
-            BasicBlock { id: 0, instructions: vec![], terminator: Terminator::Jump(1) },
-            BasicBlock { id: 1, instructions: vec![], terminator: Terminator::Branch(0, 2, 3) },
-            BasicBlock { id: 2, instructions: vec![], terminator: Terminator::Jump(1) },
-            BasicBlock { id: 3, instructions: vec![], terminator: Terminator::Return(None) },
+            BasicBlock {
+                id: 0,
+                instructions: vec![],
+                terminator: Terminator::Jump(1),
+            },
+            BasicBlock {
+                id: 1,
+                instructions: vec![],
+                terminator: Terminator::Branch(0, 2, 3),
+            },
+            BasicBlock {
+                id: 2,
+                instructions: vec![],
+                terminator: Terminator::Jump(1),
+            },
+            BasicBlock {
+                id: 3,
+                instructions: vec![],
+                terminator: Terminator::Return(None),
+            },
         ];
         builder.record_def(2, 0, 42);
 

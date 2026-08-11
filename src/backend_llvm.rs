@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 
-use crate::gc_intrinsics::{GcIntrinsicsManager, StackMap, SafePoint, GcStackSlot, GcRegister};
+use crate::gc_intrinsics::{GcIntrinsicsManager, GcRegister, GcStackSlot, SafePoint, StackMap};
 
 /// Tipo LLVM
 #[derive(Debug, Clone, PartialEq)]
@@ -52,7 +52,10 @@ impl LlvmType {
     }
 
     pub fn is_pointer(&self) -> bool {
-        matches!(self, LlvmType::Ptr | LlvmType::Struct(_, _) | LlvmType::Array(_, _))
+        matches!(
+            self,
+            LlvmType::Ptr | LlvmType::Struct(_, _) | LlvmType::Array(_, _)
+        )
     }
 }
 
@@ -105,10 +108,24 @@ pub enum LlvmInstruction {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum IcmpOp { Eq, Ne, Slt, Sgt, Sle, Sge }
+pub enum IcmpOp {
+    Eq,
+    Ne,
+    Slt,
+    Sgt,
+    Sle,
+    Sge,
+}
 
 #[derive(Debug, Clone, Copy)]
-pub enum FcmpOp { Oeq, One, Olt, Ogt, Ole, Oge }
+pub enum FcmpOp {
+    Oeq,
+    One,
+    Olt,
+    Ogt,
+    Ole,
+    Oge,
+}
 
 /// Bloque LLVM
 #[derive(Debug, Clone)]
@@ -166,9 +183,14 @@ impl LlvmModule {
         // Global type declarations
         for (name, ty) in &self.global_types {
             if let LlvmType::Struct(_, fields) = ty {
-                output.push_str(&format!("%{} = type {{ {} }}\n",
+                output.push_str(&format!(
+                    "%{} = type {{ {} }}\n",
                     name,
-                    fields.iter().map(|(_, t)| t.to_llvm_ir()).collect::<Vec<_>>().join(", ")
+                    fields
+                        .iter()
+                        .map(|(_, t)| t.to_llvm_ir())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ));
             }
         }
@@ -176,8 +198,12 @@ impl LlvmModule {
 
         // Global strings
         for (name, value) in &self.global_strings {
-            output.push_str(&format!("@{} = private unnamed_addr constant [{} x i8] c\"{}\\00\"\n",
-                name, value.len() + 1, escape_string(value)));
+            output.push_str(&format!(
+                "@{} = private unnamed_addr constant [{} x i8] c\"{}\\00\"\n",
+                name,
+                value.len() + 1,
+                escape_string(value)
+            ));
         }
         output.push('\n');
 
@@ -192,20 +218,34 @@ impl LlvmModule {
 
     fn function_to_ir(&self, func: &LlvmFunction) -> String {
         if func.is_declaration {
-            let params_str = func.params.iter()
+            let params_str = func
+                .params
+                .iter()
                 .map(|(_, t)| t.to_llvm_ir())
                 .collect::<Vec<_>>()
                 .join(", ");
-            return format!("declare {} @{}({})", func.return_type.to_llvm_ir(), func.name, params_str);
+            return format!(
+                "declare {} @{}({})",
+                func.return_type.to_llvm_ir(),
+                func.name,
+                params_str
+            );
         }
 
         let mut result = String::new();
-        let params_str = func.params.iter()
+        let params_str = func
+            .params
+            .iter()
             .map(|(name, ty)| format!("{} %{}", ty.to_llvm_ir(), name))
             .collect::<Vec<_>>()
             .join(", ");
 
-        result.push_str(&format!("define {} @{}({}) {{\n", func.return_type.to_llvm_ir(), func.name, params_str));
+        result.push_str(&format!(
+            "define {} @{}({}) {{\n",
+            func.return_type.to_llvm_ir(),
+            func.name,
+            params_str
+        ));
 
         for (i, block) in func.blocks.iter().enumerate() {
             if i > 0 {
@@ -223,52 +263,98 @@ impl LlvmModule {
 
     fn instruction_to_ir(&self, inst: &LlvmInstruction) -> String {
         match inst {
-            LlvmInstruction::Add(name, a, b) => format!("%{} = add i64 %{}, {}", name, a.name, b.name),
-            LlvmInstruction::Sub(name, a, b) => format!("%{} = sub i64 %{}, {}", name, a.name, b.name),
-            LlvmInstruction::Mul(name, a, b) => format!("%{} = mul i64 %{}, {}", name, a.name, b.name),
-            LlvmInstruction::Div(name, a, b) => format!("%{} = sdiv i64 %{}, {}", name, a.name, b.name),
+            LlvmInstruction::Add(name, a, b) => {
+                format!("%{} = add i64 %{}, {}", name, a.name, b.name)
+            }
+            LlvmInstruction::Sub(name, a, b) => {
+                format!("%{} = sub i64 %{}, {}", name, a.name, b.name)
+            }
+            LlvmInstruction::Mul(name, a, b) => {
+                format!("%{} = mul i64 %{}, {}", name, a.name, b.name)
+            }
+            LlvmInstruction::Div(name, a, b) => {
+                format!("%{} = sdiv i64 %{}, {}", name, a.name, b.name)
+            }
             LlvmInstruction::Icmp(name, op, a, b) => {
                 let op_str = match op {
-                    IcmpOp::Eq => "eq", IcmpOp::Ne => "ne",
-                    IcmpOp::Slt => "slt", IcmpOp::Sgt => "sgt",
-                    IcmpOp::Sle => "sle", IcmpOp::Sge => "sge",
+                    IcmpOp::Eq => "eq",
+                    IcmpOp::Ne => "ne",
+                    IcmpOp::Slt => "slt",
+                    IcmpOp::Sgt => "sgt",
+                    IcmpOp::Sle => "sle",
+                    IcmpOp::Sge => "sge",
                 };
                 format!("%{} = icmp {} i64 %{}, {}", name, op_str, a.name, b.name)
             }
             LlvmInstruction::Fcmp(name, op, a, b) => {
                 let op_str = match op {
-                    FcmpOp::Oeq => "oeq", FcmpOp::One => "one",
-                    FcmpOp::Olt => "olt", FcmpOp::Ogt => "ogt",
-                    FcmpOp::Ole => "ole", FcmpOp::Oge => "oge",
+                    FcmpOp::Oeq => "oeq",
+                    FcmpOp::One => "one",
+                    FcmpOp::Olt => "olt",
+                    FcmpOp::Ogt => "ogt",
+                    FcmpOp::Ole => "ole",
+                    FcmpOp::Oge => "oge",
                 };
                 format!("%{} = fcmp {} double %{}, {}", name, op_str, a.name, b.name)
             }
-            LlvmInstruction::And(name, a, b) => format!("%{} = and i1 %{}, {}", name, a.name, b.name),
+            LlvmInstruction::And(name, a, b) => {
+                format!("%{} = and i1 %{}, {}", name, a.name, b.name)
+            }
             LlvmInstruction::Or(name, a, b) => format!("%{} = or i1 %{}, {}", name, a.name, b.name),
-            LlvmInstruction::Xor(name, a, b) => format!("%{} = xor i1 %{}, {}", name, a.name, b.name),
+            LlvmInstruction::Xor(name, a, b) => {
+                format!("%{} = xor i1 %{}, {}", name, a.name, b.name)
+            }
             LlvmInstruction::Alloca(name, ty) => format!("%{} = alloca {}", name, ty.to_llvm_ir()),
-            LlvmInstruction::Store(ty, val, ptr) => format!("store {} %{}, ptr %{}", ty.to_llvm_ir(), val.name, ptr.name),
-            LlvmInstruction::Load(name, ty, ptr) => format!("%{} = load {}, ptr %{}", name, ty.to_llvm_ir(), ptr.name),
+            LlvmInstruction::Store(ty, val, ptr) => {
+                format!("store {} %{}, ptr %{}", ty.to_llvm_ir(), val.name, ptr.name)
+            }
+            LlvmInstruction::Load(name, ty, ptr) => {
+                format!("%{} = load {}, ptr %{}", name, ty.to_llvm_ir(), ptr.name)
+            }
             LlvmInstruction::Call(name, ret_ty, func, args) => {
-                let args_str = args.iter().map(|a| format!("i64 %{}", a.name)).collect::<Vec<_>>().join(", ");
+                let args_str = args
+                    .iter()
+                    .map(|a| format!("i64 %{}", a.name))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 if ret_ty == &LlvmType::Void {
                     format!("call void @{}({})", func, args_str)
                 } else {
-                    format!("%{} = call {} @{}({})", name, ret_ty.to_llvm_ir(), func, args_str)
+                    format!(
+                        "%{} = call {} @{}({})",
+                        name,
+                        ret_ty.to_llvm_ir(),
+                        func,
+                        args_str
+                    )
                 }
             }
             LlvmInstruction::Br(target) => format!("br label %{}", target),
-            LlvmInstruction::BrCond(cond, then, else_) => format!("br i1 %{}, label %{}, label %{}", cond.name, then, else_),
+            LlvmInstruction::BrCond(cond, then, else_) => {
+                format!("br i1 %{}, label %{}, label %{}", cond.name, then, else_)
+            }
             LlvmInstruction::Ret(Some(val)) => format!("ret i64 %{}", val.name),
             LlvmInstruction::Ret(None) => "ret void".to_string(),
             LlvmInstruction::Gep(name, ty, ptr, idx) => {
-                format!("%{} = getelementptr {}, ptr %{}, i64 %{}", name, ty.to_llvm_ir(), ptr.name, idx.name)
+                format!(
+                    "%{} = getelementptr {}, ptr %{}, i64 %{}",
+                    name,
+                    ty.to_llvm_ir(),
+                    ptr.name,
+                    idx.name
+                )
             }
             LlvmInstruction::Bitcast(name, val, ty) => {
-                format!("%{} = bitcast ptr %{} to {}", name, val.name, ty.to_llvm_ir())
+                format!(
+                    "%{} = bitcast ptr %{} to {}",
+                    name,
+                    val.name,
+                    ty.to_llvm_ir()
+                )
             }
             LlvmInstruction::Phi(name, ty, incoming) => {
-                let incoming_str = incoming.iter()
+                let incoming_str = incoming
+                    .iter()
                     .map(|(v, bb)| format!("[{} %{}, %{}]", ty.to_llvm_ir(), v.name, bb))
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -320,7 +406,9 @@ impl LlvmBackend {
     /// Registra un string literal como global
     pub fn add_string_literal(&mut self, value: &str) -> String {
         let name = format!("str.{}", self.module.global_strings.len());
-        self.module.global_strings.push((name.clone(), value.to_string()));
+        self.module
+            .global_strings
+            .push((name.clone(), value.to_string()));
         name
     }
     /// Inyecta GC intrinsics (safe points, stack maps, write barriers) en el módulo LLVM.
@@ -335,7 +423,10 @@ impl LlvmBackend {
         self.declare_gc_intrinsics();
 
         // 2. Por cada función no-declaración, inyectar safe points y stack maps
-        let function_ids: Vec<String> = self.module.functions.iter()
+        let function_ids: Vec<String> = self
+            .module
+            .functions
+            .iter()
             .filter(|f| !f.is_declaration)
             .map(|f| f.name.clone())
             .collect();
@@ -348,7 +439,12 @@ impl LlvmBackend {
     /// Declara las intrínsecas LLVM GC que necesitamos usar
     fn declare_gc_intrinsics(&mut self) {
         // llvm.experimental.gc.statepoint - marca safe points para el GC
-        if !self.module.functions.iter().any(|f| f.name == "llvm.experimental.gc.statepoint") {
+        if !self
+            .module
+            .functions
+            .iter()
+            .any(|f| f.name == "llvm.experimental.gc.statepoint")
+        {
             self.module.add_function(LlvmFunction {
                 name: "llvm.experimental.gc.statepoint".to_string(),
                 return_type: LlvmType::Void,
@@ -359,7 +455,12 @@ impl LlvmBackend {
         }
 
         // llvm.experimental.gc.relocate - reubica punteros después de GC
-        if !self.module.functions.iter().any(|f| f.name == "llvm.experimental.gc.relocate") {
+        if !self
+            .module
+            .functions
+            .iter()
+            .any(|f| f.name == "llvm.experimental.gc.relocate")
+        {
             self.module.add_function(LlvmFunction {
                 name: "llvm.experimental.gc.relocate".to_string(),
                 return_type: LlvmType::I64,
@@ -370,7 +471,12 @@ impl LlvmBackend {
         }
 
         // __gc_write_barrier - write barrier para generational GC
-        if !self.module.functions.iter().any(|f| f.name == "__gc_write_barrier") {
+        if !self
+            .module
+            .functions
+            .iter()
+            .any(|f| f.name == "__gc_write_barrier")
+        {
             self.module.add_function(LlvmFunction {
                 name: "__gc_write_barrier".to_string(),
                 return_type: LlvmType::Void,
@@ -408,7 +514,11 @@ impl LlvmBackend {
 
     /// Inyecta GC intrinsics en una función específica
     fn inject_function_gc(&mut self, func_name: &str) {
-        let func_idx = self.module.functions.iter().position(|f| f.name == func_name);
+        let func_idx = self
+            .module
+            .functions
+            .iter()
+            .position(|f| f.name == func_name);
         if let Some(idx) = func_idx {
             // Crear manager temporal para generar stack maps
             let mut gc_mgr = GcIntrinsicsManager::new();
@@ -430,13 +540,23 @@ impl LlvmBackend {
                             if let Some(ti) = then_idx {
                                 if ti <= block_idx {
                                     // Inyectar GC poll antes del branch (safe point)
-                                    self.inject_gc_poll_at_block(idx, block_idx, function_id, &mut gc_mgr);
+                                    self.inject_gc_poll_at_block(
+                                        idx,
+                                        block_idx,
+                                        function_id,
+                                        &mut gc_mgr,
+                                    );
                                     break;
                                 }
                             }
                             if let Some(ei) = else_idx {
                                 if ei <= block_idx {
-                                    self.inject_gc_poll_at_block(idx, block_idx, function_id, &mut gc_mgr);
+                                    self.inject_gc_poll_at_block(
+                                        idx,
+                                        block_idx,
+                                        function_id,
+                                        &mut gc_mgr,
+                                    );
                                     break;
                                 }
                             }
@@ -461,12 +581,19 @@ impl LlvmBackend {
             function_id,
             safe_point_offset: (block_idx * 8) as u32, // offset aproximado
             gc_slots: vec![
-                GcStackSlot { offset: -8, is_root: true },
-                GcStackSlot { offset: -16, is_root: true },
+                GcStackSlot {
+                    offset: -8,
+                    is_root: true,
+                },
+                GcStackSlot {
+                    offset: -16,
+                    is_root: true,
+                },
             ],
-            gc_registers: vec![
-                GcRegister { name: "RDI", is_root: true },
-            ],
+            gc_registers: vec![GcRegister {
+                name: "RDI",
+                is_root: true,
+            }],
         };
 
         // Registrar el stack map y safe point
@@ -479,7 +606,10 @@ impl LlvmBackend {
 
         // Insertar la llamada a __gc_poll al inicio del bloque
         // Desplazamos la primera instrucción y añadimos el poll
-        if !self.module.functions[func_idx].blocks[block_idx].instructions.is_empty() {
+        if !self.module.functions[func_idx].blocks[block_idx]
+            .instructions
+            .is_empty()
+        {
             let _poll_comment = format!("; GC safe point at block {}", block_idx);
             let poll_inst = LlvmInstruction::Call(
                 "".to_string(),
@@ -491,7 +621,8 @@ impl LlvmBackend {
             // Nota: no podemos insertar comentarios como instrucciones LLVM,
             // así que solo agregamos la llamada
             self.module.functions[func_idx].blocks[block_idx]
-                .instructions.insert(0, poll_inst);
+                .instructions
+                .insert(0, poll_inst);
         }
     }
 
@@ -517,11 +648,11 @@ pub fn target_triple() -> &'static str {
 
 fn escape_string(s: &str) -> String {
     s.replace('\\', "\\\\")
-     .replace('"', "\\\"")
-     .replace('\n', "\\0A")
-     .replace('\r', "\\0D")
-     .replace('\t', "\\09")
-     .replace('\0', "\\00")
+        .replace('"', "\\\"")
+        .replace('\n', "\\0A")
+        .replace('\r', "\\0D")
+        .replace('\t', "\\09")
+        .replace('\0', "\\00")
 }
 
 // === 20G: Enums ===
@@ -545,32 +676,43 @@ impl EnumLayout {
     /// Calcula el layout de un enum con las variantes dadas
     pub fn new(variants: &[(String, Vec<LlvmType>)]) -> Self {
         let tag_type = LlvmType::I8;
-        let max_payload_size = variants.iter()
+        let max_payload_size = variants
+            .iter()
             .map(|(_, fields)| fields.len())
             .max()
             .unwrap_or(0);
         let payload_type = LlvmType::Array(Box::new(LlvmType::I1), max_payload_size * 8);
 
-        let tag_values: Vec<(String, u8)> = variants.iter().enumerate()
+        let tag_values: Vec<(String, u8)> = variants
+            .iter()
+            .enumerate()
             .map(|(i, (name, _))| (name.clone(), i as u8))
             .collect();
 
-        EnumLayout { tag_type, payload_type, tag_values }
+        EnumLayout {
+            tag_type,
+            payload_type,
+            tag_values,
+        }
     }
 
     /// Retorna el tag para una variante
     pub fn tag_for(&self, variant_name: &str) -> Option<u8> {
-        self.tag_values.iter()
+        self.tag_values
+            .iter()
             .find(|(name, _)| name == variant_name)
             .map(|(_, tag)| *tag)
     }
 
     /// Genera el LLVM IR type para este enum
     pub fn to_llvm_type(&self, enum_name: &str) -> LlvmType {
-        LlvmType::Struct(enum_name.to_string(), vec![
-            ("tag".to_string(), self.tag_type.clone()),
-            ("payload".to_string(), self.payload_type.clone()),
-        ])
+        LlvmType::Struct(
+            enum_name.to_string(),
+            vec![
+                ("tag".to_string(), self.tag_type.clone()),
+                ("payload".to_string(), self.payload_type.clone()),
+            ],
+        )
     }
 }
 
@@ -580,20 +722,29 @@ pub fn result_type(_ok_type: LlvmType, _err_type: LlvmType) -> LlvmType {
     // Tag: 0 = Ok, 1 = Error
     // NOTA: por ahora el payload es un array fijo; el cálculo real de max(T,E)
     // requiere metadata de tamaño por tipo (pendiente de implementar).
-    LlvmType::Struct("Result".to_string(), vec![
-        ("tag".to_string(), LlvmType::I8),
-        ("payload".to_string(), LlvmType::Array(Box::new(LlvmType::I1), 512)),
-    ])
+    LlvmType::Struct(
+        "Result".to_string(),
+        vec![
+            ("tag".to_string(), LlvmType::I8),
+            (
+                "payload".to_string(),
+                LlvmType::Array(Box::new(LlvmType::I1), 512),
+            ),
+        ],
+    )
 }
 
 /// Option[T] — tipo genérico popular en Forja
 pub fn option_type(inner: LlvmType) -> LlvmType {
     // Option se implementa como: { i1 (is_some), T (value) }
     // Para punteros: is_some=1 tiene valor, is_some=0 es None
-    LlvmType::Struct("Option".to_string(), vec![
-        ("is_some".to_string(), LlvmType::I1),
-        ("value".to_string(), inner),
-    ])
+    LlvmType::Struct(
+        "Option".to_string(),
+        vec![
+            ("is_some".to_string(), LlvmType::I1),
+            ("value".to_string(), inner),
+        ],
+    )
 }
 
 // === 20H: Closures ===
@@ -624,11 +775,14 @@ impl ClosureLayout {
 
     /// LLVM struct type para un closure
     pub fn to_llvm_type(&self) -> LlvmType {
-        LlvmType::Struct("Closure".to_string(), vec![
-            ("fn_ptr".to_string(), self.fn_ptr_type.clone()),
-            ("env_ptr".to_string(), self.env_ptr_type.clone()),
-            ("env_size".to_string(), LlvmType::I64),
-        ])
+        LlvmType::Struct(
+            "Closure".to_string(),
+            vec![
+                ("fn_ptr".to_string(), self.fn_ptr_type.clone()),
+                ("env_ptr".to_string(), self.env_ptr_type.clone()),
+                ("env_size".to_string(), LlvmType::I64),
+            ],
+        )
     }
 }
 
@@ -841,10 +995,13 @@ mod tests {
 
     #[test]
     fn test_struct_type() {
-        let ty = LlvmType::Struct("Point".to_string(), vec![
-            ("x".to_string(), LlvmType::I64),
-            ("y".to_string(), LlvmType::I64),
-        ]);
+        let ty = LlvmType::Struct(
+            "Point".to_string(),
+            vec![
+                ("x".to_string(), LlvmType::I64),
+                ("y".to_string(), LlvmType::I64),
+            ],
+        );
         assert_eq!(ty.to_llvm_ir(), "%Point");
         // Struct is represented as %Name in LLVM IR
         assert!(ty.to_llvm_ir().starts_with('%'));
@@ -856,15 +1013,28 @@ mod tests {
         module.add_function(LlvmFunction {
             name: "add".to_string(),
             return_type: LlvmType::I64,
-            params: vec![("a".to_string(), LlvmType::I64), ("b".to_string(), LlvmType::I64)],
+            params: vec![
+                ("a".to_string(), LlvmType::I64),
+                ("b".to_string(), LlvmType::I64),
+            ],
             blocks: vec![LlvmBlock {
                 name: "entry".to_string(),
                 instructions: vec![
-                    LlvmInstruction::Add("r".to_string(),
-                        LlvmValue { name: "a".to_string(), ty: LlvmType::I64 },
-                        LlvmValue { name: "b".to_string(), ty: LlvmType::I64 },
+                    LlvmInstruction::Add(
+                        "r".to_string(),
+                        LlvmValue {
+                            name: "a".to_string(),
+                            ty: LlvmType::I64,
+                        },
+                        LlvmValue {
+                            name: "b".to_string(),
+                            ty: LlvmType::I64,
+                        },
                     ),
-                    LlvmInstruction::Ret(Some(LlvmValue { name: "r".to_string(), ty: LlvmType::I64 })),
+                    LlvmInstruction::Ret(Some(LlvmValue {
+                        name: "r".to_string(),
+                        ty: LlvmType::I64,
+                    })),
                 ],
             }],
             is_declaration: false,
@@ -880,10 +1050,13 @@ mod tests {
     #[test]
     fn test_backend_register_class() {
         let mut backend = LlvmBackend::new("test");
-        backend.register_class("Persona", vec![
-            ("nombre".to_string(), LlvmType::Ptr),
-            ("edad".to_string(), LlvmType::I64),
-        ]);
+        backend.register_class(
+            "Persona",
+            vec![
+                ("nombre".to_string(), LlvmType::Ptr),
+                ("edad".to_string(), LlvmType::I64),
+            ],
+        );
 
         assert!(backend.class_structs.contains_key("Persona"));
         assert!(backend.module.global_types.contains_key("Persona"));
@@ -903,15 +1076,29 @@ mod tests {
         module.add_function(LlvmFunction {
             name: "cmp_test".to_string(),
             return_type: LlvmType::I1,
-            params: vec![("a".to_string(), LlvmType::I64), ("b".to_string(), LlvmType::I64)],
+            params: vec![
+                ("a".to_string(), LlvmType::I64),
+                ("b".to_string(), LlvmType::I64),
+            ],
             blocks: vec![LlvmBlock {
                 name: "entry".to_string(),
                 instructions: vec![
-                    LlvmInstruction::Icmp("r".to_string(), IcmpOp::Slt,
-                        LlvmValue { name: "a".to_string(), ty: LlvmType::I64 },
-                        LlvmValue { name: "b".to_string(), ty: LlvmType::I64 },
+                    LlvmInstruction::Icmp(
+                        "r".to_string(),
+                        IcmpOp::Slt,
+                        LlvmValue {
+                            name: "a".to_string(),
+                            ty: LlvmType::I64,
+                        },
+                        LlvmValue {
+                            name: "b".to_string(),
+                            ty: LlvmType::I64,
+                        },
                     ),
-                    LlvmInstruction::Ret(Some(LlvmValue { name: "r".to_string(), ty: LlvmType::I1 })),
+                    LlvmInstruction::Ret(Some(LlvmValue {
+                        name: "r".to_string(),
+                        ty: LlvmType::I1,
+                    })),
                 ],
             }],
             is_declaration: false,
@@ -932,12 +1119,23 @@ mod tests {
                 LlvmBlock {
                     name: "entry".to_string(),
                     instructions: vec![
-                        LlvmInstruction::Icmp("cmp".to_string(), IcmpOp::Sgt,
-                            LlvmValue { name: "x".to_string(), ty: LlvmType::I64 },
-                            LlvmValue { name: "0".to_string(), ty: LlvmType::I64 },
+                        LlvmInstruction::Icmp(
+                            "cmp".to_string(),
+                            IcmpOp::Sgt,
+                            LlvmValue {
+                                name: "x".to_string(),
+                                ty: LlvmType::I64,
+                            },
+                            LlvmValue {
+                                name: "0".to_string(),
+                                ty: LlvmType::I64,
+                            },
                         ),
                         LlvmInstruction::BrCond(
-                            LlvmValue { name: "cmp".to_string(), ty: LlvmType::I1 },
+                            LlvmValue {
+                                name: "cmp".to_string(),
+                                ty: LlvmType::I1,
+                            },
                             "then".to_string(),
                             "else".to_string(),
                         ),
@@ -945,15 +1143,17 @@ mod tests {
                 },
                 LlvmBlock {
                     name: "then".to_string(),
-                    instructions: vec![
-                        LlvmInstruction::Ret(Some(LlvmValue { name: "x".to_string(), ty: LlvmType::I64 })),
-                    ],
+                    instructions: vec![LlvmInstruction::Ret(Some(LlvmValue {
+                        name: "x".to_string(),
+                        ty: LlvmType::I64,
+                    }))],
                 },
                 LlvmBlock {
                     name: "else".to_string(),
-                    instructions: vec![
-                        LlvmInstruction::Ret(Some(LlvmValue { name: "0".to_string(), ty: LlvmType::I64 })),
-                    ],
+                    instructions: vec![LlvmInstruction::Ret(Some(LlvmValue {
+                        name: "0".to_string(),
+                        ty: LlvmType::I64,
+                    }))],
                 },
             ],
             is_declaration: false,

@@ -1333,6 +1333,10 @@ impl LlvmBackend {
                 // No implementado en LLVM - evaluar la expresión interna
                 self.expr(expr)
             }
+            Expresion::Nada | Expresion::Ninguno => {
+                // No implementado en LLVM
+                Err("Nada/Ninguno no soportado en el backend LLVM".into())
+            }
             Expresion::Resultado => {
                 // 'resultado' in postcondiciones: load retval
                 if self.postcondiciones_activas {
@@ -1377,7 +1381,13 @@ impl LlvmBackend {
                 let l_v = format!("tern_v_{}", self.r().trim_start_matches('%'));
                 let l_f = format!("tern_f_{}", self.r().trim_start_matches('%'));
                 let l_end = format!("tern_end_{}", self.r().trim_start_matches('%'));
-                line!(self.out, "br i1 {}, label %{}, label %{}", cond_bool, l_v, l_f);
+                line!(
+                    self.out,
+                    "br i1 {}, label %{}, label %{}",
+                    cond_bool,
+                    l_v,
+                    l_f
+                );
                 raw!(self.out, "{}:", l_v);
                 let v_res = self.expr(si_verdadero)?;
                 line!(self.out, "br label %{}", l_end);
@@ -1386,7 +1396,15 @@ impl LlvmBackend {
                 line!(self.out, "br label %{}", l_end);
                 raw!(self.out, "{}:", l_end);
                 let phi_reg = self.r();
-                line!(self.out, "{} = phi i64 [ {}, %{} ], [ {}, %{} ]", phi_reg, v_res, l_v, f_res, l_f);
+                line!(
+                    self.out,
+                    "{} = phi i64 [ {}, %{} ], [ {}, %{} ]",
+                    phi_reg,
+                    v_res,
+                    l_v,
+                    f_res,
+                    l_f
+                );
                 Ok(phi_reg)
             }
             Expresion::LlamadaMetodo { .. } => {

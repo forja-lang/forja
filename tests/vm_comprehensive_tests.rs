@@ -1,4 +1,4 @@
-use forja::bytecode::{BytecodeGenerator, fusionar_opcodes, optimizar_indices};
+use forja::bytecode::{fusionar_opcodes, optimizar_indices, BytecodeGenerator};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
 use forja::vm_fast::ForjaFast;
@@ -72,7 +72,10 @@ fn test_vm_variable_decimal() {
 
 #[test]
 fn test_vm_variable_booleana() {
-    assert_eq!(output("variable flag = verdadero\nescribir(flag)"), vec!["verdadero"]);
+    assert_eq!(
+        output("variable flag = verdadero\nescribir(flag)"),
+        vec!["verdadero"]
+    );
 }
 
 #[test]
@@ -82,7 +85,10 @@ fn test_vm_constante() {
 
 #[test]
 fn test_vm_multiples_variables() {
-    assert_eq!(output("variable a = 1\nvariable b = 2\nescribir(a + b)"), vec!["3"]);
+    assert_eq!(
+        output("variable a = 1\nvariable b = 2\nescribir(a + b)"),
+        vec!["3"]
+    );
 }
 
 // ============================================================
@@ -96,7 +102,10 @@ fn test_vm_asignacion() {
 
 #[test]
 fn test_vm_asignacion_repetida() {
-    assert_eq!(output("variable x = 1\nx = 2\nx = 3\nescribir(x)"), vec!["3"]);
+    assert_eq!(
+        output("variable x = 1\nx = 2\nx = 3\nescribir(x)"),
+        vec!["3"]
+    );
 }
 
 // ============================================================
@@ -173,27 +182,42 @@ fn test_vm_diferente() {
 
 #[test]
 fn test_vm_si_verdadero() {
-    assert_eq!(output("si (verdadero) { escribir(\"si\") } sino { escribir(\"no\") }"), vec!["si"]);
+    assert_eq!(
+        output("si (verdadero) { escribir(\"si\") } sino { escribir(\"no\") }"),
+        vec!["si"]
+    );
 }
 
 #[test]
 fn test_vm_si_falso() {
-    assert_eq!(output("si (falso) { escribir(\"si\") } sino { escribir(\"no\") }"), vec!["no"]);
+    assert_eq!(
+        output("si (falso) { escribir(\"si\") } sino { escribir(\"no\") }"),
+        vec!["no"]
+    );
 }
 
 #[test]
 fn test_vm_si_sin_sino() {
-    assert_eq!(output("si (verdadero) { escribir(\"ok\") }\nescribir(\"fin\")"), vec!["ok", "fin"]);
+    assert_eq!(
+        output("si (verdadero) { escribir(\"ok\") }\nescribir(\"fin\")"),
+        vec!["ok", "fin"]
+    );
 }
 
 #[test]
 fn test_vm_si_con_comparacion() {
-    assert_eq!(output("variable x = 5\nsi (x > 3) { escribir(\"mayor\") }"), vec!["mayor"]);
+    assert_eq!(
+        output("variable x = 5\nsi (x > 3) { escribir(\"mayor\") }"),
+        vec!["mayor"]
+    );
 }
 
 #[test]
 fn test_vm_si_anidado() {
-    assert_eq!(output("variable x = 5\nsi (x > 0) { si (x < 10) { escribir(\"ok\") } }"), vec!["ok"]);
+    assert_eq!(
+        output("variable x = 5\nsi (x > 0) { si (x < 10) { escribir(\"ok\") } }"),
+        vec!["ok"]
+    );
 }
 
 // ============================================================
@@ -202,22 +226,34 @@ fn test_vm_si_anidado() {
 
 #[test]
 fn test_vm_mientras() {
-    assert_eq!(output("variable x = 0\nmientras (x < 3) { escribir(x)\nx = x + 1 }"), vec!["0", "1", "2"]);
+    assert_eq!(
+        output("variable x = 0\nmientras (x < 3) { escribir(x)\nx = x + 1 }"),
+        vec!["0", "1", "2"]
+    );
 }
 
 #[test]
 fn test_vm_mientras_falso() {
-    assert_eq!(output("mientras (falso) { escribir(\"no\") }"), Vec::<String>::new());
+    assert_eq!(
+        output("mientras (falso) { escribir(\"no\") }"),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
 fn test_vm_repetir() {
-    assert_eq!(output("repetir (3) { escribir(\"a\") }"), vec!["a", "a", "a"]);
+    assert_eq!(
+        output("repetir (3) { escribir(\"a\") }"),
+        vec!["a", "a", "a"]
+    );
 }
 
 #[test]
 fn test_vm_repetir_cero() {
-    assert_eq!(output("repetir (0) { escribir(\"x\") }"), Vec::<String>::new());
+    assert_eq!(
+        output("repetir (0) { escribir(\"x\") }"),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -231,7 +267,10 @@ fn test_vm_repetir_uno() {
 
 #[test]
 fn test_vm_concatenacion_texto() {
-    assert_eq!(output("escribir(\"Hola\" + \" \" + \"Mundo\")"), vec!["Hola Mundo"]);
+    assert_eq!(
+        output("escribir(\"Hola\" + \" \" + \"Mundo\")"),
+        vec!["Hola Mundo"]
+    );
 }
 
 #[test]
@@ -260,12 +299,18 @@ fn test_vm_string_trim() {
 
 #[test]
 fn test_vm_array_literal() {
-    assert_eq!(output("variable arr = [1, 2, 3]\nescribir(arr)"), vec!["[1,2,3]"]);
+    assert_eq!(
+        output("variable arr = [1, 2, 3]\nescribir(arr)"),
+        vec!["[1,2,3]"]
+    );
 }
 
 #[test]
 fn test_vm_array_get() {
-    assert_eq!(output("variable arr = [10, 20, 30]\nescribir(arr[1])"), vec!["20"]);
+    assert_eq!(
+        output("variable arr = [10, 20, 30]\nescribir(arr[1])"),
+        vec!["20"]
+    );
 }
 
 #[test]
@@ -276,7 +321,10 @@ fn test_vm_array_set() {
 
 #[test]
 fn test_vm_array_out_of_bounds() {
-    assert_eq!(output("variable arr = [1, 2]\nescribir(arr[99])"), vec!["nulo"]);
+    assert_eq!(
+        output("variable arr = [1, 2]\nescribir(arr[99])"),
+        vec!["nulo"]
+    );
 }
 
 #[test]
@@ -290,7 +338,10 @@ fn test_vm_array_vacio() {
 
 #[test]
 fn test_vm_mapa_literal() {
-    assert_eq!(output("variable m = {\"nombre\": \"Ana\"}\nescribir(m[\"nombre\"])"), vec!["Ana"]);
+    assert_eq!(
+        output("variable m = {\"nombre\": \"Ana\"}\nescribir(m[\"nombre\"])"),
+        vec!["Ana"]
+    );
 }
 
 // ============================================================
@@ -316,7 +367,10 @@ fn test_vm_funcion_simple() {
 
 #[test]
 fn test_vm_funcion_con_parametros() {
-    assert_eq!(output("funcion suma(a, b) { retornar a + b }\nescribir(suma(3, 4))"), vec!["7"]);
+    assert_eq!(
+        output("funcion suma(a, b) { retornar a + b }\nescribir(suma(3, 4))"),
+        vec!["7"]
+    );
 }
 
 #[test]
@@ -336,7 +390,10 @@ fn test_vm_funcion_recursiva() {
 
 #[test]
 fn test_vm_multiples_prints() {
-    assert_eq!(output("escribir(\"a\")\nescribir(\"b\")\nescribir(\"c\")"), vec!["a", "b", "c"]);
+    assert_eq!(
+        output("escribir(\"a\")\nescribir(\"b\")\nescribir(\"c\")"),
+        vec!["a", "b", "c"]
+    );
 }
 
 // ============================================================
@@ -350,7 +407,10 @@ fn test_vm_expresion_compuesta() {
 
 #[test]
 fn test_vm_concatenacion_con_numero() {
-    assert_eq!(output("escribir(\"El valor es \" + 42)"), vec!["El valor es 42"]);
+    assert_eq!(
+        output("escribir(\"El valor es \" + 42)"),
+        vec!["El valor es 42"]
+    );
 }
 
 // ============================================================
@@ -359,7 +419,10 @@ fn test_vm_concatenacion_con_numero() {
 
 #[test]
 fn test_vm_cuando_verdadero() {
-    assert_eq!(output("variable x = 35\ncuando (x > 30) { escribir(\"Caliente\") }"), vec!["Caliente"]);
+    assert_eq!(
+        output("variable x = 35\ncuando (x > 30) { escribir(\"Caliente\") }"),
+        vec!["Caliente"]
+    );
 }
 
 // ============================================================

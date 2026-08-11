@@ -123,7 +123,11 @@ impl BumpAllocator {
         let current = self.offset.get();
         // Alinear a la mayor entre la alineación del dato y la del header
         let header_align = std::mem::align_of::<GcHeader>();
-        let max_align = if align > header_align { align } else { header_align };
+        let max_align = if align > header_align {
+            align
+        } else {
+            header_align
+        };
         let aligned = (current + max_align - 1) & !(max_align - 1);
         let raw_end = aligned + size + std::mem::size_of::<GcHeader>();
         // Redondear hacia arriba al siguiente múltiplo de header_align
@@ -268,7 +272,9 @@ impl BumpAllocator {
 impl Drop for BumpAllocator {
     fn drop(&mut self) {
         let layout = Layout::from_size_align(self.capacity, 16).unwrap();
-        unsafe { dealloc(self.memory, layout); }
+        unsafe {
+            dealloc(self.memory, layout);
+        }
     }
 }
 
@@ -453,9 +459,7 @@ impl GenerationalGC {
         }
 
         // Leer el valor del campo en el offset indicado
-        let field_ptr = unsafe {
-            (obj.data_ptr().add(field_offset) as *const usize).read()
-        };
+        let field_ptr = unsafe { (obj.data_ptr().add(field_offset) as *const usize).read() };
 
         // Si el campo apunta a young generation, registrar en remembered set
         if self.is_in_young_generation(field_ptr) {
@@ -526,11 +530,15 @@ impl GenerationalGC {
         let temp_survivor = BumpAllocator::new(self.survivor.mem_capacity());
 
         // 3. Copiar objetos marcados del nursery al survivor temporal
-        let (nursery_count, nursery_bytes) = self.nursery.copy_marked_to(&temp_survivor, self.promotion_age);
+        let (nursery_count, nursery_bytes) = self
+            .nursery
+            .copy_marked_to(&temp_survivor, self.promotion_age);
         self.total_freed += nursery_bytes as u64;
 
         // 4. Copiar objetos marcados del survivor actual al survivor temporal
-        let (survivor_count, survivor_bytes) = self.survivor.copy_marked_to(&temp_survivor, self.promotion_age);
+        let (survivor_count, survivor_bytes) = self
+            .survivor
+            .copy_marked_to(&temp_survivor, self.promotion_age);
         self.total_freed += survivor_bytes as u64;
 
         // 5. Reemplazar survivor con el temporal
@@ -569,16 +577,21 @@ impl GenerationalGC {
         let temp_old = BumpAllocator::new(self.old_memory.mem_capacity());
 
         // 3. Copiar objetos marcados del nursery al survivor
-        let (nursery_count, nursery_bytes) = self.nursery.copy_marked_to(&temp_survivor, self.promotion_age);
+        let (nursery_count, nursery_bytes) = self
+            .nursery
+            .copy_marked_to(&temp_survivor, self.promotion_age);
         self.total_freed += nursery_bytes as u64;
 
         // 4. Promover objetos del survivor actual a old generation
         //    (objetos que ya están en survivor son considerados "viejos")
-        let (survivor_count, survivor_bytes) = self.survivor.copy_marked_to(&temp_old, self.promotion_age);
+        let (survivor_count, survivor_bytes) =
+            self.survivor.copy_marked_to(&temp_old, self.promotion_age);
         self.total_freed += survivor_bytes as u64;
 
         // 5. Copiar objetos viejos que sobrevivieron
-        let (old_count, old_bytes) = self.old_memory.copy_marked_to(&temp_old, self.promotion_age);
+        let (old_count, old_bytes) = self
+            .old_memory
+            .copy_marked_to(&temp_old, self.promotion_age);
         self.total_freed += old_bytes as u64;
 
         // 6. Reemplazar heaps
@@ -687,9 +700,7 @@ impl GenerationalGC {
 
     /// Retorna el número total de objetos en todas las generaciones
     pub fn total_object_count(&self) -> usize {
-        self.nursery.object_count()
-            + self.survivor.object_count()
-            + self.old_memory.object_count()
+        self.nursery.object_count() + self.survivor.object_count() + self.old_memory.object_count()
     }
 
     /// Verifica si el nursery necesita colección

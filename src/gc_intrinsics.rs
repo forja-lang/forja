@@ -199,9 +199,7 @@ impl LlvmGcPatterns {
     pub fn emit_write_barrier(barrier: WriteBarrier) -> &'static str {
         match barrier {
             WriteBarrier::None => "; no barrier needed",
-            WriteBarrier::RememberedSet => {
-                "call void @__gc_write_barrier(ptr %obj, ptr %val)"
-            }
+            WriteBarrier::RememberedSet => "call void @__gc_write_barrier(ptr %obj, ptr %val)",
             WriteBarrier::YoungOnly => "; young object, no barrier needed",
         }
     }
@@ -220,9 +218,18 @@ mod tests {
             function_id: fid,
             safe_point_offset: 100,
             gc_slots: vec![
-                GcStackSlot { offset: -8, is_root: true },
-                GcStackSlot { offset: -16, is_root: true },
-                GcStackSlot { offset: -24, is_root: false },
+                GcStackSlot {
+                    offset: -8,
+                    is_root: true,
+                },
+                GcStackSlot {
+                    offset: -16,
+                    is_root: true,
+                },
+                GcStackSlot {
+                    offset: -24,
+                    is_root: false,
+                },
             ],
             gc_registers: vec![],
         };

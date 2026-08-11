@@ -1,6 +1,6 @@
-use forja::transpiler::Transpiler;
 use forja::lexer::Lexer;
 use forja::parser::Parser;
+use forja::transpiler::Transpiler;
 
 fn transpilar(source: &str) -> String {
     let mut lexer = Lexer::new(source);

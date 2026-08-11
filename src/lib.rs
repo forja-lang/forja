@@ -10,6 +10,7 @@ pub mod ast;
 pub mod backend_llvm;
 pub mod bytecode;
 pub mod class_descriptor;
+pub mod codegen_reg;
 pub mod compiler_asm;
 pub mod compiler_llvm;
 pub mod error;
@@ -27,7 +28,6 @@ pub mod lexer;
 pub mod monomorph;
 pub mod native_registry;
 pub mod parser;
-pub mod codegen_reg;
 pub mod pgo;
 pub mod register_alloc;
 pub mod register_ir;
@@ -308,7 +308,7 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
             let sub_prog = module_resolver
                 .resolver(ruta)
                 .map_err(|e| format!("{}", e[0]))?;
-            if ruta != "gui" {
+            if ruta != "gui" && ruta != "std/gui" {
                 final_decls.extend(sub_prog.declaraciones);
             }
         } else if let ast::Declaracion::ImportarExterna(ref ruta) = decl {

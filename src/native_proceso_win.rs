@@ -72,7 +72,11 @@ struct MODULEENTRY32W {
 
 #[cfg(target_os = "windows")]
 extern "system" {
-    fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> *mut std::ffi::c_void;
+    fn OpenProcess(
+        dwDesiredAccess: u32,
+        bInheritHandle: i32,
+        dwProcessId: u32,
+    ) -> *mut std::ffi::c_void;
     fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
     fn GetLastError() -> u32;
     fn CreateToolhelp32Snapshot(dwFlags: u32, th32ProcessID: u32) -> *mut std::ffi::c_void;
@@ -211,8 +215,7 @@ pub fn native_proceso_obtener_pid(
             return Ok(ValorFast::entero(0));
         }
         let mut pid: i64 = 0;
-        let mut entry: PROCESSENTRY32W =
-            unsafe { std::mem::zeroed() };
+        let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
         entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
         let mut ok = unsafe { Process32FirstW(snap, &mut entry) };
         while ok != 0 {
@@ -325,7 +328,9 @@ pub fn native_proceso_modulo_base(
     #[cfg(target_os = "windows")]
     {
         let nombre_w = a_utf16(&nombre);
-        let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid as u32) };
+        let snap = unsafe {
+            CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid as u32)
+        };
         if snap.is_null() {
             return Ok(ValorFast::entero(0));
         }
@@ -366,7 +371,9 @@ pub fn native_proceso_modulo_tamano(
     #[cfg(target_os = "windows")]
     {
         let nombre_w = a_utf16(&nombre);
-        let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid as u32) };
+        let snap = unsafe {
+            CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid as u32)
+        };
         if snap.is_null() {
             return Ok(ValorFast::entero(0));
         }
@@ -438,7 +445,10 @@ pub fn native_proceso_leer_bytes(
             offset += n;
             base_addr += n;
         }
-        let vals: Vec<ValorFast> = buffer.iter().map(|b| ValorFast::entero(*b as i64)).collect();
+        let vals: Vec<ValorFast> = buffer
+            .iter()
+            .map(|b| ValorFast::entero(*b as i64))
+            .collect();
         let idx = vm.alloc_arr(vals);
         return Ok(ValorFast::arreglo(idx));
     }
@@ -501,10 +511,7 @@ pub fn native_proceso_escribir_bytes(
 // Devuelve el offset del match, o -1 si no lo encuentra.
 // ═════════════════════════════════════════════════════════════════════════
 
-pub fn native_buscar_firma(
-    vm: &mut ForjaFast,
-    args: &[ValorFast],
-) -> Result<ValorFast, ErrFast> {
+pub fn native_buscar_firma(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let bytes_idx = args[0].indice_arreglo();
     let bytes = vm.get_arr(bytes_idx);
     let firma_idx = args[1].indice_arreglo();
@@ -552,10 +559,7 @@ pub fn native_buscar_firma(
 
 static ESTADO_TECLA_ANTERIOR: Mutex<Option<(i32, bool)>> = Mutex::new(None);
 
-pub fn native_flanco_tecla(
-    _vm: &mut ForjaFast,
-    args: &[ValorFast],
-) -> Result<ValorFast, ErrFast> {
+pub fn native_flanco_tecla(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let vk = obtener_entero(args[0])? as i32;
 
     #[cfg(target_os = "windows")]

@@ -4,8 +4,8 @@
 //! de evaluación de expresiones con una pila de virtual registers.
 
 use crate::bytecode::Opcode;
-use crate::register_alloc::{VirtReg, RegClass};
-use crate::register_ir::{RegProgram, RegInstruction, BasicBlock, CmpOp};
+use crate::register_alloc::{RegClass, VirtReg};
+use crate::register_ir::{BasicBlock, CmpOp, RegInstruction, RegProgram};
 
 /// Convierte bytecode stack-based a IR register-based
 pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
@@ -71,8 +71,14 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
             }
 
             // === Aritméticas especializadas ===
-            Opcode::AddInt | Opcode::AddFloat | Opcode::SubInt | Opcode::SubFloat
-            | Opcode::MulInt | Opcode::MulFloat | Opcode::DivInt | Opcode::DivFloat => {
+            Opcode::AddInt
+            | Opcode::AddFloat
+            | Opcode::SubInt
+            | Opcode::SubFloat
+            | Opcode::MulInt
+            | Opcode::MulFloat
+            | Opcode::DivInt
+            | Opcode::DivFloat => {
                 let (b, _) = stack.pop().unwrap_or((0, RegClass::Integer));
                 let (a, _) = stack.pop().unwrap_or((0, RegClass::Integer));
                 let dst = prog.alloc_vreg();
@@ -148,9 +154,12 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                     Opcode::MayorIgual => CmpOp::Ge,
                     _ => unreachable!(),
                 };
-                current_block
-                    .instructions
-                    .push(RegInstruction::RegCmp { dst, a, b, op: op_cmp });
+                current_block.instructions.push(RegInstruction::RegCmp {
+                    dst,
+                    a,
+                    b,
+                    op: op_cmp,
+                });
                 stack.push((dst, RegClass::Integer));
             }
 
@@ -176,9 +185,12 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                     Opcode::MayorIgualFloat => CmpOp::Ge,
                     _ => unreachable!(),
                 };
-                current_block
-                    .instructions
-                    .push(RegInstruction::RegCmp { dst, a, b, op: op_cmp });
+                current_block.instructions.push(RegInstruction::RegCmp {
+                    dst,
+                    a,
+                    b,
+                    op: op_cmp,
+                });
                 stack.push((dst, RegClass::Integer));
             }
 
@@ -223,7 +235,10 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
             }
             Opcode::JumpSiFalso(label) => {
                 let (cond, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                current_block.terminator = RegInstruction::JumpIfFalse { cond, label: *label };
+                current_block.terminator = RegInstruction::JumpIfFalse {
+                    cond,
+                    label: *label,
+                };
                 prog.blocks.push(current_block);
                 current_block = BasicBlock {
                     label: label_counter,
@@ -404,7 +419,11 @@ mod tests {
 
         // StoreIdx
         match &block.instructions[1] {
-            RegInstruction::StoreVar { src, var_idx, class } => {
+            RegInstruction::StoreVar {
+                src,
+                var_idx,
+                class,
+            } => {
                 assert_eq!(*src, 0);
                 assert_eq!(*var_idx, 0);
                 assert_eq!(*class, RegClass::Integer);
@@ -414,7 +433,11 @@ mod tests {
 
         // LoadIdx
         match &block.instructions[2] {
-            RegInstruction::LoadVar { dst, var_idx, class } => {
+            RegInstruction::LoadVar {
+                dst,
+                var_idx,
+                class,
+            } => {
                 assert_eq!(*dst, 1);
                 assert_eq!(*var_idx, 0);
                 assert_eq!(*class, RegClass::Integer);
@@ -477,10 +500,7 @@ mod tests {
 
     #[test]
     fn test_push_decimal() {
-        let ops = vec![
-            Opcode::PushDecimal(3.14),
-            Opcode::Halt,
-        ];
+        let ops = vec![Opcode::PushDecimal(3.14), Opcode::Halt];
         let prog = stack_to_reg(&ops);
 
         let block = &prog.blocks[0];

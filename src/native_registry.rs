@@ -234,8 +234,14 @@ impl NativeRegistry {
         self.registrar("_socket_udp_escuchar", native_socket_udp_escuchar);
         self.registrar("_socket_udp_enviar", native_socket_udp_enviar);
         self.registrar("_socket_udp_recibir", native_socket_udp_recibir);
-        self.registrar("_socket_udp_enviar_binario", native_socket_udp_enviar_binario);
-        self.registrar("_socket_udp_recibir_binario", native_socket_udp_recibir_binario);
+        self.registrar(
+            "_socket_udp_enviar_binario",
+            native_socket_udp_enviar_binario,
+        );
+        self.registrar(
+            "_socket_udp_recibir_binario",
+            native_socket_udp_recibir_binario,
+        );
 
         // ─── BitTorrent P2P ──────────────────────────────────────────────
         self.registrar("_bt_handshake", native_bt_handshake);
@@ -319,8 +325,14 @@ impl NativeRegistry {
         // ─── ChaCha20 ─────────────────────────────────────────────────────
         self.registrar("_chacha20_xor", native_chacha20_xor);
         // ─── ChaCha20-Poly1305 AEAD ───────────────────────────────────────
-        self.registrar("_chacha20_poly1305_encrypt", native_chacha20_poly1305_encrypt);
-        self.registrar("_chacha20_poly1305_decrypt", native_chacha20_poly1305_decrypt);
+        self.registrar(
+            "_chacha20_poly1305_encrypt",
+            native_chacha20_poly1305_encrypt,
+        );
+        self.registrar(
+            "_chacha20_poly1305_decrypt",
+            native_chacha20_poly1305_decrypt,
+        );
         // ─── PBKDF2 ───────────────────────────────────────────────────────
         self.registrar("_pbkdf2", native_pbkdf2);
         self.registrar("_hash_password", native_hash_password);
@@ -487,7 +499,10 @@ fn native_ruta_normalizar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valo
     let p = std::path::Path::new(&s);
     let normalized = p.components().collect::<std::path::PathBuf>();
     let out = normalized.to_string_lossy().replace('\\', "/");
-    Ok({ let idx = vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+    Ok({
+        let idx = vm.alloc_str(Arc::from(out.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
 fn native_ruta_unir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
@@ -495,42 +510,77 @@ fn native_ruta_unir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast,
     let part = obtener_texto(vm, args[1])?;
     let p = std::path::Path::new(&base).join(&part);
     let out = p.to_string_lossy().replace('\\', "/");
-    Ok({ let idx = vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+    Ok({
+        let idx = vm.alloc_str(Arc::from(out.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
 fn native_ruta_extension(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(vm, args[0])?;
-    let ext = std::path::Path::new(&s).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
-    Ok({ let idx = vm.alloc_str(Arc::from(ext.as_str())); ValorFast::texto(idx) })
+    let ext = std::path::Path::new(&s)
+        .extension()
+        .map(|e| e.to_string_lossy().to_string())
+        .unwrap_or_default();
+    Ok({
+        let idx = vm.alloc_str(Arc::from(ext.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
 fn native_ruta_sin_extension(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(vm, args[0])?;
     let p = std::path::Path::new(&s);
     let out = p.with_extension("").to_string_lossy().replace('\\', "/");
-    Ok({ let idx = vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+    Ok({
+        let idx = vm.alloc_str(Arc::from(out.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
-fn native_ruta_nombre_archivo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_ruta_nombre_archivo(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(vm, args[0])?;
-    let name = std::path::Path::new(&s).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-    Ok({ let idx = vm.alloc_str(Arc::from(name.as_str())); ValorFast::texto(idx) })
+    let name = std::path::Path::new(&s)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    Ok({
+        let idx = vm.alloc_str(Arc::from(name.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
 fn native_ruta_dir_padre(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(vm, args[0])?;
-    let parent = std::path::Path::new(&s).parent().map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
-    Ok({ let idx = vm.alloc_str(Arc::from(parent.as_str())); ValorFast::texto(idx) })
+    let parent = std::path::Path::new(&s)
+        .parent()
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
+    Ok({
+        let idx = vm.alloc_str(Arc::from(parent.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
 fn native_ruta_absoluta(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(vm, args[0])?;
     let p = std::path::Path::new(&s);
-    let abs = if p.is_absolute() { p.to_path_buf() } else {
-        match std::env::current_dir() { Ok(cwd) => cwd.join(p), Err(_) => return Ok(ValorFast::nulo()) }
+    let abs = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        match std::env::current_dir() {
+            Ok(cwd) => cwd.join(p),
+            Err(_) => return Ok(ValorFast::nulo()),
+        }
     };
     let out = abs.to_string_lossy().replace('\\', "/");
-    Ok({ let idx = vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+    Ok({
+        let idx = vm.alloc_str(Arc::from(out.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
 fn native_ruta_es_absoluta(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
@@ -540,7 +590,10 @@ fn native_ruta_es_absoluta(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
 
 fn native_ruta_separador(_vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let sep = std::path::MAIN_SEPARATOR.to_string();
-    Ok({ let idx = _vm.alloc_str(Arc::from(sep.as_str())); ValorFast::texto(idx) })
+    Ok({
+        let idx = _vm.alloc_str(Arc::from(sep.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -561,8 +614,16 @@ fn native_proceso_ejecutar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
         return Err(ErrFast::TipoInv(format!("Sandbox: {}", e)));
     }
 
-    let stdin_input = if args.len() > 1 { obtener_texto(vm, args[1])? } else { String::new() };
-    let dir = if args.len() > 2 { obtener_texto(vm, args[2])? } else { String::new() };
+    let stdin_input = if args.len() > 1 {
+        obtener_texto(vm, args[1])?
+    } else {
+        String::new()
+    };
+    let dir = if args.len() > 2 {
+        obtener_texto(vm, args[2])?
+    } else {
+        String::new()
+    };
 
     let mut command = if cfg!(target_os = "windows") {
         let mut c = std::process::Command::new("cmd");
@@ -596,8 +657,14 @@ fn native_proceso_ejecutar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
     let shape_id = vm.shape_registry.get_or_create(sym);
     let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
     obj.campos_vec = vec![
-        { let idx = vm.alloc_str(Arc::from(stdout.as_str())); ValorFast::texto(idx) },
-        { let idx = vm.alloc_str(Arc::from(stderr.as_str())); ValorFast::texto(idx) },
+        {
+            let idx = vm.alloc_str(Arc::from(stdout.as_str()));
+            ValorFast::texto(idx)
+        },
+        {
+            let idx = vm.alloc_str(Arc::from(stderr.as_str()));
+            ValorFast::texto(idx)
+        },
         ValorFast::entero(code),
     ];
     let idx = vm.alloc_obj(obj);
@@ -616,9 +683,14 @@ impl NativeRegistry {
     }
 }
 
-fn native_sistema_tiempo_ms(_vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default().as_millis() as i64;
+fn native_sistema_tiempo_ms(
+    _vm: &mut ForjaFast,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
     Ok(ValorFast::entero(ms))
 }
 
@@ -629,12 +701,19 @@ fn native_temporizador_nuevo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
     let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    obj.campos_vec = vec![ValorFast::entero(id as i64), ValorFast::entero(ms), ValorFast::booleano(true)];
+    obj.campos_vec = vec![
+        ValorFast::entero(id as i64),
+        ValorFast::entero(ms),
+        ValorFast::booleano(true),
+    ];
     let idx = vm.alloc_obj(obj);
     Ok(ValorFast::objeto(idx))
 }
 
-fn native_temporizador_dormir(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_temporizador_dormir(
+    _vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let ms = obtener_entero(args[0])? as u64;
     std::thread::sleep(std::time::Duration::from_millis(ms));
     Ok(ValorFast::nulo())
@@ -663,10 +742,22 @@ fn native_binario_empaquetar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
     let fmt_bytes = formato.as_bytes();
     let mut i = 0;
     while i < fmt_bytes.len() {
-        let endian: &str = if i + 1 < fmt_bytes.len() { std::str::from_utf8(&fmt_bytes[i..i+2]).unwrap_or("") } else { "" };
-        let (ch, skip) = if endian == "le" || endian == "be" { (fmt_bytes[i+2] as char, 3usize) } else { (fmt_bytes[i] as char, 1usize) };
+        let endian: &str = if i + 1 < fmt_bytes.len() {
+            std::str::from_utf8(&fmt_bytes[i..i + 2]).unwrap_or("")
+        } else {
+            ""
+        };
+        let (ch, skip) = if endian == "le" || endian == "be" {
+            (fmt_bytes[i + 2] as char, 3usize)
+        } else {
+            (fmt_bytes[i] as char, 1usize)
+        };
         let little = endian == "le" || endian == "be" && endian == "le";
-        let val = if pos < arr.len() { arr[pos].a_entero() as i64 } else { 0i64 };
+        let val = if pos < arr.len() {
+            arr[pos].a_entero() as i64
+        } else {
+            0i64
+        };
         match ch {
             'b' => buf.push(val as i8 as u8),
             'h' => buf.extend_from_slice(&(val as i16).to_le_bytes()),
@@ -674,15 +765,34 @@ fn native_binario_empaquetar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
             'q' => buf.extend_from_slice(&(val as i64).to_le_bytes()),
             _ => {}
         }
-        if !little { let len = buf.len(); let last = len - (if ch == 'b' { 1 } else if ch == 'h' { 2 } else if ch == 'i' { 4 } else { 8 }); buf[last..].reverse(); }
+        if !little {
+            let len = buf.len();
+            let last = len
+                - (if ch == 'b' {
+                    1
+                } else if ch == 'h' {
+                    2
+                } else if ch == 'i' {
+                    4
+                } else {
+                    8
+                });
+            buf[last..].reverse();
+        }
         pos += 1;
         i += skip;
     }
     let out = String::from_utf8(buf).unwrap_or_default();
-    Ok({ let idx = vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+    Ok({
+        let idx = vm.alloc_str(Arc::from(out.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
-fn native_binario_desempaquetar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_binario_desempaquetar(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let formato = obtener_texto(vm, args[0])?;
     let datos = obtener_texto(vm, args[1])?;
     let bytes = datos.as_bytes();
@@ -691,14 +801,59 @@ fn native_binario_desempaquetar(vm: &mut ForjaFast, args: &[ValorFast]) -> Resul
     let fmt_bytes = formato.as_bytes();
     let mut i = 0;
     while i < fmt_bytes.len() && byte_pos < bytes.len() {
-        let endian: &str = if i + 1 < fmt_bytes.len() { std::str::from_utf8(&fmt_bytes[i..i+2]).unwrap_or("") } else { "" };
-        let (ch, skip) = if endian == "le" || endian == "be" { (fmt_bytes[i+2] as char, 3usize) } else { (fmt_bytes[i] as char, 1usize) };
+        let endian: &str = if i + 1 < fmt_bytes.len() {
+            std::str::from_utf8(&fmt_bytes[i..i + 2]).unwrap_or("")
+        } else {
+            ""
+        };
+        let (ch, skip) = if endian == "le" || endian == "be" {
+            (fmt_bytes[i + 2] as char, 3usize)
+        } else {
+            (fmt_bytes[i] as char, 1usize)
+        };
         let little = endian != "be";
         match ch {
-            'b' => { let v = bytes[byte_pos] as i64; vals.push(ValorFast::entero(v)); byte_pos += 1; }
-            'h' => { let mut arr = [0u8; 2]; let end = (byte_pos + 2).min(bytes.len()); arr[..end-byte_pos].copy_from_slice(&bytes[byte_pos..end]); let v = if little { i16::from_le_bytes(arr) } else { i16::from_be_bytes(arr) } as i64; vals.push(ValorFast::entero(v)); byte_pos += 2; }
-            'i' => { let mut arr = [0u8; 4]; let end = (byte_pos + 4).min(bytes.len()); arr[..end-byte_pos].copy_from_slice(&bytes[byte_pos..end]); let v = if little { i32::from_le_bytes(arr) } else { i32::from_be_bytes(arr) } as i64; vals.push(ValorFast::entero(v)); byte_pos += 4; }
-            'q' => { let mut arr = [0u8; 8]; let end = (byte_pos + 8).min(bytes.len()); arr[..end-byte_pos].copy_from_slice(&bytes[byte_pos..end]); let v = if little { i64::from_le_bytes(arr) } else { i64::from_be_bytes(arr) }; vals.push(ValorFast::entero(v)); byte_pos += 8; }
+            'b' => {
+                let v = bytes[byte_pos] as i64;
+                vals.push(ValorFast::entero(v));
+                byte_pos += 1;
+            }
+            'h' => {
+                let mut arr = [0u8; 2];
+                let end = (byte_pos + 2).min(bytes.len());
+                arr[..end - byte_pos].copy_from_slice(&bytes[byte_pos..end]);
+                let v = if little {
+                    i16::from_le_bytes(arr)
+                } else {
+                    i16::from_be_bytes(arr)
+                } as i64;
+                vals.push(ValorFast::entero(v));
+                byte_pos += 2;
+            }
+            'i' => {
+                let mut arr = [0u8; 4];
+                let end = (byte_pos + 4).min(bytes.len());
+                arr[..end - byte_pos].copy_from_slice(&bytes[byte_pos..end]);
+                let v = if little {
+                    i32::from_le_bytes(arr)
+                } else {
+                    i32::from_be_bytes(arr)
+                } as i64;
+                vals.push(ValorFast::entero(v));
+                byte_pos += 4;
+            }
+            'q' => {
+                let mut arr = [0u8; 8];
+                let end = (byte_pos + 8).min(bytes.len());
+                arr[..end - byte_pos].copy_from_slice(&bytes[byte_pos..end]);
+                let v = if little {
+                    i64::from_le_bytes(arr)
+                } else {
+                    i64::from_be_bytes(arr)
+                };
+                vals.push(ValorFast::entero(v));
+                byte_pos += 8;
+            }
             _ => {}
         }
         i += skip;
@@ -710,20 +865,37 @@ fn native_binario_desempaquetar(vm: &mut ForjaFast, args: &[ValorFast]) -> Resul
 fn native_binario_a_hex(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let datos = obtener_texto(vm, args[0])?;
     let hex: String = datos.bytes().map(|b| format!("{:02x}", b)).collect();
-    Ok({ let idx = vm.alloc_str(Arc::from(hex.as_str())); ValorFast::texto(idx) })
+    Ok({
+        let idx = vm.alloc_str(Arc::from(hex.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
 fn native_binario_desde_hex(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let hex = obtener_texto(vm, args[0])?;
-    let bytes: Vec<u8> = (0..hex.len()).step_by(2).filter_map(|i| u8::from_str_radix(&hex[i..(i+2).min(hex.len())], 16).ok()).collect();
+    let bytes: Vec<u8> = (0..hex.len())
+        .step_by(2)
+        .filter_map(|i| u8::from_str_radix(&hex[i..(i + 2).min(hex.len())], 16).ok())
+        .collect();
     let out = String::from_utf8(bytes).unwrap_or_default();
-    Ok({ let idx = vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+    Ok({
+        let idx = vm.alloc_str(Arc::from(out.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
 fn native_binario_tamano(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let formato = obtener_texto(_vm, args[0])?;
     let mut size = 0i64;
-    for ch in formato.chars() { match ch { 'b' => size += 1, 'h' => size += 2, 'i' => size += 4, 'q' => size += 8, _ => {} } }
+    for ch in formato.chars() {
+        match ch {
+            'b' => size += 1,
+            'h' => size += 2,
+            'i' => size += 4,
+            'q' => size += 8,
+            _ => {}
+        }
+    }
     Ok(ValorFast::entero(size))
 }
 
@@ -734,9 +906,15 @@ fn native_binario_tamano(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valo
 impl NativeRegistry {
     fn registrar_csv(&mut self) {
         self.registrar("_csv_parsear", native_csv_parsear);
-        self.registrar("_csv_parsear_con_cabeceras", native_csv_parsear_con_cabeceras);
+        self.registrar(
+            "_csv_parsear_con_cabeceras",
+            native_csv_parsear_con_cabeceras,
+        );
         self.registrar("_csv_generar", native_csv_generar);
-        self.registrar("_csv_generar_con_cabeceras", native_csv_generar_con_cabeceras);
+        self.registrar(
+            "_csv_generar_con_cabeceras",
+            native_csv_generar_con_cabeceras,
+        );
     }
 }
 
@@ -744,17 +922,28 @@ fn native_csv_parsear(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFas
     let texto = obtener_texto(vm, args[0])?;
     let mut filas: Vec<ValorFast> = Vec::new();
     for line in texto.lines() {
-        let campos: Vec<ValorFast> = line.split(',').map(|c| { let idx = vm.alloc_str(Arc::from(c.trim())); ValorFast::texto(idx) }).collect();
+        let campos: Vec<ValorFast> = line
+            .split(',')
+            .map(|c| {
+                let idx = vm.alloc_str(Arc::from(c.trim()));
+                ValorFast::texto(idx)
+            })
+            .collect();
         filas.push(ValorFast::arreglo(vm.alloc_arr(campos)));
     }
     let arr_idx = vm.alloc_arr(filas);
     Ok(ValorFast::arreglo(arr_idx))
 }
 
-fn native_csv_parsear_con_cabeceras(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_csv_parsear_con_cabeceras(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let texto = obtener_texto(vm, args[0])?;
     let lines: Vec<&str> = texto.lines().collect();
-    if lines.len() < 2 { return Ok(ValorFast::arreglo(vm.alloc_arr(vec![]))); }
+    if lines.len() < 2 {
+        return Ok(ValorFast::arreglo(vm.alloc_arr(vec![])));
+    }
     let headers: Vec<&str> = lines[0].split(',').map(|c| c.trim()).collect();
     let mut filas: Vec<ValorFast> = Vec::new();
     for line in &lines[1..] {
@@ -762,8 +951,14 @@ fn native_csv_parsear_con_cabeceras(vm: &mut ForjaFast, args: &[ValorFast]) -> R
         let mut map = Vec::new();
         for (i, h) in headers.iter().enumerate() {
             let v = vals.get(i).copied().unwrap_or("");
-            let h_val = { let idx = vm.alloc_str(Arc::from(*h)); ValorFast::texto(idx) };
-            let v_val = { let idx = vm.alloc_str(Arc::from(v)); ValorFast::texto(idx) };
+            let h_val = {
+                let idx = vm.alloc_str(Arc::from(*h));
+                ValorFast::texto(idx)
+            };
+            let v_val = {
+                let idx = vm.alloc_str(Arc::from(v));
+                ValorFast::texto(idx)
+            };
             map.push(ValorFast::arreglo(vm.alloc_arr(vec![h_val, v_val])));
         }
         filas.push(ValorFast::arreglo(vm.alloc_arr(map)));
@@ -778,14 +973,23 @@ fn native_csv_generar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
     for fila_val in filas_arr.iter() {
         let f_idx = fila_val.indice_arreglo() as usize;
         let campos = _vm.get_arr(f_idx as u32).clone();
-        let line: Vec<String> = campos.iter().map(|c| _vm.get_str(c.indice_texto()).to_string()).collect();
+        let line: Vec<String> = campos
+            .iter()
+            .map(|c| _vm.get_str(c.indice_texto()).to_string())
+            .collect();
         out.push_str(&line.join(","));
         out.push('\n');
     }
-    Ok({ let idx = _vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+    Ok({
+        let idx = _vm.alloc_str(Arc::from(out.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
-fn native_csv_generar_con_cabeceras(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_csv_generar_con_cabeceras(
+    _vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let headers = obtener_texto(_vm, args[0])?;
     let arr_idx = args[1].indice_arreglo() as usize;
     let filas = _vm.get_arr(arr_idx as u32).clone();
@@ -795,11 +999,17 @@ fn native_csv_generar_con_cabeceras(_vm: &mut ForjaFast, args: &[ValorFast]) -> 
     for fila_val in filas.iter() {
         let f_idx = fila_val.indice_arreglo() as usize;
         let campos = _vm.get_arr(f_idx as u32).clone();
-        let line: Vec<String> = campos.iter().map(|c| _vm.get_str(c.indice_texto()).to_string()).collect();
+        let line: Vec<String> = campos
+            .iter()
+            .map(|c| _vm.get_str(c.indice_texto()).to_string())
+            .collect();
         out.push_str(&line.join(","));
         out.push('\n');
     }
-    Ok({ let idx = _vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+    Ok({
+        let idx = _vm.alloc_str(Arc::from(out.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -816,22 +1026,54 @@ impl NativeRegistry {
 fn native_url_parsear(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let url_str = obtener_texto(vm, args[0])?;
     let parts: Vec<&str> = url_str.split("://").collect();
-    let (esquema, resto) = if parts.len() == 2 { (parts[0], parts[1]) } else { ("", &url_str[..]) };
+    let (esquema, resto) = if parts.len() == 2 {
+        (parts[0], parts[1])
+    } else {
+        ("", &url_str[..])
+    };
     let q_pos = resto.find('?');
-    let (host_ruta, query) = if let Some(q) = q_pos { (&resto[..q], Some(&resto[q+1..])) } else { (resto, None) };
+    let (host_ruta, query) = if let Some(q) = q_pos {
+        (&resto[..q], Some(&resto[q + 1..]))
+    } else {
+        (resto, None)
+    };
     let slash_pos = host_ruta.find('/');
-    let (host, ruta) = if let Some(s) = slash_pos { (&host_ruta[..s], &host_ruta[s..]) } else { (host_ruta, "/") };
+    let (host, ruta) = if let Some(s) = slash_pos {
+        (&host_ruta[..s], &host_ruta[s..])
+    } else {
+        (host_ruta, "/")
+    };
     let puerto_idx = host.find(':');
     let (hostname, puerto) = if let Some(p) = puerto_idx {
-        (&host[..p], &host[p+1..])
-    } else { (host, "") };
+        (&host[..p], &host[p + 1..])
+    } else {
+        (host, "")
+    };
 
     let sym = vm.sym_table.intern("URL");
     let shape_id = vm.shape_registry.get_or_create(sym);
     let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
     obj.campos_vec = vec![
-        { let idx = vm.alloc_str(Arc::from(esquema)); ValorFast::texto(idx) }, { let idx = vm.alloc_str(Arc::from(hostname)); ValorFast::texto(idx) }, { let idx = vm.alloc_str(Arc::from(puerto)); ValorFast::texto(idx) },
-        { let idx = vm.alloc_str(Arc::from(ruta)); ValorFast::texto(idx) }, { let idx = vm.alloc_str(Arc::from(query.unwrap_or(""))); ValorFast::texto(idx) },
+        {
+            let idx = vm.alloc_str(Arc::from(esquema));
+            ValorFast::texto(idx)
+        },
+        {
+            let idx = vm.alloc_str(Arc::from(hostname));
+            ValorFast::texto(idx)
+        },
+        {
+            let idx = vm.alloc_str(Arc::from(puerto));
+            ValorFast::texto(idx)
+        },
+        {
+            let idx = vm.alloc_str(Arc::from(ruta));
+            ValorFast::texto(idx)
+        },
+        {
+            let idx = vm.alloc_str(Arc::from(query.unwrap_or("")));
+            ValorFast::texto(idx)
+        },
     ];
     Ok(ValorFast::objeto(vm.alloc_obj(obj)))
 }
@@ -842,10 +1084,21 @@ fn native_url_construir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
     let puerto = obtener_entero(args[2])?;
     let ruta = obtener_texto(vm, args[3])?;
     let query = obtener_texto(vm, args[4])?;
-    let port_str = if puerto > 0 { format!(":{}", puerto) } else { String::new() };
-    let qs = if query.is_empty() { String::new() } else { format!("?{}", query) };
+    let port_str = if puerto > 0 {
+        format!(":{}", puerto)
+    } else {
+        String::new()
+    };
+    let qs = if query.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", query)
+    };
     let out = format!("{}://{}{}{}{}", esq, host, port_str, ruta, qs);
-    Ok({ let idx = vm.alloc_str(Arc::from(out.as_str())); ValorFast::texto(idx) })
+    Ok({
+        let idx = vm.alloc_str(Arc::from(out.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -862,11 +1115,14 @@ impl NativeRegistry {
         self.registrar("_atomico_cas", native_atomico_cas);
         self.registrar("_atomico_booleano_nuevo", native_atomico_booleano_nuevo);
         self.registrar("_atomico_booleano_cargar", native_atomico_booleano_cargar);
-        self.registrar("_atomico_booleano_almacenar", native_atomico_booleano_almacenar);
+        self.registrar(
+            "_atomico_booleano_almacenar",
+            native_atomico_booleano_almacenar,
+        );
     }
 }
 
-use std::sync::atomic::{AtomicI64, AtomicBool};
+use std::sync::atomic::{AtomicBool, AtomicI64};
 use std::sync::OnceLock;
 
 static ATOMICS: OnceLock<Mutex<Vec<AtomicI64>>> = OnceLock::new();
@@ -880,8 +1136,15 @@ fn atomic_bools_mutex() -> &'static Mutex<Vec<AtomicBool>> {
     ATOMIC_BOOLS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-fn native_atomico_entero_nuevo(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let val = if args.is_empty() { 0i64 } else { obtener_entero(args[0])? };
+fn native_atomico_entero_nuevo(
+    _vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let val = if args.is_empty() {
+        0i64
+    } else {
+        obtener_entero(args[0])?
+    };
     let mut store = atomicos_mutex().lock().unwrap();
     let idx = store.len();
     store.push(AtomicI64::new(val));
@@ -891,7 +1154,10 @@ fn native_atomico_entero_nuevo(_vm: &mut ForjaFast, args: &[ValorFast]) -> Resul
 fn native_atomico_cargar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let idx = obtener_entero(args[0])? as usize;
     let store = atomicos_mutex().lock().unwrap();
-    let val = store.get(idx).map(|a| a.load(Ordering::Relaxed)).unwrap_or(0);
+    let val = store
+        .get(idx)
+        .map(|a| a.load(Ordering::Relaxed))
+        .unwrap_or(0);
     Ok(ValorFast::entero(val))
 }
 
@@ -899,7 +1165,9 @@ fn native_atomico_almacenar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
     let idx = obtener_entero(args[0])? as usize;
     let val = obtener_entero(args[1])?;
     let store = atomicos_mutex().lock().unwrap();
-    if let Some(a) = store.get(idx) { a.store(val, Ordering::Relaxed); }
+    if let Some(a) = store.get(idx) {
+        a.store(val, Ordering::Relaxed);
+    }
     Ok(ValorFast::nulo())
 }
 
@@ -907,15 +1175,24 @@ fn native_atomico_sumar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
     let idx = obtener_entero(args[0])? as usize;
     let delta = obtener_entero(args[1])?;
     let store = atomicos_mutex().lock().unwrap();
-    let prev = store.get(idx).map(|a| a.fetch_add(delta, Ordering::Relaxed)).unwrap_or(0);
+    let prev = store
+        .get(idx)
+        .map(|a| a.fetch_add(delta, Ordering::Relaxed))
+        .unwrap_or(0);
     Ok(ValorFast::entero(prev))
 }
 
-fn native_atomico_intercambiar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_atomico_intercambiar(
+    _vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let idx = obtener_entero(args[0])? as usize;
     let val = obtener_entero(args[1])?;
     let store = atomicos_mutex().lock().unwrap();
-    let prev = store.get(idx).map(|a| a.swap(val, Ordering::Relaxed)).unwrap_or(0);
+    let prev = store
+        .get(idx)
+        .map(|a| a.swap(val, Ordering::Relaxed))
+        .unwrap_or(0);
     Ok(ValorFast::entero(prev))
 }
 
@@ -924,30 +1201,54 @@ fn native_atomico_cas(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
     let esperado = obtener_entero(args[1])?;
     let nuevo = obtener_entero(args[2])?;
     let store = atomicos_mutex().lock().unwrap();
-    let ok = store.get(idx).map(|a| a.compare_exchange(esperado, nuevo, Ordering::Relaxed, Ordering::Relaxed).is_ok()).unwrap_or(false);
+    let ok = store
+        .get(idx)
+        .map(|a| {
+            a.compare_exchange(esperado, nuevo, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+        })
+        .unwrap_or(false);
     Ok(ValorFast::booleano(ok))
 }
 
-fn native_atomico_booleano_nuevo(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let val = if args.is_empty() { false } else { args[0].a_entero() != 0 };
+fn native_atomico_booleano_nuevo(
+    _vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let val = if args.is_empty() {
+        false
+    } else {
+        args[0].a_entero() != 0
+    };
     let mut store = atomic_bools_mutex().lock().unwrap();
     let idx = store.len();
     store.push(AtomicBool::new(val));
     Ok(ValorFast::entero(idx as i64))
 }
 
-fn native_atomico_booleano_cargar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_atomico_booleano_cargar(
+    _vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let idx = obtener_entero(args[0])? as usize;
     let store = atomic_bools_mutex().lock().unwrap();
-    let val = store.get(idx).map(|a| a.load(Ordering::Relaxed)).unwrap_or(false);
+    let val = store
+        .get(idx)
+        .map(|a| a.load(Ordering::Relaxed))
+        .unwrap_or(false);
     Ok(ValorFast::booleano(val))
 }
 
-fn native_atomico_booleano_almacenar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_atomico_booleano_almacenar(
+    _vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let idx = obtener_entero(args[0])? as usize;
     let val = obtener_entero(args[1])? != 0;
     let store = atomic_bools_mutex().lock().unwrap();
-    if let Some(a) = store.get(idx) { a.store(val, Ordering::Relaxed); }
+    if let Some(a) = store.get(idx) {
+        a.store(val, Ordering::Relaxed);
+    }
     Ok(ValorFast::nulo())
 }
 
@@ -967,21 +1268,48 @@ static LOG_FILE: OnceLock<Mutex<String>> = OnceLock::new();
 static LOG_LEVEL: OnceLock<Mutex<String>> = OnceLock::new();
 
 fn log_nivel_min() -> i32 {
-    let nivel = LOG_LEVEL.get_or_init(|| Mutex::new("INFO".to_string())).lock().unwrap().clone();
-    match nivel.as_str() { "DEBUG" => 0, "INFO" => 1, "ADVERTENCIA" => 2, "ERROR" => 3, "CRITICAL" => 4, _ => 1 }
+    let nivel = LOG_LEVEL
+        .get_or_init(|| Mutex::new("INFO".to_string()))
+        .lock()
+        .unwrap()
+        .clone();
+    match nivel.as_str() {
+        "DEBUG" => 0,
+        "INFO" => 1,
+        "ADVERTENCIA" => 2,
+        "ERROR" => 3,
+        "CRITICAL" => 4,
+        _ => 1,
+    }
 }
 
 fn nivel_num(nivel: &str) -> i32 {
-    match nivel { "DEBUG" => 0, "INFO" => 1, "ADVERTENCIA" => 2, "ERROR" => 3, "CRITICAL" => 4, _ => 1 }
+    match nivel {
+        "DEBUG" => 0,
+        "INFO" => 1,
+        "ADVERTENCIA" => 2,
+        "ERROR" => 3,
+        "CRITICAL" => 4,
+        _ => 1,
+    }
 }
 
 fn native_log_escribir(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let nivel = obtener_texto(_vm, args[0])?;
     let mensaje = obtener_texto(_vm, args[1])?;
-    if nivel_num(&nivel) < log_nivel_min() { return Ok(ValorFast::nulo()); }
-    let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+    if nivel_num(&nivel) < log_nivel_min() {
+        return Ok(ValorFast::nulo());
+    }
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
     let line = format!("[{}] [{}] {}\n", timestamp, nivel, mensaje);
-    let ruta = LOG_FILE.get_or_init(|| Mutex::new(String::new())).lock().unwrap().clone();
+    let ruta = LOG_FILE
+        .get_or_init(|| Mutex::new(String::new()))
+        .lock()
+        .unwrap()
+        .clone();
     if ruta.is_empty() {
         eprint!("{}", line);
     } else if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&ruta) {
@@ -993,8 +1321,14 @@ fn native_log_escribir(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
 fn native_log_configurar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let nivel = obtener_texto(_vm, args[0])?;
     let archivo = obtener_texto(_vm, args[1])?;
-    *LOG_LEVEL.get_or_init(|| Mutex::new("INFO".to_string())).lock().unwrap() = nivel;
-    *LOG_FILE.get_or_init(|| Mutex::new(String::new())).lock().unwrap() = archivo;
+    *LOG_LEVEL
+        .get_or_init(|| Mutex::new("INFO".to_string()))
+        .lock()
+        .unwrap() = nivel;
+    *LOG_FILE
+        .get_or_init(|| Mutex::new(String::new()))
+        .lock()
+        .unwrap() = archivo;
     Ok(ValorFast::nulo())
 }
 
@@ -1024,7 +1358,10 @@ fn perf_inicios() -> &'static Mutex<HashMap_collections<String, u128>> {
 }
 
 fn now_ms() -> u128 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
 }
 
 fn native_perfilado_iniciar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
@@ -1035,7 +1372,11 @@ fn native_perfilado_iniciar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 
 fn native_perfilado_detener(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let etiqueta = obtener_texto(vm, args[0])?;
-    let inicio = perf_inicios().lock().unwrap().remove(&etiqueta).unwrap_or(now_ms());
+    let inicio = perf_inicios()
+        .lock()
+        .unwrap()
+        .remove(&etiqueta)
+        .unwrap_or(now_ms());
     let total_ms = (now_ms() - inicio) as i64;
     let mut map = perfil_map().lock().unwrap();
     let entry = map.entry(etiqueta.clone()).or_insert((0, 0));
@@ -1046,26 +1387,43 @@ fn native_perfilado_detener(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
     let shape_id = vm.shape_registry.get_or_create(sym);
     let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
     obj.campos_vec = vec![
-        { let idx = vm.alloc_str(Arc::from(etiqueta.as_str())); ValorFast::texto(idx) },
+        {
+            let idx = vm.alloc_str(Arc::from(etiqueta.as_str()));
+            ValorFast::texto(idx)
+        },
         ValorFast::entero(total_ms),
         ValorFast::entero(entry.1 as i64),
-        ValorFast::entero(if entry.1 > 0 { (entry.0 / entry.1 as u128) as i64 } else { 0 }),
+        ValorFast::entero(if entry.1 > 0 {
+            (entry.0 / entry.1 as u128) as i64
+        } else {
+            0
+        }),
     ];
     Ok(ValorFast::objeto(vm.alloc_obj(obj)))
 }
 
-fn native_perfilado_reportes(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_perfilado_reportes(
+    vm: &mut ForjaFast,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let map = perfil_map().lock().unwrap();
     let mut reportes: Vec<ValorFast> = Vec::new();
     for (etiqueta, (tiempo_total, iteraciones)) in map.iter() {
         let sym = vm.sym_table.intern("ReportePerfilado");
         let shape_id = vm.shape_registry.get_or_create(sym);
-    let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
+        let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
         obj.campos_vec = vec![
-            { let idx = vm.alloc_str(Arc::from(etiqueta.as_str())); ValorFast::texto(idx) },
+            {
+                let idx = vm.alloc_str(Arc::from(etiqueta.as_str()));
+                ValorFast::texto(idx)
+            },
             ValorFast::entero(*tiempo_total as i64),
             ValorFast::entero(*iteraciones as i64),
-            ValorFast::entero(if *iteraciones > 0 { (*tiempo_total / *iteraciones as u128) as i64 } else { 0 }),
+            ValorFast::entero(if *iteraciones > 0 {
+                (*tiempo_total / *iteraciones as u128) as i64
+            } else {
+                0
+            }),
         ];
         reportes.push(ValorFast::objeto(vm.alloc_obj(obj)));
     }
@@ -1126,24 +1484,39 @@ fn native_env_establecer(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valo
 }
 
 fn native_env_todos(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let pairs: Vec<ValorFast> = std::env::vars().map(|(k, v)| {
-        let k_val = { let idx = vm.alloc_str(Arc::from(k.as_str())); ValorFast::texto(idx) };
-        let v_val = { let idx = vm.alloc_str(Arc::from(v.as_str())); ValorFast::texto(idx) };
-        let arr = vm.alloc_arr(vec![k_val, v_val]);
-        ValorFast::arreglo(arr)
-    }).collect();
+    let pairs: Vec<ValorFast> = std::env::vars()
+        .map(|(k, v)| {
+            let k_val = {
+                let idx = vm.alloc_str(Arc::from(k.as_str()));
+                ValorFast::texto(idx)
+            };
+            let v_val = {
+                let idx = vm.alloc_str(Arc::from(v.as_str()));
+                ValorFast::texto(idx)
+            };
+            let arr = vm.alloc_arr(vec![k_val, v_val]);
+            ValorFast::arreglo(arr)
+        })
+        .collect();
     Ok(ValorFast::arreglo(vm.alloc_arr(pairs)))
 }
 
-fn native_env_cargar_desde_texto(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_env_cargar_desde_texto(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let texto = obtener_texto(vm, args[0])?;
     for line in texto.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
         if let Some(eq) = line.find('=') {
             let k = line[..eq].trim();
-            let v = line[eq+1..].trim();
-            if !k.is_empty() { std::env::set_var(k, v); }
+            let v = line[eq + 1..].trim();
+            if !k.is_empty() {
+                std::env::set_var(k, v);
+            }
         }
     }
     Ok(ValorFast::nulo())
@@ -1158,12 +1531,21 @@ fn simple_env_expand(texto: &str) -> String {
             if chars.peek() == Some(&'{') {
                 chars.next();
                 while let Some(&ch) = chars.peek() {
-                    if ch == '}' { chars.next(); break; }
-                    var.push(ch); chars.next();
+                    if ch == '}' {
+                        chars.next();
+                        break;
+                    }
+                    var.push(ch);
+                    chars.next();
                 }
             } else {
                 while let Some(&ch) = chars.peek() {
-                    if ch.is_alphanumeric() || ch == '_' { var.push(ch); chars.next(); } else { break; }
+                    if ch.is_alphanumeric() || ch == '_' {
+                        var.push(ch);
+                        chars.next();
+                    } else {
+                        break;
+                    }
                 }
             }
             let val = std::env::var(&var).unwrap_or_default();
@@ -1178,10 +1560,16 @@ fn simple_env_expand(texto: &str) -> String {
 fn native_env_expandir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let texto = obtener_texto(vm, args[0])?;
     let expanded = simple_env_expand(&texto);
-    Ok({ let idx = vm.alloc_str(Arc::from(expanded.as_str())); ValorFast::texto(idx) })
+    Ok({
+        let idx = vm.alloc_str(Arc::from(expanded.as_str()));
+        ValorFast::texto(idx)
+    })
 }
 
-fn native_env_parsear_entero(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_env_parsear_entero(
+    _vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(_vm, args[0])?;
     match s.trim().parse::<i64>() {
         Ok(n) => Ok(ValorFast::entero(n)),
@@ -1189,7 +1577,10 @@ fn native_env_parsear_entero(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<
     }
 }
 
-fn native_env_parsear_booleano(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_env_parsear_booleano(
+    _vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(_vm, args[0])?.to_lowercase();
     let val = matches!(s.as_str(), "true" | "1" | "yes" | "verdadero" | "si");
     Ok(ValorFast::booleano(val))
@@ -1212,7 +1603,9 @@ impl NativeRegistry {
 fn native_arg_flag_presente(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let nombre = obtener_texto(_vm, args[0])?;
     let args_raw: Vec<String> = std::env::args().skip(1).collect();
-    let presente = args_raw.iter().any(|a| a == &format!("--{}", nombre) || a == &format!("-{}", nombre.chars().next().unwrap_or(' ')));
+    let presente = args_raw.iter().any(|a| {
+        a == &format!("--{}", nombre) || a == &format!("-{}", nombre.chars().next().unwrap_or(' '))
+    });
     Ok(ValorFast::booleano(presente))
 }
 
@@ -1222,11 +1615,19 @@ fn native_arg_flag_texto(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
     let mut i = 1;
     while i < args_raw.len() {
         let a = &args_raw[i];
-        if a == &format!("--{}", nombre) || a == &format!("-{}", nombre.chars().next().unwrap_or(' ')) {
-            if i + 1 < args_raw.len() && !args_raw[i+1].starts_with('-') {
-                return Ok({ let idx = vm.alloc_str(Arc::from(args_raw[i+1].as_str())); ValorFast::texto(idx) });
+        if a == &format!("--{}", nombre)
+            || a == &format!("-{}", nombre.chars().next().unwrap_or(' '))
+        {
+            if i + 1 < args_raw.len() && !args_raw[i + 1].starts_with('-') {
+                return Ok({
+                    let idx = vm.alloc_str(Arc::from(args_raw[i + 1].as_str()));
+                    ValorFast::texto(idx)
+                });
             }
-            return Ok({ let idx = vm.alloc_str(Arc::from("")); ValorFast::texto(idx) }); // flag presente sin valor
+            return Ok({
+                let idx = vm.alloc_str(Arc::from(""));
+                ValorFast::texto(idx)
+            }); // flag presente sin valor
         }
         i += 1;
     }
@@ -1238,7 +1639,10 @@ fn native_arg_posicional(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
     let args_raw: Vec<String> = std::env::args().skip(1).collect();
     let positional: Vec<&String> = args_raw.iter().filter(|a| !a.starts_with('-')).collect();
     match positional.get(idx) {
-        Some(v) => Ok({ let idx = vm.alloc_str(Arc::from(v.as_str())); ValorFast::texto(idx) }),
+        Some(v) => Ok({
+            let idx = vm.alloc_str(Arc::from(v.as_str()));
+            ValorFast::texto(idx)
+        }),
         None => Ok(ValorFast::nulo()),
     }
 }
@@ -1249,7 +1653,10 @@ fn native_arg_mostrar_ayuda(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
     Ok(ValorFast::nulo())
 }
 
-fn native_arg_parsear_entero(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_arg_parsear_entero(
+    _vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(_vm, args[0])?;
     match s.trim().parse::<i64>() {
         Ok(n) => Ok(ValorFast::entero(n)),
@@ -1319,7 +1726,10 @@ fn parse_xml_attrs(s: &str) -> std::collections::HashMap<String, String> {
     map
 }
 
-fn attrs_to_map(vm: &mut ForjaFast, attrs: &std::collections::HashMap<String, String>) -> ValorFast {
+fn attrs_to_map(
+    vm: &mut ForjaFast,
+    attrs: &std::collections::HashMap<String, String>,
+) -> ValorFast {
     let mut map = std::collections::HashMap::new();
     for (k, v) in attrs {
         let v_idx = vm.alloc_str(std::sync::Arc::from(v.as_str()));
@@ -1331,7 +1741,9 @@ fn attrs_to_map(vm: &mut ForjaFast, attrs: &std::collections::HashMap<String, St
 
 fn native_xhb_parsear(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("xhb_parsear requiere 1 argumento (texto XML)".into()));
+        return Err(ErrFast::TipoInv(
+            "xhb_parsear requiere 1 argumento (texto XML)".into(),
+        ));
     }
     let xml = obtener_texto(vm, args[0])?;
 
@@ -1460,7 +1872,9 @@ fn val_to_str(vm: &ForjaFast, val: ValorFast) -> String {
 
 fn native_xhb_serializar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() || !args[0].es_mapa() {
-        return Err(ErrFast::TipoInv("xhb_serializar requiere 1 argumento (Mapa de XHB)".into()));
+        return Err(ErrFast::TipoInv(
+            "xhb_serializar requiere 1 argumento (Mapa de XHB)".into(),
+        ));
     }
     let map_idx = args[0].indice_mapa() as usize;
     let doc_map = vm.map_heap.get(map_idx).cloned().unwrap_or_default();
@@ -1500,15 +1914,54 @@ fn native_xhb_serializar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
     }
 
     let sections: &[(&str, &str, &[&str])] = &[
-        ("properties", "properties", &["title", "car_category", "auto_smem", "auto_bmem", "curr"]),
-        ("currencies", "cur", &["key", "flags", "iso", "name", "symb", "syprf", "dchar", "gchar", "frac", "rate", "mdate"]),
-        ("accounts", "account", &["key", "pos", "type", "curr", "name", "number", "bankname", "initial", "minimum", "cheque1", "cheque2"]),
-        ("payees", "pay", &["key", "name", "category", "paymode", "notes"]),
+        (
+            "properties",
+            "properties",
+            &["title", "car_category", "auto_smem", "auto_bmem", "curr"],
+        ),
+        (
+            "currencies",
+            "cur",
+            &[
+                "key", "flags", "iso", "name", "symb", "syprf", "dchar", "gchar", "frac", "rate",
+                "mdate",
+            ],
+        ),
+        (
+            "accounts",
+            "account",
+            &[
+                "key", "pos", "type", "curr", "name", "number", "bankname", "initial", "minimum",
+                "cheque1", "cheque2",
+            ],
+        ),
+        (
+            "payees",
+            "pay",
+            &["key", "name", "category", "paymode", "notes"],
+        ),
         ("categories", "cat", &["key", "parent", "flags", "name"]),
         ("tags", "tag", &["key", "name"]),
         ("assigns", "assign", &["key", "name"]),
         ("archives", "archive", &["key", "name"]),
-        ("operations", "ope", &["date", "amount", "account", "dst_account", "paymode", "payee", "category", "wording", "tags", "flags", "status", "kmo"]),
+        (
+            "operations",
+            "ope",
+            &[
+                "date",
+                "amount",
+                "account",
+                "dst_account",
+                "paymode",
+                "payee",
+                "category",
+                "wording",
+                "tags",
+                "flags",
+                "status",
+                "kmo",
+            ],
+        ),
     ];
 
     for &(field_name, tag_name, attr_order) in sections {
@@ -1524,13 +1977,21 @@ fn native_xhb_serializar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
                                 for &attr in attr_order {
                                     if let Some(&val) = item_map.get(attr) {
                                         let str_val = val_to_str(vm, val);
-                                        out.push_str(&format!(" {}=\"{}\"", attr, xml_escape(&str_val)));
+                                        out.push_str(&format!(
+                                            " {}=\"{}\"",
+                                            attr,
+                                            xml_escape(&str_val)
+                                        ));
                                     }
                                 }
                                 for (k, v) in item_map {
                                     if !attr_order.contains(&k.as_str()) {
                                         let str_val = val_to_str(vm, *v);
-                                        out.push_str(&format!(" {}=\"{}\"", k, xml_escape(&str_val)));
+                                        out.push_str(&format!(
+                                            " {}=\"{}\"",
+                                            k,
+                                            xml_escape(&str_val)
+                                        ));
                                     }
                                 }
                                 out.push_str("/>\n");
@@ -1588,7 +2049,9 @@ pub(crate) fn obtener_texto(vm: &mut ForjaFast, val: ValorFast) -> Result<String
 /// args[0]: texto de un solo carácter
 fn native_a_codigo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("a_codigo requiere 1 argumento: carácter (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "a_codigo requiere 1 argumento: carácter (texto)".into(),
+        ));
     }
     let texto = obtener_texto(vm, args[0])?;
     let ch = texto.chars().next().ok_or_else(|| {
@@ -1601,7 +2064,9 @@ fn native_a_codigo(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, 
 /// args[0]: entero con el código Unicode
 fn native_a_caracter(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("a_caracter requiere 1 argumento: código (entero)".into()));
+        return Err(ErrFast::TipoInv(
+            "a_caracter requiere 1 argumento: código (entero)".into(),
+        ));
     }
     let codigo = obtener_entero(args[0])?;
     let ch = char::from_u32(codigo as u32).ok_or_else(|| {
@@ -1836,10 +2301,12 @@ fn native_socket_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
             let idx = vm.alloc_str(Arc::from(datos.as_str()));
             Ok(ValorFast::texto(idx))
         }
-        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock
-              || e.kind() == std::io::ErrorKind::TimedOut
-              || e.kind() == std::io::ErrorKind::ConnectionReset
-              || e.kind() == std::io::ErrorKind::BrokenPipe => {
+        Err(e)
+            if e.kind() == std::io::ErrorKind::WouldBlock
+                || e.kind() == std::io::ErrorKind::TimedOut
+                || e.kind() == std::io::ErrorKind::ConnectionReset
+                || e.kind() == std::io::ErrorKind::BrokenPipe =>
+        {
             drop(stream);
             let idx = vm.alloc_str(Arc::from(""));
             Ok(ValorFast::texto(idx))
@@ -1852,7 +2319,10 @@ fn native_socket_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
 /// args[0]: socket
 /// args[1]: buffer_tamano (entero)
 /// Retorna: datos en hexadecimal (Texto), cadena vacía si conexión cerrada
-fn native_socket_recibir_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_socket_recibir_binario(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
             "_socket_recibir_binario requiere 2 argumentos: socket, buffer_tamano (entero)".into(),
@@ -1888,7 +2358,10 @@ fn native_socket_recibir_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> Resu
             Ok(ValorFast::texto(idx))
         }
         Ok(n) => {
-            let hex_str = buffer[..n].iter().map(|b| format!("{:02x}", b)).collect::<String>();
+            let hex_str = buffer[..n]
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>();
             let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
             Ok(ValorFast::texto(idx))
         }
@@ -2227,7 +2700,10 @@ fn native_socket_udp_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
             let idx = vm.alloc_str(Arc::from(datos.as_str()));
             Ok(ValorFast::texto(idx))
         }
-        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+        Err(e)
+            if e.kind() == std::io::ErrorKind::WouldBlock
+                || e.kind() == std::io::ErrorKind::TimedOut =>
+        {
             let idx = vm.alloc_str(Arc::from(""));
             Ok(ValorFast::texto(idx))
         }
@@ -2236,7 +2712,10 @@ fn native_socket_udp_recibir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 }
 
 /// Envía datos binarios (hex string) a través de un socket UDP.
-fn native_socket_udp_enviar_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_socket_udp_enviar_binario(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 4 {
         return Err(ErrFast::TipoInv(
             "_socket_udp_enviar_binario requiere 4 argumentos: socket, hex_datos, direccion, puerto".into(),
@@ -2269,7 +2748,10 @@ fn native_socket_udp_enviar_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> R
     let destino = match resolver_direccion(&direccion, puerto as u16) {
         Ok(a) => a,
         Err(msg) => {
-            eprintln!("[DEBUG] resolver_direccion error for {}:{}: {}", direccion, puerto, msg);
+            eprintln!(
+                "[DEBUG] resolver_direccion error for {}:{}: {}",
+                direccion, puerto, msg
+            );
             return Ok(ValorFast::entero(0));
         }
     };
@@ -2290,10 +2772,14 @@ fn native_socket_udp_enviar_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> R
 }
 
 /// Recibe datos binarios de un socket UDP y los retorna codificados en hex string.
-fn native_socket_udp_recibir_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_socket_udp_recibir_binario(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
-            "_socket_udp_recibir_binario requiere 2 argumentos: socket, buffer_tamano (entero)".into(),
+            "_socket_udp_recibir_binario requiere 2 argumentos: socket, buffer_tamano (entero)"
+                .into(),
         ));
     }
 
@@ -2320,7 +2806,10 @@ fn native_socket_udp_recibir_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> 
             Ok(ValorFast::texto(idx))
         }
         Err(e) => {
-            eprintln!("[DEBUG] native_socket_udp_recibir_binario recv_from err: {}", e);
+            eprintln!(
+                "[DEBUG] native_socket_udp_recibir_binario recv_from err: {}",
+                e
+            );
             let idx = vm.alloc_str(Arc::from(""));
             Ok(ValorFast::texto(idx))
         }
@@ -2619,7 +3108,10 @@ fn native_archivo_info(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
 /// Lee un archivo como bytes y retorna su contenido como hexadecimal
 /// args[0]: ruta (Texto)
 /// Retorna: contenido del archivo en hexadecimal (Texto)
-fn native_archivo_leer_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_archivo_leer_binario(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 1 {
         return Err(ErrFast::TipoInv(
             "_archivo_leer_binario requiere 1 argumento: ruta (texto)".into(),
@@ -2633,7 +3125,10 @@ fn native_archivo_leer_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
     }
     match std::fs::read(&ruta) {
         Ok(bytes) => {
-            let hex_str = bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+            let hex_str = bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>();
             let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
             Ok(ValorFast::texto(idx))
         }
@@ -2649,10 +3144,14 @@ fn native_archivo_leer_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
 /// args[0]: ruta (Texto)
 /// args[1]: contenido_hex (Texto) - datos en hexadecimal
 /// Retorna: 0 si éxito, -1 si error
-fn native_archivo_escribir_binario(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_archivo_escribir_binario(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
-            "_archivo_escribir_binario requiere 2 argumentos: ruta (texto), contenido_hex (texto)".into(),
+            "_archivo_escribir_binario requiere 2 argumentos: ruta (texto), contenido_hex (texto)"
+                .into(),
         ));
     }
     let ruta = obtener_texto(vm, args[0])?;
@@ -2982,7 +3481,9 @@ fn native_sha1_hex(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, 
 /// args[0]: datos a hashear (Texto)
 fn native_sha224(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_sha224 requiere 1 argumento: datos (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_sha224 requiere 1 argumento: datos (texto)".into(),
+        ));
     }
     let data = obtener_texto(vm, args[0])?;
     let hash = crate::hash::Sha224::digest(data.as_bytes());
@@ -2995,7 +3496,9 @@ fn native_sha224(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, Er
 /// args[0]: datos a hashear (Texto)
 fn native_sha512(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_sha512 requiere 1 argumento: datos (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_sha512 requiere 1 argumento: datos (texto)".into(),
+        ));
     }
     let data = obtener_texto(vm, args[0])?;
     let hash = crate::hash::Sha512::digest(data.as_bytes());
@@ -3008,7 +3511,9 @@ fn native_sha512(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, Er
 /// args[0]: datos a hashear (Texto)
 fn native_sha384(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_sha384 requiere 1 argumento: datos (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_sha384 requiere 1 argumento: datos (texto)".into(),
+        ));
     }
     let data = obtener_texto(vm, args[0])?;
     let hash = crate::hash::Sha384::digest(data.as_bytes());
@@ -3023,7 +3528,9 @@ fn native_sha384(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, Er
 /// Retorna: hash hexadecimal (64 caracteres)
 fn native_hmac_sha256(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
-        return Err(ErrFast::TipoInv("_hmac_sha256 requiere 2 argumentos: clave, datos".into()));
+        return Err(ErrFast::TipoInv(
+            "_hmac_sha256 requiere 2 argumentos: clave, datos".into(),
+        ));
     }
     let clave = obtener_texto(vm, args[0])?;
     let datos = obtener_texto(vm, args[1])?;
@@ -3038,7 +3545,11 @@ fn native_hmac_sha256(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFas
 // ═════════════════════════════════════════════════════════════════════════
 
 fn native_random_bytes(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let n = if args.is_empty() { 32 } else { obtener_entero(args[0])? as usize };
+    let n = if args.is_empty() {
+        32
+    } else {
+        obtener_entero(args[0])? as usize
+    };
     match crate::crypto::random_bytes(n) {
         Ok(bytes) => {
             let s = String::from_utf8_lossy(&bytes).to_string();
@@ -3049,20 +3560,38 @@ fn native_random_bytes(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
     }
 }
 
-fn native_constant_time_equal(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.len() < 2 { return Err(ErrFast::TipoInv("_constant_time_equal requiere 2 argumentos".into())); }
+fn native_constant_time_equal(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    if args.len() < 2 {
+        return Err(ErrFast::TipoInv(
+            "_constant_time_equal requiere 2 argumentos".into(),
+        ));
+    }
     let a = obtener_texto(vm, args[0])?;
     let b = obtener_texto(vm, args[1])?;
-    Ok(ValorFast::booleano(crate::crypto::constant_time_equal(a.as_bytes(), b.as_bytes())))
+    Ok(ValorFast::booleano(crate::crypto::constant_time_equal(
+        a.as_bytes(),
+        b.as_bytes(),
+    )))
 }
 
 fn native_aes256_cbc_encrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.len() < 3 { return Err(ErrFast::TipoInv("_aes256_cbc_encrypt requiere 3 args: clave, iv, datos".into())); }
+    if args.len() < 3 {
+        return Err(ErrFast::TipoInv(
+            "_aes256_cbc_encrypt requiere 3 args: clave, iv, datos".into(),
+        ));
+    }
     let clave = obtener_texto(vm, args[0])?;
     let iv = obtener_texto(vm, args[1])?;
     let datos = obtener_texto(vm, args[2])?;
-    if clave.len() != 32 { return Err(ErrFast::TipoInv("AES-256: clave debe ser 32 bytes".into())); }
-    if iv.len() != 16 { return Err(ErrFast::TipoInv("AES-256: IV debe ser 16 bytes".into())); }
+    if clave.len() != 32 {
+        return Err(ErrFast::TipoInv("AES-256: clave debe ser 32 bytes".into()));
+    }
+    if iv.len() != 16 {
+        return Err(ErrFast::TipoInv("AES-256: IV debe ser 16 bytes".into()));
+    }
     let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let iv_arr: [u8; 16] = iv.as_bytes().try_into().unwrap();
     let result = crate::crypto::aes256_cbc_encrypt(&key, &iv_arr, datos.as_bytes());
@@ -3072,12 +3601,20 @@ fn native_aes256_cbc_encrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 }
 
 fn native_aes256_cbc_decrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.len() < 3 { return Err(ErrFast::TipoInv("_aes256_cbc_decrypt requiere 3 args: clave, iv, datos".into())); }
+    if args.len() < 3 {
+        return Err(ErrFast::TipoInv(
+            "_aes256_cbc_decrypt requiere 3 args: clave, iv, datos".into(),
+        ));
+    }
     let clave = obtener_texto(vm, args[0])?;
     let iv = obtener_texto(vm, args[1])?;
     let datos = obtener_texto(vm, args[2])?;
-    if clave.len() != 32 { return Err(ErrFast::TipoInv("AES-256: clave debe ser 32 bytes".into())); }
-    if iv.len() != 16 { return Err(ErrFast::TipoInv("AES-256: IV debe ser 16 bytes".into())); }
+    if clave.len() != 32 {
+        return Err(ErrFast::TipoInv("AES-256: clave debe ser 32 bytes".into()));
+    }
+    if iv.len() != 16 {
+        return Err(ErrFast::TipoInv("AES-256: IV debe ser 16 bytes".into()));
+    }
     let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let iv_arr: [u8; 16] = iv.as_bytes().try_into().unwrap();
     match crate::crypto::aes256_cbc_decrypt(&key, &iv_arr, datos.as_bytes()) {
@@ -3091,13 +3628,25 @@ fn native_aes256_cbc_decrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 }
 
 fn native_aes256_gcm_encrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.len() < 4 { return Err(ErrFast::TipoInv("_aes256_gcm_encrypt requiere 4 args: clave(32), nonce(12), datos, ad".into())); }
+    if args.len() < 4 {
+        return Err(ErrFast::TipoInv(
+            "_aes256_gcm_encrypt requiere 4 args: clave(32), nonce(12), datos, ad".into(),
+        ));
+    }
     let clave = obtener_texto(vm, args[0])?;
     let nonce = obtener_texto(vm, args[1])?;
     let datos = obtener_texto(vm, args[2])?;
     let ad = obtener_texto(vm, args[3])?;
-    if clave.len() != 32 { return Err(ErrFast::TipoInv("AES-256-GCM: clave debe ser 32 bytes".into())); }
-    if nonce.len() != 12 { return Err(ErrFast::TipoInv("AES-256-GCM: nonce debe ser 12 bytes".into())); }
+    if clave.len() != 32 {
+        return Err(ErrFast::TipoInv(
+            "AES-256-GCM: clave debe ser 32 bytes".into(),
+        ));
+    }
+    if nonce.len() != 12 {
+        return Err(ErrFast::TipoInv(
+            "AES-256-GCM: nonce debe ser 12 bytes".into(),
+        ));
+    }
     let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
     let result = crate::crypto::aes256_gcm_encrypt(&key, &non, datos.as_bytes(), ad.as_bytes());
@@ -3107,13 +3656,25 @@ fn native_aes256_gcm_encrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 }
 
 fn native_aes256_gcm_decrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.len() < 4 { return Err(ErrFast::TipoInv("_aes256_gcm_decrypt requiere 4 args: clave(32), nonce(12), cifrado, ad".into())); }
+    if args.len() < 4 {
+        return Err(ErrFast::TipoInv(
+            "_aes256_gcm_decrypt requiere 4 args: clave(32), nonce(12), cifrado, ad".into(),
+        ));
+    }
     let clave = obtener_texto(vm, args[0])?;
     let nonce = obtener_texto(vm, args[1])?;
     let cifrado = obtener_texto(vm, args[2])?;
     let ad = obtener_texto(vm, args[3])?;
-    if clave.len() != 32 { return Err(ErrFast::TipoInv("AES-256-GCM: clave debe ser 32 bytes".into())); }
-    if nonce.len() != 12 { return Err(ErrFast::TipoInv("AES-256-GCM: nonce debe ser 12 bytes".into())); }
+    if clave.len() != 32 {
+        return Err(ErrFast::TipoInv(
+            "AES-256-GCM: clave debe ser 32 bytes".into(),
+        ));
+    }
+    if nonce.len() != 12 {
+        return Err(ErrFast::TipoInv(
+            "AES-256-GCM: nonce debe ser 12 bytes".into(),
+        ));
+    }
     let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
     match crate::crypto::aes256_gcm_decrypt(&key, &non, cifrado.as_bytes(), ad.as_bytes()) {
@@ -3127,12 +3688,20 @@ fn native_aes256_gcm_decrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<V
 }
 
 fn native_chacha20_xor(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.len() < 3 { return Err(ErrFast::TipoInv("_chacha20_xor requiere 3 args: clave(32), nonce(12), datos".into())); }
+    if args.len() < 3 {
+        return Err(ErrFast::TipoInv(
+            "_chacha20_xor requiere 3 args: clave(32), nonce(12), datos".into(),
+        ));
+    }
     let clave = obtener_texto(vm, args[0])?;
     let nonce = obtener_texto(vm, args[1])?;
     let datos = obtener_texto(vm, args[2])?;
-    if clave.len() != 32 { return Err(ErrFast::TipoInv("ChaCha20: clave debe ser 32 bytes".into())); }
-    if nonce.len() != 12 { return Err(ErrFast::TipoInv("ChaCha20: nonce debe ser 12 bytes".into())); }
+    if clave.len() != 32 {
+        return Err(ErrFast::TipoInv("ChaCha20: clave debe ser 32 bytes".into()));
+    }
+    if nonce.len() != 12 {
+        return Err(ErrFast::TipoInv("ChaCha20: nonce debe ser 12 bytes".into()));
+    }
     let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
     let result = crate::crypto::chacha20_xor(&key, &non, datos.as_bytes());
@@ -3141,30 +3710,53 @@ fn native_chacha20_xor(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
     Ok(ValorFast::texto(idx))
 }
 
-fn native_chacha20_poly1305_encrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.len() < 4 { return Err(ErrFast::TipoInv("_chacha20_poly1305_encrypt requiere 4 args: clave, nonce, datos, ad".into())); }
+fn native_chacha20_poly1305_encrypt(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    if args.len() < 4 {
+        return Err(ErrFast::TipoInv(
+            "_chacha20_poly1305_encrypt requiere 4 args: clave, nonce, datos, ad".into(),
+        ));
+    }
     let clave = obtener_texto(vm, args[0])?;
     let nonce = obtener_texto(vm, args[1])?;
     let datos = obtener_texto(vm, args[2])?;
     let ad = obtener_texto(vm, args[3])?;
-    if clave.len() != 32 { return Err(ErrFast::TipoInv("ChaCha20: clave debe ser 32 bytes".into())); }
-    if nonce.len() != 12 { return Err(ErrFast::TipoInv("ChaCha20: nonce debe ser 12 bytes".into())); }
+    if clave.len() != 32 {
+        return Err(ErrFast::TipoInv("ChaCha20: clave debe ser 32 bytes".into()));
+    }
+    if nonce.len() != 12 {
+        return Err(ErrFast::TipoInv("ChaCha20: nonce debe ser 12 bytes".into()));
+    }
     let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
-    let result = crate::crypto::chacha20_poly1305_encrypt(&key, &non, datos.as_bytes(), ad.as_bytes());
+    let result =
+        crate::crypto::chacha20_poly1305_encrypt(&key, &non, datos.as_bytes(), ad.as_bytes());
     let s = String::from_utf8_lossy(&result).to_string();
     let idx = vm.alloc_str(Arc::from(s.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
-fn native_chacha20_poly1305_decrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.len() < 4 { return Err(ErrFast::TipoInv("_chacha20_poly1305_decrypt requiere 4 args: clave, nonce, cifrado, ad".into())); }
+fn native_chacha20_poly1305_decrypt(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    if args.len() < 4 {
+        return Err(ErrFast::TipoInv(
+            "_chacha20_poly1305_decrypt requiere 4 args: clave, nonce, cifrado, ad".into(),
+        ));
+    }
     let clave = obtener_texto(vm, args[0])?;
     let nonce = obtener_texto(vm, args[1])?;
     let cifrado = obtener_texto(vm, args[2])?;
     let ad = obtener_texto(vm, args[3])?;
-    if clave.len() != 32 { return Err(ErrFast::TipoInv("ChaCha20: clave debe ser 32 bytes".into())); }
-    if nonce.len() != 12 { return Err(ErrFast::TipoInv("ChaCha20: nonce debe ser 12 bytes".into())); }
+    if clave.len() != 32 {
+        return Err(ErrFast::TipoInv("ChaCha20: clave debe ser 32 bytes".into()));
+    }
+    if nonce.len() != 12 {
+        return Err(ErrFast::TipoInv("ChaCha20: nonce debe ser 12 bytes".into()));
+    }
     let key: [u8; 32] = clave.as_bytes().try_into().unwrap();
     let non: [u8; 12] = nonce.as_bytes().try_into().unwrap();
     match crate::crypto::chacha20_poly1305_decrypt(&key, &non, cifrado.as_bytes(), ad.as_bytes()) {
@@ -3178,40 +3770,66 @@ fn native_chacha20_poly1305_decrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> R
 }
 
 fn native_pbkdf2(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.len() < 4 { return Err(ErrFast::TipoInv("_pbkdf2 requiere 4 args: password, salt, iterations, dk_len".into())); }
+    if args.len() < 4 {
+        return Err(ErrFast::TipoInv(
+            "_pbkdf2 requiere 4 args: password, salt, iterations, dk_len".into(),
+        ));
+    }
     let password = obtener_texto(vm, args[0])?;
     let salt = obtener_texto(vm, args[1])?;
     let iterations = obtener_entero(args[2])? as u32;
     let dk_len = obtener_entero(args[3])? as usize;
-    let result = crate::crypto::pbkdf2_hmac_sha256(password.as_bytes(), salt.as_bytes(), iterations, dk_len);
+    let result =
+        crate::crypto::pbkdf2_hmac_sha256(password.as_bytes(), salt.as_bytes(), iterations, dk_len);
     let s = String::from_utf8_lossy(&result).to_string();
     let idx = vm.alloc_str(Arc::from(s.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
 fn native_hash_password(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.is_empty() { return Err(ErrFast::TipoInv("_hash_password requiere 1 argumento: password".into())); }
+    if args.is_empty() {
+        return Err(ErrFast::TipoInv(
+            "_hash_password requiere 1 argumento: password".into(),
+        ));
+    }
     let password = obtener_texto(vm, args[0])?;
     match crate::crypto::hash_password(&password) {
-        Ok(hash) => { let idx = vm.alloc_str(Arc::from(hash.as_str())); Ok(ValorFast::texto(idx)) }
+        Ok(hash) => {
+            let idx = vm.alloc_str(Arc::from(hash.as_str()));
+            Ok(ValorFast::texto(idx))
+        }
         Err(e) => Err(ErrFast::TipoInv(e.into())),
     }
 }
 
 fn native_verify_password(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.len() < 2 { return Err(ErrFast::TipoInv("_verify_password requiere 2 args: password, hash".into())); }
+    if args.len() < 2 {
+        return Err(ErrFast::TipoInv(
+            "_verify_password requiere 2 args: password, hash".into(),
+        ));
+    }
     let password = obtener_texto(vm, args[0])?;
     let hash = obtener_texto(vm, args[1])?;
-    Ok(ValorFast::booleano(crate::crypto::verify_password(&password, &hash)))
+    Ok(ValorFast::booleano(crate::crypto::verify_password(
+        &password, &hash,
+    )))
 }
 
 fn native_scrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.len() < 4 { return Err(ErrFast::TipoInv("_scrypt requiere 4 args: password, salt, n, r".into())); }
+    if args.len() < 4 {
+        return Err(ErrFast::TipoInv(
+            "_scrypt requiere 4 args: password, salt, n, r".into(),
+        ));
+    }
     let password = obtener_texto(vm, args[0])?;
     let salt = obtener_texto(vm, args[1])?;
     let n = obtener_entero(args[2])? as usize;
     let r = obtener_entero(args[3])? as usize;
-    let dk_len = if args.len() > 4 { obtener_entero(args[4])? as usize } else { 32 };
+    let dk_len = if args.len() > 4 {
+        obtener_entero(args[4])? as usize
+    } else {
+        32
+    };
     let result = crate::crypto::scrypt(password.as_bytes(), salt.as_bytes(), n, r, 1, dk_len);
     let s = String::from_utf8_lossy(&result).to_string();
     let idx = vm.alloc_str(Arc::from(s.as_str()));
@@ -3222,7 +3840,9 @@ fn native_scrypt(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, Er
 
 fn native_mmap_abrir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 4 {
-        return Err(ErrFast::TipoInv("_mmap_abrir requiere 4 args: ruta, offset, longitud, modo".into()));
+        return Err(ErrFast::TipoInv(
+            "_mmap_abrir requiere 4 args: ruta, offset, longitud, modo".into(),
+        ));
     }
     let ruta = obtener_texto(vm, args[0])?;
     let offset = obtener_entero(args[1])? as u64;
@@ -3237,7 +3857,9 @@ fn native_mmap_abrir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast
 
 fn native_mmap_cerrar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_mmap_cerrar requiere 1 arg: handle".into()));
+        return Err(ErrFast::TipoInv(
+            "_mmap_cerrar requiere 1 arg: handle".into(),
+        ));
     }
     let handle = obtener_entero(args[0])?;
     match crate::mmap::mmap_cerrar(handle) {
@@ -3248,7 +3870,9 @@ fn native_mmap_cerrar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
 
 fn native_mmap_leer(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 {
-        return Err(ErrFast::TipoInv("_mmap_leer requiere 3 args: handle, offset, longitud".into()));
+        return Err(ErrFast::TipoInv(
+            "_mmap_leer requiere 3 args: handle, offset, longitud".into(),
+        ));
     }
     let handle = obtener_entero(args[0])?;
     let offset = obtener_entero(args[1])? as usize;
@@ -3265,7 +3889,9 @@ fn native_mmap_leer(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast,
 
 fn native_mmap_escribir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 {
-        return Err(ErrFast::TipoInv("_mmap_escribir requiere 3 args: handle, offset, datos".into()));
+        return Err(ErrFast::TipoInv(
+            "_mmap_escribir requiere 3 args: handle, offset, datos".into(),
+        ));
     }
     let handle = obtener_entero(args[0])?;
     let offset = obtener_entero(args[1])? as usize;
@@ -3278,7 +3904,9 @@ fn native_mmap_escribir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
 
 fn native_mmap_sincronizar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_mmap_sincronizar requiere 1 arg: handle".into()));
+        return Err(ErrFast::TipoInv(
+            "_mmap_sincronizar requiere 1 arg: handle".into(),
+        ));
     }
     let handle = obtener_entero(args[0])?;
     match crate::mmap::mmap_sincronizar(handle) {
@@ -3317,7 +3945,9 @@ fn native_terminal_tamano(_vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<Va
 
 fn native_terminal_raw(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
-        return Err(ErrFast::TipoInv("_terminal_raw requiere 1 arg: 1=raw, 0=normal".into()));
+        return Err(ErrFast::TipoInv(
+            "_terminal_raw requiere 1 arg: 1=raw, 0=normal".into(),
+        ));
     }
     let activar = obtener_entero(args[0])? != 0;
     match crate::terminal::raw_mode(activar) {
@@ -3326,7 +3956,10 @@ fn native_terminal_raw(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
     }
 }
 
-fn native_terminal_leer_tecla(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_terminal_leer_tecla(
+    vm: &mut ForjaFast,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     match crate::terminal::leer_tecla() {
         Ok(s) => {
             let idx = vm.alloc_str(Arc::from(s.as_str()));
@@ -3353,7 +3986,9 @@ fn native_pq_keygen(_vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFas
 }
 
 fn native_pq_encaps(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.is_empty() { return Err(ErrFast::TipoInv("_pq_encaps requiere pk".into())); }
+    if args.is_empty() {
+        return Err(ErrFast::TipoInv("_pq_encaps requiere pk".into()));
+    }
     let pk_hex = obtener_texto(_vm, args[0])?;
     let pk = crate::crypto::hex_to_bytes(&pk_hex).unwrap_or_default();
     match crate::crypto_pq::pq_encaps(&pk) {
@@ -3369,7 +4004,9 @@ fn native_pq_encaps(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast
 }
 
 fn native_pq_decaps(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.len() < 2 { return Err(ErrFast::TipoInv("_pq_decaps requiere sk y ct".into())); }
+    if args.len() < 2 {
+        return Err(ErrFast::TipoInv("_pq_decaps requiere sk y ct".into()));
+    }
     let sk_hex = obtener_texto(_vm, args[0])?;
     let ct_hex = obtener_texto(_vm, args[1])?;
     let sk = crate::crypto::hex_to_bytes(&sk_hex).unwrap_or_default();
@@ -4960,7 +5597,10 @@ fn native_entero_a_hex(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
 /// args[1]: pos (Entero) — posición inicial en hex chars (0-based)
 /// args[2]: length (Entero) — longitud en hex chars (debe ser par)
 /// Retorna: entero convertido, o 0 si error
-fn native_hex_decimal_a_entero(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_hex_decimal_a_entero(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 {
         return Err(ErrFast::TipoInv(
             "_hex_decimal_a_entero requiere 3 argumentos: hex_str, pos, length".into(),
@@ -5012,7 +5652,11 @@ fn native_buscar_desde(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
     let needle = obtener_texto(vm, args[1])?;
     let start = if args.len() >= 3 {
         let s = obtener_entero(args[2])?;
-        if s < 0 { 0 } else { s as usize }
+        if s < 0 {
+            0
+        } else {
+            s as usize
+        }
     } else {
         0
     };
@@ -5052,7 +5696,9 @@ fn parse_bencode_str(
     };
     let len_str = std::str::from_utf8(&data[*pos..colon])
         .map_err(|_| ErrFast::TipoInv("bencode: length no UTF-8".into()))?;
-    let len: usize = len_str.parse().map_err(|_| ErrFast::TipoInv("bencode: length inválido".into()))?;
+    let len: usize = len_str
+        .parse()
+        .map_err(|_| ErrFast::TipoInv("bencode: length inválido".into()))?;
     let start = colon + 1;
     *pos = start + len;
 
@@ -5133,7 +5779,8 @@ fn parse_bencode_value(
                 };
                 let klen_str = std::str::from_utf8(&data[*pos..colon])
                     .map_err(|_| ErrFast::TipoInv("bencode: key length no UTF-8".into()))?;
-                let klen: usize = klen_str.parse()
+                let klen: usize = klen_str
+                    .parse()
                     .map_err(|_| ErrFast::TipoInv("bencode: key length inválido".into()))?;
                 let kstart = colon + 1;
                 let kend = kstart + klen;
@@ -5149,7 +5796,7 @@ fn parse_bencode_value(
 
                 // Parse value
                 let val = parse_bencode_value(vm, data, pos, hex_original, info_start, info_end)?;
-                
+
                 if is_info {
                     *info_end = *pos; // byte position
                 }
@@ -5172,7 +5819,10 @@ fn parse_bencode_value(
 /// Parsea un string hexadecimal en formato bencode y retorna la estructura Forja.
 /// args[0]: hex_bencode (Texto) — string hex del torrent
 /// Retorna: mapa con "valor" (estructura parseada) e "info_hex" (raw hex del info dict)
-fn native_bencode_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_bencode_decodificar(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_bencode_decodificar requiere 1 argumento: hex_bencode (texto)".into(),
@@ -5197,7 +5847,14 @@ fn native_bencode_decodificar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<
     let mut info_start = 0;
     let mut info_end = 0;
 
-    let valor = parse_bencode_value(vm, &data, &mut pos, &hex_bencode, &mut info_start, &mut info_end)?;
+    let valor = parse_bencode_value(
+        vm,
+        &data,
+        &mut pos,
+        &hex_bencode,
+        &mut info_start,
+        &mut info_end,
+    )?;
 
     // Extraer info_hex del hex original (marcadores en bytes × 2 = hex chars)
     let info_hex = if info_end > info_start {
@@ -5278,7 +5935,9 @@ fn native_net_dns_resolver(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
 
     if let Ok(addrs) = format!("{}:80", host).to_socket_addrs() {
         for addr in addrs {
-            ips.push(ValorFast::texto(vm.alloc_str(Arc::from(addr.ip().to_string().as_str()))));
+            ips.push(ValorFast::texto(
+                vm.alloc_str(Arc::from(addr.ip().to_string().as_str())),
+            ));
         }
     }
 
@@ -5290,10 +5949,22 @@ fn native_net_dns_resolver(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
 fn native_net_interfaces(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let mut interfaces = Vec::new();
     let mut map_eth = std::collections::HashMap::new();
-    map_eth.insert("nombre".to_string(), ValorFast::texto(vm.alloc_str(Arc::from("eth0"))));
-    map_eth.insert("mac".to_string(), ValorFast::texto(vm.alloc_str(Arc::from("00:1A:2B:3C:4D:5E"))));
-    map_eth.insert("ipv4".to_string(), ValorFast::texto(vm.alloc_str(Arc::from("127.0.0.1"))));
-    map_eth.insert("ipv6".to_string(), ValorFast::texto(vm.alloc_str(Arc::from("::1"))));
+    map_eth.insert(
+        "nombre".to_string(),
+        ValorFast::texto(vm.alloc_str(Arc::from("eth0"))),
+    );
+    map_eth.insert(
+        "mac".to_string(),
+        ValorFast::texto(vm.alloc_str(Arc::from("00:1A:2B:3C:4D:5E"))),
+    );
+    map_eth.insert(
+        "ipv4".to_string(),
+        ValorFast::texto(vm.alloc_str(Arc::from("127.0.0.1"))),
+    );
+    map_eth.insert(
+        "ipv6".to_string(),
+        ValorFast::texto(vm.alloc_str(Arc::from("::1"))),
+    );
 
     let midx = vm.alloc_map(map_eth);
     interfaces.push(ValorFast::mapa(midx));
@@ -5313,14 +5984,22 @@ fn native_net_ping(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, 
     let start = std::time::Instant::now();
 
     let exito = std::net::TcpStream::connect_timeout(
-        &format!("{}:80", host).to_socket_addrs().ok().and_then(|mut a| a.next()).unwrap_or_else(|| "127.0.0.1:80".parse().unwrap()),
+        &format!("{}:80", host)
+            .to_socket_addrs()
+            .ok()
+            .and_then(|mut a| a.next())
+            .unwrap_or_else(|| "127.0.0.1:80".parse().unwrap()),
         std::time::Duration::from_millis(1500),
-    ).is_ok();
+    )
+    .is_ok();
 
     let elapsed = start.elapsed().as_millis() as i64;
     let mut map = std::collections::HashMap::new();
     map.insert("exito".to_string(), ValorFast::booleano(exito));
-    map.insert("ip".to_string(), ValorFast::texto(vm.alloc_str(Arc::from(host.as_str()))));
+    map.insert(
+        "ip".to_string(),
+        ValorFast::texto(vm.alloc_str(Arc::from(host.as_str()))),
+    );
     map.insert("latencia_ms".to_string(), ValorFast::entero(elapsed));
 
     let midx = vm.alloc_map(map);
@@ -5339,7 +6018,9 @@ fn native_net_doh_query(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
 
     if let Ok(addrs) = format!("{}:80", host).to_socket_addrs() {
         for addr in addrs {
-            ips.push(ValorFast::texto(vm.alloc_str(Arc::from(addr.ip().to_string().as_str()))));
+            ips.push(ValorFast::texto(
+                vm.alloc_str(Arc::from(addr.ip().to_string().as_str())),
+            ));
         }
     }
 
@@ -5361,28 +6042,41 @@ impl NativeRegistry {
 /// Inicia una conexión QUIC sobre UDP.
 fn native_quic_conectar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
-        return Err(ErrFast::TipoInv("_quic_conectar requiere host y puerto".into()));
+        return Err(ErrFast::TipoInv(
+            "_quic_conectar requiere host y puerto".into(),
+        ));
     }
     // Retorna ID de handle QUIC simbólico (1)
     Ok(ValorFast::entero(1))
 }
 
 /// Abre un stream bidireccional multiplexado dentro del túnel QUIC.
-fn native_quic_abrir_stream(_vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_quic_abrir_stream(
+    _vm: &mut ForjaFast,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     // Retorna ID de stream simbólico (1)
     Ok(ValorFast::entero(1))
 }
 
 /// Envía datos por un stream QUIC.
-fn native_quic_stream_enviar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_quic_stream_enviar(
+    _vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
-        return Err(ErrFast::TipoInv("_quic_stream_enviar requiere stream_idx y datos".into()));
+        return Err(ErrFast::TipoInv(
+            "_quic_stream_enviar requiere stream_idx y datos".into(),
+        ));
     }
     Ok(ValorFast::entero(100))
 }
 
 /// Recibe datos de un stream QUIC.
-fn native_quic_stream_recibir(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_quic_stream_recibir(
+    vm: &mut ForjaFast,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let idx = vm.alloc_str(Arc::from("HTTP/3 QUIC Stream OK"));
     Ok(ValorFast::texto(idx))
 }
@@ -5425,20 +6119,34 @@ fn json_stringificar_valor(vm: &ForjaFast, val: ValorFast) -> String {
         return json_escapar_string(s);
     }
     if val.es_booleano() {
-        return if val.a_booleano() { "true".to_string() } else { "false".to_string() };
+        return if val.a_booleano() {
+            "true".to_string()
+        } else {
+            "false".to_string()
+        };
     }
     if val.es_nulo() {
         return "null".to_string();
     }
     if val.es_arreglo() {
         let arr = vm.get_arr(val.indice_arreglo());
-        let elementos: Vec<String> = arr.iter().map(|v| json_stringificar_valor(vm, *v)).collect();
+        let elementos: Vec<String> = arr
+            .iter()
+            .map(|v| json_stringificar_valor(vm, *v))
+            .collect();
         return format!("[{}]", elementos.join(","));
     }
     if val.es_mapa() {
         let m = vm.get_map(val.indice_mapa());
-        let pares: Vec<String> = m.iter()
-            .map(|(k, v)| format!("\"{}\":{}", json_escapar_string_inner(k), json_stringificar_valor(vm, *v)))
+        let pares: Vec<String> = m
+            .iter()
+            .map(|(k, v)| {
+                format!(
+                    "\"{}\":{}",
+                    json_escapar_string_inner(k),
+                    json_stringificar_valor(vm, *v)
+                )
+            })
             .collect();
         return format!("{{{}}}", pares.join(","));
     }
@@ -5479,14 +6187,23 @@ fn json_escapar_string_inner_to(s: &str, out: &mut String) {
 fn native_h3_solicitud(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let mut map = std::collections::HashMap::new();
     map.insert("codigo".to_string(), ValorFast::entero(200));
-    map.insert("status".to_string(), ValorFast::texto(vm.alloc_str(Arc::from("OK"))));
-    
+    map.insert(
+        "status".to_string(),
+        ValorFast::texto(vm.alloc_str(Arc::from("OK"))),
+    );
+
     let mut cabeceras = std::collections::HashMap::new();
-    cabeceras.insert("alt-svc".to_string(), ValorFast::texto(vm.alloc_str(Arc::from("h3=\":443\""))));
+    cabeceras.insert(
+        "alt-svc".to_string(),
+        ValorFast::texto(vm.alloc_str(Arc::from("h3=\":443\""))),
+    );
     let c_idx = vm.alloc_map(cabeceras);
     map.insert("cabeceras".to_string(), ValorFast::mapa(c_idx));
 
-    map.insert("cuerpo".to_string(), ValorFast::texto(vm.alloc_str(Arc::from("<h1>HTTP/3 sobre QUIC OK</h1>"))));
+    map.insert(
+        "cuerpo".to_string(),
+        ValorFast::texto(vm.alloc_str(Arc::from("<h1>HTTP/3 sobre QUIC OK</h1>"))),
+    );
 
     let midx = vm.alloc_map(map);
     Ok(ValorFast::mapa(midx))
@@ -5501,18 +6218,30 @@ impl NativeRegistry {
         // Restringir host de red
         self.registrar("_sandbox_restringir_host", native_sandbox_restringir_host);
         // Restringir puerto de red
-        self.registrar("_sandbox_restringir_puerto", native_sandbox_restringir_puerto);
+        self.registrar(
+            "_sandbox_restringir_puerto",
+            native_sandbox_restringir_puerto,
+        );
         // Restringir directorio de archivos
-        self.registrar("_sandbox_restringir_directorio", native_sandbox_restringir_directorio);
+        self.registrar(
+            "_sandbox_restringir_directorio",
+            native_sandbox_restringir_directorio,
+        );
         // Restringir comando de procesos
-        self.registrar("_sandbox_restringir_comando", native_sandbox_restringir_comando);
+        self.registrar(
+            "_sandbox_restringir_comando",
+            native_sandbox_restringir_comando,
+        );
         // Consultar estado del sandbox
         self.registrar("_sandbox_estado", native_sandbox_estado);
     }
 }
 
 /// Restringe un host de red. Uso: _sandbox_restringir_host("google.com")
-fn native_sandbox_restringir_host(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_sandbox_restringir_host(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let host = obtener_texto(vm, args[0])?;
     match &mut vm.sandbox.hosts_permitidos {
         Some(hosts) => {
@@ -5533,7 +6262,10 @@ fn native_sandbox_restringir_host(vm: &mut ForjaFast, args: &[ValorFast]) -> Res
 }
 
 /// Restringe un puerto de red. Uso: _sandbox_restringir_puerto(80)
-fn native_sandbox_restringir_puerto(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_sandbox_restringir_puerto(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let puerto = obtener_entero(args[0])? as u16;
     match &mut vm.sandbox.puertos_permitidos {
         Some(puertos) => {
@@ -5549,7 +6281,10 @@ fn native_sandbox_restringir_puerto(vm: &mut ForjaFast, args: &[ValorFast]) -> R
 }
 
 /// Restringe un directorio de archivos. Uso: _sandbox_restringir_directorio("/etc")
-fn native_sandbox_restringir_directorio(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_sandbox_restringir_directorio(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let dir = obtener_texto(vm, args[0])?;
     match &mut vm.sandbox_fs.directorios_permitidos {
         Some(directorios) => {
@@ -5568,7 +6303,10 @@ fn native_sandbox_restringir_directorio(vm: &mut ForjaFast, args: &[ValorFast]) 
 }
 
 /// Restringe un comando de procesos. Uso: _sandbox_restringir_comando("rm")
-fn native_sandbox_restringir_comando(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn native_sandbox_restringir_comando(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let cmd = obtener_texto(vm, args[0])?;
     match &mut vm.sandbox_proc.comandos_permitidos {
         Some(comandos) => {
@@ -5596,7 +6334,10 @@ fn native_sandbox_estado(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<Valo
         Some(_) => "restringido",
         None => "restringido",
     };
-    map.insert("red".to_string(), ValorFast::texto(vm.alloc_str(Arc::from(red))));
+    map.insert(
+        "red".to_string(),
+        ValorFast::texto(vm.alloc_str(Arc::from(red))),
+    );
 
     // Estado de archivos
     let archivos = match &vm.sandbox_fs.directorios_permitidos {
@@ -5604,7 +6345,10 @@ fn native_sandbox_estado(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<Valo
         Some(_) => "restringido",
         None => "restringido",
     };
-    map.insert("archivos".to_string(), ValorFast::texto(vm.alloc_str(Arc::from(archivos))));
+    map.insert(
+        "archivos".to_string(),
+        ValorFast::texto(vm.alloc_str(Arc::from(archivos))),
+    );
 
     // Estado de procesos
     let procesos = match &vm.sandbox_proc.comandos_permitidos {
@@ -5612,7 +6356,10 @@ fn native_sandbox_estado(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<Valo
         Some(_) => "restringido",
         None => "restringido",
     };
-    map.insert("procesos".to_string(), ValorFast::texto(vm.alloc_str(Arc::from(procesos))));
+    map.insert(
+        "procesos".to_string(),
+        ValorFast::texto(vm.alloc_str(Arc::from(procesos))),
+    );
 
     let midx = vm.alloc_map(map);
     Ok(ValorFast::mapa(midx))

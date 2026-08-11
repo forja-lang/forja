@@ -256,7 +256,11 @@ mod tests {
         let mut converter = IrToBytecode::new(symbols);
         let bytecode = converter.convert_function(&func);
 
-        assert!(bytecode.iter().any(|op| matches!(op, Opcode::PushEntero(42))));
-        assert!(bytecode.iter().any(|op| matches!(op, Opcode::PushBooleano(true))));
+        assert!(bytecode
+            .iter()
+            .any(|op| matches!(op, Opcode::PushEntero(42))));
+        assert!(bytecode
+            .iter()
+            .any(|op| matches!(op, Opcode::PushBooleano(true))));
     }
 }

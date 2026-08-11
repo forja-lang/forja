@@ -64,8 +64,8 @@ pub fn page_size() -> usize {
 
 #[cfg(unix)]
 mod unix {
-    use std::os::unix::io::IntoRawFd;
     use super::*;
+    use std::os::unix::io::IntoRawFd;
 
     extern "C" {
         fn mmap(
@@ -88,7 +88,12 @@ mod unix {
     const MAP_FAILED: isize = -1;
     const MS_SYNC: i32 = 0x4;
 
-    pub fn abrir(ruta: &str, aligned_offset: u64, map_len: usize, writable: bool) -> Result<i64, String> {
+    pub fn abrir(
+        ruta: &str,
+        aligned_offset: u64,
+        map_len: usize,
+        writable: bool,
+    ) -> Result<i64, String> {
         let file = std::fs::OpenOptions::new()
             .read(true)
             .write(writable)
@@ -96,7 +101,11 @@ mod unix {
             .map_err(|e| format!("Error al abrir '{}': {}", ruta, e))?;
 
         let fd = file.into_raw_fd();
-        let prot = if writable { PROT_READ | PROT_WRITE } else { PROT_READ };
+        let prot = if writable {
+            PROT_READ | PROT_WRITE
+        } else {
+            PROT_READ
+        };
         let flags = if writable { MAP_SHARED } else { MAP_PRIVATE };
 
         let addr = unsafe {
@@ -109,7 +118,9 @@ mod unix {
                 aligned_offset as i64,
             )
         };
-        unsafe { close(fd); }
+        unsafe {
+            close(fd);
+        }
 
         if addr as isize == MAP_FAILED {
             return Err(format!("mmap falló para '{}'", ruta));
@@ -144,8 +155,8 @@ mod unix {
 
 #[cfg(windows)]
 mod windows_impl {
-    use std::os::windows::io::IntoRawHandle;
     use super::*;
+    use std::os::windows::io::IntoRawHandle;
 
     extern "system" {
         fn CreateFileMappingW(
@@ -175,7 +186,12 @@ mod windows_impl {
     const FILE_MAP_READ: u32 = 0x0004;
     const FILE_MAP_WRITE: u32 = 0x0002;
 
-    pub fn abrir(ruta: &str, aligned_offset: u64, map_len: usize, writable: bool) -> Result<i64, String> {
+    pub fn abrir(
+        ruta: &str,
+        aligned_offset: u64,
+        map_len: usize,
+        writable: bool,
+    ) -> Result<i64, String> {
         let file = std::fs::OpenOptions::new()
             .read(true)
             .write(writable)
@@ -183,7 +199,11 @@ mod windows_impl {
             .map_err(|e| format!("Error al abrir '{}': {}", ruta, e))?;
 
         let h_file = file.into_raw_handle();
-        let protect = if writable { PAGE_READWRITE } else { PAGE_READONLY };
+        let protect = if writable {
+            PAGE_READWRITE
+        } else {
+            PAGE_READONLY
+        };
 
         // Crear el objeto de mapping sin nombre (NULL)
         let h_map = unsafe {
@@ -198,17 +218,21 @@ mod windows_impl {
         };
 
         if h_map.is_null() {
-            unsafe { CloseHandle(h_file as *mut std::ffi::c_void); }
+            unsafe {
+                CloseHandle(h_file as *mut std::ffi::c_void);
+            }
             return Err(format!("CreateFileMappingW falló para '{}'", ruta));
         }
 
-        let access = if writable { FILE_MAP_READ | FILE_MAP_WRITE } else { FILE_MAP_READ };
+        let access = if writable {
+            FILE_MAP_READ | FILE_MAP_WRITE
+        } else {
+            FILE_MAP_READ
+        };
         let offset_high = (aligned_offset >> 32) as u32;
         let offset_low = (aligned_offset & 0xFFFF_FFFF) as u32;
 
-        let addr = unsafe {
-            MapViewOfFile(h_map, access, offset_high, offset_low, map_len)
-        };
+        let addr = unsafe { MapViewOfFile(h_map, access, offset_high, offset_low, map_len) };
 
         if addr.is_null() {
             unsafe {
@@ -262,10 +286,18 @@ pub fn mmap_abrir(ruta: &str, offset: u64, len: usize, _writable: bool) -> Resul
         return Err("Longitud de mapeo cero".into());
     }
 
-    #[cfg(unix)] { unix::abrir(ruta, aligned, map_len, _writable) }
-    #[cfg(windows)] { windows_impl::abrir(ruta, aligned, map_len, _writable) }
+    #[cfg(unix)]
+    {
+        unix::abrir(ruta, aligned, map_len, _writable)
+    }
+    #[cfg(windows)]
+    {
+        windows_impl::abrir(ruta, aligned, map_len, _writable)
+    }
     #[cfg(target_arch = "wasm32")]
-    { Err("mmap no soportado en WASM".to_string()) }
+    {
+        Err("mmap no soportado en WASM".to_string())
+    }
 }
 
 /// Lee bytes de la región mapeada.
@@ -295,17 +327,33 @@ pub fn mmap_escribir(handle: i64, offset_local: usize, datos: &[u8]) -> Result<u
 /// Sincroniza cambios a disco.
 pub fn mmap_sincronizar(handle: i64) -> Result<(), String> {
     let _region = obtener(handle).ok_or_else(|| "Handle inválido".to_string())?;
-    #[cfg(unix)] { unix::sincronizar(&_region) }
-    #[cfg(windows)] { windows_impl::sincronizar(&_region) }
+    #[cfg(unix)]
+    {
+        unix::sincronizar(&_region)
+    }
+    #[cfg(windows)]
+    {
+        windows_impl::sincronizar(&_region)
+    }
     #[cfg(target_arch = "wasm32")]
-    { Err("mmap no soportado en WASM".to_string()) }
+    {
+        Err("mmap no soportado en WASM".to_string())
+    }
 }
 
 /// Cierra el mapping y libera el handle.
 pub fn mmap_cerrar(handle: i64) -> Result<(), String> {
     let _region = eliminar(handle).ok_or_else(|| "Handle inválido".to_string())?;
-    #[cfg(unix)] { unix::cerrar(&_region) }
-    #[cfg(windows)] { windows_impl::cerrar(&_region) }
+    #[cfg(unix)]
+    {
+        unix::cerrar(&_region)
+    }
+    #[cfg(windows)]
+    {
+        windows_impl::cerrar(&_region)
+    }
     #[cfg(target_arch = "wasm32")]
-    { Err("mmap no soportado en WASM".to_string()) }
+    {
+        Err("mmap no soportado en WASM".to_string())
+    }
 }

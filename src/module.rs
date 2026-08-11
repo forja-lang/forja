@@ -126,12 +126,14 @@ impl ModuleResolver {
                     .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
             );
 
-            if es_absoluta || canonical.starts_with(
-                &self
-                    .root_dir
-                    .canonicalize()
-                    .unwrap_or(self.root_dir.clone()),
-            ) {
+            if es_absoluta
+                || canonical.starts_with(
+                    &self
+                        .root_dir
+                        .canonicalize()
+                        .unwrap_or(self.root_dir.clone()),
+                )
+            {
                 // Verificar límite de tamaño antes de leer
                 let meta = std::fs::metadata(&canonical).map_err(|e| {
                     vec![ErrorForja::new(
@@ -183,7 +185,8 @@ impl ModuleResolver {
                         crate::ffi::cargar_libreria(&ruta_clone).map_err(|e| {
                             vec![ErrorForja::new(
                                 crate::error::ErrorTipo::ErrorSemantico,
-                                0, 0,
+                                0,
+                                0,
                                 &format!("Error cargando librería externa '{}': {}", ruta, e),
                                 "Verificá que la ruta sea correcta y que la librería exista.",
                             )]
@@ -279,7 +282,8 @@ impl ModuleResolver {
                         crate::ffi::cargar_libreria(&ruta_clone).map_err(|e| {
                             vec![ErrorForja::new(
                                 crate::error::ErrorTipo::ErrorSemantico,
-                                0, 0,
+                                0,
+                                0,
                                 &format!("Error cargando librería externa '{}': {}", ruta, e),
                                 "Verificá que la ruta sea correcta y que la librería exista.",
                             )]
@@ -424,7 +428,10 @@ impl ModuleResolver {
     }
 
     /// Resuelve un módulo desde la stdlib embebida (prefijo "embedded://").
-    fn resolver_con_id_embebido(&mut self, ruta_embedded: &str) -> Result<(Programa, ModuleId), Vec<ErrorForja>> {
+    fn resolver_con_id_embebido(
+        &mut self,
+        ruta_embedded: &str,
+    ) -> Result<(Programa, ModuleId), Vec<ErrorForja>> {
         // Extraer el nombre real del módulo: "embedded://std/io" → "std/io"
         let nombre_modulo = ruta_embedded
             .strip_prefix("embedded://")
@@ -481,8 +488,11 @@ impl ModuleResolver {
         programa.declaraciones = dedup_declaraciones(final_decls);
 
         // Cachear
-        self.cache.insert(nombre_modulo.to_string(), programa.clone());
-        self.module_cache.por_ruta.insert(nombre_modulo.to_string(), module_id);
+        self.cache
+            .insert(nombre_modulo.to_string(), programa.clone());
+        self.module_cache
+            .por_ruta
+            .insert(nombre_modulo.to_string(), module_id);
 
         Ok((programa, module_id))
     }
@@ -496,10 +506,13 @@ pub fn dedup_declaraciones(decls: Vec<Declaracion>) -> Vec<Declaracion> {
     let mut resultado = Vec::new();
     for decl in decls {
         let key = match &decl {
-            Declaracion::Funcion { nombre, parametros, .. } => {
+            Declaracion::Funcion {
+                nombre, parametros, ..
+            } => {
                 // Incluir tipos de parámetros en la clave para permitir
                 // sobrecarga (mismo nombre, diferentes tipos de parámetros)
-                let tipos_key: Vec<String> = parametros.iter()
+                let tipos_key: Vec<String> = parametros
+                    .iter()
                     .map(|p| match &p.tipo {
                         Some(t) => formato_tipo_para_key(t),
                         None => "_".to_string(),
@@ -507,12 +520,8 @@ pub fn dedup_declaraciones(decls: Vec<Declaracion>) -> Vec<Declaracion> {
                     .collect();
                 Some(format!("fn:{}:{}", nombre, tipos_key.join(",")))
             }
-            Declaracion::Clase { nombre, .. } => {
-                Some(format!("cls:{}", nombre))
-            }
-            Declaracion::Variable { nombre, .. } => {
-                Some(format!("var:{}", nombre))
-            }
+            Declaracion::Clase { nombre, .. } => Some(format!("cls:{}", nombre)),
+            Declaracion::Variable { nombre, .. } => Some(format!("var:{}", nombre)),
             _ => None,
         };
         if let Some(key) = key {

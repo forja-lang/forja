@@ -107,7 +107,9 @@ impl Parser {
         if self.profundidad > MAX_PROFUNDIDAD {
             self.profundidad -= 1;
             return Err(ErrorForja::new(
-                ErrorTipo::DemasiadaAnidacion { max: MAX_PROFUNDIDAD as u32 },
+                ErrorTipo::DemasiadaAnidacion {
+                    max: MAX_PROFUNDIDAD as u32,
+                },
                 self.linea_actual(),
                 self.columna_actual(),
                 "El parser ha alcanzado el límite de profundidad de recursión",
@@ -985,7 +987,9 @@ impl Parser {
                 )?;
                 Some(self.parse_bloque()?)
             }
-        } else if self.coincide(TokenKind::O) && self.peek_siguiente().map(|t| &t.kind) == Some(&TokenKind::Si) {
+        } else if self.coincide(TokenKind::O)
+            && self.peek_siguiente().map(|t| &t.kind) == Some(&TokenKind::Si)
+        {
             self.avanzar(); // consume 'o'
             self.avanzar(); // consume 'si'
             let o_si = self.parse_si_desde_condicion()?;
@@ -1189,24 +1193,25 @@ impl Parser {
             // importar "ruta/absoluta" — con comillas, SOLO rutas absolutas
             TokenKind::Texto(s) => {
                 let ruta = s.clone();
-                let linea = self.linea_actual();
-                let columna = self.columna_actual();
                 self.avanzar();
                 if !es_ruta_absoluta(&ruta) {
                     return Err(ErrorForja::new(
                         ErrorTipo::ErrorSintactico,
-                        linea,
-                        columna,
-                        "Las rutas con comillas solo se permiten para rutas absolutas del sistema de archivos.",
-                        "Usá importar ruta/sin/comillas para módulos. Ej: importar std/io",
+                        self.linea_actual(),
+                        self.columna_actual(),
+                        "Las importaciones con comillas solo están permitidas para rutas absolutas.",
+                        "Usá: importar gui",
                     ));
                 }
                 ruta
             }
             // importar ruta/de/modulo  (sin comillas)
-            TokenKind::Identificador(_) | TokenKind::ResultadoKw
-            | TokenKind::TipoTexto | TokenKind::TipoEntero
-            | TokenKind::TipoDecimal | TokenKind::TipoBooleano
+            TokenKind::Identificador(_)
+            | TokenKind::ResultadoKw
+            | TokenKind::TipoTexto
+            | TokenKind::TipoEntero
+            | TokenKind::TipoDecimal
+            | TokenKind::TipoBooleano
             | TokenKind::TipoExacto => {
                 let mut partes: Vec<String> = Vec::new();
                 loop {
@@ -2253,18 +2258,29 @@ impl Parser {
             let (id_linea, id_columna) = (self.peek().linea, self.peek().columna);
             self.avanzar();
 
-            // Detectar Ok(), Error(), Algo(), Some(), None() como constructores especiales
-            if (nombre == "Ok" || nombre == "Error" || nombre == "Algo" || nombre == "Some" || nombre == "None")
+            // Detectar Ok(), Error(), Algo(), Alguno(), Nada(), Ninguno() como constructores especiales
+            if (nombre == "Ok"
+                || nombre == "Error"
+                || nombre == "Algo"
+                || nombre == "Alguno"
+                || nombre == "Nada"
+                || nombre == "Ninguno"
+                || nombre == "None")
                 && self.coincide(TokenKind::ParenAbrir)
             {
                 self.avanzar(); // consume (
-                // None() no tiene argumentos
-                if nombre == "None" {
-                    self.esperar(
-                        TokenKind::ParenCerrar,
-                        "Se esperaba ')' después de None.",
-                    )?;
-                    return Ok(Expresion::Algo(Box::new(Expresion::LiteralNulo)));
+                                // Constructor sin argumentos: Ok(), Error(), Algo(), Alguno(), Nada(), Ninguno(), None()
+                if self.coincide(TokenKind::ParenCerrar) {
+                    self.avanzar(); // consume )
+                    return match nombre.as_str() {
+                        "Ok" => Ok(Expresion::Ok(Box::new(Expresion::LiteralNulo))),
+                        "Error" => Ok(Expresion::Error(Box::new(Expresion::LiteralNulo))),
+                        "Algo" | "Some" | "Alguno" => {
+                            Ok(Expresion::Algo(Box::new(Expresion::LiteralNulo)))
+                        }
+                        "Nada" | "Ninguno" | "None" => Ok(Expresion::Ninguno),
+                        _ => unreachable!(),
+                    };
                 }
                 let arg = self.parse_expresion()?;
                 self.esperar(
@@ -2274,7 +2290,7 @@ impl Parser {
                 return match nombre.as_str() {
                     "Ok" => Ok(Expresion::Ok(Box::new(arg))),
                     "Error" => Ok(Expresion::Error(Box::new(arg))),
-                    "Algo" | "Some" => Ok(Expresion::Algo(Box::new(arg))),
+                    "Algo" | "Some" | "Alguno" => Ok(Expresion::Algo(Box::new(arg))),
                     _ => unreachable!(),
                 };
             }
@@ -2603,9 +2619,7 @@ impl Parser {
                     }
                     depth_llave -= 1;
                 }
-                TokenKind::Coma
-                    if depth_paren == 0 && depth_corchete == 0 && depth_llave == 0 =>
-                {
+                TokenKind::Coma if depth_paren == 0 && depth_corchete == 0 && depth_llave == 0 => {
                     break;
                 }
                 _ => {}
@@ -2776,7 +2790,10 @@ impl Parser {
                     }
                 }
             }
-            self.esperar(TokenKind::LlaveCerrar, "Se esperaba '}' al cerrar struct-literal")?;
+            self.esperar(
+                TokenKind::LlaveCerrar,
+                "Se esperaba '}' al cerrar struct-literal",
+            )?;
             return Ok(Expresion::Instanciacion {
                 clase,
                 argumentos: vec![Expresion::Mapa(pares)],
@@ -3463,7 +3480,10 @@ fn es_ruta_absoluta(ruta: &str) -> bool {
     // Windows: letra de unidad seguida de :\ o :/
     if ruta.len() >= 3 {
         let bytes = ruta.as_bytes();
-        if bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && (bytes[2] == b'/' || bytes[2] == b'\\') {
+        if bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && (bytes[2] == b'/' || bytes[2] == b'\\')
+        {
             return true;
         }
     }
@@ -3646,7 +3666,10 @@ mod tests {
     #[test]
     fn test_importar_con_comillas_no_absoluta_error() {
         let result = parse_source("importar \"gui\"");
-        assert!(result.is_err(), "importar con comillas para ruta no absoluta debe fallar");
+        assert!(
+            result.is_err(),
+            "importar con comillas para ruta no absoluta debe fallar"
+        );
     }
 
     #[test]
@@ -3671,10 +3694,15 @@ mod tests {
 
     #[test]
     fn test_funcion_externa() {
-        let prog = parse_source("funcion externa printf(formato: Texto, ...: Texto) -> Entero;").unwrap();
+        let prog =
+            parse_source("funcion externa printf(formato: Texto, ...: Texto) -> Entero;").unwrap();
         assert_eq!(prog.declaraciones.len(), 1);
         match &prog.declaraciones[0] {
-            Declaracion::Funcion { nombre, externa: true, .. } => {
+            Declaracion::Funcion {
+                nombre,
+                externa: true,
+                ..
+            } => {
                 assert_eq!(nombre, "printf");
             }
             _ => panic!("Se esperaba Declaracion::Funcion con externa=true"),
@@ -3684,13 +3712,19 @@ mod tests {
     #[test]
     fn test_externo_funcion_vieja_sintaxis_error() {
         let result = parse_source("externo funcion printf(formato: Texto) -> Entero;");
-        assert!(result.is_err(), "sintaxis 'externo funcion' ya no es válida");
+        assert!(
+            result.is_err(),
+            "sintaxis 'externo funcion' ya no es válida"
+        );
     }
 
     #[test]
     fn test_funcion_externa_sin_punto_coma_error() {
         let result = parse_source("funcion externa printf() {}");
-        assert!(result.is_err(), "funcion externa debe terminar en ; no en llaves");
+        assert!(
+            result.is_err(),
+            "funcion externa debe terminar en ; no en llaves"
+        );
     }
 
     #[test]

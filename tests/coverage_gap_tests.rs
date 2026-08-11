@@ -1,8 +1,8 @@
-use forja::bytecode::{BytecodeGenerator, Opcode, serializar_bytecode, deserializar_bytecode};
+use forja::bytecode::{deserializar_bytecode, serializar_bytecode, BytecodeGenerator, Opcode};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
 use forja::token::TokenKind;
-use forja::uops::{Uop, expandir_a_uops};
+use forja::uops::{expandir_a_uops, Uop};
 use std::sync::Arc;
 
 // ============================================================
@@ -11,7 +11,12 @@ use std::sync::Arc;
 
 fn kinds(source: &str) -> Vec<TokenKind> {
     let mut lexer = Lexer::new(source);
-    lexer.tokenize().unwrap().into_iter().map(|t| t.kind).collect()
+    lexer
+        .tokenize()
+        .unwrap()
+        .into_iter()
+        .map(|t| t.kind)
+        .collect()
 }
 
 #[test]
@@ -113,7 +118,10 @@ fn test_decl_asignacion_index() {
 fn test_expr_literal_nulo() {
     let prog = parse("variable x = nulo");
     match &prog.declaraciones[0] {
-        forja::ast::Declaracion::Variable { valor: Some(forja::ast::Expresion::LiteralNulo), .. } => {}
+        forja::ast::Declaracion::Variable {
+            valor: Some(forja::ast::Expresion::LiteralNulo),
+            ..
+        } => {}
         _ => panic!("expected LiteralNulo"),
     }
 }
@@ -122,7 +130,10 @@ fn test_expr_literal_nulo() {
 fn test_expr_llamada_funcion_as_expr() {
     let prog = parse("variable x = f(42)");
     match &prog.declaraciones[0] {
-        forja::ast::Declaracion::Variable { valor: Some(forja::ast::Expresion::LlamadaFuncion { nombre, .. }), .. } => {
+        forja::ast::Declaracion::Variable {
+            valor: Some(forja::ast::Expresion::LlamadaFuncion { nombre, .. }),
+            ..
+        } => {
             assert_eq!(nombre, "f");
         }
         _ => panic!("expected LlamadaFuncion as expression"),
@@ -133,7 +144,10 @@ fn test_expr_llamada_funcion_as_expr() {
 fn test_expr_llamada_metodo() {
     let prog = parse("variable s = \"hola\".trim()");
     match &prog.declaraciones[0] {
-        forja::ast::Declaracion::Variable { valor: Some(forja::ast::Expresion::LlamadaMetodo { metodo, .. }), .. } => {
+        forja::ast::Declaracion::Variable {
+            valor: Some(forja::ast::Expresion::LlamadaMetodo { metodo, .. }),
+            ..
+        } => {
             assert_eq!(metodo, "trim");
         }
         _ => panic!("expected LlamadaMetodo"),
@@ -162,7 +176,9 @@ fn test_expr_asignacion_campo() {
 fn test_expr_resultado_kw() {
     let prog = parse("funcion f() -> Entero\n    asegura resultado >= 0\n{ retornar 0 }");
     match &prog.declaraciones[0] {
-        forja::ast::Declaracion::Funcion { postcondiciones, .. } => {
+        forja::ast::Declaracion::Funcion {
+            postcondiciones, ..
+        } => {
             assert_eq!(postcondiciones.len(), 1);
         }
         _ => panic!("expected Funcion with postcondiciones"),
@@ -173,7 +189,10 @@ fn test_expr_resultado_kw() {
 fn test_expr_error_type() {
     let prog = parse("variable e = Error(\"fail\")");
     match &prog.declaraciones[0] {
-        forja::ast::Declaracion::Variable { valor: Some(forja::ast::Expresion::Error(_)), .. } => {}
+        forja::ast::Declaracion::Variable {
+            valor: Some(forja::ast::Expresion::Error(_)),
+            ..
+        } => {}
         _ => panic!("expected Error expression"),
     }
 }
@@ -208,10 +227,16 @@ fn test_opc_serialize_label() {
 
 #[test]
 fn test_opc_serialize_function_def() {
-    let opcodes = vec![Opcode::FunctionDef(Arc::from("test"), vec![Arc::from("a"), Arc::from("b")])];
+    let opcodes = vec![Opcode::FunctionDef(
+        Arc::from("test"),
+        vec![Arc::from("a"), Arc::from("b")],
+    )];
     let s = serializar_bytecode(&opcodes);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::FunctionDef(Arc::from("test"), vec![Arc::from("a"), Arc::from("b")]));
+    assert_eq!(
+        d[0],
+        Opcode::FunctionDef(Arc::from("test"), vec![Arc::from("a"), Arc::from("b")])
+    );
 }
 
 #[test]

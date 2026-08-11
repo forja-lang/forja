@@ -1,6 +1,6 @@
-use crate::token::{Token, TokenKind};
 use crate::lsp::index_stdlib::StdlibIndex;
 use crate::lsp::snippets::SNIPPETS;
+use crate::token::{Token, TokenKind};
 
 // ============================================================
 // Context Detection
@@ -8,13 +8,20 @@ use crate::lsp::snippets::SNIPPETS;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CompletionContext {
-    ImportPath { parcial: String },
-    DotAccess { objeto_expr: String, tipo_objeto: Option<String> },
+    ImportPath {
+        parcial: String,
+    },
+    DotAccess {
+        objeto_expr: String,
+        tipo_objeto: Option<String>,
+    },
     TypeAnnotation,
     GenericParam,
     VariableDecl,
     Attribute,
-    Expression { parcial: String },
+    Expression {
+        parcial: String,
+    },
 }
 
 pub fn detectar_contexto(tokens: &[Token], cursor: usize) -> CompletionContext {
@@ -23,7 +30,10 @@ pub fn detectar_contexto(tokens: &[Token], cursor: usize) -> CompletionContext {
     match &prev_raw {
         Some(TokenKind::Punto) => {
             let objeto = extraer_objeto_antes_del_punto(tokens, cursor);
-            return CompletionContext::DotAccess { objeto_expr: objeto, tipo_objeto: None };
+            return CompletionContext::DotAccess {
+                objeto_expr: objeto,
+                tipo_objeto: None,
+            };
         }
         Some(TokenKind::Texto(_)) if prev_token_is_import(tokens, cursor) => {
             let path = extraer_path_parcial(tokens, cursor);
@@ -42,16 +52,24 @@ pub fn detectar_contexto(tokens: &[Token], cursor: usize) -> CompletionContext {
             return CompletionContext::VariableDecl;
         }
         Some(TokenKind::Importar) => {
-            return CompletionContext::ImportPath { parcial: String::new() };
+            return CompletionContext::ImportPath {
+                parcial: String::new(),
+            };
         }
         _ => {}
     }
 
-    CompletionContext::Expression { parcial: extraer_prefijo_identificador(tokens, cursor) }
+    CompletionContext::Expression {
+        parcial: extraer_prefijo_identificador(tokens, cursor),
+    }
 }
 
 fn prev_token_is_import(tokens: &[Token], cursor: usize) -> bool {
-    let mut i = if cursor > 0 && cursor <= tokens.len() { cursor.saturating_sub(1) } else { 0 };
+    let mut i = if cursor > 0 && cursor <= tokens.len() {
+        cursor.saturating_sub(1)
+    } else {
+        0
+    };
     while i > 0 {
         i -= 1;
         match &tokens[i].kind {
@@ -81,7 +99,9 @@ fn extraer_objeto_antes_del_punto(tokens: &[Token], cursor: usize) -> String {
             TokenKind::Identificador(s) => return s.clone(),
             TokenKind::Este => return "este".to_string(),
             _ => {
-                if i == 0 { break; }
+                if i == 0 {
+                    break;
+                }
             }
         }
     }
@@ -100,7 +120,9 @@ fn extraer_prefijo_identificador(tokens: &[Token], cursor: usize) -> String {
 
 fn extraer_path_parcial(tokens: &[Token], cursor: usize) -> String {
     for i in (0..cursor).rev() {
-        if i >= tokens.len() { continue; }
+        if i >= tokens.len() {
+            continue;
+        }
         if let TokenKind::Texto(s) = &tokens[i].kind {
             return s.clone();
         }
@@ -116,13 +138,21 @@ fn extraer_path_parcial(tokens: &[Token], cursor: usize) -> String {
 // ============================================================
 
 pub fn fuzzy_score(query: &str, target: &str) -> f64 {
-    if query.is_empty() || target.is_empty() { return 0.0; }
+    if query.is_empty() || target.is_empty() {
+        return 0.0;
+    }
     let q = query.to_lowercase();
     let t = target.to_lowercase();
 
-    if t == q { return 1.0; }
-    if t.starts_with(&q) { return 0.95; }
-    if t.contains(&q) { return 0.75; }
+    if t == q {
+        return 1.0;
+    }
+    if t.starts_with(&q) {
+        return 0.95;
+    }
+    if t.contains(&q) {
+        return 0.75;
+    }
 
     let mut qi = 0;
     let mut matches = 0u32;
@@ -190,7 +220,12 @@ impl CompletionResolver {
         CompletionResolver { stdlib }
     }
 
-    pub fn resolver(&self, tokens: &[Token], cursor: usize, symbols: &[SymbolEntry]) -> Vec<CompletionItem> {
+    pub fn resolver(
+        &self,
+        tokens: &[Token],
+        cursor: usize,
+        symbols: &[SymbolEntry],
+    ) -> Vec<CompletionItem> {
         let context = detectar_contexto(tokens, cursor);
         let mut items = Vec::new();
 
@@ -230,7 +265,10 @@ impl CompletionResolver {
                     items.push(CompletionItem {
                         label: full.clone(),
                         kind: 9,
-                        detail: self.stdlib.modules.get(module_name)
+                        detail: self
+                            .stdlib
+                            .modules
+                            .get(module_name)
                             .map(|m| m.doc.lines().next().unwrap_or("").to_string())
                             .unwrap_or_default(),
                         documentation: String::new(),
@@ -251,7 +289,10 @@ impl CompletionResolver {
                     items.push(CompletionItem {
                         label: full.clone(),
                         kind: 9,
-                        detail: self.stdlib.modules.get(module_name)
+                        detail: self
+                            .stdlib
+                            .modules
+                            .get(module_name)
                             .map(|m| m.doc.lines().next().unwrap_or("").to_string())
                             .unwrap_or_default(),
                         documentation: String::new(),
@@ -271,20 +312,80 @@ impl CompletionResolver {
 
         let methods: Vec<StdlibFuncProxy> = match tipo.as_deref() {
             Some("Texto") => vec![
-                StdlibFuncProxy { name: "length".into(), params: vec![], ret: "Entero".into(), doc: "Longitud del texto".into() },
-                StdlibFuncProxy { name: "trim".into(), params: vec![], ret: "Texto".into(), doc: "Elimina espacios al inicio y final".into() },
-                StdlibFuncProxy { name: "to_upper".into(), params: vec![], ret: "Texto".into(), doc: "Convierte a mayúsculas".into() },
-                StdlibFuncProxy { name: "to_lower".into(), params: vec![], ret: "Texto".into(), doc: "Convierte a minúsculas".into() },
-                StdlibFuncProxy { name: "contains".into(), params: vec!["patron: Texto".into()], ret: "Booleano".into(), doc: "Verifica si contiene un substring".into() },
-                StdlibFuncProxy { name: "replace".into(), params: vec!["original: Texto".into(), "remplazo: Texto".into()], ret: "Texto".into(), doc: "Reemplaza ocurrencias".into() },
-                StdlibFuncProxy { name: "split".into(), params: vec!["separador: Texto".into()], ret: "Arreglo<Texto>".into(), doc: "Divide en partes".into() },
-                StdlibFuncProxy { name: "char_at".into(), params: vec!["indice: Entero".into()], ret: "Texto".into(), doc: "Caracter en posición".into() },
+                StdlibFuncProxy {
+                    name: "length".into(),
+                    params: vec![],
+                    ret: "Entero".into(),
+                    doc: "Longitud del texto".into(),
+                },
+                StdlibFuncProxy {
+                    name: "trim".into(),
+                    params: vec![],
+                    ret: "Texto".into(),
+                    doc: "Elimina espacios al inicio y final".into(),
+                },
+                StdlibFuncProxy {
+                    name: "to_upper".into(),
+                    params: vec![],
+                    ret: "Texto".into(),
+                    doc: "Convierte a mayúsculas".into(),
+                },
+                StdlibFuncProxy {
+                    name: "to_lower".into(),
+                    params: vec![],
+                    ret: "Texto".into(),
+                    doc: "Convierte a minúsculas".into(),
+                },
+                StdlibFuncProxy {
+                    name: "contains".into(),
+                    params: vec!["patron: Texto".into()],
+                    ret: "Booleano".into(),
+                    doc: "Verifica si contiene un substring".into(),
+                },
+                StdlibFuncProxy {
+                    name: "replace".into(),
+                    params: vec!["original: Texto".into(), "remplazo: Texto".into()],
+                    ret: "Texto".into(),
+                    doc: "Reemplaza ocurrencias".into(),
+                },
+                StdlibFuncProxy {
+                    name: "split".into(),
+                    params: vec!["separador: Texto".into()],
+                    ret: "Arreglo<Texto>".into(),
+                    doc: "Divide en partes".into(),
+                },
+                StdlibFuncProxy {
+                    name: "char_at".into(),
+                    params: vec!["indice: Entero".into()],
+                    ret: "Texto".into(),
+                    doc: "Caracter en posición".into(),
+                },
             ],
             Some("Arreglo") => vec![
-                StdlibFuncProxy { name: "longitud".into(), params: vec![], ret: "Entero".into(), doc: "Cantidad de elementos".into() },
-                StdlibFuncProxy { name: "empujar".into(), params: vec!["elemento".into()], ret: String::new(), doc: "Agrega al final".into() },
-                StdlibFuncProxy { name: "contiene".into(), params: vec!["elemento".into()], ret: "Booleano".into(), doc: "Verifica si contiene".into() },
-                StdlibFuncProxy { name: "ordenar".into(), params: vec![], ret: String::new(), doc: "Ordena los elementos".into() },
+                StdlibFuncProxy {
+                    name: "longitud".into(),
+                    params: vec![],
+                    ret: "Entero".into(),
+                    doc: "Cantidad de elementos".into(),
+                },
+                StdlibFuncProxy {
+                    name: "empujar".into(),
+                    params: vec!["elemento".into()],
+                    ret: String::new(),
+                    doc: "Agrega al final".into(),
+                },
+                StdlibFuncProxy {
+                    name: "contiene".into(),
+                    params: vec!["elemento".into()],
+                    ret: "Booleano".into(),
+                    doc: "Verifica si contiene".into(),
+                },
+                StdlibFuncProxy {
+                    name: "ordenar".into(),
+                    params: vec![],
+                    ret: String::new(),
+                    doc: "Ordena los elementos".into(),
+                },
             ],
             Some(cls) => {
                 let mut m = Vec::new();
@@ -292,7 +393,11 @@ impl CompletionResolver {
                     for method in &class_info.methods {
                         m.push(StdlibFuncProxy {
                             name: method.name.clone(),
-                            params: method.params.iter().map(|p| format!("{}: {}", p.name, p.type_str)).collect(),
+                            params: method
+                                .params
+                                .iter()
+                                .map(|p| format!("{}: {}", p.name, p.type_str))
+                                .collect(),
                             ret: method.return_type.clone(),
                             doc: method.doc.clone(),
                         });
@@ -307,8 +412,15 @@ impl CompletionResolver {
             items.push(CompletionItem {
                 label: m.name.clone(),
                 kind: 15,
-                detail: format!("({}){}", m.params.join(", "),
-                    if m.ret.is_empty() { String::new() } else { format!(" → {}", m.ret) }),
+                detail: format!(
+                    "({}){}",
+                    m.params.join(", "),
+                    if m.ret.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" → {}", m.ret)
+                    }
+                ),
                 documentation: m.doc.clone(),
                 insert_text: format!("{}()", m.name),
                 insert_text_format: 1,
@@ -369,7 +481,12 @@ impl CompletionResolver {
         }
     }
 
-    fn completar_expresion(&self, parcial: &str, symbols: &[SymbolEntry], items: &mut Vec<CompletionItem>) {
+    fn completar_expresion(
+        &self,
+        parcial: &str,
+        symbols: &[SymbolEntry],
+        items: &mut Vec<CompletionItem>,
+    ) {
         self.completar_keywords_y_snippets(parcial, items);
         self.completar_simbolos_locales(parcial, symbols, items);
         self.completar_stdlib(parcial, items);
@@ -450,7 +567,12 @@ impl CompletionResolver {
         }
     }
 
-    fn completar_simbolos_locales(&self, parcial: &str, symbols: &[SymbolEntry], items: &mut Vec<CompletionItem>) {
+    fn completar_simbolos_locales(
+        &self,
+        parcial: &str,
+        symbols: &[SymbolEntry],
+        items: &mut Vec<CompletionItem>,
+    ) {
         for sym in symbols {
             let score = fuzzy_score(parcial, &sym.name);
             if score > 0.0 {
@@ -486,10 +608,17 @@ impl CompletionResolver {
             for f in funcs {
                 let score = fuzzy_score(parcial, &f.name);
                 if score > 0.0 {
-                    let params_str: Vec<String> = f.params.iter()
-                        .map(|p| format!("{}: {}", p.name, p.type_str)).collect();
-                    let detail = format!("{} → {} [{}.fa]", params_str.join(", "),
-                        f.return_type, f.module);
+                    let params_str: Vec<String> = f
+                        .params
+                        .iter()
+                        .map(|p| format!("{}: {}", p.name, p.type_str))
+                        .collect();
+                    let detail = format!(
+                        "{} → {} [{}.fa]",
+                        params_str.join(", "),
+                        f.return_type,
+                        f.module
+                    );
                     items.push(CompletionItem {
                         label: f.name.clone(),
                         kind: if f.is_method { 15 } else { 3 },
@@ -507,7 +636,9 @@ impl CompletionResolver {
     }
 
     fn inferir_tipo_de_objeto(&self, expr: &str) -> Option<String> {
-        if expr == "este" { return Some("este".to_string()); }
+        if expr == "este" {
+            return Some("este".to_string());
+        }
         for (cls_name, _cls) in &self.stdlib.classes {
             if expr == cls_name || expr.ends_with(cls_name) {
                 return Some(cls_name.clone());

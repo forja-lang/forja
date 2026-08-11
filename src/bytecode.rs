@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 use crate::ast::*;
 use crate::error::ErrorForja;
-use std::sync::Arc;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 /// Profundidad máxima de recursión para la generación de bytecode.
 /// Previene stack overflow al recorrer ASTs con expresiones muy anidadas.
@@ -134,9 +134,9 @@ pub enum Opcode {
     Return,
 
     // === POO ===
-    NewObject(Arc<str>),         // crear instancia de clase
-    SetField(Arc<str>),          // este.campo = pop()
-    GetField(Arc<str>),          // push(este.campo)
+    NewObject(Arc<str>), // crear instancia de clase
+    SetField(Arc<str>),  // este.campo = pop()
+    GetField(Arc<str>),  // push(este.campo)
     /// Asigna el campo i-ésimo por posición (usado para construir variantes de
     /// enum: campos_vec = [tag, campo0, campo1, ...]). Pop valor, pop objeto.
     SetFieldIdx(usize),
@@ -369,7 +369,12 @@ pub struct BytecodeGenerator {
     /// Mapa de overloads de funciones (nombre -> Vec de overloads).
     /// Usado para name mangling cuando hay funciones con mismo nombre pero diferentes tipos.
     /// Cada overload: (tipos_param, tipo_retorno, parametros_tipo)
-    funciones_overload: Option<std::collections::HashMap<String, Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>>>,
+    funciones_overload: Option<
+        std::collections::HashMap<
+            String,
+            Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>,
+        >,
+    >,
 
     // === Design by Contract ===
     pub contratos: Vec<ContratoBytecode>,
@@ -438,7 +443,13 @@ impl BytecodeGenerator {
 
     /// Establece el mapa de overloads de funciones para name mangling.
     /// Permite que el generador distinga entre funciones con mismo nombre pero diferentes tipos.
-    pub fn set_funciones_overload(&mut self, funcs: std::collections::HashMap<String, Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>>) {
+    pub fn set_funciones_overload(
+        &mut self,
+        funcs: std::collections::HashMap<
+            String,
+            Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>,
+        >,
+    ) {
         self.funciones_overload = Some(funcs);
     }
 
@@ -456,7 +467,9 @@ impl BytecodeGenerator {
                     if params.len() == tipos_args.len() {
                         if tipos_args.iter().enumerate().all(|(j, arg_t)| {
                             params[j].as_ref().map_or(true, |p_t| {
-                                arg_t.as_ref().map_or(false, |a_t| self.tipos_coinciden_mangled(a_t, p_t))
+                                arg_t
+                                    .as_ref()
+                                    .map_or(false, |a_t| self.tipos_coinciden_mangled(a_t, p_t))
                             })
                         }) {
                             return format!("{}$ov{}", nombre, i);
@@ -516,16 +529,16 @@ impl BytecodeGenerator {
             // El patrón anterior evaluaba derecha dos veces (bug si tiene side effects).
             let temp_name = Arc::from(format!("__mod_t{}", self.label_counter));
             self.label_counter += 1;
-            self.generar_expresion(izquierda);                    // [a]
-            self.generar_expresion(derecha);                      // [a, b]
+            self.generar_expresion(izquierda); // [a]
+            self.generar_expresion(derecha); // [a, b]
             self.emitir(Opcode::Declare(Arc::clone(&temp_name), false)); // declara temp
-            self.emitir(Opcode::Store(Arc::clone(&temp_name)));   // [a] (b guardado en temp)
-            self.emitir(Opcode::Dup);                             // [a, a]
-            self.emitir(Opcode::Load(Arc::clone(&temp_name)));    // [a, a, b]
-            self.emitir(Opcode::Div);                             // [a, a/b]
-            self.emitir(Opcode::Load(Arc::clone(&temp_name)));    // [a, a/b, b]
-            self.emitir(Opcode::Mul);                             // [a, (a/b)*b]
-            self.emitir(Opcode::Sub);                             // [a % b]
+            self.emitir(Opcode::Store(Arc::clone(&temp_name))); // [a] (b guardado en temp)
+            self.emitir(Opcode::Dup); // [a, a]
+            self.emitir(Opcode::Load(Arc::clone(&temp_name))); // [a, a, b]
+            self.emitir(Opcode::Div); // [a, a/b]
+            self.emitir(Opcode::Load(Arc::clone(&temp_name))); // [a, a/b, b]
+            self.emitir(Opcode::Mul); // [a, (a/b)*b]
+            self.emitir(Opcode::Sub); // [a % b]
             return;
         }
 
@@ -577,7 +590,7 @@ impl BytecodeGenerator {
             (Operador::Mayor, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::MayorInt),
             (Operador::MayorIgual, Some(Tipo::Entero), Some(Tipo::Entero)) => {
                 Some(Opcode::MayorIgualInt)
-            },
+            }
             // Comparaciones: Decimal-Decimal
             (Operador::IgualIgual, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
                 Some(Opcode::IgualFloat)
@@ -790,7 +803,10 @@ impl BytecodeGenerator {
 
         // Primera pasada: recolectar nombres de funciones asincronas
         for decl in &programa.declaraciones {
-            if let Declaracion::Funcion { nombre, asincrona, .. } = decl {
+            if let Declaracion::Funcion {
+                nombre, asincrona, ..
+            } = decl
+            {
                 if *asincrona {
                     self.funciones_asincronas.insert(nombre.clone());
                 }
@@ -1152,10 +1168,8 @@ impl BytecodeGenerator {
                 ..
             } => {
                 // Determinar nombre mangled si hay overloads
-                let tipos_params: Vec<Option<Tipo>> = parametros
-                    .iter()
-                    .map(|p| p.tipo.clone())
-                    .collect();
+                let tipos_params: Vec<Option<Tipo>> =
+                    parametros.iter().map(|p| p.tipo.clone()).collect();
                 let nombre_real = if let Some(ref overloads) = self.funciones_overload {
                     if let Some(ol) = overloads.get(nombre.as_str()) {
                         if ol.len() > 1 {
@@ -1185,7 +1199,10 @@ impl BytecodeGenerator {
                     .iter()
                     .map(|p| Arc::from(p.nombre.as_str()))
                     .collect();
-                self.emitir(Opcode::FunctionDef(Arc::from(nombre_real.as_str()), param_names));
+                self.emitir(Opcode::FunctionDef(
+                    Arc::from(nombre_real.as_str()),
+                    param_names,
+                ));
 
                 // Inicializar tracking de variables para compilación de contratos
                 self.var_indices.clear();
@@ -1486,7 +1503,10 @@ impl BytecodeGenerator {
                         for arg in argumentos.iter().rev() {
                             self.generar_expresion(arg);
                         }
-                        self.emitir(Opcode::TailCall(Arc::from(nombre.as_str()), argumentos.len()));
+                        self.emitir(Opcode::TailCall(
+                            Arc::from(nombre.as_str()),
+                            argumentos.len(),
+                        ));
                     }
                     Some(expr) => {
                         self.generar_expresion(expr);
@@ -1693,8 +1713,9 @@ impl BytecodeGenerator {
                 } else if let Some((enum_nombre, tag)) = self.buscar_variante_enum(nombre) {
                     // Construcción de variante de enum con datos:
                     //   Heroe("Iron", 90) → objeto con campos_vec = [tag, campo0, campo1]
-                    let tmp: Arc<str> =
-                        Arc::from(format!("__enum_{}_{}", enum_nombre, self.label_counter).as_str());
+                    let tmp: Arc<str> = Arc::from(
+                        format!("__enum_{}_{}", enum_nombre, self.label_counter).as_str(),
+                    );
                     self.label_counter += 1;
                     self.emitir(Opcode::NewObject(Arc::from(enum_nombre.as_str())));
                     self.emitir(Opcode::Declare(tmp.clone(), true));
@@ -1765,7 +1786,9 @@ impl BytecodeGenerator {
                     }
                 }
                 // Si hay argumentos o la clase define un constructor, llamarlo con self + args
-                if (!argumentos.is_empty() && !matches!(&argumentos[0], Expresion::Mapa(_))) || self.clases_con_constructor.contains(clase) {
+                if (!argumentos.is_empty() && !matches!(&argumentos[0], Expresion::Mapa(_)))
+                    || self.clases_con_constructor.contains(clase)
+                {
                     self.emitir(Opcode::Dup);
                     for arg in argumentos {
                         self.generar_expresion(arg);
@@ -1984,16 +2007,19 @@ impl BytecodeGenerator {
                 // ── Detectar variables capturadas del entorno ──
                 let mut declaradas: HashSet<String> = HashSet::new();
                 let mut usadas: HashSet<String> = HashSet::new();
-                eprintln!("[DBG] Hilo: procesando {} declaraciones en cuerpo", cuerpo.len());
+                eprintln!(
+                    "[DBG] Hilo: procesando {} declaraciones en cuerpo",
+                    cuerpo.len()
+                );
                 for d in cuerpo.iter() {
                     Self::extraer_ids_decl(d, &mut declaradas, &mut usadas);
                 }
-                eprintln!("[DBG] Hilo: declaradas={:?}, usadas={:?}", declaradas, usadas);
+                eprintln!(
+                    "[DBG] Hilo: declaradas={:?}, usadas={:?}",
+                    declaradas, usadas
+                );
                 // Capturadas = usadas - declaradas (ordenado para consistencia)
-                let mut capturadas: Vec<String> = usadas
-                    .difference(&declaradas)
-                    .cloned()
-                    .collect();
+                let mut capturadas: Vec<String> = usadas.difference(&declaradas).cloned().collect();
                 capturadas.sort();
                 let captured_count = capturadas.len();
 
@@ -2022,10 +2048,8 @@ impl BytecodeGenerator {
                 let func_name_clone = func_name.clone();
                 self.emitir(Opcode::ThreadSpawn(func_name_clone, captured_count));
                 // Generar el cuerpo de la función del hilo en un buffer separado
-                let params: Vec<Arc<str>> = capturadas
-                    .iter()
-                    .map(|s| Arc::from(s.as_str()))
-                    .collect();
+                let params: Vec<Arc<str>> =
+                    capturadas.iter().map(|s| Arc::from(s.as_str())).collect();
                 // Guardar opcodes actuales y reemplazar por buffer temporal
                 let opcodes_previos = std::mem::replace(&mut self.opcodes, Vec::new());
                 // Emitir FunctionDef + cuerpo + Return en el buffer temporal
@@ -2141,6 +2165,26 @@ impl BytecodeGenerator {
                 self.emitir(Opcode::Pop);
                 // obj.tipo = "some"
                 self.emitir(Opcode::PushTexto(Arc::from("some")));
+                self.emitir(Opcode::Dup);
+                self.emitir(Opcode::Load(tmp.clone()));
+                self.emitir(Opcode::SetField(Arc::from("tipo")));
+                self.emitir(Opcode::Pop);
+                // Dejar objeto en stack
+                self.emitir(Opcode::Load(tmp));
+            }
+            Expresion::Nada | Expresion::Ninguno => {
+                let tmp: Arc<str> = Arc::from(format!("__none_{}", self.label_counter).as_str());
+                self.label_counter += 1;
+                self.emitir(Opcode::NewObject(Arc::from("Opcion")));
+                self.emitir(Opcode::Declare(tmp.clone(), true));
+                // obj.valor = nulo
+                self.emitir(Opcode::PushNulo);
+                self.emitir(Opcode::Dup);
+                self.emitir(Opcode::Load(tmp.clone()));
+                self.emitir(Opcode::SetField(Arc::from("valor")));
+                self.emitir(Opcode::Pop);
+                // obj.tipo = "none"
+                self.emitir(Opcode::PushTexto(Arc::from("none")));
                 self.emitir(Opcode::Dup);
                 self.emitir(Opcode::Load(tmp.clone()));
                 self.emitir(Opcode::SetField(Arc::from("tipo")));
@@ -2298,13 +2342,13 @@ impl BytecodeGenerator {
                     Operador::Division => output.push(Uop::Div),
                     Operador::Modulo => {
                         // a % b = a - (a/b)*b
-                        self.expresion_a_uops_inner(izquierda, output);  // [a]
-                        output.push(Uop::Dup);                           // [a, a]
-                        self.expresion_a_uops_inner(derecha, output);    // [a, a, b]
-                        output.push(Uop::Div);                           // [a, a/b]
-                        self.expresion_a_uops_inner(derecha, output);    // [a, a/b, b]
-                        output.push(Uop::Mul);                           // [a, (a/b)*b]
-                        output.push(Uop::Sub);                           // [a % b]
+                        self.expresion_a_uops_inner(izquierda, output); // [a]
+                        output.push(Uop::Dup); // [a, a]
+                        self.expresion_a_uops_inner(derecha, output); // [a, a, b]
+                        output.push(Uop::Div); // [a, a/b]
+                        self.expresion_a_uops_inner(derecha, output); // [a, a/b, b]
+                        output.push(Uop::Mul); // [a, (a/b)*b]
+                        output.push(Uop::Sub); // [a % b]
                     }
                     Operador::IgualIgual => output.push(Uop::Igual),
                     Operador::Diferente => output.push(Uop::Diferente),
@@ -2387,7 +2431,9 @@ impl BytecodeGenerator {
                     usadas.insert(nombre.clone());
                 }
             }
-            Expresion::Binaria { izquierda, derecha, .. } => {
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => {
                 Self::extraer_ids_expr(izquierda, usadas);
                 Self::extraer_ids_expr(derecha, usadas);
             }
@@ -2500,6 +2546,7 @@ impl BytecodeGenerator {
             | Expresion::Anterior(expr) => {
                 Self::extraer_ids_expr(expr, usadas);
             }
+            Expresion::Nada | Expresion::Ninguno => {}
             Expresion::LiteralNumero(_)
             | Expresion::LiteralDecimal(_)
             | Expresion::LiteralTexto(_)
@@ -2524,18 +2571,27 @@ impl BytecodeGenerator {
                     Self::extraer_ids_expr(val, usadas);
                 }
             }
-            Declaracion::Asignacion { nombre: _, valor, .. } => {
+            Declaracion::Asignacion {
+                nombre: _, valor, ..
+            } => {
                 Self::extraer_ids_expr(valor, usadas);
             }
             Declaracion::AsignacionMiembro { objeto, valor, .. } => {
                 Self::extraer_ids_expr(objeto, usadas);
                 Self::extraer_ids_expr(valor, usadas);
             }
-            Declaracion::AsignacionIndex { nombre: _, indice, valor, .. } => {
+            Declaracion::AsignacionIndex {
+                nombre: _,
+                indice,
+                valor,
+                ..
+            } => {
                 Self::extraer_ids_expr(indice, usadas);
                 Self::extraer_ids_expr(valor, usadas);
             }
-            Declaracion::Funcion { parametros, cuerpo, .. } => {
+            Declaracion::Funcion {
+                parametros, cuerpo, ..
+            } => {
                 // Función declarada dentro del hilo: sus parámetros son locales
                 let mut fn_locales: HashSet<String> = HashSet::new();
                 for p in parametros {
@@ -2561,7 +2617,9 @@ impl BytecodeGenerator {
                     }
                 }
             }
-            Declaracion::Mientras { condicion, bloque, .. } => {
+            Declaracion::Mientras {
+                condicion, bloque, ..
+            } => {
                 Self::extraer_ids_expr(condicion, usadas);
                 for d in bloque {
                     Self::extraer_ids_decl(d, declaradas, usadas);
@@ -2587,7 +2645,9 @@ impl BytecodeGenerator {
                     Self::extraer_ids_decl(d, declaradas, usadas);
                 }
             }
-            Declaracion::Repetir { cantidad, bloque, .. } => {
+            Declaracion::Repetir {
+                cantidad, bloque, ..
+            } => {
                 Self::extraer_ids_expr(cantidad, usadas);
                 for d in bloque {
                     Self::extraer_ids_decl(d, declaradas, usadas);
@@ -2623,7 +2683,9 @@ impl BytecodeGenerator {
             Declaracion::Expresion(expr) => {
                 Self::extraer_ids_expr(expr, usadas);
             }
-            Declaracion::AsignacionMultiple { variables, valor, .. } => {
+            Declaracion::AsignacionMultiple {
+                variables, valor, ..
+            } => {
                 for v in variables {
                     declaradas.insert(v.clone());
                 }
@@ -2775,10 +2837,7 @@ impl BytecodeGenerator {
 /// de las locales de cada función (flat_vars + base_ptr, índices desde 0).
 /// Sin esta separación, una local con idx bajo pisa a la global y los accesos
 /// desde funciones leen posiciones equivocadas (valores nulos o corruptos).
-pub fn postprocesar_globales(
-    opcodes: Vec<Opcode>,
-    globales: &[(String, bool)],
-) -> Vec<Opcode> {
+pub fn postprocesar_globales(opcodes: Vec<Opcode>, globales: &[(String, bool)]) -> Vec<Opcode> {
     let mut result = Vec::with_capacity(opcodes.len());
     for op in opcodes {
         match &op {
@@ -2829,7 +2888,7 @@ impl ModuleBytecode {
         let mut resultado = Vec::new();
         for (range_start, range_end) in &func_ranges {
             let (nombre, params) = match &self.opcodes[*range_start] {
-            Opcode::FunctionDef(n, p) => (n.clone(), p.clone()),
+                Opcode::FunctionDef(n, p) => (n.clone(), p.clone()),
                 _ => unreachable!(),
             };
             let mut max_idx = params.len();
@@ -3018,12 +3077,12 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             Opcode::PushDecimal(d) => bytes.extend_from_slice(&d.to_le_bytes()),
             Opcode::PushTexto(s) | Opcode::Load(s) | Opcode::Store(s) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-            bytes.extend_from_slice(&idx.to_le_bytes());
+                bytes.extend_from_slice(&idx.to_le_bytes());
             }
             Opcode::Declare(s, mutable) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-            bytes.extend_from_slice(&idx.to_le_bytes());
-            bytes.push(if *mutable { 1 } else { 0 });
+                bytes.extend_from_slice(&idx.to_le_bytes());
+                bytes.push(if *mutable { 1 } else { 0 });
             }
             Opcode::LoadIdx(idx)
             | Opcode::StoreIdx(idx)
@@ -3036,31 +3095,31 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             | Opcode::AddStoreIdx(idx)
             | Opcode::SubStoreIdx(idx)
             | Opcode::MulStoreIdx(idx) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
             Opcode::DeclareIdx(idx, mutable) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-            bytes.push(if *mutable { 1 } else { 0 });
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.push(if *mutable { 1 } else { 0 });
             }
             Opcode::LoadAddInt(idx, n) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-            bytes.extend_from_slice(&n.to_le_bytes());
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&n.to_le_bytes());
             }
             Opcode::LoadIdx2(a, b)
             | Opcode::LoadStoreIdx(a, b)
             | Opcode::LoadJumpSiFalso(a, b)
             | Opcode::LoadJump(a, b) => {
-            bytes.extend_from_slice(&(*a as u32).to_le_bytes());
-            bytes.extend_from_slice(&(*b as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*a as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*b as u32).to_le_bytes());
             }
             Opcode::PushBooleano(b) => bytes.push(if *b { 1 } else { 0 }),
             Opcode::Jump(target) | Opcode::JumpSiFalso(target) | Opcode::Label(target) => {
-            bytes.extend_from_slice(&(*target as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*target as u32).to_le_bytes());
             }
             Opcode::FunctionDef(s, params) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-            bytes.extend_from_slice(&idx.to_le_bytes());
-            bytes.extend_from_slice(&(params.len() as u32).to_le_bytes());
+                bytes.extend_from_slice(&idx.to_le_bytes());
+                bytes.extend_from_slice(&(params.len() as u32).to_le_bytes());
                 for p in params {
                     let p_bytes = p.as_ref().as_bytes();
                     bytes.extend_from_slice(&(p_bytes.len() as u32).to_le_bytes());
@@ -3069,106 +3128,106 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             }
             Opcode::Call(s, n) | Opcode::TailCall(s, n) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-            bytes.extend_from_slice(&idx.to_le_bytes());
-            bytes.extend_from_slice(&(*n as u32).to_le_bytes());
+                bytes.extend_from_slice(&idx.to_le_bytes());
+                bytes.extend_from_slice(&(*n as u32).to_le_bytes());
             }
             Opcode::CallMethod(s, n) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-            bytes.extend_from_slice(&idx.to_le_bytes());
-            bytes.extend_from_slice(&(*n as u32).to_le_bytes());
+                bytes.extend_from_slice(&idx.to_le_bytes());
+                bytes.extend_from_slice(&(*n as u32).to_le_bytes());
             }
             Opcode::NewObject(s) | Opcode::SetField(s) | Opcode::GetField(s) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-            bytes.extend_from_slice(&idx.to_le_bytes());
+                bytes.extend_from_slice(&idx.to_le_bytes());
             }
             Opcode::DeclareEnteroOp(idx, n) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-            bytes.extend_from_slice(&n.to_le_bytes());
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&n.to_le_bytes());
             }
             Opcode::DeclareBooleanoOp(idx, b) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-            bytes.push(if *b { 1 } else { 0 });
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.push(if *b { 1 } else { 0 });
             }
             Opcode::StoreEnteroOp(idx, n) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-            bytes.extend_from_slice(&n.to_le_bytes());
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&n.to_le_bytes());
             }
             // Nuevos opcodes float
             Opcode::DeclareFloatOp(idx, d) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-            bytes.extend_from_slice(&d.to_le_bytes());
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&d.to_le_bytes());
             }
             Opcode::StoreFloatOp(idx, d) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-            bytes.extend_from_slice(&d.to_le_bytes());
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&d.to_le_bytes());
             }
             Opcode::LoadAddFloat(idx, d) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-            bytes.extend_from_slice(&d.to_le_bytes());
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&d.to_le_bytes());
             }
             Opcode::XorSign(idx) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
             Opcode::AddStoreFloat(idx)
             | Opcode::SubStoreFloat(idx)
             | Opcode::MulStoreFloat(idx) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
             // Fase A: Modulo2(src)
             Opcode::Modulo2(src) => {
-            bytes.extend_from_slice(&(*src as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*src as u32).to_le_bytes());
             }
             // Fase B: ReduceAdd(dst, src) — 2 × u32
             Opcode::ReduceAdd(dst, src) => {
-            bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
-            bytes.extend_from_slice(&(*src as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*src as u32).to_le_bytes());
             }
             // Fase B: LoadAddPacked(dst, src1, src2) — 3 × u32
             Opcode::LoadAddPacked(dst, src1, src2) => {
-            bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
-            bytes.extend_from_slice(&(*src1 as u32).to_le_bytes());
-            bytes.extend_from_slice(&(*src2 as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*src1 as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*src2 as u32).to_le_bytes());
             }
             // Fase 3a: Stack Bypass — 3 × u32 (dst, src1, src2)
             Opcode::DivFloatDirect(dst, src1, src2)
             | Opcode::MulFloatDirect(dst, src1, src2)
             | Opcode::AddFloatDirect(dst, src1, src2)
             | Opcode::SubFloatDirect(dst, src1, src2) => {
-            bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
-            bytes.extend_from_slice(&(*src1 as u32).to_le_bytes());
-            bytes.extend_from_slice(&(*src2 as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*src1 as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*src2 as u32).to_le_bytes());
             }
             // Fase 3b: Super-fusión — 3 × u32 (dst, num_src, div_src)
             Opcode::FusedDivAdd(dst, num_src, div_src)
             | Opcode::FusedDivSub(dst, num_src, div_src) => {
-            bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
-            bytes.extend_from_slice(&(*num_src as u32).to_le_bytes());
-            bytes.extend_from_slice(&(*div_src as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*num_src as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*div_src as u32).to_le_bytes());
             }
             // Fase 3b Const: f64 + usize + usize → 8 + 4 + 4 = 16 bytes
             Opcode::FusedDivAddConst(dst, num, div_src)
             | Opcode::FusedDivSubConst(dst, num, div_src) => {
-            bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
-            bytes.extend_from_slice(&num.to_le_bytes());
-            bytes.extend_from_slice(&(*div_src as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*dst as u32).to_le_bytes());
+                bytes.extend_from_slice(&num.to_le_bytes());
+                bytes.extend_from_slice(&(*div_src as u32).to_le_bytes());
             }
             // Opcodes para Exacto (BigDecimal)
             Opcode::PushExacto(coeff, scale) => {
-            bytes.extend_from_slice(&coeff.to_le_bytes());
-            bytes.extend_from_slice(&scale.to_le_bytes());
+                bytes.extend_from_slice(&coeff.to_le_bytes());
+                bytes.extend_from_slice(&scale.to_le_bytes());
             }
             // Superinstructions Exacto
             Opcode::DeclareExactOp(idx, coeff, scale) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-            bytes.extend_from_slice(&coeff.to_le_bytes());
-            bytes.extend_from_slice(&scale.to_le_bytes());
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&coeff.to_le_bytes());
+                bytes.extend_from_slice(&scale.to_le_bytes());
             }
             Opcode::AddStoreExact(idx) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
             // Pattern matching opcodes — payload: 4 bytes (usize)
             Opcode::CheckTag(idx) | Opcode::ExtractField(idx) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
             Opcode::SetFieldIdx(idx) => {
                 bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
@@ -3178,24 +3237,24 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             | Opcode::CheckPost(idx)
             | Opcode::SaveAnterior(idx)
             | Opcode::CheckInv(idx) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
             }
             // Fase 2: DeclareIdxGlobal(usize, bool)
             Opcode::DeclareIdxGlobal(idx, mutable) => {
-            bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
-            bytes.push(if *mutable { 1 } else { 0 });
+                bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
+                bytes.push(if *mutable { 1 } else { 0 });
             }
             // Debug: SetLine(line) — payload: 4 bytes (u32)
             Opcode::SetLine(line) => {
-            bytes.extend_from_slice(&(*line as u32).to_le_bytes());
+                bytes.extend_from_slice(&(*line as u32).to_le_bytes());
             }
             Opcode::PushAddInt(n) => {
-            bytes.extend_from_slice(&n.to_le_bytes());
+                bytes.extend_from_slice(&n.to_le_bytes());
             }
             Opcode::ThreadSpawn(s, nargs) | Opcode::CallNative(s, nargs) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-            bytes.extend_from_slice(&idx.to_le_bytes());
-            bytes.extend_from_slice(&(*nargs as u32).to_le_bytes());
+                bytes.extend_from_slice(&idx.to_le_bytes());
+                bytes.extend_from_slice(&(*nargs as u32).to_le_bytes());
             }
             Opcode::CallClosure(var_idx, nargs) => {
                 bytes.extend_from_slice(&(*var_idx as u32).to_le_bytes());
@@ -3203,7 +3262,7 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
             }
             Opcode::SocketPoll(s) => {
                 let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
-            bytes.extend_from_slice(&idx.to_le_bytes());
+                bytes.extend_from_slice(&idx.to_le_bytes());
             }
             _ => {} // Opcodes sin payload
         }
@@ -3628,13 +3687,23 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
     let mut opcodes = Vec::with_capacity(num_opcodes.min(MAX_OPCODES));
     for oi in 0..num_opcodes {
         if pos >= data.len() {
-            eprintln!("[BC] opcodes truncado en i={} pos={} len={}", oi, pos, data.len());
+            eprintln!(
+                "[BC] opcodes truncado en i={} pos={} len={}",
+                oi,
+                pos,
+                data.len()
+            );
             return None;
         }
         let byte = data[pos];
         pos += 1;
         if byte > 200 {
-            eprintln!("[BC] opcode byte alto: {} en i={} pos={}", byte, oi, pos - 1);
+            eprintln!(
+                "[BC] opcode byte alto: {} en i={} pos={}",
+                byte,
+                oi,
+                pos - 1
+            );
         }
 
         match byte {
@@ -4416,9 +4485,13 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 if pos + 8 > data.len() {
                     return None;
                 }
-                let idx = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+                let idx =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
-                let nargs = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+                let nargs =
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize;
                 pos += 4;
                 let s = string_pool_get(&string_pool, idx)?;
                 opcodes.push(Opcode::TailCall(s, nargs));
@@ -4462,7 +4535,7 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
         for i in scope_start..scope_end {
             let op = &bytecode[i];
             match op {
-            Opcode::FunctionDef(_name, params) => {
+                Opcode::FunctionDef(_name, params) => {
                     // Los parámetros de la función empiezan en índice 0 de este ámbito
                     for p in params {
                         var_indices.entry(p.to_string()).or_insert_with(|| {
@@ -4508,7 +4581,7 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
                     });
                     result.push(Opcode::DeclareIdx(idx, *mutable));
                 }
-            Opcode::Call(_, _) => {
+                Opcode::Call(_, _) => {
                     result.push(op.clone());
                 }
                 _ => {
@@ -5090,11 +5163,11 @@ fun obtener() {
         );
         // Cada entrada debe ser (nombre -> mutable)
         for (_nombre, mutable) in &module_bc.global_var_indices {
-        assert!(
+            assert!(
                 *mutable,
                 "Las variables declaradas deben ser mutables, got {}",
                 mutable
-        );
+            );
         }
     }
 
@@ -5256,13 +5329,12 @@ fun probar() {
                 assert!(*mutable, "global_x debe ser mutable, got {}", mutable);
             }
         }
-    
     }
-    
+
     // ═════════════════════════════════════════════════════════════════════
     // Tests de sobrecarga automática por tipo
     // ═════════════════════════════════════════════════════════════════════
-    
+
     #[test]
     fn test_sobrecarga_funciones_con_tipos_distintos() {
         // Dos funciones con mismo nombre pero diferentes tipos de parámetros.
@@ -5291,15 +5363,8 @@ variable y = mcd(10, 20)
 
         // Verificar que mcd tiene 2 overloads
         let overloads = funciones_overload.get("mcd");
-        assert!(
-            overloads.is_some(),
-            "mcd debe estar en funciones_overload"
-        );
-        assert_eq!(
-            overloads.unwrap().len(),
-            2,
-            "mcd debe tener 2 overloads"
-        );
+        assert!(overloads.is_some(), "mcd debe estar en funciones_overload");
+        assert_eq!(overloads.unwrap().len(), 2, "mcd debe tener 2 overloads");
 
         // Generar bytecode con overloads
         let mut gen = BytecodeGenerator::new();
@@ -5349,20 +5414,20 @@ variable y = mcd(10, 20)
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
-    
+
         let mut type_checker = TypeChecker::new();
         type_checker.analizar(&programa).unwrap();
         let funciones_overload = type_checker.obtener_funciones();
-    
+
         let overloads = funciones_overload.get("sumar");
         assert!(overloads.is_some(), "sumar debe estar en overloads");
         assert_eq!(overloads.unwrap().len(), 2, "sumar debe tener 2 overloads");
-    
+
         let mut gen = BytecodeGenerator::new();
         gen.set_tipos_inferidos(type_checker.obtener_tipos_inferidos());
         gen.set_funciones_overload(funciones_overload);
         gen.generar(&programa).unwrap();
-    
+
         let bytecode = gen.opcodes.clone();
         let tiene_sumar_ov0 = bytecode.iter().any(|op| match op {
             Opcode::FunctionDef(n, _) | Opcode::Call(n, _) => n.as_ref() == "sumar$ov0",
@@ -5373,8 +5438,16 @@ variable y = mcd(10, 20)
             _ => false,
         });
 
-        assert!(tiene_sumar_ov0, "sumar$ov0 debe existir en bytecode, bytecode: {:?}", bytecode);
-        assert!(tiene_sumar_ov1, "sumar$ov1 debe existir en bytecode, bytecode: {:?}", bytecode);
+        assert!(
+            tiene_sumar_ov0,
+            "sumar$ov0 debe existir en bytecode, bytecode: {:?}",
+            bytecode
+        );
+        assert!(
+            tiene_sumar_ov1,
+            "sumar$ov1 debe existir en bytecode, bytecode: {:?}",
+            bytecode
+        );
     }
 
     #[test]
@@ -5418,8 +5491,13 @@ variable y = mcd(10, 20)
             _ => false,
         });
 
-        assert!(!tiene_saludar_ov0, "saludar no debe tener $ov0 porque no tiene overloads");
-        assert!(tiene_saludar_original, "saludar debe mantener su nombre original");
+        assert!(
+            !tiene_saludar_ov0,
+            "saludar no debe tener $ov0 porque no tiene overloads"
+        );
+        assert!(
+            tiene_saludar_original,
+            "saludar debe mantener su nombre original"
+        );
     }
 }
-

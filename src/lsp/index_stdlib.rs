@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use crate::ast::{Declaracion, Programa, Tipo};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct FunctionInfo {
@@ -95,14 +95,25 @@ impl StdlibIndex {
 
     pub fn cargar_stdlib(&mut self, stdlib_dir: &str) {
         let dir = std::path::Path::new(stdlib_dir);
-        if !dir.is_dir() { return; }
+        if !dir.is_dir() {
+            return;
+        }
 
         for entry in std::fs::read_dir(dir).unwrap_or_else(|_| std::fs::read_dir(".").unwrap()) {
-            let entry = match entry { Ok(e) => e, _ => continue };
+            let entry = match entry {
+                Ok(e) => e,
+                _ => continue,
+            };
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("fa") { continue; }
+            if path.extension().and_then(|e| e.to_str()) != Some("fa") {
+                continue;
+            }
 
-            let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+            let file_stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
             let content = match std::fs::read_to_string(&path) {
                 Ok(c) => c,
                 Err(_) => continue,
@@ -138,19 +149,23 @@ impl StdlibIndex {
         // Índice inverso: nombre → lista de funciones (para búsqueda rápida)
         for (_mod_name, module) in self.modules.clone().iter() {
             for func in &module.functions {
-                self.functions.entry(func.name.clone())
+                self.functions
+                    .entry(func.name.clone())
                     .or_default()
                     .push(func.clone());
             }
             for class in &module.classes {
                 for method in &class.methods {
-                    self.functions.entry(method.name.clone())
+                    self.functions
+                        .entry(method.name.clone())
                         .or_default()
                         .push(method.clone());
                 }
             }
             for class in &module.classes {
-                self.classes.entry(class.name.clone()).or_insert(class.clone());
+                self.classes
+                    .entry(class.name.clone())
+                    .or_insert(class.clone());
             }
             for en in &module.enums {
                 self.enums.entry(en.name.clone()).or_insert(en.clone());
@@ -165,8 +180,12 @@ impl StdlibIndex {
         let mut doc = String::new();
         for line in content.lines() {
             let t = line.trim();
-            if t.starts_with("# módulo:") { continue; }
-            if t.starts_with("##") { continue; }
+            if t.starts_with("# módulo:") {
+                continue;
+            }
+            if t.starts_with("##") {
+                continue;
+            }
             if t.starts_with("# ") {
                 let d = t.trim_start_matches("# ");
                 doc.push_str(d);
@@ -180,17 +199,35 @@ impl StdlibIndex {
         doc.trim().to_string()
     }
 
-    fn extraer_de_ast(programa: &Programa, module_name: &str, module: &mut ModuleIndex, _index: &mut StdlibIndex) {
+    fn extraer_de_ast(
+        programa: &Programa,
+        module_name: &str,
+        module: &mut ModuleIndex,
+        _index: &mut StdlibIndex,
+    ) {
         for decl in &programa.declaraciones {
             match decl {
-                Declaracion::Funcion { nombre, parametros, tipo_retorno, doc, .. } => {
-                    let params: Vec<ParamInfo> = parametros.iter().map(|p| {
-                        let ts = match &p.tipo {
-                            Some(t) => format_tipo(t),
-                            None => "?".to_string(),
-                        };
-                        ParamInfo { name: p.nombre.clone(), type_str: ts, prestado: p.prestado }
-                    }).collect();
+                Declaracion::Funcion {
+                    nombre,
+                    parametros,
+                    tipo_retorno,
+                    doc,
+                    ..
+                } => {
+                    let params: Vec<ParamInfo> = parametros
+                        .iter()
+                        .map(|p| {
+                            let ts = match &p.tipo {
+                                Some(t) => format_tipo(t),
+                                None => "?".to_string(),
+                            };
+                            ParamInfo {
+                                name: p.nombre.clone(),
+                                type_str: ts,
+                                prestado: p.prestado,
+                            }
+                        })
+                        .collect();
                     let rt = match tipo_retorno {
                         Some(t) => format_tipo(t),
                         None => String::new(),
@@ -206,23 +243,43 @@ impl StdlibIndex {
                     };
                     module.functions.push(func);
                 }
-                Declaracion::Clase { nombre, campos, metodos, .. } => {
-                    let fields: Vec<FieldInfo> = campos.iter().map(|c| {
-                        FieldInfo {
+                Declaracion::Clase {
+                    nombre,
+                    campos,
+                    metodos,
+                    ..
+                } => {
+                    let fields: Vec<FieldInfo> = campos
+                        .iter()
+                        .map(|c| FieldInfo {
                             name: c.nombre.clone(),
-                            type_str: c.tipo.as_ref().map(|t| format_tipo(t)).unwrap_or("?".to_string()),
-                        }
-                    }).collect();
+                            type_str: c
+                                .tipo
+                                .as_ref()
+                                .map(|t| format_tipo(t))
+                                .unwrap_or("?".to_string()),
+                        })
+                        .collect();
                     let mut methods: Vec<FunctionInfo> = Vec::new();
                     for m in metodos {
-                        let params: Vec<ParamInfo> = m.parametros.iter().map(|p| {
-                            ParamInfo {
+                        let params: Vec<ParamInfo> = m
+                            .parametros
+                            .iter()
+                            .map(|p| ParamInfo {
                                 name: p.nombre.clone(),
-                                type_str: p.tipo.as_ref().map(|t| format_tipo(t)).unwrap_or("?".to_string()),
+                                type_str: p
+                                    .tipo
+                                    .as_ref()
+                                    .map(|t| format_tipo(t))
+                                    .unwrap_or("?".to_string()),
                                 prestado: p.prestado,
-                            }
-                        }).collect();
-                        let rt = m.tipo_retorno.as_ref().map(|t| format_tipo(t)).unwrap_or_default();
+                            })
+                            .collect();
+                        let rt = m
+                            .tipo_retorno
+                            .as_ref()
+                            .map(|t| format_tipo(t))
+                            .unwrap_or_default();
                         methods.push(FunctionInfo {
                             name: m.nombre.clone(),
                             module: module_name.to_string(),
@@ -241,7 +298,9 @@ impl StdlibIndex {
                         doc: String::new(),
                     });
                 }
-                Declaracion::Enum { nombre, variantes, .. } => {
+                Declaracion::Enum {
+                    nombre, variantes, ..
+                } => {
                     let vars: Vec<String> = variantes.iter().map(|v| v.nombre.clone()).collect();
                     module.enums.push(EnumInfo {
                         name: nombre.clone(),
@@ -277,7 +336,9 @@ impl StdlibIndex {
     pub fn buscar_clases(&self, prefix: &str) -> Vec<&ClassInfo> {
         let mut results = Vec::new();
         for (_, c) in &self.classes {
-            if c.name.starts_with(prefix) { results.push(c); }
+            if c.name.starts_with(prefix) {
+                results.push(c);
+            }
         }
         results
     }

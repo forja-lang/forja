@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use std::fmt;
-use std::sync::atomic::{AtomicU8, AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 // ══════════════════════════════════════════════════════════════════════
 // Variables globales thread-safe (reemplazan static mut)
@@ -28,16 +28,36 @@ pub mod color {
     pub const SUBRAYADO: &str = "\x1b[4m";
     pub const DIM: &str = "\x1b[2m";
 
-    pub fn rojo(s: &str) -> String { format!("{}{}{}", ROJO, s, RESET) }
-    pub fn verde(s: &str) -> String { format!("{}{}{}", VERDE, s, RESET) }
-    pub fn amarillo(s: &str) -> String { format!("{}{}{}", AMARILLO, s, RESET) }
-    pub fn azul(s: &str) -> String { format!("{}{}{}", AZUL, s, RESET) }
-    pub fn magenta(s: &str) -> String { format!("{}{}{}", MAGENTA, s, RESET) }
-    pub fn cyan(s: &str) -> String { format!("{}{}{}", CYAN, s, RESET) }
-    pub fn gris(s: &str) -> String { format!("{}{}{}", GRIS, s, RESET) }
-    pub fn negrita(s: &str) -> String { format!("{}{}{}", NEGRITA, s, RESET) }
-    pub fn rojo_fondo(s: &str) -> String { format!("{}{}{}", ROJO_FONDO, s, RESET) }
-    pub fn amarillo_fondo(s: &str) -> String { format!("{}{}{}", AMARILLO_FONDO, s, RESET) }
+    pub fn rojo(s: &str) -> String {
+        format!("{}{}{}", ROJO, s, RESET)
+    }
+    pub fn verde(s: &str) -> String {
+        format!("{}{}{}", VERDE, s, RESET)
+    }
+    pub fn amarillo(s: &str) -> String {
+        format!("{}{}{}", AMARILLO, s, RESET)
+    }
+    pub fn azul(s: &str) -> String {
+        format!("{}{}{}", AZUL, s, RESET)
+    }
+    pub fn magenta(s: &str) -> String {
+        format!("{}{}{}", MAGENTA, s, RESET)
+    }
+    pub fn cyan(s: &str) -> String {
+        format!("{}{}{}", CYAN, s, RESET)
+    }
+    pub fn gris(s: &str) -> String {
+        format!("{}{}{}", GRIS, s, RESET)
+    }
+    pub fn negrita(s: &str) -> String {
+        format!("{}{}{}", NEGRITA, s, RESET)
+    }
+    pub fn rojo_fondo(s: &str) -> String {
+        format!("{}{}{}", ROJO_FONDO, s, RESET)
+    }
+    pub fn amarillo_fondo(s: &str) -> String {
+        format!("{}{}{}", AMARILLO_FONDO, s, RESET)
+    }
 
     /// Etiqueta decorativa para logs
     pub fn etiqueta(tipo: &str, s: &str) -> String {
@@ -50,15 +70,33 @@ pub mod color {
 }
 
 /// Color helper: info (cyan), ok (green), warning (yellow), error (red), debug (grey)
-pub fn info(msg: &str) -> String { format!("{}{}{}", color::CYAN, msg, color::RESET) }
-pub fn ok(msg: &str) -> String { format!("{}{}{}", color::VERDE, msg, color::RESET) }
-pub fn exito(msg: &str) -> String { format!("{}✅ {} {}", color::VERDE, msg, color::RESET) }
-pub fn warning(msg: &str) -> String { format!("{}⚠️ {} {}", color::AMARILLO, msg, color::RESET) }
-pub fn error(msg: &str) -> String { format!("{}❌ {} {}", color::ROJO, msg, color::RESET) }
-pub fn debug_msg(msg: &str) -> String { format!("{}🔍 {} {}", color::GRIS, msg, color::RESET) }
-pub fn resaltado(msg: &str) -> String { format!("{}{}{}", color::NEGRITA, msg, color::RESET) }
-pub fn archivo(msg: &str) -> String { format!("{}📄 {} {}", color::AMARILLO, msg, color::RESET) }
-pub fn numero(msg: &str) -> String { format!("{}{}{}", color::MAGENTA, msg, color::RESET) }
+pub fn info(msg: &str) -> String {
+    format!("{}{}{}", color::CYAN, msg, color::RESET)
+}
+pub fn ok(msg: &str) -> String {
+    format!("{}{}{}", color::VERDE, msg, color::RESET)
+}
+pub fn exito(msg: &str) -> String {
+    format!("{}✅ {} {}", color::VERDE, msg, color::RESET)
+}
+pub fn warning(msg: &str) -> String {
+    format!("{}⚠️ {} {}", color::AMARILLO, msg, color::RESET)
+}
+pub fn error(msg: &str) -> String {
+    format!("{}❌ {} {}", color::ROJO, msg, color::RESET)
+}
+pub fn debug_msg(msg: &str) -> String {
+    format!("{}🔍 {} {}", color::GRIS, msg, color::RESET)
+}
+pub fn resaltado(msg: &str) -> String {
+    format!("{}{}{}", color::NEGRITA, msg, color::RESET)
+}
+pub fn archivo(msg: &str) -> String {
+    format!("{}📄 {} {}", color::AMARILLO, msg, color::RESET)
+}
+pub fn numero(msg: &str) -> String {
+    format!("{}{}{}", color::MAGENTA, msg, color::RESET)
+}
 
 // ============================================================
 // Niveles de verbosidad para debug
@@ -96,25 +134,39 @@ pub fn json_mode() -> bool {
 }
 
 pub fn log_info(msg: &str) {
-    if nivel_actual() >= NivelVerbose::Normal { eprintln!("{}", info(msg)); }
+    if nivel_actual() >= NivelVerbose::Normal {
+        eprintln!("{}", info(msg));
+    }
 }
 pub fn log_ok(msg: &str) {
-    if nivel_actual() >= NivelVerbose::Normal { eprintln!("{}", ok(msg)); }
+    if nivel_actual() >= NivelVerbose::Normal {
+        eprintln!("{}", ok(msg));
+    }
 }
 pub fn log_warn(msg: &str) {
-    if nivel_actual() >= NivelVerbose::Normal { eprintln!("{}", warning(msg)); }
+    if nivel_actual() >= NivelVerbose::Normal {
+        eprintln!("{}", warning(msg));
+    }
 }
 pub fn log_error(msg: &str) {
-    if nivel_actual() >= NivelVerbose::Normal { eprintln!("{}", error(msg)); }
+    if nivel_actual() >= NivelVerbose::Normal {
+        eprintln!("{}", error(msg));
+    }
 }
 pub fn log_verbose(msg: &str) {
-    if nivel_actual() >= NivelVerbose::Verbose { eprintln!("{}", debug_msg(msg)); }
+    if nivel_actual() >= NivelVerbose::Verbose {
+        eprintln!("{}", debug_msg(msg));
+    }
 }
 pub fn log_debug(msg: &str) {
-    if nivel_actual() >= NivelVerbose::Debug { eprintln!("{}", debug_msg(msg)); }
+    if nivel_actual() >= NivelVerbose::Debug {
+        eprintln!("{}", debug_msg(msg));
+    }
 }
 pub fn log_trace(msg: &str) {
-    if nivel_actual() >= NivelVerbose::Trace { eprintln!("{}", debug_msg(msg)); }
+    if nivel_actual() >= NivelVerbose::Trace {
+        eprintln!("{}", debug_msg(msg));
+    }
 }
 
 /// Tipo de error de Forja
@@ -182,7 +234,13 @@ impl ErrorForja {
         mensaje: &str,
         sugerencia: &str,
     ) -> Self {
-        ErrorForja { tipo, linea, columna, mensaje: mensaje.to_string(), sugerencia: sugerencia.to_string() }
+        ErrorForja {
+            tipo,
+            linea,
+            columna,
+            mensaje: mensaje.to_string(),
+            sugerencia: sugerencia.to_string(),
+        }
     }
 
     /// Muestra el error con contexto coloreado del código fuente
@@ -199,7 +257,14 @@ impl ErrorForja {
 
         // Línea de código: " <n> │ código"
         let linea_ctx = |n: usize| {
-            format!(" {} {:>ancho$} {}│{} ", color::DIM, n, color_lin, color::RESET, ancho = ancho_num)
+            format!(
+                " {} {:>ancho$} {}│{} ",
+                color::DIM,
+                n,
+                color_lin,
+                color::RESET,
+                ancho = ancho_num
+            )
         };
 
         if idx > 0 && idx - 1 < lines.len() {
@@ -207,26 +272,50 @@ impl ErrorForja {
         }
         if idx < lines.len() {
             result.push_str(&format!("{}{}\n", linea_ctx(idx + 1), lines[idx]));
-            let indent = if self.columna > 0 { self.columna - 1 } else { 0 };
+            let indent = if self.columna > 0 {
+                self.columna - 1
+            } else {
+                0
+            };
             // Mismo margen que las líneas de código, pero con el número
             // reemplazado por espacios; el ↑ apunta a la columna del error.
-            let margen = format!(" {} {:>ancho$} {}│{} ", color::DIM, "", color_lin, color::RESET, ancho = ancho_num);
-            result.push_str(&format!("{}{}{}↑{} {}\n",
+            let margen = format!(
+                " {} {:>ancho$} {}│{} ",
+                color::DIM,
+                "",
+                color_lin,
+                color::RESET,
+                ancho = ancho_num
+            );
+            result.push_str(&format!(
+                "{}{}{}↑{} {}\n",
                 margen,
                 " ".repeat(indent),
                 color_arrow,
                 color::RESET,
-                self.mensaje));
+                self.mensaje
+            ));
         } else {
-            result.push_str(&format!(" {} {:>ancho$} {}│{} (fin del archivo)\n",
-                color::DIM, self.linea, color_lin, color::RESET, ancho = ancho_num));
+            result.push_str(&format!(
+                " {} {:>ancho$} {}│{} (fin del archivo)\n",
+                color::DIM,
+                self.linea,
+                color_lin,
+                color::RESET,
+                ancho = ancho_num
+            ));
         }
         if idx + 1 < lines.len() && idx + 1 > 0 {
             result.push_str(&format!("{}{}\n", linea_ctx(idx + 2), lines[idx + 1]));
         }
         if !self.sugerencia.is_empty() {
-            result.push_str(&format!(" {} {}💡{} {}\n",
-                color::GRIS, color::AMARILLO, color::RESET, self.sugerencia));
+            result.push_str(&format!(
+                " {} {}💡{} {}\n",
+                color::GRIS,
+                color::AMARILLO,
+                color::RESET,
+                self.sugerencia
+            ));
         }
         result
     }
@@ -237,8 +326,11 @@ impl ErrorForja {
             "{} {} {}—{} línea {}{}{}: {}",
             emoji_para(&self.tipo),
             color::negrita(categoria_educativa(&self.tipo)),
-            color::GRIS, color::RESET,
-            color::AMARILLO, self.linea, color::RESET,
+            color::GRIS,
+            color::RESET,
+            color::AMARILLO,
+            self.linea,
+            color::RESET,
             self.mensaje,
         )
     }
@@ -247,7 +339,8 @@ impl ErrorForja {
         format!(
             r#"{{"error":"{}","linea":{},"columna":{},"mensaje":"{}","sugerencia":"{}"}}"#,
             self.tipo_colorless(),
-            self.linea, self.columna,
+            self.linea,
+            self.columna,
             self.escape_json(&self.mensaje),
             self.escape_json(&self.sugerencia),
         )
@@ -314,7 +407,10 @@ impl fmt::Display for ErrorForja {
             "{} {} — {}línea {}{} — {} {}",
             emoji_para(&self.tipo),
             color::negrita(categoria_educativa(&self.tipo)),
-            color::GRIS, color::AMARILLO, self.linea, color::RESET,
+            color::GRIS,
+            color::AMARILLO,
+            self.linea,
+            color::RESET,
             self.mensaje,
         )
     }
@@ -322,7 +418,9 @@ impl fmt::Display for ErrorForja {
 
 /// Renderiza una lista completa de errores con contexto
 pub fn mostrar_errores(source: &str, errores: &[ErrorForja], json_mode: bool) {
-    if errores.is_empty() { return; }
+    if errores.is_empty() {
+        return;
+    }
 
     if json_mode {
         for err in errores {

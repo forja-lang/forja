@@ -212,13 +212,11 @@ impl Optimizer {
                         .iter()
                         .flat_map(|d| self.optimizar_declaracion(d))
                         .collect(),
-                    bloque_falso: bloque_falso
-                        .as_ref()
-                        .map(|bf| {
-                            bf.iter()
-                                .flat_map(|d| self.optimizar_declaracion(d))
-                                .collect()
-                        }),
+                    bloque_falso: bloque_falso.as_ref().map(|bf| {
+                        bf.iter()
+                            .flat_map(|d| self.optimizar_declaracion(d))
+                            .collect()
+                    }),
                 }]
             }
             Declaracion::Mientras { condicion, bloque } => {
@@ -246,9 +244,9 @@ impl Optimizer {
                 // Dead branch elimination: Si la condición es falsa, eliminar body e incremento
                 if matches!(&cond_opt, Some(Expresion::LiteralBooleano(false))) {
                     self.cambios_realizados += 1;
-                    return inicializacion.as_ref().map_or_else(Vec::new, |i| {
-                        self.optimizar_declaracion(i)
-                    });
+                    return inicializacion
+                        .as_ref()
+                        .map_or_else(Vec::new, |i| self.optimizar_declaracion(i));
                 }
                 let init_opt = inicializacion.as_ref().map(|i| {
                     let mut v = self.optimizar_declaracion(i);
@@ -298,19 +296,23 @@ impl Optimizer {
                 linea: *linea,
                 columna: *columna,
             }],
-            Declaracion::LlamadaFuncion { nombre, argumentos } => vec![Declaracion::LlamadaFuncion {
-                nombre: nombre.clone(),
-                argumentos: argumentos
-                    .iter()
-                    .map(|a| self.optimizar_expresion(a))
-                    .collect(),
-            }],
+            Declaracion::LlamadaFuncion { nombre, argumentos } => {
+                vec![Declaracion::LlamadaFuncion {
+                    nombre: nombre.clone(),
+                    argumentos: argumentos
+                        .iter()
+                        .map(|a| self.optimizar_expresion(a))
+                        .collect(),
+                }]
+            }
             Declaracion::Retornar { valor } => vec![Declaracion::Retornar {
                 valor: valor.as_ref().map(|v| self.optimizar_expresion(v)),
             }],
             Declaracion::Romper => vec![Declaracion::Romper],
             Declaracion::Continuar => vec![Declaracion::Continuar],
-            Declaracion::Expresion(expr) => vec![Declaracion::Expresion(self.optimizar_expresion(expr))],
+            Declaracion::Expresion(expr) => {
+                vec![Declaracion::Expresion(self.optimizar_expresion(expr))]
+            }
             Declaracion::Implementacion {
                 rasgo_nombre,
                 clase_nombre,
@@ -445,8 +447,10 @@ impl Optimizer {
                             return izq;
                         }
                         // x - x → 0  (mismo identificador)
-                        if let (Expresion::Identificador { nombre: n1, .. },
-                                 Expresion::Identificador { nombre: n2, .. }) = (&izq, &der)
+                        if let (
+                            Expresion::Identificador { nombre: n1, .. },
+                            Expresion::Identificador { nombre: n2, .. },
+                        ) = (&izq, &der)
                         {
                             if n1 == n2 {
                                 self.cambios_realizados += 1;
@@ -528,7 +532,11 @@ impl Optimizer {
                 }
 
                 // Doble negación
-                if let Expresion::Unaria { operador: inner_op, expr: inner_expr } = &inner {
+                if let Expresion::Unaria {
+                    operador: inner_op,
+                    expr: inner_expr,
+                } = &inner
+                {
                     if inner_op == operador {
                         self.cambios_realizados += 1;
                         return *inner_expr.clone();
@@ -651,6 +659,8 @@ impl Optimizer {
             Expresion::Ok(e) => Expresion::Ok(Box::new(self.optimizar_expresion(e))),
             Expresion::Error(e) => Expresion::Error(Box::new(self.optimizar_expresion(e))),
             Expresion::Algo(e) => Expresion::Algo(Box::new(self.optimizar_expresion(e))),
+            Expresion::Nada => Expresion::Nada,
+            Expresion::Ninguno => Expresion::Ninguno,
             Expresion::Anterior(e) => Expresion::Anterior(Box::new(self.optimizar_expresion(e))),
             Expresion::Coincidir { expr: e, brazos } => {
                 let brazos_opt = brazos
@@ -752,8 +762,11 @@ impl Optimizer {
                 Resta => a.checked_sub(*b).map(|v| ValorConstante::Entero(v)),
                 Multiplicacion => a.checked_mul(*b).map(|v| ValorConstante::Entero(v)),
                 Division => {
-                    if *b == 0 { None }
-                    else { a.checked_div(*b).map(|v| ValorConstante::Entero(v)) }
+                    if *b == 0 {
+                        None
+                    } else {
+                        a.checked_div(*b).map(|v| ValorConstante::Entero(v))
+                    }
                 }
                 IgualIgual => Some(ValorConstante::Booleano(a == b)),
                 Diferente => Some(ValorConstante::Booleano(a != b)),
@@ -966,7 +979,11 @@ impl DeadCodeEliminator {
                 Declaracion::Rasgo { nombre, .. } => {
                     self.rasgos_usados.insert(nombre.clone());
                 }
-                Declaracion::Implementacion { rasgo_nombre, clase_nombre, metodos } => {
+                Declaracion::Implementacion {
+                    rasgo_nombre,
+                    clase_nombre,
+                    metodos,
+                } => {
                     self.rasgos_usados.insert(rasgo_nombre.clone());
                     self.clases_usadas.insert(clase_nombre.clone());
                     for m in metodos {
@@ -1002,7 +1019,11 @@ impl DeadCodeEliminator {
                     self.recolectar_en_expresion(arg);
                 }
             }
-            Expresion::LlamadaMetodo { objeto, metodo, argumentos } => {
+            Expresion::LlamadaMetodo {
+                objeto,
+                metodo,
+                argumentos,
+            } => {
                 self.funciones_llamadas.insert(metodo.clone());
                 self.recolectar_en_expresion(objeto);
                 for arg in argumentos {
@@ -1082,7 +1103,9 @@ impl DeadCodeEliminator {
             }
             Declaracion::Clase { nombre, .. } => !self.clases_usadas.contains(nombre),
             Declaracion::Rasgo { nombre, .. } => !self.rasgos_usados.contains(nombre),
-            Declaracion::Enum { nombre, variantes, .. } => {
+            Declaracion::Enum {
+                nombre, variantes, ..
+            } => {
                 // Un enum se considera usado si su nombre aparece en alguna
                 // expresion, o si CUALQUIERA de sus variantes se usa (la
                 // construcción Heroe(...) y el match caso Heroe(...) referencian
@@ -1095,7 +1118,11 @@ impl DeadCodeEliminator {
                     && !self.funciones_llamadas.contains(nombre)
                     && !variante_usada
             }
-            Declaracion::Implementacion { rasgo_nombre, clase_nombre, .. } => {
+            Declaracion::Implementacion {
+                rasgo_nombre,
+                clase_nombre,
+                ..
+            } => {
                 // Si el rasgo y la clase no se usan, la implementacion es muerta
                 !self.rasgos_usados.contains(rasgo_nombre)
                     && !self.clases_usadas.contains(clase_nombre)
@@ -1261,25 +1288,27 @@ impl ConstPropagator {
             Declaracion::Retornar { valor } => Declaracion::Retornar {
                 valor: valor.as_ref().map(|v| self.propagar_expresion(v)),
             },
-            Declaracion::Expresion(expr) => {
-                Declaracion::Expresion(self.propagar_expresion(expr))
-            }
-            Declaracion::LlamadaFuncion { nombre, argumentos } => {
-                Declaracion::LlamadaFuncion {
-                    nombre: nombre.clone(),
-                    argumentos: argumentos.iter().map(|a| self.propagar_expresion(a)).collect(),
-                }
-            }
+            Declaracion::Expresion(expr) => Declaracion::Expresion(self.propagar_expresion(expr)),
+            Declaracion::LlamadaFuncion { nombre, argumentos } => Declaracion::LlamadaFuncion {
+                nombre: nombre.clone(),
+                argumentos: argumentos
+                    .iter()
+                    .map(|a| self.propagar_expresion(a))
+                    .collect(),
+            },
             Declaracion::Si {
                 condicion,
                 bloque_verdadero,
                 bloque_falso,
             } => {
-                let new_verdadero: Vec<Declaracion> = bloque_verdadero.iter()
+                let new_verdadero: Vec<Declaracion> = bloque_verdadero
+                    .iter()
                     .flat_map(|d| self.propagar_declaracion(d))
                     .collect();
                 let new_falso: Option<Vec<Declaracion>> = bloque_falso.as_ref().map(|bf| {
-                    bf.iter().flat_map(|d| self.propagar_declaracion(d)).collect()
+                    bf.iter()
+                        .flat_map(|d| self.propagar_declaracion(d))
+                        .collect()
                 });
                 Declaracion::Si {
                     condicion: Box::new(self.propagar_expresion(condicion)),
@@ -1288,7 +1317,8 @@ impl ConstPropagator {
                 }
             }
             Declaracion::Mientras { condicion, bloque } => {
-                let new_bloque: Vec<Declaracion> = bloque.iter()
+                let new_bloque: Vec<Declaracion> = bloque
+                    .iter()
                     .flat_map(|d| self.propagar_declaracion(d))
                     .collect();
                 Declaracion::Mientras {
@@ -1302,15 +1332,18 @@ impl ConstPropagator {
                 incremento,
                 bloque,
             } => {
-                let new_inicializacion = inicializacion.as_ref().map(|ini| {
-                    Box::new(self.clonar_y_propagar(ini))
-                });
-                let new_bloque: Vec<Declaracion> = bloque.iter()
+                let new_inicializacion = inicializacion
+                    .as_ref()
+                    .map(|ini| Box::new(self.clonar_y_propagar(ini)));
+                let new_bloque: Vec<Declaracion> = bloque
+                    .iter()
                     .flat_map(|d| self.propagar_declaracion(d))
                     .collect();
                 Declaracion::Para {
                     inicializacion: new_inicializacion,
-                    condicion: condicion.as_ref().map(|c| Box::new(self.propagar_expresion(c))),
+                    condicion: condicion
+                        .as_ref()
+                        .map(|c| Box::new(self.propagar_expresion(c))),
                     incremento: incremento.clone(),
                     bloque: new_bloque,
                 }
@@ -1334,7 +1367,8 @@ impl ConstPropagator {
             } => {
                 let izq = self.propagar_expresion(izquierda);
                 let der = self.propagar_expresion(derecha);
-                if let (Some(a), Some(b)) = (self.literal_a_valor(&izq), self.literal_a_valor(&der)) {
+                if let (Some(a), Some(b)) = (self.literal_a_valor(&izq), self.literal_a_valor(&der))
+                {
                     if let Some(resultado) = self.evaluar_binaria(&a, operador, &b) {
                         return self.valor_a_expresion(&resultado);
                     }
@@ -1383,7 +1417,11 @@ impl ConstPropagator {
                 let f = self.propagar_expresion(si_falso);
                 if let Some(valor) = self.literal_a_valor(&cond) {
                     if let Some(b) = valor.as_booleano() {
-                        if b { return v; } else { return f; }
+                        if b {
+                            return v;
+                        } else {
+                            return f;
+                        }
                     }
                 }
                 Expresion::Ternario {
@@ -1394,7 +1432,10 @@ impl ConstPropagator {
             }
             Expresion::LlamadaFuncion { nombre, argumentos } => Expresion::LlamadaFuncion {
                 nombre: nombre.clone(),
-                argumentos: argumentos.iter().map(|a| self.propagar_expresion(a)).collect(),
+                argumentos: argumentos
+                    .iter()
+                    .map(|a| self.propagar_expresion(a))
+                    .collect(),
             },
             _ => expr.clone(),
         }
@@ -1436,8 +1477,11 @@ impl ConstPropagator {
                 Resta => a.checked_sub(*b).map(|v| ValorConstante::Entero(v)),
                 Multiplicacion => a.checked_mul(*b).map(|v| ValorConstante::Entero(v)),
                 Division => {
-                    if *b == 0 { None }
-                    else { a.checked_div(*b).map(|v| ValorConstante::Entero(v)) }
+                    if *b == 0 {
+                        None
+                    } else {
+                        a.checked_div(*b).map(|v| ValorConstante::Entero(v))
+                    }
                 }
                 IgualIgual => Some(ValorConstante::Booleano(a == b)),
                 Diferente => Some(ValorConstante::Booleano(a != b)),
@@ -1572,10 +1616,7 @@ impl FunctionInliner {
                 ..
             } = decl
             {
-                funcs.insert(
-                    nombre.clone(),
-                    (parametros.clone(), cuerpo.clone()),
-                );
+                funcs.insert(nombre.clone(), (parametros.clone(), cuerpo.clone()));
             }
         }
 
@@ -1593,10 +1634,7 @@ impl FunctionInliner {
             if count == 1 && body.len() <= self.max_inline_size {
                 // Verificar que no es main
                 if nombre != "main" {
-                    inline_candidates.insert(
-                        nombre.clone(),
-                        (params.clone(), body.clone()),
-                    );
+                    inline_candidates.insert(nombre.clone(), (params.clone(), body.clone()));
                 }
             }
         }
@@ -1680,7 +1718,9 @@ impl FunctionInliner {
                     Self::contar_llamadas_expr(arg, counts);
                 }
             }
-            Expresion::Binaria { izquierda, derecha, .. } => {
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => {
                 Self::contar_llamadas_expr(izquierda, counts);
                 Self::contar_llamadas_expr(derecha, counts);
             }
@@ -1769,11 +1809,14 @@ impl FunctionInliner {
                 bloque_verdadero,
                 bloque_falso,
             } => {
-                let new_verdadero: Vec<Declaracion> = bloque_verdadero.iter()
+                let new_verdadero: Vec<Declaracion> = bloque_verdadero
+                    .iter()
                     .flat_map(|d| self.inline_en_decl(d, candidates))
                     .collect();
                 let new_falso: Option<Vec<Declaracion>> = bloque_falso.as_ref().map(|bf| {
-                    bf.iter().flat_map(|d| self.inline_en_decl(d, candidates)).collect()
+                    bf.iter()
+                        .flat_map(|d| self.inline_en_decl(d, candidates))
+                        .collect()
                 });
                 vec![Declaracion::Si {
                     condicion: condicion.clone(),
@@ -1782,7 +1825,8 @@ impl FunctionInliner {
                 }]
             }
             Declaracion::Mientras { condicion, bloque } => {
-                let new_bloque: Vec<Declaracion> = bloque.iter()
+                let new_bloque: Vec<Declaracion> = bloque
+                    .iter()
                     .flat_map(|d| self.inline_en_decl(d, candidates))
                     .collect();
                 vec![Declaracion::Mientras {
@@ -1796,7 +1840,8 @@ impl FunctionInliner {
                 incremento,
                 bloque,
             } => {
-                let new_bloque: Vec<Declaracion> = bloque.iter()
+                let new_bloque: Vec<Declaracion> = bloque
+                    .iter()
                     .flat_map(|d| self.inline_en_decl(d, candidates))
                     .collect();
                 vec![Declaracion::Para {
@@ -1883,11 +1928,9 @@ impl LoopUnswitcher {
                     .iter()
                     .flat_map(|d| self.unswitch_decl(d))
                     .collect();
-                let new_falso = bloque_falso.as_ref().map(|bf| {
-                    bf.iter()
-                        .flat_map(|d| self.unswitch_decl(d))
-                        .collect()
-                });
+                let new_falso = bloque_falso
+                    .as_ref()
+                    .map(|bf| bf.iter().flat_map(|d| self.unswitch_decl(d)).collect());
                 vec![Declaracion::Si {
                     condicion: condicion.clone(),
                     bloque_verdadero: new_verdadero,
@@ -1908,10 +1951,8 @@ impl LoopUnswitcher {
                 precondiciones,
                 postcondiciones,
             } => {
-                let new_cuerpo: Vec<Declaracion> = cuerpo
-                    .iter()
-                    .flat_map(|d| self.unswitch_decl(d))
-                    .collect();
+                let new_cuerpo: Vec<Declaracion> =
+                    cuerpo.iter().flat_map(|d| self.unswitch_decl(d)).collect();
                 vec![Declaracion::Funcion {
                     nombre: nombre.clone(),
                     parametros_tipo: parametros_tipo.clone(),
@@ -1934,7 +1975,12 @@ impl LoopUnswitcher {
     /// Verifica si una expresión es invariante dentro de un loop.
     /// Una expresión es invariante si no depende de variables que cambien en el loop.
     /// Considera tanto las variables de la condición del loop como las modificadas en el body.
-    fn es_invariante_en_loop(&self, expr: &Expresion, loop_cond: &Expresion, cuerpo_loop: &[Declaracion]) -> bool {
+    fn es_invariante_en_loop(
+        &self,
+        expr: &Expresion,
+        loop_cond: &Expresion,
+        cuerpo_loop: &[Declaracion],
+    ) -> bool {
         // 1. La variable no debe aparecer en la condición del loop
         let vars_loop = self.extraer_identificadores(loop_cond);
         let vars_expr = self.extraer_identificadores(expr);
@@ -1960,27 +2006,45 @@ impl LoopUnswitcher {
                 Declaracion::AsignacionIndex { nombre, .. } if nombre == var => return true,
                 Declaracion::AsignacionMiembro { objeto, .. } => {
                     if let Expresion::Identificador { nombre, .. } = objeto.as_ref() {
-                        if nombre == var { return true; }
+                        if nombre == var {
+                            return true;
+                        }
                     }
                 }
                 // Recursivo en bloques anidados
-                Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
-                    if self.body_modifica_var(bloque_verdadero, var) { return true; }
+                Declaracion::Si {
+                    bloque_verdadero,
+                    bloque_falso,
+                    ..
+                } => {
+                    if self.body_modifica_var(bloque_verdadero, var) {
+                        return true;
+                    }
                     if let Some(falso) = bloque_falso {
-                        if self.body_modifica_var(falso, var) { return true; }
+                        if self.body_modifica_var(falso, var) {
+                            return true;
+                        }
                     }
                 }
                 Declaracion::Mientras { bloque, .. } => {
-                    if self.body_modifica_var(bloque, var) { return true; }
+                    if self.body_modifica_var(bloque, var) {
+                        return true;
+                    }
                 }
                 Declaracion::Para { bloque, .. } => {
-                    if self.body_modifica_var(bloque, var) { return true; }
+                    if self.body_modifica_var(bloque, var) {
+                        return true;
+                    }
                 }
                 Declaracion::Repetir { bloque, .. } => {
-                    if self.body_modifica_var(bloque, var) { return true; }
+                    if self.body_modifica_var(bloque, var) {
+                        return true;
+                    }
                 }
                 Declaracion::Cuando { cuerpo, .. } => {
-                    if self.body_modifica_var(cuerpo, var) { return true; }
+                    if self.body_modifica_var(cuerpo, var) {
+                        return true;
+                    }
                 }
                 _ => {}
             }
@@ -2061,12 +2125,16 @@ impl CsePass {
             .iter()
             .flat_map(|d| self.cse_decl(d))
             .collect();
-        Programa { declaraciones: new_decls }
+        Programa {
+            declaraciones: new_decls,
+        }
     }
 
     fn cse_decl(&mut self, decl: &Declaracion) -> Vec<Declaracion> {
         match decl {
-            Declaracion::Variable { valor: Some(expr), .. } => {
+            Declaracion::Variable {
+                valor: Some(expr), ..
+            } => {
                 if Self::expr_has_side_effects(expr) {
                     return vec![decl.clone()];
                 }
@@ -2075,7 +2143,20 @@ impl CsePass {
                 // Para CSE real necesitaríamos un hash consenso de expresiones
                 vec![decl.clone()]
             }
-            Declaracion::Funcion { nombre, parametros_tipo, parametros, tipo_retorno, cuerpo, externa, asincrona, enlace_nombre, atributos, doc, precondiciones, postcondiciones } => {
+            Declaracion::Funcion {
+                nombre,
+                parametros_tipo,
+                parametros,
+                tipo_retorno,
+                cuerpo,
+                externa,
+                asincrona,
+                enlace_nombre,
+                atributos,
+                doc,
+                precondiciones,
+                postcondiciones,
+            } => {
                 let new_body = self.cse_block(cuerpo);
                 vec![Declaracion::Funcion {
                     nombre: nombre.clone(),
@@ -2103,7 +2184,11 @@ impl CsePass {
 
         for decl in decls {
             match decl {
-                Declaracion::Variable { valor: Some(expr), nombre, .. } if !Self::expr_has_side_effects(expr) => {
+                Declaracion::Variable {
+                    valor: Some(expr),
+                    nombre,
+                    ..
+                } if !Self::expr_has_side_effects(expr) => {
                     let key = Self::expr_hash_key(expr);
                     if let Some(existing_var) = seen.get(&key) {
                         // CSE: reemplazar expresión con referencia a variable existente
@@ -2144,37 +2229,55 @@ impl CsePass {
             // Identificador
             Expresion::Identificador { nombre, .. } => format!("id:{}", nombre),
             // Binaria — recursivo
-            Expresion::Binaria { izquierda, operador, derecha } => {
-                format!("bin:{:?}:{}:{}", operador,
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
+                format!(
+                    "bin:{:?}:{}:{}",
+                    operador,
                     Self::expr_hash_key(izquierda),
-                    Self::expr_hash_key(derecha))
+                    Self::expr_hash_key(derecha)
+                )
             }
             // Unaria — recursivo
             Expresion::Unaria { operador, expr } => {
-                format!("unary:{:?}:{}", operador,
-                    Self::expr_hash_key(expr))
+                format!("unary:{:?}:{}", operador, Self::expr_hash_key(expr))
             }
             // Llamada a función — recursivo en argumentos
             Expresion::LlamadaFuncion { nombre, argumentos } => {
-                let args_hash: Vec<String> = argumentos.iter()
-                    .map(|a| Self::expr_hash_key(a)).collect();
+                let args_hash: Vec<String> =
+                    argumentos.iter().map(|a| Self::expr_hash_key(a)).collect();
                 format!("call:{}:{}", nombre, args_hash.join(","))
             }
             // Llamada a método — recursivo en objeto y argumentos
-            Expresion::LlamadaMetodo { objeto, metodo, argumentos } => {
-                let args_hash: Vec<String> = argumentos.iter()
-                    .map(|a| Self::expr_hash_key(a)).collect();
-                format!("meth:{}:{}:{}", Self::expr_hash_key(objeto), metodo, args_hash.join(","))
+            Expresion::LlamadaMetodo {
+                objeto,
+                metodo,
+                argumentos,
+            } => {
+                let args_hash: Vec<String> =
+                    argumentos.iter().map(|a| Self::expr_hash_key(a)).collect();
+                format!(
+                    "meth:{}:{}:{}",
+                    Self::expr_hash_key(objeto),
+                    metodo,
+                    args_hash.join(",")
+                )
             }
             // Arreglo literal — recursivo en elementos
             Expresion::Arreglo(elementos) => {
-                let elems: Vec<String> = elementos.iter()
-                    .map(|e| Self::expr_hash_key(e)).collect();
+                let elems: Vec<String> = elementos.iter().map(|e| Self::expr_hash_key(e)).collect();
                 format!("arr:[{}]", elems.join(","))
             }
             // Index — recursivo en objeto e índice
             Expresion::Index { objeto, indice } => {
-                format!("idx:{}:{}", Self::expr_hash_key(objeto), Self::expr_hash_key(indice))
+                format!(
+                    "idx:{}:{}",
+                    Self::expr_hash_key(objeto),
+                    Self::expr_hash_key(indice)
+                )
             }
             // AccesoMiembro — recursivo en objeto
             Expresion::AccesoMiembro { objeto, miembro } => {
@@ -2182,8 +2285,8 @@ impl CsePass {
             }
             // Instanciación — recursivo en argumentos
             Expresion::Instanciacion { clase, argumentos } => {
-                let args_hash: Vec<String> = argumentos.iter()
-                    .map(|a| Self::expr_hash_key(a)).collect();
+                let args_hash: Vec<String> =
+                    argumentos.iter().map(|a| Self::expr_hash_key(a)).collect();
                 format!("new:{}:{}", clase, args_hash.join(","))
             }
             // Grupo (paréntesis) — recursivo
@@ -2192,17 +2295,24 @@ impl CsePass {
             }
             // Mapa literal — recursivo en claves y valores
             Expresion::Mapa(pares) => {
-                let pairs: Vec<String> = pares.iter()
+                let pairs: Vec<String> = pares
+                    .iter()
                     .map(|(k, v)| format!("{}={}", Self::expr_hash_key(k), Self::expr_hash_key(v)))
                     .collect();
                 format!("map:[{}]", pairs.join(","))
             }
             // Ternario — recursivo
-            Expresion::Ternario { condicion, si_verdadero, si_falso } => {
-                format!("tern:{}:{}:{}",
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                format!(
+                    "tern:{}:{}:{}",
                     Self::expr_hash_key(condicion),
                     Self::expr_hash_key(si_verdadero),
-                    Self::expr_hash_key(si_falso))
+                    Self::expr_hash_key(si_falso)
+                )
             }
             // Referencia — recursivo
             Expresion::Referencia { expr, mutable } => {
@@ -2212,6 +2322,8 @@ impl CsePass {
             Expresion::Ok(expr) => format!("ok:{}", Self::expr_hash_key(expr)),
             Expresion::Error(expr) => format!("err:{}", Self::expr_hash_key(expr)),
             Expresion::Algo(expr) => format!("algo:{}", Self::expr_hash_key(expr)),
+            Expresion::Nada => "nada".to_string(),
+            Expresion::Ninguno => "ninguno".to_string(),
             // Try — recursivo
             Expresion::Try(expr) => format!("try:{}", Self::expr_hash_key(expr)),
             // Asignación como expresión — recursivo
@@ -2219,12 +2331,25 @@ impl CsePass {
                 format!("asgn:{}:{}", variable, Self::expr_hash_key(valor))
             }
             // Asignación a campo — recursivo
-            Expresion::AsignacionCampo { objeto, campo, valor } => {
-                format!("asgnf:{}:{}:{}", Self::expr_hash_key(objeto), campo, Self::expr_hash_key(valor))
+            Expresion::AsignacionCampo {
+                objeto,
+                campo,
+                valor,
+            } => {
+                format!(
+                    "asgnf:{}:{}:{}",
+                    Self::expr_hash_key(objeto),
+                    campo,
+                    Self::expr_hash_key(valor)
+                )
             }
             // ArraySet — recursivo
             Expresion::ArraySet { array, valor } => {
-                format!("arrset:{}:{}", Self::expr_hash_key(array), Self::expr_hash_key(valor))
+                format!(
+                    "arrset:{}:{}",
+                    Self::expr_hash_key(array),
+                    Self::expr_hash_key(valor)
+                )
             }
             // Fallback: usar Debug sin puntero (hash determinista del contenido)
             _ => format!("other:{:?}", expr),
@@ -2232,18 +2357,21 @@ impl CsePass {
     }
 
     fn expr_has_side_effects(expr: &Expresion) -> bool {
-        matches!(expr,
+        matches!(
+            expr,
             Expresion::LlamadaFuncion { .. }
-            | Expresion::LlamadaMetodo { .. }
-            | Expresion::Instanciacion { .. }
-            | Expresion::Asignacion { .. }
-            | Expresion::Try(_)
+                | Expresion::LlamadaMetodo { .. }
+                | Expresion::Instanciacion { .. }
+                | Expresion::Asignacion { .. }
+                | Expresion::Try(_)
         )
     }
 }
 
 impl Default for CsePass {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Copy Propagation — reemplaza `b = a` con uso directo de `a`.
@@ -2265,12 +2393,27 @@ impl CopyPropagation {
             .iter()
             .flat_map(|d| self.propagar_decl(d))
             .collect();
-        Programa { declaraciones: new_decls }
+        Programa {
+            declaraciones: new_decls,
+        }
     }
 
     fn propagar_decl(&mut self, decl: &Declaracion) -> Vec<Declaracion> {
         match decl {
-            Declaracion::Funcion { nombre, parametros_tipo, parametros, tipo_retorno, cuerpo, externa, asincrona, enlace_nombre, atributos, doc, precondiciones, postcondiciones } => {
+            Declaracion::Funcion {
+                nombre,
+                parametros_tipo,
+                parametros,
+                tipo_retorno,
+                cuerpo,
+                externa,
+                asincrona,
+                enlace_nombre,
+                atributos,
+                doc,
+                precondiciones,
+                postcondiciones,
+            } => {
                 let new_body = self.propagar_block(cuerpo);
                 vec![Declaracion::Funcion {
                     nombre: nombre.clone(),
@@ -2298,12 +2441,18 @@ impl CopyPropagation {
 
         for decl in decls {
             match decl {
-                Declaracion::Variable { nombre, valor: Some(Expresion::Identificador { nombre: src, .. }), .. } => {
+                Declaracion::Variable {
+                    nombre,
+                    valor: Some(Expresion::Identificador { nombre: src, .. }),
+                    ..
+                } => {
                     // variable b = a → registrar copia
                     copies.insert(nombre.clone(), src.clone());
                     result.push(decl.clone());
                 }
-                Declaracion::Variable { valor: Some(expr), .. } => {
+                Declaracion::Variable {
+                    valor: Some(expr), ..
+                } => {
                     // Reemplazar referencias a copias en la expresión
                     let new_expr = self.reemplazar_copias_expr(expr, &copies);
                     let mut new_decl = decl.clone();
@@ -2333,9 +2482,17 @@ impl CopyPropagation {
         result
     }
 
-    fn reemplazar_copias_expr(&mut self, expr: &Expresion, copies: &HashMap<String, String>) -> Expresion {
+    fn reemplazar_copias_expr(
+        &mut self,
+        expr: &Expresion,
+        copies: &HashMap<String, String>,
+    ) -> Expresion {
         match expr {
-            Expresion::Identificador { nombre, linea, columna } => {
+            Expresion::Identificador {
+                nombre,
+                linea,
+                columna,
+            } => {
                 if let Some(src) = copies.get(nombre) {
                     self.propagaciones += 1;
                     Expresion::Identificador {
@@ -2347,20 +2504,24 @@ impl CopyPropagation {
                     expr.clone()
                 }
             }
-            Expresion::Binaria { izquierda, operador, derecha } => {
-                Expresion::Binaria {
-                    izquierda: Box::new(self.reemplazar_copias_expr(izquierda, copies)),
-                    operador: operador.clone(),
-                    derecha: Box::new(self.reemplazar_copias_expr(derecha, copies)),
-                }
-            }
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => Expresion::Binaria {
+                izquierda: Box::new(self.reemplazar_copias_expr(izquierda, copies)),
+                operador: operador.clone(),
+                derecha: Box::new(self.reemplazar_copias_expr(derecha, copies)),
+            },
             _ => expr.clone(),
         }
     }
 }
 
 impl Default for CopyPropagation {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -2444,12 +2605,16 @@ mod tests {
     fn test_dce_funcion_no_llamada_eliminada() {
         let prog = dce_source("funcion aux() { retornar 1 }\nfuncion main() { retornar 0 }");
         assert_eq!(prog.declaraciones.len(), 1);
-        assert!(matches!(&prog.declaraciones[0], Declaracion::Funcion { nombre, .. } if nombre == "main"));
+        assert!(
+            matches!(&prog.declaraciones[0], Declaracion::Funcion { nombre, .. } if nombre == "main")
+        );
     }
 
     #[test]
     fn test_dce_funcion_llamada_conservada() {
-        let prog = dce_source("funcion suma(a, b) { retornar a + b }\nfuncion main() { variable x = suma(1, 2) }");
+        let prog = dce_source(
+            "funcion suma(a, b) { retornar a + b }\nfuncion main() { variable x = suma(1, 2) }",
+        );
         assert_eq!(prog.declaraciones.len(), 2);
     }
 
@@ -2463,7 +2628,9 @@ mod tests {
     fn test_dce_clase_no_instanciada_eliminada() {
         let prog = dce_source("clase Aux { x: Entero }\nfuncion main() { retornar 0 }");
         assert_eq!(prog.declaraciones.len(), 1);
-        assert!(matches!(&prog.declaraciones[0], Declaracion::Funcion { nombre, .. } if nombre == "main"));
+        assert!(
+            matches!(&prog.declaraciones[0], Declaracion::Funcion { nombre, .. } if nombre == "main")
+        );
     }
 
     #[test]
@@ -2478,7 +2645,11 @@ mod tests {
         let prog = optimizar_source("variable y = x * 2");
         match &prog.declaraciones[0] {
             Declaracion::Variable {
-                valor: Some(Expresion::Binaria { operador: Operador::Suma, .. }),
+                valor:
+                    Some(Expresion::Binaria {
+                        operador: Operador::Suma,
+                        ..
+                    }),
                 ..
             } => {}
             _ => panic!("x * 2 no se redujo a x + x"),
@@ -2502,7 +2673,11 @@ mod tests {
         let prog = optimizar_source("variable y = 0 - x");
         match &prog.declaraciones[0] {
             Declaracion::Variable {
-                valor: Some(Expresion::Unaria { operador: OperadorUnario::Negar, .. }),
+                valor:
+                    Some(Expresion::Unaria {
+                        operador: OperadorUnario::Negar,
+                        ..
+                    }),
                 ..
             } => {}
             _ => panic!("0 - x no se redujo a -x"),
@@ -2523,7 +2698,8 @@ mod tests {
 
     #[test]
     fn test_strength_reduce_decimal_identities() {
-        let prog = optimizar_source("variable a = x + 0.0\nvariable b = x * 1.0\nvariable c = x * 0.0");
+        let prog =
+            optimizar_source("variable a = x + 0.0\nvariable b = x * 1.0\nvariable c = x * 0.0");
         match &prog.declaraciones[0] {
             Declaracion::Variable {
                 valor: Some(Expresion::Identificador { nombre, .. }),
@@ -2564,7 +2740,11 @@ mod tests {
         let prog = optimizar_source("variable y = 0.0 - x");
         match &prog.declaraciones[0] {
             Declaracion::Variable {
-                valor: Some(Expresion::Unaria { operador: OperadorUnario::Negar, .. }),
+                valor:
+                    Some(Expresion::Unaria {
+                        operador: OperadorUnario::Negar,
+                        ..
+                    }),
                 ..
             } => {}
             _ => panic!("0.0 - x no se redujo a -x"),
@@ -2586,7 +2766,10 @@ mod tests {
         let prog = constprop_source("constante x = 5\nvariable y = x + 3");
         assert_eq!(prog.declaraciones.len(), 2);
         match &prog.declaraciones[1] {
-            Declaracion::Variable { valor: Some(Expresion::LiteralNumero(8)), .. } => {}
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralNumero(8)),
+                ..
+            } => {}
             _ => panic!("constante x = 5; y = x + 3 -> y debio ser 8"),
         }
     }
@@ -2597,7 +2780,10 @@ mod tests {
         assert_eq!(prog.declaraciones.len(), 2);
         match &prog.declaraciones[1] {
             // x es mutable, no debe propagarse
-            Declaracion::Variable { valor: Some(Expresion::Binaria { .. }), .. } => {}
+            Declaracion::Variable {
+                valor: Some(Expresion::Binaria { .. }),
+                ..
+            } => {}
             _ => panic!("variable mutable no debe propagarse"),
         }
     }
@@ -2607,7 +2793,10 @@ mod tests {
         let prog = constprop_source("constante s = \"hola\"\nvariable t = s + \" mundo\"");
         assert_eq!(prog.declaraciones.len(), 2);
         match &prog.declaraciones[1] {
-            Declaracion::Variable { valor: Some(Expresion::LiteralTexto(t)), .. } => {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralTexto(t)),
+                ..
+            } => {
                 assert_eq!(t, "hola mundo");
             }
             _ => panic!("const s = hola; t = s + ' mundo' -> t debio ser 'hola mundo'"),
@@ -2619,7 +2808,10 @@ mod tests {
         let prog = constprop_source("constante a = verdadero\nvariable b = no a");
         assert_eq!(prog.declaraciones.len(), 2);
         match &prog.declaraciones[1] {
-            Declaracion::Variable { valor: Some(Expresion::LiteralBooleano(b)), .. } => {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralBooleano(b)),
+                ..
+            } => {
                 assert!(!b);
             }
             _ => panic!("const a = verdadero; b = no a -> b debio ser falso"),
@@ -2628,15 +2820,22 @@ mod tests {
 
     #[test]
     fn test_constprop_asignacion_invalida() {
-        let prog = constprop_source("constante x = 5\nvariable y = x + 2\nx = 10\nvariable z = x + 1");
+        let prog =
+            constprop_source("constante x = 5\nvariable y = x + 2\nx = 10\nvariable z = x + 1");
         assert_eq!(prog.declaraciones.len(), 4);
         match &prog.declaraciones[1] {
-            Declaracion::Variable { valor: Some(Expresion::LiteralNumero(7)), .. } => {}
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralNumero(7)),
+                ..
+            } => {}
             _ => panic!("y debio ser 7"),
         }
         match &prog.declaraciones[3] {
             // x fue reasignado, así que z = x + 1 NO debe ser 11
-            Declaracion::Variable { valor: Some(Expresion::Binaria { .. }), .. } => {}
+            Declaracion::Variable {
+                valor: Some(Expresion::Binaria { .. }),
+                ..
+            } => {}
             _ => panic!("z debio mantener la expresion x+1 despues de reasignacion"),
         }
     }
@@ -2646,7 +2845,10 @@ mod tests {
         let prog = constprop_source("constante a = 2\nconstante b = a + 3\nconstante c = b * 4");
         assert_eq!(prog.declaraciones.len(), 3);
         match &prog.declaraciones[2] {
-            Declaracion::Variable { valor: Some(Expresion::LiteralNumero(20)), .. } => {}
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralNumero(20)),
+                ..
+            } => {}
             _ => panic!("a=2, b=a+3=5, c=b*4 -> c debio ser 20"),
         }
     }
@@ -2655,23 +2857,38 @@ mod tests {
     fn test_optimizar_identidad_algebraica_y_short_circuit() {
         let prog = optimizar_source("variable x = a + 0\nvariable y = a * 1\nvariable z = a * 0\nvariable s = \"hola \" + \"mundo\"\nvariable b = no (no a)");
         match &prog.declaraciones[0] {
-            Declaracion::Variable { valor: Some(Expresion::Identificador { nombre, .. }), .. } => assert_eq!(nombre, "a"),
+            Declaracion::Variable {
+                valor: Some(Expresion::Identificador { nombre, .. }),
+                ..
+            } => assert_eq!(nombre, "a"),
             _ => panic!("Falló optimización x + 0"),
         }
         match &prog.declaraciones[1] {
-            Declaracion::Variable { valor: Some(Expresion::Identificador { nombre, .. }), .. } => assert_eq!(nombre, "a"),
+            Declaracion::Variable {
+                valor: Some(Expresion::Identificador { nombre, .. }),
+                ..
+            } => assert_eq!(nombre, "a"),
             _ => panic!("Falló optimización a * 1"),
         }
         match &prog.declaraciones[2] {
-            Declaracion::Variable { valor: Some(Expresion::LiteralNumero(0)), .. } => {},
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralNumero(0)),
+                ..
+            } => {}
             _ => panic!("Falló optimización a * 0"),
         }
         match &prog.declaraciones[3] {
-            Declaracion::Variable { valor: Some(Expresion::LiteralTexto(s)), .. } => assert_eq!(s, "hola mundo"),
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralTexto(s)),
+                ..
+            } => assert_eq!(s, "hola mundo"),
             _ => panic!("Falló concatenación de cadenas"),
         }
         match &prog.declaraciones[4] {
-            Declaracion::Variable { valor: Some(Expresion::Identificador { nombre, .. }), .. } => assert_eq!(nombre, "a"),
+            Declaracion::Variable {
+                valor: Some(Expresion::Identificador { nombre, .. }),
+                ..
+            } => assert_eq!(nombre, "a"),
             _ => panic!("Falló doble negación"),
         }
     }
@@ -2709,7 +2926,8 @@ mod tests {
 
     #[test]
     fn test_dead_branch_si_verdadero_con_sino() {
-        let prog = optimizar_source("si verdadero {\n  variable x = 1\n} sino {\n  variable y = 2\n}");
+        let prog =
+            optimizar_source("si verdadero {\n  variable x = 1\n} sino {\n  variable y = 2\n}");
         // Debería expandir solo el bloque verdadero
         assert_eq!(prog.declaraciones.len(), 1);
         match &prog.declaraciones[0] {
@@ -2730,7 +2948,10 @@ mod tests {
         let prog = optimizar_source("mientras (verdadero) {\n  variable x = 1\n}");
         // Debería conservar el loop
         assert_eq!(prog.declaraciones.len(), 1);
-        assert!(matches!(&prog.declaraciones[0], Declaracion::Mientras { .. }));
+        assert!(matches!(
+            &prog.declaraciones[0],
+            Declaracion::Mientras { .. }
+        ));
     }
 
     #[test]
@@ -2776,7 +2997,10 @@ mod tests {
         let prog = optimizar_source("repetir (3) {\n  variable x = 1\n}");
         // No debería eliminar nada
         assert_eq!(prog.declaraciones.len(), 1);
-        assert!(matches!(&prog.declaraciones[0], Declaracion::Repetir { .. }));
+        assert!(matches!(
+            &prog.declaraciones[0],
+            Declaracion::Repetir { .. }
+        ));
     }
 
     // ─── Inlining tests ─────────────────────────────────────────────────
@@ -2793,7 +3017,11 @@ mod tests {
         // La función doble debería haber sido eliminada (inlined)
         assert_eq!(inliner.inlines_realizados, 1);
         // Solo queda la declaración de variable
-        let funcs: Vec<_> = prog.declaraciones.iter().filter(|d| matches!(d, Declaracion::Funcion { .. })).collect();
+        let funcs: Vec<_> = prog
+            .declaraciones
+            .iter()
+            .filter(|d| matches!(d, Declaracion::Funcion { .. }))
+            .collect();
         assert_eq!(funcs.len(), 0, "Function should have been inlined");
     }
 
@@ -2808,9 +3036,11 @@ mod tests {
         let prog = inliner.inline(&programa);
         // main no debería ser inlined, pero sí aux
         assert_eq!(inliner.inlines_realizados, 1);
-        let main_funcs: Vec<_> = prog.declaraciones.iter().filter(|d| {
-            matches!(d, Declaracion::Funcion { nombre, .. } if nombre == "main")
-        }).collect();
+        let main_funcs: Vec<_> = prog
+            .declaraciones
+            .iter()
+            .filter(|d| matches!(d, Declaracion::Funcion { nombre, .. } if nombre == "main"))
+            .collect();
         assert_eq!(main_funcs.len(), 1, "main should be preserved");
     }
 
@@ -2825,7 +3055,11 @@ mod tests {
         let prog = inliner.inline(&programa);
         // La función tiene 11 declaraciones (> max_inline_size=10), no se inlinea
         assert_eq!(inliner.inlines_realizados, 0);
-        let funcs: Vec<_> = prog.declaraciones.iter().filter(|d| matches!(d, Declaracion::Funcion { .. })).collect();
+        let funcs: Vec<_> = prog
+            .declaraciones
+            .iter()
+            .filter(|d| matches!(d, Declaracion::Funcion { .. }))
+            .collect();
         assert_eq!(funcs.len(), 1, "Large function should not be inlined");
     }
 
@@ -2843,11 +3077,18 @@ mod tests {
         // Debería haber un Si externo con dos Mientras adentro
         assert_eq!(unswitcher.unswitches_realizados, 1);
         match &prog.declaraciones[0] {
-            Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
+            Declaracion::Si {
+                bloque_verdadero,
+                bloque_falso,
+                ..
+            } => {
                 assert_eq!(bloque_verdadero.len(), 1);
                 assert!(matches!(&bloque_verdadero[0], Declaracion::Mientras { .. }));
                 assert!(bloque_falso.is_some());
-                assert!(matches!(&bloque_falso.as_ref().unwrap()[0], Declaracion::Mientras { .. }));
+                assert!(matches!(
+                    &bloque_falso.as_ref().unwrap()[0],
+                    Declaracion::Mientras { .. }
+                ));
             }
             _ => panic!("Expected Si after unswitching"),
         }
@@ -2864,6 +3105,9 @@ mod tests {
         let mut unswitcher = LoopUnswitcher::new();
         let prog = unswitcher.unswitch(&programa);
         assert_eq!(unswitcher.unswitches_realizados, 0);
-        assert!(matches!(&prog.declaraciones[0], Declaracion::Mientras { .. }));
+        assert!(matches!(
+            &prog.declaraciones[0],
+            Declaracion::Mientras { .. }
+        ));
     }
 }

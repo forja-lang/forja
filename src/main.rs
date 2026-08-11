@@ -1744,7 +1744,7 @@ fn cmd_build(args: &[String]) {
     // Detectar si usa GUI (importar gui)
     let usa_gui = std::fs::read_to_string(&input)
         .ok()
-        .map(|s| s.contains("importar gui"))
+        .map(|s| s.contains("importar gui") || s.contains("importar \"gui\"") || s.contains("importar std/gui") || s.contains("importar \"std/gui\""))
         .unwrap_or(false);
 
     if usa_gui {
@@ -1958,7 +1958,7 @@ fn cmd_transpile(args: &[String]) {
         format!(
             r#"[package]
 name = "{}"
-version = "0.9.0"
+version = "0.9.1"
 edition = "2021"
 
 [workspace]
@@ -1985,7 +1985,7 @@ features = ["android-native-activity"]
         format!(
             r#"[package]
 name = "{}"
-version = "0.9.0"
+version = "0.9.1"
 edition = "2021"
 
 # Exportado por Forja (fa) desde {} (podés ejecutar directo con 'forja ejecutar')

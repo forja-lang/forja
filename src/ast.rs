@@ -213,7 +213,10 @@ pub enum Expresion {
         argumentos: Vec<Expresion>,
     },
     /// Referencia (préstamo) (ej: &x)
-    Referencia { expr: Box<Expresion>, mutable: bool },
+    Referencia {
+        expr: Box<Expresion>,
+        mutable: bool,
+    },
     /// Arreglo literal (ej: [1, 2, 3])
     Arreglo(Vec<Expresion>),
     /// Mapa literal (ej: {"clave": valor})
@@ -238,13 +241,17 @@ pub enum Expresion {
     /// Expresión agrupada (ej: (a + b) * c)
     Grupo(Box<Expresion>),
     /// Hilo ligero (ej: hilo { ... })
-    Hilo { cuerpo: Vec<Declaracion> },
+    Hilo {
+        cuerpo: Vec<Declaracion>,
+    },
     /// Crear canal de comunicación (ej: canal())
     CanalNuevo,
     /// Operador de propagación de errores (expr?)
     Try(Box<Expresion>),
     /// Seleccionar entre múltiples canales
-    Seleccionar { brazos: Vec<BrazoSeleccionar> },
+    Seleccionar {
+        brazos: Vec<BrazoSeleccionar>,
+    },
     /// Asignación como expresión (ej: x = 5 retorna 5)
     Asignacion {
         variable: String,
@@ -268,6 +275,9 @@ pub enum Expresion {
     Error(Box<Expresion>),
     /// Construir valor Algo de Opcion (ej: Algo(42))
     Algo(Box<Expresion>),
+    /// Construir valor Nada/Ninguno de Opcion (ej: Nada(), Ninguno())
+    Nada,
+    Ninguno,
     /// `resultado` - valor de retorno en postcondición (Design by Contract)
     Resultado,
     /// `anterior(expr)` - captura valor de expr antes de ejecución (Design by Contract)
