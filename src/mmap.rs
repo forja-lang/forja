@@ -248,7 +248,7 @@ mod windows_impl {
 /// Abre un archivo y lo mapea en memoria.
 /// `offset`: se alinea automáticamente al page_size.
 /// `len`: 0 = mapear todo el archivo desde offset.
-pub fn mmap_abrir(ruta: &str, offset: u64, len: usize, writable: bool) -> Result<i64, String> {
+pub fn mmap_abrir(ruta: &str, offset: u64, len: usize, _writable: bool) -> Result<i64, String> {
     let ps = page_size() as u64;
     let aligned = (offset / ps) * ps;
     let map_len = if len == 0 {
@@ -262,8 +262,8 @@ pub fn mmap_abrir(ruta: &str, offset: u64, len: usize, writable: bool) -> Result
         return Err("Longitud de mapeo cero".into());
     }
 
-    #[cfg(unix)] { unix::abrir(ruta, aligned, map_len, writable) }
-    #[cfg(windows)] { windows_impl::abrir(ruta, aligned, map_len, writable) }
+    #[cfg(unix)] { unix::abrir(ruta, aligned, map_len, _writable) }
+    #[cfg(windows)] { windows_impl::abrir(ruta, aligned, map_len, _writable) }
     #[cfg(target_arch = "wasm32")]
     { Err("mmap no soportado en WASM".to_string()) }
 }
@@ -294,18 +294,18 @@ pub fn mmap_escribir(handle: i64, offset_local: usize, datos: &[u8]) -> Result<u
 
 /// Sincroniza cambios a disco.
 pub fn mmap_sincronizar(handle: i64) -> Result<(), String> {
-    let region = obtener(handle).ok_or_else(|| "Handle inválido".to_string())?;
-    #[cfg(unix)] { unix::sincronizar(&region) }
-    #[cfg(windows)] { windows_impl::sincronizar(&region) }
+    let _region = obtener(handle).ok_or_else(|| "Handle inválido".to_string())?;
+    #[cfg(unix)] { unix::sincronizar(&_region) }
+    #[cfg(windows)] { windows_impl::sincronizar(&_region) }
     #[cfg(target_arch = "wasm32")]
     { Err("mmap no soportado en WASM".to_string()) }
 }
 
 /// Cierra el mapping y libera el handle.
 pub fn mmap_cerrar(handle: i64) -> Result<(), String> {
-    let region = eliminar(handle).ok_or_else(|| "Handle inválido".to_string())?;
-    #[cfg(unix)] { unix::cerrar(&region) }
-    #[cfg(windows)] { windows_impl::cerrar(&region) }
+    let _region = eliminar(handle).ok_or_else(|| "Handle inválido".to_string())?;
+    #[cfg(unix)] { unix::cerrar(&_region) }
+    #[cfg(windows)] { windows_impl::cerrar(&_region) }
     #[cfg(target_arch = "wasm32")]
     { Err("mmap no soportado en WASM".to_string()) }
 }

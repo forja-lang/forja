@@ -22,6 +22,9 @@
 #   - crates/forja-android-rt/Cargo.toml
 #   - .github/workflows/rust.yml (tag_name y name)
 #   - src/main.rs (templates de proyecto nuevo)
+#   - README.md
+#   - scripts/build-aar.sh
+#   - vscode/README.md, package.json y package-lock.json
 #
 # NOTA: Los crates forja-gui-rt y forja-wasm-gui mantienen su propia
 #       versión independiente (no se sincronizan con el compilador).
@@ -128,6 +131,31 @@ if [ -f "$rs_file" ]; then
     print_ok "$rs_file (templates)"
     COUNT=$((COUNT + 1))
 fi
+
+# 5. README.md (ejemplos CLI e interactivo)
+readme_file="README.md"
+if [ -f "$readme_file" ]; then
+    sed -i "s/Forja v$OLD_VERSION/Forja v$NEW_VERSION/g" "$readme_file"
+    print_ok "$readme_file"
+    COUNT=$((COUNT + 1))
+fi
+
+# 6. scripts/build-aar.sh
+aar_script="scripts/build-aar.sh"
+if [ -f "$aar_script" ]; then
+    sed -i "s/$OLD_VERSION/$NEW_VERSION/g" "$aar_script"
+    print_ok "$aar_script"
+    COUNT=$((COUNT + 1))
+fi
+
+# 7. Extensión de VSCode (package.json y README.md)
+for vsc_file in vscode/README.md vscode/forja-syntax/package.json vscode/forja-syntax/package-lock.json; do
+    if [ -f "$vsc_file" ]; then
+        sed -i "s/$OLD_VERSION/$NEW_VERSION/g" "$vsc_file"
+        print_ok "$vsc_file"
+        COUNT=$((COUNT + 1))
+    fi
+done
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
