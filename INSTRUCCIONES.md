@@ -791,9 +791,9 @@ coincidir (r) {
     caso Error(msg) -> { escribir("Error: " + msg) }
 }
 
-variable nombre: Opcion<Texto> = Some("Ana")
+variable nombre: Opcion<Texto> = Algo("Ana")
 coincidir (nombre) {
-    caso Some(n) -> { escribir("Hola, " + n) }
+    caso Algo(n) -> { escribir("Hola, " + n) }
     caso Ninguno -> { escribir("Sin nombre") }
 }
 ```
