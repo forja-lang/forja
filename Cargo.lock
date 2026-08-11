@@ -1489,7 +1489,7 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "forja"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "criterion",
  "crossbeam",
@@ -1509,7 +1509,7 @@ dependencies = [
 
 [[package]]
 name = "forja-android-rt"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "android_logger",
  "forja",
@@ -1526,6 +1526,7 @@ dependencies = [
  "chrono",
  "forja",
  "image",
+ "log",
  "qrcode",
  "rfd",
  "rusqlite",
@@ -1537,7 +1538,7 @@ dependencies = [
 
 [[package]]
 name = "forja-rt"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "forja",
  "forja-gui-rt",
@@ -1545,7 +1546,7 @@ dependencies = [
 
 [[package]]
 name = "forja-wasm"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "forja",
  "serde",

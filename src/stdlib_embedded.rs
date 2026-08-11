@@ -58,7 +58,6 @@ pub const XHB: &str = include_str!("../stdlib/std/xhb.fa");
 
 // ═════════════════════════════════════════════════════════════════════════
 pub const GUI: &str = include_str!("../stdlib/gui/gui.fa");
-pub const STD_GUI: &str = include_str!("../stdlib/std/gui.fa");
 
 /// Mapa descriptor: asocia cada nombre de importación (ej: "std/io", "gui")
 /// con el contenido fuente y un indicador de si es GUI.
@@ -315,7 +314,7 @@ pub const MODULOS: &[ModuloEmbebido] = &[
     },
     ModuloEmbebido {
         nombre: "std/gui",
-        fuente: STD_GUI,
+        fuente: GUI,
         es_gui: true,
     },
 ];
