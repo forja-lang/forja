@@ -54,6 +54,7 @@ pub const TOML: &str = include_str!("../stdlib/std/toml.fa");
 pub const TUI: &str = include_str!("../stdlib/std/tui.fa");
 pub const URL: &str = include_str!("../stdlib/std/url.fa");
 pub const WEBSOCKET: &str = include_str!("../stdlib/std/websocket.fa");
+pub const XHB: &str = include_str!("../stdlib/std/xhb.fa");
 
 // ═════════════════════════════════════════════════════════════════════════
 // stdlib/gui/
@@ -123,6 +124,7 @@ pub const MODULOS: &[ModuloEmbebido] = &[
     ModuloEmbebido { nombre: "std/tui",           fuente: TUI,           es_gui: false },
     ModuloEmbebido { nombre: "std/url",           fuente: URL,           es_gui: false },
     ModuloEmbebido { nombre: "std/websocket",     fuente: WEBSOCKET,     es_gui: false },
+    ModuloEmbebido { nombre: "std/xhb",           fuente: XHB,           es_gui: false },
     ModuloEmbebido { nombre: "gui",               fuente: GUI,           es_gui: true  },
 ];
 
