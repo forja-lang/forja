@@ -187,7 +187,10 @@ impl SymbolTable {
 
     /// Retorna el nombre de un SymId
     pub fn name(&self, id: SymId) -> &str {
-        self.names.get(id).map(|s| s.as_str()).unwrap_or("<unknown>")
+        self.names
+            .get(id)
+            .map(|s| s.as_str())
+            .unwrap_or("<unknown>")
     }
 
     /// Número de símbolos
@@ -445,7 +448,10 @@ impl IrBuilder {
         if !self.current_insts.is_empty() || self.current_terminator.is_some() {
             let id = self.next_block_id;
             // Si no hay terminador, poner unreachable
-            let terminator = self.current_terminator.take().unwrap_or(Terminator::Unreachable);
+            let terminator = self
+                .current_terminator
+                .take()
+                .unwrap_or(Terminator::Unreachable);
             let block = BasicBlock {
                 id,
                 instructions: std::mem::take(&mut self.current_insts),
@@ -494,7 +500,10 @@ mod tests {
         let sym = builder.symbols.intern("test_fn");
         let func = builder.build_function(sym, IrType::Int, vec![]);
         assert_eq!(func.blocks.len(), 1);
-        assert!(matches!(func.blocks[0].terminator, Terminator::Return(Some(_))));
+        assert!(matches!(
+            func.blocks[0].terminator,
+            Terminator::Return(Some(_))
+        ));
     }
 
     #[test]

@@ -51,8 +51,10 @@ pub extern "C" fn jit_print_output(output: &mut Vec<String>, val: i64) {
     // Por ahora solo con enteros
     output.push(val.to_string());
 }
+use crate::jit_tiered::{
+    CompiledCode as TieredCompiledCode, DeoptFrame, ShouldCompile, Tier, TieredJit,
+};
 use std::collections::HashMap;
-use crate::jit_tiered::{TieredJit, ShouldCompile, Tier, DeoptFrame, CompiledCode as TieredCompiledCode};
 
 #[cfg(target_os = "windows")]
 mod mem {
@@ -558,11 +560,15 @@ impl NativeJIT {
     /// Marca una función como compilada al tier dado en el tiered JIT.
     pub fn mark_compiled(&mut self, name: &str, tier: Tier) {
         if let Some(ref mut tiered) = self.tiered {
-            tiered.mark_compiled(name, tier, TieredCompiledCode {
-                code_ptr: std::ptr::null(), // placeholder — el código real está en self.compiled
-                code_size: 0,
+            tiered.mark_compiled(
+                name,
                 tier,
-            });
+                TieredCompiledCode {
+                    code_ptr: std::ptr::null(), // placeholder — el código real está en self.compiled
+                    code_size: 0,
+                    tier,
+                },
+            );
         }
     }
 
@@ -616,10 +622,10 @@ impl NativeJIT {
         let mut c = CodeBuf::new();
 
         // prologue: push rbp; push rbx; push r14; mov rbp, rsp
-        c.bytes.push(0x55);                                // push rbp
-        c.bytes.extend_from_slice(&[0x53, 0x41, 0x56]);    // push rbx; push r14
-        c.bytes.extend_from_slice(&[0x48, 0x89, 0xE5]);    // mov rbp, rsp
-        // mov rbx, rcx (vars ptr)
+        c.bytes.push(0x55); // push rbp
+        c.bytes.extend_from_slice(&[0x53, 0x41, 0x56]); // push rbx; push r14
+        c.bytes.extend_from_slice(&[0x48, 0x89, 0xE5]); // mov rbp, rsp
+                                                        // mov rbx, rcx (vars ptr)
         c.bytes.extend_from_slice(&[0x48, 0x89, 0xcb]);
         // mov r14, rdx (output ptr)
         c.bytes.extend_from_slice(&[0x49, 0x89, 0xd6]);
@@ -1845,10 +1851,10 @@ impl NativeJIT {
         } else {
             c.bytes.extend_from_slice(&[0x48, 0x31, 0xc0]); // xor rax, rax
         }
-        c.bytes.extend_from_slice(&[0x48, 0x89, 0xEC]);    // mov rsp, rbp
-        c.bytes.extend_from_slice(&[0x41, 0x5e]);           // pop r14
-        c.bytes.extend_from_slice(&[0x5b]);                 // pop rbx
-        c.bytes.push(0x5d);                                 // pop rbp
+        c.bytes.extend_from_slice(&[0x48, 0x89, 0xEC]); // mov rsp, rbp
+        c.bytes.extend_from_slice(&[0x41, 0x5e]); // pop r14
+        c.bytes.extend_from_slice(&[0x5b]); // pop rbx
+        c.bytes.push(0x5d); // pop rbp
         c.ret();
 
         let code = c.finish();
@@ -1964,8 +1970,13 @@ impl NativeJIT {
             name
         );
 
-        self.compiled
-            .insert(name.to_string(), CompiledCode { ptr, size: code_size });
+        self.compiled.insert(
+            name.to_string(),
+            CompiledCode {
+                ptr,
+                size: code_size,
+            },
+        );
         self.register_function(name);
         self.mark_compiled(name, Tier::JitSimple);
 

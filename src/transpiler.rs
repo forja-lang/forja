@@ -209,15 +209,19 @@ impl Transpiler {
     /// Detecta variables globales (declaradas a nivel de módulo, no dentro de funciones)
     fn detectar_variables_globales(&mut self, decls: &[Declaracion]) {
         for decl in decls {
-            if let Declaracion::Variable { nombre, tipo, valor, .. } = decl {
+            if let Declaracion::Variable {
+                nombre,
+                tipo,
+                valor,
+                ..
+            } = decl
+            {
                 let tipo_rust = match tipo {
                     Some(t) => self.tipo_a_rust(t),
-                    None => {
-                        match valor {
-                            Some(v) => self.inferir_tipo_expresion(v),
-                            None => "String".to_string(),
-                        }
-                    }
+                    None => match valor {
+                        Some(v) => self.inferir_tipo_expresion(v),
+                        None => "String".to_string(),
+                    },
                 };
                 self.variables_globales.insert(nombre.clone(), tipo_rust);
             }
@@ -241,21 +245,25 @@ impl Transpiler {
     /// Genera el valor inicial para una variable global
     fn valor_inicial_global(&self, expr: Option<&Expresion>, tipo_rust: &str) -> String {
         match expr {
-            Some(e) => {
-                match e {
-                    Expresion::LiteralNumero(n) => n.to_string(),
-                    Expresion::LiteralDecimal(f) => f.to_string(),
-                    Expresion::LiteralTexto(s) => format!("String::from(\"{}\")", s),
-                    Expresion::LiteralBooleano(b) => if *b { "true".to_string() } else { "false".to_string() },
-                    _ => match tipo_rust {
-                        "i64" => "0".to_string(),
-                        "f64" => "0.0".to_string(),
-                        "bool" => "false".to_string(),
-                        "String" => "String::new()".to_string(),
-                        _ => "serde_json::Value::Null".to_string(),
+            Some(e) => match e {
+                Expresion::LiteralNumero(n) => n.to_string(),
+                Expresion::LiteralDecimal(f) => f.to_string(),
+                Expresion::LiteralTexto(s) => format!("String::from(\"{}\")", s),
+                Expresion::LiteralBooleano(b) => {
+                    if *b {
+                        "true".to_string()
+                    } else {
+                        "false".to_string()
                     }
                 }
-            }
+                _ => match tipo_rust {
+                    "i64" => "0".to_string(),
+                    "f64" => "0.0".to_string(),
+                    "bool" => "false".to_string(),
+                    "String" => "String::new()".to_string(),
+                    _ => "serde_json::Value::Null".to_string(),
+                },
+            },
             None => match tipo_rust {
                 "i64" => "0".to_string(),
                 "f64" => "0.0".to_string(),
@@ -283,9 +291,11 @@ impl Transpiler {
 
     /// Indica si el programa usa el paquete GUI
     pub fn usa_gui(&self) -> bool {
-        self.forzar_gui || self.declaraciones_globales
-            .iter()
-            .any(|d| matches!(d, Declaracion::Importar(ruta) if ruta == "gui"))
+        self.forzar_gui
+            || self
+                .declaraciones_globales
+                .iter()
+                .any(|d| matches!(d, Declaracion::Importar(ruta) if ruta == "gui" || ruta == "std/gui"))
     }
 
     /// Exporta un programa Forja a código Rust (opcional, Forja ya ejecuta directo con VM)
@@ -428,7 +438,8 @@ impl Transpiler {
             if !self.variables_globales.is_empty() {
                 self.emit_line("use std::cell::RefCell;");
                 self.emit_line("");
-                let vars: Vec<(String, String, String)> = self.variables_globales
+                let vars: Vec<(String, String, String)> = self
+                    .variables_globales
                     .iter()
                     .map(|(n, t)| {
                         let default = match t.as_str() {
@@ -1271,10 +1282,7 @@ impl Transpiler {
                             ErrorTipo::ErrorSemantico,
                             0,
                             0,
-                            &format!(
-                                "Campo de clase sin nombre válido en '{}'.",
-                                nombre
-                            ),
+                            &format!("Campo de clase sin nombre válido en '{}'.", nombre),
                             "Revisa la sintaxis de los campos: cada campo debe tener un nombre.",
                         ));
                         continue;
@@ -1840,7 +1848,10 @@ impl Transpiler {
             Declaracion::Asignacion { nombre, valor, .. } => {
                 let val_str = self.transpilar_expresion(valor);
                 if self.usa_gui() && self.es_variable_global(nombre) {
-                    self.emit_line(&format!("GLOBALS_{}.with(|g| *g.borrow_mut() = {});", nombre, val_str));
+                    self.emit_line(&format!(
+                        "GLOBALS_{}.with(|g| *g.borrow_mut() = {});",
+                        nombre, val_str
+                    ));
                 } else {
                     self.emit_line(&format!("{} = {};", nombre, val_str));
                 }
@@ -2580,7 +2591,10 @@ impl Transpiler {
                     // Extraer nombre base para ver si es global
                     if let Expresion::Identificador { nombre, .. } = objeto.as_ref() {
                         if self.es_variable_global(nombre) {
-                            return format!("GLOBALS_{}.with(|g| g.borrow_mut().{})", nombre, miembro);
+                            return format!(
+                                "GLOBALS_{}.with(|g| g.borrow_mut().{})",
+                                nombre, miembro
+                            );
                         }
                     }
                 }
@@ -2734,7 +2748,10 @@ impl Transpiler {
             Expresion::Asignacion { variable, valor } => {
                 let val_str = self.transpilar_expresion(valor);
                 if self.usa_gui() && self.es_variable_global(variable) {
-                    format!("{{ let __tmp = {}; GLOBALS_{}.with(|g| *g.borrow_mut() = __tmp); __tmp }}", val_str, variable)
+                    format!(
+                        "{{ let __tmp = {}; GLOBALS_{}.with(|g| *g.borrow_mut() = __tmp); __tmp }}",
+                        val_str, variable
+                    )
                 } else {
                     format!("{{ let __tmp = {}; {} = __tmp; __tmp }}", val_str, variable)
                 }
@@ -2766,6 +2783,8 @@ impl Transpiler {
             Expresion::Algo(expr) => {
                 format!("Some({})", self.transpilar_expresion(expr))
             }
+            Expresion::Nada => "None".to_string(),
+            Expresion::Ninguno => "None".to_string(),
             Expresion::Resultado => {
                 if self.tiene_resultado_var {
                     "resultado".to_string()
@@ -2850,7 +2869,9 @@ impl Transpiler {
                     self.recolectar_vars_anterior(arg, vars);
                 }
             }
-            Expresion::LlamadaMetodo { objeto, argumentos, .. } => {
+            Expresion::LlamadaMetodo {
+                objeto, argumentos, ..
+            } => {
                 self.recolectar_vars_anterior(objeto, vars);
                 for arg in argumentos {
                     self.recolectar_vars_anterior(arg, vars);
@@ -3330,6 +3351,8 @@ impl Transpiler {
                 "Expresion::Algo(Box::new({}))",
                 self.generar_ast_expresion(inner)
             ),
+            Expresion::Nada => "Expresion::Nada".to_string(),
+            Expresion::Ninguno => "Expresion::Ninguno".to_string(),
             Expresion::Resultado => "Expresion::Resultado".to_string(),
             Expresion::Anterior(inner) => format!(
                 "Expresion::Anterior(Box::new({}))",

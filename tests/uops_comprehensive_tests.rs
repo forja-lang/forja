@@ -230,11 +230,7 @@ fn test_uops_optimize_push_pop_elimination() {
 
 #[test]
 fn test_uops_remap_jumps() {
-    let mut uops = vec![
-        Uop::Jump(5),
-        Uop::JumpSiFalso(10),
-        Uop::Halt,
-    ];
+    let mut uops = vec![Uop::Jump(5), Uop::JumpSiFalso(10), Uop::Halt];
     let bc: Vec<Opcode> = vec![];
     remapear_saltos_uops(&mut uops, &bc);
     assert_eq!(uops.len(), 3);

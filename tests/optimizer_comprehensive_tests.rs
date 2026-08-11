@@ -1,7 +1,7 @@
 use forja::ast::{Declaracion, Expresion};
 use forja::lexer::Lexer;
+use forja::optimizer::{DeadCodeEliminator, Optimizer};
 use forja::parser::Parser;
-use forja::optimizer::{Optimizer, DeadCodeEliminator};
 
 fn optimizar(source: &str) -> Vec<Declaracion> {
     let mut lexer = Lexer::new(source);
@@ -29,7 +29,10 @@ fn dce(source: &str) -> Vec<Declaracion> {
 fn test_opt_suma_plegada() {
     let decls = optimizar("variable x = 2 + 3");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralNumero(5)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralNumero(5)),
+            ..
+        } => {}
         _ => panic!("No se plegó 2+3"),
     }
 }
@@ -38,7 +41,10 @@ fn test_opt_suma_plegada() {
 fn test_opt_resta_plegada() {
     let decls = optimizar("variable x = 10 - 3");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralNumero(7)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralNumero(7)),
+            ..
+        } => {}
         _ => panic!("No se plegó 10-3"),
     }
 }
@@ -47,7 +53,10 @@ fn test_opt_resta_plegada() {
 fn test_opt_multiplicacion_plegada() {
     let decls = optimizar("variable x = 6 * 7");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralNumero(42)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralNumero(42)),
+            ..
+        } => {}
         _ => panic!("No se plegó 6*7"),
     }
 }
@@ -56,7 +65,10 @@ fn test_opt_multiplicacion_plegada() {
 fn test_opt_division_plegada() {
     let decls = optimizar("variable x = 10 / 2");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralNumero(5)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralNumero(5)),
+            ..
+        } => {}
         _ => panic!("No se plegó 10/2"),
     }
 }
@@ -72,7 +84,10 @@ fn test_opt_modulo_plegado() {
 fn test_opt_suma_decimal_plegada() {
     let decls = optimizar("variable x = 2.5 + 3.2");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralDecimal(v)), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralDecimal(v)),
+            ..
+        } => {
             assert!((v - 5.7).abs() < 0.001);
         }
         _ => panic!("No se plegó suma decimal"),
@@ -83,7 +98,10 @@ fn test_opt_suma_decimal_plegada() {
 fn test_opt_multiplicacion_decimal() {
     let decls = optimizar("variable x = 2.5 * 4.0");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralDecimal(v)), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralDecimal(v)),
+            ..
+        } => {
             assert!((v - 10.0).abs() < 0.001);
         }
         _ => panic!("No se plegó mul decimal"),
@@ -94,7 +112,10 @@ fn test_opt_multiplicacion_decimal() {
 fn test_opt_no_fold_con_variable() {
     let decls = optimizar("variable x = a + 3");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::Binaria { .. }), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::Binaria { .. }),
+            ..
+        } => {}
         _ => panic!("Dobló incorrectamente con variable"),
     }
 }
@@ -107,7 +128,10 @@ fn test_opt_no_fold_con_variable() {
 fn test_opt_fold_mayor_verdadero() {
     let decls = optimizar("variable x = 5 > 3");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralBooleano(true)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralBooleano(true)),
+            ..
+        } => {}
         _ => panic!("No se plegó 5>3"),
     }
 }
@@ -116,7 +140,10 @@ fn test_opt_fold_mayor_verdadero() {
 fn test_opt_fold_mayor_falso() {
     let decls = optimizar("variable x = 2 > 10");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralBooleano(false)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralBooleano(false)),
+            ..
+        } => {}
         _ => panic!("No se plegó 2>10"),
     }
 }
@@ -125,7 +152,10 @@ fn test_opt_fold_mayor_falso() {
 fn test_opt_fold_menor() {
     let decls = optimizar("variable x = 3 < 5");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralBooleano(true)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralBooleano(true)),
+            ..
+        } => {}
         _ => panic!("No se plegó 3<5"),
     }
 }
@@ -134,7 +164,10 @@ fn test_opt_fold_menor() {
 fn test_opt_fold_igual() {
     let decls = optimizar("variable x = 5 == 5");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralBooleano(true)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralBooleano(true)),
+            ..
+        } => {}
         _ => panic!("No se plegó 5==5"),
     }
 }
@@ -143,7 +176,10 @@ fn test_opt_fold_igual() {
 fn test_opt_fold_diferente() {
     let decls = optimizar("variable x = 5 != 3");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralBooleano(true)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralBooleano(true)),
+            ..
+        } => {}
         _ => panic!("No se plegó 5!=3"),
     }
 }
@@ -156,7 +192,10 @@ fn test_opt_fold_diferente() {
 fn test_opt_suma_cero() {
     let decls = optimizar("variable x = a + 0");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::Identificador { nombre, .. }), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::Identificador { nombre, .. }),
+            ..
+        } => {
             assert_eq!(nombre, "a");
         }
         _ => panic!("Falló a+0 -> a"),
@@ -167,7 +206,10 @@ fn test_opt_suma_cero() {
 fn test_opt_resta_cero() {
     let decls = optimizar("variable x = a - 0");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::Identificador { nombre, .. }), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::Identificador { nombre, .. }),
+            ..
+        } => {
             assert_eq!(nombre, "a");
         }
         _ => panic!("Falló a-0 -> a"),
@@ -178,7 +220,10 @@ fn test_opt_resta_cero() {
 fn test_opt_multiplica_uno() {
     let decls = optimizar("variable x = a * 1");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::Identificador { nombre, .. }), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::Identificador { nombre, .. }),
+            ..
+        } => {
             assert_eq!(nombre, "a");
         }
         _ => panic!("Falló a*1 -> a"),
@@ -189,7 +234,10 @@ fn test_opt_multiplica_uno() {
 fn test_opt_multiplica_cero() {
     let decls = optimizar("variable x = a * 0");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralNumero(0)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralNumero(0)),
+            ..
+        } => {}
         _ => panic!("Falló a*0 -> 0"),
     }
 }
@@ -198,7 +246,10 @@ fn test_opt_multiplica_cero() {
 fn test_opt_divide_uno() {
     let decls = optimizar("variable x = a / 1");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::Identificador { nombre, .. }), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::Identificador { nombre, .. }),
+            ..
+        } => {
             assert_eq!(nombre, "a");
         }
         _ => panic!("Falló a/1 -> a"),
@@ -209,7 +260,10 @@ fn test_opt_divide_uno() {
 fn test_opt_doble_negacion() {
     let decls = optimizar("variable x = no (no a)");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::Identificador { nombre, .. }), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::Identificador { nombre, .. }),
+            ..
+        } => {
             assert_eq!(nombre, "a");
         }
         _ => panic!("Falló no(no a) -> a"),
@@ -220,7 +274,10 @@ fn test_opt_doble_negacion() {
 fn test_opt_negacion_doble_negativo() {
     let decls = optimizar("variable x = -(-5)");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralNumero(5)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralNumero(5)),
+            ..
+        } => {}
         _ => panic!("Falló -(-5) -> 5"),
     }
 }
@@ -233,7 +290,10 @@ fn test_opt_negacion_doble_negativo() {
 fn test_opt_concat_cadenas() {
     let decls = optimizar("variable x = \"hola \" + \"mundo\"");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralTexto(s)), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralTexto(s)),
+            ..
+        } => {
             assert_eq!(s, "hola mundo");
         }
         _ => panic!("Falló concatenación de cadenas"),
@@ -248,7 +308,10 @@ fn test_opt_concat_cadenas() {
 fn test_opt_y_verdadero_verdadero() {
     let decls = optimizar("variable x = verdadero && verdadero");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralBooleano(true)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralBooleano(true)),
+            ..
+        } => {}
         _ => panic!("Falló true && true"),
     }
 }
@@ -257,7 +320,10 @@ fn test_opt_y_verdadero_verdadero() {
 fn test_opt_y_verdadero_falso() {
     let decls = optimizar("variable x = verdadero && falso");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralBooleano(false)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralBooleano(false)),
+            ..
+        } => {}
         _ => panic!("Falló true && false"),
     }
 }
@@ -266,7 +332,10 @@ fn test_opt_y_verdadero_falso() {
 fn test_opt_o_verdadero_falso() {
     let decls = optimizar("variable x = verdadero || falso");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralBooleano(true)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralBooleano(true)),
+            ..
+        } => {}
         _ => panic!("Falló true || false"),
     }
 }
@@ -275,7 +344,10 @@ fn test_opt_o_verdadero_falso() {
 fn test_opt_no_verdadero() {
     let decls = optimizar("variable x = !verdadero");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralBooleano(false)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralBooleano(false)),
+            ..
+        } => {}
         _ => panic!("Falló !true"),
     }
 }
@@ -284,7 +356,10 @@ fn test_opt_no_verdadero() {
 fn test_opt_no_falso() {
     let decls = optimizar("variable x = !falso");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralBooleano(true)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralBooleano(true)),
+            ..
+        } => {}
         _ => panic!("Falló !false"),
     }
 }
@@ -327,7 +402,10 @@ fn test_dce_funcion_no_llamada() {
 fn test_opt_y_verdadero_expr() {
     let decls = optimizar("variable x = verdadero && a");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::Identificador { nombre, .. }), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::Identificador { nombre, .. }),
+            ..
+        } => {
             assert_eq!(nombre, "a");
         }
         _ => panic!("Falló true && a -> a"),
@@ -338,7 +416,10 @@ fn test_opt_y_verdadero_expr() {
 fn test_opt_o_falso_expr() {
     let decls = optimizar("variable x = falso || a");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::Identificador { nombre, .. }), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::Identificador { nombre, .. }),
+            ..
+        } => {
             assert_eq!(nombre, "a");
         }
         _ => panic!("Falló false || a -> a"),
@@ -353,7 +434,10 @@ fn test_opt_o_falso_expr() {
 fn test_opt_folding_anidado() {
     let decls = optimizar("variable x = (2 + 3) * (4 - 1)");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralNumero(15)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralNumero(15)),
+            ..
+        } => {}
         _ => panic!("No se plegó (2+3)*(4-1)"),
     }
 }
@@ -362,7 +446,10 @@ fn test_opt_folding_anidado() {
 fn test_opt_folding_encadenado() {
     let decls = optimizar("variable x = 1 + 2 + 3 + 4 + 5");
     match &decls[0] {
-        Declaracion::Variable { valor: Some(Expresion::LiteralNumero(15)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::LiteralNumero(15)),
+            ..
+        } => {}
         _ => panic!("No se plegó suma encadenada"),
     }
 }

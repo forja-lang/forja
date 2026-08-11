@@ -68,7 +68,10 @@ impl ProfileData {
 
     /// Registra un tipo visto en un IC
     pub fn record_type_at_ic(&mut self, block: &BlockId, tipo: &str) {
-        let dist = self.type_distribution.entry(block.clone()).or_insert_with(HashMap::new);
+        let dist = self
+            .type_distribution
+            .entry(block.clone())
+            .or_insert_with(HashMap::new);
         *dist.entry(tipo.to_string()).or_insert(0) += 1;
     }
 

@@ -57,9 +57,8 @@ pub const WEBSOCKET: &str = include_str!("../stdlib/std/websocket.fa");
 pub const XHB: &str = include_str!("../stdlib/std/xhb.fa");
 
 // ═════════════════════════════════════════════════════════════════════════
-// stdlib/gui/
-// ═════════════════════════════════════════════════════════════════════════
 pub const GUI: &str = include_str!("../stdlib/gui/gui.fa");
+pub const STD_GUI: &str = include_str!("../stdlib/std/gui.fa");
 
 /// Mapa descriptor: asocia cada nombre de importación (ej: "std/io", "gui")
 /// con el contenido fuente y un indicador de si es GUI.
@@ -79,53 +78,246 @@ pub struct ModuloEmbebido {
 
 /// Lista completa de todos los módulos embebidos.
 pub const MODULOS: &[ModuloEmbebido] = &[
-    ModuloEmbebido { nombre: "std/aleatorio",     fuente: ALEATORIO,     es_gui: false },
-    ModuloEmbebido { nombre: "std/ansi",          fuente: ANSI,          es_gui: false },
-    ModuloEmbebido { nombre: "std/archivo",       fuente: ARCHIVO,       es_gui: false },
-    ModuloEmbebido { nombre: "std/arg",           fuente: ARG,           es_gui: false },
-    ModuloEmbebido { nombre: "std/atomicos",      fuente: ATOMICOS,      es_gui: false },
-    ModuloEmbebido { nombre: "std/binario",       fuente: BINARIO,       es_gui: false },
-    ModuloEmbebido { nombre: "std/cliente_h2",    fuente: CLIENTE_H2,    es_gui: false },
-    ModuloEmbebido { nombre: "std/cliente_h3",    fuente: CLIENTE_H3,    es_gui: false },
-    ModuloEmbebido { nombre: "std/cliente_http",  fuente: CLIENTE_HTTP,  es_gui: false },
-    ModuloEmbebido { nombre: "std/codificacion",  fuente: CODIFICACION,   es_gui: false },
-    ModuloEmbebido { nombre: "std/colecciones",   fuente: COLECCIONES,   es_gui: false },
-    ModuloEmbebido { nombre: "std/concurrencia",  fuente: CONCURRENCIA,  es_gui: false },
-    ModuloEmbebido { nombre: "std/crypto",        fuente: CRYPTO,        es_gui: false },
-    ModuloEmbebido { nombre: "std/csv",           fuente: CSV,           es_gui: false },
-    ModuloEmbebido { nombre: "std/env",           fuente: ENV,           es_gui: false },
-    ModuloEmbebido { nombre: "std/fecha",         fuente: FECHA,         es_gui: false },
-    ModuloEmbebido { nombre: "std/ffi",           fuente: FFI,           es_gui: false },
-    ModuloEmbebido { nombre: "std/hash",          fuente: HASH,          es_gui: false },
-    ModuloEmbebido { nombre: "std/hex",           fuente: HEX,           es_gui: false },
-    ModuloEmbebido { nombre: "std/io",            fuente: IO,            es_gui: false },
-    ModuloEmbebido { nombre: "std/json",          fuente: JSON,          es_gui: false },
-    ModuloEmbebido { nombre: "std/log",           fuente: LOG,           es_gui: false },
-    ModuloEmbebido { nombre: "std/matematica",    fuente: MATEMATICA,    es_gui: false },
-    ModuloEmbebido { nombre: "std/mmap",          fuente: MMAP,          es_gui: false },
-    ModuloEmbebido { nombre: "std/perfilado",     fuente: PERFILADO,     es_gui: false },
-    ModuloEmbebido { nombre: "std/proceso",       fuente: PROCESO,       es_gui: false },
-    ModuloEmbebido { nombre: "std/prueba",        fuente: PRUEBA,        es_gui: false },
-    ModuloEmbebido { nombre: "std/quic",          fuente: QUIC,          es_gui: false },
-    ModuloEmbebido { nombre: "std/sandbox",       fuente: SANDBOX,       es_gui: false },
-    ModuloEmbebido { nombre: "std/red",           fuente: RED,           es_gui: false },
-    ModuloEmbebido { nombre: "std/resultado",     fuente: RESULTADO,     es_gui: false },
-    ModuloEmbebido { nombre: "std/ruta",          fuente: RUTA,          es_gui: false },
-    ModuloEmbebido { nombre: "std/señales",       fuente: SENALES,       es_gui: false },
-    ModuloEmbebido { nombre: "std/servidor_h2",   fuente: SERVIDOR_H2,   es_gui: false },
-    ModuloEmbebido { nombre: "std/servidor_web",  fuente: SERVIDOR_WEB,  es_gui: false },
-    ModuloEmbebido { nombre: "std/sistema",       fuente: SISTEMA,       es_gui: false },
-    ModuloEmbebido { nombre: "std/sockets",       fuente: SOCKETS,       es_gui: false },
-    ModuloEmbebido { nombre: "std/sqlite",        fuente: SQLITE,        es_gui: false },
-    ModuloEmbebido { nombre: "std/temporizador",  fuente: TEMPORIZADOR,  es_gui: false },
-    ModuloEmbebido { nombre: "std/texto",         fuente: TEXTO,         es_gui: false },
-    ModuloEmbebido { nombre: "std/tls",           fuente: TLS,           es_gui: false },
-    ModuloEmbebido { nombre: "std/toml",          fuente: TOML,          es_gui: false },
-    ModuloEmbebido { nombre: "std/tui",           fuente: TUI,           es_gui: false },
-    ModuloEmbebido { nombre: "std/url",           fuente: URL,           es_gui: false },
-    ModuloEmbebido { nombre: "std/websocket",     fuente: WEBSOCKET,     es_gui: false },
-    ModuloEmbebido { nombre: "std/xhb",           fuente: XHB,           es_gui: false },
-    ModuloEmbebido { nombre: "gui",               fuente: GUI,           es_gui: true  },
+    ModuloEmbebido {
+        nombre: "std/aleatorio",
+        fuente: ALEATORIO,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/ansi",
+        fuente: ANSI,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/archivo",
+        fuente: ARCHIVO,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/arg",
+        fuente: ARG,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/atomicos",
+        fuente: ATOMICOS,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/binario",
+        fuente: BINARIO,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/cliente_h2",
+        fuente: CLIENTE_H2,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/cliente_h3",
+        fuente: CLIENTE_H3,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/cliente_http",
+        fuente: CLIENTE_HTTP,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/codificacion",
+        fuente: CODIFICACION,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/colecciones",
+        fuente: COLECCIONES,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/concurrencia",
+        fuente: CONCURRENCIA,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/crypto",
+        fuente: CRYPTO,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/csv",
+        fuente: CSV,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/env",
+        fuente: ENV,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/fecha",
+        fuente: FECHA,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/ffi",
+        fuente: FFI,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/hash",
+        fuente: HASH,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/hex",
+        fuente: HEX,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/io",
+        fuente: IO,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/json",
+        fuente: JSON,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/log",
+        fuente: LOG,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/matematica",
+        fuente: MATEMATICA,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/mmap",
+        fuente: MMAP,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/perfilado",
+        fuente: PERFILADO,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/proceso",
+        fuente: PROCESO,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/prueba",
+        fuente: PRUEBA,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/quic",
+        fuente: QUIC,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/sandbox",
+        fuente: SANDBOX,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/red",
+        fuente: RED,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/resultado",
+        fuente: RESULTADO,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/ruta",
+        fuente: RUTA,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/señales",
+        fuente: SENALES,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/servidor_h2",
+        fuente: SERVIDOR_H2,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/servidor_web",
+        fuente: SERVIDOR_WEB,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/sistema",
+        fuente: SISTEMA,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/sockets",
+        fuente: SOCKETS,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/sqlite",
+        fuente: SQLITE,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/temporizador",
+        fuente: TEMPORIZADOR,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/texto",
+        fuente: TEXTO,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/tls",
+        fuente: TLS,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/toml",
+        fuente: TOML,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/tui",
+        fuente: TUI,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/url",
+        fuente: URL,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/websocket",
+        fuente: WEBSOCKET,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "std/xhb",
+        fuente: XHB,
+        es_gui: false,
+    },
+    ModuloEmbebido {
+        nombre: "gui",
+        fuente: GUI,
+        es_gui: true,
+    },
+    ModuloEmbebido {
+        nombre: "std/gui",
+        fuente: STD_GUI,
+        es_gui: true,
+    },
 ];
 
 /// Busca un módulo embebido por nombre (exactamente como se usa en `importar`).

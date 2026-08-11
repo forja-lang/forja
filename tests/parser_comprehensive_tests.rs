@@ -1,4 +1,4 @@
-use forja::ast::{Declaracion, Expresion, Operador, Tipo, Programa};
+use forja::ast::{Declaracion, Expresion, Operador, Programa, Tipo};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
 
@@ -23,7 +23,12 @@ fn test_parse_var_simple() {
 fn test_parse_var_sin_valor() {
     let prog = parse("variable x");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { nombre, mutable, valor, .. } => {
+        Declaracion::Variable {
+            nombre,
+            mutable,
+            valor,
+            ..
+        } => {
             assert_eq!(nombre, "x");
             assert!(mutable);
             assert!(valor.is_none());
@@ -94,7 +99,9 @@ fn test_parse_funcion_vacia() {
 fn test_parse_funcion_con_parametros() {
     let prog = parse("funcion suma(a, b) { retornar a + b }");
     match &prog.declaraciones[0] {
-        Declaracion::Funcion { nombre, parametros, .. } => {
+        Declaracion::Funcion {
+            nombre, parametros, ..
+        } => {
             assert_eq!(nombre, "suma");
             assert_eq!(parametros.len(), 2);
             assert_eq!(parametros[0].nombre, "a");
@@ -130,7 +137,9 @@ fn test_parse_funcion_con_prestamo() {
 fn test_parse_funcion_con_genericos() {
     let prog = parse("funcion id<T>(x: T) -> T { retornar x }");
     match &prog.declaraciones[0] {
-        Declaracion::Funcion { parametros_tipo, .. } => {
+        Declaracion::Funcion {
+            parametros_tipo, ..
+        } => {
             assert_eq!(parametros_tipo.len(), 1);
         }
         _ => panic!("expected Funcion"),
@@ -139,7 +148,9 @@ fn test_parse_funcion_con_genericos() {
 
 #[test]
 fn test_parse_funcion_con_requiere() {
-    let prog = parse("funcion div(a: Entero, b: Entero) -> Entero\n    requiere b != 0\n{ retornar a / b }");
+    let prog = parse(
+        "funcion div(a: Entero, b: Entero) -> Entero\n    requiere b != 0\n{ retornar a / b }",
+    );
     match &prog.declaraciones[0] {
         Declaracion::Funcion { precondiciones, .. } => {
             assert_eq!(precondiciones.len(), 1);
@@ -190,7 +201,9 @@ fn test_parse_clase_con_metodo() {
 fn test_parse_clase_generica() {
     let prog = parse("clase Caja<T> { contenido: T }");
     match &prog.declaraciones[0] {
-        Declaracion::Clase { parametros_tipo, .. } => {
+        Declaracion::Clase {
+            parametros_tipo, ..
+        } => {
             assert_eq!(parametros_tipo.len(), 1);
         }
         _ => panic!("expected Clase with generics"),
@@ -205,7 +218,11 @@ fn test_parse_clase_generica() {
 fn test_parse_si_simple() {
     let prog = parse("si (x > 0) { x = x - 1 }");
     match &prog.declaraciones[0] {
-        Declaracion::Si { bloque_verdadero, bloque_falso, .. } => {
+        Declaracion::Si {
+            bloque_verdadero,
+            bloque_falso,
+            ..
+        } => {
             assert_eq!(bloque_verdadero.len(), 1);
             assert!(bloque_falso.is_none());
         }
@@ -258,7 +275,12 @@ fn test_parse_mientras_vacio() {
 fn test_parse_para_completo() {
     let prog = parse("para (variable i = 0; i < 10; i = i + 1) { }");
     match &prog.declaraciones[0] {
-        Declaracion::Para { inicializacion, condicion, incremento, .. } => {
+        Declaracion::Para {
+            inicializacion,
+            condicion,
+            incremento,
+            ..
+        } => {
             assert!(inicializacion.is_some());
             assert!(condicion.is_some());
             assert!(incremento.is_some());
@@ -271,7 +293,12 @@ fn test_parse_para_completo() {
 fn test_parse_para_sin_partes() {
     let prog = parse("para (;;) { }");
     match &prog.declaraciones[0] {
-        Declaracion::Para { inicializacion, condicion, incremento, .. } => {
+        Declaracion::Para {
+            inicializacion,
+            condicion,
+            incremento,
+            ..
+        } => {
             assert!(inicializacion.is_none());
             assert!(condicion.is_none());
             assert!(incremento.is_none());
@@ -320,7 +347,10 @@ fn test_parse_retornar_valor() {
     let prog = parse("funcion f() { retornar 42 }");
     match &prog.declaraciones[0] {
         Declaracion::Funcion { cuerpo, .. } => {
-            assert!(matches!(&cuerpo[0], Declaracion::Retornar { valor: Some(_) }));
+            assert!(matches!(
+                &cuerpo[0],
+                Declaracion::Retornar { valor: Some(_) }
+            ));
         }
         _ => panic!("expected Funcion"),
     }
@@ -334,7 +364,14 @@ fn test_parse_retornar_valor() {
 fn test_parse_expresion_suma() {
     let prog = parse("variable x = 2 + 3");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Binaria { operador: Operador::Suma, .. }), .. } => {}
+        Declaracion::Variable {
+            valor:
+                Some(Expresion::Binaria {
+                    operador: Operador::Suma,
+                    ..
+                }),
+            ..
+        } => {}
         _ => panic!("expected Binaria"),
     }
 }
@@ -343,7 +380,14 @@ fn test_parse_expresion_suma() {
 fn test_parse_expresion_resta() {
     let prog = parse("variable x = 10 - 3");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Binaria { operador: Operador::Resta, .. }), .. } => {}
+        Declaracion::Variable {
+            valor:
+                Some(Expresion::Binaria {
+                    operador: Operador::Resta,
+                    ..
+                }),
+            ..
+        } => {}
         _ => panic!("expected Binaria"),
     }
 }
@@ -352,7 +396,14 @@ fn test_parse_expresion_resta() {
 fn test_parse_expresion_multiplicacion() {
     let prog = parse("variable x = 4 * 2");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Binaria { operador: Operador::Multiplicacion, .. }), .. } => {}
+        Declaracion::Variable {
+            valor:
+                Some(Expresion::Binaria {
+                    operador: Operador::Multiplicacion,
+                    ..
+                }),
+            ..
+        } => {}
         _ => panic!("expected Binaria"),
     }
 }
@@ -361,7 +412,14 @@ fn test_parse_expresion_multiplicacion() {
 fn test_parse_expresion_division() {
     let prog = parse("variable x = 10 / 2");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Binaria { operador: Operador::Division, .. }), .. } => {}
+        Declaracion::Variable {
+            valor:
+                Some(Expresion::Binaria {
+                    operador: Operador::Division,
+                    ..
+                }),
+            ..
+        } => {}
         _ => panic!("expected Binaria"),
     }
 }
@@ -370,7 +428,14 @@ fn test_parse_expresion_division() {
 fn test_parse_expresion_modulo() {
     let prog = parse("variable x = 10 % 3");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Binaria { operador: Operador::Modulo, .. }), .. } => {}
+        Declaracion::Variable {
+            valor:
+                Some(Expresion::Binaria {
+                    operador: Operador::Modulo,
+                    ..
+                }),
+            ..
+        } => {}
         _ => panic!("expected Binaria"),
     }
 }
@@ -379,7 +444,14 @@ fn test_parse_expresion_modulo() {
 fn test_parse_expresion_mayor() {
     let prog = parse("variable x = 5 > 3");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Binaria { operador: Operador::Mayor, .. }), .. } => {}
+        Declaracion::Variable {
+            valor:
+                Some(Expresion::Binaria {
+                    operador: Operador::Mayor,
+                    ..
+                }),
+            ..
+        } => {}
         _ => panic!("expected Binaria mayor"),
     }
 }
@@ -388,7 +460,14 @@ fn test_parse_expresion_mayor() {
 fn test_parse_expresion_logica_y() {
     let prog = parse("variable x = verdadero && falso");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Binaria { operador: Operador::Y, .. }), .. } => {}
+        Declaracion::Variable {
+            valor:
+                Some(Expresion::Binaria {
+                    operador: Operador::Y,
+                    ..
+                }),
+            ..
+        } => {}
         _ => panic!("expected Binaria Y"),
     }
 }
@@ -397,7 +476,14 @@ fn test_parse_expresion_logica_y() {
 fn test_parse_expresion_logica_o() {
     let prog = parse("variable x = verdadero || falso");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Binaria { operador: Operador::O, .. }), .. } => {}
+        Declaracion::Variable {
+            valor:
+                Some(Expresion::Binaria {
+                    operador: Operador::O,
+                    ..
+                }),
+            ..
+        } => {}
         _ => panic!("expected Binaria O"),
     }
 }
@@ -406,7 +492,10 @@ fn test_parse_expresion_logica_o() {
 fn test_parse_expresion_grupo() {
     let prog = parse("variable x = (2 + 3) * 4");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Binaria { .. }), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::Binaria { .. }),
+            ..
+        } => {}
         _ => panic!("expected Binaria"),
     }
 }
@@ -415,7 +504,10 @@ fn test_parse_expresion_grupo() {
 fn test_parse_expresion_arreglo() {
     let prog = parse("variable arr = [1, 2, 3]");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Arreglo(vals)), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::Arreglo(vals)),
+            ..
+        } => {
             assert_eq!(vals.len(), 3);
         }
         _ => panic!("expected Arreglo"),
@@ -426,7 +518,10 @@ fn test_parse_expresion_arreglo() {
 fn test_parse_expresion_arreglo_vacio() {
     let prog = parse("variable arr = []");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Arreglo(vals)), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::Arreglo(vals)),
+            ..
+        } => {
             assert!(vals.is_empty());
         }
         _ => panic!("expected Arreglo"),
@@ -437,7 +532,10 @@ fn test_parse_expresion_arreglo_vacio() {
 fn test_parse_expresion_mapa() {
     let prog = parse("variable m = {\"clave\": 42}");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Mapa(pares)), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::Mapa(pares)),
+            ..
+        } => {
             assert_eq!(pares.len(), 1);
         }
         _ => panic!("expected Mapa"),
@@ -448,7 +546,10 @@ fn test_parse_expresion_mapa() {
 fn test_parse_instanciacion() {
     let prog = parse("variable p = nuevo Punto(3, 4)");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Instanciacion { clase, argumentos }), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::Instanciacion { clase, argumentos }),
+            ..
+        } => {
             assert_eq!(clase, "Punto");
             assert_eq!(argumentos.len(), 2);
         }
@@ -472,7 +573,10 @@ fn test_parse_llamada_funcion() {
 fn test_parse_acceso_miembro() {
     let prog = parse("variable name = persona.nombre");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::AccesoMiembro { miembro, .. }), .. } => {
+        Declaracion::Variable {
+            valor: Some(Expresion::AccesoMiembro { miembro, .. }),
+            ..
+        } => {
             assert_eq!(miembro, "nombre");
         }
         _ => panic!("expected AccesoMiembro"),
@@ -483,7 +587,10 @@ fn test_parse_acceso_miembro() {
 fn test_parse_referencia() {
     let prog = parse("variable r = &x");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Referencia { .. }), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::Referencia { .. }),
+            ..
+        } => {}
         _ => panic!("expected Referencia"),
     }
 }
@@ -492,7 +599,10 @@ fn test_parse_referencia() {
 fn test_parse_index() {
     let prog = parse("variable v = arr[0]");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Index { .. }), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::Index { .. }),
+            ..
+        } => {}
         _ => panic!("expected Index"),
     }
 }
@@ -501,7 +611,10 @@ fn test_parse_index() {
 fn test_parse_try() {
     let prog = parse("variable v = expr?");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Try(_)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::Try(_)),
+            ..
+        } => {}
         _ => panic!("expected Try"),
     }
 }
@@ -525,7 +638,9 @@ fn test_parse_importar() {
 fn test_parse_enum_simple() {
     let prog = parse("tipo Color = Rojo | Verde | Azul");
     match &prog.declaraciones[0] {
-        Declaracion::Enum { nombre, variantes, .. } => {
+        Declaracion::Enum {
+            nombre, variantes, ..
+        } => {
             assert_eq!(nombre, "Color");
             assert_eq!(variantes.len(), 3);
         }
@@ -559,7 +674,11 @@ fn test_parse_rasgo() {
 fn test_parse_implementa() {
     let prog = parse("implementa Volador para Ave { funcion volar() { escribir(\"volando\") } }");
     match &prog.declaraciones[0] {
-        Declaracion::Implementacion { rasgo_nombre, clase_nombre, .. } => {
+        Declaracion::Implementacion {
+            rasgo_nombre,
+            clase_nombre,
+            ..
+        } => {
             assert_eq!(rasgo_nombre, "Volador");
             assert_eq!(clase_nombre, "Ave");
         }
@@ -591,7 +710,10 @@ fn test_parse_atributo_simple() {
 fn test_parse_ok() {
     let prog = parse("variable r = Ok(42)");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Ok(_)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::Ok(_)),
+            ..
+        } => {}
         _ => panic!("expected Ok"),
     }
 }
@@ -600,7 +722,10 @@ fn test_parse_ok() {
 fn test_parse_error_expresion() {
     let prog = parse("variable e = Error(\"fail\")");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Error(_)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::Error(_)),
+            ..
+        } => {}
         _ => panic!("expected Error"),
     }
 }
@@ -609,7 +734,10 @@ fn test_parse_error_expresion() {
 fn test_parse_algo() {
     let prog = parse("variable a = Algo(42)");
     match &prog.declaraciones[0] {
-        Declaracion::Variable { valor: Some(Expresion::Algo(_)), .. } => {}
+        Declaracion::Variable {
+            valor: Some(Expresion::Algo(_)),
+            ..
+        } => {}
         _ => panic!("expected Algo"),
     }
 }

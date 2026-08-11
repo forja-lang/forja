@@ -218,7 +218,10 @@ pub fn pq_keygen() -> Result<PQKeyPair, &'static str> {
     // Serializar clave secreta: bytes(s)
     let sk = s.to_bytes();
 
-    Ok(PQKeyPair { public: pk, secret: sk })
+    Ok(PQKeyPair {
+        public: pk,
+        secret: sk,
+    })
 }
 
 /// Encapsulación: genera un secreto compartido y su ciphertext
@@ -314,7 +317,11 @@ pub fn pq_decaps(sk: &[u8], ct: &[u8]) -> Result<Vec<u8>, &'static str> {
     for i in 0..256.min(N) {
         let val = msg_prime.coeffs[i].rem_euclid(Q);
         // Si |val| < Q/4 → bit 0; si |val| > Q/4 → bit 1
-        let bit = if val > Q / 4 && val < (3 * Q) / 4 { 1 } else { 0 };
+        let bit = if val > Q / 4 && val < (3 * Q) / 4 {
+            1
+        } else {
+            0
+        };
         msg_seed[i / 8] |= bit << (i % 8);
     }
 
@@ -364,7 +371,10 @@ mod tests {
         assert_eq!(sum.coeffs[1], 0); // (3328 + 1) mod 3329 = 0
 
         let diff = sub(&a, &b);
-        assert_eq!(diff.coeffs[0], ((1000i32 - 2000i32).rem_euclid(Q as i32)) as i16);
+        assert_eq!(
+            diff.coeffs[0],
+            ((1000i32 - 2000i32).rem_euclid(Q as i32)) as i16
+        );
         assert_eq!(diff.coeffs[1], (3328 - 1) % Q);
 
         let neg_a = neg(&a);

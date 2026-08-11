@@ -62,7 +62,10 @@ fn native_bd(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFas
             heap.push(Some(Arc::new(Mutex::new(conn))));
             Ok(ValorFast::entero(idx as i64))
         }
-        Err(e) => Err(ErrFast::TipoInv(format!("BD: no se pudo abrir '{}': {}", ruta, e))),
+        Err(e) => Err(ErrFast::TipoInv(format!(
+            "BD: no se pudo abrir '{}': {}",
+            ruta, e
+        ))),
     }
 }
 
@@ -74,9 +77,9 @@ fn native_bd(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFas
 /// La conexión se clona (Arc) para que el llamador pueda usarla sin
 /// mantener el lock del heap.
 fn obtener_conn(idx: usize) -> Result<Arc<Mutex<Connection>>, ErrFast> {
-    let heap = SQLITE_HEAP.lock().map_err(|e| {
-        ErrFast::TipoInv(format!("sqlite_error_interno: {}", e))
-    })?;
+    let heap = SQLITE_HEAP
+        .lock()
+        .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
     if idx >= heap.len() {
         return Err(ErrFast::TipoInv(
             "sqlite_error: índice de conexión inválido".into(),
@@ -137,17 +140,14 @@ fn native_sqlite_abrir(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFa
 
     match Connection::open(&ruta) {
         Ok(conn) => {
-            let mut heap = SQLITE_HEAP.lock().map_err(|e| {
-                ErrFast::TipoInv(format!("sqlite_error_interno: {}", e))
-            })?;
+            let mut heap = SQLITE_HEAP
+                .lock()
+                .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
             let idx = heap.len() as u32;
             heap.push(Some(Arc::new(Mutex::new(conn))));
             Ok(ValorFast::entero(idx as i64))
         }
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "sqlite_error_apertura: {}",
-            e
-        ))),
+        Err(e) => Err(ErrFast::TipoInv(format!("sqlite_error_apertura: {}", e))),
     }
 }
 
@@ -160,9 +160,9 @@ fn native_sqlite_cerrar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valor
     }
     let idx = obtener_entero(args[0])? as usize;
 
-    let mut heap = SQLITE_HEAP.lock().map_err(|e| {
-        ErrFast::TipoInv(format!("sqlite_error_interno: {}", e))
-    })?;
+    let mut heap = SQLITE_HEAP
+        .lock()
+        .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
     if idx < heap.len() {
         heap[idx] = None;
         Ok(ValorFast::entero(0))
@@ -184,16 +184,13 @@ fn native_sqlite_ejecutar(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
     let sql = obtener_texto(_vm, args[1])?;
 
     let conn_arc = obtener_conn(idx)?;
-    let conn = conn_arc.lock().map_err(|e| {
-        ErrFast::TipoInv(format!("sqlite_error_interno: {}", e))
-    })?;
+    let conn = conn_arc
+        .lock()
+        .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
 
     match conn.execute(&sql, []) {
         Ok(filas) => Ok(ValorFast::entero(filas as i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "sqlite_error_ejecucion: {}",
-            e
-        ))),
+        Err(e) => Err(ErrFast::TipoInv(format!("sqlite_error_ejecucion: {}", e))),
     }
 }
 
@@ -209,18 +206,13 @@ fn native_sqlite_consultar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
     let sql = obtener_texto(vm, args[1])?;
 
     let conn_arc = obtener_conn(idx)?;
-    let conn = conn_arc.lock().map_err(|e| {
-        ErrFast::TipoInv(format!("sqlite_error_interno: {}", e))
-    })?;
+    let conn = conn_arc
+        .lock()
+        .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
 
     let mut stmt = match conn.prepare(&sql) {
         Ok(s) => s,
-        Err(e) => {
-            return Err(ErrFast::TipoInv(format!(
-                "sqlite_error_consulta: {}",
-                e
-            )))
-        }
+        Err(e) => return Err(ErrFast::TipoInv(format!("sqlite_error_consulta: {}", e))),
     };
 
     let column_count = stmt.column_count();
@@ -234,7 +226,9 @@ fn native_sqlite_consultar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
         let mut row_data = Vec::with_capacity(column_count);
         for i in 0..column_count {
             let name = column_names[i].clone();
-            let val = row.get::<_, rusqlite::types::Value>(i).unwrap_or(rusqlite::types::Value::Null);
+            let val = row
+                .get::<_, rusqlite::types::Value>(i)
+                .unwrap_or(rusqlite::types::Value::Null);
             row_data.push((name, val));
         }
         Ok(row_data)
@@ -245,21 +239,13 @@ fn native_sqlite_consultar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
                 match row {
                     Ok(d) => data.push(d),
                     Err(e) => {
-                        return Err(ErrFast::TipoInv(format!(
-                            "sqlite_error_consulta: {}",
-                            e
-                        )))
+                        return Err(ErrFast::TipoInv(format!("sqlite_error_consulta: {}", e)))
                     }
                 }
             }
             data
         }
-        Err(e) => {
-            return Err(ErrFast::TipoInv(format!(
-                "sqlite_error_consulta: {}",
-                e
-            )))
-        }
+        Err(e) => return Err(ErrFast::TipoInv(format!("sqlite_error_consulta: {}", e))),
     };
 
     // Convertir los datos extraídos a Forja (ahora sin el closure sobre vm)
@@ -287,9 +273,9 @@ fn native_sqlite_ultimo_id(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
     let idx = obtener_entero(args[0])? as usize;
 
     let conn_arc = obtener_conn(idx)?;
-    let conn = conn_arc.lock().map_err(|e| {
-        ErrFast::TipoInv(format!("sqlite_error_interno: {}", e))
-    })?;
+    let conn = conn_arc
+        .lock()
+        .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
     Ok(ValorFast::entero(conn.last_insert_rowid()))
 }
 
@@ -316,23 +302,18 @@ fn native_sqlite_ejecutar_params(
     let arr = vm.get_arr(arr_idx);
 
     // Convertir valores Forja a tipos SQLite (sin closure)
-    let params: Vec<Box<dyn rusqlite::types::ToSql>> = arr
-        .iter()
-        .map(|v| valor_forja_a_sqlite(vm, *v))
-        .collect();
+    let params: Vec<Box<dyn rusqlite::types::ToSql>> =
+        arr.iter().map(|v| valor_forja_a_sqlite(vm, *v)).collect();
     let params_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
     let conn_arc = obtener_conn(idx)?;
-    let conn = conn_arc.lock().map_err(|e| {
-        ErrFast::TipoInv(format!("sqlite_error_interno: {}", e))
-    })?;
+    let conn = conn_arc
+        .lock()
+        .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
 
     match conn.execute(&sql, params_refs.as_slice()) {
         Ok(filas) => Ok(ValorFast::entero(filas as i64)),
-        Err(e) => Err(ErrFast::TipoInv(format!(
-            "sqlite_error_ejecucion: {}",
-            e
-        ))),
+        Err(e) => Err(ErrFast::TipoInv(format!("sqlite_error_ejecucion: {}", e))),
     }
 }
 
@@ -359,25 +340,18 @@ fn native_sqlite_consultar_params(
     let arr = vm.get_arr(arr_idx);
 
     // Convertir valores Forja a tipos SQLite (sin mantener el borrow del array)
-    let params: Vec<Box<dyn rusqlite::types::ToSql>> = arr
-        .iter()
-        .map(|v| valor_forja_a_sqlite(vm, *v))
-        .collect();
+    let params: Vec<Box<dyn rusqlite::types::ToSql>> =
+        arr.iter().map(|v| valor_forja_a_sqlite(vm, *v)).collect();
     let params_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
     let conn_arc = obtener_conn(idx)?;
-    let conn = conn_arc.lock().map_err(|e| {
-        ErrFast::TipoInv(format!("sqlite_error_interno: {}", e))
-    })?;
+    let conn = conn_arc
+        .lock()
+        .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
 
     let mut stmt = match conn.prepare(&sql) {
         Ok(s) => s,
-        Err(e) => {
-            return Err(ErrFast::TipoInv(format!(
-                "sqlite_error_consulta: {}",
-                e
-            )))
-        }
+        Err(e) => return Err(ErrFast::TipoInv(format!("sqlite_error_consulta: {}", e))),
     };
 
     let column_count = stmt.column_count();
@@ -386,37 +360,32 @@ fn native_sqlite_consultar_params(
         .collect();
 
     // Extraer datos sin mantener el borrow del closure sobre vm
-    let rows_data: Vec<Vec<(String, rusqlite::types::Value)>> = match stmt.query_map(params_refs.as_slice(), |row| {
-        let mut row_data = Vec::with_capacity(column_count);
-        for i in 0..column_count {
-            let name = column_names[i].clone();
-            let val = row.get::<_, rusqlite::types::Value>(i).unwrap_or(rusqlite::types::Value::Null);
-            row_data.push((name, val));
-        }
-        Ok(row_data)
-    }) {
-        Ok(rows) => {
-            let mut data = Vec::new();
-            for row in rows {
-                match row {
-                    Ok(d) => data.push(d),
-                    Err(e) => {
-                        return Err(ErrFast::TipoInv(format!(
-                            "sqlite_error_consulta: {}",
-                            e
-                        )))
+    let rows_data: Vec<Vec<(String, rusqlite::types::Value)>> =
+        match stmt.query_map(params_refs.as_slice(), |row| {
+            let mut row_data = Vec::with_capacity(column_count);
+            for i in 0..column_count {
+                let name = column_names[i].clone();
+                let val = row
+                    .get::<_, rusqlite::types::Value>(i)
+                    .unwrap_or(rusqlite::types::Value::Null);
+                row_data.push((name, val));
+            }
+            Ok(row_data)
+        }) {
+            Ok(rows) => {
+                let mut data = Vec::new();
+                for row in rows {
+                    match row {
+                        Ok(d) => data.push(d),
+                        Err(e) => {
+                            return Err(ErrFast::TipoInv(format!("sqlite_error_consulta: {}", e)))
+                        }
                     }
                 }
+                data
             }
-            data
-        }
-        Err(e) => {
-            return Err(ErrFast::TipoInv(format!(
-                "sqlite_error_consulta: {}",
-                e
-            )))
-        }
-    };
+            Err(e) => return Err(ErrFast::TipoInv(format!("sqlite_error_consulta: {}", e))),
+        };
 
     // Convertir datos a Forja (fuera del closure)
     let mut resultados = Vec::with_capacity(rows_data.len());
@@ -443,9 +412,9 @@ fn native_sqlite_tablas(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
     let idx = obtener_entero(args[0])? as usize;
 
     let conn_arc = obtener_conn(idx)?;
-    let conn = conn_arc.lock().map_err(|e| {
-        ErrFast::TipoInv(format!("sqlite_error_interno: {}", e))
-    })?;
+    let conn = conn_arc
+        .lock()
+        .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
 
     let mut stmt = match conn.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -467,21 +436,13 @@ fn native_sqlite_tablas(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorF
                 match row {
                     Ok(n) => data.push(n),
                     Err(e) => {
-                        return Err(ErrFast::TipoInv(format!(
-                            "sqlite_error_consulta: {}",
-                            e
-                        )))
+                        return Err(ErrFast::TipoInv(format!("sqlite_error_consulta: {}", e)))
                     }
                 }
             }
             data
         }
-        Err(e) => {
-            return Err(ErrFast::TipoInv(format!(
-                "sqlite_error_consulta: {}",
-                e
-            )))
-        }
+        Err(e) => return Err(ErrFast::TipoInv(format!("sqlite_error_consulta: {}", e))),
     };
 
     // Convertir a Forja
@@ -506,19 +467,14 @@ fn native_sqlite_columnas(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valo
     let tabla = obtener_texto(vm, args[1])?;
 
     let conn_arc = obtener_conn(idx)?;
-    let conn = conn_arc.lock().map_err(|e| {
-        ErrFast::TipoInv(format!("sqlite_error_interno: {}", e))
-    })?;
+    let conn = conn_arc
+        .lock()
+        .map_err(|e| ErrFast::TipoInv(format!("sqlite_error_interno: {}", e)))?;
 
     let sql = format!("PRAGMA table_info('{}')", tabla.replace('\'', "''"));
     let mut stmt = match conn.prepare(&sql) {
         Ok(s) => s,
-        Err(e) => {
-            return Err(ErrFast::TipoInv(format!(
-                "sqlite_error_consulta: {}",
-                e
-            )))
-        }
+        Err(e) => return Err(ErrFast::TipoInv(format!("sqlite_error_consulta: {}", e))),
     };
 
     // Extraer datos crudos sin capturar vm
@@ -548,21 +504,13 @@ fn native_sqlite_columnas(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Valo
                 match row {
                     Ok(c) => data.push(c),
                     Err(e) => {
-                        return Err(ErrFast::TipoInv(format!(
-                            "sqlite_error_consulta: {}",
-                            e
-                        )))
+                        return Err(ErrFast::TipoInv(format!("sqlite_error_consulta: {}", e)))
                     }
                 }
             }
             data
         }
-        Err(e) => {
-            return Err(ErrFast::TipoInv(format!(
-                "sqlite_error_consulta: {}",
-                e
-            )))
-        }
+        Err(e) => return Err(ErrFast::TipoInv(format!("sqlite_error_consulta: {}", e))),
     };
 
     // Convertir a Forja

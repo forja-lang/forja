@@ -4,50 +4,115 @@
 //! representación intermedia entre el bytecode stack-based y la
 //! generación de código nativo con register allocation.
 
-use crate::register_alloc::{VirtReg, RegClass};
+use crate::register_alloc::{RegClass, VirtReg};
 
 /// Instrucción del IR register-based
 #[derive(Debug, Clone)]
 pub enum RegInstruction {
     // Movimiento de datos
-    Move { dst: VirtReg, src: VirtReg, class: RegClass },
-    LoadImm { dst: VirtReg, value: i64 },
-    LoadFloat { dst: VirtReg, value: f64 },
-    
+    Move {
+        dst: VirtReg,
+        src: VirtReg,
+        class: RegClass,
+    },
+    LoadImm {
+        dst: VirtReg,
+        value: i64,
+    },
+    LoadFloat {
+        dst: VirtReg,
+        value: f64,
+    },
+
     // Operaciones enteras (dos operandos → resultado)
-    RegAdd { dst: VirtReg, a: VirtReg, b: VirtReg },
-    RegSub { dst: VirtReg, a: VirtReg, b: VirtReg },
-    RegMul { dst: VirtReg, a: VirtReg, b: VirtReg },
-    RegDiv { dst: VirtReg, a: VirtReg, b: VirtReg },
-    
+    RegAdd {
+        dst: VirtReg,
+        a: VirtReg,
+        b: VirtReg,
+    },
+    RegSub {
+        dst: VirtReg,
+        a: VirtReg,
+        b: VirtReg,
+    },
+    RegMul {
+        dst: VirtReg,
+        a: VirtReg,
+        b: VirtReg,
+    },
+    RegDiv {
+        dst: VirtReg,
+        a: VirtReg,
+        b: VirtReg,
+    },
+
     // Operaciones de comparación
-    RegCmp { dst: VirtReg, a: VirtReg, b: VirtReg, op: CmpOp },
-    
+    RegCmp {
+        dst: VirtReg,
+        a: VirtReg,
+        b: VirtReg,
+        op: CmpOp,
+    },
+
     // Operaciones lógicas
-    RegAnd { dst: VirtReg, a: VirtReg, b: VirtReg },
-    RegOr { dst: VirtReg, a: VirtReg, b: VirtReg },
-    RegNot { dst: VirtReg, src: VirtReg },
-    
+    RegAnd {
+        dst: VirtReg,
+        a: VirtReg,
+        b: VirtReg,
+    },
+    RegOr {
+        dst: VirtReg,
+        a: VirtReg,
+        b: VirtReg,
+    },
+    RegNot {
+        dst: VirtReg,
+        src: VirtReg,
+    },
+
     // Load/Store desde memoria (variables)
-    LoadVar { dst: VirtReg, var_idx: usize, class: RegClass },
-    StoreVar { src: VirtReg, var_idx: usize, class: RegClass },
-    
+    LoadVar {
+        dst: VirtReg,
+        var_idx: usize,
+        class: RegClass,
+    },
+    StoreVar {
+        src: VirtReg,
+        var_idx: usize,
+        class: RegClass,
+    },
+
     // Saltos
-    Jump { label: usize },
-    JumpIfFalse { cond: VirtReg, label: usize },
+    Jump {
+        label: usize,
+    },
+    JumpIfFalse {
+        cond: VirtReg,
+        label: usize,
+    },
     Label(usize),
-    
+
     // Función
-    Call { func_name: String, args: Vec<VirtReg> },
-    Return { src: VirtReg },
-    
+    Call {
+        func_name: String,
+        args: Vec<VirtReg>,
+    },
+    Return {
+        src: VirtReg,
+    },
+
     // No-op
     Nop,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CmpOp {
-    Eq, Ne, Lt, Gt, Le, Ge,
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
 }
 
 /// Bloque básico del IR
@@ -67,9 +132,12 @@ pub struct RegProgram {
 
 impl RegProgram {
     pub fn new() -> Self {
-        RegProgram { blocks: Vec::new(), next_vreg: 0 }
+        RegProgram {
+            blocks: Vec::new(),
+            next_vreg: 0,
+        }
     }
-    
+
     pub fn alloc_vreg(&mut self) -> VirtReg {
         let v = self.next_vreg;
         self.next_vreg += 1;
@@ -105,12 +173,14 @@ pub fn get_uses_defs(instr: &RegInstruction) -> (Vec<(VirtReg, RegClass)>, Vec<V
         | RegInstruction::RegMul { dst, a, b }
         | RegInstruction::RegDiv { dst, a, b }
         | RegInstruction::RegAnd { dst, a, b }
-        | RegInstruction::RegOr { dst, a, b } => {
-            (vec![(*a, RClass::Integer), (*b, RClass::Integer)], vec![*dst])
-        }
-        RegInstruction::RegCmp { dst, a, b, .. } => {
-            (vec![(*a, RClass::Integer), (*b, RClass::Integer)], vec![*dst])
-        }
+        | RegInstruction::RegOr { dst, a, b } => (
+            vec![(*a, RClass::Integer), (*b, RClass::Integer)],
+            vec![*dst],
+        ),
+        RegInstruction::RegCmp { dst, a, b, .. } => (
+            vec![(*a, RClass::Integer), (*b, RClass::Integer)],
+            vec![*dst],
+        ),
         RegInstruction::RegNot { dst, src } => (vec![(*src, RClass::Integer)], vec![*dst]),
         RegInstruction::LoadVar { dst, .. } => (vec![], vec![*dst]),
         RegInstruction::StoreVar { src, class, .. } => (vec![(*src, *class)], vec![]),
@@ -218,7 +288,11 @@ mod tests {
 
     #[test]
     fn test_get_uses_defs_store_var() {
-        let instr = RegInstruction::StoreVar { src: 0, var_idx: 3, class: RegClass::Integer };
+        let instr = RegInstruction::StoreVar {
+            src: 0,
+            var_idx: 3,
+            class: RegClass::Integer,
+        };
         let (uses, defs) = get_uses_defs(&instr);
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].0, 0);
@@ -227,7 +301,11 @@ mod tests {
 
     #[test]
     fn test_get_uses_defs_load_var() {
-        let instr = RegInstruction::LoadVar { dst: 2, var_idx: 1, class: RegClass::Float };
+        let instr = RegInstruction::LoadVar {
+            dst: 2,
+            var_idx: 1,
+            class: RegClass::Float,
+        };
         let (uses, defs) = get_uses_defs(&instr);
         assert!(uses.is_empty());
         assert_eq!(defs.len(), 1);
@@ -269,9 +347,9 @@ mod tests {
         let block = BasicBlock {
             label: 0,
             instructions: vec![
-                RegInstruction::LoadImm { dst: 0, value: 5 },    // idx 0: def v0
-                RegInstruction::LoadImm { dst: 1, value: 3 },    // idx 1: def v1
-                RegInstruction::RegAdd { dst: 2, a: 0, b: 1 },   // idx 2: use v0, v1; def v2
+                RegInstruction::LoadImm { dst: 0, value: 5 }, // idx 0: def v0
+                RegInstruction::LoadImm { dst: 1, value: 3 }, // idx 1: def v1
+                RegInstruction::RegAdd { dst: 2, a: 0, b: 1 }, // idx 2: use v0, v1; def v2
             ],
             terminator: RegInstruction::Return { src: 2 },
         };
@@ -302,9 +380,13 @@ mod tests {
         let block = BasicBlock {
             label: 0,
             instructions: vec![
-                RegInstruction::LoadImm { dst: 0, value: 1 },    // idx 0
-                RegInstruction::LoadVar { dst: 1, var_idx: 0, class: RegClass::Integer }, // idx 1, v0 dead after idx 0
-                RegInstruction::LoadImm { dst: 2, value: 2 },    // idx 2, v1 dead after idx 1
+                RegInstruction::LoadImm { dst: 0, value: 1 }, // idx 0
+                RegInstruction::LoadVar {
+                    dst: 1,
+                    var_idx: 0,
+                    class: RegClass::Integer,
+                }, // idx 1, v0 dead after idx 0
+                RegInstruction::LoadImm { dst: 2, value: 2 }, // idx 2, v1 dead after idx 1
             ],
             terminator: RegInstruction::Return { src: 2 },
         };
@@ -329,10 +411,7 @@ mod tests {
         let mut prog = RegProgram::new();
         let block = BasicBlock {
             label: 0,
-            instructions: vec![
-                RegInstruction::Nop,
-                RegInstruction::Nop,
-            ],
+            instructions: vec![RegInstruction::Nop, RegInstruction::Nop],
             terminator: RegInstruction::Nop,
         };
         prog.blocks.push(block);

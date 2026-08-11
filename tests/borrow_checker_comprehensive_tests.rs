@@ -147,7 +147,10 @@ fn test_bc_funcion_retornar() {
 
 #[test]
 fn test_bc_funcion_recursiva() {
-    assert!(check("funcion fact(n) { si (n <= 1) { retornar 1 } sino { retornar n * fact(n - 1) } }").is_ok());
+    assert!(check(
+        "funcion fact(n) { si (n <= 1) { retornar 1 } sino { retornar n * fact(n - 1) } }"
+    )
+    .is_ok());
 }
 
 // ============================================================
@@ -161,7 +164,10 @@ fn test_bc_copy_semantica() {
 
 #[test]
 fn test_bc_copy_semantica_funcion() {
-    assert!(check("funcion f(x) { retornar x }\nvariable a = 5\nvariable b = f(a)\nvariable c = a").is_ok());
+    assert!(check(
+        "funcion f(x) { retornar x }\nvariable a = 5\nvariable b = f(a)\nvariable c = a"
+    )
+    .is_ok());
 }
 
 // ============================================================
@@ -180,12 +186,18 @@ fn test_bc_sino_si_encadenado() {
 
 #[test]
 fn test_bc_si_sin_parentesis() {
-    assert!(check("funcion main() {\n    variable x = 1\n    si x == 1 { escribir(\"uno\") }\n}").is_ok());
+    assert!(
+        check("funcion main() {\n    variable x = 1\n    si x == 1 { escribir(\"uno\") }\n}")
+            .is_ok()
+    );
 }
 
 #[test]
 fn test_bc_o_si() {
-    assert!(check("funcion main() {\n    variable x = 1\n    si x == 1 { } o si x == 2 { } sino { }\n}").is_ok());
+    assert!(check(
+        "funcion main() {\n    variable x = 1\n    si x == 1 { } o si x == 2 { } sino { }\n}"
+    )
+    .is_ok());
 }
 
 // ============================================================
@@ -247,7 +259,10 @@ fn test_bc_string_length() {
 
 #[test]
 fn test_bc_string_metodos() {
-    assert!(check("variable s = \"hola\"\nescribir(s.trim())\nescribir(s.to_upper())\nescribir(s.to_lower())").is_ok());
+    assert!(check(
+        "variable s = \"hola\"\nescribir(s.trim())\nescribir(s.to_upper())\nescribir(s.to_lower())"
+    )
+    .is_ok());
 }
 
 // ============================================================
@@ -356,12 +371,18 @@ fn test_bc_aritmetica_compleja() {
 
 #[test]
 fn test_bc_comparaciones() {
-    assert!(check("variable a = 5 > 3\nvariable b = 2 <= 10\nvariable c = 7 == 7\nvariable d = 8 != 3").is_ok());
+    assert!(check(
+        "variable a = 5 > 3\nvariable b = 2 <= 10\nvariable c = 7 == 7\nvariable d = 8 != 3"
+    )
+    .is_ok());
 }
 
 #[test]
 fn test_bc_logica() {
-    assert!(check("variable a = verdadero && falso\nvariable b = verdadero || falso\nvariable c = !verdadero").is_ok());
+    assert!(check(
+        "variable a = verdadero && falso\nvariable b = verdadero || falso\nvariable c = !verdadero"
+    )
+    .is_ok());
 }
 
 #[test]
@@ -389,12 +410,18 @@ fn test_bc_importar() {
 
 #[test]
 fn test_bc_requiere() {
-    assert!(check("funcion div(a: Entero, b: Entero) -> Entero\n    requiere b != 0\n{ retornar a / b }").is_ok());
+    assert!(check(
+        "funcion div(a: Entero, b: Entero) -> Entero\n    requiere b != 0\n{ retornar a / b }"
+    )
+    .is_ok());
 }
 
 #[test]
 fn test_bc_asegura() {
-    assert!(check("funcion abs(x: Entero) -> Entero\n    asegura resultado >= 0\n{ retornar x }").is_ok());
+    assert!(
+        check("funcion abs(x: Entero) -> Entero\n    asegura resultado >= 0\n{ retornar x }")
+            .is_ok()
+    );
 }
 
 // ============================================================

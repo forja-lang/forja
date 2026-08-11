@@ -5,7 +5,7 @@
 #![allow(non_snake_case)]
 
 use std::collections::HashMap;
-use std::ffi::{CString, c_void};
+use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
 use std::sync::{Mutex, OnceLock};
 
@@ -45,7 +45,9 @@ pub fn esta_cargada(ruta: &str) -> bool {
 /// Si ya está cargada, retorna el handle existente.
 /// Internamente usa LoadLibraryW (Windows) o dlopen (Unix).
 pub fn cargar_libreria(ruta: &str) -> Result<i64, String> {
-    let mut reg = registry().lock().map_err(|e| format!("Error de lock: {}", e))?;
+    let mut reg = registry()
+        .lock()
+        .map_err(|e| format!("Error de lock: {}", e))?;
 
     // Si ya está cargada, devolver la dirección del handle como id
     if let Some(&handle) = reg.get(ruta) {
@@ -71,7 +73,8 @@ pub fn cargar_libreria(ruta: &str) -> Result<i64, String> {
         }
         #[cfg(not(target_os = "windows"))]
         {
-            let c_path = CString::new(ruta).map_err(|_| "Ruta inválida (contiene null)".to_string())?;
+            let c_path =
+                CString::new(ruta).map_err(|_| "Ruta inválida (contiene null)".to_string())?;
             let h = dlopen(c_path.as_ptr(), RTLD_LAZY | RTLD_LOCAL);
             if h.is_null() {
                 let err = dlerror_str();
@@ -89,19 +92,28 @@ pub fn cargar_libreria(ruta: &str) -> Result<i64, String> {
 /// Obtiene un puntero a función desde una librería cargada.
 /// Usa GetProcAddress (Windows) o dlsym (Unix).
 pub fn obtener_funcion(ruta: &str, nombre: &str) -> Result<i64, String> {
-    let reg = registry().lock().map_err(|e| format!("Error de lock: {}", e))?;
+    let reg = registry()
+        .lock()
+        .map_err(|e| format!("Error de lock: {}", e))?;
 
-    let handle = reg.get(ruta).ok_or_else(|| format!("Librería '{}' no está cargada. Usá 'importar externa \"{}\"' primero.", ruta, ruta))?;
+    let handle = reg.get(ruta).ok_or_else(|| {
+        format!(
+            "Librería '{}' no está cargada. Usá 'importar externa \"{}\"' primero.",
+            ruta, ruta
+        )
+    })?;
 
     let fn_ptr: *mut c_void = unsafe {
         #[cfg(target_os = "windows")]
         {
-            let c_name = CString::new(nombre).map_err(|_| "Nombre de función inválido".to_string())?;
+            let c_name =
+                CString::new(nombre).map_err(|_| "Nombre de función inválido".to_string())?;
             GetProcAddress(handle.0 as *mut _, c_name.as_ptr()) as *mut c_void
         }
         #[cfg(not(target_os = "windows"))]
         {
-            let c_name = CString::new(nombre).map_err(|_| "Nombre de función inválido".to_string())?;
+            let c_name =
+                CString::new(nombre).map_err(|_| "Nombre de función inválido".to_string())?;
             dlsym(handle.0, c_name.as_ptr())
         }
     };
@@ -110,7 +122,10 @@ pub fn obtener_funcion(ruta: &str, nombre: &str) -> Result<i64, String> {
         #[cfg(target_os = "windows")]
         {
             let err = unsafe { GetLastError() };
-            return Err(format!("GetProcAddress('{}') falló: código {}", nombre, err));
+            return Err(format!(
+                "GetProcAddress('{}') falló: código {}",
+                nombre, err
+            ));
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -125,7 +140,9 @@ pub fn obtener_funcion(ruta: &str, nombre: &str) -> Result<i64, String> {
 /// Libera una librería cargada.
 /// Usa FreeLibrary (Windows) o dlclose (Unix).
 pub fn liberar_libreria(ruta: &str) -> Result<(), String> {
-    let mut reg = registry().lock().map_err(|e| format!("Error de lock: {}", e))?;
+    let mut reg = registry()
+        .lock()
+        .map_err(|e| format!("Error de lock: {}", e))?;
     if let Some(handle) = reg.remove(ruta) {
         unsafe {
             #[cfg(target_os = "windows")]
@@ -202,14 +219,19 @@ fn dlerror_str() -> String {
 // Native VM functions
 // ─────────────────────────────────────────────────────────────────────
 
-use crate::vm_fast::{ForjaFast, ValorFast, ErrFast};
-use crate::native_registry::{obtener_texto, obtener_entero};
+use crate::native_registry::{obtener_entero, obtener_texto};
+use crate::vm_fast::{ErrFast, ForjaFast, ValorFast};
 
 /// _ffi_obtener_funcion(ruta, nombre) -> Entero (puntero a función)
 /// retorna -1 si falla
-pub fn native_ffi_obtener_funcion(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn native_ffi_obtener_funcion(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
-        return Err(ErrFast::TipoInv("_ffi_obtener_funcion requiere 2 argumentos: ruta (texto), nombre (texto)".into()));
+        return Err(ErrFast::TipoInv(
+            "_ffi_obtener_funcion requiere 2 argumentos: ruta (texto), nombre (texto)".into(),
+        ));
     }
     let ruta = obtener_texto(vm, args[0])?;
     let nombre = obtener_texto(vm, args[1])?;
@@ -221,9 +243,15 @@ pub fn native_ffi_obtener_funcion(vm: &mut ForjaFast, args: &[ValorFast]) -> Res
 }
 
 /// _ffi_llamar_entero(fn_ptr, args) -> Entero
-pub fn native_ffi_llamar_entero(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn native_ffi_llamar_entero(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
-        return Err(ErrFast::TipoInv("_ffi_llamar_entero requiere 2 argumentos: fn_ptr (entero), args (arreglo<entero>)".into()));
+        return Err(ErrFast::TipoInv(
+            "_ffi_llamar_entero requiere 2 argumentos: fn_ptr (entero), args (arreglo<entero>)"
+                .into(),
+        ));
     }
 
     let fn_ptr_val = obtener_entero(args[0])?;
@@ -262,10 +290,18 @@ pub fn native_ffi_llamar_entero(vm: &mut ForjaFast, args: &[ValorFast]) -> Resul
             }
             5 => {
                 let f: extern "C" fn(i64, i64, i64, i64, i64) -> i64 = std::mem::transmute(fn_ptr);
-                f(call_args[0], call_args[1], call_args[2], call_args[3], call_args[4])
+                f(
+                    call_args[0],
+                    call_args[1],
+                    call_args[2],
+                    call_args[3],
+                    call_args[4],
+                )
             }
             _ => {
-                return Err(ErrFast::TipoInv("_ffi_llamar_entero soporta hasta 5 argumentos".into()));
+                return Err(ErrFast::TipoInv(
+                    "_ffi_llamar_entero soporta hasta 5 argumentos".into(),
+                ));
             }
         }
     };
@@ -275,9 +311,15 @@ pub fn native_ffi_llamar_entero(vm: &mut ForjaFast, args: &[ValorFast]) -> Resul
 
 /// _ffi_llamar_texto(fn_ptr, args) -> Texto
 /// Llama una función FFI que retorna un `char*`
-pub fn native_ffi_llamar_texto(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn native_ffi_llamar_texto(
+    vm: &mut ForjaFast,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
-        return Err(ErrFast::TipoInv("_ffi_llamar_texto requiere 2 argumentos: fn_ptr (entero), args (arreglo<texto>)".into()));
+        return Err(ErrFast::TipoInv(
+            "_ffi_llamar_texto requiere 2 argumentos: fn_ptr (entero), args (arreglo<texto>)"
+                .into(),
+        ));
     }
 
     let fn_ptr_val = obtener_entero(args[0])?;
@@ -285,7 +327,8 @@ pub fn native_ffi_llamar_texto(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
     // Extraer argumentos del arreglo (para texto, los pasamos como CString)
     let arr_idx = args[1].indice_arreglo() as usize;
     let arr = vm.get_arr(arr_idx as u32);
-    let call_args: Vec<String> = arr.iter()
+    let call_args: Vec<String> = arr
+        .iter()
         .map(|v| {
             let idx = v.indice_texto();
             let s = vm.get_str(idx as u32);
@@ -308,11 +351,14 @@ pub fn native_ffi_llamar_texto(vm: &mut ForjaFast, args: &[ValorFast]) -> Result
             2 => {
                 let c_arg0 = CString::new(call_args[0].as_str()).unwrap_or_default();
                 let c_arg1 = CString::new(call_args[1].as_str()).unwrap_or_default();
-                let f: extern "C" fn(*const c_char, *const c_char) -> *mut c_char = std::mem::transmute(fn_ptr);
+                let f: extern "C" fn(*const c_char, *const c_char) -> *mut c_char =
+                    std::mem::transmute(fn_ptr);
                 f(c_arg0.as_ptr(), c_arg1.as_ptr())
             }
             _ => {
-                return Err(ErrFast::TipoInv("_ffi_llamar_texto soporta hasta 2 argumentos".into()));
+                return Err(ErrFast::TipoInv(
+                    "_ffi_llamar_texto soporta hasta 2 argumentos".into(),
+                ));
             }
         }
     };

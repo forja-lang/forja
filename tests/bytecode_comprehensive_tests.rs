@@ -1,4 +1,4 @@
-use forja::bytecode::{BytecodeGenerator, Opcode, serializar_bytecode, deserializar_bytecode};
+use forja::bytecode::{deserializar_bytecode, serializar_bytecode, BytecodeGenerator, Opcode};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
 use forja::semantics::TypeChecker;
@@ -75,7 +75,9 @@ fn test_bc_push_booleano_true() {
 #[test]
 fn test_bc_push_booleano_false() {
     let bc = generar("variable x = falso");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::PushBooleano(false))));
+    assert!(bc
+        .iter()
+        .any(|op| matches!(op, Opcode::PushBooleano(false))));
 }
 
 #[test]
@@ -143,19 +145,25 @@ fn test_bc_generic_add_fallback() {
 #[test]
 fn test_bc_comparacion_mayor() {
     let bc = generar_con_tipos("variable x = 5 > 3");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::Mayor) || matches!(op, Opcode::MayorInt)));
+    assert!(bc
+        .iter()
+        .any(|op| matches!(op, Opcode::Mayor) || matches!(op, Opcode::MayorInt)));
 }
 
 #[test]
 fn test_bc_comparacion_menor() {
     let bc = generar_con_tipos("variable x = 3 < 5");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::Menor) || matches!(op, Opcode::MenorInt)));
+    assert!(bc
+        .iter()
+        .any(|op| matches!(op, Opcode::Menor) || matches!(op, Opcode::MenorInt)));
 }
 
 #[test]
 fn test_bc_comparacion_igual() {
     let bc = generar_con_tipos("variable x = 5 == 5");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::Igual) || matches!(op, Opcode::IgualInt)));
+    assert!(bc
+        .iter()
+        .any(|op| matches!(op, Opcode::Igual) || matches!(op, Opcode::IgualInt)));
 }
 
 #[test]
@@ -284,7 +292,10 @@ fn test_bc_serializacion_declare_global() {
 
 #[test]
 fn test_bc_serializacion_fusionados() {
-    let bc = vec![Opcode::DeclareEnteroOp(0, 99), Opcode::DeclareBooleanoOp(1, false)];
+    let bc = vec![
+        Opcode::DeclareEnteroOp(0, 99),
+        Opcode::DeclareBooleanoOp(1, false),
+    ];
     let serialized = serializar_bytecode(&bc);
     let deserialized = deserializar_bytecode(&serialized).unwrap();
     assert_eq!(deserialized, bc);
@@ -293,9 +304,15 @@ fn test_bc_serializacion_fusionados() {
 #[test]
 fn test_bc_serializacion_opcodes_especializados() {
     let bc = vec![
-        Opcode::AddInt, Opcode::SubFloat, Opcode::MulInt, Opcode::DivFloat,
-        Opcode::IgualInt, Opcode::MenorInt, Opcode::MenorFloat,
-        Opcode::LoadIdxEntero(5), Opcode::StoreIdxFloat(10),
+        Opcode::AddInt,
+        Opcode::SubFloat,
+        Opcode::MulInt,
+        Opcode::DivFloat,
+        Opcode::IgualInt,
+        Opcode::MenorInt,
+        Opcode::MenorFloat,
+        Opcode::LoadIdxEntero(5),
+        Opcode::StoreIdxFloat(10),
     ];
     let serialized = serializar_bytecode(&bc);
     let deserialized = deserializar_bytecode(&serialized).unwrap();
@@ -330,7 +347,10 @@ fn test_bc_print_opcode() {
 #[test]
 fn test_bc_print_despues_de_push() {
     let bc = generar("escribir(42)");
-    let idx_print = bc.iter().position(|op| matches!(op, Opcode::Print)).unwrap();
+    let idx_print = bc
+        .iter()
+        .position(|op| matches!(op, Opcode::Print))
+        .unwrap();
     assert!(idx_print > 0);
 }
 
@@ -391,7 +411,9 @@ fn test_bc_map_new() {
 #[test]
 fn test_bc_map_get() {
     let bc = generar("variable m = {\"x\": 10}\nvariable v = m[\"x\"]");
-    let has_get = bc.iter().any(|op| matches!(op, Opcode::MapGet | Opcode::Load(_) | Opcode::LoadIdx(_)));
+    let has_get = bc
+        .iter()
+        .any(|op| matches!(op, Opcode::MapGet | Opcode::Load(_) | Opcode::LoadIdx(_)));
     assert!(has_get);
 }
 
@@ -403,7 +425,12 @@ fn test_bc_map_get() {
 fn test_bc_load_variable_con_indice() {
     let bc = generar_con_tipos("variable x = 5\nescribir(x)");
     // After index optimization, uses LoadIdx or LoadIdxEntero
-    let has_load = bc.iter().any(|op| matches!(op, Opcode::LoadIdx(_) | Opcode::LoadIdxEntero(_) | Opcode::Load(_)));
+    let has_load = bc.iter().any(|op| {
+        matches!(
+            op,
+            Opcode::LoadIdx(_) | Opcode::LoadIdxEntero(_) | Opcode::Load(_)
+        )
+    });
     assert!(has_load);
 }
 

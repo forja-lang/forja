@@ -124,26 +124,42 @@ impl PhysReg {
 
 /// Registros físicos de uso general (enteros, no XMM)
 pub const GP_REGS: &[PhysReg] = &[
-    PhysReg::RAX, PhysReg::RCX, PhysReg::RDX, PhysReg::RSI, PhysReg::RDI,
-    PhysReg::R8, PhysReg::R9, PhysReg::R10, PhysReg::R11,
+    PhysReg::RAX,
+    PhysReg::RCX,
+    PhysReg::RDX,
+    PhysReg::RSI,
+    PhysReg::RDI,
+    PhysReg::R8,
+    PhysReg::R9,
+    PhysReg::R10,
+    PhysReg::R11,
 ];
 
 /// Registros callee-saved
 pub const CALLEE_SAVED: &[PhysReg] = &[
-    PhysReg::RBX, PhysReg::RBP, PhysReg::R12, PhysReg::R13, PhysReg::R14, PhysReg::R15,
+    PhysReg::RBX,
+    PhysReg::RBP,
+    PhysReg::R12,
+    PhysReg::R13,
+    PhysReg::R14,
+    PhysReg::R15,
 ];
 
 /// Registros temporales (caller-saved, preferidos para temporales)
 pub const TEMP_REGS: &[PhysReg] = &[
-    PhysReg::RAX, PhysReg::RCX, PhysReg::RDX, PhysReg::R8, PhysReg::R9, PhysReg::R10, PhysReg::R11,
+    PhysReg::RAX,
+    PhysReg::RCX,
+    PhysReg::RDX,
+    PhysReg::R8,
+    PhysReg::R9,
+    PhysReg::R10,
+    PhysReg::R11,
 ];
 
 /// Registros extendidos (callee-saved disponibles para asignación).
 /// RBX se usa como puntero a variables, R14 como puntero a output, RBP como frame pointer,
 /// por lo que no están incluidos aquí. R12, R13 y R15 quedan libres para el allocador.
-pub const EXTENDED_REGS: &[PhysReg] = &[
-    PhysReg::R12, PhysReg::R13, PhysReg::R15,
-];
+pub const EXTENDED_REGS: &[PhysReg] = &[PhysReg::R12, PhysReg::R13, PhysReg::R15];
 
 /// Variables virtuales (temporales del compilador)
 pub type VirtReg = usize;
@@ -152,8 +168,8 @@ pub type VirtReg = usize;
 #[derive(Debug, Clone)]
 pub struct LiveInterval {
     pub virt_reg: VirtReg,
-    pub start: usize,   // primera instrucción donde se usa
-    pub end: usize,     // última instrucción donde se usa (exclusive)
+    pub start: usize, // primera instrucción donde se usa
+    pub end: usize,   // última instrucción donde se usa (exclusive)
     pub reg_class: RegClass,
     /// Posiciones donde se usa esta variable (para interval splitting).
     /// Si está vacío, se comporta como si todos los puntos entre start y end fueran usos.
@@ -244,7 +260,8 @@ impl RegisterAllocator {
             assignments: HashMap::new(),
             spill_slots: 0,
             active_regs: {
-                let mut map: HashMap<PhysReg, VirtReg> = TEMP_REGS.iter().map(|&r| (r, 0)).collect();
+                let mut map: HashMap<PhysReg, VirtReg> =
+                    TEMP_REGS.iter().map(|&r| (r, 0)).collect();
                 // Registrar registros extendidos (callee-saved) como disponibles
                 for &r in EXTENDED_REGS {
                     map.insert(r, 0);
@@ -278,7 +295,7 @@ impl RegisterAllocator {
 
         // Clonar intervalos para evitar borrow conflict
         let intervals = self.intervals.clone();
-        
+
         // 3. Para cada intervalo, en orden
         for interval in &intervals {
             // 3a. Expirar intervalos que terminaron antes de este
@@ -362,8 +379,16 @@ impl RegisterAllocator {
                 None
             }
             RegClass::Float => {
-                for xmm in [PhysReg::XMM0, PhysReg::XMM1, PhysReg::XMM2, PhysReg::XMM3,
-                             PhysReg::XMM4, PhysReg::XMM5, PhysReg::XMM6, PhysReg::XMM7] {
+                for xmm in [
+                    PhysReg::XMM0,
+                    PhysReg::XMM1,
+                    PhysReg::XMM2,
+                    PhysReg::XMM3,
+                    PhysReg::XMM4,
+                    PhysReg::XMM5,
+                    PhysReg::XMM6,
+                    PhysReg::XMM7,
+                ] {
                     if self.active_regs.get(&xmm) == Some(&0) {
                         return Some(xmm);
                     }
@@ -376,7 +401,8 @@ impl RegisterAllocator {
     /// Spill del intervalo que termina más tarde
     fn spill_latest(&mut self) -> Option<LiveInterval> {
         let latest = self.active_intervals.iter().max_by_key(|i| i.end)?.clone();
-        self.active_intervals.retain(|i| i.virt_reg != latest.virt_reg);
+        self.active_intervals
+            .retain(|i| i.virt_reg != latest.virt_reg);
         Some(latest)
     }
 
@@ -452,7 +478,10 @@ mod tests {
         let results = ra.allocate();
         assert_eq!(results.len(), 15);
         // Al menos una debería estar en spill
-        let spilled = results.iter().filter(|r| matches!(r.location, Location::Stack(_))).count();
+        let spilled = results
+            .iter()
+            .filter(|r| matches!(r.location, Location::Stack(_)))
+            .count();
         assert!(spilled >= 1, "Expected at least one spill, got {}", spilled);
     }
 
@@ -489,12 +518,18 @@ mod tests {
             assert!(matches!(r.location, Location::Reg(_)));
         }
         // Y deberían usar el mismo registro (RAX que es el primero libre)
-        let regs: Vec<_> = results.iter().filter_map(|r| match &r.location {
-            Location::Reg(p) => Some(*p),
-            _ => None,
-        }).collect();
+        let regs: Vec<_> = results
+            .iter()
+            .filter_map(|r| match &r.location {
+                Location::Reg(p) => Some(*p),
+                _ => None,
+            })
+            .collect();
         // Todas deberían ser el mismo registro
-        assert!(regs.windows(2).all(|w| w[0] == w[1]), "All should use the same register");
+        assert!(
+            regs.windows(2).all(|w| w[0] == w[1]),
+            "All should use the same register"
+        );
     }
 
     #[test]
@@ -521,10 +556,16 @@ mod tests {
         assert_eq!(results.len(), 2);
         // La entera debería estar en GP reg
         let int_loc = results.iter().find(|r| r.virt_reg == 0).unwrap();
-        assert!(matches!(int_loc.location, Location::Reg(_)), "Integer should be in register");
+        assert!(
+            matches!(int_loc.location, Location::Reg(_)),
+            "Integer should be in register"
+        );
         // La float podría estar en XMM o en spill (depende de si XMM está disponible)
         let float_loc = results.iter().find(|r| r.virt_reg == 1).unwrap();
         // Solo verificar que fue asignada
-        assert!(matches!(float_loc.location, Location::Reg(_) | Location::Stack(_)));
+        assert!(matches!(
+            float_loc.location,
+            Location::Reg(_) | Location::Stack(_)
+        ));
     }
 }

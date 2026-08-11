@@ -49,16 +49,12 @@ impl ConcreteType {
             Tipo::Nulo => Some(ConcreteType::Nulo),
             Tipo::Exacto => Some(ConcreteType::Exacto),
             Tipo::Clase(nombre) => Some(ConcreteType::Clase(nombre.clone())),
-            Tipo::Arreglo(inner) => {
-                Some(ConcreteType::Arreglo(Box::new(Self::from_tipo(inner)?)))
-            }
+            Tipo::Arreglo(inner) => Some(ConcreteType::Arreglo(Box::new(Self::from_tipo(inner)?))),
             Tipo::Resultado(ok, err) => Some(ConcreteType::Resultado(
                 Box::new(Self::from_tipo(ok)?),
                 Box::new(Self::from_tipo(err)?),
             )),
-            Tipo::Opcion(inner) => {
-                Some(ConcreteType::Opcion(Box::new(Self::from_tipo(inner)?)))
-            }
+            Tipo::Opcion(inner) => Some(ConcreteType::Opcion(Box::new(Self::from_tipo(inner)?))),
             Tipo::Funcion(_, _) => None, // No monomorfizamos funciones como tipo
             Tipo::RasgoObjeto(_) => None,
             Tipo::Parametro(_) => None, // Parámetro genérico sin resolver
@@ -243,13 +239,18 @@ impl Monomorphizer {
                             let specialized_name = format!(
                                 "{}_{}",
                                 nombre,
-                                type_args.iter()
+                                type_args
+                                    .iter()
                                     .map(|(_, ct)| ct.name())
                                     .collect::<Vec<_>>()
                                     .join("_")
                             );
                             // Evitar duplicados
-                            if !self.instantiations.iter().any(|i| i.specialized_name == specialized_name) {
+                            if !self
+                                .instantiations
+                                .iter()
+                                .any(|i| i.specialized_name == specialized_name)
+                            {
                                 self.instantiations.push(GenericInstantiation {
                                     original_name: nombre.clone(),
                                     type_args,
@@ -273,13 +274,18 @@ impl Monomorphizer {
                             let specialized_name = format!(
                                 "{}_{}",
                                 clase,
-                                type_args.iter()
+                                type_args
+                                    .iter()
                                     .map(|(_, ct)| ct.name())
                                     .collect::<Vec<_>>()
                                     .join("_")
                             );
                             // Evitar duplicados
-                            if !self.instantiations.iter().any(|i| i.specialized_name == specialized_name) {
+                            if !self
+                                .instantiations
+                                .iter()
+                                .any(|i| i.specialized_name == specialized_name)
+                            {
                                 self.instantiations.push(GenericInstantiation {
                                     original_name: clase.clone(),
                                     type_args,
@@ -290,7 +296,9 @@ impl Monomorphizer {
                     }
                 }
             }
-            Expresion::Binaria { izquierda, derecha, .. } => {
+            Expresion::Binaria {
+                izquierda, derecha, ..
+            } => {
                 self.collect_from_expr(izquierda);
                 self.collect_from_expr(derecha);
             }
@@ -432,9 +440,10 @@ impl Monomorphizer {
             .parametros
             .iter()
             .map(|p| {
-                let new_tipo = p.tipo.as_ref().and_then(|t| {
-                    self.replace_type_params(t, &inst.type_args)
-                });
+                let new_tipo = p
+                    .tipo
+                    .as_ref()
+                    .and_then(|t| self.replace_type_params(t, &inst.type_args));
                 Parametro {
                     nombre: p.nombre.clone(),
                     prestado: p.prestado,
@@ -448,9 +457,10 @@ impl Monomorphizer {
             nombre: inst.specialized_name.clone(),
             parametros_tipo: Vec::new(), // Sin parámetros de tipo
             parametros: new_params,
-            tipo_retorno: generic.tipo_retorno.as_ref().and_then(|t| {
-                self.replace_type_params(t, &inst.type_args)
-            }),
+            tipo_retorno: generic
+                .tipo_retorno
+                .as_ref()
+                .and_then(|t| self.replace_type_params(t, &inst.type_args)),
             cuerpo: generic.cuerpo.clone(), // Simplificación: cuerpo sin reemplazo de tipos
             externa: false,
             asincrona: false,
@@ -471,9 +481,10 @@ impl Monomorphizer {
             .campos
             .iter()
             .map(|c| {
-                let new_tipo = c.tipo.as_ref().and_then(|t| {
-                    self.replace_type_params(t, &inst.type_args)
-                });
+                let new_tipo = c
+                    .tipo
+                    .as_ref()
+                    .and_then(|t| self.replace_type_params(t, &inst.type_args));
                 VariableClase {
                     nombre: c.nombre.clone(),
                     tipo: new_tipo,
@@ -491,7 +502,11 @@ impl Monomorphizer {
         }
     }
 
-    fn replace_type_params(&self, tipo: &Tipo, type_args: &[(String, ConcreteType)]) -> Option<Tipo> {
+    fn replace_type_params(
+        &self,
+        tipo: &Tipo,
+        type_args: &[(String, ConcreteType)],
+    ) -> Option<Tipo> {
         match tipo {
             Tipo::Parametro(nombre) => {
                 // Buscar el parámetro de tipo en los argumentos concretos
@@ -502,12 +517,12 @@ impl Monomorphizer {
                 }
                 Some(tipo.clone())
             }
-            Tipo::Arreglo(inner) => {
-                Some(Tipo::Arreglo(Box::new(self.replace_type_params(inner, type_args)?)))
-            }
-            Tipo::Opcion(inner) => {
-                Some(Tipo::Opcion(Box::new(self.replace_type_params(inner, type_args)?)))
-            }
+            Tipo::Arreglo(inner) => Some(Tipo::Arreglo(Box::new(
+                self.replace_type_params(inner, type_args)?,
+            ))),
+            Tipo::Opcion(inner) => Some(Tipo::Opcion(Box::new(
+                self.replace_type_params(inner, type_args)?,
+            ))),
             _ => Some(tipo.clone()),
         }
     }
@@ -551,15 +566,27 @@ mod tests {
 
     #[test]
     fn test_concrete_type_from_tipo() {
-        assert_eq!(ConcreteType::from_tipo(&Tipo::Entero), Some(ConcreteType::Entero));
-        assert_eq!(ConcreteType::from_tipo(&Tipo::Texto), Some(ConcreteType::Texto));
-        assert_eq!(ConcreteType::from_tipo(&Tipo::Booleano), Some(ConcreteType::Booleano));
+        assert_eq!(
+            ConcreteType::from_tipo(&Tipo::Entero),
+            Some(ConcreteType::Entero)
+        );
+        assert_eq!(
+            ConcreteType::from_tipo(&Tipo::Texto),
+            Some(ConcreteType::Texto)
+        );
+        assert_eq!(
+            ConcreteType::from_tipo(&Tipo::Booleano),
+            Some(ConcreteType::Booleano)
+        );
     }
 
     #[test]
     fn test_concrete_type_name() {
         assert_eq!(ConcreteType::Entero.name(), "Entero");
-        assert_eq!(ConcreteType::Arreglo(Box::new(ConcreteType::Entero)).name(), "Arr_Entero");
+        assert_eq!(
+            ConcreteType::Arreglo(Box::new(ConcreteType::Entero)).name(),
+            "Arr_Entero"
+        );
     }
 
     #[test]
@@ -622,7 +649,10 @@ mod tests {
         mono.specialize();
 
         assert_eq!(mono.specialized_functions.len(), 1);
-        if let Declaracion::Funcion { nombre, parametros, .. } = &mono.specialized_functions[0] {
+        if let Declaracion::Funcion {
+            nombre, parametros, ..
+        } = &mono.specialized_functions[0]
+        {
             assert_eq!(nombre, "doble_Entero");
             assert_eq!(parametros[0].tipo, Some(Tipo::Entero));
         }

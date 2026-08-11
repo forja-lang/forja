@@ -5,11 +5,11 @@
 #     y opcionalmente hacer commit, tag y push automáticamente.
 #
 # Uso:
-#   ./scripts/bump-version.sh 0.9.0              # Solo actualiza archivos
-#   ./scripts/bump-version.sh 0.9.0 --commit     # Actualiza + commit
-#   ./scripts/bump-version.sh 0.9.0 --tag        # Actualiza + commit + tag
-#   ./scripts/bump-version.sh 0.9.0 --push       # Actualiza + commit + tag + push
-#   ./scripts/bump-version.sh 0.9.0 --all        # Actualiza + commit + tag + push
+#   ./scripts/bump-version.sh 0.9.1              # Solo actualiza archivos
+#   ./scripts/bump-version.sh 0.9.1 --commit     # Actualiza + commit
+#   ./scripts/bump-version.sh 0.9.1 --tag        # Actualiza + commit + tag
+#   ./scripts/bump-version.sh 0.9.1 --push       # Actualiza + commit + tag + push
+#   ./scripts/bump-version.sh 0.9.1 --all        # Actualiza + commit + tag + push
 #
 # Requisitos:
 #   - Bash 4+ (Linux, macOS, WSL, o Git Bash en Windows)

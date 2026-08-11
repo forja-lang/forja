@@ -46,7 +46,10 @@ pub fn try_selfrun() -> Option<()> {
     let opcodes = match crate::bytecode::deserializar_bytecode(&bytecode_data) {
         Some(o) => o,
         None => {
-            eprintln!("[SELFRUN] Error al deserializar bytecode ({} bytes)", bc_size);
+            eprintln!(
+                "[SELFRUN] Error al deserializar bytecode ({} bytes)",
+                bc_size
+            );
             return None;
         }
     };

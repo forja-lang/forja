@@ -4,8 +4,8 @@
 //! de la asignación de registros. Reemplaza el codegen stack-based para
 //! funciones donde el register allocation produce código más eficiente.
 
-use crate::register_alloc::{PhysReg, Location, VirtReg};
-use crate::register_ir::{RegInstruction, RegProgram, CmpOp};
+use crate::register_alloc::{Location, PhysReg, VirtReg};
+use crate::register_ir::{CmpOp, RegInstruction, RegProgram};
 use std::collections::HashMap;
 
 /// Representación de un operando en código máquina
@@ -104,10 +104,10 @@ impl<'a> CodegenReg<'a> {
         // Prólogo: frame pointer + preservar callee-saved + reservar frame de spill.
         // Stack layout: [rbp+16]=ret_addr, [rbp+8]=saved_r14, [rbp]=saved_rbx,
         //               saved_rbp, [rbp-8]=spill_slot_0, [rbp-16]=spill_slot_1, ...
-        self.bytes.push(0x55);                            // push rbp
+        self.bytes.push(0x55); // push rbp
         self.bytes.extend_from_slice(&[0x53, 0x41, 0x56]); // push rbx; push r14
         self.bytes.extend_from_slice(&[0x48, 0x89, 0xE5]); // mov rbp, rsp
-        self.emit_mov_reg_reg(vars_ptr, PhysReg::RCX);     // mov vars_ptr, rcx
+        self.emit_mov_reg_reg(vars_ptr, PhysReg::RCX); // mov vars_ptr, rcx
         self.bytes.extend_from_slice(&[0x49, 0x89, 0xd6]); // mov r14, rdx (output ptr)
         if spill_frame > 0 {
             self.bytes.extend_from_slice(&[0x48, 0x81, 0xEC]); // sub rsp, imm32
@@ -148,8 +148,8 @@ impl<'a> CodegenReg<'a> {
                         }
                     }
                     Operand::Stack(off) => {
-                            self.emit_mov_rax_imm64(*value);
-                            self.emit_store_rax_stack(off);
+                        self.emit_mov_rax_imm64(*value);
+                        self.emit_store_rax_stack(off);
                     }
                 }
             }
@@ -233,7 +233,7 @@ impl<'a> CodegenReg<'a> {
                 self.bytes.push(0x0F);
                 self.bytes.push(setcc);
                 self.bytes.push(0xC0); // al
-                // movzx dst, al
+                                       // movzx dst, al
                 self.emit_movzx_al_to(&d);
             }
 
@@ -321,10 +321,10 @@ impl<'a> CodegenReg<'a> {
                 // Epilogue: restaurar frame pointer, callee-saved y retornar
                 // Orden inverso al prologue: push rbp; push rbx; push r14
                 self.bytes.extend_from_slice(&[0x48, 0x89, 0xEC]); // mov rsp, rbp
-                self.bytes.extend_from_slice(&[0x41, 0x5E]);       // pop r14
-                self.bytes.extend_from_slice(&[0x5B]);              // pop rbx
-                self.bytes.push(0x5D);                              // pop rbp
-                self.bytes.push(0xC3);                              // ret
+                self.bytes.extend_from_slice(&[0x41, 0x5E]); // pop r14
+                self.bytes.extend_from_slice(&[0x5B]); // pop rbx
+                self.bytes.push(0x5D); // pop rbp
+                self.bytes.push(0xC3); // ret
             }
 
             RegInstruction::Call { func_name, args } => {
@@ -425,7 +425,7 @@ impl<'a> CodegenReg<'a> {
     fn emit_mov_reg_imm64(&mut self, reg: PhysReg, value: i64) {
         let idx = reg.rex_index();
         let rex = 0x48 | if idx >= 8 { 0x01 } else { 0 }; // REX.W + REX.B
-        // REX + mov r64, imm64 = 0xB8 + reg (low 3 bits)
+                                                          // REX + mov r64, imm64 = 0xB8 + reg (low 3 bits)
         self.bytes.extend_from_slice(&[rex, 0xB8 + (idx & 7)]);
         self.i64(value);
     }
@@ -483,8 +483,9 @@ impl<'a> CodegenReg<'a> {
     fn emit_store_gpr_to_rsp(&mut self, reg: PhysReg, off: u32) {
         let r_code = reg.rex_index() & 7;
         let rex = 0x48 | if reg.rex_index() >= 8 { 0x04 } else { 0 }; // REX.W + REX.R
-        // mov [rsp+disp32], reg → ModRM mod=10, reg=r_code, rm=100(SIB); SIB base=rsp
-        self.bytes.extend_from_slice(&[rex, 0x89, 0x80 | (r_code << 3) | 4, 0x24]);
+                                                                      // mov [rsp+disp32], reg → ModRM mod=10, reg=r_code, rm=100(SIB); SIB base=rsp
+        self.bytes
+            .extend_from_slice(&[rex, 0x89, 0x80 | (r_code << 3) | 4, 0x24]);
         self.u32(off);
     }
 
@@ -492,7 +493,8 @@ impl<'a> CodegenReg<'a> {
     fn emit_load_gpr_from_rsp(&mut self, reg: PhysReg, off: u32) {
         let r_code = reg.rex_index() & 7;
         let rex = 0x48 | if reg.rex_index() >= 8 { 0x04 } else { 0 }; // REX.W + REX.R
-        self.bytes.extend_from_slice(&[rex, 0x8B, 0x80 | (r_code << 3) | 4, 0x24]);
+        self.bytes
+            .extend_from_slice(&[rex, 0x8B, 0x80 | (r_code << 3) | 4, 0x24]);
         self.u32(off); // mov reg, [rsp+off]
     }
 
@@ -500,7 +502,8 @@ impl<'a> CodegenReg<'a> {
     fn emit_store_xmm_to_rsp(&mut self, xmm_idx: u8, off: u32) {
         // movsd [rsp+disp32], xmm_idx — ModRM reg field = xmm_idx (0-7, sin REX.R)
         // 66 0F 11 /r movsd r/m64, xmm (opcode real: F2 0F 11)
-        self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x11, 0x84, 0x24]);
+        self.bytes
+            .extend_from_slice(&[0xF2, 0x0F, 0x11, 0x84, 0x24]);
         self.u32(off); // ModRM 0x84 = mod10, reg=000 (xmm0-7), rm=100(SIB); SIB 0x24 = base rsp
         let len = self.bytes.len();
         // fijar el campo reg del ModRM al xmm_idx real
@@ -510,7 +513,8 @@ impl<'a> CodegenReg<'a> {
     /// load [rsp + off] → xmm_idx
     fn emit_load_xmm_from_rsp(&mut self, xmm_idx: u8, off: u32) {
         // movsd xmm_idx, [rsp+disp32] — F2 0F 10 /r
-        self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x10, 0x84, 0x24]);
+        self.bytes
+            .extend_from_slice(&[0xF2, 0x0F, 0x10, 0x84, 0x24]);
         self.u32(off);
         let len = self.bytes.len();
         self.bytes[len - 6] = 0x84 | ((xmm_idx & 7) << 3);
@@ -550,7 +554,8 @@ impl<'a> CodegenReg<'a> {
             let rex = self.rex_w_r_b(src, dst); // mov r/m64, r64: src=reg, dst=rm
             self.bytes.push(rex);
             self.bytes.push(0x89); // mov r/m64, r64
-            self.bytes.push(0xC0 | ((src.rex_index() & 7) << 3) | (dst.rex_index() & 7));
+            self.bytes
+                .push(0xC0 | ((src.rex_index() & 7) << 3) | (dst.rex_index() & 7));
         }
     }
 
@@ -609,9 +614,13 @@ impl<'a> CodegenReg<'a> {
         } else {
             let r_code = reg.rex_index() & 7;
             let mut rex = 0x48; // REX.W
-            if reg.rex_index() >= 8 { rex |= 0x04; } // REX.R
-            if self.vars_ptr.rex_index() >= 8 { rex |= 0x01; } // REX.B
-            // mov [vars_ptr+offset], reg
+            if reg.rex_index() >= 8 {
+                rex |= 0x04;
+            } // REX.R
+            if self.vars_ptr.rex_index() >= 8 {
+                rex |= 0x01;
+            } // REX.B
+              // mov [vars_ptr+offset], reg
             self.bytes.push(rex);
             self.bytes.push(0x89);
             if offset >= -128 && offset <= 127 {
@@ -641,9 +650,13 @@ impl<'a> CodegenReg<'a> {
         } else {
             let r_code = reg.rex_index() & 7;
             let mut rex = 0x48; // REX.W
-            if reg.rex_index() >= 8 { rex |= 0x04; } // REX.R
-            if self.vars_ptr.rex_index() >= 8 { rex |= 0x01; } // REX.B
-            // mov reg, [vars_ptr+offset]
+            if reg.rex_index() >= 8 {
+                rex |= 0x04;
+            } // REX.R
+            if self.vars_ptr.rex_index() >= 8 {
+                rex |= 0x01;
+            } // REX.B
+              // mov reg, [vars_ptr+offset]
             self.bytes.push(rex);
             self.bytes.push(0x8B);
             if offset >= -128 && offset <= 127 {
@@ -692,7 +705,8 @@ impl<'a> CodegenReg<'a> {
             let rex = self.rex_w_r_b(src, dst);
             self.bytes.push(rex);
             self.bytes.push(0x01); // add r/m64, r64 (src=reg, dst=rm)
-            self.bytes.push(0xC0 | ((src.rex_index() & 7) << 3) | (dst.rex_index() & 7));
+            self.bytes
+                .push(0xC0 | ((src.rex_index() & 7) << 3) | (dst.rex_index() & 7));
         }
     }
 
@@ -723,7 +737,8 @@ impl<'a> CodegenReg<'a> {
             let rex = self.rex_w_r_b(src, dst);
             self.bytes.push(rex);
             self.bytes.push(0x29); // sub r/m64, r64 (src=reg, dst=rm)
-            self.bytes.push(0xC0 | ((src.rex_index() & 7) << 3) | (dst.rex_index() & 7));
+            self.bytes
+                .push(0xC0 | ((src.rex_index() & 7) << 3) | (dst.rex_index() & 7));
         }
     }
 
@@ -749,7 +764,8 @@ impl<'a> CodegenReg<'a> {
         self.bytes.push(rex);
         self.bytes.push(0x0F);
         self.bytes.push(0xAF); // imul r64, r/m64 (dst=reg, src=rm)
-        self.bytes.push(0xC0 | ((dst.rex_index() & 7) << 3) | (src.rex_index() & 7));
+        self.bytes
+            .push(0xC0 | ((dst.rex_index() & 7) << 3) | (src.rex_index() & 7));
     }
 
     // === Helper: idiv operand ===
@@ -763,7 +779,12 @@ impl<'a> CodegenReg<'a> {
             }
             Operand::Stack(off) => {
                 self.emit_load_reg_stack(PhysReg::R10, *off);
-                let rex = 0x48 | if PhysReg::R10.rex_index() >= 8 { 0x01 } else { 0 };
+                let rex = 0x48
+                    | if PhysReg::R10.rex_index() >= 8 {
+                        0x01
+                    } else {
+                        0
+                    };
                 self.bytes.push(rex);
                 self.bytes.push(0xF7);
                 self.bytes.push(0xF8 | (PhysReg::R10.rex_index() & 7)); // idiv r10
@@ -797,7 +818,8 @@ impl<'a> CodegenReg<'a> {
         let rex = self.rex_w_r_b(b, a); // cmp r/m64, r64: b=reg, a=rm
         self.bytes.push(rex);
         self.bytes.push(0x39);
-        self.bytes.push(0xC0 | ((b.rex_index() & 7) << 3) | (a.rex_index() & 7));
+        self.bytes
+            .push(0xC0 | ((b.rex_index() & 7) << 3) | (a.rex_index() & 7));
     }
 
     // === Helper: cmp operand, 0 ===
@@ -808,7 +830,8 @@ impl<'a> CodegenReg<'a> {
                 let rex = 0x48 | if r.rex_index() >= 8 { 0x04 } else { 0 }; // REX.W + REX.R
                 self.bytes.push(rex);
                 self.bytes.push(0x85);
-                self.bytes.push(0xC0 | ((r.rex_index() & 7) << 3) | (r.rex_index() & 7));
+                self.bytes
+                    .push(0xC0 | ((r.rex_index() & 7) << 3) | (r.rex_index() & 7));
             }
             Operand::Stack(off) => {
                 self.emit_load_rax_stack(*off);
@@ -829,7 +852,8 @@ impl<'a> CodegenReg<'a> {
                 let rex = self.rex_w_r_b(*s, *d); // and r/m64, r64: s=reg, d=rm
                 self.bytes.push(rex);
                 self.bytes.push(0x21);
-                self.bytes.push(0xC0 | ((s.rex_index() & 7) << 3) | (d.rex_index() & 7));
+                self.bytes
+                    .push(0xC0 | ((s.rex_index() & 7) << 3) | (d.rex_index() & 7));
             }
             _ => {
                 self.emit_mov_operands(&Operand::Reg(PhysReg::R10), src);
@@ -847,7 +871,8 @@ impl<'a> CodegenReg<'a> {
                 let rex = self.rex_w_r_b(*s, *d); // or r/m64, r64: s=reg, d=rm
                 self.bytes.push(rex);
                 self.bytes.push(0x09);
-                self.bytes.push(0xC0 | ((s.rex_index() & 7) << 3) | (d.rex_index() & 7));
+                self.bytes
+                    .push(0xC0 | ((s.rex_index() & 7) << 3) | (d.rex_index() & 7));
             }
             _ => {
                 self.emit_mov_operands(&Operand::Reg(PhysReg::R10), src);
@@ -869,7 +894,8 @@ impl<'a> CodegenReg<'a> {
                 } else {
                     let r_code = r.rex_index() & 7;
                     let rex = if (r.rex_index()) >= 8 { 0x49 } else { 0x48 };
-                    self.bytes.extend_from_slice(&[rex, 0x0F, 0xB6, 0xC0 | r_code]);
+                    self.bytes
+                        .extend_from_slice(&[rex, 0x0F, 0xB6, 0xC0 | r_code]);
                 }
             }
             Operand::Stack(off) => {
@@ -1018,7 +1044,11 @@ mod tests {
             instructions: vec![
                 RegInstruction::LoadImm { dst: v0, value: 5 },
                 RegInstruction::LoadImm { dst: v1, value: 3 },
-                RegInstruction::RegAdd { dst: v2, a: v0, b: v1 },
+                RegInstruction::RegAdd {
+                    dst: v2,
+                    a: v0,
+                    b: v1,
+                },
             ],
             terminator: RegInstruction::Return { src: v2 },
         };
@@ -1052,12 +1082,12 @@ mod tests {
         assert!(!code.is_empty());
 
         // Prólogo: push rbp; push rbx; push r14; mov rbp, rsp; mov rbx, rcx; mov r14, rdx
-        assert_eq!(&code[0..1], &[0x55]);                     // push rbp
-        assert_eq!(&code[1..4], &[0x53, 0x41, 0x56]);         // push rbx; push r14
-        assert_eq!(&code[4..7], &[0x48, 0x89, 0xE5]);         // mov rbp, rsp
-        assert_eq!(&code[7..10], &[0x48, 0x89, 0xcb]);        // mov rbx, rcx
-        assert_eq!(&code[10..13], &[0x49, 0x89, 0xd6]);       // mov r14, rdx
-        // sub rsp, 8 (frame de spill) = 48 81 EC + imm32
+        assert_eq!(&code[0..1], &[0x55]); // push rbp
+        assert_eq!(&code[1..4], &[0x53, 0x41, 0x56]); // push rbx; push r14
+        assert_eq!(&code[4..7], &[0x48, 0x89, 0xE5]); // mov rbp, rsp
+        assert_eq!(&code[7..10], &[0x48, 0x89, 0xcb]); // mov rbx, rcx
+        assert_eq!(&code[10..13], &[0x49, 0x89, 0xd6]); // mov r14, rdx
+                                                        // sub rsp, 8 (frame de spill) = 48 81 EC + imm32
         assert_eq!(&code[13..16], &[0x48, 0x81, 0xec]);
         assert_eq!(&code[16..20], &8u32.to_le_bytes());
 
@@ -1065,10 +1095,10 @@ mod tests {
         // Layout: [48 89 EC] [41 5E] [5B] [5D] [C3] = 8 bytes
         let len = code.len();
         assert_eq!(&code[len - 8..len - 5], &[0x48, 0x89, 0xEC]); // mov rsp, rbp
-        assert_eq!(&code[len - 5..len - 3], &[0x41, 0x5E]);       // pop r14
-        assert_eq!(code[len - 3], 0x5B);                           // pop rbx
-        assert_eq!(code[len - 2], 0x5D);                           // pop rbp
-        assert_eq!(code[len - 1], 0xC3);                           // ret
+        assert_eq!(&code[len - 5..len - 3], &[0x41, 0x5E]); // pop r14
+        assert_eq!(code[len - 3], 0x5B); // pop rbx
+        assert_eq!(code[len - 2], 0x5D); // pop rbp
+        assert_eq!(code[len - 1], 0xC3); // ret
     }
 
     #[test]
@@ -1088,16 +1118,16 @@ mod tests {
         // Sin spills: no debe haber sub rsp
         let code = emit_program(&prog, &assignments, 0);
         // Prólogo: push rbp; push rbx; push r14; mov rbp, rsp; mov rbx, rcx; mov r14, rdx
-        assert_eq!(&code[0..1], &[0x55]);                     // push rbp
-        assert_eq!(&code[1..4], &[0x53, 0x41, 0x56]);         // push rbx; push r14
-        assert_eq!(&code[4..7], &[0x48, 0x89, 0xE5]);         // mov rbp, rsp
-        // Epílogo: mov rsp, rbp; pop r14; pop rbx; pop rbp; ret
+        assert_eq!(&code[0..1], &[0x55]); // push rbp
+        assert_eq!(&code[1..4], &[0x53, 0x41, 0x56]); // push rbx; push r14
+        assert_eq!(&code[4..7], &[0x48, 0x89, 0xE5]); // mov rbp, rsp
+                                                      // Epílogo: mov rsp, rbp; pop r14; pop rbx; pop rbp; ret
         let len = code.len();
         assert_eq!(&code[len - 8..len - 5], &[0x48, 0x89, 0xEC]); // mov rsp, rbp
-        assert_eq!(&code[len - 5..len - 3], &[0x41, 0x5E]);       // pop r14
-        assert_eq!(code[len - 3], 0x5B);                           // pop rbx
-        assert_eq!(code[len - 2], 0x5D);                           // pop rbp
-        assert_eq!(code[len - 1], 0xC3);                           // ret
+        assert_eq!(&code[len - 5..len - 3], &[0x41, 0x5E]); // pop r14
+        assert_eq!(code[len - 3], 0x5B); // pop rbx
+        assert_eq!(code[len - 2], 0x5D); // pop rbp
+        assert_eq!(code[len - 1], 0xC3); // ret
     }
 
     #[test]
@@ -1160,9 +1190,7 @@ mod tests {
         let code = emit_program(&prog, &assignments, 0);
 
         // Debe existir un call rax (FF D0) en el código generado
-        let found_call = code
-            .windows(2)
-            .any(|w| w[0] == 0xFF && w[1] == 0xD0);
+        let found_call = code.windows(2).any(|w| w[0] == 0xFF && w[1] == 0xD0);
         assert!(found_call, "se esperaba una instrucción call rax");
 
         // El stub debe tener dirección válida y retornar 0 al ser invocado.

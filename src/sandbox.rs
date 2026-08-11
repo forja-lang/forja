@@ -22,7 +22,6 @@
 /// `puertos_permitidos = Some(vec![])` → ningún puerto permitido.
 /// `puertos_permitidos = Some(vec![80, 443])` → solo esos puertos.
 
-
 #[derive(Debug, Clone)]
 pub struct SandboxRed {
     /// None = modo air-gapped (sin red).
@@ -67,10 +66,7 @@ impl SandboxRed {
                 ));
             }
         } else {
-            return Err(
-                "Red habilitada (sin restricciones)."
-                    .into(),
-            );
+            return Err("Red habilitada (sin restricciones).".into());
         }
 
         // Verificar puertos
@@ -291,9 +287,7 @@ impl SandboxFilesystem {
                 ));
             }
         } else {
-            return Err(
-                "Acceso a archivos habilitado (sin restricciones).".into()
-            );
+            return Err("Acceso a archivos habilitado (sin restricciones).".into());
         }
     }
 
@@ -305,7 +299,9 @@ impl SandboxFilesystem {
         for parte in partes {
             match parte {
                 "" | "." => continue,
-                ".." => { resultado.pop(); }
+                ".." => {
+                    resultado.pop();
+                }
                 p => resultado.push(p),
             }
         }
@@ -387,9 +383,7 @@ impl SandboxProceso {
                 nombre_corto, cmds_str
             ));
         } else {
-            return Err(
-                "Ejecución de procesos habilitada (sin restricciones).".into()
-            );
+            return Err("Ejecución de procesos habilitada (sin restricciones).".into());
         }
     }
 }

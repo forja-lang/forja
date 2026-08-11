@@ -110,9 +110,7 @@ impl IrConstructor {
 
     pub fn decl_to_ir(&mut self, builder: &mut IrBuilder, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable {
-                nombre, valor, ..
-            } => {
+            Declaracion::Variable { nombre, valor, .. } => {
                 let mem = self.alloc_mem(nombre);
                 builder.emit_alloca();
                 if let Some(val_expr) = valor {
@@ -124,9 +122,7 @@ impl IrConstructor {
                 }
             }
 
-            Declaracion::Asignacion {
-                nombre, valor, ..
-            } => {
+            Declaracion::Asignacion { nombre, valor, .. } => {
                 if let Some(mem) = self.get_mem(nombre) {
                     let val = self.expr_to_ir(builder, valor);
                     builder.emit_store(mem, val);

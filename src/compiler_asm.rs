@@ -2603,6 +2603,7 @@ impl CompilerAsm {
                 // No implementado en ASM - compilar la expresión interna
                 self.compilar_expresion_asm(expr)
             }
+            Expresion::Nada | Expresion::Ninguno => String::new(),
             Expresion::Resultado => {
                 // 'resultado' - return value in postcondiciones
                 // Return value is in rax/x0 (or on stack if postcondiciones_activas)

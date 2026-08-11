@@ -770,6 +770,8 @@ impl Formatter {
                 let exp_str = self.expresion_a_string(expr);
                 format!("Algo({})", exp_str)
             }
+            Expresion::Nada => "Nada()".to_string(),
+            Expresion::Ninguno => "Ninguno()".to_string(),
             Expresion::Resultado => "resultado".to_string(),
             Expresion::Anterior(expr) => {
                 let exp_str = self.expresion_a_string(expr);

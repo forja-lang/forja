@@ -10,14 +10,16 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
-use forja::token::{Token, TokenKind};
 use forja::lsp::completado::{CompletionResolver, SymbolEntry, SymbolKind as ForjaSymbolKind};
-use forja::lsp::index_stdlib::StdlibIndex;
 use forja::lsp::firma::SignatureResolver;
+use forja::lsp::index_stdlib::StdlibIndex;
+use forja::token::{Token, TokenKind};
 
 fn completar_locales(analisis: &AnalisisDocumento) -> Vec<SymbolEntry> {
-    analisis.simbolos.iter().map(|s| {
-        SymbolEntry {
+    analisis
+        .simbolos
+        .iter()
+        .map(|s| SymbolEntry {
             name: s.nombre.clone(),
             kind: match s.tipo_simbolo {
                 SimboloTipo::Variable => ForjaSymbolKind::Variable,
@@ -29,8 +31,8 @@ fn completar_locales(analisis: &AnalisisDocumento) -> Vec<SymbolEntry> {
             },
             params: Vec::new(),
             doc: s.doc.clone().unwrap_or_default(),
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 fn cached_stdlib() -> &'static StdlibIndex {
@@ -654,10 +656,17 @@ impl LanguageServer for Backend {
             if let Some(f) = funcs.first() {
                 let mut doc = f.doc.clone();
                 if doc.is_empty() {
-                    let params_str: Vec<String> = f.params.iter()
-                        .map(|p| format!("- `{}`: {}", p.name, p.type_str)).collect();
-                    doc = format!("**{}**\n\nMódulo: `{}.fa`\n\nParámetros:\n{}",
-                        f.name, f.module, params_str.join("\n"));
+                    let params_str: Vec<String> = f
+                        .params
+                        .iter()
+                        .map(|p| format!("- `{}`: {}", p.name, p.type_str))
+                        .collect();
+                    doc = format!(
+                        "**{}**\n\nMódulo: `{}.fa`\n\nParámetros:\n{}",
+                        f.name,
+                        f.module,
+                        params_str.join("\n")
+                    );
                     if !f.return_type.is_empty() {
                         doc += &format!("\n\nRetorna: `{}`", f.return_type);
                     }
@@ -693,37 +702,44 @@ impl LanguageServer for Backend {
 
         let forja_items = self.completion_resolver.resolver(&tokens, cursor, &locales);
 
-        let lsp_items: Vec<CompletionItem> = forja_items.iter().map(|fi| {
-            let kind = match fi.kind {
-                1 => Some(CompletionItemKind::TEXT),
-                3 => Some(CompletionItemKind::FUNCTION),
-                6 => Some(CompletionItemKind::VARIABLE),
-                7 => Some(CompletionItemKind::KEYWORD),
-                9 => Some(CompletionItemKind::MODULE),
-                12 => Some(CompletionItemKind::CLASS),
-                14 => Some(CompletionItemKind::SNIPPET),
-                15 => Some(CompletionItemKind::METHOD),
-                22 => Some(CompletionItemKind::STRUCT),
-                23 => Some(CompletionItemKind::ENUM),
-                _ => Some(CompletionItemKind::TEXT),
-            };
-            let fmt = match fi.insert_text_format {
-                2 => Some(InsertTextFormat::SNIPPET),
-                _ => Some(InsertTextFormat::PLAIN_TEXT),
-            };
-            CompletionItem {
-                label: fi.label.clone(),
-                kind,
-                detail: Some(fi.detail.clone()),
-                documentation: if fi.documentation.is_empty() { None } else { Some(Documentation::String(fi.documentation.clone())) },
-                insert_text: Some(fi.insert_text.clone()),
-                insert_text_format: fmt,
-                sort_text: Some(fi.sort_text.clone()),
-                filter_text: Some(fi.filter_text.clone()),
-                preselect: if fi.preselect { Some(true) } else { None },
-                ..Default::default()
-            }
-        }).collect();
+        let lsp_items: Vec<CompletionItem> = forja_items
+            .iter()
+            .map(|fi| {
+                let kind = match fi.kind {
+                    1 => Some(CompletionItemKind::TEXT),
+                    3 => Some(CompletionItemKind::FUNCTION),
+                    6 => Some(CompletionItemKind::VARIABLE),
+                    7 => Some(CompletionItemKind::KEYWORD),
+                    9 => Some(CompletionItemKind::MODULE),
+                    12 => Some(CompletionItemKind::CLASS),
+                    14 => Some(CompletionItemKind::SNIPPET),
+                    15 => Some(CompletionItemKind::METHOD),
+                    22 => Some(CompletionItemKind::STRUCT),
+                    23 => Some(CompletionItemKind::ENUM),
+                    _ => Some(CompletionItemKind::TEXT),
+                };
+                let fmt = match fi.insert_text_format {
+                    2 => Some(InsertTextFormat::SNIPPET),
+                    _ => Some(InsertTextFormat::PLAIN_TEXT),
+                };
+                CompletionItem {
+                    label: fi.label.clone(),
+                    kind,
+                    detail: Some(fi.detail.clone()),
+                    documentation: if fi.documentation.is_empty() {
+                        None
+                    } else {
+                        Some(Documentation::String(fi.documentation.clone()))
+                    },
+                    insert_text: Some(fi.insert_text.clone()),
+                    insert_text_format: fmt,
+                    sort_text: Some(fi.sort_text.clone()),
+                    filter_text: Some(fi.filter_text.clone()),
+                    preselect: if fi.preselect { Some(true) } else { None },
+                    ..Default::default()
+                }
+            })
+            .collect();
 
         Ok(Some(CompletionResponse::Array(lsp_items)))
     }
@@ -798,14 +814,26 @@ impl LanguageServer for Backend {
         let locales = completar_locales(&analisis);
 
         if let Some(info) = self.signature_resolver.resolver(&tokens, cursor, &locales) {
-            let params: Vec<ParameterInformation> = info.params.iter().map(|p| ParameterInformation {
-                label: ParameterLabel::Simple(p.label.clone()),
-                documentation: if p.documentation.is_empty() { None } else { Some(Documentation::String(p.documentation.clone())) },
-            }).collect();
+            let params: Vec<ParameterInformation> = info
+                .params
+                .iter()
+                .map(|p| ParameterInformation {
+                    label: ParameterLabel::Simple(p.label.clone()),
+                    documentation: if p.documentation.is_empty() {
+                        None
+                    } else {
+                        Some(Documentation::String(p.documentation.clone()))
+                    },
+                })
+                .collect();
             Ok(Some(SignatureHelp {
                 signatures: vec![SignatureInformation {
                     label: info.label,
-                    documentation: if info.documentation.is_empty() { None } else { Some(Documentation::String(info.documentation)) },
+                    documentation: if info.documentation.is_empty() {
+                        None
+                    } else {
+                        Some(Documentation::String(info.documentation))
+                    },
                     parameters: Some(params),
                     active_parameter: Some(info.active_param as u32),
                 }],
@@ -878,7 +906,9 @@ impl Backend {
 
                     // La anidación profunda se muestra como sugerencia, no como error
                     let severity = match &err.tipo {
-                        forja::error::ErrorTipo::DemasiadaAnidacion { .. } => DiagnosticSeverity::INFORMATION,
+                        forja::error::ErrorTipo::DemasiadaAnidacion { .. } => {
+                            DiagnosticSeverity::INFORMATION
+                        }
                         _ => DiagnosticSeverity::ERROR,
                     };
 
@@ -1429,7 +1459,9 @@ fn calcular_rango_error_palabra(texto: &str, linea: usize, columna: usize) -> Ra
             let mut end_col = col_idx;
             // Si el caracter actual es parte de una palabra identificador, avanzar hasta el final de la palabra
             if chars[col_idx].is_alphanumeric() || chars[col_idx] == '_' {
-                while end_col < chars.len() && (chars[end_col].is_alphanumeric() || chars[end_col] == '_') {
+                while end_col < chars.len()
+                    && (chars[end_col].is_alphanumeric() || chars[end_col] == '_')
+                {
                     end_col += 1;
                 }
             } else {

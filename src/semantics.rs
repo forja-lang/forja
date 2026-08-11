@@ -283,18 +283,16 @@ impl TablaSimbolos {
                 info.estado = EstadoVariable::PrestadaInmutable(n + 1);
                 Ok(())
             }
-            EstadoVariable::PrestadaMutable => {
-                Err(ErrorForja::new(
-                    ErrorTipo::ErrorDePropiedad,
-                    linea,
-                    columna,
-                    &format!(
-                        "No se puede prestar '{}' porque ya tiene un préstamo mutable activo.",
-                        nombre
-                    ),
-                    "Usá un préstamo inmutable (&T) o esperá a que el préstamo mutable termine.",
-                ))
-            }
+            EstadoVariable::PrestadaMutable => Err(ErrorForja::new(
+                ErrorTipo::ErrorDePropiedad,
+                linea,
+                columna,
+                &format!(
+                    "No se puede prestar '{}' porque ya tiene un préstamo mutable activo.",
+                    nombre
+                ),
+                "Usá un préstamo inmutable (&T) o esperá a que el préstamo mutable termine.",
+            )),
             EstadoVariable::Movida => Err(ErrorForja::new(
                 ErrorTipo::ErrorDePropiedad,
                 linea,
@@ -1024,10 +1022,10 @@ impl BorrowChecker {
                 self.analizar_expresion_con_depth(expr, depth + 1);
                 None
             }
+            Expresion::Nada | Expresion::Ninguno => None,
             Expresion::Resultado | Expresion::Anterior(_) => None,
             Expresion::LlamadaMetodo {
-                objeto,
-                argumentos, ..
+                objeto, argumentos, ..
             } => {
                 self.analizar_expresion_con_depth(objeto, depth + 1);
                 for arg in argumentos {
@@ -1052,8 +1050,10 @@ pub struct TypeChecker {
     /// Cada overload: (tipos_param, tipo_retorno, parametros_tipo)
     /// Soportar múltiples overloads permite que funciones con el mismo nombre
     /// pero diferentes tipos de parámetros coexistan (sobrecarga por tipo).
-    funciones:
-        std::collections::HashMap<String, Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>>,
+    funciones: std::collections::HashMap<
+        String,
+        Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>,
+    >,
     /// Tipos inferidos para cada variable (nombre -> tipo)
     tipos: HashMap<String, Tipo>,
     /// Definiciones de rasgos: nombre -> lista de firmas de métodos
@@ -1090,7 +1090,10 @@ impl TypeChecker {
 
     /// Retorna un clon del mapa de funciones con sus overloads.
     /// Usado por BytecodeGenerator para resolver sobrecarga en codegen.
-    pub fn obtener_funciones(&self) -> std::collections::HashMap<String, Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>> {
+    pub fn obtener_funciones(
+        &self,
+    ) -> std::collections::HashMap<String, Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>>
+    {
         self.funciones.clone()
     }
 
@@ -1117,7 +1120,9 @@ impl TypeChecker {
             if params.len() == tipos_args.len() {
                 if tipos_args.iter().enumerate().all(|(j, arg_t)| {
                     params[j].as_ref().map_or(false, |p_t| {
-                        arg_t.as_ref().map_or(false, |a_t| self.tipos_coinciden_exacto(a_t, p_t))
+                        arg_t
+                            .as_ref()
+                            .map_or(false, |a_t| self.tipos_coinciden_exacto(a_t, p_t))
                     })
                 }) {
                     return Some(i);
@@ -1130,7 +1135,9 @@ impl TypeChecker {
             if params.len() == tipos_args.len() {
                 if tipos_args.iter().enumerate().all(|(j, arg_t)| {
                     match &params[j] {
-                        Some(p_t) => arg_t.as_ref().map_or(false, |a_t| self.tipos_son_compatibles(a_t, p_t)),
+                        Some(p_t) => arg_t
+                            .as_ref()
+                            .map_or(false, |a_t| self.tipos_son_compatibles(a_t, p_t)),
                         None => true, // Sin tipo explícito = comodín
                     }
                 }) {
@@ -1208,59 +1215,227 @@ impl TypeChecker {
             ("a_caracter", vec![Some(Tipo::Entero)], Some(Tipo::Texto)),
             // Funciones de manipulación de texto
             ("longitud", vec![Some(Tipo::Texto)], Some(Tipo::Entero)),
-            ("subcadena", vec![Some(Tipo::Texto), Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Texto)),
+            (
+                "subcadena",
+                vec![Some(Tipo::Texto), Some(Tipo::Entero), Some(Tipo::Entero)],
+                Some(Tipo::Texto),
+            ),
             // Funciones nativas de red (usadas por std/red)
-            ("_net_dns_resolver", vec![Some(Tipo::Texto), Some(Tipo::Texto)], Some(Tipo::Arreglo(Box::new(Tipo::Texto)))),
-            ("_net_doh_query", vec![Some(Tipo::Texto), Some(Tipo::Texto), Some(Tipo::Texto)], Some(Tipo::Arreglo(Box::new(Tipo::Texto)))),
-            ("_net_ping", vec![Some(Tipo::Texto), Some(Tipo::Entero)], Some(Tipo::Clase("RespuestaPing".to_string()))),
-            ("_net_interfaces", vec![], Some(Tipo::Arreglo(Box::new(Tipo::Clase("InterfazRed".to_string()))))),
-            ("_net_dns_resolver_tipo", vec![Some(Tipo::Texto), Some(Tipo::Texto)], Some(Tipo::Arreglo(Box::new(Tipo::Texto)))),
+            (
+                "_net_dns_resolver",
+                vec![Some(Tipo::Texto), Some(Tipo::Texto)],
+                Some(Tipo::Arreglo(Box::new(Tipo::Texto))),
+            ),
+            (
+                "_net_doh_query",
+                vec![Some(Tipo::Texto), Some(Tipo::Texto), Some(Tipo::Texto)],
+                Some(Tipo::Arreglo(Box::new(Tipo::Texto))),
+            ),
+            (
+                "_net_ping",
+                vec![Some(Tipo::Texto), Some(Tipo::Entero)],
+                Some(Tipo::Clase("RespuestaPing".to_string())),
+            ),
+            (
+                "_net_interfaces",
+                vec![],
+                Some(Tipo::Arreglo(Box::new(Tipo::Clase(
+                    "InterfazRed".to_string(),
+                )))),
+            ),
+            (
+                "_net_dns_resolver_tipo",
+                vec![Some(Tipo::Texto), Some(Tipo::Texto)],
+                Some(Tipo::Arreglo(Box::new(Tipo::Texto))),
+            ),
             // Funciones nativas QUIC (usadas por std/quic)
-            ("_quic_conectar", vec![Some(Tipo::Texto), Some(Tipo::Entero)], Some(Tipo::Entero)),
-            ("_quic_abrir_stream", vec![Some(Tipo::Entero)], Some(Tipo::Entero)),
-            ("_quic_stream_enviar", vec![Some(Tipo::Entero), Some(Tipo::Texto)], Some(Tipo::Entero)),
-            ("_quic_stream_recibir", vec![Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Texto)),
+            (
+                "_quic_conectar",
+                vec![Some(Tipo::Texto), Some(Tipo::Entero)],
+                Some(Tipo::Entero),
+            ),
+            (
+                "_quic_abrir_stream",
+                vec![Some(Tipo::Entero)],
+                Some(Tipo::Entero),
+            ),
+            (
+                "_quic_stream_enviar",
+                vec![Some(Tipo::Entero), Some(Tipo::Texto)],
+                Some(Tipo::Entero),
+            ),
+            (
+                "_quic_stream_recibir",
+                vec![Some(Tipo::Entero), Some(Tipo::Entero)],
+                Some(Tipo::Texto),
+            ),
             ("_quic_cerrar", vec![Some(Tipo::Entero)], Some(Tipo::Nulo)),
             // Funciones nativas HTTP/3 (usadas por std/cliente_h3)
-            ("_h3_solicitud", vec![
-                Some(Tipo::Texto), Some(Tipo::Entero), Some(Tipo::Texto),
-                Some(Tipo::Texto), Some(Tipo::Texto), Some(Tipo::Texto),
-            ], Some(Tipo::Clase("RespuestaH3".to_string()))),
+            (
+                "_h3_solicitud",
+                vec![
+                    Some(Tipo::Texto),
+                    Some(Tipo::Entero),
+                    Some(Tipo::Texto),
+                    Some(Tipo::Texto),
+                    Some(Tipo::Texto),
+                    Some(Tipo::Texto),
+                ],
+                Some(Tipo::Clase("RespuestaH3".to_string())),
+            ),
             // Funciones nativas de temporizador (usadas por std/temporizador)
-            ("_temporizador_nuevo", vec![Some(Tipo::Entero)], Some(Tipo::Clase("Timer".to_string()))),
-            ("_temporizador_dormir", vec![Some(Tipo::Entero)], Some(Tipo::Nulo)),
+            (
+                "_temporizador_nuevo",
+                vec![Some(Tipo::Entero)],
+                Some(Tipo::Clase("Timer".to_string())),
+            ),
+            (
+                "_temporizador_dormir",
+                vec![Some(Tipo::Entero)],
+                Some(Tipo::Nulo),
+            ),
             ("_sistema_tiempo_ms", vec![], Some(Tipo::Entero)),
             // Funciones nativas de procesos de Windows (forjaX — inyector)
-            ("_proceso_obtener_pid", vec![Some(Tipo::Texto)], Some(Tipo::Entero)),
-            ("_proceso_abrir_pid", vec![Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Entero)),
+            (
+                "_proceso_obtener_pid",
+                vec![Some(Tipo::Texto)],
+                Some(Tipo::Entero),
+            ),
+            (
+                "_proceso_abrir_pid",
+                vec![Some(Tipo::Entero), Some(Tipo::Entero)],
+                Some(Tipo::Entero),
+            ),
             ("_proceso_ultimo_error", vec![], Some(Tipo::Entero)),
-            ("_proceso_cerrar", vec![Some(Tipo::Entero)], Some(Tipo::Booleano)),
-            ("_proceso_modulo_base", vec![Some(Tipo::Entero), Some(Tipo::Texto)], Some(Tipo::Entero)),
-            ("_proceso_modulo_tamano", vec![Some(Tipo::Entero), Some(Tipo::Texto)], Some(Tipo::Entero)),
-            ("_proceso_leer_bytes", vec![Some(Tipo::Entero), Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Arreglo(Box::new(Tipo::Entero)))),
-            ("_proceso_escribir_bytes", vec![Some(Tipo::Entero), Some(Tipo::Entero), Some(Tipo::Arreglo(Box::new(Tipo::Entero)))], Some(Tipo::Booleano)),
-            ("_buscar_firma", vec![Some(Tipo::Arreglo(Box::new(Tipo::Entero))), Some(Tipo::Arreglo(Box::new(Tipo::Entero))), Some(Tipo::Arreglo(Box::new(Tipo::Entero)))], Some(Tipo::Entero)),
-            ("_tecla_presionada", vec![Some(Tipo::Entero)], Some(Tipo::Booleano)),
-            ("_consola_ocultar", vec![Some(Tipo::Booleano)], Some(Tipo::Booleano)),
-            ("_restaurar_al_salir", vec![Some(Tipo::Entero), Some(Tipo::Entero), Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Booleano)),
-            ("_imprimir_stdout", vec![Some(Tipo::Texto)], Some(Tipo::Nulo)),
-            ("_flanco_tecla", vec![Some(Tipo::Entero)], Some(Tipo::Booleano)),
-            ("_entero_a_hex", vec![Some(Tipo::Entero), Some(Tipo::Entero)], Some(Tipo::Texto)),
+            (
+                "_proceso_cerrar",
+                vec![Some(Tipo::Entero)],
+                Some(Tipo::Booleano),
+            ),
+            (
+                "_proceso_modulo_base",
+                vec![Some(Tipo::Entero), Some(Tipo::Texto)],
+                Some(Tipo::Entero),
+            ),
+            (
+                "_proceso_modulo_tamano",
+                vec![Some(Tipo::Entero), Some(Tipo::Texto)],
+                Some(Tipo::Entero),
+            ),
+            (
+                "_proceso_leer_bytes",
+                vec![Some(Tipo::Entero), Some(Tipo::Entero), Some(Tipo::Entero)],
+                Some(Tipo::Arreglo(Box::new(Tipo::Entero))),
+            ),
+            (
+                "_proceso_escribir_bytes",
+                vec![
+                    Some(Tipo::Entero),
+                    Some(Tipo::Entero),
+                    Some(Tipo::Arreglo(Box::new(Tipo::Entero))),
+                ],
+                Some(Tipo::Booleano),
+            ),
+            (
+                "_buscar_firma",
+                vec![
+                    Some(Tipo::Arreglo(Box::new(Tipo::Entero))),
+                    Some(Tipo::Arreglo(Box::new(Tipo::Entero))),
+                    Some(Tipo::Arreglo(Box::new(Tipo::Entero))),
+                ],
+                Some(Tipo::Entero),
+            ),
+            (
+                "_tecla_presionada",
+                vec![Some(Tipo::Entero)],
+                Some(Tipo::Booleano),
+            ),
+            (
+                "_consola_ocultar",
+                vec![Some(Tipo::Booleano)],
+                Some(Tipo::Booleano),
+            ),
+            (
+                "_restaurar_al_salir",
+                vec![
+                    Some(Tipo::Entero),
+                    Some(Tipo::Entero),
+                    Some(Tipo::Entero),
+                    Some(Tipo::Entero),
+                ],
+                Some(Tipo::Booleano),
+            ),
+            (
+                "_imprimir_stdout",
+                vec![Some(Tipo::Texto)],
+                Some(Tipo::Nulo),
+            ),
+            (
+                "_flanco_tecla",
+                vec![Some(Tipo::Entero)],
+                Some(Tipo::Booleano),
+            ),
+            (
+                "_entero_a_hex",
+                vec![Some(Tipo::Entero), Some(Tipo::Entero)],
+                Some(Tipo::Texto),
+            ),
             // Funciones nativas SQLite (usadas por std/sqlite)
             ("_sqlite_abrir", vec![Some(Tipo::Texto)], Some(Tipo::Entero)),
-            ("_sqlite_cerrar", vec![Some(Tipo::Entero)], Some(Tipo::Entero)),
-            ("_sqlite_ejecutar", vec![Some(Tipo::Entero), Some(Tipo::Texto)], Some(Tipo::Entero)),
-            ("_sqlite_consultar", vec![Some(Tipo::Entero), Some(Tipo::Texto)], None),
-            ("_sqlite_ultimo_id", vec![Some(Tipo::Entero)], Some(Tipo::Entero)),
-            ("_sqlite_ejecutar_params", vec![Some(Tipo::Entero), Some(Tipo::Texto), Some(Tipo::Arreglo(Box::new(Tipo::Nulo)))], Some(Tipo::Entero)),
-            ("_sqlite_consultar_params", vec![Some(Tipo::Entero), Some(Tipo::Texto), Some(Tipo::Arreglo(Box::new(Tipo::Nulo)))], None),
-            ("_sqlite_tablas", vec![Some(Tipo::Entero)], Some(Tipo::Arreglo(Box::new(Tipo::Texto)))),
-            ("_sqlite_columnas", vec![Some(Tipo::Entero), Some(Tipo::Texto)], None),
+            (
+                "_sqlite_cerrar",
+                vec![Some(Tipo::Entero)],
+                Some(Tipo::Entero),
+            ),
+            (
+                "_sqlite_ejecutar",
+                vec![Some(Tipo::Entero), Some(Tipo::Texto)],
+                Some(Tipo::Entero),
+            ),
+            (
+                "_sqlite_consultar",
+                vec![Some(Tipo::Entero), Some(Tipo::Texto)],
+                None,
+            ),
+            (
+                "_sqlite_ultimo_id",
+                vec![Some(Tipo::Entero)],
+                Some(Tipo::Entero),
+            ),
+            (
+                "_sqlite_ejecutar_params",
+                vec![
+                    Some(Tipo::Entero),
+                    Some(Tipo::Texto),
+                    Some(Tipo::Arreglo(Box::new(Tipo::Nulo))),
+                ],
+                Some(Tipo::Entero),
+            ),
+            (
+                "_sqlite_consultar_params",
+                vec![
+                    Some(Tipo::Entero),
+                    Some(Tipo::Texto),
+                    Some(Tipo::Arreglo(Box::new(Tipo::Nulo))),
+                ],
+                None,
+            ),
+            (
+                "_sqlite_tablas",
+                vec![Some(Tipo::Entero)],
+                Some(Tipo::Arreglo(Box::new(Tipo::Texto))),
+            ),
+            (
+                "_sqlite_columnas",
+                vec![Some(Tipo::Entero), Some(Tipo::Texto)],
+                None,
+            ),
         ];
         for (nombre, params, retorno) in nativas {
-            self.funciones.entry(nombre.to_string()).or_default().push((
-                params, retorno, vec![],
-            ));
+            self.funciones
+                .entry(nombre.to_string())
+                .or_default()
+                .push((params, retorno, vec![]));
         }
     }
 
@@ -1279,10 +1454,11 @@ impl TypeChecker {
                 let tipos_param: Vec<Option<Tipo>> =
                     parametros.iter().map(|p| p.tipo.clone()).collect();
                 // Append a la lista de overloads para este nombre
-                self.funciones
-                    .entry(nombre.clone())
-                    .or_default()
-                    .push((tipos_param, tipo_retorno.clone(), parametros_tipo.clone()));
+                self.funciones.entry(nombre.clone()).or_default().push((
+                    tipos_param,
+                    tipo_retorno.clone(),
+                    parametros_tipo.clone(),
+                ));
             }
         }
     }
@@ -1628,7 +1804,13 @@ impl TypeChecker {
                 let overloads_clone = self.funciones.get(nombre).cloned();
                 if let Some(overloads) = overloads_clone {
                     // Determinar qué overload usar según los tipos de argumento
-                    if let Some(idx) = self.resolver_sobrecarga(nombre, &overloads, &tipos_args, self.linea_actual, self.columna_actual) {
+                    if let Some(idx) = self.resolver_sobrecarga(
+                        nombre,
+                        &overloads,
+                        &tipos_args,
+                        self.linea_actual,
+                        self.columna_actual,
+                    ) {
                         if let Some((ref params, _, ref params_tipo)) = overloads.get(idx) {
                             if argumentos.len() != params.len() {
                                 self.errores.push(ErrorForja::new(
@@ -1656,7 +1838,8 @@ impl TypeChecker {
                                                 if let Some(ref arg_tipo) =
                                                     tipos_args.get(i).and_then(|t| t.clone())
                                                 {
-                                                    inferidos.insert(pnombre.clone(), arg_tipo.clone());
+                                                    inferidos
+                                                        .insert(pnombre.clone(), arg_tipo.clone());
                                                 }
                                             }
                                         }
@@ -1768,7 +1951,8 @@ impl TypeChecker {
                 } else if let Some(overloads) = overloads_clone {
                     let idx = self.resolver_sobrecarga(nombre, &overloads, &tipos_args, 0, 0);
                     if let Some(idx) = idx {
-                        if let Some((ref params, ref retorno, ref params_tipo)) = overloads.get(idx) {
+                        if let Some((ref params, ref retorno, ref params_tipo)) = overloads.get(idx)
+                        {
                             // Inferir parámetros de tipo desde los argumentos
                             if !params_tipo.is_empty() && argumentos.len() == params.len() {
                                 let mut inferidos: std::collections::HashMap<String, Tipo> =
@@ -1780,7 +1964,8 @@ impl TypeChecker {
                                                 if let Some(ref arg_tipo) =
                                                     tipos_args.get(i).and_then(|t| t.clone())
                                                 {
-                                                    inferidos.insert(pnombre.clone(), arg_tipo.clone());
+                                                    inferidos
+                                                        .insert(pnombre.clone(), arg_tipo.clone());
                                                 }
                                             }
                                         }
@@ -2035,6 +2220,10 @@ impl TypeChecker {
                 // Algo(valor) → Opcion<Tipo>
                 Some(Tipo::Opcion(Box::new(tipo.unwrap_or(Tipo::Entero))))
             }
+            Expresion::Nada | Expresion::Ninguno => {
+                // Nada() / Ninguno() → Opcion<Nulo>
+                Some(Tipo::Opcion(Box::new(Tipo::Nulo)))
+            }
             Expresion::Resultado => {
                 // Si la variable "resultado" está declarada en el ámbito actual, usar su tipo.
                 if let Some(info) = self.tabla.obtener("resultado") {
@@ -2094,8 +2283,7 @@ impl TypeChecker {
                 self.inferir_tipo_con_depth(expr, depth + 1)
             }
             Expresion::LlamadaMetodo {
-                objeto,
-                argumentos, ..
+                objeto, argumentos, ..
             } => {
                 // Llamada a método: inferir tipo del objeto y argumentos
                 self.inferir_tipo_con_depth(objeto, depth + 1);

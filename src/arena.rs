@@ -8,8 +8,8 @@
 //! **Impacto**: Principalmente en velocidad de compilación (lexer, parser, optimizer),
 //! no en runtime del código generado.
 
-use std::cell::Cell;
 use std::alloc::{alloc, dealloc, Layout};
+use std::cell::Cell;
 
 /// Chunk de memoria cruda con bump allocation.
 struct Chunk {
@@ -49,7 +49,9 @@ impl Chunk {
 impl Drop for Chunk {
     fn drop(&mut self) {
         let layout = Layout::from_size_align(self.size, 16).unwrap();
-        unsafe { dealloc(self.ptr, layout); }
+        unsafe {
+            dealloc(self.ptr, layout);
+        }
     }
 }
 
@@ -114,7 +116,7 @@ impl Arena {
     }
 
     /// Asigna un valor en la arena y retorna una referencia.
-    /// 
+    ///
     /// **Nota**: Solo funciona correctamente cuando no se mantienen
     /// referencias previas al hacer nuevas asignaciones (patrón secuencial típico de compiladores).
     pub fn alloc<T>(&mut self, value: T) -> &mut T {
@@ -286,7 +288,10 @@ mod tests {
             let val = arena.alloc(i as u64);
             assert_eq!(*val, i as u64);
         }
-        assert!(arena.chunk_count() > 1, "Expected multiple chunks with 256-byte chunks");
+        assert!(
+            arena.chunk_count() > 1,
+            "Expected multiple chunks with 256-byte chunks"
+        );
     }
 
     #[test]
@@ -311,8 +316,11 @@ mod tests {
             arena.alloc(0u8);
         }
         // Después de llenar, debería tener al menos 2 chunks
-        assert!(arena.memory_reserved() >= 512,
-            "Expected >= 512, got {}", arena.memory_reserved());
+        assert!(
+            arena.memory_reserved() >= 512,
+            "Expected >= 512, got {}",
+            arena.memory_reserved()
+        );
     }
 
     #[test]

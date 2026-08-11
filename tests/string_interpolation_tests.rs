@@ -3,7 +3,12 @@ use forja::token::TokenKind;
 
 fn kinds(source: &str) -> Vec<TokenKind> {
     let mut lexer = Lexer::new(source);
-    lexer.tokenize().unwrap().into_iter().map(|t| t.kind).collect()
+    lexer
+        .tokenize()
+        .unwrap()
+        .into_iter()
+        .map(|t| t.kind)
+        .collect()
 }
 
 // ============================================================
@@ -153,7 +158,9 @@ fn test_interp_con_numeros() {
 fn test_interp_con_booleano() {
     let k = kinds(r#"escribir("es ${verdadero}")"#);
     // verdadero may be recognized as keyword or as identifier inside interpolation
-    assert!(k[3] == TokenKind::Verdadero || k[3] == TokenKind::Identificador("verdadero".to_string()));
+    assert!(
+        k[3] == TokenKind::Verdadero || k[3] == TokenKind::Identificador("verdadero".to_string())
+    );
 }
 
 #[test]

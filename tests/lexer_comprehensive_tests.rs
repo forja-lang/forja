@@ -3,7 +3,12 @@ use forja::token::TokenKind;
 
 fn kinds(source: &str) -> Vec<TokenKind> {
     let mut lexer = Lexer::new(source);
-    lexer.tokenize().unwrap().into_iter().map(|t| t.kind).collect()
+    lexer
+        .tokenize()
+        .unwrap()
+        .into_iter()
+        .map(|t| t.kind)
+        .collect()
 }
 
 // ============================================================
@@ -521,7 +526,10 @@ fn test_identificador_simple() {
 #[test]
 fn test_identificador_con_underscore() {
     let k = kinds("mi_variable_123");
-    assert_eq!(k[0], TokenKind::Identificador("mi_variable_123".to_string()));
+    assert_eq!(
+        k[0],
+        TokenKind::Identificador("mi_variable_123".to_string())
+    );
 }
 
 #[test]
