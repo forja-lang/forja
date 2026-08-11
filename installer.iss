@@ -44,9 +44,9 @@ Source: "target\release\forja-dap.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "target\release\forja-rt.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "stdlib\*.fa"; DestDir: "{app}\stdlib"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "ejemplos\*.fa"; DestDir: "{app}\ejemplos"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "INSTRUCCIONES.md"; DestDir: "{app}"; Flags: ignoreversion; Option: skipifsourcedoesntexist
-Source: "COMANDOS.md"; DestDir: "{app}"; Flags: ignoreversion; Option: skipifsourcedoesntexist
-Source: "LICENSE.md"; DestDir: "{app}"; Flags: ignoreversion; Option: skipifsourcedoesntexist
+Source: "INSTRUCCIONES.md"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "COMANDOS.md"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "LICENSE.md"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Registry]
 ; PATH environment variable
