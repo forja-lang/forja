@@ -243,9 +243,9 @@ mod windows_impl {
 
 /// Activa o desactiva el modo raw de la terminal.
 /// En modo raw, las teclas se leen inmediatamente sin esperar Enter.
-pub fn raw_mode(activar: bool) -> Result<(), String> {
-    #[cfg(unix)] { unix::raw_mode(activar) }
-    #[cfg(windows)] { windows_impl::raw_mode(activar) }
+pub fn raw_mode(_activar: bool) -> Result<(), String> {
+    #[cfg(unix)] { unix::raw_mode(_activar) }
+    #[cfg(windows)] { windows_impl::raw_mode(_activar) }
     #[cfg(target_arch = "wasm32")]
     { Err("terminal raw mode no soportado en WASM".to_string()) }
 }

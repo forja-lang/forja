@@ -16,6 +16,7 @@ pub mod error;
 pub mod fprofiler;
 pub mod gc;
 pub mod gc_intrinsics;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod incremental_cache;
 pub mod ir;
 pub mod ir_constructor;
@@ -646,7 +647,10 @@ pub fn ejecutar_con_cache(source: &str, root_dir: &std::path::Path) -> Result<Ve
 
     let bytecode = compilar_con_cache(source, "main", root_dir)?;
     let mut vm = ForjaFast::new();
+    #[cfg(target_pointer_width = "64")]
     vm.set_max_inst(10_000_000_000);
+    #[cfg(not(target_pointer_width = "64"))]
+    vm.set_max_inst(2_000_000_000);
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
     Ok(vm.obtener_output().to_vec())
@@ -722,6 +726,7 @@ pub fn ejecutar_con_opciones_desde(
 /// (omite verificaciones de división por cero float y branches de tipo en los
 /// handlers float especializados). Nota: con programas 100% Decimal el modo
 /// se activa automáticamente, este flag fuerza también en código mixto.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn ejecutar_con_opciones_desde_fast_math(
     source: &str,
     root_dir: &std::path::Path,
@@ -731,6 +736,7 @@ pub fn ejecutar_con_opciones_desde_fast_math(
     ejecutar_con_opciones_desde_impl(source, root_dir, verificar_contratos, sandbox, true)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn ejecutar_con_opciones_desde_impl(
     source: &str,
     root_dir: &std::path::Path,
@@ -822,7 +828,10 @@ fn ejecutar_con_pgo_impl(
 
     let mut vm = ForjaFast::new();
     vm.contratos = contratos;
+    #[cfg(target_pointer_width = "64")]
     vm.set_max_inst(10_000_000_000);
+    #[cfg(not(target_pointer_width = "64"))]
+    vm.set_max_inst(2_000_000_000);
     vm.cargar_bytecode(bytecode);
 
     // 3. Aplicar perfil previo (si existe) y habilitar recolección

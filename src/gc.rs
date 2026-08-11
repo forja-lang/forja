@@ -51,6 +51,9 @@ pub struct GcRef {
     ptr: *mut u8,
 }
 
+unsafe impl Send for GcRef {}
+unsafe impl Sync for GcRef {}
+
 impl GcRef {
     /// Crea un GcRef desde un puntero crudo
     ///
@@ -96,6 +99,9 @@ struct BumpAllocator {
     /// Offset actual de allocation
     offset: Cell<usize>,
 }
+
+unsafe impl Send for BumpAllocator {}
+unsafe impl Sync for BumpAllocator {}
 
 impl BumpAllocator {
     fn new(capacity: usize) -> Self {
