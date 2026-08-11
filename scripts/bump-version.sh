@@ -5,11 +5,11 @@
 #     y opcionalmente hacer commit, tag y push automáticamente.
 #
 # Uso:
-#   ./scripts/bump-version.sh 0.9.1              # Solo actualiza archivos
-#   ./scripts/bump-version.sh 0.9.1 --commit     # Actualiza + commit
-#   ./scripts/bump-version.sh 0.9.1 --tag        # Actualiza + commit + tag
-#   ./scripts/bump-version.sh 0.9.1 --push       # Actualiza + commit + tag + push
-#   ./scripts/bump-version.sh 0.9.1 --all        # Actualiza + commit + tag + push
+#   ./scripts/bump-version.sh 0.9.2              # Solo actualiza archivos
+#   ./scripts/bump-version.sh 0.9.2 --commit     # Actualiza + commit
+#   ./scripts/bump-version.sh 0.9.2 --tag        # Actualiza + commit + tag
+#   ./scripts/bump-version.sh 0.9.2 --push       # Actualiza + commit + tag + push
+#   ./scripts/bump-version.sh 0.9.2 --all        # Actualiza + commit + tag + push
 #
 # Requisitos:
 #   - Bash 4+ (Linux, macOS, WSL, o Git Bash en Windows)
@@ -20,14 +20,16 @@
 #   - crates/forja-rt/Cargo.toml
 #   - crates/forja-wasm/Cargo.toml
 #   - crates/forja-android-rt/Cargo.toml
+#   - crates/forja-gui-rt/Cargo.toml
+#   - crates/forja-wasm-gui/Cargo.toml
 #   - .github/workflows/rust.yml (tag_name y name)
 #   - src/main.rs (templates de proyecto nuevo)
 #   - README.md
-#   - scripts/build-aar.sh
+#   - benchmarks/README.md y benchmarks/RESULTADOS_BENCHMARK.md
+#   - docs/src/pages/arquitectura/forja_android_rt.astro
+#   - scripts/build-aar.sh y scripts/build-aar.ps1
 #   - vscode/README.md, package.json y package-lock.json
-#
-# NOTA: Los crates forja-gui-rt y forja-wasm-gui mantienen su propia
-#       versión independiente (no se sincronizan con el compilador).
+#   - installer.iss (Inno Setup)
 
 set -euo pipefail
 
@@ -39,7 +41,7 @@ print_warn() { echo -e "  \033[33m⚠️\033[0m  $1"; }
 # ─── Parseo de argumentos ───────────────────────────────────────────────────
 if [ $# -lt 1 ]; then
     echo "Uso: $0 <nueva_version> [--commit|--tag|--push|--all]"
-    echo "Ejemplo: $0 0.9.0 --all"
+    echo "Ejemplo: $0 0.9.2 --all"
     exit 1
 fi
 
@@ -105,11 +107,12 @@ sed -i "s/^version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/" Cargo.toml
 print_ok "Cargo.toml"
 COUNT=$((COUNT + 1))
 
-# 2. Workspace crates que comparten versión
-for crate in forja-rt forja-wasm forja-android-rt; do
+# 2. Workspace crates
+for crate in forja-rt forja-wasm forja-android-rt forja-gui-rt forja-wasm-gui; do
     file="crates/$crate/Cargo.toml"
     if [ -f "$file" ]; then
         sed -i "s/^version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/" "$file"
+        sed -i "s/version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/g" "$file"
         print_ok "$file"
         COUNT=$((COUNT + 1))
     fi
@@ -140,15 +143,33 @@ if [ -f "$readme_file" ]; then
     COUNT=$((COUNT + 1))
 fi
 
-# 6. scripts/build-aar.sh
-aar_script="scripts/build-aar.sh"
-if [ -f "$aar_script" ]; then
-    sed -i "s/$OLD_VERSION/$NEW_VERSION/g" "$aar_script"
-    print_ok "$aar_script"
+# 6. benchmarks (README.md y RESULTADOS_BENCHMARK.md)
+for bench_file in benchmarks/README.md benchmarks/RESULTADOS_BENCHMARK.md; do
+    if [ -f "$bench_file" ]; then
+        sed -i "s/$OLD_VERSION/$NEW_VERSION/g" "$bench_file"
+        print_ok "$bench_file"
+        COUNT=$((COUNT + 1))
+    fi
+done
+
+# 7. docs (forja_android_rt.astro)
+astro_file="docs/src/pages/arquitectura/forja_android_rt.astro"
+if [ -f "$astro_file" ]; then
+    sed -i "s/$OLD_VERSION/$NEW_VERSION/g" "$astro_file"
+    print_ok "$astro_file"
     COUNT=$((COUNT + 1))
 fi
 
-# 7. Extensión de VSCode (package.json y README.md)
+# 8. scripts/build-aar.sh y scripts/build-aar.ps1
+for aar_script in scripts/build-aar.sh scripts/build-aar.ps1; do
+    if [ -f "$aar_script" ]; then
+        sed -i "s/$OLD_VERSION/$NEW_VERSION/g" "$aar_script"
+        print_ok "$aar_script"
+        COUNT=$((COUNT + 1))
+    fi
+done
+
+# 9. Extensión de VSCode (package.json, package-lock.json, README.md)
 for vsc_file in vscode/README.md vscode/forja-syntax/package.json vscode/forja-syntax/package-lock.json; do
     if [ -f "$vsc_file" ]; then
         sed -i "s/$OLD_VERSION/$NEW_VERSION/g" "$vsc_file"
@@ -157,12 +178,22 @@ for vsc_file in vscode/README.md vscode/forja-syntax/package.json vscode/forja-s
     fi
 done
 
-# 8. installer.iss (Inno Setup)
+# 10. installer.iss (Inno Setup)
 iss_file="installer.iss"
 if [ -f "$iss_file" ]; then
     sed -i "s/#define MyAppVersion \"$OLD_VERSION\"/#define MyAppVersion \"$NEW_VERSION\"/g" "$iss_file"
     print_ok "$iss_file"
     COUNT=$((COUNT + 1))
+fi
+
+# 11. Actualizar Cargo.lock mediante cargo check
+if command -v cargo &>/dev/null; then
+    print_info "Actualizando Cargo.lock con cargo check..."
+    cargo check --quiet || true
+    if [ -d "crates/forja-wasm" ]; then
+        (cd crates/forja-wasm && cargo check --quiet || true)
+    fi
+    print_ok "Cargo.lock actualizado"
 fi
 
 echo ""
@@ -248,19 +279,13 @@ echo ""
 
 if [ "$DO_PUSH" = false ]; then
     echo "📋  Para finalizar manualmente:"
-    echo ""
     if [ "$DO_COMMIT" = false ]; then
-        echo "     git add -A && git commit -m \"$COMMIT_MSG\""
+        echo "   git add -A"
+        echo "   git commit -m \"$COMMIT_MSG\""
     fi
     if [ "$DO_TAG" = false ]; then
-        echo "     git tag -a $TAG_NAME -m \"$TAG_MSG\""
+        echo "   git tag -a $TAG_NAME -m \"$TAG_MSG\""
     fi
-    echo "     git push && git push --tags"
-    echo ""
-fi
-
-if [ "$DO_PUSH" = true ]; then
-    echo "⚠️  Recordatorio: Si hay submódulos con cambios,"
-    echo "   actualizarlos con: git submodule update --remote"
+    echo "   git push origin && git push origin --tags"
     echo ""
 fi
