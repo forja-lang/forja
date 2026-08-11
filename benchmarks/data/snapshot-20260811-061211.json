@@ -1,0 +1,10 @@
+{
+  "date": "2026-08-11T06:11:24Z",
+  "version": "0.9.1",
+  "commit": "5d6c938",
+  "benchmarks": {
+    "forjafast": [],
+    "jit": [],
+    "vms": []
+  }
+}
