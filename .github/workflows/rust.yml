@@ -1,6 +1,7 @@
 name: Forja CI/CD
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main, master, develop ]
     paths:

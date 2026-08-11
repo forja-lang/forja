@@ -1,5 +1,6 @@
 name: 🤖 Asistente de Forja
 on:
+  workflow_dispatch:
   issues:
     types: [opened, labeled]
   issue_comment:
