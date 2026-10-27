@@ -1,0 +1,16 @@
+[package]
+name = "forja-gui-core"
+version = "0.1.0"
+edition = "2021"
+description = "Núcleo reutilizable de Forja GUI: señales reactivas y logging de estado, sin dependencias de xilem ni del compilador"
+license = "MIT"
+repository = "https://github.com/forja-lang/forja"
+homepage = "https://forja-lang.github.io/forja/"
+documentation = "https://docs.rs/forja-gui-core"
+readme = "README.md"
+keywords = ["forja", "gui", "signals", "reactive", "material"]
+categories = ["gui"]
+
+[dependencies]
+log = "0.4"
+serde_json = "1"
