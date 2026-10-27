@@ -1,0 +1,140 @@
+name: CI
+
+# CI base de la FASE 0 (F0-T6): build + test + fmt + clippy.
+# Complementa a `rust.yml` (que cubre Android, WASM y releases).
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: Formato y Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Checkout submodules (excepto benchmarks)
+        shell: bash
+        run: |
+          git submodule init
+          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
+            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
+          done
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+      # F2-T3: `cargo fmt --check` ya es BLOQUEANTE (el árbol Rust está formateado).
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+      # NOTA (F0-T6): clippy sigue reportándose pero NO bloquea todavía
+      # (`continue-on-error: true`) por deuda de lints preexistente, ajena a F2-T3.
+      - name: cargo clippy
+        continue-on-error: true
+        run: cargo clippy --all-targets --locked
+      # F2-T3: el formatter de Forja debe ser idempotente y determinista.
+      # Se compila el binario y se valida `forja fmt --check` sobre los ejemplos.
+      # Los archivos que no parsean se omiten como advertencia (no rompen el CI).
+      - name: Compilar binario forja
+        run: cargo build --locked --bin forja
+      - name: forja fmt --check (ejemplos)
+        run: ./target/debug/forja fmt ejemplos --check
+
+  docs:
+    name: Documentación (build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - name: Instalar dependencias
+        run: npm ci --prefix docs --no-audit --no-fund
+      - name: Build de Astro
+        run: npm run build --prefix docs
+
+  metricas:
+    name: Métricas de documentación
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      # F7-T5: falla si README/roadmap citan cifras que ya no coinciden.
+      - name: Verificar métricas
+        run: python scripts/metricas.py --check
+
+  cobertura-asm:
+    name: Cobertura ASM (≥80%)
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Checkout submodules (excepto benchmarks)
+        shell: bash
+        run: |
+          git submodule init
+          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
+            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
+          done
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+      # F4-T6/F7-T4: cobertura de compiler_asm.rs bloqueante (umbral 80%).
+      - name: Cobertura del backend ASM
+        run: bash scripts/asm-coverage.sh
+      - name: Publicar reporte de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asm-coverage
+          path: target/cov-asm/cov/report.txt
+          if-no-files-found: warn
+
+  build-and-test:
+    name: Build y Test (${{ matrix.os }})
+    needs: lint
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Checkout submodules (excepto benchmarks)
+        shell: bash
+        run: |
+          git submodule init
+          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
+            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
+          done
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Compilar (--locked)
+        run: cargo build --locked --verbose
+      - name: Ejecutar tests (--locked)
+        run: cargo test --locked --verbose
