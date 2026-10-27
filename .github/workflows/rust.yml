@@ -29,14 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
-      - name: Checkout submodules (excepto benchmarks)
-        shell: bash
-        run: |
-          git submodule init
-          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
-            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
-          done
+          submodules: recursive
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
         with:
@@ -62,14 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
-      - name: Checkout submodules (excepto benchmarks)
-        shell: bash
-        run: |
-          git submodule init
-          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
-            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
-          done
+          submodules: recursive
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
       - name: Install Rust targets
@@ -164,14 +150,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
-      - name: Checkout submodules (excepto benchmarks)
-        shell: bash
-        run: |
-          git submodule init
-          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
-            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
-          done
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -253,14 +232,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
-      - name: Checkout submodules (excepto benchmarks)
-        shell: bash
-        run: |
-          git submodule init
-          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
-            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
-          done
+          submodules: recursive
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@stable
@@ -295,14 +267,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
-      - name: Checkout submodules (excepto benchmarks)
-        shell: bash
-        run: |
-          git submodule init
-          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
-            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
-          done
+          submodules: recursive
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@stable
@@ -310,7 +275,7 @@ jobs:
           toolchain: stable
           targets: wasm32-unknown-unknown
       - name: Install wasm-bindgen
-        run: cargo install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
       - name: Install wasm-pack
         run: cargo install wasm-pack
       - name: Compilar forja-wasm
@@ -351,7 +316,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
+          submodules: recursive
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
