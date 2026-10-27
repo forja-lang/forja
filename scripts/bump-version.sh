@@ -170,9 +170,16 @@ for aar_script in scripts/build-aar.sh scripts/build-aar.ps1; do
 done
 
 # 9. Extensión de VSCode (package.json, package-lock.json, README.md)
-for vsc_file in vscode/README.md vscode/forja-syntax/package.json vscode/forja-syntax/package-lock.json; do
+# Solo se reemplazan los campos "version": "X.Y.Z"; un reemplazo global
+# también corrompe restricciones de dependencias (p. ej. jsonwebtoken ^9.0.0).
+if [ -f "vscode/README.md" ]; then
+    sed -i "s/$OLD_VERSION/$NEW_VERSION/g" vscode/README.md
+    print_ok "vscode/README.md"
+    COUNT=$((COUNT + 1))
+fi
+for vsc_file in vscode/forja-syntax/package.json vscode/forja-syntax/package-lock.json; do
     if [ -f "$vsc_file" ]; then
-        sed -i "s/$OLD_VERSION/$NEW_VERSION/g" "$vsc_file"
+        sed -i "s/\"version\": \"$OLD_VERSION\"/\"version\": \"$NEW_VERSION\"/g" "$vsc_file"
         print_ok "$vsc_file"
         COUNT=$((COUNT + 1))
     fi
