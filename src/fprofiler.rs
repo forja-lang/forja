@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Profiler de operaciones f64 para ForjaFast
 /// Contadores atómicos para medir frecuencia de opcodes float y type-checking overhead
 use std::sync::atomic::{AtomicU64, Ordering};
