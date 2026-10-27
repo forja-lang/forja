@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! # Mid-Level IR en SSA (Static Single Assignment)
 //!
 //! Representación intermedia entre AST y bytecode.
@@ -99,6 +97,12 @@ pub enum Inst {
     FieldGet(ValueId, SymId),
     /// Establecer campo de objeto: `obj.campo = valor`
     FieldSet(ValueId, SymId, ValueId),
+    /// Llamada a método: `obj.metodo(args...)`
+    CallMethod(ValueId, SymId, Vec<ValueId>),
+    /// F8-T3: fijar campo por índice (tags/campos de enum).
+    FieldSetIdx(ValueId, usize, ValueId),
+    /// F8-T3: extraer campo por índice.
+    ExtractField(ValueId, usize),
 
     // === Arrays ===
     /// Crear un array: `[a, b, c]`
@@ -107,6 +111,14 @@ pub enum Inst {
     ArrayGet(ValueId, ValueId),
     /// Establecer elemento por índice: `arr[i] = v`
     ArraySet(ValueId, ValueId, ValueId),
+
+    // === Mapas ===
+    /// Crear un mapa: `{"a": 1, ...}`
+    MapNew(Vec<(ValueId, ValueId)>),
+    /// Obtener valor por clave: `mapa[clave]`
+    MapGet(ValueId, ValueId),
+    /// Establecer valor por clave: `mapa[clave] = v`
+    MapSet(ValueId, ValueId, ValueId),
 }
 
 /// Bloque básico — secuencia de instrucciones sin branches internos
@@ -215,6 +227,8 @@ pub struct IrBuilder {
     blocks: Vec<BasicBlock>,
     /// Siguiente ID de bloque
     next_block_id: BlockId,
+    /// ID del bloque que se está construyendo actualmente
+    current_block_id: BlockId,
     /// Siguiente ID de valor
     next_value_id: ValueId,
     /// Instrucciones del bloque actual
@@ -230,6 +244,7 @@ impl IrBuilder {
         IrBuilder {
             blocks: Vec::new(),
             next_block_id: 0,
+            current_block_id: 0,
             next_value_id: 0,
             current_insts: Vec::new(),
             current_terminator: None,
@@ -237,13 +252,26 @@ impl IrBuilder {
         }
     }
 
-    /// Crea un nuevo bloque y retorna su ID
-    pub fn new_block(&mut self) -> BlockId {
-        self.flush_block();
+    /// Reserva el ID del siguiente bloque **sin** empezarlo todavía. Útil para
+    /// crear bloques destino de un `branch` antes de cerrar el bloque actual.
+    pub fn alloc_block_id(&mut self) -> BlockId {
         let id = self.next_block_id;
         self.next_block_id += 1;
+        id
+    }
+
+    /// Cierra el bloque actual y comienza a construir `id`.
+    pub fn start_block(&mut self, id: BlockId) {
+        self.flush_block();
+        self.current_block_id = id;
         self.current_insts = Vec::new();
         self.current_terminator = None;
+    }
+
+    /// Crea un nuevo bloque y retorna su ID
+    pub fn new_block(&mut self) -> BlockId {
+        let id = self.alloc_block_id();
+        self.start_block(id);
         id
     }
 
@@ -410,6 +438,88 @@ impl IrBuilder {
         v
     }
 
+    pub fn emit_array_new(&mut self, valores: Vec<ValueId>) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::ArrayNew(valores));
+        v
+    }
+
+    pub fn emit_array_get(&mut self, array: ValueId, indice: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::ArrayGet(array, indice));
+        v
+    }
+
+    pub fn emit_array_set(&mut self, array: ValueId, indice: ValueId, valor: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts
+            .push(Inst::ArraySet(array, indice, valor));
+        v
+    }
+
+    pub fn emit_map_new(&mut self, pares: Vec<(ValueId, ValueId)>) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::MapNew(pares));
+        v
+    }
+
+    pub fn emit_map_get(&mut self, mapa: ValueId, clave: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::MapGet(mapa, clave));
+        v
+    }
+
+    pub fn emit_map_set(&mut self, mapa: ValueId, clave: ValueId, valor: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::MapSet(mapa, clave, valor));
+        v
+    }
+
+    pub fn emit_object_new(&mut self, clase: SymId, campos: Vec<(SymId, ValueId)>) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::ObjectNew(clase, campos));
+        v
+    }
+
+    pub fn emit_field_get(&mut self, objeto: ValueId, campo: SymId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::FieldGet(objeto, campo));
+        v
+    }
+
+    pub fn emit_field_set(&mut self, objeto: ValueId, campo: SymId, valor: ValueId) {
+        self.current_insts
+            .push(Inst::FieldSet(objeto, campo, valor));
+    }
+
+    pub fn emit_call_method(
+        &mut self,
+        objeto: ValueId,
+        metodo: SymId,
+        args: Vec<ValueId>,
+    ) -> ValueId {
+        let v = self.next_value();
+        self.current_insts
+            .push(Inst::CallMethod(objeto, metodo, args));
+        v
+    }
+
+    pub fn emit_field_set_idx(&mut self, objeto: ValueId, idx: usize, valor: ValueId) {
+        self.current_insts
+            .push(Inst::FieldSetIdx(objeto, idx, valor));
+    }
+
+    pub fn emit_extract_field(&mut self, objeto: ValueId, idx: usize) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::ExtractField(objeto, idx));
+        v
+    }
+
+    /// true si el bloque actual ya tiene terminador (retorno/salto).
+    pub fn terminado(&self) -> bool {
+        self.current_terminator.is_some()
+    }
+
     // === Terminadores ===
 
     pub fn terminate_jump(&mut self, target: BlockId) {
@@ -446,19 +556,18 @@ impl IrBuilder {
 
     fn flush_block(&mut self) {
         if !self.current_insts.is_empty() || self.current_terminator.is_some() {
-            let id = self.next_block_id;
-            // Si no hay terminador, poner unreachable
+            // El id del bloque lo asignó `alloc_block_id`/`new_block`; no se
+            // incrementa aquí para no desalinear las referencias de salto.
             let terminator = self
                 .current_terminator
                 .take()
                 .unwrap_or(Terminator::Unreachable);
             let block = BasicBlock {
-                id,
+                id: self.current_block_id,
                 instructions: std::mem::take(&mut self.current_insts),
                 terminator,
             };
             self.blocks.push(block);
-            self.next_block_id += 1;
         }
     }
 }
@@ -509,28 +618,28 @@ mod tests {
     #[test]
     fn test_ir_builder_branches() {
         let mut builder = IrBuilder::new();
-        // Entry block: emit cond and branch
-        let _entry = builder.new_block();
+        let entry = builder.new_block(); // id 0
         let cond = builder.emit_const_bool(true);
-        let then_bb = builder.new_block(); // block 1
-        let else_bb = builder.new_block(); // block 2
+        let then_bb = builder.alloc_block_id(); // id 1
+        let else_bb = builder.alloc_block_id(); // id 2
         builder.terminate_branch(cond, then_bb, else_bb);
 
-        // Now we're building block 1 (then_bb) — emit instructions here
-        let v = builder.emit_const_int(1);
-        builder.terminate_return(Some(v));
+        builder.start_block(then_bb);
+        let v1 = builder.emit_const_int(1);
+        builder.terminate_return(Some(v1));
 
-        // Flush block 1 and start block 2 (else_bb)
-        builder.new_block(); // flushes block 1, starts block 2 (which becomes block 3)
-        let v = builder.emit_const_int(0);
-        builder.terminate_return(Some(v));
+        builder.start_block(else_bb);
+        let v0 = builder.emit_const_int(0);
+        builder.terminate_return(Some(v0));
 
         let sym = builder.symbols.intern("branch_fn");
         let func = builder.build_function(sym, IrType::Int, vec![]);
-        // We get 3 blocks: entry(0), then(1), else(2) — but new_block() flushes + creates
-        // Entry block 0, then_bb=1, else_bb=2, but new_block() creates block 3
-        // The issue is new_block creates an extra block. The test should just assert > 0.
-        assert!(func.blocks.len() >= 3);
+        // Tres bloques con ids 0 (entry), 1 (then), 2 (else).
+        assert_eq!(func.blocks.len(), 3);
+        assert_eq!(func.entry, entry);
+        let ids: Vec<BlockId> = func.blocks.iter().map(|b| b.id).collect();
+        assert!(ids.contains(&then_bb));
+        assert!(ids.contains(&else_bb));
     }
 
     #[test]
