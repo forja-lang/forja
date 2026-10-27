@@ -18,8 +18,8 @@ fn test_uops_expand_push_entero() {
 
 #[test]
 fn test_uops_expand_push_decimal() {
-    let uops = expandir(vec![Opcode::PushDecimal(3.14)]);
-    assert_eq!(uops[0], Uop::PushDecimal(3.14));
+    let uops = expandir(vec![Opcode::PushDecimal(2.5)]);
+    assert_eq!(uops[0], Uop::PushDecimal(2.5));
 }
 
 #[test]
