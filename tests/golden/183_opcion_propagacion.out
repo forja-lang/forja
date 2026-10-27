@@ -1,0 +1,3 @@
+=== Propagación de Opcion con ? ===
+reducir(8) = Alguno(2)
+reducir(6) = Ninguno
