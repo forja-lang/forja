@@ -1,0 +1,8 @@
+a = 10, b = 10, c = 5
+a == b? verdadero
+a != c? verdadero
+a > c? verdadero
+c < a? verdadero
+a >= b? verdadero
+c <= a? verdadero
+a >= b >= c
