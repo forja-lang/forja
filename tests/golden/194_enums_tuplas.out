@@ -1,0 +1,7 @@
+=== Enums con datos y tuplas ===
+RGB(255,128,0)
+#00ff00
+longitud=3
+t[0]=10 t[1]=veinte t[2]=30
+x=2 y=1
+p=7 q=8
