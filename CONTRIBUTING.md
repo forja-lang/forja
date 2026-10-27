@@ -3,8 +3,7 @@
 ¡Gracias por tu interés en Forja! Este documento describe cómo preparar el
 entorno, las convenciones del repositorio y cómo enviar cambios.
 
-> Esta guía se creó en la **FASE 0** del plan de mejoras
-> ([`plan.md`](plan.md)). Consolida las decisiones de higiene del repositorio
+> Esta guía consolida las decisiones de higiene del repositorio
 > (`.gitignore`, `Cargo.lock`, perfiles de build, licencia y CI).
 
 ---
@@ -137,7 +136,7 @@ Para evitar ediciones cruzadas entre sesiones/agentes:
    ciclo. Anunciá el cambio en el PR/issue antes de editar.
 3. **PRs pequeños.** Un PR = una tarea. No mezcles arreglos "ajenos a la tarea";
    si un cambio de otra área es necesario, registralo en `CHANGELOG.md`
-   (§"Deudas ajenas tocadas") y enlazá la tarea de `plan2.md`.
+   (§"Deudas ajenas tocadas") y enlazá la tarea correspondiente en el CHANGELOG.
 4. **`CHANGELOG.md` y `plan*.md`:** los actualiza únicamente quien cierra la
    tarea (o el coordinador), no cada PR.
 5. **Verificación antes de mezclar:** `bash scripts/verify.sh` y, si tocaste
