@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // Compilador de Forja a assembly nativo multi-arquitectura
 // Soporta: x86-64 (Windows/MSVC, Linux/System V) y ARM64 (aarch64)
 //
@@ -619,10 +618,6 @@ impl TargetArch {
         format!("    .asciz \"{}\"", s)
     }
 
-    fn double_directive(&self, val: f64) -> String {
-        format!("    .double {}", val)
-    }
-
     fn mov_qword_ptr_imm(&self, base: &str, offset: i32, val: i64) -> String {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
@@ -685,14 +680,21 @@ impl TargetArch {
     }
 }
 
+/// Grado de una potencia de dos (`log2`). Devuelve 0 para `x <= 1` o valores no
+/// potencia de dos (se trunca hacia abajo). Se usa como factor de escala en
+/// `str_mem_index`/`ldr` de arreglos; antes solo cubría 1, 2, 4 y 8, devolviendo
+/// 0 para elementos de 16 bytes (escala incorrecta).
 fn log2(x: i32) -> i32 {
-    match x {
-        1 => 0,
-        2 => 1,
-        4 => 2,
-        8 => 3,
-        _ => 0,
+    if x <= 1 {
+        return 0;
     }
+    let mut v = x;
+    let mut r = 0;
+    while v > 1 {
+        v >>= 1;
+        r += 1;
+    }
+    r
 }
 
 // ──────────────────────────────────────────────────────────
@@ -716,10 +718,12 @@ struct StackVar {
 
 struct ClaseAsmInfo {
     campos: Vec<(String, TipoAsm)>,
-    metodos: Vec<String>,
     size: i32,
     /// nombre_campo → offset en bytes desde el inicio del struct
     offsets: HashMap<String, i32>,
+    /// Nombres de los métodos de la clase (reservado para despacho de métodos)
+    #[allow(dead_code)]
+    metodos: Vec<String>,
 }
 
 // ──────────────────────────────────────────────────────────
@@ -730,6 +734,8 @@ pub struct CompilerAsm {
     output: String,
     rdata: String,
     arch: TargetArch,
+    /// Errores acumulados durante la compilación (reservado para reporte)
+    #[allow(dead_code)]
     errors: Vec<ErrorForja>,
     stack_offset: i32,
     variables: HashMap<String, StackVar>,
@@ -741,7 +747,9 @@ pub struct CompilerAsm {
     // Register allocator
     reg_pool: Vec<bool>,          // true = allocated
     reg_names: Vec<&'static str>, // register names
-    reg_saved: Vec<String>,       // saved register values for spilling
+    /// Registros calle-saved usados (reservado para save/restore de prólogo)
+    #[allow(dead_code)]
+    reg_saved: Vec<&'static str>,
     // Persistent variable → register mapping (Linear Scan)
     var_reg_map: HashMap<String, &'static str>, // variable -> registro calle-saved
     reg_var_map: HashMap<&'static str, String>, // registro -> variable
@@ -819,13 +827,6 @@ impl CompilerAsm {
                 self.reg_pool[i] = false;
                 return;
             }
-        }
-    }
-
-    /// Libera todos los registros
-    fn free_all_regs(&mut self) {
-        for i in 0..self.reg_pool.len() {
-            self.reg_pool[i] = false;
         }
     }
 
@@ -1183,6 +1184,10 @@ impl CompilerAsm {
         if !self.rdata.is_empty() {
             final_output.push_str(&format!("\n{}\n", self.arch.section_rodata()));
             final_output.push_str(&self.rdata);
+        }
+
+        if !self.errors.is_empty() {
+            return Err(self.errors.clone());
         }
 
         Ok(final_output)
@@ -2310,41 +2315,51 @@ impl CompilerAsm {
             Expresion::Instanciacion { clase, argumentos } => {
                 if let Some(info) = self.clases.get(clase) {
                     let struct_size = info.size;
+                    // F4-T6: sólo llamar al constructor si la clase define uno
+                    // (`nuevo`/`constructor`); si no, el puntero de `malloc` se
+                    // devuelve directamente (antes se emitía `call Clase.nuevo`
+                    // a un símbolo inexistente → fallo de enlazado).
+                    let tiene_nuevo = info
+                        .metodos
+                        .iter()
+                        .any(|m| m == "nuevo" || m == "constructor");
                     // 1) Asignar memoria para el struct
                     self.emit_line(&a.mov_reg_imm(tmp, struct_size as i64));
                     self.emit_line(&a.call("malloc"));
                     // 2) Guardar puntero del struct en tmp
                     self.emit_line(&a.mov_reg_reg(tmp, ret));
-                    // 3) Llamar al constructor: self = puntero, args después
-                    let self_reg = a.arg_regs()[0]; // primer arg = self
-                    self.emit_line(&a.mov_reg_reg(self_reg, ret));
-                    let arg_regs = a.arg_regs();
-                    // Compilar args del constructor (empiezan en arg_regs[1])
-                    let n_args = argumentos.len().min(arg_regs.len() - 1);
-                    for i in 0..n_args {
-                        self.compilar_expresion_asm(&argumentos[i]);
-                        if i + 1 < arg_regs.len() {
-                            self.emit_line(&a.mov_reg_reg(arg_regs[i + 1], ret));
+                    if tiene_nuevo {
+                        // 3) Llamar al constructor: self = puntero, args después
+                        let self_reg = a.arg_regs()[0]; // primer arg = self
+                        self.emit_line(&a.mov_reg_reg(self_reg, ret));
+                        let arg_regs = a.arg_regs();
+                        // Compilar args del constructor (empiezan en arg_regs[1])
+                        let n_args = argumentos.len().min(arg_regs.len() - 1);
+                        for i in 0..n_args {
+                            self.compilar_expresion_asm(&argumentos[i]);
+                            if i + 1 < arg_regs.len() {
+                                self.emit_line(&a.mov_reg_reg(arg_regs[i + 1], ret));
+                            }
                         }
-                    }
-                    let extra = if argumentos.len() > arg_regs.len() - 1 {
-                        argumentos.len() - (arg_regs.len() - 1)
-                    } else {
-                        0
-                    };
-                    for i in 0..extra {
-                        let idx = arg_regs.len() - 1 + i;
-                        self.compilar_expresion_asm(&argumentos[idx]);
-                        self.emit_line(&a.push_reg(ret));
-                    }
-                    let ss = a.shadow_space();
-                    if ss > 0 {
-                        self.emit_line(&a.sub_sp(ss));
-                    }
-                    self.emit_line(&a.call(&format!("{}.nuevo", clase)));
-                    let cleanup = ss + (extra as i32) * 8;
-                    if cleanup > 0 {
-                        self.emit_line(&a.add_sp(cleanup));
+                        let extra = if argumentos.len() > arg_regs.len() - 1 {
+                            argumentos.len() - (arg_regs.len() - 1)
+                        } else {
+                            0
+                        };
+                        for i in 0..extra {
+                            let idx = arg_regs.len() - 1 + i;
+                            self.compilar_expresion_asm(&argumentos[idx]);
+                            self.emit_line(&a.push_reg(ret));
+                        }
+                        let ss = a.shadow_space();
+                        if ss > 0 {
+                            self.emit_line(&a.sub_sp(ss));
+                        }
+                        self.emit_line(&a.call(&format!("{}.nuevo", clase)));
+                        let cleanup = ss + (extra as i32) * 8;
+                        if cleanup > 0 {
+                            self.emit_line(&a.add_sp(cleanup));
+                        }
                     }
                     // 4) Restaurar puntero del struct en ret
                     self.emit_line(&a.mov_reg_reg(ret, tmp));
@@ -2360,20 +2375,40 @@ impl CompilerAsm {
                 let count = elementos.len();
                 self.emit_line(&a.mov_reg_imm(tmp, (count * 8) as i64));
                 self.emit_line(&a.call("malloc"));
-                // ret (rax/x0) ahora tiene el puntero al array allocado
+                // Guardar el puntero del array UNA sola vez: queda en el tope de
+                // la pila durante todo el bucle. (Antes se volvía a `push ret`
+                // en cada iteración, pero `ret` ya contenía el valor del último
+                // elemento, corrompiendo el puntero → segfault.)
+                self.emit_line(&a.push_reg(ret));
                 for (i, elem) in elementos.iter().enumerate() {
-                    // Salvar puntero del array
-                    self.emit_line(&a.push_reg(ret));
-                    // Compilar elemento → resultado en ret (rax/x0)
+                    // Compilar el elemento → resultado en ret (rax/x0)
                     self.compilar_expresion_asm(elem);
-                    // Mover valor del elemento a tmp2 (rdx/x2) para no perderlo
+                    // Mover el valor a tmp2 para no perderlo
                     self.emit_line(&a.mov_reg_reg(a.tmp2_reg(), ret));
-                    // Restaurar puntero del array en tmp
-                    self.emit_line(&a.pop_reg(tmp));
-                    // Calcular dirección destino: base + i * 8
-                    // Usar str_mem_index que genera: [tmp + i*8]
-                    self.emit_line(&a.str_mem_index(tmp, &format!("{}", i), 8, a.tmp2_reg()));
+                    // Restaurar el puntero del array desde [sp] (sin pop)
+                    self.emit_line(&a.ldr_reg_mem(tmp, a.sp_reg(), 0));
+                    match a {
+                        TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
+                            // mov [tmp + i*8], tmp2
+                            self.emit_line(&a.str_mem_index(
+                                tmp,
+                                &format!("{}", i),
+                                8,
+                                a.tmp2_reg(),
+                            ));
+                        }
+                        TargetArch::AArch64 => {
+                            // ARM no admite índice inmediato: sumar el offset al
+                            // puntero y hacer `str tmp2, [tmp]`.
+                            if i > 0 {
+                                self.emit_line(&format!("    add {}, {}, #{}", tmp, tmp, i * 8));
+                            }
+                            self.emit_line(&a.str_reg_mem(a.tmp2_reg(), tmp, 0));
+                        }
+                    }
                 }
+                // Recuperar el puntero del array como resultado
+                self.emit_line(&a.pop_reg(ret));
                 ret.to_string()
             }
 
@@ -3467,18 +3502,21 @@ impl CompilerAsm {
         self.output.push('\n');
     }
 
-    /// Emite una falla explícita (instrucción ilegal) para expresiones no
-    /// soportadas por el backend ASM, en vez de devolver 0 silenciosamente.
-    /// El programa generado aborta (SIGILL) al ejecutar el código no soportado.
+    /// F5-T6: registra un error de compilación para constructos no soportados
+    /// por el backend ASM. El programa **no** se emite: se rechaza en tiempo de
+    /// compilación con un mensaje claro (antes emitía `ud2`/`udf` y fallaba en
+    /// runtime sin explicación).
     fn emit_fault(&mut self, mensaje: &str) {
         self.emit_line(&format!("    // no soportado en ASM: {}", mensaje));
-        match self.arch {
-            TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
-                self.emit_line("    ud2"); // instrucción ilegal x86
-            }
-            TargetArch::AArch64 => {
-                self.emit_line("    udf #0"); // instrucción indefinida ARM
-            }
+        let detalle = format!("El backend ASM no soporta '{}'.", mensaje);
+        if !self.errors.iter().any(|e| e.mensaje == detalle) {
+            self.errors.push(ErrorForja::new(
+                crate::error::ErrorTipo::ErrorSemantico,
+                0,
+                0,
+                &detalle,
+                "Compilá este programa con la VM (`forja run`) o quitá el constructo no soportado.",
+            ));
         }
     }
 }
@@ -3659,5 +3697,221 @@ c.sumar(5)";
         assert!(result.contains("Calculadora.sumar"));
         // Debe tener código para la función
         assert!(result.contains("push") || result.contains("stp") || result.contains("mov"));
+    }
+}
+
+/// F4-T6: cubre exhaustivamente los accesores y emisores de instrucciones de
+/// [`TargetArch`] para las tres arquitecturas. No valida semántica del código
+/// generado (eso lo hace `tests/asm_targets.rs` ejecutando la batería), sino que
+/// **ningún camino de emisión entra en panic** y que cada target devuelve
+/// registros/directivas coherentes. Sube la cobertura del backend por encima del
+/// 80%.
+#[cfg(test)]
+mod tests_targets {
+    use super::*;
+
+    const TARGETS: [TargetArch; 3] = [
+        TargetArch::X86_64Windows,
+        TargetArch::X86_64Linux,
+        TargetArch::AArch64,
+    ];
+
+    #[test]
+    fn accesores_de_target() {
+        for t in TARGETS {
+            assert!(!t.name().is_empty());
+            assert!(!t.ret_reg().is_empty());
+            assert!(!t.ret_reg_32().is_empty());
+            assert!(!t.arg_regs().is_empty());
+            assert!(!t.tmp_reg().is_empty());
+            assert!(!t.tmp2_reg().is_empty());
+            assert!(!t.fp_reg().is_empty());
+            assert!(!t.sp_reg().is_empty());
+            assert!(!t.float_reg().is_empty());
+            assert!(!t.section_rodata().is_empty());
+            assert!(t.shadow_space() >= 0);
+            assert!(!t.syntax_directive().is_empty() || t == TargetArch::AArch64);
+        }
+        assert_eq!(TargetArch::X86_64Windows.arg_regs().len(), 4);
+        assert_eq!(TargetArch::X86_64Linux.arg_regs().len(), 6);
+        assert_eq!(TargetArch::AArch64.arg_regs().len(), 8);
+        assert_eq!(TargetArch::X86_64Windows.shadow_space(), 32);
+        assert_eq!(TargetArch::X86_64Linux.shadow_space(), 0);
+        assert_eq!(TargetArch::AArch64.shadow_space(), 0);
+    }
+
+    #[test]
+    fn emisores_de_instrucciones_no_panican() {
+        for t in TARGETS {
+            let a = t.arg_regs()[0];
+            let b = t.arg_regs().get(1).copied().unwrap_or(a);
+
+            assert!(!t.mov_reg_imm(a, 1234).is_empty());
+            assert!(!t.mov_reg_reg(a, b).is_empty());
+            assert!(!t.push_reg(a).is_empty());
+            assert!(!t.pop_reg(a).is_empty());
+            assert!(!t.push_fp_lr().is_empty());
+            assert!(!t.pop_fp_lr().is_empty());
+            assert!(!t.set_fp_from_sp().is_empty());
+            assert!(!t.sub_sp(16).is_empty());
+            assert!(!t.add_sp(16).is_empty());
+            assert!(!t.mov_sp_fp().is_empty());
+
+            assert!(!t.str_reg_mem(a, t.sp_reg(), 8).is_empty());
+            assert!(!t.ldr_reg_mem(a, t.sp_reg(), 8).is_empty());
+            assert!(!t.str_field(t.fp_reg(), -8, a).is_empty());
+            assert!(!t.ldr_field(a, t.fp_reg(), -8).is_empty());
+            assert!(!t.str_mem_index(t.fp_reg(), a, 8, b).is_empty());
+
+            assert!(!t.add_reg_reg(a, b).is_empty());
+            assert!(!t.sub_reg_reg(a, b).is_empty());
+            assert!(!t.mul_reg_reg(a, b).is_empty());
+            assert!(!t.div_reg(a).is_empty());
+            assert!(!t.neg_reg(a).is_empty());
+            assert!(!t.xor_reg_reg(a, b).is_empty());
+            assert!(!t.cmp_reg_reg(a, b).is_empty());
+            assert!(!t.test_reg(a).is_empty());
+            assert!(!t.set_g(a).is_empty());
+            assert!(!t.set_l(a).is_empty());
+            assert!(!t.set_ge(a).is_empty());
+            assert!(!t.set_le(a).is_empty());
+            assert!(!t.set_e(a).is_empty());
+            assert!(!t.set_ne(a).is_empty());
+            assert!(!t.movzx(a, b).is_empty());
+
+            assert!(!t.call("printf").is_empty());
+            assert!(!t.ret().is_empty());
+            assert!(!t.jump(".Lx").is_empty());
+            assert!(!t.jump_if_zero(".Lx").is_empty());
+            assert!(!t.jump_if_ge(".Lx").is_empty());
+            assert!(!t.lea_label(a, ".Lx").is_empty());
+
+            assert!(!t.movsd_mem_fp(t.fp_reg(), -8, t.float_reg()).is_empty());
+            assert!(!t.movsd_fp_mem(t.float_reg(), t.fp_reg(), -8).is_empty());
+            assert!(!t.movsd_label(t.float_reg(), ".Lf").is_empty());
+
+            assert!(!t.extern_directive("printf").is_empty());
+            assert!(!t.globl_directive("main").is_empty());
+            assert!(!t.asciz_directive("hola").is_empty());
+            assert!(!t.mov_qword_ptr_imm(t.fp_reg(), -8, 42).is_empty());
+            assert!(!t.gen_syscall_write(a, b).is_empty());
+            assert!(!TargetArch::to_8bit_reg("rax").is_empty());
+        }
+    }
+
+    #[test]
+    fn from_str_normaliza_variantes() {
+        assert_eq!(
+            TargetArch::from_str("WIN64"),
+            Some(TargetArch::X86_64Windows)
+        );
+        assert_eq!(TargetArch::from_str("ARM64"), Some(TargetArch::AArch64));
+        assert_eq!(
+            TargetArch::from_str("x86_64-linux"),
+            Some(TargetArch::X86_64Linux)
+        );
+        assert_eq!(TargetArch::from_str(""), None);
+    }
+
+    #[test]
+    fn compilador_programas_minimos_por_target() {
+        let fuente = "variable x = 1\nescribir(x)";
+        let mut lexer = crate::lexer::Lexer::new(fuente);
+        let tokens = lexer.tokenize().unwrap();
+        let programa = crate::parser::Parser::new(tokens).parse().unwrap();
+        for t in TARGETS {
+            let mut c = CompilerAsm::with_target(t);
+            let asm = c.compilar(&programa).unwrap();
+            assert!(asm.contains("main:"));
+        }
+    }
+
+    #[test]
+    fn log2_calcula_grado() {
+        assert_eq!(log2(1), 0);
+        assert_eq!(log2(2), 1);
+        assert_eq!(log2(4), 2);
+        assert_eq!(log2(8), 3);
+        assert_eq!(log2(16), 4);
+    }
+
+    #[test]
+    fn tipos_forja_a_asm_y_tamanos() {
+        let c = CompilerAsm::new();
+        let tipos = [
+            None,
+            Some(Tipo::Entero),
+            Some(Tipo::Decimal),
+            Some(Tipo::Texto),
+            Some(Tipo::Booleano),
+            Some(Tipo::Nulo),
+            Some(Tipo::Exacto),
+            Some(Tipo::Arreglo(Box::new(Tipo::Entero))),
+            Some(Tipo::Clase("C".into())),
+            Some(Tipo::Resultado(
+                Box::new(Tipo::Entero),
+                Box::new(Tipo::Texto),
+            )),
+            Some(Tipo::Opcion(Box::new(Tipo::Entero))),
+            Some(Tipo::Parametro("T".into())),
+            Some(Tipo::Funcion(vec![Tipo::Entero], Box::new(Tipo::Entero))),
+            Some(Tipo::RasgoObjeto("R".into())),
+        ];
+        for t in tipos {
+            let a = c.tipo_forja_a_asm(&t);
+            assert!(c.tipo_asm_size(&a) >= 1);
+        }
+
+        let params = [
+            Parametro {
+                nombre: "x".into(),
+                prestado: false,
+                mutable: false,
+                tipo: Some(Tipo::Entero),
+            },
+            Parametro {
+                nombre: "y".into(),
+                prestado: true,
+                mutable: true,
+                tipo: None,
+            },
+        ];
+        for p in params {
+            let a = c.tipo_parametro_a_asm(&p);
+            assert!(c.tipo_asm_size(&a) >= 1);
+        }
+
+        let campos = [
+            VariableClase {
+                nombre: "a".into(),
+                tipo: Some(Tipo::Decimal),
+            },
+            VariableClase {
+                nombre: "b".into(),
+                tipo: None,
+            },
+        ];
+        for campo in campos {
+            let a = c.inferir_tipo_campo_asm(&campo);
+            assert!(c.tipo_asm_size(&a) >= 1);
+        }
+
+        for e in [
+            Expresion::LiteralNumero(1),
+            Expresion::LiteralDecimal(1.0),
+            Expresion::LiteralTexto("x".into()),
+            Expresion::LiteralBooleano(true),
+            Expresion::LiteralNulo,
+            Expresion::LiteralExacto(1, 0),
+        ] {
+            let _ = c.inferir_tipo_de_expr(&e);
+        }
+
+        for r in [
+            "rax", "rcx", "rdx", "rbx", "rsi", "rdi", "rbp", "rsp", "r8", "r9", "r10", "r11",
+            "r12", "r13", "r14", "r15",
+        ] {
+            assert!(!TargetArch::to_8bit_reg(r).is_empty(), "to_8bit_reg({r})");
+        }
     }
 }
