@@ -9,12 +9,52 @@ on:
     branches: [ main, master, develop ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: read
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Clasifica los cambios para no ejecutar la cadena Rust completa cuando sólo
+  # se tocó documentación (README, docs, diseño). Las métricas de documentación
+  # se ejecutan siempre porque también validan cifras que dependen del código.
+  cambios:
+    name: Detectar cambios
+    runs-on: ubuntu-latest
+    outputs:
+      codigo: ${{ steps.filtro.outputs.codigo }}
+      docs: ${{ steps.filtro.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filtro
+        with:
+          filters: |
+            codigo:
+              - 'src/**'
+              - 'tests/**'
+              - 'benches/**'
+              - 'crates/**'
+              - 'stdlib/**'
+              - 'ejemplos/**'
+              - 'scripts/**'
+              - 'patches/**'
+              - 'build.rs'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - '.cargo/**'
+              - 'installer.iss'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/rust.yml'
+            docs:
+              - 'docs/**'
+
   lint:
     name: Formato y Clippy
+    needs: cambios
+    if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +72,9 @@ jobs:
       # (`continue-on-error: true`) por deuda de lints preexistente, ajena a F2-T3.
       - name: cargo clippy
         continue-on-error: true
-        run: cargo clippy --all-targets --locked
+        # F7-T6: `--workspace` incluye los crates de `crates/` (submódulos).
+        # Sin esto, Cargo solo analiza el paquete raíz.
+        run: cargo clippy --workspace --all-targets --locked
       # F2-T3: el formatter de Forja debe ser idempotente y determinista.
       # Se compila el binario y se valida `forja fmt --check` sobre los ejemplos.
       # Los archivos que no parsean se omiten como advertencia (no rompen el CI).
@@ -43,6 +85,8 @@ jobs:
 
   docs:
     name: Documentación (build)
+    needs: cambios
+    if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.docs == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +118,8 @@ jobs:
 
   cobertura-asm:
     name: Cobertura ASM (≥80%)
-    needs: lint
+    needs: [cambios, lint]
+    if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -98,7 +143,8 @@ jobs:
 
   build-and-test:
     name: Build y Test (${{ matrix.os }})
-    needs: lint
+    needs: [cambios, lint]
+    if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -117,3 +163,42 @@ jobs:
         run: cargo build --locked --verbose
       - name: Ejecutar tests (--locked)
         run: cargo test --locked --verbose
+
+  # F7-T6: `cargo test` desde la raíz solo selecciona el paquete raíz porque
+  # el workspace tiene un paquete raíz y no define `default-members`. Los tests
+  # de `crates/` (submódulos) nunca se ejecutaban. Este job los corre en un
+  # único runner Linux; los crates wasm se validan contra su target real.
+  workspace-tests:
+    name: Tests del workspace (crates)
+    needs: [cambios, lint]
+    if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          key: workspace-tests
+      # winit/wayland necesitan estas cabeceras para compilar forja-gui-rt
+      # en el host Linux.
+      - name: Dependencias de sistema (GUI)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libx11-dev libfontconfig1-dev
+      - name: Tests de crates nativos
+        run: |
+          cargo test --workspace --locked --verbose \
+            --exclude forja-wasm \
+            --exclude forja-wasm-gui
+      - name: Instalar target WASM
+        run: rustup target add wasm32-unknown-unknown
+      - name: Check de crates WASM
+        run: |
+          cargo check --locked --verbose \
+            -p forja-wasm \
+            -p forja-wasm-gui \
+            --target wasm32-unknown-unknown
