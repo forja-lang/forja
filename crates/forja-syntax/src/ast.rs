@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 /// Definiciones del Árbol de Sintaxis Abstracta (AST) para Forja (fa)
 
