@@ -5,11 +5,11 @@
 #     y opcionalmente hacer commit, tag y push automáticamente.
 #
 # Uso:
-#   ./scripts/bump-version.sh 0.9.2              # Solo actualiza archivos
-#   ./scripts/bump-version.sh 0.9.2 --commit     # Actualiza + commit
-#   ./scripts/bump-version.sh 0.9.2 --tag        # Actualiza + commit + tag
-#   ./scripts/bump-version.sh 0.9.2 --push       # Actualiza + commit + tag + push
-#   ./scripts/bump-version.sh 0.9.2 --all        # Actualiza + commit + tag + push
+#   ./scripts/bump-version.sh 0.9.3              # Solo actualiza archivos
+#   ./scripts/bump-version.sh 0.9.3 --commit     # Actualiza + commit
+#   ./scripts/bump-version.sh 0.9.3 --tag        # Actualiza + commit + tag
+#   ./scripts/bump-version.sh 0.9.3 --push       # Actualiza + commit + tag + push
+#   ./scripts/bump-version.sh 0.9.3 --all        # Actualiza + commit + tag + push
 #
 # Requisitos:
 #   - Bash 4+ (Linux, macOS, WSL, o Git Bash en Windows)
@@ -41,7 +41,7 @@ print_warn() { echo -e "  \033[33m⚠️\033[0m  $1"; }
 # ─── Parseo de argumentos ───────────────────────────────────────────────────
 if [ $# -lt 1 ]; then
     echo "Uso: $0 <nueva_version> [--commit|--tag|--push|--all]"
-    echo "Ejemplo: $0 0.9.2 --all"
+    echo "Ejemplo: $0 0.9.3 --all"
     exit 1
 fi
 
