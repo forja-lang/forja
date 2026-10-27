@@ -1,4 +1,4 @@
-use crate::bytecode::{fusionar_opcodes, optimizar_indices, BytecodeGenerator};
+use crate::bytecode::BytecodeGenerator;
 use crate::error::{self, color};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -42,10 +42,12 @@ impl REPL {
         }
 
         let modo = if modo.is_empty() { "fast" } else { modo };
+        // (F1-T2) Solo quedan dos motores vivos: `vm_fast` (motor "fast") y
+        // `jit_tiered` (motor "jit"). Se elimina el modo obsoleto "vm" (VM
+        // Original) que ya no existe.
         let modo_desc = match modo {
             "fast" => "ForjaFast 🏆",
-            "vm" => "VM Original",
-            "jit" => "Forja JIT",
+            "jit" => "Forja JIT (tiered) ⚡",
             _ => "ForjaFast 🏆",
         };
 
@@ -116,12 +118,13 @@ impl REPL {
                             if !modo.is_empty() {
                                 self.vm_mode = modo.to_string();
                                 self.source_acumulado.clear();
+                                // (F1-T2) Motores válidos: "fast" (vm_fast) y "jit" (jit_tiered).
+                                // Cualquier otro valor cae en la rama por defecto de `compilar_y_ejecutar`.
                                 println!(
                                     "✅ VM cambiada a: {}",
                                     match modo {
                                         "fast" => "ForjaFast 🏆",
-                                        "vm" => "VM Original",
-                                        "jit" => "Forja JIT",
+                                        "jit" => "Forja JIT (tiered) ⚡",
                                         _ => modo,
                                     }
                                 );
@@ -192,8 +195,8 @@ impl REPL {
                                                 continue;
                                             }
                                         };
-                                        let bytecode = optimizar_indices(&bytecode);
-                                        let bytecode = fusionar_opcodes(&bytecode);
+                                        let bytecode =
+                                            crate::optimizer_pipeline::optimizar_bytecode(bytecode);
 
                                         vm.cargar_bytecode(bytecode);
                                         println!(
@@ -338,8 +341,7 @@ impl REPL {
         let bytecode = gen
             .generar(&programa)
             .map_err(|_| "Error generando bytecode".to_string())?;
-        let bytecode = optimizar_indices(&bytecode);
-        let bytecode = fusionar_opcodes(&bytecode);
+        let bytecode = crate::optimizer_pipeline::optimizar_bytecode(bytecode);
 
         match self.vm_mode.as_str() {
             "fast" => {
@@ -379,6 +381,8 @@ impl REPL {
     }
 
     fn mostrar_variables(&self) {
-        println!("📦 Comando 'variables' disponible solo en modo '--vm vm'");
+        // (F1-T2) El antiguo modo "vm" (VM Original) fue archivado; el estado de
+        // variables se consulta ejecutando el código en los motores vivos.
+        println!("📦 Comando 'variables' no disponible — usá 'fast' o 'jit' (motores vigentes)");
     }
 }
