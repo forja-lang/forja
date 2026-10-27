@@ -10,7 +10,6 @@
 // En plataformas que no son Windows todas las funciones retornan valores
 // por defecto (0, falso o arreglo vacío) para no romper la compilación.
 
-#![allow(dead_code)]
 #![allow(non_snake_case)]
 
 use crate::native_registry::{obtener_entero, obtener_texto};
