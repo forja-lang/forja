@@ -1,0 +1,18 @@
+# Test para operador ternario en Forja
+
+variable a = verdadero ? 10 : 20
+escribir("a = " + a_texto(a))
+
+variable b = falso ? 10 : 20
+escribir("b = " + a_texto(b))
+
+variable c = (5 > 3) ? "mayor" : "menor"
+escribir("c = " + c)
+
+variable d = falso ? 1 : (verdadero ? 2 : 3)
+escribir("d = " + a_texto(d))
+
+variable e = 10 < 5 ? "error" : (5 == 5 ? "ok" : "fail")
+escribir("e = " + e)
+
+escribir(verdadero ? "PRUEBA TERNARIO EXITOSA" : "PRUEBA TERNARIO FALLIDA")
