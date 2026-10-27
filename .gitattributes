@@ -1,0 +1,2 @@
+# Los goldens se comparan con la salida de la VM (siempre LF).
+tests/golden/*.out text eol=lf
