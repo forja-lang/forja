@@ -1,6 +1,5 @@
-#![allow(dead_code)]
 use crate::ast::*;
-use crate::error::{ErrorForja, ErrorTipo};
+use crate::error::{ErrorForja, ErrorTipo, Span};
 use crate::token::{Token, TokenKind};
 
 /// Parser recursivo descendente para Forja (fa)
@@ -106,12 +105,13 @@ impl Parser {
         self.profundidad += 1;
         if self.profundidad > MAX_PROFUNDIDAD {
             self.profundidad -= 1;
-            return Err(ErrorForja::new(
+            return Err(ErrorForja::con_codigo(
                 ErrorTipo::DemasiadaAnidacion {
                     max: MAX_PROFUNDIDAD as u32,
                 },
                 self.linea_actual(),
                 self.columna_actual(),
+                Span::punto(self.columna_actual()),
                 "El parser ha alcanzado el límite de profundidad de recursión",
                 "El programa tiene una anidación demasiado profunda. Refactoriza la expresión.",
             ));
@@ -407,10 +407,11 @@ impl Parser {
                 self.avanzar();
                 Some(self.parse_tipo()?)
             } else {
-                return Err(ErrorForja::new(
+                return Err(ErrorForja::con_codigo(
                     ErrorTipo::ErrorSintactico,
                     self.linea_actual(),
                     col,
+                    Span::rango(col, col + 1),
                     "Se esperaba '->' para el tipo de retorno.",
                     "Usá '-> Tipo' después de los parámetros para indicar el tipo de retorno.",
                 ));
@@ -618,10 +619,11 @@ impl Parser {
                         self.avanzar();
                         Some(self.parse_tipo()?)
                     } else {
-                        return Err(ErrorForja::new(
+                        return Err(ErrorForja::con_codigo(
                             ErrorTipo::ErrorSintactico,
                             self.linea_actual(),
                             col,
+                            Span::rango(col, col + 1),
                             "Se esperaba '->' para el tipo de retorno.",
                             "Usá '-> Tipo' después de los parámetros.",
                         ));
@@ -729,10 +731,11 @@ impl Parser {
 
         // consumir 'para'
         if !self.coincide(TokenKind::Para) {
-            return Err(ErrorForja::new(
+            return Err(ErrorForja::con_codigo(
                 ErrorTipo::ErrorSintactico,
                 self.linea_actual(),
                 self.columna_actual(),
+                Span::punto(self.columna_actual()),
                 "Se esperaba 'para' después del nombre del rasgo.",
                 "Usá: implementa Rasgo para Clase { ... }",
             ));
@@ -818,10 +821,11 @@ impl Parser {
                 self.avanzar();
                 Some(self.parse_tipo()?)
             } else {
-                return Err(ErrorForja::new(
+                return Err(ErrorForja::con_codigo(
                     ErrorTipo::ErrorSintactico,
                     self.linea_actual(),
                     col,
+                    Span::rango(col, col + 1),
                     "Se esperaba '->' para el tipo de retorno.",
                     "Usá '-> Tipo' después de los parámetros.",
                 ));
@@ -1086,10 +1090,11 @@ impl Parser {
                     columna,
                 }))
             } else {
-                return Err(ErrorForja::new(
+                return Err(ErrorForja::con_codigo(
                     ErrorTipo::ErrorSintactico,
                     self.linea_actual(),
                     self.columna_actual(),
+                    Span::punto(self.columna_actual()),
                     "Se esperaba '=' en la inicialización del 'para'.",
                     "Usá 'variable mut i = 0' o 'i = 0' como inicialización.",
                 ));
@@ -1190,19 +1195,12 @@ impl Parser {
         self.avanzar(); // consume 'importar'
 
         let ruta = match &self.peek().kind {
-            // importar "ruta/absoluta" — con comillas, SOLO rutas absolutas
+            // importar "ruta" — con comillas. Se aceptan tanto rutas absolutas
+            // como relativas (alias retrocompatible: `importar "std/io"` es
+            // equivalente a `importar std/io`).
             TokenKind::Texto(s) => {
                 let ruta = s.clone();
                 self.avanzar();
-                if !es_ruta_absoluta(&ruta) {
-                    return Err(ErrorForja::new(
-                        ErrorTipo::ErrorSintactico,
-                        self.linea_actual(),
-                        self.columna_actual(),
-                        "Las importaciones con comillas solo están permitidas para rutas absolutas.",
-                        "Usá: importar gui",
-                    ));
-                }
                 ruta
             }
             // importar ruta/de/modulo  (sin comillas)
@@ -1252,20 +1250,22 @@ impl Parser {
                     }
                 }
                 if partes.is_empty() {
-                    return Err(ErrorForja::new(
+                    return Err(ErrorForja::con_codigo(
                         ErrorTipo::ErrorSintactico,
                         self.linea_actual(),
                         self.columna_actual(),
+                        Span::punto(self.columna_actual()),
                         "Se esperaba un nombre de módulo después de 'importar'.",
                         "Ejemplo: importar std/io",
                     ));
                 }
                 let ruta = partes.join("/");
                 if es_ruta_absoluta(&ruta) {
-                    return Err(ErrorForja::new(
+                    return Err(ErrorForja::con_codigo(
                         ErrorTipo::ErrorSintactico,
                         self.linea_actual(),
                         self.columna_actual(),
+                        Span::punto(self.columna_actual()),
                         "Las rutas absolutas requieren comillas.",
                         "Usá importar \"ruta/absoluta\" para rutas del sistema de archivos.",
                     ));
@@ -1273,10 +1273,11 @@ impl Parser {
                 ruta
             }
             _ => {
-                return Err(ErrorForja::new(
+                return Err(ErrorForja::con_codigo(
                     ErrorTipo::ErrorSintactico,
                     self.linea_actual(),
                     self.columna_actual(),
+                    Span::punto(self.columna_actual()),
                     "Se esperaba una ruta después de 'importar'.",
                     "Ejemplos: importar std/io  o  importar \"/ruta/absoluta\"",
                 ))
@@ -1297,10 +1298,11 @@ impl Parser {
                 ruta
             }
             _ => {
-                return Err(ErrorForja::new(
+                return Err(ErrorForja::con_codigo(
                     ErrorTipo::ErrorSintactico,
                     self.linea_actual(),
                     self.columna_actual(),
+                    Span::punto(self.columna_actual()),
                     "Se esperaba una ruta entre comillas después de 'importar externa'.",
                     "Ejemplo: importar externa \"liberia.dll\"",
                 ))
@@ -1412,10 +1414,11 @@ impl Parser {
                         cuerpo,
                     });
                 } else {
-                    return Err(ErrorForja::new(
+                    return Err(ErrorForja::con_codigo(
                         crate::error::ErrorTipo::ErrorSintactico,
                         self.linea_actual(),
                         self.columna_actual(),
+                        Span::punto(self.columna_actual()),
                         &format!("Se esperaba '->' o '=' después del nombre en 'caso', pero se encontró: {}", self.peek().kind),
                         "Usá: caso canal -> variable -> { ... } o caso variable = expresion { ... }",
                     ));
@@ -1450,10 +1453,11 @@ impl Parser {
                 });
             } else {
                 // Token inesperado dentro de seleccionar
-                return Err(ErrorForja::new(
+                return Err(ErrorForja::con_codigo(
                     crate::error::ErrorTipo::ErrorSintactico,
                     self.linea_actual(),
                     self.columna_actual(),
+                    Span::punto(self.columna_actual()),
                     &format!("Se esperaba 'caso', 'tiempo' u 'otro' dentro de 'seleccionar', pero se encontró: {}", self.peek().kind),
                     "Usá: seleccionar { caso canal -> variable -> { ... } tiempo 1000 { ... } otro -> { ... } }",
                 ));
@@ -1477,19 +1481,21 @@ impl Parser {
                 self.avanzar();
                 Ok(())
             } else {
-                Err(ErrorForja::new(
+                Err(ErrorForja::con_codigo(
                     ErrorTipo::ErrorSintactico,
                     self.linea_actual(),
                     col,
+                    Span::rango(col, col + 1),
                     "Se esperaba '->'.",
                     "Usá '->' (guión seguido de mayor que).",
                 ))
             }
         } else {
-            Err(ErrorForja::new(
+            Err(ErrorForja::con_codigo(
                 ErrorTipo::ErrorSintactico,
                 self.linea_actual(),
                 self.columna_actual(),
+                Span::punto(self.columna_actual()),
                 "Se esperaba '->'.",
                 "Usá '->' (guión seguido de mayor que).",
             ))
@@ -1836,14 +1842,6 @@ impl Parser {
         })))
     }
 
-    /// Helper para obtener nombre simple de una expresión
-    fn expresion_a_nombre_simple(&self, expr: &Expresion) -> Option<String> {
-        match expr {
-            Expresion::Identificador { nombre: n, .. } => Some(n.clone()),
-            _ => None,
-        }
-    }
-
     // ============================================================
     // Parsing de expresiones (con precedencia)
     // ============================================================
@@ -1889,10 +1887,11 @@ impl Parser {
                     });
                 }
                 _ => {
-                    return Err(ErrorForja::new(
+                    return Err(ErrorForja::con_codigo(
                         ErrorTipo::ErrorSintactico,
                         self.linea_actual(),
                         self.columna_actual(),
+                        Span::punto(self.columna_actual()),
                         &format!("Expresión inesperada: {} = ...", self.peek().kind),
                         "Solo se puede asignar a una variable, campo o índice (arr[i]).",
                     ));
@@ -2202,10 +2201,11 @@ impl Parser {
             self.profundidad_paren += 1;
             if self.profundidad_paren > MAX_ANIDAMIENTO_PAREN {
                 self.profundidad_paren -= 1;
-                return Err(ErrorForja::new(
+                return Err(ErrorForja::con_codigo(
                     ErrorTipo::DemasiadaAnidacion { max: MAX_ANIDAMIENTO_PAREN as u32 },
                     self.peek().linea,
                     self.peek().columna,
+                    Span::punto(self.peek().columna),
                     "Demasiados paréntesis anidados",
                     &format!("El parser permite máximo {} niveles de anidamiento de paréntesis para evitar stack overflow. Refactoriza la expresión.",
                         MAX_ANIDAMIENTO_PAREN),
@@ -2473,10 +2473,11 @@ impl Parser {
             }
         }
 
-        Err(ErrorForja::new(
+        Err(ErrorForja::con_codigo(
             ErrorTipo::ErrorSintactico,
             self.linea_actual(),
             self.columna_actual(),
+            Span::punto(self.columna_actual()),
             &format!("Expresión inesperada: {}", self.peek().kind),
             "Revisá la sintaxis de la expresión. ¿Falta un operador o un paréntesis?",
         ))
@@ -2719,28 +2720,6 @@ impl Parser {
         }
 
         Ok(expr)
-    }
-
-    /// Intenta obtener un nombre de expresión (para construir nombre compuesto)
-    fn expresion_a_nombre(&self, expr: &Expresion) -> Option<String> {
-        match expr {
-            Expresion::Identificador { nombre: n, .. } => Some(n.clone()),
-            Expresion::LiteralTexto(s) => Some(format!("\"{}\"", s)),
-            Expresion::LiteralNumero(n) => Some(n.to_string()),
-            Expresion::LiteralDecimal(d) => Some(d.to_string()),
-            Expresion::LiteralBooleano(b) => Some(b.to_string()),
-            Expresion::LiteralExacto(coeff, scale) => Some(format!("{}e{}", coeff, scale)),
-            Expresion::AccesoMiembro { objeto, miembro } => {
-                if let Some(obj_name) = self.expresion_a_nombre(objeto) {
-                    Some(format!("{}.{}", obj_name, miembro))
-                } else {
-                    None
-                }
-            }
-            // Para llamadas a función, usar el nombre de la función como parte del compuesto
-            Expresion::LlamadaFuncion { nombre: n, .. } => Some(n.clone()),
-            _ => None,
-        }
     }
 
     /// nuevo <Clase>(<argumentos>)  o  nuevo Clase<Tipo>(<argumentos>)
@@ -3058,10 +3037,11 @@ impl Parser {
         if self.coincide(TokenKind::LlaveCerrar) {
             self.avanzar();
         } else {
-            return Err(ErrorForja::new(
+            return Err(ErrorForja::con_codigo(
                 ErrorTipo::ErrorSintactico,
                 self.linea_actual(),
                 self.columna_actual(),
+                Span::punto(self.columna_actual()),
                 "Se esperaba '}' para cerrar el bloque.",
                 "Agregá '}' al final del bloque para cerrar la llave.",
             ));
@@ -3162,10 +3142,11 @@ impl Parser {
             self.avanzar();
             Ok(())
         } else {
-            Err(ErrorForja::new(
+            Err(ErrorForja::con_codigo(
                 ErrorTipo::ErrorSintactico,
                 self.linea_actual(),
                 self.columna_actual(),
+                Span::punto(self.columna_actual()),
                 mensaje,
                 "Se esperaba un token específico.",
             ))
@@ -3198,10 +3179,11 @@ impl Parser {
                     || s.starts_with('"')
                     || token == TokenKind::EOF
                 {
-                    return Err(ErrorForja::new(
+                    return Err(ErrorForja::con_codigo(
                         ErrorTipo::ErrorSintactico,
                         self.linea_actual(),
                         self.columna_actual(),
+                        Span::punto(self.columna_actual()),
                         mensaje,
                         "Se esperaba un nombre (identificador).",
                     ));
@@ -3286,10 +3268,11 @@ impl Parser {
 
         while !self.coincide(TokenKind::LlaveCerrar) && !self.es_eof() {
             if !self.coincide(TokenKind::Caso) {
-                return Err(ErrorForja::new(
+                return Err(ErrorForja::con_codigo(
                     ErrorTipo::ErrorSintactico,
                     self.linea_actual(),
                     self.columna_actual(),
+                    Span::punto(self.columna_actual()),
                     "Se esperaba 'caso' dentro del match.",
                     "Usá: caso patron -> { cuerpo } o caso patron1 | patron2 { cuerpo }",
                 ));
@@ -3305,10 +3288,11 @@ impl Parser {
                 if self.coincide(TokenKind::Mayor) {
                     self.avanzar();
                 } else {
-                    return Err(ErrorForja::new(
+                    return Err(ErrorForja::con_codigo(
                         ErrorTipo::ErrorSintactico,
                         self.linea_actual(),
                         col,
+                        Span::rango(col, col + 1),
                         "Se esperaba '->' después del patrón.",
                         "Usá: caso patron -> { cuerpo }",
                     ));
@@ -3322,10 +3306,11 @@ impl Parser {
             } else if self.coincide(TokenKind::Retornar) {
                 // Si la expresión es 'retornar', parsear la declaración completa
                 let decl = self.parse_declaracion()?.ok_or_else(|| {
-                    ErrorForja::new(
+                    ErrorForja::con_codigo(
                         ErrorTipo::ErrorSintactico,
                         self.linea_actual(),
                         self.columna_actual(),
+                        Span::punto(self.columna_actual()),
                         "Se esperaba una declaración después de 'retornar'.",
                         "Usá: retornar expresión",
                     )
@@ -3434,10 +3419,11 @@ impl Parser {
                 let expr = self.parse_expresion_unaria()?;
                 Ok(Patron::Literal(expr))
             }
-            _ => Err(ErrorForja::new(
+            _ => Err(ErrorForja::con_codigo(
                 ErrorTipo::ErrorSintactico,
                 self.linea_actual(),
                 self.columna_actual(),
+                Span::punto(self.columna_actual()),
                 &format!(
                     "Se esperaba un patrón, pero se encontró: {}",
                     self.peek().kind
@@ -3451,17 +3437,6 @@ impl Parser {
 // ============================================================
 // Funciones auxiliares para parse_seleccionar
 // ============================================================
-
-/// Extrae el nombre del canal de una expresión como "rx1.recibir()"
-fn extraer_nombre_canal(expr: &Expresion) -> String {
-    // De "rx1.recibir()" extraer "rx1"
-    if let Expresion::LlamadaFuncion { nombre, .. } = expr {
-        if let Some(dot_pos) = nombre.find('.') {
-            return nombre[..dot_pos].to_string();
-        }
-    }
-    String::new()
-}
 
 /// Extrae un número entero de una expresión literal
 fn extraer_numero(expr: &Expresion) -> u64 {
@@ -3664,12 +3639,14 @@ mod tests {
     }
 
     #[test]
-    fn test_importar_con_comillas_no_absoluta_error() {
-        let result = parse_source("importar \"gui\"");
-        assert!(
-            result.is_err(),
-            "importar con comillas para ruta no absoluta debe fallar"
-        );
+    fn test_importar_con_comillas_relativa_es_alias() {
+        // Alias retrocompatible: `importar "std/io"` == `importar std/io`.
+        let prog = parse_source("importar \"std/io\"").unwrap();
+        assert_eq!(prog.declaraciones.len(), 1);
+        match &prog.declaraciones[0] {
+            Declaracion::Importar(ruta) => assert_eq!(ruta, "std/io"),
+            _ => panic!("Se esperaba Declaracion::Importar"),
+        }
     }
 
     #[test]
