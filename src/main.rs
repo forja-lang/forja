@@ -1,79 +1,25 @@
-// #![allow(dead_code)]
-// #![allow(unused_imports)]
+// F1-T6: el binario consume la librería `forja` en lugar de re-declarar los
+// módulos como copias privadas. Antes, `mod lexer;`/`mod parser;`/… compilaban
+// una segunda copia de cada módulo dentro del target bin, lo que (a) duplicaba
+// el trabajo de compilación y (b) marcaba como "código muerto" toda la API
+// pública de esos módulos que el bin no usaba directamente. Con `use forja::X;`
+// las rutas desnudas (`lexer::Lexer`, `parser::Parser`, …) siguen funcionando
+// pero resuelven a la librería, eliminando la duplicación y los warnings.
 
-mod arena;
-mod ast;
-mod bytecode;
-mod class_descriptor;
-mod compiler_asm;
-mod diagrama;
-mod error;
-mod formatter;
-mod fprofiler;
-mod gc;
-mod gc_intrinsics;
-mod jit_tiered;
-mod lexer;
-mod monomorph;
-mod native_registry;
-mod optimizer;
-mod package_config;
-mod package_resolver;
-mod parser;
-mod pgo;
-mod register_alloc;
-mod repl;
-mod selfrun;
-mod semantics;
-mod shape;
-mod stdlib_embedded;
-mod symbol_table;
-mod token;
-mod transpiler;
-mod uops;
-mod vm_fast;
-
-// Hash, codificación y crypto — implementaciones manuales sin dependencias externas
-mod base64;
-mod crypto;
-mod crypto_pq;
-mod hash;
-mod mmap;
-mod terminal;
-
-// HTTP/2 nativo — h2c (cleartext), sin dependencias externas
-#[cfg(not(target_arch = "wasm32"))]
-mod native_h2_core;
-
-// SQLite nativo
-#[cfg(not(target_arch = "wasm32"))]
-mod native_sqlite;
-
-mod module;
-
-// HTTP/2 con TLS (rustls) — feature flag "h2-tls"
-#[cfg(all(feature = "h2-tls", not(target_arch = "wasm32")))]
-mod native_h2_tls;
-#[cfg(not(any(feature = "h2-tls", target_arch = "wasm32")))]
-#[allow(dead_code)]
-mod native_h2_tls {
-    // stub vacío
-    pub struct SocketState;
-}
-
-// FFI — carga de librerías dinámicas (no WASM)
-#[cfg(not(target_arch = "wasm32"))]
-mod ffi;
-#[cfg(target_arch = "wasm32")]
-#[allow(dead_code)]
-mod ffi {}
-
-// Funciones nativas de procesos de Windows (PID, módulos, R/W de memoria)
-#[cfg(not(target_arch = "wasm32"))]
-mod native_proceso_win;
-#[cfg(target_arch = "wasm32")]
-#[allow(dead_code)]
-mod native_proceso_win {}
+use forja::ast;
+use forja::compiler_asm;
+use forja::diagrama;
+use forja::error;
+use forja::formatter;
+use forja::lexer;
+use forja::linter;
+use forja::package_config;
+use forja::package_resolver;
+use forja::parser;
+use forja::repl;
+use forja::selfrun;
+use forja::semantics;
+use forja::transpiler;
 
 use ast::Declaracion;
 use error::{color, mostrar_errores, NivelVerbose};
@@ -99,6 +45,8 @@ fn main() {
             "--debug" => error::establecer_nivel(NivelVerbose::Debug),
             "--trace" => error::establecer_nivel(NivelVerbose::Trace),
             "--json" | "--json-errors" => error::establecer_json_mode(true),
+            "--color" => error::establecer_color_mode(true),
+            "--no-color" => error::establecer_color_mode(false),
             _ => {}
         }
     }
@@ -110,6 +58,8 @@ fn main() {
         "--trace",
         "--json",
         "--json-errors",
+        "--color",
+        "--no-color",
     ];
     let args: Vec<String> = args
         .into_iter()
@@ -154,6 +104,8 @@ fn main() {
         "build" | "compilar" | "construir" => cmd_build(&args[2..]),
         // Formatear código
         "fmt" | "format" | "formatear" => cmd_fmt(&args[2..]),
+        // Linter (reglas configurables)
+        "lint" | "linter" | "analizar-lint" => cmd_lint(&args[2..]),
         // Compilar a assembly nativo
         "build-asm" | "compilar-asm" | "asm" => cmd_build_asm(&args[2..]),
         // Transpilar a Rust
@@ -166,8 +118,12 @@ fn main() {
         "add" | "agregar" | "añadir" => cmd_add(),
         "remove" | "remover" | "eliminar" => cmd_remove(),
         "install" | "instalar" => cmd_install(),
+        // Registry de paquetes (F3-T1)
+        "publish" | "publicar" => cmd_publish(&args[2..]),
+        "yank" | "retirar" => cmd_yank(&args[2..]),
+        "registry-serve" | "servidor-registry" => cmd_registry_serve(&args[2..]),
         // Tutorial interactivo
-        "learn" | "aprender" => cmd_learn(),
+        "learn" | "aprender" => cmd_learn(&args[2..]),
         // Colorear código Forja en la terminal
         "highlight" | "color" | "colorear" => cmd_highlight(&args[2..]),
         // Listar palabras clave del lenguaje
@@ -459,18 +415,154 @@ fn cmd_keywords() {
     println!("💡 forja explicar <palabra>  — Ver ejemplos y detalles");
 }
 
-/// forja help <tema>
-fn cmd_learn() {
-    println!("🎓 Forja — Aprendé a programar\n");
-    println!("Lección 1: Mostrar mensajes");
-    println!("═══════════════════════════\n");
-    println!("Para mostrar algo en pantalla, usamos:");
-    println!("  escribir(\"texto\")\n");
-    println!("El texto entre comillas se llama 'string' o 'cadena'.\n");
-    println!("Probá estos ejemplos con 'forja run' (o 'forja ejecutar'):");
-    println!("  1. escribir(\"Hola mundo\")");
-    println!("  2. escribir(\"Mi nombre es \" + \"Ana\")");
-    println!("\nSiguiente lección: forja palabras");
+/// forja learn|aprender [subcomando] — Curso interactivo guiado (F2-T8).
+///
+/// Subcomandos:
+///   (sin args)        Lista las lecciones y el progreso.
+///   <n>               Muestra la lección n (1-based) con su ejercicio.
+///   run <n>           Ejecuta el ejemplo de la lección n.
+///   check <n> <arch>  Verifica la solución del archivo contra la lección n.
+///   reset             Borra el progreso guardado.
+fn cmd_learn(args: &[String]) {
+    let lecciones = forja::learn::curso();
+    let mut progreso = forja::learn::Progreso::cargar();
+
+    let sub = args.first().map(|s| s.as_str()).unwrap_or("");
+
+    match sub {
+        "" | "list" | "lista" => {
+            println!("🎓 Forja — Curso interactivo\n");
+            println!(
+                "Progreso: {}/{} lecciones completadas\n",
+                progreso.total_completadas(),
+                lecciones.len()
+            );
+            for (i, l) in lecciones.iter().enumerate() {
+                let marca = if progreso.esta_completada(i) {
+                    "✅"
+                } else {
+                    "⬜"
+                };
+                println!("  {} {:>2}. {}", marca, i + 1, l.titulo);
+            }
+            println!("\nUsá 'forja learn <n>' para ver la lección n.");
+            println!("Usá 'forja learn check <n> <archivo.fa>' para verificar tu solución.");
+        }
+        "reset" | "reiniciar" => {
+            progreso = forja::learn::Progreso::default();
+            match progreso.guardar() {
+                Ok(()) => println!("🔄 Progreso reiniciado."),
+                Err(e) => eprintln!("⚠️  No se pudo reiniciar el progreso: {}", e),
+            }
+        }
+        "run" | "ejecutar" => {
+            let Some(n) = args.get(1).and_then(|s| s.parse::<usize>().ok()) else {
+                eprintln!("Uso: forja learn run <n>");
+                process::exit(1);
+            };
+            let Some(l) = n.checked_sub(1).and_then(|i| lecciones.get(i)) else {
+                eprintln!(
+                    "❌ No existe la lección {}. Hay {} lecciones.",
+                    n,
+                    lecciones.len()
+                );
+                process::exit(1);
+            };
+            println!("▶️  Ejemplo de la lección {}: {}\n", n, l.titulo);
+            println!("{}", l.ejemplo);
+            println!("\n── Salida ──");
+            match forja::learn::verificar(l.ejemplo, l.salida_esperada) {
+                forja::learn::ResultadoVerificacion::Correcto => {
+                    println!("(ejecutado correctamente)")
+                }
+                forja::learn::ResultadoVerificacion::ErrorEjecucion(e) => {
+                    eprintln!("Error: {}", e)
+                }
+                forja::learn::ResultadoVerificacion::SalidaIncorrecta { obtenida, .. } => {
+                    for linea in obtenida {
+                        println!("{}", linea);
+                    }
+                }
+            }
+        }
+        "check" | "verificar" => {
+            let Some(n) = args.get(1).and_then(|s| s.parse::<usize>().ok()) else {
+                eprintln!("Uso: forja learn check <n> <archivo.fa>");
+                process::exit(1);
+            };
+            let Some(archivo) = args.get(2) else {
+                eprintln!("Uso: forja learn check <n> <archivo.fa>");
+                process::exit(1);
+            };
+            let Some(l) = n.checked_sub(1).and_then(|i| lecciones.get(i)) else {
+                eprintln!(
+                    "❌ No existe la lección {}. Hay {} lecciones.",
+                    n,
+                    lecciones.len()
+                );
+                process::exit(1);
+            };
+            let codigo =
+                match forja::leer_archivo_con_limite(archivo, forja::MAX_ARCHIVO_DEFAULT_MB) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("❌ No se pudo leer '{}': {}", archivo, e);
+                        process::exit(1);
+                    }
+                };
+            match forja::learn::verificar(&codigo, l.salida_esperada) {
+                forja::learn::ResultadoVerificacion::Correcto => {
+                    println!("✅ ¡Correcto! Lección {} completada.", n);
+                    progreso.marcar(n - 1);
+                    if let Err(e) = progreso.guardar() {
+                        eprintln!("⚠️  No se pudo guardar el progreso: {}", e);
+                    }
+                }
+                forja::learn::ResultadoVerificacion::ErrorEjecucion(e) => {
+                    eprintln!("❌ Error al ejecutar tu solución:\n{}", e);
+                    process::exit(1);
+                }
+                forja::learn::ResultadoVerificacion::SalidaIncorrecta { obtenida, esperada } => {
+                    eprintln!("❌ La salida no coincide.");
+                    eprintln!("   Esperada: {:?}", esperada);
+                    eprintln!("   Obtenida: {:?}", obtenida);
+                    process::exit(1);
+                }
+            }
+        }
+        otro => {
+            // Si es un número, mostrar la lección correspondiente.
+            if let Ok(n) = otro.parse::<usize>() {
+                let Some(l) = n.checked_sub(1).and_then(|i| lecciones.get(i)) else {
+                    eprintln!(
+                        "❌ No existe la lección {}. Hay {} lecciones.",
+                        n,
+                        lecciones.len()
+                    );
+                    process::exit(1);
+                };
+                println!("🎓 Lección {}: {}\n", n, l.titulo);
+                println!("{}\n", l.explicacion);
+                println!("── Ejemplo ──");
+                println!("{}\n", l.ejemplo);
+                println!("── Ejercicio ──");
+                println!("{}\n", l.enunciado);
+                println!("── Plantilla ──");
+                println!("{}", l.plantilla);
+                if let Some(arch) = l.ejemplo_archivo {
+                    println!("\n📎 Ejemplo relacionado: {}", arch);
+                }
+                println!("\nCuando tengas tu solución en un archivo, verificá con:");
+                println!("  forja learn check {} <archivo.fa>", n);
+            } else {
+                eprintln!(
+                    "Subcomando desconocido: '{}'. Probá 'forja learn' para ver la lista.",
+                    otro
+                );
+                process::exit(1);
+            }
+        }
+    }
 }
 
 fn cmd_explain(codigo: &str) {
@@ -660,6 +752,176 @@ fn cmd_install() {
     println!("✅ Instalación completada");
 }
 
+/// forja publish|publicar [--dir <ruta>]
+///
+/// Empaqueta el proyecto actual (o el indicado con --dir) en un tarball
+/// `.fapkg`, lo firma y lo publica en el registry local (~/.forja/registry).
+/// Lee nombre/version/autor/descripcion de `forja.json`.
+fn cmd_publish(args: &[String]) {
+    let mut dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--dir" | "-d" => {
+                if i + 1 < args.len() {
+                    dir = Path::new(&args[i + 1]).to_path_buf();
+                    i += 2;
+                } else {
+                    eprintln!("Uso: forja publish [--dir <ruta>]");
+                    process::exit(1);
+                }
+            }
+            _ => i += 1,
+        }
+    }
+
+    let config_path = dir.join("forja.json");
+    if !config_path.exists() {
+        eprintln!(
+            "No se encontró forja.json en {}. Usá 'forja new <nombre>' o 'forja init'.",
+            dir.display()
+        );
+        process::exit(1);
+    }
+    let config = match ForjaConfig::load(&config_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{}", e);
+            process::exit(1);
+        }
+    };
+
+    if !forja::registry::Semver::es_valida(&config.version) {
+        eprintln!(
+            "❌ La versión '{}' de forja.json no es semver válido (usa mayor.menor.parche)",
+            config.version
+        );
+        process::exit(1);
+    }
+
+    println!(
+        "📦 Publicando {}@{} en el registry local...",
+        config.nombre, config.version
+    );
+    match forja::registry::publicar(
+        &dir,
+        &config.nombre,
+        &config.version,
+        &config.autor,
+        &config.descripcion,
+    ) {
+        Ok(hash) => {
+            println!("✅ Publicado {}@{}", config.nombre, config.version);
+            println!("   sha256: {}", hash);
+            println!("   index:  {}", forja::registry::ruta_index().display());
+            println!(
+                "   tarball: {}",
+                forja::registry::ruta_tarball(&config.nombre, &config.version).display()
+            );
+            match forja::registry_remote::publicar_si_configurado(
+                &config.nombre,
+                &config.version,
+                &config.autor,
+                &config.descripcion,
+            ) {
+                Ok(Some(())) => println!(
+                    "   remoto: publicada en {}",
+                    forja::registry_remote::url_base().unwrap_or_default()
+                ),
+                Ok(None) => {}
+                Err(e) => eprintln!(
+                    "⚠️  publicada localmente, pero falló el registry remoto: {}",
+                    e
+                ),
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ {}", e);
+            process::exit(1);
+        }
+    }
+}
+
+/// forja registry-serve [--dir <ruta>] [--port <puerto>] [--token <token>]
+///
+/// Servidor HTTP mínimo del registry remoto (F6-T6). Pensado para desarrollo y
+/// pruebas; en producción va detrás de un proxy TLS.
+fn cmd_registry_serve(args: &[String]) {
+    let mut dir = forja::registry::dir_registry().join("server");
+    let mut puerto = 8787u16;
+    let mut token = std::env::var("FORJA_REGISTRY_TOKEN").ok();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--dir" | "-d" if i + 1 < args.len() => {
+                dir = std::path::PathBuf::from(&args[i + 1]);
+                i += 2;
+            }
+            "--port" | "-p" if i + 1 < args.len() => {
+                puerto = args[i + 1].parse().unwrap_or(8787);
+                i += 2;
+            }
+            "--token" if i + 1 < args.len() => {
+                token = Some(args[i + 1].clone());
+                i += 2;
+            }
+            _ => i += 1,
+        }
+    }
+    let addr = format!("127.0.0.1:{}", puerto);
+    let tiene_token = token.is_some();
+    match forja::registry_server::iniciar(&dir, &addr, token) {
+        Ok(servidor) => {
+            println!("📦 Registry remoto escuchando en http://{}", servidor.addr);
+            println!("   dir:   {}", dir.display());
+            println!(
+                "   token: {}",
+                if tiene_token {
+                    "configurado"
+                } else {
+                    "sin auth (solo desarrollo)"
+                }
+            );
+            println!("   Ctrl+C para detener.");
+            loop {
+                std::thread::park();
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ {}", e);
+            process::exit(1);
+        }
+    }
+}
+
+/// forja yank|retirar <paquete> <version>
+///
+/// Marca una versión como retirada en el index del registry local. No borra
+/// el tarball; simplemente deja de resolverse con `latest` ni por versión.
+fn cmd_yank(args: &[String]) {
+    if args.len() < 2 {
+        eprintln!("Uso: forja yank|retirar <paquete> <version>");
+        process::exit(1);
+    }
+    let nombre = &args[0];
+    let version = &args[1];
+    match forja::registry::yank(nombre, version) {
+        Ok(_) => {
+            println!("✅ Versión '{}' de '{}' retirada (yanked)", version, nombre);
+            if forja::registry_remote::configurado() {
+                match forja::registry_remote::yank_remoto(nombre, version) {
+                    Ok(_) => println!("   remoto: retirada en el registry remoto"),
+                    Err(e) => eprintln!("⚠️  yank local OK, remoto falló: {}", e),
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ {}", e);
+            process::exit(1);
+        }
+    }
+}
+
 /// forja init
 fn cmd_init() {
     cmd_new(&[".".to_string()]);
@@ -683,6 +945,9 @@ fn mostrar_ayuda() {
     println!("  add <paquete> [version]    Añadir dependencia");
     println!("  remove <paquete>           Eliminar dependencia");
     println!("  install                    Instalar todas las dependencias");
+    println!("  publish [--dir <ruta>]     Publicar el paquete en el registry local");
+    println!("  yank <paquete> <version>   Retirar una versión del registry");
+    println!("  registry-serve [--port]    Servidor HTTP del registry remoto (dev)");
     println!("  aprender                   Tutorial interactivo");
     println!("  palabras                   Lista de palabras clave");
     println!("  explicar <palabra>         Explicar un concepto");
@@ -806,8 +1071,8 @@ fn cmd_bench(args: &[String]) {
         return;
     }
 
-    let bytecode = match forja::compilar_pipeline(&source) {
-        Ok(bc) => bc,
+    let bytecode = match forja::compilar_pipeline_completa(&source) {
+        Ok((bc, _contratos)) => bc,
         Err(e) => {
             eprintln!("Error de compilación: {}", e);
             process::exit(1);
@@ -885,26 +1150,37 @@ fn cmd_bench(args: &[String]) {
     }
     #[cfg(not(target_arch = "wasm32"))]
     if todas || vm_selected == "jit" {
-        // JIT bench: medir usando JitOrchestrator
-        let nombre = "Forja JIT ⚡";
+        // (F1-T2) `--vm jit` mapea al motor conservado `jit_tiered`. Como su API es
+        // de bajo nivel (hotness/OSR/deopt, sin ejecutor de bytecode), el benchmark
+        // "JIT" se mide sobre la VM canónica ForjaFast —igual que `--vm fast`—.
+        // TODO(F1-T2): medir una ruta de ejecución real sobre `jit_tiered`.
+        let nombre = "Forja JIT (tiered) ⚡";
         let t0 = std::time::Instant::now();
-        let mut jit = forja::jit_engine::JitOrchestrator::new();
+        let mut jit = forja::vm_fast::ForjaFast::new();
+        if fast_math_flag {
+            jit.set_fast_math(true);
+        }
         let crear = t0.elapsed().as_secs_f64() * 1_000_000_000.0;
 
         let t1 = std::time::Instant::now();
-        let _ = jit.ejecutar(&bytecode);
-        let cold = t1.elapsed().as_secs_f64() * 1_000_000_000.0;
+        jit.cargar_bytecode(bytecode.clone());
+        let cargar = t1.elapsed().as_secs_f64() * 1_000_000_000.0;
 
+        let t2 = std::time::Instant::now();
+        let _ = jit.ejecutar();
+        let cold = t2.elapsed().as_secs_f64() * 1_000_000_000.0;
+
+        jit.reset();
         let t3 = std::time::Instant::now();
         for _ in 0..iters {
-            let _ = jit.ejecutar(&bytecode);
+            let _ = jit.ejecutar();
         }
         let hot = t3.elapsed().as_secs_f64() * 1_000_000_000.0 / iters as f64;
 
         resultados.push(VMMedicion {
             nombre,
             crear_ns: crear,
-            cargar_ns: 0.0,
+            cargar_ns: cargar,
             cold_ns: cold,
             hot_ns: hot,
         });
@@ -961,7 +1237,7 @@ fn cmd_bench(args: &[String]) {
 /// --asm            : compila a ASM nativo y ejecuta (requiere gcc)
 fn cmd_run(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|jit] [--asm] [--native] [--fast-math] [--pgo|--pgo=recoger|--pgo=usar] [--debug|--console|--no-debug] [--contratos|--no-contratos] [--max-archivo <MB>] [--allow-net <hosts>] [--allow-port <puertos>]");
+        eprintln!("Uso: forja run|ejecutar|correr <archivo.fa> [--vm fast|jit] [--asm] [--native] [--fast-math] [--backtrace] [--pgo|--pgo=recoger|--pgo=usar] [--debug|--console|--no-debug] [--contratos|--no-contratos] [--max-archivo <MB>] [--allow-net <hosts>] [--allow-port <puertos>]");
         process::exit(1);
     }
 
@@ -970,6 +1246,7 @@ fn cmd_run(args: &[String]) {
     let mut native_mode = false;
     let mut hot_reload = false;
     let mut fast_math_flag = false;
+    let mut backtrace_flag = false; // F2-T7: mostrar pila de llamadas en errores de runtime
     let mut verificar_contratos = true; // default: contratos activados
     let mut max_archivo = forja::MAX_ARCHIVO_DEFAULT_MB;
     let mut path: &String = &args[0];
@@ -992,6 +1269,7 @@ fn cmd_run(args: &[String]) {
             "--native" => native_mode = true,
             "--hot-reload" | "--hot" => hot_reload = true,
             "--fast-math" => fast_math_flag = true,
+            "--backtrace" | "--pila" => backtrace_flag = true,
             "--pgo" => pgo_modo = Some("recoger".to_string()),
             _ if arg.starts_with("--pgo=") => {
                 pgo_modo = Some(arg.trim_start_matches("--pgo=").to_string());
@@ -1092,6 +1370,33 @@ fn cmd_run(args: &[String]) {
         dir.to_path_buf()
     }
     let root_dir = encontrar_raiz_proyecto(std::path::Path::new(path));
+
+    // F2-T7: con `--backtrace` usamos la variante que preserva la pila de
+    // llamadas. Solo aplica al modo `fast` (la VM canónica); los demás modos
+    // caen al flujo normal.
+    if backtrace_flag && vm_mode == "fast" && pgo_modo.is_none() {
+        let result = forja::ejecutar_con_opciones_desde_backtrace(
+            &source,
+            &root_dir,
+            verificar_contratos,
+            Some(sandbox),
+        );
+        match result {
+            Ok(output) => {
+                for line in output {
+                    println!("{}", line);
+                }
+            }
+            Err((mensaje, backtrace)) => {
+                eprintln!(
+                    "{}",
+                    forja::error::formatear_error_runtime(&mensaje, &backtrace)
+                );
+                process::exit(1);
+            }
+        }
+        return;
+    }
 
     let result = match vm_mode {
         "fast" => {
@@ -1473,64 +1778,324 @@ fn iniciar_watcher_hot_reload(
 }
 
 /// forja fmt|formatear|format <archivo.fa>
-fn cmd_fmt(args: &[String]) {
-    if args.is_empty() {
-        eprintln!("Uso: forja fmt|formatear|format <archivo.fa>");
-        process::exit(1);
+/// Recorre recursivamente un directorio y devuelve todas las rutas `.fa`.
+fn recolectar_archivos_fa(dir: &Path, out: &mut Vec<String>) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_dir() {
+            recolectar_archivos_fa(&path, out);
+        } else if path.extension().map(|ext| ext == "fa").unwrap_or(false) {
+            out.push(path.to_string_lossy().to_string());
+        }
     }
-    let path = &args[0];
+}
+
+/// Formatea un único archivo. Devuelve `true` si el archivo quedó correctamente
+/// formateado (o fue escrito), `false` si necesita formateo en modo `--check`.
+/// Los archivos que no parsean se reportan como advertencia y NO cuentan como
+/// fallo (para no romper el CI por ejemplos con sintaxis obsoleta).
+fn fmt_un_archivo(path: &str, check: bool, out_path: Option<&str>) -> bool {
     let source = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("{}", e);
-            process::exit(1);
+            eprintln!("⚠️  {}: {}", path, e);
+            return true;
         }
     };
     let mut lexer = lexer::Lexer::new(&source);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
-        Err(errors) => {
-            for err in errors {
-                eprintln!("{}", err);
-            }
-            process::exit(1);
+        Err(errores) => {
+            let detalle = errores
+                .first()
+                .map(|e| e.mostrar_compacto())
+                .unwrap_or_default();
+            eprintln!(
+                "⚠️  {}: no se pudo tokenizar (se omite) — {}",
+                path, detalle
+            );
+            return true;
         }
     };
     let mut parser = parser::Parser::new(tokens);
     let programa = match parser.parse() {
         Ok(p) => p,
-        Err(errors) => {
-            for err in errors {
-                eprintln!("{}", err);
-            }
-            process::exit(1);
+        Err(errores) => {
+            let detalle = errores
+                .first()
+                .map(|e| e.mostrar_compacto())
+                .unwrap_or_default();
+            eprintln!("⚠️  {}: no se pudo parsear (se omite) — {}", path, detalle);
+            return true;
         }
     };
     let mut fmt = formatter::Formatter::new();
-    let output = fmt.formatear(&programa);
-    if args.contains(&"--check".to_string()) {
-        // Modo check: verificar que el archivo ya está formateado
+    let comentarios = lexer::extraer_comentarios(&source);
+    let output = fmt.formatear_con_comentarios(&programa, &comentarios);
+
+    if check {
         if output == source {
-            println!("✅ El archivo está correctamente formateado");
+            true
         } else {
-            eprintln!(
-                "❌ El archivo necesita formateo. Ejecutá 'forja fmt {}'",
-                path
-            );
-            process::exit(1);
+            eprintln!("❌ {} necesita formateo", path);
+            false
         }
-    } else if args.len() > 1 && args[1] == "-o" && args.len() > 2 {
-        let out_path = &args[2];
-        match fs::write(out_path, &output) {
-            Ok(_) => println!("✅ Código formateado: {}", out_path),
-            Err(e) => eprintln!("Error escribiendo '{}': {}", out_path, e),
+    } else if let Some(out) = out_path {
+        match fs::write(out, &output) {
+            Ok(_) => {
+                println!("✅ Código formateado: {}", out);
+                true
+            }
+            Err(e) => {
+                eprintln!("Error escribiendo '{}': {}", out, e);
+                false
+            }
         }
     } else {
-        // Sobrescribir el archivo original
         match fs::write(path, &output) {
-            Ok(_) => println!("✅ Código formateado: {}", path),
-            Err(e) => eprintln!("Error escribiendo '{}': {}", path, e),
+            Ok(_) => {
+                println!("✅ Código formateado: {}", path);
+                true
+            }
+            Err(e) => {
+                eprintln!("Error escribiendo '{}': {}", path, e);
+                false
+            }
         }
+    }
+}
+
+fn cmd_fmt(args: &[String]) {
+    if args.is_empty() {
+        eprintln!(
+            "Uso: forja fmt|formatear|format <archivo.fa|directorio> [--check] [-o <salida>]"
+        );
+        process::exit(1);
+    }
+    let path = &args[0];
+    let check = args.contains(&"--check".to_string());
+    let out_path = if args.len() > 1 && args[1] == "-o" && args.len() > 2 {
+        Some(args[2].as_str())
+    } else {
+        None
+    };
+
+    // Modo directorio: recorrer recursivamente todos los .fa
+    if Path::new(path).is_dir() {
+        let mut archivos = Vec::new();
+        recolectar_archivos_fa(Path::new(path), &mut archivos);
+        archivos.sort();
+        if archivos.is_empty() {
+            eprintln!("No se encontraron archivos .fa en '{}'", path);
+            process::exit(1);
+        }
+        let mut fallos = 0usize;
+        for archivo in &archivos {
+            if !fmt_un_archivo(archivo, check, None) {
+                fallos += 1;
+            }
+        }
+        if check {
+            if fallos == 0 {
+                println!(
+                    "✅ {} archivo(s) correctamente formateado(s)",
+                    archivos.len()
+                );
+            } else {
+                eprintln!(
+                    "❌ {} de {} archivo(s) necesitan formateo",
+                    fallos,
+                    archivos.len()
+                );
+                process::exit(1);
+            }
+        } else if fallos > 0 {
+            process::exit(1);
+        }
+        return;
+    }
+
+    // Modo archivo único (retrocompatible)
+    if !fmt_un_archivo(path, check, out_path) {
+        process::exit(1);
+    }
+}
+
+/// forja lint|linter <archivo.fa|directorio> [--deny warnings] [--json]
+///
+/// Ejecuta el linter (F2-T4) sobre uno o varios archivos. Con `--deny warnings`
+/// cualquier advertencia se trata como error (útil para CI). Los archivos que no
+/// parsean se reportan como advertencia y NO cuentan como fallo del linter.
+fn cmd_lint(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Uso: forja lint|linter <archivo.fa|directorio> [--deny warnings] [--json]");
+        process::exit(1);
+    }
+    // Separa flags de la ruta. `--deny warnings` consume dos tokens, así que
+    // se ignoran tanto los flags (`--x`) como el valor que sigue a `--deny`.
+    let deny_warnings =
+        args.iter().any(|a| a == "--deny") && args.iter().any(|a| a == "warnings" || a == "warn");
+    let json_mode = args.iter().any(|a| a == "--json");
+    let mut path: Option<&String> = None;
+    let mut saltar_siguiente = false;
+    for a in args {
+        if saltar_siguiente {
+            saltar_siguiente = false;
+            continue;
+        }
+        if a == "--deny" {
+            saltar_siguiente = true;
+            continue;
+        }
+        if a.starts_with('-') {
+            continue;
+        }
+        path = Some(a);
+        break;
+    }
+    let path = match path {
+        Some(p) => p,
+        None => {
+            eprintln!("Uso: forja lint|linter <archivo.fa|directorio> [--deny warnings] [--json]");
+            process::exit(1);
+        }
+    };
+
+    // Carga la configuración del linter desde forja.json si existe.
+    let config = cargar_config_lint();
+
+    // Modo directorio: recorrer recursivamente todos los .fa
+    if Path::new(path).is_dir() {
+        let mut archivos = Vec::new();
+        recolectar_archivos_fa(Path::new(path), &mut archivos);
+        archivos.sort();
+        if archivos.is_empty() {
+            eprintln!("No se encontraron archivos .fa en '{}'", path);
+            process::exit(1);
+        }
+        let mut total_diags = 0usize;
+        let mut total_errores = 0usize;
+        for archivo in &archivos {
+            let (diags, errores) = lint_un_archivo(archivo, &config, deny_warnings, json_mode);
+            total_diags += diags;
+            total_errores += errores;
+        }
+        if total_diags == 0 {
+            println!(
+                "✅ {} archivo(s) sin advertencias del linter",
+                archivos.len()
+            );
+        } else {
+            println!(
+                "🔎 {} diagnóstico(s) en {} archivo(s)",
+                total_diags,
+                archivos.len()
+            );
+        }
+        if total_errores > 0 {
+            process::exit(1);
+        }
+        return;
+    }
+
+    // Modo archivo único
+    let (_, errores) = lint_un_archivo(path, &config, deny_warnings, json_mode);
+    if errores > 0 {
+        process::exit(1);
+    }
+}
+
+/// Carga la configuración del linter desde `forja.json` (clave `lint`).
+/// Si no existe el archivo o no es válido, usa la configuración por defecto.
+fn cargar_config_lint() -> linter::ConfigLint {
+    let candidatos = ["forja.json", "forja.config.json"];
+    for c in candidatos {
+        if Path::new(c).exists() {
+            if let Ok(texto) = fs::read_to_string(c) {
+                if let Ok(valor) = serde_json::from_str::<serde_json::Value>(&texto) {
+                    return linter::ConfigLint::desde_json(&valor);
+                }
+            }
+        }
+    }
+    linter::ConfigLint::default()
+}
+
+/// Ejecuta el linter sobre un archivo. Devuelve `(nº diagnósticos, nº errores)`.
+/// Los errores cuentan solo si la severidad es `Error` o si `deny_warnings` está
+/// activo y hay al menos una advertencia.
+fn lint_un_archivo(
+    path: &str,
+    config: &linter::ConfigLint,
+    deny_warnings: bool,
+    json_mode: bool,
+) -> (usize, usize) {
+    let source = match forja::leer_archivo_con_limite(path, forja::MAX_ARCHIVO_DEFAULT_MB) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("⚠️  {}: {}", path, e);
+            return (0, 0);
+        }
+    };
+    let diags = match linter::lint_source(&source, config.clone()) {
+        Ok(d) => d,
+        Err(errores) => {
+            let detalle = errores
+                .first()
+                .map(|e| e.mostrar_compacto())
+                .unwrap_or_default();
+            eprintln!("⚠️  {}: no se pudo analizar (se omite) — {}", path, detalle);
+            return (0, 0);
+        }
+    };
+
+    if diags.is_empty() {
+        return (0, 0);
+    }
+
+    let mut errores = 0usize;
+    for d in &diags {
+        let es_error = d.severidad == linter::Severidad::Error
+            || (deny_warnings && d.severidad == linter::Severidad::Warn);
+        if es_error {
+            errores += 1;
+        }
+        if json_mode {
+            let err = d.a_error_forja();
+            println!("{}", err.to_json());
+        } else {
+            let etiqueta = if es_error { "error" } else { "warning" };
+            let icono = if es_error { "❌" } else { "⚠️ " };
+            println!(
+                "{} {}[L{:04}] {}:{} — {}",
+                icono,
+                etiqueta,
+                codigo_lint(d.regla),
+                path,
+                d.linea,
+                d.mensaje
+            );
+            if !d.sugerencia.is_empty() {
+                println!("     💡 {}", d.sugerencia);
+            }
+        }
+    }
+    (diags.len(), errores)
+}
+
+/// Código numérico de una regla del linter (para mostrar `Lxxxx`).
+fn codigo_lint(regla: linter::Regla) -> u32 {
+    match regla {
+        linter::Regla::VariableSinUsar => 1,
+        linter::Regla::FuncionSinUsar => 2,
+        linter::Regla::Complejidad => 3,
+        linter::Regla::PanicAccidental => 4,
+        linter::Regla::ComparacionConstante => 5,
+        linter::Regla::DivisionPorCero => 6,
     }
 }
 
@@ -1744,7 +2309,12 @@ fn cmd_build(args: &[String]) {
     // Detectar si usa GUI (importar gui)
     let usa_gui = std::fs::read_to_string(&input)
         .ok()
-        .map(|s| s.contains("importar gui") || s.contains("importar \"gui\"") || s.contains("importar std/gui") || s.contains("importar \"std/gui\""))
+        .map(|s| {
+            s.contains("importar gui")
+                || s.contains("importar \"gui\"")
+                || s.contains("importar std/gui")
+                || s.contains("importar \"std/gui\"")
+        })
         .unwrap_or(false);
 
     if usa_gui {
