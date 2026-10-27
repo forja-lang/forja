@@ -78,8 +78,8 @@ build() {
 build test --locked --test asm_targets --no-run >/dev/null
 build test --locked --lib compiler_asm --no-run >/dev/null
 
-LIBEXE="$(ls "$TARGET_DIR"/debug/deps/forja-*"$EXE_SUFFIX" 2>/dev/null | head -1 || true)"
-ASMEXE="$(ls "$TARGET_DIR"/debug/deps/asm_targets-*"$EXE_SUFFIX" 2>/dev/null | head -1 || true)"
+LIBEXE="$(ls "$TARGET_DIR"/debug/deps/forja-*"$EXE_SUFFIX" 2>/dev/null | grep -vE '\.(d|rmeta|o)$' | head -1 || true)"
+ASMEXE="$(ls "$TARGET_DIR"/debug/deps/asm_targets-*"$EXE_SUFFIX" 2>/dev/null | grep -vE '\.(d|rmeta|o)$' | head -1 || true)"
 if [ -z "$LIBEXE" ] || [ -z "$ASMEXE" ]; then
     echo "❌ No se encontraron los binarios de test instrumentados" >&2
     exit 2
