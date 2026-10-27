@@ -1,0 +1,175 @@
+# Test de async/await para Forja
+# Ejecutar: forja run tests/test_async.fa
+#
+# NOTA: Usa asegurar() de std/prueba y .unir() en lugar de await
+# porque la VM actual implementa await como azúcar sintáctico
+# sobre .unir().
+
+importar "std/prueba"
+
+# ============================================================
+# Test 1: función async básica con retorno de entero
+# ============================================================
+escribir("--- Test 1: función async básica (entero) ---")
+
+funcion asincrona suma(a: Entero, b: Entero) -> Entero {
+    retornar a + b
+}
+
+variable future1 = suma(2, 3)
+variable resultado1 = future1.unir()
+asegurar(resultado1 == 5)
+escribir("  ✓ suma_async(2, 3) = " + resultado1)
+
+# ============================================================
+# Test 2: función async con string
+# ============================================================
+escribir("--- Test 2: función async con string ---")
+
+funcion asincrona saludar(nombre: Texto) -> Texto {
+    retornar "Hola, " + nombre
+}
+
+variable future2 = saludar("Mundo")
+variable resultado2 = future2.unir()
+asegurar(resultado2 == "Hola, Mundo")
+escribir("  ✓ saludar_async('Mundo') = " + resultado2)
+
+# ============================================================
+# Test 3: múltiples awaits secuenciales
+# ============================================================
+escribir("--- Test 3: múltiples awaits ---")
+
+funcion asincrona multi() -> Entero {
+    variable a = suma(1, 2).unir()
+    variable b = suma(3, 4).unir()
+    retornar a + b
+}
+
+variable future3 = multi()
+variable resultado3 = future3.unir()
+asegurar(resultado3 == 10)
+escribir("  ✓ multi() = " + resultado3)
+
+# ============================================================
+# Test 4: función async sin parámetros
+# ============================================================
+escribir("--- Test 4: función async sin parámetros ---")
+
+funcion asincrona cuarentaydos() -> Entero {
+    retornar 42
+}
+
+variable resultado4 = cuarentaydos().unir()
+asegurar(resultado4 == 42)
+escribir("  ✓ cuarentaydos() = " + resultado4)
+
+# ============================================================
+# Test 5: hilo con retorno de entero
+# ============================================================
+escribir("--- Test 5: hilo con retorno ---")
+
+variable future5 = hilo {
+    variable total = 0
+    variable i = 0
+    mientras (i < 5) {
+        total = total + i
+        i = i + 1
+    }
+    retornar total
+}
+
+variable resultado5 = future5.unir()
+asegurar(resultado5 == 10)
+escribir("  ✓ hilo suma 0..4 = " + resultado5)
+
+# ============================================================
+# Test 6: canal básico
+# ============================================================
+escribir("--- Test 6: canal básico ---")
+
+variable e6, r6 = canal()
+
+hilo {
+    e6.enviar(42)
+}
+
+variable resultado6 = r6.recibir()
+asegurar(resultado6 == 42)
+escribir("  ✓ canal básico = " + resultado6)
+
+# ============================================================
+# Test 7: canal con string
+# ============================================================
+escribir("--- Test 7: canal con string ---")
+
+variable e7, r7 = canal()
+
+hilo {
+    e7.enviar("Hola desde canal")
+}
+
+variable resultado7 = r7.recibir()
+asegurar(resultado7 == "Hola desde canal")
+escribir("  ✓ canal string = " + resultado7)
+
+# ============================================================
+# Test 8: múltiples hilos con canales
+# ============================================================
+escribir("--- Test 8: múltiples hilos ---")
+
+variable e8, r8 = canal()
+variable e9, r9 = canal()
+
+hilo {
+    e8.enviar(10)
+}
+
+hilo {
+    e9.enviar(20)
+}
+
+variable r8_val = r8.recibir()
+variable r9_val = r9.recibir()
+asegurar(r8_val == 10)
+asegurar(r9_val == 20)
+escribir("  ✓ múltiples hilos: " + r8_val + ", " + r9_val)
+
+# ============================================================
+# Test 9: función async con múltiples parámetros
+# ============================================================
+escribir("--- Test 9: función async multi-param ---")
+
+funcion asincrona calculo_complejo(a: Entero, b: Entero, c: Entero) -> Entero {
+    retornar a * b + c
+}
+
+variable resultado9 = calculo_complejo(3, 4, 5).unir()
+asegurar(resultado9 == 17)  # 3*4+5 = 17
+escribir("  ✓ calculo_complejo(3,4,5) = " + resultado9)
+
+# ============================================================
+# Test 10: función regular dentro de async
+# ============================================================
+escribir("--- Test 10: función regular dentro de async ---")
+
+funcion cuadrado(x: Entero) -> Entero {
+    retornar x * x
+}
+
+funcion asincrona procesar(n: Entero) -> Entero {
+    variable r = cuadrado(n)
+    retornar r
+}
+
+variable resultado10 = procesar(7).unir()
+asegurar(resultado10 == 49)
+escribir("  ✓ procesar(7) = " + resultado10)
+
+# ============================================================
+# Resumen
+# ============================================================
+escribir("")
+escribir("═══════════════════════════════════════")
+escribir("  TODOS LOS TESTS ASYNC PASARON ✓")
+escribir("═══════════════════════════════════════")
