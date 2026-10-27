@@ -11,15 +11,9 @@ Esta es la **única** licencia declarada en el repositorio:
 - [`LICENSE.md`](LICENSE.md) contiene el texto completo de la GPLv3.
 - [`README.md`](README.md:279) resume la licencia.
 
-> **Decisión de la FASE 0 (F0-T5).** Existía una contradicción: documentación
-> del sitio (`docs/src/pages/roadmap.astro`) describía el proyecto como
-> «código abierto (*source-available*)», término que **no** es una licencia
-> concreta y choca con la GPL. Siguiendo el criterio **conservador**, se optó
-> por **mantener GPL-3.0-or-later** como licencia única y **eliminar toda
-> mención a «source-available»**. Si en el futuro el proyecto decide migrar a
-> una licencia permisiva (p. ej. MIT/Apache-2.0) o a un esquema dual, el cambio
-> debe aplicarse **de forma conjunta** en `Cargo.toml`, `README.md`,
-> `LICENSE.md`, la documentación del sitio y este documento.
+> Cualquier cambio de licencia debe aplicarse de forma conjunta en
+> `Cargo.toml`, `README.md`, `LICENSE.md`, la documentación del sitio y este
+> documento.
 
 ### Licencias de los programas escritos en Forja
 
