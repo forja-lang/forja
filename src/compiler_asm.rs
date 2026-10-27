@@ -3253,19 +3253,45 @@ impl CompilerAsm {
         self.gen_write_newline();
     }
 
+    /// ¿La expresión produce texto? (F5-T6: `escribir` debe distinguir
+    /// concatenación de suma numérica).
+    fn expr_es_texto(&self, expr: &Expresion) -> bool {
+        match expr {
+            Expresion::LiteralTexto(_) => true,
+            Expresion::Identificador { nombre, .. } => self
+                .variables
+                .get(nombre)
+                .map(|v| matches!(v.tipo, TipoAsm::Texto))
+                .unwrap_or(false),
+            Expresion::Binaria {
+                izquierda,
+                operador: Operador::Suma,
+                derecha,
+            } => self.expr_es_texto(izquierda) || self.expr_es_texto(derecha),
+            Expresion::Grupo(e) => self.expr_es_texto(e),
+            _ => false,
+        }
+    }
+
     fn compilar_escribir_expr(&mut self, expr: &Expresion) {
         let a = self.arch;
         let ret = a.ret_reg();
 
         match expr {
-            // Concatenación de strings: recursivo
+            // Concatenación de strings: recursivo. Si ambos operandos son
+            // numéricos, se evalúa la suma y se imprime el resultado.
             Expresion::Binaria {
                 izquierda,
                 operador: Operador::Suma,
                 derecha,
             } => {
-                self.compilar_escribir_expr(izquierda);
-                self.compilar_escribir_expr(derecha);
+                if self.expr_es_texto(izquierda) || self.expr_es_texto(derecha) {
+                    self.compilar_escribir_expr(izquierda);
+                    self.compilar_escribir_expr(derecha);
+                } else {
+                    self.compilar_expresion_asm(expr);
+                    self.gen_write_int_value(ret);
+                }
             }
 
             // ── LiteralTexto: syscall write directo con longitud en compilación ──
