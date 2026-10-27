@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! # SSA Construction
 //!
 //! Construye SSA a partir de un IR pre-SSA:
