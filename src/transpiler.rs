@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::ast::*;
 use crate::error::{ErrorForja, ErrorTipo};
 use std::collections::HashMap;
@@ -242,60 +241,17 @@ impl Transpiler {
         }
     }
 
-    /// Genera el valor inicial para una variable global
-    fn valor_inicial_global(&self, expr: Option<&Expresion>, tipo_rust: &str) -> String {
-        match expr {
-            Some(e) => match e {
-                Expresion::LiteralNumero(n) => n.to_string(),
-                Expresion::LiteralDecimal(f) => f.to_string(),
-                Expresion::LiteralTexto(s) => format!("String::from(\"{}\")", s),
-                Expresion::LiteralBooleano(b) => {
-                    if *b {
-                        "true".to_string()
-                    } else {
-                        "false".to_string()
-                    }
-                }
-                _ => match tipo_rust {
-                    "i64" => "0".to_string(),
-                    "f64" => "0.0".to_string(),
-                    "bool" => "false".to_string(),
-                    "String" => "String::new()".to_string(),
-                    _ => "serde_json::Value::Null".to_string(),
-                },
-            },
-            None => match tipo_rust {
-                "i64" => "0".to_string(),
-                "f64" => "0.0".to_string(),
-                "bool" => "false".to_string(),
-                "String" => "String::new()".to_string(),
-                _ => "serde_json::Value::Null".to_string(),
-            },
-        }
-    }
-
     /// Verifica si un nombre es una variable global
     fn es_variable_global(&self, nombre: &str) -> bool {
         self.variables_globales.contains_key(nombre)
     }
 
-    /// Genera el código de acceso thread_local para una variable global
-    fn acceso_global(&self, nombre: &str) -> String {
-        format!("GLOBALS_{}.with(|g| g.borrow().clone())", nombre)
-    }
-
-    /// Genera el código de asignación thread_local para una variable global
-    fn asignacion_global(&self, nombre: &str, valor: &str) -> String {
-        format!("GLOBALS_{}.with(|g| *g.borrow_mut() = {});", nombre, valor)
-    }
-
     /// Indica si el programa usa el paquete GUI
     pub fn usa_gui(&self) -> bool {
         self.forzar_gui
-            || self
-                .declaraciones_globales
-                .iter()
-                .any(|d| matches!(d, Declaracion::Importar(ruta) if ruta == "gui" || ruta == "std/gui"))
+            || self.declaraciones_globales.iter().any(
+                |d| matches!(d, Declaracion::Importar(ruta) if ruta == "gui" || ruta == "std/gui"),
+            )
     }
 
     /// Exporta un programa Forja a código Rust (opcional, Forja ya ejecuta directo con VM)
@@ -539,59 +495,13 @@ impl Transpiler {
         self.funciones_externas.contains(&nombre.to_string())
     }
 
-    /// Recolecta expresiones Layout recorriendo el AST recursivamente.
-    /// Similar a `recolectar_widgets` pero genera `Layout::xxx` en lugar de widgets Xilem.
-    fn recolectar_layouts(
-        &mut self,
-        declaraciones: &[Declaracion],
-        layouts: &mut Vec<Vec<String>>,
-    ) {
-        for decl in declaraciones {
-            match decl {
-                Declaracion::LlamadaFuncion { nombre, argumentos } => {
-                    let expr = Expresion::LlamadaFuncion {
-                        nombre: nombre.clone(),
-                        argumentos: argumentos.clone(),
-                    };
-                    let layout_code = self.generar_layout_code(&expr);
-                    layouts.push(vec![layout_code]);
-                }
-                Declaracion::Expresion(expr) => {
-                    let layout_code = self.generar_layout_code(expr);
-                    layouts.push(vec![layout_code]);
-                }
-                Declaracion::Funcion { cuerpo, .. } => {
-                    self.recolectar_layouts(cuerpo, layouts);
-                }
-                Declaracion::Si {
-                    bloque_verdadero,
-                    bloque_falso,
-                    ..
-                } => {
-                    self.recolectar_layouts(bloque_verdadero, layouts);
-                    if let Some(bf) = bloque_falso {
-                        self.recolectar_layouts(bf, layouts);
-                    }
-                }
-                Declaracion::Mientras { bloque, .. } => {
-                    self.recolectar_layouts(bloque, layouts);
-                }
-                Declaracion::Cuando { cuerpo, .. } => {
-                    self.recolectar_layouts(cuerpo, layouts);
-                }
-                Declaracion::Para { bloque, .. } => {
-                    self.recolectar_layouts(bloque, layouts);
-                }
-                Declaracion::Repetir { bloque, .. } => {
-                    self.recolectar_layouts(bloque, layouts);
-                }
-                _ => {}
-            }
-        }
-    }
-
     /// Genera código Rust que construye un valor `Layout::xxx` directamente,
     /// delegando al runtime de forja_gui_rt para la conversión a widgets reales.
+    ///
+    /// API intencional: se conectará al pipeline de generación de AST GUI.
+    /// Actualmente solo se invoca recursivamente; se conserva para la
+    /// integración con el runtime de widgets.
+    #[allow(dead_code)]
     fn generar_layout_code(&mut self, expr: &Expresion) -> String {
         match expr {
             Expresion::LlamadaFuncion { nombre, argumentos } => {
@@ -1026,22 +936,25 @@ impl Transpiler {
         }
     }
 
-    /// Extrae un valor f64 de una expresión literal
+    /// Extrae un valor f64 de una expresión literal (número o decimal).
+    /// Devuelve 0.0 si la expresión no es un literal numérico.
+    #[allow(dead_code)]
     fn extraer_f64_valor(expr: &Expresion) -> f64 {
         match expr {
             Expresion::LiteralNumero(n) => *n as f64,
             Expresion::LiteralDecimal(f) => *f,
-            Expresion::LiteralExacto(coeff, scale) => *coeff as f64 * 10_f64.powi(-(*scale as i32)),
             _ => 0.0,
         }
     }
 
-    /// Extrae un valor entero (u8) de una expresión literal
+    /// Extrae un valor entero (u8) de una expresión literal numérica.
+    /// Devuelve 0 si la expresión no es un literal numérico.
+    #[allow(dead_code)]
     fn extraer_entero_valor(expr: &Expresion) -> u8 {
         match expr {
             Expresion::LiteralNumero(n) => *n as u8,
             Expresion::LiteralDecimal(f) => *f as u8,
-            _ => 1,
+            _ => 0,
         }
     }
 
