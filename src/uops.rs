@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::bytecode::Opcode;
 use std::sync::Arc;
 
