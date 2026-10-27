@@ -1,0 +1,21 @@
+{
+  "metadata": {
+    "version": "0.9.2",
+    "os": "windows",
+    "arch": "x86_64",
+    "reps": 15,
+    "warmup": 3,
+    "generated": "2026-10-05T04:14:53Z",
+    "note": "Baseline de rendimiento F4-T2. Los ratios se normalizan contra la calibración; regenerar en el runner de referencia."
+  },
+  "threshold_pct": 5.0,
+  "thresholds_pct": {
+    "compilar_fib": 20.0
+  },
+  "metrics": {
+    "compilar_fib": 14.884520884520885,
+    "vm_fib": 736.665071770335,
+    "vm_bucle": 792.3708133971292,
+    "vm_anidado": 754.436754176611
+  }
+}
