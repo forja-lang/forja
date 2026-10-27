@@ -1,0 +1,16 @@
+[package]
+name = "forja-syntax"
+version = "0.9.2"
+edition = "2021"
+description = "Frontend de Forja (fa): tokens, AST, lexer, parser y diagnósticos reutilizables"
+authors = ["forja-lang"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/forja-lang/forja"
+homepage = "https://forja-lang.github.io/forja/"
+documentation = "https://docs.rs/forja-syntax"
+readme = "README.md"
+keywords = ["forja", "compiler", "lexer", "parser", "ast"]
+categories = ["compilers", "development-tools"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
