@@ -1,0 +1,16 @@
+[package]
+name = "forja-types"
+version = "0.9.2"
+edition = "2021"
+description = "Análisis semántico y sistema de tipos de Forja (fa), reutilizable sin backend"
+authors = ["forja-lang"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/forja-lang/forja"
+homepage = "https://forja-lang.github.io/forja/"
+documentation = "https://docs.rs/forja-types"
+readme = "README.md"
+keywords = ["forja", "compiler", "type-checker", "semantics"]
+categories = ["compilers", "development-tools"]
+
+[dependencies]
+forja-syntax = { version = "0.9.2", path = "../forja-syntax" }
