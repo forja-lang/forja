@@ -3,12 +3,13 @@ plans/
 fib_rs/
 target/
 test_inline_rs/
-tests/
 .vscode/
 .cargo/
 .roo/
 .forja_gui_cache/
 .kilo/
+.opencode/
+opencode.json
 scratch/
 dist/
 temp_gui_project/
@@ -27,6 +28,8 @@ tmp/
 
 # ── Scripts ──
 *.ps1
+# F3-T7: el instalador de Windows del release debe versionarse.
+!scripts/install.ps1
 fix_code_entities.py
 fix_debug.py
 fix_astro.py
@@ -46,20 +49,26 @@ forja_history.txt
 test_resultados.txt
 SECURITY_TESTING.md
 plans/
+ANALISIS_MEJORAS.md
+COMPATIBILITY_BREAKING_CHANGES.md
 
 
-# ── Wildcards peligrosos ──
-*test*
-*tests*
+# ── Patrones específicos (reemplazan los wildcards peligrosos *test*/*tests*) ──
+# F0-T1: NO usar *test*/*tests*; ignoran archivos legítimos (p. ej. latest.fa, contest.rs).
+# Los directorios de tests ya están cubiertos por `tests/` más arriba.
+*.tmp
 
 # ── Null (generados por el compilador) ──
 $null
 return$null
 
-# ── Markdown: solo raíz o README ──
-*.md
-!/*.md
-!README.md
+# ── F4-T2: baseline de rendimiento generada en el runner de CI ──
+benches/baseline-ci.json
+
+# ── Markdown ──
+# F0-T1: NO ignorar *.md globalmente (se perdía documentación en subcarpetas).
+# Solo se excluyen artefactos generados explícitos:
+dist/*.md
 
 # ── Licencia ──
 !/LICENSE
