@@ -5,6 +5,9 @@ edition = "2021"
 description = "Forja (fa) - Lenguaje de programación educativo en español"
 authors = ["forja-lang"]
 license = "GPL-3.0-or-later"
+# F4-T2: no auto-descubrir benches; todos los targets se declaran explícitamente
+# (15 en el submódulo `benchmarks/` + el de regresión en `benches/`).
+autobenches = false
 
 [features]
 default = []
@@ -19,6 +22,9 @@ all = ["lsp", "dap", "gui", "crossbeam", "h2-tls", "parallel"]
 [dependencies]
 # Sin dependencias externas para el núcleo - solo std de Rust
 # base64, sha1, sha2: implementaciones manuales en hash.rs y base64.rs
+# F3-T8: frontend y análisis semántico extraídos a crates reutilizables.
+forja-syntax = { path = "crates/forja-syntax" }
+forja-types = { path = "crates/forja-types" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 crossbeam = { version = "0.8", optional = true }
@@ -107,11 +113,22 @@ name = "bench-criterion"
 path = "benchmarks/bench_criterion.rs"
 harness = false
 
+# F4-T2: benchmark de regresión de rendimiento (dentro del repo padre, no del
+# submódulo `benchmarks/`). Salida JSON estable comparada contra baseline.
+[[bench]]
+name = "perf-regresion"
+path = "benches/perf_regresion.rs"
+harness = false
+
 [target.'cfg(not(target_arch = "wasm32"))'.build-dependencies]
 winresource = "0.1"
 
 [workspace]
 members = [
+    "crates/forja-syntax",
+    "crates/forja-types",
+    "crates/forja-theme",
+    "crates/forja-gui-core",
     "crates/forja-gui-rt",
     "crates/forja-wasm",
     "crates/forja-wasm-gui",
@@ -121,13 +138,33 @@ members = [
 exclude = [".forja_gui_cache", "fuzz"]
 
 [patch.crates-io]
-xilem = { git = "https://github.com/forja-lang/patches.git", branch = "xilem" }
-masonry_winit = { git = "https://github.com/forja-lang/patches.git", branch = "masonry_winit" }
-masonry = { git = "https://github.com/forja-lang/patches.git", branch = "masonry" }
+# F6-T3: commits fijados (no ramas mutables). Actualizar juntos con Cargo.lock
+# cuando se migre a una versión oficial de xilem/masonry.
+xilem = { git = "https://github.com/forja-lang/patches.git", rev = "21c0cca98d0333a99e3db715bce5ce874ddae4db" }
+masonry_winit = { git = "https://github.com/forja-lang/patches.git", rev = "3ec102fcef87236a3544c420a7e2e21d439fa088" }
+masonry = { git = "https://github.com/forja-lang/patches.git", rev = "bc7d0e803040025145bb8e911cf1c7404df85613" }
 
+# Perfil release: prioriza VELOCIDAD (compilador/VM).
+# Nota (F0-T4): se retira `panic = "abort"` para preservar backtraces en
+# español y permitir que los tests capturen panics (unwinding). El binario
+# mínimo de distribución se obtiene con el perfil `dist` (abajo).
 [profile.release]
-opt-level = "z"
+opt-level = 3
 lto = "fat"
 codegen-units = 1
+
+# Perfil dist: prioriza TAMAÑO (binarios mínimos, sin símbolos).
+# Usar con `cargo build --profile dist` (ver scripts/build-aar.sh).
+[profile.dist]
+inherits = "release"
+opt-level = "z"
 panic = "abort"
 strip = "symbols"
+
+# F4-T2: perfil de benchmarks. Hereda la optimización de release pero con LTO
+# más ligera y más unidades de código para que `cargo bench` (regresión de
+# rendimiento en CI) compile en tiempos razonables.
+[profile.bench]
+inherits = "release"
+lto = "thin"
+codegen-units = 4
