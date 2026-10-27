@@ -7,7 +7,7 @@
 
 </div>
 
-Forja es un lenguaje de programación educativo moderno con sintaxis y palabras clave completamente en español. Está diseñado para enseñar conceptos de sistemas, teoría de lenguajes de programación y diseño por contrato sin la complejidad sintáctica de Rust. Incluye un compilador nativo, un compilador al vuelo (JIT) para arquitecturas x86-64, múltiples máquinas virtuales y soporte de interfaces gráficas.
+Forja es un lenguaje de programación educativo moderno con sintaxis y palabras clave completamente en español. Está diseñado para enseñar conceptos de sistemas, teoría de lenguajes de programación y diseño por contrato sin la complejidad sintáctica de Rust. Incluye un compilador nativo (AOT y ensamblador x86-64/ARM64), un compilador al vuelo (JIT *tiered*) para x86-64, un intérprete de bytecode (*ForjaFast*), transpilación a Rust y a WASM, y soporte de interfaces gráficas nativas.
 
 📖 **[Leé la documentación oficial aquí](https://forja-lang.github.io/docs)**
 
@@ -32,6 +32,13 @@ graph TD
     G -->|Ensamblador Nativo| K["Código Ensamblador (.s + GCC)"]
     G -->|Representación Intermedia| L["LLVM IR (.ll + LLC)"]
 ```
+
+> **Pipeline canónico:** la ruta de bytecode tiene un único punto de entrada documentado,
+> `compilar_pipeline_completa()` (con imports: `compilar_pipeline_completa_desde()`), que delega
+> en el núcleo `compilar_pipeline_nucleo()`. Los nombres antiguos `compilar_con_ir()` y
+> `compilar_pipeline()` quedan como aliases `#[deprecated]` que sólo delegan. La ruta de
+> transpilación a Rust es independiente y no genera bytecode: `transpilar_a_rust()` (antes
+> `compilar()`) y `transpilar_a_rust_con_ast()` (antes `compilar_con_ast()`).
 
 ---
 
@@ -71,19 +78,17 @@ para (variable i = 0; i < 5; i = i + 1) {
 ```
 
 ### 3. Interpolación de Cadenas
-Forja soporta interpolación directa con `{expresion}` y también con `${expresion}`:
+Forja interpola expresiones con `${...}`. Las llaves sueltas son caracteres literales:
 ```forja
 variable nombre = "Mundo"
 variable edad = 25
 
-// Interpolación con llaves simples
-escribir("Hola {nombre}, tenés {edad} años")
-
-// Interpolación con dólar-llave (también soportado)
+// Interpolación con dólar-llave
+escribir("Hola ${nombre}, tenés ${edad} años")
 escribir("Resultado: ${2 + 3}")
 
-// Escape de llaves literales
-escribir("JSON: \{\"clave\": \"valor\"\}")
+// Las llaves sueltas se imprimen literalmente (útil para JSON/plantillas)
+escribir("JSON: {\"clave\": \"valor\"}")
 ```
 
 ### 4. Acceso a Mapas con Sintaxis de Punto
@@ -165,7 +170,7 @@ PS C:\forja> cargo build --release --features all
 | Comando en Consola | Comando Alternativo | Propósito |
 | :--- | :--- | :--- |
 | **`ejecutar <archivo.fa>`** | `correr` | Compila y ejecuta el script en la máquina virtual *ForjaFast* (por defecto). |
-| **`compilar <archivo.fa>`** | `construir` | Genera un ejecutable autónomo nativo. Si usa `importar gui`, usa `forja-rt-gui` (VM + Xilem/Vello). Sin transpilación a Rust. |
+| **`compilar <archivo.fa>`** | `construir` | Genera un ejecutable autónomo nativo. Si usa `importar gui`, usa `forja-rt-gui` (VM + runtime gráfico Xilem). Sin transpilación a Rust. |
 | **`interactivo`** | `repl` | Inicia la consola de lectura e interpretación línea por línea. |
 | **`probar [archivo.fa]`** | `test` | Corre los módulos de prueba unitaria marcados con `@test`. |
 | **`medir <archivo.fa>`** | `benchmark` | Analiza el rendimiento del código (mediciones en frío y en caliente). |
@@ -193,18 +198,17 @@ Aquí se ilustra cómo interactuar con el compilador en un entorno de comandos t
 # Ejecución estándar (usa la máquina virtual optimizada ForjaFast por defecto)
 PS C:\forja> forja ejecutar ejemplos/01_hola.fa
 
-# Seleccionar la máquina virtual original
-PS C:\forja> forja ejecutar ejemplos/01_hola.fa --vm vm
-
-# Seleccionar el compilador al vuelo (JIT) nativo
+# Ejecutar con el compilador al vuelo (JIT tiered) nativo
 PS C:\forja> forja ejecutar ejemplos/01_hola.fa --vm jit
+
+# (La VM original v1 fue removida en 0.9.0: solo quedan ForjaFast y el JIT.)
 ```
 
-#### 2. Compilar a un Ejecutable Autónomo Ligero (~350 KB)
+#### 2. Compilar a un Ejecutable Autónomo Ligero
 ```powershell
 # Compilar script de consola
 PS C:\forja> forja compilar ejemplos/05_condicionales.fa -o condicionales.exe
-✅ Ejecutable generado: condicionales.exe (277 bytes de código de bytes)
+✅ Ejecutable generado: condicionales.exe
 
 # Ejecutar de forma directa e instantánea sin dependencias
 PS C:\forja> .\condicionales.exe
@@ -214,7 +218,7 @@ Buen trabajo!
 
 #### 3. Realizar una Medición de Rendimiento (Benchmark)
 ```powershell
-# Comparar el script corriendo en todas las configuraciones de máquinas virtuales
+# Comparar el script en los dos motores (ForjaFast y JIT)
 PS C:\forja> forja medir ejemplos/40_fibonacci.fa --vm todas --iters 100
 ```
 
@@ -232,23 +236,24 @@ PS C:\forja> forja interactivo
 
 ---
 
-## ⚡ Motores de Ejecución y Rendimiento
+## ⚡ Salidas de Compilación y Motores de Ejecución
 
-Forja incluye múltiples opciones de interpretación y generación de código:
+Forja genera distintos destinos a partir del mismo programa. Los dos **motores de ejecución** son el intérprete *ForjaFast* y el JIT *tiered*; el resto son backends de traducción:
 
-| Motor | Tipo de Ejecución | Rendimiento Relativo |
+| Salida / Motor | Tipo | Notas |
 | :--- | :--- | :--- |
-| **Representación LLVM** | Compilación estática a través de LLC (`-O2`) | **500x** (Velocidad nativa óptima) |
-| **Ensamblador Nativo** | Generación de código ensamblador más GCC (`-O2`) | **437x** (Velocidad nativa directa) |
-| **Compilador al Vuelo (JIT)** | Traducción dinámica a código máquina x86-64 | **62x** (Ejecución híbrida rápida) |
-| **Máquina Virtual ForjaFast** | Intérprete optimizado con *NaN Tagging* de 8 bytes | **4.8x** (Ejecución por defecto) |
-| **Máquina Virtual Original** | Intérprete estándar basado en pila e instrucciones | **1x** (Línea de base) |
+| **Transpilado a Rust** | Forja → `.rs` + `rustc` | Rendimiento nativo (mismo backend LLVM de Rust) |
+| **Ensamblador Nativo** | `.s` x86-64/ARM64 + `gcc -O2` | Multi-arquitectura |
+| **Backend LLVM** | LLVM IR + `llc` | 🚧 En desarrollo |
+| **JIT tiered** | Código máquina x86-64 en caliente | Con fallback seguro a la VM |
+| **ForjaFast (VM)** | Intérprete de bytecode | Motor por defecto (NaN tagging + GC) |
+| **AOT (`forja build`)** | Ejecutable con bytecode incrustado | Autónomo, sin dependencias |
 
 ---
 
 ## 🎨 Desarrollo Gráfico (GUI)
 
-Forja permite crear complejas aplicaciones de escritorio reactivas e interactivas gracias a la librería de interfaces gráficas (**Xilem + Vello**). Las interfaces siguen la guía de estilo de **Material Design 3 (Material You)**, con soporte automático para modo oscuro y claro según el sistema operativo.
+Forja permite crear complejas aplicaciones de escritorio reactivas e interactivas gracias a la librería de interfaces gráficas (**Xilem**, sobre Masonry/Winit). Las interfaces siguen la guía de estilo de **Material Design 3 (Material You)**, con soporte automático para modo oscuro y claro según el sistema operativo.
 
 Al compilar un programa que usa GUI (`importar gui`), Forja genera un ejecutable autónomo nativo usando el stub `forja-rt-gui` (VM + runtime gráfico), sin necesidad de transpilar a Rust ni tener Cargo instalado.
 
@@ -273,6 +278,20 @@ $ bash scripts/build-android.sh
 # Compilar únicamente para arquitectura ARM64 de 64 bits
 $ bash scripts/build-android.sh aarch64-linux-android
 ```
+
+---
+
+## 📌 Estado del proyecto
+
+Forja está en **v0.9.2** y en desarrollo activo. El estado verificable de cada
+componente —hecho / en progreso / planeado— vive en el
+**[roadmap oficial](https://forja-lang.github.io/docs/roadmap/)**.
+
+- **Motores de ejecución (2):** intérprete *ForjaFast* (`src/vm_fast/`) y JIT *tiered* (`src/jit_tiered.rs`).
+- **Frontend reutilizable:** crates `forja-syntax` y `forja-types` (lexer, parser, AST, tipos).
+- **Salidas:** bytecode (VM/JIT), ensamblador x86-64/ARM64, Rust, AOT, WASM, Android y GUI.
+- **Ecosistema:** `stdlib` (47 módulos), 262 ejemplos, curso de 30 días, LSP + DAP, GC generacional, registro de paquetes local y releases precompilados.
+- **En progreso:** IR real (emisión AST→IR), backend LLVM, extracción de `forja-gui-core`, registry remoto y publicación en crates.io.
 
 ---
 
