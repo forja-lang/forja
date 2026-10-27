@@ -198,16 +198,51 @@ impl PackageResolver {
             return Ok(());
         }
 
-        // No es builtin ni existe localmente: la descarga desde un registry
-        // remoto aún no está implementada. Falla explícito en vez de fingir
-        // que el paquete quedó instalado.
-        Err(format!(
-            "Paquete '{}' versión '{}' no encontrado localmente. La descarga \
-             desde un registry remoto aún no está implementada; instala el \
-             paquete manualmente en {}",
-            nombre,
-            version,
-            pkg_dir.display()
-        ))
+        // No es builtin: intentar consumir del registry local (F3-T1).
+        // El registry local vive en ~/.forja/registry y es el mismo formato
+        // que usaría el servidor remoto registry.forja-lang.dev (deuda futura).
+        match crate::registry::instalar_desde_registry(nombre, version, &pkg_dir) {
+            Ok(version_instalada) => {
+                self.installed.insert(nombre.to_string(), version_instalada);
+                return Ok(());
+            }
+            Err(e_registry) => {
+                // F6-T6: si hay registry remoto configurado, intentar allí antes
+                // de fallar. El paquete se verifica por SHA-256 y se descomprime
+                // en el directorio de paquetes del proyecto.
+                #[cfg(not(target_arch = "wasm32"))]
+                if crate::registry_remote::configurado() {
+                    match crate::registry_remote::instalar_desde_remoto(nombre, version, &pkg_dir) {
+                        Ok(version_instalada) => {
+                            self.installed.insert(nombre.to_string(), version_instalada);
+                            return Ok(());
+                        }
+                        Err(e_remoto) => {
+                            return Err(format!(
+                                "Paquete '{}' versión '{}' no encontrado. Registry local: {}. \
+                                 Registry remoto ({}): {}",
+                                nombre,
+                                version,
+                                e_registry,
+                                crate::registry_remote::url_base().unwrap_or_default(),
+                                e_remoto
+                            ));
+                        }
+                    }
+                }
+                // Ni builtin ni en el registry local: falla explícito en vez de
+                // fingir que el paquete quedó instalado.
+                return Err(format!(
+                    "Paquete '{}' versión '{}' no encontrado. No es builtin y no \
+                     está en el registry local ({}). Detalle: {}. Publicá el \
+                     paquete con 'forja publish' o instalalo manualmente en {}",
+                    nombre,
+                    version,
+                    crate::registry::ruta_index().display(),
+                    e_registry,
+                    pkg_dir.display()
+                ));
+            }
+        }
     }
 }
