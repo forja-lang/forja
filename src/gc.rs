@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! # Generational Garbage Collector
 //!
 //! GC generacional con young generation (bump allocation) y old generation
@@ -168,11 +166,6 @@ impl BumpAllocator {
     /// Bytes usados actualmente
     fn used(&self) -> usize {
         self.offset.get()
-    }
-
-    /// Bytes disponibles
-    fn available(&self) -> usize {
-        self.capacity - self.offset.get()
     }
 
     /// Retorna la dirección base de la memoria
@@ -738,6 +731,35 @@ impl Default for GenerationalGC {
     }
 }
 
+/// F4-T5: telemetría de pausas del GC (diagnóstico y tests de estrés).
+///
+/// Acumula duración de las pausas de recolección y cuántos slots del heap se
+/// reciclaron, para detectar fugas y medir el impacto del GC en producción.
+#[derive(Debug, Clone, Default)]
+pub struct GcTelemetry {
+    /// Número de recolecciones de la VM (mark-sweep real).
+    pub colecciones: u64,
+    /// Suma de todas las pausas (nanosegundos).
+    pub pausa_total_ns: u128,
+    /// Pausa máxima observada (nanosegundos).
+    pub pausa_max_ns: u128,
+    /// Pausa de la última recolección (nanosegundos).
+    pub ultima_pausa_ns: u128,
+    /// Slots del heap reciclados a las free lists (acumulado).
+    pub slots_recolectados: u64,
+}
+
+impl GcTelemetry {
+    /// Pausa media por colección (ns), o 0 si no hubo colecciones.
+    pub fn pausa_media_ns(&self) -> u128 {
+        if self.colecciones == 0 {
+            0
+        } else {
+            self.pausa_total_ns / self.colecciones as u128
+        }
+    }
+}
+
 /// Estadísticas del GC
 #[derive(Debug, Clone)]
 pub struct GcStats {
@@ -764,7 +786,7 @@ mod tests {
     fn test_gc_alloc_basic() {
         let mut gc = GenerationalGC::new();
         let r1 = gc.alloc(42i64);
-        let r2 = gc.alloc(3.14f64);
+        let r2 = gc.alloc(2.5f64);
         assert!(!r1.is_null());
         assert!(!r2.is_null());
     }
