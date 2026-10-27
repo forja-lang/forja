@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::ast::*;
 use crate::error::ErrorForja;
 use std::collections::HashSet;
@@ -412,6 +411,8 @@ pub struct BytecodeGenerator {
     /// Nombres de funciones declaradas como `asincrona`.
     /// Cuando se llama a una función en este set, se emite ThreadSpawn en vez de Call.
     funciones_asincronas: std::collections::HashSet<String>,
+    /// F8-T7: nombres de funciones de usuario (para usarlas como valores).
+    funciones_definidas: std::collections::HashSet<String>,
 }
 
 impl BytecodeGenerator {
@@ -433,6 +434,7 @@ impl BytecodeGenerator {
             loop_stack: Vec::new(),
             funciones_overload: None,
             funciones_asincronas: std::collections::HashSet::new(),
+            funciones_definidas: std::collections::HashSet::new(),
         }
     }
 
@@ -783,7 +785,11 @@ impl BytecodeGenerator {
     /// Genera bytecode a partir de un programa AST
     pub fn generar(&mut self, programa: &Programa) -> Result<Vec<Opcode>, Vec<ErrorForja>> {
         self.clases_con_constructor.clear();
+        self.funciones_definidas.clear();
         for decl in &programa.declaraciones {
+            if let Declaracion::Funcion { nombre, .. } = decl {
+                self.funciones_definidas.insert(nombre.clone());
+            }
             if let Declaracion::Clase {
                 nombre, metodos, ..
             } = decl
@@ -994,6 +1000,14 @@ impl BytecodeGenerator {
             }
         }
         None
+    }
+
+    /// Indica si una variante de enum no lleva campos (F8-T8).
+    fn variante_sin_campos(&self, nombre_constructor: &str) -> bool {
+        self.enum_variantes
+            .values()
+            .flat_map(|variantes| variantes.iter())
+            .any(|(vname, campos)| vname == nombre_constructor && campos.is_empty())
     }
 
     /// Emite la llamada final: si `nombre` es una variable local (closure o
@@ -1499,14 +1513,26 @@ impl BytecodeGenerator {
             Declaracion::Retornar { valor } => {
                 match valor {
                     Some(Expresion::LlamadaFuncion { nombre, argumentos }) => {
-                        // Tail Call Optimization: emitir argumentos + TailCall en lugar de Call + Return
-                        for arg in argumentos.iter().rev() {
-                            self.generar_expresion(arg);
+                        if let Some(&var_idx) = self.var_indices.get(nombre) {
+                            // F8-T7: callback en posición de retorno. TailCall
+                            // sólo resuelve funciones globales; emitimos una
+                            // llamada indirecta normal y retornamos.
+                            for arg in argumentos {
+                                self.generar_expresion(arg);
+                            }
+                            self.emitir(Opcode::CallClosure(var_idx, argumentos.len()));
+                            self.emitir(Opcode::Return);
+                        } else {
+                            // Tail Call Optimization: el VM popea N args y los
+                            // invierte; se empujan en orden natural (F8-T9).
+                            for arg in argumentos.iter() {
+                                self.generar_expresion(arg);
+                            }
+                            self.emitir(Opcode::TailCall(
+                                Arc::from(nombre.as_str()),
+                                argumentos.len(),
+                            ));
                         }
-                        self.emitir(Opcode::TailCall(
-                            Arc::from(nombre.as_str()),
-                            argumentos.len(),
-                        ));
                     }
                     Some(expr) => {
                         self.generar_expresion(expr);
@@ -1556,12 +1582,21 @@ impl BytecodeGenerator {
                         self.emitir(Opcode::Declare(Arc::from(varname.as_str()), *mutable));
                     }
                 } else {
-                    // Caso general: evaluar valor, push Nulo para slots extra
+                    // Caso general: el valor es una tupla/arreglo; desempaquetar
+                    // sus elementos en las variables declaradas.
+                    //   variable (a, b) = (1, 2)   →  a = 1, b = 2
+                    //   variable x, y = f()        →  x = f()[0], y = f()[1]
+                    // Se evalúa el valor una sola vez en una variable temporal y
+                    // se extrae cada posición con ArrayGet.
+                    let tmp: Arc<str> =
+                        Arc::from(format!("__destruct_{}", self.label_counter).as_str());
+                    self.label_counter += 1;
                     self.generar_expresion(valor);
-                    for _ in 1..variables.len() {
-                        self.emitir(Opcode::PushNulo);
-                    }
-                    for var in variables.iter().rev() {
+                    self.emitir(Opcode::Declare(tmp.clone(), true));
+                    for (i, var) in variables.iter().enumerate() {
+                        self.emitir(Opcode::Load(tmp.clone()));
+                        self.emitir(Opcode::PushEntero(i as i64));
+                        self.emitir(Opcode::ArrayGet);
                         self.emitir(Opcode::Declare(Arc::from(var.as_str()), *mutable));
                     }
                 }
@@ -1615,7 +1650,37 @@ impl BytecodeGenerator {
                         // Dejar el objeto en el stack como resultado
                         self.emitir(Opcode::Load(tmp_nombre));
                     }
-                    _ => self.emitir(Opcode::Load(Arc::from(nombre.as_str()))),
+                    _ => {
+                        // F8-T8: variante unitaria (`Norte`) → objeto enum con tag.
+                        if let Some((enum_nombre, tag)) = self.buscar_variante_enum(nombre) {
+                            if self.variante_sin_campos(nombre) {
+                                let tmp: Arc<str> = Arc::from(
+                                    format!("__enum_{}_{}", enum_nombre, self.label_counter)
+                                        .as_str(),
+                                );
+                                self.label_counter += 1;
+                                self.emitir(Opcode::NewObject(Arc::from(enum_nombre.as_str())));
+                                self.emitir(Opcode::Declare(tmp.clone(), true));
+                                self.emitir(Opcode::PushEntero(tag as i64));
+                                self.emitir(Opcode::Dup);
+                                self.emitir(Opcode::Load(tmp.clone()));
+                                self.emitir(Opcode::SetFieldIdx(0));
+                                self.emitir(Opcode::Pop);
+                                self.emitir(Opcode::Load(tmp));
+                            } else {
+                                // Constructor con datos usado como valor: no es
+                                // una variante unitaria; se resuelve al llamarlo.
+                                self.emitir(Opcode::Load(Arc::from(nombre.as_str())));
+                            }
+                        } else if self.funciones_definidas.contains(nombre)
+                            && !self.var_indices.contains_key(nombre)
+                        {
+                            // F8-T7: función usada como valor (callback).
+                            self.emitir(Opcode::PushTexto(Arc::from(nombre.as_str())));
+                        } else {
+                            self.emitir(Opcode::Load(Arc::from(nombre.as_str())));
+                        }
+                    }
                 }
             }
 
@@ -1931,11 +1996,30 @@ impl BytecodeGenerator {
                                     self.emitir(Opcode::Label(label_next));
                                 }
                             } else if subpatrones.is_empty() {
-                                // Constructor sin datos de enum normal: siempre matchea (comportamiento previo)
-                                self.emitir(Opcode::Pop);
-                                self.generar_cuerpo_match(&brazo.cuerpo);
+                                // F8-T8: una variante unitaria también debe comparar
+                                // su tag; antes "siempre matcheaba" y `coincidir`
+                                // ejecutaba el primer brazo para cualquier variante.
+                                let tag = self.obtener_tag_constructor(nombre_ctor).unwrap_or(0);
                                 if !es_ultimo {
+                                    self.emitir(Opcode::Dup);
+                                    self.emitir(Opcode::CheckTag(tag));
+                                    let label_next = self.nueva_label();
+                                    self.emitir(Opcode::JumpSiFalso(label_next));
+                                    self.emitir(Opcode::Pop);
+                                    self.generar_cuerpo_match(&brazo.cuerpo);
                                     self.emitir(Opcode::Jump(label_end));
+                                    self.emitir(Opcode::Label(label_next));
+                                } else {
+                                    let label_nomatch = self.nueva_label();
+                                    self.emitir(Opcode::Dup);
+                                    self.emitir(Opcode::CheckTag(tag));
+                                    self.emitir(Opcode::JumpSiFalso(label_nomatch));
+                                    self.emitir(Opcode::Pop);
+                                    self.generar_cuerpo_match(&brazo.cuerpo);
+                                    self.emitir(Opcode::Jump(label_end));
+                                    self.emitir(Opcode::Label(label_nomatch));
+                                    self.emitir(Opcode::Pop);
+                                    self.emitir(Opcode::PushNulo);
                                 }
                             } else {
                                 // Constructor con subpatrones: extraer campos con CheckTag
@@ -5110,7 +5194,7 @@ mod tests {
     fn test_generar_para_modulo_con_funciones() {
         let source = "\
 fun saludar(nombre) {
-    escribir(\"Hola, {nombre}\")
+    escribir(\"Hola, ${nombre}\")
 }
 
 fun sumar(a, b) {
