@@ -40,15 +40,15 @@ if [ "${FORJA_VERIFY_SKIP_FMT:-0}" != "1" ]; then
 fi
 
 if [ "${FORJA_VERIFY_SKIP_CLIPPY:-0}" != "1" ]; then
-    echo "==> cargo clippy"
-    "$CARGO_BIN" clippy --all-targets --locked
+    echo "==> cargo clippy (workspace)"
+    "$CARGO_BIN" clippy --workspace --all-targets --locked
 fi
 
-echo "==> cargo check --locked"
-"$CARGO_BIN" check --locked
+echo "==> cargo check --workspace --locked"
+"$CARGO_BIN" check --workspace --locked
 
-echo "==> cargo test --locked"
-"$CARGO_BIN" test --locked
+echo "==> cargo test --workspace --locked"
+"$CARGO_BIN" test --workspace --locked
 
 echo "==> métricas de documentación"
 if command -v python >/dev/null 2>&1; then
