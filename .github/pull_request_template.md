@@ -19,7 +19,7 @@
 - [ ] No introduce warnings nuevos: `cargo clippy --all-targets`
 - [ ] Actualicé la documentación relevante (si aplica)
 - [ ] Actualicé `CHANGELOG.md` (si aplica)
-- [ ] Respeto las decisiones de la FASE 0 descritas en `plan.md`
+- [ ] Respeto las decisiones de higiene descritas en `CONTRIBUTING.md`
 
 ## Issues relacionados
 
