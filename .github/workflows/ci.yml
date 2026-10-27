@@ -19,14 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
-      - name: Checkout submodules (excepto benchmarks)
-        shell: bash
-        run: |
-          git submodule init
-          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
-            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
-          done
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -54,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
+          submodules: recursive
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -71,7 +64,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
+          submodules: recursive
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
@@ -86,14 +79,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
-      - name: Checkout submodules (excepto benchmarks)
-        shell: bash
-        run: |
-          git submodule init
-          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
-            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
-          done
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
@@ -121,14 +107,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
-      - name: Checkout submodules (excepto benchmarks)
-        shell: bash
-        run: |
-          git submodule init
-          for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
-            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
-          done
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
