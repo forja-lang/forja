@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
@@ -10,6 +9,8 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 static NIVEL_VERBOSE_ATOMIC: AtomicU8 = AtomicU8::new(0);
 /// Modo JSON global
 static JSON_MODE_ATOMIC: AtomicBool = AtomicBool::new(false);
+/// Modo color global (true = ANSI habilitado, false = sin color)
+static COLOR_MODE_ATOMIC: AtomicBool = AtomicBool::new(true);
 
 /// Colores ANSI para terminal
 #[allow(dead_code)]
@@ -133,6 +134,16 @@ pub fn json_mode() -> bool {
     JSON_MODE_ATOMIC.load(Ordering::Relaxed)
 }
 
+/// Activa o desactiva la salida con colores ANSI (flag `--color`/`--no-color`).
+pub fn establecer_color_mode(activo: bool) {
+    COLOR_MODE_ATOMIC.store(activo, Ordering::Relaxed);
+}
+
+/// Indica si la salida con colores ANSI está habilitada.
+pub fn color_mode() -> bool {
+    COLOR_MODE_ATOMIC.load(Ordering::Relaxed)
+}
+
 pub fn log_info(msg: &str) {
     if nivel_actual() >= NivelVerbose::Normal {
         eprintln!("{}", info(msg));
@@ -195,6 +206,25 @@ impl ErrorTipo {
             ErrorTipo::DemasiadaAnidacion { .. } => color::MAGENTA,
         }
     }
+
+    /// Código de diagnóstico estilo `rustc` (`E0308`, `E0425`, ...).
+    ///
+    /// Se usa para renderizar `error[Exxxx]: mensaje`. Los códigos siguen
+    /// una convención propia de Forja agrupada por categoría:
+    /// - `E0xxx` léxicos, `E1xxx` sintácticos, `E2xxx` de tipos,
+    ///   `E3xxx` de propiedad, `E4xxx` semánticos, `E9xxx` internos.
+    pub fn codigo(&self) -> &'static str {
+        match self {
+            ErrorTipo::ErrorLexico => "E0001",
+            ErrorTipo::ErrorSintactico => "E1001",
+            ErrorTipo::ErrorDeTipo => "E2001",
+            ErrorTipo::ErrorDePropiedad => "E3001",
+            ErrorTipo::ErrorSemantico => "E4001",
+            ErrorTipo::ErrorInterno => "E9001",
+            ErrorTipo::LimiteArchivo { .. } => "E0002",
+            ErrorTipo::DemasiadaAnidacion { .. } => "E1002",
+        }
+    }
 }
 
 impl fmt::Display for ErrorTipo {
@@ -216,6 +246,41 @@ impl fmt::Display for ErrorTipo {
     }
 }
 
+/// Rango de columnas (1-based, inclusivo en `inicio`, exclusivo en `fin`)
+/// que abarca el fragmento de código señalado por un diagnóstico.
+///
+/// `fin == 0` significa "sin span explícito": el renderer subraya un solo
+/// carácter en `columna` (comportamiento histórico).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub inicio: usize,
+    pub fin: usize,
+}
+
+impl Span {
+    /// Span de un único carácter en la columna indicada.
+    pub fn punto(columna: usize) -> Self {
+        Span {
+            inicio: columna,
+            fin: columna + 1,
+        }
+    }
+
+    /// Span que cubre `[inicio, fin)`.
+    pub fn rango(inicio: usize, fin: usize) -> Self {
+        Span { inicio, fin }
+    }
+
+    /// Longitud en caracteres del subrayado (mínimo 1).
+    pub fn longitud(&self) -> usize {
+        if self.fin > self.inicio {
+            self.fin - self.inicio
+        } else {
+            1
+        }
+    }
+}
+
 /// Error estructurado de Forja
 #[derive(Debug, Clone)]
 pub struct ErrorForja {
@@ -224,6 +289,10 @@ pub struct ErrorForja {
     pub columna: usize,
     pub mensaje: String,
     pub sugerencia: String,
+    /// Código de diagnóstico (`E0308`, ...). Vacío = derivar de `tipo`.
+    pub codigo: String,
+    /// Rango de columnas señalado. `None` = usar `columna` como punto.
+    pub span: Option<Span>,
 }
 
 impl ErrorForja {
@@ -240,20 +309,92 @@ impl ErrorForja {
             columna,
             mensaje: mensaje.to_string(),
             sugerencia: sugerencia.to_string(),
+            codigo: String::new(),
+            span: None,
         }
     }
 
-    /// Muestra el error con contexto coloreado del código fuente
+    /// Constructor con código de diagnóstico explícito y span.
+    ///
+    /// Ejemplo: `ErrorForja::con_codigo(ErrorTipo::ErrorDeTipo, 3, 10,
+    /// Span::rango(10, 15), "se esperaba `entero`", "convierte con `a_entero()`")`.
+    pub fn con_codigo(
+        tipo: ErrorTipo,
+        linea: usize,
+        columna: usize,
+        span: Span,
+        mensaje: &str,
+        sugerencia: &str,
+    ) -> Self {
+        ErrorForja {
+            tipo,
+            linea,
+            columna,
+            mensaje: mensaje.to_string(),
+            sugerencia: sugerencia.to_string(),
+            codigo: String::new(),
+            span: Some(span),
+        }
+    }
+
+    /// Código de diagnóstico efectivo: el explícito si lo hay, si no el
+    /// derivado del `ErrorTipo`.
+    pub fn codigo_efectivo(&self) -> &str {
+        if self.codigo.is_empty() {
+            self.tipo.codigo()
+        } else {
+            &self.codigo
+        }
+    }
+
+    /// Span efectivo: el explícito si lo hay, si no un punto en `columna`.
+    pub fn span_efectivo(&self) -> Span {
+        self.span.unwrap_or_else(|| Span::punto(self.columna))
+    }
+
+    /// Muestra el error con contexto coloreado del código fuente.
+    ///
+    /// Formato estilo `rustc`:
+    /// ```text
+    /// error[E2001]: se esperaba `entero`, se encontró `texto`
+    ///   --> línea 3, columna 10
+    ///    │
+    ///  3 │ variable x = "hola"
+    ///    │              ^^^^^^
+    ///    │
+    ///    = ayuda: convierte con `a_entero()`
+    /// ```
     pub fn mostrar_con_contexto(&self, source: &str) -> String {
         let mut result = String::new();
         let lines: Vec<&str> = source.lines().collect();
         let idx = if self.linea > 0 { self.linea - 1 } else { 0 };
         let color_lin = color::GRIS;
         let color_arrow = self.tipo.color_ansi();
+        let codigo = self.codigo_efectivo();
 
         // Ancho del margen según el número de línea más largo (mínimo 4),
-        // para que el │ y el ↑ queden siempre alineados con el código.
+        // para que el │ y el subrayado queden siempre alineados con el código.
         let ancho_num = lines.len().to_string().len().max(4);
+
+        // Cabecera: "error[Exxxx]: mensaje"
+        result.push_str(&format!(
+            "{}{}error[{}]{}: {}\n",
+            color::NEGRITA,
+            color_arrow,
+            codigo,
+            color::RESET,
+            self.mensaje
+        ));
+        // Ubicación: "  --> línea N, columna C"
+        result.push_str(&format!(
+            "  {}-->{} {}línea {}, columna {}{}\n",
+            color::AZUL,
+            color::RESET,
+            color::GRIS,
+            self.linea,
+            self.columna,
+            color::RESET
+        ));
 
         // Línea de código: " <n> │ código"
         let linea_ctx = |n: usize| {
@@ -266,34 +407,32 @@ impl ErrorForja {
                 ancho = ancho_num
             )
         };
+        // Margen vacío (sin número) para las líneas de subrayado.
+        let margen_vacio = format!(
+            " {} {:>ancho$} {}│{} ",
+            color::DIM,
+            "",
+            color_lin,
+            color::RESET,
+            ancho = ancho_num
+        );
 
         if idx > 0 && idx - 1 < lines.len() {
             result.push_str(&format!("{}{}\n", linea_ctx(idx), lines[idx - 1]));
         }
         if idx < lines.len() {
             result.push_str(&format!("{}{}\n", linea_ctx(idx + 1), lines[idx]));
-            let indent = if self.columna > 0 {
-                self.columna - 1
-            } else {
-                0
-            };
-            // Mismo margen que las líneas de código, pero con el número
-            // reemplazado por espacios; el ↑ apunta a la columna del error.
-            let margen = format!(
-                " {} {:>ancho$} {}│{} ",
-                color::DIM,
-                "",
-                color_lin,
-                color::RESET,
-                ancho = ancho_num
-            );
+            let span = self.span_efectivo();
+            let indent = if span.inicio > 0 { span.inicio - 1 } else { 0 };
+            let largo = span.longitud();
+            // Subrayado `^^^^` que abarca el span del error.
             result.push_str(&format!(
-                "{}{}{}↑{} {}\n",
-                margen,
+                "{}{}{}{}{}\n",
+                margen_vacio,
                 " ".repeat(indent),
                 color_arrow,
-                color::RESET,
-                self.mensaje
+                "^".repeat(largo),
+                color::RESET
             ));
         } else {
             result.push_str(&format!(
@@ -310,19 +449,25 @@ impl ErrorForja {
         }
         if !self.sugerencia.is_empty() {
             result.push_str(&format!(
-                " {} {}💡{} {}\n",
+                " {} {}={} {}ayuda:{} {}\n",
+                color::DIM,
                 color::GRIS,
-                color::AMARILLO,
+                color::RESET,
+                color::CYAN,
                 color::RESET,
                 self.sugerencia
             ));
         }
-        result
+        if color_mode() {
+            result
+        } else {
+            limpiar_ansi(&result)
+        }
     }
 
     /// Muestra el error como una línea compacta coloreada
     pub fn mostrar_compacto(&self) -> String {
-        format!(
+        let s = format!(
             "{} {} {}—{} línea {}{}{}: {}",
             emoji_para(&self.tipo),
             color::negrita(categoria_educativa(&self.tipo)),
@@ -332,15 +477,24 @@ impl ErrorForja {
             self.linea,
             color::RESET,
             self.mensaje,
-        )
+        );
+        if color_mode() {
+            s
+        } else {
+            limpiar_ansi(&s)
+        }
     }
 
     pub fn to_json(&self) -> String {
+        let span = self.span_efectivo();
         format!(
-            r#"{{"error":"{}","linea":{},"columna":{},"mensaje":"{}","sugerencia":"{}"}}"#,
+            r#"{{"error":"{}","codigo":"{}","linea":{},"columna":{},"span":{{"inicio":{},"fin":{}}},"mensaje":"{}","sugerencia":"{}"}}"#,
             self.tipo_colorless(),
+            self.codigo_efectivo(),
             self.linea,
             self.columna,
+            span.inicio,
+            span.fin,
             self.escape_json(&self.mensaje),
             self.escape_json(&self.sugerencia),
         )
@@ -399,11 +553,32 @@ pub fn categoria_educativa(tipo: &ErrorTipo) -> &'static str {
     }
 }
 
+/// Elimina las secuencias de escape ANSI de un texto (para `--no-color`).
+pub fn limpiar_ansi(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Consumir hasta la letra final del CSI (rango @-~).
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for c2 in chars.by_ref() {
+                    if ('@'..='~').contains(&c2) {
+                        break;
+                    }
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 impl fmt::Display for ErrorForja {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let _tipo_str = format!("{}", self.tipo);
-        write!(
-            f,
+        let s = format!(
             "{} {} — {}línea {}{} — {} {}",
             emoji_para(&self.tipo),
             color::negrita(categoria_educativa(&self.tipo)),
@@ -412,8 +587,57 @@ impl fmt::Display for ErrorForja {
             self.linea,
             color::RESET,
             self.mensaje,
-        )
+        );
+        if color_mode() {
+            write!(f, "{}", s)
+        } else {
+            write!(f, "{}", limpiar_ansi(&s))
+        }
     }
+}
+
+/// (F2-T7) Formatea un error de runtime de la VM con su backtrace en español.
+///
+/// `mensaje` es la descripción clara del error (p. ej. "división por cero: ...")
+/// y `backtrace` es la pila de llamadas con nombres de función Forja y líneas.
+///
+/// Salida típica:
+/// ```text
+/// ✗ Error en ejecución: división por cero: no se puede dividir entre 0 (revisa el divisor)
+///
+/// Pila de llamadas (más reciente primero):
+///   en dividir (línea 12)
+///   en calcular (línea 27)
+///   en <principal> (línea 3)
+/// ```
+pub fn formatear_error_runtime(mensaje: &str, backtrace: &[String]) -> String {
+    let mut out = String::new();
+    let cabecera = format!(
+        "{} Error en ejecución: {}",
+        emoji_para(&ErrorTipo::ErrorInterno),
+        mensaje
+    );
+    if color_mode() {
+        out.push_str(&cabecera);
+    } else {
+        out.push_str(&limpiar_ansi(&cabecera));
+    }
+
+    if !backtrace.is_empty() {
+        out.push_str("\n\n");
+        let titulo = "Pila de llamadas (más reciente primero):";
+        if color_mode() {
+            out.push_str(&color::negrita(titulo));
+        } else {
+            out.push_str(titulo);
+        }
+        for linea in backtrace {
+            out.push('\n');
+            out.push_str(linea);
+        }
+    }
+
+    out
 }
 
 /// Renderiza una lista completa de errores con contexto
