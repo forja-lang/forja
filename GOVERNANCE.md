@@ -45,7 +45,7 @@ contribuciones externas.
 4. **Criterios de merge.**
    - El CI pasa en verde (build + test + lint).
    - Existe cobertura razonable de tests para el cambio.
-   - El cambio respeta las decisiones de la FASE 0 (ver [`plan.md`](plan.md)).
+   - El cambio respeta las decisiones de higiene descritas en `CONTRIBUTING.md`.
 5. **Rupturas.** Los cambios incompatibles deben documentarse en
    [`CHANGELOG.md`](CHANGELOG.md) y, si aplica, en la documentación.
 
