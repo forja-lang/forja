@@ -47,8 +47,10 @@ pub struct Debugger {
     pub vm: ForjaFast,
     /// Estado actual del debugger
     pub state: DebugState,
-    /// Breakpoints activos: mapean número de línea → activo
-    pub breakpoints: HashMap<usize, bool>,
+    /// Breakpoints activos: mapean número de línea → condición opcional.
+    /// `None` = breakpoint incondicional; `Some(expr)` = pausa solo si la
+    /// expresión evalúa a verdadero.
+    pub breakpoints: HashMap<usize, Option<String>>,
     /// Cache de mapeo línea → IP (construido al cargar bytecode)
     pub line_to_ip: HashMap<usize, Vec<usize>>,
     /// Cache inverso IP → línea (para lookup rápido)
@@ -63,6 +65,13 @@ pub struct Debugger {
     pub last_report_line: usize,
     /// ID de próxima petición (para callbacks)
     pub next_id: u32,
+    /// Nombres reales de variables locales por frame (índice → nombre).
+    /// Se puebla desde el AST en `cargar_nombres_desde_ast`.
+    pub nombres_locales: Vec<Vec<String>>,
+    /// Nombres reales de variables globales (índice → nombre).
+    pub nombres_globales: Vec<String>,
+    /// Nombres de funciones por IP de entrada (ip → nombre).
+    pub nombres_funciones: HashMap<usize, String>,
 }
 
 impl Debugger {
@@ -78,6 +87,9 @@ impl Debugger {
             step_over_frame_count: 0,
             last_report_line: 0,
             next_id: 0,
+            nombres_locales: Vec::new(),
+            nombres_globales: Vec::new(),
+            nombres_funciones: HashMap::new(),
         }
     }
 
@@ -101,14 +113,25 @@ impl Debugger {
         self.vm.cargar_bytecode(bc);
     }
 
-    /// Activar/desactivar breakpoint en línea
+    /// Activar/desactivar breakpoint en línea (incondicional)
     pub fn toggle_breakpoint(&mut self, line: usize, active: bool) {
-        self.breakpoints.insert(line, active);
+        if active {
+            self.breakpoints.insert(line, None);
+        } else {
+            self.breakpoints.remove(&line);
+        }
     }
 
-    /// Poner breakpoint en línea
+    /// Poner breakpoint incondicional en línea
     pub fn set_breakpoint(&mut self, line: usize) {
-        self.breakpoints.insert(line, true);
+        self.breakpoints.insert(line, None);
+    }
+
+    /// Poner breakpoint condicional en línea.
+    /// `condicion` vacía equivale a un breakpoint incondicional.
+    pub fn set_breakpoint_condicional(&mut self, line: usize, condicion: Option<String>) {
+        let cond = condicion.filter(|c| !c.trim().is_empty());
+        self.breakpoints.insert(line, cond);
     }
 
     /// Quitar breakpoint de línea
@@ -116,12 +139,24 @@ impl Debugger {
         self.breakpoints.remove(&line);
     }
 
-    /// Verificar si estamos en un breakpoint
-    pub fn en_breakpoint(&self) -> bool {
-        self.breakpoints
-            .get(&self.current_line)
-            .copied()
-            .unwrap_or(false)
+    /// Verificar si estamos en un breakpoint (incondicional o con condición
+    /// que evalúa a verdadero en el estado actual de la VM).
+    pub fn en_breakpoint(&mut self) -> bool {
+        let cond = self.breakpoints.get(&self.current_line).cloned();
+        match cond {
+            None => false,
+            Some(None) => true,
+            Some(Some(cond)) => self.evaluar_condicion(&cond),
+        }
+    }
+
+    /// Evaluar una condición de breakpoint contra el estado actual de la VM.
+    /// Si la expresión no puede evaluarse, se considera falsa (no pausa).
+    pub fn evaluar_condicion(&mut self, cond: &str) -> bool {
+        match self.evaluar(cond) {
+            Ok(var) => var.value == "verdadero",
+            Err(_) => false,
+        }
     }
 
     /// Continuar ejecución libre (hasta breakpoint o fin)
@@ -224,11 +259,9 @@ impl Debugger {
             }
 
             // Si el state es Running, check breakpoints después de SetLine
-            if self.state == DebugState::Running && self.en_breakpoint() && self.current_line > 0 {
+            if self.state == DebugState::Running && self.current_line > 0 {
                 if let Some(&line) = self.ip_to_line.get(&self.vm.ip) {
-                    if line != self.last_report_line
-                        && self.breakpoints.get(&line).copied().unwrap_or(false)
-                    {
+                    if line != self.last_report_line && self.breakpoint_activo_en(line) {
                         self.current_line = line;
                         self.state = DebugState::Paused;
                         self.last_report_line = line;
@@ -417,16 +450,33 @@ impl Debugger {
         frames
     }
 
-    /// Obtener variables locales de un frame dado
+    /// Verificar si hay un breakpoint activo en la línea dada, evaluando su
+    /// condición (si la tiene) contra el estado actual de la VM.
+    pub fn breakpoint_activo_en(&mut self, line: usize) -> bool {
+        let cond = self.breakpoints.get(&line).cloned();
+        match cond {
+            None => false,
+            Some(None) => true,
+            Some(Some(cond)) => self.evaluar_condicion(&cond),
+        }
+    }
+
+    /// Obtener variables locales de un frame dado, usando nombres reales
+    /// cuando estén disponibles (poblados desde el AST).
     pub fn obtener_variables_locales(&self, frame_idx: usize) -> Vec<VarDebug> {
         let mut vars = Vec::new();
         if frame_idx >= self.vm.frame_locals.len() {
             return vars;
         }
         let local_frame = &self.vm.frame_locals[frame_idx];
+        let nombres = self.nombres_locales.get(frame_idx);
 
         for (i, val) in local_frame.iter().enumerate() {
-            let name = format!("var_{}", i);
+            let name = nombres
+                .and_then(|ns| ns.get(i))
+                .filter(|n| !n.is_empty())
+                .cloned()
+                .unwrap_or_else(|| format!("var_{}", i));
             let (valor_str, tipo) = self.formatear_valor(*val);
             vars.push(VarDebug {
                 name,
@@ -438,14 +488,21 @@ impl Debugger {
         vars
     }
 
-    /// Obtener variables globales (ámbito global)
+    /// Obtener variables globales (ámbito global), usando nombres reales
+    /// cuando estén disponibles.
     pub fn obtener_variables_globales(&self) -> Vec<VarDebug> {
         let mut vars = Vec::new();
         // En stack-based execution, las globales están en global_var_persist
         for (i, val) in self.vm.global_var_persist.iter().enumerate() {
+            let name = self
+                .nombres_globales
+                .get(i)
+                .filter(|n| !n.is_empty())
+                .cloned()
+                .unwrap_or_else(|| format!("global_{}", i));
             let (valor_str, tipo) = self.formatear_valor(*val);
             vars.push(VarDebug {
-                name: format!("global_{}", i),
+                name,
                 value: valor_str,
                 tipo,
                 referencia: None,
@@ -476,14 +533,637 @@ impl Debugger {
         }
     }
 
-    /// Evaluar expresión simple (por ahora solo leer variables)
-    pub fn evaluar(&self, _expr: &str) -> Result<VarDebug, String> {
+    /// Evaluar una expresión en el contexto actual de la VM.
+    ///
+    /// Soporta: literales (entero, decimal, texto, booleano, nulo),
+    /// identificadores (variables locales/globales), operadores aritméticos
+    /// (`+ - * /`), comparación (`== != < > <= >=`), lógicos (`y`/`&&`,
+    /// `o`/`||`, `no`/`!`) y agrupación con paréntesis.
+    pub fn evaluar(&mut self, expr: &str) -> Result<VarDebug, String> {
+        let tokens = tokenizar_expr(expr)?;
+        let mut parser = ExprParser::new(&tokens);
+        let ast = parser.parse_expr()?;
+        if !parser.en_fin() {
+            return Err(format!("expresión inválida: '{}'", expr));
+        }
+        let val = self.evaluar_ast(&ast)?;
+        let (valor_str, tipo) = self.formatear_valor(val);
         Ok(VarDebug {
-            name: _expr.to_string(),
-            value: "(expresión no soportada en debug básico)".to_string(),
-            tipo: "desconocido".to_string(),
+            name: expr.trim().to_string(),
+            value: valor_str,
+            tipo,
             referencia: None,
         })
+    }
+
+    /// Resolver el valor de un identificador en el estado actual de la VM.
+    /// Busca primero en el frame local actual y luego en las globales.
+    fn resolver_identificador(&self, nombre: &str) -> Result<ValorFast, String> {
+        // Buscar en el frame local actual (tope de frame_locals)
+        if let Some(locals) = self.vm.frame_locals.last() {
+            let nombres = self.nombres_locales.last();
+            for (i, val) in locals.iter().enumerate() {
+                let n = nombres
+                    .and_then(|ns| ns.get(i))
+                    .filter(|n| !n.is_empty())
+                    .map(|s| s.as_str());
+                if n == Some(nombre) {
+                    return Ok(*val);
+                }
+            }
+        }
+        // Buscar en globales
+        for (i, val) in self.vm.global_var_persist.iter().enumerate() {
+            if self.nombres_globales.get(i).map(|s| s.as_str()) == Some(nombre) {
+                return Ok(*val);
+            }
+        }
+        Err(format!("variable '{}' no encontrada", nombre))
+    }
+
+    /// Evaluar un AST de expresión contra el estado actual de la VM.
+    fn evaluar_ast(&mut self, ast: &ExprAst) -> Result<ValorFast, String> {
+        match ast {
+            ExprAst::Entero(n) => Ok(get_small_int_fast(*n)),
+            ExprAst::Decimal(d) => Ok(ValorFast::flotante(*d)),
+            ExprAst::Texto(s) => {
+                let idx = self.vm.alloc_str(s.clone().into());
+                Ok(ValorFast::texto(idx))
+            }
+            ExprAst::Booleano(b) => Ok(ValorFast::booleano(*b)),
+            ExprAst::Nulo => Ok(ValorFast::nulo()),
+            ExprAst::Ident(nombre) => self.resolver_identificador(nombre),
+            ExprAst::Unaria { op, expr } => {
+                let v = self.evaluar_ast(expr)?;
+                match op {
+                    ExprOpUnaria::Neg => {
+                        if v.es_entero() {
+                            Ok(get_small_int_fast(-v.a_entero()))
+                        } else {
+                            Ok(ValorFast::flotante(-v.a_flotante()))
+                        }
+                    }
+                    ExprOpUnaria::No => Ok(ValorFast::booleano(!v.es_verdadero())),
+                }
+            }
+            ExprAst::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
+                let a = self.evaluar_ast(izquierda)?;
+                let b = self.evaluar_ast(derecha)?;
+                Ok(aplicar_binaria(operador, a, b))
+            }
+        }
+    }
+
+    /// Poblar los nombres reales de variables y funciones a partir del AST.
+    ///
+    /// El bytecode solo conserva índices (LoadIdx/StoreIdx/DeclareIdx), por lo
+    /// que los nombres se recuperan del AST respetando el mismo orden de
+    /// asignación de índices que `optimizar_indices`: parámetros primero, luego
+    /// variables en orden de primera aparición (Load/Store/Declare).
+    pub fn cargar_nombres_desde_ast(&mut self, programa: &crate::ast::Programa) {
+        use crate::ast::Declaracion;
+
+        self.nombres_globales.clear();
+        self.nombres_locales.clear();
+        self.nombres_funciones.clear();
+
+        // Globales: variables de nivel superior en orden de declaración.
+        for decl in &programa.declaraciones {
+            match decl {
+                Declaracion::Variable { nombre, .. } => {
+                    self.nombres_globales.push(nombre.clone());
+                }
+                Declaracion::AsignacionMultiple { variables, .. } => {
+                    for v in variables {
+                        self.nombres_globales.push(v.clone());
+                    }
+                }
+                Declaracion::Funcion {
+                    nombre,
+                    parametros,
+                    cuerpo,
+                    ..
+                } => {
+                    // Nombres locales de la función: params + vars del cuerpo.
+                    let mut locales: Vec<String> =
+                        parametros.iter().map(|p| p.nombre.clone()).collect();
+                    recolectar_nombres_locales(cuerpo, &mut locales);
+                    self.nombres_locales.push(locales);
+                    // Registrar nombre de función (el IP se resuelve aparte).
+                    let _ = nombre;
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Recolectar nombres de variables locales de un cuerpo en orden de aparición.
+fn recolectar_nombres_locales(cuerpo: &[crate::ast::Declaracion], out: &mut Vec<String>) {
+    use crate::ast::Declaracion;
+    for decl in cuerpo {
+        match decl {
+            Declaracion::Variable { nombre, .. } => {
+                if !out.contains(nombre) {
+                    out.push(nombre.clone());
+                }
+            }
+            Declaracion::AsignacionMultiple { variables, .. } => {
+                for v in variables {
+                    if !out.contains(v) {
+                        out.push(v.clone());
+                    }
+                }
+            }
+            Declaracion::Si {
+                bloque_verdadero,
+                bloque_falso,
+                ..
+            } => {
+                recolectar_nombres_locales(bloque_verdadero, out);
+                if let Some(f) = bloque_falso {
+                    recolectar_nombres_locales(f, out);
+                }
+            }
+            Declaracion::Mientras { bloque, .. } => recolectar_nombres_locales(bloque, out),
+            Declaracion::Para {
+                inicializacion,
+                bloque,
+                ..
+            } => {
+                if let Some(init) = inicializacion {
+                    recolectar_nombres_locales(std::slice::from_ref(init.as_ref()), out);
+                }
+                recolectar_nombres_locales(bloque, out);
+            }
+            Declaracion::Repetir { bloque, .. } => recolectar_nombres_locales(bloque, out),
+            Declaracion::Cuando { cuerpo, .. } => recolectar_nombres_locales(cuerpo, out),
+            _ => {}
+        }
+    }
+}
+
+// ======================================================================
+// Mini-evaluador de expresiones para el debugger (F2-T6)
+// ======================================================================
+
+/// Operadores unarios soportados por el evaluador.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExprOpUnaria {
+    Neg,
+    No,
+}
+
+/// Operadores binarios soportados por el evaluador.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExprOpBinaria {
+    Suma,
+    Resta,
+    Mul,
+    Div,
+    Igual,
+    Distinto,
+    Menor,
+    Mayor,
+    MenorIgual,
+    MayorIgual,
+    Y,
+    O,
+}
+
+/// AST mínimo de expresiones para el evaluador del debugger.
+#[derive(Debug, Clone)]
+enum ExprAst {
+    Entero(i64),
+    Decimal(f64),
+    Texto(String),
+    Booleano(bool),
+    Nulo,
+    Ident(String),
+    Unaria {
+        op: ExprOpUnaria,
+        expr: Box<ExprAst>,
+    },
+    Binaria {
+        izquierda: Box<ExprAst>,
+        operador: ExprOpBinaria,
+        derecha: Box<ExprAst>,
+    },
+}
+
+/// Token del mini-lexer de expresiones.
+#[derive(Debug, Clone, PartialEq)]
+enum ExprToken {
+    Entero(i64),
+    Decimal(f64),
+    Texto(String),
+    Ident(String),
+    Verdadero,
+    Falso,
+    Nulo,
+    Suma,
+    Resta,
+    Mul,
+    Div,
+    Igual,
+    Distinto,
+    Menor,
+    Mayor,
+    MenorIgual,
+    MayorIgual,
+    Y,
+    O,
+    No,
+    ParenIzq,
+    ParenDer,
+}
+
+/// Tokenizar una expresión de debug.
+fn tokenizar_expr(expr: &str) -> Result<Vec<ExprToken>, String> {
+    let chars: Vec<char> = expr.chars().collect();
+    let mut tokens = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c.is_whitespace() {
+            i += 1;
+            continue;
+        }
+        if c.is_ascii_digit() {
+            let start = i;
+            while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
+                i += 1;
+            }
+            let s: String = chars[start..i].iter().collect();
+            if s.contains('.') {
+                let d: f64 = s
+                    .parse()
+                    .map_err(|_| format!("decimal inválido: '{}'", s))?;
+                tokens.push(ExprToken::Decimal(d));
+            } else {
+                let n: i64 = s.parse().map_err(|_| format!("entero inválido: '{}'", s))?;
+                tokens.push(ExprToken::Entero(n));
+            }
+            continue;
+        }
+        if c.is_alphabetic() || c == '_' {
+            let start = i;
+            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            let s: String = chars[start..i].iter().collect();
+            match s.as_str() {
+                "verdadero" => tokens.push(ExprToken::Verdadero),
+                "falso" => tokens.push(ExprToken::Falso),
+                "nulo" => tokens.push(ExprToken::Nulo),
+                "y" => tokens.push(ExprToken::Y),
+                "o" => tokens.push(ExprToken::O),
+                "no" => tokens.push(ExprToken::No),
+                _ => tokens.push(ExprToken::Ident(s)),
+            }
+            continue;
+        }
+        if c == '"' || c == '\'' {
+            let quote = c;
+            i += 1;
+            let mut s = String::new();
+            while i < chars.len() && chars[i] != quote {
+                s.push(chars[i]);
+                i += 1;
+            }
+            if i >= chars.len() {
+                return Err("texto sin cerrar".to_string());
+            }
+            i += 1; // consumir comilla de cierre
+            tokens.push(ExprToken::Texto(s));
+            continue;
+        }
+        // Operadores (con soporte de dos caracteres)
+        let next = chars.get(i + 1).copied();
+        match c {
+            '+' => {
+                tokens.push(ExprToken::Suma);
+                i += 1;
+            }
+            '-' => {
+                tokens.push(ExprToken::Resta);
+                i += 1;
+            }
+            '*' => {
+                tokens.push(ExprToken::Mul);
+                i += 1;
+            }
+            '/' => {
+                tokens.push(ExprToken::Div);
+                i += 1;
+            }
+            '(' => {
+                tokens.push(ExprToken::ParenIzq);
+                i += 1;
+            }
+            ')' => {
+                tokens.push(ExprToken::ParenDer);
+                i += 1;
+            }
+            '=' if next == Some('=') => {
+                tokens.push(ExprToken::Igual);
+                i += 2;
+            }
+            '!' if next == Some('=') => {
+                tokens.push(ExprToken::Distinto);
+                i += 2;
+            }
+            '!' => {
+                tokens.push(ExprToken::No);
+                i += 1;
+            }
+            '<' if next == Some('=') => {
+                tokens.push(ExprToken::MenorIgual);
+                i += 2;
+            }
+            '<' => {
+                tokens.push(ExprToken::Menor);
+                i += 1;
+            }
+            '>' if next == Some('=') => {
+                tokens.push(ExprToken::MayorIgual);
+                i += 2;
+            }
+            '>' => {
+                tokens.push(ExprToken::Mayor);
+                i += 1;
+            }
+            '&' if next == Some('&') => {
+                tokens.push(ExprToken::Y);
+                i += 2;
+            }
+            '|' if next == Some('|') => {
+                tokens.push(ExprToken::O);
+                i += 2;
+            }
+            _ => return Err(format!("carácter inesperado: '{}'", c)),
+        }
+    }
+    Ok(tokens)
+}
+
+/// Parser descendente recursivo para el mini-evaluador.
+struct ExprParser<'a> {
+    tokens: &'a [ExprToken],
+    pos: usize,
+}
+
+impl<'a> ExprParser<'a> {
+    fn new(tokens: &'a [ExprToken]) -> Self {
+        ExprParser { tokens, pos: 0 }
+    }
+
+    fn en_fin(&self) -> bool {
+        self.pos >= self.tokens.len()
+    }
+
+    fn peek(&self) -> Option<&ExprToken> {
+        self.tokens.get(self.pos)
+    }
+
+    fn avanzar(&mut self) -> Option<ExprToken> {
+        let t = self.tokens.get(self.pos).cloned();
+        if t.is_some() {
+            self.pos += 1;
+        }
+        t
+    }
+
+    fn parse_expr(&mut self) -> Result<ExprAst, String> {
+        self.parse_o()
+    }
+
+    fn parse_o(&mut self) -> Result<ExprAst, String> {
+        let mut izq = self.parse_y()?;
+        while matches!(self.peek(), Some(ExprToken::O)) {
+            self.avanzar();
+            let der = self.parse_y()?;
+            izq = ExprAst::Binaria {
+                izquierda: Box::new(izq),
+                operador: ExprOpBinaria::O,
+                derecha: Box::new(der),
+            };
+        }
+        Ok(izq)
+    }
+
+    fn parse_y(&mut self) -> Result<ExprAst, String> {
+        let mut izq = self.parse_igualdad()?;
+        while matches!(self.peek(), Some(ExprToken::Y)) {
+            self.avanzar();
+            let der = self.parse_igualdad()?;
+            izq = ExprAst::Binaria {
+                izquierda: Box::new(izq),
+                operador: ExprOpBinaria::Y,
+                derecha: Box::new(der),
+            };
+        }
+        Ok(izq)
+    }
+
+    fn parse_igualdad(&mut self) -> Result<ExprAst, String> {
+        let mut izq = self.parse_relacional()?;
+        loop {
+            let op = match self.peek() {
+                Some(ExprToken::Igual) => ExprOpBinaria::Igual,
+                Some(ExprToken::Distinto) => ExprOpBinaria::Distinto,
+                _ => break,
+            };
+            self.avanzar();
+            let der = self.parse_relacional()?;
+            izq = ExprAst::Binaria {
+                izquierda: Box::new(izq),
+                operador: op,
+                derecha: Box::new(der),
+            };
+        }
+        Ok(izq)
+    }
+
+    fn parse_relacional(&mut self) -> Result<ExprAst, String> {
+        let mut izq = self.parse_aditivo()?;
+        loop {
+            let op = match self.peek() {
+                Some(ExprToken::Menor) => ExprOpBinaria::Menor,
+                Some(ExprToken::Mayor) => ExprOpBinaria::Mayor,
+                Some(ExprToken::MenorIgual) => ExprOpBinaria::MenorIgual,
+                Some(ExprToken::MayorIgual) => ExprOpBinaria::MayorIgual,
+                _ => break,
+            };
+            self.avanzar();
+            let der = self.parse_aditivo()?;
+            izq = ExprAst::Binaria {
+                izquierda: Box::new(izq),
+                operador: op,
+                derecha: Box::new(der),
+            };
+        }
+        Ok(izq)
+    }
+
+    fn parse_aditivo(&mut self) -> Result<ExprAst, String> {
+        let mut izq = self.parse_multiplicativo()?;
+        loop {
+            let op = match self.peek() {
+                Some(ExprToken::Suma) => ExprOpBinaria::Suma,
+                Some(ExprToken::Resta) => ExprOpBinaria::Resta,
+                _ => break,
+            };
+            self.avanzar();
+            let der = self.parse_multiplicativo()?;
+            izq = ExprAst::Binaria {
+                izquierda: Box::new(izq),
+                operador: op,
+                derecha: Box::new(der),
+            };
+        }
+        Ok(izq)
+    }
+
+    fn parse_multiplicativo(&mut self) -> Result<ExprAst, String> {
+        let mut izq = self.parse_unario()?;
+        loop {
+            let op = match self.peek() {
+                Some(ExprToken::Mul) => ExprOpBinaria::Mul,
+                Some(ExprToken::Div) => ExprOpBinaria::Div,
+                _ => break,
+            };
+            self.avanzar();
+            let der = self.parse_unario()?;
+            izq = ExprAst::Binaria {
+                izquierda: Box::new(izq),
+                operador: op,
+                derecha: Box::new(der),
+            };
+        }
+        Ok(izq)
+    }
+
+    fn parse_unario(&mut self) -> Result<ExprAst, String> {
+        match self.peek() {
+            Some(ExprToken::Resta) => {
+                self.avanzar();
+                let e = self.parse_unario()?;
+                Ok(ExprAst::Unaria {
+                    op: ExprOpUnaria::Neg,
+                    expr: Box::new(e),
+                })
+            }
+            Some(ExprToken::No) => {
+                self.avanzar();
+                let e = self.parse_unario()?;
+                Ok(ExprAst::Unaria {
+                    op: ExprOpUnaria::No,
+                    expr: Box::new(e),
+                })
+            }
+            _ => self.parse_primario(),
+        }
+    }
+
+    fn parse_primario(&mut self) -> Result<ExprAst, String> {
+        match self.avanzar() {
+            Some(ExprToken::Entero(n)) => Ok(ExprAst::Entero(n)),
+            Some(ExprToken::Decimal(d)) => Ok(ExprAst::Decimal(d)),
+            Some(ExprToken::Texto(s)) => Ok(ExprAst::Texto(s)),
+            Some(ExprToken::Verdadero) => Ok(ExprAst::Booleano(true)),
+            Some(ExprToken::Falso) => Ok(ExprAst::Booleano(false)),
+            Some(ExprToken::Nulo) => Ok(ExprAst::Nulo),
+            Some(ExprToken::Ident(s)) => Ok(ExprAst::Ident(s)),
+            Some(ExprToken::ParenIzq) => {
+                let e = self.parse_expr()?;
+                match self.avanzar() {
+                    Some(ExprToken::ParenDer) => Ok(e),
+                    _ => Err("se esperaba ')'".to_string()),
+                }
+            }
+            other => Err(format!("token inesperado: {:?}", other)),
+        }
+    }
+}
+
+/// Aplicar un operador binario a dos valores.
+fn aplicar_binaria(op: &ExprOpBinaria, a: ValorFast, b: ValorFast) -> ValorFast {
+    let a_int = a.es_entero();
+    let b_int = b.es_entero();
+    match op {
+        ExprOpBinaria::Suma => {
+            if a_int && b_int {
+                get_small_int_fast(a.a_entero() + b.a_entero())
+            } else {
+                ValorFast::flotante(num(a, a_int) + num(b, b_int))
+            }
+        }
+        ExprOpBinaria::Resta => {
+            if a_int && b_int {
+                get_small_int_fast(a.a_entero() - b.a_entero())
+            } else {
+                ValorFast::flotante(num(a, a_int) - num(b, b_int))
+            }
+        }
+        ExprOpBinaria::Mul => {
+            if a_int && b_int {
+                get_small_int_fast(a.a_entero() * b.a_entero())
+            } else {
+                ValorFast::flotante(num(a, a_int) * num(b, b_int))
+            }
+        }
+        ExprOpBinaria::Div => {
+            if a_int && b_int && b.a_entero() != 0 {
+                get_small_int_fast(a.a_entero() / b.a_entero())
+            } else {
+                ValorFast::flotante(num(a, a_int) / num(b, b_int))
+            }
+        }
+        ExprOpBinaria::Igual => ValorFast::booleano(comparar_igual(a, b)),
+        ExprOpBinaria::Distinto => ValorFast::booleano(!comparar_igual(a, b)),
+        ExprOpBinaria::Menor => ValorFast::booleano(num(a, a_int) < num(b, b_int)),
+        ExprOpBinaria::Mayor => ValorFast::booleano(num(a, a_int) > num(b, b_int)),
+        ExprOpBinaria::MenorIgual => ValorFast::booleano(num(a, a_int) <= num(b, b_int)),
+        ExprOpBinaria::MayorIgual => ValorFast::booleano(num(a, a_int) >= num(b, b_int)),
+        ExprOpBinaria::Y => ValorFast::booleano(a.es_verdadero() && b.es_verdadero()),
+        ExprOpBinaria::O => ValorFast::booleano(a.es_verdadero() || b.es_verdadero()),
+    }
+}
+
+/// Convertir un valor a f64 para operaciones numéricas mixtas.
+fn num(v: ValorFast, es_int: bool) -> f64 {
+    if es_int {
+        v.a_entero() as f64
+    } else {
+        v.a_flotante()
+    }
+}
+
+/// Comparar dos valores por igualdad (numérica o textual).
+fn comparar_igual(a: ValorFast, b: ValorFast) -> bool {
+    if a.es_entero() && b.es_entero() {
+        a.a_entero() == b.a_entero()
+    } else if a.es_booleano() && b.es_booleano() {
+        a.es_verdadero() == b.es_verdadero()
+    } else if a.es_nulo() && b.es_nulo() {
+        true
+    } else {
+        let af = if a.es_entero() {
+            a.a_entero() as f64
+        } else {
+            a.a_flotante()
+        };
+        let bf = if b.es_entero() {
+            b.a_entero() as f64
+        } else {
+            b.a_flotante()
+        };
+        (af - bf).abs() < 1e-12
     }
 }
 
@@ -693,6 +1373,7 @@ fn ejecutar_call_debug(dbg: &mut Debugger, nombre: &str, nargs: usize) -> Result
         dbg.vm.frame_buffer[dbg.vm.frame_count] = FrmFast {
             ip_ret: dbg.vm.ip, // ip ya incrementado por Call handler
             func_version: entry.version,
+            func_sym: sym,
         };
         dbg.vm.frame_count += 1;
 
