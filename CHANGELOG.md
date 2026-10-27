@@ -125,8 +125,6 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **F6-T8 — Windows ARM64.** `windows-11-arm` agregado a la matriz con
   `continue-on-error` mientras el runner esté en preview.
 - **F6-T9 — Extensión VSCode.** `scripts/package-vscode.sh` genera el `.vsix`.
-  **Los crates no se publican en crates.io** (decisión del usuario; se retiró
-  el script de publicación).
 - **F7-T1 — Verificación reproducible.** `scripts/verify.sh`, `Dockerfile`,
   `.devcontainer/devcontainer.json` y `Makefile` (`make verify`).
 - **F7-T2 — planificación interna reparada.** Índice 38 tareas (F4=8), marcador eliminado,
@@ -237,7 +235,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
       aclarando que el bytecode se emite desde el AST y que completarlo es F4-T8.
     - **Backend LLVM** marcado como 🚧 en desarrollo; se separó
       “En progreso / parcial” de “Planeado” (RISC-V/GPU, registry remoto, firma
-      de releases, crates.io, GC por defecto…).
+      de releases, GC por defecto…).
   - **[`README.md`](README.md:1):**
     - Intro corregida: “múltiples máquinas virtuales” → 2 motores + salidas
       (bytecode, ASM, Rust, AOT, WASM, GUI).
@@ -346,8 +344,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
     (`pub use forja_syntax::{ast, error, lexer, parser, token};` +
     `pub use forja_types::semantics;`), preservando la API pública histórica.
   - Verificado: `cargo check --locked` EXIT 0; tests verdes (`forja-syntax` 43,
-    `forja-types` 30, `forja` lib 318, integración 105+62+94+19+6+3). La
-    publicación real en crates.io queda como acción externa.
+    `forja-types` 30, `forja` lib 318, integración 105+62+94+19+6+3).
 - **F3-T7 — Releases pre-compilados multi-plataforma.** Se completó la
   publicación de binarios para que cualquiera pueda **descargar y ejecutar Forja
   sin instalar Rust**, en las tres plataformas y en x86_64/ARM64:
