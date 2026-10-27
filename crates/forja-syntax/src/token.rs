@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use std::fmt;
 
 /// Todos los tipos de token que reconoce Forja (fa)
@@ -103,15 +102,23 @@ pub enum TokenKind {
     Anterior,
 
     // === Tipos de datos ===
+    // F1-T6: variantes de tipo predefinido reconocidas por el parser y el LSP
+    // (aunque el lexer las emita como identificadores); se conservan como
+    // parte de la superficie pública de `TokenKind`.
     /// `Texto` - tipo string
+    #[allow(dead_code)]
     TipoTexto,
     /// `Entero` - tipo i64
+    #[allow(dead_code)]
     TipoEntero,
     /// `Decimal` - tipo f64
+    #[allow(dead_code)]
     TipoDecimal,
     /// `Booleano` - tipo bool
+    #[allow(dead_code)]
     TipoBooleano,
     /// `Exacto` - tipo BigDecimal (coeficiente i128, escala u32)
+    #[allow(dead_code)]
     TipoExacto,
 
     // === Símbolos ===
