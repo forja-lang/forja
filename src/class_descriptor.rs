@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::symbol_table::SymId;
 use std::collections::HashMap;
 
