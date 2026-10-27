@@ -1,0 +1,130 @@
+name: CI de crate (reutilizable)
+
+# Workflow reutilizable para los repos de `crates/` (submódulos).
+#
+# Los crates de runtime dependen del paquete raíz `forja` por ruta
+# (`forja = { path = "../.." }`), así que un clon aislado del crate no compila.
+# Estrategia: se clona el workspace Forja con sus submódulos y se superpone el
+# crate que llama en `crates/<crate>`. Así se prueba exactamente el código del
+# PR dentro del workspace real.
+#
+# Uso desde el repo del crate:
+#
+#   jobs:
+#     ci:
+#       uses: forja-lang/forja/.github/workflows/crate-ci.yml@main
+#       with:
+#         crate: forja-syntax
+#         repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+#         ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+on:
+  workflow_call:
+    inputs:
+      crate:
+        description: "Nombre del paquete Cargo (ej. forja-syntax)"
+        required: true
+        type: string
+      repository:
+        description: "Repo del crate que llama (owner/name)"
+        required: true
+        type: string
+      ref:
+        description: "Commit o rama del crate que llama"
+        required: true
+        type: string
+      parent-ref:
+        description: "Rama del repo forja contra la que se integra"
+        required: false
+        type: string
+        default: main
+      target:
+        description: "Target de Cargo para `cargo check` (ej. wasm32-unknown-unknown). Vacío = host."
+        required: false
+        type: string
+        default: ""
+      run-tests:
+        description: "Ejecutar `cargo test` en el host"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ inputs.crate }}
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout del crate
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+          path: crate
+
+      - name: Checkout del workspace Forja
+        uses: actions/checkout@v4
+        with:
+          repository: forja-lang/forja
+          ref: ${{ inputs.parent-ref }}
+          path: parent
+          submodules: recursive
+
+      - name: Superponer el crate en el workspace
+        run: |
+          rm -rf "parent/crates/${{ inputs.crate }}"
+          mkdir -p "parent/crates/${{ inputs.crate }}"
+          cp -R crate/. "parent/crates/${{ inputs.crate }}/"
+          rm -rf "parent/crates/${{ inputs.crate }}/.git"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Instalar target adicional
+        if: inputs.target != ''
+        run: rustup target add "${{ inputs.target }}"
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: parent
+
+      # Dependencias de sistema que necesitan winit/wayland en Linux.
+      # Son baratas y evitan fallos de link en `forja-gui-rt`.
+      - name: Dependencias de sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libx11-dev libfontconfig1-dev
+
+      - name: Formato
+        working-directory: parent
+        run: cargo fmt -p "${{ inputs.crate }}" -- --check
+
+      # Sin `--locked`: un PR del crate puede agregar dependencias antes de que
+      # el repo padre actualice su Cargo.lock. El padre sigue siendo la fuente
+      # de verdad y valida `--locked` en su propio CI.
+      - name: Clippy
+        working-directory: parent
+        run: |
+          if [ -n "${{ inputs.target }}" ]; then
+            cargo clippy -p "${{ inputs.crate }}" --all-targets \
+              --target "${{ inputs.target }}"
+          else
+            cargo clippy -p "${{ inputs.crate }}" --all-targets
+          fi
+
+      - name: Tests
+        if: inputs.run-tests
+        working-directory: parent
+        run: cargo test -p "${{ inputs.crate }}" --verbose
+
+      - name: Check para target específico
+        if: inputs.target != ''
+        working-directory: parent
+        run: cargo check -p "${{ inputs.crate }}" --target "${{ inputs.target }}" --verbose
