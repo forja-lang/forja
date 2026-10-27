@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! # Compilación Incremental — Caché persistente en disco
 //!
 //! Almacena bytecode serializado de módulos en `.forja/cache/` para reutilizarlo
