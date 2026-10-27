@@ -147,7 +147,7 @@ Para evitar ediciones cruzadas entre sesiones/agentes:
 5. **Verificación antes de mezclar:** `bash scripts/verify.sh` y, si tocaste
    `tests/`, `git add -f tests/<archivo>.rs` (ver §11).
 
-### Regresión de rendimiento (F4-T2)
+### Regresión de rendimiento
 
 El CI ejecuta una puerta de rendimiento (`.github/workflows/perf-regression.yml`)
 que mide cargas deterministas del compilador/VM con
