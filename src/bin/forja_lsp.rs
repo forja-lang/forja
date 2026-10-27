@@ -229,6 +229,8 @@ impl LanguageServer for Backend {
                 rename_provider: Some(OneOf::Left(true)),
                 folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
                 code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
+                inlay_hint_provider: Some(OneOf::Left(true)),
+                workspace_symbol_provider: Some(OneOf::Left(true)),
                 signature_help_provider: Some(SignatureHelpOptions {
                     trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
                     ..Default::default()
@@ -508,8 +510,8 @@ impl LanguageServer for Backend {
     // ----------------------------------------------------------------
 
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
-        let _uri = params.text_document.uri;
-        let analisis = self._get_analisis(&_uri).await;
+        let uri = params.text_document.uri;
+        let analisis = self._get_analisis(&uri).await;
 
         let mut actions: Vec<CodeActionOrCommand> = Vec::new();
 
@@ -528,20 +530,71 @@ impl LanguageServer for Backend {
             ..Default::default()
         }));
 
-        let text = self._get_text(&_uri).await;
+        let text = self._get_text(&uri).await;
         for err in &analisis.errores {
+            let rango = calcular_rango_error_palabra(&text, err.linea, err.columna);
             let diag = Diagnostic {
-                range: calcular_rango_error_palabra(&text, err.linea, err.columna),
+                range: rango,
                 severity: Some(DiagnosticSeverity::ERROR),
                 source: Some("forja".to_string()),
                 message: err.mensaje.clone(),
                 ..Default::default()
             };
 
-            // Sugerencia basada en error
+            // 2. Quick fix: importar módulo faltante (símbolo no declarado que
+            //    existe en la stdlib).
+            if let Some(nombre) = extraer_nombre_variable_error(&err.mensaje) {
+                if let Some(modulo) = modulo_stdlib_para_simbolo(&nombre) {
+                    let edit = insertar_importacion(&uri, &text, &modulo);
+                    actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+                        title: format!("🔧 Importar `{}` desde std/{}", nombre, modulo),
+                        kind: Some(CodeActionKind::QUICKFIX),
+                        diagnostics: Some(vec![diag.clone()]),
+                        edit: Some(edit),
+                        command: None,
+                        is_preferred: Some(true),
+                        ..Default::default()
+                    }));
+                }
+            }
+
+            // 3. Quick fix: añadir `mut` a una variable reasignada.
+            if let Some(nombre) = extraer_nombre_variable_error(&err.mensaje) {
+                if es_error_de_mutabilidad(&err.mensaje) {
+                    if let Some(edit) = insertar_mut(&uri, &text, &nombre) {
+                        actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+                            title: format!("🔧 Añadir `mut` a `{}`", nombre),
+                            kind: Some(CodeActionKind::QUICKFIX),
+                            diagnostics: Some(vec![diag.clone()]),
+                            edit: Some(edit),
+                            command: None,
+                            is_preferred: Some(true),
+                            ..Default::default()
+                        }));
+                    }
+                }
+            }
+
+            // 4. Quick fix: corregir tipo (usa la sugerencia del compilador si
+            //    menciona un tipo esperado).
+            if let Some(tipo) = extraer_tipo_sugerido(&err.mensaje, &err.sugerencia) {
+                if let Some(edit) = reemplazar_tipo_en_linea(&uri, &text, err.linea, &tipo) {
+                    actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+                        title: format!("🔧 Cambiar tipo a `{}`", tipo),
+                        kind: Some(CodeActionKind::QUICKFIX),
+                        diagnostics: Some(vec![diag.clone()]),
+                        edit: Some(edit),
+                        command: None,
+                        is_preferred: Some(false),
+                        ..Default::default()
+                    }));
+                }
+            }
+
+            // 5. Sugerencia genérica basada en el mensaje del compilador.
             if !err.sugerencia.is_empty() {
                 actions.push(CodeActionOrCommand::CodeAction(CodeAction {
-                    title: format!("🔧 {}: {}", err.sugerencia, err.mensaje),
+                    title: format!("💡 {}: {}", err.sugerencia, err.mensaje),
                     kind: Some(CodeActionKind::QUICKFIX),
                     diagnostics: Some(vec![diag]),
                     edit: None,
@@ -800,6 +853,107 @@ impl LanguageServer for Backend {
     }
 
     // ----------------------------------------------------------------
+    // Inlay Hints (F2-T5): tipo inferido junto a variables sin anotación
+    // ----------------------------------------------------------------
+
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        let uri = params.text_document.uri;
+        let texto = self._get_text(&uri).await;
+        let analisis = self._get_analisis(&uri).await;
+
+        let mut hints: Vec<InlayHint> = Vec::new();
+        for s in &analisis.simbolos {
+            if s.tipo_simbolo != SimboloTipo::Variable {
+                continue;
+            }
+            // Solo si la línea de declaración no tiene anotación de tipo explícita.
+            let linea_txt = match texto.lines().nth(s.linea as usize) {
+                Some(l) => l,
+                None => continue,
+            };
+            if linea_txt.contains(':') {
+                continue;
+            }
+            // Inferir el tipo a partir del literal asignado.
+            let tipo = match inferir_tipo_variable(linea_txt, &s.nombre) {
+                Some(t) => t,
+                None => continue,
+            };
+            hints.push(InlayHint {
+                position: Position {
+                    line: s.linea,
+                    character: s.col_fin,
+                },
+                label: InlayHintLabel::String(format!(": {}", tipo)),
+                kind: Some(InlayHintKind::TYPE),
+                text_edits: None,
+                tooltip: Some(InlayHintTooltip::String(format!(
+                    "Tipo inferido para `{}`",
+                    s.nombre
+                ))),
+                padding_left: Some(false),
+                padding_right: Some(true),
+                data: None,
+            });
+        }
+
+        Ok(Some(hints))
+    }
+
+    // ----------------------------------------------------------------
+    // Workspace Symbols (F2-T5): búsqueda global de símbolos
+    // ----------------------------------------------------------------
+
+    async fn symbol(
+        &self,
+        params: WorkspaceSymbolParams,
+    ) -> Result<Option<Vec<SymbolInformation>>> {
+        let consulta = params.query.to_lowercase();
+        let documentos = self.documentos.lock().await;
+        let mut resultados: Vec<SymbolInformation> = Vec::new();
+
+        for (uri, texto) in documentos.iter() {
+            let analisis = analizar_documento(texto);
+            for s in &analisis.simbolos {
+                if !consulta.is_empty() && !s.nombre.to_lowercase().contains(&consulta) {
+                    continue;
+                }
+                let kind = match s.tipo_simbolo {
+                    SimboloTipo::Variable => SymbolKind::VARIABLE,
+                    SimboloTipo::Funcion => SymbolKind::FUNCTION,
+                    SimboloTipo::Clase => SymbolKind::CLASS,
+                    SimboloTipo::Parametro => SymbolKind::VARIABLE,
+                    SimboloTipo::Enum => SymbolKind::ENUM,
+                    SimboloTipo::Rasgo => SymbolKind::INTERFACE,
+                };
+                #[allow(deprecated)]
+                resultados.push(SymbolInformation {
+                    name: s.nombre.clone(),
+                    kind,
+                    tags: None,
+                    deprecated: None,
+                    location: Location {
+                        uri: uri.clone(),
+                        range: Range {
+                            start: Position {
+                                line: s.linea,
+                                character: s.col_inicio,
+                            },
+                            end: Position {
+                                line: s.linea,
+                                character: s.col_fin,
+                            },
+                        },
+                    },
+                    container_name: None,
+                });
+            }
+        }
+
+        Ok(Some(resultados))
+    }
+
+    // ----------------------------------------------------------------
     // Signature Help
     // ----------------------------------------------------------------
 
@@ -886,7 +1040,7 @@ impl Backend {
         let mut diagnostics = Vec::new();
 
         // 1. Errores de compilación (filtrados)
-        match forja::compilar(texto) {
+        match forja::transpilar_a_rust(texto) {
             Ok(_) => {}
             Err(errors) => {
                 'next_err: for err in &errors {
@@ -937,6 +1091,32 @@ impl Backend {
             }
         }
 
+        // 3. Diagnósticos del linter (F2-T4)
+        if let Ok(diags) = forja::linter::lint_source(texto, forja::linter::ConfigLint::default()) {
+            for d in diags {
+                let severity = match d.severidad {
+                    forja::linter::Severidad::Error => DiagnosticSeverity::ERROR,
+                    forja::linter::Severidad::Warn => DiagnosticSeverity::WARNING,
+                    forja::linter::Severidad::Off => continue,
+                };
+                let mut mensaje = format!("[{}] {}", d.regla.nombre(), d.mensaje);
+                if !d.sugerencia.is_empty() {
+                    mensaje.push_str(&format!(" — {}", d.sugerencia));
+                }
+                diagnostics.push(Diagnostic {
+                    range: calcular_rango_error_palabra(texto, d.linea, d.columna),
+                    severity: Some(severity),
+                    source: Some("forja-lint".to_string()),
+                    code: Some(NumberOrString::String(format!(
+                        "L{}",
+                        codigo_lint_lsp(d.regla)
+                    ))),
+                    message: mensaje,
+                    ..Default::default()
+                });
+            }
+        }
+
         self.client
             .publish_diagnostics(uri, diagnostics, None)
             .await;
@@ -981,7 +1161,7 @@ fn analizar_documento(source: &str) -> AnalisisDocumento {
     extraer_info(&tokens, &mut analisis);
 
     // Intentar parse real para obtener errores de compilación
-    if let Err(errors) = forja::compilar(source) {
+    if let Err(errors) = forja::transpilar_a_rust(source) {
         analisis.errores = errors;
     }
 
@@ -1418,6 +1598,251 @@ fn extraer_nombre_variable_error(mensaje: &str) -> Option<String> {
             if let Some(end) = rest.find(delim) {
                 return Some(rest[..end].to_string());
             }
+        }
+    }
+    None
+}
+
+/// Código numérico de una regla del linter (para el campo `code` del diagnóstico).
+fn codigo_lint_lsp(regla: forja::linter::Regla) -> u32 {
+    use forja::linter::Regla;
+    match regla {
+        Regla::VariableSinUsar => 1,
+        Regla::FuncionSinUsar => 2,
+        Regla::Complejidad => 3,
+        Regla::PanicAccidental => 4,
+        Regla::ComparacionConstante => 5,
+        Regla::DivisionPorCero => 6,
+    }
+}
+
+// ─── Helpers de quick fixes (F2-T5) ─────────────────────────────
+
+/// Construye un `WorkspaceEdit` con un único `TextEdit` sobre `uri`.
+fn crear_workspace_edit(uri: &Url, edit: TextEdit) -> WorkspaceEdit {
+    let mut cambios: HashMap<Url, Vec<TextEdit>> = HashMap::new();
+    cambios.insert(uri.clone(), vec![edit]);
+    WorkspaceEdit {
+        changes: Some(cambios),
+        ..Default::default()
+    }
+}
+
+/// Mapea un símbolo no declarado a un módulo de la stdlib que probablemente lo
+/// exporta. Devuelve el nombre del módulo (sin extensión) si hay coincidencia.
+fn modulo_stdlib_para_simbolo(nombre: &str) -> Option<String> {
+    // Heurística por prefijo/nombre conocido. Se mantiene deliberadamente
+    // conservadora para no ofrecer imports incorrectos.
+    let n = nombre.to_lowercase();
+    let modulo = if n.starts_with("leer_") || n.starts_with("escribir_") || n == "imprimir" {
+        "io"
+    } else if n.starts_with("json_") || n == "json" {
+        "json"
+    } else if n.starts_with("csv_") || n == "csv" {
+        "csv"
+    } else if n.starts_with("hash_") || n == "hash" {
+        "hash"
+    } else if n.starts_with("hex_") || n == "hex" {
+        "hex"
+    } else if n.starts_with("url_") || n == "url" {
+        "url"
+    } else if n.starts_with("fecha_") || n.starts_with("ahora") {
+        "fecha"
+    } else if n.starts_with("aleatorio") || n.starts_with("random") {
+        "aleatorio"
+    } else if n.starts_with("matematica") || n.starts_with("raiz") || n.starts_with("potencia") {
+        "matematica"
+    } else if n.starts_with("archivo_") || n.starts_with("leer_archivo") {
+        "archivo"
+    } else if n.starts_with("ruta_") {
+        "ruta"
+    } else if n.starts_with("texto_") {
+        "texto"
+    } else if n.starts_with("log_") {
+        "log"
+    } else if n.starts_with("env_") {
+        "env"
+    } else if n.starts_with("temporizador") || n.starts_with("dormir") {
+        "temporizador"
+    } else if n.starts_with("red_") || n.starts_with("socket") {
+        "red"
+    } else if n.starts_with("sqlite") {
+        "sqlite"
+    } else if n.starts_with("toml") {
+        "toml"
+    } else {
+        return None;
+    };
+    Some(modulo.to_string())
+}
+
+/// Genera un `TextEdit` que inserta `importar std/<modulo>` al inicio del
+/// documento, evitando duplicados si ya está importado.
+fn insertar_importacion(uri: &Url, texto: &str, modulo: &str) -> WorkspaceEdit {
+    let linea_import = format!("importar std/{}\n", modulo);
+    // Si ya existe el import, no insertamos nada (edit vacío en la posición 0).
+    let ya_existe = texto.lines().any(|l| {
+        let l = l.trim();
+        l == format!("importar std/{}", modulo) || l == format!("importar \"std/{}\"", modulo)
+    });
+    let nuevo_texto = if ya_existe {
+        String::new()
+    } else {
+        linea_import
+    };
+    let edit = TextEdit {
+        range: Range {
+            start: Position {
+                line: 0,
+                character: 0,
+            },
+            end: Position {
+                line: 0,
+                character: 0,
+            },
+        },
+        new_text: nuevo_texto,
+    };
+    crear_workspace_edit(uri, edit)
+}
+
+/// Detecta si un mensaje de error corresponde a reasignación de una variable
+/// inmutable (para ofrecer añadir `mut`).
+fn es_error_de_mutabilidad(mensaje: &str) -> bool {
+    let m = mensaje.to_lowercase();
+    m.contains("inmutable")
+        || m.contains("no es mutable")
+        || m.contains("no se puede reasignar")
+        || m.contains("no se puede modificar")
+        || m.contains("constante")
+}
+
+/// Genera un `TextEdit` que inserta `mut` tras la keyword `variable` de la
+/// declaración de `nombre`. Devuelve `None` si no se encuentra el patrón.
+fn insertar_mut(uri: &Url, texto: &str, nombre: &str) -> Option<WorkspaceEdit> {
+    for (idx, linea) in texto.lines().enumerate() {
+        let trimmed = linea.trim_start();
+        // Busca `variable <nombre>` sin `mut` ya presente.
+        if let Some(resto) = trimmed.strip_prefix("variable ") {
+            let resto = resto.trim_start();
+            if resto.starts_with(nombre)
+                && resto[nombre.len()..]
+                    .trim_start()
+                    .starts_with(['=', ':', ';'])
+            {
+                let col = linea.len() - trimmed.len() + "variable ".len();
+                let edit = TextEdit {
+                    range: Range {
+                        start: Position {
+                            line: idx as u32,
+                            character: col as u32,
+                        },
+                        end: Position {
+                            line: idx as u32,
+                            character: col as u32,
+                        },
+                    },
+                    new_text: "mut ".to_string(),
+                };
+                return Some(crear_workspace_edit(uri, edit));
+            }
+        }
+    }
+    None
+}
+
+/// Extrae un tipo sugerido del mensaje/sugerencia del compilador. Reconoce
+/// patrones como "se esperaba `Entero`" o "tipo esperado: Texto".
+fn extraer_tipo_sugerido(mensaje: &str, sugerencia: &str) -> Option<String> {
+    const TIPOS: [&str; 5] = ["Texto", "Entero", "Decimal", "Booleano", "Exacto"];
+    for fuente in [sugerencia, mensaje] {
+        for tipo in TIPOS {
+            if fuente.contains(tipo) {
+                return Some(tipo.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Genera un `TextEdit` que reemplaza el tipo anotado en la línea indicada
+/// (1-based) por `tipo`. Devuelve `None` si no hay anotación de tipo.
+fn reemplazar_tipo_en_linea(
+    uri: &Url,
+    texto: &str,
+    linea: usize,
+    tipo: &str,
+) -> Option<WorkspaceEdit> {
+    let idx = linea.checked_sub(1)?;
+    let linea_txt = texto.lines().nth(idx)?;
+    // Busca el patrón `: <Tipo>` y reemplaza el identificador de tipo.
+    let pos = linea_txt.find(':')?;
+    let despues = &linea_txt[pos + 1..];
+    let inicio_tipo = despues.len() - despues.trim_start().len();
+    let resto = despues.trim_start();
+    let fin_tipo = resto
+        .find(|c: char| !c.is_alphanumeric() && c != '_')
+        .unwrap_or(resto.len());
+    if fin_tipo == 0 {
+        return None;
+    }
+    let col_inicio = pos + 1 + inicio_tipo;
+    let col_fin = col_inicio + fin_tipo;
+    let edit = TextEdit {
+        range: Range {
+            start: Position {
+                line: idx as u32,
+                character: col_inicio as u32,
+            },
+            end: Position {
+                line: idx as u32,
+                character: col_fin as u32,
+            },
+        },
+        new_text: tipo.to_string(),
+    };
+    Some(crear_workspace_edit(uri, edit))
+}
+
+/// Infiere el tipo de una variable a partir del literal asignado en su línea
+/// de declaración (F2-T5, inlay hints). Devuelve `None` si no se puede inferir.
+fn inferir_tipo_variable(linea: &str, nombre: &str) -> Option<String> {
+    // Buscar el `=` de la asignación tras el nombre de la variable.
+    let pos_nombre = linea.find(nombre)?;
+    let resto = &linea[pos_nombre + nombre.len()..];
+    let pos_igual = resto.find('=')?;
+    let valor = resto[pos_igual + 1..].trim().trim_end_matches(';').trim();
+
+    if valor.is_empty() {
+        return None;
+    }
+    // Literales de texto.
+    if valor.starts_with('"') || valor.starts_with('\'') {
+        return Some("Texto".to_string());
+    }
+    // Booleanos.
+    if valor == "verdadero" || valor == "falso" {
+        return Some("Booleano".to_string());
+    }
+    // Arreglos y mapas.
+    if valor.starts_with('[') {
+        return Some("Arreglo".to_string());
+    }
+    if valor.starts_with('{') {
+        return Some("Mapa".to_string());
+    }
+    // Números: decimal si contiene punto, entero en caso contrario.
+    let primer = valor.chars().next()?;
+    if primer.is_ascii_digit() || primer == '-' || primer == '+' {
+        let solo_num = valor
+            .trim_start_matches(['-', '+'])
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '.' || c == '_');
+        if solo_num {
+            if valor.contains('.') {
+                return Some("Decimal".to_string());
+            }
+            return Some("Entero".to_string());
         }
     }
     None
