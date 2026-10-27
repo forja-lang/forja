@@ -32,3 +32,15 @@
 [submodule "crates/forja-wasm-gui"]
 	path = crates/forja-wasm-gui
 	url = https://github.com/forja-lang/forja-wasm-gui.git
+[submodule "crates/forja-syntax"]
+	path = crates/forja-syntax
+	url = https://github.com/forja-lang/forja-syntax.git
+[submodule "crates/forja-types"]
+	path = crates/forja-types
+	url = https://github.com/forja-lang/forja-types.git
+[submodule "crates/forja-theme"]
+	path = crates/forja-theme
+	url = https://github.com/forja-lang/forja-theme.git
+[submodule "crates/forja-gui-core"]
+	path = crates/forja-gui-core
+	url = https://github.com/forja-lang/forja-gui-core.git
