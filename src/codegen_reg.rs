@@ -544,19 +544,48 @@ impl<'a> CodegenReg<'a> {
 
     // === Helper: mov reg, reg ===
     fn emit_mov_reg_reg(&mut self, dst: PhysReg, src: PhysReg) {
-        if dst.is_xmm() || src.is_xmm() {
-            // movsd xmm_dst, xmm_src
-            let d_idx = (dst as u8) - PhysReg::XMM0 as u8;
-            let s_idx = (src as u8) - PhysReg::XMM0 as u8;
-            self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x10]);
-            self.bytes.push(0xC0 | (d_idx << 3) | s_idx);
-        } else {
-            let rex = self.rex_w_r_b(src, dst); // mov r/m64, r64: src=reg, dst=rm
-            self.bytes.push(rex);
-            self.bytes.push(0x89); // mov r/m64, r64
-            self.bytes
-                .push(0xC0 | ((src.rex_index() & 7) << 3) | (dst.rex_index() & 7));
+        match (dst.is_xmm(), src.is_xmm()) {
+            (true, true) => {
+                // movsd xmm_dst, xmm_src
+                let d_idx = (dst as u8) - PhysReg::XMM0 as u8;
+                let s_idx = (src as u8) - PhysReg::XMM0 as u8;
+                self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x10]);
+                self.bytes.push(0xC0 | (d_idx << 3) | s_idx);
+            }
+            (true, false) => {
+                // movq xmm_dst, gpr_src (GPR → XMM): 66 REX.W 0F 6E /r
+                self.emit_movq_xmm_gpr(dst, src);
+            }
+            (false, true) => {
+                // movq gpr_dst, xmm_src (XMM → GPR): 66 REX.W 0F 7E /r
+                self.emit_movq_gpr_xmm(dst, src);
+            }
+            (false, false) => {
+                let rex = self.rex_w_r_b(src, dst); // mov r/m64, r64: src=reg, dst=rm
+                self.bytes.push(rex);
+                self.bytes.push(0x89); // mov r/m64, r64
+                self.bytes
+                    .push(0xC0 | ((src.rex_index() & 7) << 3) | (dst.rex_index() & 7));
+            }
         }
+    }
+
+    /// `movq xmm, gpr` — mueve los 64 bits de un GPR a un registro XMM.
+    fn emit_movq_xmm_gpr(&mut self, xmm: PhysReg, gpr: PhysReg) {
+        let x_idx = (xmm as u8) - PhysReg::XMM0 as u8;
+        let rex = 0x48 | if gpr.rex_index() >= 8 { 0x01 } else { 0 }; // REX.W + REX.B
+        self.bytes.extend_from_slice(&[0x66, rex, 0x0F, 0x6E]);
+        self.bytes
+            .push(0xC0 | ((x_idx & 7) << 3) | (gpr.rex_index() & 7));
+    }
+
+    /// `movq gpr, xmm` — mueve los 64 bits de un registro XMM a un GPR.
+    fn emit_movq_gpr_xmm(&mut self, gpr: PhysReg, xmm: PhysReg) {
+        let x_idx = (xmm as u8) - PhysReg::XMM0 as u8;
+        let rex = 0x48 | if gpr.rex_index() >= 8 { 0x01 } else { 0 }; // REX.W + REX.B
+        self.bytes.extend_from_slice(&[0x66, rex, 0x0F, 0x7E]);
+        self.bytes
+            .push(0xC0 | ((x_idx & 7) << 3) | (gpr.rex_index() & 7));
     }
 
     // === Helper: load [rbp-(off+8)] → reg ===
@@ -955,12 +984,6 @@ impl<'a> CodegenReg<'a> {
                 self.bytes[offset..offset + 4].copy_from_slice(&rel.to_le_bytes());
             }
         }
-    }
-
-    // === REX prefix para dos registros ===
-    /// REX.W + REX.R (para el campo `reg` del ModRM) + REX.B (para el `rm`).
-    fn rex_for_two(&self, a: PhysReg, b: PhysReg) -> u8 {
-        self.rex_w_r_b(a, b)
     }
 
     /// REX.W + REX.R (para `reg_field`) + REX.B (para `rm_field`).
