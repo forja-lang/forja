@@ -225,7 +225,7 @@ PS C:\forja> forja medir ejemplos/40_fibonacci.fa --vm todas --iters 100
 #### 4. Modo Interactivo (Consola de Lectura y Ejecución Directa)
 ```powershell
 PS C:\forja> forja interactivo
-🔨 Forja v0.9.2 — Escribí 'salir' para terminar
+🔨 Forja v0.9.3 — Escribí 'salir' para terminar
 > variable x = 10
 > x = x + 5
 > escribir(x)
@@ -283,7 +283,7 @@ $ bash scripts/build-android.sh aarch64-linux-android
 
 ## 📌 Estado del proyecto
 
-Forja está en **v0.9.2** y en desarrollo activo. El estado verificable de cada
+Forja está en **v0.9.3** y en desarrollo activo. El estado verificable de cada
 componente —hecho / en progreso / planeado— vive en el
 **[roadmap oficial](https://forja-lang.github.io/docs/roadmap/)**.
 
