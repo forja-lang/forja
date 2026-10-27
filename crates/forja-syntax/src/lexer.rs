@@ -1,4 +1,4 @@
-use crate::error::{ErrorForja, ErrorTipo};
+use crate::error::{ErrorForja, ErrorTipo, Span};
 use crate::token::{Token, TokenKind};
 
 /// Tokenizador/Lexer para el lenguaje Forja (fa)
@@ -355,8 +355,9 @@ impl Lexer {
                         if self.advance() == Some('\'') {
                             Ok(Some(Token::new(TokenKind::Caracter('\''), linea, columna)))
                         } else {
-                            Err(ErrorForja::new(
+                            Err(ErrorForja::con_codigo(
                                 ErrorTipo::ErrorLexico, linea, columna,
+                                Span::punto(columna),
                                 "Caracter literal mal formado: falta comilla simple de cierre después de \\'",
                                 "Usá: '\\''",
                             ))
@@ -366,17 +367,19 @@ impl Lexer {
                         self.advance();
                         Ok(Some(Token::new(TokenKind::Caracter('\r'), linea, columna)))
                     }
-                    Some(c) => Err(ErrorForja::new(
+                    Some(c) => Err(ErrorForja::con_codigo(
                         ErrorTipo::ErrorLexico,
                         linea,
                         columna,
+                        Span::rango(columna, columna + 2),
                         &format!("Secuencia de escape desconocida: '\\{}'", c),
                         "Usá una de: \\n, \\t, \\\\, \\', \\r",
                     )),
-                    None => Err(ErrorForja::new(
+                    None => Err(ErrorForja::con_codigo(
                         ErrorTipo::ErrorLexico,
                         linea,
                         columna,
+                        Span::punto(columna),
                         "Caracter literal sin cerrar después de \\",
                         "Agregá la comilla simple de cierre, ej: '\\n'",
                     )),
@@ -402,10 +405,11 @@ impl Lexer {
                     Ok(Some(Token::new(TokenKind::Texto(s), linea, columna)))
                 }
             }
-            None => Err(ErrorForja::new(
+            None => Err(ErrorForja::con_codigo(
                 ErrorTipo::ErrorLexico,
                 linea,
                 columna,
+                Span::punto(columna),
                 "Caracter literal vacío (solo ' sin contenido)",
                 "Usá: 'a' para un caracter literal.",
             )),
@@ -472,10 +476,11 @@ impl Lexer {
                             self.advance();
                         }
                         None => {
-                            return Err(ErrorForja::new(
+                            return Err(ErrorForja::con_codigo(
                                 ErrorTipo::ErrorLexico,
                                 start_line,
                                 start_col,
+                                Span::punto(start_col),
                                 "Cadena de texto sin cerrar",
                                 "Agregá una comilla doble \" al final del texto.",
                             ));
@@ -483,25 +488,12 @@ impl Lexer {
                     }
                 }
                 Some('{') => {
-                    // === INTERPOLACIÓN DIRECTA {expresion} ===
-                    let (linea_act, col_act) = (self.linea, self.columna);
-
-                    // Guardar el texto acumulado hasta ahora
-                    let texto_actual = std::mem::take(&mut s);
-
-                    if primer_fragmento.is_none() {
-                        primer_fragmento = Some(texto_actual);
-                    } else {
-                        self.tokens_pendientes.push(Token::new(
-                            TokenKind::Texto(texto_actual),
-                            linea_act,
-                            col_act,
-                        ));
-                    }
-
-                    self.advance(); // consume {
-                    self.escanear_expresion_interpolada()?;
-                    continue;
+                    // `{` es un carácter literal dentro de un string.
+                    // La interpolación solo se activa con `${...}` (ver rama `$`).
+                    // Esto permite escribir llaves literales, p. ej. en plantillas
+                    // de código: "funcion f() -> ${tipo} {\n".
+                    s.push('{');
+                    self.advance();
                 }
                 Some('$') => {
                     // Verificar si es ${ (interpolación) o $$ ($ literal)
@@ -550,10 +542,11 @@ impl Lexer {
                     self.advance();
                 }
                 None => {
-                    return Err(ErrorForja::new(
+                    return Err(ErrorForja::con_codigo(
                         ErrorTipo::ErrorLexico,
                         start_line,
                         start_col,
+                        Span::punto(start_col),
                         "Cadena de texto sin cerrar",
                         "Agregá una comilla doble \" al final del texto.",
                     ));
@@ -585,10 +578,11 @@ impl Lexer {
 
             match self.current() {
                 None => {
-                    return Err(ErrorForja::new(
+                    return Err(ErrorForja::con_codigo(
                         ErrorTipo::ErrorLexico,
                         self.linea,
                         self.columna,
+                        Span::punto(self.columna),
                         "Interpolación sin cerrar",
                         "Agregá '}' para cerrar la expresión interpolada ${.",
                     ));
@@ -602,10 +596,11 @@ impl Lexer {
                     // no es el cierre de la interpolación, sino parte de la expresión.
                     // En Forja no hay bloques dentro de expresiones, así que esto
                     // no debería ocurrir, pero lo manejamos por seguridad.
-                    return Err(ErrorForja::new(
+                    return Err(ErrorForja::con_codigo(
                         ErrorTipo::ErrorLexico,
                         self.linea,
                         self.columna,
+                        Span::punto(self.columna),
                         "} inesperado dentro de la expresión interpolada",
                         "Revisá que los paréntesis y corchetes estén balanceados.",
                     ));
@@ -797,10 +792,11 @@ impl Lexer {
                             self.columna,
                         ));
                     } else {
-                        return Err(ErrorForja::new(
+                        return Err(ErrorForja::con_codigo(
                             ErrorTipo::ErrorLexico,
                             self.linea,
                             self.columna,
+                            Span::punto(self.columna),
                             "Carácter '|' inesperado dentro de interpolación. ¿Quizás quisiste escribir '||'?",
                             "Usá '||' para el operador O lógico.",
                         ));
@@ -838,10 +834,11 @@ impl Lexer {
                                 self.advance();
                             }
                             None => {
-                                return Err(ErrorForja::new(
+                                return Err(ErrorForja::con_codigo(
                                     ErrorTipo::ErrorLexico,
                                     linea_act,
                                     col_act,
+                                    Span::punto(col_act),
                                     "String entre comillas simples sin cerrar",
                                     "Agregá ' al final del texto.",
                                 ));
@@ -896,10 +893,11 @@ impl Lexer {
                         }
                     } else {
                         // Carácter desconocido, avanzar
-                        return Err(ErrorForja::new(
+                        return Err(ErrorForja::con_codigo(
                             ErrorTipo::ErrorLexico,
                             self.linea,
                             self.columna,
+                            Span::punto(self.columna),
                             &format!("Carácter no reconocido dentro de interpolación: '{}'", ch),
                             "Revisá que la expresión dentro de ${} sea válida.",
                         ));
@@ -1154,10 +1152,11 @@ impl Lexer {
             // Carácter desconocido
             _ => {
                 self.advance();
-                return Err(ErrorForja::new(
+                return Err(ErrorForja::con_codigo(
                     ErrorTipo::ErrorLexico,
                     linea,
                     columna,
+                    Span::punto(columna),
                     &format!("Carácter no reconocido: '{}'", ch),
                     "Revisá que no haya caracteres extraños. ¿Quizás es un typo?",
                 ));
@@ -1279,11 +1278,11 @@ mod tests {
     #[test]
     #[allow(clippy::approx_constant)]
     fn test_tokenize_numeros() {
-        let source = "42 3.14";
+        let source = "42 2.5";
         let mut lexer = Lexer::new(source);
         let tokens = lexer.tokenize().unwrap();
         assert_eq!(tokens[0].kind, TokenKind::Numero(42));
-        assert_eq!(tokens[1].kind, TokenKind::Decimal(3.14));
+        assert_eq!(tokens[1].kind, TokenKind::Decimal(2.5));
     }
 
     #[test]
@@ -1366,6 +1365,38 @@ mod tests {
         assert_eq!(
             tokens[2].kind,
             TokenKind::Texto("Hola ${nombre}".to_string())
+        );
+        assert_eq!(tokens[3].kind, TokenKind::ParenCerrar);
+    }
+
+    #[test]
+    fn test_string_llave_literal() {
+        // `{` sin `$` es un carácter literal (no interpolación directa).
+        let source = r#"escribir("funcion f() -> ${tipo} {\n")"#;
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::Escribir);
+        assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
+        assert_eq!(
+            tokens[2].kind,
+            TokenKind::Texto("funcion f() -> ".to_string())
+        );
+        assert_eq!(tokens[3].kind, TokenKind::Identificador("tipo".to_string()));
+        assert_eq!(tokens[4].kind, TokenKind::Texto(" {\n".to_string()));
+        assert_eq!(tokens[5].kind, TokenKind::ParenCerrar);
+    }
+
+    #[test]
+    fn test_string_llaves_literales_simples() {
+        // Un string con llaves literales y sin interpolación se preserva tal cual.
+        let source = r#"escribir("{ \"clave\": 1 }")"#;
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::Escribir);
+        assert_eq!(tokens[1].kind, TokenKind::ParenAbrir);
+        assert_eq!(
+            tokens[2].kind,
+            TokenKind::Texto("{ \"clave\": 1 }".to_string())
         );
         assert_eq!(tokens[3].kind, TokenKind::ParenCerrar);
     }
@@ -1457,4 +1488,206 @@ mod tests {
         assert_eq!(tokens[4].kind, TokenKind::Texto("".to_string()));
         assert_eq!(tokens[5].kind, TokenKind::ParenCerrar);
     }
+}
+
+/// Comentario del código fuente, con su ubicación y el token que le sigue
+/// (para poder reinsertarlo al reformatear sin perder el orden).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Comentario {
+    pub linea: usize,
+    pub columna: usize,
+    pub texto: String,
+    pub bloque: bool,
+    /// Clave del siguiente token significativo (excluye doc comments y EOF).
+    pub siguiente_token: Option<String>,
+    /// Aparición (0-based) de esa clave en el flujo de tokens original.
+    pub siguiente_ocurrencia: usize,
+}
+
+/// Extrae los comentarios (`//`, `///` y `/* */`) del fuente, ignorando los
+/// marcadores que aparecen dentro de strings o literales de carácter.
+///
+/// Es la base de F5-T2: el formatter reconstruye desde el AST (que no conserva
+/// comentarios), así que se reinsertan por línea del token siguiente.
+pub fn extraer_comentarios(source: &str) -> Vec<Comentario> {
+    struct Crudo {
+        linea: usize,
+        columna: usize,
+        fin_linea: usize,
+        fin_columna: usize,
+        texto: String,
+        bloque: bool,
+    }
+
+    let chars: Vec<char> = source.chars().collect();
+    let mut crudos: Vec<Crudo> = Vec::new();
+    let mut i = 0usize;
+    let mut linea = 1usize;
+    let mut columna = 1usize;
+
+    while i < chars.len() {
+        let c = chars[i];
+        match c {
+            '"' => {
+                i += 1;
+                columna += 1;
+                while i < chars.len() {
+                    match chars[i] {
+                        '\\' => {
+                            i += 1;
+                            columna += 1;
+                            if i < chars.len() {
+                                if chars[i] == '\n' {
+                                    linea += 1;
+                                    columna = 1;
+                                } else {
+                                    columna += 1;
+                                }
+                                i += 1;
+                            }
+                        }
+                        '"' => {
+                            i += 1;
+                            columna += 1;
+                            break;
+                        }
+                        '\n' => {
+                            linea += 1;
+                            columna = 1;
+                            i += 1;
+                        }
+                        _ => {
+                            i += 1;
+                            columna += 1;
+                        }
+                    }
+                }
+            }
+            '\'' => {
+                // Literal de carácter: saltar hasta la comilla de cierre en la
+                // misma línea (el lexer también acepta 'texto').
+                let (l0, c0) = (linea, columna);
+                let mut j = i + 1;
+                let mut cerrado = false;
+                while j < chars.len() && chars[j] != '\n' {
+                    if chars[j] == '\\' {
+                        j += 2;
+                        continue;
+                    }
+                    if chars[j] == '\'' {
+                        cerrado = true;
+                        break;
+                    }
+                    j += 1;
+                }
+                if cerrado {
+                    while i <= j && i < chars.len() {
+                        if chars[i] == '\n' {
+                            linea += 1;
+                            columna = 1;
+                        } else {
+                            columna += 1;
+                        }
+                        i += 1;
+                    }
+                } else {
+                    linea = l0;
+                    columna = c0;
+                    i += 1;
+                    columna += 1;
+                }
+            }
+            '/' if chars.get(i + 1) == Some(&'/') => {
+                let (li, co) = (linea, columna);
+                let inicio = i;
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
+                    columna += 1;
+                }
+                let texto: String = chars[inicio..i].iter().collect();
+                crudos.push(Crudo {
+                    linea: li,
+                    columna: co,
+                    fin_linea: linea,
+                    fin_columna: columna,
+                    texto,
+                    bloque: false,
+                });
+            }
+            '/' if chars.get(i + 1) == Some(&'*') => {
+                let (li, co) = (linea, columna);
+                let inicio = i;
+                i += 2;
+                columna += 2;
+                while i < chars.len() {
+                    if chars[i] == '*' && chars.get(i + 1) == Some(&'/') {
+                        i += 2;
+                        columna += 2;
+                        break;
+                    }
+                    if chars[i] == '\n' {
+                        linea += 1;
+                        columna = 1;
+                    } else {
+                        columna += 1;
+                    }
+                    i += 1;
+                }
+                let texto: String = chars[inicio..i].iter().collect();
+                crudos.push(Crudo {
+                    linea: li,
+                    columna: co,
+                    fin_linea: linea,
+                    fin_columna: columna,
+                    texto,
+                    bloque: true,
+                });
+            }
+            '\n' => {
+                linea += 1;
+                columna = 1;
+                i += 1;
+            }
+            _ => {
+                i += 1;
+                columna += 1;
+            }
+        }
+    }
+
+    // Tokens significativos (sin doc comments ni EOF) para asociar cada
+    // comentario con el token que lo sigue.
+    let mut tokens: Vec<(usize, usize, String)> = Vec::new();
+    if let Ok(lista) = Lexer::new(source).tokenize() {
+        for t in lista {
+            if matches!(t.kind, TokenKind::DocComment(_) | TokenKind::EOF) {
+                continue;
+            }
+            tokens.push((t.linea, t.columna, format!("{:?}", t.kind)));
+        }
+    }
+
+    let mut resultado = Vec::with_capacity(crudos.len());
+    for crudo in crudos {
+        let idx = tokens
+            .iter()
+            .position(|(l, c, _)| (*l, *c) > (crudo.fin_linea, crudo.fin_columna));
+        let (siguiente_token, siguiente_ocurrencia) = match idx {
+            Some(idx) => {
+                let clave = tokens[idx].2.clone();
+                let previas = tokens[..idx].iter().filter(|(_, _, k)| *k == clave).count();
+                (Some(clave), previas)
+            }
+            None => (None, 0),
+        };
+        resultado.push(Comentario {
+            linea: crudo.linea,
+            columna: crudo.columna,
+            texto: crudo.texto,
+            bloque: crudo.bloque,
+            siguiente_token,
+            siguiente_ocurrencia,
+        });
+    }
+    resultado
 }
