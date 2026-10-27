@@ -1,6 +1,6 @@
 [package]
 name = "forja"
-version = "0.9.3"
+version = "0.9.4"
 edition = "2021"
 description = "Forja (fa) - Lenguaje de programación educativo en español"
 authors = ["forja-lang"]
@@ -154,12 +154,23 @@ lto = "fat"
 codegen-units = 1
 
 # Perfil dist: prioriza TAMAÑO (binarios mínimos, sin símbolos).
-# Usar con `cargo build --profile dist` (ver scripts/build-aar.sh).
+# Usar con `cargo build --profile dist` (el AAR usa `dist-android`).
 [profile.dist]
 inherits = "release"
 opt-level = "z"
 panic = "abort"
 strip = "symbols"
+
+# Perfil dist-android: mismo objetivo de tamaño que `dist`, pero con ThinLTO.
+# El LTO `fat` de release multiplica el tiempo de link por cada ABI de Android
+# (4 targets en CI) sin una ganancia de tamaño proporcional. Se usa solo para
+# el runtime Android; el resto de la distribución sigue con `dist`.
+[profile.dist-android]
+inherits = "release"
+opt-level = "z"
+panic = "abort"
+strip = "symbols"
+lto = "thin"
 
 # F4-T2: perfil de benchmarks. Hereda la optimización de release pero con LTO
 # más ligera y más unidades de código para que `cargo bench` (regresión de
