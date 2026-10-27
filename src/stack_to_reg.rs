@@ -500,14 +500,14 @@ mod tests {
 
     #[test]
     fn test_push_decimal() {
-        let ops = vec![Opcode::PushDecimal(3.14), Opcode::Halt];
+        let ops = vec![Opcode::PushDecimal(2.5), Opcode::Halt];
         let prog = stack_to_reg(&ops);
 
         let block = &prog.blocks[0];
         match &block.instructions[0] {
             RegInstruction::LoadFloat { dst, value } => {
                 assert_eq!(*dst, 0);
-                assert_eq!(*value, 3.14);
+                assert_eq!(*value, 2.5);
             }
             _ => panic!("Expected LoadFloat"),
         }
