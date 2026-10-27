@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! # GC Intrinsics para LLVM Backend
 //!
 //! Módulo que define las intrínsecas de LLVM necesarias para integrar
