@@ -24,6 +24,15 @@ on:
       - '.github/workflows/perf-regression.yml'
   push:
     branches: [ main, master ]
+    paths:
+      - 'src/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'benches/**'
+      - 'scripts/check-perf-regression.sh'
+      - 'scripts/perf_regression.py'
+      - '.github/workflows/perf-regression.yml'
   workflow_dispatch:
 
 env:
