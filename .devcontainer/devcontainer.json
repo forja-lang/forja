@@ -1,0 +1,17 @@
+{
+  "name": "Forja (reproducible)",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": ".."
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "forja-lang.forja-syntax"
+      ]
+    }
+  },
+  "postCreateCommand": "cargo fetch --locked",
+  "remoteUser": "root"
+}
