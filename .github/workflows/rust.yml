@@ -41,10 +41,12 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+      # F0-T3: `--locked` garantiza que el Cargo.lock raíz (workspace) es la
+      # fuente de verdad y que la build no resuelve dependencias nuevas.
       - name: Compilación
-        run: cargo build --verbose
+        run: cargo build --locked --verbose
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --locked --verbose
 
   build-android:
     name: Compilar Android
@@ -117,13 +119,48 @@ jobs:
           name: forja-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/forja
 
+  # F3-T7: matriz de compilación multiplataforma (x86_64 y aarch64).
+  # Cada entrada produce un archivo comprimido autocontenido (binarios + stdlib)
+  # listo para descargar y ejecutar SIN toolchain de Rust.
+  #   - Rust nativo cuando el runner coincide con la arquitectura.
+  #   - macOS x64 se compila desde el runner arm64 con `--target` (SDK universal).
+  # NOTA: Windows ARM64 (runner `windows-11-arm`, en preview) queda como deuda
+  # para no arriesgar el release con un label de runner aún inestable.
   build:
-    name: "Compilar (${{ matrix.os }})"
+    name: "Compilar (${{ matrix.name }})"
     needs: test
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental == true }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macOS-latest]
+        include:
+          - name: linux-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            unix: true
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            unix: true
+          - name: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            unix: false
+          # F6-T8: runner en preview; no bloquea el release hasta estabilizarse.
+          - name: windows-arm64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            unix: false
+            experimental: true
+          - name: macos-x64
+            os: macos-14
+            target: x86_64-apple-darwin
+            unix: true
+          - name: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            unix: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -135,43 +172,78 @@ jobs:
           for sub in $(git config --file .gitmodules --get-regexp path | grep -v benchmarks | sed 's/.* //'); do
             git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
           done
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
-      - name: Compilar (forja)
-        run: cargo build --release --bins --features all --verbose
+        with:
+          key: ${{ matrix.name }}
+      - name: Compilar toolchain (forja, forja-lsp, forja-dap)
+        shell: bash
+        run: cargo build --locked --release --target ${{ matrix.target }} --bins --features all --verbose
       - name: Compilar forja-rt
-        run: cargo build -p forja-rt --release --verbose
+        shell: bash
+        run: cargo build --locked -p forja-rt --release --target ${{ matrix.target }} --verbose
       - name: Compilar forja-rt-gui (con GUI)
+        shell: bash
         run: |
-          cargo build -p forja-rt --release --features gui --target-dir target-gui --verbose
-          copy target-gui\release\forja-rt.exe target\release\forja-rt-gui.exe 2>nul || cp target-gui/release/forja-rt target/release/forja-rt-gui 2>/dev/null || true
-      - name: Compilar instalador para Windows
-        if: matrix.os == 'windows-latest'
+          cargo build --locked -p forja-rt --release --features gui \
+            --target ${{ matrix.target }} --target-dir target-gui --verbose
+          mkdir -p "target/${{ matrix.target }}/release"
+          cp "target-gui/${{ matrix.target }}/release/forja-rt.exe" \
+             "target/${{ matrix.target }}/release/forja-rt-gui.exe" 2>/dev/null || \
+          cp "target-gui/${{ matrix.target }}/release/forja-rt" \
+             "target/${{ matrix.target }}/release/forja-rt-gui"
+      - name: Compilar instalador para Windows (x64)
+        if: matrix.name == 'windows-x64'
+        shell: cmd
         run: |
+          mkdir target\release 2>nul
+          copy /Y target\${{ matrix.target }}\release\forja.exe     target\release\
+          copy /Y target\${{ matrix.target }}\release\forja-lsp.exe target\release\
+          copy /Y target\${{ matrix.target }}\release\forja-dap.exe target\release\
+          copy /Y target\${{ matrix.target }}\release\forja-rt.exe  target\release\
           iscc /O. installer.iss
-      - name: Archivos binarios (Windows)
-        if: matrix.os == 'windows-latest'
+      - name: Empaquetar (Unix)
+        if: matrix.unix
+        shell: bash
         run: |
-          mkdir staging
-          copy target\release\forja.exe staging\
-          copy target\release\forja-lsp.exe staging\
-          copy target\release\forja-dap.exe staging\
-          copy target\release\forja-rt.exe staging\
-          copy target\release\forja-rt-gui.exe staging\
-          xcopy /E /I stdlib staging\stdlib\
-          copy forja-installer-x64.exe staging\
-      - name: Archivos binarios (Linux / macOS)
-        if: matrix.os != 'windows-latest'
+          VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          PKG="forja-${VERSION}-${{ matrix.name }}"
+          BIN="target/${{ matrix.target }}/release"
+          mkdir -p "pack/$PKG"
+          cp "$BIN/forja" "$BIN/forja-lsp" "$BIN/forja-dap" "$BIN/forja-rt" "$BIN/forja-rt-gui" "pack/$PKG/"
+          cp -r stdlib "pack/$PKG/stdlib"
+          for doc in README.md COMANDOS.md INSTRUCCIONES.md LICENSE.md; do
+            [ -f "$doc" ] && cp "$doc" "pack/$PKG/" || true
+          done
+          mkdir -p dist
+          tar -C pack -czf "dist/$PKG.tar.gz" "$PKG"
+          echo "✅ Empaquetado dist/$PKG.tar.gz"
+      - name: Empaquetar (Windows)
+        if: '!matrix.unix'
+        shell: pwsh
         run: |
-          mkdir staging
-          cp target/release/forja target/release/forja-lsp target/release/forja-dap staging/
-          cp target/release/forja-rt target/release/forja-rt-gui staging/
-          cp -r stdlib staging/stdlib
+          $version = (Select-String -Path Cargo.toml -Pattern '^version').Line.Split('"')[1]
+          $pkg = "forja-$version-${{ matrix.name }}"
+          $bin = "target/${{ matrix.target }}/release"
+          New-Item -ItemType Directory -Force -Path "pack/$pkg" | Out-Null
+          Copy-Item "$bin/forja.exe","$bin/forja-lsp.exe","$bin/forja-dap.exe","$bin/forja-rt.exe","$bin/forja-rt-gui.exe" "pack/$pkg/"
+          Copy-Item -Recurse stdlib "pack/$pkg/stdlib"
+          if (Test-Path forja-installer-x64.exe) { Copy-Item forja-installer-x64.exe "pack/$pkg/" }
+          foreach ($doc in @('README.md','COMANDOS.md','INSTRUCCIONES.md','LICENSE.md')) {
+            if (Test-Path $doc) { Copy-Item $doc "pack/$pkg/" }
+          }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "pack/$pkg" -DestinationPath "dist/$pkg.zip" -Force
+          Write-Host "✅ Empaquetado dist/$pkg.zip"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: forja-${{ matrix.os }}
-          path: staging/*
+          name: forja-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: warn
 
   build-aar:
     name: Compilar Android AAR
@@ -286,78 +358,94 @@ jobs:
           path: artifacts
       - name: Get version
         run: echo "VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)" >> $GITHUB_ENV
-      - name: Prepare binaries
+      - name: Recolectar assets del release
         shell: bash
         run: |
-          mkdir -p binaries
-          # Linux
-          cp artifacts/forja-ubuntu-latest/forja                  binaries/forja-linux
-          cp artifacts/forja-ubuntu-latest/forja-lsp              binaries/forja-lsp-linux
-          cp artifacts/forja-ubuntu-latest/forja-dap              binaries/forja-dap-linux
-          cp artifacts/forja-ubuntu-latest/forja-rt               binaries/forja-rt-linux
-          cp artifacts/forja-ubuntu-latest/forja-rt-gui           binaries/forja-rt-gui-linux
-          # macOS
-          cp artifacts/forja-macOS-latest/forja                   binaries/forja-macos
-          cp artifacts/forja-macOS-latest/forja-lsp               binaries/forja-lsp-macos
-          cp artifacts/forja-macOS-latest/forja-dap               binaries/forja-dap-macos
-          cp artifacts/forja-macOS-latest/forja-rt                binaries/forja-rt-macos
-          cp artifacts/forja-macOS-latest/forja-rt-gui            binaries/forja-rt-gui-macos
-          # Windows
-          cp artifacts/forja-windows-latest/forja.exe             binaries/forja.exe
-          cp artifacts/forja-windows-latest/forja-lsp.exe         binaries/forja-lsp.exe
-          cp artifacts/forja-windows-latest/forja-dap.exe         binaries/forja-dap.exe
-          cp artifacts/forja-windows-latest/forja-rt.exe          binaries/forja-rt.exe
-          cp artifacts/forja-windows-latest/forja-rt-gui.exe      binaries/forja-rt-gui.exe
-          cp artifacts/forja-windows-latest/forja-installer-x64.exe binaries/forja-installer-x64.exe
-          # Stdlib (desde el checkout del repo, misma para todas las plataformas)
-          cp -r stdlib                                            binaries/stdlib
-          # WASM
-          cp artifacts/forja-wasm/forja_wasm.js                   binaries/forja_wasm.js
-          cp artifacts/forja-wasm/forja_wasm_bg.wasm              binaries/forja_wasm_bg.wasm
-          # WASM GUI
-          cp artifacts/forja-wasm/forja_wasm_gui.js               binaries/forja_wasm_gui.js
-          cp artifacts/forja-wasm/forja_wasm_gui_bg.wasm          binaries/forja_wasm_gui_bg.wasm
-          # Android AAR
-          cp artifacts/forja-android-aar/forja-android-rt-*.aar   binaries/
-      - name: Create compressed archives
+          mkdir -p dist
+          # 1) Paquetes precompilados por plataforma
+          #    (forja-<version>-<linux-x64|linux-arm64|windows-x64|macos-x64|macos-arm64>.tar.gz|.zip)
+          find artifacts -type f \( -name 'forja-*.tar.gz' -o -name 'forja-*.zip' \) -exec cp -v {} dist/ \;
+          # 2) stdlib portable (actualizaciones manuales)
+          if [ -d stdlib ]; then
+            mkdir -p pack-stdlib/forja-stdlib
+            cp -r stdlib/. pack-stdlib/forja-stdlib/
+            tar -C pack-stdlib -czf "dist/forja-${VERSION}-stdlib.tar.gz" forja-stdlib
+          fi
+          # 3) WASM + GUI WASM (playground / web)
+          for f in forja_wasm.js forja_wasm_bg.wasm forja_wasm_gui.js forja_wasm_gui_bg.wasm; do
+            if [ -f "artifacts/forja-wasm/$f" ]; then cp -v "artifacts/forja-wasm/$f" dist/; fi
+          done
+          # 4) AAR de Android
+          find artifacts/forja-android-aar -name '*.aar' -exec cp -v {} dist/ \; 2>/dev/null || true
+          echo "── Assets del release ──"
+          ls -la dist/
+      # F3-T7: checksums SHA-256 de TODOS los assets, para verificación de descargas.
+      - name: Checksums (SHA-256)
         shell: bash
         run: |
-          cd binaries
-          # Los binarios quedan en binaries/ (forja-linux, forja-macos...),
-          # así que los paquetes se ensamblan en pack/ para evitar colisiones de nombres.
-          mkdir -p pack/forja-windows pack/forja-linux pack/forja-macos
-          # Windows: zip con stdlib incluida
-          cp forja.exe forja-lsp.exe forja-dap.exe forja-rt.exe forja-rt-gui.exe forja-installer-x64.exe pack/forja-windows/
-          cp -r stdlib pack/forja-windows/
-          # Linux: tar.gz con stdlib incluida
-          cp forja-linux forja-lsp-linux forja-dap-linux forja-rt-linux forja-rt-gui-linux pack/forja-linux/
-          cp -r stdlib pack/forja-linux/
-          # macOS: tar.gz con stdlib incluida
-          cp forja-macos forja-lsp-macos forja-dap-macos forja-rt-macos forja-rt-gui-macos pack/forja-macos/
-          cp -r stdlib pack/forja-macos/
-          # Portable stdlib (para actualizaciones manuales)
-          tar czf ../forja-${{ env.VERSION }}-stdlib.tar.gz stdlib/
-          cd pack
-          zip -r ../../forja-${{ env.VERSION }}-windows-x64.zip forja-windows/
-          tar czf ../../forja-${{ env.VERSION }}-linux-x64.tar.gz forja-linux/
-          tar czf ../../forja-${{ env.VERSION }}-macos-x64.tar.gz forja-macos/
-          cd ../..
-          rm -rf binaries/pack
-          ls -la forja-*.zip forja-*.tar.gz
+          cd dist
+          rm -f SHA256SUMS
+          sha256sum * > SHA256SUMS
+          echo "── SHA256SUMS ──"
+          cat SHA256SUMS
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: binaries/*
+          subject-path: dist/*
+      # F6-T7: firma keyless (Sigstore/cosign) además del SHA256SUMS y la
+      # atestación de procedencia. Las instalaciones pueden verificar el blob.
+      - uses: sigstore/cosign-installer@v3
+      - name: Firmar assets (cosign keyless)
+        shell: bash
+        run: |
+          cd dist
+          for f in *; do
+            case "$f" in
+              SHA256SUMS|*.bundle|*.sig|*.pem) continue ;;
+            esac
+            [ -f "$f" ] || continue
+            cosign sign-blob --yes --bundle "$f.bundle" "$f"
+            echo "✅ firmado: $f"
+          done
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: v${{ env.VERSION }}
           name: v${{ env.VERSION }}
+          body: |
+            ## Forja v${{ env.VERSION }} — binarios precompilados
+
+            Descargá el paquete de tu plataforma, descomprimilo y ejecutá `forja`.
+            **No necesitás Rust ni compilar nada.**
+
+            | Plataforma | Archivo |
+            |------------|---------|
+            | Linux x86_64 | `forja-*.tar.gz` (`linux-x64`) |
+            | Linux ARM64 | `forja-*.tar.gz` (`linux-arm64`) |
+            | macOS Intel | `forja-*.tar.gz` (`macos-x64`) |
+            | macOS Apple Silicon | `forja-*.tar.gz` (`macos-arm64`) |
+            | Windows x64 | `forja-*.zip` (`windows-x64`) |
+
+            Cada asset incluye un `.bundle` de **cosign** (firma keyless de
+            Sigstore). Para verificar:
+
+            ```bash
+            cosign verify-blob \
+              --bundle forja-<version>-<plataforma>.tar.gz.bundle \
+              --certificate-identity-regexp 'https://github.com/forja-lang/forja/.github/workflows/rust.yml@refs/heads/(main|master)' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              forja-<version>-<plataforma>.tar.gz
+            ```
+
+            Verificá la integridad con `SHA256SUMS`:
+            ```
+            sha256sum -c SHA256SUMS
+            ```
+
+            Instalación en un paso:
+            - Linux/macOS: `curl -fsSL https://raw.githubusercontent.com/forja-lang/forja/main/scripts/install.sh | sh`
+            - Windows (PowerShell): `irm https://raw.githubusercontent.com/forja-lang/forja/main/scripts/install.ps1 | iex`
           generate_release_notes: true
-          files: |
-            forja-*.zip
-            forja-*.tar.gz
-            binaries/forja*
-            binaries/*.exe
-            binaries/*.aar
+          files: dist/*
+
