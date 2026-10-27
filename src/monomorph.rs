@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! # Monomorfización de Genéricos
 //!
 //! Detecta todas las instanciaciones concretas de genéricos y genera
