@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! # Linear Scan Register Allocation
 //!
 //! Implementa el algoritmo de Poletto & Sarkar (1999) para asignación de registros
@@ -161,6 +159,18 @@ pub const TEMP_REGS: &[PhysReg] = &[
 /// por lo que no están incluidos aquí. R12, R13 y R15 quedan libres para el allocador.
 pub const EXTENDED_REGS: &[PhysReg] = &[PhysReg::R12, PhysReg::R13, PhysReg::R15];
 
+/// Registros XMM disponibles para valores flotantes.
+pub const XMM_REGS: &[PhysReg] = &[
+    PhysReg::XMM0,
+    PhysReg::XMM1,
+    PhysReg::XMM2,
+    PhysReg::XMM3,
+    PhysReg::XMM4,
+    PhysReg::XMM5,
+    PhysReg::XMM6,
+    PhysReg::XMM7,
+];
+
 /// Variables virtuales (temporales del compilador)
 pub type VirtReg = usize;
 
@@ -266,6 +276,11 @@ impl RegisterAllocator {
                 for &r in EXTENDED_REGS {
                     map.insert(r, 0);
                 }
+                // Registrar los XMM (valores flotantes) como disponibles. Sin
+                // esto `find_free_reg(Float)` nunca encontraba registro libre.
+                for &r in XMM_REGS {
+                    map.insert(r, 0);
+                }
                 map
             },
             active_intervals: Vec::new(),
@@ -309,7 +324,9 @@ impl RegisterAllocator {
                 self.active_intervals.push(interval.clone());
             } else {
                 // 3c. No hay registro libre → spill del que termina más tarde
-                let spill = self.spill_latest();
+                // (de la MISMA clase: nunca se roba un GPR para un valor Float
+                // ni al revés, lo que corrompía el codegen).
+                let spill = self.spill_latest(interval.reg_class);
                 let slot = self.alloc_spill_slot();
                 self.assignments
                     .insert(interval.virt_reg, Location::Stack(slot));
@@ -321,12 +338,16 @@ impl RegisterAllocator {
                             self.assignments.get(&spilled_interval.virt_reg)
                         {
                             let phys = *phys;
-                            self.active_regs.insert(phys, interval.virt_reg);
-                            self.assignments
-                                .insert(interval.virt_reg, Location::Reg(phys));
-                            let slot2 = self.alloc_spill_slot();
-                            self.assignments
-                                .insert(spilled_interval.virt_reg, Location::Stack(slot2));
+                            // Sólo intercambiar si la clase del registro físico
+                            // coincide con la del intervalo (seguridad de clase).
+                            if phys.is_xmm() == (interval.reg_class == RegClass::Float) {
+                                self.active_regs.insert(phys, interval.virt_reg);
+                                self.assignments
+                                    .insert(interval.virt_reg, Location::Reg(phys));
+                                let slot2 = self.alloc_spill_slot();
+                                self.assignments
+                                    .insert(spilled_interval.virt_reg, Location::Stack(slot2));
+                            }
                         }
                     }
                 }
@@ -379,16 +400,7 @@ impl RegisterAllocator {
                 None
             }
             RegClass::Float => {
-                for xmm in [
-                    PhysReg::XMM0,
-                    PhysReg::XMM1,
-                    PhysReg::XMM2,
-                    PhysReg::XMM3,
-                    PhysReg::XMM4,
-                    PhysReg::XMM5,
-                    PhysReg::XMM6,
-                    PhysReg::XMM7,
-                ] {
+                for &xmm in XMM_REGS {
                     if self.active_regs.get(&xmm) == Some(&0) {
                         return Some(xmm);
                     }
@@ -398,9 +410,14 @@ impl RegisterAllocator {
         }
     }
 
-    /// Spill del intervalo que termina más tarde
-    fn spill_latest(&mut self) -> Option<LiveInterval> {
-        let latest = self.active_intervals.iter().max_by_key(|i| i.end)?.clone();
+    /// Spill del intervalo **de la clase dada** que termina más tarde.
+    fn spill_latest(&mut self, class: RegClass) -> Option<LiveInterval> {
+        let latest = self
+            .active_intervals
+            .iter()
+            .filter(|i| i.reg_class == class)
+            .max_by_key(|i| i.end)?
+            .clone();
         self.active_intervals
             .retain(|i| i.virt_reg != latest.virt_reg);
         Some(latest)
