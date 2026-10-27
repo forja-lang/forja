@@ -177,3 +177,117 @@ escribir(r)
     assert!(result.contains("escribir"));
     assert!(result.contains("retornar"));
 }
+
+// ============================================================
+// F5-T1: escapes dentro de strings
+// ============================================================
+
+fn primer_literal_texto(source: &str) -> String {
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().unwrap();
+    let mut parser = Parser::new(tokens);
+    let programa = parser.parse().unwrap();
+    for decl in &programa.declaraciones {
+        if let forja::ast::Declaracion::Variable {
+            valor: Some(forja::ast::Expresion::LiteralTexto(s)),
+            ..
+        } = decl
+        {
+            return s.clone();
+        }
+    }
+    panic!("no se encontró un literal de texto");
+}
+
+#[test]
+fn test_fmt_preserva_salto_de_linea_escapado() {
+    let source = "variable x = \"a\\nb\"\n";
+    let out = formatear(source);
+    assert!(
+        out.contains("\\n"),
+        "el formatter debe re-escapar \\n: {out}"
+    );
+    assert!(!out.contains("\"a\nb\""), "no debe haber salto real: {out}");
+    assert_eq!(primer_literal_texto(&out), "a\nb");
+}
+
+#[test]
+fn test_fmt_preserva_escapes_y_comillas() {
+    let source = "variable x = \"a\\tb\\\"c\\\\d\\${no}\"\n";
+    let out = formatear(source);
+    assert_eq!(out, formatear(&out), "no idempotente: {out}");
+    assert_eq!(primer_literal_texto(&out), "a\tb\"c\\d${no}");
+}
+
+#[test]
+fn test_fmt_preserva_json_embebido() {
+    let source = "variable x = \"{\\\"k\\\":\\\"v\\\"}\"\n";
+    let out = formatear(source);
+    assert_eq!(out, formatear(&out), "no idempotente: {out}");
+    assert_eq!(primer_literal_texto(&out), "{\"k\":\"v\"}");
+}
+
+#[test]
+fn test_fmt_round_trip_exacto() {
+    let source = "variable x: Exacto = 3.14159265358979323846\n";
+    let out = formatear(source);
+    assert!(out.contains("e-20"), "escala de Exacto mal emitida: {out}");
+    assert_eq!(out, formatear(&out), "Exacto no idempotente: {out}");
+}
+
+// ============================================================
+// F5-T2: preservación de comentarios
+// ============================================================
+
+fn formatear_con_comentarios(source: &str) -> String {
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().unwrap();
+    let mut parser = Parser::new(tokens);
+    let programa = parser.parse().unwrap();
+    let comentarios = forja::lexer::extraer_comentarios(source);
+    let mut fmt = Formatter::new();
+    fmt.formatear_con_comentarios(&programa, &comentarios)
+}
+
+#[test]
+fn test_fmt_preserva_comentarios_de_linea_y_bloque() {
+    let source = "\
+// cabecera del programa
+variable x = 1
+/* bloque
+   de comentario */
+funcion f() {
+    // dentro de la función
+    retornar x
+}
+";
+    let out = formatear_con_comentarios(source);
+    assert!(out.contains("// cabecera del programa"), "{out}");
+    assert!(out.contains("/* bloque"), "{out}");
+    assert!(out.contains("de comentario */"), "{out}");
+    assert!(out.contains("// dentro de la función"), "{out}");
+}
+
+#[test]
+fn test_fmt_comentarios_idempotente() {
+    let source = "\
+// uno
+variable x = 1 // al final
+// dos
+escribir(x)
+";
+    let first = formatear_con_comentarios(source);
+    assert!(first.contains("// uno"));
+    assert!(first.contains("// al final"));
+    assert!(first.contains("// dos"));
+    let second = formatear_con_comentarios(&first);
+    assert_eq!(first, second, "comentarios no idempotentes");
+}
+
+#[test]
+fn test_extraer_comentarios_ignora_strings() {
+    let comentarios =
+        forja::lexer::extraer_comentarios("variable s = \"// no es comentario\"\n// sí lo es\n");
+    assert_eq!(comentarios.len(), 1);
+    assert!(comentarios[0].texto.contains("sí lo es"));
+}
