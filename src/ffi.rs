@@ -1,7 +1,6 @@
 // FFI (Foreign Function Interface) para Forja
 // Provee el registro global de librerías cargadas vía importar externa
 // y las funciones nativas _ffi_obtener_funcion, _ffi_llamar_entero, _ffi_llamar_texto
-#![allow(dead_code)]
 #![allow(non_snake_case)]
 
 use std::collections::HashMap;
