@@ -195,6 +195,41 @@ pub fn get_uses_defs(instr: &RegInstruction) -> (Vec<(VirtReg, RegClass)>, Vec<V
     }
 }
 
+/// Clase de registro que **define** una instrucción, si define alguna.
+///
+/// Para operaciones aritméticas sin clase explícita se infiere a partir de la
+/// clase de sus operandos (`clases`): si alguno es `Float`, el resultado también.
+/// Esto es imprescindible para que un `AddFloat` no reciba un registro GPR.
+fn clase_de_def(
+    instr: &RegInstruction,
+    clases: &std::collections::HashMap<VirtReg, RegClass>,
+) -> Option<RegClass> {
+    use crate::register_alloc::RegClass as RClass;
+    match instr {
+        RegInstruction::LoadImm { .. } => Some(RClass::Integer),
+        RegInstruction::LoadFloat { .. } => Some(RClass::Float),
+        RegInstruction::Move { class, .. } => Some(*class),
+        RegInstruction::LoadVar { class, .. } => Some(*class),
+        RegInstruction::RegAdd { a, b, .. }
+        | RegInstruction::RegSub { a, b, .. }
+        | RegInstruction::RegMul { a, b, .. }
+        | RegInstruction::RegDiv { a, b, .. } => {
+            let fa = clases.get(a).copied().unwrap_or(RClass::Integer);
+            let fb = clases.get(b).copied().unwrap_or(RClass::Integer);
+            if fa == RClass::Float || fb == RClass::Float {
+                Some(RClass::Float)
+            } else {
+                Some(RClass::Integer)
+            }
+        }
+        RegInstruction::RegCmp { .. }
+        | RegInstruction::RegAnd { .. }
+        | RegInstruction::RegOr { .. }
+        | RegInstruction::RegNot { .. } => Some(RClass::Integer),
+        _ => None,
+    }
+}
+
 /// Calcula live intervals desde el IR register-based.
 /// También registra las posiciones de uso de cada variable para soportar interval splitting.
 pub fn compute_live_intervals(prog: &RegProgram) -> Vec<crate::register_alloc::LiveInterval> {
@@ -202,46 +237,59 @@ pub fn compute_live_intervals(prog: &RegProgram) -> Vec<crate::register_alloc::L
     use crate::register_alloc::RegClass as RClass;
     use std::collections::HashMap;
 
+    // Pasada 1: clase de cada vreg, en orden de programa. Los defs toman su clase
+    // de la instrucción (explícita o inferida de los operandos); los usos heredan
+    // la suya. Sin esto, un valor Float creado por `AddFloat` (o `LoadFloat`) se
+    // trataba como entero y el allocator le daba un registro GPR.
+    let mut clases: HashMap<VirtReg, RClass> = HashMap::new();
+    for block in &prog.blocks {
+        for instr in block
+            .instructions
+            .iter()
+            .chain(std::iter::once(&block.terminator))
+        {
+            let (uses, defs) = get_uses_defs(instr);
+            if let Some(c) = clase_de_def(instr, &clases) {
+                for d in &defs {
+                    clases.insert(*d, c);
+                }
+            }
+            for (u, c) in &uses {
+                clases.entry(*u).or_insert(*c);
+            }
+        }
+    }
+
     // (start, end, class, posiciones_de_uso)
     let mut intervals: HashMap<VirtReg, (usize, usize, RClass, Vec<usize>)> = HashMap::new();
     let mut instr_idx = 0;
 
     for block in &prog.blocks {
-        for instr in &block.instructions {
+        for instr in block
+            .instructions
+            .iter()
+            .chain(std::iter::once(&block.terminator))
+        {
             let (uses, defs) = get_uses_defs(instr);
+            let clase_def = clase_de_def(instr, &clases).unwrap_or(RClass::Integer);
             for vreg in defs {
+                let c = clases.get(&vreg).copied().unwrap_or(clase_def);
                 intervals
                     .entry(vreg)
-                    .or_insert_with(|| (instr_idx, instr_idx, RClass::Integer, Vec::new()))
+                    .or_insert_with(|| (instr_idx, instr_idx, c, Vec::new()))
                     .1 = instr_idx;
             }
-            for (vreg, class) in uses {
+            for (vreg, nominal) in uses {
+                let c = clases.get(&vreg).copied().unwrap_or(nominal);
                 let entry = intervals
                     .entry(vreg)
-                    .or_insert_with(|| (instr_idx, instr_idx, class, Vec::new()));
+                    .or_insert_with(|| (instr_idx, instr_idx, c, Vec::new()));
                 entry.0 = entry.0.min(instr_idx);
                 entry.1 = instr_idx;
                 entry.3.push(instr_idx);
             }
             instr_idx += 1;
         }
-        // Procesar terminador
-        let (uses, defs) = get_uses_defs(&block.terminator);
-        for vreg in defs {
-            intervals
-                .entry(vreg)
-                .or_insert_with(|| (instr_idx, instr_idx, RClass::Integer, Vec::new()))
-                .1 = instr_idx;
-        }
-        for (vreg, class) in uses {
-            let entry = intervals
-                .entry(vreg)
-                .or_insert_with(|| (instr_idx, instr_idx, class, Vec::new()));
-            entry.0 = entry.0.min(instr_idx);
-            entry.1 = instr_idx;
-            entry.3.push(instr_idx);
-        }
-        instr_idx += 1;
     }
 
     intervals
