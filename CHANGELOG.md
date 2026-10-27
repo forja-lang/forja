@@ -7,7 +7,13 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-10-27
+
 ### plan3 — runtime, corpus y distribución
+
+- **Versión 0.9.3.** Bump de todos los crates del workspace y de la extensión
+  VSCode. Se retiraron del repositorio y del historial los documentos internos
+  de planificación y el documento del backend ASM.
 
 - **F8-T1 — IR de funciones de usuario.** `IrConstructor` compila cada
   `Declaracion::Funcion` a su propio `SsaFunction` con marco local
@@ -86,7 +92,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **F5-T6 — ASM sin stubs silenciosos.** Los constructos no soportados
   (`mapas`, `Try`, `hilo`, `canal`, `closures`, `LiteralExacto`, métodos en
   expresiones) fallan en compilación con mensaje claro; se actualizó
-  `ASM_BACKEND.md` y la batería negativa.
+  el documento del backend ASM y la batería negativa.
 - **F5-T7 — Interpolación `${...}` verificada.** Sin usos obsoletos de `{expr}`
   en docs/corpus; VM y JIT producen la misma salida y las llaves sin `$` son
   literales.
@@ -123,7 +129,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   el script de publicación).
 - **F7-T1 — Verificación reproducible.** `scripts/verify.sh`, `Dockerfile`,
   `.devcontainer/devcontainer.json` y `Makefile` (`make verify`).
-- **F7-T2 — `plan.md` reparado.** Índice 38 tareas (F4=8), marcador eliminado,
+- **F7-T2 — planificación interna reparada.** Índice 38 tareas (F4=8), marcador eliminado,
   F0 con ✅, KPIs medidos y matriz/dependencias actualizadas.
 - **F7-T3 — Coordinación concurrente.** Ownership por área, archivos calientes
   y un solo escritor de `CHANGELOG`/`plan*.md` en `CONTRIBUTING.md` + PR
@@ -135,7 +141,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   Rust, módulos y ejemplos; `--check` falla si README/roadmap derivan y el CI lo
   ejecuta.
 - **Higiene:** `.gitignore` deja de ignorar `tests/` (evita "tests fantasma") y
-  `plan.md`; clippy queda sin errores (constantes de test y una condición
+  la planificación; clippy queda sin errores (constantes de test y una condición
   redundante corregidas).
 
 ### Corregido
@@ -146,7 +152,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   *segfault* (y ARM64 usaba un número como registro índice); **(2)** las clases
   sin `constructor` emitían `call Clase.nuevo` a un símbolo inexistente (fallo de
   enlazado); **(3)** `log2` sólo cubría 1/2/4/8. Documentado en
-  [`ASM_BACKEND.md`](ASM_BACKEND.md:1).
+  el documento del backend ASM.
 
 - **F4-T5 — El GC de la VM no recolectaba y perdía objetos vivos.** El
   mark-sweep de `vm_fast` estaba desconectado (el bridge a `GenerationalGC`
@@ -250,7 +256,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   programas para las tres arquitecturas (x86-64 Windows, x86-64 Linux/System V,
   ARM64) con invariantes por target, más un test end-to-end en Linux que
   ensambla con `gcc` y ejecuta el código. Documentación de ABI y limitaciones en
-  [`ASM_BACKEND.md`](ASM_BACKEND.md:1) y script de cobertura bloqueante
+  el documento del backend ASM y script de cobertura bloqueante
   [`scripts/asm-coverage.sh`](scripts/asm-coverage.sh:1) (**83.1%** de líneas,
   DoD ≥80%).
 - **F4-T3 — Fase única de optimización reutilizable.** Se centralizó **toda** la
