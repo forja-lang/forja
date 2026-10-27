@@ -50,20 +50,21 @@ jobs:
       - name: Verify WASM files (restore from git if download failed)
         run: |
           ANY_FAILURE=0
-          # Core WASM
-          if [ ! -f src/wasm/forja_wasm.js ] || ! head -1 src/wasm/forja_wasm.js | grep -q "wasm-bindgen" 2>/dev/null; then
-            echo "⚠️  Core download failed, restoring from git..."
-            git checkout -- src/wasm/forja_wasm.js src/wasm/forja_wasm_bg.wasm 2>/dev/null || true
-          fi
-          # GUI WASM
-          if [ ! -f src/wasm/forja_wasm_gui.js ] || ! head -1 src/wasm/forja_wasm_gui.js | grep -q "wasm-bindgen" 2>/dev/null; then
-            echo "⚠️  GUI download failed, restoring from git..."
-            git checkout -- src/wasm/forja_wasm_gui.js src/wasm/forja_wasm_gui_bg.wasm 2>/dev/null || true
-          fi
+          # Un wasm válido empieza con los bytes mágicos \0asm (0061736d).
+          for pair in "forja_wasm.js forja_wasm_bg.wasm" "forja_wasm_gui.js forja_wasm_gui_bg.wasm"; do
+            set -- $pair
+            js="$1"
+            wasm="$2"
+            magic=$(head -c 4 "src/wasm/$wasm" 2>/dev/null | od -An -tx1 | tr -d ' \n')
+            if [ ! -s "src/wasm/$js" ] || [ ! -s "src/wasm/$wasm" ] || [ "$magic" != "0061736d" ] || ! grep -q "export" "src/wasm/$js"; then
+              echo "⚠️  $js/$wasm inválido o descarga fallida, restaurando desde git..."
+              git checkout -- "src/wasm/$js" "src/wasm/$wasm" 2>/dev/null || true
+            fi
+          done
           # Verify all files present
           for f in src/wasm/forja_wasm.js src/wasm/forja_wasm_bg.wasm \
                    src/wasm/forja_wasm_gui.js src/wasm/forja_wasm_gui_bg.wasm; do
-            if [ ! -f "$f" ]; then
+            if [ ! -s "$f" ]; then
               echo "❌ Missing: $f"
               ANY_FAILURE=1
             fi
