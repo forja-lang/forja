@@ -36,15 +36,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
+          submodules: recursive
 
-      - name: Checkout submodules
-        shell: bash
-        run: |
-          git submodule init
-          for sub in $(git config --file .gitmodules --get-regexp path | sed 's/.* //'); do
-            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
-          done
 
       - uses: dtolnay/rust-toolchain@stable
 
