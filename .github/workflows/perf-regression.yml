@@ -1,0 +1,93 @@
+name: Perf Regression
+
+# F4-T2 — Regresión de rendimiento automática.
+#
+# Ejecuta el benchmark `perf-regresion` (cargas deterministas del compilador/VM
+# normalizadas contra una calibración) y compara contra la línea base.
+#
+# La línea base de CI se genera y cachea **en el propio runner** (clave por SO),
+# para que la comparación no cruce máquinas. La línea base versionada
+# `benches/baseline.json` sirve de referencia para desarrollo local y bootstrap.
+# Si no hay baseline del runner todavía, la corrida se auto-calibra (bootstrap)
+# y no falla, evitando falsos positivos en repos recién configurados.
+on:
+  pull_request:
+    branches: [ main, master, develop ]
+    paths:
+      - 'src/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'benches/**'
+      - 'scripts/check-perf-regression.sh'
+      - 'scripts/perf_regression.py'
+      - '.github/workflows/perf-regression.yml'
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  perf-regression:
+    name: Regresión de rendimiento
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Checkout submodules
+        shell: bash
+        run: |
+          git submodule init
+          for sub in $(git config --file .gitmodules --get-regexp path | sed 's/.* //'); do
+            git submodule update --init --depth 1 "$sub" 2>/dev/null || echo "⚠️ Saltando $sub"
+          done
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Restaurar baseline del runner
+        id: restore-baseline
+        uses: actions/cache/restore@v4
+        with:
+          path: benches/baseline-ci.json
+          key: perf-baseline-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            perf-baseline-${{ runner.os }}-
+
+      - name: ¿Hay baseline del runner?
+        id: baseline
+        shell: bash
+        run: |
+          if [ -f benches/baseline-ci.json ]; then
+            echo "disponible=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "disponible=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Con baseline del runner: comparación estricta (bloqueante).
+      - name: Verificar regresión de rendimiento
+        if: steps.baseline.outputs.disponible == 'true'
+        env:
+          PERF_BASELINE: benches/baseline-ci.json
+          PERF_THRESHOLD_PCT: '5'
+        run: bash scripts/check-perf-regression.sh
+
+      # Sin baseline del runner: auto-calibrar y aceptar esta corrida.
+      - name: Bootstrap de baseline del runner
+        if: steps.baseline.outputs.disponible == 'false'
+        run: bash scripts/check-perf-regression.sh --update-baseline --baseline-out benches/baseline-ci.json
+
+      - name: Guardar baseline del runner
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: benches/baseline-ci.json
+          key: perf-baseline-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
