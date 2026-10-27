@@ -76,16 +76,19 @@ for target in "${TARGETS[@]}"; do
     echo ""
     echo "  Building for $target → $abi"
 
+    # F0-T4: el AAR es un artefacto de distribución → perfil `dist`
+    # (opt-level = "z", panic = "abort", strip = "symbols").
     cargo build \
         --package forja-android-rt \
         --target "$target" \
-        --release \
+        --profile dist \
+        --locked \
         --manifest-path "$CRATE_DIR/Cargo.toml"
 
-    # Copy .so to AAR staging
+    # Copy .so to AAR staging (--profile dist emite en target/<target>/dist/)
     ABI_DIR="$JNI_DIR/$abi"
     mkdir -p "$ABI_DIR"
-    cp "$BUILD_DIR/$target/release/libforja_android_rt.so" "$ABI_DIR/"
+    cp "$BUILD_DIR/$target/dist/libforja_android_rt.so" "$ABI_DIR/"
     echo "  → libforja_android_rt.so ($abi)"
 done
 
