@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! # Arena Allocation — Asignador de memoria por bloques para el compilador
 //!
 //! En lugar de miles de `Box::new()`, `Vec::push()` y `String::clone()` individuales,
@@ -299,8 +297,8 @@ mod tests {
         let mut arena = Arena::new();
         let a = arena.alloc(42i32);
         assert_eq!(*a, 42);
-        let b = arena.alloc(3.14f64);
-        assert_eq!(*b, 3.14);
+        let b = arena.alloc(2.5f64);
+        assert_eq!(*b, 2.5);
         let c = arena.alloc_slice(&["hello", "world"]);
         assert_eq!(c, &["hello", "world"]);
     }
