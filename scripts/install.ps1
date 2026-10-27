@@ -11,7 +11,7 @@
     irm https://raw.githubusercontent.com/forja-lang/forja/main/scripts/install.ps1 | iex
 
 .EXAMPLE
-    .\install.ps1 -Version v0.9.2 -InstallDir "$env:LOCALAPPDATA\forja"
+    .\install.ps1 -Version v0.9.3 -InstallDir "$env:LOCALAPPDATA\forja"
 #>
 param(
     [string]$Version = "latest",
