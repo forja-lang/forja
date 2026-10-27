@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! # Tiered JIT Compilation
 //!
 //! Sistema de compilación en múltiples niveles:
