@@ -1,6 +1,9 @@
-#![allow(dead_code)]
-
-//! # LLVM Backend para Forja
+//! # LLVM Backend para Forja — BACKEND NUEVO (en desarrollo)
+//!
+//! Este es el **backend LLVM NUEVO en desarrollo** (andamiaje de bajo nivel
+//! IR→LLVM). Todavía **NO implementa lowering AST→LLVM**: esa labor corresponde
+//! a F4-T8/F4-T1. El lowering real AST→LLVM hoy vive en el módulo interno/legacy
+//! `compiler_llvm.rs`, retenido solo para respaldar `compilar_a_llvm()`.
 //!
 //! Backend que genera código máquina nativo usando LLVM como infraestructura.
 //! Soporta: tipos básicos, funciones, clases/structs, enums, closures.
@@ -1164,4 +1167,19 @@ mod tests {
         assert!(ir.contains("then:"));
         assert!(ir.contains("else:"));
     }
+}
+
+// ─── F6-T5: lowering AST → LLVM IR (texto) ──────────────────────────────────
+//
+// El lowering histórico (antes `compiler_llvm.rs`, módulo interno separado)
+// vive ahora bajo `backend_llvm` como `legado`. Así hay **un solo** backend
+// LLVM público y `compilar_a_llvm()` no depende de un módulo paralelo.
+#[path = "backend_llvm/legacy.rs"]
+pub mod legado;
+
+/// Compila declaraciones Forja a LLVM IR textual usando el lowering unificado.
+pub fn compilar_a_llvm_texto(declaraciones: &[crate::ast::Declaracion]) -> Result<String, String> {
+    let mut backend = legado::LlvmBackend::new("", "forja_module");
+    backend.compile(declaraciones)?;
+    Ok(backend.emit_ir())
 }
