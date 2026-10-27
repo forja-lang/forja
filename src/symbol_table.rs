@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Tabla de símbolos global con String Interning
 /// Permite comparar identificadores en O(1) usando SymId en lugar de O(n) con strcmp
 use std::collections::HashMap;
