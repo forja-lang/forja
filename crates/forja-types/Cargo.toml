@@ -1,6 +1,6 @@
 [package]
 name = "forja-types"
-version = "0.9.2"
+version = "0.9.3"
 edition = "2021"
 description = "Análisis semántico y sistema de tipos de Forja (fa), reutilizable sin backend"
 authors = ["forja-lang"]
@@ -13,4 +13,4 @@ keywords = ["forja", "compiler", "type-checker", "semantics"]
 categories = ["compilers", "development-tools"]
 
 [dependencies]
-forja-syntax = { version = "0.9.2", path = "../forja-syntax" }
+forja-syntax = { version = "0.9.3", path = "../forja-syntax" }
