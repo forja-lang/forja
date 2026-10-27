@@ -1,6 +1,8 @@
-# 🔥 Forja (fa)
-
 <div align="center">
+
+<img src="design/forge.png" alt="Logo de Forja" width="128">
+
+# Forja (fa)
 
 [![Compilación](https://img.shields.io/github/actions/workflow/status/forja-lang/forja/rust.yml?style=flat-square&logo=github&label=build)](https://github.com/forja-lang/forja/actions)
 [![Documentación](https://img.shields.io/badge/docs-forja--lang.github.io-blue?style=flat-square&logo=readthedocs)](https://forja-lang.github.io/docs)
@@ -9,11 +11,11 @@
 
 Forja es un lenguaje de programación educativo moderno con sintaxis y palabras clave completamente en español. Está diseñado para enseñar conceptos de sistemas, teoría de lenguajes de programación y diseño por contrato sin la complejidad sintáctica de Rust. Incluye un compilador nativo (AOT y ensamblador x86-64/ARM64), un compilador al vuelo (JIT *tiered*) para x86-64, un intérprete de bytecode (*ForjaFast*), transpilación a Rust y a WASM, y soporte de interfaces gráficas nativas.
 
-📖 **[Leé la documentación oficial aquí](https://forja-lang.github.io/docs)**
+**[Leé la documentación oficial aquí](https://forja-lang.github.io/docs)**
 
 ---
 
-## ⚙️ Arquitectura del Compilador e Intérprete
+## Arquitectura del Compilador e Intérprete
 
 El siguiente diagrama detalla cómo se procesa el código fuente de Forja hasta sus distintos entornos de ejecución:
 
@@ -42,17 +44,17 @@ graph TD
 
 ---
 
-## 📚 Sintaxis del Lenguaje por Ejemplo
+## Sintaxis del Lenguaje por Ejemplo
 
 ### 1. Variables, Constantes y Tipos Básicos
 ```forja
 // Las variables son mutables por defecto usando 'variable' o 'var'
 variable edad = 18
-edad = 19 // ✅ Permitido
+edad = 19 // Permitido
 
 // Las constantes son inmutables usando 'constante' o 'const'
 constante pi = 3.14159
-// pi = 3.2 // ❌ Error en tiempo de compilación
+// pi = 3.2 // Error en tiempo de compilación
 ```
 
 ### 2. Control de Flujo (Condicionales y Bucles)
@@ -150,7 +152,7 @@ funcion dividir(a: Entero, b: Entero) -> Entero
 
 ---
 
-## 💻 Consola de Comandos (CLI)
+## Consola de Comandos (CLI)
 
 Todos los comandos de la herramienta de consola de Forja aceptan términos y argumentos en español.
 
@@ -208,7 +210,7 @@ PS C:\forja> forja ejecutar ejemplos/01_hola.fa --vm jit
 ```powershell
 # Compilar script de consola
 PS C:\forja> forja compilar ejemplos/05_condicionales.fa -o condicionales.exe
-✅ Ejecutable generado: condicionales.exe
+Ejecutable generado: condicionales.exe
 
 # Ejecutar de forma directa e instantánea sin dependencias
 PS C:\forja> .\condicionales.exe
@@ -225,18 +227,18 @@ PS C:\forja> forja medir ejemplos/40_fibonacci.fa --vm todas --iters 100
 #### 4. Modo Interactivo (Consola de Lectura y Ejecución Directa)
 ```powershell
 PS C:\forja> forja interactivo
-🔨 Forja v0.9.3 — Escribí 'salir' para terminar
+Forja v0.9.3 — Escribí 'salir' para terminar
 > variable x = 10
 > x = x + 5
 > escribir(x)
 15
 > salir
-👋 ¡Hasta luego!
+¡Hasta luego!
 ```
 
 ---
 
-## ⚡ Salidas de Compilación y Motores de Ejecución
+## Salidas de Compilación y Motores de Ejecución
 
 Forja genera distintos destinos a partir del mismo programa. Los dos **motores de ejecución** son el intérprete *ForjaFast* y el JIT *tiered*; el resto son backends de traducción:
 
@@ -244,14 +246,14 @@ Forja genera distintos destinos a partir del mismo programa. Los dos **motores d
 | :--- | :--- | :--- |
 | **Transpilado a Rust** | Forja → `.rs` + `rustc` | Rendimiento nativo (mismo backend LLVM de Rust) |
 | **Ensamblador Nativo** | `.s` x86-64/ARM64 + `gcc -O2` | Multi-arquitectura |
-| **Backend LLVM** | LLVM IR + `llc` | 🚧 En desarrollo |
+| **Backend LLVM** | LLVM IR + `llc` | En desarrollo |
 | **JIT tiered** | Código máquina x86-64 en caliente | Con fallback seguro a la VM |
 | **ForjaFast (VM)** | Intérprete de bytecode | Motor por defecto (NaN tagging + GC) |
 | **AOT (`forja build`)** | Ejecutable con bytecode incrustado | Autónomo, sin dependencias |
 
 ---
 
-## 🎨 Desarrollo Gráfico (GUI)
+## Desarrollo Gráfico (GUI)
 
 Forja permite crear complejas aplicaciones de escritorio reactivas e interactivas gracias a la librería de interfaces gráficas (**Xilem**, sobre Masonry/Winit). Las interfaces siguen la guía de estilo de **Material Design 3 (Material You)**, con soporte automático para modo oscuro y claro según el sistema operativo.
 
@@ -267,7 +269,7 @@ PS C:\forja> forja compilar ejemplos/gui.fa -o miapp.exe
 
 ---
 
-## ⚙️ Compilación Cruzada para Android
+## Compilación Cruzada para Android
 
 El compilador soporta la generación directa de binarios optimizados para dispositivos Android (arquitecturas ARM64, x86_64, ARM32 y x86):
 
@@ -281,7 +283,7 @@ $ bash scripts/build-android.sh aarch64-linux-android
 
 ---
 
-## 📌 Estado del proyecto
+## Estado del proyecto
 
 Forja está en **v0.9.3** y en desarrollo activo. El estado verificable de cada
 componente —hecho / en progreso / planeado— vive en el
@@ -291,11 +293,11 @@ componente —hecho / en progreso / planeado— vive en el
 - **Frontend reutilizable:** crates `forja-syntax` y `forja-types` (lexer, parser, AST, tipos).
 - **Salidas:** bytecode (VM/JIT), ensamblador x86-64/ARM64, Rust, AOT, WASM, Android y GUI.
 - **Ecosistema:** `stdlib` (47 módulos), 262 ejemplos, curso de 30 días, LSP + DAP, GC generacional, registro de paquetes local y releases precompilados.
-- **En progreso:** IR real (emisión AST→IR), backend LLVM, extracción de `forja-gui-core`, registry remoto y publicación en crates.io.
+- **En progreso:** IR real (emisión AST→IR), backend LLVM, extracción de `forja-gui-core` y registry remoto.
 
 ---
 
-## 📜 Licencia y Uso de Marca
+## Licencia y Uso de Marca
 
 *   **Compilador y Herramientas**: Licenciado bajo la **Licencia Pública General de GNU v3.0 (GPLv3)**.
 *   **Tus Programas**: Escribir software en Forja no restringe su distribución. **Tus aplicaciones son de tu propiedad exclusiva** y podés elegir la licencia comercial o de código abierto que prefieras.

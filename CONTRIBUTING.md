@@ -35,10 +35,10 @@ Comandos base (equivalentes a lo que corre el CI):
 
 ```bash
 bash scripts/verify.sh     # fmt + clippy + check + test (recomendado)
-cargo build            # compila en modo debug
-cargo test             # ejecuta la suite de tests
+cargo build                  # compila en modo debug
+cargo test --workspace       # tests del paquete raíz y de los crates
 cargo fmt --all -- --check   # verifica el formato
-cargo clippy --all-targets   # análisis estático
+cargo clippy --workspace --all-targets   # análisis estático (incluye crates)
 ```
 
 Compilaciones optimizadas:
@@ -46,6 +46,7 @@ Compilaciones optimizadas:
 ```bash
 cargo build --release         # perfil release (prioriza VELOCIDAD — ver §6)
 cargo build --profile dist    # perfil dist (prioriza TAMAÑO, para distribución)
+cargo build --profile dist-android -p forja-android-rt   # AAR (ThinLTO)
 ```
 
 ## 4. Estructura del repositorio y submódulos
@@ -91,19 +92,23 @@ Decisión adoptada en **F0-T3**:
 
 ## 6. Perfiles de build (F0-T4)
 
-[`Cargo.toml`](Cargo.toml:128) define dos perfiles diferenciados:
+[`Cargo.toml`](Cargo.toml) define tres perfiles diferenciados:
 
 | Perfil | Opt. nivel | `panic` | `strip` | Uso |
 |---|---|---|---|---|
 | `release` | `3` (velocidad) | unwind (por defecto) | no | Desarrollo y benchmarks |
 | `dist` | `"z"` (tamaño) | `abort` | `symbols` | Artefactos de distribución |
+| `dist-android` | `"z"` (tamaño) | `abort` | `symbols` | `.so` / AAR Android (ThinLTO) |
 
 - El perfil **`release` prioriza velocidad** (compilador/VM) y **retira
   `panic = "abort"`** para preservar backtraces y permitir que los tests
   capturen panics.
 - El perfil **`dist`** hereda de `release` y prioriza **tamaño**: úsalo para
-  releases (`cargo build --profile dist`). Los scripts de distribución
-  (p. ej. [`scripts/build-aar.sh`](scripts/build-aar.sh:79)) ya lo usan.
+  releases de escritorio (`cargo build --profile dist`).
+- El perfil **`dist-android`** mantiene el tamaño de `dist` pero usa
+  **ThinLTO**, para no pagar LTO `fat` en cada uno de los 4 ABIs Android.
+  [`scripts/build-aar.sh`](scripts/build-aar.sh) lo usa por defecto
+  (`FORJA_AAR_PROFILE` permite cambiarlo).
 
 ## 7. Política de archivos ignorados (F0-T1)
 
