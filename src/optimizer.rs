@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::ast::*;
 use std::collections::{HashMap, HashSet};
 
@@ -848,6 +847,8 @@ pub struct DeadCodeEliminator {
     pub eliminados: usize,
     variables_usadas: HashSet<String>,
     funciones_llamadas: HashSet<String>,
+    /// F8-T7: todas las funciones declaradas (para conservar las usadas como valor).
+    funciones_definidas: HashSet<String>,
     clases_usadas: HashSet<String>,
     rasgos_usados: HashSet<String>,
 }
@@ -858,12 +859,19 @@ impl DeadCodeEliminator {
             eliminados: 0,
             variables_usadas: HashSet::new(),
             funciones_llamadas: HashSet::new(),
+            funciones_definidas: HashSet::new(),
             clases_usadas: HashSet::new(),
             rasgos_usados: HashSet::new(),
         }
     }
 
     pub fn eliminar(&mut self, programa: &Programa) -> Programa {
+        self.funciones_definidas.clear();
+        for decl in &programa.declaraciones {
+            if let Declaracion::Funcion { nombre, .. } = decl {
+                self.funciones_definidas.insert(nombre.clone());
+            }
+        }
         self.recolectar_usos(&programa.declaraciones);
         let declaraciones: Vec<Declaracion> = programa
             .declaraciones
@@ -1001,7 +1009,13 @@ impl DeadCodeEliminator {
     fn recolectar_en_expresion(&mut self, expr: &Expresion) {
         match expr {
             Expresion::Identificador { nombre, .. } => {
-                self.variables_usadas.insert(nombre.clone());
+                // F8-T7: un identificador que referencia una función es un uso
+                // de esa función como valor (callback), no una variable.
+                if self.funciones_definidas.contains(nombre) {
+                    self.funciones_llamadas.insert(nombre.clone());
+                } else {
+                    self.variables_usadas.insert(nombre.clone());
+                }
             }
             Expresion::Binaria {
                 izquierda, derecha, ..
@@ -1068,6 +1082,29 @@ impl DeadCodeEliminator {
             }
             Expresion::Closure { cuerpo, .. } => {
                 self.recolectar_usos(cuerpo);
+            }
+            // F8-T9: las funciones llamadas dentro de un hilo también son usos.
+            Expresion::Hilo { cuerpo } => {
+                self.recolectar_usos(cuerpo);
+            }
+            Expresion::Seleccionar { brazos } => {
+                for brazo in brazos {
+                    if let Some((_, recepcion)) = &brazo.recepcion {
+                        self.recolectar_en_expresion(recepcion);
+                    }
+                    self.recolectar_usos(&brazo.cuerpo);
+                }
+            }
+            Expresion::Asignacion { valor, .. } => {
+                self.recolectar_en_expresion(valor);
+            }
+            Expresion::AsignacionCampo { objeto, valor, .. } => {
+                self.recolectar_en_expresion(objeto);
+                self.recolectar_en_expresion(valor);
+            }
+            Expresion::ArraySet { array, valor } => {
+                self.recolectar_en_expresion(array);
+                self.recolectar_en_expresion(valor);
             }
             Expresion::Try(expr) => {
                 // El operador ? envuelve una llamada: los usos internos (y las
