@@ -1,7 +1,6 @@
 // native_h2_core.rs — Núcleo HTTP/2 para Forja
 // Frames binarios, HPACK (Huffman + tabla dinámica), detección de protocolo
 // Sin dependencias externas — solo std
-#![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 
@@ -11,6 +10,12 @@ use std::collections::HashMap;
 
 // ═══════════════════════════════════════════════════════════════════════
 // Constantes HTTP/2
+//
+// Estas constantes documentan el protocolo HTTP/2 (RFC 7540) y HPACK
+// (RFC 7541). Algunas no se referencian aún en el código porque el
+// servidor implementa un subconjunto del protocolo; se conservan como
+// referencia normativa y para futuras extensiones (PUSH_PROMISE,
+// PRIORITY, CONTINUATION, códigos de error completos, etc.).
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Preface mágico para conexión HTTP/2 directa (Prior Knowledge)
@@ -19,49 +24,73 @@ const H2_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 /// Tipos de frame
 const FRAME_DATA: u8 = 0x00;
 const FRAME_HEADERS: u8 = 0x01;
+#[allow(dead_code)]
 const FRAME_PRIORITY: u8 = 0x02;
 const FRAME_RST_STREAM: u8 = 0x03;
 const FRAME_SETTINGS: u8 = 0x04;
+#[allow(dead_code)]
 const FRAME_PUSH_PROMISE: u8 = 0x05;
 const FRAME_PING: u8 = 0x06;
 const FRAME_GOAWAY: u8 = 0x07;
 const FRAME_WINDOW_UPDATE: u8 = 0x08;
+#[allow(dead_code)]
 const FRAME_CONTINUATION: u8 = 0x09;
 
 /// Flags de frame
 const FLAG_END_STREAM: u8 = 0x01;
 const FLAG_END_HEADERS: u8 = 0x04;
+#[allow(dead_code)]
 const FLAG_PADDED: u8 = 0x08;
+#[allow(dead_code)]
 const FLAG_PRIORITY: u8 = 0x20;
 const FLAG_ACK: u8 = 0x01;
 
 /// Settings IDs
+#[allow(dead_code)]
 const SETTINGS_HEADER_TABLE_SIZE: u16 = 1;
+#[allow(dead_code)]
 const SETTINGS_ENABLE_PUSH: u16 = 2;
 const SETTINGS_MAX_CONCURRENT_STREAMS: u16 = 3;
 const SETTINGS_INITIAL_WINDOW_SIZE: u16 = 4;
 const SETTINGS_MAX_FRAME_SIZE: u16 = 5;
+#[allow(dead_code)]
 const SETTINGS_MAX_HEADER_LIST_SIZE: u16 = 6;
 
 /// Códigos de error HTTP/2
+#[allow(dead_code)]
 const ERROR_NO_ERROR: u32 = 0;
+#[allow(dead_code)]
 const ERROR_PROTOCOL_ERROR: u32 = 1;
+#[allow(dead_code)]
 const ERROR_INTERNAL_ERROR: u32 = 2;
+#[allow(dead_code)]
 const ERROR_FLOW_CONTROL_ERROR: u32 = 3;
+#[allow(dead_code)]
 const ERROR_SETTINGS_TIMEOUT: u32 = 4;
+#[allow(dead_code)]
 const ERROR_STREAM_CLOSED: u32 = 5;
+#[allow(dead_code)]
 const ERROR_FRAME_SIZE_ERROR: u32 = 6;
+#[allow(dead_code)]
 const ERROR_REFUSED_STREAM: u32 = 7;
+#[allow(dead_code)]
 const ERROR_CANCEL: u32 = 8;
+#[allow(dead_code)]
 const ERROR_COMPRESSION_ERROR: u32 = 9;
+#[allow(dead_code)]
 const ERROR_CONNECT_ERROR: u32 = 10;
+#[allow(dead_code)]
 const ERROR_ENHANCE_YOUR_CALM: u32 = 11;
+#[allow(dead_code)]
 const ERROR_INADEQUATE_SECURITY: u32 = 12;
+#[allow(dead_code)]
 const ERROR_HTTP_1_1_REQUIRED: u32 = 13;
 
 /// Tamaño de ventana de flow control por defecto
+#[allow(dead_code)]
 const DEFAULT_WINDOW_SIZE: u32 = 65535;
 /// Tamaño máximo de frame por defecto
+#[allow(dead_code)]
 const DEFAULT_MAX_FRAME_SIZE: u32 = 16384;
 
 // ═══════════════════════════════════════════════════════════════════════
