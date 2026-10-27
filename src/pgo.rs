@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! # Profile-Guided Optimization (PGO)
 //!
 //! Recolección de perfiles de ejecución y recompilación guiada por perfil.
