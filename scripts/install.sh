@@ -8,7 +8,7 @@
 #
 # Uso:
 #   curl -fsSL https://raw.githubusercontent.com/forja-lang/forja/main/scripts/install.sh | sh
-#   sh install.sh --version v0.9.2 --prefix "$HOME/.forja" --bin-dir "$HOME/.local/bin"
+#   sh install.sh --version v0.9.3 --prefix "$HOME/.forja" --bin-dir "$HOME/.local/bin"
 #
 # Variables de entorno equivalentes: FORJA_VERSION, FORJA_PREFIX, FORJA_BIN_DIR.
 # ─────────────────────────────────────────────────────────────────────────────
