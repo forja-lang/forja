@@ -1,0 +1,4 @@
+=== Propagación encadenada con ? ===
+Promedio válido: 6
+Error: Valor negativo: -1
+Error: Valor negativo: -6
