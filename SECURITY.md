@@ -28,9 +28,21 @@
 
 ## Verificación de releases / Release Verification
 
-Todos los releases publicados en GitHub incluyen **artifact attestations** firmadas criptográficamente mediante [GitHub Artifact Attestations](https://github.com/actions/attest-build-provenance) (basado en Sigstore).
+Todos los releases publicados en GitHub incluyen **artifact attestations** firmadas criptográficamente mediante [GitHub Artifact Attestations](https://github.com/actions/attest-build-provenance) (basado en Sigstore) y, desde **F6-T7**, una firma **cosign keyless** por cada asset (`.bundle`).
 
-### Verificar un artifact descargado
+### Verificar con cosign (recomendado)
+
+```bash
+cosign verify-blob \
+  --bundle forja-<version>-<plataforma>.tar.gz.bundle \
+  --certificate-identity-regexp 'https://github.com/forja-lang/forja/.github/workflows/rust.yml@refs/heads/(main|master)' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  forja-<version>-<plataforma>.tar.gz
+```
+
+La **identidad pública** es el workflow oficial `forja-lang/forja/.github/workflows/rust.yml` en `main`/`master`, emitido por `token.actions.githubusercontent.com`. No hay una clave estática: la confianza se ancla en el OIDC de GitHub Actions y en el certificado de Sigstore. Los instaladores (`scripts/install.sh`, `scripts/install.ps1`) verifican automáticamente si `cosign` está disponible.
+
+### Verificar con GitHub CLI
 
 ```bash
 # Requiere GitHub CLI (gh) versión 2.0+
