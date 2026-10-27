@@ -1,0 +1,21 @@
+[package]
+name = "forja-theme"
+version = "0.1.0"
+edition = "2021"
+description = "Sistema de tema Material You (Material 3) para Forja GUI — colores dinámicos, tipografía, formas, elevación y animación, sin dependencias de xilem ni forja"
+license = "MIT"
+repository = "https://github.com/forja-lang/forja"
+homepage = "https://forja-lang.github.io/forja/"
+documentation = "https://docs.rs/forja-theme"
+readme = "README.md"
+keywords = ["material", "theme", "material-you", "gui", "forja"]
+categories = ["gui", "graphics"]
+
+[features]
+default = []
+# Habilita las conversiones hacia tipos de xilem (Color, FontWeight, CornerRadius).
+# `forja-gui-rt` activa esta feature; el crate queda puro sin ella.
+xilem = ["dep:xilem"]
+
+[dependencies]
+xilem = { version = "0.4", optional = true }
