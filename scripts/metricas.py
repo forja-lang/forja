@@ -83,6 +83,7 @@ def main() -> int:
             print(f"{clave}: {valor}")
         return 0
 
+    print(f"métricas calculadas: {m}")
     objetivos = [(README, "README"), (ROADMAP, "ROADMAP")]
     errores = 0
     for ruta, tipo in objetivos:
