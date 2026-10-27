@@ -1,8 +1,119 @@
+//! Formatter determinista e idempotente para Forja (F2-T3).
+//!
+//! Desde F5-T2 conserva los comentarios: `Formatter::formatear` reconstruye
+//! desde el AST (sin comentarios), pero `formatear_con_comentarios` reinserta
+//! los comentarios extraídos del fuente por línea del token siguiente.
+
 use crate::ast::*;
+
+/// Re-escapa el valor de un literal de texto para que el código emitido vuelva
+/// a producir el mismo valor al parsearlo (F5-T1). Sin esto, un `\n` real en el
+/// valor del AST se escribía como salto de línea y corrompía el archivo.
+pub fn escapar_texto(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '$' if chars.peek() == Some(&'{') => {
+                // Evita que el texto literal se reinterprete como interpolación.
+                out.push_str("\\$");
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+fn prefijo_indentacion(linea: &str) -> &str {
+    let fin = linea
+        .char_indices()
+        .find(|(_, c)| *c != ' ' && *c != '\t')
+        .map(|(i, _)| i)
+        .unwrap_or(linea.len());
+    &linea[..fin]
+}
+
+fn empujar_comentario(out: &mut String, texto: &str, indent: &str) {
+    for linea in texto.lines() {
+        out.push_str(indent);
+        out.push_str(linea);
+        out.push('\n');
+    }
+}
+
+/// Reinserta comentarios en el código ya formateado (F5-T2) usando como ancla
+/// la línea del token que seguía a cada comentario en el fuente original.
+fn insertar_comentarios(base: String, comentarios: &[crate::lexer::Comentario]) -> String {
+    if comentarios.is_empty() {
+        return base;
+    }
+
+    let mut lexer = crate::lexer::Lexer::new(&base);
+    let tokens = lexer.tokenize().unwrap_or_default();
+    let mut posiciones: std::collections::HashMap<String, Vec<usize>> =
+        std::collections::HashMap::new();
+    for t in &tokens {
+        if matches!(
+            t.kind,
+            crate::token::TokenKind::DocComment(_)
+                | crate::token::TokenKind::EOF
+                | crate::token::TokenKind::Error(_)
+        ) {
+            continue;
+        }
+        posiciones
+            .entry(format!("{:?}", t.kind))
+            .or_default()
+            .push(t.linea);
+    }
+
+    let mut inserciones: std::collections::BTreeMap<usize, Vec<&str>> =
+        std::collections::BTreeMap::new();
+    for comentario in comentarios {
+        let destino = comentario
+            .siguiente_token
+            .as_ref()
+            .and_then(|clave| {
+                posiciones
+                    .get(clave)
+                    .and_then(|lineas| lineas.get(comentario.siguiente_ocurrencia))
+            })
+            .copied();
+        inserciones
+            .entry(destino.unwrap_or(usize::MAX))
+            .or_default()
+            .push(&comentario.texto);
+    }
+
+    let lineas: Vec<&str> = base.lines().collect();
+    let mut out = String::with_capacity(base.len() + 32 * comentarios.len());
+    for (idx, linea) in lineas.iter().enumerate() {
+        if let Some(textos) = inserciones.remove(&(idx + 1)) {
+            let indent = prefijo_indentacion(linea);
+            for texto in textos {
+                empujar_comentario(&mut out, texto, indent);
+            }
+        }
+        out.push_str(linea);
+        out.push('\n');
+    }
+    if let Some(textos) = inserciones.remove(&usize::MAX) {
+        for texto in textos {
+            empujar_comentario(&mut out, texto, "");
+        }
+    }
+    out
+}
 
 pub struct Formatter {
     output: String,
     indent: usize,
+    emitir_doc: bool,
 }
 
 impl Formatter {
@@ -10,6 +121,7 @@ impl Formatter {
         Formatter {
             output: String::new(),
             indent: 0,
+            emitir_doc: true,
         }
     }
 
@@ -19,6 +131,20 @@ impl Formatter {
             self.output.push('\n');
         }
         self.output.clone()
+    }
+
+    /// Formatea preservando los comentarios extraídos del fuente original
+    /// (F5-T2). Los comentarios se reinsertan antes de la línea del token que
+    /// les seguía; los doc comments se toman de la lista (no del AST) para no
+    /// duplicarlos.
+    pub fn formatear_con_comentarios(
+        &mut self,
+        programa: &Programa,
+        comentarios: &[crate::lexer::Comentario],
+    ) -> String {
+        self.emitir_doc = false;
+        let base = self.formatear(programa);
+        insertar_comentarios(base, comentarios)
     }
 
     fn indent_str(&self) -> String {
@@ -337,9 +463,11 @@ impl Formatter {
                 precondiciones,
                 postcondiciones,
             } => {
-                if let Some(ref d) = doc {
-                    for line in d.lines() {
-                        self.push(&format!("{}{}\n", self.indent_str(), line));
+                if self.emitir_doc {
+                    if let Some(ref d) = doc {
+                        for line in d.lines() {
+                            self.push(&format!("{}{}\n", self.indent_str(), line));
+                        }
                     }
                 }
                 for attr in atributos {
@@ -566,8 +694,17 @@ impl Formatter {
         match expr {
             Expresion::LiteralNumero(n) => n.to_string(),
             Expresion::LiteralDecimal(d) => d.to_string(),
-            Expresion::LiteralExacto(coeff, scale) => format!("{}e{}", coeff, scale),
-            Expresion::LiteralTexto(s) => format!("\"{}\"", s),
+            Expresion::LiteralExacto(coeff, scale) => {
+                if *scale == 0 {
+                    coeff.to_string()
+                } else {
+                    // Exacto = coeff * 10^-scale. El lexer acepta `e-<scale>`;
+                    // emitir `e<scale>` multiplicaría por 10^scale y podría
+                    // desbordar i128 al reformatear (F5-T1 round-trip).
+                    format!("{}e-{}", coeff, scale)
+                }
+            }
+            Expresion::LiteralTexto(s) => format!("\"{}\"", escapar_texto(s)),
             Expresion::LiteralBooleano(b) => (if *b { "verdadero" } else { "falso" }).to_string(),
             Expresion::LiteralNulo => "nulo".to_string(),
             Expresion::Identificador { nombre: n, .. } => n.clone(),
@@ -794,5 +931,107 @@ impl Formatter {
 
     fn push(&mut self, s: &str) {
         self.output.push_str(s);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::Lexer;
+    use crate::parser::Parser;
+
+    /// Formatea un fragmento de código fuente.
+    fn formatear(source: &str) -> String {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().expect("el lexer no debe fallar");
+        let mut parser = Parser::new(tokens);
+        let programa = parser.parse().expect("el parser no debe fallar");
+        let mut fmt = Formatter::new();
+        fmt.formatear(&programa)
+    }
+
+    /// Verifica que formatear dos veces produce exactamente el mismo resultado.
+    fn assert_idempotente(source: &str) {
+        let primera = formatear(source);
+        let segunda = formatear(&primera);
+        assert_eq!(
+            primera, segunda,
+            "el formatter no es idempotente para:\n{}",
+            source
+        );
+    }
+
+    #[test]
+    fn test_idempotencia_variable() {
+        assert_idempotente("variable x = 5\n");
+    }
+
+    #[test]
+    fn test_idempotencia_constante() {
+        assert_idempotente("constante PI: Decimal = 2.5\n");
+    }
+
+    #[test]
+    fn test_idempotencia_funcion() {
+        assert_idempotente(
+            "funcion sumar(a: Entero, b: Entero) -> Entero {\n    retornar a + b\n}\n",
+        );
+    }
+
+    #[test]
+    fn test_idempotencia_si_sino() {
+        assert_idempotente(
+            "si (x > 0) {\n    escribir(\"positivo\")\n} sino {\n    escribir(\"negativo\")\n}\n",
+        );
+    }
+
+    #[test]
+    fn test_idempotencia_mientras() {
+        assert_idempotente("mientras (i < 10) {\n    i = i + 1\n}\n");
+    }
+
+    #[test]
+    fn test_idempotencia_para() {
+        assert_idempotente("para (variable i = 0; i < 10; i = i + 1) {\n    escribir(i)\n}\n");
+    }
+
+    #[test]
+    fn test_idempotencia_clase() {
+        assert_idempotente(
+            "clase Persona {\n    variable nombre: Texto\n    funcion saludar() {\n        escribir(\"hola\")\n    }\n}\n",
+        );
+    }
+
+    #[test]
+    fn test_idempotencia_arreglo_y_mapa() {
+        assert_idempotente("variable arr = [1, 2, 3]\n");
+        assert_idempotente("variable m = {\"a\": 1, \"b\": 2}\n");
+    }
+
+    #[test]
+    fn test_idempotencia_expresiones() {
+        assert_idempotente("variable r = (a + b) * c - d / e\n");
+        assert_idempotente("variable b = x > 0 y y < 10 o z == 5\n");
+    }
+
+    #[test]
+    fn test_idempotencia_llamada_metodo() {
+        assert_idempotente("objeto.metodo(1, 2, 3)\n");
+    }
+
+    #[test]
+    fn test_idempotencia_programa_completo() {
+        let source = "\
+constante MAX: Entero = 100
+
+funcion principal() {
+    variable suma = 0
+    para (variable i = 0; i < MAX; i = i + 1) {
+        suma = suma + i
+    }
+    escribir(suma)
+}
+";
+        assert_idempotente(source);
     }
 }
