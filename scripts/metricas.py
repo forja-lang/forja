@@ -24,17 +24,36 @@ ROADMAP = ROOT / "docs" / "src" / "pages" / "roadmap.astro"
 
 
 def contar_rust() -> int:
-    total = 0
-    for base, dirs, archivos in os.walk(ROOT):
-        dirs[:] = [d for d in dirs if d not in EXCLUIDOS]
-        for archivo in archivos:
-            if archivo.endswith(".rs"):
-                try:
-                    with open(Path(base) / archivo, encoding="utf-8", errors="ignore") as f:
-                        total += sum(1 for _ in f)
-                except OSError:
-                    pass
-    return total
+    """Cuenta sólo archivos versionados (incluye submódulos)."""
+    import subprocess
+
+    try:
+        salida = subprocess.check_output(
+            ["git", "ls-files", "--recurse-submodules", "*.rs"],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+        total = 0
+        for rel in salida.splitlines():
+            try:
+                with open(ROOT / rel, encoding="utf-8", errors="ignore") as f:
+                    total += sum(1 for _ in f)
+            except OSError:
+                pass
+        return total
+    except Exception:
+        total = 0
+        for base, dirs, archivos in os.walk(ROOT):
+            dirs[:] = [d for d in dirs if d not in EXCLUIDOS]
+            for archivo in archivos:
+                if archivo.endswith(".rs"):
+                    try:
+                        with open(Path(base) / archivo, encoding="utf-8", errors="ignore") as f:
+                            total += sum(1 for _ in f)
+                    except OSError:
+                        pass
+        return total
 
 
 def contar(patron: str) -> int:
