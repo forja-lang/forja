@@ -11,7 +11,7 @@
 //! [`crate::registry_server`] incluido). En producción se recomienda terminar
 //! TLS en un proxy (nginx/caddy) y apuntar `FORJA_REGISTRY_URL` a `https://`;
 //! para `https://` este cliente devuelve un error explicativo si no se compiló
-//! con un cliente TLS (ver deuda documentada en `plan2.md`).
+//! con un cliente TLS (ver deuda documentada en el CHANGELOG).
 
 use crate::base64::{b64_decode, b64_encode};
 use crate::registry::{
