@@ -22,12 +22,20 @@
 #   - crates/forja-android-rt/Cargo.toml
 #   - crates/forja-gui-rt/Cargo.toml
 #   - crates/forja-wasm-gui/Cargo.toml
+#   - crates/forja-syntax/Cargo.toml
+#   - crates/forja-types/Cargo.toml
+#   - crates/forja-theme/Cargo.toml
+#   - crates/forja-gui-core/Cargo.toml
+#   - crates/*/README.md
+#   - crates/forja-android-rt/android/template/app/build.gradle.kts
 #   - .github/workflows/rust.yml (tag_name y name)
 #   - src/main.rs (templates de proyecto nuevo)
 #   - README.md
 #   - benchmarks/README.md y benchmarks/RESULTADOS_BENCHMARK.md
-#   - docs/src/pages/arquitectura/forja_android_rt.astro
+#   - docs/src/pages/index.astro, roadmap.astro y
+#     arquitectura/forja_android_rt.astro
 #   - scripts/build-aar.sh y scripts/build-aar.ps1
+#   - scripts/install.sh y scripts/install.ps1
 #   - vscode/README.md, package.json y package-lock.json
 #   - installer.iss (Inno Setup)
 
@@ -107,13 +115,21 @@ sed -i "s/^version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/" Cargo.toml
 print_ok "Cargo.toml"
 COUNT=$((COUNT + 1))
 
-# 2. Workspace crates
-for crate in forja-rt forja-wasm forja-android-rt forja-gui-rt forja-wasm-gui; do
+# 2. Workspace crates (Cargo.toml y README)
+for crate in forja-rt forja-wasm forja-android-rt forja-gui-rt forja-wasm-gui \
+             forja-syntax forja-types forja-theme forja-gui-core; do
     file="crates/$crate/Cargo.toml"
     if [ -f "$file" ]; then
         sed -i "s/^version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/" "$file"
         sed -i "s/version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/g" "$file"
         print_ok "$file"
+        COUNT=$((COUNT + 1))
+    fi
+
+    readme="crates/$crate/README.md"
+    if [ -f "$readme" ]; then
+        sed -i "s/$OLD_VERSION/$NEW_VERSION/g" "$readme"
+        print_ok "$readme"
         COUNT=$((COUNT + 1))
     fi
 done
@@ -135,10 +151,10 @@ if [ -f "$rs_file" ]; then
     COUNT=$((COUNT + 1))
 fi
 
-# 5. README.md (ejemplos CLI e interactivo)
+# 5. README.md (ejemplos CLI e interactivo y estado del proyecto)
 readme_file="README.md"
 if [ -f "$readme_file" ]; then
-    sed -i "s/Forja v$OLD_VERSION/Forja v$NEW_VERSION/g" "$readme_file"
+    sed -i "s/v$OLD_VERSION/v$NEW_VERSION/g" "$readme_file"
     print_ok "$readme_file"
     COUNT=$((COUNT + 1))
 fi
@@ -152,13 +168,17 @@ for bench_file in benchmarks/README.md benchmarks/RESULTADOS_BENCHMARK.md; do
     fi
 done
 
-# 7. docs (forja_android_rt.astro)
-astro_file="docs/src/pages/arquitectura/forja_android_rt.astro"
-if [ -f "$astro_file" ]; then
-    sed -i "s/$OLD_VERSION/$NEW_VERSION/g" "$astro_file"
-    print_ok "$astro_file"
-    COUNT=$((COUNT + 1))
-fi
+# 7. docs (portada, roadmap y página del runtime Android)
+for docs_file in \
+    docs/src/pages/index.astro \
+    docs/src/pages/roadmap.astro \
+    docs/src/pages/arquitectura/forja_android_rt.astro; do
+    if [ -f "$docs_file" ]; then
+        sed -i "s/$OLD_VERSION/$NEW_VERSION/g" "$docs_file"
+        print_ok "$docs_file"
+        COUNT=$((COUNT + 1))
+    fi
+done
 
 # 8. scripts/build-aar.sh y scripts/build-aar.ps1
 for aar_script in scripts/build-aar.sh scripts/build-aar.ps1; do
@@ -169,11 +189,31 @@ for aar_script in scripts/build-aar.sh scripts/build-aar.ps1; do
     fi
 done
 
-# 9. Extensión de VSCode (package.json, package-lock.json, README.md)
+# 9. Plantilla Android: nombre del AAR enlazado por Gradle
+gradle_file="crates/forja-android-rt/android/template/app/build.gradle.kts"
+if [ -f "$gradle_file" ]; then
+    sed -i "s/forja-android-rt-$OLD_VERSION\.aar/forja-android-rt-$NEW_VERSION.aar/g" "$gradle_file"
+    print_ok "$gradle_file"
+    COUNT=$((COUNT + 1))
+fi
+
+# 10. scripts/install.sh y scripts/install.ps1 (ejemplos de versión)
+for install_script in scripts/install.sh scripts/install.ps1; do
+    if [ -f "$install_script" ]; then
+        sed -i "s/v$OLD_VERSION/v$NEW_VERSION/g" "$install_script"
+        print_ok "$install_script"
+        COUNT=$((COUNT + 1))
+    fi
+done
+
+# 11. Extensión de VSCode (package.json, package-lock.json, README.md)
 # Solo se reemplazan los campos "version": "X.Y.Z"; un reemplazo global
-# también corrompe restricciones de dependencias (p. ej. jsonwebtoken ^9.0.0).
+# también corrompe restricciones de dependencias (p. ej. jsonwebtoken ^9.0.0)
+# y valores como el color `#10.9.3` del README.
 if [ -f "vscode/README.md" ]; then
-    sed -i "s/$OLD_VERSION/$NEW_VERSION/g" vscode/README.md
+    sed -i "s/badge\/version-$OLD_VERSION-/badge\/version-$NEW_VERSION-/" vscode/README.md
+    sed -i "s/forja-syntax-$OLD_VERSION\.vsix/forja-syntax-$NEW_VERSION.vsix/g" vscode/README.md
+    sed -i "s/Versión actual: $OLD_VERSION/Versión actual: $NEW_VERSION/g" vscode/README.md
     print_ok "vscode/README.md"
     COUNT=$((COUNT + 1))
 fi
@@ -185,7 +225,7 @@ for vsc_file in vscode/forja-syntax/package.json vscode/forja-syntax/package-loc
     fi
 done
 
-# 10. installer.iss (Inno Setup)
+# 12. installer.iss (Inno Setup)
 iss_file="installer.iss"
 if [ -f "$iss_file" ]; then
     sed -i "s/#define MyAppVersion \"$OLD_VERSION\"/#define MyAppVersion \"$NEW_VERSION\"/g" "$iss_file"
@@ -193,7 +233,7 @@ if [ -f "$iss_file" ]; then
     COUNT=$((COUNT + 1))
 fi
 
-# 11. Actualizar Cargo.lock mediante cargo check
+# 13. Actualizar Cargo.lock mediante cargo check
 if command -v cargo &>/dev/null; then
     print_info "Actualizando Cargo.lock con cargo check..."
     cargo check --quiet || true
