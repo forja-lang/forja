@@ -168,6 +168,9 @@ const PROGRAMAS: &[(&str, &str)] = &[
         "condicion_grupo",
         "funcion f(x) -> Entero {\n    si ((x > 0)) { retornar 1 }\n    retornar 0\n}\nescribir(f(1))",
     ),
+    ("acceso_miembro_stmt", "clase C { x }\nvariable c = nuevo C()\nc.x"),
+    ("retorno_sin_valor_stmt", "funcion f() { retornar }\nf()"),
+    ("identificador_booleano", "variable b: Booleano = verdadero\nescribir(b)"),
     ("importar_externa", "importar externa \"libc.so.6\"\nescribir(1)"),
     (
         "funcion_externa",
@@ -534,5 +537,35 @@ fn e2e_x86_64_linux_ensambla_y_ejecuta() {
             esperado,
             "[{nombre}] salida inesperada de la ejecución"
         );
+    }
+}
+
+/// Cobertura de caminos del backend: compila constructos que no están en la
+/// batería principal (tipos, métodos, match, control, errores) para todas las
+/// arquitecturas. Los constructos no soportados deben devolver `Err` sin panic.
+#[test]
+fn cobertura_constructos_asm() {
+    let programas: &[&str] = &[
+        "clase C { x: Entero\n y: Decimal\n z: Texto\n b: Booleano\n constructor(a: Entero) { este.x = a\n este.y = 1.5\n este.z = \"z\"\n este.b = verdadero }\n funcion get() -> Entero { retornar este.x }\n funcion set(v: Entero) { este.x = v } }\nvariable c = nuevo C(7)\nc.set(8)\nc.x = c.x + 1\nescribir(c.get())\nescribir(c.y)\nescribir(c.z)\nescribir(c.b)",
+        "clase P { a\n b\n funcion suma(x, y) -> Entero { retornar este.a + x + y } }\nvariable p = nuevo P()\np.a = 1\nescribir(p.suma(2, 3))",
+        "tipo E = A(Entero) | B(Texto) | C\nfuncion f(e: E) -> Texto {\n coincidir (e) {\n  caso A(n) -> { retornar \"a\" }\n  caso B(s) -> { retornar s }\n  caso C -> { retornar \"c\" }\n }\n}\nescribir(f(A(1)))",
+        "variable s = \"x\"\ncoincidir (s) { caso \"x\" -> { escribir(1) } caso _ -> { escribir(2) } }",
+        "variable a = 1\nvariable b = 2\nvariable r = a < b\nescribir(r)\nr = a <= b\nescribir(r)\nr = a >= b\nescribir(r)\nr = a != b\nescribir(r)\nescribir((a + b) * 2 - 1 / 1 % 2)\nescribir(!falso && verdadero || falso)",
+        "variable i = 0\npara (variable j = 0; j < 3; j = j + 1) { i = i + j }\nrepetir (2) { i = i + 1 }\ncuando (i > 0) { escribir(i) }\nmientras (i < 20) { i = i + 1 }",
+        "funcion f(a: Entero, b: Entero, c: Entero, d: Entero, e: Entero, f: Entero, g: Entero, h: Entero) -> Entero\n requiere a > 0, \"a\"\n asegura resultado > 0\n{ retornar a + b + c + d + e + f + g + h }\nescribir(f(1,2,3,4,5,6,7,8))",
+        "funcion externa puts(s: Texto) -> Entero;\nescribir(1)",
+        "variable m = {\"a\": 1, \"b\": 2}\nescribir(m[\"a\"])",
+        "variable f = func(x) { x + 1 }\nescribir(f(1))",
+        "hilo { escribir(1) }",
+        "variable t, r = canal()",
+        "funcion g() -> Resultado<Entero, Texto> { retornar Ok(1) }\nfuncion h() -> Resultado<Entero, Texto> { variable x = g()?\n retornar Ok(x) }\nescribir(1)",
+        "variable x = 0.123456789012345678\nescribir(x)",
+    ];
+    for fuente in programas {
+        if let Ok(programa) = parsear(fuente) {
+            for target in TARGETS {
+                let _ = compilar_a_asm_con_target(&programa, *target);
+            }
+        }
     }
 }

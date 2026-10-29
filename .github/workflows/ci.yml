@@ -117,7 +117,7 @@ jobs:
         run: python scripts/metricas.py --check
 
   cobertura-asm:
-    name: Cobertura ASM (≥80%)
+    name: Cobertura ASM (100%)
     needs: [cambios, lint]
     if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
     runs-on: ubuntu-latest
@@ -130,7 +130,7 @@ jobs:
           components: llvm-tools-preview
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
-      # F4-T6/F7-T4: cobertura de compiler_asm.rs bloqueante (umbral 80%).
+      # F4-T6/F7-T4: cobertura de compiler_asm.rs bloqueante (umbral 100%).
       - name: Cobertura del backend ASM
         run: bash scripts/asm-coverage.sh
       - name: Publicar reporte de cobertura

@@ -22,6 +22,7 @@ main_rs/
 forjanzas/
 forjaX/
 tmp/
+*.profraw
 
 # ── Ejecutables ──
 *.exe

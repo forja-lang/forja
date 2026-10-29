@@ -27,11 +27,20 @@ pub enum TargetArch {
 
 impl TargetArch {
     pub fn detect() -> Self {
-        if cfg!(all(target_arch = "x86_64", target_os = "windows")) {
+        Self::desde_plataforma(std::env::consts::ARCH, std::env::consts::OS)
+    }
+
+    /// Mapea `(arquitectura, sistema operativo)` al target del backend.
+    ///
+    /// Es una función pura (sin `cfg!`) para que todas las combinaciones sean
+    /// alcanzables desde los tests: con `cfg!` las ramas de otras plataformas
+    /// se compilan como código muerto y nunca podrían ejecutarse.
+    fn desde_plataforma(arch: &str, os: &str) -> Self {
+        if arch == "x86_64" && os == "windows" {
             TargetArch::X86_64Windows
-        } else if cfg!(all(target_arch = "x86_64", target_os = "linux")) {
+        } else if arch == "x86_64" && os == "linux" {
             TargetArch::X86_64Linux
-        } else if cfg!(target_arch = "aarch64") {
+        } else if arch == "aarch64" {
             TargetArch::AArch64
         } else {
             // fallback: Linux x86-64
@@ -680,6 +689,18 @@ impl TargetArch {
     }
 }
 
+/// Tamaño acumulado del struct al agregar un campo de `tam` bytes.
+///
+/// `tam` viene de `tipo_asm_size` (4 u 8 bytes); el caso `tam <= 0` queda como
+/// red de seguridad para tipos de tamaño desconocido y reserva un qword.
+fn acumular_tamano_campo(size: i32, tam: i32) -> i32 {
+    if tam > 0 {
+        (size + tam - 1) / tam * tam + tam
+    } else {
+        size + 8
+    }
+}
+
 /// Grado de una potencia de dos (`log2`). Devuelve 0 para `x <= 1` o valores no
 /// potencia de dos (se trunca hacia abajo). Se usa como factor de escala en
 /// `str_mem_index`/`ldr` de arreglos; antes solo cubría 1, 2, 4 y 8, devolviendo
@@ -843,6 +864,24 @@ impl CompilerAsm {
             }
         }
         None
+    }
+
+    /// Copia el valor de retorno (`rax`/`x0`, o su mitad baja si es booleano)
+    /// al registro calle-saved `reg`.
+    ///
+    /// Los decimales viven en `xmm0`/`d0` y nunca reciben registro del pool, así
+    /// que para `TipoAsm::Decimal` no se emite nada.
+    fn emit_mov_ret_a_reg(&mut self, tipo: &TipoAsm, reg: &str) {
+        let a = self.arch;
+        match tipo {
+            TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) => {
+                self.emit_line(a.mov_reg_reg(reg, a.ret_reg()));
+            }
+            TipoAsm::Booleano => {
+                self.emit_line(a.mov_reg_reg(reg, a.ret_reg_32()));
+            }
+            TipoAsm::Decimal => {}
+        }
     }
 
     /// Libera el registro asociado a una variable (si lo tiene).
@@ -1211,11 +1250,7 @@ impl CompilerAsm {
                     let tipo = self.inferir_tipo_campo_asm(campo);
                     let tam = self.tipo_asm_size(&tipo);
                     // Alinear: cada campo empieza en múltiplo de su tamaño
-                    if tam > 0 {
-                        size = (size + tam - 1) / tam * tam + tam;
-                    } else {
-                        size += 8;
-                    }
+                    size = acumular_tamano_campo(size, tam);
                     let offset = i as i32 * 8; // offset simplificado: cada campo en qword
                     offsets.insert(campo.nombre.clone(), offset);
                     campos_info.push((campo.nombre.clone(), tipo));
@@ -1499,15 +1534,7 @@ impl CompilerAsm {
                     if let Some(val) = valor {
                         let _ = self.compilar_expresion_asm(val);
                         // ret (rax/x0) tiene el valor -> mover al registro asignado
-                        match tipo_asm {
-                            TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) => {
-                                self.emit_line(&a.mov_reg_reg(reg, ret));
-                            }
-                            TipoAsm::Booleano => {
-                                self.emit_line(&a.mov_reg_reg(reg, a.ret_reg_32()));
-                            }
-                            _ => {}
-                        }
+                        self.emit_mov_ret_a_reg(&tipo_asm, reg);
                     }
                 } else {
                     // ─── Variable en stack (sin registro disponible o tipo decimal) ───
@@ -1543,16 +1570,9 @@ impl CompilerAsm {
                 // ¿La variable destino está en un registro?
                 if let Some(&reg) = self.var_reg_map.get(nombre) {
                     // Variable en registro → mover resultado de ret (rax/x0) al registro
-                    if let Some(var) = self.variables.get(nombre) {
-                        match var.tipo {
-                            TipoAsm::Entero | TipoAsm::Texto | TipoAsm::Clase(_) => {
-                                self.emit_line(&a.mov_reg_reg(reg, ret));
-                            }
-                            TipoAsm::Booleano => {
-                                self.emit_line(&a.mov_reg_reg(reg, a.ret_reg_32()));
-                            }
-                            _ => {}
-                        }
+                    let tipo = self.variables.get(nombre).map(|var| var.tipo.clone());
+                    if let Some(tipo) = tipo {
+                        self.emit_mov_ret_a_reg(&tipo, reg);
                     }
                 } else if let Some(var) = self.variables.get(nombre) {
                     // Variable en stack
@@ -3579,6 +3599,9 @@ pub fn compilar_a_asm_con_target(
     let mut compiler = CompilerAsm::with_target(target);
     compiler.compilar(programa)
 }
+
+#[cfg(test)]
+mod cobertura;
 
 #[cfg(test)]
 mod tests {
