@@ -11,10 +11,6 @@ Esta es la **única** licencia declarada en el repositorio:
 - [`LICENSE.md`](LICENSE.md) contiene el texto completo de la GPLv3.
 - [`README.md`](README.md:279) resume la licencia.
 
-> Cualquier cambio de licencia debe aplicarse de forma conjunta en
-> `Cargo.toml`, `README.md`, `LICENSE.md`, la documentación del sitio y este
-> documento.
-
 ### Licencias de los programas escritos en Forja
 
 Escribir software *en* Forja **no** obliga a licenciarlo bajo GPL: los programas
