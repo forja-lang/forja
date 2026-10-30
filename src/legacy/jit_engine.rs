@@ -5,92 +5,92 @@ use crate::bytecode::{self, Opcode};
 use crate::vm_fast::ForjaFast;
 
 /// Decide si un bloque de bytecode es JIT-compilable por NativeJIT actual
-/// Solo opcodes que NativeJIT::compile() soporta realmente (NO Call/Return/Print/FunctionDef)
-pub fn es_jiteable(opcodes: &[Opcode]) -> bool {
-    for op in opcodes {
+/// Solo codigos que NativeJIT::compile() soporta realmente (NO Llamar/Retornar/Imprimir/DefinirFuncion)
+pub fn es_jiteable(codigos: &[Opcode]) -> bool {
+    for op in codigos {
         match op {
             // Opcodes que ignoramos (estructura del programa, no cómputo)
-            Opcode::FunctionDef(_, _) | Opcode::Halt | Opcode::Return |
-            Opcode::Label(_) | Opcode::Print => continue,
+            Opcode::DefinirFuncion(_, _) | Opcode::Detener | Opcode::Retornar |
+            Opcode::Etiqueta(_) | Opcode::Imprimir => continue,
             // JITeables
             Opcode::PushEntero(_) | Opcode::PushDecimal(_) |
             Opcode::PushBooleano(_) | Opcode::PushNulo |
-            Opcode::Pop | Opcode::Dup |
-            Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Div |
-            Opcode::AddInt | Opcode::AddFloat |
-            Opcode::SubInt | Opcode::SubFloat |
-            Opcode::MulInt | Opcode::MulFloat |
-            Opcode::DivInt | Opcode::DivFloat |
-            Opcode::IgualInt | Opcode::MenorInt | Opcode::MayorInt |
-            Opcode::IgualFloat | Opcode::DiferenteFloat |
-            Opcode::MenorFloat | Opcode::MayorFloat |
-            Opcode::MenorIgualFloat | Opcode::MayorIgualFloat |
+            Opcode::Descartar | Opcode::Duplicar |
+            Opcode::Sumar | Opcode::Restar | Opcode::Multiplicar | Opcode::Dividir |
+            Opcode::SumarEntero | Opcode::SumarDecimal |
+            Opcode::RestarEntero | Opcode::RestarDecimal |
+            Opcode::MultiplicarEntero | Opcode::MultiplicarDecimal |
+            Opcode::DividirEntero | Opcode::DividirDecimal |
+            Opcode::IgualEntero | Opcode::MenorEntero | Opcode::MayorEntero |
+            Opcode::IgualDecimal | Opcode::DistintoDecimal |
+            Opcode::MenorDecimal | Opcode::MayorDecimal |
+            Opcode::MenorIgualDecimal | Opcode::MayorIgualDecimal |
             Opcode::Igual | Opcode::Diferente |
             Opcode::Menor | Opcode::Mayor |
             Opcode::MenorIgual | Opcode::MayorIgual |
             Opcode::Y | Opcode::O | Opcode::No |
-            Opcode::LoadIdx(_) | Opcode::StoreIdx(_) | Opcode::DeclareIdx(_, _) |
-            Opcode::LoadIdxEntero(_) | Opcode::LoadIdxFloat(_) |
-            Opcode::StoreIdxEntero(_) | Opcode::StoreIdxFloat(_) |
-            Opcode::DeclareEnteroOp(_, _) | Opcode::DeclareBooleanoOp(_, _) |
-            Opcode::StoreEnteroOp(_, _) |
-            Opcode::DeclareFloatOp(_, _) | Opcode::StoreFloatOp(_, _) |
-            Opcode::LoadAddFloat(_, _) |
-            Opcode::XorSign(_) |
-            Opcode::AddStoreFloat(_) | Opcode::SubStoreFloat(_) | Opcode::MulStoreFloat(_) |
-            // Fase 3b: Direct fused float opcodes (JITeables)
-            Opcode::FusedDivAddConst(_, _, _) | Opcode::FusedDivSubConst(_, _, _) |
-            Opcode::Jump(_) | Opcode::JumpSiFalso(_) |
+            Opcode::CargarIndice(_) | Opcode::GuardarIndice(_) | Opcode::DeclararIndice(_, _) |
+            Opcode::CargarIndiceEntero(_) | Opcode::CargarIndiceDecimal(_) |
+            Opcode::GuardarIndiceEntero(_) | Opcode::GuardarIndiceDecimal(_) |
+            Opcode::DeclararOperacionEntero(_, _) | Opcode::DeclararOperacionBooleano(_, _) |
+            Opcode::GuardarOperacionEntero(_, _) |
+            Opcode::DeclararOperacionDecimal(_, _) | Opcode::GuardarOperacionDecimal(_, _) |
+            Opcode::CargarSumarDecimal(_, _) |
+            Opcode::InvertirSigno(_) |
+            Opcode::SumarGuardarDecimal(_) | Opcode::RestarGuardarDecimal(_) | Opcode::MultiplicarGuardarDecimal(_) |
+            // Fase 3b: Direct fused float codigos (JITeables)
+            Opcode::DividirSumarFusionadoConst(_, _, _) | Opcode::DividirRestarFusionadoConst(_, _, _) |
+            Opcode::Salto(_) | Opcode::SaltoSiFalso(_) |
             // Superinstructions — expandibles en JIT
-            Opcode::LoadAddInt(_, _) | Opcode::LoadIdx2(_, _) |
-            Opcode::LoadStoreIdx(_, _) | Opcode::AddStoreIdx(_) |
-            Opcode::SubStoreIdx(_) | Opcode::MulStoreIdx(_) |
-            Opcode::PushAddInt(_) | Opcode::LoadJumpSiFalso(_, _) |
-            Opcode::LoadJump(_, _) | Opcode::DupAddInt |
-            // AVX2 packed SIMD opcodes (JIT-only)
-            Opcode::AddPacked(_, _, _, _) | Opcode::SubPacked(_, _, _, _) |
-            Opcode::MulPacked(_, _, _, _) | Opcode::DivPacked(_, _, _, _) |
-            // Fase A: Modulo2
-            Opcode::Modulo2(_) |
+            Opcode::CargarSumarEntero(_, _) | Opcode::CargarIndice2(_, _) |
+            Opcode::CargarGuardarIndice(_, _) | Opcode::SumarGuardarIndice(_) |
+            Opcode::RestarGuardarIndice(_) | Opcode::MultiplicarGuardarIndice(_) |
+            Opcode::EmpujarSumarEntero(_) | Opcode::CargarSaltoSiFalso(_, _) |
+            Opcode::CargarSalto(_, _) | Opcode::DuplicarSumarEntero |
+            // AVX2 packed SIMD codigos (JIT-only)
+            Opcode::SumarEmpaquetado(_, _, _, _) | Opcode::RestarEmpaquetado(_, _, _, _) |
+            Opcode::MultiplicarEmpaquetado(_, _, _, _) | Opcode::DividirEmpaquetado(_, _, _, _) |
+            // Fase A: ModuloDos
+            Opcode::ModuloDos(_) |
             // Fase B: AVX2 SoA
-            Opcode::ReduceAdd(_, _) | Opcode::LoadAddPacked(_, _, _) => {}
+            Opcode::ReducirSuma(_, _) | Opcode::CargarSumarEmpaquetado(_, _, _) => {}
             // NO JITeables — Fase 5: Exacto (BigDecimal) no soportado en JIT nativo
-            Opcode::PushExacto(_, _) | Opcode::AddExact | Opcode::SubExact |
-            Opcode::MulExact | Opcode::DivExact |
-            Opcode::IgualExact | Opcode::MenorExact | Opcode::MayorExact |
+            Opcode::PushExacto(_, _) | Opcode::SumarExacto | Opcode::RestarExacto |
+            Opcode::MultiplicarExacto | Opcode::DividirExacto |
+            Opcode::IgualExacto | Opcode::MenorExacto | Opcode::MayorExacto |
             Opcode::EnteroAExacto | Opcode::DecimalAExacto |
-            Opcode::DeclareExactOp(_, _, _) | Opcode::AddStoreExact(_) => return false,
+            Opcode::DeclararOperacionExacto(_, _, _) | Opcode::SumarGuardarExacto(_) => return false,
             _ => return false,
         }
     }
     true
 }
 
-/// Especialización estática de tipos: convierte Add/Sub/Mul/Div genéricos
-/// en AddInt/AddFloat/etc. según los tipos inferidos de las variables.
+/// Especialización estática de tipos: convierte Sumar/Restar/Multiplicar/Dividir genéricos
+/// en SumarEntero/SumarDecimal/etc. según los tipos inferidos de las variables.
 /// Necesario porque el JIT compila a nativo y necesita saber el tipo en
 /// tiempo de compilación (no puede hacer quickening adaptativo en runtime).
 fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
     use Opcode::*;
 
-    // Pre-paso: detectar patrón PushDecimal(0.0) + LoadIdxFloat(x) + SubFloat + StoreIdxFloat(x) → XorSign(x)
-    // También detecta PushEntero(0) + LoadIdxFloat(x) + Sub(genérico) + StoreIdxFloat(x) si el tipo es float
+    // Pre-paso: detectar patrón PushDecimal(0.0) + CargarIndiceDecimal(x) + RestarDecimal + GuardarIndiceDecimal(x) → InvertirSigno(x)
+    // También detecta PushEntero(0) + CargarIndiceDecimal(x) + Restar(genérico) + GuardarIndiceDecimal(x) si el tipo es float
     let mut preprocessed: Vec<Opcode> = Vec::with_capacity(bytecode.len());
     let mut i = 0;
     while i < bytecode.len() {
         if i + 3 < bytecode.len() {
             let is_negation = matches!(
                 (&bytecode[i], &bytecode[i+1], &bytecode[i+2], &bytecode[i+3]),
-                (PushDecimal(d), LoadIdxFloat(x), SubFloat, StoreIdxFloat(y)) if *d == 0.0 && x == y
+                (PushDecimal(d), CargarIndiceDecimal(x), RestarDecimal, GuardarIndiceDecimal(y)) if *d == 0.0 && x == y
             );
             if is_negation {
-                if let (_, LoadIdxFloat(x), _, _) = (
+                if let (_, CargarIndiceDecimal(x), _, _) = (
                     &bytecode[i],
                     &bytecode[i + 1],
                     &bytecode[i + 2],
                     &bytecode[i + 3],
                 ) {
-                    preprocessed.push(XorSign(*x));
+                    preprocessed.push(InvertirSigno(*x));
                     i += 4;
                     continue;
                 }
@@ -105,25 +105,25 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
     let n_vars = bytecode
         .iter()
         .filter_map(|op| match op {
-            LoadIdx(i) | StoreIdx(i) | DeclareIdx(i, _) => Some(*i),
-            LoadIdxEntero(i) | LoadIdxFloat(i) => Some(*i),
-            StoreIdxEntero(i) | StoreIdxFloat(i) => Some(*i),
-            DeclareEnteroOp(i, _)
-            | DeclareBooleanoOp(i, _)
-            | StoreEnteroOp(i, _)
-            | DeclareFloatOp(i, _)
-            | StoreFloatOp(i, _) => Some(*i),
-            LoadAddInt(i, _)
-            | LoadAddFloat(i, _)
-            | AddStoreIdx(i)
-            | SubStoreIdx(i)
-            | MulStoreIdx(i)
-            | AddStoreFloat(i)
-            | SubStoreFloat(i)
-            | MulStoreFloat(i) => Some(*i),
-            XorSign(i) => Some(*i),
-            LoadIdx2(a, _) | LoadStoreIdx(a, _) => Some(*a),
-            LoadJumpSiFalso(i, _) | LoadJump(i, _) => Some(*i),
+            CargarIndice(i) | GuardarIndice(i) | DeclararIndice(i, _) => Some(*i),
+            CargarIndiceEntero(i) | CargarIndiceDecimal(i) => Some(*i),
+            GuardarIndiceEntero(i) | GuardarIndiceDecimal(i) => Some(*i),
+            DeclararOperacionEntero(i, _)
+            | DeclararOperacionBooleano(i, _)
+            | GuardarOperacionEntero(i, _)
+            | DeclararOperacionDecimal(i, _)
+            | GuardarOperacionDecimal(i, _) => Some(*i),
+            CargarSumarEntero(i, _)
+            | CargarSumarDecimal(i, _)
+            | SumarGuardarIndice(i)
+            | RestarGuardarIndice(i)
+            | MultiplicarGuardarIndice(i)
+            | SumarGuardarDecimal(i)
+            | RestarGuardarDecimal(i)
+            | MultiplicarGuardarDecimal(i) => Some(*i),
+            InvertirSigno(i) => Some(*i),
+            CargarIndice2(a, _) | CargarGuardarIndice(a, _) => Some(*a),
+            CargarSaltoSiFalso(i, _) | CargarSalto(i, _) => Some(*i),
             _ => None,
         })
         .max()
@@ -135,37 +135,37 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
 
     for op in bytecode {
         match op {
-            DeclareEnteroOp(idx, _) | StoreEnteroOp(idx, _) => {
+            DeclararOperacionEntero(idx, _) | GuardarOperacionEntero(idx, _) => {
                 if *idx < tipos_var.len() {
                     tipos_var[*idx] = Some(0);
                 }
             }
-            DeclareFloatOp(idx, _) | StoreFloatOp(idx, _) => {
+            DeclararOperacionDecimal(idx, _) | GuardarOperacionDecimal(idx, _) => {
                 if *idx < tipos_var.len() {
                     tipos_var[*idx] = Some(1);
                 }
             }
-            DeclareBooleanoOp(idx, _) => {
+            DeclararOperacionBooleano(idx, _) => {
                 if *idx < tipos_var.len() {
                     tipos_var[*idx] = Some(2);
                 }
             }
-            LoadIdxEntero(idx) => {
+            CargarIndiceEntero(idx) => {
                 if *idx < tipos_var.len() {
                     tipos_var[*idx] = Some(0);
                 }
             }
-            LoadIdxFloat(idx) => {
+            CargarIndiceDecimal(idx) => {
                 if *idx < tipos_var.len() {
                     tipos_var[*idx] = Some(1);
                 }
             }
-            StoreIdxEntero(idx) => {
+            GuardarIndiceEntero(idx) => {
                 if *idx < tipos_var.len() {
                     tipos_var[*idx] = Some(0);
                 }
             }
-            StoreIdxFloat(idx) => {
+            GuardarIndiceDecimal(idx) => {
                 if *idx < tipos_var.len() {
                     tipos_var[*idx] = Some(1);
                 }
@@ -180,15 +180,15 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
 
     for op in bytecode {
         match op {
-            PushEntero(_) | LoadIdxEntero(_) | StoreEnteroOp(_, _) => {
+            PushEntero(_) | CargarIndiceEntero(_) | GuardarOperacionEntero(_, _) => {
                 result.push(op.clone());
                 stack_tipos.push(0);
             }
-            PushDecimal(_) | LoadIdxFloat(_) | DeclareFloatOp(_, _) | StoreFloatOp(_, _) => {
+            PushDecimal(_) | CargarIndiceDecimal(_) | DeclararOperacionDecimal(_, _) | GuardarOperacionDecimal(_, _) => {
                 result.push(op.clone());
                 stack_tipos.push(1);
             }
-            PushBooleano(_) | DeclareBooleanoOp(_, _) => {
+            PushBooleano(_) | DeclararOperacionBooleano(_, _) => {
                 result.push(op.clone());
                 stack_tipos.push(2);
             }
@@ -196,7 +196,7 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
                 result.push(op.clone());
                 stack_tipos.push(3);
             }
-            LoadIdx(idx) => {
+            CargarIndice(idx) => {
                 let t = if *idx < tipos_var.len() {
                     tipos_var[*idx].unwrap_or(3)
                 } else {
@@ -205,7 +205,7 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
                 result.push(op.clone());
                 stack_tipos.push(t);
             }
-            Dup => {
+            Duplicar => {
                 if let Some(&t) = stack_tipos.last() {
                     result.push(op.clone());
                     stack_tipos.push(t);
@@ -213,63 +213,63 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
                     result.push(op.clone());
                 }
             }
-            Pop => {
+            Descartar => {
                 result.push(op.clone());
                 stack_tipos.pop();
             }
-            Label(_) | FunctionDef(_, _) | Halt | Return | Print | Jump(_) | JumpSiFalso(_) => {
+            Etiqueta(_) | DefinirFuncion(_, _) | Detener | Retornar | Imprimir | Salto(_) | SaltoSiFalso(_) => {
                 result.push(op.clone());
             }
-            StoreIdx(_) | DeclareIdx(_, _) => {
+            GuardarIndice(_) | DeclararIndice(_, _) => {
                 result.push(op.clone());
                 stack_tipos.pop();
             }
-            Add | Sub | Mul | Div | Igual | Menor | Mayor | MenorIgual | MayorIgual => {
+            Sumar | Restar | Multiplicar | Dividir | Igual | Menor | Mayor | MenorIgual | MayorIgual => {
                 let t2 = stack_tipos.pop().unwrap_or(3);
                 let t1 = stack_tipos.pop().unwrap_or(3);
 
                 let (nuevo_op, result_tipo) = match op {
-                    Add => {
+                    Sumar => {
                         if t1 == 0 && t2 == 0 {
-                            (AddInt, 0)
+                            (SumarEntero, 0)
                         } else if t1 == 1 && t2 == 1 {
-                            (AddFloat, 1)
+                            (SumarDecimal, 1)
                         } else {
                             (op.clone(), 3)
                         }
                     }
-                    Sub => {
+                    Restar => {
                         if t1 == 0 && t2 == 0 {
-                            (SubInt, 0)
+                            (RestarEntero, 0)
                         } else if t1 == 1 && t2 == 1 {
-                            (SubFloat, 1)
+                            (RestarDecimal, 1)
                         } else {
                             (op.clone(), 3)
                         }
                     }
-                    Mul => {
+                    Multiplicar => {
                         if t1 == 0 && t2 == 0 {
-                            (MulInt, 0)
+                            (MultiplicarEntero, 0)
                         } else if t1 == 1 && t2 == 1 {
-                            (MulFloat, 1)
+                            (MultiplicarDecimal, 1)
                         } else {
                             (op.clone(), 3)
                         }
                     }
-                    Div => {
+                    Dividir => {
                         if t1 == 0 && t2 == 0 {
-                            (DivInt, 0)
+                            (DividirEntero, 0)
                         } else if t1 == 1 && t2 == 1 {
-                            (DivFloat, 1)
+                            (DividirDecimal, 1)
                         } else {
                             (op.clone(), 3)
                         }
                     }
                     Igual => {
                         if t1 == 0 && t2 == 0 {
-                            (IgualInt, 2)
+                            (IgualEntero, 2)
                         } else if t1 == 1 && t2 == 1 {
-                            (IgualFloat, 2)
+                            (IgualDecimal, 2)
                         } else {
                             (op.clone(), 2)
                         }
@@ -278,25 +278,25 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
                         if t1 == 0 && t2 == 0 {
                             (op.clone(), 2)
                         } else if t1 == 1 && t2 == 1 {
-                            (DiferenteFloat, 2)
+                            (DistintoDecimal, 2)
                         } else {
                             (op.clone(), 2)
                         }
                     }
                     Menor => {
                         if t1 == 0 && t2 == 0 {
-                            (MenorInt, 2)
+                            (MenorEntero, 2)
                         } else if t1 == 1 && t2 == 1 {
-                            (MenorFloat, 2)
+                            (MenorDecimal, 2)
                         } else {
                             (op.clone(), 2)
                         }
                     }
                     Mayor => {
                         if t1 == 0 && t2 == 0 {
-                            (MayorInt, 2)
+                            (MayorEntero, 2)
                         } else if t1 == 1 && t2 == 1 {
-                            (MayorFloat, 2)
+                            (MayorDecimal, 2)
                         } else {
                             (op.clone(), 2)
                         }
@@ -305,7 +305,7 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
                         if t1 == 0 && t2 == 0 {
                             (op.clone(), 2)
                         } else if t1 == 1 && t2 == 1 {
-                            (MenorIgualFloat, 2)
+                            (MenorIgualDecimal, 2)
                         } else {
                             (op.clone(), 2)
                         }
@@ -314,7 +314,7 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
                         if t1 == 0 && t2 == 0 {
                             (op.clone(), 2)
                         } else if t1 == 1 && t2 == 1 {
-                            (MayorIgualFloat, 2)
+                            (MayorIgualDecimal, 2)
                         } else {
                             (op.clone(), 2)
                         }
@@ -324,26 +324,26 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
                 result.push(nuevo_op);
                 stack_tipos.push(result_tipo);
             }
-            AddInt | SubInt | MulInt | DivInt => {
+            SumarEntero | RestarEntero | MultiplicarEntero | DividirEntero => {
                 result.push(op.clone());
                 stack_tipos.pop();
                 stack_tipos.pop();
                 stack_tipos.push(0);
             }
-            AddFloat | SubFloat | MulFloat | DivFloat => {
+            SumarDecimal | RestarDecimal | MultiplicarDecimal | DividirDecimal => {
                 result.push(op.clone());
                 stack_tipos.pop();
                 stack_tipos.pop();
                 stack_tipos.push(1);
             }
-            IgualInt | MenorInt | MayorInt | IgualFloat | DiferenteFloat | MenorFloat
-            | MayorFloat | MenorIgualFloat | MayorIgualFloat => {
+            IgualEntero | MenorEntero | MayorEntero | IgualDecimal | DistintoDecimal | MenorDecimal
+            | MayorDecimal | MenorIgualDecimal | MayorIgualDecimal => {
                 result.push(op.clone());
                 stack_tipos.pop();
                 stack_tipos.pop();
                 stack_tipos.push(2);
             }
-            LoadAddInt(idx, _) => {
+            CargarSumarEntero(idx, _) => {
                 let t = if *idx < tipos_var.len() {
                     tipos_var[*idx].unwrap_or(0)
                 } else {
@@ -352,7 +352,7 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
                 result.push(op.clone());
                 stack_tipos.push(t);
             }
-            LoadAddFloat(idx, _) => {
+            CargarSumarDecimal(idx, _) => {
                 let t = if *idx < tipos_var.len() {
                     tipos_var[*idx].unwrap_or(1)
                 } else {
@@ -361,7 +361,7 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
                 result.push(op.clone());
                 stack_tipos.push(t);
             }
-            LoadIdx2(a, b) => {
+            CargarIndice2(a, b) => {
                 let ta = if *a < tipos_var.len() {
                     tipos_var[*a].unwrap_or(3)
                 } else {
@@ -376,36 +376,36 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
                 stack_tipos.push(ta);
                 stack_tipos.push(tb);
             }
-            XorSign(_) => {
+            InvertirSigno(_) => {
                 result.push(op.clone());
             }
-            LoadStoreIdx(_, _) => {
+            CargarGuardarIndice(_, _) => {
                 result.push(op.clone());
             }
-            AddStoreIdx(_) | SubStoreIdx(_) | MulStoreIdx(_) => {
-                result.push(op.clone());
-                stack_tipos.pop();
-                stack_tipos.pop();
-            }
-            AddStoreFloat(_) | SubStoreFloat(_) | MulStoreFloat(_) => {
+            SumarGuardarIndice(_) | RestarGuardarIndice(_) | MultiplicarGuardarIndice(_) => {
                 result.push(op.clone());
                 stack_tipos.pop();
                 stack_tipos.pop();
             }
-            PushAddInt(_) => {
+            SumarGuardarDecimal(_) | RestarGuardarDecimal(_) | MultiplicarGuardarDecimal(_) => {
                 result.push(op.clone());
                 stack_tipos.pop();
-                stack_tipos.push(0);
+                stack_tipos.pop();
             }
-            DupAddInt => {
+            EmpujarSumarEntero(_) => {
                 result.push(op.clone());
                 stack_tipos.pop();
                 stack_tipos.push(0);
             }
-            LoadJumpSiFalso(_, _) => {
+            DuplicarSumarEntero => {
+                result.push(op.clone());
+                stack_tipos.pop();
+                stack_tipos.push(0);
+            }
+            CargarSaltoSiFalso(_, _) => {
                 result.push(op.clone());
             }
-            LoadJump(idx, _) => {
+            CargarSalto(idx, _) => {
                 let t = if *idx < tipos_var.len() {
                     tipos_var[*idx].unwrap_or(3)
                 } else {
@@ -425,22 +425,22 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
                 stack_tipos.pop();
                 stack_tipos.push(2);
             }
-            DeclareEnteroOp(_, _) => {
+            DeclararOperacionEntero(_, _) => {
                 result.push(op.clone());
             }
-            AddPacked(_, _, _, _)
-            | SubPacked(_, _, _, _)
-            | MulPacked(_, _, _, _)
-            | DivPacked(_, _, _, _) => {
+            SumarEmpaquetado(_, _, _, _)
+            | RestarEmpaquetado(_, _, _, _)
+            | MultiplicarEmpaquetado(_, _, _, _)
+            | DividirEmpaquetado(_, _, _, _) => {
                 result.push(op.clone());
             }
-            // Fase A: Modulo2(src) — pushea 0 o 1 (entero)
-            Modulo2(_) => {
+            // Fase A: ModuloDos(src) — pushea 0 o 1 (entero)
+            ModuloDos(_) => {
                 result.push(op.clone());
                 stack_tipos.push(0); // resultado entero
             }
-            // Fase B: ReduceAdd / LoadAddPacked (JIT-only, no stack change)
-            ReduceAdd(_, _) | LoadAddPacked(_, _, _) => {
+            // Fase B: ReducirSuma / CargarSumarEmpaquetado (JIT-only, no stack change)
+            ReducirSuma(_, _) | CargarSumarEmpaquetado(_, _, _) => {
                 result.push(op.clone());
             }
             _ => {
@@ -452,12 +452,12 @@ fn especializar_bytecode(bytecode: &[Opcode]) -> Vec<Opcode> {
     result
 }
 
-/// Desenrolla bucles 4x: detecta patrón Label + ... + Jump(label_mismo)
+/// Desenrolla bucles 4x: detecta patrón Etiqueta + ... + Salto(label_mismo)
 /// Duplica el cuerpo del bucle 4 veces. Cada copia mantiene su propio
 /// incremento de contador (i = i + 1), por lo que 4 copias = +4 por iteración.
 ///
 /// Cuando AVX2 está disponible, transforma bucles float a SIMD paralelo
-/// con 4 acumuladores contiguos y opcodes AddPacked/SubPacked/MulPacked/DivPacked.
+/// con 4 acumuladores contiguos y codigos SumarEmpaquetado/RestarEmpaquetado/MultiplicarEmpaquetado/DividirEmpaquetado.
 pub fn loop_unrolling(bytecode: &[Opcode]) -> Vec<Opcode> {
     // AVX2 SIMD acceleration: detecta bucles float y los procesa con YMM
     if crate::jit::has_avx2() {
@@ -472,18 +472,18 @@ pub fn loop_unrolling(bytecode: &[Opcode]) -> Vec<Opcode> {
 /// Standard 4x loop unrolling (sin AVX2)
 fn standard_loop_unrolling(bytecode: &[Opcode]) -> Vec<Opcode> {
     use Opcode::*;
-    // Buscar patrón: Label(l) ... Jump(l) (mismo label)
+    // Buscar patrón: Etiqueta(l) ... Salto(l) (mismo label)
     for i in 0..bytecode.len() {
-        if let Label(l) = &bytecode[i] {
-            // Buscar Jump(l) hacia atrás (mismo label, y debe estar después de Label)
+        if let Etiqueta(l) = &bytecode[i] {
+            // Buscar Salto(l) hacia atrás (mismo label, y debe estar después de Etiqueta)
             for j in (i + 1)..bytecode.len() {
-                if let Label(_) = &bytecode[j] {
+                if let Etiqueta(_) = &bytecode[j] {
                     break;
                 } // otro label interrumpe el bucle
-                if let Jump(target) = &bytecode[j] {
+                if let Salto(target) = &bytecode[j] {
                     if *target == *l {
-                        // Encontramos un bucle! Label(l) ... cuerpo ... Jump(l)
-                        let body = &bytecode[i + 1..j]; // cuerpo sin Label ni Jump
+                        // Encontramos un bucle! Etiqueta(l) ... cuerpo ... Salto(l)
+                        let body = &bytecode[i + 1..j]; // cuerpo sin Etiqueta ni Salto
                         let unroll_factor = 4usize;
 
                         // Duplicar el cuerpo 4 veces (cada copia tiene i = i + 1)
@@ -496,9 +496,9 @@ fn standard_loop_unrolling(bytecode: &[Opcode]) -> Vec<Opcode> {
                         // Reconstruir bytecode con bucle desenrollado
                         let mut result: Vec<Opcode> =
                             Vec::with_capacity(bytecode.len() + new_body.len() - body.len());
-                        result.extend_from_slice(&bytecode[..=i]); // hasta Label inclusive
+                        result.extend_from_slice(&bytecode[..=i]); // hasta Etiqueta inclusive
                         result.extend_from_slice(&new_body); // cuerpo desenrollado ×4
-                        result.extend_from_slice(&bytecode[j..]); // desde Jump en adelante
+                        result.extend_from_slice(&bytecode[j..]); // desde Salto en adelante
                         return result;
                     }
                 }
@@ -509,24 +509,24 @@ fn standard_loop_unrolling(bytecode: &[Opcode]) -> Vec<Opcode> {
 }
 
 /// Intenta transformar un bucle con AVX2 SIMD: asigna 4 acumuladores contiguos
-/// y usa AddPacked/SubPacked/MulPacked/DivPacked para procesar 4 términos en paralelo.
+/// y usa SumarEmpaquetado/RestarEmpaquetado/MultiplicarEmpaquetado/DividirEmpaquetado para procesar 4 términos en paralelo.
 /// Retorna Some(bytecode) si pudo transformar, None si no aplica.
 fn try_avx2_unroll(bytecode: &[Opcode]) -> Option<Vec<Opcode>> {
     use Opcode::*;
-    // Buscar patrón: Label(l) ... Jump(l)
+    // Buscar patrón: Etiqueta(l) ... Salto(l)
     for i in 0..bytecode.len() {
-        if let Label(l) = &bytecode[i] {
+        if let Etiqueta(l) = &bytecode[i] {
             for j in (i + 1)..bytecode.len() {
-                if let Label(_) = &bytecode[j] {
+                if let Etiqueta(_) = &bytecode[j] {
                     break;
                 }
-                if let Jump(target) = &bytecode[j] {
+                if let Salto(target) = &bytecode[j] {
                     if *target == *l {
                         let body = &bytecode[i + 1..j];
 
-                        // Verificar que el cuerpo tiene operaciones float (PushDecimal + Add/Sub/Mul/Div)
+                        // Verificar que el cuerpo tiene operaciones float (PushDecimal + Sumar/Restar/Multiplicar/Dividir)
                         let tiene_push_dec = body.iter().any(|op| matches!(op, PushDecimal(_)));
-                        let tiene_arith = body.iter().any(|op| matches!(op, Add | Sub | Mul | Div));
+                        let tiene_arith = body.iter().any(|op| matches!(op, Sumar | Restar | Multiplicar | Dividir));
                         if !tiene_push_dec || !tiene_arith {
                             return None;
                         }
@@ -535,7 +535,7 @@ fn try_avx2_unroll(bytecode: &[Opcode]) -> Option<Vec<Opcode>> {
                         use std::collections::BTreeSet;
                         let mut escritas = BTreeSet::new();
                         for op in body {
-                            if let StoreIdx(i) = op {
+                            if let GuardarIndice(i) = op {
                                 escritas.insert(*i);
                             }
                         }
@@ -546,31 +546,31 @@ fn try_avx2_unroll(bytecode: &[Opcode]) -> Option<Vec<Opcode>> {
                         // Encontrar max variable index
                         let max_idx = bytecode.iter().fold(0usize, |a, op| {
                             let idx = match op {
-                                LoadIdx(i)
-                                | StoreIdx(i)
-                                | DeclareIdx(i, _)
-                                | LoadIdxEntero(i)
-                                | LoadIdxFloat(i)
-                                | StoreIdxEntero(i)
-                                | StoreIdxFloat(i)
-                                | DeclareEnteroOp(i, _)
-                                | DeclareBooleanoOp(i, _)
-                                | StoreEnteroOp(i, _)
-                                | DeclareFloatOp(i, _)
-                                | StoreFloatOp(i, _)
-                                | AddStoreFloat(i)
-                                | SubStoreFloat(i)
-                                | MulStoreFloat(i)
-                                | XorSign(i)
-                                | LoadAddInt(i, _)
-                                | LoadAddFloat(i, _)
-                                | AddStoreIdx(i)
-                                | SubStoreIdx(i)
-                                | MulStoreIdx(i)
-                                | LoadIdx2(i, _)
-                                | LoadStoreIdx(i, _)
-                                | LoadJumpSiFalso(i, _)
-                                | LoadJump(i, _) => *i + 1,
+                                CargarIndice(i)
+                                | GuardarIndice(i)
+                                | DeclararIndice(i, _)
+                                | CargarIndiceEntero(i)
+                                | CargarIndiceDecimal(i)
+                                | GuardarIndiceEntero(i)
+                                | GuardarIndiceDecimal(i)
+                                | DeclararOperacionEntero(i, _)
+                                | DeclararOperacionBooleano(i, _)
+                                | GuardarOperacionEntero(i, _)
+                                | DeclararOperacionDecimal(i, _)
+                                | GuardarOperacionDecimal(i, _)
+                                | SumarGuardarDecimal(i)
+                                | RestarGuardarDecimal(i)
+                                | MultiplicarGuardarDecimal(i)
+                                | InvertirSigno(i)
+                                | CargarSumarEntero(i, _)
+                                | CargarSumarDecimal(i, _)
+                                | SumarGuardarIndice(i)
+                                | RestarGuardarIndice(i)
+                                | MultiplicarGuardarIndice(i)
+                                | CargarIndice2(i, _)
+                                | CargarGuardarIndice(i, _)
+                                | CargarSaltoSiFalso(i, _)
+                                | CargarSalto(i, _) => *i + 1,
                                 _ => 0,
                             };
                             a.max(idx)
@@ -581,19 +581,19 @@ fn try_avx2_unroll(bytecode: &[Opcode]) -> Option<Vec<Opcode>> {
                             return None;
                         }
 
-                        // Encontrar el contador (StoreIdx más cercano al final del body)
+                        // Encontrar el contador (GuardarIndice más cercano al final del body)
                         let mut counter_idx = 0usize;
                         for op in body.iter().rev() {
-                            if let StoreIdx(i) = op {
+                            if let GuardarIndice(i) = op {
                                 counter_idx = *i;
                                 break;
                             }
                         }
 
-                        // Extraer condición del bucle (desde LoadIdx(counter) hasta JumpSiFalso/Jump)
+                        // Extraer condición del bucle (desde CargarIndice(counter) hasta SaltoSiFalso/Salto)
                         let mut _cond_start = body.len();
                         for (k, op) in body.iter().enumerate() {
-                            if matches!(op, LoadIdx(i) if *i == counter_idx) {
+                            if matches!(op, CargarIndice(i) if *i == counter_idx) {
                                 _cond_start = k;
                                 break;
                             }
@@ -613,7 +613,7 @@ fn try_avx2_unroll(bytecode: &[Opcode]) -> Option<Vec<Opcode>> {
                         // Inicializar slots SIMD (antes del loop)
                         // 8 acumuladores = 0.0
                         for k in 0..8 {
-                            result.push(StoreFloatOp(acc + k, 0.0));
+                            result.push(GuardarOperacionDecimal(acc + k, 0.0));
                         }
                         // Leer valores iniciales de divisores del cuerpo
                         let mut first_div = 1.0f64;
@@ -636,51 +636,51 @@ fn try_avx2_unroll(bytecode: &[Opcode]) -> Option<Vec<Opcode>> {
                             } else {
                                 first_div_neg + ((k - 1) as f64) * 2.0
                             };
-                            result.push(StoreFloatOp(divs + k, d));
+                            result.push(GuardarOperacionDecimal(divs + k, d));
                         }
                         // 8 ones = 1.0
                         for k in 0..8 {
-                            result.push(StoreFloatOp(ones + k, 1.0));
+                            result.push(GuardarOperacionDecimal(ones + k, 1.0));
                         }
                         // 8 signs: +1, -1, +1, -1, ...
                         for k in 0..8 {
                             let s = if k % 2 == 0 { 1.0 } else { -1.0 };
-                            result.push(StoreFloatOp(signs + k, s));
+                            result.push(GuardarOperacionDecimal(signs + k, s));
                         }
                         // 8 eights = 8.0
                         for k in 0..8 {
-                            result.push(StoreFloatOp(eights + k, 8.0));
+                            result.push(GuardarOperacionDecimal(eights + k, 8.0));
                         }
 
-                        // Label loop
-                        result.push(Label(0));
+                        // Etiqueta loop
+                        result.push(Etiqueta(0));
 
                         // Cuerpo SIMD: 8 términos en paralelo (2× ymm de 4 doubles)
                         // ymm0 = 1.0/divs[0..3]; ymm1 = 1.0/divs[4..7]
-                        result.push(DivPacked(recip, divs, recip + 4, divs + 4));
+                        result.push(DividirEmpaquetado(recip, divs, recip + 4, divs + 4));
                         // ymm0 *= signs[0..3]; ymm1 *= signs[4..7]
-                        result.push(MulPacked(recip, signs, recip + 4, signs + 4));
+                        result.push(MultiplicarEmpaquetado(recip, signs, recip + 4, signs + 4));
                         // acc[0..3] += recip[0..3]; acc[4..7] += recip[4..7]
-                        result.push(AddPacked(acc, recip, acc + 4, recip + 4));
+                        result.push(SumarEmpaquetado(acc, recip, acc + 4, recip + 4));
                         // divs[0..3] += 8.0; divs[4..7] += 8.0
-                        result.push(AddPacked(divs, eights, divs + 4, eights + 4));
+                        result.push(SumarEmpaquetado(divs, eights, divs + 4, eights + 4));
 
                         // Incrementar contador: i += 8 (en vez de i += 1)
-                        result.push(LoadIdxFloat(counter_idx));
+                        result.push(CargarIndiceDecimal(counter_idx));
                         result.push(PushDecimal(8.0));
-                        result.push(AddFloat);
-                        result.push(StoreIdxFloat(counter_idx));
+                        result.push(SumarDecimal);
+                        result.push(GuardarIndiceDecimal(counter_idx));
 
                         // Extraer SOLO la condición del bucle (los últimos ~5 ops del body)
-                        // Patrón: LoadIdx(i) + LoadIdx(limit) + [comparación] + JumpSiFalso
+                        // Patrón: CargarIndice(i) + CargarIndice(limit) + [comparación] + SaltoSiFalso
                         let mut cond_only: Vec<Opcode> = Vec::new();
-                        // Buscar JumpSiFalso desde el final hacia atrás
+                        // Buscar SaltoSiFalso desde el final hacia atrás
                         for k in (0..body.len()).rev() {
-                            if matches!(&body[k], JumpSiFalso(_)) {
-                                // Encontrado: extraer desde donde carga el contador hasta JumpSiFalso
+                            if matches!(&body[k], SaltoSiFalso(_)) {
+                                // Encontrado: extraer desde donde carga el contador hasta SaltoSiFalso
                                 let mut cond_start_p = k;
                                 for p in (0..k).rev() {
-                                    if matches!(&body[p], LoadIdx(i) if *i == counter_idx) {
+                                    if matches!(&body[p], CargarIndice(i) if *i == counter_idx) {
                                         cond_start_p = p;
                                         break;
                                     }
@@ -693,39 +693,39 @@ fn try_avx2_unroll(bytecode: &[Opcode]) -> Option<Vec<Opcode>> {
                             result.extend_from_slice(&cond_only);
                         } else {
                             // Fallback: condición original completa
-                            result.push(LoadIdxFloat(counter_idx));
-                            result.push(LoadIdxFloat(6)); // limit
+                            result.push(CargarIndiceDecimal(counter_idx));
+                            result.push(CargarIndiceDecimal(6)); // limit
                             result.push(MenorIgual);
-                            result.push(JumpSiFalso(1));
+                            result.push(SaltoSiFalso(1));
                         }
 
-                        result.push(Jump(0));
+                        result.push(Salto(0));
 
                         // Reducción: sumar 8 acumuladores
-                        result.push(LoadIdxFloat(acc));
+                        result.push(CargarIndiceDecimal(acc));
                         for k in 1..8 {
-                            result.push(LoadIdxFloat(acc + k));
-                            result.push(AddFloat);
+                            result.push(CargarIndiceDecimal(acc + k));
+                            result.push(SumarDecimal);
                         }
-                        // Store en la primera variable float del body
+                        // Guardar en la primera variable float del body
                         let mut target_idx = 0usize;
                         for op in body {
-                            if let StoreIdxFloat(i) = op {
+                            if let GuardarIndiceDecimal(i) = op {
                                 target_idx = *i;
                                 break;
                             }
-                            if let StoreIdx(i) = op {
+                            if let GuardarIndice(i) = op {
                                 if *i != counter_idx {
                                     target_idx = *i;
                                     break;
                                 }
                             }
                         }
-                        if target_idx != 0 || body.iter().any(|op| matches!(op, StoreIdxFloat(0))) {
-                            result.push(StoreIdxFloat(target_idx));
+                        if target_idx != 0 || body.iter().any(|op| matches!(op, GuardarIndiceDecimal(0))) {
+                            result.push(GuardarIndiceDecimal(target_idx));
                         }
 
-                        // Copiar resto después del Jump
+                        // Copiar resto después del Salto
                         if j + 1 < bytecode.len() {
                             result.extend_from_slice(&bytecode[j + 1..]);
                         }
@@ -822,13 +822,13 @@ impl JitOrchestrator {
                 loop_unrolling(&bc_opt)
             };
 
-            // Fusionar opcodes después del unrolling
+            // Fusionar codigos después del unrolling
             let bc_fusion = bytecode::fusionar_opcodes(&bc_unrolled);
-            // Especializar tipos (Add→AddInt/AddFloat, etc.) para JIT nativo
+            // Especializar tipos (Sumar→SumarEntero/SumarDecimal, etc.) para JIT nativo
             let bc_esp = especializar_bytecode(&bc_fusion);
 
             // Fase 3a/b: Fusionar patrones float Direct (después de especializar,
-            // cuando LoadIdxFloat ya reemplazó a LoadIdx)
+            // cuando CargarIndiceDecimal ya reemplazó a CargarIndice)
             let bc_direct = bytecode::fusionar_direct_float_opcodes(&bc_esp);
 
             // Intentar JIT
@@ -841,7 +841,7 @@ impl JitOrchestrator {
 
             // Tiered JIT: registrar funciones y actualizar contadores de hotness
             for op in bytecode {
-                if let Opcode::FunctionDef(name, _) = op {
+                if let Opcode::DefinirFuncion(name, _) = op {
                     self.tiered.register_function(name);
                     // Si PGO dice que es tier2 candidate, forzar compilación
                     if self.es_pgo_tier2_candidate(name) {
@@ -850,7 +850,7 @@ impl JitOrchestrator {
                 }
             }
             for op in bytecode {
-                if let Opcode::Call(name, _) = op {
+                if let Opcode::Llamar(name, _) = op {
                     match self.tiered.on_function_call(name) {
                         crate::jit_tiered::ShouldCompile::Yes(_tier) => {
                             // En una implementación real, compilaría la función al tier dado
@@ -922,20 +922,20 @@ fn loop_unrolling_pgo(bytecode: &[Opcode], factor: usize) -> Vec<Opcode> {
     let mut i = 0;
     while i < bytecode.len() {
         // Detectar patrón de loop:
-        // DeclareIdxEntero(counter, 0) o DeclareFloatOp(counter, 0)
+        // DeclareIdxEntero(counter, 0) o DeclararOperacionDecimal(counter, 0)
         // ... body ...
-        // LoadIdx(counter) + PushEntero(limit) + MenorIgual + JumpSiFalso(end)
-        // LoadIdx(counter) + PushEntero(1) + Add + StoreIdx(counter) + Jump(back)
-        // Label(end)
+        // CargarIndice(counter) + PushEntero(limit) + MenorIgual + SaltoSiFalso(end)
+        // CargarIndice(counter) + PushEntero(1) + Sumar + GuardarIndice(counter) + Salto(back)
+        // Etiqueta(end)
         if i + 2 < bytecode.len() {
-            if let DeclareIdx(counter, _) = &bytecode[i] {
+            if let DeclararIndice(counter, _) = &bytecode[i] {
                 // Buscar el body del loop
                 let body_start = i + 1;
                 let mut body_end = None;
                 let mut j = body_start;
                 while j < bytecode.len() {
-                    if let Jump(target) = &bytecode[j] {
-                        // El Jump de retorno del loop
+                    if let Salto(target) = &bytecode[j] {
+                        // El Salto de retorno del loop
                         if *target <= j {
                             body_end = Some(j);
                             break;
@@ -950,7 +950,7 @@ fn loop_unrolling_pgo(bytecode: &[Opcode], factor: usize) -> Vec<Opcode> {
                     // Extraer el body del loop (sin la condición)
                     let mut cond_start = body.len();
                     for (k, op) in body.iter().enumerate() {
-                        if matches!(op, LoadIdx(i) if *i == *counter) {
+                        if matches!(op, CargarIndice(i) if *i == *counter) {
                             // Verificar si es la condición del loop
                             if k + 3 < body.len() {
                                 if matches!(&body[k + 2], MenorIgual | Menor) {
@@ -973,7 +973,7 @@ fn loop_unrolling_pgo(bytecode: &[Opcode], factor: usize) -> Vec<Opcode> {
 
                     // Saltar al final del loop
                     if end + 1 < bytecode.len() {
-                        result.push(Jump(end + 1 - result.len()));
+                        result.push(Salto(end + 1 - result.len()));
                     }
 
                     // Saltar el loop original
