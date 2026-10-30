@@ -1,0 +1,6 @@
+=== Error Personalizado ===
+
+Operación 01: Error: división por cero
+Operación 11: ✅ 5
+Operación 21: ✅ 3
+Operación 31: Error: raíz cuadrada de número negativo
