@@ -1,0 +1,21 @@
+=== PATRÓN FACTORY ===
+
+Encapsula la creación de objetos en una fábrica.
+
+Creando vehículos desde la fábrica:
+  Auto: 4 ruedas, 5 pasajeros
+  Moto: 2 ruedas, 2 pasajeros
+  Camión: 6 ruedas, 3 pasajeros
+  Bicicleta: 2 ruedas, 1 pasajeros
+
+Creando por tipo (usando método genérico):
+  auto: Auto: 4 ruedas, 5 pasajeros
+  moto: Moto: 2 ruedas, 2 pasajeros
+  camion: Camión: 6 ruedas, 3 pasajeros
+  bici: Bicicleta: 2 ruedas, 1 pasajeros
+  Tipo de vehículo desconocido: avion
+
+Ventajas del Factory:
+  • El código cliente no necesita conocer las clases concretas
+  • Centraliza la lógica de creación
+  • Facilita añadir nuevos tipos
