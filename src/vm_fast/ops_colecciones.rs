@@ -46,7 +46,7 @@ impl ForjaFast {
     #[inline]
     pub(crate) fn ejecutar_ops_colecciones(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
-            Opcode::ArrayNew(n) => {
+            Opcode::NuevoArreglo(n) => {
                 let mut e = Vec::with_capacity(*n);
                 for _ in 0..*n {
                     e.push(self.pop_valor()?);
@@ -56,7 +56,7 @@ impl ForjaFast {
                 self.push_valor(ValorFast::arreglo(idx));
                 self.ip += 1;
             }
-            Opcode::ArrayGet => {
+            Opcode::ObtenerElemento => {
                 let ip = self.ip;
                 match self.ic_arrayget[ip] {
                     Some(true) => {
@@ -128,7 +128,7 @@ impl ForjaFast {
                 }
                 self.ip += 1;
             }
-            Opcode::ArraySet => {
+            Opcode::FijarElemento => {
                 let ip = self.ip;
                 match self.ic_arrayset[ip] {
                     Some(true) => {
@@ -181,7 +181,7 @@ impl ForjaFast {
                 }
                 self.ip += 1;
             }
-            Opcode::ArrayLen => {
+            Opcode::LongitudArreglo => {
                 let a = self.pop_valor()?;
                 if a.es_arreglo() {
                     let arr = self.get_arr(a.indice_arreglo());
@@ -191,7 +191,7 @@ impl ForjaFast {
                 }
                 self.ip += 1;
             }
-            Opcode::MapNew(n) => {
+            Opcode::NuevoMapa(n) => {
                 let mut m = HashMap::with_capacity(*n);
                 for _ in 0..*n {
                     let v = self.pop_valor()?;
@@ -205,7 +205,7 @@ impl ForjaFast {
                 self.push_valor(ValorFast::mapa(idx));
                 self.ip += 1;
             }
-            Opcode::MapGet => {
+            Opcode::ObtenerValorDeMapa => {
                 let ip = self.ip;
                 if self.ic_mapget[ip] {
                     let k = self.pop_valor()?;
@@ -233,7 +233,7 @@ impl ForjaFast {
                 }
                 self.ip += 1;
             }
-            Opcode::MapSet => {
+            Opcode::FijarValorDeMapa => {
                 let ip = self.ip;
                 if self.ic_mapset[ip] {
                     let v = self.pop_valor()?;
