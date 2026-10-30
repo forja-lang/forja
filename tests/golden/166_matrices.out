@@ -1,0 +1,32 @@
+=== OPERACIONES CON MATRICES ===
+
+Matriz A (2×3):
+  | 1 2 3 |
+  | 4 5 6 |
+Matriz B (2×3):
+  | 7 8 9 |
+  | 10 11 12 |
+
+A + B:
+
+A - B:
+
+Matriz C (3×2):
+  | 1 2 |
+  | 3 4 |
+  | 5 6 |
+
+A × C (2×3 × 3×2 = 2×2):
+
+Transpuesta de A (2×3 → 3×2):
+
+Matriz D (2×2):
+  | 2 3 |
+  | 1 4 |
+  det(D) = 5
+
+Matriz E (3×3):
+  | 1 2 3 |
+  | 4 5 6 |
+  | 7 8 10 |
+  det(E) = -3
