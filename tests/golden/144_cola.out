@@ -1,0 +1,22 @@
+=== Cola (Queue FIFO) ===
+
+  Cola: [10,20,30]  (frente: 10)
+Desencolando: 10
+  Cola: [20,30]  (frente: 20)
+  Cola: [20,30,40,50]  (frente: 20)
+Frente: 20
+Tamaño: 4
+
+Simulación de banco:
+Llegan 4 clientes al banco:
+
+  Cola: [Cliente 1,Cliente 2,Cliente 3,Cliente 4]  (frente: Cliente 1)
+
+  Atendiendo: Cliente 1
+  Atendiendo: Cliente 2
+  Atendiendo: Cliente 3
+  Atendiendo: Cliente 4
+
+Se atendieron 4 clientes en orden de llegada.
+
+La cola sigue el principio FIFO (First In, First Out).
