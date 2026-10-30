@@ -14,11 +14,11 @@ impl ForjaFast {
     #[inline]
     pub(crate) fn ejecutar_ops_concurrencia(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
-            Opcode::ChannelNew | Opcode::ChannelNewCap => {
+            Opcode::NuevoCanal | Opcode::NuevoCanalConCapacidad => {
                 // F12-T2: canal acotado → `enviar` bloquea con la cola llena.
                 // `ChannelNewCap` toma la capacidad de la pila (`canal(n)`).
                 let capacidad = match op {
-                    Opcode::ChannelNewCap => {
+                    Opcode::NuevoCanalConCapacidad => {
                         let v = self.pop_valor()?;
                         let n = if v.es_entero() { v.a_entero() } else { 0 };
                         n.max(0) as usize
@@ -48,7 +48,7 @@ impl ForjaFast {
 
             // ─── HILOS REALES con std::thread::spawn ─────────────────────────
             // ─── HILOS REALES con std::thread::spawn ─────────────────────────
-            Opcode::ThreadSpawn(func_name, captured_count) => {
+            Opcode::CrearHilo(func_name, captured_count) => {
                 // Pop valores capturados
                 let mut captured: Vec<ValorFast> = Vec::with_capacity(*captured_count);
                 for _ in 0..*captured_count {
