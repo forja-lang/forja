@@ -1,0 +1,15 @@
+=== MiResultado<T, E> Manual ===
+
+10 / 2:
+  ✅ Éxito
+
+10 / 0:
+  ❌ Error
+
+Resultados:
+  Op 01: verdadero
+  Op 11: verdadero
+  Op 21: falso
+  Op 31: verdadero
+
+MiResultado funciona con cualquier combinación de T y E
