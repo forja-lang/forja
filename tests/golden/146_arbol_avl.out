@@ -1,0 +1,14 @@
+=== Árbol AVL Auto-balanceado ===
+
+Insertando: [10,20,30,40,50,25]
+
+Estructura AVL (con alturas):
+        50 (h=1)
+    40 (h=2)
+30 (h=3)
+        25 (h=1)
+    20 (h=2)
+        10 (h=1)
+
+A diferencia del BST simple, AVL se mantiene balanceado.
+Altura máxima: O(log n) garantizado.
