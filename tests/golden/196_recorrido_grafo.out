@@ -1,0 +1,39 @@
+=== RECORRIDO DE GRAFOS (DFS y BFS) ===
+
+Grafo (8 nodos):
+  0 → [
+]
+  1 → [
+]
+  2 → [
+]
+  3 → [
+]
+  4 → [
+]
+  5 → [
+]
+  6 → [
+]
+  7 → [
+]
+
+DFS desde nodo 0: 
+0 
+
+
+BFS desde nodo 0: 
+0 
+
+
+--- Verificación de caminos ---
+  ¿Camino de 0 a 7? falso
+  ¿Camino de 0 a 3? falso
+  ¿Camino de 1 a 6? falso
+  ¿Camino de 0 a 99? falso
+
+Comparación:
+  • DFS (profundidad): usa pila, va hasta el fondo, retrocede
+  • BFS (amplitud): usa cola, explora por niveles
+  • BFS encuentra el camino más corto en grafos no ponderados
+  • DFS usa menos memoria que BFS en grafos densos
