@@ -1,0 +1,22 @@
+═══ Tests de Pattern Matching ═══
+
+
+Test: Estado
+  Usuario activo
+  Usuario inactivo
+  Usuario suspendido
+Test: ResultadoPago
+  Pago exitoso: $500
+  Pago fallido: Saldo insuficiente
+  Pago pendiente
+Test: Dibujo anidado
+  Circulo de radio 10
+  Figura RGB(255,0,0)
+Test: Ignorar
+  es_par(4): verdadero
+  es_par(7): falso
+Test: Variable en patron
+  El valor es: 42
+
+
+Todos los tests pasaron ✅
