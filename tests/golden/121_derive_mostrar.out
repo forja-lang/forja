@@ -1,0 +1,8 @@
+=== @derive(Mostrar) ===
+
+Producto: <Producto>
+Usuario: <Usuario>
+Nivel bajo: <Nivel>
+Nivel crítico: <Nivel>
+
+@derive(Mostrar) muestra el contenido completo del objeto.
