@@ -1,0 +1,28 @@
+=== TÉCNICAS DE OPTIMIZACIÓN ===
+
+--- 1. Optimización de bucles ---
+  Suma ingenua (1..1000): 500500
+  Suma optimizada (fórmula): 500500
+  La fórmula es O(1) vs O(n) del bucle
+
+--- 2. Optimización de primalidad ---
+  ¿997 es primo?
+  Ingenuo (revisa hasta n-1): verdadero
+  Optimizado (revisa hasta √n): verdadero
+  La optimización reduce de O(n) a O(√n)
+
+--- 3. Pre-cálculo de constantes ---
+  Tabla de senos precalculada para 360°
+  Acceso directo: O(1) vs cálculo: O(n)
+
+--- 4. Variables locales ---
+  Lento (acceso repetido): nulo
+  Rápido (variable local): nulo
+  Cachear accesos reduce la sobrecarga
+
+--- Resumen de técnicas ---
+  ✅ Bucles: extraer invariantes, usar fórmulas cerradas
+  ✅ Condiciones: evaluar lo más específico primero
+  ✅ Memoria: cachear accesos repetidos en variables locales
+  ✅ Algoritmos: elegir la estructura de datos adecuada
+  ✅ Precisión: no optimizar prematuramente - medir primero
