@@ -1,0 +1,7 @@
+La variable se escribe ${nombre} y vale Ana
+El precio es $100
+Total: $10050
+En LaTeX se usa ${} para matemáticas, pero en Forja Ana se interpola
+Precio: $1500
+IVA (21%): $315
+Total: $1500315
