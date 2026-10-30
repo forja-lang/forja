@@ -1,0 +1,13 @@
+=== Validación de Datos ===
+
+Validando usuario: Ana
+  ✅ Edad válida: 25
+  ❌ Email: El email debe contener @
+
+Validando usuario: Juan
+  ❌ Edad: La edad no puede ser negativa
+  ❌ Email: El email debe contener @
+
+Validando usuario: Pedro
+  ❌ Edad: La edad parece irreal (> 150)
+  ❌ Email: El email debe contener @
