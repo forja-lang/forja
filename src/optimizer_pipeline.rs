@@ -14,7 +14,7 @@
 //!   [`PipelineAst::basico`] y [`PipelineAst::completo`] reproducen exactamente
 //!   los órdenes históricos, por lo que la paridad de comportamiento es total.
 //! * [`PipelineBytecode`] / [`optimizar_bytecode`] — passes de bytecode
-//!   (índices globales + fusión de opcodes) en un solo lugar.
+//!   (índices globales + fusión de codigos) en un solo lugar.
 //!
 //! Añadir una optimización nueva se hace ahora en **un único punto**: se
 //! implementa el trait y se añade al nivel correspondiente (o se compone un
@@ -189,7 +189,7 @@ impl Default for PipelineAst {
 pub struct PipelineBytecode {
     /// Asignar índices globales a las variables (`optimizar_indices`).
     pub indices: bool,
-    /// Fusionar opcodes (superinstrucciones, `fusionar_opcodes`).
+    /// Fusionar codigos (superinstrucciones, `fusionar_opcodes`).
     pub fusion: bool,
 }
 
@@ -219,14 +219,14 @@ impl PipelineBytecode {
     }
 
     /// Aplica los passes configurados en orden.
-    pub fn ejecutar(&self, mut opcodes: Vec<Opcode>) -> Vec<Opcode> {
+    pub fn ejecutar(&self, mut codigos: Vec<Opcode>) -> Vec<Opcode> {
         if self.indices {
-            opcodes = crate::bytecode::optimizar_indices(&opcodes);
+            codigos = crate::bytecode::optimizar_indices(&codigos);
         }
         if self.fusion {
-            opcodes = crate::bytecode::fusionar_opcodes(&opcodes);
+            codigos = crate::bytecode::fusionar_opcodes(&codigos);
         }
-        opcodes
+        codigos
     }
 }
 
@@ -240,8 +240,8 @@ impl Default for PipelineBytecode {
 ///
 /// Es el **único** lugar donde se compone la optimización de bytecode para la
 /// ruta canónica, `repl` y el resto de consumidores.
-pub fn optimizar_bytecode(opcodes: Vec<Opcode>) -> Vec<Opcode> {
-    PipelineBytecode::completo().ejecutar(opcodes)
+pub fn optimizar_bytecode(codigos: Vec<Opcode>) -> Vec<Opcode> {
+    PipelineBytecode::completo().ejecutar(codigos)
 }
 
 #[cfg(test)]
@@ -311,9 +311,9 @@ mod tests {
 
     #[test]
     fn pipeline_bytecode_sin_passes_no_cambia_la_entrada() {
-        let opcodes = vec![Opcode::PushEntero(1), Opcode::PushEntero(2)];
-        let salida = PipelineBytecode::ninguno().ejecutar(opcodes.clone());
-        assert_eq!(salida.len(), opcodes.len());
+        let codigos = vec![Opcode::PushEntero(1), Opcode::PushEntero(2)];
+        let salida = PipelineBytecode::ninguno().ejecutar(codigos.clone());
+        assert_eq!(salida.len(), codigos.len());
     }
 
     #[test]
