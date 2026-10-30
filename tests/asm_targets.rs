@@ -7,7 +7,7 @@
 //!
 //! DoD F4-T6: consolidar x86-64 y ARM64 con cobertura de tests por target.
 
-use forja::compiler_asm::{compilar_a_asm_con_target, TargetArch};
+use forja::compiler_asm::{compilar_a_asm_con_target, CompilerAsm, TargetArch};
 
 /// Parsea un programa Forja (fallible).
 fn parsear(fuente: &str) -> Result<forja::ast::Programa, String> {
@@ -204,6 +204,12 @@ const PROGRAMAS_NO_SOPORTADOS: &[(&str, &str, &str)] = &[
         "LiteralExacto",
     ),
     (
+        // `si` usado como expresión (no como sentencia de control).
+        "si_como_expresion",
+        "variable x = si (verdadero) { 1 } sino { 2 }\nescribir(x)",
+        "SiComoExpresion",
+    ),
+    (
         "metodo_get",
         "clase C {\n    v\n    funcion set(x) {\n        este.v = x\n    }\n    funcion get() -> Entero {\n        retornar este.v\n    }\n}\nvariable c = nuevo C()\nc.set(3)\nescribir(c.get())",
         "LlamadaMetodo",
@@ -214,6 +220,7 @@ const TARGETS: &[TargetArch] = &[
     TargetArch::X86_64Windows,
     TargetArch::X86_64Linux,
     TargetArch::AArch64,
+    TargetArch::RiscV64,
 ];
 
 #[test]
@@ -227,9 +234,11 @@ fn target_syntax_directives() {
         ".intel_syntax noprefix"
     );
     assert_eq!(TargetArch::AArch64.syntax_directive(), "");
+    assert_eq!(TargetArch::RiscV64.syntax_directive(), "");
     assert_eq!(TargetArch::X86_64Windows.name(), "x86-64 Windows");
     assert_eq!(TargetArch::X86_64Linux.name(), "x86-64 Linux");
     assert_eq!(TargetArch::AArch64.name(), "ARM64 (aarch64)");
+    assert_eq!(TargetArch::RiscV64.name(), "RISC-V 64 (rv64)");
 }
 
 #[test]
@@ -244,6 +253,10 @@ fn target_from_str_aliases() {
         ("aarch64", TargetArch::AArch64),
         ("arm64", TargetArch::AArch64),
         ("ARM", TargetArch::AArch64),
+        ("riscv64", TargetArch::RiscV64),
+        ("riscv", TargetArch::RiscV64),
+        ("rv64", TargetArch::RiscV64),
+        ("RISC-V", TargetArch::RiscV64),
     ];
     for (entrada, esperado) in casos {
         assert_eq!(
@@ -252,13 +265,27 @@ fn target_from_str_aliases() {
             "from_str({entrada:?})"
         );
     }
-    assert_eq!(TargetArch::desde_str("riscv"), None);
+    assert_eq!(TargetArch::desde_str("mips"), None);
     assert_eq!(TargetArch::desde_str("gpu"), None);
 }
 
 #[test]
 fn detect_no_paniquea() {
     let _ = TargetArch::detect();
+}
+
+/// `CompilerAsm::default()` existe para que el tipo no quede sin `Default`
+/// (clippy `new_without_default`); debe producir el mismo ASM que `new()`.
+#[test]
+fn default_equivale_a_new() {
+    let programa = parsear("variable x = 1\nescribir(x)").expect("parse");
+    let mut por_defecto = CompilerAsm::default();
+    let mut explicito = CompilerAsm::new();
+    assert_eq!(
+        por_defecto.compilar(&programa).expect("default compila"),
+        explicito.compilar(&programa).expect("new compila"),
+        "CompilerAsm::default() debe equivaler a new()"
+    );
 }
 
 /// Compila toda la batería para cada target y valida invariantes de arquitectura.
@@ -328,6 +355,36 @@ fn bateria_por_target() {
                             "[{} / {nombre}] mezcla sintaxis/registros x86",
                             target.name()
                         ));
+                    }
+                }
+                TargetArch::RiscV64 => {
+                    if !asm.contains("a0") && !asm.contains("t0") {
+                        fallos.push(format!(
+                            "[{} / {nombre}] no emite registros RISC-V (a0/t0)",
+                            target.name()
+                        ));
+                    }
+                    for token in [
+                        "rcx",
+                        "rax",
+                        "eax",
+                        "rbp",
+                        ".intel_syntax",
+                        "x0",
+                        "w0",
+                        "stp x29",
+                        "ldr ",
+                        "str ",
+                        "cbz ",
+                        "svc ",
+                        "adrp ",
+                    ] {
+                        if asm.contains(token) {
+                            fallos.push(format!(
+                                "[{} / {nombre}] RISC-V emite token ajeno `{token}`",
+                                target.name()
+                            ));
+                        }
                     }
                 }
             }
@@ -568,4 +625,49 @@ fn cobertura_constructos_asm() {
             }
         }
     }
+}
+
+/// Ensambla de verdad el assembly RISC-V con el toolchain cruzado, si está
+/// instalado (`riscv64-linux-gnu-gcc`). Sin toolchain el test se omite: igual
+/// que el e2e de x86-64, la validación real depende de la máquina.
+#[test]
+fn e2e_riscv64_ensambla() {
+    use std::process::Command;
+
+    let cc = "riscv64-linux-gnu-gcc";
+    if Command::new(cc).arg("--version").output().is_err() {
+        eprintln!("{cc} no disponible; se omite el ensamblado RISC-V");
+        return;
+    }
+
+    let dir = std::env::temp_dir().join("forja_asm_riscv64");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut fallos = Vec::new();
+    for (nombre, fuente) in PROGRAMAS {
+        let programa = parsear(fuente).expect("parse");
+        let asm = compilar_a_asm_con_target(&programa, TargetArch::RiscV64).expect("compila");
+        let ruta = dir.join(format!("{nombre}.s"));
+        std::fs::write(&ruta, asm).expect("escribir .s");
+
+        let salida = Command::new(cc)
+            .arg("-c")
+            .arg("-o")
+            .arg(dir.join(format!("{nombre}.o")))
+            .arg(&ruta)
+            .output()
+            .expect("ejecutar gcc cruzado");
+        if !salida.status.success() {
+            fallos.push(format!(
+                "[{nombre}] {}",
+                String::from_utf8_lossy(&salida.stderr).trim()
+            ));
+        }
+    }
+    assert!(
+        fallos.is_empty(),
+        "El assembly RISC-V no ensambla ({} casos):\n\n{}",
+        fallos.len(),
+        fallos.join("\n")
+    );
 }
