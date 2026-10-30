@@ -1,4 +1,4 @@
-use forja::bytecode::{deserializar_bytecode, serializar_bytecode, BytecodeGenerator, Opcode};
+use forja::bytecode::{deserializar_bytecode, serializar_bytecode, GeneradorBytecode, Opcode};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
 use forja::semantics::TypeChecker;
@@ -9,7 +9,7 @@ fn generar(source: &str) -> Vec<Opcode> {
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
-    let mut gen = BytecodeGenerator::new();
+    let mut gen = GeneradorBytecode::new();
     gen.generar(&programa).unwrap()
 }
 
@@ -21,7 +21,7 @@ fn generar_con_tipos(source: &str) -> Vec<Opcode> {
     let mut tc = TypeChecker::new();
     tc.analizar(&programa).unwrap();
     let tipos = tc.obtener_tipos_inferidos();
-    let mut gen = BytecodeGenerator::new();
+    let mut gen = GeneradorBytecode::new();
     gen.set_tipos_inferidos(tipos);
     gen.generar(&programa).unwrap()
 }
@@ -93,49 +93,49 @@ fn test_bc_push_nulo() {
 #[test]
 fn test_bc_add_int() {
     let bc = generar_con_tipos("variable x = 2 + 3");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::AddInt)));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::SumarEntero)));
 }
 
 #[test]
 fn test_bc_add_float() {
     let bc = generar_con_tipos("variable x = 2.5 + 3.7");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::AddFloat)));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::SumarDecimal)));
 }
 
 #[test]
 fn test_bc_sub_int() {
     let bc = generar_con_tipos("variable x = 10 - 3");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::SubInt)));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::RestarEntero)));
 }
 
 #[test]
 fn test_bc_mul_int() {
     let bc = generar_con_tipos("variable x = 4 * 2");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::MulInt)));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::MultiplicarEntero)));
 }
 
 #[test]
 fn test_bc_mul_float() {
     let bc = generar_con_tipos("variable x = 2.5 * 3.0");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::MulFloat)));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::MultiplicarDecimal)));
 }
 
 #[test]
 fn test_bc_div_int() {
     let bc = generar_con_tipos("variable x = 10 / 2");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::DivInt)));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::DividirEntero)));
 }
 
 #[test]
 fn test_bc_div_float() {
     let bc = generar_con_tipos("variable x = 7.5 / 2.5");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::DivFloat)));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::DividirDecimal)));
 }
 
 #[test]
 fn test_bc_generic_add_fallback() {
     let bc = generar("variable x = \"a\" + 5");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::Add)));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::Sumar)));
 }
 
 // ============================================================
@@ -147,7 +147,7 @@ fn test_bc_comparacion_mayor() {
     let bc = generar_con_tipos("variable x = 5 > 3");
     assert!(bc
         .iter()
-        .any(|op| matches!(op, Opcode::Mayor) || matches!(op, Opcode::MayorInt)));
+        .any(|op| matches!(op, Opcode::Mayor) || matches!(op, Opcode::MayorEntero)));
 }
 
 #[test]
@@ -155,7 +155,7 @@ fn test_bc_comparacion_menor() {
     let bc = generar_con_tipos("variable x = 3 < 5");
     assert!(bc
         .iter()
-        .any(|op| matches!(op, Opcode::Menor) || matches!(op, Opcode::MenorInt)));
+        .any(|op| matches!(op, Opcode::Menor) || matches!(op, Opcode::MenorEntero)));
 }
 
 #[test]
@@ -163,13 +163,13 @@ fn test_bc_comparacion_igual() {
     let bc = generar_con_tipos("variable x = 5 == 5");
     assert!(bc
         .iter()
-        .any(|op| matches!(op, Opcode::Igual) || matches!(op, Opcode::IgualInt)));
+        .any(|op| matches!(op, Opcode::Igual) || matches!(op, Opcode::IgualEntero)));
 }
 
 #[test]
 fn test_bc_comparacion_menor_int() {
     let bc = generar_con_tipos("variable x = 3 < 5");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::MenorInt)));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::MenorEntero)));
 }
 
 // ============================================================
@@ -179,19 +179,19 @@ fn test_bc_comparacion_menor_int() {
 #[test]
 fn test_bc_si_has_jump_si_falso() {
     let bc = generar("si (verdadero) { variable x = 1 }");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::JumpSiFalso(_))));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::SaltoSiFalso(_))));
 }
 
 #[test]
 fn test_bc_si_has_jump() {
     let bc = generar("si (verdadero) { } sino { }");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::Jump(_))));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::Salto(_))));
 }
 
 #[test]
 fn test_bc_mientras_has_jump_si_falso() {
     let bc = generar("mientras (falso) { }");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::JumpSiFalso(_))));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::SaltoSiFalso(_))));
 }
 
 #[test]
@@ -207,25 +207,25 @@ fn test_bc_repetir_push_cantidad() {
 #[test]
 fn test_bc_declare_mutable() {
     let bc = generar("variable x = 5");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::Declare(_, true))));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::Declarar(_, true))));
 }
 
 #[test]
 fn test_bc_declare_inmutable() {
     let bc = generar("constante x = 10");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::Declare(_, false))));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::Declarar(_, false))));
 }
 
 #[test]
 fn test_bc_load_variable() {
     let bc = generar("variable x = 5\nescribir(x)");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::Load(_))));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::Cargar(_))));
 }
 
 #[test]
 fn test_bc_store_variable() {
     let bc = generar("variable x = 5\nx = 10");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::Store(_))));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::Guardar(_))));
 }
 
 // ============================================================
@@ -235,13 +235,13 @@ fn test_bc_store_variable() {
 #[test]
 fn test_bc_halt_ultimo() {
     let bc = generar("variable x = 5");
-    assert_eq!(bc.last(), Some(&Opcode::Halt));
+    assert_eq!(bc.last(), Some(&Opcode::Detener));
 }
 
 #[test]
 fn test_bc_halt_ultimo_vacio() {
     let bc = generar("variable x = 5");
-    assert_eq!(bc.last(), Some(&Opcode::Halt));
+    assert_eq!(bc.last(), Some(&Opcode::Detener));
 }
 
 // ============================================================
@@ -284,17 +284,17 @@ fn test_bc_serializacion_push_texto() {
 
 #[test]
 fn test_bc_serializacion_declare_global() {
-    let bc = vec![Opcode::DeclareIdxGlobal(42, true)];
+    let bc = vec![Opcode::DeclararIndiceGlobal(42, true)];
     let serialized = serializar_bytecode(&bc);
     let deserialized = deserializar_bytecode(&serialized).unwrap();
-    assert_eq!(deserialized[0], Opcode::DeclareIdxGlobal(42, true));
+    assert_eq!(deserialized[0], Opcode::DeclararIndiceGlobal(42, true));
 }
 
 #[test]
 fn test_bc_serializacion_fusionados() {
     let bc = vec![
-        Opcode::DeclareEnteroOp(0, 99),
-        Opcode::DeclareBooleanoOp(1, false),
+        Opcode::DeclararOperacionEntero(0, 99),
+        Opcode::DeclararOperacionBooleano(1, false),
     ];
     let serialized = serializar_bytecode(&bc);
     let deserialized = deserializar_bytecode(&serialized).unwrap();
@@ -304,15 +304,15 @@ fn test_bc_serializacion_fusionados() {
 #[test]
 fn test_bc_serializacion_opcodes_especializados() {
     let bc = vec![
-        Opcode::AddInt,
-        Opcode::SubFloat,
-        Opcode::MulInt,
-        Opcode::DivFloat,
-        Opcode::IgualInt,
-        Opcode::MenorInt,
-        Opcode::MenorFloat,
-        Opcode::LoadIdxEntero(5),
-        Opcode::StoreIdxFloat(10),
+        Opcode::SumarEntero,
+        Opcode::RestarDecimal,
+        Opcode::MultiplicarEntero,
+        Opcode::DividirDecimal,
+        Opcode::IgualEntero,
+        Opcode::MenorEntero,
+        Opcode::MenorDecimal,
+        Opcode::CargarIndiceEntero(5),
+        Opcode::GuardarIndiceDecimal(10),
     ];
     let serialized = serializar_bytecode(&bc);
     let deserialized = deserializar_bytecode(&serialized).unwrap();
@@ -329,7 +329,7 @@ fn test_bc_serializacion_vacio() {
 
 #[test]
 fn test_bc_serializacion_magic_bytes() {
-    let bc = vec![Opcode::Halt];
+    let bc = vec![Opcode::Detener];
     let serialized = serializar_bytecode(&bc);
     assert_eq!(&serialized[0..4], b"FBC\0");
 }
@@ -341,7 +341,7 @@ fn test_bc_serializacion_magic_bytes() {
 #[test]
 fn test_bc_print_opcode() {
     let bc = generar("escribir(\"test\")");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::Print)));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::Imprimir)));
 }
 
 #[test]
@@ -349,7 +349,7 @@ fn test_bc_print_despues_de_push() {
     let bc = generar("escribir(42)");
     let idx_print = bc
         .iter()
-        .position(|op| matches!(op, Opcode::Print))
+        .position(|op| matches!(op, Opcode::Imprimir))
         .unwrap();
     assert!(idx_print > 0);
 }
@@ -361,19 +361,19 @@ fn test_bc_print_despues_de_push() {
 #[test]
 fn test_bc_funcion_call() {
     let bc = generar("funcion f() { }\nf()");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::Call(_, 0))));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::Llamar(_, 0))));
 }
 
 #[test]
 fn test_bc_funcion_con_parametros() {
     let bc = generar("funcion suma(a, b) { retornar a + b }\nsuma(3, 4)");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::Call(_, 2))));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::Llamar(_, 2))));
 }
 
 #[test]
 fn test_bc_funcion_retornar() {
     let bc = generar("funcion f() -> Entero { retornar 42 }\nf()");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::Return)));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::Retornar)));
 }
 
 // ============================================================
@@ -383,19 +383,19 @@ fn test_bc_funcion_retornar() {
 #[test]
 fn test_bc_array_new() {
     let bc = generar("variable arr = [1, 2, 3]");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::ArrayNew(_))));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::NuevoArreglo(_))));
 }
 
 #[test]
 fn test_bc_array_get() {
     let bc = generar("variable arr = [10, 20]\nvariable v = arr[0]");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::ArrayGet)));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::ObtenerElemento)));
 }
 
 #[test]
 fn test_bc_array_set() {
     let bc = generar("variable arr = [1, 2]\narr[0] = 99");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::ArraySet)));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::FijarElemento)));
 }
 
 // ============================================================
@@ -405,7 +405,7 @@ fn test_bc_array_set() {
 #[test]
 fn test_bc_map_new() {
     let bc = generar("variable m = {\"a\": 1}");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::MapNew(_))));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::NuevoMapa(_))));
 }
 
 #[test]
@@ -413,7 +413,7 @@ fn test_bc_map_get() {
     let bc = generar("variable m = {\"x\": 10}\nvariable v = m[\"x\"]");
     let has_get = bc
         .iter()
-        .any(|op| matches!(op, Opcode::MapGet | Opcode::Load(_) | Opcode::LoadIdx(_)));
+        .any(|op| matches!(op, Opcode::ObtenerValorDeMapa | Opcode::Cargar(_) | Opcode::CargarIndice(_)));
     assert!(has_get);
 }
 
@@ -428,7 +428,7 @@ fn test_bc_load_variable_con_indice() {
     let has_load = bc.iter().any(|op| {
         matches!(
             op,
-            Opcode::LoadIdx(_) | Opcode::LoadIdxEntero(_) | Opcode::Load(_)
+            Opcode::CargarIndice(_) | Opcode::CargarIndiceEntero(_) | Opcode::Cargar(_)
         )
     });
     assert!(has_load);
@@ -447,7 +447,7 @@ fn test_bc_string_length_ok() {
 #[test]
 fn test_bc_string_concat() {
     let bc = generar("variable s = \"a\" + \"b\"");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::Add)));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::Sumar)));
 }
 
 // ============================================================
@@ -458,6 +458,6 @@ fn test_bc_string_concat() {
 fn test_bc_hola_mundo() {
     let bc = generar("escribir(\"Hola mundo\")");
     assert_eq!(bc[0], Opcode::PushTexto(Arc::from("Hola mundo")));
-    assert!(bc.contains(&Opcode::Print));
-    assert!(bc.contains(&Opcode::Halt));
+    assert!(bc.contains(&Opcode::Imprimir));
+    assert!(bc.contains(&Opcode::Detener));
 }
