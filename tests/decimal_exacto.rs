@@ -137,7 +137,7 @@ escribir(a > 1)
 fn parametro_exacto_convierte_el_argumento() {
     // Repro: un parámetro `Exacto` se quedaba con el Decimal/Entero recibido y la
     // primera operación Exacto moría en runtime ("tipo incompatible: operación
-    // Exacto con un operando que no es Exacto, Entero ni Decimal"). La coerción
+    // Exacto con un operando que no es Exacto ni Entero). La coerción
     // por tipo declarado existía para `variable r: Exacto = …` pero no para los
     // argumentos de una llamada.
     let out = salida(
