@@ -21,7 +21,7 @@ use std::collections::HashMap;
 pub type FuncId = String;
 
 /// ID de bloque (función + offset)
-pub type BlockId = String;
+pub type IdBloque = String;
 
 /// Datos de perfil recolectados
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -29,11 +29,11 @@ pub struct ProfileData {
     /// Conteo de llamadas por función
     pub function_hotness: HashMap<FuncId, u64>,
     /// Conteo de branches: (función, block_id) → (taken, not_taken)
-    pub branch_counts: HashMap<BlockId, (u64, u64)>,
+    pub branch_counts: HashMap<IdBloque, (u64, u64)>,
     /// Iteraciones de loop: (función, loop_pc) → iteraciones totales
-    pub loop_iterations: HashMap<BlockId, u64>,
+    pub loop_iterations: HashMap<IdBloque, u64>,
     /// Distribución de tipos en ICs: (función, ip) → tipo → conteo
-    pub type_distribution: HashMap<BlockId, HashMap<String, u64>>,
+    pub type_distribution: HashMap<IdBloque, HashMap<String, u64>>,
     /// Hotness por instruction pointer del bytecode (para pre-especialización
     /// adaptativa: los IPs calientes se especializan en el primer run)
     pub hot_ips: HashMap<usize, u64>,
@@ -50,7 +50,7 @@ impl ProfileData {
     }
 
     /// Registra un branch taken/not-taken
-    pub fn record_branch(&mut self, block: &BlockId, taken: bool) {
+    pub fn record_branch(&mut self, block: &IdBloque, taken: bool) {
         let entry = self.branch_counts.entry(block.clone()).or_insert((0, 0));
         if taken {
             entry.0 += 1;
@@ -60,12 +60,12 @@ impl ProfileData {
     }
 
     /// Registra iteraciones de loop
-    pub fn record_loop(&mut self, block: &BlockId, iterations: u64) {
+    pub fn record_loop(&mut self, block: &IdBloque, iterations: u64) {
         *self.loop_iterations.entry(block.clone()).or_insert(0) += iterations;
     }
 
     /// Registra un tipo visto en un IC
-    pub fn record_type_at_ic(&mut self, block: &BlockId, tipo: &str) {
+    pub fn record_type_at_ic(&mut self, block: &IdBloque, tipo: &str) {
         let dist = self.type_distribution.entry(block.clone()).or_default();
         *dist.entry(tipo.to_string()).or_insert(0) += 1;
     }
@@ -115,7 +115,7 @@ impl ProfileData {
     }
 
     /// Retorna si un branch es Hot (taken > 80%) o Cold (taken < 20%)
-    pub fn branch_hotness(&self, block: &BlockId) -> Option<BranchHotness> {
+    pub fn branch_hotness(&self, block: &IdBloque) -> Option<BranchHotness> {
         let (taken, not_taken) = self.branch_counts.get(block)?;
         let total = taken + not_taken;
         if total == 0 {
@@ -149,9 +149,9 @@ pub struct ProfileGuidedDecisions {
     /// Funciones que deben ser inlined (hot + pequeña)
     pub inline_candidates: Vec<FuncId>,
     /// Branches que deben tener layout lineal (HotTaken → fall-through)
-    pub hot_branches: Vec<(BlockId, BranchHotness)>,
+    pub hot_branches: Vec<(IdBloque, BranchHotness)>,
     /// Loops que deben tener unrolling más agresivo
-    pub hot_loops: Vec<(BlockId, u64)>,
+    pub hot_loops: Vec<(IdBloque, u64)>,
     /// Funciones que deben tener optimización agresiva
     pub tier2_candidates: Vec<FuncId>,
 }
@@ -204,7 +204,7 @@ impl ProfileGuidedDecisions {
         self.hot_branches
             .iter()
             .filter_map(|(block_id, _)| {
-                // BlockId tiene formato "función+offset" o "offset"
+                // IdBloque tiene formato "función+offset" o "offset"
                 block_id
                     .rsplit_once('+')
                     .and_then(|(_, offset_str)| offset_str.parse::<usize>().ok())
