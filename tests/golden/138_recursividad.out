@@ -1,0 +1,36 @@
+=== Recursividad ===
+
+Factorial:
+  1! = 1
+  2! = 2
+  3! = 6
+  4! = 24
+  5! = 120
+  6! = 720
+  7! = 5040
+  8! = 40320
+  9! = 362880
+  10! = 3628800
+
+Fibonacci:
+  fib(0) = 0
+  fib(1) = 1
+  fib(2) = 1
+  fib(3) = 2
+  fib(4) = 3
+  fib(5) = 5
+  fib(6) = 8
+  fib(7) = 13
+  fib(8) = 21
+  fib(9) = 34
+  fib(10) = 55
+
+Suma hasta n:
+  suma(10) = 55
+  suma(100) = 5050
+
+Potencia:
+  2^8 = 256
+  3^4 = 81
+
+La recursividad resuelve problemas dividiéndolos en subproblemas más pequeños.
