@@ -1,0 +1,9 @@
+=== Búsqueda Binaria ===
+
+Array: [2,5,8,12,16,23,38,45,56,72]
+  23 → encontrado en índice 5
+  2 → encontrado en índice 0
+  72 → encontrado en índice 9
+  99 → no encontrado
+
+Búsqueda binaria: O(log n), requiere array ordenado.
