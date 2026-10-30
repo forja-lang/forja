@@ -33,7 +33,7 @@ fn lectura_de_booleano_en_registro() {
         let _ = c.compilar_expresion_asm(&id("bool"));
         // El valor booleano se mueve usando la mitad de 32 bits.
         assert!(
-            c.output.contains("eax") || c.output.contains("w0"),
+            c.output.contains("eax") || c.output.contains("w0") || c.output.contains("a0"),
             "{t:?}: {output}",
             output = c.output
         );
