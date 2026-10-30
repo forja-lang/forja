@@ -102,6 +102,10 @@ cargo run --release --bin forja -- build-asm ejemplos/01_hola.fa --target arm64 
 # Compilar manualmente el .s generado
 cargo run --release --bin forja -- build-asm ejemplos/01_hola.fa --target x86_64-linux -o prog
 gcc -O2 -o prog prog.s
+
+# Target cruzado: el .s queda en disco y lo ensambla el toolchain cruzado
+cargo run --release --bin forja -- build-asm ejemplos/01_hola.fa --target riscv64 -o prog
+riscv64-linux-gnu-gcc -O2 -o prog prog.s
 ```
 
 Targets disponibles:
@@ -112,6 +116,7 @@ Targets disponibles:
 | `--target x86_64-windows` | x86-64 | Microsoft x64 (RCX, RDX, R8, R9) |
 | `--target x86_64-linux` | x86-64 | System V (RDI, RSI, RDX, RCX) |
 | `--target arm64` | ARM64 AArch64 | X0..X7, stp/ldp, cbz |
+| `--target riscv64` | RISC-V 64 (RV64GC) | A0..A7, sd/ld, beqz/bnez, ecall |
 
 ### `forja transpile|t|transpilar|transpilador <archivo> [-o <salida>]` — Transpilar a Rust
 
