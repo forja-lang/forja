@@ -55,28 +55,28 @@ fn describir_declaracion(d: &Declaracion) -> &'static str {
 }
 
 /// Tipo numérico aproximado de una expresión, para coercer a `Exacto` cuando el
-/// destino lo exige. `TipoIR` no distingue numéricos, así que se infiere del AST
+/// destino lo exige. `TipoEstatico` no distingue numéricos, así que se infiere del AST
 /// (los literales exactos ya vienen resueltos por el parser).
 #[derive(Clone, Copy, PartialEq)]
-enum NumKind {
+enum TipoNumerico {
     Entero,
     Decimal,
     Exacto,
 }
 
-pub struct IrConstructor {
-    pub symbols: TablaSimbolosIr,
-    var_map: HashMap<String, MemIdx>,
-    global_map: HashMap<String, MemIdx>,
-    next_mem: MemIdx,
-    next_local: MemIdx,
+pub struct ConstructorDesdeAst {
+    pub simbolos: TablaSimbolosIr,
+    mapa_variables: HashMap<String, IdxMemoria>,
+    mapa_globales: HashMap<String, IdxMemoria>,
+    next_mem: IdxMemoria,
+    next_local: IdxMemoria,
     in_function: bool,
     /// F6-T1 etapa 3: tipo estático mínimo para elegir `ArrayGet` vs `MapGet`.
-    tipos_valor: HashMap<ValueId, TipoIR>,
-    tipos_var: HashMap<String, TipoIR>,
+    tipos_valor: HashMap<IdValor, TipoEstatico>,
+    tipos_var: HashMap<String, TipoEstatico>,
     /// Tipo numérico de cada variable (`Exacto`/`Decimal`/`Entero`), para
     /// convertir en la asignación igual que en la declaración.
-    num_var: HashMap<String, NumKind>,
+    num_var: HashMap<String, TipoNumerico>,
     /// `false` si se encontró un constructo que el constructor IR no soporta.
     pub soportado: bool,
     /// F11-T5: primer constructo no soportado encontrado, con la forma del AST
@@ -95,29 +95,29 @@ pub struct IrConstructor {
     hilo_counter: usize,
     /// F11-T5: pila de ciclos activos `(salida, continuación)` para traducir
     /// `romper` y `continuar` a saltos.
-    ciclos: Vec<(BlockId, BlockId)>,
+    ciclos: Vec<(IdBloque, IdBloque)>,
 }
 
 /// Base de índices de memoria local (los globales empiezan en 0).
-pub const LOCAL_BASE: MemIdx = 1_000_000;
+pub const LOCAL_BASE: IdxMemoria = 1_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TipoIR {
+enum TipoEstatico {
     Arreglo,
     Mapa,
     Otro,
 }
 
-impl IrConstructor {
+impl ConstructorDesdeAst {
     /// Tipo numérico aproximado de una expresión. Se usa para decidir la
     /// conversión a `Exacto` en declaraciones y asignaciones.
-    fn tipo_num(&self, e: &Expresion) -> Option<NumKind> {
+    fn tipo_numerico_de(&self, e: &Expresion) -> Option<TipoNumerico> {
         match e {
-            Expresion::LiteralNumero(_) => Some(NumKind::Entero),
-            Expresion::LiteralDecimal(_) => Some(NumKind::Decimal),
-            Expresion::LiteralExacto(..) => Some(NumKind::Exacto),
-            Expresion::Grupo(inner) => self.tipo_num(inner),
-            Expresion::Unaria { expr, .. } => self.tipo_num(expr),
+            Expresion::LiteralNumero(_) => Some(TipoNumerico::Entero),
+            Expresion::LiteralDecimal(_) => Some(TipoNumerico::Decimal),
+            Expresion::LiteralExacto(..) => Some(TipoNumerico::Exacto),
+            Expresion::Grupo(inner) => self.tipo_numerico_de(inner),
+            Expresion::Unaria { expr, .. } => self.tipo_numerico_de(expr),
             Expresion::Binaria {
                 izquierda,
                 operador,
@@ -127,14 +127,19 @@ impl IrConstructor {
                 if !matches!(operador, Suma | Resta | Multiplicacion | Division | Modulo) {
                     return None;
                 }
-                match (self.tipo_num(izquierda), self.tipo_num(derecha)) {
-                    (Some(NumKind::Exacto), _) | (_, Some(NumKind::Exacto)) => {
-                        Some(NumKind::Exacto)
+                match (
+                    self.tipo_numerico_de(izquierda),
+                    self.tipo_numerico_de(derecha),
+                ) {
+                    (Some(TipoNumerico::Exacto), _) | (_, Some(TipoNumerico::Exacto)) => {
+                        Some(TipoNumerico::Exacto)
                     }
-                    (Some(NumKind::Decimal), _) | (_, Some(NumKind::Decimal)) => {
-                        Some(NumKind::Decimal)
+                    (Some(TipoNumerico::Decimal), _) | (_, Some(TipoNumerico::Decimal)) => {
+                        Some(TipoNumerico::Decimal)
                     }
-                    (Some(NumKind::Entero), Some(NumKind::Entero)) => Some(NumKind::Entero),
+                    (Some(TipoNumerico::Entero), Some(TipoNumerico::Entero)) => {
+                        Some(TipoNumerico::Entero)
+                    }
                     _ => None,
                 }
             }
@@ -143,11 +148,12 @@ impl IrConstructor {
         }
     }
 
+    /// Crea un traductor AST → IR sin funciones ni símbolos.
     pub fn new() -> Self {
-        IrConstructor {
-            symbols: TablaSimbolosIr::new(),
-            var_map: HashMap::new(),
-            global_map: HashMap::new(),
+        ConstructorDesdeAst {
+            simbolos: TablaSimbolosIr::new(),
+            mapa_variables: HashMap::new(),
+            mapa_globales: HashMap::new(),
             next_mem: 0,
             next_local: 0,
             in_function: false,
@@ -165,7 +171,7 @@ impl IrConstructor {
         }
     }
 
-    fn marcar_no_soportado(&mut self, motivo: impl Into<String>) -> ValueId {
+    fn marcar_no_soportado(&mut self, motivo: impl Into<String>) -> IdValor {
         self.soportado = false;
         // Sólo interesa el primer motivo: es el que aborta la emisión IR.
         if self.motivo_no_soportado.is_none() {
@@ -174,57 +180,62 @@ impl IrConstructor {
         0
     }
 
-    fn alloc_mem(&mut self, name: &str) -> MemIdx {
+    fn reservar_memoria(&mut self, nombre: &str) -> IdxMemoria {
         // F8-T1: las variables de una función viven en el marco local; las de
         // nivel superior son globales.
-        if let Some(&idx) = self.var_map.get(name) {
+        if let Some(&idx) = self.mapa_variables.get(nombre) {
             return idx;
         }
-        if let Some(&idx) = self.global_map.get(name) {
+        if let Some(&idx) = self.mapa_globales.get(nombre) {
             return idx;
         }
         if self.in_function {
             let idx = LOCAL_BASE + self.next_local;
-            self.var_map.insert(name.to_string(), idx);
+            self.mapa_variables.insert(nombre.to_string(), idx);
             self.next_local += 1;
             idx
         } else {
             let idx = self.next_mem;
-            self.global_map.insert(name.to_string(), idx);
+            self.mapa_globales.insert(nombre.to_string(), idx);
             self.next_mem += 1;
             idx
         }
     }
 
-    fn get_mem(&self, name: &str) -> Option<MemIdx> {
-        self.var_map
-            .get(name)
-            .or_else(|| self.global_map.get(name))
+    fn obtener_memoria(&self, nombre: &str) -> Option<IdxMemoria> {
+        self.mapa_variables
+            .get(nombre)
+            .or_else(|| self.mapa_globales.get(nombre))
             .copied()
     }
 
-    pub fn tipo_to_ir(tipo: &Tipo) -> IrType {
+    /// Traduce un tipo del lenguaje al tipo correspondiente del IR.
+    pub fn tipo_a_ir(tipo: &Tipo) -> TipoIr {
         match tipo {
-            Tipo::Entero => IrType::Int,
-            Tipo::Decimal => IrType::Float,
-            Tipo::Booleano => IrType::Bool,
-            _ => IrType::Ptr,
+            Tipo::Entero => TipoIr::Entero,
+            Tipo::Decimal => TipoIr::Decimal,
+            Tipo::Booleano => TipoIr::Booleano,
+            _ => TipoIr::Puntero,
         }
     }
 
-    /// Convierte una expresión a IR. Devuelve el `ValueId` del resultado.
-    pub fn expr_to_ir(&mut self, builder: &mut IrBuilder, expr: &Expresion) -> ValueId {
+    /// Convierte una expresión a IR. Devuelve el `IdValor` del resultado.
+    pub fn expresion_a_ir(
+        &mut self,
+        constructor_ir: &mut ConstructorIr,
+        expr: &Expresion,
+    ) -> IdValor {
         match expr {
-            Expresion::LiteralNumero(n) => builder.emit_const_int(*n),
-            Expresion::LiteralDecimal(d) => builder.emit_const_float(*d),
+            Expresion::LiteralNumero(n) => constructor_ir.emitir_const_entero(*n),
+            Expresion::LiteralDecimal(d) => constructor_ir.emitir_const_decimal(*d),
             // F11-T5: `exacto` (BigDecimal) se emite como constante de precisión
             // arbitraria; la VM ya tiene `PushExacto`.
             Expresion::LiteralExacto(coeficiente, escala) => {
-                builder.emit_const_exacto(*coeficiente, *escala)
+                constructor_ir.emitir_const_exacto(*coeficiente, *escala)
             }
-            Expresion::LiteralBooleano(b) => builder.emit_const_bool(*b),
-            Expresion::LiteralTexto(s) => builder.emit_const_str(s),
-            Expresion::LiteralNulo => builder.emit_const_nil(),
+            Expresion::LiteralBooleano(b) => constructor_ir.emitir_const_booleano(*b),
+            Expresion::LiteralTexto(s) => constructor_ir.emitir_const_texto(s),
+            Expresion::LiteralNulo => constructor_ir.emitir_const_nulo(),
 
             // `si` como elemento de layout: fuera del subconjunto IR (es GUI).
             Expresion::Si { .. } => {
@@ -235,27 +246,27 @@ impl IrConstructor {
                 // F11-T1: función usada como valor (callback por nombre o
                 // `&funcion`): el valor es el nombre de la función, igual que
                 // en el backend AST.
-                if !self.var_map.contains_key(nombre)
-                    && !self.global_map.contains_key(nombre)
+                if !self.mapa_variables.contains_key(nombre)
+                    && !self.mapa_globales.contains_key(nombre)
                     && self.funciones_definidas.contains(nombre)
                 {
-                    return builder.emit_const_str(nombre);
+                    return constructor_ir.emitir_const_texto(nombre);
                 }
                 // F8-T3: variante unitaria.
                 // F11-T5: las variantes vacías built-in de `Resultado`/`Opcion`
                 // (`Ninguno`, `Nada`, `None`) se representan como objetos con
                 // campo `tipo` — igual que `Ninguno()` —, no con tag posicional:
-                // `Opcode::Try` y el pattern matching las distinguen por nombre.
+                // `Opcode::Intentar` y el pattern matching las distinguen por nombre.
                 if let Some((enum_nombre, tag, false)) = self.variantes_enum.get(nombre).cloned() {
                     if let Some(tipo_str) = tipo_de_constructor_builtin(nombre) {
-                        let clase = builder.symbols.internar(&enum_nombre);
-                        let tipo = builder.symbols.internar(tipo_str);
-                        return builder.emit_enum_object(clase, None, tipo);
+                        let clase = constructor_ir.simbolos.internar(&enum_nombre);
+                        let tipo = constructor_ir.simbolos.internar(tipo_str);
+                        return constructor_ir.emitir_objeto_de_enum(clase, None, tipo);
                     }
-                    return self.crear_variante(builder, &enum_nombre, tag, Vec::new());
+                    return self.crear_variante(constructor_ir, &enum_nombre, tag, Vec::new());
                 }
-                if let Some(mem) = self.get_mem(nombre) {
-                    let v = builder.emit_load(mem);
+                if let Some(mem) = self.obtener_memoria(nombre) {
+                    let v = constructor_ir.emitir_carga(mem);
                     if let Some(t) = self.tipos_var.get(nombre).copied() {
                         self.tipos_valor.insert(v, t);
                     }
@@ -267,80 +278,118 @@ impl IrConstructor {
                 }
             }
 
-            Expresion::Grupo(e) => self.expr_to_ir(builder, e),
+            Expresion::Grupo(e) => self.expresion_a_ir(constructor_ir, e),
 
             Expresion::Binaria {
                 izquierda,
                 operador,
                 derecha,
             } => {
-                let l = self.expr_to_ir(builder, izquierda);
-                let r = self.expr_to_ir(builder, derecha);
+                let mut l = self.expresion_a_ir(constructor_ir, izquierda);
+                let mut r = self.expresion_a_ir(constructor_ir, derecha);
+                // Mezcla de `Exacto` con `Entero`/`Decimal`: el operando que no es
+                // Exacto se convierte antes de operar. Las operaciones genéricas
+                // de la VM combinan Exacto con Exacto y con Entero, pero no con
+                // Decimal, y en ese caso devolvían Nulo (`Exacto * 0.21` se
+                // imprimía como `nulo`). Es la misma coerción que aplica el
+                // backend AST, así que ambos caminos producen el mismo valor.
+                if matches!(
+                    operador,
+                    Operador::Suma
+                        | Operador::Resta
+                        | Operador::Multiplicacion
+                        | Operador::Division
+                        | Operador::IgualIgual
+                        | Operador::Diferente
+                        | Operador::Menor
+                        | Operador::Mayor
+                        | Operador::MenorIgual
+                        | Operador::MayorIgual
+                ) {
+                    match (
+                        self.tipo_numerico_de(izquierda),
+                        self.tipo_numerico_de(derecha),
+                    ) {
+                        (Some(TipoNumerico::Exacto), Some(TipoNumerico::Entero)) => {
+                            r = constructor_ir.emitir_a_exacto(r, true)
+                        }
+                        (Some(TipoNumerico::Exacto), Some(TipoNumerico::Decimal)) => {
+                            r = constructor_ir.emitir_a_exacto(r, false)
+                        }
+                        (Some(TipoNumerico::Entero), Some(TipoNumerico::Exacto)) => {
+                            l = constructor_ir.emitir_a_exacto(l, true)
+                        }
+                        (Some(TipoNumerico::Decimal), Some(TipoNumerico::Exacto)) => {
+                            l = constructor_ir.emitir_a_exacto(l, false)
+                        }
+                        _ => {}
+                    }
+                }
                 match operador {
-                    Operador::Suma => builder.emit_add(l, r),
-                    Operador::Resta => builder.emit_sub(l, r),
-                    Operador::Multiplicacion => builder.emit_mul(l, r),
-                    Operador::Division => builder.emit_div(l, r),
-                    Operador::Modulo => builder.emit_mod(l, r),
-                    Operador::IgualIgual => builder.emit_eq(l, r),
-                    Operador::Diferente => builder.emit_neq(l, r),
-                    Operador::Menor => builder.emit_lt(l, r),
-                    Operador::Mayor => builder.emit_gt(l, r),
-                    Operador::MenorIgual => builder.emit_lte(l, r),
-                    Operador::MayorIgual => builder.emit_gte(l, r),
-                    Operador::Y => builder.emit_and(l, r),
-                    Operador::O => builder.emit_or(l, r),
+                    Operador::Suma => constructor_ir.emitir_suma(l, r),
+                    Operador::Resta => constructor_ir.emitir_resta(l, r),
+                    Operador::Multiplicacion => constructor_ir.emitir_multiplicacion(l, r),
+                    Operador::Division => constructor_ir.emitir_division(l, r),
+                    Operador::Modulo => constructor_ir.emitir_modulo(l, r),
+                    Operador::IgualIgual => constructor_ir.emitir_igualdad(l, r),
+                    Operador::Diferente => constructor_ir.emitir_desigualdad(l, r),
+                    Operador::Menor => constructor_ir.emitir_menor(l, r),
+                    Operador::Mayor => constructor_ir.emitir_mayor(l, r),
+                    Operador::MenorIgual => constructor_ir.emitir_menor_o_igual(l, r),
+                    Operador::MayorIgual => constructor_ir.emitir_mayor_o_igual(l, r),
+                    Operador::Y => constructor_ir.emitir_y(l, r),
+                    Operador::O => constructor_ir.emitir_o(l, r),
                 }
             }
 
             Expresion::Unaria { operador, expr } => {
-                let val = self.expr_to_ir(builder, expr);
+                let val = self.expresion_a_ir(constructor_ir, expr);
                 match operador {
                     OperadorUnario::Negar => {
-                        let zero = builder.emit_const_int(0);
-                        builder.emit_sub(zero, val)
+                        let zero = constructor_ir.emitir_const_entero(0);
+                        constructor_ir.emitir_resta(zero, val)
                     }
-                    OperadorUnario::No => builder.emit_not(val),
+                    OperadorUnario::No => constructor_ir.emitir_no(val),
                 }
             }
 
             Expresion::Arreglo(elementos) => {
-                let valores: Vec<ValueId> = elementos
+                let valores: Vec<IdValor> = elementos
                     .iter()
-                    .map(|e| self.expr_to_ir(builder, e))
+                    .map(|e| self.expresion_a_ir(constructor_ir, e))
                     .collect();
-                let v = builder.emit_array_new(valores);
-                self.tipos_valor.insert(v, TipoIR::Arreglo);
+                let v = constructor_ir.emitir_nuevo_arreglo(valores);
+                self.tipos_valor.insert(v, TipoEstatico::Arreglo);
                 v
             }
 
             Expresion::Mapa(pares) => {
-                let pares_ir: Vec<(ValueId, ValueId)> = pares
+                let pares_ir: Vec<(IdValor, IdValor)> = pares
                     .iter()
                     .map(|(k, v)| {
-                        let kv = self.expr_to_ir(builder, k);
-                        let vv = self.expr_to_ir(builder, v);
+                        let kv = self.expresion_a_ir(constructor_ir, k);
+                        let vv = self.expresion_a_ir(constructor_ir, v);
                         (kv, vv)
                     })
                     .collect();
-                let v = builder.emit_map_new(pares_ir);
-                self.tipos_valor.insert(v, TipoIR::Mapa);
+                let v = constructor_ir.emitir_nuevo_mapa(pares_ir);
+                self.tipos_valor.insert(v, TipoEstatico::Mapa);
                 v
             }
 
             Expresion::Index { objeto, indice } => {
-                let obj = self.expr_to_ir(builder, objeto);
-                let idx = self.expr_to_ir(builder, indice);
+                let obj = self.expresion_a_ir(constructor_ir, objeto);
+                let idx = self.expresion_a_ir(constructor_ir, indice);
                 // F11-T5: sólo se distingue el mapa cuando el tipo es conocido.
                 // En el resto de los casos se usa `ArrayGet`, que en la VM
                 // discrimina arreglo/mapa en runtime (igual que el backend AST).
-                if self.tipos_valor.get(&obj).copied() == Some(TipoIR::Mapa) {
-                    let v = builder.emit_map_get(obj, idx);
-                    self.tipos_valor.insert(v, TipoIR::Otro);
+                if self.tipos_valor.get(&obj).copied() == Some(TipoEstatico::Mapa) {
+                    let v = constructor_ir.emitir_obtener_valor_de_mapa(obj, idx);
+                    self.tipos_valor.insert(v, TipoEstatico::Otro);
                     v
                 } else {
-                    let v = builder.emit_array_get(obj, idx);
-                    self.tipos_valor.insert(v, TipoIR::Otro);
+                    let v = constructor_ir.emitir_obtener_elemento(obj, idx);
+                    self.tipos_valor.insert(v, TipoEstatico::Otro);
                     v
                 }
             }
@@ -349,165 +398,165 @@ impl IrConstructor {
                 // F12-T3: `imprimir` es el alias de `escribir` que usan varios
                 // ejemplos del curso (el backend AST lo trata igual).
                 if nombre == "imprimir" {
-                    let escribir = builder.symbols.internar("escribir");
+                    let escribir = constructor_ir.simbolos.internar("escribir");
                     for arg in argumentos {
-                        let v = self.expr_to_ir(builder, arg);
-                        builder.emit_call(escribir, vec![v]);
+                        let v = self.expresion_a_ir(constructor_ir, arg);
+                        constructor_ir.emitir_llamada(escribir, vec![v]);
                     }
-                    return builder.emit_const_nil();
+                    return constructor_ir.emitir_const_nulo();
                 }
                 // F12-T3: builtins de stdlib que el backend AST ya resolvía y el
                 // IR no cubría (`a_numero`, `tiempo_actual`, `pedir_numero`):
                 // sin esto los ejemplos fallaban con "función no definida".
                 if nombre == "a_numero" && argumentos.len() == 1 {
-                    let texto = self.expr_to_ir(builder, &argumentos[0]);
-                    return builder.emit_parse_int(texto);
+                    let texto = self.expresion_a_ir(constructor_ir, &argumentos[0]);
+                    return constructor_ir.emitir_parseo_entero(texto);
                 }
                 if nombre == "tiempo_actual" && argumentos.is_empty() {
-                    return builder.emit_tiempo_actual();
+                    return constructor_ir.emitir_tiempo_actual();
                 }
                 if nombre == "pedir_numero" {
-                    let escribir = builder.symbols.internar("escribir");
+                    let escribir = constructor_ir.simbolos.internar("escribir");
                     for arg in argumentos {
-                        let v = self.expr_to_ir(builder, arg);
-                        builder.emit_call(escribir, vec![v]);
+                        let v = self.expresion_a_ir(constructor_ir, arg);
+                        constructor_ir.emitir_llamada(escribir, vec![v]);
                     }
-                    let linea = builder.emit_read_line();
-                    return builder.emit_parse_int(linea);
+                    let linea = constructor_ir.emitir_lectura_linea();
+                    return constructor_ir.emitir_parseo_entero(linea);
                 }
                 // F11-T5: `escribir_linea(args)` = `escribir(args)` + "\n",
                 // igual que el backend AST (no está registrada en la VM).
                 if nombre == "escribir_linea" {
-                    let escribir = builder.symbols.internar("escribir");
+                    let escribir = constructor_ir.simbolos.internar("escribir");
                     for arg in argumentos {
-                        let v = self.expr_to_ir(builder, arg);
-                        builder.emit_call(escribir, vec![v]);
+                        let v = self.expresion_a_ir(constructor_ir, arg);
+                        constructor_ir.emitir_llamada(escribir, vec![v]);
                     }
-                    let salto = builder.emit_const_str("\n");
-                    return builder.emit_call(escribir, vec![salto]);
+                    let salto = constructor_ir.emitir_const_texto("\n");
+                    return constructor_ir.emitir_llamada(escribir, vec![salto]);
                 }
                 // F11-T3: `Ninguno()` / `Nada()` con paréntesis llegan como
                 // llamada; son la variante vacía de `Opcion`.
                 if argumentos.is_empty() && matches!(nombre.as_str(), "Ninguno" | "Nada" | "None") {
-                    let clase = builder.symbols.internar("Opcion");
-                    let tipo = builder.symbols.internar("none");
-                    return builder.emit_enum_object(clase, None, tipo);
+                    let clase = constructor_ir.simbolos.internar("Opcion");
+                    let tipo = constructor_ir.simbolos.internar("none");
+                    return constructor_ir.emitir_objeto_de_enum(clase, None, tipo);
                 }
                 // F11-T2: el parser representa `objeto.metodo(args)` como una
                 // llamada con nombre punteado cuando aparece como sentencia.
                 // F11-T5: el objeto puede ser una cadena de campos
                 // (`self.encapsulado.enviar(...)`).
                 if let Some((objeto, metodo)) = nombre.rsplit_once('.') {
-                    if let Some(obj) = self.objeto_de_nombre(builder, objeto) {
-                        let args: Vec<ValueId> = argumentos
+                    if let Some(obj) = self.objeto_de_nombre(constructor_ir, objeto) {
+                        let args: Vec<IdValor> = argumentos
                             .iter()
-                            .map(|a| self.expr_to_ir(builder, a))
+                            .map(|a| self.expresion_a_ir(constructor_ir, a))
                             .collect();
-                        let met = builder.symbols.internar(metodo);
-                        return builder.emit_call_method(obj, met, args);
+                        let met = constructor_ir.simbolos.internar(metodo);
+                        return constructor_ir.emitir_llamada_metodo(obj, met, args);
                     }
                 }
                 // F8-T3: constructor de variante de enum con datos.
                 if let Some((enum_nombre, tag, _)) = self.variantes_enum.get(nombre).cloned() {
-                    let args: Vec<ValueId> = argumentos
+                    let args: Vec<IdValor> = argumentos
                         .iter()
-                        .map(|a| self.expr_to_ir(builder, a))
+                        .map(|a| self.expresion_a_ir(constructor_ir, a))
                         .collect();
-                    return self.crear_variante(builder, &enum_nombre, tag, args);
+                    return self.crear_variante(constructor_ir, &enum_nombre, tag, args);
                 }
                 // F11-T1: si el nombre es una variable (closure guardado en una
                 // variable local o global, o callback recibido por parámetro),
                 // la llamada es indirecta.
                 if let Some(mem) = self.mem_de_variable(nombre) {
-                    let callee = builder.emit_load(mem);
-                    let args: Vec<ValueId> = argumentos
+                    let callee = constructor_ir.emitir_carga(mem);
+                    let args: Vec<IdValor> = argumentos
                         .iter()
-                        .map(|a| self.expr_to_ir(builder, a))
+                        .map(|a| self.expresion_a_ir(constructor_ir, a))
                         .collect();
-                    return builder.emit_call_closure(callee, args);
+                    return constructor_ir.emitir_llamada_clausura(callee, args);
                 }
                 // F12-T1: `leer()` es el builtin de lectura, pero una variable
                 // con ese nombre (un closure) tiene prioridad, igual que en el
                 // backend AST.
                 if nombre == "leer" && argumentos.is_empty() {
-                    return builder.emit_read_line();
+                    return constructor_ir.emitir_lectura_linea();
                 }
                 // F8-T1: llamadas a funciones de usuario y builtins.
-                let args: Vec<ValueId> = argumentos
+                let args: Vec<IdValor> = argumentos
                     .iter()
-                    .map(|a| self.expr_to_ir(builder, a))
+                    .map(|a| self.expresion_a_ir(constructor_ir, a))
                     .collect();
-                let sym = builder.symbols.internar(nombre);
-                builder.emit_call(sym, args)
+                let sym = constructor_ir.simbolos.internar(nombre);
+                constructor_ir.emitir_llamada(sym, args)
             }
 
             Expresion::Closure { parametros, cuerpo } => {
-                let (func, capturadas) = self.compilar_closure(builder, parametros, cuerpo);
+                let (func, capturadas) = self.compilar_closure(constructor_ir, parametros, cuerpo);
                 // F12-T1: los valores capturados se leen del ámbito envolvente en
                 // el punto de creación (captura por valor).
                 let mut valores = Vec::with_capacity(capturadas.len());
                 for cap in &capturadas {
                     valores.push(match self.mem_de_variable(cap) {
-                        Some(mem) => builder.emit_load(mem),
-                        None => builder.emit_const_nil(),
+                        Some(mem) => constructor_ir.emitir_carga(mem),
+                        None => constructor_ir.emitir_const_nulo(),
                     });
                 }
-                builder.emit_make_closure(func, valores)
+                constructor_ir.emitir_crear_clausura(func, valores)
             }
 
             // F11-T2: `hilo { ... }`. Las variables capturadas se pasan como
             // argumentos (copia) a la función del hilo.
             Expresion::Hilo { cuerpo } => {
-                let (func, capturadas) = self.compilar_hilo(builder, cuerpo);
+                let (func, capturadas) = self.compilar_hilo(constructor_ir, cuerpo);
                 let mut valores = Vec::with_capacity(capturadas.len());
                 for cap in &capturadas {
                     valores.push(match self.mem_de_variable(cap) {
-                        Some(mem) => builder.emit_load(mem),
-                        None => builder.emit_const_nil(),
+                        Some(mem) => constructor_ir.emitir_carga(mem),
+                        None => constructor_ir.emitir_const_nulo(),
                     });
                 }
-                builder.emit_thread_spawn(func, valores)
+                constructor_ir.emitir_crear_hilo(func, valores)
             }
 
             Expresion::CanalNuevo(capacidad) => match capacidad {
                 Some(c) => {
-                    let cap = self.expr_to_ir(builder, c);
-                    builder.emit_channel_new_cap(cap)
+                    let cap = self.expresion_a_ir(constructor_ir, c);
+                    constructor_ir.emitir_nuevo_canal_con_capacidad(cap)
                 }
-                None => builder.emit_channel_new(),
+                None => constructor_ir.emitir_nuevo_canal(),
             },
 
             // F11-T3: `Resultado` y `Opcion` se representan como objetos con
             // campos `valor` y `tipo`, igual que en el backend AST (lo consume
-            // `Opcode::Try` y el pattern matching por campo).
+            // `Opcode::Intentar` y el pattern matching por campo).
             Expresion::Ok(e) => {
-                let valor = self.expr_to_ir(builder, e);
-                let clase = builder.symbols.internar("Resultado");
-                let tipo = builder.symbols.internar("ok");
-                builder.emit_enum_object(clase, Some(valor), tipo)
+                let valor = self.expresion_a_ir(constructor_ir, e);
+                let clase = constructor_ir.simbolos.internar("Resultado");
+                let tipo = constructor_ir.simbolos.internar("ok");
+                constructor_ir.emitir_objeto_de_enum(clase, Some(valor), tipo)
             }
             Expresion::Error(e) => {
-                let valor = self.expr_to_ir(builder, e);
-                let clase = builder.symbols.internar("Resultado");
-                let tipo = builder.symbols.internar("error");
-                builder.emit_enum_object(clase, Some(valor), tipo)
+                let valor = self.expresion_a_ir(constructor_ir, e);
+                let clase = constructor_ir.simbolos.internar("Resultado");
+                let tipo = constructor_ir.simbolos.internar("error");
+                constructor_ir.emitir_objeto_de_enum(clase, Some(valor), tipo)
             }
             Expresion::Algo(e) => {
-                let valor = self.expr_to_ir(builder, e);
-                let clase = builder.symbols.internar("Opcion");
-                let tipo = builder.symbols.internar("some");
-                builder.emit_enum_object(clase, Some(valor), tipo)
+                let valor = self.expresion_a_ir(constructor_ir, e);
+                let clase = constructor_ir.simbolos.internar("Opcion");
+                let tipo = constructor_ir.simbolos.internar("some");
+                constructor_ir.emitir_objeto_de_enum(clase, Some(valor), tipo)
             }
             Expresion::Nada | Expresion::Ninguno => {
-                let clase = builder.symbols.internar("Opcion");
-                let tipo = builder.symbols.internar("none");
-                builder.emit_enum_object(clase, None, tipo)
+                let clase = constructor_ir.simbolos.internar("Opcion");
+                let tipo = constructor_ir.simbolos.internar("none");
+                constructor_ir.emitir_objeto_de_enum(clase, None, tipo)
             }
             // F11-T3: `?` — la VM desenvuelve el valor o propaga el error
-            // desenrollando el frame (`Opcode::Try`).
+            // desenrollando el frame (`Opcode::Intentar`).
             Expresion::Try(e) => {
-                let valor = self.expr_to_ir(builder, e);
-                builder.emit_try(valor)
+                let valor = self.expresion_a_ir(constructor_ir, e);
+                constructor_ir.emitir_intento(valor)
             }
 
             // F11-T2: `seleccionar` no está implementado en la VM: se compilan
@@ -517,51 +566,53 @@ impl IrConstructor {
             Expresion::Seleccionar { brazos } => {
                 for brazo in brazos {
                     if let Some((variable, _)) = &brazo.recepcion {
-                        let mem = self.alloc_mem(variable);
-                        builder.emit_alloca(mem);
-                        let nulo = builder.emit_const_nil();
-                        builder.emit_store(mem, nulo);
+                        let mem = self.reservar_memoria(variable);
+                        constructor_ir.emitir_reserva(mem);
+                        let nulo = constructor_ir.emitir_const_nulo();
+                        constructor_ir.emitir_guardado(mem, nulo);
                     }
                     for d in &brazo.cuerpo {
-                        self.decl_to_ir(builder, d);
+                        self.declaracion_a_ir(constructor_ir, d);
                     }
                 }
-                builder.emit_const_nil()
+                constructor_ir.emitir_const_nulo()
             }
 
             Expresion::Instanciacion { clase, argumentos } => {
                 // F8-T2: crear objeto y, si existe, invocar el constructor.
-                let clase_sym = builder.symbols.internar(clase);
+                let clase_sym = constructor_ir.simbolos.internar(clase);
                 // Struct-literal: nuevo Clase { campo: valor }.
                 if argumentos.len() == 1 {
                     if let Expresion::Mapa(pares) = &argumentos[0] {
                         let mut campos = Vec::new();
                         for (k, v) in pares {
                             if let Expresion::LiteralTexto(nombre_campo) = k {
-                                let val = self.expr_to_ir(builder, v);
-                                let sym = builder.symbols.internar(nombre_campo);
+                                let val = self.expresion_a_ir(constructor_ir, v);
+                                let sym = constructor_ir.simbolos.internar(nombre_campo);
                                 campos.push((sym, val));
                             }
                         }
-                        return builder.emit_object_new(clase_sym, campos);
+                        return constructor_ir.emitir_nuevo_objeto(clase_sym, campos);
                     }
                 }
-                let objeto = builder.emit_object_new(clase_sym, Vec::new());
+                let objeto = constructor_ir.emitir_nuevo_objeto(clase_sym, Vec::new());
                 if self.clases_con_constructor.contains(clase) {
                     let mut args = vec![objeto];
                     for a in argumentos {
-                        args.push(self.expr_to_ir(builder, a));
+                        args.push(self.expresion_a_ir(constructor_ir, a));
                     }
-                    let ctor = builder.symbols.internar(&format!("{}.nuevo", clase));
-                    builder.emit_call(ctor, args);
+                    let simbolo_constructor = constructor_ir
+                        .simbolos
+                        .internar(&format!("{}.nuevo", clase));
+                    constructor_ir.emitir_llamada(simbolo_constructor, args);
                 }
                 objeto
             }
 
             Expresion::AccesoMiembro { objeto, miembro } => {
-                let obj = self.expr_to_ir(builder, objeto);
-                let campo = builder.symbols.internar(miembro);
-                builder.emit_field_get(obj, campo)
+                let obj = self.expresion_a_ir(constructor_ir, objeto);
+                let campo = constructor_ir.simbolos.internar(miembro);
+                constructor_ir.emitir_obtener_campo(obj, campo)
             }
 
             Expresion::LlamadaMetodo {
@@ -569,13 +620,13 @@ impl IrConstructor {
                 metodo,
                 argumentos,
             } => {
-                let obj = self.expr_to_ir(builder, objeto);
-                let args: Vec<ValueId> = argumentos
+                let obj = self.expresion_a_ir(constructor_ir, objeto);
+                let args: Vec<IdValor> = argumentos
                     .iter()
-                    .map(|a| self.expr_to_ir(builder, a))
+                    .map(|a| self.expresion_a_ir(constructor_ir, a))
                     .collect();
-                let met = builder.symbols.internar(metodo);
-                builder.emit_call_method(obj, met, args)
+                let met = constructor_ir.simbolos.internar(metodo);
+                constructor_ir.emitir_llamada_metodo(obj, met, args)
             }
 
             Expresion::AsignacionCampo {
@@ -583,21 +634,21 @@ impl IrConstructor {
                 campo,
                 valor,
             } => {
-                let obj = self.expr_to_ir(builder, objeto);
-                let val = self.expr_to_ir(builder, valor);
-                let field = builder.symbols.internar(campo);
-                builder.emit_field_set(obj, field, val);
+                let obj = self.expresion_a_ir(constructor_ir, objeto);
+                let val = self.expresion_a_ir(constructor_ir, valor);
+                let field = constructor_ir.simbolos.internar(campo);
+                constructor_ir.emitir_fijar_campo(obj, field, val);
                 val
             }
 
             Expresion::Coincidir { expr, brazos } => {
-                self.compilar_match(builder, expr, brazos);
-                builder.emit_const_nil()
+                self.compilar_match(constructor_ir, expr, brazos);
+                constructor_ir.emitir_const_nulo()
             }
 
             // F11-T5: `&expr` no cambia el valor (no hay referencias en la VM):
             // el backend AST emite la expresión tal cual.
-            Expresion::Referencia { expr, .. } => self.expr_to_ir(builder, expr),
+            Expresion::Referencia { expr, .. } => self.expresion_a_ir(constructor_ir, expr),
 
             // F11-T5: ternario como expresión. Sin `Phi` disponible, el valor se
             // materializa en un slot temporal y se recarga en el bloque de unión.
@@ -606,49 +657,49 @@ impl IrConstructor {
                 si_verdadero,
                 si_falso,
             } => {
-                let cond = self.expr_to_ir(builder, condicion);
-                let mem = self.alloc_mem(&format!("__ternario_{}", self.next_local));
-                builder.emit_alloca(mem);
+                let cond = self.expresion_a_ir(constructor_ir, condicion);
+                let mem = self.reservar_memoria(&format!("__ternario_{}", self.next_local));
+                constructor_ir.emitir_reserva(mem);
 
-                let then_bb = builder.alloc_block_id();
-                let else_bb = builder.alloc_block_id();
-                let end_bb = builder.alloc_block_id();
-                builder.terminate_branch(cond, then_bb, else_bb);
+                let then_bb = constructor_ir.reservar_id_bloque();
+                let else_bb = constructor_ir.reservar_id_bloque();
+                let end_bb = constructor_ir.reservar_id_bloque();
+                constructor_ir.terminar_con_rama(cond, then_bb, else_bb);
 
-                builder.start_block(then_bb);
-                let v = self.expr_to_ir(builder, si_verdadero);
-                builder.emit_store(mem, v);
-                builder.terminate_jump(end_bb);
+                constructor_ir.iniciar_bloque(then_bb);
+                let v = self.expresion_a_ir(constructor_ir, si_verdadero);
+                constructor_ir.emitir_guardado(mem, v);
+                constructor_ir.terminar_con_salto(end_bb);
 
-                builder.start_block(else_bb);
-                let f = self.expr_to_ir(builder, si_falso);
-                builder.emit_store(mem, f);
-                builder.terminate_jump(end_bb);
+                constructor_ir.iniciar_bloque(else_bb);
+                let f = self.expresion_a_ir(constructor_ir, si_falso);
+                constructor_ir.emitir_guardado(mem, f);
+                constructor_ir.terminar_con_salto(end_bb);
 
-                builder.start_block(end_bb);
-                builder.emit_load(mem)
+                constructor_ir.iniciar_bloque(end_bb);
+                constructor_ir.emitir_carga(mem)
             }
 
             // F11-T5: asignación como expresión (`variable y = (x = 5)`): el
             // valor de la expresión es el valor asignado.
             Expresion::Asignacion { variable, valor } => {
-                let mem = self.alloc_mem(variable);
-                let val = self.expr_to_ir(builder, valor);
-                builder.emit_store(mem, val);
+                let mem = self.reservar_memoria(variable);
+                let val = self.expresion_a_ir(constructor_ir, valor);
+                constructor_ir.emitir_guardado(mem, val);
                 val
             }
 
             // F11-T5: `arr[i] = v` / `mapa[k] = v` como expresión evalúa al
             // valor asignado (el backend AST lo deja en la pila).
             Expresion::ArraySet { array, valor } => {
-                let val = self.expr_to_ir(builder, valor);
+                let val = self.expresion_a_ir(constructor_ir, valor);
                 if let Expresion::Index { objeto, indice } = array.as_ref() {
-                    let obj = self.expr_to_ir(builder, objeto);
-                    let idx = self.expr_to_ir(builder, indice);
-                    self.emitir_set_coleccion(builder, obj, idx, val);
+                    let obj = self.expresion_a_ir(constructor_ir, objeto);
+                    let idx = self.expresion_a_ir(constructor_ir, indice);
+                    self.emitir_asignacion_coleccion(constructor_ir, obj, idx, val);
                 } else {
                     // Forma no reconocida: se evalúa por sus efectos.
-                    self.expr_to_ir(builder, array);
+                    self.expresion_a_ir(constructor_ir, array);
                 }
                 val
             }
@@ -657,46 +708,46 @@ impl IrConstructor {
             // postcondiciones y un nombre de variable corriente en la práctica.
             // El backend AST la resuelve como variable si existe y, si no, Nulo.
             Expresion::Resultado => match self.mem_de_variable("resultado") {
-                Some(mem) => builder.emit_load(mem),
-                None => builder.emit_const_nil(),
+                Some(mem) => constructor_ir.emitir_carga(mem),
+                None => constructor_ir.emitir_const_nulo(),
             },
 
             // F11-T5: `anterior(expr)` sólo tiene sentido en contratos, que no
             // forman parte del cuerpo IR: se evalúa la expresión interna.
-            Expresion::Anterior(expr) => self.expr_to_ir(builder, expr),
+            Expresion::Anterior(expr) => self.expresion_a_ir(constructor_ir, expr),
         }
     }
 
     /// F11-T5: emite `coleccion[clave] = valor` eligiendo `ArraySet`/`MapSet`
     /// según el tipo estático (o `ArraySet`, que discrimina en runtime).
-    fn emitir_set_coleccion(
+    fn emitir_asignacion_coleccion(
         &mut self,
-        builder: &mut IrBuilder,
-        coleccion: ValueId,
-        indice: ValueId,
-        valor: ValueId,
+        constructor_ir: &mut ConstructorIr,
+        coleccion: IdValor,
+        indice: IdValor,
+        valor: IdValor,
     ) {
-        if self.tipos_valor.get(&coleccion).copied() == Some(TipoIR::Mapa) {
-            builder.emit_map_set(coleccion, indice, valor);
+        if self.tipos_valor.get(&coleccion).copied() == Some(TipoEstatico::Mapa) {
+            constructor_ir.emitir_fijar_valor_de_mapa(coleccion, indice, valor);
         } else {
-            builder.emit_array_set(coleccion, indice, valor);
+            constructor_ir.emitir_fijar_elemento(coleccion, indice, valor);
         }
     }
 
     /// F8-T3: crea un objeto variante con tag en el campo 0 y datos desde 1.
     fn crear_variante(
         &mut self,
-        builder: &mut IrBuilder,
+        constructor_ir: &mut ConstructorIr,
         enum_nombre: &str,
         tag: usize,
-        args: Vec<ValueId>,
-    ) -> ValueId {
-        let clase = builder.symbols.internar(enum_nombre);
-        let obj = builder.emit_object_new(clase, Vec::new());
-        let tag_val = builder.emit_const_int(tag as i64);
-        builder.emit_field_set_idx(obj, 0, tag_val);
+        args: Vec<IdValor>,
+    ) -> IdValor {
+        let clase = constructor_ir.simbolos.internar(enum_nombre);
+        let obj = constructor_ir.emitir_nuevo_objeto(clase, Vec::new());
+        let tag_val = constructor_ir.emitir_const_entero(tag as i64);
+        constructor_ir.emitir_fijar_campo_por_indice(obj, 0, tag_val);
         for (i, arg) in args.into_iter().enumerate() {
-            builder.emit_field_set_idx(obj, i + 1, arg);
+            constructor_ir.emitir_fijar_campo_por_indice(obj, i + 1, arg);
         }
         obj
     }
@@ -705,20 +756,22 @@ impl IrConstructor {
     /// comodín, variable y constructor de variante con variables.
     fn compilar_match(
         &mut self,
-        builder: &mut IrBuilder,
+        constructor_ir: &mut ConstructorIr,
         expr: &Expresion,
         brazos: &[BrazoMatch],
-    ) -> ValueId {
-        let valor = self.expr_to_ir(builder, expr);
-        let end = builder.alloc_block_id();
+    ) -> IdValor {
+        let valor = self.expresion_a_ir(constructor_ir, expr);
+        let end = constructor_ir.reservar_id_bloque();
         for brazo in brazos {
-            let body = builder.alloc_block_id();
-            let next = builder.alloc_block_id();
+            let body = constructor_ir.reservar_id_bloque();
+            let next = constructor_ir.reservar_id_bloque();
             let cond = match &brazo.patron {
-                Patron::Ignorar | Patron::Variable(_) => Some(builder.emit_const_bool(true)),
+                Patron::Ignorar | Patron::Variable(_) => {
+                    Some(constructor_ir.emitir_const_booleano(true))
+                }
                 Patron::Literal(e) => {
-                    let lit = self.expr_to_ir(builder, e);
-                    Some(builder.emit_eq(valor, lit))
+                    let lit = self.expresion_a_ir(constructor_ir, e);
+                    Some(constructor_ir.emitir_igualdad(valor, lit))
                 }
                 Patron::Constructor(nombre, _) => {
                     // F11-T3: `Ok`/`Error`/`Alguno`/`Ninguno` no usan tag
@@ -726,49 +779,50 @@ impl IrConstructor {
                     // `valor`. Se compara el campo `tipo` por nombre, igual que
                     // el backend AST.
                     if let Some(tipo_str) = tipo_de_constructor_builtin(nombre) {
-                        let sym_tipo = builder.symbols.internar("tipo");
-                        let tipo_val = builder.emit_field_get(valor, sym_tipo);
-                        let lit = builder.emit_const_str(tipo_str);
-                        Some(builder.emit_eq(tipo_val, lit))
+                        let sym_tipo = constructor_ir.simbolos.internar("tipo");
+                        let tipo_val = constructor_ir.emitir_obtener_campo(valor, sym_tipo);
+                        let lit = constructor_ir.emitir_const_texto(tipo_str);
+                        Some(constructor_ir.emitir_igualdad(tipo_val, lit))
                     } else {
                         let tag = self
                             .variantes_enum
                             .get(nombre)
                             .map(|(_, t, _)| *t)
                             .unwrap_or(0);
-                        let tag_val = builder.emit_extract_field(valor, 0);
-                        let lit = builder.emit_const_int(tag as i64);
-                        Some(builder.emit_eq(tag_val, lit))
+                        let tag_val = constructor_ir.emitir_extraer_campo_por_indice(valor, 0);
+                        let lit = constructor_ir.emitir_const_entero(tag as i64);
+                        Some(constructor_ir.emitir_igualdad(tag_val, lit))
                     }
                 }
             };
             match cond {
-                Some(c) => builder.terminate_branch(c, body, next),
-                None => builder.terminate_jump(next),
+                Some(c) => constructor_ir.terminar_con_rama(c, body, next),
+                None => constructor_ir.terminar_con_salto(next),
             }
-            builder.start_block(body);
+            constructor_ir.iniciar_bloque(body);
             match &brazo.patron {
                 Patron::Variable(nombre) => {
-                    let mem = self.alloc_mem(nombre);
-                    builder.emit_store(mem, valor);
+                    let mem = self.reservar_memoria(nombre);
+                    constructor_ir.emitir_guardado(mem, valor);
                 }
                 Patron::Constructor(nombre_ctor, subs) => {
                     if tipo_de_constructor_builtin(nombre_ctor).is_some() {
                         // F11-T3: el valor va en el campo `valor` (por nombre).
                         for sub in subs {
                             if let Patron::Variable(nombre) = sub {
-                                let sym_valor = builder.symbols.internar("valor");
-                                let campo = builder.emit_field_get(valor, sym_valor);
-                                let mem = self.alloc_mem(nombre);
-                                builder.emit_store(mem, campo);
+                                let sym_valor = constructor_ir.simbolos.internar("valor");
+                                let campo = constructor_ir.emitir_obtener_campo(valor, sym_valor);
+                                let mem = self.reservar_memoria(nombre);
+                                constructor_ir.emitir_guardado(mem, campo);
                             }
                         }
                     } else {
                         for (i, sub) in subs.iter().enumerate() {
                             if let Patron::Variable(nombre) = sub {
-                                let campo = builder.emit_extract_field(valor, i + 1);
-                                let mem = self.alloc_mem(nombre);
-                                builder.emit_store(mem, campo);
+                                let campo =
+                                    constructor_ir.emitir_extraer_campo_por_indice(valor, i + 1);
+                                let mem = self.reservar_memoria(nombre);
+                                constructor_ir.emitir_guardado(mem, campo);
                             }
                         }
                     }
@@ -776,20 +830,20 @@ impl IrConstructor {
                 _ => {}
             }
             for d in &brazo.cuerpo {
-                self.decl_to_ir(builder, d);
+                self.declaracion_a_ir(constructor_ir, d);
             }
-            if !builder.terminado() {
-                builder.terminate_jump(end);
+            if !constructor_ir.esta_terminado() {
+                constructor_ir.terminar_con_salto(end);
             }
-            builder.start_block(next);
+            constructor_ir.iniciar_bloque(next);
         }
-        builder.terminate_jump(end);
-        builder.start_block(end);
-        builder.emit_const_nil()
+        constructor_ir.terminar_con_salto(end);
+        constructor_ir.iniciar_bloque(end);
+        constructor_ir.emitir_const_nulo()
     }
 
     /// Convierte una declaración (sentencia) a IR.
-    pub fn decl_to_ir(&mut self, builder: &mut IrBuilder, decl: &Declaracion) {
+    pub fn declaracion_a_ir(&mut self, constructor_ir: &mut ConstructorIr, decl: &Declaracion) {
         match decl {
             Declaracion::Variable {
                 nombre,
@@ -797,57 +851,71 @@ impl IrConstructor {
                 valor,
                 ..
             } => {
-                let mem = self.alloc_mem(nombre);
-                builder.emit_alloca(mem);
+                let mem = self.reservar_memoria(nombre);
+                constructor_ir.emitir_reserva(mem);
                 let val = match valor {
                     Some(e) => {
-                        let mut v = self.expr_to_ir(builder, e);
+                        let mut v = self.expresion_a_ir(constructor_ir, e);
                         // F11-T5 + fase 1 del plan decimal: el destino `Exacto`
                         // convierte el valor según su tipo real, no según la forma
                         // del AST (`0.1 + 0.2` y `f()` también cuentan).
-                        let num = self.tipo_num(e);
+                        let num = self.tipo_numerico_de(e);
                         if matches!(tipo, Some(Tipo::Exacto)) {
                             match num {
-                                Some(NumKind::Entero) => v = builder.emit_a_exacto(v, true),
-                                Some(NumKind::Decimal) => v = builder.emit_a_exacto(v, false),
+                                Some(TipoNumerico::Entero) => {
+                                    v = constructor_ir.emitir_a_exacto(v, true)
+                                }
+                                Some(TipoNumerico::Decimal) => {
+                                    v = constructor_ir.emitir_a_exacto(v, false)
+                                }
                                 _ => {}
                             }
                         }
                         if let Some(t) = self.tipos_valor.get(&v).copied() {
                             self.tipos_var.insert(nombre.clone(), t);
                         }
-                        self.num_var.insert(
-                            nombre.clone(),
-                            if matches!(tipo, Some(Tipo::Exacto)) {
-                                NumKind::Exacto
-                            } else {
-                                num.unwrap_or(NumKind::Exacto)
-                            },
-                        );
+                        // Solo se registra el tipo numérico cuando se conoce de
+                        // verdad. Antes, un inicializador de tipo desconocido se
+                        // anotaba como `Exacto` por descarte, y eso hacía que
+                        // operaciones entre enteros se tomaran por aritmética
+                        // exacta (convertían los operandos y cambiaban el
+                        // resultado).
+                        if matches!(tipo, Some(Tipo::Exacto)) {
+                            self.num_var.insert(nombre.clone(), TipoNumerico::Exacto);
+                        } else if let Some(kind) = num {
+                            self.num_var.insert(nombre.clone(), kind);
+                        }
                         v
                     }
-                    None => builder.emit_const_nil(),
+                    None => constructor_ir.emitir_const_nulo(),
                 };
-                builder.emit_store(mem, val);
+                constructor_ir.emitir_guardado(mem, val);
             }
 
             Declaracion::Asignacion { nombre, valor, .. } => {
-                let mem = self.alloc_mem(nombre);
-                let mut val = self.expr_to_ir(builder, valor);
+                let mem = self.reservar_memoria(nombre);
+                let mut val = self.expresion_a_ir(constructor_ir, valor);
                 // Misma coerción que en la declaración: asignar a una variable
                 // Exacto un Entero/Decimal lo convierte, en vez de dejar un f64
                 // disfrazado que después rompe las operaciones.
-                if matches!(self.num_var.get(nombre.as_str()), Some(NumKind::Exacto)) {
-                    match self.tipo_num(valor) {
-                        Some(NumKind::Entero) => val = builder.emit_a_exacto(val, true),
-                        Some(NumKind::Decimal) => val = builder.emit_a_exacto(val, false),
+                if matches!(
+                    self.num_var.get(nombre.as_str()),
+                    Some(TipoNumerico::Exacto)
+                ) {
+                    match self.tipo_numerico_de(valor) {
+                        Some(TipoNumerico::Entero) => {
+                            val = constructor_ir.emitir_a_exacto(val, true)
+                        }
+                        Some(TipoNumerico::Decimal) => {
+                            val = constructor_ir.emitir_a_exacto(val, false)
+                        }
                         _ => {}
                     }
                 }
                 if let Some(t) = self.tipos_valor.get(&val).copied() {
                     self.tipos_var.insert(nombre.clone(), t);
                 }
-                builder.emit_store(mem, val);
+                constructor_ir.emitir_guardado(mem, val);
             }
 
             Declaracion::AsignacionMiembro {
@@ -856,10 +924,10 @@ impl IrConstructor {
                 valor,
                 ..
             } => {
-                let obj = self.expr_to_ir(builder, objeto);
-                let val = self.expr_to_ir(builder, valor);
-                let field = builder.symbols.internar(miembro);
-                builder.emit_field_set(obj, field, val);
+                let obj = self.expresion_a_ir(constructor_ir, objeto);
+                let val = self.expresion_a_ir(constructor_ir, valor);
+                let field = constructor_ir.simbolos.internar(miembro);
+                constructor_ir.emitir_fijar_campo(obj, field, val);
             }
 
             Declaracion::AsignacionIndex {
@@ -868,25 +936,25 @@ impl IrConstructor {
                 valor,
                 ..
             } => {
-                let Some(mem) = self.get_mem(nombre) else {
+                let Some(mem) = self.obtener_memoria(nombre) else {
                     self.marcar_no_soportado(format!(
                         "asignación por índice a `{nombre}`, que no está declarada"
                     ));
                     return;
                 };
                 let tipo = self.tipos_var.get(nombre).copied();
-                let arr = builder.emit_load(mem);
-                let idx = self.expr_to_ir(builder, indice);
-                let val = self.expr_to_ir(builder, valor);
+                let arr = constructor_ir.emitir_carga(mem);
+                let idx = self.expresion_a_ir(constructor_ir, indice);
+                let val = self.expresion_a_ir(constructor_ir, valor);
                 match tipo {
-                    Some(TipoIR::Mapa) => {
-                        let res = builder.emit_map_set(arr, idx, val);
-                        builder.emit_store(mem, res);
+                    Some(TipoEstatico::Mapa) => {
+                        let res = constructor_ir.emitir_fijar_valor_de_mapa(arr, idx, val);
+                        constructor_ir.emitir_guardado(mem, res);
                     }
                     // Arreglo o tipo desconocido: `ArraySet` discrimina en runtime.
                     _ => {
-                        let res = builder.emit_array_set(arr, idx, val);
-                        builder.emit_store(mem, res);
+                        let res = constructor_ir.emitir_fijar_elemento(arr, idx, val);
+                        constructor_ir.emitir_guardado(mem, res);
                     }
                 }
             }
@@ -896,8 +964,8 @@ impl IrConstructor {
             } => {
                 // Sentencia de llamada: misma ruta que en posición de expresión
                 // (cubre `escribir`, funciones de usuario y métodos).
-                self.expr_to_ir(
-                    builder,
+                self.expresion_a_ir(
+                    constructor_ir,
                     &Expresion::LlamadaFuncion {
                         nombre: nombre.clone(),
                         argumentos: argumentos.clone(),
@@ -910,19 +978,19 @@ impl IrConstructor {
             Declaracion::AsignacionMultiple {
                 variables, valor, ..
             } => {
-                let contenedor = self.expr_to_ir(builder, valor);
+                let contenedor = self.expresion_a_ir(constructor_ir, valor);
                 for (i, nombre) in variables.iter().enumerate() {
-                    let indice = builder.emit_const_int(i as i64);
-                    let elemento = builder.emit_array_get(contenedor, indice);
-                    let mem = self.alloc_mem(nombre);
-                    builder.emit_alloca(mem);
-                    builder.emit_store(mem, elemento);
+                    let indice = constructor_ir.emitir_const_entero(i as i64);
+                    let elemento = constructor_ir.emitir_obtener_elemento(contenedor, indice);
+                    let mem = self.reservar_memoria(nombre);
+                    constructor_ir.emitir_reserva(mem);
+                    constructor_ir.emitir_guardado(mem, elemento);
                 }
             }
 
             Declaracion::Expresion(e) => {
                 if let Expresion::Coincidir { expr, brazos } = e {
-                    self.compilar_match(builder, expr, brazos);
+                    self.compilar_match(constructor_ir, expr, brazos);
                     return;
                 }
                 if let Expresion::AsignacionCampo {
@@ -931,10 +999,10 @@ impl IrConstructor {
                     valor,
                 } = e
                 {
-                    let obj = self.expr_to_ir(builder, objeto);
-                    let val = self.expr_to_ir(builder, valor);
-                    let field = builder.symbols.internar(campo);
-                    builder.emit_field_set(obj, field, val);
+                    let obj = self.expresion_a_ir(constructor_ir, objeto);
+                    let val = self.expresion_a_ir(constructor_ir, valor);
+                    let field = constructor_ir.simbolos.internar(campo);
+                    constructor_ir.emitir_fijar_campo(obj, field, val);
                     return;
                 }
                 // F6-T1 etapa 3: `arr[i] = v` / `mapa[k] = v` llega como
@@ -942,68 +1010,68 @@ impl IrConstructor {
                 // valor descartado queda en la pila sin consumidores.
                 // Expresión usada como sentencia: se evalúa y el valor se
                 // descarta. Cubre llamadas, métodos, `hilo { ... }`, `canal()` y
-                // cualquier otra expresión soportada por `expr_to_ir`.
-                self.expr_to_ir(builder, e);
+                // cualquier otra expresión soportada por `expresion_a_ir`.
+                self.expresion_a_ir(constructor_ir, e);
             }
 
             // F11-T5: `cuando` es un `si` sin rama falsa (bloque reactivo).
             Declaracion::Cuando {
                 condicion, cuerpo, ..
             } => {
-                let cond = self.expr_to_ir(builder, condicion);
-                let body_bb = builder.alloc_block_id();
-                let merge_bb = builder.alloc_block_id();
-                builder.terminate_branch(cond, body_bb, merge_bb);
-                builder.start_block(body_bb);
+                let cond = self.expresion_a_ir(constructor_ir, condicion);
+                let body_bb = constructor_ir.reservar_id_bloque();
+                let merge_bb = constructor_ir.reservar_id_bloque();
+                constructor_ir.terminar_con_rama(cond, body_bb, merge_bb);
+                constructor_ir.iniciar_bloque(body_bb);
                 for d in cuerpo {
-                    self.decl_to_ir(builder, d);
+                    self.declaracion_a_ir(constructor_ir, d);
                 }
-                builder.terminate_jump(merge_bb);
-                builder.start_block(merge_bb);
+                constructor_ir.terminar_con_salto(merge_bb);
+                constructor_ir.iniciar_bloque(merge_bb);
             }
 
             // F11-T5: `repetir (n) { ... }` con un contador oculto.
             Declaracion::Repetir { cantidad, bloque } => {
-                let contador = self.alloc_mem(&format!("__repetir_{}", self.next_local));
-                let cero = builder.emit_const_int(0);
-                builder.emit_store(contador, cero);
+                let contador = self.reservar_memoria(&format!("__repetir_{}", self.next_local));
+                let cero = constructor_ir.emitir_const_entero(0);
+                constructor_ir.emitir_guardado(contador, cero);
 
-                let header_bb = builder.alloc_block_id();
-                let body_bb = builder.alloc_block_id();
-                let inc_bb = builder.alloc_block_id();
-                let exit_bb = builder.alloc_block_id();
+                let header_bb = constructor_ir.reservar_id_bloque();
+                let body_bb = constructor_ir.reservar_id_bloque();
+                let inc_bb = constructor_ir.reservar_id_bloque();
+                let exit_bb = constructor_ir.reservar_id_bloque();
 
-                builder.terminate_jump(header_bb);
-                builder.start_block(header_bb);
-                let actual = builder.emit_load(contador);
-                let limite = self.expr_to_ir(builder, cantidad);
-                let cond = builder.emit_lt(actual, limite);
-                builder.terminate_branch(cond, body_bb, exit_bb);
+                constructor_ir.terminar_con_salto(header_bb);
+                constructor_ir.iniciar_bloque(header_bb);
+                let actual = constructor_ir.emitir_carga(contador);
+                let limite = self.expresion_a_ir(constructor_ir, cantidad);
+                let cond = constructor_ir.emitir_menor(actual, limite);
+                constructor_ir.terminar_con_rama(cond, body_bb, exit_bb);
 
-                builder.start_block(body_bb);
+                constructor_ir.iniciar_bloque(body_bb);
                 self.ciclos.push((exit_bb, inc_bb));
                 for d in bloque {
-                    self.decl_to_ir(builder, d);
+                    self.declaracion_a_ir(constructor_ir, d);
                 }
                 self.ciclos.pop();
-                if !builder.terminado() {
-                    builder.terminate_jump(inc_bb);
+                if !constructor_ir.esta_terminado() {
+                    constructor_ir.terminar_con_salto(inc_bb);
                 }
 
-                builder.start_block(inc_bb);
-                let actual = builder.emit_load(contador);
-                let uno = builder.emit_const_int(1);
-                let siguiente = builder.emit_add(actual, uno);
-                builder.emit_store(contador, siguiente);
-                builder.terminate_jump(header_bb);
+                constructor_ir.iniciar_bloque(inc_bb);
+                let actual = constructor_ir.emitir_carga(contador);
+                let uno = constructor_ir.emitir_const_entero(1);
+                let siguiente = constructor_ir.emitir_suma(actual, uno);
+                constructor_ir.emitir_guardado(contador, siguiente);
+                constructor_ir.terminar_con_salto(header_bb);
 
-                builder.start_block(exit_bb);
+                constructor_ir.iniciar_bloque(exit_bb);
             }
 
             Declaracion::Romper => {
                 if let Some((salida, _)) = self.ciclos.last().copied() {
-                    builder.terminate_jump(salida);
-                    builder.new_block();
+                    constructor_ir.terminar_con_salto(salida);
+                    constructor_ir.nuevo_bloque();
                 } else {
                     self.marcar_no_soportado("`romper` fuera de un ciclo");
                 }
@@ -1011,8 +1079,8 @@ impl IrConstructor {
 
             Declaracion::Continuar => {
                 if let Some((_, continuacion)) = self.ciclos.last().copied() {
-                    builder.terminate_jump(continuacion);
-                    builder.new_block();
+                    constructor_ir.terminar_con_salto(continuacion);
+                    constructor_ir.nuevo_bloque();
                 } else {
                     self.marcar_no_soportado("`continuar` fuera de un ciclo");
                 }
@@ -1020,9 +1088,11 @@ impl IrConstructor {
 
             Declaracion::Retornar { valor } => {
                 // F8-T1: retorno explícito de una función IR.
-                let v = valor.as_ref().map(|e| self.expr_to_ir(builder, e));
-                builder.terminate_return(v);
-                builder.new_block();
+                let v = valor
+                    .as_ref()
+                    .map(|e| self.expresion_a_ir(constructor_ir, e));
+                constructor_ir.terminar_con_retorno(v);
+                constructor_ir.nuevo_bloque();
             }
 
             Declaracion::Si {
@@ -1030,55 +1100,55 @@ impl IrConstructor {
                 bloque_verdadero,
                 bloque_falso,
             } => {
-                let cond = self.expr_to_ir(builder, condicion);
-                let then_bb = builder.alloc_block_id();
-                let merge_bb = builder.alloc_block_id();
+                let cond = self.expresion_a_ir(constructor_ir, condicion);
+                let then_bb = constructor_ir.reservar_id_bloque();
+                let merge_bb = constructor_ir.reservar_id_bloque();
                 let else_bb = if bloque_falso.is_some() {
-                    Some(builder.alloc_block_id())
+                    Some(constructor_ir.reservar_id_bloque())
                 } else {
                     None
                 };
                 let destino_falso = else_bb.unwrap_or(merge_bb);
-                builder.terminate_branch(cond, then_bb, destino_falso);
+                constructor_ir.terminar_con_rama(cond, then_bb, destino_falso);
 
-                builder.start_block(then_bb);
+                constructor_ir.iniciar_bloque(then_bb);
                 for d in bloque_verdadero {
-                    self.decl_to_ir(builder, d);
+                    self.declaracion_a_ir(constructor_ir, d);
                 }
-                builder.terminate_jump(merge_bb);
+                constructor_ir.terminar_con_salto(merge_bb);
 
                 if let Some(bf) = bloque_falso {
-                    builder.start_block(else_bb.unwrap());
+                    constructor_ir.iniciar_bloque(else_bb.unwrap());
                     for d in bf {
-                        self.decl_to_ir(builder, d);
+                        self.declaracion_a_ir(constructor_ir, d);
                     }
-                    builder.terminate_jump(merge_bb);
+                    constructor_ir.terminar_con_salto(merge_bb);
                 }
 
-                builder.start_block(merge_bb);
+                constructor_ir.iniciar_bloque(merge_bb);
             }
 
             Declaracion::Mientras { condicion, bloque } => {
-                let header_bb = builder.alloc_block_id();
-                let body_bb = builder.alloc_block_id();
-                let exit_bb = builder.alloc_block_id();
+                let header_bb = constructor_ir.reservar_id_bloque();
+                let body_bb = constructor_ir.reservar_id_bloque();
+                let exit_bb = constructor_ir.reservar_id_bloque();
 
-                builder.terminate_jump(header_bb);
-                builder.start_block(header_bb);
-                let cond = self.expr_to_ir(builder, condicion);
-                builder.terminate_branch(cond, body_bb, exit_bb);
+                constructor_ir.terminar_con_salto(header_bb);
+                constructor_ir.iniciar_bloque(header_bb);
+                let cond = self.expresion_a_ir(constructor_ir, condicion);
+                constructor_ir.terminar_con_rama(cond, body_bb, exit_bb);
 
-                builder.start_block(body_bb);
+                constructor_ir.iniciar_bloque(body_bb);
                 self.ciclos.push((exit_bb, header_bb));
                 for d in bloque {
-                    self.decl_to_ir(builder, d);
+                    self.declaracion_a_ir(constructor_ir, d);
                 }
                 self.ciclos.pop();
-                if !builder.terminado() {
-                    builder.terminate_jump(header_bb);
+                if !constructor_ir.esta_terminado() {
+                    constructor_ir.terminar_con_salto(header_bb);
                 }
 
-                builder.start_block(exit_bb);
+                constructor_ir.iniciar_bloque(exit_bb);
             }
 
             Declaracion::Para {
@@ -1088,38 +1158,38 @@ impl IrConstructor {
                 bloque,
             } => {
                 if let Some(init) = inicializacion {
-                    self.decl_to_ir(builder, init);
+                    self.declaracion_a_ir(constructor_ir, init);
                 }
-                let header_bb = builder.alloc_block_id();
-                let body_bb = builder.alloc_block_id();
-                let exit_bb = builder.alloc_block_id();
+                let header_bb = constructor_ir.reservar_id_bloque();
+                let body_bb = constructor_ir.reservar_id_bloque();
+                let exit_bb = constructor_ir.reservar_id_bloque();
 
-                builder.terminate_jump(header_bb);
-                builder.start_block(header_bb);
+                constructor_ir.terminar_con_salto(header_bb);
+                constructor_ir.iniciar_bloque(header_bb);
                 let cond = match condicion {
-                    Some(c) => self.expr_to_ir(builder, c),
-                    None => builder.emit_const_bool(true),
+                    Some(c) => self.expresion_a_ir(constructor_ir, c),
+                    None => constructor_ir.emitir_const_booleano(true),
                 };
-                builder.terminate_branch(cond, body_bb, exit_bb);
+                constructor_ir.terminar_con_rama(cond, body_bb, exit_bb);
 
-                let inc_bb = builder.alloc_block_id();
-                builder.start_block(body_bb);
+                let inc_bb = constructor_ir.reservar_id_bloque();
+                constructor_ir.iniciar_bloque(body_bb);
                 self.ciclos.push((exit_bb, inc_bb));
                 for d in bloque {
-                    self.decl_to_ir(builder, d);
+                    self.declaracion_a_ir(constructor_ir, d);
                 }
                 self.ciclos.pop();
-                if !builder.terminado() {
-                    builder.terminate_jump(inc_bb);
+                if !constructor_ir.esta_terminado() {
+                    constructor_ir.terminar_con_salto(inc_bb);
                 }
 
-                builder.start_block(inc_bb);
+                constructor_ir.iniciar_bloque(inc_bb);
                 if let Some(inc) = incremento {
-                    self.decl_to_ir(builder, inc);
+                    self.declaracion_a_ir(constructor_ir, inc);
                 }
-                builder.terminate_jump(header_bb);
+                constructor_ir.terminar_con_salto(header_bb);
 
-                builder.start_block(exit_bb);
+                constructor_ir.iniciar_bloque(exit_bb);
             }
 
             // Los `importar` anidados (la stdlib los usa dentro de funciones,
@@ -1136,7 +1206,7 @@ impl IrConstructor {
 
     /// Construye una función SSA sintética `main` con las declaraciones de
     /// nivel superior (variables, control de flujo y `escribir`).
-    pub fn program_to_ir(&mut self, programa: &Programa) -> IrProgram {
+    pub fn programa_a_ir(&mut self, programa: &Programa) -> ProgramaIr {
         // F8-T1: primero se compilan las funciones (cada una con su propio
         // marco local); el código de nivel superior vive en `main`.
         self.clases_con_constructor.clear();
@@ -1177,11 +1247,11 @@ impl IrConstructor {
         self.in_function = false;
         for decl in &programa.declaraciones {
             if let Declaracion::Variable { nombre, .. } = decl {
-                self.alloc_mem(nombre);
+                self.reservar_memoria(nombre);
             }
         }
 
-        let mut funciones_usuario: Vec<SsaFunction> = Vec::new();
+        let mut funciones_usuario: Vec<FuncionSsa> = Vec::new();
         for decl in &programa.declaraciones {
             match decl {
                 Declaracion::Funcion {
@@ -1219,10 +1289,10 @@ impl IrConstructor {
             }
         }
 
-        let name_sym = self.symbols.internar("main");
-        let mut builder = IrBuilder::new();
-        builder.symbols = self.symbols.clone();
-        let _entry = builder.new_block();
+        let name_sym = self.simbolos.internar("main");
+        let mut constructor_ir = ConstructorIr::new();
+        constructor_ir.simbolos = self.simbolos.clone();
+        let _entry = constructor_ir.nuevo_bloque();
 
         for decl in &programa.declaraciones {
             match decl {
@@ -1238,44 +1308,48 @@ impl IrConstructor {
                 | Declaracion::Implementacion { .. }
                 | Declaracion::Importar(_)
                 | Declaracion::ImportarExterna(_) => {}
-                _ => self.decl_to_ir(&mut builder, decl),
+                _ => self.declaracion_a_ir(&mut constructor_ir, decl),
             }
         }
 
-        builder.terminate_return(None);
-        let func = builder.build_function(name_sym, IrType::Void, vec![]);
-        self.symbols = builder.symbols.clone();
+        constructor_ir.terminar_con_retorno(None);
+        let func = constructor_ir.construir_funcion(name_sym, TipoIr::Vacio, vec![]);
+        self.simbolos = constructor_ir.simbolos.clone();
 
-        let mut functions = Vec::with_capacity(1 + funciones_usuario.len());
-        functions.push(func);
-        functions.extend(funciones_usuario);
+        let mut funciones = Vec::with_capacity(1 + funciones_usuario.len());
+        funciones.push(func);
+        funciones.extend(funciones_usuario);
 
-        IrProgram {
-            functions,
-            symbols: self.symbols.clone(),
+        ProgramaIr {
+            funciones,
+            simbolos: self.simbolos.clone(),
         }
     }
 
-    /// MemIdx de una variable visible (local primero, luego global).
-    fn mem_de_variable(&self, nombre: &str) -> Option<MemIdx> {
-        self.var_map
+    /// IdxMemoria de una variable visible (local primero, luego global).
+    fn mem_de_variable(&self, nombre: &str) -> Option<IdxMemoria> {
+        self.mapa_variables
             .get(nombre)
             .copied()
-            .or_else(|| self.global_map.get(nombre).copied())
+            .or_else(|| self.mapa_globales.get(nombre).copied())
     }
 
     /// F11-T5: resuelve un nombre punteado `a.b.c` a un valor: la variable raíz
     /// y un `FieldGet` por cada nivel.
-    fn objeto_de_nombre(&mut self, builder: &mut IrBuilder, nombre: &str) -> Option<ValueId> {
+    fn objeto_de_nombre(
+        &mut self,
+        constructor_ir: &mut ConstructorIr,
+        nombre: &str,
+    ) -> Option<IdValor> {
         let mut partes = nombre.split('.');
         let raiz = partes.next()?;
         let mut objeto = match self.mem_de_variable(raiz) {
-            Some(mem) => builder.emit_load(mem),
+            Some(mem) => constructor_ir.emitir_carga(mem),
             None => return None,
         };
         for campo in partes {
-            let sym = builder.symbols.internar(campo);
-            objeto = builder.emit_field_get(objeto, sym);
+            let sym = constructor_ir.simbolos.internar(campo);
+            objeto = constructor_ir.emitir_obtener_campo(objeto, sym);
         }
         Some(objeto)
     }
@@ -1286,10 +1360,10 @@ impl IrConstructor {
     /// el nombre de su función, sin entorno): eso llega con F12-T1.
     fn compilar_closure(
         &mut self,
-        host: &mut IrBuilder,
+        host: &mut ConstructorIr,
         parametros: &[Parametro],
         cuerpo: &[Declaracion],
-    ) -> (SsaFunction, Vec<String>) {
+    ) -> (FuncionSsa, Vec<String>) {
         let nombre = format!("__closure_{}", self.closure_counter);
         self.closure_counter += 1;
 
@@ -1299,52 +1373,56 @@ impl IrConstructor {
         let capturadas = self.variables_libres_locales(parametros, cuerpo);
 
         // Marco propio: guardar y restaurar el del host.
-        let vars_previas = std::mem::take(&mut self.var_map);
+        let vars_previas = std::mem::take(&mut self.mapa_variables);
         let next_local_previo = self.next_local;
         let in_function_previo = self.in_function;
         self.next_local = 0;
 
-        let mut builder = IrBuilder::new();
+        let mut constructor_ir = ConstructorIr::new();
         // La tabla del host es la fuente de verdad de los `IdSimboloIr`: el closure la
         // clona y el resultado se devuelve al host, para que los ids del nombre
         // del closure y de sus parámetros signifiquen lo mismo en ambos.
-        builder.symbols = host.symbols.clone();
-        let name_sym = builder.symbols.internar(&nombre);
-        let _entry = builder.new_block();
+        constructor_ir.simbolos = host.simbolos.clone();
+        let name_sym = constructor_ir.simbolos.internar(&nombre);
+        let _entry = constructor_ir.nuevo_bloque();
 
         // La firma es `(__entorno, p1, ..., pn)`: el entorno viaja como primer
         // argumento para que una llamada indirecta lo pase siempre.
-        let entorno_sym = builder.symbols.internar("__entorno");
+        let entorno_sym = constructor_ir.simbolos.internar("__entorno");
         let mut params_ir = Vec::with_capacity(1 + parametros.len());
-        params_ir.push((entorno_sym, IrType::Ptr));
+        params_ir.push((entorno_sym, TipoIr::Puntero));
         for (i, p) in parametros.iter().enumerate() {
             let mem = LOCAL_BASE + 1 + i;
-            self.var_map.insert(p.nombre.clone(), mem);
-            let tipo = p.tipo.as_ref().map(Self::tipo_to_ir).unwrap_or(IrType::Ptr);
-            params_ir.push((builder.symbols.internar(&p.nombre), tipo));
+            self.mapa_variables.insert(p.nombre.clone(), mem);
+            let tipo = p
+                .tipo
+                .as_ref()
+                .map(Self::tipo_a_ir)
+                .unwrap_or(TipoIr::Puntero);
+            params_ir.push((constructor_ir.simbolos.internar(&p.nombre), tipo));
         }
         self.next_local = 1 + parametros.len();
 
         // Prólogo: cada capturada se materializa en un slot propio como
         // `entorno[k]`. `mem2reg` las convierte en valores SSA como al resto.
         for (k, capturada) in capturadas.iter().enumerate() {
-            let mem = self.alloc_mem(capturada);
-            builder.emit_alloca(mem);
-            let entorno = builder.emit_load(LOCAL_BASE);
-            let indice = builder.emit_const_int(k as i64);
-            let valor = builder.emit_array_get(entorno, indice);
-            builder.emit_store(mem, valor);
+            let mem = self.reservar_memoria(capturada);
+            constructor_ir.emitir_reserva(mem);
+            let entorno = constructor_ir.emitir_carga(LOCAL_BASE);
+            let indice = constructor_ir.emitir_const_entero(k as i64);
+            let valor = constructor_ir.emitir_obtener_elemento(entorno, indice);
+            constructor_ir.emitir_guardado(mem, valor);
         }
 
         for decl in cuerpo {
-            self.decl_to_ir(&mut builder, decl);
+            self.declaracion_a_ir(&mut constructor_ir, decl);
         }
-        builder.terminate_return(None);
-        let func = builder.build_function(name_sym, IrType::Ptr, params_ir);
-        host.symbols = builder.symbols.clone();
-        self.symbols = builder.symbols.clone();
+        constructor_ir.terminar_con_retorno(None);
+        let func = constructor_ir.construir_funcion(name_sym, TipoIr::Puntero, params_ir);
+        host.simbolos = constructor_ir.simbolos.clone();
+        self.simbolos = constructor_ir.simbolos.clone();
 
-        self.var_map = vars_previas;
+        self.mapa_variables = vars_previas;
         self.next_local = next_local_previo;
         self.in_function = in_function_previo;
         (func, capturadas)
@@ -1361,11 +1439,11 @@ impl IrConstructor {
         let mut declaradas: HashSet<String> = parametros.iter().map(|p| p.nombre.clone()).collect();
         let mut usadas: HashSet<String> = HashSet::new();
         for d in cuerpo {
-            crate::bytecode::BytecodeGenerator::extraer_ids_decl(d, &mut declaradas, &mut usadas);
+            crate::bytecode::GeneradorBytecode::extraer_ids_decl(d, &mut declaradas, &mut usadas);
         }
         let mut libres: Vec<String> = usadas
             .difference(&declaradas)
-            .filter(|nombre| self.var_map.contains_key(*nombre))
+            .filter(|nombre| self.mapa_variables.contains_key(*nombre))
             .cloned()
             .collect();
         libres.sort();
@@ -1376,15 +1454,15 @@ impl IrConstructor {
     /// parámetros son las variables que captura del entorno.
     fn compilar_hilo(
         &mut self,
-        host: &mut IrBuilder,
+        host: &mut ConstructorIr,
         cuerpo: &[Declaracion],
-    ) -> (SsaFunction, Vec<String>) {
+    ) -> (FuncionSsa, Vec<String>) {
         // Capturadas = usadas - declaradas dentro del cuerpo (misma regla que
         // el backend AST, reutilizando su recorrido).
         let mut declaradas: HashSet<String> = HashSet::new();
         let mut usadas: HashSet<String> = HashSet::new();
         for d in cuerpo {
-            crate::bytecode::BytecodeGenerator::extraer_ids_decl(d, &mut declaradas, &mut usadas);
+            crate::bytecode::GeneradorBytecode::extraer_ids_decl(d, &mut declaradas, &mut usadas);
         }
         let mut capturadas: Vec<String> = usadas.difference(&declaradas).cloned().collect();
         capturadas.sort();
@@ -1392,33 +1470,33 @@ impl IrConstructor {
         let nombre = format!("__hilo_{}", self.hilo_counter);
         self.hilo_counter += 1;
 
-        let vars_previas = std::mem::take(&mut self.var_map);
+        let vars_previas = std::mem::take(&mut self.mapa_variables);
         let next_local_previo = self.next_local;
         let in_function_previo = self.in_function;
         self.next_local = 0;
 
-        let mut builder = IrBuilder::new();
-        builder.symbols = host.symbols.clone();
-        let name_sym = builder.symbols.internar(&nombre);
-        let _entry = builder.new_block();
+        let mut constructor_ir = ConstructorIr::new();
+        constructor_ir.simbolos = host.simbolos.clone();
+        let name_sym = constructor_ir.simbolos.internar(&nombre);
+        let _entry = constructor_ir.nuevo_bloque();
 
         let mut params_ir = Vec::with_capacity(capturadas.len());
         for (i, cap) in capturadas.iter().enumerate() {
             let mem = LOCAL_BASE + i;
-            self.var_map.insert(cap.clone(), mem);
-            params_ir.push((builder.symbols.internar(cap), IrType::Ptr));
+            self.mapa_variables.insert(cap.clone(), mem);
+            params_ir.push((constructor_ir.simbolos.internar(cap), TipoIr::Puntero));
         }
         self.next_local = capturadas.len();
 
         for d in cuerpo {
-            self.decl_to_ir(&mut builder, d);
+            self.declaracion_a_ir(&mut constructor_ir, d);
         }
-        builder.terminate_return(None);
-        let func = builder.build_function(name_sym, IrType::Ptr, params_ir);
-        host.symbols = builder.symbols.clone();
-        self.symbols = builder.symbols.clone();
+        constructor_ir.terminar_con_retorno(None);
+        let func = constructor_ir.construir_funcion(name_sym, TipoIr::Puntero, params_ir);
+        host.simbolos = constructor_ir.simbolos.clone();
+        self.simbolos = constructor_ir.simbolos.clone();
 
-        self.var_map = vars_previas;
+        self.mapa_variables = vars_previas;
         self.next_local = next_local_previo;
         self.in_function = in_function_previo;
         (func, capturadas)
@@ -1430,87 +1508,95 @@ impl IrConstructor {
         parametros: &[Parametro],
         tipo_retorno: Option<&Tipo>,
         cuerpo: &[Declaracion],
-    ) -> SsaFunction {
+    ) -> FuncionSsa {
         self.in_function = true;
-        self.var_map.clear();
+        self.mapa_variables.clear();
         self.next_local = 0;
 
-        let mut builder = IrBuilder::new();
-        builder.symbols = self.symbols.clone();
-        let name_sym = builder.symbols.internar(nombre);
-        let _entry = builder.new_block();
+        let mut constructor_ir = ConstructorIr::new();
+        constructor_ir.simbolos = self.simbolos.clone();
+        let name_sym = constructor_ir.simbolos.internar(nombre);
+        let _entry = constructor_ir.nuevo_bloque();
 
         let mut params_ir = Vec::with_capacity(parametros.len());
         for (i, p) in parametros.iter().enumerate() {
             let mem = LOCAL_BASE + i;
-            self.var_map.insert(p.nombre.clone(), mem);
-            let tipo = p.tipo.as_ref().map(Self::tipo_to_ir).unwrap_or(IrType::Ptr);
-            params_ir.push((builder.symbols.internar(&p.nombre), tipo));
+            self.mapa_variables.insert(p.nombre.clone(), mem);
+            let tipo = p
+                .tipo
+                .as_ref()
+                .map(Self::tipo_a_ir)
+                .unwrap_or(TipoIr::Puntero);
+            params_ir.push((constructor_ir.simbolos.internar(&p.nombre), tipo));
         }
         self.next_local = parametros.len();
 
         for decl in cuerpo {
-            self.decl_to_ir(&mut builder, decl);
+            self.declaracion_a_ir(&mut constructor_ir, decl);
         }
-        builder.terminate_return(None);
-        let ret = tipo_retorno.map(Self::tipo_to_ir).unwrap_or(IrType::Void);
-        let func = builder.build_function(name_sym, ret, params_ir);
-        self.symbols = builder.symbols.clone();
+        constructor_ir.terminar_con_retorno(None);
+        let ret = tipo_retorno.map(Self::tipo_a_ir).unwrap_or(TipoIr::Vacio);
+        let func = constructor_ir.construir_funcion(name_sym, ret, params_ir);
+        self.simbolos = constructor_ir.simbolos.clone();
 
         self.in_function = false;
-        self.var_map.clear();
+        self.mapa_variables.clear();
         self.next_local = 0;
         func
     }
 
     /// F8-T2: compila un método como función `Clase.metodo`, con `este` en el
     /// índice local 0 y los parámetros a continuación.
-    fn compilar_metodo(&mut self, clase: &str, metodo: &Metodo) -> SsaFunction {
+    fn compilar_metodo(&mut self, clase: &str, metodo: &Metodo) -> FuncionSsa {
         self.in_function = true;
-        self.var_map.clear();
+        self.mapa_variables.clear();
         self.next_local = 0;
 
-        let mut builder = IrBuilder::new();
-        builder.symbols = self.symbols.clone();
+        let mut constructor_ir = ConstructorIr::new();
+        constructor_ir.simbolos = self.simbolos.clone();
         let nombre_metodo = if metodo.nombre.is_empty() {
             "nuevo"
         } else {
             &metodo.nombre
         };
         let nombre_completo = format!("{}.{}", clase, nombre_metodo);
-        let name_sym = builder.symbols.internar(&nombre_completo);
-        let _entry = builder.new_block();
+        let name_sym = constructor_ir.simbolos.internar(&nombre_completo);
+        let _entry = constructor_ir.nuevo_bloque();
 
-        self.var_map.insert("self".to_string(), LOCAL_BASE);
-        let mut params_ir = vec![(builder.symbols.internar("self"), IrType::Ptr)];
+        self.mapa_variables.insert("self".to_string(), LOCAL_BASE);
+        let mut params_ir = vec![(constructor_ir.simbolos.internar("self"), TipoIr::Puntero)];
         for (i, p) in metodo.parametros.iter().enumerate() {
             let mem = LOCAL_BASE + 1 + i;
-            self.var_map.insert(p.nombre.clone(), mem);
-            let tipo = p.tipo.as_ref().map(Self::tipo_to_ir).unwrap_or(IrType::Ptr);
-            params_ir.push((builder.symbols.internar(&p.nombre), tipo));
+            self.mapa_variables.insert(p.nombre.clone(), mem);
+            let tipo = p
+                .tipo
+                .as_ref()
+                .map(Self::tipo_a_ir)
+                .unwrap_or(TipoIr::Puntero);
+            params_ir.push((constructor_ir.simbolos.internar(&p.nombre), tipo));
         }
         self.next_local = 1 + metodo.parametros.len();
 
         for decl in &metodo.cuerpo {
-            self.decl_to_ir(&mut builder, decl);
+            self.declaracion_a_ir(&mut constructor_ir, decl);
         }
-        builder.terminate_return(None);
+        constructor_ir.terminar_con_retorno(None);
         let ret = metodo
             .tipo_retorno
             .as_ref()
-            .map(Self::tipo_to_ir)
-            .unwrap_or(IrType::Void);
-        let func = builder.build_function(name_sym, ret, params_ir);
-        self.symbols = builder.symbols.clone();
+            .map(Self::tipo_a_ir)
+            .unwrap_or(TipoIr::Vacio);
+        let func = constructor_ir.construir_funcion(name_sym, ret, params_ir);
+        self.simbolos = constructor_ir.simbolos.clone();
 
         self.in_function = false;
-        self.var_map.clear();
+        self.mapa_variables.clear();
         self.next_local = 0;
         func
     }
 }
 
-impl Default for IrConstructor {
+impl Default for ConstructorDesdeAst {
     fn default() -> Self {
         Self::new()
     }
@@ -1520,7 +1606,7 @@ impl Default for IrConstructor {
 mod tests {
     use super::*;
 
-    fn parse_source(source: &str) -> Programa {
+    fn parsear_fuente(source: &str) -> Programa {
         let mut lexer = crate::lexer::Lexer::new(source);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = crate::parser::Parser::new(tokens);
@@ -1529,41 +1615,45 @@ mod tests {
 
     #[test]
     fn test_simple_programa() {
-        let prog = parse_source("variable a = 1\nescribir(a + 2)");
-        let mut ctor = IrConstructor::new();
-        let ir = ctor.program_to_ir(&prog);
-        assert!(ctor.soportado);
-        assert_eq!(ir.functions.len(), 1);
-        assert!(!ir.functions[0].blocks.is_empty());
+        let prog = parsear_fuente("variable a = 1\nescribir(a + 2)");
+        let mut constructor_ir = ConstructorDesdeAst::new();
+        let ir = constructor_ir.programa_a_ir(&prog);
+        assert!(constructor_ir.soportado);
+        assert_eq!(ir.funciones.len(), 1);
+        assert!(!ir.funciones[0].bloques.is_empty());
     }
 
     #[test]
     fn test_if_genera_bloques() {
-        let prog = parse_source("variable x = 1\nsi (x > 0) { escribir(1) } sino { escribir(0) }");
-        let mut ctor = IrConstructor::new();
-        let ir = ctor.program_to_ir(&prog);
-        assert!(ctor.soportado);
-        // entry + then + else + merge
-        assert!(ir.functions[0].blocks.len() >= 3);
+        let prog =
+            parsear_fuente("variable x = 1\nsi (x > 0) { escribir(1) } sino { escribir(0) }");
+        let mut constructor_ir = ConstructorDesdeAst::new();
+        let ir = constructor_ir.programa_a_ir(&prog);
+        assert!(constructor_ir.soportado);
+        // entrada + then + else + merge
+        assert!(ir.funciones[0].bloques.len() >= 3);
     }
 
     #[test]
     fn test_mientras_genera_bloques() {
-        let prog = parse_source("variable i = 0\nmientras (i < 3) { i = i + 1 }\nescribir(i)");
-        let mut ctor = IrConstructor::new();
-        let ir = ctor.program_to_ir(&prog);
-        assert!(ctor.soportado);
-        assert!(ir.functions[0].blocks.len() >= 3);
+        let prog = parsear_fuente("variable i = 0\nmientras (i < 3) { i = i + 1 }\nescribir(i)");
+        let mut constructor_ir = ConstructorDesdeAst::new();
+        let ir = constructor_ir.programa_a_ir(&prog);
+        assert!(constructor_ir.soportado);
+        assert!(ir.funciones[0].bloques.len() >= 3);
     }
 
     #[test]
     fn test_funciones_de_usuario_soportadas() {
-        let prog = parse_source("funcion f() { retornar 1 }\nescribir(f())");
-        let mut ctor = IrConstructor::new();
-        let ir = ctor.program_to_ir(&prog);
-        assert!(ctor.soportado, "F8-T1: las funciones ya están en el IR");
-        assert_eq!(ir.functions.len(), 2, "main + f");
-        assert_eq!(ir.functions[0].params.len(), 0);
-        assert_eq!(ir.functions[1].params.len(), 0);
+        let prog = parsear_fuente("funcion f() { retornar 1 }\nescribir(f())");
+        let mut constructor_ir = ConstructorDesdeAst::new();
+        let ir = constructor_ir.programa_a_ir(&prog);
+        assert!(
+            constructor_ir.soportado,
+            "F8-T1: las funciones ya están en el IR"
+        );
+        assert_eq!(ir.funciones.len(), 2, "main + f");
+        assert_eq!(ir.funciones[0].parametros.len(), 0);
+        assert_eq!(ir.funciones[1].parametros.len(), 0);
     }
 }
