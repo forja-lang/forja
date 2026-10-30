@@ -1,0 +1,9 @@
+=== Múltiples Parámetros Genéricos ===
+
+(1, medio, verdadero)
+(nombre, 3.14, 42)
+
+Combinación:
+(1, uno, 1)
+
+Los tipos T, U, V son independientes entre sí
