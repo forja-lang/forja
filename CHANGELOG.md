@@ -5,7 +5,7 @@ Todas las versiones notables de **Forja (fa)** serán documentadas en este archi
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/),
 y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.5] - 2026-10-30
 
 ### GUI — rendimiento y perfil de arranque
 
@@ -133,6 +133,22 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
     (`fluent:light` / `fluent:dark`), como dice la documentación.
   - **Paleta de gráficos**: Fluent usaba el secundario/terciario violeta y oliva
     que genera Monet. Ahora son azul y teal coherentes con el acento.
+
+### Correcciones de compilación
+
+- **GUI Android (`E0382`).** `build_and_run_android` movía `theme` al closure de
+  render y después lo volvía a usar para el property set de Masonry: el AAR de
+  Android no compilaba. Ahora el closure se queda con el tema y el property set
+  usa una copia.
+- **Cero warnings en `cargo build`** (host, Android y WASM): los statics de
+  `native_proceso_win` solo existen en Windows, los helpers de `mmap` solo donde
+  hay `unix`/`windows`, `hash_source` solo fuera de WASM, y el rustflag de WASM
+  usa el nombre que entiende rustc (`nontrapping-fptoint`, no el de binaryen).
+- **Tests de los crates.** `forja-syntax` (nuevo `TokenKind::Decimal`
+  estructurado), `forja-theme` (test de `corner_radius` solo con `xilem`) y
+  `forja-lsp` compilan sus tests.
+- **CI.** `wasm-bindgen-cli` se instala con la versión que fija `Cargo.lock` en
+  vez de una hardcodeada: el desajuste 0.2.130/0.2.129 rompía los bindings WASM.
 
 ## [0.9.3] - 2026-10-27
 

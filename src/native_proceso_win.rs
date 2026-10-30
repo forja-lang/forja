@@ -14,6 +14,7 @@
 
 use crate::native_registry::{obtener_entero, obtener_texto};
 use crate::vm_fast::{ErrFast, ForjaFast, ValorFast};
+#[cfg(target_os = "windows")]
 use std::sync::Mutex;
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -110,6 +111,7 @@ extern "system" {
 // Estado global para restauración automática de bytes al salir (Ctrl+C)
 // ═════════════════════════════════════════════════════════════════════════
 
+#[cfg(target_os = "windows")]
 static ESTADO_RESTAURAR: Mutex<Option<(i64, i64, u8, u8)>> = Mutex::new(None);
 
 #[cfg(target_os = "windows")]
@@ -556,6 +558,7 @@ pub fn native_buscar_firma(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
 // variables de Forja, que ForjaFast puede corromper en bucles).
 // ═════════════════════════════════════════════════════════════════════════
 
+#[cfg(target_os = "windows")]
 static ESTADO_TECLA_ANTERIOR: Mutex<Option<(i32, bool)>> = Mutex::new(None);
 
 pub fn native_flanco_tecla(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {

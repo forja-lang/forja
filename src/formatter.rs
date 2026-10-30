@@ -708,7 +708,16 @@ impl Formatter {
             Expresion::LiteralBooleano(b) => (if *b { "verdadero" } else { "falso" }).to_string(),
             Expresion::LiteralNulo => "nulo".to_string(),
             Expresion::Si { .. } => "si { … }".to_string(),
-            Expresion::Identificador { nombre: n, .. } => n.clone(),
+            // El parser internamente llama `self` al receptor (`TokenKind::Este`),
+            // pero en el lenguaje se escribe `este`. Sin esto el formateador
+            // emitía `self.x`, que ya no es el keyword.
+            Expresion::Identificador { nombre: n, .. } => {
+                if n == "self" {
+                    "este".to_string()
+                } else {
+                    n.clone()
+                }
+            }
             Expresion::Binaria {
                 izquierda,
                 operador,
@@ -962,6 +971,23 @@ mod tests {
             primera, segunda,
             "el formatter no es idempotente para:\n{}",
             source
+        );
+    }
+
+    #[test]
+    fn test_este_no_se_convierte_en_self() {
+        // El parser llama `self` al receptor (`TokenKind::Este`); el formateador
+        // tiene que volver a escribir `este`, que es el keyword del lenguaje.
+        let salida = formatear(
+            "clase A {\n    x\n    funcion f() -> Entero {\n        retornar este.x\n    }\n}\n",
+        );
+        assert!(
+            salida.contains("este.x"),
+            "el formateador perdió `este`:\n{salida}"
+        );
+        assert!(
+            !salida.contains("self."),
+            "el formateador emitió `self`:\n{salida}"
         );
     }
 

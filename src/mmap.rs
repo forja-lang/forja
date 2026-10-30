@@ -4,6 +4,7 @@
 // Windows: CreateFileMappingW / MapViewOfFile / UnmapViewOfFile via extern "system"
 
 use std::collections::HashMap;
+#[cfg(any(unix, windows))]
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
@@ -24,6 +25,7 @@ unsafe impl Sync for MmapRegion {}
 
 // ─── Gestión global de handles ─────────────────────────────────────────────
 
+#[cfg(any(unix, windows))]
 static NEXT_HANDLE: AtomicI64 = AtomicI64::new(1);
 static REGIONS: OnceLock<Mutex<HashMap<i64, MmapRegion>>> = OnceLock::new();
 
@@ -31,6 +33,7 @@ fn regions() -> &'static Mutex<HashMap<i64, MmapRegion>> {
     REGIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+#[cfg(any(unix, windows))]
 fn registrar(region: MmapRegion) -> i64 {
     let h = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
     regions().lock().unwrap().insert(h, region);

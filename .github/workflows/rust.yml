@@ -329,7 +329,12 @@ jobs:
           toolchain: stable
           targets: wasm32-unknown-unknown
       - name: Install wasm-bindgen
-        run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
+        # La versión del CLI debe coincidir con la del Cargo.lock: un desajuste
+        # hace fallar la generación de bindings (schema version distinta).
+        run: |
+          VERSION=$(awk -F'"' '/^name = "wasm-bindgen"$/{getline; print $2; exit}' Cargo.lock)
+          echo "wasm-bindgen-cli $VERSION (según Cargo.lock)"
+          cargo install wasm-bindgen-cli --version "$VERSION" --locked
       - name: Install wasm-pack
         run: cargo install wasm-pack
       - name: Compilar forja-wasm

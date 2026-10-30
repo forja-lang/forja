@@ -199,7 +199,6 @@ fn servidor_rechaza_firma_que_no_corresponde() {
         .resolver_version("alterado", "1.0.0")
         .unwrap()
         .clone();
-    let destino = raiz.join("instalado");
     let err = forja::registry::verificar_tarball(b"contenido manipulado", &version)
         .expect_err("el paquete alterado debe rechazarse");
     assert!(err.contains("Integridad") || err.contains("Firma"), "{err}");

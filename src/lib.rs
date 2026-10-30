@@ -316,6 +316,7 @@ use crate::error::ErrorForja;
 
 /// Calcula un hash u64 a partir de una cadena de código fuente.
 /// Usado por la compilación incremental para detectar cambios en el source.
+#[cfg(not(target_arch = "wasm32"))]
 fn hash_source(source: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};

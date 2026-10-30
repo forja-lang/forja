@@ -1472,7 +1472,7 @@ fn clasificar_token(token: &Token) -> (u32, u32) {
         // Identificadores
         TokenKind::Identificador(_) => (9, 0), // variable (default)
         // Literales
-        TokenKind::Numero(_) | TokenKind::Decimal(_) | TokenKind::LiteralExacto(..) => (3, 0), // number
+        TokenKind::Numero(_) | TokenKind::Decimal { .. } | TokenKind::LiteralExacto(..) => (3, 0), // number
         TokenKind::Texto(_) | TokenKind::Caracter(_) => (2, 0), // string
         // Operadores aritméticos y relacionales
         TokenKind::Mas
