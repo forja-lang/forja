@@ -73,3 +73,17 @@ dist/*.md
 
 # ── Licencia ──
 !/LICENSE
+
+# ── Salidas de pruebas de transpilación (cargo projects generados a mano) ──
+gui_block_rs/
+gui_call_rs/
+gui_nuevo_sin_import_rs/
+gui_old_rs/
+gui_sin_import_rs/
+json_solo_import_rs/
+money_rs/
+
+# ── Artefactos de herramientas ──
+node_modules/
+.astro/
+.pi/
