@@ -157,8 +157,8 @@ Para evitar ediciones cruzadas entre sesiones/agentes:
 Los workflows están separados por responsabilidad:
 
 - **CI** — valida, no publica: [`ci.yml`](.github/workflows/ci.yml) (fmt,
-  clippy, tests en 3 SO, tests del workspace, cobertura ASM, build de docs y
-  métricas), [`perf-regression.yml`](.github/workflows/perf-regression.yml) y
+  clippy, tests en 3 SO, tests del workspace, cobertura ASM, build de docs,
+  métricas y auditoría de dependencias RUSTSEC), [`perf-regression.yml`](.github/workflows/perf-regression.yml) y
   [`crate-ci.yml`](.github/workflows/crate-ci.yml) (reutilizable por los repos
   de `crates/`).
 - **CD** — entrega, sólo en `main`/`master`: [`cd.yml`](.github/workflows/cd.yml)
