@@ -402,7 +402,7 @@ pub struct FunctionTable {
 #[derive(Clone)]
 pub struct VersionedBytecode {
     pub version: u32,
-    pub opcodes: Vec<Opcode>,
+    pub codigos: Vec<Opcode>,
 }
 
 /// Representación portable de un valor con referencias a heap, para cruzar
@@ -474,6 +474,10 @@ pub enum ErrFast {
     Limite,
     IdxOut(String),
     ErrorPropagado(ValorFast),
+    /// Contrato de diseño violado (`requiere`/`garantiza`/invariante). Antes
+    /// esto hacía `panic!`: el CLI lo mostraba como crash y los llamadores en
+    /// proceso (tests, LSP, WASM) no podían recuperarse.
+    Contrato(String),
 }
 
 impl std::fmt::Display for ErrFast {
@@ -510,6 +514,7 @@ impl std::fmt::Display for ErrFast {
                 m
             ),
             ErrFast::ErrorPropagado(_) => write!(f, "error propagado con '?'"),
+            ErrFast::Contrato(m) => write!(f, "contrato violado: {}", m),
         }
     }
 }
