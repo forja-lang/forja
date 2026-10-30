@@ -19,8 +19,8 @@
 // Si NO es NaN pattern → es un f64 directo
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::bytecode::ModuleBytecode;
-use crate::bytecode::{self, BuiltinKind, ContratoBytecode, Opcode};
+use crate::bytecode::ModuloBytecode;
+use crate::bytecode::{self, TipoIncorporada, ContratoBytecode, Opcode};
 use crate::class_descriptor::{DescriptorClase, FormaCampos};
 use crate::shape::{IdForma, RegistroFormas};
 
@@ -303,7 +303,7 @@ pub struct ForjaFast {
     pub socket_heap: Vec<SocketState>,
 
     // ─── SocketPoll: mapeo nombre → índice local ────────────────────────
-    // Se construye en cargar_bytecode desde Opcode::Declare con nombre, para
+    // Se construye en cargar_bytecode desde Opcode::Declarar con nombre, para
     // que SocketPoll(nombre_variable) pueda resolver el índice del socket.
     pub nombre_local: HashMap<String, usize>,
 
@@ -923,7 +923,7 @@ impl ForjaFast {
                 // Saltos (no deberían aparecer en contratos simples)
                 Uop::Jump(_) | Uop::JumpSiFalso(_) | Uop::Label(_) => {}
 
-                // Otros opcodes: ignorar
+                // Otros codigos: ignorar
                 _ => {}
             }
             ip += 1;
@@ -1038,7 +1038,7 @@ impl ForjaFast {
         // Pre-calcular rangos de funciones para limitar escaneo de vars_size
         let mut func_ranges: Vec<(usize, usize)> = Vec::new(); // (start, end)
         for (i, op) in self.bytecode.iter().enumerate() {
-            if let Opcode::FunctionDef(_, _) = op {
+            if let Opcode::DefinirFuncion(_, _) = op {
                 func_ranges.push((i, self.bytecode.len())); // end temporal
                 if func_ranges.len() > 1 {
                     let prev = func_ranges.len() - 2;
@@ -1049,7 +1049,7 @@ impl ForjaFast {
 
         for (i, op) in self.bytecode.iter().enumerate() {
             match op {
-                Opcode::FunctionDef(n, params) => {
+                Opcode::DefinirFuncion(n, params) => {
                     // Calcular vars_size: solo escanear el cuerpo de la función
                     let mut max_idx: usize = params.len();
                     let end = func_ranges
@@ -1059,37 +1059,37 @@ impl ForjaFast {
                         .unwrap_or(self.bytecode.len());
                     for j in (i + 1)..end {
                         match &self.bytecode[j] {
-                            Opcode::LoadIdx(idx)
-                            | Opcode::StoreIdx(idx)
-                            | Opcode::DeclareIdx(idx, _) => {
+                            Opcode::CargarIndice(idx)
+                            | Opcode::GuardarIndice(idx)
+                            | Opcode::DeclararIndice(idx, _) => {
                                 if *idx + 1 > max_idx {
                                     max_idx = *idx + 1;
                                 }
                             }
-                            Opcode::DeclareEnteroOp(idx, _)
-                            | Opcode::DeclareBooleanoOp(idx, _)
-                            | Opcode::StoreEnteroOp(idx, _)
-                            | Opcode::DeclareFloatOp(idx, _)
-                            | Opcode::StoreFloatOp(idx, _) => {
+                            Opcode::DeclararOperacionEntero(idx, _)
+                            | Opcode::DeclararOperacionBooleano(idx, _)
+                            | Opcode::GuardarOperacionEntero(idx, _)
+                            | Opcode::DeclararOperacionDecimal(idx, _)
+                            | Opcode::GuardarOperacionDecimal(idx, _) => {
                                 if *idx + 1 > max_idx {
                                     max_idx = *idx + 1;
                                 }
                             }
-                            Opcode::LoadIdxEntero(idx)
-                            | Opcode::LoadIdxFloat(idx)
-                            | Opcode::StoreIdxEntero(idx)
-                            | Opcode::StoreIdxFloat(idx) => {
+                            Opcode::CargarIndiceEntero(idx)
+                            | Opcode::CargarIndiceDecimal(idx)
+                            | Opcode::GuardarIndiceEntero(idx)
+                            | Opcode::GuardarIndiceDecimal(idx) => {
                                 if *idx + 1 > max_idx {
                                     max_idx = *idx + 1;
                                 }
                             }
                             // Superinstructions (Fase 1a) con índices
-                            Opcode::LoadAddInt(idx, _) | Opcode::LoadAddFloat(idx, _) => {
+                            Opcode::CargarSumarEntero(idx, _) | Opcode::CargarSumarDecimal(idx, _) => {
                                 if *idx + 1 > max_idx {
                                     max_idx = *idx + 1;
                                 }
                             }
-                            Opcode::LoadIdx2(a, b) => {
+                            Opcode::CargarIndice2(a, b) => {
                                 if *a + 1 > max_idx {
                                     max_idx = *a + 1;
                                 }
@@ -1097,7 +1097,7 @@ impl ForjaFast {
                                     max_idx = *b + 1;
                                 }
                             }
-                            Opcode::LoadStoreIdx(a, b) => {
+                            Opcode::CargarGuardarIndice(a, b) => {
                                 if *a + 1 > max_idx {
                                     max_idx = *a + 1;
                                 }
@@ -1105,17 +1105,17 @@ impl ForjaFast {
                                     max_idx = *b + 1;
                                 }
                             }
-                            Opcode::AddStoreIdx(idx)
-                            | Opcode::SubStoreIdx(idx)
-                            | Opcode::MulStoreIdx(idx)
-                            | Opcode::AddStoreFloat(idx)
-                            | Opcode::SubStoreFloat(idx)
-                            | Opcode::MulStoreFloat(idx) => {
+                            Opcode::SumarGuardarIndice(idx)
+                            | Opcode::RestarGuardarIndice(idx)
+                            | Opcode::MultiplicarGuardarIndice(idx)
+                            | Opcode::SumarGuardarDecimal(idx)
+                            | Opcode::RestarGuardarDecimal(idx)
+                            | Opcode::MultiplicarGuardarDecimal(idx) => {
                                 if *idx + 1 > max_idx {
                                     max_idx = *idx + 1;
                                 }
                             }
-                            Opcode::LoadJumpSiFalso(idx, _) | Opcode::LoadJump(idx, _)
+                            Opcode::CargarSaltoSiFalso(idx, _) | Opcode::CargarSalto(idx, _)
                                 if *idx + 1 > max_idx =>
                             {
                                 max_idx = *idx + 1;
@@ -1137,7 +1137,7 @@ impl ForjaFast {
                     // Diferir registro en function_table para evitar E0502 (self.bytecode.iter() inmutable vs self.registrar_funcion() mutable)
                     registos_pendientes.push((sym_id, i + 1, max_idx, None));
                 }
-                Opcode::Label(l) => {
+                Opcode::Etiqueta(l) => {
                     label_positions.insert(*l, i);
                 }
                 _ => {}
@@ -1149,21 +1149,21 @@ impl ForjaFast {
             self.registrar_funcion(*sym_id, *ip, *vars_size, *module_id);
         }
 
-        // Segunda pasada: resolver labels usando get_mut para acceder a los opcodes
+        // Segunda pasada: resolver labels usando get_mut para acceder a los codigos
         for j in 0..self.bytecode.len() {
             let replacement = {
                 let op = &self.bytecode[j];
                 match op {
-                    Opcode::Jump(t) => label_positions.get(t).map(|&pos| Opcode::Jump(pos)),
-                    Opcode::JumpSiFalso(t) => {
-                        label_positions.get(t).map(|&pos| Opcode::JumpSiFalso(pos))
+                    Opcode::Salto(t) => label_positions.get(t).map(|&pos| Opcode::Salto(pos)),
+                    Opcode::SaltoSiFalso(t) => {
+                        label_positions.get(t).map(|&pos| Opcode::SaltoSiFalso(pos))
                     }
-                    Opcode::LoadJump(idx, t) => label_positions
+                    Opcode::CargarSalto(idx, t) => label_positions
                         .get(t)
-                        .map(|&pos| Opcode::LoadJump(*idx, pos)),
-                    Opcode::LoadJumpSiFalso(idx, t) => label_positions
+                        .map(|&pos| Opcode::CargarSalto(*idx, pos)),
+                    Opcode::CargarSaltoSiFalso(idx, t) => label_positions
                         .get(t)
-                        .map(|&pos| Opcode::LoadJumpSiFalso(*idx, pos)),
+                        .map(|&pos| Opcode::CargarSaltoSiFalso(*idx, pos)),
                     _ => None,
                 }
             };
@@ -1173,7 +1173,7 @@ impl ForjaFast {
         }
 
         // Quickening: pre-especializar bytecode estáticamente
-        // Reemplaza opcodes genéricos por especializados cuando sea posible
+        // Reemplaza codigos genéricos por especializados cuando sea posible
         self.quickening();
 
         // Debug: mostrar bytecode después de quickening (solo con --debug)
@@ -1185,7 +1185,7 @@ impl ForjaFast {
                 .map(|op| format!("{:?}", op))
                 .collect();
             eprintln!(
-                "[BC] ({}) primeros opcodes: {:?}",
+                "[BC] ({}) primeros codigos: {:?}",
                 self.bytecode.len(),
                 muestra
             );
@@ -1224,7 +1224,7 @@ impl ForjaFast {
         self.mapa_ip_linea = vec![0usize; self.bytecode.len()];
         let mut linea_vigente: usize = 0;
         for (i, op) in self.bytecode.iter().enumerate() {
-            if let Opcode::SetLine(l) = op {
+            if let Opcode::FijarLinea(l) = op {
                 linea_vigente = *l;
             }
             self.mapa_ip_linea[i] = linea_vigente;
@@ -1509,7 +1509,7 @@ mod ops_exacto;
 mod ops_fusionadas;
 
 // Ramas simples del `match op` (push/pop/dup, variables por índice/global,
-// opcodes fusionados de declaración) extraídas a `ops_simples.rs` (F1-T7).
+// codigos fusionados de declaración) extraídas a `ops_simples.rs` (F1-T7).
 mod ops_simples;
 
 // Ramas autocontenidas de colecciones (arreglos y mapas) extraídas a
