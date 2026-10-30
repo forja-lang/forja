@@ -14,6 +14,57 @@ use crate::ast::*;
 use crate::ir::*;
 use std::collections::{HashMap, HashSet};
 
+/// F11-T3: `tipo` (campo `tipo` del objeto) de los constructores built-in de
+/// `Resultado`/`Opcion`. Misma tabla que `bytecode.rs`.
+fn tipo_de_constructor_builtin(nombre: &str) -> Option<&'static str> {
+    match nombre {
+        "Some" | "Alguno" | "Algo" => Some("some"),
+        "None" | "Ninguno" => Some("none"),
+        "Ok" => Some("ok"),
+        "Error" | "Err" => Some("error"),
+        _ => None,
+    }
+}
+
+fn describir_declaracion(d: &Declaracion) -> &'static str {
+    match d {
+        Declaracion::Variable { .. } => "variable",
+        Declaracion::Asignacion { .. } => "asignación",
+        Declaracion::AsignacionMiembro { .. } => "acceso a miembro como sentencia",
+        Declaracion::AsignacionIndex { .. } => "asignación por índice",
+        Declaracion::Funcion { .. } => "función",
+        Declaracion::Clase { .. } => "clase",
+        Declaracion::Si { .. } => "si",
+        Declaracion::Mientras { .. } => "mientras",
+        Declaracion::Para { .. } => "para",
+        Declaracion::Repetir { .. } => "repetir",
+        Declaracion::Cuando { .. } => "cuando",
+        Declaracion::LlamadaFuncion { .. } => "llamada a función",
+        Declaracion::AccesoMiembro { .. } => "acceso a miembro como sentencia",
+        Declaracion::Retornar { .. } => "retornar",
+        Declaracion::Romper => "romper",
+        Declaracion::Continuar => "continuar",
+        Declaracion::Importar(_) => "importar",
+        Declaracion::ImportarExterna(_) => "importar externa",
+        Declaracion::Enum { .. } => "enum",
+        Declaracion::AsignacionMultiple { .. } => "asignación múltiple",
+        Declaracion::Rasgo { .. } => "rasgo",
+        Declaracion::Implementacion { .. } => "implementación",
+        Declaracion::Expresion(_) => "expresión como sentencia",
+    }
+}
+
+/// `Some(true)` si el literal es entero, `Some(false)` si es decimal (también
+/// bajo una negación unaria); `None` si no es un literal numérico.
+fn literal_numerico(e: &Expresion) -> Option<bool> {
+    match e {
+        Expresion::LiteralNumero(_) => Some(true),
+        Expresion::LiteralDecimal(_) => Some(false),
+        Expresion::Unaria { expr, .. } => literal_numerico(expr),
+        _ => None,
+    }
+}
+
 pub struct IrConstructor {
     pub symbols: SymbolTable,
     var_map: HashMap<String, MemIdx>,
@@ -26,10 +77,23 @@ pub struct IrConstructor {
     tipos_var: HashMap<String, TipoIR>,
     /// `false` si se encontró un constructo que el constructor IR no soporta.
     pub soportado: bool,
+    /// F11-T5: primer constructo no soportado encontrado, con la forma del AST
+    /// que lo disparó. Alimenta el diagnóstico del fallback a AST.
+    pub motivo_no_soportado: Option<String>,
     /// F8-T2: clases que declaran constructor (`nuevo`).
     clases_con_constructor: HashSet<String>,
     /// F8-T3: variante → (enum, tag, tiene_datos).
     variantes_enum: HashMap<String, (String, usize, bool)>,
+    /// F11-T1: contador para nombrar las funciones anónimas (`__closure_N`).
+    closure_counter: usize,
+    /// F11-T1: nombres de funciones declaradas, para tratarlas como valor
+    /// (`&funcion`, callbacks por nombre).
+    funciones_definidas: HashSet<String>,
+    /// F11-T2: contador para nombrar las funciones de hilo (`__hilo_N`).
+    hilo_counter: usize,
+    /// F11-T5: pila de ciclos activos `(salida, continuación)` para traducir
+    /// `romper` y `continuar` a saltos.
+    ciclos: Vec<(BlockId, BlockId)>,
 }
 
 /// Base de índices de memoria local (los globales empiezan en 0).
@@ -54,13 +118,22 @@ impl IrConstructor {
             tipos_valor: HashMap::new(),
             tipos_var: HashMap::new(),
             soportado: true,
+            motivo_no_soportado: None,
             clases_con_constructor: HashSet::new(),
             variantes_enum: HashMap::new(),
+            closure_counter: 0,
+            funciones_definidas: HashSet::new(),
+            hilo_counter: 0,
+            ciclos: Vec::new(),
         }
     }
 
-    fn marcar_no_soportado(&mut self) -> ValueId {
+    fn marcar_no_soportado(&mut self, motivo: impl Into<String>) -> ValueId {
         self.soportado = false;
+        // Sólo interesa el primer motivo: es el que aborta la emisión IR.
+        if self.motivo_no_soportado.is_none() {
+            self.motivo_no_soportado = Some(motivo.into());
+        }
         0
     }
 
@@ -107,13 +180,41 @@ impl IrConstructor {
         match expr {
             Expresion::LiteralNumero(n) => builder.emit_const_int(*n),
             Expresion::LiteralDecimal(d) => builder.emit_const_float(*d),
+            // F11-T5: `exacto` (BigDecimal) se emite como constante de precisión
+            // arbitraria; la VM ya tiene `PushExacto`.
+            Expresion::LiteralExacto(coeficiente, escala) => {
+                builder.emit_const_exacto(*coeficiente, *escala)
+            }
             Expresion::LiteralBooleano(b) => builder.emit_const_bool(*b),
             Expresion::LiteralTexto(s) => builder.emit_const_str(s),
             Expresion::LiteralNulo => builder.emit_const_nil(),
 
+            // `si` como elemento de layout: fuera del subconjunto IR (es GUI).
+            Expresion::Si { .. } => {
+                self.marcar_no_soportado("si como elemento de argumentos (layout condicional)")
+            }
+
             Expresion::Identificador { nombre, .. } => {
+                // F11-T1: función usada como valor (callback por nombre o
+                // `&funcion`): el valor es el nombre de la función, igual que
+                // en el backend AST.
+                if !self.var_map.contains_key(nombre)
+                    && !self.global_map.contains_key(nombre)
+                    && self.funciones_definidas.contains(nombre)
+                {
+                    return builder.emit_const_str(nombre);
+                }
                 // F8-T3: variante unitaria.
+                // F11-T5: las variantes vacías built-in de `Resultado`/`Opcion`
+                // (`Ninguno`, `Nada`, `None`) se representan como objetos con
+                // campo `tipo` — igual que `Ninguno()` —, no con tag posicional:
+                // `Opcode::Try` y el pattern matching las distinguen por nombre.
                 if let Some((enum_nombre, tag, false)) = self.variantes_enum.get(nombre).cloned() {
+                    if let Some(tipo_str) = tipo_de_constructor_builtin(nombre) {
+                        let clase = builder.symbols.intern(&enum_nombre);
+                        let tipo = builder.symbols.intern(tipo_str);
+                        return builder.emit_enum_object(clase, None, tipo);
+                    }
                     return self.crear_variante(builder, &enum_nombre, tag, Vec::new());
                 }
                 if let Some(mem) = self.get_mem(nombre) {
@@ -125,7 +226,7 @@ impl IrConstructor {
                 } else {
                     // Variable no declarada: el TypeChecker ya la habría
                     // rechazado. La tratamos como no soportada.
-                    self.marcar_no_soportado()
+                    self.marcar_no_soportado(format!("identificador `{nombre}` no declarado"))
                 }
             }
 
@@ -193,22 +294,53 @@ impl IrConstructor {
             Expresion::Index { objeto, indice } => {
                 let obj = self.expr_to_ir(builder, objeto);
                 let idx = self.expr_to_ir(builder, indice);
-                match self.tipos_valor.get(&obj).copied() {
-                    Some(TipoIR::Arreglo) => {
-                        let v = builder.emit_array_get(obj, idx);
-                        self.tipos_valor.insert(v, TipoIR::Otro);
-                        v
-                    }
-                    Some(TipoIR::Mapa) => {
-                        let v = builder.emit_map_get(obj, idx);
-                        self.tipos_valor.insert(v, TipoIR::Otro);
-                        v
-                    }
-                    _ => self.marcar_no_soportado(),
+                // F11-T5: sólo se distingue el mapa cuando el tipo es conocido.
+                // En el resto de los casos se usa `ArrayGet`, que en la VM
+                // discrimina arreglo/mapa en runtime (igual que el backend AST).
+                if self.tipos_valor.get(&obj).copied() == Some(TipoIR::Mapa) {
+                    let v = builder.emit_map_get(obj, idx);
+                    self.tipos_valor.insert(v, TipoIR::Otro);
+                    v
+                } else {
+                    let v = builder.emit_array_get(obj, idx);
+                    self.tipos_valor.insert(v, TipoIR::Otro);
+                    v
                 }
             }
 
             Expresion::LlamadaFuncion { nombre, argumentos } => {
+                // F11-T5: `escribir_linea(args)` = `escribir(args)` + "\n",
+                // igual que el backend AST (no está registrada en la VM).
+                if nombre == "escribir_linea" {
+                    let escribir = builder.symbols.intern("escribir");
+                    for arg in argumentos {
+                        let v = self.expr_to_ir(builder, arg);
+                        builder.emit_call(escribir, vec![v]);
+                    }
+                    let salto = builder.emit_const_str("\n");
+                    return builder.emit_call(escribir, vec![salto]);
+                }
+                // F11-T3: `Ninguno()` / `Nada()` con paréntesis llegan como
+                // llamada; son la variante vacía de `Opcion`.
+                if argumentos.is_empty() && matches!(nombre.as_str(), "Ninguno" | "Nada" | "None") {
+                    let clase = builder.symbols.intern("Opcion");
+                    let tipo = builder.symbols.intern("none");
+                    return builder.emit_enum_object(clase, None, tipo);
+                }
+                // F11-T2: el parser representa `objeto.metodo(args)` como una
+                // llamada con nombre punteado cuando aparece como sentencia.
+                // F11-T5: el objeto puede ser una cadena de campos
+                // (`self.encapsulado.enviar(...)`).
+                if let Some((objeto, metodo)) = nombre.rsplit_once('.') {
+                    if let Some(obj) = self.objeto_de_nombre(builder, objeto) {
+                        let args: Vec<ValueId> = argumentos
+                            .iter()
+                            .map(|a| self.expr_to_ir(builder, a))
+                            .collect();
+                        let met = builder.symbols.intern(metodo);
+                        return builder.emit_call_method(obj, met, args);
+                    }
+                }
                 // F8-T3: constructor de variante de enum con datos.
                 if let Some((enum_nombre, tag, _)) = self.variantes_enum.get(nombre).cloned() {
                     let args: Vec<ValueId> = argumentos
@@ -217,6 +349,23 @@ impl IrConstructor {
                         .collect();
                     return self.crear_variante(builder, &enum_nombre, tag, args);
                 }
+                // F11-T1: si el nombre es una variable (closure guardado en una
+                // variable local o global, o callback recibido por parámetro),
+                // la llamada es indirecta.
+                if let Some(mem) = self.mem_de_variable(nombre) {
+                    let callee = builder.emit_load(mem);
+                    let args: Vec<ValueId> = argumentos
+                        .iter()
+                        .map(|a| self.expr_to_ir(builder, a))
+                        .collect();
+                    return builder.emit_call_closure(callee, args);
+                }
+                // F12-T1: `leer()` es el builtin de lectura, pero una variable
+                // con ese nombre (un closure) tiene prioridad, igual que en el
+                // backend AST.
+                if nombre == "leer" && argumentos.is_empty() {
+                    return builder.emit_read_line();
+                }
                 // F8-T1: llamadas a funciones de usuario y builtins.
                 let args: Vec<ValueId> = argumentos
                     .iter()
@@ -224,6 +373,94 @@ impl IrConstructor {
                     .collect();
                 let sym = builder.symbols.intern(nombre);
                 builder.emit_call(sym, args)
+            }
+
+            Expresion::Closure { parametros, cuerpo } => {
+                let (func, capturadas) = self.compilar_closure(builder, parametros, cuerpo);
+                // F12-T1: los valores capturados se leen del ámbito envolvente en
+                // el punto de creación (captura por valor).
+                let mut valores = Vec::with_capacity(capturadas.len());
+                for cap in &capturadas {
+                    valores.push(match self.mem_de_variable(cap) {
+                        Some(mem) => builder.emit_load(mem),
+                        None => builder.emit_const_nil(),
+                    });
+                }
+                builder.emit_make_closure(func, valores)
+            }
+
+            // F11-T2: `hilo { ... }`. Las variables capturadas se pasan como
+            // argumentos (copia) a la función del hilo.
+            Expresion::Hilo { cuerpo } => {
+                let (func, capturadas) = self.compilar_hilo(builder, cuerpo);
+                let mut valores = Vec::with_capacity(capturadas.len());
+                for cap in &capturadas {
+                    valores.push(match self.mem_de_variable(cap) {
+                        Some(mem) => builder.emit_load(mem),
+                        None => builder.emit_const_nil(),
+                    });
+                }
+                builder.emit_thread_spawn(func, valores)
+            }
+
+            Expresion::CanalNuevo(capacidad) => match capacidad {
+                Some(c) => {
+                    let cap = self.expr_to_ir(builder, c);
+                    builder.emit_channel_new_cap(cap)
+                }
+                None => builder.emit_channel_new(),
+            },
+
+            // F11-T3: `Resultado` y `Opcion` se representan como objetos con
+            // campos `valor` y `tipo`, igual que en el backend AST (lo consume
+            // `Opcode::Try` y el pattern matching por campo).
+            Expresion::Ok(e) => {
+                let valor = self.expr_to_ir(builder, e);
+                let clase = builder.symbols.intern("Resultado");
+                let tipo = builder.symbols.intern("ok");
+                builder.emit_enum_object(clase, Some(valor), tipo)
+            }
+            Expresion::Error(e) => {
+                let valor = self.expr_to_ir(builder, e);
+                let clase = builder.symbols.intern("Resultado");
+                let tipo = builder.symbols.intern("error");
+                builder.emit_enum_object(clase, Some(valor), tipo)
+            }
+            Expresion::Algo(e) => {
+                let valor = self.expr_to_ir(builder, e);
+                let clase = builder.symbols.intern("Opcion");
+                let tipo = builder.symbols.intern("some");
+                builder.emit_enum_object(clase, Some(valor), tipo)
+            }
+            Expresion::Nada | Expresion::Ninguno => {
+                let clase = builder.symbols.intern("Opcion");
+                let tipo = builder.symbols.intern("none");
+                builder.emit_enum_object(clase, None, tipo)
+            }
+            // F11-T3: `?` — la VM desenvuelve el valor o propaga el error
+            // desenrollando el frame (`Opcode::Try`).
+            Expresion::Try(e) => {
+                let valor = self.expr_to_ir(builder, e);
+                builder.emit_try(valor)
+            }
+
+            // F11-T2: `seleccionar` no está implementado en la VM: se compilan
+            // los cuerpos (igual que el backend AST) y la expresión vale Nulo.
+            // F11-T5: el backend AST no liga la variable de recepción, así que
+            // se declara con Nulo para que el cuerpo pueda referenciarla.
+            Expresion::Seleccionar { brazos } => {
+                for brazo in brazos {
+                    if let Some((variable, _)) = &brazo.recepcion {
+                        let mem = self.alloc_mem(variable);
+                        builder.emit_alloca(mem);
+                        let nulo = builder.emit_const_nil();
+                        builder.emit_store(mem, nulo);
+                    }
+                    for d in &brazo.cuerpo {
+                        self.decl_to_ir(builder, d);
+                    }
+                }
+                builder.emit_const_nil()
             }
 
             Expresion::Instanciacion { clase, argumentos } => {
@@ -292,8 +529,91 @@ impl IrConstructor {
                 builder.emit_const_nil()
             }
 
-            // No soportado en la ruta IR (fallback a AST).
-            _ => self.marcar_no_soportado(),
+            // F11-T5: `&expr` no cambia el valor (no hay referencias en la VM):
+            // el backend AST emite la expresión tal cual.
+            Expresion::Referencia { expr, .. } => self.expr_to_ir(builder, expr),
+
+            // F11-T5: ternario como expresión. Sin `Phi` disponible, el valor se
+            // materializa en un slot temporal y se recarga en el bloque de unión.
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                let cond = self.expr_to_ir(builder, condicion);
+                let mem = self.alloc_mem(&format!("__ternario_{}", self.next_local));
+                builder.emit_alloca(mem);
+
+                let then_bb = builder.alloc_block_id();
+                let else_bb = builder.alloc_block_id();
+                let end_bb = builder.alloc_block_id();
+                builder.terminate_branch(cond, then_bb, else_bb);
+
+                builder.start_block(then_bb);
+                let v = self.expr_to_ir(builder, si_verdadero);
+                builder.emit_store(mem, v);
+                builder.terminate_jump(end_bb);
+
+                builder.start_block(else_bb);
+                let f = self.expr_to_ir(builder, si_falso);
+                builder.emit_store(mem, f);
+                builder.terminate_jump(end_bb);
+
+                builder.start_block(end_bb);
+                builder.emit_load(mem)
+            }
+
+            // F11-T5: asignación como expresión (`variable y = (x = 5)`): el
+            // valor de la expresión es el valor asignado.
+            Expresion::Asignacion { variable, valor } => {
+                let mem = self.alloc_mem(variable);
+                let val = self.expr_to_ir(builder, valor);
+                builder.emit_store(mem, val);
+                val
+            }
+
+            // F11-T5: `arr[i] = v` / `mapa[k] = v` como expresión evalúa al
+            // valor asignado (el backend AST lo deja en la pila).
+            Expresion::ArraySet { array, valor } => {
+                let val = self.expr_to_ir(builder, valor);
+                if let Expresion::Index { objeto, indice } = array.as_ref() {
+                    let obj = self.expr_to_ir(builder, objeto);
+                    let idx = self.expr_to_ir(builder, indice);
+                    self.emitir_set_coleccion(builder, obj, idx, val);
+                } else {
+                    // Forma no reconocida: se evalúa por sus efectos.
+                    self.expr_to_ir(builder, array);
+                }
+                val
+            }
+
+            // F11-T5: `resultado` es a la vez la variable de retorno de las
+            // postcondiciones y un nombre de variable corriente en la práctica.
+            // El backend AST la resuelve como variable si existe y, si no, Nulo.
+            Expresion::Resultado => match self.mem_de_variable("resultado") {
+                Some(mem) => builder.emit_load(mem),
+                None => builder.emit_const_nil(),
+            },
+
+            // F11-T5: `anterior(expr)` sólo tiene sentido en contratos, que no
+            // forman parte del cuerpo IR: se evalúa la expresión interna.
+            Expresion::Anterior(expr) => self.expr_to_ir(builder, expr),
+        }
+    }
+
+    /// F11-T5: emite `coleccion[clave] = valor` eligiendo `ArraySet`/`MapSet`
+    /// según el tipo estático (o `ArraySet`, que discrimina en runtime).
+    fn emitir_set_coleccion(
+        &mut self,
+        builder: &mut IrBuilder,
+        coleccion: ValueId,
+        indice: ValueId,
+        valor: ValueId,
+    ) {
+        if self.tipos_valor.get(&coleccion).copied() == Some(TipoIR::Mapa) {
+            builder.emit_map_set(coleccion, indice, valor);
+        } else {
+            builder.emit_array_set(coleccion, indice, valor);
         }
     }
 
@@ -335,14 +655,25 @@ impl IrConstructor {
                     Some(builder.emit_eq(valor, lit))
                 }
                 Patron::Constructor(nombre, _) => {
-                    let tag = self
-                        .variantes_enum
-                        .get(nombre)
-                        .map(|(_, t, _)| *t)
-                        .unwrap_or(0);
-                    let tag_val = builder.emit_extract_field(valor, 0);
-                    let lit = builder.emit_const_int(tag as i64);
-                    Some(builder.emit_eq(tag_val, lit))
+                    // F11-T3: `Ok`/`Error`/`Alguno`/`Ninguno` no usan tag
+                    // posicional: son objetos con campos `tipo` (texto) y
+                    // `valor`. Se compara el campo `tipo` por nombre, igual que
+                    // el backend AST.
+                    if let Some(tipo_str) = tipo_de_constructor_builtin(nombre) {
+                        let sym_tipo = builder.symbols.intern("tipo");
+                        let tipo_val = builder.emit_field_get(valor, sym_tipo);
+                        let lit = builder.emit_const_str(tipo_str);
+                        Some(builder.emit_eq(tipo_val, lit))
+                    } else {
+                        let tag = self
+                            .variantes_enum
+                            .get(nombre)
+                            .map(|(_, t, _)| *t)
+                            .unwrap_or(0);
+                        let tag_val = builder.emit_extract_field(valor, 0);
+                        let lit = builder.emit_const_int(tag as i64);
+                        Some(builder.emit_eq(tag_val, lit))
+                    }
                 }
             };
             match cond {
@@ -355,12 +686,24 @@ impl IrConstructor {
                     let mem = self.alloc_mem(nombre);
                     builder.emit_store(mem, valor);
                 }
-                Patron::Constructor(_, subs) => {
-                    for (i, sub) in subs.iter().enumerate() {
-                        if let Patron::Variable(nombre) = sub {
-                            let campo = builder.emit_extract_field(valor, i + 1);
-                            let mem = self.alloc_mem(nombre);
-                            builder.emit_store(mem, campo);
+                Patron::Constructor(nombre_ctor, subs) => {
+                    if tipo_de_constructor_builtin(nombre_ctor).is_some() {
+                        // F11-T3: el valor va en el campo `valor` (por nombre).
+                        for sub in subs {
+                            if let Patron::Variable(nombre) = sub {
+                                let sym_valor = builder.symbols.intern("valor");
+                                let campo = builder.emit_field_get(valor, sym_valor);
+                                let mem = self.alloc_mem(nombre);
+                                builder.emit_store(mem, campo);
+                            }
+                        }
+                    } else {
+                        for (i, sub) in subs.iter().enumerate() {
+                            if let Patron::Variable(nombre) = sub {
+                                let campo = builder.emit_extract_field(valor, i + 1);
+                                let mem = self.alloc_mem(nombre);
+                                builder.emit_store(mem, campo);
+                            }
                         }
                     }
                 }
@@ -382,12 +725,25 @@ impl IrConstructor {
     /// Convierte una declaración (sentencia) a IR.
     pub fn decl_to_ir(&mut self, builder: &mut IrBuilder, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { nombre, valor, .. } => {
+            Declaracion::Variable {
+                nombre,
+                tipo,
+                valor,
+                ..
+            } => {
                 let mem = self.alloc_mem(nombre);
-                builder.emit_alloca();
+                builder.emit_alloca(mem);
                 let val = match valor {
                     Some(e) => {
-                        let v = self.expr_to_ir(builder, e);
+                        let mut v = self.expr_to_ir(builder, e);
+                        // F11-T5: `variable x: Exacto = <literal numérico>` se
+                        // convierte, igual que el backend AST: la VM no coerciona
+                        // en la asignación y la resta de Exactos depende de ello.
+                        if matches!(tipo, Some(Tipo::Exacto)) {
+                            if let Some(desde_entero) = literal_numerico(e) {
+                                v = builder.emit_a_exacto(v, desde_entero);
+                            }
+                        }
                         if let Some(t) = self.tipos_valor.get(&v).copied() {
                             self.tipos_var.insert(nombre.clone(), t);
                         }
@@ -426,7 +782,9 @@ impl IrConstructor {
                 ..
             } => {
                 let Some(mem) = self.get_mem(nombre) else {
-                    self.marcar_no_soportado();
+                    self.marcar_no_soportado(format!(
+                        "asignación por índice a `{nombre}`, que no está declarada"
+                    ));
                     return;
                 };
                 let tipo = self.tipos_var.get(nombre).copied();
@@ -434,16 +792,14 @@ impl IrConstructor {
                 let idx = self.expr_to_ir(builder, indice);
                 let val = self.expr_to_ir(builder, valor);
                 match tipo {
-                    Some(TipoIR::Arreglo) => {
-                        let res = builder.emit_array_set(arr, idx, val);
-                        builder.emit_store(mem, res);
-                    }
                     Some(TipoIR::Mapa) => {
                         let res = builder.emit_map_set(arr, idx, val);
                         builder.emit_store(mem, res);
                     }
+                    // Arreglo o tipo desconocido: `ArraySet` discrimina en runtime.
                     _ => {
-                        self.marcar_no_soportado();
+                        let res = builder.emit_array_set(arr, idx, val);
+                        builder.emit_store(mem, res);
                     }
                 }
             }
@@ -451,13 +807,29 @@ impl IrConstructor {
             Declaracion::LlamadaFuncion {
                 nombre, argumentos, ..
             } => {
-                // Sólo `escribir` de un argumento en el subconjunto IR.
-                if nombre == "escribir" && argumentos.len() == 1 {
-                    let val = self.expr_to_ir(builder, &argumentos[0]);
-                    let sym = builder.symbols.intern("escribir");
-                    builder.emit_call(sym, vec![val]);
-                } else {
-                    self.marcar_no_soportado();
+                // Sentencia de llamada: misma ruta que en posición de expresión
+                // (cubre `escribir`, funciones de usuario y métodos).
+                self.expr_to_ir(
+                    builder,
+                    &Expresion::LlamadaFuncion {
+                        nombre: nombre.clone(),
+                        argumentos: argumentos.clone(),
+                    },
+                );
+            }
+
+            // F11-T2: `variable tx, rx = canal()` / `variable (a, b) = ...`.
+            // Se evalúa el valor una sola vez y se extrae cada posición.
+            Declaracion::AsignacionMultiple {
+                variables, valor, ..
+            } => {
+                let contenedor = self.expr_to_ir(builder, valor);
+                for (i, nombre) in variables.iter().enumerate() {
+                    let indice = builder.emit_const_int(i as i64);
+                    let elemento = builder.emit_array_get(contenedor, indice);
+                    let mem = self.alloc_mem(nombre);
+                    builder.emit_alloca(mem);
+                    builder.emit_store(mem, elemento);
                 }
             }
 
@@ -479,53 +851,84 @@ impl IrConstructor {
                     return;
                 }
                 // F6-T1 etapa 3: `arr[i] = v` / `mapa[k] = v` llega como
-                // Expresion::ArraySet con un Index sobre una variable.
-                if let Expresion::ArraySet { array, valor } = e {
-                    if let Expresion::Index { objeto, indice } = array.as_ref() {
-                        if let Expresion::Identificador { nombre, .. } = objeto.as_ref() {
-                            if let Some(mem) = self.get_mem(nombre) {
-                                let tipo = self.tipos_var.get(nombre).copied();
-                                let arr = builder.emit_load(mem);
-                                let idx = self.expr_to_ir(builder, indice);
-                                let val = self.expr_to_ir(builder, valor);
-                                match tipo {
-                                    Some(TipoIR::Arreglo) => {
-                                        let res = builder.emit_array_set(arr, idx, val);
-                                        builder.emit_store(mem, res);
-                                    }
-                                    Some(TipoIR::Mapa) => {
-                                        let res = builder.emit_map_set(arr, idx, val);
-                                        builder.emit_store(mem, res);
-                                    }
-                                    _ => {
-                                        self.marcar_no_soportado();
-                                    }
-                                }
-                                return;
-                            }
-                        }
-                    }
+                // Expresion::ArraySet; la expresión genérica ya lo resuelve y el
+                // valor descartado queda en la pila sin consumidores.
+                // Expresión usada como sentencia: se evalúa y el valor se
+                // descarta. Cubre llamadas, métodos, `hilo { ... }`, `canal()` y
+                // cualquier otra expresión soportada por `expr_to_ir`.
+                self.expr_to_ir(builder, e);
+            }
+
+            // F11-T5: `cuando` es un `si` sin rama falsa (bloque reactivo).
+            Declaracion::Cuando {
+                condicion, cuerpo, ..
+            } => {
+                let cond = self.expr_to_ir(builder, condicion);
+                let body_bb = builder.alloc_block_id();
+                let merge_bb = builder.alloc_block_id();
+                builder.terminate_branch(cond, body_bb, merge_bb);
+                builder.start_block(body_bb);
+                for d in cuerpo {
+                    self.decl_to_ir(builder, d);
                 }
-                // Expresión usada como sentencia (p. ej. una llamada).
-                if let Expresion::LlamadaMetodo { .. } = e {
-                    self.expr_to_ir(builder, e);
-                    return;
+                builder.terminate_jump(merge_bb);
+                builder.start_block(merge_bb);
+            }
+
+            // F11-T5: `repetir (n) { ... }` con un contador oculto.
+            Declaracion::Repetir { cantidad, bloque } => {
+                let contador = self.alloc_mem(&format!("__repetir_{}", self.next_local));
+                let cero = builder.emit_const_int(0);
+                builder.emit_store(contador, cero);
+
+                let header_bb = builder.alloc_block_id();
+                let body_bb = builder.alloc_block_id();
+                let inc_bb = builder.alloc_block_id();
+                let exit_bb = builder.alloc_block_id();
+
+                builder.terminate_jump(header_bb);
+                builder.start_block(header_bb);
+                let actual = builder.emit_load(contador);
+                let limite = self.expr_to_ir(builder, cantidad);
+                let cond = builder.emit_lt(actual, limite);
+                builder.terminate_branch(cond, body_bb, exit_bb);
+
+                builder.start_block(body_bb);
+                self.ciclos.push((exit_bb, inc_bb));
+                for d in bloque {
+                    self.decl_to_ir(builder, d);
                 }
-                if let Expresion::LlamadaFuncion {
-                    nombre, argumentos, ..
-                } = e
-                {
-                    if nombre == "escribir" && argumentos.len() == 1 {
-                        let val = self.expr_to_ir(builder, &argumentos[0]);
-                        let sym = builder.symbols.intern("escribir");
-                        builder.emit_call(sym, vec![val]);
-                        return;
-                    }
-                    // Llamada a función como sentencia (resultado descartado).
-                    self.expr_to_ir(builder, e);
-                    return;
+                self.ciclos.pop();
+                if !builder.terminado() {
+                    builder.terminate_jump(inc_bb);
                 }
-                self.marcar_no_soportado();
+
+                builder.start_block(inc_bb);
+                let actual = builder.emit_load(contador);
+                let uno = builder.emit_const_int(1);
+                let siguiente = builder.emit_add(actual, uno);
+                builder.emit_store(contador, siguiente);
+                builder.terminate_jump(header_bb);
+
+                builder.start_block(exit_bb);
+            }
+
+            Declaracion::Romper => {
+                if let Some((salida, _)) = self.ciclos.last().copied() {
+                    builder.terminate_jump(salida);
+                    builder.new_block();
+                } else {
+                    self.marcar_no_soportado("`romper` fuera de un ciclo");
+                }
+            }
+
+            Declaracion::Continuar => {
+                if let Some((_, continuacion)) = self.ciclos.last().copied() {
+                    builder.terminate_jump(continuacion);
+                    builder.new_block();
+                } else {
+                    self.marcar_no_soportado("`continuar` fuera de un ciclo");
+                }
             }
 
             Declaracion::Retornar { valor } => {
@@ -579,10 +982,14 @@ impl IrConstructor {
                 builder.terminate_branch(cond, body_bb, exit_bb);
 
                 builder.start_block(body_bb);
+                self.ciclos.push((exit_bb, header_bb));
                 for d in bloque {
                     self.decl_to_ir(builder, d);
                 }
-                builder.terminate_jump(header_bb);
+                self.ciclos.pop();
+                if !builder.terminado() {
+                    builder.terminate_jump(header_bb);
+                }
 
                 builder.start_block(exit_bb);
             }
@@ -608,10 +1015,18 @@ impl IrConstructor {
                 };
                 builder.terminate_branch(cond, body_bb, exit_bb);
 
+                let inc_bb = builder.alloc_block_id();
                 builder.start_block(body_bb);
+                self.ciclos.push((exit_bb, inc_bb));
                 for d in bloque {
                     self.decl_to_ir(builder, d);
                 }
+                self.ciclos.pop();
+                if !builder.terminado() {
+                    builder.terminate_jump(inc_bb);
+                }
+
+                builder.start_block(inc_bb);
                 if let Some(inc) = incremento {
                     self.decl_to_ir(builder, inc);
                 }
@@ -620,9 +1035,14 @@ impl IrConstructor {
                 builder.start_block(exit_bb);
             }
 
+            // Los `importar` anidados (la stdlib los usa dentro de funciones,
+            // p. ej. `stdlib/std/json.fa`) ya los resolvió el cargador de
+            // módulos: el backend AST los ignora y el IR hace lo mismo.
+            Declaracion::Importar(_) | Declaracion::ImportarExterna(_) => {}
+
             // Fuera del subconjunto IR.
-            _ => {
-                self.soportado = false;
+            otra => {
+                self.marcar_no_soportado(describir_declaracion(otra));
             }
         }
     }
@@ -634,6 +1054,12 @@ impl IrConstructor {
         // marco local); el código de nivel superior vive en `main`.
         self.clases_con_constructor.clear();
         self.variantes_enum.clear();
+        self.funciones_definidas.clear();
+        for decl in &programa.declaraciones {
+            if let Declaracion::Funcion { nombre, .. } = decl {
+                self.funciones_definidas.insert(nombre.clone());
+            }
+        }
         for decl in &programa.declaraciones {
             if let Declaracion::Enum {
                 nombre, variantes, ..
@@ -655,6 +1081,16 @@ impl IrConstructor {
                         self.clases_con_constructor.insert(nombre.clone());
                     }
                 }
+            }
+        }
+
+        // F11-T5: las variables de nivel superior son globales visibles desde
+        // cualquier función, así que se reservan ANTES de compilar las funciones
+        // (que se emiten primero y no pueden depender del orden de `main`).
+        self.in_function = false;
+        for decl in &programa.declaraciones {
+            if let Declaracion::Variable { nombre, .. } = decl {
+                self.alloc_mem(nombre);
             }
         }
 
@@ -680,6 +1116,18 @@ impl IrConstructor {
                         funciones_usuario.push(self.compilar_metodo(nombre, m));
                     }
                 }
+                // F11-T4: los métodos de una implementación de rasgo se emiten
+                // como funciones `Clase.metodo`, que es lo que resuelve el
+                // despacho dinámico (`CallMethod`) por la clase del objeto.
+                Declaracion::Implementacion {
+                    clase_nombre,
+                    metodos,
+                    ..
+                } => {
+                    for m in metodos {
+                        funciones_usuario.push(self.compilar_metodo(clase_nombre, m));
+                    }
+                }
                 _ => {}
             }
         }
@@ -694,12 +1142,15 @@ impl IrConstructor {
                 Declaracion::Funcion { .. }
                 | Declaracion::Clase { .. }
                 | Declaracion::Enum { .. } => {}
+                // F11-T4: los rasgos se validan en el análisis semántico y no
+                // emiten bytecode (igual que en el backend AST); las
+                // implementaciones ya se compilaron arriba como funciones. Los
+                // imports ya los resolvió el cargador de módulos y
+                // `ImportarExterna` sólo alimenta el registro FFI.
                 Declaracion::Rasgo { .. }
                 | Declaracion::Implementacion { .. }
                 | Declaracion::Importar(_)
-                | Declaracion::ImportarExterna(_) => {
-                    self.marcar_no_soportado();
-                }
+                | Declaracion::ImportarExterna(_) => {}
                 _ => self.decl_to_ir(&mut builder, decl),
             }
         }
@@ -716,6 +1167,174 @@ impl IrConstructor {
             functions,
             symbols: self.symbols.clone(),
         }
+    }
+
+    /// MemIdx de una variable visible (local primero, luego global).
+    fn mem_de_variable(&self, nombre: &str) -> Option<MemIdx> {
+        self.var_map
+            .get(nombre)
+            .copied()
+            .or_else(|| self.global_map.get(nombre).copied())
+    }
+
+    /// F11-T5: resuelve un nombre punteado `a.b.c` a un valor: la variable raíz
+    /// y un `FieldGet` por cada nivel.
+    fn objeto_de_nombre(&mut self, builder: &mut IrBuilder, nombre: &str) -> Option<ValueId> {
+        let mut partes = nombre.split('.');
+        let raiz = partes.next()?;
+        let mut objeto = match self.mem_de_variable(raiz) {
+            Some(mem) => builder.emit_load(mem),
+            None => return None,
+        };
+        for campo in partes {
+            let sym = builder.symbols.intern(campo);
+            objeto = builder.emit_field_get(objeto, sym);
+        }
+        Some(objeto)
+    }
+
+    /// Compila el cuerpo de un closure como función anónima con marco propio.
+    ///
+    /// El closure no captura el entorno (el runtime representa un closure como
+    /// el nombre de su función, sin entorno): eso llega con F12-T1.
+    fn compilar_closure(
+        &mut self,
+        host: &mut IrBuilder,
+        parametros: &[Parametro],
+        cuerpo: &[Declaracion],
+    ) -> (SsaFunction, Vec<String>) {
+        let nombre = format!("__closure_{}", self.closure_counter);
+        self.closure_counter += 1;
+
+        // F12-T1: variables libres del cuerpo que son **locales** del ámbito
+        // envolvente (los globales se siguen leyendo en tiempo de llamada). Se
+        // capturan por valor en el momento de crear el closure.
+        let capturadas = self.variables_libres_locales(parametros, cuerpo);
+
+        // Marco propio: guardar y restaurar el del host.
+        let vars_previas = std::mem::take(&mut self.var_map);
+        let next_local_previo = self.next_local;
+        let in_function_previo = self.in_function;
+        self.next_local = 0;
+
+        let mut builder = IrBuilder::new();
+        // La tabla del host es la fuente de verdad de los `SymId`: el closure la
+        // clona y el resultado se devuelve al host, para que los ids del nombre
+        // del closure y de sus parámetros signifiquen lo mismo en ambos.
+        builder.symbols = host.symbols.clone();
+        let name_sym = builder.symbols.intern(&nombre);
+        let _entry = builder.new_block();
+
+        // La firma es `(__entorno, p1, ..., pn)`: el entorno viaja como primer
+        // argumento para que una llamada indirecta lo pase siempre.
+        let entorno_sym = builder.symbols.intern("__entorno");
+        let mut params_ir = Vec::with_capacity(1 + parametros.len());
+        params_ir.push((entorno_sym, IrType::Ptr));
+        for (i, p) in parametros.iter().enumerate() {
+            let mem = LOCAL_BASE + 1 + i;
+            self.var_map.insert(p.nombre.clone(), mem);
+            let tipo = p.tipo.as_ref().map(Self::tipo_to_ir).unwrap_or(IrType::Ptr);
+            params_ir.push((builder.symbols.intern(&p.nombre), tipo));
+        }
+        self.next_local = 1 + parametros.len();
+
+        // Prólogo: cada capturada se materializa en un slot propio como
+        // `entorno[k]`. `mem2reg` las convierte en valores SSA como al resto.
+        for (k, capturada) in capturadas.iter().enumerate() {
+            let mem = self.alloc_mem(capturada);
+            builder.emit_alloca(mem);
+            let entorno = builder.emit_load(LOCAL_BASE);
+            let indice = builder.emit_const_int(k as i64);
+            let valor = builder.emit_array_get(entorno, indice);
+            builder.emit_store(mem, valor);
+        }
+
+        for decl in cuerpo {
+            self.decl_to_ir(&mut builder, decl);
+        }
+        builder.terminate_return(None);
+        let func = builder.build_function(name_sym, IrType::Ptr, params_ir);
+        host.symbols = builder.symbols.clone();
+        self.symbols = builder.symbols.clone();
+
+        self.var_map = vars_previas;
+        self.next_local = next_local_previo;
+        self.in_function = in_function_previo;
+        (func, capturadas)
+    }
+
+    /// Nombres usados en `cuerpo` que no se declaran dentro (parámetros +
+    /// locales) y que son variables **locales** del ámbito envolvente. Es la
+    /// lista de variables que un closure captura por valor.
+    fn variables_libres_locales(
+        &self,
+        parametros: &[Parametro],
+        cuerpo: &[Declaracion],
+    ) -> Vec<String> {
+        let mut declaradas: HashSet<String> = parametros.iter().map(|p| p.nombre.clone()).collect();
+        let mut usadas: HashSet<String> = HashSet::new();
+        for d in cuerpo {
+            crate::bytecode::BytecodeGenerator::extraer_ids_decl(d, &mut declaradas, &mut usadas);
+        }
+        let mut libres: Vec<String> = usadas
+            .difference(&declaradas)
+            .filter(|nombre| self.var_map.contains_key(*nombre))
+            .cloned()
+            .collect();
+        libres.sort();
+        libres
+    }
+
+    /// Compila el cuerpo de un `hilo { ... }` como función anónima cuyos
+    /// parámetros son las variables que captura del entorno.
+    fn compilar_hilo(
+        &mut self,
+        host: &mut IrBuilder,
+        cuerpo: &[Declaracion],
+    ) -> (SsaFunction, Vec<String>) {
+        // Capturadas = usadas - declaradas dentro del cuerpo (misma regla que
+        // el backend AST, reutilizando su recorrido).
+        let mut declaradas: HashSet<String> = HashSet::new();
+        let mut usadas: HashSet<String> = HashSet::new();
+        for d in cuerpo {
+            crate::bytecode::BytecodeGenerator::extraer_ids_decl(d, &mut declaradas, &mut usadas);
+        }
+        let mut capturadas: Vec<String> = usadas.difference(&declaradas).cloned().collect();
+        capturadas.sort();
+
+        let nombre = format!("__hilo_{}", self.hilo_counter);
+        self.hilo_counter += 1;
+
+        let vars_previas = std::mem::take(&mut self.var_map);
+        let next_local_previo = self.next_local;
+        let in_function_previo = self.in_function;
+        self.next_local = 0;
+
+        let mut builder = IrBuilder::new();
+        builder.symbols = host.symbols.clone();
+        let name_sym = builder.symbols.intern(&nombre);
+        let _entry = builder.new_block();
+
+        let mut params_ir = Vec::with_capacity(capturadas.len());
+        for (i, cap) in capturadas.iter().enumerate() {
+            let mem = LOCAL_BASE + i;
+            self.var_map.insert(cap.clone(), mem);
+            params_ir.push((builder.symbols.intern(cap), IrType::Ptr));
+        }
+        self.next_local = capturadas.len();
+
+        for d in cuerpo {
+            self.decl_to_ir(&mut builder, d);
+        }
+        builder.terminate_return(None);
+        let func = builder.build_function(name_sym, IrType::Ptr, params_ir);
+        host.symbols = builder.symbols.clone();
+        self.symbols = builder.symbols.clone();
+
+        self.var_map = vars_previas;
+        self.next_local = next_local_previo;
+        self.in_function = in_function_previo;
+        (func, capturadas)
     }
 
     fn compilar_funcion(

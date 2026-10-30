@@ -356,11 +356,18 @@ impl ForjaFast {
             }
 
             BuiltinFast::Esperar => {
-                let ms_val = self.pop_valor()?;
-                if ms_val.es_entero() {
-                    let ms = ms_val.a_entero();
-                    let dur = std::time::Duration::from_millis(ms.max(0) as u64);
-                    std::thread::sleep(dur);
+                let v = self.pop_valor()?;
+                // `esperar(250)` duerme milisegundos; `esperar(0.25)` duerme
+                // segundos (escala de los ejemplos del curso). Antes un decimal
+                // caía en la rama de enteros y no dormía nada.
+                if v.es_entero() {
+                    let ms = v.a_entero();
+                    std::thread::sleep(std::time::Duration::from_millis(ms.max(0) as u64));
+                } else if v.es_flotante() {
+                    let s = v.a_flotante();
+                    if s > 0.0 {
+                        std::thread::sleep(std::time::Duration::from_secs_f64(s));
+                    }
                 }
                 self.push_valor(ValorFast::nulo());
             }

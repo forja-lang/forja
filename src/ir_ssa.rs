@@ -7,7 +7,7 @@
 //! Referencia: Cooper, Harvey, Kennedy — "A Simple, Fast Dominance Algorithm"
 
 use crate::ir::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Dominator tree
 pub struct DominatorTree {
@@ -262,22 +262,40 @@ impl LoopInfo {
     }
 }
 
-/// SSA Builder — inserte φ-nodes para variables mutables
+/// φ-node de una variable de memoria en un bloque de unión.
+#[derive(Debug, Clone)]
+pub struct PhiVar {
+    /// Variable promovida.
+    pub mem: MemIdx,
+    /// Id provisional del valor que produce el φ (se renumera en el pase).
+    pub valor: ValueId,
+    /// Un operando por bloque predecesor, en orden de bloque.
+    pub operandos: Vec<(BlockId, ValueId)>,
+}
+
+/// SSA Builder — inserta φ-nodes para variables mutables.
 pub struct SsaBuilder {
     /// Variables que necesitan φ-nodes
     phi_vars: HashSet<MemIdx>,
-    /// Definiciones de variable por bloque: block_id → (mem_idx, value_id)
+    /// Definiciones de variable por bloque: (block_id, mem_idx) → value_id
     pub defs: HashMap<(BlockId, MemIdx), ValueId>,
-    /// Phi nodes a insertar: block_id → (mem_idx, value_id)
-    pub phi_nodes: HashMap<BlockId, Vec<(MemIdx, ValueId)>>,
+    /// φ por bloque, ordenados por variable (determinista).
+    pub phi_nodes: BTreeMap<BlockId, Vec<PhiVar>>,
+    /// Siguiente id provisional para el valor de un φ.
+    next_valor: ValueId,
 }
 
 impl SsaBuilder {
+    /// Base de los ids provisionales de los φ: por encima de cualquier id que
+    /// produzca el constructor.
+    pub const BASE_VALOR: ValueId = 1 << 31;
+
     pub fn new() -> Self {
         SsaBuilder {
             phi_vars: HashSet::new(),
             defs: HashMap::new(),
-            phi_nodes: HashMap::new(),
+            phi_nodes: BTreeMap::new(),
+            next_valor: Self::BASE_VALOR,
         }
     }
 
@@ -291,33 +309,31 @@ impl SsaBuilder {
         self.defs.insert((block, mem), val);
     }
 
-    /// Analiza qué variables necesitan φ-nodes basándose en el dominator tree.
+    /// Analiza qué variables necesitan φ-nodes y los inserta.
     ///
-    /// Implementa el phi-placement clásico (Cytron et al. / pruned SSA):
-    /// para cada variable, propaga sus bloques de definición a través de la
-    /// **iterated dominance frontier** (IDF) y coloca un φ en cada bloque de
-    /// la IDF. Los argumentos de cada φ se resuelven como las *reaching
-    /// definitions* de la variable en cada predecessor del bloque.
+    /// Implementa el phi-placement clásico (Cytron et al. / pruned SSA): para
+    /// cada variable propaga sus bloques de definición por la *iterated
+    /// dominance frontier* y coloca un φ en cada bloque de la IDF. Los operandos
+    /// se resuelven como la *reaching definition* en cada predecesor, y el φ
+    /// queda registrado como definición de su bloque (un φ encadenado lo ve).
     pub fn compute_phi_nodes(&mut self, domtree: &DominatorTree, blocks: &[BasicBlock]) {
         // Dominance frontier de cada bloque (DF[runner] → bloques join)
         let df = domtree.dominance_frontier(blocks);
 
-        // Predecessors por bloque (para resolver los argumentos de los φ)
+        // Predecesores por bloque (para resolver los argumentos de los φ)
         let mut block_predecessors: Vec<Vec<BlockId>> = vec![Vec::new(); blocks.len()];
         for blk in blocks {
-            let targets = match &blk.terminator {
-                Terminator::Jump(t) => vec![*t],
-                Terminator::Branch(_, t, e) => vec![*t, *e],
-                _ => vec![],
-            };
-            for t in targets {
+            for t in DominatorTree::successors(&blk.terminator) {
                 if t < block_predecessors.len() {
                     block_predecessors[t].push(blk.id);
                 }
             }
         }
 
-        for &var in &self.phi_vars.clone() {
+        let mut vars: Vec<MemIdx> = self.phi_vars.iter().copied().collect();
+        vars.sort_unstable();
+
+        for var in vars {
             let def_blocks: HashSet<BlockId> = self
                 .defs
                 .keys()
@@ -335,41 +351,43 @@ impl SsaBuilder {
             while let Some(block) = worklist.pop() {
                 if let Some(frontier) = df.get(&block) {
                     for &y in frontier {
-                        if !has_phi.contains(&y) {
-                            has_phi.insert(y);
-                            if !def_blocks.contains(&y) {
-                                worklist.push(y);
-                            }
+                        if has_phi.insert(y) && !def_blocks.contains(&y) {
+                            worklist.push(y);
                         }
                     }
                 }
             }
 
-            // Insertar φ-nodes con sus argumentos (reaching definitions)
-            for phi_block in has_phi {
-                let empty_preds: Vec<BlockId> = Vec::new();
-                let preds = if phi_block < block_predecessors.len() {
-                    &block_predecessors[phi_block]
-                } else {
-                    &empty_preds
-                };
-                // Collect reaching defs first to avoid borrow conflict
-                let reaching: Vec<(usize, usize)> = preds
+            let mut bloques_phi: Vec<BlockId> = has_phi.into_iter().collect();
+            bloques_phi.sort_unstable();
+            for phi_block in bloques_phi {
+                let preds = block_predecessors
+                    .get(phi_block)
+                    .cloned()
+                    .unwrap_or_default();
+                let operandos: Vec<(BlockId, ValueId)> = preds
                     .iter()
                     .map(|&pred| {
                         let val = self.reaching_def(pred, var, domtree).unwrap_or(0);
-                        (var, val)
+                        (pred, val)
                     })
                     .collect();
-                let entry = self.phi_nodes.entry(phi_block).or_default();
-                entry.extend(reaching);
+                let valor = self.next_valor;
+                self.next_valor += 1;
+                // El φ define la variable en su bloque.
+                self.defs.insert((phi_block, var), valor);
+                self.phi_nodes.entry(phi_block).or_default().push(PhiVar {
+                    mem: var,
+                    valor,
+                    operandos,
+                });
             }
         }
     }
 
     /// Resuelve la *reaching definition* de `var` en `block`: la definición
     /// más cercana en el camino `block → idom → idom → ...` hacia la raíz.
-    fn reaching_def(
+    pub fn reaching_def(
         &self,
         block: BlockId,
         var: MemIdx,
@@ -392,6 +410,327 @@ impl Default for SsaBuilder {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// ─── F11-T6: promoción de memoria a SSA (`mem2reg`) ─────────────────────────
+
+/// Promueve las variables en memoria (`Alloca`/`Store`/`Load`) a valores SSA en
+/// todo el programa, incluidas las funciones anidadas (closures e hilos).
+///
+/// Reglas:
+/// * Sólo se promueven slots **locales** (`MemIdx >= LOCAL_BASE`): los globales
+///   del nivel superior pueden leerlos otras funciones y el REPL los persiste
+///   entre líneas (`global_var_persist`), así que siguen en memoria.
+/// * Un φ se coloca en la frontera de dominancia de las definiciones de cada
+///   variable y sus operandos se resuelven por predecesor.
+/// * Si una `Load` promovida no tiene definición alcanzable, la función se deja
+///   tal cual (no se promueve nada de ella).
+///
+/// La numeración de `ValueId` se recalcula (es posicional en el conversor), así
+/// que el resultado es un `SsaFunction` nuevo; los φ pueden referenciar valores
+/// definidos más adelante en el orden de bloques (φ de un bucle).
+pub fn promover_programa(programa: &IrProgram) -> IrProgram {
+    IrProgram {
+        functions: programa
+            .functions
+            .iter()
+            .map(promover_funcion)
+            .collect::<Vec<_>>(),
+        symbols: programa.symbols.clone(),
+    }
+}
+
+/// Promueve una función y las funciones anidadas que contenga.
+pub fn promover_funcion(func: &SsaFunction) -> SsaFunction {
+    use crate::ir_constructor::LOCAL_BASE;
+
+    // 1. Slots promovibles: declarados en esta función y locales del marco.
+    let mut promovibles: HashSet<MemIdx> = HashSet::new();
+    for b in &func.blocks {
+        for inst in &b.instructions {
+            if let Inst::Alloca(m) = inst {
+                if *m >= LOCAL_BASE {
+                    promovibles.insert(*m);
+                }
+            }
+        }
+    }
+    if promovibles.is_empty() {
+        return clonar_promoviendo_anidadas(func);
+    }
+
+    // 2. Id posicional de cada instrucción que produce valor.
+    let mut id_de: HashMap<(BlockId, usize), ValueId> = HashMap::new();
+    let mut next: ValueId = 0;
+    for b in &func.blocks {
+        for (i, inst) in b.instructions.iter().enumerate() {
+            if produce_valor(inst) {
+                id_de.insert((b.id, i), next);
+                next += 1;
+            }
+        }
+    }
+
+    // 3. Dominadores y colocación de φ-nodes.
+    let domtree = DominatorTree::compute(&func.blocks);
+    let mut sb = SsaBuilder::new();
+    for m in &promovibles {
+        sb.mark_phi_variable(*m);
+    }
+    for b in &func.blocks {
+        for inst in &b.instructions {
+            if let Inst::Store(m, v) = inst {
+                if promovibles.contains(m) {
+                    // Última definición del bloque: es la que alcanza al final.
+                    sb.record_def(b.id, *m, *v);
+                }
+            }
+        }
+    }
+    sb.compute_phi_nodes(&domtree, &func.blocks);
+
+    // 4. Renombrado: recorrido del árbol de dominadores con el valor vigente de
+    //    cada variable. Es lo que resuelve las cargas en orden *dentro* del
+    //    bloque y los φ de un bucle (el valor que sale de cada predecesor).
+    let mut hijos: HashMap<BlockId, Vec<BlockId>> = HashMap::new();
+    for (b, idom) in domtree.idom.iter().enumerate() {
+        if let Some(d) = idom {
+            if *d != b {
+                hijos.entry(*d).or_default().push(b as BlockId);
+            }
+        }
+    }
+    let bloques_por_id: HashMap<BlockId, &BasicBlock> =
+        func.blocks.iter().map(|b| (b.id, b)).collect();
+
+    let mut alias: HashMap<ValueId, ValueId> = HashMap::new();
+    let mut salida: HashMap<(BlockId, MemIdx), ValueId> = HashMap::new();
+    let mut actual: HashMap<MemIdx, ValueId> = HashMap::new();
+    if !renombrar_bloque(
+        func.entry,
+        &bloques_por_id,
+        &hijos,
+        &sb.phi_nodes,
+        &promovibles,
+        &id_de,
+        &mut actual,
+        &mut alias,
+        &mut salida,
+    ) {
+        return clonar_promoviendo_anidadas(func);
+    }
+
+    // Rellenar los operandos de cada φ con el valor que sale de cada predecesor.
+    let mut phis_por_bloque: BTreeMap<BlockId, Vec<PhiVar>> = BTreeMap::new();
+    for (bloque, phis) in &sb.phi_nodes {
+        let mut nuevos_phis = Vec::with_capacity(phis.len());
+        for phi in phis {
+            let mut operandos = Vec::with_capacity(phi.operandos.len());
+            for (pred, _) in &phi.operandos {
+                let Some(&valor) = salida.get(&(*pred, phi.mem)) else {
+                    return clonar_promoviendo_anidadas(func);
+                };
+                operandos.push((*pred, valor));
+            }
+            nuevos_phis.push(PhiVar {
+                mem: phi.mem,
+                valor: phi.valor,
+                operandos,
+            });
+        }
+        phis_por_bloque.insert(*bloque, nuevos_phis);
+    }
+
+    // 5. Construir el flujo nuevo: φ al inicio de cada bloque y las
+    //    instrucciones que no son de las variables promovidas.
+    type BloqueNuevo = (BlockId, Vec<(ValueId, Inst)>, Terminator);
+    let mut nuevo: Vec<BloqueNuevo> = Vec::with_capacity(func.blocks.len());
+    for b in &func.blocks {
+        let mut insts: Vec<(ValueId, Inst)> = Vec::new();
+        if let Some(phis) = phis_por_bloque.get(&b.id) {
+            for phi in phis {
+                insts.push((phi.valor, Inst::Phi(phi.mem, phi.operandos.clone())));
+            }
+        }
+        for (i, inst) in b.instructions.iter().enumerate() {
+            match inst {
+                Inst::Alloca(m) if promovibles.contains(m) => continue,
+                Inst::Store(m, _) if promovibles.contains(m) => continue,
+                Inst::Load(m) if promovibles.contains(m) => continue,
+                _ => {
+                    let token = id_de.get(&(b.id, i)).copied().unwrap_or(0);
+                    insts.push((token, inst.clone()));
+                }
+            }
+        }
+        nuevo.push((b.id, insts, b.terminator.clone()));
+    }
+
+    // 6. Renumerar: la numeración del conversor es posicional.
+    let mut mapa: HashMap<ValueId, ValueId> = HashMap::new();
+    let mut next: ValueId = 0;
+    for (_, insts, _) in &nuevo {
+        for (token, inst) in insts {
+            if produce_valor(inst) {
+                mapa.insert(*token, next);
+                next += 1;
+            }
+        }
+    }
+    // `alias` colapsa cadenas (un store cuyo valor era otra load promovida).
+    let resolver = |v: ValueId| -> Option<ValueId> {
+        let mut actual = v;
+        for _ in 0..=alias.len() {
+            match alias.get(&actual) {
+                Some(&sig) if sig != actual => actual = sig,
+                _ => break,
+            }
+        }
+        mapa.get(&actual).copied()
+    };
+    let mut sin_resolver = false;
+    for (_, insts, term) in &mut nuevo {
+        for (_, inst) in insts.iter_mut() {
+            inst.reasignar_valores(&mut |v: ValueId| match resolver(v) {
+                Some(nv) => nv,
+                None => {
+                    sin_resolver = true;
+                    0
+                }
+            });
+        }
+        term.reasignar_valores(&mut |v: ValueId| match resolver(v) {
+            Some(nv) => nv,
+            None => {
+                sin_resolver = true;
+                0
+            }
+        });
+    }
+    if sin_resolver {
+        return clonar_promoviendo_anidadas(func);
+    }
+
+    // 7. Promover las funciones anidadas (closures e hilos).
+    for (_, insts, _) in &mut nuevo {
+        for (_, inst) in insts.iter_mut() {
+            match inst {
+                Inst::MakeClosure(f, _) => **f = promover_funcion(f),
+                Inst::ThreadSpawn(f, _) => **f = promover_funcion(f),
+                _ => {}
+            }
+        }
+    }
+
+    SsaFunction {
+        name: func.name,
+        return_type: func.return_type,
+        blocks: nuevo
+            .into_iter()
+            .map(|(id, insts, terminator)| BasicBlock {
+                id,
+                instructions: insts.into_iter().map(|(_, i)| i).collect(),
+                terminator,
+            })
+            .collect(),
+        entry: func.entry,
+        num_params: func.num_params,
+        params: func.params.clone(),
+    }
+}
+
+/// Recorrido de renombrado sobre el árbol de dominadores: mantiene el valor
+/// vigente de cada variable promovida, resuelve las cargas en orden dentro del
+/// bloque y registra el valor con el que sale cada bloque (para los operandos
+/// de los φ). Devuelve `false` si una carga no tiene definición vigente.
+#[allow(clippy::too_many_arguments)]
+fn renombrar_bloque(
+    bloque: BlockId,
+    bloques: &HashMap<BlockId, &BasicBlock>,
+    hijos: &HashMap<BlockId, Vec<BlockId>>,
+    phis: &BTreeMap<BlockId, Vec<PhiVar>>,
+    promovibles: &HashSet<MemIdx>,
+    id_de: &HashMap<(BlockId, usize), ValueId>,
+    actual: &mut HashMap<MemIdx, ValueId>,
+    alias: &mut HashMap<ValueId, ValueId>,
+    salida: &mut HashMap<(BlockId, MemIdx), ValueId>,
+) -> bool {
+    let mut guardados: Vec<(MemIdx, Option<ValueId>)> = Vec::new();
+    if let Some(phis_bloque) = phis.get(&bloque) {
+        for phi in phis_bloque {
+            guardados.push((phi.mem, actual.insert(phi.mem, phi.valor)));
+        }
+    }
+
+    if let Some(b) = bloques.get(&bloque) {
+        for (i, inst) in b.instructions.iter().enumerate() {
+            match inst {
+                Inst::Store(m, v) if promovibles.contains(m) => {
+                    guardados.push((*m, actual.insert(*m, *v)));
+                }
+                Inst::Load(m) if promovibles.contains(m) => {
+                    let Some(&vigente) = actual.get(m) else {
+                        return false;
+                    };
+                    if let Some(id_load) = id_de.get(&(bloque, i)) {
+                        alias.insert(*id_load, vigente);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Valor con el que sale el bloque (para los operandos de los φ del sucesor).
+    for (mem, valor) in actual.iter() {
+        salida.insert((bloque, *mem), *valor);
+    }
+
+    if let Some(hs) = hijos.get(&bloque) {
+        for &h in hs {
+            if !renombrar_bloque(
+                h,
+                bloques,
+                hijos,
+                phis,
+                promovibles,
+                id_de,
+                actual,
+                alias,
+                salida,
+            ) {
+                return false;
+            }
+        }
+    }
+
+    for (mem, previo) in guardados.into_iter().rev() {
+        match previo {
+            Some(v) => {
+                actual.insert(mem, v);
+            }
+            None => {
+                actual.remove(&mem);
+            }
+        }
+    }
+    true
+}
+
+/// Copia la función promoviendo sólo sus funciones anidadas (los ids no cambian
+/// porque el flujo se mantiene igual).
+fn clonar_promoviendo_anidadas(func: &SsaFunction) -> SsaFunction {
+    let mut nueva = func.clone();
+    for b in &mut nueva.blocks {
+        for inst in b.instructions.iter_mut() {
+            match inst {
+                Inst::MakeClosure(f, _) => **f = promover_funcion(f),
+                Inst::ThreadSpawn(f, _) => **f = promover_funcion(f),
+                _ => {}
+            }
+        }
+    }
+    nueva
 }
 
 #[cfg(test)]
@@ -566,12 +905,13 @@ mod tests {
             .phi_nodes
             .get(&3)
             .expect("debe haber un φ en el join (bloque 3)");
+        assert_eq!(phis.len(), 1, "un φ para la variable");
         assert_eq!(
-            phis.len(),
+            phis[0].operandos.len(),
             2,
             "el φ debe tener 2 argumentos (uno por predecessor)"
         );
-        let mut vals: Vec<ValueId> = phis.iter().map(|&(_, v)| v).collect();
+        let mut vals: Vec<ValueId> = phis[0].operandos.iter().map(|&(_, v)| v).collect();
         vals.sort_unstable();
         assert_eq!(vals, vec![10, 20]);
         assert!(
@@ -651,5 +991,168 @@ mod tests {
             .get(&1)
             .expect("el header del loop (bloque 1) debe tener un φ");
         assert!(!phis.is_empty(), "el φ del header debe tener argumentos");
+    }
+
+    // ─── F11-T6: mem2reg (promoción a SSA) ──────────────────────────────────
+
+    /// Compila un programa a IR y devuelve la función pedida (ya promovida).
+    fn ir_de_fuente(fuente: &str) -> crate::ir::IrProgram {
+        let mut lexer = crate::lexer::Lexer::new(fuente);
+        let tokens = lexer.tokenize().expect("lexer");
+        let programa = crate::parser::Parser::new(tokens).parse().expect("parser");
+        let mut ctor = crate::ir_constructor::IrConstructor::new();
+        let ir = ctor.program_to_ir(&programa);
+        assert!(ctor.soportado, "el programa debe estar cubierto por IR");
+        ir
+    }
+
+    fn funcion<'a>(prog: &'a crate::ir::IrProgram, nombre: &str) -> &'a crate::ir::SsaFunction {
+        prog.functions
+            .iter()
+            .find(|f| prog.symbols.name(f.name) == nombre)
+            .unwrap_or_else(|| panic!("no está la función {nombre}"))
+    }
+
+    fn contar_phis(f: &crate::ir::SsaFunction) -> usize {
+        f.blocks
+            .iter()
+            .flat_map(|b| b.instructions.iter())
+            .filter(|i| matches!(i, Inst::Phi(_, _)))
+            .count()
+    }
+
+    fn contar_memoria(f: &crate::ir::SsaFunction, mem: MemIdx) -> usize {
+        f.blocks
+            .iter()
+            .flat_map(|b| b.instructions.iter())
+            .filter(|i| match i {
+                Inst::Alloca(m) | Inst::Load(m) => *m == mem,
+                Inst::Store(m, _) => *m == mem,
+                _ => false,
+            })
+            .count()
+    }
+
+    #[test]
+    fn mem2reg_bucle_genera_phi_y_elimina_memoria() {
+        let fuente = "funcion contar(n: Entero) -> Entero {\n    variable i = 0\n    mientras (i < n) { i = i + 1 }\n    retornar i\n}\nescribir(contar(3))";
+        let ir = ir_de_fuente(fuente);
+        let ssa = promover_funcion(funcion(&ir, "contar"));
+
+        assert!(
+            contar_phis(&ssa) >= 1,
+            "el acumulador del bucle debe tener un φ en el header"
+        );
+        assert!(
+            contar_memoria(&ssa, crate::ir_constructor::LOCAL_BASE + 1) == 0,
+            "el slot del acumulador no debe quedar en memoria"
+        );
+    }
+
+    #[test]
+    fn mem2reg_no_promueve_globales_de_main() {
+        let fuente = "variable i = 0\nmientras (i < 3) { i = i + 1 }\nescribir(i)";
+        let ir = ir_de_fuente(fuente);
+        let ssa = promover_funcion(funcion(&ir, "main"));
+        assert_eq!(contar_phis(&ssa), 0, "los globales no se promueven");
+        assert!(
+            contar_memoria(&ssa, 0) > 0,
+            "el global `i` sigue en memoria"
+        );
+    }
+
+    #[test]
+    fn mem2reg_promueve_locales_de_funcion() {
+        let fuente = "funcion suma(n: Entero) -> Entero {\n    variable s = 0\n    variable i = 0\n    mientras (i < n) { s = s + i\n i = i + 1 }\n    retornar s\n}\nescribir(suma(4))";
+        let ir = ir_de_fuente(fuente);
+        let ssa = promover_funcion(funcion(&ir, "suma"));
+
+        let locales: Vec<MemIdx> = ssa
+            .blocks
+            .iter()
+            .flat_map(|b| b.instructions.iter())
+            .filter_map(|i| match i {
+                Inst::Alloca(m) => Some(*m),
+                _ => None,
+            })
+            .collect();
+        assert!(locales.is_empty(), "no deben quedar `Alloca` de locales");
+        assert!(contar_phis(&ssa) >= 2, "s e i necesitan φ en el header");
+
+        // Los usos del φ deben estar resueltos: ningún operando apunta a un
+        // valor inexistente (el conversor numera posicionalmente).
+        let total = ssa
+            .blocks
+            .iter()
+            .flat_map(|b| b.instructions.iter())
+            .filter(|i| produce_valor(i))
+            .count() as ValueId;
+        let mut usos: Vec<ValueId> = Vec::new();
+        for b in &ssa.blocks {
+            for i in &b.instructions {
+                let mut copia = i.clone();
+                copia.reasignar_valores(&mut |v| {
+                    usos.push(v);
+                    v
+                });
+            }
+        }
+        assert!(
+            usos.iter().all(|v| *v < total),
+            "todo operando debe referenciar un valor existente"
+        );
+    }
+
+    #[test]
+    fn mem2reg_rama_sin_union_no_genera_phi() {
+        let fuente = "funcion f(n: Entero) -> Entero {\n    variable x = 1\n    si (n > 0) { x = 2 }\n    retornar x\n}\nescribir(f(1))";
+        let ir = ir_de_fuente(fuente);
+        let ssa = promover_funcion(funcion(&ir, "f"));
+        // El `si` tiene un único camino que define `x`: el join necesita φ.
+        assert_eq!(contar_phis(&ssa), 1, "un φ en el join del `si`");
+    }
+
+    #[test]
+    fn mem2reg_sin_memoria_no_cambia_la_funcion() {
+        let fuente =
+            "funcion f(a: Entero, b: Entero) -> Entero {\n    retornar a + b\n}\nescribir(f(1, 2))";
+        let ir = ir_de_fuente(fuente);
+        let ssa = promover_funcion(funcion(&ir, "f"));
+        assert_eq!(contar_phis(&ssa), 0);
+        assert_eq!(
+            format!("{:?}", ssa.blocks),
+            format!("{:?}", funcion(&ir, "f").blocks),
+            "sin variables locales el IR no debe cambiar"
+        );
+    }
+
+    #[test]
+    fn mem2reg_promueve_funciones_anidadas() {
+        let fuente = "funcion main() {\n    variable f = func(x) { variable y = x + 1\n retornar y }\n    escribir(f(1))\n}\nmain()";
+        let ir = ir_de_fuente(fuente);
+        let ssa = promover_programa(&ir);
+        // El closure viaja dentro de `MakeClosure`: debe quedar promovido.
+        let mut encontrado = false;
+        for f in &ssa.functions {
+            for b in &f.blocks {
+                for i in &b.instructions {
+                    if let Inst::MakeClosure(closure, _) = i {
+                        encontrado = true;
+                        // Los parámetros capturados viven en memoria; las
+                        // variables locales del closure deben quedar en SSA.
+                        let tiene_alloca = closure
+                            .blocks
+                            .iter()
+                            .flat_map(|b| b.instructions.iter())
+                            .any(|i| matches!(i, Inst::Alloca(_)));
+                        assert!(
+                            !tiene_alloca,
+                            "el cuerpo del closure debe quedar sin `Alloca`"
+                        );
+                    }
+                }
+            }
+        }
+        assert!(encontrado, "el programa debe tener un closure");
     }
 }

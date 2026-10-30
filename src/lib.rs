@@ -19,6 +19,8 @@ pub mod bytecode;
 pub mod class_descriptor;
 pub mod codegen_reg;
 pub mod compiler_asm;
+pub mod dedup;
+pub mod desugar;
 pub mod fprofiler;
 pub mod gc;
 pub mod gc_intrinsics;
@@ -98,16 +100,26 @@ pub mod legacy;
 fn compilar_pipeline_nucleo(
     programa: ast::Programa,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    compilar_pipeline_nucleo_emision(programa, false)
+    compilar_pipeline_nucleo_emision(programa, MotorEmision::Ir)
 }
 
-/// Variante del núcleo con **emisión IR** configurable (F4-T8). Con
-/// `forzar_ir = true` exige la ruta IR (devuelve `Err` si el programa está fuera
-/// del subconjunto soportado); con `false` sólo la usa si `FORJA_IR_EMIT` está
-/// activo, con *fallback* a AST.
+/// Motor de emisión que exige el llamador (F11-T5).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum MotorEmision {
+    /// IR: **único** camino de emisión de la ruta canónica. Si algún constructo
+    /// no está cubierto, la compilación falla con diagnóstico (no hay fallback).
+    Ir,
+    /// AST forzado: ignora el constructor IR. Es la base de comparación de
+    /// paridad funcional y del benchmark AST vs IR (F14-T2).
+    SoloAst,
+}
+
+/// Variante del núcleo con el motor de emisión configurable (F11-T5): la ruta
+/// canónica usa [`MotorEmision::Ir`]; `SoloAst` queda para comparación y
+/// benchmark.
 fn compilar_pipeline_nucleo_emision(
     mut programa: ast::Programa,
-    forzar_ir: bool,
+    motor: MotorEmision,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
     // FASE: Prelude — inyectar los tipos algebraicos básicos (`Resultado` y
     // `Opcion`) para que sus variantes queden registradas en `variantes_enum`
@@ -132,6 +144,11 @@ fn compilar_pipeline_nucleo_emision(
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
 
+    // FASE: Desugardo de `seleccionar` (F12-T2). Va después del análisis
+    // semántico: el código sintético (`__sel*`) no necesita comprobación y así
+    // los dos backends consumen la misma forma.
+    desugar::desugar_programa(&mut programa);
+
     // FASE: Monomorfización
     monomorphize_programa(&mut programa);
 
@@ -151,54 +168,32 @@ fn compilar_pipeline_nucleo_emision(
         })
         .collect();
 
-    // F4-T8: emisión de bytecode **derivada del IR** (experimental). Con
-    // `forzar_ir` es obligatoria; el env `FORJA_IR_EMIT` la activa con fallback a
-    // AST si el programa está fuera del subconjunto soportado por el constructor.
-    // F8-T5: IR-first por defecto para el subconjunto soportado; si el
-    // constructor IR no cubre el programa, se conserva el fallback AST salvo
-    // que el llamador exija IR estricto (`compilar_desde_ir`).
-    if true {
-        match ir_emision::emitir_bytecode_ir(&programa) {
-            Ok(bc) => {
-                ir_emision::registrar_intento(true);
-                let bc = bytecode::postprocesar_globales(bc, &globales);
-                let bc = optimizer_pipeline::optimizar_bytecode(bc);
-                // F8-T4: los contratos se compilan con el generador AST (sus
-                // condiciones no forman parte del CFG de la función) y se
-                // adjuntan a la emisión IR.
-                let mut gen_contratos = bytecode::BytecodeGenerator::new();
-                let contratos = match gen_contratos.generar(&programa) {
-                    Ok(_) => gen_contratos.contratos,
-                    Err(_) => Vec::new(),
-                };
-                return Ok((bc, contratos));
-            }
-            Err(e) => {
-                ir_emision::registrar_intento(false);
-                if forzar_ir {
-                    return Err(format!("emisión IR no soportada: {e}"));
-                }
-                // `FORJA_IR_EMIT`: fallback silencioso a la ruta AST.
-            }
-        }
-    }
-
-    // Andamiaje IR (F1-T1): diagnóstico con FORJA_IR_DEBUG.
-    if std::env::var_os("FORJA_IR_DEBUG").is_some() {
-        let mut constructor = ir_constructor::IrConstructor::new();
-        let ir_program = constructor.program_to_ir(&programa);
-        eprintln!(
-            "[forja] IR constructor (diagnóstico): {} funciones IR generadas",
-            ir_program.functions.len()
+    // F11-T5: **IR es el único motor de la ruta canónica** (ya no hay fallback
+    // a AST). Si el constructor IR encuentra un constructo no cubierto, la
+    // compilación falla con el diagnóstico del constructo: una única fuente de
+    // emisión y ningún camino silencioso alternativo.
+    if motor == MotorEmision::SoloAst {
+        // Base de comparación/benchmark: backend AST explícito.
+        let funciones_overload = type_checker.obtener_funciones();
+        return ir_emision::emitir_bytecode_canonico(
+            &programa,
+            tipos_inferidos,
+            funciones_overload,
         );
     }
 
-    // FASE: Emisión canónica — **punto único de backend** centralizado en
-    // `ir_emision` (F4-T8). Con esto, tanto `compilar_pipeline_completa` como el
-    // alias `compilar_con_ir` desembocan en el mismo backend, garantizando la
-    // paridad byte a byte por construcción.
-    let funciones_overload = type_checker.obtener_funciones();
-    ir_emision::emitir_bytecode_canonico(&programa, tipos_inferidos, funciones_overload)
+    let bc = ir_emision::emitir_bytecode_ir(&programa)
+        .map_err(|e| format!("emisión IR no soportada: {e}"))?;
+    let bc = bytecode::postprocesar_globales(bc, &globales);
+    let bc = optimizer_pipeline::optimizar_bytecode(bc);
+    // F8-T4: los contratos se compilan con el generador AST (sus condiciones no
+    // forman parte del CFG de la función) y se adjuntan a la emisión IR.
+    let mut gen_contratos = bytecode::BytecodeGenerator::new();
+    let contratos = match gen_contratos.generar(&programa) {
+        Ok(_) => gen_contratos.contratos,
+        Err(_) => Vec::new(),
+    };
+    Ok((bc, contratos))
 }
 
 /// Alias histórico del pipeline de bytecode. **Deprecado** (F1-B3).
@@ -230,7 +225,7 @@ pub fn compilar_desde_ir(
     let programa = parser::Parser::new(tokens)
         .parse()
         .map_err(|e| format!("{}", e[0]))?;
-    compilar_pipeline_nucleo_emision(programa, true)
+    compilar_pipeline_nucleo_emision(programa, MotorEmision::Ir)
 }
 
 // Hash, codificación y crypto — implementaciones manuales sin dependencias externas
@@ -485,7 +480,7 @@ pub fn compilar_pipeline(source: &str) -> Result<Vec<bytecode::Opcode>, String> 
 /// Reemplaza nodos `Importar` con las declaraciones reales de los módulos.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast::Programa, String> {
-    use crate::module::dedup_declaraciones;
+    use crate::dedup::dedup_declaraciones;
     use crate::module::ModuleResolver;
     use crate::package_resolver::PackageResolver;
     use std::collections::HashSet;
@@ -520,12 +515,17 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
     let mut final_decls = Vec::new();
     for decl in programa.declaraciones {
         if let ast::Declaracion::Importar(ref ruta) = decl {
+            // La GUI nativa la resuelve `forja-gui-rt` al transpilar; no hay un
+            // módulo Forja que inlinear. Además `stdlib/gui/gui.fa` desborda la
+            // pila del parser en la ruta nativa.
+            if ruta == "gui" || ruta == "std/gui" {
+                final_decls.push(decl);
+                continue;
+            }
             let sub_prog = module_resolver
                 .resolver(ruta)
                 .map_err(|e| format!("{}", e[0]))?;
-            if ruta != "gui" && ruta != "std/gui" {
-                final_decls.extend(sub_prog.declaraciones);
-            }
+            final_decls.extend(sub_prog.declaraciones);
         } else if let ast::Declaracion::ImportarExterna(ref ruta) = decl {
             // Cargar la librería externa en el registro FFI
             crate::ffi::cargar_libreria(ruta)
@@ -544,7 +544,6 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
 
 /// Reescribe `modulo.funcion(args)` como `funcion(args)` tras inlinearlos
 /// imports (F5-T4). Solo actúa sobre alias declarados por `importar`.
-#[cfg(not(target_arch = "wasm32"))]
 fn reescribir_llamadas_de_modulo(
     declaracion: &mut ast::Declaracion,
     alias: &std::collections::HashSet<String>,
@@ -797,6 +796,71 @@ fn reescribir_llamadas_de_modulo(
     decl(declaracion, alias);
 }
 
+/// Resuelve los `importar` inlineando la **stdlib embebida** en el binario.
+///
+/// En WASM no hay sistema de archivos, así que `ModuleResolver` no existe: sin
+/// esto `importar std/json` se ignoraba en silencio y el playground fallaba con
+/// "función no definida". La GUI se omite a propósito (la resuelve su runtime).
+#[cfg(target_arch = "wasm32")]
+pub fn resolver_imports_embebida(source: &str) -> Result<ast::Programa, String> {
+    use crate::dedup::dedup_declaraciones;
+    use std::collections::HashSet;
+
+    fn parsear(source: &str) -> Result<ast::Programa, String> {
+        let mut lexer = lexer::Lexer::new(source);
+        let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
+        let mut parser = parser::Parser::new(tokens);
+        parser.parse().map_err(|e| format!("{}", e[0]))
+    }
+
+    fn inlinear(
+        ruta: &str,
+        alias: &mut HashSet<String>,
+        visitados: &mut HashSet<String>,
+        salida: &mut Vec<ast::Declaracion>,
+    ) -> Result<(), String> {
+        if !visitados.insert(ruta.to_string()) {
+            return Ok(());
+        }
+        let (fuente, es_gui) = crate::stdlib_embedded::obtener(ruta)
+            .ok_or_else(|| format!("El módulo '{}' no está disponible en el navegador", ruta))?;
+        if es_gui {
+            return Ok(());
+        }
+        for decl in parsear(fuente)?.declaraciones {
+            if let ast::Declaracion::Importar(sub) = &decl {
+                if let Some(a) = sub.rsplit('/').next() {
+                    alias.insert(a.to_string());
+                }
+                inlinear(sub, alias, visitados, salida)?;
+            } else {
+                salida.push(decl);
+            }
+        }
+        Ok(())
+    }
+
+    let mut programa = parsear(source)?;
+    let mut alias: HashSet<String> = HashSet::new();
+    let mut visitados: HashSet<String> = HashSet::new();
+    let mut final_decls = Vec::new();
+    for decl in programa.declaraciones {
+        if let ast::Declaracion::Importar(ruta) = &decl {
+            if let Some(a) = ruta.rsplit('/').next() {
+                alias.insert(a.to_string());
+            }
+            inlinear(ruta, &mut alias, &mut visitados, &mut final_decls)?;
+        } else {
+            final_decls.push(decl);
+        }
+    }
+    for decl in &mut final_decls {
+        reescribir_llamadas_de_modulo(decl, &alias);
+    }
+    programa.declaraciones = dedup_declaraciones(final_decls);
+    Ok(programa)
+}
+
 /// Compila código Forja a **bytecode**, resolviendo `importar` desde un directorio raíz.
 ///
 /// **Entrypoint canónico (variante con imports).** Resuelve los imports con
@@ -815,6 +879,29 @@ pub fn compilar_pipeline_completa_desde(
     compilar_pipeline_nucleo(programa)
 }
 
+/// F11-T5: variante **estricta** de [`compilar_pipeline_completa_desde`] que
+/// exige la ruta IR en todos los constructos (sin fallback a AST). Es el punto
+/// de verificación de la cobertura IR del corpus y de la paridad funcional.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn compilar_pipeline_completa_desde_ir(
+    source: &str,
+    root_dir: &std::path::Path,
+) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
+    let programa = resolver_imports(source, root_dir)?;
+    compilar_pipeline_nucleo_emision(programa, MotorEmision::Ir)
+}
+
+/// F11-T5: variante que fuerza el **backend AST** (sin constructor IR). Es la
+/// base de comparación de paridad funcional y del benchmark AST vs IR (F14-T2).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn compilar_pipeline_completa_desde_ast(
+    source: &str,
+    root_dir: &std::path::Path,
+) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
+    let programa = resolver_imports(source, root_dir)?;
+    compilar_pipeline_nucleo_emision(programa, MotorEmision::SoloAst)
+}
+
 /// Compila código Forja a **bytecode** + tabla de contratos (Design by Contract).
 ///
 /// **Entrypoint canónico de bytecode (source plano, sin imports).** Es la
@@ -827,16 +914,25 @@ pub fn compilar_pipeline_completa_desde(
 pub fn compilar_pipeline_completa(
     source: &str,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    // FASE 1: Lexer
-    let mut lexer = lexer::Lexer::new(source);
-    let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
+    // En WASM no hay FS: los `importar` se resuelven contra la stdlib embebida.
+    #[cfg(target_arch = "wasm32")]
+    {
+        return compilar_pipeline_nucleo(resolver_imports_embebida(source)?);
+    }
 
-    // FASE 2-3: Parser
-    let mut parser = parser::Parser::new(tokens);
-    let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // FASE 1: Lexer
+        let mut lexer = lexer::Lexer::new(source);
+        let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
 
-    // FASE 4+: núcleo único del pipeline a bytecode (sin lógica duplicada).
-    compilar_pipeline_nucleo(programa)
+        // FASE 2-3: Parser
+        let mut parser = parser::Parser::new(tokens);
+        let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
+
+        // FASE 4+: núcleo único del pipeline a bytecode (sin lógica duplicada).
+        compilar_pipeline_nucleo(programa)
+    }
 }
 
 /// Compila un módulo Forja a ModuleBytecode, sin resolución de imports.
@@ -1410,6 +1506,75 @@ pub fn leer_archivo_con_limite(ruta: &str, max_mb: u64) -> Result<String, String
 
 /// Constante con el límite por defecto (10 MB)
 pub const MAX_ARCHIVO_DEFAULT_MB: u64 = 10;
+
+/// Convierte una ruta del sistema de archivos en un valor seguro para una
+/// plantilla de `Cargo.toml`.
+///
+/// Quita el prefijo verbatim de Windows (`\\?\`) que devuelve
+/// [`std::fs::canonicalize`] y usa barras normales: en un string básico de TOML
+/// las barras invertidas son escapes (`C:\Users` → `\U` inválido), mientras que
+/// Cargo acepta `/` en todas las plataformas.
+pub fn ruta_para_toml(ruta: &std::path::Path) -> String {
+    let texto = ruta.display().to_string();
+    let sin_verbatim = texto.strip_prefix(r"\\?\").unwrap_or(&texto);
+    sin_verbatim.replace('\\', "/")
+}
+
+/// Busca la raíz del repositorio de Forja, es decir el directorio que tiene
+/// `crates/forja-gui-rt`, necesario para compilar las apps GUI (el `Cargo.toml`
+/// generado apunta a esos crates por ruta).
+///
+/// Prueba primero el directorio actual y sus ancestros, y después el directorio
+/// del ejecutable y sus ancestros — así funciona tanto si se invoca `forja`
+/// desde la raíz del repo como desde `target/debug/` o con una ruta absoluta.
+///
+/// En Windows el CLI se re-ejecuta desde una copia en `%TEMP%` (shadow copy), así
+/// que la ruta del ejecutable «real» llega en `FORJA_ORIGINAL_EXE`; sin eso la
+/// búsqueda miraría dentro de `%TEMP%` y no encontraría nada.
+pub fn raiz_forja() -> Option<std::path::PathBuf> {
+    let mut candidatos: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        candidatos.extend(cwd.ancestors().map(|d| d.to_path_buf()));
+    }
+    let exe = std::env::var_os("FORJA_ORIGINAL_EXE")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::current_exe().ok());
+    if let Some(exe) = exe {
+        candidatos.extend(exe.ancestors().skip(1).map(|d| d.to_path_buf()));
+    }
+    candidatos
+        .into_iter()
+        .find(|dir| dir.join("crates/forja-gui-rt/Cargo.toml").is_file())
+}
+
+#[cfg(test)]
+mod tests_ruta_para_toml {
+    use super::ruta_para_toml;
+    use std::path::Path;
+
+    #[test]
+    fn convierte_rutas_de_windows_a_barras_normales() {
+        let ruta = Path::new(r"C:\Users\gaucho\forja\crates\forja-gui-rt");
+        assert_eq!(
+            ruta_para_toml(ruta),
+            "C:/Users/gaucho/forja/crates/forja-gui-rt"
+        );
+        assert!(!ruta_para_toml(ruta).contains('\\'));
+    }
+
+    #[test]
+    fn quita_el_prefijo_verbatim() {
+        let ruta = Path::new(r"\\?\C:\Users\gaucho\forja");
+        assert_eq!(ruta_para_toml(ruta), "C:/Users/gaucho/forja");
+    }
+
+    #[test]
+    fn encuentra_la_raiz_del_repo() {
+        // Los tests corren con el directorio actual en la raíz del crate.
+        let raiz = super::raiz_forja().expect("debería encontrar la raíz del repo de forja");
+        assert!(raiz.join("crates/forja-gui-rt/Cargo.toml").is_file());
+    }
+}
 
 /// Formatea código Forja usando el formatter interno
 /// Devuelve el código formateado, o el original si hay errores de sintaxis

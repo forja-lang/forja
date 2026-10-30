@@ -1,4 +1,4 @@
-﻿// Método `ejecutar_uops` de la VM canónica `ForjaFast` (F1-T7).
+// Método `ejecutar_uops` de la VM canónica `ForjaFast` (F1-T7).
 // Extraído de `ejecucion.rs` para mantener archivos por debajo de ~1500 líneas.
 
 use super::*;
@@ -73,7 +73,15 @@ impl ForjaFast {
             }
             self.ejecutadas += 1;
 
-            let uop = uops[self.ip].clone();
+            let uop = if self.hay_uop_forzado {
+                self.hay_uop_forzado = false;
+                match self.uop_forzado.take() {
+                    Some(u) => u,
+                    None => uops[self.ip].clone(),
+                }
+            } else {
+                uops[self.ip].clone()
+            };
 
             // Ramas Exacto (BigDecimal) autocontenidas delegadas a
             // `ops_uops_exacto.rs` (F1-T7).
@@ -509,17 +517,34 @@ impl ForjaFast {
                 Uop::Halt => break,
 
                 // === FUNCTIONS (Flat Var Stack) ===
-                Uop::CallClosure(var_idx, nargs) => {
-                    // La variable local var_idx contiene el nombre de la función
-                    // del closure: reescribir a Uop::Call y reprocesar.
-                    let nombre_val = self
-                        .locals()
-                        .get(var_idx)
-                        .copied()
-                        .unwrap_or(ValorFast::nulo());
-                    if nombre_val.es_texto() {
-                        let nombre = self.str_heap[nombre_val.indice_texto() as usize].clone();
-                        uops[self.ip] = Uop::Call(nombre.to_string(), nargs);
+                Uop::CallClosure(nargs) => {
+                    // Pila: [callee, arg1, ..., argN]: reescribir a Uop::Call
+                    // dejando sólo los argumentos encima.
+                    let n = nargs;
+                    let mut args: Vec<ValorFast> = Vec::with_capacity(n);
+                    for _ in 0..n {
+                        args.push(self.pop_valor()?);
+                    }
+                    args.reverse();
+                    let callee = self.pop_valor()?;
+                    if callee.es_texto() {
+                        let nombre = self.str_heap[callee.indice_texto() as usize].clone();
+                        for a in args {
+                            self.push_valor(a);
+                        }
+                        self.uop_forzado = Some(Uop::Call(nombre.to_string(), n));
+                        self.hay_uop_forzado = true;
+                        continue;
+                    }
+                    // F12-T1: closure con entorno (objeto `Closure`): el entorno
+                    // va como primer argumento.
+                    if let Some((nombre, env)) = self.desempaquetar_closure(&callee) {
+                        self.push_valor(env);
+                        for a in args {
+                            self.push_valor(a);
+                        }
+                        self.uop_forzado = Some(Uop::Call(nombre.to_string(), n + 1));
+                        self.hay_uop_forzado = true;
                         continue;
                     }
                     self.push_valor(ValorFast::nulo());
@@ -804,6 +829,7 @@ impl ForjaFast {
                                 let (nuevo_shape, _) =
                                     self.shape_registry.add_campo_dinamico(shape_id, field_sym);
                                 self.obj_shapes[idx as usize] = nuevo_shape;
+                                self.obj_heap[idx as usize].shape_id = nuevo_shape;
                                 if sidx < self.obj_heap[idx as usize].campos_vec.len() {
                                     self.obj_heap[idx as usize].campos_vec[sidx] = v;
                                 } else {
@@ -915,26 +941,15 @@ impl ForjaFast {
                         if clase_sym == self.sym_canal_emisor {
                             let chan_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
-                            let method_str = self.sym_table.get(method_sym);
-                            eprintln!(
-                                "[DBG] enviar#3: clase_sym={:?}, method_sym={:?}, chan_idx={}",
-                                self.sym_table.get(clase_sym),
-                                method_str,
-                                chan_idx
-                            );
                             if method_sym == self.sym_enviar || method_sym.0 == self.sym_send.0 {
                                 if !args.is_empty() {
                                     let val = args[0];
-                                    let val_str = self.mostrar_valor(&val);
-                                    eprintln!("[DBG] enviar#3: enviando val={}", val_str);
                                     let ok = self.canal_enviar(chan_idx, val);
                                     self.push_valor(ValorFast::booleano(ok));
                                 } else {
-                                    eprintln!("[DBG] enviar#3: sin argumentos");
                                     self.push_valor(ValorFast::nulo());
                                 }
                             } else {
-                                eprintln!("[DBG] enviar#3: metodo no coincide");
                                 self.push_valor(ValorFast::nulo());
                             }
                             self.ip += 1;
@@ -943,13 +958,6 @@ impl ForjaFast {
                         if clase_sym == self.sym_canal_receptor {
                             let chan_idx =
                                 self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
-                            let method_str = self.sym_table.get(method_sym);
-                            eprintln!(
-                                "[DBG] recibir#3: clase_sym={:?}, method_sym={:?}, chan_idx={}",
-                                self.sym_table.get(clase_sym),
-                                method_str,
-                                chan_idx
-                            );
                             if method_sym == self.sym_recibir
                                 || method_sym.0 == self.sym_recibir.0
                                 || method_sym.0 == self.sym_receive.0
@@ -960,13 +968,20 @@ impl ForjaFast {
                                         let val = self.valor_de_channel(cv);
                                         self.push_valor(val)
                                     }
-                                    None => {
-                                        eprintln!("[DBG] recibir#3: recv() sin mensaje");
-                                        self.push_valor(ValorFast::nulo())
+                                    None => self.push_valor(ValorFast::nulo()),
+                                }
+                            } else if crate::vm_fast::ops_metodos::es_try_recibir(
+                                self.sym_table.get(method_sym),
+                            ) {
+                                // F12-T2: recepción no bloqueante.
+                                match self.canal_try_recibir(chan_idx) {
+                                    Some(cv) => {
+                                        let val = self.valor_de_channel(cv);
+                                        self.push_valor(val)
                                     }
+                                    None => self.push_valor(ValorFast::nulo()),
                                 }
                             } else {
-                                eprintln!("[DBG] recibir#3: metodo no coincide");
                                 self.push_valor(ValorFast::nulo());
                             }
                             self.ip += 1;

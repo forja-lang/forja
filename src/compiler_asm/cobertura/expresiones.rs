@@ -224,7 +224,7 @@ fn constructos_no_soportados_registran_error_sin_paniquear() {
             Expresion::Hilo {
                 cuerpo: vec![decl_asignacion("ent", num(1))],
             },
-            Expresion::CanalNuevo,
+            Expresion::CanalNuevo(None),
             Expresion::Seleccionar {
                 brazos: vec![BrazoSeleccionar {
                     recepcion: None,

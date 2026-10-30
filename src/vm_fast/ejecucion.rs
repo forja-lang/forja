@@ -38,11 +38,26 @@ impl ForjaFast {
                 inst.record(ip);
             }
 
-            // SAFETY: ip < len está garantizado por la condición del loop.
-            // Leemos el opcode via raw pointer para evitar el Clone de Opcode
-            // (que incrementaría ref counts de Arc<str> innecesariamente).
-            // El puntero es válido durante toda la iteración del match.
-            let op: &Opcode = unsafe { &*self.bytecode.as_ptr().add(ip) };
+            // Instrucción forzada por la ejecución anterior (ver
+            // `CallClosure`: ejecuta `Call` sin parchear el opcode).
+            let op_forzado = if self.hay_op_forzado {
+                self.hay_op_forzado = false;
+                self.op_forzado.take()
+            } else {
+                None
+            };
+            let op_propia;
+            let op: &Opcode = match op_forzado {
+                Some(o) => {
+                    op_propia = o;
+                    &op_propia
+                }
+                // SAFETY: ip < len está garantizado por la condición del loop.
+                // Leemos el opcode via raw pointer para evitar el Clone de Opcode
+                // (que incrementaría ref counts de Arc<str> innecesariamente).
+                // El puntero es válido durante toda la iteración del match.
+                None => unsafe { &*self.bytecode.as_ptr().add(ip) },
+            };
 
             // Ramas autocontenidas (superinstrucciones float, stack bypass, fused ops,
             // comparaciones y operadores lógicos) delegadas a `ops_float.rs` (F1-T7).
@@ -935,18 +950,42 @@ impl ForjaFast {
                 // La variable local var_idx contiene el nombre de la función a
                 // llamar (el valor de un closure). Reescribe el opcode a Call y
                 // reprocesa la misma posición.
-                Opcode::CallClosure(var_idx, nargs) => {
-                    let nombre_val = self
-                        .locals()
-                        .get(*var_idx)
-                        .copied()
-                        .unwrap_or(ValorFast::nulo());
-                    if nombre_val.es_texto() {
-                        let nombre = self.str_heap[nombre_val.indice_texto() as usize].clone();
-                        self.bytecode[self.ip] = Opcode::Call(nombre, *nargs);
+                Opcode::CallClosure(nargs) => {
+                    // Pila: [callee, arg1, ..., argN]. Se desempujan los
+                    // argumentos para llegar al callee, y se vuelven a empujar
+                    // para que `Call` los encuentre encima.
+                    let n = *nargs;
+                    let mut args: Vec<ValorFast> = Vec::with_capacity(n);
+                    for _ in 0..n {
+                        args.push(self.pop_valor()?);
+                    }
+                    args.reverse();
+                    let callee = self.pop_valor()?;
+                    if callee.es_texto() {
+                        let nombre = self.str_heap[callee.indice_texto() as usize].clone();
+                        for a in args {
+                            self.push_valor(a);
+                        }
+                        // Se ejecuta `Call` en el mismo ip, sin reescribir el
+                        // opcode: en las llamadas siguientes el bytecode vuelve a
+                        // empujar el destinatario antes de `CallClosure`.
+                        self.op_forzado = Some(Opcode::Call(nombre, n));
+                        self.hay_op_forzado = true;
                         continue;
                     }
-                    // Sin nombre válido: push nulo y avanzar
+                    // F12-T1: un closure es un objeto `Closure` con `fn` y `env`.
+                    // El entorno viaja como primer argumento (la función anónima
+                    // lo espera en `__entorno`).
+                    if let Some((nombre, env)) = self.desempaquetar_closure(&callee) {
+                        self.push_valor(env);
+                        for a in args {
+                            self.push_valor(a);
+                        }
+                        self.op_forzado = Some(Opcode::Call(nombre, n + 1));
+                        self.hay_op_forzado = true;
+                        continue;
+                    }
+                    // Sin destinatario válido: resultado nulo
                     self.push_valor(ValorFast::nulo());
                     self.ip += 1;
                 }

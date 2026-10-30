@@ -164,6 +164,28 @@ fn test_canal_multiple_mensajes() {
     assert_eq!(out, vec!["60"]);
 }
 
+/// F12-T2: `try_recibir` es no bloqueante pero **sí** entrega el mensaje cuando
+/// lo hay (antes devolvía siempre Nulo, así que el test de "vacío" pasaba sin
+/// comprobar nada).
+#[test]
+fn test_canal_try_recibir_entrega_mensaje() {
+    let out = output_fast(
+        r#"
+        funcion main() {
+            variable tx, rx = canal()
+            tx.enviar(7)
+            escribir(rx.try_recibir())
+            variable vacio = rx.try_recibir()
+            si (vacio == nulo) {
+                escribir("vacio")
+            }
+        }
+        main()
+        "#,
+    );
+    assert_eq!(out, vec!["7", "vacio"]);
+}
+
 #[test]
 fn test_canal_try_recibir() {
     let out = output_fast(

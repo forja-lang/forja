@@ -7,6 +7,15 @@
 
 use super::*;
 
+/// F12-T2: nombres aceptados para la recepción **no bloqueante** de un
+/// `CanalReceptor` (`rx.try_recibir()` → valor o Nulo si no hay mensajes).
+pub(crate) fn es_try_recibir(nombre: &str) -> bool {
+    matches!(
+        nombre,
+        "try_recibir" | "intentar_recibir" | "try_recv" | "try_receive"
+    )
+}
+
 impl ForjaFast {
     /// Ejecuta las ramas de llamada a metodos del `match op`.
     ///
@@ -16,10 +25,18 @@ impl ForjaFast {
     pub(crate) fn ejecutar_ops_metodos(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
             Opcode::CallMethod(m, nargs) => {
-                if let Some(b) = resolver_builtin_fast(m.as_ref()) {
-                    self.exec_builtin(b, *nargs)?;
-                    self.ip += 1;
-                    return Ok(true);
+                // Un método de usuario puede llamarse como un builtin
+                // (`c.obtener()` vs `arreglo.obtener(i)`). Los builtins no
+                // reciben el receptor como el resto de la pila, así que despachar
+                // por nombre cuando el receptor es un objeto consumía valores
+                // ajenos (`"pref " + c.obtener()` perdía el texto).
+                let receptor_es_objeto = self.peek_valor(*nargs).es_objeto();
+                if !receptor_es_objeto {
+                    if let Some(b) = resolver_builtin_fast(m.as_ref()) {
+                        self.exec_builtin(b, *nargs)?;
+                        self.ip += 1;
+                        return Ok(true);
+                    }
                 }
                 self.flush_stack();
                 let mut args: Vec<ValorFast> = Vec::with_capacity(*nargs);
@@ -36,26 +53,15 @@ impl ForjaFast {
                     if clase_sym == self.sym_canal_emisor {
                         let chan_idx =
                             self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
-                        let method_str = self.sym_table.get(method_sym);
-                        eprintln!(
-                            "[DBG] enviar#1: clase_sym={:?}, method_sym={:?}, chan_idx={}",
-                            self.sym_table.get(clase_sym),
-                            method_str,
-                            chan_idx
-                        );
                         if method_sym == self.sym_enviar || method_sym.0 == self.sym_send.0 {
                             if !args.is_empty() {
                                 let val = args[0];
-                                let val_str = self.mostrar_valor(&val);
-                                eprintln!("[DBG] enviar#1: enviando val={}", val_str);
                                 let ok = self.canal_enviar(chan_idx, val);
                                 self.push_valor(ValorFast::booleano(ok));
                             } else {
-                                eprintln!("[DBG] enviar#1: sin argumentos");
                                 self.push_valor(ValorFast::nulo());
                             }
                         } else {
-                            eprintln!("[DBG] enviar#1: metodo no coincide");
                             self.push_valor(ValorFast::nulo());
                         }
                         self.ip += 1;
@@ -64,13 +70,6 @@ impl ForjaFast {
                     if clase_sym == self.sym_canal_receptor {
                         let chan_idx =
                             self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
-                        let method_str = self.sym_table.get(method_sym);
-                        eprintln!(
-                            "[DBG] recibir#1: clase_sym={:?}, method_sym={:?}, chan_idx={}",
-                            self.sym_table.get(clase_sym),
-                            method_str,
-                            chan_idx
-                        );
                         if method_sym == self.sym_recibir
                             || method_sym.0 == self.sym_recibir.0
                             || method_sym.0 == self.sym_receive.0
@@ -82,13 +81,18 @@ impl ForjaFast {
                                     let val = self.valor_de_channel(cv);
                                     self.push_valor(val)
                                 }
-                                None => {
-                                    eprintln!("[DBG] recibir#1: recv() sin mensaje");
-                                    self.push_valor(ValorFast::nulo())
+                                None => self.push_valor(ValorFast::nulo()),
+                            }
+                        } else if es_try_recibir(self.sym_table.get(method_sym)) {
+                            // F12-T2: `rx.try_recibir()` no bloquea; Nulo si vacío.
+                            match self.canal_try_recibir(chan_idx) {
+                                Some(cv) => {
+                                    let val = self.valor_de_channel(cv);
+                                    self.push_valor(val)
                                 }
+                                None => self.push_valor(ValorFast::nulo()),
                             }
                         } else {
-                            eprintln!("[DBG] recibir#1: metodo no coincide");
                             self.push_valor(ValorFast::nulo());
                         }
                         self.ip += 1;
@@ -238,12 +242,18 @@ impl ForjaFast {
 
             // ─── CALLMETHODCACHED (Fase 2b) — método con SymId e inline cache ───
             Opcode::CallMethodCached(method_sym_id, nargs) => {
-                // Primero verificar si es un builtin (split, length, etc.)
+                // Primero verificar si es un builtin (split, length, etc.), pero
+                // sólo si el receptor no es un objeto: si lo es, el nombre puede
+                // ser un método de usuario (`c.obtener()`) y los builtins
+                // consumen otra cantidad de valores de la pila.
                 let method_name_str = self.sym_table.get(SymId(*method_sym_id));
-                if let Some(b) = resolver_builtin_fast(method_name_str) {
-                    self.exec_builtin(b, *nargs)?;
-                    self.ip += 1;
-                    return Ok(true);
+                let receptor_es_objeto = self.peek_valor(*nargs).es_objeto();
+                if !receptor_es_objeto {
+                    if let Some(b) = resolver_builtin_fast(method_name_str) {
+                        self.exec_builtin(b, *nargs)?;
+                        self.ip += 1;
+                        return Ok(true);
+                    }
                 }
                 // Intentar inline cache primero
                 let ip = self.ip;
@@ -319,26 +329,15 @@ impl ForjaFast {
                     if clase_sym == self.sym_canal_emisor {
                         let chan_idx =
                             self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
-                        let method_str = self.sym_table.get(method_sym);
-                        eprintln!(
-                            "[DBG] enviar#2: clase_sym={:?}, method_sym={:?}, chan_idx={}",
-                            self.sym_table.get(clase_sym),
-                            method_str,
-                            chan_idx
-                        );
                         if method_sym == self.sym_enviar || method_sym.0 == self.sym_send.0 {
                             if !args.is_empty() {
                                 let val = args[0];
-                                let val_str = self.mostrar_valor(&val);
-                                eprintln!("[DBG] enviar#2: enviando val={}", val_str);
                                 let ok = self.canal_enviar(chan_idx, val);
                                 self.push_valor(ValorFast::booleano(ok));
                             } else {
-                                eprintln!("[DBG] enviar#2: sin argumentos");
                                 self.push_valor(ValorFast::nulo());
                             }
                         } else {
-                            eprintln!("[DBG] enviar#2: metodo no coincide");
                             self.push_valor(ValorFast::nulo());
                         }
                         self.ip += 1;
@@ -347,13 +346,6 @@ impl ForjaFast {
                     if clase_sym == self.sym_canal_receptor {
                         let chan_idx =
                             self.obj_heap[idx as usize].campos_vec[0].a_entero() as usize;
-                        let method_str = self.sym_table.get(method_sym);
-                        eprintln!(
-                            "[DBG] recibir#2: clase_sym={:?}, method_sym={:?}, chan_idx={}",
-                            self.sym_table.get(clase_sym),
-                            method_str,
-                            chan_idx
-                        );
                         if method_sym == self.sym_recibir
                             || method_sym.0 == self.sym_recibir.0
                             || method_sym.0 == self.sym_receive.0
@@ -364,13 +356,18 @@ impl ForjaFast {
                                     let val = self.valor_de_channel(cv);
                                     self.push_valor(val)
                                 }
-                                None => {
-                                    eprintln!("[DBG] recibir#2: recv() sin mensaje");
-                                    self.push_valor(ValorFast::nulo())
+                                None => self.push_valor(ValorFast::nulo()),
+                            }
+                        } else if es_try_recibir(self.sym_table.get(method_sym)) {
+                            // F12-T2: `rx.try_recibir()` no bloquea; Nulo si vacío.
+                            match self.canal_try_recibir(chan_idx) {
+                                Some(cv) => {
+                                    let val = self.valor_de_channel(cv);
+                                    self.push_valor(val)
                                 }
+                                None => self.push_valor(ValorFast::nulo()),
                             }
                         } else {
-                            eprintln!("[DBG] recibir#2: metodo no coincide");
                             self.push_valor(ValorFast::nulo());
                         }
                         self.ip += 1;

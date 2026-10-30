@@ -55,6 +55,14 @@ impl ForjaFast {
             let op = self.bytecode[i].clone();
 
             match op {
+                // F11-T5: los índices de slot locales se reutilizan en cada
+                // función (parámetros desde 0 y temporales a continuación), así
+                // que un tipo inferido dentro de una función no vale en la
+                // siguiente. Sin este reset, `LoadIdx(4)` de un método podía
+                // especializarse con el tipo que el slot 4 tenía en otra
+                // función (p. ej. un `self` objeto leído como entero).
+                Opcode::FunctionDef(_, _) => tipos_var.fill(None),
+
                 // ── Asignaciones literales: inferir tipo exacto ─────────────
                 // NOTA: Los opcodes fusionados (DeclareEnteroOp, etc.) solo se
                 // generan para variables LOCALES (DeclareIdx). Las variables
@@ -100,9 +108,9 @@ impl ForjaFast {
                     if idx < tipos_var.len() {
                         let prev_tipo = if i > 0 {
                             match &self.bytecode[i - 1] {
-                                Opcode::PushEntero(_)
-                                | Opcode::LoadIdxEntero(_)
-                                | Opcode::StoreEnteroOp(_, _) => Some(TipoInferido::Entero),
+                                Opcode::PushEntero(_) | Opcode::LoadIdxEntero(_) => {
+                                    Some(TipoInferido::Entero)
+                                }
                                 Opcode::PushDecimal(_)
                                 | Opcode::LoadIdxFloat(_)
                                 | Opcode::StoreIdxFloat(_)
@@ -132,9 +140,9 @@ impl ForjaFast {
                     if idx < tipos_var.len() && !global_indices.contains(&idx) {
                         let prev_tipo = if i > 0 {
                             match &self.bytecode[i - 1] {
-                                Opcode::PushEntero(_)
-                                | Opcode::LoadIdxEntero(_)
-                                | Opcode::StoreEnteroOp(_, _) => Some(TipoInferido::Entero),
+                                Opcode::PushEntero(_) | Opcode::LoadIdxEntero(_) => {
+                                    Some(TipoInferido::Entero)
+                                }
                                 Opcode::PushDecimal(_)
                                 | Opcode::LoadIdxFloat(_)
                                 | Opcode::DeclareFloatOp(_, _)
@@ -158,9 +166,9 @@ impl ForjaFast {
                     if idx < tipos_var.len() {
                         let prev_tipo = if i > 0 {
                             match &self.bytecode[i - 1] {
-                                Opcode::PushEntero(_)
-                                | Opcode::LoadIdxEntero(_)
-                                | Opcode::StoreEnteroOp(_, _) => Some(TipoInferido::Entero),
+                                Opcode::PushEntero(_) | Opcode::LoadIdxEntero(_) => {
+                                    Some(TipoInferido::Entero)
+                                }
                                 Opcode::PushDecimal(_)
                                 | Opcode::LoadIdxFloat(_)
                                 | Opcode::DeclareFloatOp(_, _)
@@ -208,34 +216,11 @@ impl ForjaFast {
                     }
                 }
 
-                // ── STRING BUILDER: fusionar LoadIdx + Add(texto) + StoreIdx ──
-                Opcode::Add => {
-                    if let Some((t1, t2)) = self.inferir_tipos_binarios(i, &tipos_var) {
-                        if t1 == TipoInferido::Entero && t2 == TipoInferido::Entero {
-                            self.bytecode[i] = Opcode::AddInt;
-                        } else if t1 == TipoInferido::Flotante && t2 == TipoInferido::Flotante {
-                            self.bytecode[i] = Opcode::AddFloat;
-                        } else if t1 == TipoInferido::Texto
-                            && t2 == TipoInferido::Texto
-                            && i + 1 < self.bytecode.len()
-                        {
-                            // Detectar s = s + x → StrAppend(idx)
-                            let next = self.bytecode[i + 1].clone();
-                            if let Opcode::StoreIdx(idx) = &next {
-                                if i >= 2 {
-                                    let prev = self.bytecode[i - 2].clone();
-                                    if let Opcode::LoadIdx(prev_idx) = &prev {
-                                        if prev_idx == idx {
-                                            self.bytecode[i - 2] = Opcode::Pop;
-                                            self.bytecode[i] = Opcode::StrAppend(*idx);
-                                            self.bytecode[i + 1] = Opcode::Pop;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                // (F11-T5) Ya no se fusiona `LoadIdx + Add + StoreIdx` en
+                // `StrAppend`: el buffer del builder sólo se materializaba en
+                // `Return` y `LoadIdx` no lo consultaba, así que acumular texto
+                // dentro de un bucle perdía lo concatenado. Se deja el `Add`
+                // genérico, que es correcto.
 
                 // ── Opcodes de comparación ──
                 Opcode::Igual => {
@@ -395,6 +380,12 @@ impl ForjaFast {
         ip: usize,
         tipos_var: &[Option<TipoInferido>],
     ) -> Option<(TipoInferido, TipoInferido)> {
+        // El escaneo es **conservador a propósito**: sólo se especializa cuando
+        // los dos operandos provienen de productores de un valor contiguos y
+        // conocidos. Cruzar un opcode que consume la pila (`Call`, `Add`,
+        // `Store`, saltos…) hacía que se tomaran como operandos los valores
+        // *de dentro* de la llamada y `escribir("x=" + f(2) + "")` se
+        // especializara a `AddInt`, perdiendo el prefijo de texto.
         let mut operandos_encontrados = 0;
         let mut tipos = [TipoInferido::Desconocido; 2];
 
@@ -402,29 +393,17 @@ impl ForjaFast {
             if operandos_encontrados >= 2 {
                 break;
             }
-            let op = &self.bytecode[j];
-            match op {
-                Opcode::PushEntero(_) | Opcode::StoreEnteroOp(_, _) => {
+            match &self.bytecode[j] {
+                // Productores de exactamente un valor con tipo conocido.
+                Opcode::PushEntero(_) | Opcode::LoadIdxEntero(_) | Opcode::LoadAddInt(_, _) => {
                     tipos[operandos_encontrados] = TipoInferido::Entero;
                     operandos_encontrados += 1;
                 }
-                Opcode::LoadIdxEntero(_) | Opcode::LoadAddInt(_, _) => {
-                    tipos[operandos_encontrados] = TipoInferido::Entero;
-                    operandos_encontrados += 1;
-                }
-                Opcode::PushDecimal(_) => {
+                Opcode::PushDecimal(_) | Opcode::LoadIdxFloat(_) | Opcode::LoadAddFloat(_, _) => {
                     tipos[operandos_encontrados] = TipoInferido::Flotante;
                     operandos_encontrados += 1;
                 }
-                Opcode::LoadIdxFloat(_) | Opcode::LoadAddFloat(_, _) => {
-                    tipos[operandos_encontrados] = TipoInferido::Flotante;
-                    operandos_encontrados += 1;
-                }
-                Opcode::DeclareFloatOp(_, _) | Opcode::StoreFloatOp(_, _) => {
-                    tipos[operandos_encontrados] = TipoInferido::Flotante;
-                    operandos_encontrados += 1;
-                }
-                Opcode::PushBooleano(_) | Opcode::DeclareBooleanoOp(_, _) => {
+                Opcode::PushBooleano(_) => {
                     tipos[operandos_encontrados] = TipoInferido::Booleano;
                     operandos_encontrados += 1;
                 }
@@ -432,13 +411,8 @@ impl ForjaFast {
                     tipos[operandos_encontrados] = TipoInferido::Texto;
                     operandos_encontrados += 1;
                 }
-                Opcode::LoadIdx(idx) => {
-                    // Si LoadIdx no fue especializado aún, consultar tipos_var
-                    if let Some(Some(tipo)) = idx.checked_sub(0).and_then(|_| tipos_var.get(*idx)) {
-                        tipos[operandos_encontrados] = *tipo;
-                    } else {
-                        tipos[operandos_encontrados] = TipoInferido::Desconocido;
-                    }
+                Opcode::PushNulo => {
+                    tipos[operandos_encontrados] = TipoInferido::Desconocido;
                     operandos_encontrados += 1;
                 }
                 // Modulo2(src) → push entero (resultado de i & 1)
@@ -446,20 +420,47 @@ impl ForjaFast {
                     tipos[operandos_encontrados] = TipoInferido::Entero;
                     operandos_encontrados += 1;
                 }
-                _ => {}
-            }
-
-            // Saltar opcodes que no modifican el stack (labels, etc.)
-            if matches!(
-                op,
-                Opcode::Label(_) | Opcode::FunctionDef(_, _) | Opcode::Halt
-            ) {
-                continue;
+                Opcode::LoadIdx(idx) => {
+                    // Sin tipo inferido para el slot, el operando es desconocido
+                    // (y la operación no se especializa).
+                    tipos[operandos_encontrados] = tipos_var
+                        .get(*idx)
+                        .copied()
+                        .flatten()
+                        .unwrap_or(TipoInferido::Desconocido);
+                    operandos_encontrados += 1;
+                }
+                // `LoadIdx2(a, b)` empuja dos valores: `a` y después `b`, así
+                // que el primero que se ve hacia atrás es `b`.
+                Opcode::LoadIdx2(a, b) => {
+                    for idx in [*b, *a] {
+                        if operandos_encontrados >= 2 {
+                            break;
+                        }
+                        tipos[operandos_encontrados] = tipos_var
+                            .get(idx)
+                            .copied()
+                            .flatten()
+                            .unwrap_or(TipoInferido::Desconocido);
+                        operandos_encontrados += 1;
+                    }
+                }
+                // Opcodes sin efecto en la pila (sólo escriben memoria): se
+                // puede seguir mirando hacia atrás.
+                Opcode::StoreEnteroOp(_, _)
+                | Opcode::StoreFloatOp(_, _)
+                | Opcode::DeclareEnteroOp(_, _)
+                | Opcode::DeclareFloatOp(_, _)
+                | Opcode::DeclareBooleanoOp(_, _)
+                | Opcode::LoadStoreIdx(_, _) => {}
+                // Cualquier otra cosa cambia la pila de forma desconocida:
+                // no hay garantía de que los dos operandos vengan de aquí.
+                _ => return None,
             }
         }
 
         if operandos_encontrados == 2 {
-            // Orden inverso: stack es LIFO, el primer encontrado es el tope (segundo operando)
+            // Orden inverso: stack es LIFO, el primero encontrado es el tope (segundo operando)
             Some((tipos[1], tipos[0]))
         } else {
             None

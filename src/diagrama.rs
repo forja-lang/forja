@@ -466,6 +466,7 @@ impl DiagramGenerator {
             Expresion::LiteralTexto(s) => format!("\"{s}\""),
             Expresion::LiteralBooleano(b) => (if *b { "true" } else { "false" }).to_string(),
             Expresion::LiteralNulo => "nulo".to_string(),
+            Expresion::Si { .. } => "si { … }".to_string(),
             Expresion::LiteralExacto(coeff, scale) => format!("Exacto({coeff},{scale})"),
             Expresion::Identificador { nombre: n, .. } => n.clone(),
             Expresion::Binaria {
@@ -545,7 +546,7 @@ impl DiagramGenerator {
             Expresion::Coincidir { .. } => "coincidir...".to_string(),
             Expresion::Closure { .. } => "closure...".to_string(),
             Expresion::Hilo { .. } => "hilo{...}".to_string(),
-            Expresion::CanalNuevo => "canal()".to_string(),
+            Expresion::CanalNuevo(_) => "canal()".to_string(),
             Expresion::Seleccionar { brazos } => {
                 let mut out = String::from("seleccionar { ");
                 for (i, brazo) in brazos.iter().enumerate() {

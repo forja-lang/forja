@@ -707,6 +707,7 @@ impl Formatter {
             Expresion::LiteralTexto(s) => format!("\"{}\"", escapar_texto(s)),
             Expresion::LiteralBooleano(b) => (if *b { "verdadero" } else { "falso" }).to_string(),
             Expresion::LiteralNulo => "nulo".to_string(),
+            Expresion::Si { .. } => "si { … }".to_string(),
             Expresion::Identificador { nombre: n, .. } => n.clone(),
             Expresion::Binaria {
                 izquierda,
@@ -832,7 +833,10 @@ impl Formatter {
                 out.push_str(&format!("{}}}", self.indent_str()));
                 out
             }
-            Expresion::CanalNuevo => "canal()".to_string(),
+            Expresion::CanalNuevo(capacidad) => match capacidad {
+                Some(c) => format!("canal({})", self.expresion_a_string(c)),
+                None => "canal()".to_string(),
+            },
             Expresion::Try(expr) => {
                 let exp_str = self.expresion_a_string(expr);
                 format!("{}?", exp_str)

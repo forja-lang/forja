@@ -200,6 +200,12 @@ impl ForjaFast {
         self.ic_mapget = vec![false; self.bytecode.len()];
         self.ic_mapset = vec![false; self.bytecode.len()];
 
+        // 8b. Descartar overrides de instrucción pendientes (F11-T5).
+        self.op_forzado = None;
+        self.hay_op_forzado = false;
+        self.uop_forzado = None;
+        self.hay_uop_forzado = false;
+
         // 9. Aplicar quickening (especialización estática)
         self.quickening();
 

@@ -423,9 +423,16 @@ pub enum ValorPortable {
     Texto(Arc<str>),
     Arreglo(Vec<ValorPortable>),
     Mapa(Vec<(String, ValorPortable)>),
+    /// F12-T2: referencia a un contenedor ya serializado en este mismo mensaje.
+    /// Preserva ciclos y objetos compartidos (el receptor reutiliza el valor
+    /// creado para ese id).
+    Referencia(u32),
     Objeto {
         clase: Arc<str>,
-        campos: Vec<ValorPortable>,
+        /// `(campo, valor)` en el orden del shape del emisor. Los nombres son
+        /// necesarios: el shape de la clase en la VM receptora puede no conocer
+        /// todavía sus campos (sólo se registran al escribir en ellos).
+        campos: Vec<(Arc<str>, ValorPortable)>,
     },
 }
 

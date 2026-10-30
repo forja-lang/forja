@@ -436,6 +436,16 @@ fn test_fmt_si_sino() {
 }
 
 #[test]
+fn test_fmt_canal_con_capacidad() {
+    // F12-T2: `canal(n)` (backpressure) debe formatearse y re-parsearse igual.
+    assert_format_roundtrip(
+        "variable tx, rx = canal(4)
+variable t2, r2 = canal()
+",
+    );
+}
+
+#[test]
 fn test_fmt_mientras_para_repetir() {
     assert_format_roundtrip("mientras (x < 10) {\n    x = x + 1\n}\n");
     assert_format_roundtrip("para (variable i = 0; i < 5; i = i + 1) {\n    escribir(i)\n}\n");
@@ -614,4 +624,148 @@ escribir(p.edad)
     let root_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let out = forja::ejecutar_con_opciones_desde(code, root_dir, true, None).unwrap();
     assert_eq!(out, vec!["Ana", "25"]);
+}
+
+// ─── F12-T1: closures como valor con captura de entorno ─────────────────────
+
+/// Ejecuta por los motores disponibles y exige la misma salida: ruta canónica
+/// (IR + VM), backend AST y la ruta JIT (`ejecutar_jit`, que orquesta
+/// `jit_tiered` sobre la VM).
+///
+/// El ejecutor de uops (`ForjaFast::ejecutar_uops`) queda fuera: es experimental
+/// y hoy ni siquiera devuelve valores de objetos (da Nulo), así que no es un
+/// motor de ejecución utilizable.
+fn ejecutar_todos_los_motores(fuente: &str) -> Vec<String> {
+    fn correr_vm(bc: Vec<forja::bytecode::Opcode>) -> Vec<String> {
+        let mut vm = ForjaFast::new();
+        vm.set_max_inst(2_000_000);
+        vm.cargar_bytecode(bc);
+        vm.ejecutar().expect("vm");
+        vm.obtener_output().to_vec()
+    }
+
+    let (bc_ir, _) = forja::compilar_desde_ir(fuente).expect("ruta IR");
+    let salida_ir = correr_vm(bc_ir);
+    // Backend AST por la ruta real (con `postprocesar_globales`): el helper
+    // `ejecutar` de este archivo no lo aplica y deja los globales como locales.
+    let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let (bc_ast, _) =
+        forja::compilar_pipeline_completa_desde_ast(fuente, raiz).expect("backend AST");
+    let salida_ast = correr_vm(bc_ast);
+    let salida_jit = forja::ejecutar_jit(fuente).expect("ruta JIT");
+
+    assert_eq!(salida_ast, salida_ir, "AST vs IR");
+    assert_eq!(salida_jit, salida_ir, "JIT vs VM");
+    salida_ir
+}
+
+/// F12-T1 (DoD): un closure anónimo asignado a una variable y llamado funciona,
+/// y captura por valor las variables locales del ámbito donde se crea.
+#[test]
+fn f12_t1_closure_captura_por_valor() {
+    let salida = ejecutar_todos_los_motores(
+        r#"funcion h() -> Entero {
+    variable base = 40
+    variable f = func(x) { retornar x + base }
+    retornar f(2)
+}
+escribir(h())"#,
+    );
+    assert_eq!(salida, vec!["42"]);
+}
+
+/// La captura es un **snapshot**: mutar la variable después de crear el closure
+/// no cambia lo que el closure ve.
+#[test]
+fn f12_t1_la_captura_es_un_snapshot() {
+    let salida = ejecutar_todos_los_motores(
+        r#"funcion h() -> Entero {
+    variable k = 1
+    variable leer_k = func() { retornar k }
+    k = 99
+    retornar leer_k()
+}
+escribir(h())"#,
+    );
+    assert_eq!(salida, vec!["1"]);
+}
+
+/// Un closure puede escaparse de la función que lo crea: el entorno viaja con
+/// el valor.
+#[test]
+fn f12_t1_closure_retornado_conserva_su_entorno() {
+    let salida = ejecutar_todos_los_motores(
+        r#"funcion sumador(base) {
+    variable f = func(x) { retornar x + base }
+    retornar f
+}
+variable mas_cien = sumador(100)
+variable mas_uno = sumador(1)
+escribir(mas_cien(10))
+escribir(mas_uno(10))"#,
+    );
+    assert_eq!(salida, vec!["110", "11"]);
+}
+
+/// Closures anidados: el interno captura también del ámbito externo.
+#[test]
+fn f12_t1_closures_anidados() {
+    let salida = ejecutar_todos_los_motores(
+        r#"funcion h() -> Entero {
+    variable a = 10
+    variable exterior = func(b) {
+        variable interior = func(c) { retornar a + b + c }
+        retornar interior(100)
+    }
+    retornar exterior(1000)
+}
+escribir(h())"#,
+    );
+    assert_eq!(salida, vec!["1110"]);
+}
+
+/// Un closure con captura se puede pasar como callback a una función de usuario.
+#[test]
+fn f12_t1_callback_con_captura() {
+    let salida = ejecutar_todos_los_motores(
+        r#"funcion aplicar(f, v) { retornar f(v) }
+funcion h() -> Entero {
+    variable base = 7
+    variable f = func(x) { retornar x + base }
+    retornar aplicar(f, 35)
+}
+escribir(h())"#,
+    );
+    assert_eq!(salida, vec!["42"]);
+}
+
+/// Cada vuelta de un bucle crea un closure nuevo con el valor vigente.
+#[test]
+fn f12_t1_captura_en_bucle() {
+    let salida = ejecutar_todos_los_motores(
+        r#"funcion h() -> Entero {
+    variable suma = 0
+    variable i = 0
+    mientras (i < 3) {
+        variable por_i = func(x) { retornar x * i }
+        suma = suma + por_i(10)
+        i = i + 1
+    }
+    retornar suma
+}
+escribir(h())"#,
+    );
+    assert_eq!(salida, vec!["30"]);
+}
+
+/// Los globales **no** se capturan: el closure los lee en tiempo de llamada.
+#[test]
+fn f12_t1_los_globales_no_se_capturan() {
+    let salida = ejecutar_todos_los_motores(
+        r#"variable contador = 1
+variable leer_contador = func() { retornar contador }
+contador = 41
+escribir(leer_contador())"#,
+    );
+    assert_eq!(salida, vec!["41"]);
 }

@@ -369,6 +369,10 @@ impl Transpiler {
                     // Saltar main de Forja cuando hay GUI (Xilem genera su propio main)
                     self.emit_line(&format!("// fn main() de Forja omitido (GUI usa Xilem)"));
                 }
+                // En GUI, los callbacks se ejecutan desde el AST embebido (evaluador),
+                // no como Rust: emitir el cuerpo rompía con las funciones que arman
+                // layouts (llamadas a widgets que no existen en Rust).
+                Declaracion::Funcion { .. } if self.usa_gui() => {}
                 Declaracion::Funcion { .. } => {
                     self.transpilar_declaracion(decl);
                     self.emit_line("");
@@ -426,21 +430,29 @@ impl Transpiler {
                 }
                 self.emit_line("");
             }
-            // Generar el programa completo como datos estáticos de Rust
+            // Generar el programa completo como datos de Rust
             // El runtime (forja_gui_rt) se encarga de todo: tema, estado, eventos, layout, bucle
+            //
+            // Se emite como función y no como `static`: `vec![…]` no se puede construir
+            // en un `static` estable (`Vec` no es const), así que la forma estática no
+            // compilaba en ninguna versión de Rust.
             let ast_code = self.generar_ast_programa(&programa.declaraciones);
-            self.emit_line("// ─── Programa Forja como datos estáticos para el runtime ───");
+            self.emit_line("// ─── Programa Forja como datos para el runtime ───");
             self.emit_line("use forja::ast::*;");
             self.emit_line("");
-            self.emit_line("static PROGRAMA: Programa = Programa {");
-            self.emit_line("    declaraciones: vec![");
+            self.emit_line("fn programa() -> Programa {");
+            self.emit_line("    Programa {");
+            self.emit_line("        declaraciones: vec![");
+            self.indent();
             self.indent();
             for line in ast_code.lines() {
                 self.emit_line(line);
             }
             self.dedent();
-            self.emit_line("    ],");
-            self.emit_line("};");
+            self.dedent();
+            self.emit_line("        ],");
+            self.emit_line("    }");
+            self.emit_line("}");
             self.emit_line("");
 
             // main() delega completamente al runtime
@@ -452,7 +464,7 @@ impl Transpiler {
             self.emit_line("        .map(|s| s.to_string());");
             self.emit_line("");
             self.emit_line(
-                "    forja_gui_rt::build_and_run(&PROGRAMA, load_state.as_deref(), None, true)",
+                "    forja_gui_rt::build_and_run(&programa(), load_state.as_deref(), None, true)",
             );
             self.emit_line("}");
             self.emit_line("");
@@ -464,7 +476,7 @@ impl Transpiler {
                 "fn android_main(app: winit::platform::android::activity::AndroidApp) {",
             );
             self.emit_line(
-                "    forja_gui_rt::build_and_run_android(&PROGRAMA, None, None, true, app);",
+                "    forja_gui_rt::build_and_run_android(&programa(), None, None, true, app);",
             );
             self.emit_line("}");
             return Ok(self.output.clone());
@@ -964,7 +976,7 @@ impl Transpiler {
             match decl {
                 Declaracion::Expresion(Expresion::Seleccionar { .. }) => return true,
                 Declaracion::Expresion(Expresion::Hilo { .. }) => return true,
-                Declaracion::Expresion(Expresion::CanalNuevo) => return true,
+                Declaracion::Expresion(Expresion::CanalNuevo(_)) => return true,
                 Declaracion::Variable {
                     valor: Some(val), ..
                 } => {
@@ -1034,7 +1046,7 @@ impl Transpiler {
         match expr {
             Expresion::Seleccionar { .. } => true,
             Expresion::Hilo { .. } => true,
-            Expresion::CanalNuevo => true,
+            Expresion::CanalNuevo(_) => true,
             Expresion::LlamadaFuncion { nombre, .. } => {
                 nombre.contains("enviar") || nombre.contains("recibir") || nombre.contains("unir")
             }
@@ -2349,6 +2361,10 @@ impl Transpiler {
             }
             Expresion::LiteralBooleano(b) => b.to_string(),
             Expresion::LiteralNulo => "()".to_string(),
+            // `si` como elemento de layout sólo existe en la ruta GUI.
+            Expresion::Si { .. } => {
+                "panic!(\"`si` como expresión sólo se admite en apps GUI\")".to_string()
+            }
 
             Expresion::Identificador { nombre, .. } => {
                 if nombre == "self" {
@@ -2621,7 +2637,10 @@ impl Transpiler {
                 let inner = self.transpilar_expresion(expr);
                 format!("{}.into()?", inner)
             }
-            Expresion::CanalNuevo => "mpsc::channel()".to_string(),
+            Expresion::CanalNuevo(capacidad) => match capacidad {
+                Some(c) => format!("mpsc::sync_channel({})", self.transpilar_expresion(c)),
+                None => "mpsc::channel()".to_string(),
+            },
             Expresion::Seleccionar { brazos } => {
                 // Transpilar a crossbeam::select! macro
                 // Usamos un enfoque similar a Hilo: guardar/restaurar output state
@@ -3103,13 +3122,48 @@ impl Transpiler {
     fn generar_ast_expresion(&self, expr: &Expresion) -> String {
         match expr {
             Expresion::LiteralNumero(n) => format!("Expresion::LiteralNumero({})", n),
-            Expresion::LiteralDecimal(f) => format!("Expresion::LiteralDecimal({})", f),
+            // `{:?}` mantiene el `.0` (20.0 y no 20): un entero en el campo f64
+            // del AST no compila. Los no finitos se emiten como constantes.
+            Expresion::LiteralDecimal(f) => {
+                let literal = if f.is_finite() {
+                    format!("{:?}", f)
+                } else if f.is_nan() {
+                    "f64::NAN".to_string()
+                } else if *f > 0.0 {
+                    "f64::INFINITY".to_string()
+                } else {
+                    "f64::NEG_INFINITY".to_string()
+                };
+                format!("Expresion::LiteralDecimal({})", literal)
+            }
             Expresion::LiteralTexto(s) => format!(
                 "Expresion::LiteralTexto(String::from(\"{}\"))",
                 self.esc_ast_string(s)
             ),
             Expresion::LiteralBooleano(b) => format!("Expresion::LiteralBooleano({})", b),
             Expresion::LiteralNulo => "Expresion::LiteralNulo".to_string(),
+            Expresion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
+                let ramas = |b: &Vec<Declaracion>| {
+                    b.iter()
+                        .map(|d| self.generar_ast_declaracion(d))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                let sino = match bloque_falso {
+                    Some(b) => format!("Some(vec![{}])", ramas(b)),
+                    None => "None".to_string(),
+                };
+                format!(
+                    "Expresion::Si {{ condicion: Box::new({}), bloque_verdadero: vec![{}], bloque_falso: {} }}",
+                    self.generar_ast_expresion(condicion),
+                    ramas(bloque_verdadero),
+                    sino
+                )
+            }
             Expresion::LiteralExacto(coeff, scale) => {
                 format!("Expresion::LiteralExacto({}, {})", coeff, scale)
             }
@@ -3228,7 +3282,7 @@ impl Transpiler {
                     .collect();
                 format!("Expresion::Hilo {{ cuerpo: vec![{}] }}", blk.join(", "))
             }
-            Expresion::CanalNuevo => "Expresion::CanalNuevo".to_string(),
+            Expresion::CanalNuevo(_) => "Expresion::CanalNuevo".to_string(),
             Expresion::Try(inner) => format!(
                 "Expresion::Try(Box::new({}))",
                 self.generar_ast_expresion(inner)
@@ -3571,15 +3625,20 @@ mod tests {
     }
 
     #[test]
-    fn test_gui_genera_programa_estatico() {
+    fn test_gui_genera_programa_como_funcion() {
         let source = "importar gui\nfuncion main() {\n    escribir(\"hola\")\n}";
         let result = transpilar_source(source).unwrap();
-        // Ahora genera el programa como datos estaticos en vez de inline Xilem
-        assert!(result.contains("static PROGRAMA: Programa"));
+        // El programa se emite como función: `vec![…]` no es const, así que la
+        // forma `static PROGRAMA` no compilaba en ninguna versión estable de Rust.
+        assert!(result.contains("fn programa() -> Programa {"));
         assert!(result.contains("use forja::ast::*;"));
-        // main() usa build_and_run del runtime
-        assert!(result.contains("build_and_run"));
-        assert!(result.contains("PROGRAMA"));
+        assert!(
+            !result.contains("static PROGRAMA"),
+            "el AST no debe emitirse en un `static` (no es const):\n{result}"
+        );
+        // main() usa build_and_run del runtime, tomando el programa de la función
+        assert!(result.contains("build_and_run(&programa(),"));
+        assert!(result.contains("build_and_run_android(&programa(),"));
     }
 
     #[test]

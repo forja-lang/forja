@@ -127,9 +127,18 @@ pub enum Opcode {
     // === Funciones ===
     FunctionDef(Arc<str>, Vec<Arc<str>>), // (nombre, parámetros)
     Call(Arc<str>, usize),
-    /// Llamada indirecta a closure: la variable local `var_idx` contiene el
-    /// nombre de la función a llamar (el valor del closure). (var_idx, nargs)
-    CallClosure(usize, usize),
+    /// Llamada indirecta a closure (F11-T1).
+    ///
+    /// El destinatario es un **valor** en la pila: se empuja el closure (el
+    /// nombre de la función que representa) y después los argumentos, de modo
+    /// que la pila queda `[callee, arg1, ..., argN]`. La VM lee el callee,
+    /// reescribe el opcode a `Call` y continúa.
+    ///
+    /// Antes el opcode llevaba un índice de variable local (`CallClosure(idx,
+    /// nargs)`), pero los índices del generador no coincidían con los que
+    /// asigna `optimizar_indices` por ámbito: la llamada leía un slot
+    /// equivocado (nulo) y las closures no ejecutaban.
+    CallClosure(usize),
     Return,
 
     // === POO ===
@@ -331,6 +340,9 @@ pub enum Opcode {
     // === Concurrencia: Canales mpsc e Hilos ===
     /// Crear un canal mpsc real, empuja [tx_obj, rx_obj]
     ChannelNew,
+    /// F12-T2: como `ChannelNew` pero la capacidad (entero) se desempuja de la
+    /// pila: `enviar` bloquea cuando la cola está llena (backpressure).
+    ChannelNewCap,
     /// Lanzar un hilo que ejecuta la función `func_name`
     /// Los valores capturados ya están en la pila (captured_count)
     ThreadSpawn(Arc<str>, usize),
@@ -363,8 +375,22 @@ pub struct BytecodeGenerator {
     pub opcodes: Vec<Opcode>,
     label_counter: usize,
     errores: Vec<ErrorForja>,
-    /// Tipos inferidos por el TypeChecker (compile-time type information)
+    /// Tipos inferidos por el TypeChecker (compile-time type information).
+    ///
+    /// Es un mapa **por nombre y sin ámbitos**, así que no se usa para
+    /// especializar variables (un `variable b: Exacto` dentro de una función de
+    /// la stdlib retipaba el `b` global de otro programa). La especialización
+    /// sale de `tipos_ambito`/`retornos`, que el generador mantiene por ámbito.
     tipos_inferidos: Option<std::collections::HashMap<String, Tipo>>,
+    /// Tipos de las variables visibles en el ámbito que se está emitiendo
+    /// (parámetros, `variable`, constantes). Es la fuente de la especialización.
+    tipos_ambito: std::collections::HashMap<String, Tipo>,
+    /// Tipos de retorno anotados de funciones y métodos, por nombre simple.
+    retornos: std::collections::HashMap<String, Tipo>,
+    /// F12-T1: pila de nombres declarados por función. El tope es el ámbito en
+    /// el que se está emitiendo; sirve para decidir qué captura un closure (sólo
+    /// variables locales del ámbito envolvente, no globales).
+    pila_locales: Vec<std::collections::HashSet<String>>,
     /// Mapa de overloads de funciones (nombre -> Vec de overloads).
     /// Usado para name mangling cuando hay funciones con mismo nombre pero diferentes tipos.
     /// Cada overload: (tipos_param, tipo_retorno, parametros_tipo)
@@ -399,6 +425,11 @@ pub struct BytecodeGenerator {
     /// Almacenar aquí evita que optimizar_indices mezcle índices del ámbito
     /// exterior con los del ámbito de la función del hilo.
     hilo_funciones: Vec<(Arc<str>, Vec<Arc<str>>, Vec<Opcode>)>,
+    /// F11-T1: definiciones de closures (`FunctionDef` + cuerpo + `Return`)
+    /// diferidas al final del programa. No pueden emitirse en el punto de uso
+    /// porque la VM ejecuta el flujo secuencialmente: al entrar en el cuerpo
+    /// del closure ejecutaría su `Return` y saltaría el resto del programa.
+    closure_defs: Vec<Opcode>,
     /// Clases que definen constructor
     clases_con_constructor: std::collections::HashSet<String>,
 
@@ -422,6 +453,9 @@ impl BytecodeGenerator {
             label_counter: 0,
             errores: Vec::new(),
             tipos_inferidos: None,
+            tipos_ambito: std::collections::HashMap::new(),
+            retornos: std::collections::HashMap::new(),
+            pila_locales: vec![std::collections::HashSet::new()],
             contratos: Vec::new(),
             var_indices: std::collections::HashMap::new(),
             var_counter: 0,
@@ -429,6 +463,7 @@ impl BytecodeGenerator {
             channel_counter: 0,
             hilo_counter: 0,
             hilo_funciones: Vec::new(),
+            closure_defs: Vec::new(),
             clases_con_constructor: std::collections::HashSet::new(),
             profundidad_actual: 0,
             loop_stack: Vec::new(),
@@ -514,7 +549,43 @@ impl BytecodeGenerator {
                 // Keywords booleanos
                 match nombre.as_str() {
                     "verdadero" | "falso" => Some(Tipo::Booleano),
-                    _ => self.tipos_inferidos.as_ref()?.get(nombre).cloned(),
+                    _ => self.tipos_ambito.get(nombre).cloned(),
+                }
+            }
+            Expresion::Grupo(e) => self.inferir_tipo_expresion(e),
+            Expresion::LlamadaFuncion { nombre, .. } => self.retornos.get(nombre).cloned(),
+            Expresion::LlamadaMetodo { metodo, .. } => self.retornos.get(metodo).cloned(),
+            Expresion::Unaria { operador, expr } => match operador {
+                OperadorUnario::Negar => self.inferir_tipo_expresion(expr),
+                OperadorUnario::No => Some(Tipo::Booleano),
+            },
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
+                use Operador::*;
+                match operador {
+                    IgualIgual | Diferente | Menor | Mayor | MenorIgual | MayorIgual | Y | O => {
+                        Some(Tipo::Booleano)
+                    }
+                    Suma | Resta | Multiplicacion | Division | Modulo => {
+                        let izq = self.inferir_tipo_expresion(izquierda);
+                        let der = self.inferir_tipo_expresion(derecha);
+                        match (izq, der) {
+                            (Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Tipo::Entero),
+                            (Some(Tipo::Decimal), Some(Tipo::Decimal | Tipo::Entero))
+                            | (Some(Tipo::Entero), Some(Tipo::Decimal)) => Some(Tipo::Decimal),
+                            (
+                                Some(Tipo::Exacto),
+                                Some(Tipo::Exacto | Tipo::Entero | Tipo::Decimal),
+                            )
+                            | (Some(Tipo::Entero | Tipo::Decimal), Some(Tipo::Exacto)) => {
+                                Some(Tipo::Exacto)
+                            }
+                            _ => None,
+                        }
+                    }
                 }
             }
             _ => None,
@@ -641,7 +712,12 @@ impl BytecodeGenerator {
                 let es_decimal_izq = matches!(tipo_izq, Some(Tipo::Decimal));
                 let es_decimal_der = matches!(tipo_der, Some(Tipo::Decimal));
 
-                if es_exacto_izq || es_exacto_der {
+                // El otro operando debe ser numérico: `texto + Exacto` no es una
+                // suma de Exactos (antes se convertía el texto y se emitía
+                // `AddExact`, que devolvía Nulo y perdía la concatenación).
+                let exacto_con_numerico = (es_exacto_izq && (es_entero_der || es_decimal_der))
+                    || (es_exacto_der && (es_entero_izq || es_decimal_izq));
+                if exacto_con_numerico {
                     // Caso Exacto + Entero → Exacto o Exacto + Decimal → Exacto
                     // Generar operandos con conversión automática al valor más preciso
                     self.generar_expresion(izquierda);
@@ -807,6 +883,30 @@ impl BytecodeGenerator {
         let mut globales: Vec<&Declaracion> = Vec::new();
         let mut nuevas_funciones: Vec<Declaracion> = Vec::new();
 
+        // F11-T5: tipos de retorno anotados (funciones y métodos), para
+        // especializar llamadas sin depender del mapa global del TypeChecker.
+        self.retornos.clear();
+        for decl in &programa.declaraciones {
+            match decl {
+                Declaracion::Funcion {
+                    nombre,
+                    tipo_retorno: Some(t),
+                    ..
+                } => {
+                    self.retornos.insert(nombre.clone(), t.clone());
+                }
+                Declaracion::Clase { metodos, .. }
+                | Declaracion::Implementacion { metodos, .. } => {
+                    for m in metodos {
+                        if let Some(t) = &m.tipo_retorno {
+                            self.retornos.insert(m.nombre.clone(), t.clone());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
         // Primera pasada: recolectar nombres de funciones asincronas
         for decl in &programa.declaraciones {
             if let Declaracion::Funcion {
@@ -936,11 +1036,52 @@ impl BytecodeGenerator {
             self.opcodes.extend(body);
         }
 
+        // F11-T1: definiciones de closures, también fuera del flujo principal.
+        for op in self.closure_defs.drain(..) {
+            self.opcodes.push(op);
+        }
+
         if self.errores.is_empty() {
             Ok(self.opcodes.clone())
         } else {
             Err(self.errores.clone())
         }
+    }
+
+    /// `true` si `nombre` está declarado en algún ámbito visible (global de
+    /// nivel superior o local de la función en curso). Sirve para que una
+    /// variable tape a un builtin del mismo nombre (`variable leer = func()…`).
+    fn es_variable_visible(&self, nombre: &str) -> bool {
+        self.pila_locales
+            .iter()
+            .any(|ambito| ambito.contains(nombre))
+    }
+
+    /// F12-T1: variables libres del cuerpo de un closure que son **locales** del
+    /// ámbito envolvente. Los globales no se capturan: se leen en tiempo de
+    /// llamada.
+    fn variables_libres_closure(
+        &self,
+        parametros: &[Parametro],
+        cuerpo: &[Declaracion],
+    ) -> Vec<String> {
+        if self.pila_locales.len() < 2 {
+            return Vec::new();
+        }
+        let mut declaradas: std::collections::HashSet<String> =
+            parametros.iter().map(|p| p.nombre.clone()).collect();
+        let mut usadas: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for d in cuerpo {
+            Self::extraer_ids_decl(d, &mut declaradas, &mut usadas);
+        }
+        let locales = self.pila_locales.last().cloned().unwrap_or_default();
+        let mut libres: Vec<String> = usadas
+            .difference(&declaradas)
+            .filter(|nombre| locales.contains(*nombre))
+            .cloned()
+            .collect();
+        libres.sort();
+        libres
     }
 
     fn generar_declaraciones(&mut self, declaraciones: &[Declaracion]) {
@@ -1010,12 +1151,25 @@ impl BytecodeGenerator {
             .any(|(vname, campos)| vname == nombre_constructor && campos.is_empty())
     }
 
-    /// Emite la llamada final: si `nombre` es una variable local (closure o
-    /// callback recibido como parámetro), emite `CallClosure(var_idx, nargs)`;
-    /// si es una función conocida, emite `Call(nombre_real, nargs)`.
-    fn emitir_llamada_despacho(&mut self, nombre: &str, nombre_real: &str, nargs: usize) {
-        if let Some(&var_idx) = self.var_indices.get(nombre) {
-            self.emitir(Opcode::CallClosure(var_idx, nargs));
+    /// Si `nombre` es una variable (closure o callback recibido por
+    /// parámetro), empuja su valor como destinatario de la llamada y devuelve
+    /// `true`: la llamada debe usar `CallClosure`. Debe invocarse **antes** de
+    /// generar los argumentos.
+    fn emitir_callee_si_variable(&mut self, nombre: &str) -> bool {
+        if self.var_indices.contains_key(nombre) {
+            self.emitir(Opcode::Load(Arc::from(nombre)));
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Emite la llamada final: `CallClosure(nargs)` si el destinatario ya se
+    /// empujó con [`Self::emitir_callee_si_variable`], o `Call(nombre, nargs)`
+    /// para funciones conocidas.
+    fn emitir_llamada_despacho(&mut self, nombre_real: &str, nargs: usize, indirecta: bool) {
+        if indirecta {
+            self.emitir(Opcode::CallClosure(nargs));
         } else {
             self.emitir(Opcode::Call(Arc::from(nombre_real), nargs));
         }
@@ -1123,6 +1277,21 @@ impl BytecodeGenerator {
                     self.emitir(Opcode::PushNulo);
                 }
                 self.emitir(Opcode::Declare(Arc::from(nombre.as_str()), *mutable));
+                if let Some(ambito) = self.pila_locales.last_mut() {
+                    ambito.insert(nombre.clone());
+                }
+                // Tipo para especializar usos posteriores en este ámbito.
+                let tipo_var = tipo
+                    .clone()
+                    .or_else(|| valor.as_ref().and_then(|v| self.inferir_tipo_expresion(v)));
+                match tipo_var {
+                    Some(t) => {
+                        self.tipos_ambito.insert(nombre.clone(), t);
+                    }
+                    None => {
+                        self.tipos_ambito.remove(nombre);
+                    }
+                }
             }
 
             Declaracion::Asignacion { nombre, valor, .. } => {
@@ -1208,6 +1377,33 @@ impl BytecodeGenerator {
                 } else {
                     nombre.to_string()
                 };
+                // F11-T5: ámbito de tipos propio. Se conservan los tipos de las
+                // variables de nivel superior (visibles dentro de la función) y se
+                // añaden los parámetros; al terminar se restaura el ámbito previo.
+                let ambito_previo = std::mem::take(&mut self.tipos_ambito);
+                let mut ambito = ambito_previo.clone();
+                for p in parametros {
+                    if let Some(t) = &p.tipo {
+                        ambito.insert(p.nombre.clone(), t.clone());
+                    }
+                }
+                self.tipos_ambito = ambito;
+
+                // F12-T1: ámbito de locales propio (para decidir capturas de
+                // closures anidados): los parámetros son locales de la función.
+                let locales_previos = std::mem::take(&mut self.pila_locales);
+                self.pila_locales = vec![locales_previos
+                    .last()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect()];
+                let mut locales_funcion = std::collections::HashSet::new();
+                for p in parametros {
+                    locales_funcion.insert(p.nombre.clone());
+                }
+                self.pila_locales.push(locales_funcion);
+
                 // Emitir FunctionDef con nombres de parámetros
                 let param_names: Vec<Arc<str>> = parametros
                     .iter()
@@ -1258,6 +1454,10 @@ impl BytecodeGenerator {
 
                 // Al final de la función, hacemos return implícito
                 self.emitir(Opcode::Return);
+
+                // Restaurar los ámbitos del nivel superior.
+                self.tipos_ambito = ambito_previo;
+                self.pila_locales = locales_previos;
             }
 
             Declaracion::Clase { .. } => {
@@ -1488,6 +1688,7 @@ impl BytecodeGenerator {
                     }
                     self.emitir(Opcode::CallMethod(method_name, argumentos.len()));
                 } else {
+                    let indirecta = self.emitir_callee_si_variable(nombre);
                     for arg in argumentos {
                         self.generar_expresion(arg);
                     }
@@ -1497,7 +1698,7 @@ impl BytecodeGenerator {
                         .map(|arg| self.inferir_tipo_expresion(arg))
                         .collect();
                     let nombre_real = self.resolver_nombre_mangled(nombre, &tipos_args);
-                    self.emitir_llamada_despacho(nombre, &nombre_real, argumentos.len());
+                    self.emitir_llamada_despacho(&nombre_real, argumentos.len(), indirecta);
                     // Las funciones nativas (como _imprimir_error) dejan su valor de retorno
                     // en la pila. Para llamadas a nivel de declaración, descartamos ese valor.
                     // Forja functions are balanced (no return value pushed), so Pop is safe
@@ -1513,14 +1714,15 @@ impl BytecodeGenerator {
             Declaracion::Retornar { valor } => {
                 match valor {
                     Some(Expresion::LlamadaFuncion { nombre, argumentos }) => {
-                        if let Some(&var_idx) = self.var_indices.get(nombre) {
-                            // F8-T7: callback en posición de retorno. TailCall
-                            // sólo resuelve funciones globales; emitimos una
+                        let indirecta = self.emitir_callee_si_variable(nombre);
+                        if indirecta {
+                            // Callback en posición de retorno: TailCall sólo
+                            // resuelve funciones globales, así que emitimos una
                             // llamada indirecta normal y retornamos.
                             for arg in argumentos {
                                 self.generar_expresion(arg);
                             }
-                            self.emitir(Opcode::CallClosure(var_idx, argumentos.len()));
+                            self.emitir(Opcode::CallClosure(argumentos.len()));
                             self.emitir(Opcode::Return);
                         } else {
                             // Tail Call Optimization: el VM popea N args y los
@@ -1570,9 +1772,15 @@ impl BytecodeGenerator {
                 valor,
             } => {
                 // CASO ESPECIAL: canal() → crea canal mpsc real, asigna tx y rx
-                if let Expresion::CanalNuevo = valor.as_ref() {
-                    // ChannelNew empuja [tx_obj, rx_obj] al stack
-                    self.emitir(Opcode::ChannelNew);
+                if let Expresion::CanalNuevo(capacidad) = valor.as_ref() {
+                    // ChannelNew(Cap) empuja [tx_obj, rx_obj] al stack
+                    match capacidad {
+                        Some(c) => {
+                            self.generar_expresion(c);
+                            self.emitir(Opcode::ChannelNewCap);
+                        }
+                        None => self.emitir(Opcode::ChannelNew),
+                    }
                     // Si hay más de 2 variables, llenar resto con Nulo
                     for _ in 2..variables.len() {
                         self.emitir(Opcode::PushNulo);
@@ -1619,6 +1827,20 @@ impl BytecodeGenerator {
             return;
         }
         match expr {
+            // `si` como elemento de layout sólo tiene sentido en apps GUI: la
+            // ruta bytecode no lo puede emitir.
+            Expresion::Si { .. } => {
+                self.errores.push(ErrorForja::new(
+                    crate::error::ErrorTipo::ErrorSemantico,
+                    0,
+                    0,
+                    "`si` como elemento de una lista de argumentos sólo se admite en apps GUI.",
+                    "Usá el `si` como sentencia, o compilá la app con `forja ejecutar --native`.",
+                ));
+                self.profundidad_actual -= 1;
+                self.emitir(Opcode::PushNulo);
+                return;
+            }
             Expresion::LiteralNumero(n) => self.emitir(Opcode::PushEntero(*n)),
             Expresion::LiteralDecimal(d) => self.emitir(Opcode::PushDecimal(*d)),
             Expresion::LiteralTexto(s) => self.emitir(Opcode::PushTexto(Arc::from(s.as_str()))),
@@ -1739,7 +1961,7 @@ impl BytecodeGenerator {
                         self.emitir(Opcode::PushTexto(Arc::from("\n")));
                         self.emitir(Opcode::Print);
                     }
-                } else if nombre == "leer" {
+                } else if nombre == "leer" && !self.es_variable_visible(nombre) {
                     // leer() pide input al usuario y deja el resultado en la pila
                     self.emitir(Opcode::ReadLine);
                 } else if self.generar_builtin(nombre, argumentos) {
@@ -1809,6 +2031,7 @@ impl BytecodeGenerator {
                         let nargs = argumentos.len();
                         self.emitir(Opcode::ThreadSpawn(Arc::from(nombre.as_str()), nargs));
                     } else {
+                        let indirecta = self.emitir_callee_si_variable(nombre);
                         for arg in argumentos {
                             self.generar_expresion(arg);
                         }
@@ -1818,7 +2041,7 @@ impl BytecodeGenerator {
                             .map(|arg| self.inferir_tipo_expresion(arg))
                             .collect();
                         let nombre_real = self.resolver_nombre_mangled(nombre, &tipos_args);
-                        self.emitir_llamada_despacho(nombre, &nombre_real, argumentos.len());
+                        self.emitir_llamada_despacho(&nombre_real, argumentos.len(), indirecta);
                     }
                 }
             }
@@ -2057,23 +2280,84 @@ impl BytecodeGenerator {
             }
 
             Expresion::Closure { parametros, cuerpo } => {
-                // Función anónima: se define como FunctionDef y el VALOR del
-                // closure es el nombre de la función (para llamadas indirectas
-                // como mapa(lista, func(x) { ... }) → callback(...)).
+                // Función anónima. F11-T1: la definición se acumula para
+                // emitirla al final del programa (junto a las funciones), NO en
+                // el punto de uso: un `FunctionDef` inline haría que la
+                // ejecución secuencial entre en el cuerpo y su `Return` corte el
+                // programa.
+                //
+                // F12-T1: el valor es un objeto `Closure` con el nombre de la
+                // función (`fn`) y el entorno capturado (`env`), y la función
+                // recibe ese entorno como primer parámetro (`__entorno`).
                 let nombre: Arc<str> =
                     Arc::from(format!("__closure_{}", self.label_counter).as_str());
                 self.label_counter += 1;
-                let param_names: Vec<Arc<str>> = parametros
-                    .iter()
-                    .map(|p| Arc::from(p.nombre.as_str()))
-                    .collect();
+                let capturadas = self.variables_libres_closure(parametros, cuerpo);
+
+                let mut param_names: Vec<Arc<str>> = Vec::with_capacity(1 + parametros.len());
+                param_names.push(Arc::from("__entorno"));
+                param_names.extend(parametros.iter().map(|p| Arc::from(p.nombre.as_str())));
+
+                let flujo_previo = std::mem::take(&mut self.opcodes);
+                let ambito_previo = std::mem::take(&mut self.tipos_ambito);
+                let locales_previos = std::mem::take(&mut self.pila_locales);
+                self.pila_locales = vec![locales_previos.last().cloned().unwrap_or_default()];
+                let mut locales = std::collections::HashSet::new();
+                locales.insert("__entorno".to_string());
+                for p in parametros {
+                    locales.insert(p.nombre.clone());
+                }
+                self.pila_locales.push(locales);
+                let mut ambito = self
+                    .pila_locales
+                    .last()
+                    .map(|_| Default::default())
+                    .unwrap();
+                let _: &mut std::collections::HashMap<String, Tipo> = &mut ambito;
+                for p in parametros {
+                    if let Some(t) = &p.tipo {
+                        ambito.insert(p.nombre.clone(), t.clone());
+                    }
+                }
+                self.tipos_ambito = ambito;
+
                 self.emitir(Opcode::FunctionDef(nombre.clone(), param_names));
+                // Prólogo: cada variable capturada se materializa como
+                // `entorno[k]` en una variable local de la función.
+                for (k, capturada) in capturadas.iter().enumerate() {
+                    self.emitir(Opcode::Load(Arc::from("__entorno")));
+                    self.emitir(Opcode::PushEntero(k as i64));
+                    self.emitir(Opcode::ArrayGet);
+                    self.emitir(Opcode::Declare(Arc::from(capturada.as_str()), true));
+                    if let Some(ambito) = self.pila_locales.last_mut() {
+                        ambito.insert(capturada.clone());
+                    }
+                }
                 for d in cuerpo {
                     self.generar_declaracion(d);
                 }
                 self.emitir(Opcode::Return);
-                // El valor del closure: el nombre de la función como Texto
+                self.tipos_ambito = ambito_previo;
+                self.pila_locales = locales_previos;
+                let definicion = std::mem::replace(&mut self.opcodes, flujo_previo);
+                self.closure_defs.extend(definicion);
+
+                // Valor del closure: objeto `Closure { fn, env }`.
+                let tmp: Arc<str> =
+                    Arc::from(format!("__closure_obj_{}", self.label_counter).as_str());
+                self.label_counter += 1;
+                self.emitir(Opcode::NewObject(Arc::from("Closure")));
+                self.emitir(Opcode::Declare(tmp.clone(), true));
                 self.emitir(Opcode::PushTexto(nombre));
+                self.emitir(Opcode::Load(tmp.clone()));
+                self.emitir(Opcode::SetField(Arc::from("fn")));
+                for capturada in &capturadas {
+                    self.emitir(Opcode::Load(Arc::from(capturada.as_str())));
+                }
+                self.emitir(Opcode::ArrayNew(capturadas.len()));
+                self.emitir(Opcode::Load(tmp.clone()));
+                self.emitir(Opcode::SetField(Arc::from("env")));
+                self.emitir(Opcode::Load(tmp));
             }
 
             Expresion::Index { objeto, indice } => {
@@ -2091,17 +2375,9 @@ impl BytecodeGenerator {
                 // ── Detectar variables capturadas del entorno ──
                 let mut declaradas: HashSet<String> = HashSet::new();
                 let mut usadas: HashSet<String> = HashSet::new();
-                eprintln!(
-                    "[DBG] Hilo: procesando {} declaraciones en cuerpo",
-                    cuerpo.len()
-                );
                 for d in cuerpo.iter() {
                     Self::extraer_ids_decl(d, &mut declaradas, &mut usadas);
                 }
-                eprintln!(
-                    "[DBG] Hilo: declaradas={:?}, usadas={:?}",
-                    declaradas, usadas
-                );
                 // Capturadas = usadas - declaradas (ordenado para consistencia)
                 let mut capturadas: Vec<String> = usadas.difference(&declaradas).cloned().collect();
                 capturadas.sort();
@@ -2136,6 +2412,15 @@ impl BytecodeGenerator {
                     capturadas.iter().map(|s| Arc::from(s.as_str())).collect();
                 // Guardar opcodes actuales y reemplazar por buffer temporal
                 let opcodes_previos = std::mem::replace(&mut self.opcodes, Vec::new());
+                // Ámbito propio: los capturados conservan el tipo que tenían fuera.
+                let ambito_previo = std::mem::take(&mut self.tipos_ambito);
+                let mut ambito = std::collections::HashMap::new();
+                for cap in &capturadas {
+                    if let Some(t) = ambito_previo.get(cap.as_str()) {
+                        ambito.insert(cap.clone(), t.clone());
+                    }
+                }
+                self.tipos_ambito = ambito;
                 // Emitir FunctionDef + cuerpo + Return en el buffer temporal
                 let func_name_for_def = func_name.clone();
                 self.emitir(Opcode::FunctionDef(func_name_for_def, params));
@@ -2143,14 +2428,21 @@ impl BytecodeGenerator {
                     self.generar_declaracion(d);
                 }
                 self.emitir(Opcode::Return);
+                self.tipos_ambito = ambito_previo;
                 // Guardar el cuerpo generado
                 let body = std::mem::replace(&mut self.opcodes, opcodes_previos);
                 self.hilo_funciones.push((func_name, vec![], body));
             }
 
-            Expresion::CanalNuevo => {
-                // Crear canal mpsc real: ChannelNew empuja [tx_obj, rx_obj]
-                self.emitir(Opcode::ChannelNew);
+            Expresion::CanalNuevo(capacidad) => {
+                // Crear canal mpsc real: ChannelNew(Cap) empuja [tx_obj, rx_obj]
+                match capacidad {
+                    Some(c) => {
+                        self.generar_expresion(c);
+                        self.emitir(Opcode::ChannelNewCap);
+                    }
+                    None => self.emitir(Opcode::ChannelNew),
+                }
                 self.emitir(Opcode::ArrayNew(2));
             }
             Expresion::Seleccionar { brazos } => {
@@ -2507,8 +2799,23 @@ impl BytecodeGenerator {
     // ─── Helpers para detectar variables capturadas en hilo { } ──────────
 
     /// Extrae todos los identificadores (usos de variable) de una expresión recursivamente.
-    fn extraer_ids_expr(expr: &Expresion, usadas: &mut HashSet<String>) {
+    pub(crate) fn extraer_ids_expr(expr: &Expresion, usadas: &mut HashSet<String>) {
         match expr {
+            Expresion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
+                Self::extraer_ids_expr(condicion, usadas);
+                for d in bloque_verdadero {
+                    Self::extraer_ids_decl(d, &mut HashSet::new(), usadas);
+                }
+                if let Some(bloque) = bloque_falso {
+                    for d in bloque {
+                        Self::extraer_ids_decl(d, &mut HashSet::new(), usadas);
+                    }
+                }
+            }
             Expresion::Identificador { nombre, .. } => {
                 // Keywords que NO son variables
                 if nombre != "verdadero" && nombre != "falso" && nombre != "nulo" {
@@ -2637,13 +2944,16 @@ impl BytecodeGenerator {
             | Expresion::LiteralBooleano(_)
             | Expresion::LiteralNulo
             | Expresion::LiteralExacto(_, _)
-            | Expresion::CanalNuevo
+            | Expresion::CanalNuevo(_)
             | Expresion::Resultado => {}
         }
     }
 
     /// Extrae variables declaradas e identificadores usados en una declaración recursivamente.
-    fn extraer_ids_decl(
+    ///
+    /// F11-T2: también lo usa el constructor IR para calcular las variables
+    /// capturadas por un `hilo { ... }`, para no duplicar el recorrido del AST.
+    pub(crate) fn extraer_ids_decl(
         decl: &Declaracion,
         declaradas: &mut HashSet<String>,
         usadas: &mut HashSet<String>,
@@ -2922,31 +3232,63 @@ impl BytecodeGenerator {
 /// Sin esta separación, una local con idx bajo pisa a la global y los accesos
 /// desde funciones leen posiciones equivocadas (valores nulos o corruptos).
 pub fn postprocesar_globales(opcodes: Vec<Opcode>, globales: &[(String, bool)]) -> Vec<Opcode> {
+    use std::collections::HashSet;
+
+    let indice_global = |nombre: &str| globales.iter().position(|(g, _)| g == nombre);
     let mut result = Vec::with_capacity(opcodes.len());
+    // El backend AST emite primero el código de nivel superior, luego `Halt` y
+    // después los cuerpos de funciones (métodos, hilos y closures incluidos).
+    // Solo el tramo previo a `Halt` es ámbito global.
+    let mut en_ambito_global = true;
+    // Nombres locales de la función en curso (parámetros + `Declare`), para no
+    // confundir un local que se llama como una variable global:
+    // `variable a` global + `funcion mcd(a, b)` leía el global en vez del
+    // parámetro.
+    let mut locales: HashSet<String> = HashSet::new();
+
     for op in opcodes {
         match &op {
-            Opcode::Declare(nombre, mutable)
-                if globales.iter().any(|(g, _)| g == nombre.as_ref()) =>
-            {
-                let g = globales
-                    .iter()
-                    .position(|(n, _)| n == nombre.as_ref())
-                    .unwrap();
-                result.push(Opcode::DeclareIdxGlobal(g, *mutable));
+            Opcode::Halt => en_ambito_global = false,
+            Opcode::FunctionDef(_, params) => {
+                en_ambito_global = false;
+                locales.clear();
+                locales.extend(params.iter().map(|p| p.to_string()));
             }
-            Opcode::Load(nombre) if globales.iter().any(|(g, _)| g == nombre.as_ref()) => {
-                let g = globales
-                    .iter()
-                    .position(|(n, _)| n == nombre.as_ref())
-                    .unwrap();
-                result.push(Opcode::LoadIdxGlobal(g));
+            _ => {}
+        }
+
+        if let Opcode::Declare(nombre, _) = &op {
+            if !en_ambito_global {
+                locales.insert(nombre.to_string());
             }
-            Opcode::Store(nombre) if globales.iter().any(|(g, _)| g == nombre.as_ref()) => {
-                let g = globales
-                    .iter()
-                    .position(|(n, _)| n == nombre.as_ref())
-                    .unwrap();
-                result.push(Opcode::StoreIdxGlobal(g));
+        }
+
+        let sombreado = !en_ambito_global
+            && matches!(&op,
+            Opcode::Load(n) | Opcode::Store(n) | Opcode::Declare(n, _)
+                if locales.contains(n.as_ref()));
+
+        match &op {
+            Opcode::Declare(nombre, mutable) if !sombreado => {
+                if let Some(g) = indice_global(nombre) {
+                    result.push(Opcode::DeclareIdxGlobal(g, *mutable));
+                } else {
+                    result.push(op);
+                }
+            }
+            Opcode::Load(nombre) if !sombreado => {
+                if let Some(g) = indice_global(nombre) {
+                    result.push(Opcode::LoadIdxGlobal(g));
+                } else {
+                    result.push(op);
+                }
+            }
+            Opcode::Store(nombre) if !sombreado => {
+                if let Some(g) = indice_global(nombre) {
+                    result.push(Opcode::StoreIdxGlobal(g));
+                } else {
+                    result.push(op);
+                }
             }
             _ => result.push(op),
         }
@@ -3340,8 +3682,7 @@ pub fn serializar_bytecode(opcodes: &[Opcode]) -> Vec<u8> {
                 bytes.extend_from_slice(&idx.to_le_bytes());
                 bytes.extend_from_slice(&(*nargs as u32).to_le_bytes());
             }
-            Opcode::CallClosure(var_idx, nargs) => {
-                bytes.extend_from_slice(&(*var_idx as u32).to_le_bytes());
+            Opcode::CallClosure(nargs) => {
                 bytes.extend_from_slice(&(*nargs as u32).to_le_bytes());
             }
             Opcode::SocketPoll(s) => {
@@ -3406,7 +3747,7 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::GetField(_) => 64,
         Opcode::CallMethod(_, _) => 65,
         Opcode::SetFieldIdx(_) => 66,
-        Opcode::CallClosure(_, _) => 67,
+        Opcode::CallClosure(_) => 67,
         Opcode::TailCall(_, _) => 255,
         Opcode::ArrayNew(_) => 80,
         Opcode::ArrayGet => 81,
@@ -3505,6 +3846,7 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::ThreadSpawn(_, _) => 195,
         Opcode::CallNative(_, _) => 196,
         Opcode::SocketPoll(_) => 197,
+        Opcode::ChannelNewCap => 201,
         // Opcodes especializados (runtime-only, no serializables)
         _ => 255,
     }
@@ -3561,7 +3903,7 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         64 => Some(Opcode::GetField(Arc::from(""))),
         65 => Some(Opcode::CallMethod(Arc::from(""), 0)),
         66 => Some(Opcode::SetFieldIdx(0)),
-        67 => Some(Opcode::CallClosure(0, 0)),
+        67 => Some(Opcode::CallClosure(0)),
         80 => Some(Opcode::ArrayNew(0)),
         81 => Some(Opcode::ArrayGet),
         82 => Some(Opcode::ArraySet),
@@ -3645,6 +3987,7 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         198 => Some(Opcode::DiferenteInt),
         199 => Some(Opcode::MenorIgualInt),
         200 => Some(Opcode::MayorIgualInt),
+        201 => Some(Opcode::ChannelNewCap),
         _ => None,
     }
 }
@@ -4433,20 +4776,16 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 pos += 4;
                 opcodes.push(Opcode::SetFieldIdx(idx));
             }
-            // CallClosure (var_idx, nargs) — 8 bytes payload (2 × u32)
+            // CallClosure (nargs) — 4 bytes payload (el callee va en la pila)
             67 => {
-                if pos + 8 > data.len() {
+                if pos + 4 > data.len() {
                     return None;
                 }
-                let var_idx =
-                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
-                        as usize;
-                pos += 4;
                 let nargs =
                     u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
                         as usize;
                 pos += 4;
-                opcodes.push(Opcode::CallClosure(var_idx, nargs));
+                opcodes.push(Opcode::CallClosure(nargs));
             }
             // Design by Contract opcodes — 4 bytes payload (usize)
             130 | 131 | 132 | 133 => {

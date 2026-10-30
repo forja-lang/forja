@@ -14,11 +14,21 @@ impl ForjaFast {
     #[inline]
     pub(crate) fn ejecutar_ops_concurrencia(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
-            Opcode::ChannelNew => {
-                let (tx, rx) = std::sync::mpsc::channel::<ChannelValue>();
+            Opcode::ChannelNew | Opcode::ChannelNewCap => {
+                // F12-T2: canal acotado → `enviar` bloquea con la cola llena.
+                // `ChannelNewCap` toma la capacidad de la pila (`canal(n)`).
+                let capacidad = match op {
+                    Opcode::ChannelNewCap => {
+                        let v = self.pop_valor()?;
+                        let n = if v.es_entero() { v.a_entero() } else { 0 };
+                        n.max(0) as usize
+                    }
+                    _ => CAPACIDAD_CANAL,
+                };
+                let (tx, rx) = std::sync::mpsc::sync_channel::<ChannelValue>(capacidad);
                 let tx_idx = self.alloc_chan_tx(tx);
-                let rx_idx = self.alloc_chan_rx(rx, tx_idx);
-                eprintln!("[DBG] ChannelNew: tx_idx={}, rx_idx={}", tx_idx, rx_idx);
+                let rx_idx =
+                    self.alloc_chan_rx(std::sync::Arc::new(std::sync::Mutex::new(rx)), tx_idx);
                 // Crear objeto CanalEmisor
                 let shape_tx = self.shape_registry.get_or_create(self.sym_canal_emisor);
                 let mut obj_tx = ObjVal::new(self.sym_canal_emisor, shape_tx);
@@ -58,6 +68,9 @@ impl ForjaFast {
                     let thread_obj_heap = self.obj_heap.clone();
                     let thread_obj_shapes = self.obj_shapes.clone();
                     let thread_chan_tx_heap = self.chan_tx_heap.clone();
+                    // F12-T2: el hijo también necesita los receptores; sin esto
+                    // `rx.recibir()` dentro de un `hilo` devolvía Nulo.
+                    let thread_chan_rx_heap = self.chan_rx_heap.clone();
                     let thread_output = self.output.clone();
                     let thread_ip = entry.ip;
                     let thread_vars_size = entry.vars_size.max(nargs);
@@ -67,87 +80,96 @@ impl ForjaFast {
                     // Clonar el nombre de la función para que el closure `move`
                     // no capture la referencia `&Opcode` (que no es `'static`).
                     let func_name_owned: Arc<str> = Arc::clone(func_name);
-                    // Spawn thread
-                    let spawn_result = std::thread::Builder::new()
-                        .name(format!("forja-hilo-{}", func_name_owned))
-                        .spawn(move || {
-                            // catch_unwind para evitar que panics maten el thread sin enviar resultado.
-                            let ret = std::panic::catch_unwind(|| {
-                                let mut hilo_vm = ForjaFast::new();
-                                hilo_vm.bytecode = thread_bytecode;
-                                hilo_vm.sym_table = thread_sym_table;
-                                hilo_vm.init_symbols();
-                                // Límite de instrucciones para prevenir hilos colgados
-                                hilo_vm.set_max_inst(500_000);
-                                hilo_vm.funciones = thread_funcs;
-                                hilo_vm.func_params = thread_func_params;
-                                {
-                                    let mut locals = vec![ValorFast::nulo(); thread_vars_size];
-                                    for (i, arg) in captured.into_iter().enumerate() {
-                                        locals[i] = arg;
-                                    }
-                                    hilo_vm.frame_locals = vec![locals];
+                    let nombre_hilo = format!("forja-hilo-{}", func_name_owned);
+                    let cuerpo = move || {
+                        // catch_unwind para evitar que panics maten el thread sin enviar resultado.
+                        let ret = std::panic::catch_unwind(|| {
+                            let mut hilo_vm = ForjaFast::new();
+                            hilo_vm.bytecode = thread_bytecode;
+                            hilo_vm.sym_table = thread_sym_table;
+                            hilo_vm.init_symbols();
+                            // Límite de instrucciones para prevenir hilos colgados
+                            hilo_vm.set_max_inst(500_000);
+                            hilo_vm.funciones = thread_funcs;
+                            hilo_vm.func_params = thread_func_params;
+                            {
+                                let mut locals = vec![ValorFast::nulo(); thread_vars_size];
+                                for (i, arg) in captured.into_iter().enumerate() {
+                                    locals[i] = arg;
                                 }
-                                hilo_vm.contador_especializacion =
-                                    vec![0u8; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_getfield = vec![Pic::Empty; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_setfield = vec![Pic::Empty; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_miss_count = vec![0u8; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_callmethod = vec![Pic::Empty; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_arrayget = vec![None; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_arrayset = vec![None; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_mapget = vec![false; hilo_vm.bytecode.len()];
-                                hilo_vm.ic_mapset = vec![false; hilo_vm.bytecode.len()];
-                                // function_table clonada → mismo orden de índices
-                                hilo_vm.function_table.entries = thread_function_table;
-                                hilo_vm.sym_to_func_idx = thread_sym_to_func_idx;
-                                hilo_vm.obj_heap = thread_obj_heap;
-                                hilo_vm.obj_shapes = thread_obj_shapes;
-                                hilo_vm.chan_tx_heap = thread_chan_tx_heap;
-                                hilo_vm.output = thread_output;
-                                hilo_vm.frame_buffer[0] = FrmFast {
-                                    ip_ret: hilo_vm.bytecode.len(),
-                                    func_version: 0,
-                                    func_sym: SymId(0),
-                                };
-                                hilo_vm.frame_count = 1;
-                                hilo_vm.ip = thread_ip;
-                                let result = hilo_vm.ejecutar();
-                                if let Err(ref e) = result {
-                                    use std::io::Write;
-                                    eprintln!("[WARN] Hilo '{}': {:?}", func_name_owned, e);
-                                    std::io::stderr().flush().ok();
-                                }
-                                let ret =
-                                    hilo_vm.stack.first().copied().unwrap_or(ValorFast::nulo());
-                                // Resolver valor de retorno a ChannelValue para
-                                // que el padre pueda re-indexar strings
-                                if ret.es_texto() {
-                                    ChannelValue::Texto(Arc::clone(
-                                        hilo_vm.get_str(ret.indice_texto()),
-                                    ))
-                                } else if ret.es_arreglo()
-                                    || ret.es_mapa()
-                                    || ret.es_objeto()
-                                    || ret.es_exacto()
-                                {
-                                    // F8-T9: los índices de heap del hijo no son
-                                    // válidos en el padre; serializar.
-                                    ChannelValue::Portable(Box::new(
-                                        hilo_vm.serializar_portable(ret, 0),
-                                    ))
-                                } else {
-                                    ChannelValue::Valor(ret)
-                                }
-                            })
-                            .unwrap_or_else(|_| {
-                                eprintln!("[WARN] Hilo '{}': panic capturado", func_name_owned);
-                                ChannelValue::Valor(ValorFast::nulo())
-                            });
-                            tx_result.send(ret).ok();
+                                hilo_vm.frame_locals = vec![locals];
+                            }
+                            hilo_vm.contador_especializacion = vec![0u8; hilo_vm.bytecode.len()];
+                            hilo_vm.ic_getfield = vec![Pic::Empty; hilo_vm.bytecode.len()];
+                            hilo_vm.ic_setfield = vec![Pic::Empty; hilo_vm.bytecode.len()];
+                            hilo_vm.ic_miss_count = vec![0u8; hilo_vm.bytecode.len()];
+                            hilo_vm.ic_callmethod = vec![Pic::Empty; hilo_vm.bytecode.len()];
+                            hilo_vm.ic_arrayget = vec![None; hilo_vm.bytecode.len()];
+                            hilo_vm.ic_arrayset = vec![None; hilo_vm.bytecode.len()];
+                            hilo_vm.ic_mapget = vec![false; hilo_vm.bytecode.len()];
+                            hilo_vm.ic_mapset = vec![false; hilo_vm.bytecode.len()];
+                            // function_table clonada → mismo orden de índices
+                            hilo_vm.function_table.entries = thread_function_table;
+                            hilo_vm.sym_to_func_idx = thread_sym_to_func_idx;
+                            hilo_vm.obj_heap = thread_obj_heap;
+                            hilo_vm.obj_shapes = thread_obj_shapes;
+                            hilo_vm.chan_tx_heap = thread_chan_tx_heap;
+                            hilo_vm.chan_rx_heap = thread_chan_rx_heap;
+                            hilo_vm.output = thread_output;
+                            hilo_vm.frame_buffer[0] = FrmFast {
+                                ip_ret: hilo_vm.bytecode.len(),
+                                func_version: 0,
+                                func_sym: SymId(0),
+                            };
+                            hilo_vm.frame_count = 1;
+                            hilo_vm.ip = thread_ip;
+                            let result = hilo_vm.ejecutar();
+                            if let Err(ref e) = result {
+                                use std::io::Write;
+                                eprintln!("[WARN] Hilo '{}': {:?}", func_name_owned, e);
+                                std::io::stderr().flush().ok();
+                            }
+                            let ret = hilo_vm.stack.first().copied().unwrap_or(ValorFast::nulo());
+                            // Resolver valor de retorno a ChannelValue para
+                            // que el padre pueda re-indexar strings
+                            if ret.es_texto() {
+                                ChannelValue::Texto(Arc::clone(hilo_vm.get_str(ret.indice_texto())))
+                            } else if ret.es_arreglo()
+                                || ret.es_mapa()
+                                || ret.es_objeto()
+                                || ret.es_exacto()
+                            {
+                                // F8-T9: los índices de heap del hijo no son
+                                // válidos en el padre; serializar.
+                                ChannelValue::Portable(Box::new(
+                                    hilo_vm.serializar_portable(ret, 0),
+                                ))
+                            } else {
+                                ChannelValue::Valor(ret)
+                            }
+                        })
+                        .unwrap_or_else(|_| {
+                            eprintln!("[WARN] Hilo '{}': panic capturado", func_name_owned);
+                            ChannelValue::Valor(ValorFast::nulo())
                         });
+                        tx_result.send(ret).ok();
+                    };
+                    // En WASM no hay hilos: el cuerpo corre en línea y su resultado
+                    // queda ya encolado en el canal, así `unir()` y los canales que
+                    // use el cuerpo (enviar/recibir) siguen funcionando.
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let spawn_result = std::thread::Builder::new()
+                        .name(nombre_hilo)
+                        .spawn(cuerpo)
+                        .map(|_| ());
+                    #[cfg(target_arch = "wasm32")]
+                    let spawn_result: Result<(), ()> = {
+                        let _ = nombre_hilo;
+                        cuerpo();
+                        Ok(())
+                    };
                     match spawn_result {
-                        Ok(_join_handle) => {
+                        Ok(_) => {
                             // Almacenar receiver y crear objeto Hilo
                             let thread_idx = self.alloc_thread(None, Some(rx_result));
                             let shape_hilo = self.shape_registry.get_or_create(self.sym_hilo);

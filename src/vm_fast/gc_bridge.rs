@@ -3,6 +3,10 @@
 
 use super::*;
 
+/// Profundidad máxima de anidamiento al serializar un valor portable
+/// (F12-T2). Ver [`ForjaFast::serializar_portable`].
+const PROFUNDIDAD_MAXIMA_PORTABLE: usize = 1024;
+
 impl ForjaFast {
     // ─── VM Heap Helpers ──────────────────────────────────────────────────────
 
@@ -103,7 +107,7 @@ impl ForjaFast {
     // ─── Channel / Thread Heap Helpers ───────────────────────────────────────
 
     #[inline(always)]
-    pub(crate) fn alloc_chan_tx(&mut self, tx: std::sync::mpsc::Sender<ChannelValue>) -> u32 {
+    pub(crate) fn alloc_chan_tx(&mut self, tx: std::sync::mpsc::SyncSender<ChannelValue>) -> u32 {
         self.gc_pressure = self.gc_pressure.saturating_add(1);
         if let Some(idx) = self.chan_tx_free.pop() {
             self.chan_tx_heap[idx as usize] = Some(tx);
@@ -124,7 +128,7 @@ impl ForjaFast {
     #[inline(always)]
     pub(crate) fn alloc_chan_rx(
         &mut self,
-        rx: std::sync::mpsc::Receiver<ChannelValue>,
+        rx: Arc<std::sync::Mutex<std::sync::mpsc::Receiver<ChannelValue>>>,
         tx_idx: u32,
     ) -> u32 {
         self.gc_pressure = self.gc_pressure.saturating_add(1);
@@ -172,9 +176,34 @@ impl ForjaFast {
     /// Serializa un valor con referencias a heap a una representación portable
     /// (F8-T9). Los índices de heap no son válidos entre VMs.
     pub(crate) fn serializar_portable(&self, val: ValorFast, depth: usize) -> ValorPortable {
-        if depth > 32 {
+        self.serializar_portable_con(val, depth, &mut Vec::new())
+    }
+
+    /// F12-T2: `visitados` lleva `(tipo, índice de heap) → id` de los contenedores
+    /// ya emitidos en este mensaje. Una segunda visita emite `Referencia(id)`, así
+    /// que los ciclos y los objetos compartidos sobreviven al envío en vez de
+    /// cortarse a Nulo.
+    fn serializar_portable_con(
+        &self,
+        val: ValorFast,
+        depth: usize,
+        visitados: &mut Vec<(u8, u32, u32)>,
+    ) -> ValorPortable {
+        // Los ciclos ya no dependen de este límite (se emiten como `Referencia`):
+        // sólo protege a la recursión de Rust ante grafos anidados absurdos.
+        // shortcut: 1024 niveles de anidamiento, subir o iterar si se necesita más.
+        if depth > PROFUNDIDAD_MAXIMA_PORTABLE {
             return ValorPortable::Nulo;
         }
+        let referencia = |tipo: u8, idx: u32, visitados: &mut Vec<(u8, u32, u32)>| {
+            if let Some(&(_, _, id)) = visitados.iter().find(|(t, i, _)| *t == tipo && *i == idx) {
+                Some(ValorPortable::Referencia(id))
+            } else {
+                let id = visitados.len() as u32;
+                visitados.push((tipo, idx, id));
+                None
+            }
+        };
         if val.es_nulo() {
             ValorPortable::Nulo
         } else if val.es_booleano() {
@@ -189,28 +218,67 @@ impl ForjaFast {
         } else if val.es_texto() {
             ValorPortable::Texto(Arc::clone(self.get_str(val.indice_texto())))
         } else if val.es_arreglo() {
+            if let Some(r) = referencia(0, val.indice_arreglo(), visitados) {
+                return r;
+            }
             ValorPortable::Arreglo(
                 self.get_arr(val.indice_arreglo())
                     .iter()
-                    .map(|v| self.serializar_portable(*v, depth + 1))
+                    .map(|v| self.serializar_portable_con(*v, depth + 1, visitados))
                     .collect(),
             )
         } else if val.es_mapa() {
+            if let Some(r) = referencia(1, val.indice_mapa(), visitados) {
+                return r;
+            }
             ValorPortable::Mapa(
                 self.get_map(val.indice_mapa())
                     .iter()
-                    .map(|(k, v)| (k.clone(), self.serializar_portable(*v, depth + 1)))
+                    .map(|(k, v)| {
+                        (
+                            k.clone(),
+                            self.serializar_portable_con(*v, depth + 1, visitados),
+                        )
+                    })
                     .collect(),
             )
         } else if val.es_objeto() {
+            if let Some(r) = referencia(2, val.indice_objeto(), visitados) {
+                return r;
+            }
             let obj = self.get_obj(val.indice_objeto());
+            // F12-T2: se envían `(campo, valor)`. Sin el nombre, la VM receptora
+            // no puede registrar el campo en el descriptor de la clase y la
+            // lectura daría Nulo. El mapa autoritativo es el `ClassDescriptor`
+            // (el que usan `GetField`/`SetField`); el shape del `ShapeRegistry`
+            // sólo se actualiza en las transiciones de campo, así que un objeto
+            // creado después conserva el shape base vacío.
+            let desc = self.class_descriptors.get(&obj.clase);
+            let campos: Vec<(Arc<str>, ValorPortable)> = obj
+                .campos_vec
+                .iter()
+                .enumerate()
+                .map(|(i, v)| {
+                    let sym = desc
+                        .and_then(|d| d.shape.indice_a_campo.get(i).copied())
+                        .or_else(|| {
+                            self.obj_shapes
+                                .get(val.indice_objeto() as usize)
+                                .and_then(|sid| self.shape_registry.get(*sid))
+                                .and_then(|s| s.indice_a_campo.get(i).copied())
+                        });
+                    let nombre: Arc<str> = sym
+                        .map(|sym| Arc::from(self.sym_table.get(sym)))
+                        .unwrap_or_else(|| Arc::from(""));
+                    (
+                        nombre,
+                        self.serializar_portable_con(*v, depth + 1, visitados),
+                    )
+                })
+                .collect();
             ValorPortable::Objeto {
                 clase: Arc::from(self.sym_table.get(obj.clase)),
-                campos: obj
-                    .campos_vec
-                    .iter()
-                    .map(|v| self.serializar_portable(*v, depth + 1))
-                    .collect(),
+                campos,
             }
         } else {
             ValorPortable::Nulo
@@ -219,7 +287,22 @@ impl ForjaFast {
 
     /// Reconstruye un valor portable en los heaps de esta VM (F8-T9).
     pub(crate) fn importar_portable(&mut self, valor: ValorPortable) -> ValorFast {
+        self.importar_portable_con(valor, &mut HashMap::new())
+    }
+
+    /// F12-T2: `creados` mapea el id del emisor al valor ya alocado aquí. Cada
+    /// contenedor se aloca **antes** de rellenarse (mismo orden de visita que el
+    /// emisor), así que `Referencia(id)` reconstruye ciclos y alias en vez de
+    /// recursar sin fin.
+    fn importar_portable_con(
+        &mut self,
+        valor: ValorPortable,
+        creados: &mut HashMap<u32, ValorFast>,
+    ) -> ValorFast {
         match valor {
+            ValorPortable::Referencia(id) => {
+                creados.get(&id).copied().unwrap_or_else(ValorFast::nulo)
+            }
             ValorPortable::Nulo => ValorFast::nulo(),
             ValorPortable::Booleano(b) => ValorFast::booleano(b),
             ValorPortable::Entero(i) => ValorFast::entero(i),
@@ -230,31 +313,95 @@ impl ForjaFast {
                 ValorFast::texto(idx)
             }
             ValorPortable::Arreglo(elementos) => {
+                let id = creados.len() as u32;
+                let idx = self.alloc_arr(Vec::new());
+                let v = ValorFast::arreglo(idx);
+                creados.insert(id, v);
                 let vals: Vec<ValorFast> = elementos
                     .into_iter()
-                    .map(|v| self.importar_portable(v))
+                    .map(|e| self.importar_portable_con(e, creados))
                     .collect();
-                let idx = self.alloc_arr(vals);
-                ValorFast::arreglo(idx)
+                *self.get_arr_mut(idx) = vals;
+                v
             }
             ValorPortable::Mapa(pares) => {
-                let mut mapa = std::collections::HashMap::with_capacity(pares.len());
-                for (k, v) in pares {
-                    mapa.insert(k, self.importar_portable(v));
+                let id = creados.len() as u32;
+                let idx = self.alloc_map(HashMap::new());
+                let v = ValorFast::mapa(idx);
+                creados.insert(id, v);
+                for (k, val) in pares {
+                    let importado = self.importar_portable_con(val, creados);
+                    self.get_map_mut(idx).insert(k, importado);
                 }
-                let idx = self.alloc_map(mapa);
-                ValorFast::mapa(idx)
+                v
             }
             ValorPortable::Objeto { clase, campos } => {
                 let clase_sym = self.sym_table.intern(&clase);
-                let shape = self.shape_registry.get_or_create(clase_sym);
-                let mut obj = ObjVal::new(clase_sym, shape);
-                obj.campos_vec = campos
-                    .into_iter()
-                    .map(|v| self.importar_portable(v))
-                    .collect();
-                let idx = self.alloc_obj(obj);
-                ValorFast::objeto(idx)
+                // F12-T2: el objeto llega de otra VM, que puede haber creado la
+                // clase sin que ésta exista aquí. Sin descriptor de clase,
+                // `GetField`/`SetField` caen al fallback `campos_vec[sym]` y las
+                // lecturas dan Nulo. Se registra el descriptor con los campos en
+                // el orden del emisor.
+                if !self.class_descriptors.contains_key(&clase_sym) {
+                    let mut shape = ClassShape::new();
+                    for (nombre, _) in &campos {
+                        let campo = self.sym_table.intern(nombre);
+                        shape.add_campo(campo);
+                    }
+                    self.class_descriptors.insert(
+                        clase_sym,
+                        ClassDescriptor {
+                            nombre: clase_sym,
+                            shape,
+                            mro: vec![clase_sym],
+                            metodos: HashMap::new(),
+                            rasgos: Vec::new(),
+                        },
+                    );
+                }
+                let id = creados.len() as u32;
+                let mut shape = self.shape_registry.get_or_create(clase_sym);
+                let obj_idx = self.alloc_obj(ObjVal::new(clase_sym, shape));
+                creados.insert(id, ValorFast::objeto(obj_idx));
+                for (nombre, valor) in campos {
+                    let campo = self.sym_table.intern(&nombre);
+                    // Índice según el descriptor (lo que usan GetField/SetField).
+                    let idx = match self
+                        .class_descriptors
+                        .get(&clase_sym)
+                        .and_then(|d| d.shape.get_idx(campo))
+                    {
+                        Some(i) => i,
+                        None => self
+                            .class_descriptors
+                            .get_mut(&clase_sym)
+                            .map(|d| d.shape.add_campo(campo))
+                            .unwrap_or(0),
+                    };
+                    // Mantener el shape del registro en el mismo orden (lo usan
+                    // las inline caches y la serialización de vuelta).
+                    if self
+                        .shape_registry
+                        .get(shape)
+                        .and_then(|s| s.get_idx(campo))
+                        .is_none()
+                    {
+                        shape = self.shape_registry.add_campo_dinamico(shape, campo).0;
+                    }
+                    let v = self.importar_portable_con(valor, creados);
+                    let campos_vec = &mut self.get_obj_mut(obj_idx).campos_vec;
+                    while campos_vec.len() < idx {
+                        campos_vec.push(ValorFast::nulo());
+                    }
+                    if idx < campos_vec.len() {
+                        campos_vec[idx] = v;
+                    } else {
+                        campos_vec.push(v);
+                    }
+                }
+                self.get_obj_mut(obj_idx).shape_id = shape;
+                self.obj_shapes[obj_idx as usize] = shape;
+                ValorFast::objeto(obj_idx)
             }
         }
     }
@@ -304,7 +451,31 @@ impl ForjaFast {
             .chan_rx_heap
             .get(chan_idx)
             .and_then(|r| r.as_ref())
+            .and_then(|r| r.lock().ok())
             .and_then(|r| r.recv().ok());
+        if res.is_some() {
+            if let Some(&tx) = self.chan_rx_tx.get(chan_idx) {
+                if let Some(payloads) = self.chan_payloads.get_mut(tx as usize) {
+                    if !payloads.is_empty() {
+                        payloads.remove(0);
+                    }
+                }
+            }
+        }
+        res
+    }
+
+    /// F12-T2: recepción **no bloqueante** (la usa `seleccionar` y
+    /// `rx.try_recibir()`). Devuelve `None` si el canal no tiene mensajes;
+    /// descuenta las raíces del GC igual que `canal_recibir`.
+    #[inline]
+    pub(crate) fn canal_try_recibir(&mut self, chan_idx: usize) -> Option<ChannelValue> {
+        let res = self
+            .chan_rx_heap
+            .get(chan_idx)
+            .and_then(|r| r.as_ref())
+            .and_then(|r| r.lock().ok())
+            .and_then(|r| r.try_recv().ok());
         if res.is_some() {
             if let Some(&tx) = self.chan_rx_tx.get(chan_idx) {
                 if let Some(payloads) = self.chan_payloads.get_mut(tx as usize) {

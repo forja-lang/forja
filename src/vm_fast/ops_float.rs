@@ -30,9 +30,18 @@ impl ForjaFast {
             Opcode::LoadAddFloat(idx, d) => {
                 prof_count!(load_add_float);
                 let val = self.load_local(*idx);
-                // Fast path directo: quickening garantiza float
-                self.push_valor(ValorFast::flotante(val.a_flotante() + d));
-                self.ip += 1;
+                // La fusión se hace sobre un `Add` sin tipo: si el valor no es
+                // numérico (p. ej. `"pref " + 1.5`) se delega en el `Add`
+                // genérico en el mismo ip en vez de operar como flotante.
+                if val.es_flotante() || val.es_entero() {
+                    self.push_valor(ValorFast::flotante(val.a_flotante() + d));
+                    self.ip += 1;
+                } else {
+                    self.push_valor(val);
+                    self.push_valor(ValorFast::flotante(*d));
+                    self.op_forzado = Some(Opcode::Add);
+                    self.hay_op_forzado = true;
+                }
             }
             Opcode::AddStoreFloat(idx) => {
                 prof_count!(add_store_float);

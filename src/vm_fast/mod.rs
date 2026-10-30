@@ -44,6 +44,14 @@ use crate::uops::{expandir_a_uops, optimizar_uops, remapear_saltos_uops, Uop};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// F12-T2: capacidad de un canal creado con `canal()`.
+///
+/// Los canales son **acotados**: cuando la cola está llena, `enviar` bloquea al
+/// emisor (backpressure) en vez de crecer sin límite y agotar la memoria.
+/// `canal()` no expone la capacidad en el lenguaje todavía.
+/// shortcut: capacidad fija, añadir `canal(n)` cuando el lenguaje lo pida.
+pub const CAPACIDAD_CANAL: usize = 1024;
+
 // ─── ForjaFast VM (con VM Heap) ────────────────────────────────────────────
 
 pub struct ForjaFast {
@@ -106,12 +114,13 @@ pub struct ForjaFast {
     exacto_free: Vec<u32>,           // free list Exacto
 
     // ─── Channel Heaps (mpsc) ────────────────────────────────────────────
-    /// Canales de transmisión (Sender) — usa ChannelValue para transportar
-    /// strings como contenido real en lugar de índices VM-locales.
-    pub chan_tx_heap: Vec<Option<std::sync::mpsc::Sender<ChannelValue>>>,
-    /// Canales de recepción (Receiver) — usa ChannelValue para transportar
-    /// strings como contenido real en lugar de índices VM-locales.
-    pub chan_rx_heap: Vec<Option<std::sync::mpsc::Receiver<ChannelValue>>>,
+    /// Canales de transmisión (Sender acotado) — usa ChannelValue para
+    /// transportar strings como contenido real en lugar de índices VM-locales.
+    pub chan_tx_heap: Vec<Option<std::sync::mpsc::SyncSender<ChannelValue>>>,
+    /// Canales de recepción. Van en `Arc<Mutex<…>>` porque `mpsc::Receiver` no
+    /// es `Clone` y un `hilo { … }` necesita **compartir** el receptor con su VM
+    /// hijo (F12-T2: antes el hijo no lo recibía y `recibir()` daba Nulo).
+    pub chan_rx_heap: Vec<Option<Arc<std::sync::Mutex<std::sync::mpsc::Receiver<ChannelValue>>>>>,
     /// Marcas GC para canales tx
     pub chan_tx_marked: Vec<bool>,
     /// Marcas GC para canales rx
@@ -203,8 +212,11 @@ pub struct ForjaFast {
     sym_nuevo: SymId,
 
     // ─── SymId para canales e hilos ────────────────────────────────────
-    sym_canal_emisor: SymId,
-    sym_canal_receptor: SymId,
+    pub(crate) sym_canal_emisor: SymId,
+    pub(crate) sym_canal_receptor: SymId,
+    /// F12-T1: campos del objeto que representa un closure.
+    sym_closure_fn: SymId,
+    sym_closure_env: SymId,
     sym_hilo: SymId,
     sym_enviar: SymId,
     sym_recibir: SymId,
@@ -269,6 +281,20 @@ pub struct ForjaFast {
 
     // ─── String Builders (concat optimizado) ────────────────────────────
     pub str_builders: HashMap<usize, String>,
+
+    // ─── Override de instrucción ────────────────────────────────────────
+    /// Instrucción que reemplaza a la del `ip` actual en este paso. Lo usa
+    /// `CallClosure` para ejecutar `Call` **sin parchear** el opcode: el
+    /// llamador siempre empuja el destinatario antes de `CallClosure`, así que
+    /// un `Call` parcheado en su lugar dejaba un valor extra en la pila por
+    /// llamada y corrompía la profundidad de las lecturas siguientes.
+    pub op_forzado: Option<Opcode>,
+    /// `true` si `op_forzado` está armado: permite que el bucle caliente sólo
+    /// mire un booleano en vez de mover el `Option` en cada instrucción.
+    pub hay_op_forzado: bool,
+    /// Lo mismo para el intérprete de uops.
+    pub uop_forzado: Option<crate::uops::Uop>,
+    pub hay_uop_forzado: bool,
 
     // ─── Native Functions Registry ──────────────────────────────────────
     pub native_registry: NativeRegistry,
@@ -374,6 +400,8 @@ impl ForjaFast {
             sym_nuevo: SymId(0),
             sym_canal_emisor: SymId(0),
             sym_canal_receptor: SymId(0),
+            sym_closure_fn: SymId(0),
+            sym_closure_env: SymId(0),
             sym_hilo: SymId(0),
             sym_enviar: SymId(0),
             sym_recibir: SymId(0),
@@ -397,6 +425,10 @@ impl ForjaFast {
             anterior_stack: HashMap::new(),
             verificar_contratos: true,
             str_builders: HashMap::new(),
+            op_forzado: None,
+            hay_op_forzado: false,
+            uop_forzado: None,
+            hay_uop_forzado: false,
             native_registry: NativeRegistry::new(),
             socket_heap: Vec::new(),
             nombre_local: HashMap::new(),
@@ -978,6 +1010,8 @@ impl ForjaFast {
         self.sym_nuevo = self.sym_table.intern("nuevo");
         self.sym_canal_emisor = self.sym_table.intern("CanalEmisor");
         self.sym_canal_receptor = self.sym_table.intern("CanalReceptor");
+        self.sym_closure_fn = self.sym_table.intern("fn");
+        self.sym_closure_env = self.sym_table.intern("env");
         self.sym_hilo = self.sym_table.intern("Hilo");
         self.sym_enviar = self.sym_table.intern("enviar");
         self.sym_recibir = self.sym_table.intern("recibir");

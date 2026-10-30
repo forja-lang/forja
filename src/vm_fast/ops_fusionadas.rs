@@ -41,17 +41,15 @@ impl ForjaFast {
                 if val.es_entero() {
                     self.push_valor(get_small_int_fast(val.a_entero() as i64 + *n));
                 } else {
-                    // Fallback: push y ejecutar Add
+                    // Los operandos no son enteros: se delega en el `Add`
+                    // genérico (texto/flotante/nulo) en el mismo ip. La fusión
+                    // se hace sobre un `Add` sin tipo, así que asumir enteros
+                    // devolvía nulo en `decimal + 1`.
                     self.push_valor(val);
                     self.push_valor(get_small_int_fast(*n));
-                    let (b, a) = (self.pop_valor()?, self.pop_valor()?);
-                    if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(
-                            a.a_entero() as i64 + b.a_entero() as i64,
-                        ));
-                    } else {
-                        self.push_valor(ValorFast::nulo());
-                    }
+                    self.op_forzado = Some(Opcode::Add);
+                    self.hay_op_forzado = true;
+                    return Ok(true);
                 }
                 self.ip += 1;
             }
@@ -131,14 +129,9 @@ impl ForjaFast {
                 } else {
                     self.push_valor(a);
                     self.push_valor(get_small_int_fast(*n));
-                    let (b, a) = (self.pop_valor()?, self.pop_valor()?);
-                    if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(
-                            a.a_entero() as i64 + b.a_entero() as i64,
-                        ));
-                    } else {
-                        self.push_valor(ValorFast::nulo());
-                    }
+                    self.op_forzado = Some(Opcode::Add);
+                    self.hay_op_forzado = true;
+                    return Ok(true);
                 }
                 self.ip += 1;
             }
@@ -151,17 +144,11 @@ impl ForjaFast {
                     self.push_valor(a);
                     self.push_valor(get_small_int_fast(n + n));
                 } else {
-                    let v = a;
-                    self.push_valor(v);
-                    self.push_valor(v);
-                    let (b, a) = (self.pop_valor()?, self.pop_valor()?);
-                    if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(
-                            a.a_entero() as i64 + b.a_entero() as i64,
-                        ));
-                    } else {
-                        self.push_valor(ValorFast::nulo());
-                    }
+                    self.push_valor(a);
+                    self.push_valor(a);
+                    self.op_forzado = Some(Opcode::Add);
+                    self.hay_op_forzado = true;
+                    return Ok(true);
                 }
                 self.ip += 1;
             }

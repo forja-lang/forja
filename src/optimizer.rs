@@ -480,16 +480,24 @@ impl Optimizer {
                             self.cambios_realizados += 1;
                             return der;
                         }
-                        if matches!(&der, Expresion::LiteralNumero(0))
-                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 0.0)
-                            || matches!(&izq, Expresion::LiteralNumero(0))
-                            || matches!(&izq, Expresion::LiteralDecimal(d) if *d == 0.0)
-                        {
+                        let der_es_cero = matches!(&der, Expresion::LiteralNumero(0))
+                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 0.0);
+                        let izq_es_cero = matches!(&izq, Expresion::LiteralNumero(0))
+                            || matches!(&izq, Expresion::LiteralDecimal(d) if *d == 0.0);
+                        if der_es_cero && !tiene_efectos_secundarios(&izq) {
                             self.cambios_realizados += 1;
                             return Expresion::LiteralNumero(0);
                         }
-                        // x * 2 → x + x  (strength reduction)
-                        if matches!(&der, Expresion::LiteralNumero(2)) {
+                        if izq_es_cero && !tiene_efectos_secundarios(&der) {
+                            self.cambios_realizados += 1;
+                            return Expresion::LiteralNumero(0);
+                        }
+                        // x * 2 → x + x  (strength reduction). Sólo con un
+                        // operando reevaluable: duplicarlo no debe repetir
+                        // efectos secundarios.
+                        if matches!(&der, Expresion::LiteralNumero(2))
+                            && !tiene_efectos_secundarios(&izq)
+                        {
                             self.cambios_realizados += 1;
                             return Expresion::Binaria {
                                 izquierda: Box::new(izq.clone()),
@@ -507,9 +515,10 @@ impl Optimizer {
                         }
                     }
                     Operador::Modulo => {
-                        // x % 1 → 0
-                        if matches!(&der, Expresion::LiteralNumero(1))
-                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 1.0)
+                        // x % 1 → 0 (sólo si descartar `x` no pierde efectos)
+                        if (matches!(&der, Expresion::LiteralNumero(1))
+                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 1.0))
+                            && !tiene_efectos_secundarios(&izq)
                         {
                             self.cambios_realizados += 1;
                             return Expresion::LiteralNumero(0);
@@ -1028,6 +1037,13 @@ impl DeadCodeEliminator {
                 if let Some(dot_pos) = nombre.find('.') {
                     let var_name = &nombre[..dot_pos];
                     self.variables_usadas.insert(var_name.to_string());
+                } else if !self.funciones_definidas.contains(nombre) {
+                    // F11-T1: un nombre invocado que no es una función declarada
+                    // puede ser un closure/callback guardado en una variable
+                    // (`variable f = func(x) {...}` + `f(1)`). Sin marcarlo, el
+                    // DCE borraba la variable y la llamada quedaba como
+                    // `Call("f")` en vez de `CallClosure`.
+                    self.variables_usadas.insert(nombre.clone());
                 }
                 for arg in argumentos {
                     self.recolectar_en_expresion(arg);
@@ -1069,6 +1085,21 @@ impl DeadCodeEliminator {
                 }
             }
             Expresion::Unaria { expr: e, .. } => {
+                self.recolectar_en_expresion(e);
+            }
+            // F11-T5: el DCE no miraba dentro del ternario ni de `&expr`, así
+            // que borraba variables usadas sólo en una rama del ternario y
+            // funciones pasadas como callback (`&funcion`).
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                self.recolectar_en_expresion(condicion);
+                self.recolectar_en_expresion(si_verdadero);
+                self.recolectar_en_expresion(si_falso);
+            }
+            Expresion::Referencia { expr: e, .. } => {
                 self.recolectar_en_expresion(e);
             }
             Expresion::Grupo(expr) => {
@@ -1168,16 +1199,111 @@ impl DeadCodeEliminator {
         }
     }
 
-    /// Determina si una expresión tiene efectos secundarios que impiden su eliminación.
-    /// Las llamadas a funciones, métodos e instanciaciones tienen efectos colaterales
-    /// (pueden modificar estado externo, asignar memoria, producir I/O, etc.).
+    /// Determina si una expresión tiene efectos secundarios que impiden su
+    /// eliminación.
+    ///
+    /// Delega en [`tiene_efectos_secundarios`] a propósito: antes había aquí una
+    /// lista propia que sólo miraba llamadas e instanciaciones, así que
+    /// `variable h1 = hilo { … }` se eliminaba por "no usada" y el hilo **nunca
+    /// se lanzaba** (el padre quedaba esperando su mensaje). Dos listas de
+    /// pureza se desincronizan; una sola, no.
     fn tiene_side_effects(&self, expr: &Expresion) -> bool {
-        matches!(
-            expr,
-            Expresion::LlamadaFuncion { .. }
-                | Expresion::LlamadaMetodo { .. }
-                | Expresion::Instanciacion { .. }
-        )
+        tiene_efectos_secundarios(expr)
+    }
+}
+
+/// ¿La expresión puede tener efectos observables al evaluarse?
+///
+/// Las reducciones aritméticas (`x * 2 → x + x`, `x * 0 → 0`, `x % 1 → 0`)
+/// duplican o descartan un operando: sólo son válidas si evaluarlo dos veces
+/// —o no evaluarlo— no cambia el comportamiento. Con una llamada dentro
+/// (`rx.recibir() * 2`) duplicarla cambiaría el programa (dos recepciones).
+fn tiene_efectos_secundarios(expr: &Expresion) -> bool {
+    match expr {
+        Expresion::LlamadaFuncion { .. }
+        | Expresion::LlamadaMetodo { .. }
+        | Expresion::Instanciacion { .. }
+        | Expresion::Hilo { .. }
+        | Expresion::CanalNuevo(_)
+        | Expresion::Seleccionar { .. }
+        | Expresion::Try(_)
+        | Expresion::Asignacion { .. }
+        | Expresion::AsignacionCampo { .. }
+        | Expresion::ArraySet { .. }
+        | Expresion::Closure { .. } => true,
+        Expresion::Binaria {
+            izquierda, derecha, ..
+        } => tiene_efectos_secundarios(izquierda) || tiene_efectos_secundarios(derecha),
+        Expresion::Unaria { expr, .. }
+        | Expresion::Grupo(expr)
+        | Expresion::Referencia { expr, .. }
+        | Expresion::Anterior(expr)
+        | Expresion::Ok(expr)
+        | Expresion::Error(expr)
+        | Expresion::Algo(expr) => tiene_efectos_secundarios(expr),
+        Expresion::Ternario {
+            condicion,
+            si_verdadero,
+            si_falso,
+        } => {
+            tiene_efectos_secundarios(condicion)
+                || tiene_efectos_secundarios(si_verdadero)
+                || tiene_efectos_secundarios(si_falso)
+        }
+        Expresion::AccesoMiembro { objeto, .. } => tiene_efectos_secundarios(objeto),
+        Expresion::Index { objeto, indice } => {
+            tiene_efectos_secundarios(objeto) || tiene_efectos_secundarios(indice)
+        }
+        Expresion::Arreglo(elementos) => elementos.iter().any(tiene_efectos_secundarios),
+        Expresion::Mapa(pares) => pares
+            .iter()
+            .any(|(k, v)| tiene_efectos_secundarios(k) || tiene_efectos_secundarios(v)),
+        Expresion::Coincidir { expr, brazos } => {
+            tiene_efectos_secundarios(expr)
+                || brazos
+                    .iter()
+                    .any(|b| b.cuerpo.iter().any(decl_tiene_efectos_secundarios))
+        }
+        _ => false,
+    }
+}
+
+/// ¿Alguna declaración del bloque puede tener efectos observables?
+fn decl_tiene_efectos_secundarios(decl: &Declaracion) -> bool {
+    match decl {
+        Declaracion::Expresion(e) | Declaracion::Retornar { valor: Some(e) } => {
+            tiene_efectos_secundarios(e)
+        }
+        Declaracion::Variable { valor, .. } => {
+            valor.as_ref().is_some_and(tiene_efectos_secundarios)
+        }
+        Declaracion::Asignacion { valor, .. } => tiene_efectos_secundarios(valor),
+        Declaracion::LlamadaFuncion { .. } => true,
+        Declaracion::Si {
+            condicion,
+            bloque_verdadero,
+            bloque_falso,
+        } => {
+            tiene_efectos_secundarios(condicion)
+                || bloque_verdadero.iter().any(decl_tiene_efectos_secundarios)
+                || bloque_falso
+                    .as_ref()
+                    .is_some_and(|b| b.iter().any(decl_tiene_efectos_secundarios))
+        }
+        Declaracion::Mientras { condicion, bloque }
+        | Declaracion::Cuando {
+            condicion,
+            cuerpo: bloque,
+            ..
+        } => {
+            tiene_efectos_secundarios(condicion)
+                || bloque.iter().any(decl_tiene_efectos_secundarios)
+        }
+        Declaracion::Repetir { cantidad, bloque } => {
+            tiene_efectos_secundarios(cantidad) || bloque.iter().any(decl_tiene_efectos_secundarios)
+        }
+        Declaracion::Para { bloque, .. } => bloque.iter().any(decl_tiene_efectos_secundarios),
+        _ => false,
     }
 }
 

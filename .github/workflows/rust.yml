@@ -343,13 +343,13 @@ jobs:
       - name: Install wasm-opt (binaryen)
         run: sudo apt-get install -y binaryen
       - name: Optimize WASM with wasm-opt
-        run: wasm-opt --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext -O3 wasm-output/forja_wasm_bg.wasm -o wasm-output/forja_wasm_bg.wasm
+        run: wasm-opt --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-reference-types --enable-multivalue -O3 wasm-output/forja_wasm_bg.wasm -o wasm-output/forja_wasm_bg.wasm
       - name: Compilar forja-wasm-gui con wasm-pack
         run: |
           mkdir -p wasm-output-gui
           WASM_OPT=false wasm-pack build crates/forja-wasm-gui --target web --out-dir ../../wasm-output-gui --out-name forja_wasm_gui --no-opt
       - name: Optimize GUI WASM with wasm-opt
-        run: wasm-opt --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext -O3 wasm-output-gui/forja_wasm_gui_bg.wasm -o wasm-output-gui/forja_wasm_gui_bg.wasm
+        run: wasm-opt --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-reference-types --enable-multivalue -O3 wasm-output-gui/forja_wasm_gui_bg.wasm -o wasm-output-gui/forja_wasm_gui_bg.wasm
       - name: Copy GUI WASM files to output
         run: cp wasm-output-gui/* wasm-output/
       - name: Upload WASM artifacts

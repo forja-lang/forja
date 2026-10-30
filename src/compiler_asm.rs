@@ -2089,6 +2089,10 @@ impl CompilerAsm {
                 self.emit_fault("LiteralExacto");
                 ret.to_string()
             }
+            Expresion::Si { .. } => {
+                self.emit_fault("SiComoExpresion");
+                ret.to_string()
+            }
             Expresion::LiteralNumero(n) => {
                 self.emit_line(&a.mov_reg_imm(ret, *n));
                 ret.to_string()
@@ -2584,7 +2588,7 @@ impl CompilerAsm {
                 format!("{}", 0)
             }
 
-            Expresion::CanalNuevo => {
+            Expresion::CanalNuevo(_) => {
                 // Concurrencia no implementada en ASM
                 self.emit_fault("canal");
                 String::new()

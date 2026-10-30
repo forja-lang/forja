@@ -48,6 +48,7 @@ mod quic_h3;
 mod red;
 mod ruta;
 mod sandbox;
+mod seleccionar;
 mod senales;
 mod sistema;
 mod sockets;
@@ -218,6 +219,7 @@ impl NativeRegistry {
         crate::native_h2_tls::registrar_tls(&mut reg);
         reg.registrar_caracter_conversion();
         reg.registrar_xhb();
+        reg.registrar_seleccionar();
         reg
     }
 

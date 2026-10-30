@@ -37,17 +37,25 @@ pub enum Inst {
     // === Constantes ===
     ConstInt(i64),
     ConstFloat(f64),
+    /// F11-T5: literal de precisión arbitraria (`exacto`): coeficiente y escala.
+    ConstExacto(i128, u32),
+    /// F11-T5: conversión a `Exacto` (`true` si el origen es entero).
+    AExacto(ValueId, bool),
     ConstBool(bool),
     ConstStr(SymId),
     ConstNil,
+    /// F11-T5: lectura de una línea de entrada (`leer()`).
+    ReadLine,
 
     // === Parámetros ===
     /// Parámetro de función (el índice corresponde al orden de los parámetros)
     Param(usize),
 
     // === φ-node ===
-    /// φ-node: merge de valores en junction de control flow
-    Phi(Vec<ValueId>),
+    /// φ-node: valor de la variable de memoria `mem` en una unión de caminos.
+    /// Cada operando es `(bloque_predecesor, valor)`; el conversor los baja a
+    /// copias en las aristas (predecesor → slot del φ).
+    Phi(MemIdx, Vec<(BlockId, ValueId)>),
 
     // === Aritmética ===
     Add(ValueId, ValueId),
@@ -75,8 +83,9 @@ pub enum Inst {
     Load(MemIdx),
     /// Guarda un valor en memoria (variable mutable)
     Store(MemIdx, ValueId),
-    /// Aloca un slot de memoria para una variable
-    Alloca,
+    /// Declara el slot de memoria `mem` (su valor inicial es Nulo). Es el punto
+    /// de entrada de una variable para el paso `mem2reg`.
+    Alloca(MemIdx),
 
     // === Control flow ===
     /// Salto incondicional a un bloque
@@ -89,6 +98,35 @@ pub enum Inst {
     // === Funciones ===
     /// Llamada a función: `nombre(args...)`
     Call(SymId, Vec<ValueId>),
+    /// Crear un closure en este punto.
+    ///
+    /// F12-T1: el valor es un objeto `Closure` con el nombre de la función
+    /// anónima (`fn`) y el **entorno capturado** (`env`, un arreglo con el valor
+    /// que tenían las variables libres al crear el closure). El cuerpo viaja
+    /// dentro de la instrucción —con su propio marco de variables— porque el IR
+    /// es plano y el conversor debe emitir la definición FUERA del flujo
+    /// principal: la VM ejecuta secuencialmente y un `FunctionDef` inline haría
+    /// que el `Return` del closure corte el programa.
+    ///
+    /// Los `ValueId` son los valores capturados, en el mismo orden en que la
+    /// función anónima los espera en su parámetro `__entorno`.
+    MakeClosure(Box<SsaFunction>, Vec<ValueId>),
+    /// F11-T1: llamada indirecta. El destinatario es un valor (un closure
+    /// guardado en variable o un callback recibido por parámetro).
+    CallClosure(ValueId, Vec<ValueId>),
+    /// F11-T2: `hilo { ... }`. El cuerpo viaja como función sintética cuyos
+    /// parámetros son las variables capturadas; los valores capturados se
+    /// pasan al hilo como argumentos (copia, no referencia).
+    ThreadSpawn(Box<SsaFunction>, Vec<ValueId>),
+    /// F11-T2: `canal()`. El valor es el arreglo `[emisor, receptor]`.
+    ChannelNew,
+    /// F12-T2: canal con capacidad explícita (backpressure).
+    ChannelNewCap(ValueId),
+    /// F11-T3: construir un valor de `Resultado`/`Opcion`: objeto `<clase>` con
+    /// campos `valor` (opcional) y `tipo` (`ok`/`error`/`some`/`none`).
+    EnumObject(SymId, Option<ValueId>, SymId),
+    /// F11-T3: `expr?` — desenvuelve el valor o propaga el error.
+    Try(ValueId),
 
     // === Objetos ===
     /// Crear un nuevo objeto: `nuevo Clase { campo: valor, ... }`
@@ -143,6 +181,150 @@ pub enum Terminator {
     Return(Option<ValueId>),
     /// Unreachable (código muerto)
     Unreachable,
+}
+
+impl Terminator {
+    /// Reasigna los `ValueId` que usa el terminador.
+    pub fn reasignar_valores(&mut self, f: &mut impl FnMut(ValueId) -> ValueId) {
+        match self {
+            Terminator::Branch(cond, _, _) => *cond = f(*cond),
+            Terminator::Return(Some(v)) => *v = f(*v),
+            Terminator::Jump(_) | Terminator::Return(None) | Terminator::Unreachable => {}
+        }
+    }
+}
+
+impl Inst {
+    /// Reasigna todos los `ValueId` que usa la instrucción. Lo usan los pases
+    /// que cambian la numeración de valores (p. ej. `mem2reg`).
+    ///
+    /// Las funciones anidadas (`MakeClosure`, `ThreadSpawn`) no se tocan aquí:
+    /// el pase que renumera se encarga de ellas por separado.
+    pub fn reasignar_valores(&mut self, f: &mut impl FnMut(ValueId) -> ValueId) {
+        match self {
+            // Sin operandos de valor.
+            Inst::ConstInt(_)
+            | Inst::ConstFloat(_)
+            | Inst::ConstExacto(_, _)
+            | Inst::ConstBool(_)
+            | Inst::ConstStr(_)
+            | Inst::ConstNil
+            | Inst::ReadLine
+            | Inst::Param(_)
+            | Inst::ChannelNew
+            | Inst::Alloca(_)
+            | Inst::Load(_)
+            | Inst::Jump(_) => {}
+
+            Inst::MakeClosure(_, capturados) => {
+                for v in capturados.iter_mut() {
+                    *v = f(*v);
+                }
+            }
+
+            Inst::Return(None) => {}
+
+            Inst::AExacto(v, _)
+            | Inst::Neg(v)
+            | Inst::Not(v)
+            | Inst::Try(v)
+            | Inst::ExtractField(v, _)
+            | Inst::FieldGet(v, _)
+            | Inst::Store(_, v)
+            | Inst::Return(Some(v))
+            | Inst::Branch(v, _, _) => *v = f(*v),
+
+            Inst::Phi(_, operandos) => {
+                for (_, v) in operandos.iter_mut() {
+                    *v = f(*v);
+                }
+            }
+
+            Inst::Add(a, b)
+            | Inst::Sub(a, b)
+            | Inst::Mul(a, b)
+            | Inst::Div(a, b)
+            | Inst::Mod(a, b)
+            | Inst::Eq(a, b)
+            | Inst::Neq(a, b)
+            | Inst::Lt(a, b)
+            | Inst::Gt(a, b)
+            | Inst::Lte(a, b)
+            | Inst::Gte(a, b)
+            | Inst::And(a, b)
+            | Inst::Or(a, b)
+            | Inst::ArrayGet(a, b)
+            | Inst::MapGet(a, b) => {
+                *a = f(*a);
+                *b = f(*b);
+            }
+
+            Inst::ChannelNewCap(v) => *v = f(*v),
+
+            Inst::Call(_, args) | Inst::ArrayNew(args) => {
+                for v in args.iter_mut() {
+                    *v = f(*v);
+                }
+            }
+
+            // El destinatario de una llamada indirecta **es** un valor.
+            Inst::CallClosure(callee, args) => {
+                *callee = f(*callee);
+                for v in args.iter_mut() {
+                    *v = f(*v);
+                }
+            }
+
+            Inst::ThreadSpawn(_, args) => {
+                for v in args.iter_mut() {
+                    *v = f(*v);
+                }
+            }
+
+            Inst::CallMethod(obj, _, args) => {
+                *obj = f(*obj);
+                for v in args.iter_mut() {
+                    *v = f(*v);
+                }
+            }
+
+            Inst::EnumObject(_, valor, _) => {
+                if let Some(v) = valor {
+                    *v = f(*v);
+                }
+            }
+
+            Inst::ObjectNew(_, campos) => {
+                for (_, v) in campos.iter_mut() {
+                    *v = f(*v);
+                }
+            }
+
+            Inst::FieldSet(obj, _, v)
+            | Inst::FieldSetIdx(obj, _, v)
+            | Inst::ArraySet(obj, _, v)
+            | Inst::MapSet(obj, _, v) => {
+                *obj = f(*obj);
+                *v = f(*v);
+            }
+
+            Inst::MapNew(pares) => {
+                for (k, v) in pares.iter_mut() {
+                    *k = f(*k);
+                    *v = f(*v);
+                }
+            }
+        }
+    }
+}
+
+/// `true` si la instrucción produce un `ValueId` (y por lo tanto ocupa un
+/// número en la numeración posicional del IR).
+pub fn produce_valor(inst: &Inst) -> bool {
+    !matches!(
+        inst,
+        Inst::Store(_, _) | Inst::FieldSet(_, _, _) | Inst::FieldSetIdx(_, _, _)
+    )
 }
 
 /// Función en SSA
@@ -301,6 +483,23 @@ impl IrBuilder {
         v
     }
 
+    /// F11-T5: literal `exacto` (BigDecimal) del lenguaje.
+    pub fn emit_const_exacto(&mut self, coeficiente: i128, escala: u32) -> ValueId {
+        let v = self.next_value();
+        self.current_insts
+            .push(Inst::ConstExacto(coeficiente, escala));
+        v
+    }
+
+    /// F11-T5: conversión a `Exacto` de un entero o de un decimal (el backend
+    /// AST la emite cuando la variable declara tipo `Exacto` y el valor es un
+    /// literal).
+    pub fn emit_a_exacto(&mut self, valor: ValueId, desde_entero: bool) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::AExacto(valor, desde_entero));
+        v
+    }
+
     pub fn emit_const_bool(&mut self, value: bool) -> ValueId {
         let v = self.next_value();
         self.current_insts.push(Inst::ConstBool(value));
@@ -326,9 +525,10 @@ impl IrBuilder {
         v
     }
 
-    pub fn emit_phi(&mut self, values: Vec<ValueId>) -> ValueId {
+    /// φ-node para la variable de memoria `mem`, con un operando por predecesor.
+    pub fn emit_phi(&mut self, mem: MemIdx, operandos: Vec<(BlockId, ValueId)>) -> ValueId {
         let v = self.next_value();
-        self.current_insts.push(Inst::Phi(values));
+        self.current_insts.push(Inst::Phi(mem, operandos));
         v
     }
 
@@ -432,9 +632,75 @@ impl IrBuilder {
         v
     }
 
-    pub fn emit_alloca(&mut self) -> ValueId {
+    /// F12-T1: define un closure con su entorno capturado y devuelve su valor.
+    pub fn emit_make_closure(&mut self, func: SsaFunction, capturados: Vec<ValueId>) -> ValueId {
         let v = self.next_value();
-        self.current_insts.push(Inst::Alloca);
+        self.current_insts
+            .push(Inst::MakeClosure(Box::new(func), capturados));
+        v
+    }
+
+    /// F11-T1: llamada indirecta a un closure/callback.
+    pub fn emit_call_closure(&mut self, callee: ValueId, args: Vec<ValueId>) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::CallClosure(callee, args));
+        v
+    }
+
+    /// F11-T2: lanza un hilo con el cuerpo y los valores capturados.
+    pub fn emit_thread_spawn(&mut self, func: SsaFunction, capturadas: Vec<ValueId>) -> ValueId {
+        let v = self.next_value();
+        self.current_insts
+            .push(Inst::ThreadSpawn(Box::new(func), capturadas));
+        v
+    }
+
+    /// F11-T2: crea un canal y devuelve el arreglo `[emisor, receptor]`.
+    pub fn emit_channel_new(&mut self) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::ChannelNew);
+        v
+    }
+
+    /// F12-T2: canal acotado; `capacidad` es un `Entero`.
+    pub fn emit_channel_new_cap(&mut self, capacidad: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::ChannelNewCap(capacidad));
+        v
+    }
+
+    /// F11-T3: construye un `Resultado`/`Opcion` con `valor` y `tipo`.
+    pub fn emit_enum_object(
+        &mut self,
+        clase: SymId,
+        valor: Option<ValueId>,
+        tipo: SymId,
+    ) -> ValueId {
+        let v = self.next_value();
+        self.current_insts
+            .push(Inst::EnumObject(clase, valor, tipo));
+        v
+    }
+
+    /// F11-T3: propaga `?` sobre el valor dado.
+    pub fn emit_try(&mut self, valor: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::Try(valor));
+        v
+    }
+
+    /// F11-T5: lee una línea de entrada (`leer()`), como `Opcode::ReadLine`.
+    pub fn emit_read_line(&mut self) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::ReadLine);
+        v
+    }
+
+    /// Declara la variable de memoria `mem` en este punto (su valor inicial es
+    /// Nulo). El slot identifica la variable para el paso `mem2reg`.
+    pub fn emit_alloca(&mut self, mem: MemIdx) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::Alloca(mem));
         v
     }
 

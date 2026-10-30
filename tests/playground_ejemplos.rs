@@ -45,7 +45,15 @@ fn test_ejemplos_playground_parsean() {
 fn test_ejemplos_playground_ejecutan() {
     let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     for codigo in ejemplos_playground() {
-        if codigo.contains("columna ") {
+        // Los ejemplos de GUI se validan en el navegador (necesitan el host de
+        // widgets): en la VM sólo producirían Nulo. El filtro mira el nombre de
+        // cualquier builtin de layout, no un texto con espacio — antes era
+        // `"columna "` y el ejemplo escrito como `columna(` sí se ejecutaba.
+        if ["columna", "fila", "pila", "titulo", "boton"]
+            .iter()
+            .any(|b| codigo.contains(b))
+            || codigo.contains("importar gui")
+        {
             continue;
         }
         let salida =

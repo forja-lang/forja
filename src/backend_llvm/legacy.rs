@@ -1044,6 +1044,10 @@ impl LlvmBackend {
             Expresion::LiteralExacto(_, _) => {
                 Err("LiteralExacto (BigDecimal) no soportado en el backend LLVM".into())
             }
+            Expresion::Si { .. } => Err(
+                "`si` como elemento de una lista de argumentos no se soporta en el backend LLVM"
+                    .into(),
+            ),
             Expresion::LiteralTexto(s) => {
                 let lbl = self.sl();
                 let esc = s
@@ -1277,7 +1281,7 @@ impl LlvmBackend {
                 // Concurrencia no implementada en LLVM
                 Ok("0".into())
             }
-            Expresion::CanalNuevo => {
+            Expresion::CanalNuevo(_) => {
                 Err("canal() (concurrencia) no soportado en el backend LLVM".into())
             }
             Expresion::Seleccionar { brazos } => {

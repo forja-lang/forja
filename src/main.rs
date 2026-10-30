@@ -1589,15 +1589,21 @@ fn ejecutar_nativo(source: &str, input_path: &str, hot_reload: bool) -> Result<(
         .transpilar(&programa)
         .map_err(|e| format!("Error de transpilación: {}", e[0]))?;
 
-    // 6. Escribir main.rs
-    std::fs::write(temp_dir.join("main.rs"), &codigo_rust)
-        .map_err(|e| format!("Error escribiendo main.rs: {}", e))?;
+    // 6. Escribir el fuentes en `src/main.rs` (Cargo exige el target en `src/`;
+    // dejarlo en la raíz del paquete hacía fallar con «no targets specified»).
+    std::fs::create_dir_all(temp_dir.join("src"))
+        .map_err(|e| format!("Error creando src/: {}", e))?;
+    std::fs::write(temp_dir.join("src").join("main.rs"), &codigo_rust)
+        .map_err(|e| format!("Error escribiendo src/main.rs: {}", e))?;
 
     // 7. Escribir Cargo.toml con rutas absolutas
-    let forja_root =
-        std::fs::canonicalize(".").map_err(|e| format!("Error resolviendo ruta raíz: {}", e))?;
+    let forja_root = forja::raiz_forja().ok_or_else(|| {
+        "No encuentro la raíz del repo de forja (necesito `crates/forja-gui-rt` para compilar apps GUI). Corré `forja` desde la raíz del repo.".to_string()
+    })?;
     let forja_gui_rt_path = forja_root.join("crates/forja-gui-rt");
 
+    // Las rutas van con barras normales: dentro de un string TOML básico las
+    // barras invertidas de Windows son escapes (`C:\Users` → `\U` inválido).
     let cargo_toml = format!(
         r#"[package]
 name = "{}"
@@ -1610,11 +1616,8 @@ forja = {{ path = "{}" }}
 serde_json = "1"
 "#,
         nombre_crate,
-        forja_gui_rt_path
-            .display()
-            .to_string()
-            .replace("\\\\?\\", ""),
-        forja_root.display().to_string().replace("\\\\?\\", "")
+        forja::ruta_para_toml(&forja_gui_rt_path),
+        forja::ruta_para_toml(&forja_root)
     );
 
     std::fs::write(temp_dir.join("Cargo.toml"), &cargo_toml)
@@ -1640,7 +1643,12 @@ serde_json = "1"
     } else {
         nombre_crate.clone()
     };
-    let bin_path = temp_dir.join("target").join("release").join(&exe_name);
+    // Cargo respeta `CARGO_TARGET_DIR` del entorno: si está seteado, el binario no
+    // queda en `<temp>/target/release` sino ahí.
+    let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| temp_dir.join("target"));
+    let bin_path = target_dir.join("release").join(&exe_name);
 
     println!("🚀 Ejecutando GUI nativa...");
     let child = std::process::Command::new(&bin_path)
@@ -2524,11 +2532,29 @@ fn cmd_transpile(args: &[String]) {
     }
 
     let usa_gui = transpiler.usa_gui();
+    // Las rutas a los crates locales salen de la raíz del repo (misma resolución
+    // que `ejecutar_nativo`) y se escriben con barras normales: en un string TOML
+    // básico las barras invertidas de Windows son escapes (`C:\Users` → `\U`).
+    // Las rutas a los crates locales salen de la raíz del repo (misma resolución
+    // que `ejecutar_nativo`) y se escriben con barras normales: en un string TOML
+    // básico las barras invertidas de Windows son escapes (`C:\Users` → `\U`).
+    let forja_root = match forja::raiz_forja() {
+        Some(raiz) => raiz,
+        None => {
+            eprintln!(
+                "Error: no encuentro la raíz del repo de forja (necesito `crates/forja-gui-rt`\n\
+                 para compilar apps GUI). Corré `forja` desde la raíz del repo."
+            );
+            process::exit(1);
+        }
+    };
+    let forja_toml = forja::ruta_para_toml(&forja_root);
+    let forja_gui_rt_toml = forja::ruta_para_toml(&forja_root.join("crates/forja-gui-rt"));
     let cargo_toml = if usa_gui {
         format!(
             r#"[package]
 name = "{}"
-version = "0.9.3"
+version = "0.9.5"
 edition = "2021"
 
 [workspace]
@@ -2541,21 +2567,21 @@ name = "{}"
 path = "src/lib.rs"
 
 [dependencies]
-forja = {{ path = "C:\\Users\\gaucho\\forja" }}
-forja-gui-rt = {{ path = "C:\\Users\\gaucho\\forja\\crates\\forja-gui-rt" }}
+forja = {{ path = "{}" }}
+forja-gui-rt = {{ path = "{}" }}
 serde_json = "1"
 
 [target.'cfg(target_os = "android")'.dependencies.winit]
 version = "0.30.13"
 features = ["android-native-activity"]
 "#,
-            nombre_crate, nombre_crate
+            nombre_crate, nombre_crate, forja_toml, forja_gui_rt_toml
         )
     } else {
         format!(
             r#"[package]
 name = "{}"
-version = "0.9.3"
+version = "0.9.5"
 edition = "2021"
 
 # Exportado por Forja (fa) desde {} (podés ejecutar directo con 'forja ejecutar')

@@ -50,7 +50,9 @@ fn corpus_no_parseables_conocidos() {
     // Documentados en plan3/F10-T2; si alguno empieza a parsear, hay que
     // actualizar la lista y el corpus.
     let raiz = Path::new(env!("CARGO_MANIFEST_DIR")).join("ejemplos");
-    for nombre in ["192_metaprogramacion.fa", "199_forja_desde_forja.fa"] {
+    // `199_forja_desde_forja.fa` se recuperó de la historia del submódulo
+    // (estaba corrupto por un `formato(ejemplos)` viejo) y ya parsea.
+    for nombre in ["192_metaprogramacion.fa"] {
         let fuente = std::fs::read_to_string(raiz.join(nombre)).unwrap();
         let mut lexer = forja::lexer::Lexer::new(&fuente);
         let tokens = lexer.tokenize().expect("debe tokenizar");

@@ -50,6 +50,7 @@ jobs:
       - name: Verify WASM files (restore from git if download failed)
         run: |
           ANY_FAILURE=0
+          FALLBACK=0
           # Un wasm válido empieza con los bytes mágicos \0asm (0061736d).
           for pair in "forja_wasm.js forja_wasm_bg.wasm" "forja_wasm_gui.js forja_wasm_gui_bg.wasm"; do
             set -- $pair
@@ -57,10 +58,22 @@ jobs:
             wasm="$2"
             magic=$(head -c 4 "src/wasm/$wasm" 2>/dev/null | od -An -tx1 | tr -d ' \n')
             if [ ! -s "src/wasm/$js" ] || [ ! -s "src/wasm/$wasm" ] || [ "$magic" != "0061736d" ] || ! grep -q "export" "src/wasm/$js"; then
+              # El fallback mantiene el sitio en pie, pero significa que el WASM
+              # del release está roto: que se vea en el run y en el resumen.
+              echo "::warning title=WASM del release inválido::$js/$wasm no sirve; se usa la copia de git. El próximo release publicaría un playground roto."
               echo "⚠️  $js/$wasm inválido o descarga fallida, restaurando desde git..."
               git checkout -- "src/wasm/$js" "src/wasm/$wasm" 2>/dev/null || true
+              FALLBACK=1
             fi
           done
+          if [ "$FALLBACK" -eq 1 ]; then
+            {
+              echo "### ⚠️ WASM del release no utilizable"
+              echo ""
+              echo "El playground se publicó con la copia de git. Revisar los flags"
+              echo "de features del paso wasm-opt del workflow de release."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
           # Verify all files present
           for f in src/wasm/forja_wasm.js src/wasm/forja_wasm_bg.wasm \
                    src/wasm/forja_wasm_gui.js src/wasm/forja_wasm_gui_bg.wasm; do
@@ -70,10 +83,10 @@ jobs:
             fi
           done
           if [ "$ANY_FAILURE" -eq 1 ]; then
-            echo "❌ Some WASM files are missing — build may fail"
-          else
-            echo "✅ All WASM files ready"
+            echo "::error title=WASM faltante::Faltan archivos WASM y git tampoco los tiene."
+            exit 1
           fi
+          echo "✅ All WASM files ready"
 
       - run: npm ci
         env:

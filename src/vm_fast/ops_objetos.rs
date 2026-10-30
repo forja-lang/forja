@@ -9,6 +9,27 @@
 use super::*;
 
 impl ForjaFast {
+    /// F12-T1: extrae `(nombre de la función, entorno)` de un valor que sea un
+    /// objeto `Closure`. Devuelve `None` si no lo es.
+    pub(crate) fn desempaquetar_closure(&self, valor: &ValorFast) -> Option<(Arc<str>, ValorFast)> {
+        if !valor.es_objeto() {
+            return None;
+        }
+        let idx = valor.indice_objeto() as usize;
+        let clase = self.obj_heap.get(idx)?.clase;
+        let desc = self.class_descriptors.get(&clase)?;
+        let i_fn = desc.shape.get_idx(self.sym_closure_fn)?;
+        let i_env = desc.shape.get_idx(self.sym_closure_env)?;
+        let campos = &self.obj_heap.get(idx)?.campos_vec;
+        let fn_val = *campos.get(i_fn)?;
+        let env_val = *campos.get(i_env)?;
+        if !fn_val.es_texto() {
+            return None;
+        }
+        let nombre = self.str_heap.get(fn_val.indice_texto() as usize)?.clone();
+        Some((nombre, env_val))
+    }
+
     /// Ejecuta las ramas de objetos del `match op`.
     ///
     /// Devuelve `Ok(true)` si `op` fue manejada por este helper, `Ok(false)` en
@@ -97,6 +118,7 @@ impl ForjaFast {
                             let (nuevo_shape, _) =
                                 self.shape_registry.add_campo_dinamico(shape_id, field_sym);
                             self.obj_shapes[obj_idx as usize] = nuevo_shape;
+                            self.obj_heap[obj_idx as usize].shape_id = nuevo_shape;
                             if sidx < self.obj_heap[obj_idx as usize].campos_vec.len() {
                                 self.obj_heap[obj_idx as usize].campos_vec[sidx] = v;
                             } else {

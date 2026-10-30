@@ -3,52 +3,26 @@
 //! Orquesta el constructor IR ([`crate::ir_constructor`]) y el conversor
 //! ([`crate::ir_to_bytecode`]) para emitir bytecode **derivado del IR**.
 //!
-//! Sólo cubre el subconjunto del lenguaje implementado en el constructor IR
-//! (código de nivel superior, funciones de usuario, arreglos y mapas). Si el
-//! programa usa otros constructos (clases, enums, contratos), devuelve `Err`
-//! para que el llamador haga *fallback* a la ruta AST.
+//! F11-T5: es el **único** motor de la ruta canónica. Cubre todo el lenguaje;
+//! si el constructor IR no puede con un programa, devuelve `Err` con el
+//! diagnóstico del constructo (no hay *fallback* a la ruta AST).
 
 use crate::ast::{Declaracion, ParametroTipo, Programa, Tipo};
 use crate::bytecode::{BytecodeGenerator, ContratoBytecode, Opcode};
 use crate::ir_constructor::IrConstructor;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-static IR_OK: AtomicU64 = AtomicU64::new(0);
-static IR_FALLBACK: AtomicU64 = AtomicU64::new(0);
-
-/// F8-T6: contadores de emisión IR (éxitos y fallbacks).
-pub fn telemetria() -> (u64, u64) {
-    (
-        IR_OK.load(Ordering::Relaxed),
-        IR_FALLBACK.load(Ordering::Relaxed),
-    )
-}
-
-/// Registra el resultado de un intento de emisión IR.
-pub fn registrar_intento(ok: bool) {
-    if ok {
-        IR_OK.fetch_add(1, Ordering::Relaxed);
-    } else {
-        IR_FALLBACK.fetch_add(1, Ordering::Relaxed);
-    }
-}
 use crate::ir_to_bytecode::IrToBytecode;
 use std::collections::HashMap;
 
 /// Overloads de funciones tal como los expone el `TypeChecker`.
 pub type Overloads = HashMap<String, Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>>;
 
-/// (F4-T8, unificación de backend) **Único punto de emisión canónica** de
-/// bytecode. Tanto la ruta pública (`compilar_pipeline_completa`) como el alias
-/// IR (`compilar_con_ir`) desembocan aquí, de modo que la paridad byte a byte se
-/// garantiza **por construcción** (comparten el mismo backend).
-///
-/// Etapa actual: el backend baja el programa al generador probado
-/// ([`BytecodeGenerator`]) y aplica la post-producción única
+/// **Backend AST** ([`BytecodeGenerator`]) con la post-producción común
 /// (`postprocesar_globales` + [`crate::optimizer_pipeline::optimizar_bytecode`]).
-/// La sustitución de esa bajada por la emisión SSA real ([`emitir_bytecode_ir`])
-/// es el trabajo incremental de F4-T8; el andamiaje IR ya está construido y
-/// validado en el subconjunto.
+///
+/// F11-T5: la ruta canónica **no** pasa por aquí (emite por IR, ver
+/// [`emitir_bytecode_ir`]). Se conserva como motor alternativo explícito
+/// ([`crate::MotorEmision::SoloAst`]) para comparar comportamientos y como base
+/// del benchmark AST vs IR de F14-T2.
 pub fn emitir_bytecode_canonico(
     programa: &Programa,
     tipos: HashMap<String, Tipo>,
@@ -88,9 +62,16 @@ pub fn emitir_bytecode_ir(programa: &Programa) -> Result<Vec<Opcode>, String> {
     let mut ctor = IrConstructor::new();
     let ir = ctor.program_to_ir(programa);
     if !ctor.soportado {
-        return Err("programa fuera del subconjunto IR".to_string());
+        // F11-T5: el diagnóstico dice qué constructo abortó la emisión IR.
+        let motivo = ctor
+            .motivo_no_soportado
+            .unwrap_or_else(|| "constructo no soportado".to_string());
+        return Err(format!("programa fuera del subconjunto IR: {motivo}"));
     }
 
+    // F11-T6: promoción de memoria a SSA (mem2reg + φ) antes de bajar a
+    // bytecode. Los φ se resuelven en las aristas al convertir.
+    let ir = crate::ir_ssa::promover_programa(&ir);
     let mut converter = IrToBytecode::new(ir.symbols.clone());
     Ok(converter.convert_program(&ir))
 }
