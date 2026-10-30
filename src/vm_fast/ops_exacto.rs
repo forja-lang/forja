@@ -36,7 +36,7 @@ impl ForjaFast {
                 self.push_valor(v);
                 self.ip += 1;
             }
-            Opcode::AddExact => {
+            Opcode::SumarExacto => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
                 let a = self.normalizar_a_exacto(a);
@@ -84,7 +84,7 @@ impl ForjaFast {
                 self.push_valor(val);
                 self.ip += 1;
             }
-            Opcode::SubExact => {
+            Opcode::RestarExacto => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
                 let a = self.normalizar_a_exacto(a);
@@ -132,7 +132,7 @@ impl ForjaFast {
                 self.push_valor(val);
                 self.ip += 1;
             }
-            Opcode::MulExact => {
+            Opcode::MultiplicarExacto => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
                 let a = self.normalizar_a_exacto(a);
@@ -171,7 +171,7 @@ impl ForjaFast {
                 self.push_valor(val);
                 self.ip += 1;
             }
-            Opcode::DivExact => {
+            Opcode::DividirExacto => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
                 let a = self.normalizar_a_exacto(a);
@@ -242,7 +242,7 @@ impl ForjaFast {
                 self.push_valor(val);
                 self.ip += 1;
             }
-            Opcode::IgualExact => {
+            Opcode::IgualExacto => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
                 let a = self.normalizar_a_exacto(a);
@@ -263,7 +263,7 @@ impl ForjaFast {
                 self.push_valor(ValorFast::booleano(igual));
                 self.ip += 1;
             }
-            Opcode::MenorExact => {
+            Opcode::MenorExacto => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
                 let a = self.normalizar_a_exacto(a);
@@ -284,7 +284,7 @@ impl ForjaFast {
                 self.push_valor(ValorFast::booleano(menor));
                 self.ip += 1;
             }
-            Opcode::MayorExact => {
+            Opcode::MayorExacto => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
                 let a = self.normalizar_a_exacto(a);
@@ -329,14 +329,14 @@ impl ForjaFast {
                 }
                 self.ip += 1;
             }
-            Opcode::DeclareExactOp(idx, coeff, scale) => {
+            Opcode::DeclararOperacionExacto(idx, coeff, scale) => {
                 // Declarar variable con valor Exacto literal
                 let v = self.exacto_valor(*coeff, *scale);
                 self.store_local(*idx, v);
                 self.push_valor(v);
                 self.ip += 1;
             }
-            Opcode::AddStoreExact(idx) => {
+            Opcode::SumarGuardarExacto(idx) => {
                 // Pop valor, sumar a variable en idx (acumulador Exacto)
                 let b = self.pop_valor()?;
                 let var_val = self.load_local(*idx);
