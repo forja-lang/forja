@@ -29,6 +29,9 @@ METRICA_CALIBRACION = "calibracion"
 # ruido; se le da un margen mayor sin dejar de detectar regresiones grandes.
 UMBRALES_POR_METRICA: dict[str, float] = {
     "compilar_fib": 20.0,
+    # F14-T2: los cocientes ir/ast son ruidosos (dividen dos medianas).
+    "ir_vs_ast_compilar": 15.0,
+    "ir_vs_ast_vm": 15.0,
 }
 
 

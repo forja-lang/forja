@@ -11,14 +11,22 @@ Cómo lo evita:
 
 1. **Parejas intercaladas con orden aleatorizado**: todas las versiones se
    miden en la misma ventana temporal y ninguna queda siempre primera.
-2. **Mediana + bootstrap + test de permutación** en vez de comparar promedios
-   o mínimos sueltos. Un veredicto exige `p < 0.01` y IC95 que excluya 0.
+2. **Cuantil bajo + bootstrap + test de permutación** en vez de promedios o
+   mínimos sueltos. El ruido de una máquina real es *aditivo* (antivirus,
+   scheduler, page cache) y con `forja compilar` la distribución llega a ser
+   bimodal (~55 ms vs ~135 ms): la mediana cae en cualquiera de las dos modas y
+   dos versiones idénticas parecen distintas. El estimador por defecto es el
+   percentil 10. Un veredicto exige p < 0.05, IC95 que excluya 0 y un efecto
+   de al menos 2 %.
 3. **Suelo por release**: un `.fa` que solo imprime se compila y se mide con el
    mismo release. Lo que sobra sobre ese suelo es cálculo real; si el cálculo
    es menos del 25 % del tiempo, la ruta se marca SIN TRABAJO REAL y no opina.
 4. **Hash de codegen y de bytecode**: si el transpilador emite el mismo
    `main.rs` o el compilador el mismo bytecode, el tool lo dice — hay rutas
    que no *pueden* diferir.
+5. **Workload recursivo** además del publicado: los bucles cerrados del corpus
+   se pliegan a constantes en AOT y solo miden arranque, así que la ruta AOT
+   suma un `fib(32)` recursivo, que no se pliega.
 
 Uso:
     python scripts/bench-releases.py v0.9.3 v0.9.4
@@ -43,7 +51,6 @@ import statistics
 import subprocess
 import sys
 import tarfile
-import tempfile
 import time
 import urllib.request
 import zipfile
@@ -62,9 +69,23 @@ escribir("SUMA:" + "49999995000000")
 escribir("CALLS:" + "499999500000")
 escribir("NESTED:" + "2472525000")
 """
-ALFA = 0.01          # exigencia de p-valor para declarar una diferencia
+ALFA = 0.05          # exigencia de p-valor (con IC95 sin 0 y efecto minimo)
 BOOTSTRAP = 10_000
 PERMUTACIONES = 20_000
+
+# Workload sintético: la recursión no se pliega en tiempo de compilación, así
+# que es el único tipo de carga que le deja trabajo real a la ruta AOT (los
+# bucles cerrados del corpus se reducen a constantes y miden solo arranque).
+# Solo corre en AOT: en la VM fib(32) tardaría minutos por muestra.
+RECURSIVO_FA = """// Workload sintético del harness: recursión no plegable en AOT.
+funcion fib(n) {
+    si (n <= 1) {
+        retornar n
+    }
+    retornar fib(n - 1) + fib(n - 2)
+}
+escribir("FIB32:" + fib(32))
+"""
 
 
 # --------------------------------------------------------------------------
@@ -275,28 +296,45 @@ def mad(xs: list[float]) -> float:
     return mediana([abs(x - m) for x in xs])
 
 
-def bootstrap_ic(a: list[float], b: list[float], rng: random.Random,
+def cuantil(xs: list[float], q: float) -> float:
+    """Cuantil por rango más cercano (q=0.10 -> el 10 % más rápido).
+
+    El ruido de esta máquina es **aditivo**: antivirus, scheduling y page cache
+    solo *suman* tiempo, nunca restan. Con `forja compilar` la distribución es
+    bimodal (~55 ms vs ~135 ms según si el AV escanea el .exe recién escrito) y
+    la mediana puede caer en cualquiera de los dos modos: dos versiones
+    idénticas aparecen distintas. El cuantil bajo mide el costo intrínseco de
+    la operación, que es lo que un release cambia.
+    """
+    ordenados = sorted(xs)
+    if len(ordenados) == 1:
+        return ordenados[0]
+    k = int(round(q * (len(ordenados) - 1)))
+    return ordenados[max(0, min(len(ordenados) - 1, k))]
+
+
+def bootstrap_ic(a: list[float], b: list[float], rng: random.Random, q: float,
                  n: int = BOOTSTRAP) -> tuple[float, float]:
-    """IC95 de mediana(b) - mediana(a) por remuestreo con reemplazo."""
+    """IC95 de cuantil(b) - cuantil(a) por remuestreo con reemplazo."""
     deltas = []
     for _ in range(n):
-        ma = mediana(rng.choices(a, k=len(a)))
-        mb = mediana(rng.choices(b, k=len(b)))
-        deltas.append(mb - ma)
+        da = cuantil(rng.choices(a, k=len(a)), q)
+        db = cuantil(rng.choices(b, k=len(b)), q)
+        deltas.append(db - da)
     deltas.sort()
     return deltas[int(0.025 * n)], deltas[int(0.975 * n) - 1]
 
 
-def test_permutacion(a: list[float], b: list[float], rng: random.Random,
+def test_permutacion(a: list[float], b: list[float], rng: random.Random, q: float,
                      n: int = PERMUTACIONES) -> float:
-    """p-valor bilateral de la diferencia de medianas, por permutación."""
-    observado = abs(mediana(b) - mediana(a))
+    """p-valor bilateral de la diferencia de cuantiles, por permutación."""
+    observado = abs(cuantil(b, q) - cuantil(a, q))
     pool = a + b
     k = len(a)
     extremos = 0
     for _ in range(n):
         rng.shuffle(pool)
-        if abs(mediana(pool[k:]) - mediana(pool[:k])) >= observado:
+        if abs(cuantil(pool[k:], q) - cuantil(pool[:k], q)) >= observado:
             extremos += 1
     return (extremos + 1) / (n + 1)
 
@@ -375,10 +413,18 @@ class Bloque:
     suelo: dict[str, list[float]]
     extra: dict[str, dict] = field(default_factory=dict)
     aplica_suelo: bool = True
+    salidas: dict[str, str] = field(default_factory=dict)
 
 
 def _etiqueta(ruta: str, workload: str) -> str:
     return f"{ruta}:{workload}"
+
+
+def salida_de(cmd: list[str], cwd: Path | None = None) -> str:
+    """Hash de stdout: dos versiones solo se pueden comparar si computan lo mismo."""
+    res = subprocess.run(cmd, cwd=str(cwd) if cwd else None,
+                         capture_output=True, text=True, timeout=900)
+    return hashlib.sha256((res.stdout or "").encode("utf-8", "replace")).hexdigest()
 
 
 def medir_bloque(ruta: str, workload: str, releases: list[Release],
@@ -396,8 +442,20 @@ def medir_bloque(ruta: str, workload: str, releases: list[Release],
         # El arranque del CLI *es* el suelo: no tiene sentido descontárselo.
         base_suelo = {tag: list(v) for tag, v in muestras.items()}
         aplica = False
+    # `startup` imprime la versión (por diseño distinta): no se compara.
+    # `pipeline` mide la compilación, así que su salida útil es la del ejecutable
+    # generado; el stdout de `forja compilar` incluye la ruta con el tag y siempre
+    # difiere entre releases.
+    if ruta == "startup":
+        salidas = {}
+    elif ruta == "pipeline":
+        salidas = {rel.tag: salida_de([preparados[rel.tag].comando[-1]])
+                   for rel in releases}
+    else:
+        salidas = {rel.tag: salida_de(preparados[rel.tag].comando)
+                   for rel in releases}
     extra = {rel.tag: preparados[rel.tag].extra for rel in releases}
-    return Bloque(ruta, workload, muestras, base_suelo, extra, aplica)
+    return Bloque(ruta, workload, muestras, base_suelo, extra, aplica, salidas)
 
 
 # --------------------------------------------------------------------------
@@ -405,27 +463,38 @@ def medir_bloque(ruta: str, workload: str, releases: list[Release],
 # --------------------------------------------------------------------------
 
 def comparar(bloque: Bloque, referencia: str, min_trabajo_pct: float,
-             rng: random.Random) -> list[dict]:
-    """Compara la referencia contra cada otra versión dentro de un bloque."""
+             rng: random.Random, q: float = 0.10,
+             min_efecto_pct: float = 2.0) -> list[dict]:
+    """Compara la referencia contra cada otra versión dentro de un bloque.
+
+    El estimador es el cuantil bajo `q` (por defecto el 10 % más rápido), no la
+    mediana: en una máquina con picos aditivos de antivirus/scheduling la
+    mediana cae en cualquiera de las dos modas y dos versiones idénticas
+    parecen distintas. Se exigen tres cosas para declarar una diferencia:
+    p < ALFA, IC95 sin 0 y un efecto de al menos `min_efecto_pct`.
+    """
     salida = []
     for tag in bloque.muestras:
         if tag == referencia:
             continue
         a = bloque.muestras[referencia]
         b = bloque.muestras[tag]
-        ma, mb = mediana(a), mediana(b)
-        ic = bootstrap_ic(a, b, rng)
-        p = test_permutacion(a, b, rng)
+        ma, mb = cuantil(a, q), cuantil(b, q)
+        ic = bootstrap_ic(a, b, rng, q)
+        p = test_permutacion(a, b, rng, q)
         delta = mb - ma
         pct = (delta / ma * 100.0) if ma else 0.0
 
         # Trabajo real: lo que excede el suelo del propio release.
-        suelo_ref = mediana(bloque.suelo[referencia])
-        trabajo_ref = ma - suelo_ref
-        trabajo_pct = (trabajo_ref / ma * 100.0) if ma else 0.0
+        suelo_ref = cuantil(bloque.suelo[referencia], q)
+        trabajo_pct = ((ma - suelo_ref) / ma * 100.0) if ma else 0.0
 
-        significativo = p < ALFA and (ic[0] > 0 or ic[1] < 0)
-        if bloque.aplica_suelo and trabajo_pct < min_trabajo_pct:
+        significativo = (p < ALFA and (ic[0] > 0 or ic[1] < 0)
+                         and abs(pct) >= min_efecto_pct)
+        salidas_distintas = len(set(bloque.salidas.values())) > 1
+        if salidas_distintas:
+            veredicto = "SALIDAS DISTINTAS"
+        elif bloque.aplica_suelo and trabajo_pct < min_trabajo_pct:
             veredicto = "SIN TRABAJO REAL"
         elif not significativo:
             veredicto = "sin diferencia"
@@ -439,13 +508,18 @@ def comparar(bloque: Bloque, referencia: str, min_trabajo_pct: float,
             "ruta": bloque.ruta,
             "workload": bloque.workload,
             "a": referencia, "b": tag,
-            "mediana_a": ma, "mediana_b": mb,
+            "estimador_a": ma, "estimador_b": mb,
+            "mediana_a": mediana(a), "mediana_b": mediana(b),
             "min_a": min(a), "min_b": min(b),
             "mad_a": mad(a), "mad_b": mad(b),
             "delta_ms": delta, "delta_pct": pct,
             "ic95": ic, "p": p,
             "suelo_ms": suelo_ref, "trabajo_pct": trabajo_pct,
             "aplica_suelo": bloque.aplica_suelo,
+            "salida_identica": not salidas_distintas,
+            "salidas": bloque.salidas,
+            "ruido_a": (mediana(a) / min(a)) if min(a) else 1.0,
+            "ruido_b": (mediana(b) / min(b)) if min(b) else 1.0,
             "veredicto": veredicto,
             "n": len(a),
         })
@@ -472,7 +546,8 @@ def informe_md(meta: dict, comparaciones: list[dict], bloques: list[Bloque],
     lineas.append(f"| Releases | {', '.join(tags)} |")
     lineas.append(f"| Plataforma | {meta['plataforma']} |")
     lineas.append(f"| Parejas | {meta['pares']} (warmup {meta['warmup']}, orden aleatorizado) |")
-    lineas.append(f"| Significancia | p < {ALFA} y IC95 sin 0 |")
+    lineas.append(f"| Estimador | percentil {meta['quantile'] * 100:.0f} (el ruido es aditivo: AV, scheduler, caché) |")
+    lineas.append(f"| Significancia | p < {ALFA}, IC95 sin 0 y efecto ≥ {meta['min_efecto_pct']:.0f} % |")
     lineas.append(f"| Calibración | {_f(meta['calibracion_ms'])} ms |")
     lineas.append(f"| rustc | {meta['rustc']} |")
     lineas.append(f"| CPU | {meta['cpu']} |")
@@ -489,14 +564,16 @@ def informe_md(meta: dict, comparaciones: list[dict], bloques: list[Bloque],
         if not propias:
             continue
         lineas.append(f"## Resumen — {ref} (referencia) vs {otra}\n")
-        cabecera = ["Ruta", "Workload", ref, otra, "Δ", "IC95", "p", "Veredicto"]
+        q = meta["quantile"] * 100
+        cabecera = ["Ruta", "Workload", f"{ref} p{q:.0f}", f"{otra} p{q:.0f}",
+                    "Δ", "IC95", "p", "Veredicto"]
         lineas.append("| " + " | ".join(cabecera) + " |")
         lineas.append("|" + "|".join(["---"] * len(cabecera)) + "|")
         for c in propias:
             ic = f"[{_f(c['ic95'][0], 1)}, {_f(c['ic95'][1], 1)}]"
             lineas.append(
-                f"| {c['ruta']} | {c['workload']} | {_f(c['mediana_a'])} ms | "
-                f"{_f(c['mediana_b'])} ms | {c['delta_ms']:+.2f} ms ({c['delta_pct']:+.1f} %) | "
+                f"| {c['ruta']} | {c['workload']} | {_f(c['estimador_a'])} ms | "
+                f"{_f(c['estimador_b'])} ms | {c['delta_ms']:+.2f} ms ({c['delta_pct']:+.1f} %) | "
                 f"{ic} | {c['p']:.3f} | {c['veredicto']} |"
             )
         lineas.append("")
@@ -506,10 +583,25 @@ def informe_md(meta: dict, comparaciones: list[dict], bloques: list[Bloque],
         lineas.append(f"### `{c['ruta']}` — {c['workload']} — {c['a']} vs {c['b']}\n")
         lineas.append("| Métrica | " + " | ".join([c["a"], c["b"]]) + " |")
         lineas.append("|---|---|---|")
+        q = meta["quantile"] * 100
+        lineas.append(f"| Percentil {q:.0f} (estimador) | {_f(c['estimador_a'])} ms | "
+                      f"{_f(c['estimador_b'])} ms |")
         lineas.append(f"| Mediana | {_f(c['mediana_a'])} ms | {_f(c['mediana_b'])} ms |")
         lineas.append(f"| Mínimo | {_f(c['min_a'])} ms | {_f(c['min_b'])} ms |")
         lineas.append(f"| MAD | {_f(c['mad_a'])} ms | {_f(c['mad_b'])} ms |")
-        lineas.append(f"- Muestras | {c['n']} | {c['n']} |")
+        lineas.append(f"| Ruido (mediana ÷ mínimo) | {c['ruido_a']:.2f}× | {c['ruido_b']:.2f}× |")
+        lineas.append(f"| Muestras | {c['n']} | {c['n']} |")
+        lineas.append("")
+        if max(c["ruido_a"], c["ruido_b"]) >= 1.5:
+            lineas.append(f"- ⚠️ **Distribución ruidosa** (mediana {max(c['ruido_a'], c['ruido_b']):.2f}× "
+                          f"el mínimo): por eso el veredicto usa el percentil bajo.")
+        if c["salidas"]:
+            if c["salida_identica"]:
+                h = next(iter(c["salidas"].values()))[:12]
+                lineas.append(f"- Salida del programa: **idéntica** en todas las versiones (`{h}…`)")
+            else:
+                lineas.append("- ❌ **Salidas distintas**: las versiones no computan lo mismo, "
+                              "así que los tiempos no son comparables.")
         lineas.append("")
         if c["aplica_suelo"]:
             trabajo = max(0.0, c["trabajo_pct"])
@@ -545,8 +637,13 @@ def informe_md(meta: dict, comparaciones: list[dict], bloques: list[Bloque],
     lineas.append("")
 
     lineas.append("## Veredicto general\n")
-    reales = [c for c in comparaciones if c["veredicto"] != "SIN TRABAJO REAL"]
+    reales = [c for c in comparaciones
+              if c["veredicto"] not in ("SIN TRABAJO REAL", "SALIDAS DISTINTAS")]
     descartadas = len(comparaciones) - len(reales)
+    invalidas = [c for c in comparaciones if c["veredicto"] == "SALIDAS DISTINTAS"]
+    if invalidas:
+        lineas.append("❌ **Comparación inválida**: hay rutas donde las versiones imprimen "
+                      "resultados distintos. No se pueden comparar tiempos así.\n")
     if not reales:
         lineas.append("No hay ninguna ruta con trabajo real suficiente: el bench no puede "
                       "opinar sobre estas versiones.")
@@ -563,7 +660,8 @@ def informe_md(meta: dict, comparaciones: list[dict], bloques: list[Bloque],
                               f"({c['delta_ms']:+.2f} ms, {c['delta_pct']:+.1f} %, p={c['p']:.4f})")
     if descartadas:
         lineas.append("")
-        lineas.append(f"_{descartadas} comparación(es) descartada(s) por no tener trabajo real._")
+        lineas.append(f"_{descartadas} comparación(es) descartada(s): sin trabajo real o con "
+                      f"salidas distintas._")
     return "\n".join(lineas) + "\n"
 
 
@@ -620,6 +718,10 @@ def main() -> int:
                    help="archivo .fa (repetible); por defecto benchmarks/bench_forja_aot.fa")
     p.add_argument("--min-trabajo", type=float, default=25.0,
                    help="%% de cálculo real mínimo para que una ruta opine")
+    p.add_argument("--quantile", type=float, default=0.10,
+                   help="percentil usado como estimador (el ruido de la máquina es aditivo)")
+    p.add_argument("--min-efecto", type=float, default=2.0,
+                   help="%% de diferencia mínimo para declarar un cambio significativo")
     p.add_argument("--cache", default=None, help="directorio de caché de binarios")
     p.add_argument("--local", action="append", default=[], metavar="TAG=DIR",
                    help="usar un release ya descomprimido en vez de descargarlo")
@@ -633,6 +735,7 @@ def main() -> int:
     repo_raiz = Path(__file__).resolve().parent.parent
     workloads = ([Path(w) for w in args.workload] if args.workload
                  else [repo_raiz / "benchmarks" / "bench_forja_aot.fa"])
+    solo_publicados = not args.workload
     for w in workloads:
         if not w.exists():
             raise SystemExit(f"✗ no existe el workload {w}")
@@ -676,6 +779,13 @@ def main() -> int:
               f"(usá 60 para un veredicto firme)", file=sys.stderr)
     suelo_fa = trabajo / "suelo.fa"
     suelo_fa.write_text(SUELO_FA, encoding="utf-8")
+    # Con los workloads por defecto se agrega el recursivo, que es el único que
+    # le da trabajo real a la ruta AOT.
+    trabajos: list[tuple[Path, set[str] | None]] = [(w, None) for w in workloads]
+    if solo_publicados:
+        recursivo = trabajo / "recursivo.fa"
+        recursivo.write_text(RECURSIVO_FA, encoding="utf-8")
+        trabajos.append((recursivo, {"aot"}))
 
     # Suelos por release (una sola vez, sirven a las tres rutas).
     suelos: dict[str, dict[str, Preparado]] = {r: {} for r in rutas}
@@ -706,24 +816,25 @@ def main() -> int:
         bloques.append(medir_bloque("startup", "forja --version", releases, prep_startup,
                                     None, args.pairs, args.warmup, args.seed))
 
-    for wl in workloads:
+    for wl, solo in trabajos:
+        rutas_wl = [r for r in rutas if solo is None or r in solo]
         print(f"\n▸ Workload {wl.name}", file=sys.stderr)
-        prep: dict[str, dict[str, Preparado]] = {r: {} for r in rutas}
+        prep: dict[str, dict[str, Preparado]] = {r: {} for r in rutas_wl}
         for rel in releases:
-            if "aot" in rutas:
-                exe, sha = transpilar(rel.forja, wl, trabajo / rel.tag / "aot")
+            if "aot" in rutas_wl:
+                exe, sha = transpilar(rel.forja, wl, trabajo / rel.tag / f"aot_{wl.stem}")
                 prep["aot"][rel.tag] = Preparado(rel.tag, "aot", [str(exe)], {"codegen": sha})
-            if "vm" in rutas:
+            if "vm" in rutas_wl:
                 prep["vm"][rel.tag] = Preparado(
                     rel.tag, "vm", [str(rel.forja), "ejecutar", str(wl)])
-            if "pipeline" in rutas:
+            if "pipeline" in rutas_wl:
                 exe, sha, tam = compilar(
-                    rel.forja, wl, trabajo / rel.tag / "pipeline" / "out.exe")
+                    rel.forja, wl, trabajo / rel.tag / f"pipeline_{wl.stem}" / "out.exe")
                 prep["pipeline"][rel.tag] = Preparado(
                     rel.tag, "pipeline", [str(rel.forja), "compilar", str(wl), "-o", str(exe)],
                     {"bytecode": sha, "bytecode_bytes": tam})
 
-        for ruta in rutas:
+        for ruta in rutas_wl:
             if ruta == "startup":
                 continue
             bloque = medir_bloque(ruta, wl.name, releases, prep[ruta],
@@ -732,7 +843,8 @@ def main() -> int:
 
     comparaciones: list[dict] = []
     for bloque in bloques:
-        comparaciones.extend(comparar(bloque, tags[0], args.min_trabajo, rng_stats))
+        comparaciones.extend(comparar(bloque, tags[0], args.min_trabajo, rng_stats,
+                                      args.quantile, args.min_efecto))
 
     rustc = subprocess.run(["rustc", "--version"], capture_output=True, text=True)
     meta = {
@@ -744,6 +856,8 @@ def main() -> int:
         "pares": args.pairs,
         "warmup": args.warmup,
         "min_trabajo_pct": args.min_trabajo,
+        "quantile": args.quantile,
+        "min_efecto_pct": args.min_efecto,
         "alfa": ALFA,
         "calibracion_ms": calibrar(),
         "cpu": info_cpu(),

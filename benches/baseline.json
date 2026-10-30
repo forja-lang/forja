@@ -1,21 +1,29 @@
 {
   "metadata": {
-    "version": "0.9.2",
+    "version": "0.9.5",
     "os": "windows",
     "arch": "x86_64",
-    "reps": 15,
-    "warmup": 3,
-    "generated": "2026-10-05T04:14:53Z",
+    "reps": 9,
+    "warmup": 2,
+    "generated": "2026-10-30T07:16:11Z",
     "note": "Baseline de rendimiento F4-T2. Los ratios se normalizan contra la calibración; regenerar en el runner de referencia."
   },
   "threshold_pct": 5.0,
   "thresholds_pct": {
-    "compilar_fib": 20.0
+    "compilar_fib": 20.0,
+    "ir_vs_ast_compilar": 15.0,
+    "ir_vs_ast_vm": 15.0
   },
   "metrics": {
-    "compilar_fib": 14.884520884520885,
-    "vm_fib": 736.665071770335,
-    "vm_bucle": 792.3708133971292,
-    "vm_anidado": 754.436754176611
+    "compilar_fib": 19.612691466083152,
+    "vm_fib": 654.9936974789916,
+    "vm_bucle": 532.261316872428,
+    "vm_anidado": 480.7095516569201,
+    "compilar_ast": 36.731404958677686,
+    "compilar_ir": 35.76077586206897,
+    "vm_ast": 632.327868852459,
+    "vm_ir": 931.9791666666666,
+    "ir_vs_ast_compilar": 0.9677036199095023,
+    "ir_vs_ast_vm": 1.48294845237223
   }
 }

@@ -1,4 +1,4 @@
-//! # Benchmark de regresión de rendimiento (F4-T2)
+//! # Benchmark de regresión de rendimiento (F4-T2 / F14-T2)
 //!
 //! Binario `harness = false` que mide un conjunto **determinista** de cargas de
 //! trabajo del compilador/VM y emite un JSON estable por `stdout` para que
@@ -6,6 +6,11 @@
 //! compare contra una línea base versionada (`benches/baseline.json`).
 //!
 //! ## Por qué ratios y no tiempos absolutos
+//!
+//! Desde F14-T2 también se mide el mismo programa por los dos motores de
+//! emisión (**AST** y **IR**) y se emiten los cocientes `ir_vs_ast_*`: es lo que
+//! vigila que el IR no se aleje del AST (hoy la ruta canónica es AST-first con
+//! fallback IR, y el bytecode del IR se ejecuta ~1.4x más lento).
 //!
 //! Los tiempos absolutos dependen de la máquina y del runner de CI. Para hacer
 //! la comparación robusta, cada carga se normaliza contra una métrica de
@@ -191,6 +196,39 @@ fn main() {
         black_box(ejecutar(&bc_anidado));
     });
 
+    // 6. F14-T2: comparación **AST vs IR** de los dos motores de emisión.
+    //    Se mide el mismo programa por las dos rutas y se emite además el cociente
+    //    `ir/ast`, que es lo que se vigila: si el IR se aleja del AST (más lento o
+    //    más rápido) la métrica se mueve aunque la máquina cambie.
+    let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let m_compilar_ast = medir_con_calibracion(warmup, reps, calibracion, || {
+        for _ in 0..10 {
+            let (_bc, _) =
+                black_box(forja::compilar_pipeline_completa_desde_ast(SRC_FIB, raiz).unwrap());
+        }
+    });
+    let m_compilar_ir = medir_con_calibracion(warmup, reps, calibracion, || {
+        for _ in 0..10 {
+            let (_bc, _) =
+                black_box(forja::compilar_pipeline_completa_desde_ir(SRC_FIB, raiz).unwrap());
+        }
+    });
+    let (bc_ast, _) = forja::compilar_pipeline_completa_desde_ast(SRC_FIB, raiz).unwrap();
+    let (bc_ir, _) = forja::compilar_pipeline_completa_desde_ir(SRC_FIB, raiz).unwrap();
+    // Paridad funcional: las dos rutas deben producir la misma salida.
+    assert_eq!(
+        ejecutar(&bc_ast),
+        ejecutar(&bc_ir),
+        "AST e IR deben dar la misma salida (F14-T2)"
+    );
+    let m_vm_ast = medir_con_calibracion(warmup, reps, calibracion, || {
+        black_box(ejecutar(&bc_ast));
+    });
+    let m_vm_ir = medir_con_calibracion(warmup, reps, calibracion, || {
+        black_box(ejecutar(&bc_ir));
+    });
+    let cociente = |a: f64, b: f64| if b > 0.0 { a / b } else { 0.0 };
+
     let salida = json!({
         "version": env!("CARGO_PKG_VERSION"),
         "os": std::env::consts::OS,
@@ -203,11 +241,31 @@ fn main() {
             {"name": "vm_fib",       "ratio": m_vm_fib.ratio,    "ns": m_vm_fib.ns},
             {"name": "vm_bucle",     "ratio": m_vm_bucle.ratio,  "ns": m_vm_bucle.ns},
             {"name": "vm_anidado",   "ratio": m_vm_anidado.ratio,"ns": m_vm_anidado.ns},
+            {"name": "compilar_ast", "ratio": m_compilar_ast.ratio, "ns": m_compilar_ast.ns},
+            {"name": "compilar_ir",  "ratio": m_compilar_ir.ratio,  "ns": m_compilar_ir.ns},
+            {"name": "vm_ast",       "ratio": m_vm_ast.ratio,       "ns": m_vm_ast.ns},
+            {"name": "vm_ir",        "ratio": m_vm_ir.ratio,        "ns": m_vm_ir.ns},
+            // Cocientes ir/ast (>1 = el IR tarda más que el AST).
+            {"name": "ir_vs_ast_compilar",
+             "ratio": cociente(m_compilar_ir.ns, m_compilar_ast.ns),
+             "ns": m_compilar_ir.ns},
+            {"name": "ir_vs_ast_vm",
+             "ratio": cociente(m_vm_ir.ns, m_vm_ast.ns),
+             "ns": m_vm_ir.ns},
         ]
     });
 
     // stdout: SOLO el JSON (la script lo parsea). Diagnóstico por stderr.
     println!("{}", salida);
+    eprintln!(
+        "[perf] AST vs IR: compilar ast={:.0}ns ir={:.0}ns (ir/ast={:.2}) · vm ast={:.0}ns ir={:.0}ns (ir/ast={:.2})",
+        m_compilar_ast.ns,
+        m_compilar_ir.ns,
+        cociente(m_compilar_ir.ns, m_compilar_ast.ns),
+        m_vm_ast.ns,
+        m_vm_ir.ns,
+        cociente(m_vm_ir.ns, m_vm_ast.ns)
+    );
     eprintln!(
         "[perf] calibracion={:.0}ns compilar_fib={:.0}ns (x{:.3}) vm_fib={:.0}ns (x{:.1}) vm_bucle={:.0}ns (x{:.1}) vm_anidado={:.0}ns (x{:.1})",
         ns_calibracion,

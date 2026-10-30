@@ -54,15 +54,14 @@ fn describir_declaracion(d: &Declaracion) -> &'static str {
     }
 }
 
-/// `Some(true)` si el literal es entero, `Some(false)` si es decimal (también
-/// bajo una negación unaria); `None` si no es un literal numérico.
-fn literal_numerico(e: &Expresion) -> Option<bool> {
-    match e {
-        Expresion::LiteralNumero(_) => Some(true),
-        Expresion::LiteralDecimal(_) => Some(false),
-        Expresion::Unaria { expr, .. } => literal_numerico(expr),
-        _ => None,
-    }
+/// Tipo numérico aproximado de una expresión, para coercer a `Exacto` cuando el
+/// destino lo exige. `TipoIR` no distingue numéricos, así que se infiere del AST
+/// (los literales exactos ya vienen resueltos por el parser).
+#[derive(Clone, Copy, PartialEq)]
+enum NumKind {
+    Entero,
+    Decimal,
+    Exacto,
 }
 
 pub struct IrConstructor {
@@ -75,6 +74,9 @@ pub struct IrConstructor {
     /// F6-T1 etapa 3: tipo estático mínimo para elegir `ArrayGet` vs `MapGet`.
     tipos_valor: HashMap<ValueId, TipoIR>,
     tipos_var: HashMap<String, TipoIR>,
+    /// Tipo numérico de cada variable (`Exacto`/`Decimal`/`Entero`), para
+    /// convertir en la asignación igual que en la declaración.
+    num_var: HashMap<String, NumKind>,
     /// `false` si se encontró un constructo que el constructor IR no soporta.
     pub soportado: bool,
     /// F11-T5: primer constructo no soportado encontrado, con la forma del AST
@@ -107,6 +109,33 @@ enum TipoIR {
 }
 
 impl IrConstructor {
+    /// Tipo numérico aproximado de una expresión. Se usa para decidir la
+    /// conversión a `Exacto` en declaraciones y asignaciones.
+    fn tipo_num(&self, e: &Expresion) -> Option<NumKind> {
+        match e {
+            Expresion::LiteralNumero(_) => Some(NumKind::Entero),
+            Expresion::LiteralDecimal(_) => Some(NumKind::Decimal),
+            Expresion::LiteralExacto(..) => Some(NumKind::Exacto),
+            Expresion::Grupo(inner) => self.tipo_num(inner),
+            Expresion::Unaria { expr, .. } => self.tipo_num(expr),
+            Expresion::Binaria { izquierda, operador, derecha } => {
+                use Operador::*;
+                if !matches!(operador, Suma | Resta | Multiplicacion | Division | Modulo) {
+                    return None;
+                }
+                match (self.tipo_num(izquierda), self.tipo_num(derecha)) {
+                    (Some(NumKind::Exacto), _) | (_, Some(NumKind::Exacto)) => Some(NumKind::Exacto),
+                    (Some(NumKind::Decimal), _) | (_, Some(NumKind::Decimal)) => Some(NumKind::Decimal),
+                    (Some(NumKind::Entero), Some(NumKind::Entero)) => Some(NumKind::Entero),
+                    _ => None,
+                }
+            }
+            Expresion::Identificador { nombre, .. } => self.num_var.get(nombre).copied(),
+            _ => None,
+        }
+    }
+
+
     pub fn new() -> Self {
         IrConstructor {
             symbols: SymbolTable::new(),
@@ -117,6 +146,7 @@ impl IrConstructor {
             in_function: false,
             tipos_valor: HashMap::new(),
             tipos_var: HashMap::new(),
+            num_var: HashMap::new(),
             soportado: true,
             motivo_no_soportado: None,
             clases_con_constructor: HashSet::new(),
@@ -765,17 +795,28 @@ impl IrConstructor {
                 let val = match valor {
                     Some(e) => {
                         let mut v = self.expr_to_ir(builder, e);
-                        // F11-T5: `variable x: Exacto = <literal numérico>` se
-                        // convierte, igual que el backend AST: la VM no coerciona
-                        // en la asignación y la resta de Exactos depende de ello.
+                        // F11-T5 + fase 1 del plan decimal: el destino `Exacto`
+                        // convierte el valor según su tipo real, no según la forma
+                        // del AST (`0.1 + 0.2` y `f()` también cuentan).
+                        let num = self.tipo_num(e);
                         if matches!(tipo, Some(Tipo::Exacto)) {
-                            if let Some(desde_entero) = literal_numerico(e) {
-                                v = builder.emit_a_exacto(v, desde_entero);
+                            match num {
+                                Some(NumKind::Entero) => v = builder.emit_a_exacto(v, true),
+                                Some(NumKind::Decimal) => v = builder.emit_a_exacto(v, false),
+                                _ => {}
                             }
                         }
                         if let Some(t) = self.tipos_valor.get(&v).copied() {
                             self.tipos_var.insert(nombre.clone(), t);
                         }
+                        self.num_var.insert(
+                            nombre.clone(),
+                            if matches!(tipo, Some(Tipo::Exacto)) {
+                                NumKind::Exacto
+                            } else {
+                                num.unwrap_or(NumKind::Exacto)
+                            },
+                        );
                         v
                     }
                     None => builder.emit_const_nil(),
@@ -785,7 +826,17 @@ impl IrConstructor {
 
             Declaracion::Asignacion { nombre, valor, .. } => {
                 let mem = self.alloc_mem(nombre);
-                let val = self.expr_to_ir(builder, valor);
+                let mut val = self.expr_to_ir(builder, valor);
+                // Misma coerción que en la declaración: asignar a una variable
+                // Exacto un Entero/Decimal lo convierte, en vez de dejar un f64
+                // disfrazado que después rompe las operaciones.
+                if matches!(self.num_var.get(nombre.as_str()), Some(NumKind::Exacto)) {
+                    match self.tipo_num(valor) {
+                        Some(NumKind::Entero) => val = builder.emit_a_exacto(val, true),
+                        Some(NumKind::Decimal) => val = builder.emit_a_exacto(val, false),
+                        _ => {}
+                    }
+                }
                 if let Some(t) = self.tipos_valor.get(&val).copied() {
                     self.tipos_var.insert(nombre.clone(), t);
                 }

@@ -453,6 +453,14 @@ y el despliegue de `registry.forja-lang.dev` (BLOQUEADO-EXTERNO).
 - **Esfuerzo:** ALTO.
 
 ### F14-T2 · Rendimiento post-IR `[MEDIO]`
+**Estado:** HECHO — `benches/perf_regresion.rs` mide ahora **AST vs IR** con el
+mismo programa: `compilar_ast`/`compilar_ir`, `vm_ast`/`vm_ir` y los cocientes
+`ir_vs_ast_compilar`/`ir_vs_ast_vm` (umbral 15% en
+`scripts/perf_regression.py`). El bench además **verifica paridad funcional**
+(misma salida por las dos rutas) antes de medir.
+Medido en esta máquina (carga alta, 9 repeticiones): compilar por IR cuesta
+~+5% y el bytecode del IR se ejecuta **~1.39–1.48x más lento** que el del AST.
+Eso respalda la ruta canónica AST-first con fallback IR (decisión de F14-T2).
 - **¿Qué?** Benchmark AST vs IR y regresión en CI.
 - **¿Cuándo?** Tras F11-T5.
 - **¿Por qué?** IR-first puede cambiar el rendimiento.
