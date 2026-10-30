@@ -71,7 +71,7 @@ impl ForjaFast {
     ///
     /// La señal de propagación se modela con `Option<ValorFast>` (no con
     /// `ErrFast::ErrorPropagado`, que permanece reservado y sin usar). Usado por
-    /// `Opcode::Try` y `Uop::Try`.
+    /// `Opcode::Intentar` y `Uop::Try`.
     pub(crate) fn aplicar_try(&mut self) -> Result<Option<ValorFast>, ErrFast> {
         let valor = self.pop_valor()?;
         if valor.es_objeto() {
