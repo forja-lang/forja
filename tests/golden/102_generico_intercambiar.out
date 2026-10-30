@@ -1,0 +1,8 @@
+=== Intercambiar Genérico ===
+
+intercambiar(42, "Hola") → (Hola, 42)
+intercambiar("Activo") → (falso, Activo)
+intercambiar(3.14, 100) → (100, 3.14)
+Doble intercambio: (20, 10)
+
+Los tipos T y U pueden ser diferentes entre sí
