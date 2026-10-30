@@ -1,4 +1,4 @@
-// Superinstrucciones fusionadas, comparaciones float, XorSign y opcodes de
+// Superinstrucciones fusionadas, comparaciones float, XorSign y codigos de
 // pattern matching de la VM canónica `ForjaFast` (F1-T7).
 //
 // Extraído de `ejecucion.rs` durante el refactor F1-T7. Estas ramas del
@@ -20,7 +20,7 @@ impl ForjaFast {
             // === SUPERINSTRUCTIONS (Fase 1a) ===
 
             // LoadIdx2(a,b): carga dos variables sin dispatch intermedio
-            Opcode::LoadIdx2(a, b) => {
+            Opcode::CargarIndice2(a, b) => {
                 let va = self.load_local(*a);
                 let vb = self.load_local(*b);
                 self.push_valor(va);
@@ -29,14 +29,14 @@ impl ForjaFast {
             }
 
             // LoadStoreIdx(src, dst): carga src y guarda en dst (copia entre variables)
-            Opcode::LoadStoreIdx(src, dst) => {
+            Opcode::CargarGuardarIndice(src, dst) => {
                 let val = self.load_local(*src);
                 self.store_local(*dst, val);
                 self.ip += 1;
             }
 
             // LoadAddInt(idx, n): carga var + suma entero constante en un solo paso
-            Opcode::LoadAddInt(idx, n) => {
+            Opcode::CargarSumarEntero(idx, n) => {
                 let val = self.load_local(*idx);
                 if val.es_entero() {
                     self.push_valor(get_small_int_fast(val.a_entero() + *n));
@@ -47,7 +47,7 @@ impl ForjaFast {
                     // devolvía nulo en `decimal + 1`.
                     self.push_valor(val);
                     self.push_valor(get_small_int_fast(*n));
-                    self.op_forzado = Some(Opcode::Add);
+                    self.op_forzado = Some(Opcode::Sumar);
                     self.hay_op_forzado = true;
                     return Ok(true);
                 }
@@ -55,7 +55,7 @@ impl ForjaFast {
             }
 
             // AddStoreIdx(idx): AddInt + StoreIdx fusionado
-            Opcode::AddStoreIdx(idx) => {
+            Opcode::SumarGuardarIndice(idx) => {
                 let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                 let result = if a.es_entero() && b.es_entero() {
                     get_small_int_fast(a.a_entero() + b.a_entero())
@@ -74,7 +74,7 @@ impl ForjaFast {
             }
 
             // SubStoreIdx(idx): SubInt + StoreIdx fusionado
-            Opcode::SubStoreIdx(idx) => {
+            Opcode::RestarGuardarIndice(idx) => {
                 let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                 let result = if a.es_entero() && b.es_entero() {
                     get_small_int_fast(a.a_entero() - b.a_entero())
@@ -93,7 +93,7 @@ impl ForjaFast {
             }
 
             // MulStoreIdx(idx): MulInt + StoreIdx fusionado
-            Opcode::MulStoreIdx(idx) => {
+            Opcode::MultiplicarGuardarIndice(idx) => {
                 let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                 let result = if a.es_entero() && b.es_entero() {
                     get_small_int_fast(a.a_entero() * b.a_entero())
@@ -112,7 +112,7 @@ impl ForjaFast {
             }
 
             // PushAddInt(n): PushEntero(n) + AddInt fusionado
-            Opcode::PushAddInt(n) => {
+            Opcode::EmpujarSumarEntero(n) => {
                 let a = self.pop_valor()?;
                 // TRACE TEMPORAL (investigación leibniz)
                 if self.show_bytecode && self.ejecutadas < 60 {
@@ -129,7 +129,7 @@ impl ForjaFast {
                 } else {
                     self.push_valor(a);
                     self.push_valor(get_small_int_fast(*n));
-                    self.op_forzado = Some(Opcode::Add);
+                    self.op_forzado = Some(Opcode::Sumar);
                     self.hay_op_forzado = true;
                     return Ok(true);
                 }
@@ -137,7 +137,7 @@ impl ForjaFast {
             }
 
             // DupAddInt: Dup + AddInt fusionado
-            Opcode::DupAddInt => {
+            Opcode::DuplicarSumarEntero => {
                 let a = self.pop_valor()?;
                 if a.es_entero() {
                     let n = a.a_entero();
@@ -146,7 +146,7 @@ impl ForjaFast {
                 } else {
                     self.push_valor(a);
                     self.push_valor(a);
-                    self.op_forzado = Some(Opcode::Add);
+                    self.op_forzado = Some(Opcode::Sumar);
                     self.hay_op_forzado = true;
                     return Ok(true);
                 }
@@ -154,7 +154,7 @@ impl ForjaFast {
             }
 
             // LoadJumpSiFalso(idx, target): carga condicional y salta
-            Opcode::LoadJumpSiFalso(idx, target) => {
+            Opcode::CargarSaltoSiFalso(idx, target) => {
                 let val = self.load_local(*idx);
                 if !val.es_verdadero_con_heap(&self.str_heap) {
                     self.ip = *target;
@@ -164,14 +164,14 @@ impl ForjaFast {
             }
 
             // LoadJump(idx, target): goto calculado (carga y salta)
-            Opcode::LoadJump(idx, target) => {
+            Opcode::CargarSalto(idx, target) => {
                 let val = self.load_local(*idx);
                 self.push_valor(val);
                 self.ip = *target;
             }
 
-            // Float comparison opcodes (creados por especializador JIT)
-            Opcode::IgualFloat => {
+            // Float comparison codigos (creados por especializador JIT)
+            Opcode::IgualDecimal => {
                 let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                 self.push_valor(ValorFast::booleano(if a.es_flotante() && b.es_flotante() {
                     a.a_flotante() == b.a_flotante()
@@ -180,7 +180,7 @@ impl ForjaFast {
                 }));
                 self.ip += 1;
             }
-            Opcode::DiferenteFloat => {
+            Opcode::DistintoDecimal => {
                 let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                 self.push_valor(ValorFast::booleano(if a.es_flotante() && b.es_flotante() {
                     a.a_flotante() != b.a_flotante()
@@ -189,7 +189,7 @@ impl ForjaFast {
                 }));
                 self.ip += 1;
             }
-            Opcode::MenorFloat => {
+            Opcode::MenorDecimal => {
                 let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                 self.push_valor(ValorFast::booleano(if a.es_flotante() && b.es_flotante() {
                     a.a_flotante() < b.a_flotante()
@@ -198,7 +198,7 @@ impl ForjaFast {
                 }));
                 self.ip += 1;
             }
-            Opcode::MayorFloat => {
+            Opcode::MayorDecimal => {
                 let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                 self.push_valor(ValorFast::booleano(if a.es_flotante() && b.es_flotante() {
                     a.a_flotante() > b.a_flotante()
@@ -207,7 +207,7 @@ impl ForjaFast {
                 }));
                 self.ip += 1;
             }
-            Opcode::MenorIgualFloat => {
+            Opcode::MenorIgualDecimal => {
                 let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                 self.push_valor(ValorFast::booleano(if a.es_flotante() && b.es_flotante() {
                     a.a_flotante() <= b.a_flotante()
@@ -216,7 +216,7 @@ impl ForjaFast {
                 }));
                 self.ip += 1;
             }
-            Opcode::MayorIgualFloat => {
+            Opcode::MayorIgualDecimal => {
                 let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                 self.push_valor(ValorFast::booleano(if a.es_flotante() && b.es_flotante() {
                     a.a_flotante() >= b.a_flotante()
@@ -225,7 +225,7 @@ impl ForjaFast {
                 }));
                 self.ip += 1;
             }
-            Opcode::XorSign(idx) => {
+            Opcode::InvertirSigno(idx) => {
                 // x = -x via XOR sign bit
                 let val = self.load_local(*idx);
                 if val.es_flotante() {
@@ -238,8 +238,8 @@ impl ForjaFast {
                 }
                 self.ip += 1;
             }
-            // === Pattern Matching opcodes ===
-            Opcode::CheckTag(tag_idx) => {
+            // === Pattern Matching codigos ===
+            Opcode::VerificarEtiqueta(tag_idx) => {
                 // Verificar que el valor en el tope tenga el tag indicado
                 let val = self.pop_valor()?;
                 let es_match = if val.es_objeto() {
@@ -264,7 +264,7 @@ impl ForjaFast {
                 self.push_valor(ValorFast::booleano(es_match));
                 self.ip += 1;
             }
-            Opcode::ExtractField(field_idx) => {
+            Opcode::ExtraerCampo(field_idx) => {
                 // Extraer el campo i-ésimo del objeto en el tope
                 let val = self.pop_valor()?;
                 if val.es_objeto() {
