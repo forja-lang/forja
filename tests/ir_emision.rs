@@ -240,16 +240,18 @@ fn ir_emision_rechaza_fuera_del_subconjunto() {
     );
 }
 
-/// F11-T5: la ruta canónica **no** tiene fallback a AST: el bytecode que emite
-/// es exactamente el de la ruta IR estricta (misma fuente, mismo resultado).
+/// F14-T2: la ruta canónica es **AST-first** (el emisor IR duplica el bytecode
+/// y la VM lo ejecuta más lento); el backend AST explícito debe coincidir.
 #[test]
-fn ruta_canonica_emite_el_mismo_bytecode_que_ir_estricto() {
+fn ruta_canonica_es_ast_first_y_coincide_con_ast_estricto() {
     let fuente = "funcion f() -> Entero {\n    retornar 7\n}\nescribir(f())";
+    let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let (bc_canonico, _c) = forja::compilar_pipeline_completa(fuente).expect("ruta canónica");
-    let (bc_ir, _c) = forja::compilar_desde_ir(fuente).expect("ruta IR estricta");
+    let (bc_ast, _c) = forja::compilar_pipeline_completa_desde_ast(fuente, raiz)
+        .expect("backend AST explícito");
     assert_eq!(
-        bc_canonico, bc_ir,
-        "F11-T5: la ruta canónica debe ser la ruta IR"
+        bc_canonico, bc_ast,
+        "F14-T2: la ruta canónica debe usar el emisor AST (más compacto)"
     );
     assert_eq!(ejecutar(bc_canonico), vec!["7"]);
 }
