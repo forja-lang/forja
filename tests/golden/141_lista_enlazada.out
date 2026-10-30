@@ -1,0 +1,13 @@
+=== Lista Simplemente Enlazada ===
+
+Después de insertar:
+  Lista: [30,20,10,5,1]
+  ¿20 está en la lista? verdadero
+  ¿99 está en la lista? falso
+
+Después de eliminar 20:
+  Lista: [30,10,5,1]
+Después de eliminar 1:
+  Lista: [30,10,5]
+
+La lista enlazada permite inserción y eliminación eficiente O(1) al inicio.
