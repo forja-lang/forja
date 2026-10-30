@@ -1,0 +1,9 @@
+=== Patrones con datos ===
+
+🦸 Spark (poder: 95) — Héroe de élite
+🦹 Shadow (maldad: 85) — 🔥 Amenaza crítica
+👤 Juan (civil) — Inocente, sin peligro
+🦸 Nova (poder: 45) — Héroe en entrenamiento
+🦹 Rata (maldad: 30) — Amenaza menor
+
+Los patrones pueden extraer datos de las variantes del enum.
