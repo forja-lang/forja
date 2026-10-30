@@ -1,0 +1,26 @@
+=== PATRÓN STRATEGY ===
+
+Algoritmos intercambiables mediante rasgos.
+
+Array original: [64,34,25,12,22,11,90,8]
+
+1. Usando Bubble Sort:
+  ⚙️ Estrategia cambiada
+  Ordenando con estrategia actual...
+  Resultado: [8,11,12,22,25,34,64,90]
+
+2. Usando Selection Sort:
+  ⚙️ Estrategia cambiada
+  Ordenando con estrategia actual...
+  Resultado: [8,11,12,22,25,34,64,90]
+
+3. Usando Quick Sort:
+  ⚙️ Estrategia cambiada
+  Ordenando con estrategia actual...
+  Resultado: [8,11,12,22,25,34,64,90]
+
+Ventajas del patrón Strategy:
+  • Los algoritmos son intercambiables en tiempo de ejecución
+  • Cada algoritmo está encapsulado en su propia clase
+  • Favorece la composición sobre la herencia
+  • Fácil de extender con nuevas estrategias
