@@ -17,31 +17,12 @@ use std::path::Path;
 /// Ejemplos que no compilan por errores ajenos a la emisión (F11-T5/F12-T3).
 /// Si alguno empieza a compilar, hay que quitarlo de la lista.
 ///
-/// Estado al 2026-10-30 (246/260 compilan). Categorías:
-/// * **Contenido dañado** (un `forja fmt` viejo los corrompió dentro del
-///   submódulo `ejemplos/`): `192`, `202`, `203`, `204`, `210`, `216`, `217`,
-///   `219`, `220`, `221`. Hay que reescribirlos a mano; su historia en git
-///   tampoco compila.
-/// * **Lenguaje**: `301` pasa un tipo como valor (`convertir(n, Entero)`) y
-///   `199_prestamos_completo` usa `ref_mut`; falta soporte/azúcar.
-/// * **Inválido a propósito**: `36_referencias` muta con un préstamo activo
-///   (el ejemplo muestra justamente el error del borrow checker).
-/// * **Hueco del IR**: `900_storybook` usa `si` como elemento de argumentos
-///   (layout condicional), que sólo entiende el runtime de GUI.
+/// Estado al 2026-10-30: **259/260 compilan**. Sólo queda `900_storybook`, que
+/// usa `si` como **elemento de argumentos** (layout condicional): eso lo
+/// entiende únicamente el runtime de GUI, no la VM. Los otros 13 que fallaban
+/// (contenido dañado por un `forja fmt` viejo, `convertir(x, Tipo)`, `ref_mut`,
+/// matrices 2D, operadores de bits en la stdlib…) están corregidos.
 const NO_COMPILAN: &[&str] = &[
-    "192_metaprogramacion.fa",
-    "199_prestamos_completo.fa",
-    "202_servidor_tcp.fa",
-    "203_cliente_http.fa",
-    "204_udp_eco.fa",
-    "210_sistema.fa",
-    "216_concurrencia.fa",
-    "217_servidor_web.fa",
-    "219_websocket.fa",
-    "220_servidor_h2.fa",
-    "221_cliente_h2.fa",
-    "301_layout_responsive.fa",
-    "36_referencias.fa",
     "900_storybook.fa",
 ];
 
@@ -71,11 +52,14 @@ fn corpus_completo_por_ir_sin_fallback() {
             forja::compilar_pipeline_completa_desde(&fuente, raiz),
             forja::compilar_pipeline_completa_desde_ir(&fuente, raiz),
         ) {
-            (Ok((bc_canonico, _)), Ok((bc_ir, _))) => {
+            (Ok(_), Ok(_)) => {
+                // La ruta canónica es **AST-first con fallback IR** (decisión de
+                // F14-T2: el bytecode del IR es ~2.2x más grande y ~1.8x más
+                // lento), así que ya no se compara bytecode: lo que se exige es
+                // que todo lo que compila por la canónica **también** lo haga
+                // por la ruta IR estricta. Si no, habría un constructo que sólo
+                // cubre el backend AST y F11 estaría incompleta.
                 por_ir += 1;
-                if bc_canonico != bc_ir {
-                    fallos.push(format!("{nombre}: bytecode canónico != IR"));
-                }
             }
             (Ok(_), Err(e)) => {
                 fallos.push(format!(
@@ -125,13 +109,14 @@ fn corpus_completo_por_ir_sin_fallback() {
 /// * `167_estadistica`: el **AST** imprime `nulo` en `Desviación Estándar`
 ///   (raíz cuadrada por Newton con decimales); el IR da `1`, que es lo
 ///   correcto. Es un bug del backend AST, que sólo se usa como comparación.
-/// * `400_exacto`: el **AST** no maneja el tipo `Exacto` (imprime `0`/`nulo`);
-///   el IR da los valores correctos (123.45, 123, 8, 59049).
+/// * `210_sistema`: lee el entorno y el directorio actual; la ruta canónica
+///   (AST) y el IR difieren en el formato de los valores devueltos por las
+///   nativas de sistema (`tiempo_ms`, `PATH`).
 ///
 /// `135_ordenamiento_mergesort` ya no diverge: se corrigieron el crecimiento
 /// de arreglos por índice (`variable a = []` + `a[i] = v`) y la renumeración
 /// del índice en `Inst::ArraySet`/`MapSet`.
-const DIVERGENCIAS_CONOCIDAS: &[&str] = &["167_estadistica.fa", "400_exacto.fa"];
+const DIVERGENCIAS_CONOCIDAS: &[&str] = &["167_estadistica.fa", "210_sistema.fa"];
 
 /// Marcadores de ejemplos no deterministas o con dependencias externas: su
 /// salida no se puede comparar entre dos ejecuciones.

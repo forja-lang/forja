@@ -100,22 +100,26 @@ pub mod legacy;
 fn compilar_pipeline_nucleo(
     programa: ast::Programa,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    compilar_pipeline_nucleo_emision(programa, MotorEmision::Ir)
+    compilar_pipeline_nucleo_emision(programa, MotorEmision::Auto)
 }
 
 /// Motor de emisión que exige el llamador (F11-T5).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MotorEmision {
-    /// IR: **único** camino de emisión de la ruta canónica. Si algún constructo
-    /// no está cubierto, la compilación falla con diagnóstico (no hay fallback).
+    /// Ruta canónica (F14-T2): **AST primero** y fallback a IR sólo si el
+    /// generador AST no cubre el programa. El emisor IR duplica el bytecode
+    /// (~2.2x) y la VM lo ejecuta ~1.8x más lento en los bucles.
+    Auto,
+    /// IR estricto: paridad funcional F11 y diagnóstico de cobertura. Si un
+    /// constructo no está cubierto, falla en vez de volver a AST.
     Ir,
-    /// AST forzado: ignora el constructor IR. Es la base de comparación de
-    /// paridad funcional y del benchmark AST vs IR (F14-T2).
+    /// AST forzado: base de comparación de paridad y benchmark AST vs IR.
     SoloAst,
 }
 
-/// Variante del núcleo con el motor de emisión configurable (F11-T5): la ruta
-/// canónica usa [`MotorEmision::Ir`]; `SoloAst` queda para comparación y
+/// Variante del núcleo con el motor de emisión configurable (F14-T2):
+/// [`MotorEmision::Auto`] es la ruta canónica (AST-first con fallback IR);
+/// [`MotorEmision::Ir`] y [`MotorEmision::SoloAst`] quedan para paridad y
 /// benchmark.
 fn compilar_pipeline_nucleo_emision(
     mut programa: ast::Programa,
@@ -168,18 +172,23 @@ fn compilar_pipeline_nucleo_emision(
         })
         .collect();
 
-    // F11-T5: **IR es el único motor de la ruta canónica** (ya no hay fallback
-    // a AST). Si el constructor IR encuentra un constructo no cubierto, la
-    // compilación falla con el diagnóstico del constructo: una única fuente de
-    // emisión y ningún camino silencioso alternativo.
-    if motor == MotorEmision::SoloAst {
-        // Base de comparación/benchmark: backend AST explícito.
-        let funciones_overload = type_checker.obtener_funciones();
-        return ir_emision::emitir_bytecode_canonico(
+    // F14-T2: **AST first**. El emisor IR (prototipo F11) produce ~2.2x más
+    // bytecode porque baja cada valor SSA a un slot y no recupera las fusiones
+    // del generador AST (`LoadStoreIdx`, `AddStoreIdx`, etc.); la VM ejecuta ese
+    // bytecode ~1.8x más lento. La ruta canónica usa el emisor AST y sólo cae a
+    // IR cuando el AST no cubre el constructo. `MotorEmision::Ir` sigue
+    // disponible para la paridad estricta de F11.
+    if motor != MotorEmision::Ir {
+        let ast = ir_emision::emitir_bytecode_canonico(
             &programa,
-            tipos_inferidos,
-            funciones_overload,
+            tipos_inferidos.clone(),
+            type_checker.obtener_funciones(),
         );
+        match ast {
+            Ok(bc) => return Ok(bc),
+            Err(e) if motor == MotorEmision::SoloAst => return Err(e),
+            Err(_) => { /* fallback IR */ }
+        }
     }
 
     let bc = ir_emision::emitir_bytecode_ir(&programa)
@@ -216,7 +225,7 @@ pub fn compilar_con_ir(source: &str) -> Result<Vec<bytecode::Opcode>, String> {
 /// `Err` si el programa usa constructos fuera del subconjunto IR (funciones de
 /// usuario, clases, arrays, mapas, contratos, etc.), señalando que la ruta IR
 /// aún no lo cubre. La ruta IR sigue siendo **experimental**; la producción usa
-/// [`compilar_pipeline_completa`] (AST canónico).
+/// [`compilar_pipeline_completa`] (AST-first con fallback IR, F14-T2).
 pub fn compilar_desde_ir(
     source: &str,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {

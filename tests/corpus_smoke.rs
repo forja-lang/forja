@@ -52,7 +52,10 @@ fn corpus_no_parseables_conocidos() {
     let raiz = Path::new(env!("CARGO_MANIFEST_DIR")).join("ejemplos");
     // `199_forja_desde_forja.fa` se recuperó de la historia del submódulo
     // (estaba corrupto por un `formato(ejemplos)` viejo) y ya parsea.
-    for nombre in ["192_metaprogramacion.fa"] {
+    // `192_metaprogramacion.fa` también quedó corregido en el submódulo `ejemplos`
+    // y ya parsea (verificado también con el binario previo al arreglo).
+    const NO_PARSEABLES: [&str; 0] = [];
+    for nombre in NO_PARSEABLES {
         let fuente = std::fs::read_to_string(raiz.join(nombre)).unwrap();
         let mut lexer = forja::lexer::Lexer::new(&fuente);
         let tokens = lexer.tokenize().expect("debe tokenizar");

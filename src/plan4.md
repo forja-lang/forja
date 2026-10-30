@@ -96,7 +96,7 @@ los ejemplos que hoy no compilan (lista `NO_COMPILAN` en
 | Registry remoto sin TLS/auth de producción | Es un servidor de desarrollo HTTP | F12-T4 |
 | CI real, ARM64, Marketplace/Homebrew | Nunca se ejecutaron contra infraestructura real | F13-T1…T4 |
 | Widgets fuera de `forja-gui-core` | El crate extraído sólo contiene signals/debug | F14-T1 |
-| Rendimiento tras IR-first | No hay benchmark comparativo AST vs IR | F14-T2 |
+| Rendimiento tras IR-first | IR duplica bytecode y ~1.8× VM; mitigado con AST-first (falta gate CI) | F14-T2 |
 | Firma de paquetes y TLS | SHA-256 local; falta verificación asimétrica de autores | F14-T3 |
 | Docs/roadmap | Deriva manual de hitos | F14-T4 |
 
@@ -444,6 +444,11 @@ propósito.
 - **Subtareas:** benchmarks de arranque/ejecución, umbral, reporte.
 - **DoD:** sin regresión >5% o justificada.
 - **Esfuerzo:** MEDIO.
+- **Estado:** EN-CURSO. Medido con `bench-releases.py`: el emisor IR duplica
+  el bytecode del workload (862 → 1 882 bytes) y la VM lo ejecuta ~1.8× más
+  lento (v0.9.2 ~1.7 s vs v0.9.3 ~3.0 s). Mitigado con `MotorEmision::Auto`
+  (AST-first + fallback IR); `MotorEmision::Ir` queda para paridad estricta.
+  Falta el gate de CI con umbral.
 
 ### F14-T3 · Seguridad de paquetes y supply chain `[ALTO]`
 - **¿Qué?** Firmas asimétricas de paquetes, verificación de autores y auditoría

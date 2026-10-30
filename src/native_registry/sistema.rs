@@ -12,7 +12,42 @@ impl NativeRegistry {
         self.registrar("_char", native_char);
         self.registrar("_codigo_char", native_codigo_char);
         self.registrar("_numero_a_texto_base", native_numero_a_texto_base);
+        // Las usa `std/sistema.fa`; faltaban en el registro, así que
+        // `sistema.sistema_operativo()` y `directorio_actual()` fallaban con
+        // "función no definida".
+        self.registrar("_sistema_so", native_sistema_so);
+        self.registrar("_sistema_directorio_actual", native_sistema_directorio_actual);
+        // `std/sistema.fa` usa estos nombres; el registro tenía los cortos
+        // (`_args`, `_env`, `_salir`, `_sistema_tiempo_ms`).
+        self.registrar("_sistema_argumentos", native_args);
+        self.registrar("_sistema_salir", native_salir);
+        self.registrar("_sistema_variable_entorno", native_env);
+        self.registrar(
+            "_sistema_tiempo_actual_ms",
+            crate::native_registry::temporizador::native_sistema_tiempo_ms,
+        );
     }
+}
+
+/// Nombre del sistema operativo (`_sistema_so()`), como lo reporta Rust.
+pub(crate) fn native_sistema_so(
+    vm: &mut ForjaFast,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let idx = vm.alloc_str(Arc::from(std::env::consts::OS));
+    Ok(ValorFast::texto(idx))
+}
+
+/// Directorio de trabajo actual (`_sistema_directorio_actual()`).
+pub(crate) fn native_sistema_directorio_actual(
+    vm: &mut ForjaFast,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let dir = std::env::current_dir().map_err(|e| {
+        ErrFast::TipoInv(format!("no se pudo leer el directorio actual: {e}"))
+    })?;
+    let idx = vm.alloc_str(Arc::from(dir.to_string_lossy().as_ref()));
+    Ok(ValorFast::texto(idx))
 }
 pub(crate) fn native_args(vm: &mut ForjaFast, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let args: Vec<ValorFast> = std::env::args()
