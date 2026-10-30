@@ -485,40 +485,91 @@ impl BytecodeGenerator {
         self.funciones_overload = Some(funcs);
     }
 
+    /// Índice del overload que atiende una llamada, si hay firmas registradas
+    /// para `nombre`. `None` = el generador no tiene información de esa función.
+    fn indice_overload(&self, nombre: &str, tipos_args: &[Option<Tipo>]) -> Option<usize> {
+        let ol = self.funciones_overload.as_ref()?.get(nombre)?;
+        // 1) Overload que coincide por aridad + tipos
+        if let Some(i) = ol.iter().position(|(params, _, _)| {
+            params.len() == tipos_args.len()
+                && tipos_args.iter().enumerate().all(|(j, arg_t)| {
+                    params[j].as_ref().is_none_or(|p_t| {
+                        arg_t
+                            .as_ref()
+                            .is_some_and(|a_t| self.tipos_coinciden_mangled(a_t, p_t))
+                    })
+                })
+        }) {
+            return Some(i);
+        }
+        // 2) Fallback: primera firma con la misma aridad; 3) último recurso: 0
+        Some(
+            ol.iter()
+                .position(|(params, _, _)| params.len() == tipos_args.len())
+                .unwrap_or(0),
+        )
+    }
+
     /// Resuelve el nombre mangled para una llamada a función dados los tipos de argumento.
     /// Para funciones sin overloads, retorna el nombre original.
     /// Para funciones con overloads, retorna nombre$idx donde idx es el índice del overload que coincide.
     fn resolver_nombre_mangled(&self, nombre: &str, tipos_args: &[Option<Tipo>]) -> String {
-        if let Some(ref overloads) = self.funciones_overload {
-            if let Some(ol) = overloads.get(nombre) {
-                if ol.len() <= 1 {
-                    return nombre.to_string();
-                }
-                // Buscar overload que coincida por aridad + tipos
-                for (i, (params, _, _)) in ol.iter().enumerate() {
-                    if params.len() == tipos_args.len()
-                        && tipos_args.iter().enumerate().all(|(j, arg_t)| {
-                            params[j].as_ref().is_none_or(|p_t| {
-                                arg_t
-                                    .as_ref()
-                                    .is_some_and(|a_t| self.tipos_coinciden_mangled(a_t, p_t))
-                            })
-                        })
-                    {
-                        return format!("{}$ov{}", nombre, i);
-                    }
-                }
-                // Fallback: usar primer overload que coincida en aridad
-                for (i, (params, _, _)) in ol.iter().enumerate() {
-                    if params.len() == tipos_args.len() {
-                        return format!("{}$ov{}", nombre, i);
-                    }
-                }
-                // Último recurso: overload 0
-                return format!("{}$ov{}", nombre, 0);
+        let n_overloads = self
+            .funciones_overload
+            .as_ref()
+            .and_then(|overloads| overloads.get(nombre))
+            .map_or(0, |ol| ol.len());
+        if n_overloads <= 1 {
+            return nombre.to_string();
+        }
+        match self.indice_overload(nombre, tipos_args) {
+            Some(i) => format!("{}$ov{}", nombre, i),
+            None => nombre.to_string(),
+        }
+    }
+
+    /// Tipos declarados de los parámetros del overload que atiende la llamada.
+    /// Se consultan **antes** de emitir los argumentos para poder coercionarlos.
+    fn tipos_parametros_llamada(
+        &self,
+        nombre: &str,
+        tipos_args: &[Option<Tipo>],
+    ) -> Option<Vec<Option<Tipo>>> {
+        let ol = self.funciones_overload.as_ref()?.get(nombre)?;
+        let idx = self.indice_overload(nombre, tipos_args)?;
+        ol.get(idx).map(|(params, _, _)| params.clone())
+    }
+
+    /// Convierte el valor que quedó en la pila al tipo del parámetro declarado.
+    ///
+    /// Sin esto un parámetro `Exacto` se quedaba con el Decimal/Entero recibido y
+    /// la primera operación Exacto moría en runtime ("tipo incompatible"):
+    /// `funcion f(x: Exacto) { x * 2 }` llamado con `f(3.0)` fallaba, y con eso
+    /// `std/matematica` (`exacto_potencia(&exacto, &exacto)`) no funcionaba.
+    fn coercionar_a_parametro(&mut self, tipo_param: Option<&Tipo>, arg: &Expresion) {
+        if !matches!(tipo_param, Some(Tipo::Exacto)) {
+            return;
+        }
+        match self.inferir_tipo_expresion(arg) {
+            Some(Tipo::Entero) => self.emitir(Opcode::EnteroAExacto),
+            Some(Tipo::Decimal) => self.emitir(Opcode::DecimalAExacto),
+            _ => {}
+        }
+    }
+
+    /// Emite los argumentos de una llamada, coercionando cada uno al tipo del
+    /// parámetro que le toca (hoy sólo `Exacto` necesita conversión).
+    fn emitir_argumentos_de_llamada(
+        &mut self,
+        argumentos: &[Expresion],
+        params: Option<&[Option<Tipo>]>,
+    ) {
+        for (i, arg) in argumentos.iter().enumerate() {
+            self.generar_expresion(arg);
+            if let Some(params) = params {
+                self.coercionar_a_parametro(params.get(i).and_then(|t| t.as_ref()), arg);
             }
         }
-        nombre.to_string()
     }
 
     /// Verifica si dos tipos concretos coinciden para resolución de mangling.
@@ -1695,15 +1746,19 @@ impl BytecodeGenerator {
                     self.emitir(Opcode::CallMethod(method_name, argumentos.len()));
                 } else {
                     let indirecta = self.emitir_callee_si_variable(nombre);
-                    for arg in argumentos {
-                        self.generar_expresion(arg);
-                    }
-                    // Resolver nombre mangled para sobrecarga por tipo
+                    // Misma coerción que en `Expresion::LlamadaFuncion`: una
+                    // llamada como sentencia también pasa por la firma.
                     let tipos_args: Vec<Option<Tipo>> = argumentos
                         .iter()
                         .map(|arg| self.inferir_tipo_expresion(arg))
                         .collect();
                     let nombre_real = self.resolver_nombre_mangled(nombre, &tipos_args);
+                    let params = if indirecta {
+                        None
+                    } else {
+                        self.tipos_parametros_llamada(nombre, &tipos_args)
+                    };
+                    self.emitir_argumentos_de_llamada(argumentos, params.as_deref());
                     self.emitir_llamada_despacho(&nombre_real, argumentos.len(), indirecta);
                     // Las funciones nativas (como _imprimir_error) dejan su valor de retorno
                     // en la pila. Para llamadas a nivel de declaración, descartamos ese valor.
@@ -2042,22 +2097,29 @@ impl BytecodeGenerator {
                 } else {
                     // Verificar si la función es asincrona → usar ThreadSpawn en vez de Call
                     if self.funciones_asincronas.contains(nombre.as_str()) {
-                        for arg in argumentos {
-                            self.generar_expresion(arg);
-                        }
+                        let tipos_args: Vec<Option<Tipo>> = argumentos
+                            .iter()
+                            .map(|arg| self.inferir_tipo_expresion(arg))
+                            .collect();
+                        let params = self.tipos_parametros_llamada(nombre, &tipos_args);
+                        self.emitir_argumentos_de_llamada(argumentos, params.as_deref());
                         let nargs = argumentos.len();
                         self.emitir(Opcode::ThreadSpawn(Arc::from(nombre.as_str()), nargs));
                     } else {
                         let indirecta = self.emitir_callee_si_variable(nombre);
-                        for arg in argumentos {
-                            self.generar_expresion(arg);
-                        }
-                        // Resolver nombre mangled para sobrecarga por tipo
+                        // La firma se consulta antes de emitir los argumentos: el
+                        // tipo declarado del parámetro decide la coerción (Exacto).
                         let tipos_args: Vec<Option<Tipo>> = argumentos
                             .iter()
                             .map(|arg| self.inferir_tipo_expresion(arg))
                             .collect();
                         let nombre_real = self.resolver_nombre_mangled(nombre, &tipos_args);
+                        let params = if indirecta {
+                            None
+                        } else {
+                            self.tipos_parametros_llamada(nombre, &tipos_args)
+                        };
+                        self.emitir_argumentos_de_llamada(argumentos, params.as_deref());
                         self.emitir_llamada_despacho(&nombre_real, argumentos.len(), indirecta);
                     }
                 }
