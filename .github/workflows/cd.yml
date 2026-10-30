@@ -182,6 +182,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      # La pila GUI (xilem/vello) enlaza fontconfig/freetype por pkg-config:
+      # ubuntu-latest los trae, los runners ARM no.
+      - name: Dependencias de sistema (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y libfontconfig1-dev libfreetype-dev pkg-config
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
         with:
