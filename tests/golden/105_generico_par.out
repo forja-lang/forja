@@ -1,0 +1,15 @@
+=== Par<T, U> ===
+
+Par(1, "uno"):
+  Primero: 1
+  Segundo: uno
+
+Par("activo", verdadero):
+  Primero: activo
+  Segundo: verdadero
+
+Intercambiado:
+  Primero (era segundo): uno
+  Segundo (era primero): 1
+
+Par funciona con cualquier combinación de tipos T y U
