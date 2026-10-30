@@ -43,7 +43,7 @@ pub fn try_selfrun() -> Option<()> {
     file.read_exact(&mut bytecode_data).ok()?;
 
     // Deserializar bytecode
-    let opcodes = match crate::bytecode::deserializar_bytecode(&bytecode_data) {
+    let codigos = match crate::bytecode::deserializar_bytecode(&bytecode_data) {
         Some(o) => o,
         None => {
             eprintln!(
@@ -55,7 +55,7 @@ pub fn try_selfrun() -> Option<()> {
     };
 
     if std::env::var("FORJA_DEBUG_BC").is_ok() {
-        println!("OPCODES: {:?}", opcodes);
+        println!("OPCODES: {:?}", codigos);
     }
 
     // Inicializar VM ForjaFast de producción
@@ -72,7 +72,7 @@ pub fn try_selfrun() -> Option<()> {
         vm.verificar_contratos = true;
     }
 
-    vm.cargar_bytecode(opcodes);
+    vm.cargar_bytecode(codigos);
 
     // Ejecutar la VM
     let exec_res = vm.ejecutar();
