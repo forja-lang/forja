@@ -1,0 +1,19 @@
+=== Torres de Hanoi ===
+
+Resolviendo Torres de Hanoi con 3 discos:
+
+Movimientos:
+  Mover disco 1 de A a C
+  Mover disco 2 de A a B
+  Mover disco 1 de C a B
+  Mover disco 3 de A a C
+  Mover disco 1 de B a A
+  Mover disco 2 de B a C
+  Mover disco 1 de A a C
+
+Total de movimientos para 3 discos: nulo
+
+Con 4 discos serían nulo movimientos.
+Con 5 discos serían nulo movimientos.
+
+Las Torres de Hanoi es un problema clásico de recursividad.
