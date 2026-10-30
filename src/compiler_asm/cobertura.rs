@@ -9,10 +9,11 @@
 
 use super::*;
 
-const TARGETS: [TargetArch; 3] = [
+const TARGETS: [TargetArch; 4] = [
     TargetArch::X86_64Windows,
     TargetArch::X86_64Linux,
     TargetArch::AArch64,
+    TargetArch::RiscV64,
 ];
 
 // ──────────────────────────────────────────────────────────
@@ -39,6 +40,10 @@ fn detect_mapea_cada_plataforma() {
     );
     assert_eq!(
         TargetArch::desde_plataforma("riscv64", "linux"),
+        TargetArch::RiscV64
+    );
+    assert_eq!(
+        TargetArch::desde_plataforma("riscv32", "linux"),
         TargetArch::X86_64Linux
     );
     assert_eq!(
@@ -51,7 +56,10 @@ fn detect_mapea_cada_plataforma() {
 fn tabla_de_targets_completa() {
     for t in TARGETS {
         assert!(!t.name().is_empty());
-        assert!(!t.syntax_directive().is_empty() || t == TargetArch::AArch64);
+        assert!(
+            !t.syntax_directive().is_empty()
+                || matches!(t, TargetArch::AArch64 | TargetArch::RiscV64)
+        );
         assert!(!t.section_rodata().is_empty());
         assert!(!t.ret_reg().is_empty());
         assert!(!t.ret_reg_32().is_empty());
@@ -80,6 +88,9 @@ fn tabla_de_targets_completa() {
         ("aarch64", TargetArch::AArch64),
         ("arm64", TargetArch::AArch64),
         ("arm", TargetArch::AArch64),
+        ("riscv64", TargetArch::RiscV64),
+        ("riscv", TargetArch::RiscV64),
+        ("rv64", TargetArch::RiscV64),
     ];
     for (texto, esperado) in casos {
         assert_eq!(
@@ -211,7 +222,7 @@ fn emisores_por_target_emiten_formas_distintas() {
         assert!(qword.contains("42"), "{t:?}: {qword}");
         assert!(!t.gen_syscall_write(a, b).is_empty());
         assert!(!t.section_rodata().is_empty());
-        assert!(t.fp_reg() != sp || t == TargetArch::AArch64);
+        assert!(t.fp_reg() != sp || matches!(t, TargetArch::AArch64 | TargetArch::RiscV64));
     }
 }
 
