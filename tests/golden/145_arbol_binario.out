@@ -1,0 +1,30 @@
+=== Árbol Binario de Búsqueda ===
+
+Insertando: [50,30,70,20,40,60,80,35,65]
+
+Estructura del árbol:
+        80
+    70
+            65
+        60
+50
+        40
+            35
+    30
+        20
+
+Recorrido inorder (ordenado):
+  20
+  30
+  35
+  40
+  50
+  60
+  65
+  70
+  80
+
+¿Contiene 40? verdadero
+¿Contiene 99? falso
+
+BST mantiene los elementos ordenados: izquierdo < raíz < derecho.
