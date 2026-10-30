@@ -1,0 +1,31 @@
+=== REGRESIÓN LINEAL SIMPLE ===
+
+Método de mínimos cuadrados: y = mx + b
+
+Datos de entrenamiento:
+  Horas de estudio → Calificación
+  1h → 52 puntos
+  2h → 55 puntos
+  3h → 58 puntos
+  4h → 65 puntos
+  5h → 70 puntos
+  6h → 73 puntos
+  7h → 78 puntos
+  8h → 82 puntos
+  9h → 88 puntos
+  10h → 92 puntos
+
+Modelo entrenado:
+  Ecuación: y = 4x + 51
+  R² = 1
+
+Predicciones:
+  0h de estudio → calificación estimada: 51
+  2.5h de estudio → calificación estimada: 51
+  7.5h de estudio → calificación estimada: 51
+  11h de estudio → calificación estimada: 95
+  12h de estudio → calificación estimada: 99
+
+La regresión lineal encuentra la recta que mejor se ajusta
+a los datos minimizando la suma de errores al cuadrado.
+R² cercano a 1 indica un buen ajuste del modelo.
