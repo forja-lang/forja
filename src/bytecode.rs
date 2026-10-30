@@ -862,6 +862,20 @@ impl BytecodeGenerator {
     pub fn generar(&mut self, programa: &Programa) -> Result<Vec<Opcode>, Vec<ErrorForja>> {
         self.clases_con_constructor.clear();
         self.funciones_definidas.clear();
+        // Los enums se registran **antes** de compilar cualquier cuerpo: si no,
+        // construir una variante dentro de una función (`retornar Circulo(r)`)
+        // se emitía como `Call("Circulo")` y fallaba en runtime con "función no
+        // definida" (en el nivel superior funcionaba por el orden de visita).
+        self.enum_variantes.clear();
+        for decl in &programa.declaraciones {
+            if let Declaracion::Enum { nombre, variantes, .. } = decl {
+                let var_info: Vec<(String, Vec<Tipo>)> = variantes
+                    .iter()
+                    .map(|v| (v.nombre.clone(), v.tipos.clone()))
+                    .collect();
+                self.enum_variantes.insert(nombre.clone(), var_info);
+            }
+        }
         for decl in &programa.declaraciones {
             if let Declaracion::Funcion { nombre, .. } = decl {
                 self.funciones_definidas.insert(nombre.clone());
@@ -1712,8 +1726,21 @@ impl BytecodeGenerator {
             }
 
             Declaracion::Retornar { valor } => {
+                // `TailCall` sólo vale para funciones de usuario: una variante de
+                // enum (`retornar Circulo(r)`), un builtin (`retornar Algo(x)`) o
+                // una función de stdlib se emitían como `TailCall` y el runtime
+                // fallaba con "función no definida" al no existir esa función.
+                let tail_candidato = match valor {
+                    Some(Expresion::LlamadaFuncion { nombre, .. }) => {
+                        self.funciones_definidas.contains(nombre.as_str())
+                            && self.buscar_variante_enum(nombre).is_none()
+                    }
+                    _ => false,
+                };
                 match valor {
-                    Some(Expresion::LlamadaFuncion { nombre, argumentos }) => {
+                    Some(Expresion::LlamadaFuncion { nombre, argumentos })
+                        if tail_candidato =>
+                    {
                         let indirecta = self.emitir_callee_si_variable(nombre);
                         if indirecta {
                             // Callback en posición de retorno: TailCall sólo

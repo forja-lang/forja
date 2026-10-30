@@ -274,11 +274,14 @@ Hecho además:
 - `135` ya no diverge AST/IR; sólo queda `167` (bug del backend AST con la raíz
   de Newton en decimales).
 
-**Corpus ejecutable (medido con la VM, 10 s por ejemplo):** 209 corren con
-salida, 30 compilan pero no imprimen nada (GUI, red, stdin), 14 no compilan y 7
-son interactivos (`pedir_texto`/`leer` en bucle: 151, 152, 154, 155, 159, 160,
-189) — en un runner sin stdin agotan el límite de instrucciones, no es un fallo
-del lenguaje.
+**Corpus ejecutable (medido con la VM, 10 s por ejemplo):** **259/260 compilan**
+y **220/260 corren con salida**; 31 compilan sin imprimir nada (GUI, red, stdin)
+y quedan 8 fallos de ejecución: 7 son interactivos (`pedir_texto`/`leer` en
+bucle: 151, 152, 154, 155, 159, 160, 189 — en un runner sin stdin agotan el
+límite de instrucciones, no es un fallo del lenguaje) y `400_exacto` tropieza con
+un bug de aritmética `Exacto` dentro de funciones (repro: `funcion f(x: Exacto)
+-> Exacto { variable r: Exacto = 2.0  retornar r * x }` con `x = 3` da `8.0` en
+vez de `6.0`; en el nivel superior da bien).
 
 Corregido en esta pasada (lenguaje y stdlib):
 - **`+` entre arreglos concatena** (antes caía en el caso de texto y devolvía
