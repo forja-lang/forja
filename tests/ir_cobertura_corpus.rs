@@ -125,11 +125,13 @@ fn corpus_completo_por_ir_sin_fallback() {
 /// * `167_estadistica`: el **AST** imprime `nulo` en `Desviación Estándar`
 ///   (raíz cuadrada por Newton con decimales); el IR da `1`, que es lo
 ///   correcto. Es un bug del backend AST, que sólo se usa como comparación.
+/// * `400_exacto`: el **AST** no maneja el tipo `Exacto` (imprime `0`/`nulo`);
+///   el IR da los valores correctos (123.45, 123, 8, 59049).
 ///
 /// `135_ordenamiento_mergesort` ya no diverge: se corrigieron el crecimiento
 /// de arreglos por índice (`variable a = []` + `a[i] = v`) y la renumeración
 /// del índice en `Inst::ArraySet`/`MapSet`.
-const DIVERGENCIAS_CONOCIDAS: &[&str] = &["167_estadistica.fa"];
+const DIVERGENCIAS_CONOCIDAS: &[&str] = &["167_estadistica.fa", "400_exacto.fa"];
 
 /// Marcadores de ejemplos no deterministas o con dependencias externas: su
 /// salida no se puede comparar entre dos ejecuciones.
@@ -148,6 +150,9 @@ const NO_DETERMINISTAS: &[&str] = &[
     "leer_archivo",
     "escribir_archivo",
     "sockets",
+    // El orden de claves de un `mapa` depende del `HashMap`: 209_json serializa
+    // un mapa y cada backend lo recorre en un orden distinto.
+    "json.serializar",
 ];
 
 fn ejecutar_bytecode(bc: Vec<forja::bytecode::Opcode>) -> Result<Vec<String>, String> {
