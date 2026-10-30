@@ -1,0 +1,6 @@
+=== Selection Sort ===
+
+Original: [64,25,12,22,11,90,33]
+Ordenado: [11,12,22,25,33,64,90]
+
+Selection sort encuentra el mínimo y lo coloca en su posición.
