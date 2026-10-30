@@ -422,7 +422,7 @@ fn ejecutar_programa(state: &mut DAPState) {
         }
 
         if state.debugger.vm.ip >= state.debugger.vm.bytecode.len() {
-            // Programa terminado
+            // Programa esta_terminado
             let evt = RPCEvent {
                 seq: state.next_seq(),
                 r#type: "event".into(),
