@@ -87,7 +87,7 @@ COVDIR="$TARGET_DIR/cov"
 rm -rf "$COVDIR"
 mkdir -p "$COVDIR"
 
-echo "== F4-T6 · Cobertura del backend ASM ==" >&2
+echo "Cobertura del backend ASM" >&2
 build() {
     CARGO_TARGET_DIR="$TARGET_DIR" RUSTFLAGS="-C instrument-coverage" "$CARGO" "$@"
 }
