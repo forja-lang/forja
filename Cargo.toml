@@ -1,6 +1,6 @@
 [package]
 name = "forja"
-version = "0.9.4"
+version = "0.9.5"
 edition = "2021"
 description = "Forja (fa) - Lenguaje de programación educativo en español"
 authors = ["forja-lang"]
@@ -137,17 +137,26 @@ members = [
 ]
 exclude = [".forja_gui_cache", "fuzz"]
 
-[patch.crates-io]
-# F6-T3: commits fijados (no ramas mutables). Actualizar juntos con Cargo.lock
-# cuando se migre a una versión oficial de xilem/masonry.
-xilem = { git = "https://github.com/forja-lang/patches.git", rev = "21c0cca98d0333a99e3db715bce5ce874ddae4db" }
-masonry_winit = { git = "https://github.com/forja-lang/patches.git", rev = "3ec102fcef87236a3544c420a7e2e21d439fa088" }
-masonry = { git = "https://github.com/forja-lang/patches.git", rev = "bc7d0e803040025145bb8e911cf1c7404df85613" }
+# xilem y su stack (masonry, masonry_core, masonry_winit, xilem_masonry,
+# masonry_imaging, tree_arena) se consumen directo del `main` de linebender:
+# el último release publicado (0.4.0, oct-2025) está desactualizado y los
+# parches que Forja mantenía sobre él ya están upstream. Ver
+# .thinkrail/context/TASK-xilem-main-migration.md.
+# `Cargo.lock` congela el commit: para mover el pin, `cargo update -p xilem`.
 
 # Perfil release: prioriza VELOCIDAD (compilador/VM).
 # Nota (F0-T4): se retira `panic = "abort"` para preservar backtraces en
 # español y permitir que los tests capturen panics (unwinding). El binario
 # mínimo de distribución se obtiene con el perfil `dist` (abajo).
+# Perfil de desarrollo del repo: las dependencias del stack gráfico (xilem,
+# vello, wgpu, parley) sin optimizar son 10-20x más lentas y hacen que arrastrar
+# un slider o el scrollbar se sienta pegajoso incluso en `cargo run --example`.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
 opt-level = 3
 lto = "fat"
