@@ -198,7 +198,7 @@ fn compilar_pipeline_nucleo_emision(
     let bc = optimizer_pipeline::optimizar_bytecode(bc);
     // F8-T4: los contratos se compilan con el generador AST (sus condiciones no
     // forman parte del CFG de la función) y se adjuntan a la emisión IR.
-    let mut gen_contratos = bytecode::BytecodeGenerator::new();
+    let mut gen_contratos = bytecode::GeneradorBytecode::new();
     let contratos = match gen_contratos.generar(&programa) {
         Ok(_) => gen_contratos.contratos,
         Err(_) => Vec::new(),
@@ -955,7 +955,7 @@ pub fn compilar_pipeline_completa(
     }
 }
 
-/// Compila un módulo Forja a ModuleBytecode, sin resolución de imports.
+/// Compila un módulo Forja a ModuloBytecode, sin resolución de imports.
 /// El caller debe proveer el source completo del módulo (con imports ya resueltos
 /// inline, o un módulo sin imports externos).
 ///
@@ -964,8 +964,8 @@ pub fn compilar_pipeline_completa(
 pub fn compilar_modulo(
     source: &str,
     module_id: ModuleId,
-) -> Result<bytecode::ModuleBytecode, String> {
-    use bytecode::BytecodeGenerator;
+) -> Result<bytecode::ModuloBytecode, String> {
+    use bytecode::GeneradorBytecode;
 
     // FASE 0: Caché incremental
     // El caller puede usar IncrementalCache para verificar si el hash del source
@@ -999,9 +999,9 @@ pub fn compilar_modulo(
     // Nivel básico: const-fold → dce → const-prop.
     let programa = optimizer_pipeline::PipelineAst::basico().ejecutar(programa);
 
-    // FASE 5: Generar ModuleBytecode con generar_para_modulo()
+    // FASE 5: Generar ModuloBytecode con generar_para_modulo()
     let funciones_overload = type_checker.obtener_funciones();
-    let mut gen = BytecodeGenerator::new();
+    let mut gen = GeneradorBytecode::new();
     gen.set_tipos_inferidos(tipos_inferidos);
     gen.set_funciones_overload(funciones_overload);
     let mut module_bc = gen
@@ -1009,7 +1009,7 @@ pub fn compilar_modulo(
         .map_err(|_| "Error generando bytecode para módulo".to_string())?;
 
     // FASE 6: Optimizar bytecode interno — punto único (`optimizer_pipeline`).
-    module_bc.opcodes = optimizer_pipeline::optimizar_bytecode(module_bc.opcodes);
+    module_bc.codigos = optimizer_pipeline::optimizar_bytecode(module_bc.codigos);
 
     Ok(module_bc)
 }
@@ -1087,10 +1087,10 @@ pub fn ejecutar_con_cache(source: &str, root_dir: &std::path::Path) -> Result<Ve
 #[cfg(feature = "parallel")]
 pub fn compilar_modulos_paralelo(
     modulos: Vec<(String, ModuleId)>,
-) -> Result<Vec<bytecode::ModuleBytecode>, String> {
+) -> Result<Vec<bytecode::ModuloBytecode>, String> {
     use rayon::prelude::*;
 
-    let resultados: Vec<Result<bytecode::ModuleBytecode, String>> = modulos
+    let resultados: Vec<Result<bytecode::ModuloBytecode, String>> = modulos
         .into_par_iter()
         .map(|(source, module_id)| compilar_modulo(&source, module_id))
         .collect();
@@ -1308,10 +1308,10 @@ pub fn alimentar_tiered_jit(bc: &[bytecode::Opcode]) {
     let mut tiered = TieredJit::new();
     for (ip, op) in bc.iter().enumerate() {
         match op {
-            bytecode::Opcode::FunctionDef(nombre, _) => {
+            bytecode::Opcode::DefinirFuncion(nombre, _) => {
                 tiered.register_function(nombre.as_ref());
             }
-            bytecode::Opcode::Call(nombre, _) => {
+            bytecode::Opcode::Llamar(nombre, _) => {
                 if let ShouldCompile::Yes(_tier) = tiered.on_function_call(nombre.as_ref()) {
                     // Cuando exista un codegen nativo conectado aquí se marcará
                     // `mark_compiled`; hoy la ejecución sigue en la VM.
