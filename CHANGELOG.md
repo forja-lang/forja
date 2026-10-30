@@ -5,6 +5,51 @@ Todas las versiones notables de **Forja (fa)** serán documentadas en este archi
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/),
 y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.6] - sin publicar
+
+### Lenguaje — `Exacto` y entrada por teclado
+
+- **Parámetro `Exacto` coerciona el argumento.** `funcion f(x: Exacto) { x * 2 }`
+  llamado con `f(3.0)` guardaba el Decimal tal cual y la primera operación Exacto
+  moría en runtime (`tipo incompatible`). Afectaba a `exacto_potencia` de
+  `std/matematica` y a cualquier función con parámetro `Exacto`. La coerción por
+  tipo declarado ahora también se aplica en las tres rutas de llamada
+  (expresión, sentencia y `hilo`).
+- **`a_numero(nulo)` devuelve Nulo** en vez de `0`: con EOF (sin stdin) el
+  `0` se comparaba con el número secreto y los juegos interactivos giraban hasta
+  agotar el límite de ejecución. Igual regla en la VM de opcodes y en la de uops,
+  que además ya no imprimen un prompt `> ` que el programa no pidió.
+- **Las operaciones Exacto aceptan `Decimal`** convirtiéndolo (escala 10, como
+  `DecimalAExacto`): el backend AST coercionaba el operando y el IR no, así que
+  `Exacto * 0.21` daba `nulo` por la ruta IR.
+- `154_tateti`, `155_memorice` y `160_cronometro` cortan al terminar la entrada
+  (submódulo `ejemplos`), en vez de girar para siempre.
+- **Un contrato violado ya no hace `panic!`**: `requiere`/`garantiza`/invariante
+  devuelven `ErrFast::Contrato` ("contrato violado: precondición no se cumple:
+  …"). Antes el proceso abortaba, así que el CLI mostraba un crash y los
+  llamadores en proceso (tests, LSP, WASM) no podían recuperarse.
+
+### Pruebas — corpus completo bajo golden
+
+- `tests/golden_runner.rs` ya no compara 13 ejemplos fijos: recorre **todo**
+  `ejemplos/`, excluye con motivo lo que no puede ser estable (stdin,
+  aleatoriedad, tiempo, hilos/canales, red, GUI, ficheros, FFI, entorno) y avisa
+  si queda un golden huérfano. Regeneración: `FORJA_UPDATE_GOLDEN=1 cargo test
+  --test golden_runner`.
+
+### Seguridad
+
+- **Auditoría de dependencias en CI** (`cargo audit`, RUSTSEC) sobre
+  `Cargo.lock`, bloqueante ante vulnerabilidades. SECURITY.md ya lo prometía,
+  pero no estaba cableado. Hoy: 0 vulnerabilidades y 6 avisos de crates sin
+  mantenimiento en transitivas de GUI/DBus.
+
+### Distribución
+
+- `scripts/bump-version.ps1` bumpea los mismos crates que la versión en bash
+  (faltaban `forja-syntax`, `forja-types`, `forja-theme` y `forja-gui-core`, y
+  el workspace quedaba sin resolver las dependencias por ruta+versión).
+
 ## [0.9.5] - 2026-10-30
 
 ### GUI — rendimiento y perfil de arranque
