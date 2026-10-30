@@ -1,0 +1,51 @@
+╔══════════════════════════════════════════════╗
+║    Operaciones Funcionales sobre Colecciones ║
+╚══════════════════════════════════════════════╝
+
+─── mapa() ───
+  mapa([1,2,3,4,5], duplicar):
+    [2,4,6,8,10]
+  mapa(["hola","mundo","forja"], exclamar):
+    [hola!,mundo!,forja!]
+─── filtrar() ───
+  filtrar([1,2,3,4,5], es_par):
+    [2,4]
+  filtrar([1,2,3,4,5], >3):
+    [4,5]
+─── reducir() ───
+  suma con reducir([1,2,3,4,5]): 15
+  producto con reducir([1,2,3,4,5]): 120
+─── encontrar() ───
+  encontrar([1,2,3,4,5], >3): 4
+  encontrar([1,2,3,4,5], negativo): nulo
+─── alguno() ───
+  ¿algún par en [1,2,3,4,5]?: verdadero
+  ¿algún negativo?: falso
+─── todos() ───
+  ¿todos positivos en [1,2,3,4,5]?: verdadero
+  ¿todos pares en [1,2,3,4,5]?: falso
+─── ordenar() ───
+  ordenar([3,1,4,1,5,9,2,6]):
+    [1,1,2,3,4,5,6,9]
+  original intacto:
+    [3,1,4,1,5,9,2,6]
+─── aplanar() ───
+  aplanar([[1,2],[3,[4]],5]):
+    [1,2,3,[4],5]
+─── unico() ───
+  unico([1,2,2,3,1,4,3,5]):
+    [1,2,3,4,5]
+─── invertir() ───
+  invertir([1,2,3,4,5]):
+    [5,4,3,2,1]
+─── segmento() ───
+  segmento([a,b,c,d,e], 1, 4):
+    [b,c,d]
+─── Combinación de operaciones ───
+  pares al cuadrado y ordenados:
+    [4,16,36,64]
+─── Mapas (API definida) ───
+  Las funciones claves(), valores(), pares(),
+  fusionar() y filtrar_claves() están definidas
+  y requieren soporte futuro de iteración nativa
+  sobre mapas en el runtime de Forja.
