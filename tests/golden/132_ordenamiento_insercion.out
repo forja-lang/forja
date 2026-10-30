@@ -1,0 +1,6 @@
+=== Insertion Sort ===
+
+Original: [29,10,14,37,13,33,48,22]
+Ordenado: [10,13,14,22,29,33,37,48]
+
+Insertion sort construye el array ordenado de a un elemento por vez.
