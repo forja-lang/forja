@@ -1,0 +1,6 @@
+=== Merge Sort ===
+
+Original: [38,27,43,3,9,82,10,55,1]
+Ordenado: [1,3,9,10,27,38,43,55,82]
+
+Merge sort divide el array en mitades, ordena y fusiona. O(n log n) estable.
