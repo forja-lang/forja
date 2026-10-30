@@ -30,13 +30,13 @@ impl AOTCompiler {
         let base_dir = entrada_path.parent().unwrap_or(std::path::Path::new("."));
 
         // 2. Compilar con la pipeline completa (resuelve imports, type-checking, optimizaciones)
-        let (opcodes, _contratos) = crate::compilar_pipeline_completa_desde(&source, base_dir)?;
+        let (codigos, _contratos) = crate::compilar_pipeline_completa_desde(&source, base_dir)?;
 
-        // 2b. Sanitizar: convertir opcodes runtime-only a equivalentes genéricos
-        let opcodes = bytecode::sanitizar_para_serializacion(&opcodes);
+        // 2b. Sanitizar: convertir codigos runtime-only a equivalentes genéricos
+        let codigos = bytecode::sanitizar_para_serializacion(&codigos);
 
         // 3. Serializar bytecode a binario
-        let fbc_data = bytecode::serializar_bytecode(&opcodes);
+        let fbc_data = bytecode::serializar_bytecode(&codigos);
 
         // 5. Generar ejecutable autónomo (copiar stub + apendar bytecode)
         Self::generar_ejecutable(&fbc_data, salida, gui, con_consola)?;
