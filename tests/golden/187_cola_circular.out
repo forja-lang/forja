@@ -1,0 +1,57 @@
+=== BUFFER CIRCULAR (RING BUFFER) ===
+
+Estructura FIFO de tamaño fijo que reutiliza memoria.
+
+Buffer creado: capacidad = 5
+
+--- Encolando 3 elementos ---
+  📥 Encolado: 10  [buff: 1/5]
+  📥 Encolado: 20  [buff: 2/5]
+  📥 Encolado: 30  [buff: 3/5]
+  Buffer circular [3/5]:
+    [0]: 10
+    [1]: 20
+    [2]: 30
+
+--- Desencolando 2 elementos ---
+  📤 Desencolado: 10  [buff: 2/5]
+  📤 Desencolado: 20  [buff: 1/5]
+  Buffer circular [1/5]:
+    [2]: 30
+
+--- Encolando 4 más (total 5, llenando) ---
+  📥 Encolado: 40  [buff: 2/5]
+  📥 Encolado: 50  [buff: 3/5]
+  📥 Encolado: 60  [buff: 4/5]
+  📥 Encolado: 70  [buff: 5/5]
+  Buffer circular [5/5]:
+    [2]: 30
+    [3]: 40
+    [4]: 50
+    [0]: 60
+    [1]: 70
+
+--- Buffer lleno! Sobrescribiendo (encolar más) ---
+  📥 Encolado: 80  [buff: 5/5]
+  📥 Encolado: 90  [buff: 5/5]
+  Buffer circular [5/5]:
+    [4]: 50
+    [0]: 60
+    [1]: 70
+    [2]: 80
+    [3]: 90
+
+--- Vaciando todo ---
+  📤 Desencolado: 50  [buff: 4/5]
+  📤 Desencolado: 60  [buff: 3/5]
+  📤 Desencolado: 70  [buff: 2/5]
+  📤 Desencolado: 80  [buff: 1/5]
+  📤 Desencolado: 90  [buff: 0/5]
+  Buffer circular [0/5]:
+    (vacío)
+
+Ventajas del buffer circular:
+  • Tamaño fijo sin realocaciones de memoria
+  • Operaciones de encolar/desencolar en O(1)
+  • Ideal para streaming y buffers de audio/video
+  • Perfecto para el patrón productor-consumidor
