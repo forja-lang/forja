@@ -1,0 +1,13 @@
+=== MiOpcion<T> Manual ===
+
+MiOpcion con 42:
+  ¿Es algo? verdadero
+  ¿Es Ninguno? falso
+  Valor: 42
+
+MiOpcion con "Hola":
+  Valor: Hola
+
+MiOpcion vacío:
+  ¿Es algo? falso
+  ¿Es Ninguno? verdadero
