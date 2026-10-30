@@ -7,7 +7,7 @@
 #
 # Uso:
 #   bash scripts/build-aar.sh                          # todos los ABIs + AAR
-#   bash scripts/build-aar.sh 0.9.5                    # versión específica
+#   bash scripts/build-aar.sh 0.9.6                    # versión específica
 #   bash scripts/build-aar.sh --target aarch64-linux-android --build-only
 #   bash scripts/build-aar.sh --package-only           # empaqueta .so ya compilados
 #
@@ -55,7 +55,7 @@ usage() {
     cat <<'EOF'
 Uso:
   bash scripts/build-aar.sh                          # todos los ABIs + AAR
-  bash scripts/build-aar.sh 0.9.5                    # versión específica
+  bash scripts/build-aar.sh 0.9.6                    # versión específica
   bash scripts/build-aar.sh --target aarch64-linux-android --build-only
   bash scripts/build-aar.sh --package-only           # empaqueta .so ya compilados
 
