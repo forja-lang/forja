@@ -1,0 +1,30 @@
+=== Tabla Hash ===
+
+Tabla Hash (6 elementos):
+  [0]: ∅
+  [1]: ∅
+  [2]: ∅
+  [3]: ∅
+  [4]: ∅
+  [5]: ∅
+  [6]: ∅
+  [7]: ∅
+
+Búsquedas:
+  nombre → nulo
+  edad → nulo
+  inexistente → nulo
+
+Después de eliminar 'edad':
+  edad → nulo
+Tabla Hash (6 elementos):
+  [0]: ∅
+  [1]: ∅
+  [2]: ∅
+  [3]: ∅
+  [4]: ∅
+  [5]: ∅
+  [6]: ∅
+  [7]: ∅
+
+Tabla hash: inserciones y búsquedas O(1) promedio.
