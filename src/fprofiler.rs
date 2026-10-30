@@ -1,5 +1,5 @@
 /// Profiler de operaciones f64 para ForjaFast
-/// Contadores atómicos para medir frecuencia de opcodes float y type-checking overhead
+/// Contadores atómicos para medir frecuencia de codigos float y type-checking overhead
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Flag global para habilitar/deshabilitar profiling
