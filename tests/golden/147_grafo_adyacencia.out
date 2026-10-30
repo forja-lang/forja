@@ -1,0 +1,15 @@
+=== Grafo con Matriz de Adyacencia ===
+
+  Matriz de adyacencia:
+
+      A B C D E 
+  A  
+  B  
+  C  
+  D  
+  E  
+
+Recorrido DFS desde A:
+  Visitando: A
+
+La matriz de adyacencia es O(V²) en memoria.
