@@ -55,7 +55,13 @@ impl ForjaFast {
                     let result = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
                     self.exacto_valor(result, escala)
                 } else {
-                    ValorFast::nulo()
+                    // Un exacto con un operando que no lo es (p. ej. un literal
+                    // Decimal asignado a una variable Exacto) no debe dar Nulo en
+                    // silencio: eso corrompía cuentas sin avisar.
+                    return Err(ErrFast::TipoInv(
+                        "operación Exacto con un operando que no es Exacto, Entero ni Decimal"
+                            .to_string(),
+                    ));
                 };
                 self.push_valor(val);
                 self.ip += 1;
@@ -95,7 +101,13 @@ impl ForjaFast {
                     let result = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
                     self.exacto_valor(result, escala)
                 } else {
-                    ValorFast::nulo()
+                    // Un exacto con un operando que no lo es (p. ej. un literal
+                    // Decimal asignado a una variable Exacto) no debe dar Nulo en
+                    // silencio: eso corrompía cuentas sin avisar.
+                    return Err(ErrFast::TipoInv(
+                        "operación Exacto con un operando que no es Exacto, Entero ni Decimal"
+                            .to_string(),
+                    ));
                 };
                 self.push_valor(val);
                 self.ip += 1;
@@ -126,7 +138,13 @@ impl ForjaFast {
                         .ok_or(ErrFast::OverflowArit)?;
                     self.exacto_valor(result, ae.escala)
                 } else {
-                    ValorFast::nulo()
+                    // Un exacto con un operando que no lo es (p. ej. un literal
+                    // Decimal asignado a una variable Exacto) no debe dar Nulo en
+                    // silencio: eso corrompía cuentas sin avisar.
+                    return Err(ErrFast::TipoInv(
+                        "operación Exacto con un operando que no es Exacto, Entero ni Decimal"
+                            .to_string(),
+                    ));
                 };
                 self.push_valor(val);
                 self.ip += 1;
@@ -189,7 +207,13 @@ impl ForjaFast {
                         self.exacto_valor(cociente, extra)
                     }
                 } else {
-                    ValorFast::nulo()
+                    // Un exacto con un operando que no lo es (p. ej. un literal
+                    // Decimal asignado a una variable Exacto) no debe dar Nulo en
+                    // silencio: eso corrompía cuentas sin avisar.
+                    return Err(ErrFast::TipoInv(
+                        "operación Exacto con un operando que no es Exacto, Entero ni Decimal"
+                            .to_string(),
+                    ));
                 };
                 self.push_valor(val);
                 self.ip += 1;
