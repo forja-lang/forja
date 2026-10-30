@@ -9,7 +9,7 @@ use super::*;
 
 impl ForjaFast {
     /// Ejecuta las ramas simples del `match op`: push/pop/dup, acceso a
-    /// variables por índice y por nombre, y opcodes fusionados de declaración.
+    /// variables por índice y por nombre, y codigos fusionados de declaración.
     ///
     /// Devuelve `Ok(true)` si `op` fue manejada por este helper, `Ok(false)` en
     /// caso contrario (para que el `match` principal de `ejecutar` la procese).
@@ -38,32 +38,32 @@ impl ForjaFast {
                 self.push_valor(ValorFast::nulo());
                 self.ip += 1;
             }
-            Opcode::Pop => {
+            Opcode::Descartar => {
                 self.pop_valor()?;
                 self.ip += 1;
             }
-            Opcode::Dup => {
+            Opcode::Duplicar => {
                 let v = *self.peek_valor(0);
                 self.push_valor(v);
                 self.ip += 1;
             }
 
             // === VARIABLES POR ÍNDICE (O(1) — acceso directo a Flat Var Stack) ===
-            Opcode::LoadIdx(idx) => {
+            Opcode::CargarIndice(idx) => {
                 self.push_valor(self.load_local(*idx));
                 self.ip += 1;
             }
-            Opcode::StoreIdx(idx) => {
+            Opcode::GuardarIndice(idx) => {
                 let val = self.pop_valor()?;
                 self.store_local(*idx, val);
                 self.ip += 1;
             }
-            Opcode::DeclareIdx(idx, _) => {
+            Opcode::DeclararIndice(idx, _) => {
                 let val = self.pop_valor()?;
                 self.store_local(*idx, val);
                 self.ip += 1;
             }
-            Opcode::DeclareIdxGlobal(idx, _) => {
+            Opcode::DeclararIndiceGlobal(idx, _) => {
                 let idx = *idx;
                 // Asegurar espacio en global_var_persist
                 if idx >= self.global_var_persist.len() {
@@ -82,7 +82,7 @@ impl ForjaFast {
             }
             // Acceso directo a variables globales de módulo (no usan frame_locals):
             // evita la colisión de índices con las locales de las funciones.
-            Opcode::LoadIdxGlobal(idx) => {
+            Opcode::CargarIndiceGlobal(idx) => {
                 let idx = *idx;
                 // TRACE TEMPORAL (investigación leibniz)
                 if self.show_bytecode && self.ejecutadas < 60 {
@@ -105,7 +105,7 @@ impl ForjaFast {
                 }
                 self.ip += 1;
             }
-            Opcode::StoreIdxGlobal(idx) => {
+            Opcode::GuardarIndiceGlobal(idx) => {
                 let idx = *idx;
                 let val = self.pop_valor()?;
                 if idx >= self.global_var_persist.len() {
@@ -126,27 +126,27 @@ impl ForjaFast {
             }
 
             // === OPCODES FUSIONADOS (sin push/pop — asignación directa) ===
-            Opcode::DeclareEnteroOp(idx, n) => {
+            Opcode::DeclararOperacionEntero(idx, n) => {
                 self.store_local(*idx, get_small_int_fast(*n));
                 self.ip += 1;
             }
-            Opcode::DeclareBooleanoOp(idx, b) => {
+            Opcode::DeclararOperacionBooleano(idx, b) => {
                 self.store_local(*idx, ValorFast::booleano(*b));
                 self.ip += 1;
             }
-            Opcode::StoreEnteroOp(idx, n) => {
+            Opcode::GuardarOperacionEntero(idx, n) => {
                 self.store_local(*idx, get_small_int_fast(*n));
                 self.ip += 1;
             }
 
             // === VARIABLES POR NOMBRE (fallback) ===
-            Opcode::Load(n) => {
+            Opcode::Cargar(n) => {
                 return Err(ErrFast::VarNoDecl(n.to_string()));
             }
-            Opcode::Store(n) => {
+            Opcode::Guardar(n) => {
                 return Err(ErrFast::VarNoDecl(n.to_string()));
             }
-            Opcode::Declare(n, _) => {
+            Opcode::Declarar(n, _) => {
                 return Err(ErrFast::VarNoDecl(n.to_string()));
             }
 
