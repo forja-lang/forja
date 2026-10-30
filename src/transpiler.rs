@@ -119,6 +119,8 @@ pub struct Transpiler {
     temp_counter: usize,
     /// Si es true, no genera el fn main() automático
     pub saltar_main: bool,
+    /// Si es true, la app GUI compilada mantiene la consola (`forja compilar --console`)
+    mantener_consola: bool,
     /// Clases declaradas (para generar impls)
     clases: HashMap<String, ClaseInfo>,
     /// Declaraciones globales del programa (para análisis de mutabilidad)
@@ -202,7 +204,15 @@ impl Transpiler {
             profundidad_expresion: 0,
             variables_globales: HashMap::new(),
             forzar_gui: false,
+            mantener_consola: false,
         }
+    }
+
+    /// `true` = la app compilada conserva la ventana de consola (para ver errores).
+    /// Por defecto las apps GUI usan el subsistema `windows` y no abren consola.
+    pub fn con_consola(mut self, mantener: bool) -> Self {
+        self.mantener_consola = mantener;
+        self
     }
 
     /// Detecta variables globales (declaradas a nivel de módulo, no dentro de funciones)
@@ -271,8 +281,9 @@ impl Transpiler {
         );
         self.emit_line("");
 
-        // En Windows, las apps GUI deben usar el subsistema "windows" para no mostrar consola
-        if self.usa_gui() {
+        // En Windows, las apps GUI deben usar el subsistema "windows" para no mostrar
+        // consola. Con `--console` se omite a propósito para poder ver los errores.
+        if self.usa_gui() && !self.mantener_consola {
             self.emit_line(
                 "#![cfg_attr(target_os = \"windows\", windows_subsystem = \"windows\")]",
             );

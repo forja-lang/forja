@@ -1614,6 +1614,15 @@ edition = "2021"
 forja-gui-rt = {{ path = "{}" }}
 forja = {{ path = "{}" }}
 serde_json = "1"
+
+# Perfil de desarrollo optimizado: las dependencias del stack gráfico
+# (xilem, vello, wgpu, parley) son 10-20x más lentas sin optimizar y eso hace
+# que arrastrar un slider o el scrollbar se sienta pegajoso en `cargo run`.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
 "#,
         nombre_crate,
         forja::ruta_para_toml(&forja_gui_rt_path),
@@ -2272,6 +2281,7 @@ fn cmd_build(args: &[String]) {
     // Escanear argumentos en cualquier orden (archivo .fa, -o, flags)
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
+    let mut con_consola = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -2285,8 +2295,9 @@ fn cmd_build(args: &[String]) {
                     process::exit(1);
                 }
             }
-            "--debug" | "--console" => {}
-            "--no-debug" => {}
+            // Conservar la consola en la app compilada (ver panics/errores).
+            "--debug" | "--console" => con_consola = true,
+            "--no-debug" => con_consola = false,
             _ => {
                 if args[i].ends_with(".fa") {
                     input = Some(args[i].clone());
@@ -2332,7 +2343,7 @@ fn cmd_build(args: &[String]) {
     // Compilar a ejecutable autónomo (AOT con bytecode embebido)
     // - Sin GUI: usa forja-rt.exe (VM sola)
     // - Con GUI: usa forja-rt-gui.exe (VM + forja-gui-rt con Xilem/Vello)
-    if let Err(e) = forja::aot::AOTCompiler::compilar(&input, &output, usa_gui) {
+    if let Err(e) = forja::aot::AOTCompiler::compilar_con(&input, &output, usa_gui, con_consola) {
         eprintln!("{}", e);
         process::exit(1);
     }
@@ -2570,6 +2581,15 @@ path = "src/lib.rs"
 forja = {{ path = "{}" }}
 forja-gui-rt = {{ path = "{}" }}
 serde_json = "1"
+
+# Perfil de desarrollo optimizado: las dependencias del stack gráfico
+# (xilem, vello, wgpu, parley) son 10-20x más lentas sin optimizar y eso hace
+# que arrastrar un slider o el scrollbar se sienta pegajoso en `cargo run`.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
 
 [target.'cfg(target_os = "android")'.dependencies.winit]
 version = "0.30.13"
