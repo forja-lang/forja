@@ -18,6 +18,30 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Self-hosted primero. GitHub no sabe caer de un runner propio a uno
+  # hospedado: si el job pide `self-hosted` y no hay ninguno en línea, queda en
+  # cola hasta el timeout. Por eso la elección se hace acá, en un job corto
+  # sobre ubuntu-latest, que mira qué runners están online y publica el
+  # `runs-on` de Linux y Windows (ver scripts/elegir-runner.py).
+  elige-runner:
+    name: Elegir runner
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      linux: ${{ steps.elegir.outputs.linux }}
+      windows: ${{ steps.elegir.outputs.windows }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: elegir
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUNNER_LINUX: ${{ vars.RUNNER_LINUX }}
+          RUNNER_WINDOWS: ${{ vars.RUNNER_WINDOWS }}
+        run: python3 scripts/elegir-runner.py
+
   # Clasifica los cambios para no ejecutar la cadena Rust completa cuando sólo
   # se tocó documentación (README, docs, diseño). Las métricas de documentación
   # se ejecutan siempre porque también validan cifras que dependen del código.
@@ -54,9 +78,9 @@ jobs:
 
   lint:
     name: Formato y Clippy
-    needs: cambios
+    needs: [cambios, elige-runner]
     if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -90,9 +114,9 @@ jobs:
 
   docs:
     name: Documentación (build)
-    needs: cambios
+    needs: [cambios, elige-runner]
     if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.docs == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -120,7 +144,8 @@ jobs:
   # `docs-deploy.yml`.
   metricas:
     name: Métricas de documentación (auto)
-    runs-on: ubuntu-latest
+    needs: elige-runner
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
     permissions:
       contents: write
     steps:
@@ -153,9 +178,9 @@ jobs:
 
   cobertura-asm:
     name: Cobertura ASM (100%)
-    needs: [cambios, lint]
+    needs: [cambios, lint, elige-runner]
     if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -178,9 +203,9 @@ jobs:
 
   build-and-test:
     name: Build y Test (${{ matrix.os }})
-    needs: [cambios, lint]
+    needs: [cambios, lint, elige-runner]
     if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ fromJSON(matrix.os == 'ubuntu-latest' && needs.elige-runner.outputs.linux || matrix.os == 'windows-latest' && needs.elige-runner.outputs.windows || format('"{0}"', matrix.os)) }}
     strategy:
       fail-fast: false
       matrix:
@@ -205,9 +230,9 @@ jobs:
   # único runner Linux; los crates wasm se validan contra su target real.
   workspace-tests:
     name: Tests del workspace (crates)
-    needs: [cambios, lint]
+    needs: [cambios, lint, elige-runner]
     if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -243,9 +268,9 @@ jobs:
   # NDK y exporta los linkers por target.
   android-check:
     name: Android (${{ matrix.target }})
-    needs: [cambios, lint]
+    needs: [cambios, lint, elige-runner]
     if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
     strategy:
       fail-fast: false
       matrix:

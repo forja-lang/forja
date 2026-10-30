@@ -172,6 +172,23 @@ recalcula las del `README.md` y las commitea cuando cambian, y
 [`docs-deploy.yml`](.github/workflows/docs-deploy.yml) regenera el roadmap del
 sitio al publicar (ese archivo vive en el submódulo `docs`).
 
+### Runners: self-hosted primero
+
+Los jobs de Linux y Windows piden el runner propio si hay uno **en línea** y
+caen al de GitHub si no. GitHub no sabe hacer ese fallback solo (un job con
+`runs-on: self-hosted` sin runner disponible queda en cola hasta el timeout),
+así que cada workflow arranca con el job `elige-runner`, que consulta los
+runners del repo y publica el `runs-on` que usan los demás jobs
+([`scripts/elegir-runner.py`](scripts/elegir-runner.py)).
+
+- Se usan las etiquetas que el propio runner reporta, así que no hay que
+  hardcodear ninguna (y agregarle etiquetas propias no rompe nada).
+- Runners registrados a nivel **organización**: la API del repo no los lista, así
+  que se fuerzan con la variable de repositorio `RUNNER_LINUX` /
+  `RUNNER_WINDOWS` (JSON con las etiquetas, p. ej.
+  `["self-hosted","linux","x64"]`), o con `gh variable set`.
+- Los jobs de macOS siguen en los runners hospedados.
+
 ### Regresión de rendimiento
 
 El CI ejecuta una puerta de rendimiento (`.github/workflows/perf-regression.yml`)

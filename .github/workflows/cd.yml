@@ -46,11 +46,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Self-hosted primero. GitHub no sabe caer de un runner propio a uno
+  # hospedado: si el job pide `self-hosted` y no hay ninguno en línea, queda en
+  # cola hasta el timeout. Por eso la elección se hace acá, en un job corto
+  # sobre ubuntu-latest, que mira qué runners están online y publica el
+  # `runs-on` de Linux y Windows (ver scripts/elegir-runner.py).
+  elige-runner:
+    name: Elegir runner
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      linux: ${{ steps.elegir.outputs.linux }}
+      windows: ${{ steps.elegir.outputs.windows }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: elegir
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUNNER_LINUX: ${{ vars.RUNNER_LINUX }}
+          RUNNER_WINDOWS: ${{ vars.RUNNER_WINDOWS }}
+        run: python3 scripts/elegir-runner.py
+
   # Puerta de release: build+test mínimos antes de entregar. La matriz
   # completa (3 SO + workspace + crates) la corre `ci.yml`.
   gate:
     name: Puerta de release (build + test)
-    runs-on: ubuntu-latest
+    needs: elige-runner
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,8 +93,8 @@ jobs:
 
   build-android:
     name: Compilar Android
-    needs: gate
-    runs-on: ubuntu-latest
+    needs: [gate, elige-runner]
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
     strategy:
       matrix:
         target:
@@ -144,8 +169,8 @@ jobs:
   # para no arriesgar el release con un label de runner aún inestable.
   build:
     name: "Compilar (${{ matrix.name }})"
-    needs: gate
-    runs-on: ${{ matrix.os }}
+    needs: [gate, elige-runner]
+    runs-on: ${{ fromJSON(matrix.name == 'linux-x64' && needs.elige-runner.outputs.linux || matrix.name == 'windows-x64' && needs.elige-runner.outputs.windows || format('"{0}"', matrix.os)) }}
     continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       fail-fast: false
@@ -265,8 +290,8 @@ jobs:
   build-aar-so:
     name: Android .so (${{ matrix.abi }})
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    needs: gate
-    runs-on: ubuntu-latest
+    needs: [gate, elige-runner]
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
     strategy:
       fail-fast: false
       matrix:
@@ -312,8 +337,8 @@ jobs:
   build-aar:
     name: Empaquetar Android AAR
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    needs: build-aar-so
-    runs-on: ubuntu-latest
+    needs: [build-aar-so, elige-runner]
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -335,7 +360,8 @@ jobs:
   build-wasm:
     name: Compilar WASM
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
+    needs: elige-runner
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -393,12 +419,12 @@ jobs:
   release:
     name: Crear versión
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    needs: [build, build-wasm, build-aar]
+    needs: [build, build-wasm, build-aar, elige-runner]
     permissions:
       contents: write
       attestations: write
       id-token: write
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -505,9 +531,9 @@ jobs:
   # republica el dashboard del submódulo `benchmarks` en gh-pages.
   bench-versiones:
     name: Bench por versión
-    needs: [release]
+    needs: [release, elige-runner]
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
     timeout-minutes: 45
     permissions:
       contents: write
