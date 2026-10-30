@@ -20,6 +20,15 @@
 
 | Fase | Estado |
 |------|--------|
+| F11 | HECHO |
+| F12 | EN-CURSO — T1/T2/T5 hechos; T3 (corpus 259/260 compilan, 220/260 corren) y T4 (firmas/límites/auditoría hechos, falta OIDC/TLS/despliegue) parciales |
+| F13 | BLOQUEADO-EXTERNO |
+| F14 | EN-CURSO — T2 (rendimiento AST vs IR) y T3 (firmas Ed25519) hechos; T1 excluido (GUI); T4 hecho |
+
+**Siguiente tarea:** F12-T3 — los 7 ejemplos interactivos (necesitan stdin) y el
+bug de aritmética `Exacto` dentro de funciones (`400_exacto`).
+
+------|--------|
 | F11 (T1–T6) | HECHO |
 | F12-T1, F12-T2 | HECHO |
 | F12-T3 corpus ejecutable | EN-CURSO (246/260 compilan; 209/260 corren) |
@@ -497,6 +506,13 @@ rechaza un paquete alterado al instalar. Falta auditoría de dependencias
 - **Esfuerzo:** ALTO.
 
 ### F14-T4 · Docs vivas y roadmap automático `[BAJO]`
+**Estado:** HECHO — `scripts/metricas.py` ya actualizaba las cifras (líneas de
+Rust, ejemplos, módulos) en README y roadmap; ahora además **genera el bloque de
+estado del Plan 4** en `docs/src/pages/roadmap.astro` a partir de la tabla
+`## Estado actual` de este archivo y de los nombres del índice de fases (marcado
+con `BEGIN/END plan4`). La sección manual "En progreso (Plan 4)" se eliminó: el
+estado ya no se escribe a mano. `python scripts/metricas.py --check` falla si el
+roadmap deriva.
 - **¿Qué?** Generar roadmap/hitos desde `plan*.md` y métricas.
 - **¿Cuándo?** Continuo.
 - **¿Por qué?** El roadmap se actualizó a mano y quedó desactualizado.

@@ -227,7 +227,7 @@ PS C:\forja> forja medir ejemplos/40_fibonacci.fa --vm todas --iters 100
 #### 4. Modo Interactivo (Consola de Lectura y Ejecución Directa)
 ```powershell
 PS C:\forja> forja interactivo
-Forja v0.9.3 — Escribí 'salir' para terminar
+Forja v0.9.5 — Escribí 'salir' para terminar
 > variable x = 10
 > x = x + 5
 > escribir(x)
@@ -285,14 +285,14 @@ $ bash scripts/build-android.sh aarch64-linux-android
 
 ## Estado del proyecto
 
-Forja está en **v0.9.3** y en desarrollo activo. El estado verificable de cada
+Forja está en **v0.9.5** y en desarrollo activo. El estado verificable de cada
 componente —hecho / en progreso / planeado— vive en el
 **[roadmap oficial](https://forja-lang.github.io/docs/roadmap/)**.
 
 - **Motores de ejecución (2):** intérprete *ForjaFast* (`src/vm_fast/`) y JIT *tiered* (`src/jit_tiered.rs`).
 - **Frontend reutilizable:** crates `forja-syntax` y `forja-types` (lexer, parser, AST, tipos).
 - **Salidas:** bytecode (VM/JIT), ensamblador x86-64/ARM64, Rust, AOT, WASM, Android y GUI.
-- **Ecosistema:** `stdlib` (47 módulos), 262 ejemplos, curso de 30 días, LSP + DAP, GC generacional, registro de paquetes local y releases precompilados.
+- **Ecosistema:** `stdlib` (47 módulos), 263 ejemplos, curso de 30 días, LSP + DAP, GC generacional, registro de paquetes local y releases precompilados.
 - **En progreso:** IR real (emisión AST→IR), backend LLVM, extracción de `forja-gui-core` y registry remoto.
 
 ---

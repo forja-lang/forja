@@ -21,6 +21,11 @@ ROOT = Path(__file__).resolve().parent.parent
 EXCLUIDOS = {".git", "target", "node_modules", ".kilo", ".opencode", ".kilocode", "patches"}
 README = ROOT / "README.md"
 ROADMAP = ROOT / "docs" / "src" / "pages" / "roadmap.astro"
+PLAN4 = ROOT / "src" / "plan4.md"
+
+# Marcadores del bloque del roadmap que se genera desde `src/plan4.md`.
+INICIO_PLAN = "<!-- BEGIN plan4: generado por scripts/metricas.py -->"
+FIN_PLAN = "<!-- END plan4 -->"
 
 
 def contar_rust() -> int:
@@ -89,6 +94,74 @@ def aplicar(texto: str, m: dict[str, int], archivo: str) -> str:
     return texto
 
 
+def _tabla_md(texto: str, encabezado: str) -> list[list[str]]:
+    """Filas de la primera tabla Markdown que sigue a `encabezado`."""
+    pos = texto.find(encabezado)
+    if pos < 0:
+        return []
+    filas: list[list[str]] = []
+    for linea in texto[pos:].splitlines()[1:]:
+        linea = linea.strip()
+        if not linea.startswith("|"):
+            if filas:
+                break
+            continue
+        celdas = [c.strip() for c in linea.strip("|").split("|")]
+        if all(set(c) <= set("-: ") for c in celdas):
+            continue  # separador
+        filas.append(celdas)
+    return filas[1:] if filas else []  # sin el encabezado
+
+
+def _icono(fase: str, estado: str) -> str:
+    if "HECHO" in estado:
+        return "✅"
+    if "EN-CURSO" in estado:
+        return "🚧"
+    if "BLOQUEADO" in estado:
+        return "🔒"
+    return "🗺️"
+
+
+def bloque_plan4() -> str:
+    """Bloque HTML del roadmap generado desde el estado de `src/plan4.md`.
+
+    Así el roadmap no puede derivar del plan: el estado sale de las fichas, no
+    de una lista escrita a mano (F14-T4).
+    """
+    if not PLAN4.exists():
+        return ""
+    texto = PLAN4.read_text(encoding="utf-8")
+    nombres = {f[0]: f[1] for f in _tabla_md(texto, "## Índice de fases") if len(f) >= 2}
+    estados = _tabla_md(texto, "## Estado actual (continuar aquí)")
+    if not estados:
+        return ""
+    tarjetas = []
+    for fila in estados:
+        if len(fila) < 2:
+            continue
+        fase, estado = fila[0], fila[1]
+        nombre = nombres.get(fase.split()[0], fase)
+        icono = _icono(fase, estado)
+        tarjetas.append(
+            f'    <div class="feature-card"><span class="icon">{icono}</span>'
+            f"<h4>{fase} — {nombre}</h4><p>{estado}</p></div>"
+        )
+    partes = [INICIO_PLAN, '  <div class="feature-grid">'] + tarjetas + ["  </div>", FIN_PLAN]
+    return chr(10).join(partes)
+
+
+def aplicar_plan(texto: str) -> str:
+    """Reemplaza el bloque generado (o lo inserta antes de `</Layout>`)."""
+    bloque = bloque_plan4()
+    if not bloque:
+        return texto
+    patron = re.compile(re.escape(INICIO_PLAN) + r".*?" + re.escape(FIN_PLAN), re.S)
+    if patron.search(texto):
+        return patron.sub(bloque, texto)
+    return texto.replace("</Layout>", bloque + chr(10) + "</Layout>")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     grupo = parser.add_mutually_exclusive_group()
@@ -111,6 +184,8 @@ def main() -> int:
             continue
         original = ruta.read_text(encoding="utf-8")
         esperado = aplicar(original, m, tipo)
+        if tipo == "ROADMAP":
+            esperado = aplicar_plan(esperado)
         if original == esperado:
             continue
         if args.write:
