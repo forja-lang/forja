@@ -868,7 +868,10 @@ impl BytecodeGenerator {
         // definida" (en el nivel superior funcionaba por el orden de visita).
         self.enum_variantes.clear();
         for decl in &programa.declaraciones {
-            if let Declaracion::Enum { nombre, variantes, .. } = decl {
+            if let Declaracion::Enum {
+                nombre, variantes, ..
+            } = decl
+            {
                 let var_info: Vec<(String, Vec<Tipo>)> = variantes
                     .iter()
                     .map(|v| (v.nombre.clone(), v.tipos.clone()))
@@ -1259,32 +1262,16 @@ impl BytecodeGenerator {
                 });
                 if let Some(val) = valor {
                     self.generar_expresion(val);
-                    // Si la variable tiene tipo Exacto y el valor es un literal
-                    // Decimal o Entero, emitir conversión para que el runtime
-                    // almacene el valor correcto como Exacto (BigDecimal).
-                    if let Some(Tipo::Exacto) = tipo {
-                        if let Some(val_expr) = valor {
-                            match val_expr {
-                                Expresion::LiteralDecimal(_) => {
-                                    self.emitir(Opcode::DecimalAExacto);
-                                }
-                                Expresion::LiteralNumero(_) => {
-                                    self.emitir(Opcode::EnteroAExacto);
-                                }
-                                Expresion::Unaria {
-                                    operador: OperadorUnario::Negar,
-                                    expr,
-                                } => match expr.as_ref() {
-                                    Expresion::LiteralDecimal(_) => {
-                                        self.emitir(Opcode::DecimalAExacto);
-                                    }
-                                    Expresion::LiteralNumero(_) => {
-                                        self.emitir(Opcode::EnteroAExacto);
-                                    }
-                                    _ => {}
-                                },
-                                _ => {}
-                            }
+                    // Coerción por tipo declarado: si el destino es Exacto y la
+                    // expresión no lo es, convertir para que el runtime guarde un
+                    // Exacto de verdad. Antes sólo se miraba la *forma* sintáctica
+                    // del inicializador, así que `variable a: Exacto = 0.1 + 0.2`
+                    // quedaba como f64 y después fallaba al operar con otro Exacto.
+                    if matches!(tipo, Some(Tipo::Exacto)) {
+                        match self.inferir_tipo_expresion(val) {
+                            Some(Tipo::Entero) => self.emitir(Opcode::EnteroAExacto),
+                            Some(Tipo::Decimal) => self.emitir(Opcode::DecimalAExacto),
+                            _ => {}
                         }
                     }
                 } else {
@@ -1310,6 +1297,16 @@ impl BytecodeGenerator {
 
             Declaracion::Asignacion { nombre, valor, .. } => {
                 self.generar_expresion(valor);
+                // Misma coerción que en la declaración: asignar a una variable
+                // Exacto un valor Entero/Decimal lo convierte en vez de dejar un
+                // f64 disfrazado que rompe las operaciones siguientes.
+                if matches!(self.tipos_ambito.get(nombre.as_str()), Some(Tipo::Exacto)) {
+                    match self.inferir_tipo_expresion(valor) {
+                        Some(Tipo::Entero) => self.emitir(Opcode::EnteroAExacto),
+                        Some(Tipo::Decimal) => self.emitir(Opcode::DecimalAExacto),
+                        _ => {}
+                    }
+                }
                 self.emitir(Opcode::Store(Arc::from(nombre.as_str())));
             }
 
@@ -1738,9 +1735,7 @@ impl BytecodeGenerator {
                     _ => false,
                 };
                 match valor {
-                    Some(Expresion::LlamadaFuncion { nombre, argumentos })
-                        if tail_candidato =>
-                    {
+                    Some(Expresion::LlamadaFuncion { nombre, argumentos }) if tail_candidato => {
                         let indirecta = self.emitir_callee_si_variable(nombre);
                         if indirecta {
                             // Callback en posición de retorno: TailCall sólo
