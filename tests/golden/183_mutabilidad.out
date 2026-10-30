@@ -1,0 +1,30 @@
+=== MUT vs CONST vs VARIABLE ===
+
+--- Constantes (tiempo de compilación) ---
+  VELOCIDAD_LUZ = 299792458 m/s
+  Gravedad (G) = 9 m/s²
+  PI = 3
+
+--- Variables (mutables por defecto) ---
+  contador = 0
+  contador = 1
+  contador = 2
+  contador = 100
+
+--- Objetos mutables ---
+  📌 Posición: (10, 20)
+  📍 Punto movido a (15, 17)
+  📌 Posición: (15, 17)
+  📍 Punto movido a (13, 25)
+  📌 Posición: (13, 25)
+  Reiniciado a origen: (0, 0)
+
+--- Práctica recomendada ---
+  • Usa CONSTANTE para valores fijos universales (PI, gravedad)
+  • Usa VARIABLE para valores que cambian (contadores, acumuladores)
+  • Las propiedades de clase son mutables por defecto
+  • La inmutabilidad evita efectos secundarios no deseados
+  • Prefiere crear nuevos objetos en lugar de mutar existentes
+
+  ForjaApp v1.0.0
+  (las constantes llevan el valor en el nombre)
