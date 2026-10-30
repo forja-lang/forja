@@ -1,0 +1,13 @@
+=== @derive(Mostrar, Igual) múltiple ===
+
+p1 = <Persona>
+p2 = <Persona>
+p3 = <Persona>
+falso
+falso
+
+Colores:
+falso
+falso
+
+Múltiples derives: un atributo, múltiples comportamientos.
