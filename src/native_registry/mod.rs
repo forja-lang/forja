@@ -7,7 +7,7 @@
 // registros que no dependen de un dominio externo.
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::bytecode::BytecodeGenerator;
+use crate::bytecode::GeneradorBytecode;
 use crate::symbol_table::{IdSimbolo, TablaSimbolos};
 use crate::vm_fast::{ErrFast, ForjaFast, ValorFast};
 /// Registro de funciones nativas para la VM Forja
