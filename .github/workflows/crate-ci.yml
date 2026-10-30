@@ -1,4 +1,4 @@
-name: CI de crate (reutilizable)
+name: CI / Crate (reutilizable)
 
 # Workflow reutilizable para los repos de `crates/` (submódulos).
 #

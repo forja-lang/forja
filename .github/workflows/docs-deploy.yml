@@ -1,10 +1,14 @@
-name: Deploy Docs
+name: CD / Docs
 
 on:
   push:
     branches: [main]
     paths:
       - 'docs/**'
+  # Las cifras del roadmap se derivan del código: aunque no toques `docs/`,
+  # el sitio se republica cada semana con los números al día.
+  schedule:
+    - cron: '0 5 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -26,6 +30,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # El roadmap cita líneas de Rust / ejemplos / módulos del repo padre. El
+      # archivo vive en el submódulo `docs`, así que no se puede commitear
+      # desde acá: se regenera antes de compilar y el sitio publica cifras al día.
+      - name: Regenerar métricas del roadmap
+        working-directory: ${{ github.workspace }}
+        run: python3 scripts/metricas.py --write
 
       - uses: actions/setup-node@v4
         with:
@@ -47,46 +60,27 @@ jobs:
           curl -sL --fail \
             https://github.com/forja-lang/forja/releases/latest/download/forja_wasm_gui.js \
             -o src/wasm/forja_wasm_gui.js
-      - name: Verify WASM files (restore from git if download failed)
+      - name: Validar el WASM descargado (si no sirve, copia de git)
+        shell: bash
         run: |
-          ANY_FAILURE=0
-          FALLBACK=0
-          # Un wasm válido empieza con los bytes mágicos \0asm (0061736d).
-          for pair in "forja_wasm.js forja_wasm_bg.wasm" "forja_wasm_gui.js forja_wasm_gui_bg.wasm"; do
-            set -- $pair
-            js="$1"
-            wasm="$2"
-            magic=$(head -c 4 "src/wasm/$wasm" 2>/dev/null | od -An -tx1 | tr -d ' \n')
-            if [ ! -s "src/wasm/$js" ] || [ ! -s "src/wasm/$wasm" ] || [ "$magic" != "0061736d" ] || ! grep -q "export" "src/wasm/$js"; then
-              # El fallback mantiene el sitio en pie, pero significa que el WASM
-              # del release está roto: que se vea en el run y en el resumen.
-              echo "::warning title=WASM del release inválido::$js/$wasm no sirve; se usa la copia de git. El próximo release publicaría un playground roto."
-              echo "⚠️  $js/$wasm inválido o descarga fallida, restaurando desde git..."
-              git checkout -- "src/wasm/$js" "src/wasm/$wasm" 2>/dev/null || true
-              FALLBACK=1
-            fi
-          done
-          if [ "$FALLBACK" -eq 1 ]; then
+          # Bytes mágicos + export presente no alcanzan: el par glue/wasm puede
+          # ser válido y explotar en la init del navegador (pasó con v0.9.5, el
+          # playground quedó sin VM y sin GUI). Lo instanciamos de verdad.
+          if ! node ../scripts/check-wasm-playground.mjs src/wasm; then
+            echo "::warning title=WASM del release inválido::El par del release no inicializa; se publica la copia de git. El próximo release saldría roto."
+            git checkout -- src/wasm/forja_wasm.js src/wasm/forja_wasm_bg.wasm                             src/wasm/forja_wasm_gui.js src/wasm/forja_wasm_gui_bg.wasm 2>/dev/null || true
             {
               echo "### ⚠️ WASM del release no utilizable"
               echo ""
-              echo "El playground se publicó con la copia de git. Revisar los flags"
-              echo "de features del paso wasm-opt del workflow de release."
+              echo "El playground se publicó con la copia de git. Revisar el job"
+              echo "`build-wasm` del release: el par glue/wasm debe salir del mismo"
+              echo "wasm-bindgen que compiló el .wasm."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
-          # Verify all files present
-          for f in src/wasm/forja_wasm.js src/wasm/forja_wasm_bg.wasm \
-                   src/wasm/forja_wasm_gui.js src/wasm/forja_wasm_gui_bg.wasm; do
-            if [ ! -s "$f" ]; then
-              echo "❌ Missing: $f"
-              ANY_FAILURE=1
-            fi
-          done
-          if [ "$ANY_FAILURE" -eq 1 ]; then
-            echo "::error title=WASM faltante::Faltan archivos WASM y git tampoco los tiene."
+          node ../scripts/check-wasm-playground.mjs src/wasm || {
+            echo "::error title=WASM roto::La copia de git tampoco inicializa."
             exit 1
-          fi
-          echo "✅ All WASM files ready"
+          }
 
       - run: npm ci
         env:

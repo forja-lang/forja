@@ -28,7 +28,7 @@
 #   - crates/forja-gui-core/Cargo.toml
 #   - crates/*/README.md
 #   - crates/forja-android-rt/android/template/app/build.gradle.kts
-#   - .github/workflows/rust.yml (tag_name y name)
+#   - .github/workflows/cd.yml (tag_name y name)
 #   - src/main.rs (templates de proyecto nuevo)
 #   - README.md
 #   - benchmarks/README.md y benchmarks/RESULTADOS_BENCHMARK.md
@@ -134,12 +134,12 @@ for crate in forja-rt forja-wasm forja-android-rt forja-gui-rt forja-wasm-gui \
     fi
 done
 
-# 3. .github/workflows/rust.yml
-ci_file=".github/workflows/rust.yml"
-if [ -f "$ci_file" ]; then
-    sed -i "s/tag_name: v$OLD_VERSION/tag_name: v$NEW_VERSION/" "$ci_file"
-    sed -i "s/name: v$OLD_VERSION/name: v$NEW_VERSION/" "$ci_file"
-    print_ok "$ci_file (tag_name y name)"
+# 3. .github/workflows/cd.yml
+release_file=".github/workflows/cd.yml"
+if [ -f "$release_file" ]; then
+    sed -i "s/tag_name: v$OLD_VERSION/tag_name: v$NEW_VERSION/" "$release_file"
+    sed -i "s/name: v$OLD_VERSION/name: v$NEW_VERSION/" "$release_file"
+    print_ok "$release_file (tag_name y name)"
     COUNT=$((COUNT + 1))
 fi
 

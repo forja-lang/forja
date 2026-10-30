@@ -1,7 +1,8 @@
 name: CI
 
-# CI base de la FASE 0 (F0-T6): build + test + fmt + clippy.
-# Complementa a `rust.yml` (que cubre Android, WASM y releases).
+# CI: sólo validación (fmt, clippy, tests, cobertura, docs). No publica nada.
+# Complementa a `cd.yml` (entrega: binarios, Android, WASM y release) y a
+# `perf-regression.yml` (puerta de rendimiento).
 on:
   push:
     branches: [ main, master, develop ]
@@ -47,7 +48,7 @@ jobs:
               - '.cargo/**'
               - 'installer.iss'
               - '.github/workflows/ci.yml'
-              - '.github/workflows/rust.yml'
+              - '.github/workflows/cd.yml'
             docs:
               - 'docs/**'
 
@@ -82,6 +83,10 @@ jobs:
         run: cargo build --locked --bin forja
       - name: forja fmt --check (ejemplos)
         run: ./target/debug/forja fmt ejemplos --check
+      # Guardas del workflow de entrega: matriz de release, firmas y par WASM
+      # del playground. Cuesta milisegundos y evita publicar un release roto.
+      - name: Validar workflow de release
+        run: bash scripts/validate-release-workflow.sh
 
   docs:
     name: Documentación (build)
@@ -99,12 +104,25 @@ jobs:
           cache-dependency-path: docs/package-lock.json
       - name: Instalar dependencias
         run: npm ci --prefix docs --no-audit --no-fund
+      # El par glue/wasm del playground está versionado: si se desajusta,
+      # la VM no inicializa en el navegador (el sitio publicaría un playground
+      # muerto). Instanciarlo acá cuesta un segundo.
+      - name: Validar WASM del playground
+        run: node scripts/check-wasm-playground.mjs docs/src/wasm
       - name: Build de Astro
         run: npm run build --prefix docs
 
+  # Las cifras publicadas (líneas de Rust, ejemplos, módulos) se derivan del
+  # código, así que nadie las mantiene a mano: este job las recalcula y
+  # commitea el README cuando cambian. En PRs sólo avisa; el push a `main`
+  # deja el README al día solo. El roadmap vive en el submódulo `docs` (no se
+  # puede commitear desde acá) y se regenera al publicar el sitio, en
+  # `docs-deploy.yml`.
   metricas:
-    name: Métricas de documentación
+    name: Métricas de documentación (auto)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -112,9 +130,26 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-      # F7-T5: falla si README/roadmap citan cifras que ya no coinciden.
-      - name: Verificar métricas
-        run: python scripts/metricas.py --check
+      - name: Recalcular cifras en la documentación
+        run: python scripts/metricas.py --write
+      - name: Sincronizar README
+        shell: bash
+        run: |
+          if git diff --quiet -- README.md; then
+            echo "✅ Cifras del README al día"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" != "push" ]; then
+            # El push a main las commitea; en un PR sólo avisamos para no
+            # reescribir la rama de nadie ni dejar checks pendientes.
+            echo "::warning title=Métricas desactualizadas::Las cifras del README se actualizan solas al mezclar."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "chore(metricas): cifras de documentación al día"
+          git push
 
   cobertura-asm:
     name: Cobertura ASM (100%)
@@ -202,3 +237,42 @@ jobs:
             -p forja-wasm \
             -p forja-wasm-gui \
             --target wasm32-unknown-unknown
+
+  # Compilar el CLI para Android es validación, no entrega: no sube artefactos
+  # (los `.so`/AAR se empaquetan en `cd.yml`). Reusa el script que ya detecta el
+  # NDK y exporta los linkers por target.
+  android-check:
+    name: Android (${{ matrix.target }})
+    needs: [cambios, lint]
+    if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-linux-android
+          - x86_64-linux-android
+          - armv7-linux-androideabi
+          - i686-linux-android
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          # Una caché por target: sin esto las 4 entradas de la matriz compiten
+          # por la misma clave y se invalidan entre sí.
+          key: android-${{ matrix.target }}
+          cache-on-failure: true
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27
+          add-to-path: false
+      - name: Compilar para ${{ matrix.target }}
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: bash scripts/build-android.sh "${{ matrix.target }}" release gui

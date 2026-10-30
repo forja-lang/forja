@@ -117,7 +117,7 @@ if command -v cosign >/dev/null 2>&1; then
     if curl -fsSL "$BASE/$ASSET.bundle" -o "$TMP/$ASSET.bundle" 2>/dev/null; then
         if cosign verify-blob \
             --bundle "$TMP/$ASSET.bundle" \
-            --certificate-identity-regexp "https://github.com/$REPO/.github/workflows/rust.yml@refs/heads/(main|master)" \
+            --certificate-identity-regexp "https://github.com/$REPO/.github/workflows/(rust|cd).yml@refs/heads/(main|master)" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             "$TMP/$ASSET" >/dev/null 2>&1; then
             echo "   ✅ Firma cosign verificada"

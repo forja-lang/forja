@@ -85,7 +85,7 @@ try {
             Invoke-WebRequest -Uri "$base/$asset.bundle" -OutFile $bundle -UseBasicParsing
             & cosign verify-blob `
                 --bundle $bundle `
-                --certificate-identity-regexp "https://github.com/$Repo/.github/workflows/rust.yml@refs/heads/(main|master)" `
+                --certificate-identity-regexp "https://github.com/$Repo/.github/workflows/(rust|cd).yml@refs/heads/(main|master)" `
                 --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
                 $zipPath | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "Firma cosign inválida para $asset" }

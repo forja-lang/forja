@@ -147,6 +147,26 @@ Para evitar ediciones cruzadas entre sesiones/agentes:
 5. **Verificación antes de mezclar:** `bash scripts/verify.sh` y, si tocaste
    `tests/`, `git add -f tests/<archivo>.rs` (ver §11).
 
+### CI vs CD
+
+Los workflows están separados por responsabilidad:
+
+- **CI** — valida, no publica: [`ci.yml`](.github/workflows/ci.yml) (fmt,
+  clippy, tests en 3 SO, tests del workspace, cobertura ASM, build de docs y
+  métricas), [`perf-regression.yml`](.github/workflows/perf-regression.yml) y
+  [`crate-ci.yml`](.github/workflows/crate-ci.yml) (reutilizable por los repos
+  de `crates/`).
+- **CD** — entrega, sólo en `main`/`master`: [`cd.yml`](.github/workflows/cd.yml)
+  (binarios multiplataforma, AAR de Android, WASM y release firmado con
+  cosign), [`docs-deploy.yml`](.github/workflows/docs-deploy.yml) (GitHub Pages)
+  y [`benchmark-dashboard.yml`](.github/workflows/benchmark-dashboard.yml)
+  (dashboard en `gh-pages`).
+
+Las cifras de documentación no se mantienen a mano: [`ci.yml`](.github/workflows/ci.yml)
+recalcula las del `README.md` y las commitea cuando cambian, y
+[`docs-deploy.yml`](.github/workflows/docs-deploy.yml) regenera el roadmap del
+sitio al publicar (ese archivo vive en el submódulo `docs`).
+
 ### Regresión de rendimiento
 
 El CI ejecuta una puerta de rendimiento (`.github/workflows/perf-regression.yml`)

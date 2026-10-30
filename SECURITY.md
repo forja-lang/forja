@@ -35,12 +35,12 @@ Todos los releases publicados en GitHub incluyen **artifact attestations** firma
 ```bash
 cosign verify-blob \
   --bundle forja-<version>-<plataforma>.tar.gz.bundle \
-  --certificate-identity-regexp 'https://github.com/forja-lang/forja/.github/workflows/rust.yml@refs/heads/(main|master)' \
+  --certificate-identity-regexp 'https://github.com/forja-lang/forja/.github/workflows/(rust|cd).yml@refs/heads/(main|master)' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   forja-<version>-<plataforma>.tar.gz
 ```
 
-La **identidad pública** es el workflow oficial `forja-lang/forja/.github/workflows/rust.yml` en `main`/`master`, emitido por `token.actions.githubusercontent.com`. No hay una clave estática: la confianza se ancla en el OIDC de GitHub Actions y en el certificado de Sigstore. Los instaladores (`scripts/install.sh`, `scripts/install.ps1`) verifican automáticamente si `cosign` está disponible.
+La **identidad pública** es el workflow oficial de entrega `forja-lang/forja/.github/workflows/cd.yml` en `main`/`master`, emitido por `token.actions.githubusercontent.com`. Los releases anteriores al split CI/CD (hasta `v0.9.5`) se firmaron con el workflow `rust.yml`, que ahora se llama `cd.yml`; el regex `(rust|cd)` cubre ambos. No hay una clave estática: la confianza se ancla en el OIDC de GitHub Actions y en el certificado de Sigstore. Los instaladores (`scripts/install.sh`, `scripts/install.ps1`) verifican automáticamente si `cosign` está disponible.
 
 ### Verificar con GitHub CLI
 

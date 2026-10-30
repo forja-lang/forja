@@ -46,7 +46,7 @@ contribuciones externas.
 - Los artefactos de distribución se compilan con el perfil `dist`
   (ver [`CONTRIBUTING.md`](CONTRIBUTING.md)).
 - El flujo de publicación está descrito en
-  [`.github/workflows/rust.yml`](.github/workflows/rust.yml).
+  [`.github/workflows/cd.yml`](.github/workflows/cd.yml).
 
 ## 5. Marca
 

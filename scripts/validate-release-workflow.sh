@@ -3,7 +3,7 @@
 # (F6-T7/F6-T8/F9-T3/F9-T4) sin depender de GitHub Actions.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WF="$ROOT/.github/workflows/rust.yml"
+WF="$ROOT/.github/workflows/cd.yml"
 
 fail() { echo "❌ $1" >&2; exit 1; }
 ok() { echo "✅ $1"; }
@@ -16,6 +16,15 @@ grep -q "sigstore/cosign-installer" "$WF" || fail "falta cosign-installer"
 grep -q "cosign sign-blob" "$WF" || fail "falta cosign sign-blob"
 grep -q "attest-build-provenance" "$WF" || fail "falta artifact attestation"
 ok "firma cosign y atestación configuradas"
+
+# El par glue/wasm del playground tiene que salir del MISMO wasm-bindgen que
+# compiló el .wasm. wasm-pack traía el suyo y el par quedó desalineado: la init
+# moría en el navegador y el playground se publicaba sin VM ni GUI (v0.9.5).
+grep -q "check-wasm-playground.mjs" "$WF" || fail "el release no valida el WASM del playground"
+if grep -q "wasm-pack build" "$WF"; then
+    fail "el release usa wasm-pack: genera el par con wasm-bindgen pinneado desde Cargo.lock"
+fi
+ok "par glue/wasm del playground generado y validado"
 
 for script in scripts/install.sh scripts/install.ps1; do
     [ -f "$ROOT/$script" ] || fail "falta $script"
