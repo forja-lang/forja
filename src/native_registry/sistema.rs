@@ -16,7 +16,10 @@ impl NativeRegistry {
         // `sistema.sistema_operativo()` y `directorio_actual()` fallaban con
         // "función no definida".
         self.registrar("_sistema_so", native_sistema_so);
-        self.registrar("_sistema_directorio_actual", native_sistema_directorio_actual);
+        self.registrar(
+            "_sistema_directorio_actual",
+            native_sistema_directorio_actual,
+        );
         // `std/sistema.fa` usa estos nombres; el registro tenía los cortos
         // (`_args`, `_env`, `_salir`, `_sistema_tiempo_ms`).
         self.registrar("_sistema_argumentos", native_args);
@@ -43,9 +46,8 @@ pub(crate) fn native_sistema_directorio_actual(
     vm: &mut ForjaFast,
     _args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let dir = std::env::current_dir().map_err(|e| {
-        ErrFast::TipoInv(format!("no se pudo leer el directorio actual: {e}"))
-    })?;
+    let dir = std::env::current_dir()
+        .map_err(|e| ErrFast::TipoInv(format!("no se pudo leer el directorio actual: {e}")))?;
     let idx = vm.alloc_str(Arc::from(dir.to_string_lossy().as_ref()));
     Ok(ValorFast::texto(idx))
 }

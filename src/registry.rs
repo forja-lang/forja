@@ -116,8 +116,13 @@ pub struct VersionPublicada {
     pub version: String,
     /// SHA-256 (hex) del tarball `.fapkg`.
     pub sha256: String,
-    /// Firma del hash con la clave del autor (base64).
+    /// Firma del hash con la clave del autor (base64 o hex según el esquema).
     pub firma: String,
+    /// F12-T4/F14-T3: clave pública Ed25519 del autor (hex). Si está presente,
+    /// `firma` es una firma Ed25519 (hex) del `sha256` y la verificación es
+    /// asimétrica: el servidor no necesita la clave privada de nadie.
+    #[serde(default)]
+    pub clave_publica: String,
     /// Autor que publicó.
     #[serde(default)]
     pub autor: String,
@@ -210,6 +215,109 @@ pub fn firmar_hash(hash_hex: &str, clave: &str) -> String {
     datos.extend_from_slice(hash_hex.as_bytes());
     let digest = Sha256::digest(&datos);
     b64_encode(&digest)
+}
+
+/// Firma `hash_hex` con Ed25519 usando la clave privada del autor (32 bytes).
+/// Devuelve la firma en hex (64 bytes).
+pub fn firmar_hash_ed25519(hash_hex: &str, privada: &[u8; 32]) -> String {
+    let firma = crate::ed25519::firmar(privada, hash_hex.as_bytes());
+    let mut s = String::with_capacity(128);
+    for b in firma.iter() {
+        s.push_str(&format!("{:02x}", b));
+    }
+    s
+}
+
+/// Verifica una firma Ed25519 (hex) sobre `hash_hex` con la clave pública (hex).
+pub fn verificar_firma_ed25519(hash_hex: &str, firma_hex: &str, publica_hex: &str) -> bool {
+    let (Some(firma), Some(publica)) = (
+        crate::crypto::hex_to_bytes(firma_hex),
+        crate::crypto::hex_to_bytes(publica_hex),
+    ) else {
+        return false;
+    };
+    if firma.len() != 64 || publica.len() != 32 {
+        return false;
+    }
+    let mut f = [0u8; 64];
+    f.copy_from_slice(&firma);
+    let mut p = [0u8; 32];
+    p.copy_from_slice(&publica);
+    crate::ed25519::verificar(&p, hash_hex.as_bytes(), &f)
+}
+
+/// Clave **del autor** (Ed25519) para firmar paquetes.
+///
+/// Se guarda en `~/.forja/keys/author.key` (hex de la semilla de 32 bytes) y se
+/// crea la primera vez. `FORJA_AUTHOR_KEY` permite usar otra (hex).
+pub fn clave_autor() -> Result<crate::ed25519::ParClaves, String> {
+    if let Ok(hex) = std::env::var("FORJA_AUTHOR_KEY") {
+        let bytes = crate::crypto::hex_to_bytes(hex.trim())
+            .ok_or_else(|| "FORJA_AUTHOR_KEY no es hex válido".to_string())?;
+        if bytes.len() != 32 {
+            return Err("FORJA_AUTHOR_KEY debe ser una semilla de 32 bytes".to_string());
+        }
+        let mut semilla = [0u8; 32];
+        semilla.copy_from_slice(&bytes);
+        return Ok(crate::ed25519::par_desde_semilla(&semilla));
+    }
+
+    let ruta = dir_registry()
+        .parent()
+        .map(|p| p.join("keys"))
+        .unwrap_or_else(|| dir_registry())
+        .join("author.key");
+    if let Ok(texto) = fs::read_to_string(&ruta) {
+        let bytes = crate::crypto::hex_to_bytes(texto.trim())
+            .ok_or_else(|| format!("clave inválida en {}", ruta.display()))?;
+        if bytes.len() != 32 {
+            return Err(format!("clave inválida en {}", ruta.display()));
+        }
+        let mut semilla = [0u8; 32];
+        semilla.copy_from_slice(&bytes);
+        return Ok(crate::ed25519::par_desde_semilla(&semilla));
+    }
+
+    let semilla = crate::ed25519::semilla_aleatoria()
+        .map_err(|e| format!("no se pudo generar la clave: {}", e))?;
+    if let Some(parent) = ruta.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("no se pudo crear {}: {}", parent.display(), e))?;
+    }
+    let mut hex = String::with_capacity(64);
+    for b in semilla.iter() {
+        hex.push_str(&format!("{:02x}", b));
+    }
+    fs::write(&ruta, hex.as_bytes())
+        .map_err(|e| format!("no se pudo guardar la clave en {}: {}", ruta.display(), e))?;
+    Ok(crate::ed25519::par_desde_semilla(&semilla))
+}
+
+/// Verifica integridad **y** firma de un tarball contra lo que dice el índice.
+///
+/// Con `clave_publica` presente la firma es asimétrica (Ed25519): un paquete
+/// alterado o firmado por otra clave no valida. Sin ella se acepta el formato
+/// viejo (clave simétrica local) por compatibilidad.
+pub fn verificar_tarball(datos: &[u8], version: &VersionPublicada) -> Result<(), String> {
+    let hash = sha256_hex(datos);
+    if hash != version.sha256 {
+        return Err(format!(
+            "Integridad comprometida: hash del tarball no coincide para {}@{}",
+            version.version, version.version
+        ));
+    }
+    let firma_ok = if version.clave_publica.is_empty() {
+        verificar_firma(&hash, &version.firma, &clave_firma())
+    } else {
+        verificar_firma_ed25519(&hash, &version.firma, &version.clave_publica)
+    };
+    if !firma_ok {
+        return Err(format!(
+            "Firma inválida para {} (posible manipulación o autor no verificado)",
+            version.version
+        ));
+    }
+    Ok(())
 }
 
 /// Verifica que `firma` corresponda a `hash_hex` con `clave`.
@@ -391,7 +499,15 @@ pub fn publicar(
 
     let datos = empaquetar(project_dir, nombre, version)?;
     let hash = sha256_hex(&datos);
-    let firma = firmar_hash(&hash, &clave_firma());
+    // F12-T4: firma **asimétrica** con la clave del autor (el servidor sólo
+    // necesita la pública para verificar).
+    let claves = clave_autor()?;
+    let firma = firmar_hash_ed25519(&hash, &claves.privada);
+    let clave_publica = claves
+        .publica
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
 
     let tarball = ruta_tarball(nombre, version);
     if let Some(parent) = tarball.parent() {
@@ -414,6 +530,7 @@ pub fn publicar(
             version: version.to_string(),
             sha256: hash.clone(),
             firma,
+            clave_publica,
             autor: autor.to_string(),
             descripcion: descripcion.to_string(),
             yanked: false,
@@ -468,20 +585,7 @@ pub fn instalar_desde_registry(nombre: &str, req: &str, destino: &Path) -> Resul
     let datos = fs::read(&tarball)
         .map_err(|e| format!("Error leyendo tarball {}: {}", tarball.display(), e))?;
 
-    // Verificación de integridad + firma.
-    let hash = sha256_hex(&datos);
-    if hash != version.sha256 {
-        return Err(format!(
-            "Integridad comprometida: hash del tarball no coincide para {}@{}",
-            nombre, version.version
-        ));
-    }
-    if !verificar_firma(&hash, &version.firma, &clave_firma()) {
-        return Err(format!(
-            "Firma inválida para {}@{} (posible manipulación)",
-            nombre, version.version
-        ));
-    }
+    verificar_tarball(&datos, &version)?;
 
     desempaquetar(&datos, destino)?;
     Ok(version.version)
@@ -575,6 +679,7 @@ mod tests {
                 version: "1.0.0".to_string(),
                 sha256: "x".to_string(),
                 firma: "y".to_string(),
+                clave_publica: String::new(),
                 autor: String::new(),
                 descripcion: String::new(),
                 yanked: false,
@@ -586,6 +691,7 @@ mod tests {
                 version: "1.1.0".to_string(),
                 sha256: "x".to_string(),
                 firma: "y".to_string(),
+                clave_publica: String::new(),
                 autor: String::new(),
                 descripcion: String::new(),
                 yanked: true,

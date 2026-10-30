@@ -24,7 +24,7 @@
 | F12-T1, F12-T2 | HECHO |
 | F12-T3 corpus ejecutable | EN-CURSO (246/260 compilan; 209/260 corren) |
 | F12-T5 hilo no unido / rx en hijo | HECHO |
-| F12-T4 registry de producción | ABIERTO |
+| F12-T4 registry de producción | EN-CURSO (firmas, límites, auditoría) |
 | F13 (T1–T4) | BLOQUEADO-EXTERNO |
 | F14 (T1–T4) | ABIERTO |
 
@@ -96,7 +96,7 @@ los ejemplos que hoy no compilan (lista `NO_COMPILAN` en
 | Registry remoto sin TLS/auth de producción | Es un servidor de desarrollo HTTP | F12-T4 |
 | CI real, ARM64, Marketplace/Homebrew | Nunca se ejecutaron contra infraestructura real | F13-T1…T4 |
 | Widgets fuera de `forja-gui-core` | El crate extraído sólo contiene signals/debug | F14-T1 |
-| Rendimiento tras IR-first | IR duplica bytecode y ~1.8× VM; mitigado con AST-first (falta gate CI) | F14-T2 |
+| Rendimiento tras IR-first | IR duplicaba bytecode y ~1.8× VM; corregido con AST-first + fast path de dispatch (falta gate CI) | F14-T2 |
 | Firma de paquetes y TLS | SHA-256 local; falta verificación asimétrica de autores | F14-T3 |
 | Docs/roadmap | Deriva manual de hitos | F14-T4 |
 
@@ -330,6 +330,21 @@ propósito.
 - **Esfuerzo:** MEDIO.
 
 ### F12-T4 · Registry remoto de producción `[ALTO]`
+**Estado:** EN-CURSO — hecho lo que no depende de infraestructura externa:
+- **Firma asimétrica** (F14-T3): Ed25519 propio en `src/ed25519.rs` (RFC 8032,
+  con los vectores del apéndice en tests). El autor firma el `sha256` del
+  tarball con su clave privada (`~/.forja/keys/author.key` o
+  `FORJA_AUTHOR_KEY`) y publica su clave pública; el servidor **verifica** y
+  rechaza con 403. `verificar_tarball` hace integridad + firma al instalar.
+- **Límite de tasa** por IP (cubo de fichas, `FORJA_REGISTRY_RATE`) con 429, y
+  **auditoría** JSON Lines en `<dir>/audit.log` (publicación, yank y rechazos).
+- **Bug encontrado y arreglado de paso**: `Sha512::finalize` usaba un campo de
+  longitud de 64 bits en vez de 128 y no comprimía el bloque final —
+  `Sha512::digest("abc")` devolvía el estado inicial. SHA-384 también.
+- **Bug del servidor**: los sockets aceptados heredaban el modo no bloqueante
+  del listener y la primera lectura podía responder 400.
+Pendiente: OIDC en lugar del token compartido, TLS en el proceso (hoy por proxy)
+y el despliegue de `registry.forja-lang.dev` (BLOQUEADO-EXTERNO).
 - **¿Qué?** TLS, autenticación de autores, rate limiting, firmas asimétricas y
   `yank` remoto.
 - **¿Cuándo?** Tras F11.
@@ -449,11 +464,19 @@ propósito.
 - **Esfuerzo:** MEDIO.
 - **Estado:** EN-CURSO. Medido con `bench-releases.py`: el emisor IR duplica
   el bytecode del workload (862 → 1 882 bytes) y la VM lo ejecuta ~1.8× más
-  lento (v0.9.2 ~1.7 s vs v0.9.3 ~3.0 s). Mitigado con `MotorEmision::Auto`
-  (AST-first + fallback IR); `MotorEmision::Ir` queda para paridad estricta.
-  Falta el gate de CI con umbral.
+  lento. Corregido con dos cambios: `MotorEmision::Auto` (AST-first + fallback
+  IR) y un fast path de control de flujo en `vm_fast/ejecucion.rs` (los
+  `Jump`/`JumpSiFalso`/`Label` pagaban los 11 `match` de la cadena de helpers).
+  Bench final (30 parejas, p10): v0.9.5 1 167 ms vs v0.9.4 3 014 ms (**-61.3 %**)
+  y v0.9.2 1 217 ms; startup -7.2 % vs v0.9.4. `MotorEmision::Ir` queda para
+  paridad estricta. Falta el gate de CI con umbral.
 
 ### F14-T3 · Seguridad de paquetes y supply chain `[ALTO]`
+**Estado:** HECHO (núcleo) — firmas **Ed25519** propias (`src/ed25519.rs`,
+RFC 8032 con vectores), clave del autor en `~/.forja/keys/author.key`, el
+servidor verifica al publicar (403 si no corresponde) y `verificar_tarball`
+rechaza un paquete alterado al instalar. Falta auditoría de dependencias
+(`cargo audit` en CI) y publicar las claves en un keyserver.
 - **¿Qué?** Firmas asimétricas de paquetes, verificación de autores y auditoría
   de dependencias.
 - **¿Cuándo?** Tras F12-T4.

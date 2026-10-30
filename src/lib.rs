@@ -21,6 +21,7 @@ pub mod codegen_reg;
 pub mod compiler_asm;
 pub mod dedup;
 pub mod desugar;
+pub mod ed25519;
 pub mod fprofiler;
 pub mod gc;
 pub mod gc_intrinsics;

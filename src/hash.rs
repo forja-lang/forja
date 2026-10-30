@@ -333,12 +333,20 @@ impl Sha512 {
     }
 
     pub fn finalize(mut self) -> [u8; 64] {
+        // SHA-512 usa bloques de 128 bytes y un campo de longitud de **128 bits**
+        // (16 bytes). Antes se escribían sólo 8, el bloque quedaba en 120 bytes y
+        // nunca se comprimía: `digest` devolvía el estado inicial para cualquier
+        // entrada.
         let bit_len = self.len.wrapping_mul(8).to_be_bytes();
         self.update(&[0x80]);
         while (self.len as usize) % 128 != 112 {
             self.update(&[0]);
         }
-        self.update(&bit_len);
+        // `buf` tiene 112 bytes rellenos y sin comprimir: completar el bloque.
+        self.buf[112..120].copy_from_slice(&[0u8; 8]);
+        self.buf[120..128].copy_from_slice(&bit_len);
+        self.len += 16;
+        sha512_compress(&mut self.h, &self.buf);
         let mut result = [0u8; 64];
         for (i, &h) in self.h.iter().enumerate() {
             result[i * 8..(i + 1) * 8].copy_from_slice(&h.to_be_bytes());

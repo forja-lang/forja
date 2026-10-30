@@ -15,8 +15,7 @@
 
 use crate::base64::{b64_decode, b64_encode};
 use crate::registry::{
-    desempaquetar, firmar_hash, ruta_index, sha256_hex, verificar_firma, Index, Semver,
-    VersionPublicada,
+    desempaquetar, ruta_index, sha256_hex, verificar_firma, Index, Semver, VersionPublicada,
 };
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
@@ -29,8 +28,12 @@ pub struct Publicacion {
     pub autor: String,
     #[serde(default)]
     pub descripcion: String,
+    /// Firma Ed25519 (hex) del sha256 del tarball, con la clave del autor.
     #[serde(default)]
     pub firma: String,
+    /// Clave pública Ed25519 del autor (hex): el servidor verifica con ella.
+    #[serde(default)]
+    pub clave_publica: String,
     pub tarball_b64: String,
 }
 
@@ -151,11 +154,19 @@ pub fn publicar_remoto(
         return Err(format!("versión no semver: '{}'", version));
     }
     let hash = sha256_hex(datos);
-    let firma = firmar_hash(&hash, &crate::registry::clave_firma());
+    // F12-T4: el autor firma con su clave privada Ed25519 y adjunta la pública.
+    let claves = crate::registry::clave_autor()?;
+    let firma = crate::registry::firmar_hash_ed25519(&hash, &claves.privada);
+    let clave_publica = claves
+        .publica
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
     let payload = Publicacion {
         autor: autor.to_string(),
         descripcion: descripcion.to_string(),
         firma,
+        clave_publica,
         tarball_b64: b64_encode(datos),
     };
     let cuerpo = serde_json::to_vec(&payload).map_err(|e| e.to_string())?;
@@ -267,6 +278,7 @@ pub fn index_servidor(dir: &Path) -> std::path::PathBuf {
 }
 
 /// Añade una versión al índice (usado por el servidor).
+#[allow(clippy::too_many_arguments)]
 pub fn registrar_version(
     index: &mut Index,
     nombre: &str,
@@ -274,6 +286,7 @@ pub fn registrar_version(
     autor: &str,
     descripcion: &str,
     firma: &str,
+    clave_publica: &str,
     hash: &str,
 ) {
     use std::collections::BTreeMap;
@@ -289,6 +302,7 @@ pub fn registrar_version(
             version: version.to_string(),
             sha256: hash.to_string(),
             firma: firma.to_string(),
+            clave_publica: clave_publica.to_string(),
             autor: autor.to_string(),
             descripcion: descripcion.to_string(),
             yanked: false,

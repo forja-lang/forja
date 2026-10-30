@@ -1,12 +1,27 @@
-//! F6-T6: servidor mínimo del registry remoto (HTTP/1.1, sin dependencias).
+//! Servidor del registry remoto (HTTP/1.1, sin dependencias).
 //!
-//! Pensado para desarrollo/pruebas end-to-end y como referencia del protocolo
-//! (`registry_remote.rs`). En producción va detrás de un proxy TLS.
+//! Sirve el protocolo que consume [`crate::registry_remote`] y cubre la parte
+//! de **F12-T4** que no depende de infraestructura externa:
+//!
+//! * **Autenticación por token** (`--token`, cabecera `Authorization: Bearer`).
+//! * **Firmas asimétricas**: el autor firma el `sha256` del tarball con su clave
+//!   Ed25519 y publica su clave pública. El servidor **verifica** y rechaza con
+//!   403 lo que no corresponda; no guarda ninguna clave privada.
+//! * **Límites**: cuerpo de hasta 64 MB, nombre/versión validados y límite de
+//!   peticiones por IP (cubo de fichas, `FORJA_REGISTRY_RATE`, 20 req/s).
+//! * **Auditoría**: cada publicación/yank (y cada rechazo) se anota en
+//!   `<dir>/audit.log` como JSON Lines.
 //!
 //! Uso desde el CLI:
 //! ```text
 //! forja registry-serve --dir ~/.forja/registry-server --port 8787 [--token X]
 //! ```
+//!
+//! Producción: el TLS se termina en un **proxy** (nginx/Caddy/Cloudflare) delante
+//! de este servidor, que sólo escucha en `127.0.0.1`; ahí también vive el rate
+//! limit de red. La verificación de firmas y la auditoría son de este proceso.
+//! Pendiente para F12-T4: OIDC (hoy es un token compartido) y `forja verify`
+//! como comando de usuario.
 
 use crate::registry::{firmar_hash, sha256_hex, Index, Semver, VersionPublicada};
 use std::collections::BTreeMap;
@@ -16,6 +31,70 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+
+/// F12-T4: límite de peticiones por IP y registro de auditoría.
+struct Estado {
+    /// `ip -> (tokens disponibles, último instante)`
+    cubos: std::collections::HashMap<std::net::IpAddr, (f64, std::time::Instant)>,
+    /// Peticiones por segundo permitidas a cada IP.
+    tasa: f64,
+    /// Ráfaga inicial (capacidad del cubo).
+    rafaga: f64,
+    auditoria: Option<std::path::PathBuf>,
+}
+
+impl Estado {
+    fn nuevo(dir: &Path) -> Self {
+        Estado {
+            cubos: std::collections::HashMap::new(),
+            tasa: std::env::var("FORJA_REGISTRY_RATE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(20.0),
+            rafaga: 40.0,
+            auditoria: Some(dir.join("audit.log")),
+        }
+    }
+
+    /// `true` si la IP puede hacer otra petición (cubo de fichas).
+    fn permitir(&mut self, ip: std::net::IpAddr) -> bool {
+        let ahora = std::time::Instant::now();
+        let (tokens, ultimo) = self.cubos.entry(ip).or_insert((self.rafaga, ahora));
+        let transcurrido = ahora.duration_since(*ultimo).as_secs_f64();
+        *tokens = (*tokens + transcurrido * self.tasa).min(self.rafaga);
+        *ultimo = ahora;
+        if *tokens >= 1.0 {
+            *tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Deja constancia de las operaciones que cambian el registry.
+    fn auditar(&self, ip: std::net::IpAddr, metodo: &str, ruta: &str, status: u16) {
+        let Some(ruta_log) = &self.auditoria else {
+            return;
+        };
+        let ahora = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let linea = format!(
+            "{{\"ts\":{},\"ip\":\"{}\",\"metodo\":\"{}\",\"ruta\":\"{}\",\"status\":{}}}
+",
+            ahora, ip, metodo, ruta, status
+        );
+        use std::io::Write as _;
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(ruta_log)
+        {
+            let _ = f.write_all(linea.as_bytes());
+        }
+    }
+}
 
 struct Peticion {
     metodo: String,
@@ -61,12 +140,23 @@ pub fn iniciar(
         .map_err(|e| format!("local_addr: {}", e))?;
     let stop = Arc::new(AtomicBool::new(false));
     let stop_hilo = stop.clone();
+    let mut estado = Estado::nuevo(&dir);
     let handle = std::thread::spawn(move || {
         while !stop_hilo.load(Ordering::SeqCst) {
             match listener.accept() {
-                Ok((mut stream, _)) => {
+                Ok((mut stream, peer)) => {
+                    // El listener es no bloqueante y en Windows el socket
+                    // aceptado hereda ese modo: sin esto, la primera lectura
+                    // podía devolver WouldBlock y responder 400 antes de que el
+                    // cliente terminara de escribir.
+                    let _ = stream.set_nonblocking(false);
                     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
-                    let _ = atender(&mut stream, &dir, token.as_deref());
+                    if !estado.permitir(peer.ip()) {
+                        let _ = responder(&mut stream, 429, "text/plain", b"demasiadas peticiones");
+                        estado.auditar(peer.ip(), "-", "-", 429);
+                        continue;
+                    }
+                    let _ = atender(&mut stream, &dir, token.as_deref(), &mut estado, peer.ip());
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     std::thread::sleep(Duration::from_millis(20));
@@ -192,7 +282,13 @@ fn tarball_path(dir: &Path, nombre: &str, version: &str) -> PathBuf {
         .join(format!("{}-{}.fapkg", nombre, version))
 }
 
-fn atender(stream: &mut TcpStream, dir: &Path, token: Option<&str>) -> Result<(), String> {
+fn atender(
+    stream: &mut TcpStream,
+    dir: &Path,
+    token: Option<&str>,
+    estado: &mut Estado,
+    ip: std::net::IpAddr,
+) -> Result<(), String> {
     let pet = match leer_peticion(stream) {
         Ok(p) => p,
         Err(e) => {
@@ -216,10 +312,12 @@ fn atender(stream: &mut TcpStream, dir: &Path, token: Option<&str>) -> Result<()
         ("PUT", ["api", "v1", "packages", nombre, version]) => {
             if !autorizado(&pet, token) {
                 responder(stream, 401, "text/plain", b"token invalido");
+                estado.auditar(ip, &pet.metodo, &pet.ruta, 401);
                 return Ok(());
             }
             if !es_nombre_seguro(nombre) || !Semver::es_valida(version) {
                 responder(stream, 400, "text/plain", b"nombre o version invalidos");
+                estado.auditar(ip, &pet.metodo, &pet.ruta, 400);
                 return Ok(());
             }
             let (publicacion, datos) =
@@ -239,8 +337,25 @@ fn atender(stream: &mut TcpStream, dir: &Path, token: Option<&str>) -> Result<()
                 .unwrap_or(false)
             {
                 responder(stream, 409, "text/plain", b"version ya publicada");
+                estado.auditar(ip, &pet.metodo, &pet.ruta, 409);
                 return Ok(());
             }
+            // F12-T4: si el autor manda su clave pública, la firma se verifica
+            // acá (el servidor no tiene ninguna clave privada). Un paquete
+            // alterado o firmado con otra clave se rechaza.
+            let hash_calculado = sha256_hex(&datos);
+            if !publicacion.clave_publica.is_empty()
+                && !crate::registry::verificar_firma_ed25519(
+                    &hash_calculado,
+                    &publicacion.firma,
+                    &publicacion.clave_publica,
+                )
+            {
+                responder(stream, 403, "text/plain", b"firma invalida para el autor");
+                estado.auditar(ip, &pet.metodo, &pet.ruta, 403);
+                return Ok(());
+            }
+
             let ruta = tarball_path(dir, nombre, version);
             if let Some(parent) = ruta.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -265,6 +380,7 @@ fn atender(stream: &mut TcpStream, dir: &Path, token: Option<&str>) -> Result<()
                     version: (*version).to_string(),
                     sha256: hash.clone(),
                     firma,
+                    clave_publica: publicacion.clave_publica,
                     autor: publicacion.autor,
                     descripcion: publicacion.descripcion,
                     yanked: false,
@@ -277,6 +393,7 @@ fn atender(stream: &mut TcpStream, dir: &Path, token: Option<&str>) -> Result<()
                 "application/json",
                 format!("{{\"sha256\":\"{}\"}}", hash).as_bytes(),
             );
+            estado.auditar(ip, &pet.metodo, &pet.ruta, 201);
         }
         ("GET", ["api", "v1", "packages", nombre, version, "download"]) => {
             if !es_nombre_seguro(nombre) || !Semver::es_valida(version) {
@@ -291,6 +408,7 @@ fn atender(stream: &mut TcpStream, dir: &Path, token: Option<&str>) -> Result<()
         ("DELETE", ["api", "v1", "packages", nombre, version]) => {
             if !autorizado(&pet, token) {
                 responder(stream, 401, "text/plain", b"token invalido");
+                estado.auditar(ip, &pet.metodo, &pet.ruta, 401);
                 return Ok(());
             }
             let index_path = index_path(dir);
@@ -304,6 +422,7 @@ fn atender(stream: &mut TcpStream, dir: &Path, token: Option<&str>) -> Result<()
                     v.yanked = true;
                     index.guardar(&index_path)?;
                     responder(stream, 200, "application/json", b"{\"yanked\":true}");
+                    estado.auditar(ip, &pet.metodo, &pet.ruta, 200);
                 }
                 None => responder(stream, 404, "text/plain", b"no encontrado"),
             }
