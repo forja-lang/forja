@@ -7,6 +7,133 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+### GUI — rendimiento y perfil de arranque
+
+- **Caché de paths SVG.** `MaterialSvgIcon` parseaba el `d` del SVG en cada
+  reconstrucción (cada movimiento del slider, cada tecla). Ahora hay una caché
+  global por nombre de icono: una pantalla con 6 iconos ahorra ~120 µs por frame.
+  Test incluido (`cachea_y_reutiliza`).
+- **Apps generadas con perfil optimizado.** `forja ejecutar --native` y el
+  proyecto de `forja transpilar` ahora escriben `[profile.dev] opt-level = 1` +
+  `[profile.dev.package."*"] opt-level = 3`: el stack gráfico (xilem, vello, wgpu,
+  parley) sin optimizar es 10-20x más lento y hacía que arrastrar un slider o el
+  scrollbar se sintiera pegajoso en `cargo run`.
+- **Medición de frames.** `FORJA_GUI_PERF=1` reporta cada 30 reconstrucciones
+  `ms/frame` (extraer + construir), widgets por frame y frames/segundo. Medido en
+  release sobre la galería: **0,31 ms/frame** (extraer 0,06 + construir 0,25),
+  58 nodos de layout.
+- **Límite conocido:** Masonry crea las superficies con `PresentMode::AutoVsync`
+  y no expone el `WindowId` necesario para cambiarlo (`set_present_mode`), así que
+  los fps quedan capados por el monitor. Desbloquearlo requiere parchear
+  `masonry_winit` (el directorio `patches/` no está cableado en Cargo.toml).
+
+### GUI — opciones de ventana y arranque sin consola
+
+- **`ventana(...)` declarativa.** Nueva función que se lee del AST antes de crear
+  la ventana y no produce widgets: `ventana(titulo, ancho, alto, icono,
+  ancho_minimo, alto_minimo, redimensionable, decoraciones)`, con los argumentos
+  de la derecha opcionales. El icono se carga desde PNG/JPG/BMP/ICO con el crate
+  `image` y se aplica a la ventana y la barra de tareas. Módulo `window_config`
+  con 4 tests de extracción.
+- **Sin consola al arrancar.** `forja-rt-gui.exe` se compilaba como aplicación de
+  consola: cada `.exe` generado abría una ventana negra antes de la GUI. Ahora
+  `forja compilar` corrige el `Subsystem` del PE a `WINDOWS_GUI` (verificado
+  leyendo el campo: 2 en el .exe generado) y `--console`/`--debug` lo dejan en
+  `CONSOLE` (3). El runtime además se despega de la consola con `FreeConsole` al
+  arrancar; `FORJA_CONSOLA=1` lo desactiva.
+- **Logs silenciosos por defecto.** El volcado del árbol de layouts y los
+  mensajes de arranque se gatean con `FORJA_GUI_DEBUG=1`, para no ensuciar la
+  consola ni retrasar el arranque.
+- **Arranque medido:** ventana visible a ~750 ms del lanzamiento en build de
+  debug, sin ventana de consola en ningún muestreo (clases de ventana del
+  proceso).
+
+### GUI — diseños predeterminados, grid responsivo e iconos vectoriales
+
+- **Dos diseños listos para usar, en claro y oscuro.** `forja-theme` agrega
+  `DesignStyle` y los constructores `MaterialTheme::fluent(is_dark)` (Windows 11:
+  fondo Mica, acento `#005FB8`/`#4CC2FF`, esquinas 4-8px) y
+  `MaterialTheme::liquid_glass(is_dark)` (superficies vidriosas, acento
+  `#007AFF`/`#0A84FF`, esquinas 20-32px). `MaterialTheme::named()` acepta el
+  nombre del diseño (`"fluent"`, `"vidrio"`, con sufijo `:dark`) o un color
+  semilla, y `toggle_dark_mode()` conserva el diseño. En Forja se usan como
+  `tema_fluent(hijo)`, `tema_fluent_oscuro(hijo)`, `tema_liquid_glass(hijo)` y
+  `tema_liquid_glass_oscuro(hijo)` (alias `tema_windows11`, `tema_vidrio`).
+- **El diseño llega a toda la ventana.** Si la raíz del layout es un `tema_*`,
+  `tema_de_raiz()` usa ese diseño también para el fondo de la ventana y el
+  título (antes el wrapper sólo cambiaba los colores de los hijos y el fondo
+  seguía siendo el de Material You). `Layout::ThemeProvider` pinta además el
+  fondo del diseño, así el wrapper funciona también anidado.
+- **Las formas y superficies salen del tema.** Los radios hardcodeados de
+  botones, FAB, icon buttons, chips, tarjetas, campos, barras y skeletons ahora
+  vienen de `ShapeSystem` (`for_family`), con `ShapeSystem::button` nuevo. Fluent
+  dibuja hairline de 1px en tarjetas y campos (estilo Windows 11) y Liquid Glass
+  usa superficies translúcidas; Material You mantiene sus variantes.
+- **Chrome nativo: Mica real.** Nuevo módulo `chrome`: en Windows la ventana pide
+  el material del sistema (`DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_MAINWINDOW`) cuando
+  el diseño es Fluent y el modo del tema coincide con el del SO, más esquinas
+  redondeadas y borde con el contorno del tema. Verificado leyendo el atributo de
+  vuelta desde DWM (`SYSTEMBACKDROP_TYPE = 2`). Si el modo no coincide, se apaga
+  el material y la barra usa los colores del tema: con backdrop activo Windows
+  ignora esos colores y una app clara quedaba con barra oscura. Con los efectos
+  de transparencia desactivados en Windows, DWM sustituye Mica por el color
+  sólido (comportamiento del sistema, no del render).
+- **Detalles de control Fluent 2.** Radios de control 4px (`ControlCornerRadius`),
+  tarjetas como capa translúcida (70% blanco en claro, 5% en oscuro) con hairline
+  de 1px, y estados de interacción: hover/pressed en botones, foco con color de
+  acento en botones y campos. El switch usa acento en el riel cuando está
+  encendido (antes quedaba blanco sobre blanco).
+- **Tipografía: se confirmó que ya es Segoe UI.** Medición pixel a pixel: la
+  familia `SystemUi` de Masonry resuelve a Segoe UI en Windows (misma firma que
+  pedirla por nombre). No hacía falta cargar la fuente; queda como pendiente usar
+  la variante *Segoe UI Variable* por diseño, que sí requeriría fijar la familia
+  en cada label.
+- **Grid responsivo y autosize.** `Layout::Grid` ahora se renderiza con el
+  widget `grid` real de Masonry en lugar de filas flex con anchos fijos: las
+  columnas son `FRACTION` (se reparten el ancho disponible y siguen el resize)
+  y las filas son `Auto` (cada fila mide su contenido). Se acepta
+  `grid`/`grilla`/`cuadricula` con la firma `(hijos, columnas, gap)`; el wrapper
+  del stdlib pasaba `(filas, columnas)` en el orden equivocado.
+- **Iconos SVG en todos los widgets.** `MaterialIcon::to_widget()` renderiza el
+  path SVG con Vello (antes emoji) y se eliminó la tabla `fallback_emoji`. FAB,
+  búsqueda, avatares, empty/error state y el stepper usan iconos vectoriales en
+  lugar de emojis; un nombre desconocido se muestra como texto.
+- **Catálogo de componentes completo.** Se agregaron al stdlib los wrappers que
+  el runtime ya interpretaba y no estaban documentados: `navegador`, `pantalla`,
+  `lista_dinamica`, `lienzo`, `contenedor`, `columna_centrada`, `girar`,
+  `zoom_pellizco`, `titulo`, `texto_color`, `circulo_color` y las constantes de
+  estilo (`barra()`, `riel()`, `cajon()`, `fade()`, `slide()`, `radial()`,
+  `sweep()`, `hover()`, `pressed()`, `focused()`, `disabled()`). Cada grupo de
+  nombres que acepta el parser tiene ahora su función en `stdlib/gui/gui.fa`.
+- **Documentación y ejemplo.** La página de GUI pasa a ser un catálogo completo
+  por secciones (diseños, layouts, texto, iconos, botones, inputs, listas,
+  navegación, feedback, gráficos) y se agregó `ejemplos/208_gui_galeria.fa`,
+  con scroll, grid de tarjetas, formulario, indicadores y un gráfico.
+- **Verificación visual con ventana real.** Se abrió la galería en Windows y se
+  revisaron capturas de los cuatro modos (Fluent claro/oscuro, Liquid Glass
+  claro/oscuro). Fallos encontrados y corregidos en esa pasada:
+  - **Widgets nativos en tema oscuro.** `Button`, `Checkbox`, `Switch`,
+    `TextInput`, `Slider` y `ProgressBar` de Masonry se pintaban con su property
+    set oscuro por defecto: en modo claro los campos, switches y sliders salían
+    negros. Nuevo módulo `theme_props` que deriva el `DefaultProperties` del tema
+    y se aplica con `Xilem::with_default_properties`.
+  - **Textos invisibles.** `texto_color(..., "primary")` y compañía caían en
+    blanco fijo (`color_desde_nombre` no conocía roles): texto blanco sobre
+    blanco. Ahora los roles se resuelven contra el esquema del tema.
+  - **Iconos violetas** en un tema Fluent: `parse_color` devolvía hex fijos de
+    Material You. Ahora se resuelve el rol del tema primero.
+  - **Iconos inexistentes desaparecían** en silencio: `trending_down` no estaba
+    en el catálogo y no se dibujaba nada. Se agregó el icono y un fallback
+    visible (el nombre entre corchetes).
+  - **`interruptor` era un checkbox dentro de una caja pintada** que se estiraba
+    a todo el ancho. Ahora usa el `Switch` nativo, con riel y thumb del tema.
+  - **`barra_progreso` medía 300px fijos** y mostraba el relleno partido a mano;
+    ahora usa el `ProgressBar` nativo (ancho disponible, color del tema).
+  - **`tema_fluent` salía oscuro** en un SO en modo oscuro: el sufijo ahora manda
+    (`fluent:light` / `fluent:dark`), como dice la documentación.
+  - **Paleta de gráficos**: Fluent usaba el secundario/terciario violeta y oliva
+    que genera Monet. Ahora son azul y teal coherentes con el acento.
+
 ## [0.9.3] - 2026-10-27
 
 ### plan3 — runtime, corpus y distribución

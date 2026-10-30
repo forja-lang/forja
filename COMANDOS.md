@@ -69,6 +69,11 @@ cargo run --release --bin forja -- run ejemplos/01_hola.fa --asm
 cargo run --release --bin forja -- run benchmarks/leibniz_test.fa --fast-math
 ```
 
+> **Apps GUI (`importar "gui"`) con `--native`**: generan un proyecto Cargo temporal que
+> depende por ruta de `crates/forja-gui-rt`, así que necesitan el **checkout del repo** y
+> Rust instalado (el primer build compila todo Xilem/wgpu en release y tarda varios
+> minutos). La app se abre sola al terminar.
+
 ### `forja build|compilar|construir <archivo> -o <salida>` — Ejecutable autónomo
 
 Genera un `.exe` que contiene la VM + bytecode incrustado.
@@ -114,6 +119,11 @@ Targets disponibles:
 cargo run --release --bin forja -- transpile ejemplos/01_hola.fa
 cargo run --release --bin forja -- t ejemplos/clases.fa -o salida.rs
 ```
+
+> Para apps GUI (`importar "gui"`) no genera un único `.rs`: crea un **proyecto Cargo**
+> (`<nombre>_rs/`) con `src/lib.rs` + `src/programa.json` y las rutas a
+> `forja`/`forja-gui-rt` del checkout, y lo compila con cargo. El AST viaja como datos
+> (`fn programa()`), igual que en la ruta `--native`.
 
 ### `forja repl|interactivo [--vm fast|vm|jit]` — Modo interactivo
 
