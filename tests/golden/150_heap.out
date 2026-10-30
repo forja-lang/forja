@@ -1,0 +1,19 @@
+=== Heap (Montículo / Cola de Prioridad) ===
+
+Encolando: 30, 10, 50, 20, 40, 60
+
+  Máximo: 60
+
+Desencolando (siempre el máximo):
+  60
+  50
+  40
+  30
+  20
+  10
+
+Heap Sort descendente:
+  Original: [15,3,8,22,1,19,7,12]
+  Ordenado: nulo
+
+El heap garantiza que el máximo sea siempre accesible en O(1).
