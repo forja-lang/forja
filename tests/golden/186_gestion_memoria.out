@@ -1,0 +1,32 @@
+=== GESTIÓN DE MEMORIA ===
+
+--- STACK (pila) ---
+  Variables en stack: a=10, b=20, c=30
+  (se liberan automáticamente al salir de la función)
+  Resultado de función: 30
+
+--- HEAP (montículo) ---
+  📦 BLOQUE #1: Asignados 16 bytes en HEAP
+  📦 BLOQUE #2: Asignados 32 bytes en HEAP
+  📦 BLOQUE #3: Asignados 48 bytes en HEAP
+
+Usando los bloques:
+
+
+
+--- Stack vs Heap ---
+  STACK:
+    • Rápido, automático, tamaño fijo
+    • Variables locales y parámetros de función
+    • Liberación al salir del ámbito
+
+  HEAP:
+    • Más lento, tamaño dinámico
+    • Objetos creados con 'nuevo'
+    • Gestionado automáticamente (recolección de basura)
+
+--- Buenas prácticas ---
+  • Prefereir stack cuando sea posible (más rápido)
+  • Usar heap para objetos grandes o de larga vida
+  • Liberar recursos explícitamente cuando sea crítico
+  • Evitar referencias circulares que impidan la liberación
