@@ -1,0 +1,43 @@
+=== METAPROGRAMACIÓN ===
+
+Forja genera código Forja a partir de datos.
+
+Código generado:
+clase Persona {
+    nombre
+    edad
+    ciudad
+
+    constructor() {
+        self.nombre = nulo
+        self.edad = nulo
+        self.ciudad = nulo
+    }
+
+    funcion obtener_nombre() {
+        retornar self.nombre
+    }
+    funcion fijar_nombre(valor) {
+        self.nombre = valor
+    }
+    funcion obtener_edad() {
+        retornar self.edad
+    }
+    funcion fijar_edad(valor) {
+        self.edad = valor
+    }
+    funcion obtener_ciudad() {
+        retornar self.ciudad
+    }
+    funcion fijar_ciudad(valor) {
+        self.ciudad = valor
+    }
+}
+
+Líneas generadas: 1
+Caracteres: 549
+
+Ventajas:
+  • Menos código repetitivo a mano
+  • El patrón se define una sola vez
+  • Fácil de auditar: el texto generado se puede imprimir
