@@ -52,7 +52,7 @@ pub(crate) fn native_recargar_modulo(
     };
 
     // Generar nuevo bytecode para el módulo
-    let mut gen = BytecodeGenerator::new();
+    let mut gen = GeneradorBytecode::new();
     let module_bc = match gen.generar_para_modulo(&programa, module_id) {
         Ok(mbc) => mbc,
         Err(e) => {
@@ -137,7 +137,7 @@ pub(crate) fn native_recargar_todo(
         };
 
         // Generar nuevo bytecode
-        let mut gen = BytecodeGenerator::new();
+        let mut gen = GeneradorBytecode::new();
         let module_bc = match gen.generar_para_modulo(&programa, *module_id) {
             Ok(mbc) => mbc,
             Err(e) => {
