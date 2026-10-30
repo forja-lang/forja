@@ -1,0 +1,11 @@
+=== @derive(Igual) ===
+
+falso
+falso
+verdadero
+
+Comparando monedas:
+falso
+falso
+
+Con @derive(Igual) se comparan TODOS los campos automáticamente.
