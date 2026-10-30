@@ -1,0 +1,27 @@
+=== PATRÓN DECORATOR ===
+
+Añade responsabilidades dinámicamente.
+
+1. Notificación básica (solo email):
+  📧 Enviando email: 'Hola mundo'
+
+2. Email + SMS:
+  📧 Enviando email: 'Promoción especial'
+  📱 Enviando SMS: 'Promoción especial'
+
+3. Email + SMS + Slack:
+  📧 Enviando email: 'Reunión a las 15:00'
+  📱 Enviando SMS: 'Reunión a las 15:00'
+  💬 Enviando Slack: 'Reunión a las 15:00'
+
+4. Email + SMS + Slack + Push (máximo nivel):
+  📧 Enviando email: '⚠️ ALERTA: Sistema crítico'
+  📱 Enviando SMS: '⚠️ ALERTA: Sistema crítico'
+  💬 Enviando Slack: '⚠️ ALERTA: Sistema crítico'
+  🔔 Enviando notificación Push: '⚠️ ALERTA: Sistema crítico'
+
+Ventajas del Decorator:
+  • Las funcionalidades se añaden en tiempo de ejecución
+  • Evita una explosión de subclases para cada combinación
+  • Sigue el principio de responsabilidad única
+  • Los decoradores son intercambiables y reutilizables
