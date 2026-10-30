@@ -186,7 +186,7 @@ fn coincidir_con_todos_los_patrones() {
         });
         assert!(c.output.contains("match_end"), "{t:?}");
         assert!(
-            c.output.contains("jne") || c.output.contains("b.ne"),
+            c.output.contains("jne") || c.output.contains("b.ne") || c.output.contains("bnez"),
             "{t:?}"
         );
         // Las variables del patrón quedan registradas en el stack.
