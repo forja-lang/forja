@@ -1,0 +1,15 @@
+=== Exhaustividad en Match ===
+
+El compilador verifica que TODAS las variantes estén cubiertas.
+
+Estados:
+  🟢 Usuario activo
+  ⚪ Usuario inactivo
+  🟡 Usuario suspendido
+  🔴 Usuario baneado
+
+Pagos:
+  ✅ Pago exitoso
+  ❌ Fondos insuficientes
+  ❌ Tarjeta vencida
+  ❌ Rechazada: Bloqueo por seguridad
