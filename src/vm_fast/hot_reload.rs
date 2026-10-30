@@ -93,7 +93,7 @@ impl ForjaFast {
     pub fn hot_swap_module(
         &mut self,
         module_id: ModuleId,
-        nuevo_bc: &ModuleBytecode,
+        nuevo_bc: &ModuloBytecode,
     ) -> Result<(), String> {
         // 1. Determinar la versión actual y calcular la nueva
         let version_actual = self
@@ -106,7 +106,7 @@ impl ForjaFast {
         // 2. Preservar bytecode completo actual en el pool
         self.bytecode_pool.push(VersionedBytecode {
             version: version_actual,
-            opcodes: self.bytecode.clone(),
+            codigos: self.bytecode.clone(),
         });
 
         // 3. Obtener el rango que ocupa el módulo en self.bytecode
@@ -121,13 +121,13 @@ impl ForjaFast {
                 )
             })?;
         let old_len = end - start;
-        let new_len = nuevo_bc.opcodes.len();
+        let new_len = nuevo_bc.codigos.len();
 
         // 4. Reemplazar bytecode del módulo in-place
         if new_len == old_len {
             for (dst, src) in self.bytecode[start..end]
                 .iter_mut()
-                .zip(nuevo_bc.opcodes.iter())
+                .zip(nuevo_bc.codigos.iter())
             {
                 let op = src.clone();
                 *dst = op;
@@ -135,7 +135,7 @@ impl ForjaFast {
         } else {
             let tail = self.bytecode[end..].to_vec();
             self.bytecode.truncate(start);
-            self.bytecode.extend_from_slice(&nuevo_bc.opcodes);
+            self.bytecode.extend_from_slice(&nuevo_bc.codigos);
             self.bytecode.extend(tail);
 
             // Ajustar rangos de otros módulos que están después
