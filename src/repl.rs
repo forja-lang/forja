@@ -1,4 +1,4 @@
-use crate::bytecode::BytecodeGenerator;
+use crate::bytecode::GeneradorBytecode;
 use crate::error::{self, color};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -184,7 +184,7 @@ impl REPL {
                                                 continue;
                                             }
                                         };
-                                        let mut gen = BytecodeGenerator::new();
+                                        let mut gen = GeneradorBytecode::new();
                                         let bytecode = match gen.generar(&programa) {
                                             Ok(b) => b,
                                             Err(_) => {
@@ -245,7 +245,7 @@ impl REPL {
                                             continue;
                                         }
                                     };
-                                    let mut gen = BytecodeGenerator::new();
+                                    let mut gen = GeneradorBytecode::new();
                                     let module_bc = match gen
                                         .generar_para_modulo(&programa, module_sym)
                                     {
@@ -337,7 +337,7 @@ impl REPL {
         let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
-        let mut gen = BytecodeGenerator::new();
+        let mut gen = GeneradorBytecode::new();
         let bytecode = gen
             .generar(&programa)
             .map_err(|_| "Error generando bytecode".to_string())?;
