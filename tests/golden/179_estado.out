@@ -1,0 +1,34 @@
+=== PATRÓN STATE CON ENUM ===
+
+El comportamiento cambia según el estado interno.
+
+--- Semáforo ---
+  🛑 ¡ALTO! Los vehículos deben detenerse.
+  🚦 Cambiando de 🔴 Rojo → 🟢 Verde
+  ✅ ¡AVANCE! Los vehículos pueden circular.
+  🚦 Cambiando de 🟢 Verde → 🟡 Amarillo
+  ⚠️ PRECAUCIÓN! Prepararse para detenerse.
+  🚦 Cambiando de 🟡 Amarillo → 🔴 Rojo
+  🛑 ¡ALTO! Los vehículos deben detenerse.
+
+--- Reproductor de Música ---
+  Estado: ⏹️ Detenido
+
+  🎵 Reproduciendo 'Bohemian Rhapsody'
+  Estado: ▶️ Reproduciendo
+  Canción: 'Bohemian Rhapsody'
+
+  ⏸️ Reproducción pausada
+  Estado: ⏸️ Pausado
+  Canción: 'Bohemian Rhapsody'
+
+  ▶️ Reanudando 'Bohemian Rhapsody'
+  Estado: ▶️ Reproduciendo
+  Canción: 'Bohemian Rhapsody'
+
+  ⏹️ Reproducción detenida
+  Estado: ⏹️ Detenido
+  Canción: 'Bohemian Rhapsody'
+
+El patrón State organiza el comportamiento específico
+de cada estado sin usar condicionales complejos.
