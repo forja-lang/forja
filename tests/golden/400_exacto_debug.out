@@ -1,0 +1,12 @@
+x:
+10
+y:
+3
+x / y:
+3
+num:
+-42.5
+num < 0:
+verdadero
+absoluto(num):
+nulo
