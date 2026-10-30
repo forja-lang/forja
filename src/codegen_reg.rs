@@ -1062,7 +1062,7 @@ mod tests {
         let v1 = prog.alloc_vreg();
         let v2 = prog.alloc_vreg();
 
-        let block = crate::register_ir::BasicBlock {
+        let block = crate::register_ir::BloqueBasico {
             label: 0,
             instructions: vec![
                 RegInstruction::LoadImm { dst: v0, value: 5 },
@@ -1090,7 +1090,7 @@ mod tests {
     fn test_codegen_prologue_y_epilogo() {
         let mut prog = RegProgram::new();
         let v0 = prog.alloc_vreg();
-        let block = crate::register_ir::BasicBlock {
+        let block = crate::register_ir::BloqueBasico {
             label: 0,
             instructions: vec![RegInstruction::LoadImm { dst: v0, value: 42 }],
             terminator: RegInstruction::Return { src: v0 },
@@ -1128,7 +1128,7 @@ mod tests {
     fn test_codegen_sin_spill_no_reserva_frame() {
         let mut prog = RegProgram::new();
         let v0 = prog.alloc_vreg();
-        let block = crate::register_ir::BasicBlock {
+        let block = crate::register_ir::BloqueBasico {
             label: 0,
             instructions: vec![RegInstruction::LoadImm { dst: v0, value: 7 }],
             terminator: RegInstruction::Return { src: v0 },
@@ -1157,7 +1157,7 @@ mod tests {
     fn test_codegen_call_emite_call_rax() {
         let mut prog = RegProgram::new();
         let v0 = prog.alloc_vreg();
-        let block = crate::register_ir::BasicBlock {
+        let block = crate::register_ir::BloqueBasico {
             label: 0,
             instructions: vec![RegInstruction::Call {
                 func_name: "foo".into(),
@@ -1197,7 +1197,7 @@ mod tests {
     fn test_codegen_call_sin_tabla_usa_stub() {
         let mut prog = RegProgram::new();
         let v0 = prog.alloc_vreg();
-        let block = crate::register_ir::BasicBlock {
+        let block = crate::register_ir::BloqueBasico {
             label: 0,
             instructions: vec![RegInstruction::Call {
                 func_name: "desconocida".into(),
