@@ -2,8 +2,8 @@ use forja::bytecode::Opcode;
 use forja::uops::{expandir_a_uops, optimizar_uops, remapear_saltos_uops, Uop};
 use std::sync::Arc;
 
-fn expandir(opcodes: Vec<Opcode>) -> Vec<Uop> {
-    expandir_a_uops(&opcodes)
+fn expandir(codigos: Vec<Opcode>) -> Vec<Uop> {
+    expandir_a_uops(&codigos)
 }
 
 // ============================================================
@@ -42,25 +42,25 @@ fn test_uops_expand_push_nulo() {
 
 #[test]
 fn test_uops_expand_add() {
-    let uops = expandir(vec![Opcode::Add]);
+    let uops = expandir(vec![Opcode::Sumar]);
     assert_eq!(uops[0], Uop::Add);
 }
 
 #[test]
 fn test_uops_expand_sub() {
-    let uops = expandir(vec![Opcode::Sub]);
+    let uops = expandir(vec![Opcode::Restar]);
     assert_eq!(uops[0], Uop::Sub);
 }
 
 #[test]
 fn test_uops_expand_mul() {
-    let uops = expandir(vec![Opcode::Mul]);
+    let uops = expandir(vec![Opcode::Multiplicar]);
     assert_eq!(uops[0], Uop::Mul);
 }
 
 #[test]
 fn test_uops_expand_div() {
-    let uops = expandir(vec![Opcode::Div]);
+    let uops = expandir(vec![Opcode::Dividir]);
     assert_eq!(uops[0], Uop::Div);
 }
 
@@ -72,85 +72,85 @@ fn test_uops_expand_compare() {
 
 #[test]
 fn test_uops_expand_jump() {
-    let uops = expandir(vec![Opcode::Jump(42)]);
+    let uops = expandir(vec![Opcode::Salto(42)]);
     assert_eq!(uops[0], Uop::Jump(42));
 }
 
 #[test]
 fn test_uops_expand_jump_si_falso() {
-    let uops = expandir(vec![Opcode::JumpSiFalso(99)]);
+    let uops = expandir(vec![Opcode::SaltoSiFalso(99)]);
     assert_eq!(uops[0], Uop::JumpSiFalso(99));
 }
 
 #[test]
 fn test_uops_expand_print() {
-    let uops = expandir(vec![Opcode::Print]);
+    let uops = expandir(vec![Opcode::Imprimir]);
     assert_eq!(uops[0], Uop::Print);
 }
 
 #[test]
 fn test_uops_expand_halt() {
-    let uops = expandir(vec![Opcode::Halt]);
+    let uops = expandir(vec![Opcode::Detener]);
     assert_eq!(uops[0], Uop::Halt);
 }
 
 #[test]
 fn test_uops_expand_call() {
-    let uops = expandir(vec![Opcode::Call(Arc::from("f"), 2)]);
+    let uops = expandir(vec![Opcode::Llamar(Arc::from("f"), 2)]);
     assert_eq!(uops[0], Uop::Call("f".to_string(), 2));
 }
 
 #[test]
 fn test_uops_expand_return() {
-    let uops = expandir(vec![Opcode::Return]);
+    let uops = expandir(vec![Opcode::Retornar]);
     assert_eq!(uops[0], Uop::Return);
 }
 
 #[test]
 fn test_uops_expand_array_new() {
-    let uops = expandir(vec![Opcode::ArrayNew(3)]);
+    let uops = expandir(vec![Opcode::NuevoArreglo(3)]);
     assert_eq!(uops[0], Uop::ArrayNew(3));
 }
 
 #[test]
 fn test_uops_expand_array_get() {
-    let uops = expandir(vec![Opcode::ArrayGet]);
+    let uops = expandir(vec![Opcode::ObtenerElemento]);
     assert_eq!(uops[0], Uop::ArrayGet);
 }
 
 #[test]
 fn test_uops_expand_array_set() {
-    let uops = expandir(vec![Opcode::ArraySet]);
+    let uops = expandir(vec![Opcode::FijarElemento]);
     assert_eq!(uops[0], Uop::ArraySet);
 }
 
 #[test]
 fn test_uops_expand_map_new() {
-    let uops = expandir(vec![Opcode::MapNew(2)]);
+    let uops = expandir(vec![Opcode::NuevoMapa(2)]);
     assert_eq!(uops[0], Uop::MapNew(2));
 }
 
 #[test]
 fn test_uops_expand_map_get() {
-    let uops = expandir(vec![Opcode::MapGet]);
+    let uops = expandir(vec![Opcode::ObtenerValorDeMapa]);
     assert_eq!(uops[0], Uop::MapGet);
 }
 
 #[test]
 fn test_uops_expand_map_set() {
-    let uops = expandir(vec![Opcode::MapSet]);
+    let uops = expandir(vec![Opcode::FijarValorDeMapa]);
     assert_eq!(uops[0], Uop::MapSet);
 }
 
 #[test]
 fn test_uops_expand_dup() {
-    let uops = expandir(vec![Opcode::Dup]);
+    let uops = expandir(vec![Opcode::Duplicar]);
     assert_eq!(uops[0], Uop::Dup);
 }
 
 #[test]
 fn test_uops_expand_pop() {
-    let uops = expandir(vec![Opcode::Pop]);
+    let uops = expandir(vec![Opcode::Descartar]);
     assert_eq!(uops[0], Uop::Pop);
 }
 
@@ -159,9 +159,9 @@ fn test_uops_expand_multiples() {
     let uops = expandir(vec![
         Opcode::PushEntero(1),
         Opcode::PushEntero(2),
-        Opcode::AddInt,
-        Opcode::Print,
-        Opcode::Halt,
+        Opcode::SumarEntero,
+        Opcode::Imprimir,
+        Opcode::Detener,
     ]);
     assert_eq!(uops.len(), 5);
     assert_eq!(uops[0], Uop::PushEntero(1));
@@ -170,38 +170,38 @@ fn test_uops_expand_multiples() {
 
 #[test]
 fn test_uops_expand_declare_idx() {
-    let uops = expandir(vec![Opcode::DeclareIdx(3, true)]);
+    let uops = expandir(vec![Opcode::DeclararIndice(3, true)]);
     // DeclareIdx with mutable flag should expand
     assert_eq!(uops[0], Uop::DeclareInit(3));
 }
 
 #[test]
 fn test_uops_expand_declare_idx_global() {
-    let uops = expandir(vec![Opcode::DeclareIdxGlobal(42, true)]);
+    let uops = expandir(vec![Opcode::DeclararIndiceGlobal(42, true)]);
     assert_eq!(uops[0], Uop::DeclareInit(42));
 }
 
 #[test]
 fn test_uops_expand_fusionados_declare_entero() {
-    let uops = expandir(vec![Opcode::DeclareEnteroOp(0, 42)]);
+    let uops = expandir(vec![Opcode::DeclararOperacionEntero(0, 42)]);
     assert!(!uops.is_empty());
 }
 
 #[test]
 fn test_uops_expand_declare_booleano_op() {
-    let uops = expandir(vec![Opcode::DeclareBooleanoOp(1, true)]);
+    let uops = expandir(vec![Opcode::DeclararOperacionBooleano(1, true)]);
     assert!(!uops.is_empty());
 }
 
 #[test]
 fn test_uops_expand_add_int() {
-    let uops = expandir(vec![Opcode::AddInt]);
+    let uops = expandir(vec![Opcode::SumarEntero]);
     assert_eq!(uops[0], Uop::AddInt);
 }
 
 #[test]
 fn test_uops_expand_add_float() {
-    let uops = expandir(vec![Opcode::AddFloat]);
+    let uops = expandir(vec![Opcode::SumarDecimal]);
     assert_eq!(uops[0], Uop::AddFloat);
 }
 
