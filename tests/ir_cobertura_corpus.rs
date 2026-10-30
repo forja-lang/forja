@@ -112,7 +112,7 @@ fn corpus_completo_por_ir_sin_fallback() {
 ///
 /// `135_ordenamiento_mergesort` ya no diverge: se corrigieron el crecimiento
 /// de arreglos por índice (`variable a = []` + `a[i] = v`) y la renumeración
-/// del índice en `Inst::ArraySet`/`MapSet`.
+/// del índice en `Instruccion::FijarElemento`/`FijarValorDeMapa`.
 const DIVERGENCIAS_CONOCIDAS: &[&str] = &["167_estadistica.fa"];
 
 /// Marcadores de ejemplos no deterministas o con dependencias externas: su
