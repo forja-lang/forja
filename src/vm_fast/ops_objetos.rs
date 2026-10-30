@@ -37,7 +37,7 @@ impl ForjaFast {
     #[inline]
     pub(crate) fn ejecutar_ops_objetos(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
-            Opcode::NewObject(c) => {
+            Opcode::NuevoObjeto(c) => {
                 let clase_sym = self.tabla_simbolos.internar(c.as_ref());
                 self.class_descriptors.entry(clase_sym).or_insert_with(|| {
                     let forma = FormaCampos::new();
@@ -57,7 +57,7 @@ impl ForjaFast {
                 self.ip += 1;
                 Ok(true)
             }
-            Opcode::SetField(c) => {
+            Opcode::FijarCampo(c) => {
                 let obj_val = *self.peek_valor(0);
                 if obj_val.es_objeto() {
                     let obj_idx = obj_val.indice_objeto();
@@ -149,7 +149,7 @@ impl ForjaFast {
                 self.ip += 1;
                 Ok(true)
             }
-            Opcode::SetFieldIdx(idx) => {
+            Opcode::FijarCampoPorIndice(idx) => {
                 // Asignación posicional: [valor, objeto] con objeto en top.
                 // Campos de variante de enum: [tag, campo0, campo1, ...]
                 let obj_val = *self.peek_valor(0);
@@ -174,7 +174,7 @@ impl ForjaFast {
                 self.ip += 1;
                 Ok(true)
             }
-            Opcode::GetField(c) => {
+            Opcode::ObtenerCampo(c) => {
                 let obj_val = *self.peek_valor(0);
                 if self.show_bytecode {
                     eprintln!(
