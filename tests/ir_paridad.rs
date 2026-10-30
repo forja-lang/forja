@@ -94,13 +94,13 @@ fn ejecutar(bytecode: Vec<Opcode>) -> Result<Vec<String>, String> {
     Ok(vm.obtener_output())
 }
 
-/// Compara dos vectores de opcodes y, si difieren, señala el primer opcode
+/// Compara dos vectores de codigos y, si difieren, señala el primer opcode
 /// divergente con contexto legible.
 fn comparar_bytecode(etiqueta: &str, a: &[Opcode], b: &[Opcode]) {
     assert_eq!(
         a.len(),
         b.len(),
-        "programa `{etiqueta}`: distinto número de opcodes (canónico={} vs IR={})",
+        "programa `{etiqueta}`: distinto número de codigos (canónico={} vs IR={})",
         a.len(),
         b.len()
     );
