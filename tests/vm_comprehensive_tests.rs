@@ -1,4 +1,4 @@
-use forja::bytecode::{fusionar_opcodes, optimizar_indices, BytecodeGenerator};
+use forja::bytecode::{fusionar_opcodes, optimizar_indices, GeneradorBytecode};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
 use forja::vm_fast::ForjaFast;
@@ -8,7 +8,7 @@ fn ejecutar(source: &str) -> ForjaFast {
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
-    let mut gen = BytecodeGenerator::new();
+    let mut gen = GeneradorBytecode::new();
     let mut bc = gen.generar(&programa).unwrap();
     bc = optimizar_indices(&bc);
     bc = fusionar_opcodes(&bc);
@@ -434,7 +434,7 @@ fn output_fast(source: &str) -> Vec<String> {
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
-    let mut gen = BytecodeGenerator::new();
+    let mut gen = GeneradorBytecode::new();
     let bc = gen.generar(&programa).unwrap();
     let bc = optimizar_indices(&bc);
     let bc = fusionar_opcodes(&bc);
