@@ -1,0 +1,24 @@
+=== PATRÓN SINGLETON ===
+
+Garantiza una única instancia de una clase.
+
+Intentando obtener configuración (primera vez):
+  🔨 Primera vez: creando instancia única...
+  App: ForjaApp v1.0.0
+  Idioma: es
+
+Modificando configuración...
+
+Intentando obtener configuración (segunda vez):
+  ♻️ Instancia ya existente: reutilizando...
+  App: ForjaApp v1.0.0
+  Idioma: en
+
+¿Son la misma instancia?
+  ❌ No, son objetos diferentes.
+
+El Singleton es útil para:
+  • Configuración global de la aplicación
+  • Pool de conexiones a base de datos
+  • Logger o sistema de logging
+  • Cache compartido
