@@ -300,7 +300,7 @@ fn f11_t1_closure_en_variable_sobrevive_al_dce() {
     let (bc, _c) = forja::compilar_pipeline_completa(fuente).expect("compila");
     assert!(
         bc.iter()
-            .any(|op| matches!(op, Opcode::FunctionDef(n, _) if n.contains("__closure_"))),
+            .any(|op| matches!(op, Opcode::DefinirFuncion(n, _) if n.contains("__closure_"))),
         "la definición del closure debe sobrevivir a las optimizaciones"
     );
     assert_eq!(ejecutar(bc), vec!["42"]);
@@ -342,7 +342,7 @@ fn optimizador_no_duplica_llamadas_al_reducir_multiplicacion() {
     let (bc, _c) = forja::compilar_pipeline_completa(fuente).expect("compila");
     let recepciones = bc
         .iter()
-        .filter(|op| matches!(op, Opcode::CallMethod(m, _) if m.as_ref() == "recibir"))
+        .filter(|op| matches!(op, Opcode::LlamarMetodo(m, _) if m.as_ref() == "recibir"))
         .count();
     assert_eq!(
         recepciones, 1,
@@ -447,31 +447,31 @@ escribir(1)";
 /// funciones y el REPL).
 #[test]
 fn f11_t6_el_ir_emitido_es_ssa_con_phi_real() {
-    use forja::ir::Inst;
-    use forja::ir_constructor::IrConstructor;
+    use forja::ir::Instruccion;
+    use forja::ir_constructor::ConstructorDesdeAst;
     use forja::ir_ssa;
 
     let fuente = "funcion suma(n: Entero) -> Entero {\n    variable s = 0\n    variable i = 0\n    mientras (i < n) {\n        s = s + i\n        i = i + 1\n    }\n    retornar s\n}\nescribir(suma(4))";
     let mut lexer = forja::lexer::Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
     let programa = forja::parser::Parser::new(tokens).parse().unwrap();
-    let mut ctor = IrConstructor::new();
-    let ir = ctor.program_to_ir(&programa);
+    let mut ctor = ConstructorDesdeAst::new();
+    let ir = ctor.programa_a_ir(&programa);
     assert!(ctor.soportado);
 
     let ssa = ir_ssa::promover_programa(&ir);
     let suma = ssa
-        .functions
+        .funciones
         .iter()
-        .find(|f| ssa.symbols.nombre_de(f.name) == "suma")
+        .find(|f| ssa.simbolos.nombre_de(f.nombre) == "suma")
         .expect("función suma");
 
     // φ reales: uno por variable del bucle (s e i).
-    let phis: Vec<&Inst> = suma
-        .blocks
+    let phis: Vec<&Instruccion> = suma
+        .bloques
         .iter()
-        .flat_map(|b| b.instructions.iter())
-        .filter(|i| matches!(i, Inst::Phi(_, _)))
+        .flat_map(|b| b.instrucciones.iter())
+        .filter(|i| matches!(i, Instruccion::Phi(_, _)))
         .collect();
     assert!(
         phis.len() >= 2,
@@ -479,7 +479,7 @@ fn f11_t6_el_ir_emitido_es_ssa_con_phi_real() {
     );
     // Cada φ tiene un operando por predecesor (sin la heurística del primero).
     for phi in &phis {
-        let Inst::Phi(_, operandos) = phi else {
+        let Instruccion::Phi(_, operandos) = phi else {
             unreachable!()
         };
         assert!(
@@ -490,10 +490,10 @@ fn f11_t6_el_ir_emitido_es_ssa_con_phi_real() {
     // Las locales promovidas no quedan en memoria.
     assert!(
         !suma
-            .blocks
+            .bloques
             .iter()
-            .flat_map(|b| b.instructions.iter())
-            .any(|i| matches!(i, Inst::Alloca(_))),
+            .flat_map(|b| b.instrucciones.iter())
+            .any(|i| matches!(i, Instruccion::Reservar(_))),
         "no deben quedar `Alloca` de locales"
     );
 
