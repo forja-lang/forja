@@ -4,8 +4,8 @@
 use super::*;
 
 impl ForjaFast {
-    /// Ejecuta usando uops expandidos (micro-opcodes)
-    /// Expande opcodes compuestos en secuencias de uops,
+    /// Ejecuta usando uops expandidos (micro-codigos)
+    /// Expande codigos compuestos en secuencias de uops,
     /// optimiza patrones comunes, y ejecuta usando el pipeline de uops
     pub fn ejecutar_uops(&mut self) -> Result<(), ErrFast> {
         // 1. Expandir bytecode a uops
@@ -696,27 +696,35 @@ impl ForjaFast {
                 // === Built-in functions (stdlib) ===
                 Uop::ParseInt => {
                     let v = self.pop_valor()?;
-                    let n: i64 = if v.es_texto() {
+                    // `leer()` sin stdin devuelve Nulo: convertirlo en 0 hacía que
+                    // un bucle interactivo ("pedir número hasta acertar") girara
+                    // para siempre. Nulo se propaga.
+                    let n: Option<i64> = if v.es_texto() {
                         let idx = v.indice_texto();
                         let s = self.get_str(idx);
-                        s.parse::<i64>().unwrap_or(0)
+                        Some(s.parse::<i64>().unwrap_or(0))
                     } else if v.es_entero() {
-                        v.a_entero()
+                        Some(v.a_entero())
                     } else if v.es_flotante() {
-                        v.a_flotante() as i64
+                        Some(v.a_flotante() as i64)
                     } else if v.es_exacto() {
                         let idx = v.indice_exacto();
                         let exacto = self.get_exacto(idx);
                         if exacto.escala == 0 {
-                            exacto.coeficiente as i64
+                            Some(exacto.coeficiente as i64)
                         } else {
                             let divisor = 10_i128.wrapping_pow(exacto.escala);
-                            (exacto.coeficiente.wrapping_div(divisor)) as i64
+                            Some((exacto.coeficiente.wrapping_div(divisor)) as i64)
                         }
+                    } else if v.es_nulo() {
+                        None
                     } else {
-                        0
+                        Some(0)
                     };
-                    self.push_valor(ValorFast::entero(n));
+                    match n {
+                        Some(n) => self.push_valor(ValorFast::entero(n)),
+                        None => self.push_valor(ValorFast::nulo()),
+                    }
                     self.ip += 1;
                 }
                 Uop::TiempoActual => {
@@ -746,7 +754,7 @@ impl ForjaFast {
                 Uop::ReadLine => {
                     let mut i = String::new();
                     // Sin prompt: el programa decide qué escribir (la ruta de
-                    // opcodes tampoco lo imprime) y así las dos VM coinciden.
+                    // codigos tampoco lo imprime) y así las dos VM coinciden.
                     match std::io::stdin().read_line(&mut i) {
                         // EOF (0 bytes): Nulo, igual que `Opcode::ReadLine`. Antes
                         // devolvía texto vacío y un bucle interactivo sin stdin
@@ -1290,7 +1298,7 @@ impl ForjaFast {
                             self.ip += 1;
                         }
                         Some(err) => {
-                            // Propagación REAL idéntica a la ruta de opcodes: sin
+                            // Propagación REAL idéntica a la ruta de codigos: sin
                             // divergencia VM/uops. Desenrollar como `Uop::Return`.
                             self.top_len = 0;
                             self.push_valor(err);

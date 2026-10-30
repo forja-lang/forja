@@ -6,6 +6,22 @@
 use super::*;
 
 impl ForjaFast {
+    /// Convierte un `Decimal` a `Exacto` para las operaciones Exacto (escala 10,
+    /// la misma que `DecimalAExacto`).
+    ///
+    /// El backend AST coerciona los argumentos al tipo del parámetro, pero el IR
+    /// no: sin esto `Exacto * Decimal` funcionaba por una ruta y fallaba por la
+    /// otra (divergencia AST/IR en `400_exacto`).
+    fn normalizar_a_exacto(&mut self, v: ValorFast) -> ValorFast {
+        if v.es_flotante() {
+            let escala = 10u32;
+            let coeff = (v.a_flotante() * 10_f64.powi(escala as i32)) as i128;
+            self.exacto_valor(coeff, escala)
+        } else {
+            v
+        }
+    }
+
     /// Ejecuta las ramas autocontenidas del `match op` correspondientes a las
     /// operaciones Exacto (BigDecimal): aritmética, comparaciones y conversiones.
     ///
@@ -23,6 +39,8 @@ impl ForjaFast {
             Opcode::AddExact => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
+                let a = self.normalizar_a_exacto(a);
+                let b = self.normalizar_a_exacto(b);
                 let val = if a.es_exacto() && b.es_exacto() {
                     let ae = self.get_exacto(a.indice_exacto());
                     let be = self.get_exacto(b.indice_exacto());
@@ -69,6 +87,8 @@ impl ForjaFast {
             Opcode::SubExact => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
+                let a = self.normalizar_a_exacto(a);
+                let b = self.normalizar_a_exacto(b);
                 let val = if a.es_exacto() && b.es_exacto() {
                     let ae = self.get_exacto(a.indice_exacto());
                     let be = self.get_exacto(b.indice_exacto());
@@ -115,6 +135,8 @@ impl ForjaFast {
             Opcode::MulExact => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
+                let a = self.normalizar_a_exacto(a);
+                let b = self.normalizar_a_exacto(b);
                 let val = if a.es_exacto() && b.es_exacto() {
                     let ae = self.get_exacto(a.indice_exacto());
                     let be = self.get_exacto(b.indice_exacto());
@@ -152,6 +174,8 @@ impl ForjaFast {
             Opcode::DivExact => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
+                let a = self.normalizar_a_exacto(a);
+                let b = self.normalizar_a_exacto(b);
                 let val = if a.es_exacto() && b.es_exacto() {
                     let ae = self.get_exacto(a.indice_exacto());
                     let be = self.get_exacto(b.indice_exacto());
@@ -221,6 +245,8 @@ impl ForjaFast {
             Opcode::IgualExact => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
+                let a = self.normalizar_a_exacto(a);
+                let b = self.normalizar_a_exacto(b);
                 let igual = if a.es_exacto() && b.es_exacto() {
                     let ae = self.get_exacto(a.indice_exacto());
                     let be = self.get_exacto(b.indice_exacto());
@@ -240,6 +266,8 @@ impl ForjaFast {
             Opcode::MenorExact => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
+                let a = self.normalizar_a_exacto(a);
+                let b = self.normalizar_a_exacto(b);
                 let menor = if a.es_exacto() && b.es_exacto() {
                     let ae = self.get_exacto(a.indice_exacto());
                     let be = self.get_exacto(b.indice_exacto());
@@ -259,6 +287,8 @@ impl ForjaFast {
             Opcode::MayorExact => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
+                let a = self.normalizar_a_exacto(a);
+                let b = self.normalizar_a_exacto(b);
                 let mayor = if a.es_exacto() && b.es_exacto() {
                     let ae = self.get_exacto(a.indice_exacto());
                     let be = self.get_exacto(b.indice_exacto());
