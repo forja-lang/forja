@@ -100,9 +100,9 @@
     }
   },
   {
-    "date": "2026-10-30T16:47:25Z",
+    "date": "2026-10-30T16:49:12Z",
     "version": "0.9.5",
-    "commit": "92d3cf1",
+    "commit": "400e1af",
     "benchmarks": {
       "forjafast": [],
       "jit": [],
