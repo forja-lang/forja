@@ -211,7 +211,7 @@ mod windows_impl {
         // Crear el objeto de mapping sin nombre (NULL)
         let h_map = unsafe {
             CreateFileMappingW(
-                h_file as *mut std::ffi::c_void,
+                h_file,
                 std::ptr::null_mut(),
                 protect,
                 0, // max size high
@@ -222,7 +222,7 @@ mod windows_impl {
 
         if h_map.is_null() {
             unsafe {
-                CloseHandle(h_file as *mut std::ffi::c_void);
+                CloseHandle(h_file);
             }
             return Err(format!("CreateFileMappingW falló para '{}'", ruta));
         }
@@ -239,8 +239,8 @@ mod windows_impl {
 
         if addr.is_null() {
             unsafe {
-                CloseHandle(h_map as *mut std::ffi::c_void);
-                CloseHandle(h_file as *mut std::ffi::c_void);
+                CloseHandle(h_map);
+                CloseHandle(h_file);
             }
             return Err(format!("MapViewOfFile falló para '{}'", ruta));
         }

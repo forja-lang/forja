@@ -112,8 +112,8 @@ fn test_error_campos() {
     );
     assert_eq!(err.linea, 10);
     assert_eq!(err.columna, 15);
-    assert_eq!(err.mensaje, "mensaje de error");
-    assert_eq!(err.sugerencia, "sugerencia util");
+    assert_eq!(&*err.mensaje, "mensaje de error");
+    assert_eq!(&*err.sugerencia, "sugerencia util");
 }
 
 #[test]
@@ -246,6 +246,6 @@ fn test_multiples_errores_lexer() {
     let mut lexer = Lexer::new("\"a\n\"b\n\"c\n");
     let result = lexer.tokenize();
     if let Err(errors) = result {
-        assert!(errors.len() >= 1);
+        assert!(!errors.is_empty());
     }
 }

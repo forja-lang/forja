@@ -463,7 +463,7 @@ fn f11_t6_el_ir_emitido_es_ssa_con_phi_real() {
     let suma = ssa
         .functions
         .iter()
-        .find(|f| ssa.symbols.name(f.name) == "suma")
+        .find(|f| ssa.symbols.nombre_de(f.name) == "suma")
         .expect("función suma");
 
     // φ reales: uno por variable del bucle (s e i).

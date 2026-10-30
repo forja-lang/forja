@@ -32,9 +32,7 @@ impl ForjaFast {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
                 // Fast-Math total (solo manual): sin checks de tipo.
-                if self.fast_math_total() {
-                    self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_flotante()));
-                } else if a.es_flotante() && b.es_flotante() {
+                if self.fast_math_total() || (a.es_flotante() && b.es_flotante()) {
                     self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_flotante()));
                 } else if a.es_entero() && b.es_flotante() {
                     self.push_valor(ValorFast::flotante(a.a_entero() as f64 + b.a_flotante()));

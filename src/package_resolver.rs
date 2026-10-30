@@ -43,10 +43,8 @@ impl PackageResolver {
         let path = Path::new(ruta);
 
         // 1. Ruta absoluta o relativa directa
-        if path.is_absolute() {
-            if path.exists() {
-                return Some(path.to_path_buf());
-            }
+        if path.is_absolute() && path.exists() {
+            return Some(path.to_path_buf());
         }
 
         // 2. Relativa al directorio del proyecto
@@ -204,7 +202,7 @@ impl PackageResolver {
         match crate::registry::instalar_desde_registry(nombre, version, &pkg_dir) {
             Ok(version_instalada) => {
                 self.installed.insert(nombre.to_string(), version_instalada);
-                return Ok(());
+                Ok(())
             }
             Err(e_registry) => {
                 // F6-T6: si hay registry remoto configurado, intentar allí antes
@@ -232,7 +230,7 @@ impl PackageResolver {
                 }
                 // Ni builtin ni en el registry local: falla explícito en vez de
                 // fingir que el paquete quedó instalado.
-                return Err(format!(
+                Err(format!(
                     "Paquete '{}' versión '{}' no encontrado. No es builtin y no \
                      está en el registry local ({}). Detalle: {}. Publicá el \
                      paquete con 'forja publish' o instalalo manualmente en {}",
@@ -241,7 +239,7 @@ impl PackageResolver {
                     crate::registry::ruta_index().display(),
                     e_registry,
                     pkg_dir.display()
-                ));
+                ))
             }
         }
     }

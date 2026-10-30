@@ -6,6 +6,12 @@ pub struct DiagramGenerator {
     node_id: usize,
 }
 
+impl Default for DiagramGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DiagramGenerator {
     pub fn new() -> Self {
         DiagramGenerator {

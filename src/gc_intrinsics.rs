@@ -117,13 +117,7 @@ impl GcIntrinsicsManager {
         self.stack_maps
             .iter()
             .filter(|sm| sm.function_id == function_id)
-            .min_by_key(|sm| {
-                if sm.safe_point_offset <= pc_offset {
-                    pc_offset - sm.safe_point_offset
-                } else {
-                    sm.safe_point_offset - pc_offset
-                }
-            })
+            .min_by_key(|sm| pc_offset.abs_diff(sm.safe_point_offset))
     }
 
     /// Retorna todos los safe points de una función

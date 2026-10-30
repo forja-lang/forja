@@ -25,7 +25,7 @@ pub(crate) fn native_archivo_leer(
     vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_archivo_leer requiere 1 argumento: ruta (texto)".into(),
         ));
@@ -87,7 +87,7 @@ pub(crate) fn native_archivo_existe(
     vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_archivo_existe requiere 1 argumento: ruta (texto)".into(),
         ));
@@ -100,7 +100,7 @@ pub(crate) fn native_archivo_eliminar(
     vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_archivo_eliminar requiere 1 argumento: ruta (texto)".into(),
         ));
@@ -177,7 +177,7 @@ pub(crate) fn native_archivo_tamano(
     vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_archivo_tamano requiere 1 argumento: ruta (texto)".into(),
         ));
@@ -205,7 +205,7 @@ pub(crate) fn native_directorio_crear(
     vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_directorio_crear requiere 1 argumento: ruta (texto)".into(),
         ));
@@ -230,7 +230,7 @@ pub(crate) fn native_directorio_eliminar(
     vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_directorio_eliminar requiere 1 argumento: ruta (texto)".into(),
         ));
@@ -255,7 +255,7 @@ pub(crate) fn native_directorio_listar(
     vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_directorio_listar requiere 1 argumento: ruta (texto)".into(),
         ));
@@ -290,7 +290,7 @@ pub(crate) fn native_archivo_info(
     vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_archivo_info requiere 1 argumento: ruta (texto)".into(),
         ));
@@ -343,7 +343,7 @@ pub(crate) fn native_archivo_leer_binario(
     vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_archivo_leer_binario requiere 1 argumento: ruta (texto)".into(),
         ));

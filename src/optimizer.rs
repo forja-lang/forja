@@ -15,6 +15,12 @@ pub struct Optimizer {
     pub arena: Option<crate::arena::Arena>,
 }
 
+impl Default for Optimizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Optimizer {
     pub fn new() -> Self {
         Optimizer {
@@ -514,16 +520,15 @@ impl Optimizer {
                             return izq;
                         }
                     }
-                    Operador::Modulo => {
+                    Operador::Modulo
                         // x % 1 → 0 (sólo si descartar `x` no pierde efectos)
                         if (matches!(&der, Expresion::LiteralNumero(1))
                             || matches!(&der, Expresion::LiteralDecimal(d) if *d == 1.0))
                             && !tiene_efectos_secundarios(&izq)
-                        {
+                        => {
                             self.cambios_realizados += 1;
                             return Expresion::LiteralNumero(0);
                         }
-                    }
                     _ => {}
                 }
 
@@ -766,14 +771,14 @@ impl Optimizer {
         use Operador::*;
         match (a, b) {
             (ValorConstante::Entero(a), ValorConstante::Entero(b)) => match op {
-                Suma => a.checked_add(*b).map(|v| ValorConstante::Entero(v)),
-                Resta => a.checked_sub(*b).map(|v| ValorConstante::Entero(v)),
-                Multiplicacion => a.checked_mul(*b).map(|v| ValorConstante::Entero(v)),
+                Suma => a.checked_add(*b).map(ValorConstante::Entero),
+                Resta => a.checked_sub(*b).map(ValorConstante::Entero),
+                Multiplicacion => a.checked_mul(*b).map(ValorConstante::Entero),
                 Division => {
                     if *b == 0 {
                         None
                     } else {
-                        a.checked_div(*b).map(|v| ValorConstante::Entero(v))
+                        a.checked_div(*b).map(ValorConstante::Entero)
                     }
                 }
                 IgualIgual => Some(ValorConstante::Booleano(a == b)),
@@ -860,6 +865,12 @@ pub struct DeadCodeEliminator {
     funciones_definidas: HashSet<String>,
     clases_usadas: HashSet<String>,
     rasgos_usados: HashSet<String>,
+}
+
+impl Default for DeadCodeEliminator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DeadCodeEliminator {
@@ -1313,6 +1324,12 @@ pub struct ConstPropagator {
     constantes: HashMap<String, ValorConstante>,
 }
 
+impl Default for ConstPropagator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConstPropagator {
     pub fn new() -> Self {
         ConstPropagator {
@@ -1636,14 +1653,14 @@ impl ConstPropagator {
         use Operador::*;
         match (a, b) {
             (ValorConstante::Entero(a), ValorConstante::Entero(b)) => match op {
-                Suma => a.checked_add(*b).map(|v| ValorConstante::Entero(v)),
-                Resta => a.checked_sub(*b).map(|v| ValorConstante::Entero(v)),
-                Multiplicacion => a.checked_mul(*b).map(|v| ValorConstante::Entero(v)),
+                Suma => a.checked_add(*b).map(ValorConstante::Entero),
+                Resta => a.checked_sub(*b).map(ValorConstante::Entero),
+                Multiplicacion => a.checked_mul(*b).map(ValorConstante::Entero),
                 Division => {
                     if *b == 0 {
                         None
                     } else {
-                        a.checked_div(*b).map(|v| ValorConstante::Entero(v))
+                        a.checked_div(*b).map(ValorConstante::Entero)
                     }
                 }
                 IgualIgual => Some(ValorConstante::Booleano(a == b)),
@@ -1830,10 +1847,10 @@ impl FunctionInliner {
             Declaracion::LlamadaFuncion { nombre, .. } => {
                 *counts.entry(nombre.clone()).or_insert(0) += 1;
             }
-            Declaracion::Variable { valor, .. } => {
-                if let Some(expr) = valor {
-                    Self::contar_llamadas_expr(expr, counts);
-                }
+            Declaracion::Variable {
+                valor: Some(expr), ..
+            } => {
+                Self::contar_llamadas_expr(expr, counts);
             }
             Declaracion::Asignacion { valor, .. } => {
                 Self::contar_llamadas_expr(valor, counts);
@@ -2204,10 +2221,8 @@ impl LoopUnswitcher {
                         return true;
                     }
                 }
-                Declaracion::Cuando { cuerpo, .. } => {
-                    if self.body_modifica_var(cuerpo, var) {
-                        return true;
-                    }
+                Declaracion::Cuando { cuerpo, .. } if self.body_modifica_var(cuerpo, var) => {
+                    return true;
                 }
                 _ => {}
             }
@@ -2410,8 +2425,7 @@ impl CsePass {
             }
             // Llamada a función — recursivo en argumentos
             Expresion::LlamadaFuncion { nombre, argumentos } => {
-                let args_hash: Vec<String> =
-                    argumentos.iter().map(|a| Self::expr_hash_key(a)).collect();
+                let args_hash: Vec<String> = argumentos.iter().map(Self::expr_hash_key).collect();
                 format!("call:{}:{}", nombre, args_hash.join(","))
             }
             // Llamada a método — recursivo en objeto y argumentos
@@ -2420,8 +2434,7 @@ impl CsePass {
                 metodo,
                 argumentos,
             } => {
-                let args_hash: Vec<String> =
-                    argumentos.iter().map(|a| Self::expr_hash_key(a)).collect();
+                let args_hash: Vec<String> = argumentos.iter().map(Self::expr_hash_key).collect();
                 format!(
                     "meth:{}:{}:{}",
                     Self::expr_hash_key(objeto),
@@ -2431,7 +2444,7 @@ impl CsePass {
             }
             // Arreglo literal — recursivo en elementos
             Expresion::Arreglo(elementos) => {
-                let elems: Vec<String> = elementos.iter().map(|e| Self::expr_hash_key(e)).collect();
+                let elems: Vec<String> = elementos.iter().map(Self::expr_hash_key).collect();
                 format!("arr:[{}]", elems.join(","))
             }
             // Index — recursivo en objeto e índice
@@ -2448,8 +2461,7 @@ impl CsePass {
             }
             // Instanciación — recursivo en argumentos
             Expresion::Instanciacion { clase, argumentos } => {
-                let args_hash: Vec<String> =
-                    argumentos.iter().map(|a| Self::expr_hash_key(a)).collect();
+                let args_hash: Vec<String> = argumentos.iter().map(Self::expr_hash_key).collect();
                 format!("new:{}:{}", clase, args_hash.join(","))
             }
             // Grupo (paréntesis) — recursivo
@@ -2633,7 +2645,7 @@ impl CopyPropagation {
                     let new_val = self.reemplazar_copias_expr(valor, &copies);
                     let mut new_decl = decl.clone();
                     if let Declaracion::Asignacion { valor, .. } = &mut new_decl {
-                        *valor = Box::new(new_val);
+                        **valor = new_val;
                     }
                     result.push(new_decl);
                 }

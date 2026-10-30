@@ -42,8 +42,7 @@ fn native_bd(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFas
         ));
     }
     let spec = obtener_texto(vm, args[0])?;
-    let ruta = if spec.starts_with("sqlite:") {
-        let resto = &spec["sqlite:".len()..];
+    let ruta = if let Some(resto) = spec.strip_prefix("sqlite:") {
         if resto == "memoria" || resto.is_empty() {
             ":memory:".to_string()
         } else {
@@ -224,8 +223,8 @@ fn native_sqlite_consultar(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Val
     // para evitar el problema del closure que captura vm.
     let rows_data: Vec<Vec<(String, rusqlite::types::Value)>> = match stmt.query_map([], |row| {
         let mut row_data = Vec::with_capacity(column_count);
-        for i in 0..column_count {
-            let name = column_names[i].clone();
+        for (i, name) in column_names.iter().enumerate().take(column_count) {
+            let name = name.clone();
             let val = row
                 .get::<_, rusqlite::types::Value>(i)
                 .unwrap_or(rusqlite::types::Value::Null);
@@ -363,8 +362,8 @@ fn native_sqlite_consultar_params(
     let rows_data: Vec<Vec<(String, rusqlite::types::Value)>> =
         match stmt.query_map(params_refs.as_slice(), |row| {
             let mut row_data = Vec::with_capacity(column_count);
-            for i in 0..column_count {
-                let name = column_names[i].clone();
+            for (i, name) in column_names.iter().enumerate().take(column_count) {
+                let name = name.clone();
                 let val = row
                     .get::<_, rusqlite::types::Value>(i)
                     .unwrap_or(rusqlite::types::Value::Null);

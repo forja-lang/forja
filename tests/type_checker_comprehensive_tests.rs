@@ -4,9 +4,9 @@ use forja::semantics::TypeChecker;
 
 fn check(source: &str) -> Result<(), Vec<forja::error::ErrorForja>> {
     let mut lexer = Lexer::new(source);
-    let tokens = lexer.tokenize().map_err(|e| e)?;
+    let tokens = lexer.tokenize()?;
     let mut parser = Parser::new(tokens);
-    let programa = parser.parse().map_err(|e| e)?;
+    let programa = parser.parse()?;
     let mut tc = TypeChecker::new();
     tc.analizar(&programa)
 }

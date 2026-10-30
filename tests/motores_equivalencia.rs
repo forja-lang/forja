@@ -188,7 +188,7 @@ fn observar_tiered(bc: &[forja::bytecode::Opcode]) {
             Opcode::Call(nombre, _) => {
                 // No importa el tier resultante en una única pasada; lo relevante
                 // es que el orquestador procese la llamada sin paniquear.
-                let _ = match tiered.on_function_call(nombre.as_ref()) {
+                match tiered.on_function_call(nombre.as_ref()) {
                     ShouldCompile::No | ShouldCompile::Yes(_) => (),
                 };
             }

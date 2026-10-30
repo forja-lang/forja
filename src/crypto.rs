@@ -268,9 +268,7 @@ fn mix_columns_inv(state: &mut [u8; 16]) {
 fn aes256_encrypt_block(block: &[u8; 16], w: &[[u8; 4]; 60]) -> [u8; 16] {
     let mut state = *block;
     let mut rk = [[0u8; 4]; 4];
-    for i in 0..4 {
-        rk[i] = w[i];
-    }
+    rk.copy_from_slice(&w[..4]);
     add_round_key(&mut state, &rk);
 
     for round in 1..=13 {
@@ -285,9 +283,7 @@ fn aes256_encrypt_block(block: &[u8; 16], w: &[[u8; 4]; 60]) -> [u8; 16] {
 
     sub_bytes(&mut state);
     shift_rows(&mut state);
-    for i in 0..4 {
-        rk[i] = w[56 + i];
-    }
+    rk.copy_from_slice(&w[56..60]);
     add_round_key(&mut state, &rk);
     state
 }
@@ -296,9 +292,7 @@ fn aes256_encrypt_block(block: &[u8; 16], w: &[[u8; 4]; 60]) -> [u8; 16] {
 fn aes256_decrypt_block(block: &[u8; 16], w: &[[u8; 4]; 60]) -> [u8; 16] {
     let mut state = *block;
     let mut rk = [[0u8; 4]; 4];
-    for i in 0..4 {
-        rk[i] = w[56 + i];
-    }
+    rk.copy_from_slice(&w[56..60]);
     add_round_key(&mut state, &rk);
 
     for round in (1..=13).rev() {
@@ -313,9 +307,7 @@ fn aes256_decrypt_block(block: &[u8; 16], w: &[[u8; 4]; 60]) -> [u8; 16] {
 
     shift_rows_inv(&mut state);
     sub_bytes_inv(&mut state);
-    for i in 0..4 {
-        rk[i] = w[i];
-    }
+    rk.copy_from_slice(&w[..4]);
     add_round_key(&mut state, &rk);
     state
 }
@@ -323,7 +315,7 @@ fn aes256_decrypt_block(block: &[u8; 16], w: &[[u8; 4]; 60]) -> [u8; 16] {
 /// Cifra datos con AES-256-CBC (padding PKCS7)
 pub fn aes256_cbc_encrypt(clave: &[u8; 32], iv: &[u8; 16], datos: &[u8]) -> Vec<u8> {
     let w = aes256_key_expand(clave);
-    let blocks = (datos.len() + 15) / 16;
+    let blocks = datos.len().div_ceil(16);
     let mut out = Vec::with_capacity(blocks * 16);
     let mut prev = *iv;
 
@@ -336,9 +328,7 @@ pub fn aes256_cbc_encrypt(clave: &[u8; 32], iv: &[u8; 16], datos: &[u8]) -> Vec<
         // PKCS7 padding
         if size < 16 {
             let pad = (16 - size) as u8;
-            for j in size..16 {
-                block[j] = pad;
-            }
+            block[size..].fill(pad);
         } else if i == blocks - 1 {
             // Último bloque exacto: agregar un bloque completo de padding
             let mut extra = [0u8; 16];
@@ -369,7 +359,7 @@ pub fn aes256_cbc_decrypt(
     iv: &[u8; 16],
     datos: &[u8],
 ) -> Result<Vec<u8>, &'static str> {
-    if datos.len() % 16 != 0 || datos.is_empty() {
+    if !datos.len().is_multiple_of(16) || datos.is_empty() {
         return Err("AES-CBC: datos deben ser múltiplo de 16 bytes");
     }
     let w = aes256_key_expand(clave);
@@ -412,12 +402,8 @@ fn gcm_ghash(h: &[u8; 16], data: &[u8]) -> [u8; 16] {
     let mut y = [0u8; 16];
     let mut buf = [0u8; 16];
     for chunk in data.chunks(16) {
-        for i in 0..chunk.len() {
-            buf[i] = chunk[i];
-        }
-        for i in chunk.len()..16 {
-            buf[i] = 0;
-        }
+        buf[..chunk.len()].copy_from_slice(chunk);
+        buf[chunk.len()..].fill(0);
         // XOR y ^= buf
         for i in 0..16 {
             y[i] ^= buf[i];
@@ -495,10 +481,10 @@ pub fn aes256_gcm_encrypt(clave: &[u8; 32], nonce: &[u8; 12], datos: &[u8], ad: 
     ghash_input.extend_from_slice(ad);
     // Padding A to 16 bytes
     let a_pad = (16 - ad.len() % 16) % 16;
-    ghash_input.extend(std::iter::repeat(0u8).take(a_pad));
+    ghash_input.extend(std::iter::repeat_n(0u8, a_pad));
     ghash_input.extend_from_slice(&cifrado);
     let c_pad = (16 - cifrado.len() % 16) % 16;
-    ghash_input.extend(std::iter::repeat(0u8).take(c_pad));
+    ghash_input.extend(std::iter::repeat_n(0u8, c_pad));
     // Longitudes en bits
     ghash_input.extend_from_slice(&(ad.len() as u64 * 8).to_be_bytes());
     ghash_input.extend_from_slice(&(cifrado.len() as u64 * 8).to_be_bytes());
@@ -543,10 +529,10 @@ pub fn aes256_gcm_decrypt(
     let mut ghash_input = Vec::new();
     ghash_input.extend_from_slice(ad);
     let a_pad = (16 - ad.len() % 16) % 16;
-    ghash_input.extend(std::iter::repeat(0u8).take(a_pad));
+    ghash_input.extend(std::iter::repeat_n(0u8, a_pad));
     ghash_input.extend_from_slice(cifrado);
     let c_pad = (16 - cifrado.len() % 16) % 16;
-    ghash_input.extend(std::iter::repeat(0u8).take(c_pad));
+    ghash_input.extend(std::iter::repeat_n(0u8, c_pad));
     ghash_input.extend_from_slice(&(ad.len() as u64 * 8).to_be_bytes());
     ghash_input.extend_from_slice(&(cifrado.len() as u64 * 8).to_be_bytes());
 
@@ -881,10 +867,10 @@ pub fn chacha20_poly1305_encrypt(
     let mut poly_input = Vec::new();
     poly_input.extend_from_slice(ad);
     let a_pad = (16 - ad.len() % 16) % 16;
-    poly_input.extend(std::iter::repeat(0u8).take(a_pad));
+    poly_input.extend(std::iter::repeat_n(0u8, a_pad));
     poly_input.extend_from_slice(&cifrado);
     let c_pad = (16 - cifrado.len() % 16) % 16;
-    poly_input.extend(std::iter::repeat(0u8).take(c_pad));
+    poly_input.extend(std::iter::repeat_n(0u8, c_pad));
     poly_input.extend_from_slice(&(ad.len() as u64).to_le_bytes());
     poly_input.extend_from_slice(&(cifrado.len() as u64).to_le_bytes());
 
@@ -916,10 +902,10 @@ pub fn chacha20_poly1305_decrypt(
     let mut poly_input = Vec::new();
     poly_input.extend_from_slice(ad);
     let a_pad = (16 - ad.len() % 16) % 16;
-    poly_input.extend(std::iter::repeat(0u8).take(a_pad));
+    poly_input.extend(std::iter::repeat_n(0u8, a_pad));
     poly_input.extend_from_slice(cifrado);
     let c_pad = (16 - cifrado.len() % 16) % 16;
-    poly_input.extend(std::iter::repeat(0u8).take(c_pad));
+    poly_input.extend(std::iter::repeat_n(0u8, c_pad));
     poly_input.extend_from_slice(&(ad.len() as u64).to_le_bytes());
     poly_input.extend_from_slice(&(cifrado.len() as u64).to_le_bytes());
 
@@ -1137,7 +1123,7 @@ pub fn scrypt(
 }
 
 pub fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return None;
     }
     let mut bytes = Vec::with_capacity(hex.len() / 2);

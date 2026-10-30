@@ -80,9 +80,7 @@ pub(crate) fn native_json_stringificar(
     let val = args[0];
     let resultado = json_stringificar_valor(vm, val);
     let idx = vm.alloc_str(Arc::from(resultado.as_str()));
-    let mut arr = Vec::with_capacity(2);
-    arr.push(ValorFast::entero(0));
-    arr.push(ValorFast::texto(idx));
+    let arr = vec![ValorFast::entero(0), ValorFast::texto(idx)];
     let aidx = vm.alloc_arr(arr);
     Ok(ValorFast::arreglo(aidx))
 }

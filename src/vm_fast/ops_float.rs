@@ -154,7 +154,7 @@ impl ForjaFast {
                 // push(vars[src] & 1) — fast path: quickening garantiza entero
                 let val = self.load_local(*src);
                 // Branchless: entero & 1 (también funciona para float por NaN tagging)
-                self.push_valor(get_small_int_fast((val.a_entero() as i64) & 1));
+                self.push_valor(get_small_int_fast(val.a_entero() & 1));
                 self.ip += 1;
             }
 

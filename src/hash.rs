@@ -12,6 +12,12 @@ pub struct Sha256 {
     len: u64,
 }
 
+impl Default for Sha256 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Sha256 {
     pub fn new() -> Self {
         Self {
@@ -32,7 +38,7 @@ impl Sha256 {
             self.buf[remaining..remaining + take].copy_from_slice(&data[..take]);
             self.len += take as u64;
             off += take;
-            if self.len as usize % 64 == 0 {
+            if (self.len as usize).is_multiple_of(64) {
                 sha256_compress(&mut self.h, &self.buf);
             }
         }
@@ -146,6 +152,12 @@ pub struct Sha1 {
     len: u64,
 }
 
+impl Default for Sha1 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Sha1 {
     pub fn new() -> Self {
         Self {
@@ -163,7 +175,7 @@ impl Sha1 {
             self.buf[remaining..remaining + take].copy_from_slice(&data[..take]);
             self.len += take as u64;
             off += take;
-            if self.len as usize % 64 == 0 {
+            if (self.len as usize).is_multiple_of(64) {
                 sha1_compress(&mut self.h, &self.buf);
             }
         }
@@ -220,7 +232,7 @@ fn sha1_compress(h: &mut [u32; 5], block: &[u8; 64]) {
 
     let (mut a, mut b, mut c, mut d, mut e) = (h[0], h[1], h[2], h[3], h[4]);
 
-    for i in 0..80 {
+    for (i, &wi) in w.iter().enumerate() {
         let (f, k): (u32, u32) = match i {
             0..=19 => ((b & c) | ((!b) & d), 0x5a827999),
             20..=39 => (b ^ c ^ d, 0x6ed9eba1),
@@ -232,7 +244,7 @@ fn sha1_compress(h: &mut [u32; 5], block: &[u8; 64]) {
             .wrapping_add(f)
             .wrapping_add(e)
             .wrapping_add(k)
-            .wrapping_add(w[i]);
+            .wrapping_add(wi);
         e = d;
         d = c;
         c = b.rotate_left(30);
@@ -254,6 +266,12 @@ const IV224: [u32; 8] = [
 ];
 
 pub struct Sha224(Sha256);
+
+impl Default for Sha224 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Sha224 {
     pub fn new() -> Self {
@@ -288,6 +306,12 @@ pub struct Sha512 {
     len: u64,
 }
 
+impl Default for Sha512 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Sha512 {
     pub fn new() -> Self {
         Self {
@@ -314,7 +338,7 @@ impl Sha512 {
             self.buf[remaining..remaining + take].copy_from_slice(&data[..take]);
             self.len += take as u64;
             off += take;
-            if self.len as usize % 128 == 0 {
+            if (self.len as usize).is_multiple_of(128) {
                 sha512_compress(&mut self.h, &self.buf);
             }
         }
@@ -512,6 +536,12 @@ const IV384: [u64; 8] = [
 ];
 
 pub struct Sha384(Sha512);
+
+impl Default for Sha384 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Sha384 {
     pub fn new() -> Self {

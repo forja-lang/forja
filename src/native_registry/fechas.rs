@@ -71,7 +71,7 @@ pub(crate) fn native_fecha_desde_timestamp(
     vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_fecha_desde_timestamp requiere 1 argumento: timestamp (entero)".into(),
         ));
@@ -117,24 +117,24 @@ pub(crate) fn native_fecha_a_timestamp(
     let minuto = obtener_entero(args[4])?;
     let segundo = obtener_entero(args[5])?;
 
-    if mes < 1 || mes > 12 {
+    if !(1..=12).contains(&mes) {
         return Err(ErrFast::TipoInv(format!("mes inválido: {}", mes)));
     }
-    if dia < 1 || dia > 31 {
+    if !(1..=31).contains(&dia) {
         return Err(ErrFast::TipoInv(format!("día inválido: {}", dia)));
     }
-    if hora < 0 || hora > 23 {
+    if !(0..=23).contains(&hora) {
         return Err(ErrFast::TipoInv(format!("hora inválida: {}", hora)));
     }
-    if minuto < 0 || minuto > 59 {
+    if !(0..=59).contains(&minuto) {
         return Err(ErrFast::TipoInv(format!("minuto inválido: {}", minuto)));
     }
-    if segundo < 0 || segundo > 59 {
+    if !(0..=59).contains(&segundo) {
         return Err(ErrFast::TipoInv(format!("segundo inválido: {}", segundo)));
     }
 
     let dias = days_from_civil(año, mes as u32, dia as u32);
-    let ts = dias * 86400 + hora as i64 * 3600 + minuto as i64 * 60 + segundo as i64;
+    let ts = dias * 86400 + hora * 3600 + minuto * 60 + segundo;
 
     Ok(ValorFast::entero(ts))
 }

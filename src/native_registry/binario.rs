@@ -33,7 +33,7 @@ pub(crate) fn native_binario_empaquetar(
         };
         let little = endian == "le";
         let val = if pos < arr.len() {
-            arr[pos].a_entero() as i64
+            arr[pos].a_entero()
         } else {
             0i64
         };
@@ -41,7 +41,7 @@ pub(crate) fn native_binario_empaquetar(
             'b' => buf.push(val as i8 as u8),
             'h' => buf.extend_from_slice(&(val as i16).to_le_bytes()),
             'i' => buf.extend_from_slice(&(val as i32).to_le_bytes()),
-            'q' => buf.extend_from_slice(&(val as i64).to_le_bytes()),
+            'q' => buf.extend_from_slice(&val.to_le_bytes()),
             _ => {}
         }
         if !little {

@@ -275,7 +275,7 @@ mod windows_impl {
             return Err("ReadConsoleW falló".into());
         }
         let s = String::from_utf16_lossy(&buf[..read as usize]);
-        Ok(s.trim_end_matches(&['\r', '\n']).to_string())
+        Ok(s.trim_end_matches(['\r', '\n']).to_string())
     }
 }
 

@@ -62,7 +62,7 @@ pub(crate) fn native_socket_tcp_conectar(
     let direccion = obtener_texto(vm, args[0])?;
     let puerto = obtener_entero(args[1])?;
 
-    if puerto < 1 || puerto > 65535 {
+    if !(1..=65535).contains(&puerto) {
         return Err(ErrFast::TipoInv(format!(
             "direccion_invalida: puerto {} fuera de rango (1-65535)",
             puerto
@@ -151,7 +151,7 @@ pub(crate) fn native_socket_recibir(
 
     let socket_idx = extraer_indice_socket(vm, args[0])?;
     let buffer_tamano = obtener_entero(args[1])?;
-    let buffer_tamano = buffer_tamano.max(1).min(65536) as usize;
+    let buffer_tamano = buffer_tamano.clamp(1, 65536) as usize;
 
     if !vm.socket_get(socket_idx).connected {
         return Err(ErrFast::TipoInv(
@@ -212,7 +212,7 @@ pub(crate) fn native_socket_recibir_binario(
 
     let socket_idx = extraer_indice_socket(vm, args[0])?;
     let buffer_tamano = obtener_entero(args[1])?;
-    let buffer_tamano = buffer_tamano.max(1).min(65536) as usize;
+    let buffer_tamano = buffer_tamano.clamp(1, 65536) as usize;
 
     if !vm.socket_get(socket_idx).connected {
         return Err(ErrFast::TipoInv(
@@ -378,14 +378,14 @@ pub(crate) fn native_socket_tcp_escuchar(
     vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_socket_tcp_escuchar requiere al menos 1 argumento: puerto (entero)".into(),
         ));
     }
 
     let puerto = obtener_entero(args[0])?;
-    if puerto < 1 || puerto > 65535 {
+    if !(1..=65535).contains(&puerto) {
         return Err(ErrFast::TipoInv(format!(
             "direccion_invalida: puerto {} fuera de rango (1-65535)",
             puerto
@@ -470,14 +470,14 @@ pub(crate) fn native_socket_udp_escuchar(
     vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_socket_udp_escuchar requiere al menos 1 argumento: puerto (entero)".into(),
         ));
     }
 
     let puerto = obtener_entero(args[0])?;
-    if puerto < 0 || puerto > 65535 {
+    if !(0..=65535).contains(&puerto) {
         return Err(ErrFast::TipoInv(format!(
             "direccion_invalida: puerto {} fuera de rango (0-65535)",
             puerto
@@ -528,7 +528,7 @@ pub(crate) fn native_socket_udp_enviar(
     let direccion = obtener_texto(vm, args[2])?;
     let puerto = obtener_entero(args[3])?;
 
-    if puerto < 1 || puerto > 65535 {
+    if !(1..=65535).contains(&puerto) {
         return Err(ErrFast::TipoInv(format!(
             "direccion_invalida: puerto {} fuera de rango (1-65535)",
             puerto
@@ -576,7 +576,7 @@ pub(crate) fn native_socket_udp_recibir(
 
     let socket_idx = extraer_indice_socket(vm, args[0])?;
     let buffer_tamano = obtener_entero(args[1])?;
-    let buffer_tamano = buffer_tamano.max(1).min(65536) as usize;
+    let buffer_tamano = buffer_tamano.clamp(1, 65536) as usize;
 
     let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
         Some(arc) => Arc::clone(arc),
@@ -623,7 +623,7 @@ pub(crate) fn native_socket_udp_enviar_binario(
     let direccion = obtener_texto(vm, args[2])?;
     let puerto = obtener_entero(args[3])?;
 
-    if puerto < 1 || puerto > 65535 {
+    if !(1..=65535).contains(&puerto) {
         return Err(ErrFast::TipoInv(format!(
             "direccion_invalida: puerto {} fuera de rango (1-65535)",
             puerto
@@ -681,7 +681,7 @@ pub(crate) fn native_socket_udp_recibir_binario(
 
     let socket_idx = extraer_indice_socket(vm, args[0])?;
     let buffer_tamano = obtener_entero(args[1])?;
-    let buffer_tamano = buffer_tamano.max(1).min(65536) as usize;
+    let buffer_tamano = buffer_tamano.clamp(1, 65536) as usize;
 
     let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
         Some(arc) => Arc::clone(arc),

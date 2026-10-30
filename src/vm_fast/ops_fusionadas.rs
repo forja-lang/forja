@@ -39,7 +39,7 @@ impl ForjaFast {
             Opcode::LoadAddInt(idx, n) => {
                 let val = self.load_local(*idx);
                 if val.es_entero() {
-                    self.push_valor(get_small_int_fast(val.a_entero() as i64 + *n));
+                    self.push_valor(get_small_int_fast(val.a_entero() + *n));
                 } else {
                     // Los operandos no son enteros: se delega en el `Add`
                     // genérico (texto/flotante/nulo) en el mismo ip. La fusión
@@ -58,13 +58,13 @@ impl ForjaFast {
             Opcode::AddStoreIdx(idx) => {
                 let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                 let result = if a.es_entero() && b.es_entero() {
-                    get_small_int_fast(a.a_entero() as i64 + b.a_entero() as i64)
+                    get_small_int_fast(a.a_entero() + b.a_entero())
                 } else {
                     self.push_valor(a);
                     self.push_valor(b);
                     let (b2, a2) = (self.pop_valor()?, self.pop_valor()?);
                     if a2.es_entero() && b2.es_entero() {
-                        get_small_int_fast(a2.a_entero() as i64 + b2.a_entero() as i64)
+                        get_small_int_fast(a2.a_entero() + b2.a_entero())
                     } else {
                         ValorFast::nulo()
                     }
@@ -77,13 +77,13 @@ impl ForjaFast {
             Opcode::SubStoreIdx(idx) => {
                 let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                 let result = if a.es_entero() && b.es_entero() {
-                    get_small_int_fast(a.a_entero() as i64 - b.a_entero() as i64)
+                    get_small_int_fast(a.a_entero() - b.a_entero())
                 } else {
                     self.push_valor(a);
                     self.push_valor(b);
                     let (b2, a2) = (self.pop_valor()?, self.pop_valor()?);
                     if a2.es_entero() && b2.es_entero() {
-                        get_small_int_fast(a2.a_entero() as i64 - b2.a_entero() as i64)
+                        get_small_int_fast(a2.a_entero() - b2.a_entero())
                     } else {
                         ValorFast::nulo()
                     }
@@ -96,13 +96,13 @@ impl ForjaFast {
             Opcode::MulStoreIdx(idx) => {
                 let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                 let result = if a.es_entero() && b.es_entero() {
-                    get_small_int_fast(a.a_entero() as i64 * b.a_entero() as i64)
+                    get_small_int_fast(a.a_entero() * b.a_entero())
                 } else {
                     self.push_valor(a);
                     self.push_valor(b);
                     let (b2, a2) = (self.pop_valor()?, self.pop_valor()?);
                     if a2.es_entero() && b2.es_entero() {
-                        get_small_int_fast(a2.a_entero() as i64 * b2.a_entero() as i64)
+                        get_small_int_fast(a2.a_entero() * b2.a_entero())
                     } else {
                         ValorFast::nulo()
                     }
@@ -125,7 +125,7 @@ impl ForjaFast {
                     );
                 }
                 if a.es_entero() {
-                    self.push_valor(get_small_int_fast(a.a_entero() as i64 + n));
+                    self.push_valor(get_small_int_fast(a.a_entero() + n));
                 } else {
                     self.push_valor(a);
                     self.push_valor(get_small_int_fast(*n));
@@ -140,7 +140,7 @@ impl ForjaFast {
             Opcode::DupAddInt => {
                 let a = self.pop_valor()?;
                 if a.es_entero() {
-                    let n = a.a_entero() as i64;
+                    let n = a.a_entero();
                     self.push_valor(a);
                     self.push_valor(get_small_int_fast(n + n));
                 } else {

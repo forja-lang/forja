@@ -14,7 +14,7 @@ pub(crate) fn native_aleatorio_semilla(
     _vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_aleatorio_semilla requiere 1 argumento: valor (entero)".into(),
         ));
@@ -29,7 +29,7 @@ pub(crate) fn native_aleatorio_entero(
     _vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_aleatorio_entero requiere 1 argumento: max (entero)".into(),
         ));

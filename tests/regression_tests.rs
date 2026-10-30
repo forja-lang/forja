@@ -5,8 +5,6 @@
 // Para ejecutar:
 //   cargo test regression_tests
 
-use forja;
-
 // ──────────────────────────────────────────────
 // 1. Paréntesis infinitos
 // ──────────────────────────────────────────────
@@ -75,7 +73,7 @@ fn unicode_raro_no_crashea() {
 // ──────────────────────────────────────────────
 #[test]
 fn bytes_nulos_no_crashean() {
-    let input = format!("let a = \x00\x00\x001;\n");
+    let input = "let a = \x00\x00\x001;\n".to_string();
     let result = std::panic::catch_unwind(|| {
         let mut lexer = forja::lexer::Lexer::new(&input);
         let _ = lexer.tokenize();

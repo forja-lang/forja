@@ -66,10 +66,7 @@ impl ProfileData {
 
     /// Registra un tipo visto en un IC
     pub fn record_type_at_ic(&mut self, block: &BlockId, tipo: &str) {
-        let dist = self
-            .type_distribution
-            .entry(block.clone())
-            .or_insert_with(HashMap::new);
+        let dist = self.type_distribution.entry(block.clone()).or_default();
         *dist.entry(tipo.to_string()).or_insert(0) += 1;
     }
 
@@ -260,10 +257,8 @@ impl Instrumenter {
     #[inline(always)]
     pub fn record(&mut self, ip: usize) {
         self.current_count += 1;
-        if self.current_count % self.sample_rate == 0 {
-            if ip < self.counters.len() {
-                self.counters[ip] += 1;
-            }
+        if self.current_count.is_multiple_of(self.sample_rate) && ip < self.counters.len() {
+            self.counters[ip] += 1;
         }
     }
 
@@ -276,7 +271,7 @@ impl Instrumenter {
             .map(|(i, &c)| (i, c))
             .filter(|(_, c)| *c > 0)
             .collect();
-        indexed.sort_by(|a, b| b.1.cmp(&a.1));
+        indexed.sort_by_key(|&(_, c)| std::cmp::Reverse(c));
         indexed.truncate(top_n);
         indexed
     }

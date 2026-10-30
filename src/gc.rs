@@ -478,10 +478,10 @@ impl GenerationalGC {
         if obj.header().generation != Generation::Old {
             return;
         }
-        if self.is_in_young_generation(new_ptr_value) {
-            if !self.remembered_set.iter().any(|r| r.ptr == obj.ptr) {
-                self.remembered_set.push(*obj);
-            }
+        if self.is_in_young_generation(new_ptr_value)
+            && !self.remembered_set.iter().any(|r| r.ptr == obj.ptr)
+        {
+            self.remembered_set.push(*obj);
         }
     }
 

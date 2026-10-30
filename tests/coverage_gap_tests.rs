@@ -535,7 +535,7 @@ fn test_uop_expand_read_line() {
 fn test_uop_expand_channel_new() {
     let uops = expandir_a_uops(&[Opcode::ChannelNew]);
     // ChannelNew expands to some sequence of uops
-    assert!(uops.len() >= 1);
+    assert!(!uops.is_empty());
 }
 
 #[test]
@@ -603,31 +603,31 @@ fn test_uop_expand_decimal_a_exacto() {
 #[test]
 fn test_uop_expand_contract_check_pre() {
     let uops = expandir_a_uops(&[Opcode::CheckPre(0)]);
-    assert!(uops.len() >= 1);
+    assert!(!uops.is_empty());
 }
 
 #[test]
 fn test_uop_expand_contract_check_post() {
     let uops = expandir_a_uops(&[Opcode::CheckPost(1)]);
-    assert!(uops.len() >= 1);
+    assert!(!uops.is_empty());
 }
 
 #[test]
 fn test_uop_expand_contract_save_anterior() {
     let uops = expandir_a_uops(&[Opcode::SaveAnterior(2)]);
-    assert!(uops.len() >= 1);
+    assert!(!uops.is_empty());
 }
 
 #[test]
 fn test_uop_expand_contract_check_inv() {
     let uops = expandir_a_uops(&[Opcode::CheckInv(3)]);
-    assert!(uops.len() >= 1);
+    assert!(!uops.is_empty());
 }
 
 #[test]
 fn test_uop_expand_set_line() {
     let uops = expandir_a_uops(&[Opcode::SetLine(10)]);
-    assert!(uops.len() >= 1);
+    assert!(!uops.is_empty());
 }
 
 // ============================================================

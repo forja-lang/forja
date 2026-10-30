@@ -649,17 +649,17 @@ pub fn optimizar_uops(uops: &[Uop]) -> Vec<Uop> {
         }
 
         // Detectar patrones de 2 uops: Push(n), Pop → eliminar ambos
-        if i + 1 < uops.len() {
-            if matches!(
+        if i + 1 < uops.len()
+            && matches!(
                 (&uops[i], &uops[i + 1]),
                 (Uop::PushEntero(_), Uop::Pop)
                     | (Uop::PushBooleano(_), Uop::Pop)
                     | (Uop::PushNulo, Uop::Pop)
-            ) {
-                // Eliminar ambos (Push + Pop se cancelan mutuamente)
-                i += 2;
-                continue;
-            }
+            )
+        {
+            // Eliminar ambos (Push + Pop se cancelan mutuamente)
+            i += 2;
+            continue;
         }
 
         // Detectar StorePop que sigue a DeclareVar del mismo índice → fusionar a DeclareInit
@@ -737,12 +737,12 @@ fn construir_mapeo_posiciones(bytecode: &[Opcode]) -> Vec<usize> {
 pub fn remapear_saltos_uops(uops: &mut [Uop], bytecode: &[Opcode]) {
     let mapeo = construir_mapeo_posiciones(bytecode);
 
-    for i in 0..uops.len() {
-        match &mut uops[i] {
-            Uop::Jump(target) | Uop::JumpSiFalso(target) | Uop::Label(target) => {
-                if *target < mapeo.len() {
-                    *target = mapeo[*target];
-                }
+    for uop in uops.iter_mut() {
+        match uop {
+            Uop::Jump(target) | Uop::JumpSiFalso(target) | Uop::Label(target)
+                if *target < mapeo.len() =>
+            {
+                *target = mapeo[*target];
             }
             _ => {}
         }

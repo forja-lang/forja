@@ -82,8 +82,8 @@ impl DominatorTree {
 
         // Construir children
         let mut children: Vec<Vec<BlockId>> = vec![Vec::new(); n];
-        for i in 0..n {
-            if let Some(dom) = idom[i] {
+        for (i, dom) in idom.iter().enumerate().take(n) {
+            if let Some(dom) = *dom {
                 if dom != i && dom < n {
                     children[dom].push(i);
                 }
@@ -1009,7 +1009,7 @@ mod tests {
     fn funcion<'a>(prog: &'a crate::ir::IrProgram, nombre: &str) -> &'a crate::ir::SsaFunction {
         prog.functions
             .iter()
-            .find(|f| prog.symbols.name(f.name) == nombre)
+            .find(|f| prog.symbols.nombre_de(f.name) == nombre)
             .unwrap_or_else(|| panic!("no está la función {nombre}"))
     }
 

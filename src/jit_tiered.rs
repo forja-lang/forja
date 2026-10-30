@@ -203,17 +203,12 @@ impl TieredJit {
 
     /// Registra una función
     pub fn register_function(&mut self, name: &str) {
-        self.functions
-            .entry(name.to_string())
-            .or_insert_with(FunctionState::new);
+        self.functions.entry(name.to_string()).or_default();
     }
 
     /// Notifica una ejecución de función y retorna si debe compilarse
     pub fn on_function_call(&mut self, name: &str) -> ShouldCompile {
-        let state = self
-            .functions
-            .entry(name.to_string())
-            .or_insert_with(FunctionState::new);
+        let state = self.functions.entry(name.to_string()).or_default();
         state.tick(&self.thresholds)
     }
 

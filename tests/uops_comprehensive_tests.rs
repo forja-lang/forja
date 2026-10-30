@@ -184,13 +184,13 @@ fn test_uops_expand_declare_idx_global() {
 #[test]
 fn test_uops_expand_fusionados_declare_entero() {
     let uops = expandir(vec![Opcode::DeclareEnteroOp(0, 42)]);
-    assert!(uops.len() >= 1);
+    assert!(!uops.is_empty());
 }
 
 #[test]
 fn test_uops_expand_declare_booleano_op() {
     let uops = expandir(vec![Opcode::DeclareBooleanoOp(1, true)]);
-    assert!(uops.len() >= 1);
+    assert!(!uops.is_empty());
 }
 
 #[test]

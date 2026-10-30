@@ -123,7 +123,7 @@ impl Arena {
 
     /// Asigna un slice de valores en la arena y retorna una referencia.
     pub fn alloc_slice<T: Clone>(&mut self, slice: &[T]) -> &[T] {
-        let size = std::mem::size_of::<T>() * slice.len();
+        let size = std::mem::size_of_val(slice);
         let align = std::mem::align_of::<T>();
         let idx = self.get_chunk_idx_for(size, align);
         let ptr = self.chunks[idx].alloc_bytes(size, align) as *mut T;

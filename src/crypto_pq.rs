@@ -104,8 +104,8 @@ fn mul_naive(a: &Poly, b: &Poly) -> Poly {
         }
     }
     let mut out = Poly::new();
-    for i in 0..N {
-        out.coeffs[i] = c[i] as i16;
+    for (o, &ci) in out.coeffs.iter_mut().zip(c.iter()) {
+        *o = ci as i16;
     }
     out
 }
@@ -255,7 +255,7 @@ pub fn pq_encaps(pk: &[u8]) -> Result<(Vec<u8>, Vec<u8>), &'static str> {
     for i in 0..256.min(N) {
         let byte = msg_seed[i / 8];
         let bit = (byte >> (i % 8)) & 1;
-        msg.coeffs[i] = ((Q as i16) / 2) * (bit as i16);
+        msg.coeffs[i] = (Q / 2) * (bit as i16);
     }
 
     // u = A*r + e1
@@ -339,8 +339,8 @@ mod tests {
     #[test]
     fn test_pq_keygen_encaps_decaps() {
         let keys = pq_keygen().unwrap();
-        assert!(keys.public.len() > 0);
-        assert!(keys.secret.len() > 0);
+        assert!(!keys.public.is_empty());
+        assert!(!keys.secret.is_empty());
 
         let (shared_ct, ct) = pq_encaps(&keys.public).unwrap();
         let shared_dec = pq_decaps(&keys.secret, &ct).unwrap();

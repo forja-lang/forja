@@ -91,7 +91,7 @@ fn token_prev_raw(tokens: &[Token], cursor: usize) -> Option<TokenKind> {
 }
 
 fn extraer_objeto_antes_del_punto(tokens: &[Token], cursor: usize) -> String {
-    let start = if cursor >= 2 { cursor - 2 } else { 0 };
+    let start = cursor.saturating_sub(2);
     let mut i = start;
     while i > 0 {
         i = i.saturating_sub(1);
@@ -639,7 +639,7 @@ impl CompletionResolver {
         if expr == "este" {
             return Some("este".to_string());
         }
-        for (cls_name, _cls) in &self.stdlib.classes {
+        for cls_name in self.stdlib.classes.keys() {
             if expr == cls_name || expr.ends_with(cls_name) {
                 return Some(cls_name.clone());
             }

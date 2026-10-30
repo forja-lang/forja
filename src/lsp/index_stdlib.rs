@@ -71,6 +71,12 @@ pub struct StdlibIndex {
     pub builtin_types: Vec<(&'static str, &'static str)>,
 }
 
+impl Default for StdlibIndex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StdlibIndex {
     pub fn new() -> Self {
         StdlibIndex {
@@ -253,11 +259,7 @@ impl StdlibIndex {
                         .iter()
                         .map(|c| FieldInfo {
                             name: c.nombre.clone(),
-                            type_str: c
-                                .tipo
-                                .as_ref()
-                                .map(|t| format_tipo(t))
-                                .unwrap_or("?".to_string()),
+                            type_str: c.tipo.as_ref().map(format_tipo).unwrap_or("?".to_string()),
                         })
                         .collect();
                     let mut methods: Vec<FunctionInfo> = Vec::new();
@@ -270,16 +272,12 @@ impl StdlibIndex {
                                 type_str: p
                                     .tipo
                                     .as_ref()
-                                    .map(|t| format_tipo(t))
+                                    .map(format_tipo)
                                     .unwrap_or("?".to_string()),
                                 prestado: p.prestado,
                             })
                             .collect();
-                        let rt = m
-                            .tipo_retorno
-                            .as_ref()
-                            .map(|t| format_tipo(t))
-                            .unwrap_or_default();
+                        let rt = m.tipo_retorno.as_ref().map(format_tipo).unwrap_or_default();
                         methods.push(FunctionInfo {
                             name: m.nombre.clone(),
                             module: module_name.to_string(),
@@ -335,7 +333,7 @@ impl StdlibIndex {
 
     pub fn buscar_clases(&self, prefix: &str) -> Vec<&ClassInfo> {
         let mut results = Vec::new();
-        for (_, c) in &self.classes {
+        for c in self.classes.values() {
             if c.name.starts_with(prefix) {
                 results.push(c);
             }
@@ -379,7 +377,7 @@ fn format_tipo(t: &Tipo) -> String {
         Tipo::Clase(n) => n.clone(),
         Tipo::Arreglo(inner) => format!("Arreglo<{}>", format_tipo(inner)),
         Tipo::Funcion(params, ret) => {
-            let ps: Vec<String> = params.iter().map(|p| format_tipo(p)).collect();
+            let ps: Vec<String> = params.iter().map(format_tipo).collect();
             format!("({}) -> {}", ps.join(", "), format_tipo(ret))
         }
         Tipo::Resultado(ok, err) => format!("Resultado<{}, {}>", format_tipo(ok), format_tipo(err)),

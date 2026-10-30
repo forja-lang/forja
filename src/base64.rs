@@ -65,7 +65,7 @@ pub fn b64_decode(texto: &str) -> Result<Vec<u8>, &'static str> {
     if len == 0 {
         return Ok(Vec::new());
     }
-    if len % 4 != 0 {
+    if !len.is_multiple_of(4) {
         return Err("base64: longitud inválida");
     }
 

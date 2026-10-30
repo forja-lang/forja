@@ -99,8 +99,8 @@ fn red_p(x: &[u64; 8]) -> U256 {
         let mut nuevo = [0u64; 9];
         nuevo[..4].copy_from_slice(&buf[..4]);
         let mut carry: u128 = 0;
-        for i in 4..9 {
-            let t = (buf[i] as u128) * 38 + carry;
+        for (i, &bi) in buf.iter().enumerate().skip(4) {
+            let t = (bi as u128) * 38 + carry;
             let bajo = t as u64;
             carry = t >> 64;
             // Sumar `bajo` en la posición i-4 propagando el acarreo.
@@ -256,7 +256,7 @@ fn punto_base() -> Punto {
 fn punto_sumar(p: &Punto, q: &Punto, d: &U256) -> Punto {
     let a = fe_mul(&fe_sub(&p.y, &p.x), &fe_sub(&q.y, &q.x));
     let b = fe_mul(&fe_add(&p.y, &p.x), &fe_add(&q.y, &q.x));
-    let c = fe_mul(&fe_mul(&p.t, &d), &fe_mul(&q.t, &[2, 0, 0, 0]));
+    let c = fe_mul(&fe_mul(&p.t, d), &fe_mul(&q.t, &[2, 0, 0, 0]));
     let dd = fe_mul(&fe_mul(&p.z, &q.z), &[2, 0, 0, 0]);
     let e = fe_sub(&b, &a);
     let f = fe_sub(&dd, &c);
@@ -417,12 +417,12 @@ fn sc_muladd(a: &U256, b: &U256, c: &U256) -> U256 {
         prod[i] = s as u64;
         carry = s >> 64;
     }
-    for i in 4..8 {
+    for p in prod.iter_mut().take(8).skip(4) {
         if carry == 0 {
             break;
         }
-        let s = prod[i] as u128 + carry;
-        prod[i] = s as u64;
+        let s = *p as u128 + carry;
+        *p = s as u64;
         carry = s >> 64;
     }
     sc_reduce_wide(&prod)

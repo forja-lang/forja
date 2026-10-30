@@ -68,7 +68,7 @@ pub fn cargar_libreria(ruta: &str) -> Result<i64, String> {
                 let err = GetLastError();
                 return Err(format!("LoadLibraryW falló: código {}", err));
             }
-            h as *mut c_void
+            h
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -107,7 +107,7 @@ pub fn obtener_funcion(ruta: &str, nombre: &str) -> Result<i64, String> {
         {
             let c_name =
                 CString::new(nombre).map_err(|_| "Nombre de función inválido".to_string())?;
-            GetProcAddress(handle.0 as *mut _, c_name.as_ptr()) as *mut c_void
+            GetProcAddress(handle.0, c_name.as_ptr())
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -258,7 +258,7 @@ pub fn native_ffi_llamar_entero(
     // Extraer argumentos del arreglo
     let arr_idx = args[1].indice_arreglo() as usize;
     let arr = vm.get_arr(arr_idx as u32);
-    let call_args: Vec<i64> = arr.iter().map(|v| v.a_entero() as i64).collect();
+    let call_args: Vec<i64> = arr.iter().map(|v| v.a_entero()).collect();
 
     // Llamar a la función externa con cantidad variable de argumentos.
     // fn_ptr_val viaja como i64 pero el puntero real es del tamaño de un
@@ -330,7 +330,7 @@ pub fn native_ffi_llamar_texto(
         .iter()
         .map(|v| {
             let idx = v.indice_texto();
-            let s = vm.get_str(idx as u32);
+            let s = vm.get_str(idx);
             s.to_string()
         })
         .collect();

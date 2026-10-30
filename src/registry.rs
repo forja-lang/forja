@@ -265,7 +265,7 @@ pub fn clave_autor() -> Result<crate::ed25519::ParClaves, String> {
     let ruta = dir_registry()
         .parent()
         .map(|p| p.join("keys"))
-        .unwrap_or_else(|| dir_registry())
+        .unwrap_or_else(dir_registry)
         .join("author.key");
     if let Ok(texto) = fs::read_to_string(&ruta) {
         let bytes = crate::crypto::hex_to_bytes(texto.trim())
@@ -374,7 +374,7 @@ pub fn ruta_tarball(nombre: &str, version: &str) -> PathBuf {
 /// sin dependencias externas y garantizar determinismo byte a byte.
 pub fn empaquetar(project_dir: &Path, nombre: &str, version: &str) -> Result<Vec<u8>, String> {
     let mut archivos: Vec<PathBuf> = Vec::new();
-    recolectar_fa(project_dir, project_dir, &mut archivos)?;
+    recolectar_fa(project_dir, &mut archivos)?;
     archivos.sort();
 
     if archivos.is_empty() {
@@ -406,7 +406,7 @@ pub fn empaquetar(project_dir: &Path, nombre: &str, version: &str) -> Result<Vec
 }
 
 /// Recolecta recursivamente archivos `.fa` (ignora `target/`, `.git/`, `.forja/`).
-fn recolectar_fa(base: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+fn recolectar_fa(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
     let entries =
         fs::read_dir(dir).map_err(|e| format!("Error leyendo {}: {}", dir.display(), e))?;
     for entry in entries {
@@ -417,7 +417,7 @@ fn recolectar_fa(base: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
             if nombre == "target" || nombre == ".git" || nombre == ".forja" || nombre == "modulos" {
                 continue;
             }
-            recolectar_fa(base, &path, out)?;
+            recolectar_fa(&path, out)?;
         } else if path.extension().map(|e| e == "fa").unwrap_or(false) {
             out.push(path);
         }

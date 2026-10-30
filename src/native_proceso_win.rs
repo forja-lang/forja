@@ -227,7 +227,7 @@ pub fn native_proceso_obtener_pid(
             ok = unsafe { Process32NextW(snap, &mut entry) };
         }
         unsafe { CloseHandle(snap) };
-        return Ok(ValorFast::entero(pid));
+        Ok(ValorFast::entero(pid))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -259,7 +259,7 @@ pub fn native_proceso_abrir_pid(
         if h.is_null() {
             return Ok(ValorFast::entero(0));
         }
-        return Ok(ValorFast::entero(h as i64));
+        Ok(ValorFast::entero(h as i64))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -281,7 +281,7 @@ pub fn native_proceso_ultimo_error(
     #[cfg(target_os = "windows")]
     {
         let e = unsafe { GetLastError() };
-        return Ok(ValorFast::entero(e as i64));
+        Ok(ValorFast::entero(e as i64))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -304,7 +304,7 @@ pub fn native_proceso_cerrar(
     #[cfg(target_os = "windows")]
     {
         let r = unsafe { CloseHandle(handle as *mut std::ffi::c_void) };
-        return Ok(ValorFast::booleano(r != 0));
+        Ok(ValorFast::booleano(r != 0))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -347,7 +347,7 @@ pub fn native_proceso_modulo_base(
             ok = unsafe { Module32NextW(snap, &mut entry) };
         }
         unsafe { CloseHandle(snap) };
-        return Ok(ValorFast::entero(base));
+        Ok(ValorFast::entero(base))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -390,7 +390,7 @@ pub fn native_proceso_modulo_tamano(
             ok = unsafe { Module32NextW(snap, &mut entry) };
         }
         unsafe { CloseHandle(snap) };
-        return Ok(ValorFast::entero(tamano));
+        Ok(ValorFast::entero(tamano))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -451,7 +451,7 @@ pub fn native_proceso_leer_bytes(
             .map(|b| ValorFast::entero(*b as i64))
             .collect();
         let idx = vm.alloc_arr(vals);
-        return Ok(ValorFast::arreglo(idx));
+        Ok(ValorFast::arreglo(idx))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -494,7 +494,7 @@ pub fn native_proceso_escribir_bytes(
                 &mut escritos,
             )
         };
-        return Ok(ValorFast::booleano(ok != 0 && escritos == buffer.len()));
+        Ok(ValorFast::booleano(ok != 0 && escritos == buffer.len()))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -574,7 +574,7 @@ pub fn native_flanco_tecla(_vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
             _ => presionada,
         };
         *guard = Some((vk, presionada));
-        return Ok(ValorFast::booleano(flanco));
+        Ok(ValorFast::booleano(flanco))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -593,7 +593,7 @@ pub fn native_tecla_presionada(
     #[cfg(target_os = "windows")]
     {
         let state = unsafe { GetAsyncKeyState(vk as i32) };
-        return Ok(ValorFast::booleano(((state as u16) & 0x8000) != 0));
+        Ok(ValorFast::booleano(((state as u16) & 0x8000) != 0))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -622,7 +622,7 @@ pub fn native_consola_ocultar(
         }
         let comando = if ocultar { SW_HIDE } else { SW_SHOW };
         let r = unsafe { ShowWindow(hwnd, comando) };
-        return Ok(ValorFast::booleano(r != 0));
+        Ok(ValorFast::booleano(r != 0))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -673,7 +673,7 @@ pub fn native_restaurar_al_salir(
             *guard = Some((handle, direccion, byte1, byte2));
         }
         let r = unsafe { SetConsoleCtrlHandler(Some(handler_ctrl), 1) };
-        return Ok(ValorFast::booleano(r != 0));
+        Ok(ValorFast::booleano(r != 0))
     }
 
     #[cfg(not(target_os = "windows"))]

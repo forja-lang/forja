@@ -52,6 +52,12 @@ pub struct FloatProfilerData {
     pub type_check_int_fail: AtomicU64,
 }
 
+impl Default for FloatProfilerData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FloatProfilerData {
     pub const fn new() -> Self {
         FloatProfilerData {

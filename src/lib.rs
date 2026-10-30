@@ -701,11 +701,7 @@ fn reescribir_llamadas_de_modulo(
 
     fn decl(d: &mut Declaracion, alias: &std::collections::HashSet<String>) {
         match d {
-            Declaracion::Variable { valor, .. } => {
-                if let Some(v) = valor {
-                    expr(v, alias);
-                }
-            }
+            Declaracion::Variable { valor: Some(v), .. } => expr(v, alias),
             Declaracion::Asignacion { valor, .. } => expr(valor, alias),
             Declaracion::AsignacionMiembro { objeto, valor, .. } => {
                 expr(objeto, alias);
@@ -803,11 +799,7 @@ fn reescribir_llamadas_de_modulo(
                 }
             }
             Declaracion::AccesoMiembro { objeto, .. } => expr(objeto, alias),
-            Declaracion::Retornar { valor } => {
-                if let Some(v) = valor {
-                    expr(v, alias);
-                }
-            }
+            Declaracion::Retornar { valor: Some(v) } => expr(v, alias),
             Declaracion::AsignacionMultiple { valor, .. } => expr(valor, alias),
             Declaracion::Implementacion { metodos, .. } => {
                 for metodo in metodos.iter_mut() {

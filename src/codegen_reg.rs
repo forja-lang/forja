@@ -388,7 +388,7 @@ impl<'a> CodegenReg<'a> {
                     .call_addresses
                     .get(func_name)
                     .copied()
-                    .unwrap_or_else(|| stub_nop_addr());
+                    .unwrap_or_else(stub_nop_addr);
                 self.emit_mov_rax_imm64(target as i64);
                 self.bytes.push(0xFF); // call rax
                 self.bytes.push(0xD0);
@@ -633,7 +633,7 @@ impl<'a> CodegenReg<'a> {
             let r_idx = (reg as u8) - PhysReg::XMM0 as u8;
             // movsd [vars_ptr+offset], xmm
             self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x11]);
-            if offset >= -128 && offset <= 127 {
+            if (-128..=127).contains(&offset) {
                 self.bytes.push(0x40 | ((r_idx & 7) << 3) | base_rm); // mod=01, rm=vars_ptr
                 self.bytes.push(offset as u8);
             } else {
@@ -652,7 +652,7 @@ impl<'a> CodegenReg<'a> {
               // mov [vars_ptr+offset], reg
             self.bytes.push(rex);
             self.bytes.push(0x89);
-            if offset >= -128 && offset <= 127 {
+            if (-128..=127).contains(&offset) {
                 self.bytes.push(0x40 | ((r_code & 7) << 3) | base_rm); // mod=01, rm=vars_ptr
                 self.bytes.push(offset as u8);
             } else {
@@ -669,7 +669,7 @@ impl<'a> CodegenReg<'a> {
             let r_idx = (reg as u8) - PhysReg::XMM0 as u8;
             // movsd xmm, [vars_ptr+offset]
             self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x10]);
-            if offset >= -128 && offset <= 127 {
+            if (-128..=127).contains(&offset) {
                 self.bytes.push(0x40 | ((r_idx & 7) << 3) | base_rm); // mod=01, rm=vars_ptr
                 self.bytes.push(offset as u8);
             } else {
@@ -688,7 +688,7 @@ impl<'a> CodegenReg<'a> {
               // mov reg, [vars_ptr+offset]
             self.bytes.push(rex);
             self.bytes.push(0x8B);
-            if offset >= -128 && offset <= 127 {
+            if (-128..=127).contains(&offset) {
                 self.bytes.push(0x40 | ((r_code & 7) << 3) | base_rm); // mod=01, rm=vars_ptr
                 self.bytes.push(offset as u8);
             } else {

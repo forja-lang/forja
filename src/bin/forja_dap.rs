@@ -186,13 +186,18 @@ fn main() {
 
         // DAP usa Content-Length headers como LSP
         if line.starts_with("Content-Length: ") {
-            let len: usize = line["Content-Length: ".len()..].trim().parse().unwrap_or(0);
+            let len: usize = line
+                .strip_prefix("Content-Length: ")
+                .unwrap_or_default()
+                .trim()
+                .parse()
+                .unwrap_or(0);
             // Leer blank line
             let mut blank = String::new();
             stdin.lock().read_line(&mut blank).ok();
             // Leer contenido
             let mut content = vec![0u8; len];
-            if let Err(_) = io::stdin().read_exact(&mut content) {
+            if io::stdin().read_exact(&mut content).is_err() {
                 break;
             }
             let msg_str = String::from_utf8_lossy(&content);
@@ -411,14 +416,9 @@ fn ejecutar_programa(state: &mut DAPState) {
     // hacen return. Se reemplaza por un bloque simple.
     {
         // Verificar comandos pendientes
-        if let Ok(cmd) = state.cmd_rx.try_recv() {
-            match cmd {
-                DebugCommand::Disconnect => {
-                    state.disconnect_requested = true;
-                    return;
-                }
-                _ => {}
-            }
+        if let Ok(DebugCommand::Disconnect) = state.cmd_rx.try_recv() {
+            state.disconnect_requested = true;
+            return;
         }
 
         if state.debugger.vm.ip >= state.debugger.vm.bytecode.len() {
@@ -448,8 +448,7 @@ fn ejecutar_programa(state: &mut DAPState) {
                             "description": format!("Breakpoint en línea {}", line),
                         })),
                     };
-                    send_json(&evt);
-                    return; // Esperar otro comando del usuario
+                    send_json(&evt); // Esperar otro comando del usuario
                 }
                 forja::debugger::DebugEvent::StepCompletado { line } => {
                     let evt = RPCEvent {
@@ -463,7 +462,6 @@ fn ejecutar_programa(state: &mut DAPState) {
                         })),
                     };
                     send_json(&evt);
-                    return;
                 }
                 forja::debugger::DebugEvent::Pausado { line } => {
                     let evt = RPCEvent {
@@ -477,7 +475,6 @@ fn ejecutar_programa(state: &mut DAPState) {
                         })),
                     };
                     send_json(&evt);
-                    return;
                 }
                 forja::debugger::DebugEvent::Terminado => {
                     let evt = RPCEvent {
@@ -488,7 +485,6 @@ fn ejecutar_programa(state: &mut DAPState) {
                     };
                     send_json(&evt);
                     state.terminated = true;
-                    return;
                 }
             },
             Err(e) => {
@@ -504,7 +500,6 @@ fn ejecutar_programa(state: &mut DAPState) {
                     })),
                 };
                 send_json(&evt);
-                return;
             }
         }
     }
@@ -542,7 +537,7 @@ fn handle_next(state: &mut DAPState, seq: i64) {
     send_json(&resp);
 
     // Step over
-    if let Err(_) = state.debugger.step_over() {
+    if state.debugger.step_over().is_err() {
         let evt = RPCEvent {
             seq: state.next_seq(),
             r#type: "event".into(),
@@ -580,7 +575,7 @@ fn handle_step_in(state: &mut DAPState, seq: i64) {
     };
     send_json(&resp);
 
-    if let Err(_) = state.debugger.step_into() {
+    if state.debugger.step_into().is_err() {
         let evt = RPCEvent {
             seq: state.next_seq(),
             r#type: "event".into(),
@@ -617,7 +612,7 @@ fn handle_step_out(state: &mut DAPState, seq: i64) {
     };
     send_json(&resp);
 
-    if let Err(_) = state.debugger.step_out() {
+    if state.debugger.step_out().is_err() {
         let evt = RPCEvent {
             seq: state.next_seq(),
             r#type: "event".into(),

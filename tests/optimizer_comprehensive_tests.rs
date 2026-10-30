@@ -391,7 +391,7 @@ fn test_dce_funcion_llamada() {
 fn test_dce_funcion_no_llamada() {
     let decls = dce("funcion f() { }\nescribir(\"ok\")");
     // DCE may not eliminate unused functions
-    assert!(decls.len() >= 1);
+    assert!(!decls.is_empty());
 }
 
 // ============================================================

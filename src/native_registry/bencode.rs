@@ -127,7 +127,7 @@ pub(crate) fn native_hex_decimal_a_entero(
     let pos = obtener_entero(args[1])? as usize;
     let length = obtener_entero(args[2])? as usize;
 
-    if pos + length > hex_str.len() || length == 0 || length % 2 != 0 {
+    if pos + length > hex_str.len() || length == 0 || !length.is_multiple_of(2) {
         return Ok(ValorFast::entero(0));
     }
 

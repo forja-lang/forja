@@ -137,8 +137,7 @@ impl IncrementalCache {
         std::fs::create_dir_all(&self.cache_dir)?;
 
         let manifest_path = self.cache_dir.join("manifest.json");
-        let json = serde_json::to_string_pretty(&self.entries)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string_pretty(&self.entries).map_err(std::io::Error::other)?;
         std::fs::write(&manifest_path, json)?;
 
         Ok(())

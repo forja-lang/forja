@@ -537,7 +537,7 @@ impl LanguageServer for Backend {
                 range: rango,
                 severity: Some(DiagnosticSeverity::ERROR),
                 source: Some("forja".to_string()),
-                message: err.mensaje.clone(),
+                message: err.mensaje.to_string(),
                 ..Default::default()
             };
 
@@ -1085,7 +1085,7 @@ impl Backend {
                     range: calcular_rango_error_palabra(texto, err.linea, err.columna),
                     severity: Some(DiagnosticSeverity::ERROR),
                     source: Some("forja".to_string()),
-                    message: err.mensaje,
+                    message: err.mensaje.to_string(),
                     ..Default::default()
                 });
             }
@@ -1855,8 +1855,8 @@ fn es_variable_de_patron(source: &str, linea: usize, var_name: &str) -> bool {
     let start = line_idx.saturating_sub(5);
     let end = std::cmp::min(line_idx + 5, lines.len());
 
-    for i in start..end {
-        let line = lines[i].trim();
+    for linea in &lines[start..end] {
+        let line = linea.trim();
         if line.starts_with("caso ") {
             if let Some(paren_start) = line.find('(') {
                 if let Some(paren_end) = line.rfind(')') {

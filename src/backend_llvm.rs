@@ -534,37 +534,34 @@ impl LlvmBackend {
             for (block_idx, block) in blocks.iter().enumerate() {
                 // Buscar branch condicionales que apuntan a bloques anteriores (loops)
                 for inst in &block.instructions {
-                    match inst {
-                        LlvmInstruction::BrCond(_, then_label, else_label) => {
-                            // Si el target está antes del bloque actual, es un loop
-                            let then_idx = block_names.iter().position(|n| n == then_label);
-                            let else_idx = block_names.iter().position(|n| n == else_label);
+                    if let LlvmInstruction::BrCond(_, then_label, else_label) = inst {
+                        // Si el target está antes del bloque actual, es un loop
+                        let then_idx = block_names.iter().position(|n| n == then_label);
+                        let else_idx = block_names.iter().position(|n| n == else_label);
 
-                            if let Some(ti) = then_idx {
-                                if ti <= block_idx {
-                                    // Inyectar GC poll antes del branch (safe point)
-                                    self.inject_gc_poll_at_block(
-                                        idx,
-                                        block_idx,
-                                        function_id,
-                                        &mut gc_mgr,
-                                    );
-                                    break;
-                                }
-                            }
-                            if let Some(ei) = else_idx {
-                                if ei <= block_idx {
-                                    self.inject_gc_poll_at_block(
-                                        idx,
-                                        block_idx,
-                                        function_id,
-                                        &mut gc_mgr,
-                                    );
-                                    break;
-                                }
+                        if let Some(ti) = then_idx {
+                            if ti <= block_idx {
+                                // Inyectar GC poll antes del branch (safe point)
+                                self.inject_gc_poll_at_block(
+                                    idx,
+                                    block_idx,
+                                    function_id,
+                                    &mut gc_mgr,
+                                );
+                                break;
                             }
                         }
-                        _ => {}
+                        if let Some(ei) = else_idx {
+                            if ei <= block_idx {
+                                self.inject_gc_poll_at_block(
+                                    idx,
+                                    block_idx,
+                                    function_id,
+                                    &mut gc_mgr,
+                                );
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -603,7 +600,7 @@ impl LlvmBackend {
         gc_mgr.register_stack_map(stack_map.clone());
         gc_mgr.register_safe_point(SafePoint {
             pc_offset: (block_idx * 8) as u32,
-            stack_map: stack_map,
+            stack_map,
             frame_depth: 1,
         });
 
@@ -765,6 +762,12 @@ pub struct ClosureLayout {
     pub env_ptr_type: LlvmType,
     /// Tamaño del environment en bytes
     pub env_size: usize,
+}
+
+impl Default for ClosureLayout {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ClosureLayout {
@@ -956,6 +959,12 @@ pub fn declare_builtins(module: &mut LlvmModule) {
         blocks: vec![],
         is_declaration: true,
     });
+}
+
+impl Default for AsyncLayout {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AsyncLayout {

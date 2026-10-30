@@ -252,6 +252,10 @@ impl TablaDinamica {
         self.entries.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn buscar(&self, name: &str, value: &str) -> Option<usize> {
         // Buscar en tabla estática primero
         if let Some(idx) = static_table_index(name, value) {
@@ -831,9 +835,9 @@ impl H2Frame {
     }
 
     /// Parsea un frame desde bytes recibidos (sin payload — solo header de 9 bytes)
-    pub fn parse_header(data: &[u8]) -> Result<(usize, u8, u8, u32), ()> {
+    pub fn parse_header(data: &[u8]) -> Option<(usize, u8, u8, u32)> {
         if data.len() < 9 {
-            return Err(());
+            return None;
         }
         let len = ((data[0] as usize) << 16) | ((data[1] as usize) << 8) | (data[2] as usize);
         let frame_type = data[3];
@@ -843,7 +847,7 @@ impl H2Frame {
             | ((data[7] as u32) << 8)
             | (data[8] as u32);
         let stream_id = stream_id & 0x7FFFFFFF;
-        Ok((len, frame_type, flags, stream_id))
+        Some((len, frame_type, flags, stream_id))
     }
 
     /// Crea un frame SETTINGS vacío (ACK o con settings)
@@ -1041,7 +1045,7 @@ pub fn texto_a_cabeceras(texto: &str) -> HashMap<String, String> {
 pub fn hpack_decodificar(
     data: &[u8],
     tabla: &mut TablaDinamica,
-) -> Result<HashMap<String, String>, ()> {
+) -> Option<HashMap<String, String>> {
     let mut cabeceras = HashMap::new();
     let mut offset = 0;
 
@@ -1050,21 +1054,21 @@ pub fn hpack_decodificar(
 
         if byte >= 0x80 {
             // ─── Indexed Header Field (1xxxxxxx) ───
-            let idx = decode_integer(data, &mut offset, 7)?;
+            let idx = decode_integer(data, &mut offset, 7).ok()?;
             if idx == 0 {
-                return Err(());
+                return None;
             }
             if let Some((name, value)) = tabla.get(idx as usize) {
                 cabeceras.insert(name.to_string(), value.to_string());
             } else {
-                return Err(());
+                return None;
             }
         } else if byte >= 0x40 {
             // ─── Literal with Incremental Indexing (01xxxxxx) ───
             let use_name_index = (byte & 0x3F) != 0;
             if use_name_index {
-                let idx = decode_integer(data, &mut offset, 6)?;
-                let value = decode_string(data, &mut offset)?;
+                let idx = decode_integer(data, &mut offset, 6).ok()?;
+                let value = decode_string(data, &mut offset).ok()?;
                 let entry = tabla
                     .get(idx as usize)
                     .map(|(n, _)| (n.to_string(), value.clone()));
@@ -1072,7 +1076,7 @@ pub fn hpack_decodificar(
                     cabeceras.insert(name.clone(), val.clone());
                     tabla.add(&name, &val);
                 } else {
-                    return Err(());
+                    return None;
                 }
             } else {
                 // decodificar nombre como string
@@ -1080,13 +1084,13 @@ pub fn hpack_decodificar(
                 // Si prefix == 0, entonces literal sin índice de nombre
                 if byte & 0x3F == 0 {
                     offset += 1; // consumir el 0x40
-                    let name = decode_string(data, &mut offset)?;
-                    let value = decode_string(data, &mut offset)?;
+                    let name = decode_string(data, &mut offset).ok()?;
+                    let value = decode_string(data, &mut offset).ok()?;
                     cabeceras.insert(name.clone(), value.clone());
                     tabla.add(&name, &value);
                 } else {
-                    let idx = decode_integer(data, &mut offset, 6)?;
-                    let value = decode_string(data, &mut offset)?;
+                    let idx = decode_integer(data, &mut offset, 6).ok()?;
+                    let value = decode_string(data, &mut offset).ok()?;
                     let entry = tabla
                         .get(idx as usize)
                         .map(|(n, _)| (n.to_string(), value.clone()));
@@ -1094,13 +1098,13 @@ pub fn hpack_decodificar(
                         cabeceras.insert(name.clone(), val.clone());
                         tabla.add(&name, &val);
                     } else {
-                        return Err(());
+                        return None;
                     }
                 }
             }
         } else if byte >= 0x20 {
             // ─── Table Size Update (001xxxxx) ───
-            let new_size = decode_integer(data, &mut offset, 5)? as usize;
+            let new_size = decode_integer(data, &mut offset, 5).ok()? as usize;
             tabla.set_max_size(new_size);
         } else {
             // ─── Literal without Indexing / Never Indexed (0000xxxx / 0001xxxx) ───
@@ -1108,22 +1112,22 @@ pub fn hpack_decodificar(
             let _ = never_indexed;
             let use_name_index = (byte & 0x0F) != 0;
             if use_name_index {
-                let idx = decode_integer(data, &mut offset, 4)?;
-                let value = decode_string(data, &mut offset)?;
+                let idx = decode_integer(data, &mut offset, 4).ok()?;
+                let value = decode_string(data, &mut offset).ok()?;
                 if let Some((name, _)) = tabla.get(idx as usize) {
                     cabeceras.insert(name.to_string(), value);
                 } else {
-                    return Err(());
+                    return None;
                 }
             } else {
-                let name = decode_string(data, &mut offset)?;
-                let value = decode_string(data, &mut offset)?;
+                let name = decode_string(data, &mut offset).ok()?;
+                let value = decode_string(data, &mut offset).ok()?;
                 cabeceras.insert(name, value);
             }
         }
     }
 
-    Ok(cabeceras)
+    Some(cabeceras)
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1222,7 +1226,7 @@ pub fn native_h2_escribir_frame(
 // ═══════════════════════════════════════════════════════════════════════
 
 pub fn native_h2_leer_frame(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_h2_leer_frame requiere 1 argumento: socket".into(),
         ));
@@ -1256,7 +1260,7 @@ pub fn native_h2_leer_frame(vm: &mut ForjaFast, args: &[ValorFast]) -> Result<Va
     }
 
     let (len, frame_type, flags, stream_id) = H2Frame::parse_header(&header)
-        .map_err(|_| ErrFast::TipoInv("h2_frame_invalido: header mal formado".into()))?;
+        .ok_or_else(|| ErrFast::TipoInv("h2_frame_invalido: header mal formado".into()))?;
 
     // Validar tamaño máximo
     if len > 16777215 {
@@ -1331,7 +1335,7 @@ pub fn native_hpack_decodificar(
     let bloque = b64_decodificar(&hpack_b64)?;
     let mut tabla = TablaDinamica::new(4096);
     let cabeceras = hpack_decodificar(&bloque, &mut tabla)
-        .map_err(|_| ErrFast::TipoInv("hpack_error: fallo al decodificar".into()))?;
+        .ok_or_else(|| ErrFast::TipoInv("hpack_error: fallo al decodificar".into()))?;
     let resultado = cabeceras_a_texto(&cabeceras);
     Ok(ValorFast::texto(vm.alloc_str(resultado.into())))
 }
@@ -1358,7 +1362,7 @@ pub fn native_h2_settings_default(
 
     // Parsear el frame serializado para extraer payload
     let (len, _frame_type, flags, stream_id) = H2Frame::parse_header(&raw[..9])
-        .map_err(|_| ErrFast::TipoInv("h2_settings_invalido".into()))?;
+        .ok_or_else(|| ErrFast::TipoInv("h2_settings_invalido".into()))?;
     let payload = &raw[9..9 + len];
     let payload_b64 = b64_codificar(payload);
 

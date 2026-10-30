@@ -342,9 +342,7 @@ pub(crate) fn native_http_fecha_texto(
             // Día de la semana (Zeller-like)
             let tm = if m < 3 { y - 1 } else { y };
             let td = if m < 3 { m + 12 } else { m };
-            let dow =
-                ((tm as i64 + tm / 4 - tm / 100 + tm / 400 + (13 * td as i64 + 8) / 5 + d as i64)
-                    % 7) as usize;
+            let dow = ((tm + tm / 4 - tm / 100 + tm / 400 + (13 * td + 8) / 5 + d) % 7) as usize;
 
             format!(
                 "{}, {:02} {} {} {:02}:{:02}:{:02} GMT",
@@ -856,7 +854,7 @@ pub(crate) fn native_chunked_decodificar(
         let mut leido = 0;
         while leido < tamano {
             if let Some(l) = lineas.next() {
-                let parte = if leido + l.len() + 1 <= tamano {
+                let parte = if leido + l.len() < tamano {
                     // línea completa
                     leido += l.len() + 1; // +1 por el \n
                     format!("{}\n", l)
@@ -935,7 +933,7 @@ pub(crate) fn native_http_crear_respuesta_raw(
     vm: &mut ForjaFast,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    if args.len() < 1 {
+    if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_http_crear_respuesta_raw requiere 1+ argumentos: codigo, [cabeceras_texto], [cuerpo]"
                 .into(),

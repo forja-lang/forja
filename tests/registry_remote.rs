@@ -144,7 +144,7 @@ fn registry_remoto_publica_descarga_y_yank() {
 #[test]
 fn servidor_rechaza_firma_que_no_corresponde() {
     let raiz = temp_dir("firma");
-    let servidor = forja::registry_server::iniciar(&raiz.join("server"), "127.0.0.1:0", None)
+    let servidor = forja::registry_server::iniciar(raiz.join("server"), "127.0.0.1:0", None)
         .expect("servidor");
 
     let datos = b"contenido del paquete".to_vec();

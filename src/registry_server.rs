@@ -152,7 +152,7 @@ pub fn iniciar(
                     let _ = stream.set_nonblocking(false);
                     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
                     if !estado.permitir(peer.ip()) {
-                        let _ = responder(&mut stream, 429, "text/plain", b"demasiadas peticiones");
+                        responder(&mut stream, 429, "text/plain", b"demasiadas peticiones");
                         estado.auditar(peer.ip(), "-", "-", 429);
                         continue;
                     }

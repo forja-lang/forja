@@ -220,7 +220,7 @@ impl DiagnosticoLint {
             &self.mensaje,
             &self.sugerencia,
         );
-        err.codigo = format!("L{}", codigo_regla(self.regla));
+        err.codigo = format!("L{}", codigo_regla(self.regla)).into();
         err.span = Some(Span::punto(self.columna));
         err
     }
@@ -345,11 +345,7 @@ impl Linter {
     /// Analiza una declaración individual (expresiones y sub-bloques).
     fn analizar_declaracion(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { valor, .. } => {
-                if let Some(v) = valor {
-                    self.analizar_expresion(v);
-                }
-            }
+            Declaracion::Variable { valor: Some(v), .. } => self.analizar_expresion(v),
             Declaracion::Asignacion { valor, .. } => self.analizar_expresion(valor),
             Declaracion::AsignacionMiembro { objeto, valor, .. } => {
                 self.analizar_expresion(objeto);
@@ -421,11 +417,7 @@ impl Linter {
                 }
             }
             Declaracion::AccesoMiembro { objeto, .. } => self.analizar_expresion(objeto),
-            Declaracion::Retornar { valor } => {
-                if let Some(v) = valor {
-                    self.analizar_expresion(v);
-                }
-            }
+            Declaracion::Retornar { valor: Some(v) } => self.analizar_expresion(v),
             Declaracion::Expresion(e) => self.analizar_expresion(e),
             Declaracion::AsignacionMultiple { valor, .. } => self.analizar_expresion(valor),
             _ => {}
@@ -702,11 +694,7 @@ fn recolectar_funciones_decl(
                 recolectar_funciones_decl(d, definidas, llamadas);
             }
         }
-        Declaracion::Variable { valor, .. } => {
-            if let Some(v) = valor {
-                recolectar_llamadas_expr(v, llamadas);
-            }
-        }
+        Declaracion::Variable { valor: Some(v), .. } => recolectar_llamadas_expr(v, llamadas),
         Declaracion::Asignacion { valor, .. } => recolectar_llamadas_expr(valor, llamadas),
         Declaracion::AsignacionMiembro { objeto, valor, .. } => {
             recolectar_llamadas_expr(objeto, llamadas);
@@ -716,11 +704,7 @@ fn recolectar_funciones_decl(
             recolectar_llamadas_expr(indice, llamadas);
             recolectar_llamadas_expr(valor, llamadas);
         }
-        Declaracion::Retornar { valor } => {
-            if let Some(v) = valor {
-                recolectar_llamadas_expr(v, llamadas);
-            }
-        }
+        Declaracion::Retornar { valor: Some(v) } => recolectar_llamadas_expr(v, llamadas),
         Declaracion::Expresion(e) => recolectar_llamadas_expr(e, llamadas),
         Declaracion::AsignacionMultiple { valor, .. } => recolectar_llamadas_expr(valor, llamadas),
         Declaracion::AccesoMiembro { objeto, .. } => recolectar_llamadas_expr(objeto, llamadas),
@@ -833,11 +817,7 @@ fn recolectar_uso_decl(
     escritas: &mut HashSet<String>,
 ) {
     match decl {
-        Declaracion::Variable { valor, .. } => {
-            if let Some(v) = valor {
-                recolectar_uso_expr(v, leidas);
-            }
-        }
+        Declaracion::Variable { valor: Some(v), .. } => recolectar_uso_expr(v, leidas),
         Declaracion::Asignacion { nombre, valor, .. } => {
             escritas.insert(nombre.clone());
             recolectar_uso_expr(valor, leidas);
@@ -861,11 +841,7 @@ fn recolectar_uso_decl(
                 recolectar_uso_expr(a, leidas);
             }
         }
-        Declaracion::Retornar { valor } => {
-            if let Some(v) = valor {
-                recolectar_uso_expr(v, leidas);
-            }
-        }
+        Declaracion::Retornar { valor: Some(v) } => recolectar_uso_expr(v, leidas),
         Declaracion::Expresion(e) => recolectar_uso_expr(e, leidas),
         Declaracion::Si {
             condicion,
@@ -1267,8 +1243,10 @@ mod tests {
 
     #[test]
     fn test_complejidad_alta() {
-        let mut cfg = ConfigLint::default();
-        cfg.complejidad_max = 2;
+        let cfg = ConfigLint {
+            complejidad_max: 2,
+            ..Default::default()
+        };
         let src = "funcion f(n) {\n  si n > 0 {\n    si n > 1 {\n      si n > 2 {\n        escribir(n)\n      }\n    }\n  }\n}\nf(1)\n";
         let diags = lint_source(src, cfg).unwrap();
         assert!(tiene_regla(&diags, Regla::Complejidad));

@@ -546,7 +546,7 @@ fn llamada_a_funcion_candidata_se_inlinea() {
             "{t:?}: una función simple debe inlinarse"
         );
         assert!(
-            !c.output.contains(&format!("call inc")),
+            !c.output.contains(&"call inc".to_string()),
             "{t:?}: no debe emitir la llamada"
         );
     }

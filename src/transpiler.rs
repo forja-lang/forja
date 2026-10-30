@@ -98,10 +98,8 @@ fn existe_variable_resultado(declaraciones: &[Declaracion]) -> bool {
                     return true;
                 }
             }
-            Declaracion::Repetir { bloque, .. } => {
-                if existe_variable_resultado(bloque) {
-                    return true;
-                }
+            Declaracion::Repetir { bloque, .. } if existe_variable_resultado(bloque) => {
+                return true;
             }
             _ => {}
         }
@@ -185,6 +183,12 @@ fn necesita_parentesis(expr: &Expresion, op_padre: &Operador) -> bool {
     };
     // El hijo necesita paréntesis si tiene menor precedencia que el padre
     prec_hijo < prec_padre
+}
+
+impl Default for Transpiler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Transpiler {
@@ -378,7 +382,7 @@ impl Transpiler {
                 Declaracion::Funcion { externa: true, .. } => {} // ya declaradas en extern "C"
                 Declaracion::Funcion { nombre, .. } if self.usa_gui() && nombre == "main" => {
                     // Saltar main de Forja cuando hay GUI (Xilem genera su propio main)
-                    self.emit_line(&format!("// fn main() de Forja omitido (GUI usa Xilem)"));
+                    self.emit_line("// fn main() de Forja omitido (GUI usa Xilem)");
                 }
                 // En GUI, los callbacks se ejecutan desde el AST embebido (evaluador),
                 // no como Rust: emitir el cuerpo rompía con las funciones que arman
@@ -425,12 +429,12 @@ impl Transpiler {
                     .collect();
                 for (nombre, tipo_rust, valor_default) in &vars {
                     let tipo_safe = if tipo_rust.contains("serde_json") {
-                        format!("serde_json::Value")
+                        "serde_json::Value".to_string()
                     } else {
                         tipo_rust.clone()
                     };
                     let val_safe = if tipo_rust.contains("serde_json") {
-                        format!("serde_json::Value::Null")
+                        "serde_json::Value::Null".to_string()
                     } else {
                         valor_default.clone()
                     };
@@ -767,14 +771,14 @@ impl Transpiler {
                     }
                     // ===== INDICADORES =====
                     "barra_progreso_linear" | "progress_bar_linear" | "lineal_progreso" => {
-                        let _progress = argumentos.first().map_or(0.5, |a| Self::extraer_f64_valor(a));
-                        format!("Layout::LinearProgress {{ variable: String::from(\"\"), indeterminado: false }}")
+                        let _progress = argumentos.first().map_or(0.5, Self::extraer_f64_valor);
+                        "Layout::LinearProgress { variable: String::from(\"\"), indeterminado: false }".to_string()
                     }
                     "barra_progreso_indeterminada" | "indeterminado" | "indeterminate" => {
                         "Layout::LinearProgress { variable: String::from(\"\"), indeterminado: true }".to_string()
                     }
                     "circulo_progreso" | "circular_progress" | "cargando_circular" => {
-                        let size = argumentos.first().map_or(48.0, |a| Self::extraer_f64_valor(a));
+                        let size = argumentos.first().map_or(48.0, Self::extraer_f64_valor);
                         format!("Layout::CircularProgress {{ variable: String::from(\"\"), size: {}, indeterminado: true }}", size)
                     }
                     "distintivo" | "badge" | "insignia" => {
@@ -787,8 +791,8 @@ impl Transpiler {
                         "Layout::Badge { child: Box::new(Layout::Spacer(0.0)), valor: None, dot: true }".to_string()
                     }
                     "esqueleto" | "skeleton" | "placeholder_carga" => {
-                        let ancho = argumentos.first().map_or(200.0, |a| Self::extraer_f64_valor(a));
-                        let alto = argumentos.get(1).map_or(20.0, |a| Self::extraer_f64_valor(a));
+                        let ancho = argumentos.first().map_or(200.0, Self::extraer_f64_valor);
+                        let alto = argumentos.get(1).map_or(20.0, Self::extraer_f64_valor);
                         format!("Layout::Skeleton {{ ancho: {}, alto: {}, tipo: String::from(\"rect\") }}", ancho, alto)
                     }
                     "esqueleto_tarjeta" | "skeleton_card" | "tarjeta_placeholder" => {
@@ -1042,10 +1046,8 @@ impl Transpiler {
                         return true;
                     }
                 }
-                Declaracion::Funcion { cuerpo, .. } => {
-                    if self.detectar_concurrencia(cuerpo) {
-                        return true;
-                    }
+                Declaracion::Funcion { cuerpo, .. } if self.detectar_concurrencia(cuerpo) => {
+                    return true;
                 }
                 _ => {}
             }
@@ -1208,7 +1210,7 @@ impl Transpiler {
                 self.emit_derive_from_atributos(atributos);
 
                 // Generar struct
-                self.emit_line(&format!("#[derive(Debug)]"));
+                self.emit_line("#[derive(Debug)]");
                 self.emit_line(&format!("struct {}{} {{", nombre, gen_params_str));
                 self.indent();
 
@@ -1261,7 +1263,7 @@ impl Transpiler {
 
     fn inferir_tipo_campo(&self, campo: &VariableClase) -> String {
         // Buscar el tipo inferido desde el constructor (recolectar_clases)
-        for (_nombre, info) in &self.clases {
+        for info in self.clases.values() {
             if let Some(tipo) = info.tipos_campos.get(&campo.nombre) {
                 return tipo.clone();
             }
@@ -1279,7 +1281,7 @@ impl Transpiler {
                 .map(|p| {
                     let mut param_str = String::new();
                     if p.prestado {
-                        param_str.push_str("&");
+                        param_str.push('&');
                     }
                     if p.mutable {
                         param_str.push_str("mut ");
@@ -1348,7 +1350,7 @@ impl Transpiler {
                 .map(|p| {
                     let mut param_str = String::new();
                     if p.prestado {
-                        param_str.push_str("&");
+                        param_str.push('&');
                     }
                     if p.mutable {
                         param_str.push_str("mut ");
@@ -1366,7 +1368,7 @@ impl Transpiler {
             let tiene_self = metodo
                 .parametros
                 .first()
-                .map_or(false, |p| p.nombre == "self");
+                .is_some_and(|p| p.nombre == "self");
             if !tiene_self {
                 sig.push_str("&self");
                 if !params.is_empty() {
@@ -1375,7 +1377,7 @@ impl Transpiler {
             }
 
             sig.push_str(&params.join(", "));
-            sig.push_str(")");
+            sig.push(')');
 
             // Tipo de retorno opcional explícito
             if let Some(ref t) = metodo.tipo_retorno {
@@ -1859,7 +1861,7 @@ impl Transpiler {
                     .map(|p| {
                         let mut s = String::new();
                         if p.prestado {
-                            s.push_str("&");
+                            s.push('&');
                         }
                         if p.mutable {
                             s.push_str("mut ");
@@ -1959,7 +1961,7 @@ impl Transpiler {
                         .map(|p| {
                             let mut s = String::new();
                             if p.prestado {
-                                s.push_str("&");
+                                s.push('&');
                             }
                             if p.mutable {
                                 s.push_str("mut ");
@@ -2234,7 +2236,7 @@ impl Transpiler {
                         .iter()
                         .map(|a| self.transpilar_expresion(a))
                         .collect();
-                    if args.len() >= 1 {
+                    if !args.is_empty() {
                         self.emit_line(&format!("assert!({}, \"Aserción falló\");", args[0]));
                     }
                 } else {
@@ -2427,12 +2429,12 @@ impl Transpiler {
                     Operador::O => " || ",
                 };
                 // Solo añadir paréntesis donde sea necesario por precedencia
-                let izq_final = if necesita_parentesis(izquierda, &operador) {
+                let izq_final = if necesita_parentesis(izquierda, operador) {
                     format!("({})", izq_str)
                 } else {
                     izq_str
                 };
-                let der_final = if necesita_parentesis(derecha, &operador) {
+                let der_final = if necesita_parentesis(derecha, operador) {
                     format!("({})", der_str)
                 } else {
                     der_str
@@ -2491,7 +2493,7 @@ impl Transpiler {
                     if !args.is_empty() {
                         format!("assert!({}, \"Aserción falló\")", args[0])
                     } else {
-                        format!("assert!(false, \"asegurar() sin argumentos\")")
+                        "assert!(false, \"asegurar() sin argumentos\")".to_string()
                     }
                 } else {
                     format!("{}({})", nombre, args.join(", "))
@@ -2610,7 +2612,7 @@ impl Transpiler {
                     self.indent_level = saved_indent;
                     result.push_str("    },\n");
                 }
-                result.push_str("}");
+                result.push('}');
                 result
             }
 
@@ -3123,9 +3125,7 @@ impl Transpiler {
                 format!("Declaracion::AccesoMiembro {{ objeto: Box::new({}), miembro: String::from(\"{}\") }}",
                     self.generar_ast_expresion(objeto), self.esc_ast_string(miembro))
             }
-            _ => {
-                format!("// Declaracion omitida (generacion directa)")
-            }
+            _ => "// Declaracion omitida (generacion directa)".to_string(),
         }
     }
 
@@ -3505,12 +3505,12 @@ mod tests {
 
     fn transpilar_source(source: &str) -> Result<String, Vec<ErrorForja>> {
         let mut lexer = Lexer::new(source);
-        let tokens = lexer.tokenize().map_err(|e| e)?;
+        let tokens = lexer.tokenize()?;
         let mut parser = Parser::new(tokens);
-        let programa = parser.parse().map_err(|e| e)?;
+        let programa = parser.parse()?;
 
         let mut checker = BorrowChecker::new();
-        checker.analizar(&programa).map_err(|e| e)?;
+        checker.analizar(&programa)?;
 
         let mut transpiler = Transpiler::new();
         transpiler.transpilar(&programa)

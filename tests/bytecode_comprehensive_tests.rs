@@ -83,7 +83,7 @@ fn test_bc_push_booleano_false() {
 #[test]
 fn test_bc_push_nulo() {
     let bc = generar("variable x = nulo");
-    assert!(bc.iter().any(|op| *op == Opcode::PushNulo));
+    assert!(bc.contains(&Opcode::PushNulo));
 }
 
 // ============================================================
@@ -441,7 +441,7 @@ fn test_bc_load_variable_con_indice() {
 #[test]
 fn test_bc_string_length_ok() {
     let result = generar("variable n = \"hola\".length()");
-    assert!(result.len() > 0);
+    assert!(!result.is_empty());
 }
 
 #[test]

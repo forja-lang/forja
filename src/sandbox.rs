@@ -276,18 +276,18 @@ impl SandboxFilesystem {
 
             let dirs_str = directorios.join(", ");
             if escritura {
-                return Err(format!(
+                Err(format!(
                     "Escritura denegada en '{}'. Directorios permitidos: [{}].",
                     ruta, dirs_str
-                ));
+                ))
             } else {
-                return Err(format!(
+                Err(format!(
                     "Lectura denegada en '{}'. Directorios permitidos: [{}].",
                     ruta, dirs_str
-                ));
+                ))
             }
         } else {
-            return Err("Acceso a archivos habilitado (sin restricciones).".into());
+            Err("Acceso a archivos habilitado (sin restricciones).".into())
         }
     }
 
@@ -378,12 +378,12 @@ impl SandboxProceso {
             }
 
             let cmds_str = comandos.join(", ");
-            return Err(format!(
+            Err(format!(
                 "Comando no permitido: '{}'. Comandos permitidos: [{}].",
                 nombre_corto, cmds_str
-            ));
+            ))
         } else {
-            return Err("Ejecución de procesos habilitada (sin restricciones).".into());
+            Err("Ejecución de procesos habilitada (sin restricciones).".into())
         }
     }
 }

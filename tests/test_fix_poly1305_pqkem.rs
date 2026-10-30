@@ -67,13 +67,8 @@ impl Sha256 {
     }
     fn compress(&mut self) {
         let w = &mut [0u32; 64];
-        for i in 0..16 {
-            w[i] = u32::from_be_bytes([
-                self.buf[i * 4],
-                self.buf[i * 4 + 1],
-                self.buf[i * 4 + 2],
-                self.buf[i * 4 + 3],
-            ]);
+        for (slot, chunk) in w.iter_mut().take(16).zip(self.buf.chunks_exact(4)) {
+            *slot = u32::from_be_bytes(chunk.try_into().unwrap());
         }
         for i in 16..64 {
             let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
@@ -360,10 +355,10 @@ fn test_chacha20_poly1305_roundtrip() {
     let mut pi = Vec::new();
     pi.extend_from_slice(ad);
     let ap = (16 - ad.len() % 16) % 16;
-    pi.extend(std::iter::repeat(0u8).take(ap));
+    pi.extend(std::iter::repeat_n(0u8, ap));
     pi.extend_from_slice(&cifrado);
     let cp = (16 - cifrado.len() % 16) % 16;
-    pi.extend(std::iter::repeat(0u8).take(cp));
+    pi.extend(std::iter::repeat_n(0u8, cp));
     pi.extend_from_slice(&(ad.len() as u64).to_le_bytes());
     pi.extend_from_slice(&(cifrado.len() as u64).to_le_bytes());
     let tag = poly1305_mac(&pk, &pi);
@@ -372,9 +367,9 @@ fn test_chacha20_poly1305_roundtrip() {
     pk2.copy_from_slice(&pkb2[..32]);
     let mut pi2 = Vec::new();
     pi2.extend_from_slice(ad);
-    pi2.extend(std::iter::repeat(0u8).take(ap));
+    pi2.extend(std::iter::repeat_n(0u8, ap));
     pi2.extend_from_slice(&cifrado);
-    pi2.extend(std::iter::repeat(0u8).take(cp));
+    pi2.extend(std::iter::repeat_n(0u8, cp));
     pi2.extend_from_slice(&(ad.len() as u64).to_le_bytes());
     pi2.extend_from_slice(&(cifrado.len() as u64).to_le_bytes());
     let computed_tag = poly1305_mac(&pk2, &pi2);
@@ -459,8 +454,8 @@ fn mul_naive(a: &Poly, b: &Poly) -> Poly {
         }
     }
     let mut out = Poly::new();
-    for i in 0..N {
-        out.coeffs[i] = c[i] as i16;
+    for (o, &ci) in out.coeffs.iter_mut().zip(c.iter()) {
+        *o = ci as i16;
     }
     out
 }
@@ -502,7 +497,7 @@ fn compress(x: i16, d: usize) -> i16 {
     ((((x.rem_euclid(Q) as u32) << d) + (Q as u32 >> 1)) / Q as u32) as i16
 }
 fn decompress(x: i16, d: usize) -> i16 {
-    ((((x as u32) * (Q as u32) + (1 << (d - 1))) >> d) as u32) as i16
+    (((x as u32) * (Q as u32) + (1 << (d - 1))) >> d) as i16
 }
 
 fn pq_keygen() -> (Vec<u8>, Vec<u8>) {
@@ -526,7 +521,7 @@ fn pq_encaps(pk: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let mut msg = Poly::new();
     for i in 0..256.min(N) {
         let bit = (ms[i / 8] >> (i % 8)) & 1;
-        msg.coeffs[i] = ((Q as i16) / 2) * (bit as i16);
+        msg.coeffs[i] = (Q / 2) * (bit as i16);
     }
     let u = add(&mul_naive(&a, &r), &e1);
     let v = add(&add(&mul_naive(&t, &r), &e2), &msg);
@@ -592,7 +587,7 @@ fn test_poly1305() {
 
 fn test_pq_kem() {
     let (pk, sk) = pq_keygen();
-    assert!(pk.len() > 0 && sk.len() > 0);
+    assert!(!pk.is_empty() && !sk.is_empty());
     let (shared_ct, ct) = pq_encaps(&pk);
     let shared_dec = pq_decaps(&sk, &ct);
     assert_eq!(shared_ct, shared_dec, "PQ KEM: shared secrets must match");

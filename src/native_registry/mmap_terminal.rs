@@ -16,7 +16,7 @@ pub(crate) fn native_mmap_abrir(
     let writable = modo == "rw";
     match crate::mmap::mmap_abrir(&ruta, offset, len, writable) {
         Ok(h) => Ok(ValorFast::entero(h)),
-        Err(e) => Err(ErrFast::TipoInv(e.into())),
+        Err(e) => Err(ErrFast::TipoInv(e)),
     }
 }
 
@@ -32,7 +32,7 @@ pub(crate) fn native_mmap_cerrar(
     let handle = obtener_entero(args[0])?;
     match crate::mmap::mmap_cerrar(handle) {
         Ok(()) => Ok(ValorFast::entero(0)),
-        Err(e) => Err(ErrFast::TipoInv(e.into())),
+        Err(e) => Err(ErrFast::TipoInv(e)),
     }
 }
 
@@ -54,7 +54,7 @@ pub(crate) fn native_mmap_leer(
             let idx = vm.alloc_str(Arc::from(s.as_str()));
             Ok(ValorFast::texto(idx))
         }
-        Err(e) => Err(ErrFast::TipoInv(e.into())),
+        Err(e) => Err(ErrFast::TipoInv(e)),
     }
 }
 
@@ -72,7 +72,7 @@ pub(crate) fn native_mmap_escribir(
     let datos = obtener_texto(vm, args[2])?;
     match crate::mmap::mmap_escribir(handle, offset, datos.as_bytes()) {
         Ok(n) => Ok(ValorFast::entero(n as i64)),
-        Err(e) => Err(ErrFast::TipoInv(e.into())),
+        Err(e) => Err(ErrFast::TipoInv(e)),
     }
 }
 
@@ -88,7 +88,7 @@ pub(crate) fn native_mmap_sincronizar(
     let handle = obtener_entero(args[0])?;
     match crate::mmap::mmap_sincronizar(handle) {
         Ok(()) => Ok(ValorFast::entero(0)),
-        Err(e) => Err(ErrFast::TipoInv(e.into())),
+        Err(e) => Err(ErrFast::TipoInv(e)),
     }
 }
 
@@ -125,7 +125,7 @@ pub(crate) fn native_terminal_tamano(
             let ret = ValorFast::texto(_vm.alloc_str(Arc::from(s.as_str())));
             Ok(ret)
         }
-        Err(e) => Err(ErrFast::TipoInv(e.into())),
+        Err(e) => Err(ErrFast::TipoInv(e)),
     }
 }
 
@@ -141,7 +141,7 @@ pub(crate) fn native_terminal_raw(
     let activar = obtener_entero(args[0])? != 0;
     match crate::terminal::raw_mode(activar) {
         Ok(()) => Ok(ValorFast::entero(0)),
-        Err(e) => Err(ErrFast::TipoInv(e.into())),
+        Err(e) => Err(ErrFast::TipoInv(e)),
     }
 }
 
@@ -154,6 +154,6 @@ pub(crate) fn native_terminal_leer_tecla(
             let idx = vm.alloc_str(Arc::from(s.as_str()));
             Ok(ValorFast::texto(idx))
         }
-        Err(e) => Err(ErrFast::TipoInv(e.into())),
+        Err(e) => Err(ErrFast::TipoInv(e)),
     }
 }

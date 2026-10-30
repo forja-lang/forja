@@ -201,11 +201,9 @@ impl Monomorphizer {
 
     fn collect_from_decl(&mut self, decl: &Declaracion) {
         match decl {
-            Declaracion::Variable { valor, .. } => {
-                if let Some(expr) = valor {
-                    self.collect_from_expr(expr);
-                }
-            }
+            Declaracion::Variable {
+                valor: Some(expr), ..
+            } => self.collect_from_expr(expr),
             Declaracion::Funcion { cuerpo, .. } => {
                 for d in cuerpo {
                     self.collect_from_decl(d);

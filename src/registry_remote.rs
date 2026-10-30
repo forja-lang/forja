@@ -98,7 +98,7 @@ pub fn peticion(
          Content-Length: {}\r\n",
         cuerpo.len()
     );
-    if cuerpo.len() > 0 {
+    if !cuerpo.is_empty() {
         req.push_str("Content-Type: application/json\r\n");
     }
     if con_token {
