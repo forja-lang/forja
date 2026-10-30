@@ -466,13 +466,42 @@ fn test_literal_numero_grande() {
 #[allow(clippy::approx_constant)]
 fn test_literal_decimal() {
     let k = kinds("3.14");
-    assert_eq!(k[0], TokenKind::Decimal(3.14));
+    assert_eq!(
+        k[0],
+        TokenKind::Decimal {
+            valor: 3.14,
+            coeff: 314,
+            escala: 2
+        }
+    );
 }
 
 #[test]
 fn test_literal_decimal_cero_inicio() {
     let k = kinds("0.5");
-    assert_eq!(k[0], TokenKind::Decimal(0.5));
+    assert_eq!(
+        k[0],
+        TokenKind::Decimal {
+            valor: 0.5,
+            coeff: 5,
+            escala: 1
+        }
+    );
+}
+
+#[test]
+fn test_literal_decimal_conserva_digitos_exactos() {
+    // 12.34 no es representable en binario: los dígitos del fuente se conservan
+    // para que un destino Exacto no herede el error de f64.
+    let k = kinds("12.34");
+    assert_eq!(
+        k[0],
+        TokenKind::Decimal {
+            valor: 12.34,
+            coeff: 1234,
+            escala: 2
+        }
+    );
 }
 
 #[test]
