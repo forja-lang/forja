@@ -1,0 +1,24 @@
+=== PROGRAMACIÓN DINÁMICA ===
+
+--- Fibonacci: Comparación de enfoques ---
+  Fib(10) - Tabulación (bottom-up): 55
+  Fib(10) - Optimizado (O(1) memoria): 55
+
+  Comparación de complejidad:
+    Tabulación:  O(n) tiempo, O(n) memoria
+    Optimizado:  O(n) tiempo, O(1) memoria
+
+--- Problema de la Mochila (0/1 Knapsack) ---
+  Items: (peso, valor)
+    01: (2, 3)
+    11: (3, 4)
+    21: (4, 5)
+    31: (5, 6)
+  Capacidad: 8
+  Valor máximo: 0
+
+La programación dinámica es útil para:
+  • Problemas con subestructura óptima
+  • Problemas con subproblemas superpuestos
+  • Optimización combinatoria
+  • La clave: almacenar resultados para reutilizarlos
