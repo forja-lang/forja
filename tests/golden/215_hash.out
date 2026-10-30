@@ -1,0 +1,41 @@
+=== MÓDULO HASH SHA-256 ===
+
+
+
+
+
+═══ SHA-256 BÁSICO ═══
+
+
+
+
+
+
+
+
+═══ CONSISTENCIA ═══
+
+
+
+
+
+═══ DIFERENTES INPUTS → DIFERENTES HASHES ═══
+
+
+
+
+
+═══ MANEJO DE ERRORES ═══
+
+
+
+
+
+═══ VERIFICACIÓN DE HASH CONOCIDO ═══
+
+
+
+
+
+=== ¡Todas las pruebas completadas! ===
+
