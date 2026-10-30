@@ -75,13 +75,13 @@ const PROGRAMAS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Compara dos vectores de opcodes y, si difieren, produce un mensaje con el
-/// índice y el par de opcodes divergentes (archivo + diff legible).
+/// Compara dos vectores de codigos y, si difieren, produce un mensaje con el
+/// índice y el par de codigos divergentes (archivo + diff legible).
 fn comparar_bytecode(etiqueta: &str, a: &[Opcode], b: &[Opcode]) {
     assert_eq!(
         a.len(),
         b.len(),
-        "programa `{etiqueta}`: distinto número de opcodes ({} vs {})",
+        "programa `{etiqueta}`: distinto número de codigos ({} vs {})",
         a.len(),
         b.len()
     );
