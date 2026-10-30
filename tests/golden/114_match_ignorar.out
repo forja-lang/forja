@@ -1,0 +1,16 @@
+=== Patrón _ para ignorar ===
+
+El guión bajo _ ignora partes que no necesitamos.
+
+Pagos:
+  Pago procesado ✅
+  Pago rechazado ❌
+  Pago en espera ⏳
+
+Eventos:
+  Click detectado
+  Tecla presionada
+  Ventana redimensionada
+  Campo enfocado
+
+El _ evita declarar variables que no se usan.
