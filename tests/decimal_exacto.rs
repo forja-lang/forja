@@ -75,3 +75,59 @@ escribir(a + b)
     );
     assert_eq!(out, vec!["0.3"], "salida: {out:?}");
 }
+
+#[test]
+fn expresion_entera_en_contexto_exacto_no_pasa_por_f64() {
+    // El tipo declarado se propaga a los literales de toda la expresión:
+    // 0.1 + 0.2 se suma como Exacto (0.3), no como f64 (0.30000000000000004).
+    let out = salida(
+        r#"
+variable a: Exacto = 0.1 + 0.2
+variable b: Exacto = 0.3
+escribir(a)
+escribir(a == b)
+"#,
+    );
+    assert_eq!(out, vec!["0.3", "verdadero"], "salida: {out:?}");
+}
+
+#[test]
+fn asignacion_a_variable_exacta_convierte() {
+    let out = salida(
+        r#"
+variable saldo: Exacto = 0.0
+saldo = 12.34
+variable esperado: Exacto = 12.34
+escribir(saldo == esperado)
+"#,
+    );
+    assert_eq!(out, vec!["verdadero"], "salida: {out:?}");
+}
+
+#[test]
+fn exacto_mas_entero_es_exacto() {
+    // El caso mixto ya convertía el operando: se fija para que no vuelva atrás.
+    let out = salida(
+        r#"
+variable a: Exacto = 1.5
+variable b = a + 2
+variable c: Exacto = 3.5
+escribir(b == c)
+"#,
+    );
+    assert_eq!(out, vec!["verdadero"], "salida: {out:?}");
+}
+
+#[test]
+fn comparacion_decimal_contra_exacto_no_da_falso_silencioso() {
+    // `Exacto == Entero` antes devolvía falso siempre (IgualExact sólo comparaba
+    // exacto-exacto); el generador convierte el operando.
+    let out = salida(
+        r#"
+variable a: Exacto = 2.0
+escribir(a == 2)
+escribir(a > 1)
+"#,
+    );
+    assert_eq!(out, vec!["verdadero", "verdadero"], "salida: {out:?}");
+}
