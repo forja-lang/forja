@@ -1,0 +1,17 @@
+=== PATRÓN ADAPTER ===
+
+Convierte interfaces incompatibles mediante un adaptador.
+
+--- Adaptador de Temperatura ---
+  Temperatura actual: 36°C
+  Configurando a 25°C...
+  🌡️ Sistema legacy: temperatura ajustada a 77°F
+
+--- Adaptador de Longitud ---
+  Longitud: 30 cm
+
+El patrón Adapter es útil para:
+  • Integrar APIs de terceros con interfaces diferentes
+  • Hacer compatible código legacy con sistemas modernos
+  • Unificar múltiples implementaciones bajo una interfaz común
+  • Migrar sistemas gradualmente sin romper el código existente
