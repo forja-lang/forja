@@ -206,7 +206,7 @@ impl ForjaFast {
                             self.mostrar_valor(&a),
                             self.mostrar_valor(&b),
                             self.mostrar_valor(&{
-                                let r = if a.es_entero() && b.es_entero() {
+                                if a.es_entero() && b.es_entero() {
                                     get_small_int_fast(a.a_entero().wrapping_add(b.a_entero()))
                                 } else if a.es_flotante() && b.es_flotante() {
                                     ValorFast::flotante(a.a_flotante() + b.a_flotante())
@@ -216,8 +216,7 @@ impl ForjaFast {
                                     ValorFast::flotante(a.a_flotante() + b.a_entero() as f64)
                                 } else {
                                     ValorFast::nulo()
-                                };
-                                r
+                                }
                             })
                         );
                     }
@@ -243,18 +242,16 @@ impl ForjaFast {
                                     continue;
                                 }
                             }
-                            2 => {
-                                if a.es_texto() && b.es_texto() {
-                                    let s = format!(
-                                        "{}{}",
-                                        self.get_str(a.indice_texto()),
-                                        self.get_str(b.indice_texto())
-                                    );
-                                    let idx = self.alloc_str(Arc::from(s.as_str()));
-                                    self.push_valor(ValorFast::texto(idx));
-                                    self.ip += 1;
-                                    continue;
-                                }
+                            2 if a.es_texto() && b.es_texto() => {
+                                let s = format!(
+                                    "{}{}",
+                                    self.get_str(a.indice_texto()),
+                                    self.get_str(b.indice_texto())
+                                );
+                                let idx = self.alloc_str(Arc::from(s.as_str()));
+                                self.push_valor(ValorFast::texto(idx));
+                                self.ip += 1;
+                                continue;
                             }
                             _ => {}
                         }
@@ -374,14 +371,12 @@ impl ForjaFast {
                                     continue;
                                 }
                             }
-                            1 => {
-                                if a.es_flotante() && b.es_flotante() {
-                                    self.push_valor(ValorFast::flotante(
-                                        a.a_flotante() - b.a_flotante(),
-                                    ));
-                                    self.ip += 1;
-                                    continue;
-                                }
+                            1 if a.es_flotante() && b.es_flotante() => {
+                                self.push_valor(ValorFast::flotante(
+                                    a.a_flotante() - b.a_flotante(),
+                                ));
+                                self.ip += 1;
+                                continue;
                             }
                             _ => {}
                         }
@@ -472,14 +467,12 @@ impl ForjaFast {
                                     continue;
                                 }
                             }
-                            1 => {
-                                if a.es_flotante() && b.es_flotante() {
-                                    self.push_valor(ValorFast::flotante(
-                                        a.a_flotante() * b.a_flotante(),
-                                    ));
-                                    self.ip += 1;
-                                    continue;
-                                }
+                            1 if a.es_flotante() && b.es_flotante() => {
+                                self.push_valor(ValorFast::flotante(
+                                    a.a_flotante() * b.a_flotante(),
+                                ));
+                                self.ip += 1;
+                                continue;
                             }
                             _ => {}
                         }
@@ -575,22 +568,20 @@ impl ForjaFast {
                                     continue;
                                 }
                             }
-                            1 => {
-                                if a.es_flotante() && b.es_flotante() {
-                                    self.push_valor(ValorFast::flotante(
-                                        a.a_flotante() / b.a_flotante(),
-                                    ));
-                                    self.ip += 1;
-                                    continue;
-                                }
+                            1 if a.es_flotante() && b.es_flotante() => {
+                                self.push_valor(ValorFast::flotante(
+                                    a.a_flotante() / b.a_flotante(),
+                                ));
+                                self.ip += 1;
+                                continue;
                             }
                             _ => {}
                         }
                     }
                     self.cache_div_type = Some((ta, tb));
                     if a.es_entero() && b.es_entero() {
-                        let result = a.a_entero() as i64;
-                        let divisor = b.a_entero() as i64;
+                        let result = a.a_entero();
+                        let divisor = b.a_entero();
                         if divisor == 0 {
                             self.push_valor(ValorFast::nulo());
                         } else {
@@ -680,9 +671,7 @@ impl ForjaFast {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
                     // Fast-Math total (solo manual): sin checks de tipo.
-                    if self.fast_math_total() {
-                        self.push_valor(ValorFast::flotante(a.a_flotante() - b.a_flotante()));
-                    } else if a.es_flotante() && b.es_flotante() {
+                    if self.fast_math_total() || (a.es_flotante() && b.es_flotante()) {
                         self.push_valor(ValorFast::flotante(a.a_flotante() - b.a_flotante()));
                     } else if a.es_entero() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_entero() as f64 - b.a_flotante()));
@@ -708,9 +697,7 @@ impl ForjaFast {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
                     // Fast-Math total (solo manual): sin checks de tipo.
-                    if self.fast_math_total() {
-                        self.push_valor(ValorFast::flotante(a.a_flotante() * b.a_flotante()));
-                    } else if a.es_flotante() && b.es_flotante() {
+                    if self.fast_math_total() || (a.es_flotante() && b.es_flotante()) {
                         self.push_valor(ValorFast::flotante(a.a_flotante() * b.a_flotante()));
                     } else if a.es_entero() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_entero() as f64 * b.a_flotante()));
@@ -800,9 +787,7 @@ impl ForjaFast {
                             continue;
                         }
                         if a2.es_entero() && b2.es_entero() {
-                            self.push_valor(get_small_int_fast(
-                                a2.a_entero() as i64 / b2.a_entero() as i64,
-                            ));
+                            self.push_valor(get_small_int_fast(a2.a_entero() / b2.a_entero()));
                         } else if a2.es_flotante() && b2.es_flotante() {
                             self.push_valor(ValorFast::flotante(a2.a_flotante() / b2.a_flotante()));
                         } else {
@@ -846,7 +831,7 @@ impl ForjaFast {
                         p.record_call(nombre.as_ref());
                     }
                     let call_ip = self.ip;
-                    let sym_id = self.sym_table.intern(nombre.as_ref());
+                    let sym_id = self.tabla_simbolos.internar(nombre.as_ref());
                     if self.show_bytecode {
                         eprintln!("[DEBUG Call] nombre={}, nargs={}, self.stack.len={}, top_len={}, frame_count={}",
                             nombre, nargs, self.stack.len(), self.top_len, self.frame_count);
@@ -1026,7 +1011,7 @@ impl ForjaFast {
 
                 // ─── TAIL CALL ────────────────────────────────────────────────
                 Opcode::TailCall(nombre, nargs) => {
-                    let sym_id = self.sym_table.intern(nombre.as_ref());
+                    let sym_id = self.tabla_simbolos.internar(nombre.as_ref());
                     if let Some(entry) = self.lookup_func_entry(sym_id) {
                         self.flush_stack();
                         let mut args: Vec<ValorFast> = Vec::with_capacity(*nargs);
@@ -1118,8 +1103,8 @@ impl ForjaFast {
                                 .func_names_pgo
                                 .get(*func_idx)
                                 .filter(|n| !n.is_empty())
-                                .map(|n| self.sym_table.intern(n))
-                                .unwrap_or(SymId(0));
+                                .map(|n| self.tabla_simbolos.internar(n))
+                                .unwrap_or(IdSimbolo(0));
                             self.frame_buffer[self.frame_count] = FrmFast {
                                 ip_ret: next_ip,
                                 func_version: entry.version,
@@ -1289,7 +1274,7 @@ impl ForjaFast {
                     }
                     args.reverse();
 
-                    let func = self.native_registry.obtener_fn(&nombre);
+                    let func = self.native_registry.obtener_fn(nombre);
                     match func {
                         Some(func) => match func(self, &args) {
                             Ok(val) => {

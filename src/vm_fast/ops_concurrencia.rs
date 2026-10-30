@@ -30,11 +30,13 @@ impl ForjaFast {
                 let rx_idx =
                     self.alloc_chan_rx(std::sync::Arc::new(std::sync::Mutex::new(rx)), tx_idx);
                 // Crear objeto CanalEmisor
-                let shape_tx = self.shape_registry.get_or_create(self.sym_canal_emisor);
+                let shape_tx = self.registro_formas.obtener_o_crear(self.sym_canal_emisor);
                 let mut obj_tx = ObjVal::new(self.sym_canal_emisor, shape_tx);
                 obj_tx.campos_vec.push(ValorFast::entero(tx_idx as i64));
                 let obj_tx_idx = self.alloc_obj(obj_tx);
-                let shape_rx = self.shape_registry.get_or_create(self.sym_canal_receptor);
+                let shape_rx = self
+                    .registro_formas
+                    .obtener_o_crear(self.sym_canal_receptor);
                 let mut obj_rx = ObjVal::new(self.sym_canal_receptor, shape_rx);
                 obj_rx.campos_vec.push(ValorFast::entero(rx_idx as i64));
                 let obj_rx_idx = self.alloc_obj(obj_rx);
@@ -54,19 +56,19 @@ impl ForjaFast {
                 }
                 captured.reverse();
                 // Buscar función en la tabla
-                let fn_sym = self.sym_table.intern(func_name.as_ref());
+                let fn_sym = self.tabla_simbolos.internar(func_name.as_ref());
                 if let Some(entry) = self.lookup_func_entry(fn_sym) {
                     let nargs = captured.len();
                     // Clonar estado necesario para el hilo
                     let thread_bytecode = self.bytecode.clone();
-                    let thread_sym_table = self.sym_table.clone();
+                    let thread_sym_table = self.tabla_simbolos.clone();
                     let thread_funcs = self.funciones.clone();
                     let thread_func_params = self.func_params.clone();
                     // Clonar function_table para preservar índices de CallDirect
                     let thread_function_table = self.function_table.entries.clone();
                     let thread_sym_to_func_idx = self.sym_to_func_idx.clone();
                     let thread_obj_heap = self.obj_heap.clone();
-                    let thread_obj_shapes = self.obj_shapes.clone();
+                    let thread_obj_shapes = self.formas_objeto.clone();
                     let thread_chan_tx_heap = self.chan_tx_heap.clone();
                     // F12-T2: el hijo también necesita los receptores; sin esto
                     // `rx.recibir()` dentro de un `hilo` devolvía Nulo.
@@ -86,7 +88,7 @@ impl ForjaFast {
                         let ret = std::panic::catch_unwind(|| {
                             let mut hilo_vm = ForjaFast::new();
                             hilo_vm.bytecode = thread_bytecode;
-                            hilo_vm.sym_table = thread_sym_table;
+                            hilo_vm.tabla_simbolos = thread_sym_table;
                             hilo_vm.init_symbols();
                             // Límite de instrucciones para prevenir hilos colgados
                             hilo_vm.set_max_inst(500_000);
@@ -112,14 +114,14 @@ impl ForjaFast {
                             hilo_vm.function_table.entries = thread_function_table;
                             hilo_vm.sym_to_func_idx = thread_sym_to_func_idx;
                             hilo_vm.obj_heap = thread_obj_heap;
-                            hilo_vm.obj_shapes = thread_obj_shapes;
+                            hilo_vm.formas_objeto = thread_obj_shapes;
                             hilo_vm.chan_tx_heap = thread_chan_tx_heap;
                             hilo_vm.chan_rx_heap = thread_chan_rx_heap;
                             hilo_vm.output = thread_output;
                             hilo_vm.frame_buffer[0] = FrmFast {
                                 ip_ret: hilo_vm.bytecode.len(),
                                 func_version: 0,
-                                func_sym: SymId(0),
+                                func_sym: IdSimbolo(0),
                             };
                             hilo_vm.frame_count = 1;
                             hilo_vm.ip = thread_ip;
@@ -172,7 +174,7 @@ impl ForjaFast {
                         Ok(_) => {
                             // Almacenar receiver y crear objeto Hilo
                             let thread_idx = self.alloc_thread(None, Some(rx_result));
-                            let shape_hilo = self.shape_registry.get_or_create(self.sym_hilo);
+                            let shape_hilo = self.registro_formas.obtener_o_crear(self.sym_hilo);
                             let mut obj = ObjVal::new(self.sym_hilo, shape_hilo);
                             obj.campos_vec.push(ValorFast::entero(thread_idx as i64));
                             let obj_idx = self.alloc_obj(obj);

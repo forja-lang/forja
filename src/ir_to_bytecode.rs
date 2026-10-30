@@ -23,6 +23,12 @@ use crate::ir_constructor::LOCAL_BASE;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Nodo φ de un bloque: (valor del φ, slot, operandos por predecesor).
+type Phi = (ValueId, usize, Vec<(BlockId, ValueId)>);
+
+/// φ por bloque de destino.
+type PhisPorBloque = HashMap<BlockId, Vec<Phi>>;
+
 /// Conversor de IR SSA a bytecode
 pub struct IrToBytecode {
     /// Mapa de ValueId → índice de variable en el bytecode
@@ -30,7 +36,7 @@ pub struct IrToBytecode {
     /// Siguiente índice de variable temporal
     next_var: usize,
     /// Tabla de símbolos
-    symbols: SymbolTable,
+    symbols: TablaSimbolosIr,
     /// true si se está convirtiendo main.
     es_main: bool,
     /// Desplazamiento de labels para funciones múltiples.
@@ -51,7 +57,7 @@ pub struct IrToBytecode {
 const LABEL_BASE_DIFERIDO: usize = 1_000_000;
 
 impl IrToBytecode {
-    pub fn new(symbols: SymbolTable) -> Self {
+    pub fn new(symbols: TablaSimbolosIr) -> Self {
         IrToBytecode {
             value_to_var: HashMap::new(),
             next_var: 0,
@@ -87,7 +93,7 @@ impl IrToBytecode {
     pub fn convert_program(&mut self, ir: &IrProgram) -> Vec<Opcode> {
         let mut bytecode = Vec::new();
         for (i, func) in ir.functions.iter().enumerate() {
-            let nombre = ir.symbols.name(func.name).to_string();
+            let nombre = ir.symbols.nombre_de(func.name).to_string();
             // F11-T2: el punto de entrada es la PRIMERA función (la `main`
             // sintética que arma `program_to_ir`), no cualquiera llamada
             // "main". Un programa que declara `funcion main()` tiene además esa
@@ -97,7 +103,7 @@ impl IrToBytecode {
                 let params: Vec<Arc<str>> = func
                     .params
                     .iter()
-                    .map(|(sym, _)| Arc::from(ir.symbols.name(*sym)))
+                    .map(|(sym, _)| Arc::from(ir.symbols.nombre_de(*sym)))
                     .collect();
                 bytecode.push(Opcode::FunctionDef(Arc::from(nombre.as_str()), params));
             }
@@ -153,8 +159,7 @@ impl IrToBytecode {
         self.next_var = slot;
 
         // φ por bloque de destino: (valor del φ, slot, operandos por predecesor).
-        let mut phis_por_bloque: HashMap<BlockId, Vec<(ValueId, usize, Vec<(BlockId, ValueId)>)>> =
-            HashMap::new();
+        let mut phis_por_bloque: PhisPorBloque = HashMap::new();
         let mut next_value: ValueId = 0;
         for block in &func.blocks {
             for inst in &block.instructions {
@@ -222,11 +227,11 @@ impl IrToBytecode {
     /// La conversión usa un estado aislado: el mapeo de valores, el frame y el
     /// espacio de labels del host no deben tocarse.
     fn definir_diferido(&mut self, func: &SsaFunction) -> String {
-        let nombre = self.symbols.name(func.name).to_string();
+        let nombre = self.symbols.nombre_de(func.name).to_string();
         let params: Vec<Arc<str>> = func
             .params
             .iter()
-            .map(|(sym, _)| Arc::from(self.symbols.name(*sym)))
+            .map(|(sym, _)| Arc::from(self.symbols.nombre_de(*sym)))
             .collect();
 
         let value_to_var_previo = std::mem::take(&mut self.value_to_var);
@@ -354,7 +359,7 @@ impl IrToBytecode {
                 guardar!(bytecode);
             }
             Inst::ConstStr(sym) => {
-                let name = self.symbols.name(*sym).to_string();
+                let name = self.symbols.nombre_de(*sym).to_string();
                 bytecode.push(Opcode::PushTexto(Arc::from(name.as_str())));
                 guardar!(bytecode);
             }
@@ -447,7 +452,7 @@ impl IrToBytecode {
                 guardar!(bytecode);
             }
             Inst::Call(func_sym, args) => {
-                let name = self.symbols.name(*func_sym).to_string();
+                let name = self.symbols.nombre_de(*func_sym).to_string();
                 if name == "escribir" {
                     for arg in args {
                         let var = self.operando(arg);
@@ -508,8 +513,8 @@ impl IrToBytecode {
                 guardar!(bytecode);
             }
             Inst::EnumObject(clase, valor, tipo) => {
-                let clase_name = self.symbols.name(*clase).to_string();
-                let tipo_txt = self.symbols.name(*tipo).to_string();
+                let clase_name = self.symbols.nombre_de(*clase).to_string();
+                let tipo_txt = self.symbols.nombre_de(*tipo).to_string();
                 bytecode.push(Opcode::NewObject(Arc::from(clase_name.as_str())));
                 // F11-T5: el objeto se materializa en un temporal anónimo del IR
                 // (no en una variable con nombre): `optimizar_indices` renumera
@@ -523,7 +528,7 @@ impl IrToBytecode {
                 // El campo `valor` se fija siempre (Nulo si la variante no
                 // lleva datos): el backend AST hace lo mismo y `Opcode::Try`,
                 // `GetField("valor")` y las cachés inline dependen de que ambos
-                // campos existan en el shape del objeto.
+                // campos existan en el forma del objeto.
                 match valor {
                     Some(v) => {
                         let var = self.operando(v);
@@ -572,7 +577,7 @@ impl IrToBytecode {
                 guardar!(bytecode);
             }
             Inst::ObjectNew(clase, campos) => {
-                let clase_name = self.symbols.name(*clase).to_string();
+                let clase_name = self.symbols.nombre_de(*clase).to_string();
                 bytecode.push(Opcode::NewObject(Arc::from(clase_name.as_str())));
                 // F11-T5: temporal anónimo del IR en vez de `Declare(nombre)` (ver
                 // `EnumObject`).
@@ -583,7 +588,7 @@ impl IrToBytecode {
                     // vaciaría la pila y podría comerse un valor anterior
                     // (`f(nuevo P(1), x)`).
                     let v = self.operando(valor);
-                    let nombre = self.symbols.name(*campo).to_string();
+                    let nombre = self.symbols.nombre_de(*campo).to_string();
                     bytecode.push(self.load_var(v));
                     bytecode.push(self.load_var(obj_var));
                     bytecode.push(Opcode::SetField(Arc::from(nombre.as_str())));
@@ -594,7 +599,7 @@ impl IrToBytecode {
             }
             Inst::FieldGet(objeto, campo) => {
                 let o = self.operando(objeto);
-                let nombre = self.symbols.name(*campo).to_string();
+                let nombre = self.symbols.nombre_de(*campo).to_string();
                 bytecode.push(self.load_var(o));
                 bytecode.push(Opcode::GetField(Arc::from(nombre.as_str())));
                 guardar!(bytecode);
@@ -602,7 +607,7 @@ impl IrToBytecode {
             Inst::FieldSet(objeto, campo, valor) => {
                 let o = self.operando(objeto);
                 let v = self.operando(valor);
-                let nombre = self.symbols.name(*campo).to_string();
+                let nombre = self.symbols.nombre_de(*campo).to_string();
                 bytecode.push(self.load_var(v));
                 bytecode.push(self.load_var(o));
                 bytecode.push(Opcode::SetField(Arc::from(nombre.as_str())));
@@ -624,7 +629,7 @@ impl IrToBytecode {
             }
             Inst::CallMethod(objeto, metodo, args) => {
                 let o = self.operando(objeto);
-                let nombre = self.symbols.name(*metodo).to_string();
+                let nombre = self.symbols.nombre_de(*metodo).to_string();
                 bytecode.push(self.load_var(o));
                 for arg in args {
                     let a = self.operando(arg);
@@ -755,8 +760,8 @@ mod tests {
     /// referencian por variables correctas (no todas `0`) y que hay `Add`.
     #[test]
     fn test_value_to_var_no_todo_cero() {
-        let mut symbols = SymbolTable::new();
-        let func_name = symbols.intern("doble");
+        let mut symbols = TablaSimbolosIr::new();
+        let func_name = symbols.internar("doble");
 
         let mut builder = IrBuilder::new();
         builder.symbols = symbols.clone();
@@ -781,8 +786,8 @@ mod tests {
 
     #[test]
     fn test_const_generation() {
-        let mut symbols = SymbolTable::new();
-        let func_name = symbols.intern("test");
+        let mut symbols = TablaSimbolosIr::new();
+        let func_name = symbols.internar("test");
 
         let mut builder = IrBuilder::new();
         builder.symbols = symbols.clone();
@@ -812,8 +817,8 @@ mod tests {
     /// a mano: debe emitir `Label`, `Jump`, `JumpSiFalso` y `Print`.
     #[test]
     fn test_bucle_emite_labels_y_jumps() {
-        let mut symbols = SymbolTable::new();
-        let func_name = symbols.intern("main");
+        let mut symbols = TablaSimbolosIr::new();
+        let func_name = symbols.internar("main");
         let mut builder = IrBuilder::new();
         builder.symbols = symbols.clone();
         let _entry = builder.new_block();
@@ -843,7 +848,7 @@ mod tests {
 
         builder.start_block(exit);
         let s3 = builder.emit_load(0);
-        let escribir = builder.symbols.intern("escribir");
+        let escribir = builder.symbols.internar("escribir");
         builder.emit_call(escribir, vec![s3]);
         builder.terminate_return(None);
 

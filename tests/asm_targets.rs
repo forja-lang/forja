@@ -247,13 +247,13 @@ fn target_from_str_aliases() {
     ];
     for (entrada, esperado) in casos {
         assert_eq!(
-            TargetArch::from_str(entrada),
+            TargetArch::desde_str(entrada),
             Some(esperado),
             "from_str({entrada:?})"
         );
     }
-    assert_eq!(TargetArch::from_str("riscv"), None);
-    assert_eq!(TargetArch::from_str("gpu"), None);
+    assert_eq!(TargetArch::desde_str("riscv"), None);
+    assert_eq!(TargetArch::desde_str("gpu"), None);
 }
 
 #[test]

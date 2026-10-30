@@ -52,8 +52,8 @@ pub(crate) fn native_perfilado_detener(
     entry.0 += total_ms as u128;
     entry.1 += 1;
     // build ReportePerfilado object
-    let sym = vm.sym_table.intern("ReportePerfilado");
-    let shape_id = vm.shape_registry.get_or_create(sym);
+    let sym = vm.tabla_simbolos.internar("ReportePerfilado");
+    let shape_id = vm.registro_formas.obtener_o_crear(sym);
     let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
     obj.campos_vec = vec![
         {
@@ -78,8 +78,8 @@ pub(crate) fn native_perfilado_reportes(
     let map = perfil_map().lock().unwrap();
     let mut reportes: Vec<ValorFast> = Vec::new();
     for (etiqueta, (tiempo_total, iteraciones)) in map.iter() {
-        let sym = vm.sym_table.intern("ReportePerfilado");
-        let shape_id = vm.shape_registry.get_or_create(sym);
+        let sym = vm.tabla_simbolos.internar("ReportePerfilado");
+        let shape_id = vm.registro_formas.obtener_o_crear(sym);
         let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
         obj.campos_vec = vec![
             {

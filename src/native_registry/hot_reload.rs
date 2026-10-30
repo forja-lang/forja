@@ -21,7 +21,7 @@ pub(crate) fn native_recargar_modulo(
     }
 
     let nombre_modulo = crate::native_registry::obtener_texto(vm, args[0])?;
-    let module_id = SymId(vm.sym_table.intern(&nombre_modulo).0);
+    let module_id = IdSimbolo(vm.tabla_simbolos.internar(&nombre_modulo).0);
 
     // Verificar que el módulo está registrado
     if !vm.module_registry.contains_key(&module_id) {
@@ -95,7 +95,7 @@ pub(crate) fn native_version_modulo(
     }
 
     let nombre_modulo = crate::native_registry::obtener_texto(vm, args[0])?;
-    let module_id = SymId(vm.sym_table.intern(&nombre_modulo).0);
+    let module_id = IdSimbolo(vm.tabla_simbolos.internar(&nombre_modulo).0);
 
     let version = vm
         .module_registry

@@ -7,8 +7,8 @@
 
 use crate::bytecode::Opcode;
 use crate::prof_count;
-use crate::shape::ShapeId;
-use crate::symbol_table::SymId;
+use crate::shape::IdForma;
+use crate::symbol_table::IdSimbolo;
 use std::sync::Arc;
 
 /// Índice especial de variable para 'resultado' en postcondiciones.
@@ -20,18 +20,18 @@ pub const RESULTADO_IDX: usize = usize::MAX;
 // Extendido de [-5, 256] para cubrir valores negativos comunes como -10, -100
 use std::cell::OnceCell;
 thread_local! {
-    static SMALL_INT_CACHE_FAST: OnceCell<[ValorFast; 529]> = OnceCell::new();
+    static SMALL_INT_CACHE_FAST: OnceCell<[ValorFast; 529]> = const { OnceCell::new() };
 }
 
 /// Devuelve ValorFast::entero(n) usando la Small Integer Cache si n está en [-16, 512]
 #[inline(always)]
 pub fn get_small_int_fast(n: i64) -> ValorFast {
-    if n >= -16 && n <= 512 {
+    if (-16..=512).contains(&n) {
         SMALL_INT_CACHE_FAST.with(|cell| {
             let cache = cell.get_or_init(|| {
                 let mut cache: [ValorFast; 529] = [ValorFast::nulo(); 529];
-                for i in 0..529 {
-                    cache[i] = ValorFast::entero((i as i64) - 16);
+                for (i, slot) in cache.iter_mut().enumerate() {
+                    *slot = ValorFast::entero((i as i64) - 16);
                 }
                 cache
             });
@@ -250,15 +250,12 @@ impl ValorFast {
             self.a_entero() != 0
         } else if self.es_flotante() {
             self.a_flotante() != 0.0
-        } else if self.es_texto() {
-            true // ⚠️ Sin str_heap no se puede verificar si el string está vacío. Usar es_verdadero_con_heap() para verificación precisa.
-        } else if self.es_exacto() {
+        } else {
+            // ⚠️ Sin str_heap no se puede verificar si el string está vacío
+            // (usar `es_verdadero_con_heap`). Exacto, objetos, arrays y mapas
+            // siempre son verdadero.
             true
         }
-        // Exacto siempre es verdadero (coeff != 0 es verdadero)
-        else {
-            true
-        } // objetos, arrays, mapas siempre son verdadero
     }
 
     /// Versión de `es_verdadero` con acceso al heap de strings para verificar
@@ -276,10 +273,8 @@ impl ValorFast {
         } else if self.es_texto() {
             let idx = self.indice_texto() as usize;
             idx < str_heap.len() && !str_heap[idx].is_empty()
-        } else if self.es_exacto() {
-            true
         } else {
-            true // objetos, arrays, mapas siempre son verdadero
+            true // exacto, objetos, arrays, mapas siempre son verdadero
         }
     }
 
@@ -312,13 +307,13 @@ impl ValorFast {
 
 #[derive(Clone)]
 pub struct ObjVal {
-    pub clase: SymId,               // SymId de la clase (comparación O(1))
-    pub shape_id: ShapeId,          // ShapeId actual (puede cambiar por transiciones)
-    pub campos_vec: Vec<ValorFast>, // índice → valor (shape compartido)
+    pub clase: IdSimbolo,           // IdSimbolo de la clase (comparación O(1))
+    pub shape_id: IdForma,          // IdForma actual (puede cambiar por transiciones)
+    pub campos_vec: Vec<ValorFast>, // índice → valor (forma compartido)
 }
 
 impl ObjVal {
-    pub fn new(clase: SymId, shape_id: ShapeId) -> Self {
+    pub fn new(clase: IdSimbolo, shape_id: IdForma) -> Self {
         ObjVal {
             clase,
             shape_id,
@@ -391,10 +386,10 @@ pub(crate) struct FuncFast {
 /// Versión de una función: permite reemplazarla en caliente
 #[derive(Clone, Copy, Debug)]
 pub struct FuncVersion {
-    pub ip: usize,                // Instruction pointer dentro del bytecode
-    pub vars_size: usize,         // Tamaño del frame de variables locales
-    pub version: u32,             // Número de versión (se incrementa en cada recarga)
-    pub module_id: Option<SymId>, // Módulo al que pertenece (None = builtin/nativa)
+    pub ip: usize,                    // Instruction pointer dentro del bytecode
+    pub vars_size: usize,             // Tamaño del frame de variables locales
+    pub version: u32,                 // Número de versión (se incrementa en cada recarga)
+    pub module_id: Option<IdSimbolo>, // Módulo al que pertenece (None = builtin/nativa)
 }
 
 /// Tabla de indirección de funciones con soporte de versionado
@@ -429,8 +424,8 @@ pub enum ValorPortable {
     Referencia(u32),
     Objeto {
         clase: Arc<str>,
-        /// `(campo, valor)` en el orden del shape del emisor. Los nombres son
-        /// necesarios: el shape de la clase en la VM receptora puede no conocer
+        /// `(campo, valor)` en el orden del forma del emisor. Los nombres son
+        /// necesarios: el forma de la clase en la VM receptora puede no conocer
         /// todavía sus campos (sólo se registran al escribir en ellos).
         campos: Vec<(Arc<str>, ValorPortable)>,
     },
@@ -464,8 +459,8 @@ pub(crate) struct FrmFast {
     pub(crate) func_version: u32,
     // F2-T7: símbolo de la función que se está ejecutando en este frame.
     // Permite reconstruir el backtrace con nombres de función Forja.
-    // `SymId(0)` = frame raíz (código de nivel superior, sin función).
-    pub(crate) func_sym: SymId,
+    // `IdSimbolo(0)` = frame raíz (código de nivel superior, sin función).
+    pub(crate) func_sym: IdSimbolo,
 }
 
 #[derive(Debug, Clone)]
@@ -538,8 +533,8 @@ pub(crate) enum TipoInferido {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Pic {
     Empty,
-    Mono(SymId, usize),
-    Poly([(SymId, usize); 4], u8),
+    Mono(IdSimbolo, usize),
+    Poly([(IdSimbolo, usize); 4], u8),
     // Estado megamórfico del inline cache: se consulta en los `matches!`
     // de despacho (fallback a búsqueda MRO) pero aún no se construye
     // explícitamente; reservado para la transición Poly → Mega.
@@ -548,7 +543,7 @@ pub(crate) enum Pic {
 }
 
 impl Pic {
-    pub(crate) fn hit(&self, clase: SymId) -> Option<usize> {
+    pub(crate) fn hit(&self, clase: IdSimbolo) -> Option<usize> {
         match self {
             Pic::Mono(c, idx) if *c == clase => Some(*idx),
             Pic::Poly(arr, _) => arr
@@ -558,11 +553,14 @@ impl Pic {
         }
     }
 
-    pub(crate) fn record_miss(self, clase: SymId, idx: usize) -> Self {
+    pub(crate) fn record_miss(self, clase: IdSimbolo, idx: usize) -> Self {
         match self {
             Pic::Empty => Pic::Mono(clase, idx),
             Pic::Mono(c, i) if c == clase => Pic::Mono(c, i),
-            Pic::Mono(c, i) => Pic::Poly([(c, i), (clase, idx), (SymId(0), 0), (SymId(0), 0)], 2),
+            Pic::Mono(c, i) => Pic::Poly(
+                [(c, i), (clase, idx), (IdSimbolo(0), 0), (IdSimbolo(0), 0)],
+                2,
+            ),
             Pic::Poly(mut arr, count) if count < 4 => {
                 if arr.iter().any(|&(c, _)| c == clase) {
                     // ya existe, solo actualizar idx

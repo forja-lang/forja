@@ -36,8 +36,8 @@ pub(crate) fn native_url_parsear(
         (host, "")
     };
 
-    let sym = vm.sym_table.intern("URL");
-    let shape_id = vm.shape_registry.get_or_create(sym);
+    let sym = vm.tabla_simbolos.internar("URL");
+    let shape_id = vm.registro_formas.obtener_o_crear(sym);
     let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
     obj.campos_vec = vec![
         {

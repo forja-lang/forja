@@ -23,8 +23,8 @@ pub(crate) fn native_temporizador_nuevo(
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let ms = obtener_entero(args[0])?;
-    let sym = vm.sym_table.intern("Timer");
-    let shape_id = vm.shape_registry.get_or_create(sym);
+    let sym = vm.tabla_simbolos.internar("Timer");
+    let shape_id = vm.registro_formas.obtener_o_crear(sym);
     let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

@@ -19,13 +19,13 @@ impl ForjaFast {
         let shape_id = obj.shape_id;
         if let Some(idx) = self.obj_free.pop() {
             self.obj_heap[idx as usize] = obj;
-            self.obj_shapes[idx as usize] = shape_id;
+            self.formas_objeto[idx as usize] = shape_id;
             idx
         } else {
             let idx = self.obj_heap.len() as u32;
             self.obj_heap.push(obj);
             self.obj_marked.push(false);
-            self.obj_shapes.push(shape_id);
+            self.formas_objeto.push(shape_id);
             idx
         }
     }
@@ -249,10 +249,10 @@ impl ForjaFast {
             let obj = self.get_obj(val.indice_objeto());
             // F12-T2: se envían `(campo, valor)`. Sin el nombre, la VM receptora
             // no puede registrar el campo en el descriptor de la clase y la
-            // lectura daría Nulo. El mapa autoritativo es el `ClassDescriptor`
-            // (el que usan `GetField`/`SetField`); el shape del `ShapeRegistry`
+            // lectura daría Nulo. El mapa autoritativo es el `DescriptorClase`
+            // (el que usan `GetField`/`SetField`); el forma del `RegistroFormas`
             // sólo se actualiza en las transiciones de campo, así que un objeto
-            // creado después conserva el shape base vacío.
+            // creado después conserva el forma base vacío.
             let desc = self.class_descriptors.get(&obj.clase);
             let campos: Vec<(Arc<str>, ValorPortable)> = obj
                 .campos_vec
@@ -260,15 +260,15 @@ impl ForjaFast {
                 .enumerate()
                 .map(|(i, v)| {
                     let sym = desc
-                        .and_then(|d| d.shape.indice_a_campo.get(i).copied())
+                        .and_then(|d| d.forma.indice_a_campo.get(i).copied())
                         .or_else(|| {
-                            self.obj_shapes
+                            self.formas_objeto
                                 .get(val.indice_objeto() as usize)
-                                .and_then(|sid| self.shape_registry.get(*sid))
+                                .and_then(|sid| self.registro_formas.obtener(*sid))
                                 .and_then(|s| s.indice_a_campo.get(i).copied())
                         });
                     let nombre: Arc<str> = sym
-                        .map(|sym| Arc::from(self.sym_table.get(sym)))
+                        .map(|sym| Arc::from(self.tabla_simbolos.texto(sym)))
                         .unwrap_or_else(|| Arc::from(""));
                     (
                         nombre,
@@ -277,7 +277,7 @@ impl ForjaFast {
                 })
                 .collect();
             ValorPortable::Objeto {
-                clase: Arc::from(self.sym_table.get(obj.clase)),
+                clase: Arc::from(self.tabla_simbolos.texto(obj.clase)),
                 campos,
             }
         } else {
@@ -336,23 +336,23 @@ impl ForjaFast {
                 v
             }
             ValorPortable::Objeto { clase, campos } => {
-                let clase_sym = self.sym_table.intern(&clase);
+                let clase_sym = self.tabla_simbolos.internar(&clase);
                 // F12-T2: el objeto llega de otra VM, que puede haber creado la
                 // clase sin que ésta exista aquí. Sin descriptor de clase,
                 // `GetField`/`SetField` caen al fallback `campos_vec[sym]` y las
                 // lecturas dan Nulo. Se registra el descriptor con los campos en
                 // el orden del emisor.
                 if !self.class_descriptors.contains_key(&clase_sym) {
-                    let mut shape = ClassShape::new();
+                    let mut forma = FormaCampos::new();
                     for (nombre, _) in &campos {
-                        let campo = self.sym_table.intern(nombre);
-                        shape.add_campo(campo);
+                        let campo = self.tabla_simbolos.internar(nombre);
+                        forma.agregar_campo(campo);
                     }
                     self.class_descriptors.insert(
                         clase_sym,
-                        ClassDescriptor {
+                        DescriptorClase {
                             nombre: clase_sym,
-                            shape,
+                            forma,
                             mro: vec![clase_sym],
                             metodos: HashMap::new(),
                             rasgos: Vec::new(),
@@ -360,33 +360,33 @@ impl ForjaFast {
                     );
                 }
                 let id = creados.len() as u32;
-                let mut shape = self.shape_registry.get_or_create(clase_sym);
-                let obj_idx = self.alloc_obj(ObjVal::new(clase_sym, shape));
+                let mut forma = self.registro_formas.obtener_o_crear(clase_sym);
+                let obj_idx = self.alloc_obj(ObjVal::new(clase_sym, forma));
                 creados.insert(id, ValorFast::objeto(obj_idx));
                 for (nombre, valor) in campos {
-                    let campo = self.sym_table.intern(&nombre);
+                    let campo = self.tabla_simbolos.internar(&nombre);
                     // Índice según el descriptor (lo que usan GetField/SetField).
                     let idx = match self
                         .class_descriptors
                         .get(&clase_sym)
-                        .and_then(|d| d.shape.get_idx(campo))
+                        .and_then(|d| d.forma.obtener_indice(campo))
                     {
                         Some(i) => i,
                         None => self
                             .class_descriptors
                             .get_mut(&clase_sym)
-                            .map(|d| d.shape.add_campo(campo))
+                            .map(|d| d.forma.agregar_campo(campo))
                             .unwrap_or(0),
                     };
-                    // Mantener el shape del registro en el mismo orden (lo usan
+                    // Mantener el forma del registro en el mismo orden (lo usan
                     // las inline caches y la serialización de vuelta).
                     if self
-                        .shape_registry
-                        .get(shape)
-                        .and_then(|s| s.get_idx(campo))
+                        .registro_formas
+                        .obtener(forma)
+                        .and_then(|s| s.obtener_indice(campo))
                         .is_none()
                     {
-                        shape = self.shape_registry.add_campo_dinamico(shape, campo).0;
+                        forma = self.registro_formas.agregar_campo_dinamico(forma, campo).0;
                     }
                     let v = self.importar_portable_con(valor, creados);
                     let campos_vec = &mut self.get_obj_mut(obj_idx).campos_vec;
@@ -399,8 +399,8 @@ impl ForjaFast {
                         campos_vec.push(v);
                     }
                 }
-                self.get_obj_mut(obj_idx).shape_id = shape;
-                self.obj_shapes[obj_idx as usize] = shape;
+                self.get_obj_mut(obj_idx).shape_id = forma;
+                self.formas_objeto[obj_idx as usize] = forma;
                 ValorFast::objeto(obj_idx)
             }
         }
@@ -589,11 +589,11 @@ impl ForjaFast {
         self.thread_free.clear();
 
         // Objetos no marcados → free list
-        let default_shape = self.shape_registry.get_or_create(SymId(0));
+        let default_shape = self.registro_formas.obtener_o_crear(IdSimbolo(0));
         for i in 0..self.obj_heap.len() {
             if !self.obj_marked[i] {
-                self.obj_heap[i] = ObjVal::new(SymId(0), default_shape);
-                self.obj_shapes[i] = default_shape;
+                self.obj_heap[i] = ObjVal::new(IdSimbolo(0), default_shape);
+                self.formas_objeto[i] = default_shape;
                 self.obj_free.push(i as u32);
             }
         }
@@ -848,8 +848,8 @@ impl ForjaFast {
                     }
                     buf[i] = v;
                 }
-                for i in 0..actual_len {
-                    self.mark_value(buf[i]);
+                for &v in &buf[..actual_len] {
+                    self.mark_value(v);
                 }
             }
         } else if val.es_exacto() {

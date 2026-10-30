@@ -83,18 +83,18 @@ fn tabla_de_targets_completa() {
     ];
     for (texto, esperado) in casos {
         assert_eq!(
-            TargetArch::from_str(texto),
+            TargetArch::desde_str(texto),
             Some(esperado),
             "from_str({texto})"
         );
         let mayusculas = texto.to_uppercase();
         assert_eq!(
-            TargetArch::from_str(&mayusculas),
+            TargetArch::desde_str(&mayusculas),
             Some(esperado),
             "from_str({mayusculas})"
         );
     }
-    assert_eq!(TargetArch::from_str("mips"), None);
+    assert_eq!(TargetArch::desde_str("mips"), None);
 }
 
 // ──────────────────────────────────────────────────────────

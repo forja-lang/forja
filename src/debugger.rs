@@ -74,6 +74,12 @@ pub struct Debugger {
     pub nombres_funciones: HashMap<usize, String>,
 }
 
+impl Default for Debugger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Debugger {
     pub fn new() -> Self {
         Debugger {
@@ -100,10 +106,7 @@ impl Debugger {
         self.ip_to_line.clear();
         for (ip, op) in bc.iter().enumerate() {
             if let Opcode::SetLine(line) = op {
-                self.line_to_ip
-                    .entry(*line)
-                    .or_insert_with(Vec::new)
-                    .push(ip);
+                self.line_to_ip.entry(*line).or_default().push(ip);
                 self.ip_to_line.insert(ip, *line);
             }
         }
@@ -249,13 +252,12 @@ impl Debugger {
             self.ejecutar_un_paso(&op)?;
 
             // Detectar salida de funciones para StepOut
-            if self.state == DebugState::StepOut {
-                if self.vm.frame_count < self.step_out_target_frame {
-                    self.state = DebugState::Paused;
-                    return Ok(DebugEvent::StepCompletado {
-                        line: self.current_line,
-                    });
-                }
+            if self.state == DebugState::StepOut && self.vm.frame_count < self.step_out_target_frame
+            {
+                self.state = DebugState::Paused;
+                return Ok(DebugEvent::StepCompletado {
+                    line: self.current_line,
+                });
             }
 
             // Si el state es Running, check breakpoints después de SetLine
@@ -1178,7 +1180,7 @@ fn ejecutar_add(dbg: &mut Debugger) -> Result<(), ErrFast> {
     let b_int = b.es_entero();
     if a_int && b_int {
         dbg.vm
-            .push_valor(get_small_int_fast((a.a_entero() + b.a_entero()) as i64));
+            .push_valor(get_small_int_fast(a.a_entero() + b.a_entero()));
     } else {
         let af = if a_int {
             a.a_entero() as f64
@@ -1202,7 +1204,7 @@ fn ejecutar_sub(dbg: &mut Debugger) -> Result<(), ErrFast> {
     let b_int = b.es_entero();
     if a_int && b_int {
         dbg.vm
-            .push_valor(get_small_int_fast((a.a_entero() - b.a_entero()) as i64));
+            .push_valor(get_small_int_fast(a.a_entero() - b.a_entero()));
     } else {
         let af = if a_int {
             a.a_entero() as f64
@@ -1226,7 +1228,7 @@ fn ejecutar_mul(dbg: &mut Debugger) -> Result<(), ErrFast> {
     let b_int = b.es_entero();
     if a_int && b_int {
         dbg.vm
-            .push_valor(get_small_int_fast((a.a_entero() * b.a_entero()) as i64));
+            .push_valor(get_small_int_fast(a.a_entero() * b.a_entero()));
     } else {
         let af = if a_int {
             a.a_entero() as f64
@@ -1250,7 +1252,7 @@ fn ejecutar_div(dbg: &mut Debugger) -> Result<(), ErrFast> {
     let b_int = b.es_entero();
     if a_int && b_int && b.a_entero() != 0 {
         dbg.vm
-            .push_valor(get_small_int_fast((a.a_entero() / b.a_entero()) as i64));
+            .push_valor(get_small_int_fast(a.a_entero() / b.a_entero()));
     } else {
         let af = if a_int {
             a.a_entero() as f64
@@ -1357,7 +1359,7 @@ fn ejecutar_o(dbg: &mut Debugger) -> Result<(), ErrFast> {
 /// 3. Push de nuevo frame_locals Vec para el nuevo ámbito
 /// 4. Paso de argumentos en los índices 0, 1, 2...
 fn ejecutar_call_debug(dbg: &mut Debugger, nombre: &str, nargs: usize) -> Result<(), ErrFast> {
-    let sym = dbg.vm.sym_table.intern(nombre);
+    let sym = dbg.vm.tabla_simbolos.internar(nombre);
     if let Some(entry) = dbg.vm.lookup_func_entry(sym) {
         // Sincronizar cache stack → stack real
         dbg.vm.flush_stack();

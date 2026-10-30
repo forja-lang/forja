@@ -50,7 +50,7 @@ pub(crate) fn native_a_caracter(
 
 pub(crate) fn obtener_entero(val: ValorFast) -> Result<i64, ErrFast> {
     if val.es_entero() {
-        Ok(val.a_entero() as i64)
+        Ok(val.a_entero())
     } else if val.es_flotante() {
         Ok(val.a_flotante() as i64)
     } else {
@@ -79,23 +79,23 @@ pub(crate) fn extraer_indice_socket(vm: &mut ForjaFast, val: ValorFast) -> Resul
 }
 
 pub(crate) fn crear_valor_socket(vm: &mut ForjaFast, socket_idx: u32) -> ValorFast {
-    let sym_socket = vm.sym_table.intern("@Socket");
-    if !vm.class_descriptors.contains_key(&sym_socket) {
-        use crate::class_descriptor::{ClassDescriptor, Shape};
-        let desc = ClassDescriptor {
+    let sym_socket = vm.tabla_simbolos.internar("@Socket");
+    vm.class_descriptors.entry(sym_socket).or_insert_with(|| {
+        use crate::class_descriptor::{DescriptorClase, FormaCampos};
+
+        DescriptorClase {
             nombre: sym_socket,
-            shape: Shape::new(),
+            forma: FormaCampos::new(),
             mro: vec![sym_socket],
             metodos: HashMap::new(),
             rasgos: Vec::new(),
-        };
-        vm.class_descriptors.insert(sym_socket, desc);
-    }
-    let shape_id = vm.shape_registry.get_or_create(sym_socket);
+        }
+    });
+    let shape_id = vm.registro_formas.obtener_o_crear(sym_socket);
     let mut obj = crate::vm_fast::ObjVal::new(sym_socket, shape_id);
     obj.campos_vec.push(ValorFast::entero(socket_idx as i64));
     let obj_idx = vm.alloc_obj(obj);
-    vm.obj_shapes[obj_idx as usize] = shape_id;
+    vm.formas_objeto[obj_idx as usize] = shape_id;
     ValorFast::objeto(obj_idx)
 }
 

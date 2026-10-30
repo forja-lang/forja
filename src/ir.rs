@@ -19,7 +19,7 @@ pub type ValueId = usize;
 pub type BlockId = usize;
 
 /// Identificador de símbolo (nombre de variable, función, etc.)
-pub type SymId = usize;
+pub type IdSimboloIr = usize;
 
 /// Tipo de dato en el IR
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,7 +42,7 @@ pub enum Inst {
     /// F11-T5: conversión a `Exacto` (`true` si el origen es entero).
     AExacto(ValueId, bool),
     ConstBool(bool),
-    ConstStr(SymId),
+    ConstStr(IdSimboloIr),
     ConstNil,
     /// F11-T5: lectura de una línea de entrada (`leer()`).
     ReadLine,
@@ -101,7 +101,7 @@ pub enum Inst {
 
     // === Funciones ===
     /// Llamada a función: `nombre(args...)`
-    Call(SymId, Vec<ValueId>),
+    Call(IdSimboloIr, Vec<ValueId>),
     /// Crear un closure en este punto.
     ///
     /// F12-T1: el valor es un objeto `Closure` con el nombre de la función
@@ -128,19 +128,19 @@ pub enum Inst {
     ChannelNewCap(ValueId),
     /// F11-T3: construir un valor de `Resultado`/`Opcion`: objeto `<clase>` con
     /// campos `valor` (opcional) y `tipo` (`ok`/`error`/`some`/`none`).
-    EnumObject(SymId, Option<ValueId>, SymId),
+    EnumObject(IdSimboloIr, Option<ValueId>, IdSimboloIr),
     /// F11-T3: `expr?` — desenvuelve el valor o propaga el error.
     Try(ValueId),
 
     // === Objetos ===
     /// Crear un nuevo objeto: `nuevo Clase { campo: valor, ... }`
-    ObjectNew(SymId, Vec<(SymId, ValueId)>),
+    ObjectNew(IdSimboloIr, Vec<(IdSimboloIr, ValueId)>),
     /// Obtener campo de objeto: `obj.campo`
-    FieldGet(ValueId, SymId),
+    FieldGet(ValueId, IdSimboloIr),
     /// Establecer campo de objeto: `obj.campo = valor`
-    FieldSet(ValueId, SymId, ValueId),
+    FieldSet(ValueId, IdSimboloIr, ValueId),
     /// Llamada a método: `obj.metodo(args...)`
-    CallMethod(ValueId, SymId, Vec<ValueId>),
+    CallMethod(ValueId, IdSimboloIr, Vec<ValueId>),
     /// F8-T3: fijar campo por índice (tags/campos de enum).
     FieldSetIdx(ValueId, usize, ValueId),
     /// F8-T3: extraer campo por índice.
@@ -306,7 +306,7 @@ impl Inst {
                 }
             }
 
-            // `FieldSet`/`FieldSetIdx` llevan un `SymId`/`usize` en el medio,
+            // `FieldSet`/`FieldSetIdx` llevan un `IdSimboloIr`/`usize` en el medio,
             // que no se renumera. `ArraySet`/`MapSet` llevan un **valor**
             // (índice o clave) y sí: saltárselo dejaba el operando apuntando a
             // un `ValueId` ya reasignado (sin materializar), y el conversor
@@ -345,7 +345,7 @@ pub fn produce_valor(inst: &Inst) -> bool {
 #[derive(Debug, Clone)]
 pub struct SsaFunction {
     /// Nombre de la función
-    pub name: SymId,
+    pub name: IdSimboloIr,
     /// Tipo de retorno
     pub return_type: IrType,
     /// Bloques básicos
@@ -355,7 +355,7 @@ pub struct SsaFunction {
     /// Número de parámetros
     pub num_params: usize,
     /// Mapa de nombre → índice de parámetro
-    pub params: Vec<(SymId, IrType)>,
+    pub params: Vec<(IdSimboloIr, IrType)>,
 }
 
 /// Programa completo en IR SSA
@@ -364,54 +364,86 @@ pub struct IrProgram {
     /// Funciones definidas
     pub functions: Vec<SsaFunction>,
     /// Tabla de símbolos (nombre → id)
-    pub symbols: SymbolTable,
+    pub symbols: TablaSimbolosIr,
 }
 
-/// Tabla de símbolos para el IR
+/// Tabla de símbolos propia del IR.
+///
+/// Es independiente de [`crate::symbol_table::TablaSimbolos`]: aquí el
+/// identificador es directamente un índice `usize` y los textos se guardan sin
+/// compartir asignación, porque el IR se construye de una sola pasada y no se
+/// clona por cada nodo.
 #[derive(Debug, Clone)]
-pub struct SymbolTable {
-    names: Vec<String>,
-    by_name: HashMap<String, SymId>,
+pub struct TablaSimbolosIr {
+    /// Identificador → nombre del símbolo.
+    nombres: Vec<String>,
+    /// Nombre → identificador, para resolver el internado en O(1).
+    indice_por_nombre: HashMap<String, IdSimboloIr>,
 }
 
-impl SymbolTable {
+impl TablaSimbolosIr {
+    /// Crea una tabla del IR vacía.
+    ///
+    /// # Devuelve
+    /// Una tabla sin símbolos.
     pub fn new() -> Self {
-        SymbolTable {
-            names: Vec::new(),
-            by_name: HashMap::new(),
+        TablaSimbolosIr {
+            nombres: Vec::new(),
+            indice_por_nombre: HashMap::new(),
         }
     }
 
-    /// Obtiene o crea un SymId para un nombre
-    pub fn intern(&mut self, name: &str) -> SymId {
-        if let Some(&id) = self.by_name.get(name) {
+    /// Interna un nombre y devuelve su identificador.
+    ///
+    /// Si el nombre ya estaba internado devuelve el identificador existente.
+    ///
+    /// # Parámetros
+    /// * `nombre` — Nombre que se quiere internar.
+    ///
+    /// # Devuelve
+    /// El identificador asignado a `nombre`.
+    pub fn internar(&mut self, nombre: &str) -> IdSimboloIr {
+        if let Some(&id) = self.indice_por_nombre.get(nombre) {
             return id;
         }
-        let id = self.names.len();
-        self.names.push(name.to_string());
-        self.by_name.insert(name.to_string(), id);
+        let id = self.nombres.len();
+        self.nombres.push(nombre.to_string());
+        self.indice_por_nombre.insert(nombre.to_string(), id);
         id
     }
 
-    /// Retorna el nombre de un SymId
-    pub fn name(&self, id: SymId) -> &str {
-        self.names
+    /// Devuelve el nombre asociado a un identificador.
+    ///
+    /// # Parámetros
+    /// * `id` — Identificador previamente internado.
+    ///
+    /// # Devuelve
+    /// El nombre original, o `<unknown>` si el identificador no existe.
+    pub fn nombre_de(&self, id: IdSimboloIr) -> &str {
+        self.nombres
             .get(id)
-            .map(|s| s.as_str())
+            .map(|nombre| nombre.as_str())
             .unwrap_or("<unknown>")
     }
 
-    /// Número de símbolos
+    /// Cantidad de símbolos internados.
+    ///
+    /// # Devuelve
+    /// Número de nombres distintos que contiene la tabla.
     pub fn len(&self) -> usize {
-        self.names.len()
+        self.nombres.len()
     }
 
+    /// Indica si la tabla está vacía.
+    ///
+    /// # Devuelve
+    /// `true` si no se internó ningún nombre todavía.
     pub fn is_empty(&self) -> bool {
-        self.names.is_empty()
+        self.nombres.is_empty()
     }
 }
 
-impl Default for SymbolTable {
+impl Default for TablaSimbolosIr {
     fn default() -> Self {
         Self::new()
     }
@@ -432,7 +464,7 @@ pub struct IrBuilder {
     /// Terminador del bloque actual (None si aún no se puso)
     current_terminator: Option<Terminator>,
     /// Tabla de símbolos
-    pub symbols: SymbolTable,
+    pub symbols: TablaSimbolosIr,
 }
 
 impl IrBuilder {
@@ -444,7 +476,7 @@ impl IrBuilder {
             next_value_id: 0,
             current_insts: Vec::new(),
             current_terminator: None,
-            symbols: SymbolTable::new(),
+            symbols: TablaSimbolosIr::new(),
         }
     }
 
@@ -522,7 +554,7 @@ impl IrBuilder {
 
     pub fn emit_const_str(&mut self, name: &str) -> ValueId {
         let v = self.next_value();
-        let sym = self.symbols.intern(name);
+        let sym = self.symbols.internar(name);
         self.current_insts.push(Inst::ConstStr(sym));
         v
     }
@@ -640,7 +672,7 @@ impl IrBuilder {
         self.current_insts.push(Inst::Store(mem, val));
     }
 
-    pub fn emit_call(&mut self, func: SymId, args: Vec<ValueId>) -> ValueId {
+    pub fn emit_call(&mut self, func: IdSimboloIr, args: Vec<ValueId>) -> ValueId {
         let v = self.next_value();
         self.current_insts.push(Inst::Call(func, args));
         v
@@ -686,9 +718,9 @@ impl IrBuilder {
     /// F11-T3: construye un `Resultado`/`Opcion` con `valor` y `tipo`.
     pub fn emit_enum_object(
         &mut self,
-        clase: SymId,
+        clase: IdSimboloIr,
         valor: Option<ValueId>,
-        tipo: SymId,
+        tipo: IdSimboloIr,
     ) -> ValueId {
         let v = self.next_value();
         self.current_insts
@@ -769,19 +801,23 @@ impl IrBuilder {
         v
     }
 
-    pub fn emit_object_new(&mut self, clase: SymId, campos: Vec<(SymId, ValueId)>) -> ValueId {
+    pub fn emit_object_new(
+        &mut self,
+        clase: IdSimboloIr,
+        campos: Vec<(IdSimboloIr, ValueId)>,
+    ) -> ValueId {
         let v = self.next_value();
         self.current_insts.push(Inst::ObjectNew(clase, campos));
         v
     }
 
-    pub fn emit_field_get(&mut self, objeto: ValueId, campo: SymId) -> ValueId {
+    pub fn emit_field_get(&mut self, objeto: ValueId, campo: IdSimboloIr) -> ValueId {
         let v = self.next_value();
         self.current_insts.push(Inst::FieldGet(objeto, campo));
         v
     }
 
-    pub fn emit_field_set(&mut self, objeto: ValueId, campo: SymId, valor: ValueId) {
+    pub fn emit_field_set(&mut self, objeto: ValueId, campo: IdSimboloIr, valor: ValueId) {
         self.current_insts
             .push(Inst::FieldSet(objeto, campo, valor));
     }
@@ -789,7 +825,7 @@ impl IrBuilder {
     pub fn emit_call_method(
         &mut self,
         objeto: ValueId,
-        metodo: SymId,
+        metodo: IdSimboloIr,
         args: Vec<ValueId>,
     ) -> ValueId {
         let v = self.next_value();
@@ -831,9 +867,9 @@ impl IrBuilder {
     /// Construye un SsaFunction a partir de los bloques construidos
     pub fn build_function(
         &mut self,
-        name: SymId,
+        name: IdSimboloIr,
         return_type: IrType,
-        params: Vec<(SymId, IrType)>,
+        params: Vec<(IdSimboloIr, IrType)>,
     ) -> SsaFunction {
         self.flush_block();
         // El entry block siempre es el primero (índice 0)
@@ -881,14 +917,14 @@ mod tests {
 
     #[test]
     fn test_symbol_table() {
-        let mut st = SymbolTable::new();
-        let id1 = st.intern("main");
-        let id2 = st.intern("foo");
-        let id1b = st.intern("main");
+        let mut st = TablaSimbolosIr::new();
+        let id1 = st.internar("main");
+        let id2 = st.internar("foo");
+        let id1b = st.internar("main");
         assert_eq!(id1, id1b);
         assert_ne!(id1, id2);
-        assert_eq!(st.name(id1), "main");
-        assert_eq!(st.name(id2), "foo");
+        assert_eq!(st.nombre_de(id1), "main");
+        assert_eq!(st.nombre_de(id2), "foo");
     }
 
     #[test]
@@ -900,7 +936,7 @@ mod tests {
         let v2 = builder.emit_add(v0, v1);
         builder.terminate_return(Some(v2));
 
-        let sym = builder.symbols.intern("test_fn");
+        let sym = builder.symbols.internar("test_fn");
         let func = builder.build_function(sym, IrType::Int, vec![]);
         assert_eq!(func.blocks.len(), 1);
         assert!(matches!(
@@ -926,7 +962,7 @@ mod tests {
         let v0 = builder.emit_const_int(0);
         builder.terminate_return(Some(v0));
 
-        let sym = builder.symbols.intern("branch_fn");
+        let sym = builder.symbols.internar("branch_fn");
         let func = builder.build_function(sym, IrType::Int, vec![]);
         // Tres bloques con ids 0 (entry), 1 (then), 2 (else).
         assert_eq!(func.blocks.len(), 3);

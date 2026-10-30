@@ -6,21 +6,21 @@ use crate::error::ErrorForja;
 use crate::lexer::Lexer;
 use crate::package_resolver::PackageResolver;
 use crate::parser::Parser;
-use crate::symbol_table::SymId;
+use crate::symbol_table::IdSimbolo;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-/// Identificador único de módulo = SymId de su ruta canónica
-pub type ModuleId = SymId;
+/// Identificador único de módulo = IdSimbolo de su ruta canónica
+pub type ModuleId = IdSimbolo;
 
 /// Metadatos de un módulo cargado
 #[derive(Debug, Clone)]
 pub struct ModuleInfo {
     pub source_path: String,
     pub source_hash: u64,
-    pub funciones: Vec<SymId>,
+    pub funciones: Vec<IdSimbolo>,
     pub variables_globales: Vec<(String, bool)>, // (nombre, mutable)
     pub imports: Vec<ModuleId>,
     pub dependents: Vec<ModuleId>,
@@ -35,6 +35,12 @@ pub struct ModuleCache {
     pub por_id: HashMap<ModuleId, ModuleInfo>,
     pub grafo_importaciones: HashMap<ModuleId, Vec<ModuleId>>,
     pub grafo_dependientes: HashMap<ModuleId, Vec<ModuleId>>,
+}
+
+impl Default for ModuleCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ModuleCache {
@@ -112,14 +118,14 @@ impl ModuleResolver {
                 .por_ruta
                 .get(&ruta_key)
                 .copied()
-                .unwrap_or_else(|| SymId(0));
+                .unwrap_or(IdSimbolo(0));
             return Ok((prog.clone(), module_id));
         }
 
         // Intentar resolver la ruta localmente
         if let Ok(canonical) = path.canonicalize() {
             let canonical_str = canonical.to_str().unwrap_or("").to_string();
-            let module_id = SymId(
+            let module_id = IdSimbolo(
                 canonical_str
                     .bytes()
                     .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
@@ -127,8 +133,7 @@ impl ModuleResolver {
 
             if es_absoluta
                 || canonical.starts_with(
-                    &self
-                        .root_dir
+                    self.root_dir
                         .canonicalize()
                         .unwrap_or(self.root_dir.clone()),
                 )
@@ -148,7 +153,7 @@ impl ModuleResolver {
                 if tamano > max_bytes {
                     return Err(vec![ErrorForja::new(
                         crate::error::ErrorTipo::LimiteArchivo {
-                            ruta: canonical.to_string_lossy().to_string(),
+                            ruta: canonical.to_string_lossy().into(),
                             max: forja::MAX_ARCHIVO_DEFAULT_MB,
                             actual: tamano,
                         },
@@ -239,7 +244,7 @@ impl ModuleResolver {
                 if tamano > max_bytes {
                     return Err(vec![ErrorForja::new(
                         crate::error::ErrorTipo::LimiteArchivo {
-                            ruta: ruta_str,
+                            ruta: ruta_str.into(),
                             max: forja::MAX_ARCHIVO_DEFAULT_MB,
                             actual: tamano,
                         },
@@ -263,7 +268,7 @@ impl ModuleResolver {
                 let mut parser = Parser::new(tokens);
                 let mut programa = parser.parse()?;
 
-                let module_id = SymId(
+                let module_id = IdSimbolo(
                     ruta_str
                         .bytes()
                         .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
@@ -400,12 +405,12 @@ impl ModuleResolver {
             self.module_cache
                 .grafo_importaciones
                 .entry(module_id)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(*import);
             self.module_cache
                 .grafo_dependientes
                 .entry(*import)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(module_id);
         }
     }
@@ -443,7 +448,7 @@ impl ModuleResolver {
                 .por_ruta
                 .get(nombre_modulo)
                 .copied()
-                .unwrap_or_else(|| SymId(0));
+                .unwrap_or(IdSimbolo(0));
             return Ok((prog.clone(), module_id));
         }
 
@@ -457,7 +462,7 @@ impl ModuleResolver {
             )])?;
 
         // Generar ModuleId a partir del nombre
-        let module_id = SymId(
+        let module_id = IdSimbolo(
             nombre_modulo
                 .bytes()
                 .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),

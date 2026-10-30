@@ -48,7 +48,7 @@ impl ForjaFast {
                 if obj.es_objeto() {
                     let idx = obj.indice_objeto();
                     let clase_sym = self.obj_heap[idx as usize].clase;
-                    let method_sym = self.sym_table.intern(m.as_ref());
+                    let method_sym = self.tabla_simbolos.internar(m.as_ref());
                     // ── NATIVE DISPATCH: CanalEmisor / CanalReceptor / Hilo ──
                     if clase_sym == self.sym_canal_emisor {
                         let chan_idx =
@@ -83,7 +83,7 @@ impl ForjaFast {
                                 }
                                 None => self.push_valor(ValorFast::nulo()),
                             }
-                        } else if es_try_recibir(self.sym_table.get(method_sym)) {
+                        } else if es_try_recibir(self.tabla_simbolos.texto(method_sym)) {
                             // F12-T2: `rx.try_recibir()` no bloquea; Nulo si vacío.
                             match self.canal_try_recibir(chan_idx) {
                                 Some(cv) => {
@@ -107,14 +107,14 @@ impl ForjaFast {
                         {
                             // Si hay receiver pendiente, recibir resultado del hilo
                             if thread_idx < self.thread_rx.len() {
-                                if let Some(rx) = self.thread_rx[thread_idx as usize].take() {
+                                if let Some(rx) = self.thread_rx[thread_idx].take() {
                                     let val = match rx.recv() {
                                         Ok(cv) => self.valor_de_channel(cv),
                                         Err(_) => ValorFast::nulo(),
                                     };
-                                    self.thread_heap[thread_idx as usize] = Some(val);
+                                    self.thread_heap[thread_idx] = Some(val);
                                     self.push_valor(val);
-                                } else if let Some(val) = self.thread_heap[thread_idx as usize] {
+                                } else if let Some(val) = self.thread_heap[thread_idx] {
                                     self.push_valor(val);
                                 } else {
                                     self.push_valor(ValorFast::nulo());
@@ -157,9 +157,9 @@ impl ForjaFast {
                         }
                     }
                     // Fallback: búsqueda por nombre "Clase.metodo" (compatibilidad)
-                    let c = self.sym_table.get(clase_sym);
+                    let c = self.tabla_simbolos.texto(clase_sym);
                     let fn_name = format!("{}.{}", c, m);
-                    let fn_sym = self.sym_table.intern(&fn_name);
+                    let fn_sym = self.tabla_simbolos.internar(&fn_name);
                     if let Some(entry) = self.lookup_func_entry(fn_sym) {
                         let max_frames = self.frame_buffer.len();
                         if self.frame_count >= max_frames {
@@ -240,13 +240,13 @@ impl ForjaFast {
                 }
             }
 
-            // ─── CALLMETHODCACHED (Fase 2b) — método con SymId e inline cache ───
+            // ─── CALLMETHODCACHED (Fase 2b) — método con IdSimbolo e inline cache ───
             Opcode::CallMethodCached(method_sym_id, nargs) => {
                 // Primero verificar si es un builtin (split, length, etc.), pero
                 // sólo si el receptor no es un objeto: si lo es, el nombre puede
                 // ser un método de usuario (`c.obtener()`) y los builtins
                 // consumen otra cantidad de valores de la pila.
-                let method_name_str = self.sym_table.get(SymId(*method_sym_id));
+                let method_name_str = self.tabla_simbolos.texto(IdSimbolo(*method_sym_id));
                 let receptor_es_objeto = self.peek_valor(*nargs).es_objeto();
                 if !receptor_es_objeto {
                     if let Some(b) = resolver_builtin_fast(method_name_str) {
@@ -284,7 +284,7 @@ impl ForjaFast {
                                     self.frame_buffer[self.frame_count] = FrmFast {
                                         ip_ret: self.ip + 1,
                                         func_version: entry.version,
-                                        func_sym: SymId(*method_sym_id),
+                                        func_sym: IdSimbolo(*method_sym_id),
                                     };
                                     self.frame_count += 1;
                                     let total_vars = 1 + nargs;
@@ -324,7 +324,7 @@ impl ForjaFast {
                 if obj.es_objeto() {
                     let idx = obj.indice_objeto();
                     let clase_sym = self.obj_heap[idx as usize].clase;
-                    let method_sym = SymId(*method_sym_id);
+                    let method_sym = IdSimbolo(*method_sym_id);
                     // ── NATIVE DISPATCH: CanalEmisor / CanalReceptor / Hilo ──
                     if clase_sym == self.sym_canal_emisor {
                         let chan_idx =
@@ -358,7 +358,7 @@ impl ForjaFast {
                                 }
                                 None => self.push_valor(ValorFast::nulo()),
                             }
-                        } else if es_try_recibir(self.sym_table.get(method_sym)) {
+                        } else if es_try_recibir(self.tabla_simbolos.texto(method_sym)) {
                             // F12-T2: `rx.try_recibir()` no bloquea; Nulo si vacío.
                             match self.canal_try_recibir(chan_idx) {
                                 Some(cv) => {
@@ -381,14 +381,14 @@ impl ForjaFast {
                             || method_sym.0 == self.sym_join.0
                         {
                             if thread_idx < self.thread_rx.len() {
-                                if let Some(rx) = self.thread_rx[thread_idx as usize].take() {
+                                if let Some(rx) = self.thread_rx[thread_idx].take() {
                                     let val = match rx.recv() {
                                         Ok(cv) => self.valor_de_channel(cv),
                                         Err(_) => ValorFast::nulo(),
                                     };
-                                    self.thread_heap[thread_idx as usize] = Some(val);
+                                    self.thread_heap[thread_idx] = Some(val);
                                     self.push_valor(val);
-                                } else if let Some(val) = self.thread_heap[thread_idx as usize] {
+                                } else if let Some(val) = self.thread_heap[thread_idx] {
                                     self.push_valor(val);
                                 } else {
                                     self.push_valor(ValorFast::nulo());
@@ -434,10 +434,10 @@ impl ForjaFast {
                         }
                     }
                     // Fallback: búsqueda por nombre "Clase.metodo"
-                    let c = self.sym_table.get(clase_sym);
-                    let method_name = self.sym_table.get(method_sym);
+                    let c = self.tabla_simbolos.texto(clase_sym);
+                    let method_name = self.tabla_simbolos.texto(method_sym);
                     let fn_name = format!("{}.{}", c, method_name);
-                    let fn_sym = self.sym_table.intern(&fn_name);
+                    let fn_sym = self.tabla_simbolos.internar(&fn_name);
                     if let Some(entry) = self.lookup_func_entry(fn_sym) {
                         let max_frames = self.frame_buffer.len();
                         if self.frame_count >= max_frames {
@@ -470,7 +470,7 @@ impl ForjaFast {
                 } else if obj.es_texto() {
                     let txt_idx = obj.indice_texto();
                     let s = self.get_str(txt_idx);
-                    let m = self.sym_table.get(SymId(*method_sym_id));
+                    let m = self.tabla_simbolos.texto(IdSimbolo(*method_sym_id));
                     match m {
                         "longitud" => {
                             self.push_valor(ValorFast::entero(s.chars().count() as i64));
@@ -500,7 +500,7 @@ impl ForjaFast {
                     self.ip += 1;
                 } else if obj.es_arreglo() {
                     let arr_idx = obj.indice_arreglo();
-                    let m = self.sym_table.get(SymId(*method_sym_id));
+                    let m = self.tabla_simbolos.texto(IdSimbolo(*method_sym_id));
                     match m {
                         "longitud" => {
                             let len = self.array_heap[arr_idx as usize].len() as i64;

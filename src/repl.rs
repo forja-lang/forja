@@ -2,7 +2,7 @@ use crate::bytecode::BytecodeGenerator;
 use crate::error::{self, color};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
-use crate::symbol_table::SymId;
+use crate::symbol_table::IdSimbolo;
 use rustyline::{history::FileHistory, Editor};
 
 /// REPL interactivo de Forja con historial y autocompletado
@@ -217,9 +217,9 @@ impl REPL {
                                 // ── Hot-swap de módulo específico ──────────────────────
                                 let nombre_modulo = arg.to_string();
                                 if let Some(ref mut vm) = self.vm_fast {
-                                    // Construir SymId con el mismo hash que module.rs
+                                    // Construir IdSimbolo con el mismo hash que module.rs
                                     let module_sym =
-                                        SymId(nombre_modulo.bytes().fold(0u32, |acc, b| {
+                                        IdSimbolo(nombre_modulo.bytes().fold(0u32, |acc, b| {
                                             acc.wrapping_mul(31).wrapping_add(b as u32)
                                         }));
                                     if !vm.module_registry.contains_key(&module_sym) {

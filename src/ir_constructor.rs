@@ -65,7 +65,7 @@ enum NumKind {
 }
 
 pub struct IrConstructor {
-    pub symbols: SymbolTable,
+    pub symbols: TablaSimbolosIr,
     var_map: HashMap<String, MemIdx>,
     global_map: HashMap<String, MemIdx>,
     next_mem: MemIdx,
@@ -145,7 +145,7 @@ impl IrConstructor {
 
     pub fn new() -> Self {
         IrConstructor {
-            symbols: SymbolTable::new(),
+            symbols: TablaSimbolosIr::new(),
             var_map: HashMap::new(),
             global_map: HashMap::new(),
             next_mem: 0,
@@ -248,8 +248,8 @@ impl IrConstructor {
                 // `Opcode::Try` y el pattern matching las distinguen por nombre.
                 if let Some((enum_nombre, tag, false)) = self.variantes_enum.get(nombre).cloned() {
                     if let Some(tipo_str) = tipo_de_constructor_builtin(nombre) {
-                        let clase = builder.symbols.intern(&enum_nombre);
-                        let tipo = builder.symbols.intern(tipo_str);
+                        let clase = builder.symbols.internar(&enum_nombre);
+                        let tipo = builder.symbols.internar(tipo_str);
                         return builder.emit_enum_object(clase, None, tipo);
                     }
                     return self.crear_variante(builder, &enum_nombre, tag, Vec::new());
@@ -349,7 +349,7 @@ impl IrConstructor {
                 // F12-T3: `imprimir` es el alias de `escribir` que usan varios
                 // ejemplos del curso (el backend AST lo trata igual).
                 if nombre == "imprimir" {
-                    let escribir = builder.symbols.intern("escribir");
+                    let escribir = builder.symbols.internar("escribir");
                     for arg in argumentos {
                         let v = self.expr_to_ir(builder, arg);
                         builder.emit_call(escribir, vec![v]);
@@ -367,7 +367,7 @@ impl IrConstructor {
                     return builder.emit_tiempo_actual();
                 }
                 if nombre == "pedir_numero" {
-                    let escribir = builder.symbols.intern("escribir");
+                    let escribir = builder.symbols.internar("escribir");
                     for arg in argumentos {
                         let v = self.expr_to_ir(builder, arg);
                         builder.emit_call(escribir, vec![v]);
@@ -378,7 +378,7 @@ impl IrConstructor {
                 // F11-T5: `escribir_linea(args)` = `escribir(args)` + "\n",
                 // igual que el backend AST (no está registrada en la VM).
                 if nombre == "escribir_linea" {
-                    let escribir = builder.symbols.intern("escribir");
+                    let escribir = builder.symbols.internar("escribir");
                     for arg in argumentos {
                         let v = self.expr_to_ir(builder, arg);
                         builder.emit_call(escribir, vec![v]);
@@ -389,8 +389,8 @@ impl IrConstructor {
                 // F11-T3: `Ninguno()` / `Nada()` con paréntesis llegan como
                 // llamada; son la variante vacía de `Opcion`.
                 if argumentos.is_empty() && matches!(nombre.as_str(), "Ninguno" | "Nada" | "None") {
-                    let clase = builder.symbols.intern("Opcion");
-                    let tipo = builder.symbols.intern("none");
+                    let clase = builder.symbols.internar("Opcion");
+                    let tipo = builder.symbols.internar("none");
                     return builder.emit_enum_object(clase, None, tipo);
                 }
                 // F11-T2: el parser representa `objeto.metodo(args)` como una
@@ -403,7 +403,7 @@ impl IrConstructor {
                             .iter()
                             .map(|a| self.expr_to_ir(builder, a))
                             .collect();
-                        let met = builder.symbols.intern(metodo);
+                        let met = builder.symbols.internar(metodo);
                         return builder.emit_call_method(obj, met, args);
                     }
                 }
@@ -437,7 +437,7 @@ impl IrConstructor {
                     .iter()
                     .map(|a| self.expr_to_ir(builder, a))
                     .collect();
-                let sym = builder.symbols.intern(nombre);
+                let sym = builder.symbols.internar(nombre);
                 builder.emit_call(sym, args)
             }
 
@@ -482,25 +482,25 @@ impl IrConstructor {
             // `Opcode::Try` y el pattern matching por campo).
             Expresion::Ok(e) => {
                 let valor = self.expr_to_ir(builder, e);
-                let clase = builder.symbols.intern("Resultado");
-                let tipo = builder.symbols.intern("ok");
+                let clase = builder.symbols.internar("Resultado");
+                let tipo = builder.symbols.internar("ok");
                 builder.emit_enum_object(clase, Some(valor), tipo)
             }
             Expresion::Error(e) => {
                 let valor = self.expr_to_ir(builder, e);
-                let clase = builder.symbols.intern("Resultado");
-                let tipo = builder.symbols.intern("error");
+                let clase = builder.symbols.internar("Resultado");
+                let tipo = builder.symbols.internar("error");
                 builder.emit_enum_object(clase, Some(valor), tipo)
             }
             Expresion::Algo(e) => {
                 let valor = self.expr_to_ir(builder, e);
-                let clase = builder.symbols.intern("Opcion");
-                let tipo = builder.symbols.intern("some");
+                let clase = builder.symbols.internar("Opcion");
+                let tipo = builder.symbols.internar("some");
                 builder.emit_enum_object(clase, Some(valor), tipo)
             }
             Expresion::Nada | Expresion::Ninguno => {
-                let clase = builder.symbols.intern("Opcion");
-                let tipo = builder.symbols.intern("none");
+                let clase = builder.symbols.internar("Opcion");
+                let tipo = builder.symbols.internar("none");
                 builder.emit_enum_object(clase, None, tipo)
             }
             // F11-T3: `?` — la VM desenvuelve el valor o propaga el error
@@ -531,7 +531,7 @@ impl IrConstructor {
 
             Expresion::Instanciacion { clase, argumentos } => {
                 // F8-T2: crear objeto y, si existe, invocar el constructor.
-                let clase_sym = builder.symbols.intern(clase);
+                let clase_sym = builder.symbols.internar(clase);
                 // Struct-literal: nuevo Clase { campo: valor }.
                 if argumentos.len() == 1 {
                     if let Expresion::Mapa(pares) = &argumentos[0] {
@@ -539,7 +539,7 @@ impl IrConstructor {
                         for (k, v) in pares {
                             if let Expresion::LiteralTexto(nombre_campo) = k {
                                 let val = self.expr_to_ir(builder, v);
-                                let sym = builder.symbols.intern(nombre_campo);
+                                let sym = builder.symbols.internar(nombre_campo);
                                 campos.push((sym, val));
                             }
                         }
@@ -552,7 +552,7 @@ impl IrConstructor {
                     for a in argumentos {
                         args.push(self.expr_to_ir(builder, a));
                     }
-                    let ctor = builder.symbols.intern(&format!("{}.nuevo", clase));
+                    let ctor = builder.symbols.internar(&format!("{}.nuevo", clase));
                     builder.emit_call(ctor, args);
                 }
                 objeto
@@ -560,7 +560,7 @@ impl IrConstructor {
 
             Expresion::AccesoMiembro { objeto, miembro } => {
                 let obj = self.expr_to_ir(builder, objeto);
-                let campo = builder.symbols.intern(miembro);
+                let campo = builder.symbols.internar(miembro);
                 builder.emit_field_get(obj, campo)
             }
 
@@ -574,7 +574,7 @@ impl IrConstructor {
                     .iter()
                     .map(|a| self.expr_to_ir(builder, a))
                     .collect();
-                let met = builder.symbols.intern(metodo);
+                let met = builder.symbols.internar(metodo);
                 builder.emit_call_method(obj, met, args)
             }
 
@@ -585,7 +585,7 @@ impl IrConstructor {
             } => {
                 let obj = self.expr_to_ir(builder, objeto);
                 let val = self.expr_to_ir(builder, valor);
-                let field = builder.symbols.intern(campo);
+                let field = builder.symbols.internar(campo);
                 builder.emit_field_set(obj, field, val);
                 val
             }
@@ -691,7 +691,7 @@ impl IrConstructor {
         tag: usize,
         args: Vec<ValueId>,
     ) -> ValueId {
-        let clase = builder.symbols.intern(enum_nombre);
+        let clase = builder.symbols.internar(enum_nombre);
         let obj = builder.emit_object_new(clase, Vec::new());
         let tag_val = builder.emit_const_int(tag as i64);
         builder.emit_field_set_idx(obj, 0, tag_val);
@@ -726,7 +726,7 @@ impl IrConstructor {
                     // `valor`. Se compara el campo `tipo` por nombre, igual que
                     // el backend AST.
                     if let Some(tipo_str) = tipo_de_constructor_builtin(nombre) {
-                        let sym_tipo = builder.symbols.intern("tipo");
+                        let sym_tipo = builder.symbols.internar("tipo");
                         let tipo_val = builder.emit_field_get(valor, sym_tipo);
                         let lit = builder.emit_const_str(tipo_str);
                         Some(builder.emit_eq(tipo_val, lit))
@@ -757,7 +757,7 @@ impl IrConstructor {
                         // F11-T3: el valor va en el campo `valor` (por nombre).
                         for sub in subs {
                             if let Patron::Variable(nombre) = sub {
-                                let sym_valor = builder.symbols.intern("valor");
+                                let sym_valor = builder.symbols.internar("valor");
                                 let campo = builder.emit_field_get(valor, sym_valor);
                                 let mem = self.alloc_mem(nombre);
                                 builder.emit_store(mem, campo);
@@ -858,7 +858,7 @@ impl IrConstructor {
             } => {
                 let obj = self.expr_to_ir(builder, objeto);
                 let val = self.expr_to_ir(builder, valor);
-                let field = builder.symbols.intern(miembro);
+                let field = builder.symbols.internar(miembro);
                 builder.emit_field_set(obj, field, val);
             }
 
@@ -933,7 +933,7 @@ impl IrConstructor {
                 {
                     let obj = self.expr_to_ir(builder, objeto);
                     let val = self.expr_to_ir(builder, valor);
-                    let field = builder.symbols.intern(campo);
+                    let field = builder.symbols.internar(campo);
                     builder.emit_field_set(obj, field, val);
                     return;
                 }
@@ -1219,7 +1219,7 @@ impl IrConstructor {
             }
         }
 
-        let name_sym = self.symbols.intern("main");
+        let name_sym = self.symbols.internar("main");
         let mut builder = IrBuilder::new();
         builder.symbols = self.symbols.clone();
         let _entry = builder.new_block();
@@ -1274,7 +1274,7 @@ impl IrConstructor {
             None => return None,
         };
         for campo in partes {
-            let sym = builder.symbols.intern(campo);
+            let sym = builder.symbols.internar(campo);
             objeto = builder.emit_field_get(objeto, sym);
         }
         Some(objeto)
@@ -1305,23 +1305,23 @@ impl IrConstructor {
         self.next_local = 0;
 
         let mut builder = IrBuilder::new();
-        // La tabla del host es la fuente de verdad de los `SymId`: el closure la
+        // La tabla del host es la fuente de verdad de los `IdSimboloIr`: el closure la
         // clona y el resultado se devuelve al host, para que los ids del nombre
         // del closure y de sus parámetros signifiquen lo mismo en ambos.
         builder.symbols = host.symbols.clone();
-        let name_sym = builder.symbols.intern(&nombre);
+        let name_sym = builder.symbols.internar(&nombre);
         let _entry = builder.new_block();
 
         // La firma es `(__entorno, p1, ..., pn)`: el entorno viaja como primer
         // argumento para que una llamada indirecta lo pase siempre.
-        let entorno_sym = builder.symbols.intern("__entorno");
+        let entorno_sym = builder.symbols.internar("__entorno");
         let mut params_ir = Vec::with_capacity(1 + parametros.len());
         params_ir.push((entorno_sym, IrType::Ptr));
         for (i, p) in parametros.iter().enumerate() {
             let mem = LOCAL_BASE + 1 + i;
             self.var_map.insert(p.nombre.clone(), mem);
             let tipo = p.tipo.as_ref().map(Self::tipo_to_ir).unwrap_or(IrType::Ptr);
-            params_ir.push((builder.symbols.intern(&p.nombre), tipo));
+            params_ir.push((builder.symbols.internar(&p.nombre), tipo));
         }
         self.next_local = 1 + parametros.len();
 
@@ -1399,14 +1399,14 @@ impl IrConstructor {
 
         let mut builder = IrBuilder::new();
         builder.symbols = host.symbols.clone();
-        let name_sym = builder.symbols.intern(&nombre);
+        let name_sym = builder.symbols.internar(&nombre);
         let _entry = builder.new_block();
 
         let mut params_ir = Vec::with_capacity(capturadas.len());
         for (i, cap) in capturadas.iter().enumerate() {
             let mem = LOCAL_BASE + i;
             self.var_map.insert(cap.clone(), mem);
-            params_ir.push((builder.symbols.intern(cap), IrType::Ptr));
+            params_ir.push((builder.symbols.internar(cap), IrType::Ptr));
         }
         self.next_local = capturadas.len();
 
@@ -1437,7 +1437,7 @@ impl IrConstructor {
 
         let mut builder = IrBuilder::new();
         builder.symbols = self.symbols.clone();
-        let name_sym = builder.symbols.intern(nombre);
+        let name_sym = builder.symbols.internar(nombre);
         let _entry = builder.new_block();
 
         let mut params_ir = Vec::with_capacity(parametros.len());
@@ -1445,7 +1445,7 @@ impl IrConstructor {
             let mem = LOCAL_BASE + i;
             self.var_map.insert(p.nombre.clone(), mem);
             let tipo = p.tipo.as_ref().map(Self::tipo_to_ir).unwrap_or(IrType::Ptr);
-            params_ir.push((builder.symbols.intern(&p.nombre), tipo));
+            params_ir.push((builder.symbols.internar(&p.nombre), tipo));
         }
         self.next_local = parametros.len();
 
@@ -1478,16 +1478,16 @@ impl IrConstructor {
             &metodo.nombre
         };
         let nombre_completo = format!("{}.{}", clase, nombre_metodo);
-        let name_sym = builder.symbols.intern(&nombre_completo);
+        let name_sym = builder.symbols.internar(&nombre_completo);
         let _entry = builder.new_block();
 
         self.var_map.insert("self".to_string(), LOCAL_BASE);
-        let mut params_ir = vec![(builder.symbols.intern("self"), IrType::Ptr)];
+        let mut params_ir = vec![(builder.symbols.internar("self"), IrType::Ptr)];
         for (i, p) in metodo.parametros.iter().enumerate() {
             let mem = LOCAL_BASE + 1 + i;
             self.var_map.insert(p.nombre.clone(), mem);
             let tipo = p.tipo.as_ref().map(Self::tipo_to_ir).unwrap_or(IrType::Ptr);
-            params_ir.push((builder.symbols.intern(&p.nombre), tipo));
+            params_ir.push((builder.symbols.internar(&p.nombre), tipo));
         }
         self.next_local = 1 + metodo.parametros.len();
 

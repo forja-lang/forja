@@ -78,7 +78,7 @@ impl ForjaFast {
             let obj_idx = valor.indice_objeto();
             let clase_sym = self.obj_heap[obj_idx as usize].clase;
             let es_error = if let Some(desc) = self.class_descriptors.get(&clase_sym) {
-                if let Some(tipo_idx) = desc.shape.get_idx(self.sym_tipo) {
+                if let Some(tipo_idx) = desc.forma.obtener_indice(self.sym_tipo) {
                     if tipo_idx < self.obj_heap[obj_idx as usize].campos_vec.len() {
                         let tipo_val = self.obj_heap[obj_idx as usize].campos_vec[tipo_idx];
                         if tipo_val.es_texto() {
@@ -103,7 +103,7 @@ impl ForjaFast {
             }
             // Extraer valor interno
             let valor_interno = if let Some(desc) = self.class_descriptors.get(&clase_sym) {
-                if let Some(valor_idx) = desc.shape.get_idx(self.sym_valor) {
+                if let Some(valor_idx) = desc.forma.obtener_indice(self.sym_valor) {
                     if valor_idx < self.obj_heap[obj_idx as usize].campos_vec.len() {
                         self.obj_heap[obj_idx as usize].campos_vec[valor_idx]
                     } else {
@@ -212,7 +212,7 @@ impl ForjaFast {
     /// Convierte los string builders activos a Arc<str> y los guarda en flat_vars.
     /// Se llama al salir de una función para persistir los buffers acumulados.
     /// Extrae la primera entrada válida de un PIC para el inline cache de CallMethod.
-    pub(crate) fn extract_pic_entry(&self, pic: Pic) -> Option<(SymId, usize)> {
+    pub(crate) fn extract_pic_entry(&self, pic: Pic) -> Option<(IdSimbolo, usize)> {
         match pic {
             Pic::Mono(c, idx) => Some((c, idx)),
             Pic::Poly(arr, _) => Some(arr[0]),

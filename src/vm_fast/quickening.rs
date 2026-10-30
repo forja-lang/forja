@@ -303,7 +303,7 @@ impl ForjaFast {
                 // Reemplazar Call(nombre, nargs) por CallDirect o CallBuiltin
                 // cuando sea posible, eliminando el hash lookup.
                 Opcode::Call(nombre, nargs) => {
-                    let sym = self.sym_table.intern(nombre.as_ref());
+                    let sym = self.tabla_simbolos.internar(nombre.as_ref());
                     // Buscar por índice usando sym_to_func_idx (mapeo correcto a function_table)
                     if let Some(&func_idx) = self.sym_to_func_idx.get(&sym) {
                         self.bytecode[i] = Opcode::CallDirect(func_idx, nargs);
@@ -330,17 +330,17 @@ impl ForjaFast {
                     }
                 }
                 Opcode::TailCall(nombre, nargs) => {
-                    let sym = self.sym_table.intern(nombre.as_ref());
+                    let sym = self.tabla_simbolos.internar(nombre.as_ref());
                     if self.sym_to_func_idx.contains_key(&sym) {
                         self.bytecode[i] = Opcode::TailCall(Arc::from(nombre.as_ref()), nargs);
                     }
                 }
 
-                // ── CALLMETHOD → CallMethodCached (con SymId) ─────────────────
-                // Convertir el método a SymId (como u32) para comparaciones O(1) en runtime.
+                // ── CALLMETHOD → CallMethodCached (con IdSimbolo) ─────────────────
+                // Convertir el método a IdSimbolo (como u32) para comparaciones O(1) en runtime.
                 // El inline cache (clase_id, método_idx) se maneja en ic_callmethod.
                 Opcode::CallMethod(m, nargs) => {
-                    let method_sym = self.sym_table.intern(m.as_ref());
+                    let method_sym = self.tabla_simbolos.internar(m.as_ref());
                     self.bytecode[i] = Opcode::CallMethodCached(method_sym.0, nargs);
                 }
 
@@ -382,7 +382,7 @@ impl ForjaFast {
         let mut func_names = vec![String::new(); self.function_table.entries.len()];
         for (sym, idx) in &self.sym_to_func_idx {
             if *idx < func_names.len() {
-                func_names[*idx] = self.sym_table.get(*sym).to_string();
+                func_names[*idx] = self.tabla_simbolos.texto(*sym).to_string();
             }
         }
         self.func_names_pgo = func_names;

@@ -21,8 +21,8 @@
 #[cfg(not(target_arch = "wasm32"))]
 use crate::bytecode::ModuleBytecode;
 use crate::bytecode::{self, BuiltinKind, ContratoBytecode, Opcode};
-use crate::class_descriptor::{ClassDescriptor, Shape as ClassShape};
-use crate::shape::{ShapeId, ShapeRegistry};
+use crate::class_descriptor::{DescriptorClase, FormaCampos};
+use crate::shape::{IdForma, RegistroFormas};
 
 // ─── Submódulos (F1-T7) ────────────────────────────────────────────────────
 mod tipos;
@@ -39,7 +39,7 @@ pub(crate) use tipos::{homogeneizar_exacto_fast, FrmFast, FuncFast, Pic, TipoInf
 use crate::module::{ModuleId, ModuleInfo, ModuleResolver};
 use crate::native_registry::{NativeRegistry, SocketState};
 use crate::prof_count;
-use crate::symbol_table::{SymId, SymbolTable};
+use crate::symbol_table::{IdSimbolo, TablaSimbolos};
 use crate::uops::{expandir_a_uops, optimizar_uops, remapear_saltos_uops, Uop};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -86,13 +86,13 @@ pub struct ForjaFast {
     str_marked: Vec<bool>,   // marcas GC para strings
     array_marked: Vec<bool>, // marcas GC para arrays
     // ─── Class Descriptors + Shape ─────────────────────────────────────────
-    /// Cache de descriptores de clase (clase SymId → ClassDescriptor)
-    pub class_descriptors: HashMap<SymId, ClassDescriptor>,
-    /// Shape Registry (maneja shapes y transiciones)
-    pub shape_registry: ShapeRegistry,
+    /// Cache de descriptores de clase (clase IdSimbolo → DescriptorClase)
+    pub class_descriptors: HashMap<IdSimbolo, DescriptorClase>,
+    /// Shape Registry (maneja formas y transiciones)
+    pub registro_formas: RegistroFormas,
     /// Shape de cada objeto (por índice en obj_heap)
-    /// obj_shapes[idx] = ShapeId del objeto en obj_heap[idx]
-    pub obj_shapes: Vec<ShapeId>,
+    /// formas_objeto[idx] = IdForma del objeto en obj_heap[idx]
+    pub formas_objeto: Vec<IdForma>,
 
     map_marked: Vec<bool>, // marcas GC para mapas
     obj_free: Vec<u32>,    // free list objetos
@@ -193,64 +193,64 @@ pub struct ForjaFast {
     ic_mapget: Vec<bool>,
     ic_mapset: Vec<bool>,
 
-    // ─── String Interning (SymbolTable) ────────────────────────────────────
-    /// Tabla de símbolos: mapea strings únicos a SymId para comparaciones O(1)
-    pub sym_table: SymbolTable,
+    // ─── String Interning (TablaSimbolos) ────────────────────────────────────
+    /// Tabla de símbolos: mapea strings únicos a IdSimbolo para comparaciones O(1)
+    pub tabla_simbolos: TablaSimbolos,
 
-    // Cache de SymId para builtins comunes (comparaciones O(1))
-    sym_escribir: SymId,
-    sym_retornar: SymId,
-    sym_longitud: SymId,
-    sym_len: SymId,
-    sym_tipo: SymId,
-    sym_a_texto: SymId,
-    sym_es_numero: SymId,
-    sym_es_texto: SymId,
-    sym_empujar: SymId,
-    sym_obtener: SymId,
-    sym_remover: SymId,
-    sym_nuevo: SymId,
+    // Cache de IdSimbolo para builtins comunes (comparaciones O(1))
+    sym_escribir: IdSimbolo,
+    sym_retornar: IdSimbolo,
+    sym_longitud: IdSimbolo,
+    sym_len: IdSimbolo,
+    sym_tipo: IdSimbolo,
+    sym_a_texto: IdSimbolo,
+    sym_es_numero: IdSimbolo,
+    sym_es_texto: IdSimbolo,
+    sym_empujar: IdSimbolo,
+    sym_obtener: IdSimbolo,
+    sym_remover: IdSimbolo,
+    sym_nuevo: IdSimbolo,
 
-    // ─── SymId para canales e hilos ────────────────────────────────────
-    pub(crate) sym_canal_emisor: SymId,
-    pub(crate) sym_canal_receptor: SymId,
+    // ─── IdSimbolo para canales e hilos ────────────────────────────────────
+    pub(crate) sym_canal_emisor: IdSimbolo,
+    pub(crate) sym_canal_receptor: IdSimbolo,
     /// F12-T1: campos del objeto que representa un closure.
-    sym_closure_fn: SymId,
-    sym_closure_env: SymId,
-    sym_hilo: SymId,
-    sym_enviar: SymId,
-    sym_recibir: SymId,
-    sym_unir: SymId,
-    sym_send: SymId,
-    sym_receive: SymId,
-    sym_recv: SymId,
-    sym_join: SymId,
-    sym_valor: SymId,
+    sym_closure_fn: IdSimbolo,
+    sym_closure_env: IdSimbolo,
+    sym_hilo: IdSimbolo,
+    sym_enviar: IdSimbolo,
+    sym_recibir: IdSimbolo,
+    sym_unir: IdSimbolo,
+    sym_send: IdSimbolo,
+    sym_receive: IdSimbolo,
+    sym_recv: IdSimbolo,
+    sym_join: IdSimbolo,
+    sym_valor: IdSimbolo,
 
-    pub(crate) funciones: HashMap<SymId, FuncFast>,
+    pub(crate) funciones: HashMap<IdSimbolo, FuncFast>,
     /// Nombres de parámetros por función (necesario para mapear args en Call)
-    func_params: HashMap<SymId, Vec<String>>,
+    func_params: HashMap<IdSimbolo, Vec<String>>,
     pub bytecode: Vec<Opcode>,
     pub output: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 
     // ─── Hot Reload: Function Table (indirección) ──────────────────────────
     pub function_table: FunctionTable, // Tabla de indirección
-    pub sym_to_func_idx: HashMap<SymId, usize>, // Mapeo SymId → índice en function_table
-    pub function_versions: HashMap<SymId, u32>, // Versión actual de cada función
+    pub sym_to_func_idx: HashMap<IdSimbolo, usize>, // Mapeo IdSimbolo → índice en function_table
+    pub function_versions: HashMap<IdSimbolo, u32>, // Versión actual de cada función
     pub bytecode_pool: Vec<VersionedBytecode>, // Pool de bytecode versionado
 
     // ─── Hot Reload: Module Registry ───────────────────────────────────────
     /// Registro de módulos cargados (ModuleId → ModuleInfo)
     #[cfg(not(target_arch = "wasm32"))]
     pub module_registry: HashMap<ModuleId, ModuleInfo>,
-    /// Módulo propietario de cada función (SymId → ModuleId)
+    /// Módulo propietario de cada función (IdSimbolo → ModuleId)
     #[cfg(not(target_arch = "wasm32"))]
-    pub module_fn_owners: HashMap<SymId, ModuleId>,
+    pub module_fn_owners: HashMap<IdSimbolo, ModuleId>,
     /// Resolver de módulos (para recargar)
     #[cfg(not(target_arch = "wasm32"))]
     pub module_resolver: ModuleResolver,
-    /// Variables globales de módulo (SymId del nombre → (índice_global, mutable))
-    pub nombre_a_idx_global: HashMap<SymId, (usize, bool)>,
+    /// Variables globales de módulo (IdSimbolo del nombre → (índice_global, mutable))
+    pub nombre_a_idx_global: HashMap<IdSimbolo, (usize, bool)>,
     /// Valores persistentes de variables globales de módulo (idx → ValorFast)
     /// Persisten entre hot-reloads para que el estado de la variable se preserve.
     pub global_var_persist: Vec<ValorFast>,
@@ -318,6 +318,12 @@ pub struct ForjaFast {
 // `FrmFast`, `ErrFast` y `TipoInferido` se extrajeron a `tipos.rs` (F1-T7) y se
 // re-exportan arriba vía `pub use`/`pub(crate) use`.
 
+impl Default for ForjaFast {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ForjaFast {
     /// F4-T5: umbral por defecto de asignaciones entre recolecciones. Alto para
     /// no afectar a programas cortos (el GC solo se dispara en presión sostenida).
@@ -330,7 +336,7 @@ impl ForjaFast {
             frame_buffer: [FrmFast {
                 ip_ret: 0,
                 func_version: 0,
-                func_sym: SymId(0),
+                func_sym: IdSimbolo(0),
             }; 2048],
             frame_count: 0,
             frame_locals: vec![Vec::with_capacity(64)], // root frame
@@ -351,8 +357,8 @@ impl ForjaFast {
             str_marked: Vec::new(),
             array_marked: Vec::new(),
             class_descriptors: HashMap::new(),
-            shape_registry: ShapeRegistry::new(),
-            obj_shapes: Vec::new(),
+            registro_formas: RegistroFormas::new(),
+            formas_objeto: Vec::new(),
             map_marked: Vec::new(),
             obj_free: Vec::new(),
             str_free: Vec::new(),
@@ -385,32 +391,32 @@ impl ForjaFast {
             ic_arrayset: Vec::new(),
             ic_mapget: Vec::new(),
             ic_mapset: Vec::new(),
-            sym_table: SymbolTable::new(),
-            sym_escribir: SymId(0),
-            sym_retornar: SymId(0),
-            sym_longitud: SymId(0),
-            sym_len: SymId(0),
-            sym_tipo: SymId(0),
-            sym_a_texto: SymId(0),
-            sym_es_numero: SymId(0),
-            sym_es_texto: SymId(0),
-            sym_empujar: SymId(0),
-            sym_obtener: SymId(0),
-            sym_remover: SymId(0),
-            sym_nuevo: SymId(0),
-            sym_canal_emisor: SymId(0),
-            sym_canal_receptor: SymId(0),
-            sym_closure_fn: SymId(0),
-            sym_closure_env: SymId(0),
-            sym_hilo: SymId(0),
-            sym_enviar: SymId(0),
-            sym_recibir: SymId(0),
-            sym_unir: SymId(0),
-            sym_send: SymId(0),
-            sym_receive: SymId(0),
-            sym_recv: SymId(0),
-            sym_join: SymId(0),
-            sym_valor: SymId(0),
+            tabla_simbolos: TablaSimbolos::new(),
+            sym_escribir: IdSimbolo(0),
+            sym_retornar: IdSimbolo(0),
+            sym_longitud: IdSimbolo(0),
+            sym_len: IdSimbolo(0),
+            sym_tipo: IdSimbolo(0),
+            sym_a_texto: IdSimbolo(0),
+            sym_es_numero: IdSimbolo(0),
+            sym_es_texto: IdSimbolo(0),
+            sym_empujar: IdSimbolo(0),
+            sym_obtener: IdSimbolo(0),
+            sym_remover: IdSimbolo(0),
+            sym_nuevo: IdSimbolo(0),
+            sym_canal_emisor: IdSimbolo(0),
+            sym_canal_receptor: IdSimbolo(0),
+            sym_closure_fn: IdSimbolo(0),
+            sym_closure_env: IdSimbolo(0),
+            sym_hilo: IdSimbolo(0),
+            sym_enviar: IdSimbolo(0),
+            sym_recibir: IdSimbolo(0),
+            sym_unir: IdSimbolo(0),
+            sym_send: IdSimbolo(0),
+            sym_receive: IdSimbolo(0),
+            sym_recv: IdSimbolo(0),
+            sym_join: IdSimbolo(0),
+            sym_valor: IdSimbolo(0),
             funciones: HashMap::new(),
             func_params: HashMap::new(),
             bytecode: Vec::new(),
@@ -540,7 +546,7 @@ impl ForjaFast {
             if let Some(perfil) = self.perfil_pgo.as_mut() {
                 for (ip, count) in inst.counters.iter().enumerate() {
                     if *count > 0 {
-                        *perfil.hot_ips.entry(ip).or_insert(0) += *count as u64;
+                        *perfil.hot_ips.entry(ip).or_insert(0) += *count;
                     }
                 }
             }
@@ -700,7 +706,7 @@ impl ForjaFast {
                     }
                 }
                 Uop::StoreIdx(idx) => {
-                    let val = stack.pop().unwrap_or(ValorFast::nulo());
+                    let val = stack.pop().unwrap_or_default();
                     self.store_local(*idx, val);
                 }
                 Uop::DeclareVar(idx) => {
@@ -708,102 +714,86 @@ impl ForjaFast {
                     self.store_local(*idx, self.load_local(*idx));
                 }
                 Uop::DeclareInit(idx) => {
-                    let val = stack.pop().unwrap_or(ValorFast::nulo());
+                    let val = stack.pop().unwrap_or_default();
                     self.store_local(*idx, val);
                 }
 
                 // Aritméticas
                 Uop::Add => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() {
-                        stack.push(get_small_int_fast(
-                            a.a_entero() as i64 + b.a_entero() as i64,
-                        ));
+                        stack.push(get_small_int_fast(a.a_entero() + b.a_entero()));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
                 }
                 Uop::Sub => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() {
-                        stack.push(get_small_int_fast(
-                            a.a_entero() as i64 - b.a_entero() as i64,
-                        ));
+                        stack.push(get_small_int_fast(a.a_entero() - b.a_entero()));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
                 }
                 Uop::Mul => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() {
-                        stack.push(get_small_int_fast(
-                            a.a_entero() as i64 * b.a_entero() as i64,
-                        ));
+                        stack.push(get_small_int_fast(a.a_entero() * b.a_entero()));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
                 }
                 Uop::Div => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() && b.a_entero() != 0 {
-                        stack.push(get_small_int_fast(
-                            a.a_entero() as i64 / b.a_entero() as i64,
-                        ));
+                        stack.push(get_small_int_fast(a.a_entero() / b.a_entero()));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
                 }
                 Uop::AddInt => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() {
-                        stack.push(get_small_int_fast(
-                            a.a_entero() as i64 + b.a_entero() as i64,
-                        ));
+                        stack.push(get_small_int_fast(a.a_entero() + b.a_entero()));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
                 }
                 Uop::SubInt => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() {
-                        stack.push(get_small_int_fast(
-                            a.a_entero() as i64 - b.a_entero() as i64,
-                        ));
+                        stack.push(get_small_int_fast(a.a_entero() - b.a_entero()));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
                 }
                 Uop::MulInt => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() {
-                        stack.push(get_small_int_fast(
-                            a.a_entero() as i64 * b.a_entero() as i64,
-                        ));
+                        stack.push(get_small_int_fast(a.a_entero() * b.a_entero()));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
                 }
                 Uop::DivInt => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() && b.a_entero() != 0 {
-                        stack.push(get_small_int_fast(
-                            a.a_entero() as i64 / b.a_entero() as i64,
-                        ));
+                        stack.push(get_small_int_fast(a.a_entero() / b.a_entero()));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
                 }
                 Uop::AddFloat => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     if a.es_flotante() && b.es_flotante() {
                         stack.push(ValorFast::flotante(a.a_flotante() + b.a_flotante()));
                     } else {
@@ -811,8 +801,8 @@ impl ForjaFast {
                     }
                 }
                 Uop::SubFloat => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     if a.es_flotante() && b.es_flotante() {
                         stack.push(ValorFast::flotante(a.a_flotante() - b.a_flotante()));
                     } else {
@@ -820,8 +810,8 @@ impl ForjaFast {
                     }
                 }
                 Uop::MulFloat => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     if a.es_flotante() && b.es_flotante() {
                         stack.push(ValorFast::flotante(a.a_flotante() * b.a_flotante()));
                     } else {
@@ -829,8 +819,8 @@ impl ForjaFast {
                     }
                 }
                 Uop::DivFloat => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     if a.es_flotante() && b.es_flotante() && b.a_flotante() != 0.0 {
                         stack.push(ValorFast::flotante(a.a_flotante() / b.a_flotante()));
                     } else {
@@ -840,8 +830,8 @@ impl ForjaFast {
 
                 // Comparaciones
                 Uop::Igual => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     stack.push(ValorFast::booleano(if a.es_entero() && b.es_entero() {
                         a.a_entero() == b.a_entero()
                     } else if a.es_flotante() && b.es_flotante() {
@@ -853,8 +843,8 @@ impl ForjaFast {
                     }));
                 }
                 Uop::Diferente => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     stack.push(ValorFast::booleano(if a.es_entero() && b.es_entero() {
                         a.a_entero() != b.a_entero()
                     } else if a.es_flotante() && b.es_flotante() {
@@ -864,8 +854,8 @@ impl ForjaFast {
                     }));
                 }
                 Uop::Menor => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     stack.push(ValorFast::booleano(if a.es_entero() && b.es_entero() {
                         a.a_entero() < b.a_entero()
                     } else if a.es_flotante() && b.es_flotante() {
@@ -875,8 +865,8 @@ impl ForjaFast {
                     }));
                 }
                 Uop::Mayor => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     stack.push(ValorFast::booleano(if a.es_entero() && b.es_entero() {
                         a.a_entero() > b.a_entero()
                     } else if a.es_flotante() && b.es_flotante() {
@@ -886,8 +876,8 @@ impl ForjaFast {
                     }));
                 }
                 Uop::MenorIgual => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     stack.push(ValorFast::booleano(if a.es_entero() && b.es_entero() {
                         a.a_entero() <= b.a_entero()
                     } else if a.es_flotante() && b.es_flotante() {
@@ -897,8 +887,8 @@ impl ForjaFast {
                     }));
                 }
                 Uop::MayorIgual => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     stack.push(ValorFast::booleano(if a.es_entero() && b.es_entero() {
                         a.a_entero() >= b.a_entero()
                     } else if a.es_flotante() && b.es_flotante() {
@@ -908,22 +898,22 @@ impl ForjaFast {
                     }));
                 }
                 Uop::No => {
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let a = stack.pop().unwrap_or_default();
                     stack.push(ValorFast::booleano(
                         !a.es_verdadero_con_heap(&self.str_heap),
                     ));
                 }
                 Uop::Y => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     stack.push(ValorFast::booleano(
                         a.es_verdadero_con_heap(&self.str_heap)
                             && b.es_verdadero_con_heap(&self.str_heap),
                     ));
                 }
                 Uop::O => {
-                    let b = stack.pop().unwrap_or(ValorFast::nulo());
-                    let a = stack.pop().unwrap_or(ValorFast::nulo());
+                    let b = stack.pop().unwrap_or_default();
+                    let a = stack.pop().unwrap_or_default();
                     stack.push(ValorFast::booleano(
                         a.es_verdadero_con_heap(&self.str_heap)
                             || b.es_verdadero_con_heap(&self.str_heap),
@@ -994,33 +984,33 @@ impl ForjaFast {
         l[idx] = val;
     }
 
-    /// Inicializa SymId para builtins comunes — permite comparaciones O(1)
+    /// Inicializa IdSimbolo para builtins comunes — permite comparaciones O(1)
     fn init_symbols(&mut self) {
-        self.sym_escribir = self.sym_table.intern("escribir");
-        self.sym_retornar = self.sym_table.intern("retornar");
-        self.sym_longitud = self.sym_table.intern("longitud");
-        self.sym_len = self.sym_table.intern("len");
-        self.sym_tipo = self.sym_table.intern("tipo");
-        self.sym_a_texto = self.sym_table.intern("a_texto");
-        self.sym_es_numero = self.sym_table.intern("es_numero");
-        self.sym_es_texto = self.sym_table.intern("es_texto");
-        self.sym_empujar = self.sym_table.intern("empujar");
-        self.sym_obtener = self.sym_table.intern("obtener");
-        self.sym_remover = self.sym_table.intern("remover");
-        self.sym_nuevo = self.sym_table.intern("nuevo");
-        self.sym_canal_emisor = self.sym_table.intern("CanalEmisor");
-        self.sym_canal_receptor = self.sym_table.intern("CanalReceptor");
-        self.sym_closure_fn = self.sym_table.intern("fn");
-        self.sym_closure_env = self.sym_table.intern("env");
-        self.sym_hilo = self.sym_table.intern("Hilo");
-        self.sym_enviar = self.sym_table.intern("enviar");
-        self.sym_recibir = self.sym_table.intern("recibir");
-        self.sym_unir = self.sym_table.intern("unir");
-        self.sym_send = self.sym_table.intern("send");
-        self.sym_receive = self.sym_table.intern("receive");
-        self.sym_recv = self.sym_table.intern("recv");
-        self.sym_join = self.sym_table.intern("join");
-        self.sym_valor = self.sym_table.intern("valor");
+        self.sym_escribir = self.tabla_simbolos.internar("escribir");
+        self.sym_retornar = self.tabla_simbolos.internar("retornar");
+        self.sym_longitud = self.tabla_simbolos.internar("longitud");
+        self.sym_len = self.tabla_simbolos.internar("len");
+        self.sym_tipo = self.tabla_simbolos.internar("tipo");
+        self.sym_a_texto = self.tabla_simbolos.internar("a_texto");
+        self.sym_es_numero = self.tabla_simbolos.internar("es_numero");
+        self.sym_es_texto = self.tabla_simbolos.internar("es_texto");
+        self.sym_empujar = self.tabla_simbolos.internar("empujar");
+        self.sym_obtener = self.tabla_simbolos.internar("obtener");
+        self.sym_remover = self.tabla_simbolos.internar("remover");
+        self.sym_nuevo = self.tabla_simbolos.internar("nuevo");
+        self.sym_canal_emisor = self.tabla_simbolos.internar("CanalEmisor");
+        self.sym_canal_receptor = self.tabla_simbolos.internar("CanalReceptor");
+        self.sym_closure_fn = self.tabla_simbolos.internar("fn");
+        self.sym_closure_env = self.tabla_simbolos.internar("env");
+        self.sym_hilo = self.tabla_simbolos.internar("Hilo");
+        self.sym_enviar = self.tabla_simbolos.internar("enviar");
+        self.sym_recibir = self.tabla_simbolos.internar("recibir");
+        self.sym_unir = self.tabla_simbolos.internar("unir");
+        self.sym_send = self.tabla_simbolos.internar("send");
+        self.sym_receive = self.tabla_simbolos.internar("receive");
+        self.sym_recv = self.tabla_simbolos.internar("recv");
+        self.sym_join = self.tabla_simbolos.internar("join");
+        self.sym_valor = self.tabla_simbolos.internar("valor");
     }
 
     fn init_ic(&mut self) {
@@ -1044,7 +1034,7 @@ impl ForjaFast {
 
         // Primera pasada: indexar labels, funciones, y calcular vars_size
         let mut label_positions: HashMap<usize, usize> = HashMap::new();
-        let mut registos_pendientes: Vec<(SymId, usize, usize, Option<SymId>)> = Vec::new();
+        let mut registos_pendientes: Vec<(IdSimbolo, usize, usize, Option<IdSimbolo>)> = Vec::new();
         // Pre-calcular rangos de funciones para limitar escaneo de vars_size
         let mut func_ranges: Vec<(usize, usize)> = Vec::new(); // (start, end)
         for (i, op) in self.bytecode.iter().enumerate() {
@@ -1125,15 +1115,15 @@ impl ForjaFast {
                                     max_idx = *idx + 1;
                                 }
                             }
-                            Opcode::LoadJumpSiFalso(idx, _) | Opcode::LoadJump(idx, _) => {
-                                if *idx + 1 > max_idx {
-                                    max_idx = *idx + 1;
-                                }
+                            Opcode::LoadJumpSiFalso(idx, _) | Opcode::LoadJump(idx, _)
+                                if *idx + 1 > max_idx =>
+                            {
+                                max_idx = *idx + 1;
                             }
                             _ => {}
                         }
                     }
-                    let sym_id = self.sym_table.intern(n.as_ref());
+                    let sym_id = self.tabla_simbolos.internar(n.as_ref());
                     self.funciones.insert(
                         sym_id,
                         FuncFast {
@@ -1273,10 +1263,10 @@ impl ForjaFast {
         self.ic_arrayset.iter_mut().for_each(|c| *c = None);
         self.ic_mapget.iter_mut().for_each(|c| *c = false);
         self.ic_mapset.iter_mut().for_each(|c| *c = false);
-        // Clear class descriptors + shapes
+        // Clear class descriptors + formas
         self.class_descriptors.clear();
-        self.obj_shapes.clear();
-        self.shape_registry.reset();
+        self.formas_objeto.clear();
+        self.registro_formas.reiniciar();
         // Reset GC state
         self.obj_marked.clear();
         self.str_marked.clear();
@@ -1351,8 +1341,12 @@ impl ForjaFast {
     // ─── Resolución de métodos via MRO ──────────────────────────────────────
 
     /// Busca un método `method_sym` en el MRO de la clase `clase_sym`.
-    /// Retorna el SymId de la función "Clase.metodo" si se encuentra, o None.
-    fn resolver_metodo_mro(&self, clase_sym: SymId, method_sym: SymId) -> Option<SymId> {
+    /// Retorna el IdSimbolo de la función "Clase.metodo" si se encuentra, o None.
+    fn resolver_metodo_mro(
+        &self,
+        clase_sym: IdSimbolo,
+        method_sym: IdSimbolo,
+    ) -> Option<IdSimbolo> {
         if let Some(desc) = self.class_descriptors.get(&clase_sym) {
             // Buscar método en la clase y su MRO
             for &clase_id in &desc.mro {
@@ -1390,7 +1384,7 @@ impl ForjaFast {
         }
         if v.es_objeto() {
             let o = self.get_obj(v.indice_objeto());
-            let nombre_clase = self.sym_table.get(o.clase);
+            let nombre_clase = self.tabla_simbolos.texto(o.clase);
             return format!("<{}>", nombre_clase);
         }
         if v.es_arreglo() {
@@ -1440,7 +1434,7 @@ impl ForjaFast {
         let sym_actual = if self.frame_count > 0 {
             self.frame_buffer[self.frame_count - 1].func_sym
         } else {
-            SymId(0)
+            IdSimbolo(0)
         };
         let nombre_actual = self.nombre_funcion(sym_actual);
         let linea_actual = self.linea_de_ip(self.ip);
@@ -1459,11 +1453,11 @@ impl ForjaFast {
 
         // El código de nivel superior (frame raíz) no se registra en
         // `frame_buffer`; lo añadimos al final si el frame más externo no es
-        // ya el raíz (`SymId(0)`).
+        // ya el raíz (`IdSimbolo(0)`).
         let mas_externo = if self.frame_count > 0 {
             self.frame_buffer[0].func_sym
         } else {
-            SymId(0)
+            IdSimbolo(0)
         };
         if mas_externo.0 != 0 {
             lineas.push(formatear_frame_backtrace("<principal>", 0));
@@ -1472,13 +1466,13 @@ impl ForjaFast {
         lineas
     }
 
-    /// Resuelve el nombre legible de una función a partir de su `SymId`.
-    /// `SymId(0)` (o símbolo vacío) se muestra como `<principal>`.
-    fn nombre_funcion(&self, sym: SymId) -> String {
+    /// Resuelve el nombre legible de una función a partir de su `IdSimbolo`.
+    /// `IdSimbolo(0)` (o símbolo vacío) se muestra como `<principal>`.
+    fn nombre_funcion(&self, sym: IdSimbolo) -> String {
         if sym.0 == 0 {
             return "<principal>".to_string();
         }
-        let nombre = self.sym_table.get(sym);
+        let nombre = self.tabla_simbolos.texto(sym);
         if nombre.is_empty() {
             "<principal>".to_string()
         } else {

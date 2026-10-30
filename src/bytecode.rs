@@ -280,7 +280,7 @@ pub enum Opcode {
     TailCall(Arc<str>, usize), // (nombre_funcion, nargs)
 
     /// Llamada a método con inline cache
-    /// El method_sym_id es el valor interno de SymId (u32) para comparación O(1);
+    /// El method_sym_id es el valor interno de IdSimbolo (u32) para comparación O(1);
     /// el IC (clase_id, método_idx) se maneja aparte en el vector ic_callmethod.
     /// Creado en quickening, no serializable.
     CallMethodCached(u32, usize), // (method_sym_id, nargs)
@@ -394,12 +394,7 @@ pub struct BytecodeGenerator {
     /// Mapa de overloads de funciones (nombre -> Vec de overloads).
     /// Usado para name mangling cuando hay funciones con mismo nombre pero diferentes tipos.
     /// Cada overload: (tipos_param, tipo_retorno, parametros_tipo)
-    funciones_overload: Option<
-        std::collections::HashMap<
-            String,
-            Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>,
-        >,
-    >,
+    funciones_overload: Option<crate::semantics::MapaSobrecargas>,
 
     // === Design by Contract ===
     pub contratos: Vec<ContratoBytecode>,
@@ -424,7 +419,7 @@ pub struct BytecodeGenerator {
     /// Cada entrada: (nombre, parámetros_capturados, cuerpo bytecode)
     /// Almacenar aquí evita que optimizar_indices mezcle índices del ámbito
     /// exterior con los del ámbito de la función del hilo.
-    hilo_funciones: Vec<(Arc<str>, Vec<Arc<str>>, Vec<Opcode>)>,
+    hilo_funciones: Vec<FuncionHilo>,
     /// F11-T1: definiciones de closures (`FunctionDef` + cuerpo + `Return`)
     /// diferidas al final del programa. No pueden emitirse en el punto de uso
     /// porque la VM ejecuta el flujo secuencialmente: al entrar en el cuerpo
@@ -444,6 +439,12 @@ pub struct BytecodeGenerator {
     funciones_asincronas: std::collections::HashSet<String>,
     /// F8-T7: nombres de funciones de usuario (para usarlas como valores).
     funciones_definidas: std::collections::HashSet<String>,
+}
+
+impl Default for BytecodeGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BytecodeGenerator {
@@ -480,13 +481,7 @@ impl BytecodeGenerator {
 
     /// Establece el mapa de overloads de funciones para name mangling.
     /// Permite que el generador distinga entre funciones con mismo nombre pero diferentes tipos.
-    pub fn set_funciones_overload(
-        &mut self,
-        funcs: std::collections::HashMap<
-            String,
-            Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<ParametroTipo>)>,
-        >,
-    ) {
+    pub fn set_funciones_overload(&mut self, funcs: crate::semantics::MapaSobrecargas) {
         self.funciones_overload = Some(funcs);
     }
 
@@ -501,16 +496,16 @@ impl BytecodeGenerator {
                 }
                 // Buscar overload que coincida por aridad + tipos
                 for (i, (params, _, _)) in ol.iter().enumerate() {
-                    if params.len() == tipos_args.len() {
-                        if tipos_args.iter().enumerate().all(|(j, arg_t)| {
-                            params[j].as_ref().map_or(true, |p_t| {
+                    if params.len() == tipos_args.len()
+                        && tipos_args.iter().enumerate().all(|(j, arg_t)| {
+                            params[j].as_ref().is_none_or(|p_t| {
                                 arg_t
                                     .as_ref()
-                                    .map_or(false, |a_t| self.tipos_coinciden_mangled(a_t, p_t))
+                                    .is_some_and(|a_t| self.tipos_coinciden_mangled(a_t, p_t))
                             })
-                        }) {
-                            return format!("{}$ov{}", nombre, i);
-                        }
+                        })
+                    {
+                        return format!("{}$ov{}", nombre, i);
                     }
                 }
                 // Fallback: usar primer overload que coincida en aridad
@@ -1137,7 +1132,7 @@ impl BytecodeGenerator {
 
     /// Busca el tag (índice) de un constructor por su nombre en todos los enums registrados
     fn obtener_tag_constructor(&self, nombre_constructor: &str) -> Option<usize> {
-        for (_nombre_enum, variantes) in &self.enum_variantes {
+        for variantes in self.enum_variantes.values() {
             for (i, (vname, _)) in variantes.iter().enumerate() {
                 if vname == nombre_constructor {
                     return Some(i);
@@ -2433,7 +2428,7 @@ impl BytecodeGenerator {
                 let params: Vec<Arc<str>> =
                     capturadas.iter().map(|s| Arc::from(s.as_str())).collect();
                 // Guardar opcodes actuales y reemplazar por buffer temporal
-                let opcodes_previos = std::mem::replace(&mut self.opcodes, Vec::new());
+                let opcodes_previos = std::mem::take(&mut self.opcodes);
                 // Ámbito propio: los capturados conservan el tipo que tenían fuera.
                 let ambito_previo = std::mem::take(&mut self.tipos_ambito);
                 let mut ambito = std::collections::HashMap::new();
@@ -3144,14 +3139,17 @@ impl BytecodeGenerator {
 
 // ─── ModuleBytecode: Bytecode producido para un módulo completo ────────────
 
-use crate::symbol_table::SymId;
+use crate::symbol_table::IdSimbolo;
+
+/// Función de hilo diferida: (nombre, parámetros capturados, cuerpo).
+type FuncionHilo = (Arc<str>, Vec<Arc<str>>, Vec<Opcode>);
 
 /// Bytecode generado para un módulo completo, con metadatos para hot-reload
 pub struct ModuleBytecode {
     pub opcodes: Vec<Opcode>,
-    pub module_id: SymId,
+    pub module_id: IdSimbolo,
     pub global_var_indices: Vec<(String, bool)>, // nombres de vars globales
-    pub function_sym_ids: Vec<SymId>,            // SymIds de funciones definidas
+    pub function_sym_ids: Vec<IdSimbolo>,        // SymIds de funciones definidas
 }
 
 impl BytecodeGenerator {
@@ -3160,7 +3158,7 @@ impl BytecodeGenerator {
     pub fn generar_para_modulo(
         &mut self,
         programa: &Programa,
-        module_id: SymId,
+        module_id: IdSimbolo,
     ) -> Result<ModuleBytecode, Vec<ErrorForja>> {
         // Reiniciar estado del generador para este módulo
         self.opcodes.clear();
@@ -3169,7 +3167,7 @@ impl BytecodeGenerator {
 
         // Variables globales del módulo (ámbito módulo)
         let mut global_var_indices: Vec<(String, bool)> = Vec::new();
-        let mut function_sym_ids: Vec<SymId> = Vec::new();
+        let mut function_sym_ids: Vec<IdSimbolo> = Vec::new();
 
         // Primera pasada: identificar variables globales y funciones
         for decl in &programa.declaraciones {
@@ -3181,8 +3179,8 @@ impl BytecodeGenerator {
                     global_var_indices.push((nombre.clone(), *mutable));
                 }
                 Declaracion::Funcion { nombre, .. } => {
-                    // Generar un SymId temporal para la función
-                    let temp_id = SymId(
+                    // Generar un IdSimbolo temporal para la función
+                    let temp_id = IdSimbolo(
                         nombre
                             .bytes()
                             .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
@@ -3199,7 +3197,7 @@ impl BytecodeGenerator {
                             &metodo.nombre
                         };
                         let full_name = format!("{}.{}", nombre, nombre_metodo);
-                        let temp_id = SymId(
+                        let temp_id = IdSimbolo(
                             full_name
                                 .bytes()
                                 .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
@@ -3214,7 +3212,7 @@ impl BytecodeGenerator {
                 } => {
                     for metodo in metodos {
                         let full_name = format!("{}.{}", clase_nombre, metodo.nombre);
-                        let temp_id = SymId(
+                        let temp_id = IdSimbolo(
                             full_name
                                 .bytes()
                                 .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
@@ -3395,10 +3393,10 @@ impl ModuleBytecode {
                             max_idx = idx.saturating_add(1);
                         }
                     }
-                    Opcode::LoadJumpSiFalso(idx, _) | Opcode::LoadJump(idx, _) => {
-                        if idx.saturating_add(1) > max_idx {
-                            max_idx = idx.saturating_add(1);
-                        }
+                    Opcode::LoadJumpSiFalso(idx, _) | Opcode::LoadJump(idx, _)
+                        if idx.saturating_add(1) > max_idx =>
+                    {
+                        max_idx = idx.saturating_add(1);
                     }
                     _ => {}
                 }
@@ -4430,7 +4428,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 pos += 8;
                 opcodes.push(Opcode::LoadAddFloat(idx, d));
             }
-            26 | 27 | 28 => {
+            26..=28 => {
                 // AddStoreFloat | SubStoreFloat | MulStoreFloat
                 if pos + 4 > data.len() {
                     return None;
@@ -4501,7 +4499,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 pos += 4;
                 opcodes.push(Opcode::LoadAddPacked(dst, src1, src2));
             }
-            50 | 51 | 52 => {
+            50..=52 => {
                 // Jump | JumpSiFalso | Label
                 if pos + 4 > data.len() {
                     return None;
@@ -4609,7 +4607,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 pos += 4;
                 opcodes.push(Opcode::ArrayNew(n));
             }
-            62 | 63 | 64 => {
+            62..=64 => {
                 // NewObject | SetField | GetField
                 if pos + 4 > data.len() {
                     return None;
@@ -4626,7 +4624,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 });
             }
             // Fase 3a: Stack Bypass — 3 × u32 (dst, src1, src2)
-            96 | 97 | 98 | 99 => {
+            96..=99 => {
                 if pos + 12 > data.len() {
                     return None;
                 }
@@ -4810,7 +4808,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 opcodes.push(Opcode::CallClosure(nargs));
             }
             // Design by Contract opcodes — 4 bytes payload (usize)
-            130 | 131 | 132 | 133 => {
+            130..=133 => {
                 if pos + 4 > data.len() {
                     return None;
                 }
@@ -4977,8 +4975,7 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
         let mut var_indices: HashMap<String, usize> = HashMap::new();
         let mut next_idx: usize = 0;
 
-        for i in scope_start..scope_end {
-            let op = &bytecode[i];
+        for op in &bytecode[scope_start..scope_end] {
             match op {
                 Opcode::FunctionDef(_name, params) => {
                     // Los parámetros de la función empiezan en índice 0 de este ámbito
@@ -5086,18 +5083,16 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
                 &bc[i + 6],
             ) {
                 if a1 == a2 && *n1 == 2 && *n2 == 2 {
-                    match (&bc[i + 3], &bc[i + 5], &bc[i + 6]) {
-                        (
-                            Opcode::Div | Opcode::DivInt,
-                            Opcode::Mul | Opcode::MulInt,
-                            Opcode::Sub | Opcode::SubInt,
-                        ) => {
-                            // Reemplazar 7 ops con Modulo2(a)
-                            result.push(Opcode::Modulo2(*a1));
-                            i += 7;
-                            continue;
-                        }
-                        _ => {}
+                    if let (
+                        Opcode::Div | Opcode::DivInt,
+                        Opcode::Mul | Opcode::MulInt,
+                        Opcode::Sub | Opcode::SubInt,
+                    ) = (&bc[i + 3], &bc[i + 5], &bc[i + 6])
+                    {
+                        // Reemplazar 7 ops con Modulo2(a)
+                        result.push(Opcode::Modulo2(*a1));
+                        i += 7;
+                        continue;
                     }
                 }
             }
@@ -5352,9 +5347,9 @@ mod tests {
 
     fn generar_bytecode(source: &str) -> Result<Vec<Opcode>, Vec<ErrorForja>> {
         let mut lexer = Lexer::new(source);
-        let tokens = lexer.tokenize().map_err(|e| e)?;
+        let tokens = lexer.tokenize()?;
         let mut parser = Parser::new(tokens);
-        let programa = parser.parse().map_err(|e| e)?;
+        let programa = parser.parse()?;
         let mut gen = BytecodeGenerator::new();
         gen.generar(&programa)
     }
@@ -5531,7 +5526,7 @@ mod tests {
 
     fn generar_bytecode_para_modulo(
         source: &str,
-        module_id: SymId,
+        module_id: IdSimbolo,
     ) -> Result<ModuleBytecode, Vec<ErrorForja>> {
         use crate::lexer::Lexer;
         use crate::parser::Parser;
@@ -5566,7 +5561,7 @@ fun version() {
     retornar 1
 }
 ";
-        let module_id = SymId(42);
+        let module_id = IdSimbolo(42);
         let module_bc = generar_bytecode_para_modulo(source, module_id).unwrap();
 
         // El ModuleBytecode debe tener el module_id correcto
@@ -5598,7 +5593,7 @@ fun obtener() {
     retornar contador
 }
 ";
-        let module_id = SymId(7);
+        let module_id = IdSimbolo(7);
         let module_bc = generar_bytecode_para_modulo(source, module_id).unwrap();
 
         // Debe tener al menos una variable global (contador, nombre)
@@ -5627,7 +5622,7 @@ fun bar(x) {
     retornar x * 2
 }
 ";
-        let module_id = SymId(99);
+        let module_id = IdSimbolo(99);
         let module_bc = generar_bytecode_para_modulo(source, module_id).unwrap();
 
         let funciones = module_bc.desglosar();
@@ -5747,7 +5742,7 @@ fun probar() {
     retornar global_x
 }
 ";
-        let module_id = SymId(100);
+        let module_id = IdSimbolo(100);
         let module_bc = generar_bytecode_para_modulo(source, module_id).unwrap();
 
         // Verificar que tiene DeclareIdxGlobal

@@ -55,8 +55,8 @@ pub(crate) fn native_proceso_ejecutar(
     let code = output.status.code().unwrap_or(-1) as i64;
 
     // Build result object: SalidaProceso { stdout, stderr, codigo_salida }
-    let sym = vm.sym_table.intern("SalidaProceso");
-    let shape_id = vm.shape_registry.get_or_create(sym);
+    let sym = vm.tabla_simbolos.internar("SalidaProceso");
+    let shape_id = vm.registro_formas.obtener_o_crear(sym);
     let mut obj = crate::vm_fast::ObjVal::new(sym, shape_id);
     obj.campos_vec = vec![
         {

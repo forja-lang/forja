@@ -1511,7 +1511,7 @@ fn ejecutar_asm(source: &str, input_path: &str) -> Result<Vec<String>, String> {
 
     // 3. Compilar con gcc -O2
     let output = Command::new("gcc")
-        .args(&["-O2", "-o", &exe_path, &asm_path])
+        .args(["-O2", "-o", &exe_path, &asm_path])
         .output()
         .map_err(|e| format!("Error ejecutando gcc: {}. ¿Está instalado?", e))?;
 
@@ -1567,7 +1567,7 @@ fn ejecutar_nativo(source: &str, input_path: &str, hot_reload: bool) -> Result<(
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("app");
-    let mut nombre_crate = input_stem.replace('-', "_").replace(' ', "_");
+    let mut nombre_crate = input_stem.replace(['-', ' '], "_");
     if !nombre_crate.is_empty() {
         let first = nombre_crate.chars().next().unwrap();
         if first.is_ascii_digit() {
@@ -1635,7 +1635,7 @@ opt-level = 3
     // 8. Compilar con cargo (release)
     println!("📦 Compilando GUI nativa...");
     let output = std::process::Command::new("cargo")
-        .args(&["build", "--release"])
+        .args(["build", "--release"])
         .current_dir(&temp_dir)
         .output()
         .map_err(|e| format!("Error ejecutando cargo: {}. ¿Está instalado Rust?", e))?;
@@ -1737,7 +1737,7 @@ fn iniciar_watcher_hot_reload(
             // Recompilar
             println!("  🔨 Recompilando...");
             let status = std::process::Command::new("cargo")
-                .args(&["build", "--release"])
+                .args(["build", "--release"])
                 .current_dir(&build_dir)
                 .output()
                 .map_err(|e| format!("Error recompilando: {}", e))?;
@@ -2218,10 +2218,10 @@ fn generar_doc_html(declaraciones: &[Declaracion]) -> String {
                     html.push_str(&format!(
                         "<div class='doc-text'>{}</div>",
                         doc_text
+                            .replace('&', "&amp;")
+                            .replace('<', "&lt;")
+                            .replace('>', "&gt;")
                             .replace('\n', "<br>")
-                            .replace("&", "&")
-                            .replace("<", "<")
-                            .replace(">", ">")
                     ));
                 } else {
                     html.push_str("<div class='meta'>Sin documentación</div>");
@@ -2534,7 +2534,7 @@ fn cmd_transpile(args: &[String]) {
     }
 
     // Sanitizar nombre: debe empezar con letra (regla de Cargo)
-    let mut nombre_crate = input_stem.replace('-', "_").replace(' ', "_");
+    let mut nombre_crate = input_stem.replace(['-', ' '], "_");
     if !nombre_crate.is_empty() {
         let first = nombre_crate.chars().next().unwrap();
         if first.is_ascii_digit() {
@@ -2677,9 +2677,9 @@ edition = "2021"
         Ok(()) => {
             let build_dir = "release"; // siempre usamos release
             let exe_name = if cfg!(target_os = "windows") {
-                format!("{}.exe", input_stem.replace('-', "_").replace(' ', "_"))
+                format!("{}.exe", input_stem.replace(['-', ' '], "_"))
             } else {
-                input_stem.replace('-', "_").replace(' ', "_")
+                input_stem.replace(['-', ' '], "_")
             };
             println!();
             println!(
@@ -2765,7 +2765,7 @@ fn cmd_build_asm(args: &[String]) {
 
     // Determinar target
     let target = if let Some(ref ts) = target_str {
-        match compiler_asm::TargetArch::from_str(ts) {
+        match compiler_asm::TargetArch::desde_str(ts) {
             Some(t) => t,
             None => {
                 eprintln!(
@@ -2839,7 +2839,7 @@ fn cmd_build_asm(args: &[String]) {
     // Compilar con gcc
     println!("📦 Compilando con gcc -O2...");
     let gcc_result = std::process::Command::new("gcc")
-        .args(&["-O2", "-o", &output_path, asm_path.to_str().unwrap()])
+        .args(["-O2", "-o", &output_path, asm_path.to_str().unwrap()])
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
         .status();
@@ -2904,8 +2904,7 @@ fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
     let inicio = std::time::Instant::now();
 
     for archivo in &archivos {
-        let codigo = forja::leer_archivo_con_limite(archivo, forja::MAX_ARCHIVO_DEFAULT_MB)
-            .map_err(|e| e)?;
+        let codigo = forja::leer_archivo_con_limite(archivo, forja::MAX_ARCHIVO_DEFAULT_MB)?;
 
         // FASE 1: Lexer (inline como los demás cmd_*)
         let mut lexer = lexer::Lexer::new(&codigo);

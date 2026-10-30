@@ -9,10 +9,10 @@ impl ForjaFast {
     /// Registrar una función en la tabla de indirección
     pub fn registrar_funcion(
         &mut self,
-        sym: SymId,
+        sym: IdSimbolo,
         ip: usize,
         vars_size: usize,
-        module_id: Option<SymId>,
+        module_id: Option<IdSimbolo>,
     ) -> usize {
         let version = self.function_versions.get(&sym).copied().unwrap_or(1);
         let idx = self
@@ -45,7 +45,7 @@ impl ForjaFast {
     /// Reemplazar una función en caliente (hot reload)
     pub fn reemplazar_funcion(
         &mut self,
-        sym: SymId,
+        sym: IdSimbolo,
         nueva_ip: usize,
         nuevo_vars_size: usize,
     ) -> bool {
@@ -65,13 +65,13 @@ impl ForjaFast {
     }
 
     /// Obtener versión actual de una función
-    pub fn version_funcion(&self, sym: SymId) -> u32 {
+    pub fn version_funcion(&self, sym: IdSimbolo) -> u32 {
         self.function_versions.get(&sym).copied().unwrap_or(0)
     }
 
     /// Buscar una función en la function_table (indirección para hot reload)
     /// Retorna None si no está registrada; en ese caso se cae a funciones nativas.
-    pub fn lookup_func_entry(&self, sym: SymId) -> Option<FuncVersion> {
+    pub fn lookup_func_entry(&self, sym: IdSimbolo) -> Option<FuncVersion> {
         self.sym_to_func_idx
             .get(&sym)
             .copied()
@@ -167,7 +167,7 @@ impl ForjaFast {
         // 6. Re-mapear funciones del módulo en la function_table
         let funciones = nuevo_bc.desglosar();
         for (nombre, ip_rel, vars_size) in &funciones {
-            let sym = self.sym_table.intern(nombre.as_str());
+            let sym = self.tabla_simbolos.internar(nombre.as_str());
             let ip_absoluta = start + ip_rel;
 
             if let Some(&idx) = self.sym_to_func_idx.get(&sym) {

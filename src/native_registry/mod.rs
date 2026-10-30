@@ -8,7 +8,7 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::bytecode::BytecodeGenerator;
-use crate::symbol_table::{SymId, SymbolTable};
+use crate::symbol_table::{IdSimbolo, TablaSimbolos};
 use crate::vm_fast::{ErrFast, ForjaFast, ValorFast};
 /// Registro de funciones nativas para la VM Forja
 use std::collections::HashMap;
@@ -170,16 +170,22 @@ pub type NativeFn = fn(&mut ForjaFast, &[ValorFast]) -> Result<ValorFast, ErrFas
 // ═════════════════════════════════════════════════════════════════════════
 
 pub struct NativeRegistry {
-    /// SymbolTable local para internar nombres → SymId (lookup O(1))
-    sym_table: SymbolTable,
-    /// Mapa SymId → NativeFn: sin string matching en caliente
-    funciones: HashMap<SymId, NativeFn>,
+    /// TablaSimbolos local para internar nombres → IdSimbolo (lookup O(1))
+    tabla_simbolos: TablaSimbolos,
+    /// Mapa IdSimbolo → NativeFn: sin string matching en caliente
+    funciones: HashMap<IdSimbolo, NativeFn>,
+}
+
+impl Default for NativeRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NativeRegistry {
     pub fn new() -> Self {
         let mut reg = NativeRegistry {
-            sym_table: SymbolTable::new(),
+            tabla_simbolos: TablaSimbolos::new(),
             funciones: HashMap::new(),
         };
         reg.registrar_sockets();
@@ -223,39 +229,39 @@ impl NativeRegistry {
         reg
     }
 
-    /// Registra una función nativa internando su nombre como SymId.
-    /// Retorna el SymId para usar directamente en CallNative (bytecode).
-    pub fn registrar(&mut self, nombre: &str, func: NativeFn) -> SymId {
-        let sym = self.sym_table.intern(nombre);
+    /// Registra una función nativa internando su nombre como IdSimbolo.
+    /// Retorna el IdSimbolo para usar directamente en CallNative (bytecode).
+    pub fn registrar(&mut self, nombre: &str, func: NativeFn) -> IdSimbolo {
+        let sym = self.tabla_simbolos.internar(nombre);
         self.funciones.insert(sym, func);
         sym
     }
 
-    /// Interna un string como SymId (para resolver nombres en caliente desde la VM)
-    pub fn internar(&mut self, nombre: &str) -> SymId {
-        self.sym_table.intern(nombre)
+    /// Interna un string como IdSimbolo (para resolver nombres en caliente desde la VM)
+    pub fn internar(&mut self, nombre: &str) -> IdSimbolo {
+        self.tabla_simbolos.internar(nombre)
     }
 
-    /// Busca una función nativa por SymId — lookup O(1), sin strings.
+    /// Busca una función nativa por IdSimbolo — lookup O(1), sin strings.
     /// Retorna la función (copia de un fn pointer) para que el caller
     /// pueda ejecutarla sin mantener un borrow sobre la NativeRegistry.
-    pub fn buscar_fn(&self, sym: SymId) -> Result<NativeFn, ErrFast> {
+    pub fn buscar_fn(&self, sym: IdSimbolo) -> Result<NativeFn, ErrFast> {
         self.funciones
             .get(&sym)
             .copied()
             .ok_or_else(|| ErrFast::FnNoDef(format!("función nativa sym={:?} no encontrada", sym)))
     }
 
-    /// Obtiene una función nativa por SymId (sin ejecutar)
-    pub fn obtener_fn_sym(&self, sym: SymId) -> Option<NativeFn> {
+    /// Obtiene una función nativa por IdSimbolo (sin ejecutar)
+    pub fn obtener_fn_sym(&self, sym: IdSimbolo) -> Option<NativeFn> {
         self.funciones.get(&sym).copied()
     }
 
-    /// Ejecuta una función nativa por SymId — seguro contra borrow checker
+    /// Ejecuta una función nativa por IdSimbolo — seguro contra borrow checker
     /// Primero busca el fn pointer (copia), luego lo ejecuta sin borrow activo
     pub fn ejecutar_sym(
         &mut self,
-        sym: SymId,
+        sym: IdSimbolo,
         vm: &mut ForjaFast,
         args: &[ValorFast],
     ) -> Result<ValorFast, ErrFast> {
@@ -270,14 +276,14 @@ impl NativeRegistry {
         nombre: &str,
         args: &[ValorFast],
     ) -> Result<ValorFast, ErrFast> {
-        let sym = self.sym_table.intern(nombre);
+        let sym = self.tabla_simbolos.internar(nombre);
         self.ejecutar_sym(sym, vm, args)
     }
 
     /// Obtiene una función nativa por nombre (sin ejecutar)
-    /// Requiere &mut self porque internar() muta la SymbolTable
+    /// Requiere &mut self porque internar() muta la TablaSimbolos
     pub fn obtener_fn(&mut self, nombre: &str) -> Option<NativeFn> {
-        let sym = self.sym_table.intern(nombre);
+        let sym = self.tabla_simbolos.internar(nombre);
         self.funciones.get(&sym).copied()
     }
 
