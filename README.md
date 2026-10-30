@@ -4,8 +4,10 @@
 
 # Forja (fa)
 
-[![Compilación](https://img.shields.io/github/actions/workflow/status/forja-lang/forja/rust.yml?style=flat-square&logo=github&label=build)](https://github.com/forja-lang/forja/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/forja-lang/forja/ci.yml?style=flat-square&logo=github&label=CI)](https://github.com/forja-lang/forja/actions/workflows/ci.yml)
+[![CD](https://img.shields.io/github/actions/workflow/status/forja-lang/forja/cd.yml?style=flat-square&logo=github&label=CD)](https://github.com/forja-lang/forja/actions/workflows/cd.yml)
 [![Documentación](https://img.shields.io/badge/docs-forja--lang.github.io-blue?style=flat-square&logo=readthedocs)](https://forja-lang.github.io/docs)
+[![Rendimiento por versión](https://img.shields.io/badge/bench-por%20versi%C3%B3n-blue?style=flat-square&logo=speedtest)](https://forja-lang.github.io/forja/benchmarks/)
 
 </div>
 

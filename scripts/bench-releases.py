@@ -24,9 +24,14 @@ Cómo lo evita:
 4. **Hash de codegen y de bytecode**: si el transpilador emite el mismo
    `main.rs` o el compilador el mismo bytecode, el tool lo dice — hay rutas
    que no *pueden* diferir.
-5. **Workload recursivo** además del publicado: los bucles cerrados del corpus
-   se pliegan a constantes en AOT y solo miden arranque, así que la ruta AOT
-   suma un `fib(32)` recursivo, que no se pliega.
+5. **Una carga por ruta, la que sí le deja trabajo real**: los bucles cerrados
+   del corpus publicado se pliegan a constantes en AOT (solo medirían arranque)
+   y no alcanzan para que el compilador pese más que su propio arranque. Con
+   los workloads por defecto, `vm` mide el `.fa` publicado (enteros) más una
+   carga de flotantes, `aot` un recursivo que no se pliega y `pipeline` un
+   programa grande generado al vuelo.
+6. **Pico de memoria (RSS)** por bloque, con `GNU time -v` (solo Linux): el
+   tiempo cuenta la mitad del rendimiento de una VM.
 
 Uso:
     python scripts/bench-releases.py v0.9.3 v0.9.4
@@ -74,18 +79,57 @@ BOOTSTRAP = 10_000
 PERMUTACIONES = 20_000
 
 # Workload sintético: la recursión no se pliega en tiempo de compilación, así
-# que es el único tipo de carga que le deja trabajo real a la ruta AOT (los
-# bucles cerrados del corpus se reducen a constantes y miden solo arranque).
-# Solo corre en AOT: en la VM fib(32) tardaría minutos por muestra.
+# que es la carga que le deja trabajo real a la ruta AOT (los bucles cerrados
+# del corpus se reducen a constantes y miden solo arranque).
+# Solo corre en AOT: en la VM fib(33) tardaría minutos por muestra.
 RECURSIVO_FA = """// Workload sintético del harness: recursión no plegable en AOT.
+// fib(33) deja ~60 % del tiempo por encima del suelo (fib(32) quedaba en 38 %).
 funcion fib(n) {
     si (n <= 1) {
         retornar n
     }
     retornar fib(n - 1) + fib(n - 2)
 }
-escribir("FIB32:" + fib(32))
+escribir("FIB33:" + fib(33))
 """
+
+# La ruta `pipeline` mide `forja compilar`: con el corpus publicado (60 líneas)
+# casi todo el tiempo es el arranque del CLI y el cálculo queda en 0 %, así que
+# se genera un programa grande y el front-end del compilador pesa en la cuenta.
+# 2000 funciones dan ~51 % de trabajo real en Windows (arranque de 440 ms) y
+# quedan lejos del techo de bytecode: con 3000 el .exe de 0.9.4 ya no arranca.
+COMPILADOR_FUNCIONES = 2000
+
+# Carga de punto flotante: el corpus publicado solo hace cuentas enteras, así
+# que sin esto la ruta `vm` no vigila los opcodes Float (división + suma) ni
+# las optimizaciones de coma flotante. ~1.3 s por muestra en la VM.
+FLOTANTES_FA = """// Carga de flotantes: 1M iteraciones de división + suma.
+constante N = 1000000
+
+variable suma = 0.0
+variable divisor_pos = 1.0
+variable divisor_neg = 3.0
+variable i = 0
+
+mientras (i < N) {
+    suma = suma + 1.0 / divisor_pos
+    suma = suma - 1.0 / divisor_neg
+    divisor_pos = divisor_pos + 4.0
+    divisor_neg = divisor_neg + 4.0
+    i = i + 1
+}
+
+escribir("PI:" + suma * 4.0)
+"""
+
+
+def carga_compilador(n: int = COMPILADOR_FUNCIONES) -> str:
+    """Programa grande y determinista: n funciones + 2n llamadas."""
+    lineas = [f"funcion f{i}(x) {{ retornar x + {i} }}" for i in range(n)]
+    lineas.append("variable total = 0")
+    lineas += [f"total = total + f{i % n}({i})" for i in range(n * 2)]
+    lineas.append('escribir("TOTAL:" + total)')
+    return "\n".join(lineas) + "\n"
 
 
 # --------------------------------------------------------------------------
@@ -414,6 +458,7 @@ class Bloque:
     extra: dict[str, dict] = field(default_factory=dict)
     aplica_suelo: bool = True
     salidas: dict[str, str] = field(default_factory=dict)
+    memoria: dict[str, float] = field(default_factory=dict)
 
 
 def _etiqueta(ruta: str, workload: str) -> str:
@@ -421,15 +466,60 @@ def _etiqueta(ruta: str, workload: str) -> str:
 
 
 def salida_de(cmd: list[str], cwd: Path | None = None) -> str:
-    """Hash de stdout: dos versiones solo se pueden comparar si computan lo mismo."""
+    """Hash de stdout: dos versiones solo se pueden comparar si computan lo mismo.
+
+    Incluye el código de salida: un ejecutable que falla no imprime nada y su
+    hash vacío coincidiría con el de cualquier otro que también falle.
+    """
     res = subprocess.run(cmd, cwd=str(cwd) if cwd else None,
                          capture_output=True, text=True, timeout=900)
-    return hashlib.sha256((res.stdout or "").encode("utf-8", "replace")).hexdigest()
+    if res.returncode != 0:
+        print(f"  ⚠ la carga terminó con código {res.returncode}: "
+              f"{(res.stderr or '').strip()[:200]}", file=sys.stderr)
+    return hashlib.sha256(f"{res.returncode}\n{res.stdout or ''}".encode("utf-8", "replace")).hexdigest()
+
+
+PICO_RSS = re.compile(r"Maximum resident set size \(kbytes\):\s*(\d+)")
+
+
+def gnu_time() -> str | None:
+    """Ruta a un GNU time con `-v`, única forma de leer el pico de RSS del hijo.
+
+    No sirve `resource.getrusage(RUSAGE_CHILDREN).ru_maxrss`: da el máximo
+    acumulado de todos los hijos, no el de una corrida suelta. En Windows/macOS
+    no hay GNU time: la memoria queda como no disponible.
+    """
+    for candidato in ("/usr/bin/time", "/bin/time"):
+        if not Path(candidato).exists():
+            continue
+        try:
+            r = subprocess.run([candidato, "-v", "true"], capture_output=True,
+                               text=True, timeout=60)
+        except OSError:
+            continue
+        if "Maximum resident" in (r.stderr or ""):
+            return candidato
+    return None
+
+
+def pico_memoria(cmd: list[str], tiempo_v: str | None, reps: int = 3) -> float | None:
+    """Pico de RSS en MB (mediana de `reps` corridas) o None si no hay GNU time."""
+    if not tiempo_v:
+        return None
+    picos = []
+    for _ in range(reps):
+        r = subprocess.run([tiempo_v, "-v", *cmd], capture_output=True,
+                           text=True, timeout=900)
+        m = PICO_RSS.search(r.stderr or "")
+        if m:
+            picos.append(int(m.group(1)) / 1024.0)
+    return mediana(picos) if picos else None
 
 
 def medir_bloque(ruta: str, workload: str, releases: list[Release],
                  preparados: dict[str, Preparado], suelo: dict[str, Preparado] | None,
-                 pares: int, warmup: int, semilla: int) -> Bloque:
+                 pares: int, warmup: int, semilla: int,
+                 tiempo_v: str | None = None) -> Bloque:
     print(f"  · {ruta}/{workload} ({pares} parejas × {len(releases)} releases)",
           file=sys.stderr)
     muestras = medir_armas({rel.tag: preparados[rel.tag].comando for rel in releases},
@@ -455,7 +545,12 @@ def medir_bloque(ruta: str, workload: str, releases: list[Release],
         salidas = {rel.tag: salida_de(preparados[rel.tag].comando)
                    for rel in releases}
     extra = {rel.tag: preparados[rel.tag].extra for rel in releases}
-    return Bloque(ruta, workload, muestras, base_suelo, extra, aplica, salidas)
+    memoria = {}
+    for rel in releases:
+        mb = pico_memoria(preparados[rel.tag].comando, tiempo_v)
+        if mb is not None:
+            memoria[rel.tag] = round(mb, 2)
+    return Bloque(ruta, workload, muestras, base_suelo, extra, aplica, salidas, memoria)
 
 
 # --------------------------------------------------------------------------
@@ -485,9 +580,17 @@ def comparar(bloque: Bloque, referencia: str, min_trabajo_pct: float,
         delta = mb - ma
         pct = (delta / ma * 100.0) if ma else 0.0
 
-        # Trabajo real: lo que excede el suelo del propio release.
-        suelo_ref = cuantil(bloque.suelo[referencia], q)
-        trabajo_pct = ((ma - suelo_ref) / ma * 100.0) if ma else 0.0
+        # Trabajo real: lo que excede el suelo del propio release. Se toma el
+        # mayor de los dos lados: si la versión nueva compila de verdad, su
+        # diferencia con una vieja que solo arrancaba sigue siendo atribuible
+        # al cálculo (y taparla escondería justo la regresión que se busca).
+        def trabajo(tag: str, ms: float) -> float:
+            base = cuantil(bloque.suelo[tag], q)
+            return ((ms - base) / ms * 100.0) if ms else 0.0
+
+        trabajo_a = trabajo(referencia, ma)
+        trabajo_b = trabajo(tag, mb)
+        trabajo_pct = max(trabajo_a, trabajo_b)
 
         significativo = (p < ALFA and (ic[0] > 0 or ic[1] < 0)
                          and abs(pct) >= min_efecto_pct)
@@ -514,12 +617,16 @@ def comparar(bloque: Bloque, referencia: str, min_trabajo_pct: float,
             "mad_a": mad(a), "mad_b": mad(b),
             "delta_ms": delta, "delta_pct": pct,
             "ic95": ic, "p": p,
-            "suelo_ms": suelo_ref, "trabajo_pct": trabajo_pct,
+            "suelo_ms": cuantil(bloque.suelo[referencia], q),
+            "trabajo_pct": trabajo_pct,
+            "trabajo_a": trabajo_a, "trabajo_b": trabajo_b,
             "aplica_suelo": bloque.aplica_suelo,
             "salida_identica": not salidas_distintas,
             "salidas": bloque.salidas,
             "ruido_a": (mediana(a) / min(a)) if min(a) else 1.0,
             "ruido_b": (mediana(b) / min(b)) if min(b) else 1.0,
+            "memoria_a": bloque.memoria.get(referencia),
+            "memoria_b": bloque.memoria.get(tag),
             "veredicto": veredicto,
             "n": len(a),
         })
@@ -604,14 +711,31 @@ def informe_md(meta: dict, comparaciones: list[dict], bloques: list[Bloque],
                               "así que los tiempos no son comparables.")
         lineas.append("")
         if c["aplica_suelo"]:
-            trabajo = max(0.0, c["trabajo_pct"])
-            lineas.append(f"- Suelo (mismo release, sin cuentas): **{_f(c['suelo_ms'])} ms**")
-            lineas.append(f"- Cálculo real sobre el total: **{trabajo:.0f} %**")
+            lineas.append(f"- Suelo (mismo release, sin cuentas): **{_f(c['suelo_ms'])} ms** ({c['a']})")
+            lineas.append(f"- Cálculo real sobre el total: **{max(0.0, c['trabajo_a']):.0f} %** "
+                          f"({c['a']}) / **{max(0.0, c['trabajo_b']):.0f} %** ({c['b']})")
             if c["veredicto"] == "SIN TRABAJO REAL":
                 lineas.append("- ⚠️ **Ruta dominada por arranque + I/O: no se usa para el veredicto.**")
         else:
             lineas.append("- Sin suelo: esta métrica *es* el arranque del proceso.")
         lineas.append("")
+
+    # Pico de memoria: la otra mitad del rendimiento (y de las claims del VM).
+    lineas.append("## Pico de memoria (RSS)\n")
+    con_memoria = [b for b in bloques if b.memoria]
+    if not con_memoria:
+        lineas.append("_No disponible: esta plataforma no tiene GNU time "
+                      "(`/usr/bin/time -v`). Se mide en el CI de Linux._")
+    else:
+        lineas.append("| Bloque | " + " | ".join(tags) + " |")
+        lineas.append("|" + "|".join(["---"] * (len(tags) + 1)) + "|")
+        for b in con_memoria:
+            celdas = " | ".join(f"{b.memoria[t]:.1f} MB" if t in b.memoria else "—"
+                                for t in tags)
+            lineas.append(f"| {_etiqueta(b.ruta, b.workload)} | {celdas} |")
+        lineas.append("")
+        lineas.append("> Mediana de 3 corridas por bloque, con `GNU time -v`.")
+    lineas.append("")
 
     # Hashes de codegen / bytecode: lo que no puede diferir.
     lineas.append("## Artefactos generados\n")
@@ -779,13 +903,21 @@ def main() -> int:
               f"(usá 60 para un veredicto firme)", file=sys.stderr)
     suelo_fa = trabajo / "suelo.fa"
     suelo_fa.write_text(SUELO_FA, encoding="utf-8")
-    # Con los workloads por defecto se agrega el recursivo, que es el único que
-    # le da trabajo real a la ruta AOT.
-    trabajos: list[tuple[Path, set[str] | None]] = [(w, None) for w in workloads]
     if solo_publicados:
-        recursivo = trabajo / "recursivo.fa"
-        recursivo.write_text(RECURSIVO_FA, encoding="utf-8")
-        trabajos.append((recursivo, {"aot"}))
+        # Cada ruta recibe la carga que le deja trabajo real por encima del
+        # suelo; el .fa publicado lo mide solo la VM, que no pliega bucles.
+        carga_aot = trabajo / "carga_aot.fa"
+        carga_aot.write_text(RECURSIVO_FA, encoding="utf-8")
+        carga_comp = trabajo / "carga_compilador.fa"
+        carga_comp.write_text(carga_compilador(), encoding="utf-8")
+        trabajos: list[tuple[Path, set[str] | None]] = [(w, {"vm"}) for w in workloads]
+        carga_float = trabajo / "carga_flotantes.fa"
+        carga_float.write_text(FLOTANTES_FA, encoding="utf-8")
+        trabajos.append((carga_float, {"vm"}))
+        trabajos.append((carga_aot, {"aot"}))
+        trabajos.append((carga_comp, {"pipeline"}))
+    else:
+        trabajos = [(w, None) for w in workloads]
 
     # Suelos por release (una sola vez, sirven a las tres rutas).
     suelos: dict[str, dict[str, Preparado]] = {r: {} for r in rutas}
@@ -808,13 +940,16 @@ def main() -> int:
 
     bloques: list[Bloque] = []
     rng_stats = random.Random(args.seed)
+    tiempo_v = gnu_time()
+    if not tiempo_v:
+        print("⚠ sin GNU time: no se mide el pico de memoria", file=sys.stderr)
 
     # El arranque del CLI no depende del workload: se mide una sola vez.
     if "startup" in rutas:
         prep_startup = {rel.tag: Preparado(rel.tag, "startup", [str(rel.forja), "--version"])
                         for rel in releases}
         bloques.append(medir_bloque("startup", "forja --version", releases, prep_startup,
-                                    None, args.pairs, args.warmup, args.seed))
+                                    None, args.pairs, args.warmup, args.seed, tiempo_v))
 
     for wl, solo in trabajos:
         rutas_wl = [r for r in rutas if solo is None or r in solo]
@@ -838,7 +973,7 @@ def main() -> int:
             if ruta == "startup":
                 continue
             bloque = medir_bloque(ruta, wl.name, releases, prep[ruta],
-                                  suelos[ruta], args.pairs, args.warmup, args.seed)
+                                  suelos[ruta], args.pairs, args.warmup, args.seed, tiempo_v)
             bloques.append(bloque)
 
     comparaciones: list[dict] = []
@@ -846,7 +981,10 @@ def main() -> int:
         comparaciones.extend(comparar(bloque, tags[0], args.min_trabajo, rng_stats,
                                       args.quantile, args.min_efecto))
 
-    rustc = subprocess.run(["rustc", "--version"], capture_output=True, text=True)
+    try:
+        rustc = subprocess.run(["rustc", "--version"], capture_output=True, text=True)
+    except OSError:
+        rustc = None
     meta = {
         "fecha": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "repo": args.repo,
@@ -861,7 +999,8 @@ def main() -> int:
         "alfa": ALFA,
         "calibracion_ms": calibrar(),
         "cpu": info_cpu(),
-        "rustc": (rustc.stdout or "no disponible").strip(),
+        "rustc": (rustc.stdout or "no disponible").strip() if rustc else "no disponible",
+        "memoria": bool(tiempo_v),
         "reportado": {r.tag: r.reportado for r in releases},
     }
 
@@ -869,6 +1008,7 @@ def main() -> int:
     print()
     print(md)
     if args.md:
+        Path(args.md).parent.mkdir(parents=True, exist_ok=True)
         Path(args.md).write_text(md, encoding="utf-8")
         print(f"\n▸ informe escrito en {args.md}", file=sys.stderr)
     if args.json:
@@ -876,11 +1016,13 @@ def main() -> int:
             "metadata": meta,
             "bloques": [
                 {"ruta": b.ruta, "workload": b.workload,
-                 "muestras": b.muestras, "suelo": b.suelo, "extra": b.extra}
+                 "muestras": b.muestras, "suelo": b.suelo, "extra": b.extra,
+                 "memoria": b.memoria}
                 for b in bloques
             ],
             "comparaciones": comparaciones,
         }
+        Path(args.json).parent.mkdir(parents=True, exist_ok=True)
         Path(args.json).write_text(json.dumps(datos, indent=2, ensure_ascii=False),
                                    encoding="utf-8")
         print(f"▸ json escrito en {args.json}", file=sys.stderr)

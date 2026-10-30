@@ -1,4 +1,4 @@
-name: Forja CI/CD / Benchmarks
+name: CD / Benchmarks
 on:
   push:
     branches: [ main, master ]
@@ -61,4 +61,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./benchmarks/dashboard
           destination_dir: benchmarks
-          keep_files: false
+          keep_files: true
