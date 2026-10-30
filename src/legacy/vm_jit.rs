@@ -191,9 +191,9 @@ pub struct BytecodeDT {
 }
 
 /// Compilador de bytecode compacto — con label resolution correcta
-pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
+pub fn compilar_bytecode(codigos: &[crate::bytecode::Opcode]) -> BytecodeDT {
     let mut bc = BytecodeDT {
-        code: Vec::with_capacity(opcodes.len()),
+        code: Vec::with_capacity(codigos.len()),
         int_ops: Vec::new(),
         float_ops: Vec::new(),
         str_ops: Vec::new(),
@@ -212,9 +212,9 @@ pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
     let mut label_to_op_idx: HashMap<usize, usize> = HashMap::new(); // label_id → opcode index
     let mut jump_placeholders: Vec<(usize, usize)> = Vec::new(); // (pos_en_code, label_id) para parchear
 
-    for (i, op) in opcodes.iter().enumerate() {
+    for (i, op) in codigos.iter().enumerate() {
         match op {
-            crate::bytecode::Opcode::Label(l) => {
+            crate::bytecode::Opcode::Etiqueta(l) => {
                 label_to_op_idx.insert(*l, i);
             }
             _ => {}
@@ -222,9 +222,9 @@ pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
     }
 
     // Construir array de code_positions: por cada opcode original, su posición en code[]
-    let mut code_pos: Vec<usize> = Vec::with_capacity(opcodes.len());
+    let mut code_pos: Vec<usize> = Vec::with_capacity(codigos.len());
 
-    for (_, op) in opcodes.iter().enumerate() {
+    for (_, op) in codigos.iter().enumerate() {
         code_pos.push(bc.code.len());
 
         match op {
@@ -247,99 +247,99 @@ pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
             crate::bytecode::Opcode::PushNulo => {
                 bc.code.push(OP_PUSH_NULO);
             }
-            crate::bytecode::Opcode::Pop => {
+            crate::bytecode::Opcode::Descartar => {
                 bc.code.push(OP_POP);
             }
-            crate::bytecode::Opcode::Dup => {
+            crate::bytecode::Opcode::Duplicar => {
                 bc.code.push(OP_DUP);
             }
-            crate::bytecode::Opcode::Load(n) => {
+            crate::bytecode::Opcode::Cargar(n) => {
                 bc.code.push(OP_LOAD);
                 bc.str_ops.push(n.to_string());
             }
-            crate::bytecode::Opcode::Store(n) => {
+            crate::bytecode::Opcode::Guardar(n) => {
                 bc.code.push(OP_STORE);
                 bc.str_ops.push(n.to_string());
             }
-            crate::bytecode::Opcode::Declare(n, _) => {
+            crate::bytecode::Opcode::Declarar(n, _) => {
                 bc.code.push(OP_DECLARE);
                 bc.str_ops.push(n.to_string());
             }
             // LoadIdx/StoreIdx/DeclareIdx: acceso por índice — convertir a nombre-based con un nombre dummy
-            // porque el DT VM usa str_ops para nombres. Estos opcodes vienen de optimizar_indices()
+            // porque el DT VM usa str_ops para nombres. Estos codigos vienen de optimizar_indices()
             // y no deberían aparecer en el flujo normal del DT VM.
-            crate::bytecode::Opcode::LoadIdx(idx) => {
+            crate::bytecode::Opcode::CargarIndice(idx) => {
                 bc.code.push(OP_LOAD);
                 bc.str_ops.push(format!("%idx_{}", idx));
             }
-            crate::bytecode::Opcode::StoreIdx(idx) => {
+            crate::bytecode::Opcode::GuardarIndice(idx) => {
                 bc.code.push(OP_STORE);
                 bc.str_ops.push(format!("%idx_{}", idx));
             }
-            crate::bytecode::Opcode::DeclareIdx(idx, _) => {
+            crate::bytecode::Opcode::DeclararIndice(idx, _) => {
                 bc.code.push(OP_DECLARE);
                 bc.str_ops.push(format!("%idx_{}", idx));
             }
             // Opcodes fusionados: compilar como equivalentes no-fusionados
-            crate::bytecode::Opcode::DeclareEnteroOp(idx, n) => {
+            crate::bytecode::Opcode::DeclararOperacionEntero(idx, n) => {
                 bc.code.push(OP_PUSH_ENTERO);
                 bc.int_ops.push(*n);
                 bc.code.push(OP_DECLARE);
                 bc.str_ops.push(format!("%idx_{}", idx));
             }
-            crate::bytecode::Opcode::DeclareBooleanoOp(idx, b) => {
+            crate::bytecode::Opcode::DeclararOperacionBooleano(idx, b) => {
                 bc.code.push(OP_PUSH_BOOL);
                 bc.int_ops.push(if *b { 1 } else { 0 });
                 bc.code.push(OP_DECLARE);
                 bc.str_ops.push(format!("%idx_{}", idx));
             }
-            crate::bytecode::Opcode::StoreEnteroOp(idx, n) => {
+            crate::bytecode::Opcode::GuardarOperacionEntero(idx, n) => {
                 bc.code.push(OP_PUSH_ENTERO);
                 bc.int_ops.push(*n);
                 bc.code.push(OP_STORE);
                 bc.str_ops.push(format!("%idx_{}", idx));
             }
-            crate::bytecode::Opcode::Add => {
+            crate::bytecode::Opcode::Sumar => {
                 bc.code.push(OP_ADD);
             }
-            crate::bytecode::Opcode::Sub => {
+            crate::bytecode::Opcode::Restar => {
                 bc.code.push(OP_SUB);
             }
-            crate::bytecode::Opcode::Mul => {
+            crate::bytecode::Opcode::Multiplicar => {
                 bc.code.push(OP_MUL);
             }
-            crate::bytecode::Opcode::Div => {
+            crate::bytecode::Opcode::Dividir => {
                 bc.code.push(OP_DIV);
             }
             // Opcodes especializados (runtime-only) → mapear a genéricos en compilación
-            crate::bytecode::Opcode::AddInt | crate::bytecode::Opcode::AddFloat => {
+            crate::bytecode::Opcode::SumarEntero | crate::bytecode::Opcode::SumarDecimal => {
                 bc.code.push(OP_ADD);
             }
-            crate::bytecode::Opcode::SubInt | crate::bytecode::Opcode::SubFloat => {
+            crate::bytecode::Opcode::RestarEntero | crate::bytecode::Opcode::RestarDecimal => {
                 bc.code.push(OP_SUB);
             }
-            crate::bytecode::Opcode::MulInt | crate::bytecode::Opcode::MulFloat => {
+            crate::bytecode::Opcode::MultiplicarEntero | crate::bytecode::Opcode::MultiplicarDecimal => {
                 bc.code.push(OP_MUL);
             }
-            crate::bytecode::Opcode::DivInt | crate::bytecode::Opcode::DivFloat => {
+            crate::bytecode::Opcode::DividirEntero | crate::bytecode::Opcode::DividirDecimal => {
                 bc.code.push(OP_DIV);
             }
-            crate::bytecode::Opcode::IgualInt => {
+            crate::bytecode::Opcode::IgualEntero => {
                 bc.code.push(OP_IGUAL);
             }
-            crate::bytecode::Opcode::MenorInt => {
+            crate::bytecode::Opcode::MenorEntero => {
                 bc.code.push(OP_MENOR);
             }
-            crate::bytecode::Opcode::MayorInt => {
+            crate::bytecode::Opcode::MayorEntero => {
                 bc.code.push(OP_MAYOR);
             }
-            crate::bytecode::Opcode::LoadIdxEntero(idx)
-            | crate::bytecode::Opcode::LoadIdxFloat(idx) => {
+            crate::bytecode::Opcode::CargarIndiceEntero(idx)
+            | crate::bytecode::Opcode::CargarIndiceDecimal(idx) => {
                 bc.code.push(OP_LOAD);
                 bc.str_ops.push(format!("%idx_{}", idx));
             }
-            crate::bytecode::Opcode::StoreIdxEntero(idx)
-            | crate::bytecode::Opcode::StoreIdxFloat(idx) => {
+            crate::bytecode::Opcode::GuardarIndiceEntero(idx)
+            | crate::bytecode::Opcode::GuardarIndiceDecimal(idx) => {
                 bc.code.push(OP_STORE);
                 bc.str_ops.push(format!("%idx_{}", idx));
             }
@@ -370,20 +370,20 @@ pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
             crate::bytecode::Opcode::No => {
                 bc.code.push(OP_NO);
             }
-            crate::bytecode::Opcode::Jump(l) => {
+            crate::bytecode::Opcode::Salto(l) => {
                 bc.code.push(OP_JUMP);
                 bc.jump_ops.push(0);
                 jump_placeholders.push((bc.jump_ops.len() - 1, *l));
             }
-            crate::bytecode::Opcode::JumpSiFalso(l) => {
+            crate::bytecode::Opcode::SaltoSiFalso(l) => {
                 bc.code.push(OP_JUMP_SI_FALSO);
                 bc.jump_ops.push(0);
                 jump_placeholders.push((bc.jump_ops.len() - 1, *l));
             }
-            crate::bytecode::Opcode::Label(_) => {
+            crate::bytecode::Opcode::Etiqueta(_) => {
                 bc.code.push(OP_LABEL);
             }
-            crate::bytecode::Opcode::FunctionDef(n, p) => {
+            crate::bytecode::Opcode::DefinirFuncion(n, p) => {
                 let pos = bc.code.len();
                 bc.code.push(OP_FN_DEF);
                 let n_str = n.to_string();
@@ -397,62 +397,62 @@ pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
                 bc.fn_strl_start
                     .insert(n_str.clone(), bc.str_list_ops.len());
             }
-            crate::bytecode::Opcode::Call(n, a) => {
+            crate::bytecode::Opcode::Llamar(n, a) => {
                 let call_ip = bc.code.len();
                 bc.code.push(OP_CALL);
                 bc.call_names.insert(call_ip, n.to_string());
                 bc.int_ops.push(*a as i64);
             }
-            crate::bytecode::Opcode::Return => {
+            crate::bytecode::Opcode::Retornar => {
                 bc.code.push(OP_RETURN);
             }
-            crate::bytecode::Opcode::Print => {
+            crate::bytecode::Opcode::Imprimir => {
                 bc.code.push(OP_PRINT);
             }
-            crate::bytecode::Opcode::ReadLine => {
+            crate::bytecode::Opcode::LeerLinea => {
                 bc.code.push(OP_READ);
             }
-            crate::bytecode::Opcode::NewObject(c) => {
+            crate::bytecode::Opcode::NuevoObjeto(c) => {
                 bc.code.push(OP_NEW_OBJ);
                 bc.str_ops.push(c.to_string());
             }
-            crate::bytecode::Opcode::SetField(c) => {
+            crate::bytecode::Opcode::FijarCampo(c) => {
                 bc.code.push(OP_SET_FIELD);
                 bc.str_ops.push(c.to_string());
             }
-            crate::bytecode::Opcode::GetField(c) => {
+            crate::bytecode::Opcode::ObtenerCampo(c) => {
                 bc.code.push(OP_GET_FIELD);
                 bc.str_ops.push(c.to_string());
             }
-            crate::bytecode::Opcode::CallMethod(m, a) => {
+            crate::bytecode::Opcode::LlamarMetodo(m, a) => {
                 bc.code.push(OP_CALL_METHOD);
                 bc.str_ops.push(m.to_string());
                 bc.int_ops.push(*a as i64);
             }
-            crate::bytecode::Opcode::ArrayNew(n) => {
+            crate::bytecode::Opcode::NuevoArreglo(n) => {
                 bc.code.push(OP_ARRAY_NEW);
                 bc.int_ops.push(*n as i64);
             }
-            crate::bytecode::Opcode::ArrayGet => {
+            crate::bytecode::Opcode::ObtenerElemento => {
                 bc.code.push(OP_ARRAY_GET);
             }
-            crate::bytecode::Opcode::ArraySet => {
+            crate::bytecode::Opcode::FijarElemento => {
                 bc.code.push(OP_ARRAY_SET);
             }
-            crate::bytecode::Opcode::ArrayLen => {
+            crate::bytecode::Opcode::LongitudArreglo => {
                 bc.code.push(OP_ARRAY_LEN);
             }
-            crate::bytecode::Opcode::MapNew(n) => {
+            crate::bytecode::Opcode::NuevoMapa(n) => {
                 bc.code.push(OP_MAP_NEW);
                 bc.int_ops.push(*n as i64);
             }
-            crate::bytecode::Opcode::MapGet => {
+            crate::bytecode::Opcode::ObtenerValorDeMapa => {
                 bc.code.push(OP_MAP_GET);
             }
-            crate::bytecode::Opcode::MapSet => {
+            crate::bytecode::Opcode::FijarValorDeMapa => {
                 bc.code.push(OP_MAP_SET);
             }
-            crate::bytecode::Opcode::Halt => {
+            crate::bytecode::Opcode::Detener => {
                 bc.code.push(OP_HALT);
             }
             // === Opcodes para Exacto (BigDecimal) ===
@@ -460,25 +460,25 @@ pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
                 bc.code.push(OP_PUSH_EXACTO);
                 bc.exacto_ops.push((*coeff, *scale));
             }
-            crate::bytecode::Opcode::AddExact => {
+            crate::bytecode::Opcode::SumarExacto => {
                 bc.code.push(OP_ADD_EXACT);
             }
-            crate::bytecode::Opcode::SubExact => {
+            crate::bytecode::Opcode::RestarExacto => {
                 bc.code.push(OP_SUB_EXACT);
             }
-            crate::bytecode::Opcode::MulExact => {
+            crate::bytecode::Opcode::MultiplicarExacto => {
                 bc.code.push(OP_MUL_EXACT);
             }
-            crate::bytecode::Opcode::DivExact => {
+            crate::bytecode::Opcode::DividirExacto => {
                 bc.code.push(OP_DIV_EXACT);
             }
-            crate::bytecode::Opcode::IgualExact => {
+            crate::bytecode::Opcode::IgualExacto => {
                 bc.code.push(OP_IGUAL_EXACT);
             }
-            crate::bytecode::Opcode::MenorExact => {
+            crate::bytecode::Opcode::MenorExacto => {
                 bc.code.push(OP_MENOR_EXACT);
             }
-            crate::bytecode::Opcode::MayorExact => {
+            crate::bytecode::Opcode::MayorExacto => {
                 bc.code.push(OP_MAYOR_EXACT);
             }
             crate::bytecode::Opcode::EnteroAExacto => {
@@ -487,14 +487,14 @@ pub fn compilar_bytecode(opcodes: &[crate::bytecode::Opcode]) -> BytecodeDT {
             crate::bytecode::Opcode::DecimalAExacto => {
                 bc.code.push(OP_DECIMAL_A_EXACTO);
             }
-            crate::bytecode::Opcode::DeclareExactOp(idx, coeff, scale) => {
+            crate::bytecode::Opcode::DeclararOperacionExacto(idx, coeff, scale) => {
                 // Expandir superinstrucción: PushExacto + Declare
                 bc.code.push(OP_PUSH_EXACTO);
                 bc.exacto_ops.push((*coeff, *scale));
                 bc.code.push(OP_DECLARE);
                 bc.str_ops.push(format!("%idx_{}", idx));
             }
-            crate::bytecode::Opcode::AddStoreExact(idx) => {
+            crate::bytecode::Opcode::SumarGuardarExacto(idx) => {
                 bc.code.push(OP_ADD_STORE_EXACT);
                 bc.int_ops.push(*idx as i64);
             }
