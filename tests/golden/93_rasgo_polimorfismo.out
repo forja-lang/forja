@@ -1,0 +1,7 @@
+=== Polimorfismo con Rasgos ===
+
+Rex dice: ¡Guau guau!
+Mishi dice: ¡Miau!
+Lola dice: ¡Muuuu!
+
+Todos implementan el rasgo Sonido
