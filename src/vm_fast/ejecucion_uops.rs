@@ -539,7 +539,7 @@ impl ForjaFast {
                     self.ip += 1;
                 }
                 Uop::Call(nombre, nargs) => {
-                    // Opcode::CallDirect se expande a Uop::Call("%direct_{idx}"):
+                    // Opcode::LlamarDirecto se expande a Uop::Call("%direct_{idx}"):
                     // resolver el índice directamente contra function_table.
                     let entry_opt: Option<FuncVersion> =
                         if let Some(idx_str) = nombre.strip_prefix("%direct_") {
@@ -756,7 +756,7 @@ impl ForjaFast {
                     // Sin prompt: el programa decide qué escribir (la ruta de
                     // codigos tampoco lo imprime) y así las dos VM coinciden.
                     match std::io::stdin().read_line(&mut i) {
-                        // EOF (0 bytes): Nulo, igual que `Opcode::ReadLine`. Antes
+                        // EOF (0 bytes): Nulo, igual que `Opcode::LeerLinea`. Antes
                         // devolvía texto vacío y un bucle interactivo sin stdin
                         // giraba hasta agotar el límite de instrucciones.
                         Ok(0) | Err(_) => self.push_valor(ValorFast::nulo()),
