@@ -29,6 +29,11 @@ Si ya lo clonaste sin submódulos:
 git submodule update --init --recursive
 ```
 
+Los submódulos se usan **en el commit que registra este repositorio**, no en la
+punta de su rama: no uses `git submodule update --remote` (ni `branch = ...` en
+`.gitmodules`) para compilar o publicar. Actualizar un submódulo es un cambio
+deliberado: se commitea el submódulo y después el puntero.
+
 ## 3. Compilar, probar y verificar
 
 Comandos base (equivalentes a lo que corre el CI):
