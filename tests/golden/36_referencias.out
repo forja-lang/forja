@@ -1,0 +1,14 @@
+Original: 42
+  por referencia: 42
+  por referencia: 42
+
+Préstamo guardado en una variable:
+  referencia = 7
+
+Préstamo mutable:
+  dentro: 11
+
+Resumen:
+  &x      → préstamo inmutable (sólo leer)
+  &mut x  → préstamo mutable (modificar), exclusivo
+  un préstamo activo impide modificar la variable original
