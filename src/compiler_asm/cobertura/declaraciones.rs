@@ -103,7 +103,9 @@ fn asignacion_a_miembro_con_y_sin_registro_libre() {
             linea: 0,
             columna: 0,
         });
-        assert!(c.output.contains(" + 0]") || c.output.contains("#0]"));
+        assert!(
+            c.output.contains(" + 0]") || c.output.contains("#0]") || c.output.contains(", 0(")
+        );
 
         // Sin registros libres: el puntero se guarda en la pila.
         let mut c = con_variables(t);
