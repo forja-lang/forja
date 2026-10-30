@@ -22,9 +22,7 @@ use std::path::Path;
 /// entiende únicamente el runtime de GUI, no la VM. Los otros 13 que fallaban
 /// (contenido dañado por un `forja fmt` viejo, `convertir(x, Tipo)`, `ref_mut`,
 /// matrices 2D, operadores de bits en la stdlib…) están corregidos.
-const NO_COMPILAN: &[&str] = &[
-    "900_storybook.fa",
-];
+const NO_COMPILAN: &[&str] = &["900_storybook.fa"];
 
 #[test]
 fn corpus_completo_por_ir_sin_fallback() {
@@ -107,16 +105,15 @@ fn corpus_completo_por_ir_sin_fallback() {
 /// Contenido actual (2026-10-30):
 ///
 /// * `167_estadistica`: el **AST** imprime `nulo` en `Desviación Estándar`
-///   (raíz cuadrada por Newton con decimales); el IR da `1`, que es lo
-///   correcto. Es un bug del backend AST, que sólo se usa como comparación.
-/// * `210_sistema`: lee el entorno y el directorio actual; la ruta canónica
-///   (AST) y el IR difieren en el formato de los valores devueltos por las
-///   nativas de sistema (`tiempo_ms`, `PATH`).
+///   (raíz cuadrada por Newton con decimales); el IR da el valor correcto. Es
+///   un bug del backend AST, que sólo se usa como comparación.
+///
+/// `210_sistema` ya converge (el formato de las nativas de sistema se unificó).
 ///
 /// `135_ordenamiento_mergesort` ya no diverge: se corrigieron el crecimiento
 /// de arreglos por índice (`variable a = []` + `a[i] = v`) y la renumeración
 /// del índice en `Inst::ArraySet`/`MapSet`.
-const DIVERGENCIAS_CONOCIDAS: &[&str] = &["167_estadistica.fa", "210_sistema.fa"];
+const DIVERGENCIAS_CONOCIDAS: &[&str] = &["167_estadistica.fa"];
 
 /// Marcadores de ejemplos no deterministas o con dependencias externas: su
 /// salida no se puede comparar entre dos ejecuciones.
