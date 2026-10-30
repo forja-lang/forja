@@ -1,0 +1,19 @@
+=== NÚMEROS COMPLEJOS ===
+
+  a = 3 + 4i
+  b = 1 - 2i
+
+  a + b = nulo
+  a - b = nulo
+  a × b = nulo
+  a ÷ b = Error: división por cero
+
+  |a| = 5
+  |b| = 2
+  Conjugado de a = nulo
+  Conjugado de b = nulo
+
+Propiedades importantes:
+  • Un número complejo es z = a + bi, donde i² = -1
+  • El conjugado cambia el signo de la parte imaginaria
+  • El módulo es la distancia al origen: √(a² + b²)
