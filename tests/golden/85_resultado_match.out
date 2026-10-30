@@ -1,0 +1,10 @@
+=== Match sobre Resultado ===
+10 / 2:
+  ✅ Resultado: 5
+10 / 0:
+  ❌ Error: No se puede dividir por cero
+100 / 3:
+  ✅ Resultado: 33
+7 / 0:
+  ❌ Error: No se puede dividir por cero
+20/4 = 5, duplicado = 10
