@@ -23,6 +23,7 @@ forjanzas/
 forjaX/
 tmp/
 *.profraw
+actions-runner/
 
 # ── Ejecutables ──
 *.exe
@@ -31,6 +32,10 @@ tmp/
 *.ps1
 # F3-T7: el instalador de Windows del release debe versionarse.
 !scripts/install.ps1
+# El bump de versión debe versionarse en las dos plataformas: al estar ignorado,
+# la copia de Windows se desincronizó del .sh y dejó de actualizar lugares
+# (README de crates, docs, scripts de instalación, plantilla Gradle).
+!scripts/bump-version.ps1
 fix_code_entities.py
 fix_debug.py
 fix_astro.py
