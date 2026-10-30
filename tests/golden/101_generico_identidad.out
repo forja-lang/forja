@@ -1,0 +1,9 @@
+=== Función Identidad Genérica ===
+
+identidad(42) = 42
+identidad("Hola mundo") = Hola mundo
+identidad(verdadero) = verdadero
+identidad(3.14) = 3.14
+identidad([1, 2, 3]) = [1,2,3]
+
+La función identidad funciona para cualquier tipo T
