@@ -10,37 +10,37 @@ use crate::ir::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Dominator tree
-pub struct DominatorTree {
-    /// idom[b] = id del dominador inmediato de b
-    pub idom: Vec<Option<BlockId>>,
-    /// children[b] = hijos en el dominator tree
-    pub children: Vec<Vec<BlockId>>,
+pub struct ArbolDominadores {
+    /// dominador_inmediato[b] = id del dominador inmediato de b
+    pub dominador_inmediato: Vec<Option<IdBloque>>,
+    /// hijos[b] = hijos en el dominator tree
+    pub hijos: Vec<Vec<IdBloque>>,
 }
 
-impl DominatorTree {
+impl ArbolDominadores {
     /// Calcula el dominator tree usando el algoritmo iterativo de Cooper
-    pub fn compute(blocks: &[BasicBlock]) -> Self {
-        let n = blocks.len();
+    pub fn calcular(bloques: &[BloqueBasico]) -> Self {
+        let n = bloques.len();
         if n == 0 {
-            return DominatorTree {
-                idom: Vec::new(),
-                children: Vec::new(),
+            return ArbolDominadores {
+                dominador_inmediato: Vec::new(),
+                hijos: Vec::new(),
             };
         }
 
-        let mut idom: Vec<Option<BlockId>> = vec![None; n];
-        // El entry block es su propio dominador
-        if let Some(entry) = blocks.first() {
-            idom[entry.id] = Some(entry.id);
+        let mut dominador_inmediato: Vec<Option<IdBloque>> = vec![None; n];
+        // El entrada bloque es su propio dominador
+        if let Some(entrada) = bloques.first() {
+            dominador_inmediato[entrada.id] = Some(entrada.id);
         }
 
         // Construir mapa de predecessors
-        let mut preds: Vec<Vec<BlockId>> = vec![Vec::new(); n];
-        for block in blocks {
-            let succs = Self::successors(&block.terminator);
-            for s in &succs {
+        let mut predecesores: Vec<Vec<IdBloque>> = vec![Vec::new(); n];
+        for bloque in bloques {
+            let bloques_sucesores = Self::sucesores(&bloque.terminador);
+            for s in &bloques_sucesores {
                 if *s < n {
-                    preds[*s].push(block.id);
+                    predecesores[*s].push(bloque.id);
                 }
             }
         }
@@ -48,94 +48,101 @@ impl DominatorTree {
         let mut changed = true;
         while changed {
             changed = false;
-            for block in blocks {
-                if block.id == 0 {
-                    continue; // Skip entry
+            for bloque in bloques {
+                if bloque.id == 0 {
+                    continue; // Skip entrada
                 }
-                if preds[block.id].is_empty() {
+                if predecesores[bloque.id].is_empty() {
                     continue;
                 }
 
-                // Encontrar el primer predecessor con idom definido
+                // Encontrar el primer predecessor con dominador_inmediato definido
                 let mut new_idom = None;
-                for &p in &preds[block.id] {
-                    if idom[p].is_some() {
+                for &p in &predecesores[bloque.id] {
+                    if dominador_inmediato[p].is_some() {
                         new_idom = Some(p);
                         break;
                     }
                 }
 
-                if let Some(mut dom) = new_idom {
+                if let Some(mut dominador) = new_idom {
                     // Intersect con otros predecessors
-                    for &p in &preds[block.id] {
-                        if idom[p].is_some() && p != dom {
-                            dom = Self::intersect(&idom, dom, p);
+                    for &p in &predecesores[bloque.id] {
+                        if dominador_inmediato[p].is_some() && p != dominador {
+                            dominador = Self::intersecar(&dominador_inmediato, dominador, p);
                         }
                     }
-                    if idom[block.id] != Some(dom) {
-                        idom[block.id] = Some(dom);
+                    if dominador_inmediato[bloque.id] != Some(dominador) {
+                        dominador_inmediato[bloque.id] = Some(dominador);
                         changed = true;
                     }
                 }
             }
         }
 
-        // Construir children
-        let mut children: Vec<Vec<BlockId>> = vec![Vec::new(); n];
-        for (i, dom) in idom.iter().enumerate().take(n) {
-            if let Some(dom) = *dom {
-                if dom != i && dom < n {
-                    children[dom].push(i);
+        // Construir hijos
+        let mut hijos: Vec<Vec<IdBloque>> = vec![Vec::new(); n];
+        for (i, dominador) in dominador_inmediato.iter().enumerate().take(n) {
+            if let Some(dominador) = *dominador {
+                if dominador != i && dominador < n {
+                    hijos[dominador].push(i);
                 }
             }
         }
 
-        DominatorTree { idom, children }
+        ArbolDominadores {
+            dominador_inmediato,
+            hijos,
+        }
     }
 
     /// Verifica si `a` domina a `b`
-    pub fn dominates(&self, a: BlockId, b: BlockId) -> bool {
+    pub fn domina(&self, a: IdBloque, b: IdBloque) -> bool {
         if a == b {
             return true;
         }
-        let mut current = b;
-        while let Some(dom) = self.idom[current] {
-            if dom == a {
+        let mut actual = b;
+        while let Some(dominador) = self.dominador_inmediato[actual] {
+            if dominador == a {
                 return true;
             }
-            if dom == current {
+            if dominador == actual {
                 break; // reached root
             }
-            current = dom;
+            actual = dominador;
         }
         false
     }
 
     /// LCA en el dominator tree (least common ancestor)
-    fn intersect(idom: &[Option<BlockId>], mut b1: BlockId, mut b2: BlockId) -> BlockId {
-        // Nota: Usamos BlockId directamente en vez de semi-dominator ordering
+    fn intersecar(
+        dominador_inmediato: &[Option<IdBloque>],
+        mut bloque1: IdBloque,
+        mut bloque2: IdBloque,
+    ) -> IdBloque {
+        // Nota: Usamos IdBloque directamente en vez de semi-dominator ordering
         // (DFS numbering de Cooper et al.). Esto es correcto cuando los BlockIds
         // son secuenciales sin huecos (que es siempre el caso en Forja: los bloques
-        // se crean secuencialmente via `new_block()`). Si en el futuro se soportaran
+        // se crean secuencialmente via `nuevo_bloque()`). Si en el futuro se soportaran
         // huecos en IDs (por ejemplo, para dead-code elimination con reasignación),
         // se necesitaría implementar DFS numbering y comparar por ese ordering.
-        while b1 != b2 {
-            while b1 > b2 {
-                if let Some(d) = idom[b1] {
-                    b1 = d;
+        while bloque1 != bloque2 {
+            while bloque1 > bloque2 {
+                if let Some(d) = dominador_inmediato[bloque1] {
+                    bloque1 = d;
                 } else {
-                    return b1;
+                    return bloque1;
                 }
             }
-            while b2 > b1 {
-                if let Some(d) = idom[b2] {
-                    b2 = d;
+            while bloque2 > bloque1 {
+                if let Some(d) = dominador_inmediato[bloque2] {
+                    bloque2 = d;
                 } else {
-                    return b2;
+                    return bloque2;
                 }
             }
         }
-        b1
+        bloque1
     }
 
     /// Calcula la dominance frontier (DF) de cada bloque usando el algoritmo
@@ -144,39 +151,52 @@ impl DominatorTree {
     /// ```text
     /// para cada bloque b con ≥ 2 predecessors:
     ///     para cada predecessor p de b:
-    ///         runner = p
-    ///         mientras runner != idom[b]:
-    ///             DF[runner] += b
-    ///             runner = idom[runner]
+    ///         bloque_recorrido = p
+    ///         mientras bloque_recorrido != dominador_inmediato[b]:
+    ///             DF[bloque_recorrido] += b
+    ///             bloque_recorrido = dominador_inmediato[bloque_recorrido]
     /// ```
     ///
     /// DF[x] contiene los bloques `b` que x domina estrictamente pero cuyo
     /// dominador inmediato no domina (es decir, donde el control flow de x
     /// puede "escapar" y juntarse con otro).
-    pub fn dominance_frontier(&self, blocks: &[BasicBlock]) -> HashMap<BlockId, HashSet<BlockId>> {
-        let n = blocks.len();
-        let mut preds: Vec<Vec<BlockId>> = vec![Vec::new(); n];
-        for block in blocks {
-            for &s in &Self::successors(&block.terminator) {
+    pub fn frontera_dominancia(
+        &self,
+        bloques: &[BloqueBasico],
+    ) -> HashMap<IdBloque, HashSet<IdBloque>> {
+        let n = bloques.len();
+        let mut predecesores: Vec<Vec<IdBloque>> = vec![Vec::new(); n];
+        for bloque in bloques {
+            for &s in &Self::sucesores(&bloque.terminador) {
                 if s < n {
-                    preds[s].push(block.id);
+                    predecesores[s].push(bloque.id);
                 }
             }
         }
 
-        let mut df: HashMap<BlockId, HashSet<BlockId>> = HashMap::new();
-        for block in blocks {
-            if preds[block.id].len() < 2 {
+        let mut df: HashMap<IdBloque, HashSet<IdBloque>> = HashMap::new();
+        for bloque in bloques {
+            if predecesores[bloque.id].len() < 2 {
                 continue;
             }
-            let idom_b = self.idom.get(block.id).and_then(|x| *x).unwrap_or(block.id);
-            for &p in &preds[block.id] {
-                let mut runner = p;
-                while runner != idom_b {
-                    df.entry(runner).or_default().insert(block.id);
-                    match self.idom.get(runner).and_then(|x| *x) {
-                        Some(idom) if idom != runner => runner = idom,
-                        _ => break, // raíz alcanzada (idom[root] == root)
+            let idom_b = self
+                .dominador_inmediato
+                .get(bloque.id)
+                .and_then(|x| *x)
+                .unwrap_or(bloque.id);
+            for &p in &predecesores[bloque.id] {
+                let mut bloque_recorrido = p;
+                while bloque_recorrido != idom_b {
+                    df.entry(bloque_recorrido).or_default().insert(bloque.id);
+                    match self
+                        .dominador_inmediato
+                        .get(bloque_recorrido)
+                        .and_then(|x| *x)
+                    {
+                        Some(dominador_inmediato) if dominador_inmediato != bloque_recorrido => {
+                            bloque_recorrido = dominador_inmediato
+                        }
+                        _ => break, // raíz alcanzada (dominador_inmediato[root] == root)
                     }
                 }
             }
@@ -185,128 +205,129 @@ impl DominatorTree {
     }
 
     /// Retorna los sucesores directos de un terminador
-    fn successors(term: &Terminator) -> Vec<BlockId> {
-        match term {
-            Terminator::Jump(t) => vec![*t],
-            Terminator::Branch(_, t, e) => vec![*t, *e],
-            Terminator::Return(_) | Terminator::Unreachable => vec![],
+    fn sucesores(terminador: &Terminador) -> Vec<IdBloque> {
+        match terminador {
+            Terminador::Salto(t) => vec![*t],
+            Terminador::Rama(_, t, e) => vec![*t, *e],
+            Terminador::Retorno(_) | Terminador::Inalcanzable => vec![],
         }
     }
 }
 
 /// Natural loop detector
-pub struct LoopInfo {
-    /// back_edges[i] = (from, to) donde to domina from (back edge)
-    pub back_edges: Vec<(BlockId, BlockId)>,
-    /// loops[i] = conjunto de bloques en el loop cuyo header es i
-    pub loops: HashMap<BlockId, HashSet<BlockId>>,
+pub struct InfoBucles {
+    /// aristas_de_retorno[i] = (from, to) donde to domina from (back edge)
+    pub aristas_de_retorno: Vec<(IdBloque, IdBloque)>,
+    /// bucles[i] = conjunto de bloques en el loop cuyo cabecera es i
+    pub bucles: HashMap<IdBloque, HashSet<IdBloque>>,
 }
 
-impl LoopInfo {
-    /// Detecta loops naturales a partir del dominator tree y los edges
-    pub fn detect(blocks: &[BasicBlock], domtree: &DominatorTree) -> Self {
-        let mut back_edges = Vec::new();
-        let mut loops_map: HashMap<BlockId, HashSet<BlockId>> = HashMap::new();
+impl InfoBucles {
+    /// Detecta bucles naturales a partir del dominator tree y los edges
+    pub fn detectar(bloques: &[BloqueBasico], arbol_dominadores: &ArbolDominadores) -> Self {
+        let mut aristas_de_retorno = Vec::new();
+        let mut mapa_bucles: HashMap<IdBloque, HashSet<IdBloque>> = HashMap::new();
 
         // Encontrar back edges: edge (u, v) donde v domina u
-        for block in blocks {
-            let succs = DominatorTree::successors(&block.terminator);
-            for &s in &succs {
-                if domtree.dominates(s, block.id) {
-                    // (block.id, s) es un back edge, s es el loop header
-                    back_edges.push((block.id, s));
+        for bloque in bloques {
+            let bloques_sucesores = ArbolDominadores::sucesores(&bloque.terminador);
+            for &s in &bloques_sucesores {
+                if arbol_dominadores.domina(s, bloque.id) {
+                    // (bloque.id, s) es un back edge, s es el loop cabecera
+                    aristas_de_retorno.push((bloque.id, s));
                     // Encontrar todos los bloques en el loop
-                    let loop_body = Self::compute_loop_body(block.id, s, blocks);
-                    loops_map.entry(s).or_default().extend(loop_body);
+                    let cuerpo_bucle = Self::calcular_cuerpo_bucle(bloque.id, s, bloques);
+                    mapa_bucles.entry(s).or_default().extend(cuerpo_bucle);
                 }
             }
         }
 
-        LoopInfo {
-            back_edges,
-            loops: loops_map,
+        InfoBucles {
+            aristas_de_retorno,
+            bucles: mapa_bucles,
         }
     }
 
-    /// Calcula el cuerpo del loop dado un back edge (tail, header)
-    fn compute_loop_body(
-        tail: BlockId,
-        header: BlockId,
-        blocks: &[BasicBlock],
-    ) -> HashSet<BlockId> {
-        let mut body = HashSet::new();
-        body.insert(header);
-        if tail != header {
-            body.insert(tail);
-            // BFS backwards desde tail hasta header
-            let mut worklist = vec![tail];
-            let mut preds_map: HashMap<BlockId, Vec<BlockId>> = HashMap::new();
-            for block in blocks {
-                let succs = DominatorTree::successors(&block.terminator);
-                for &s in &succs {
-                    preds_map.entry(s).or_default().push(block.id);
+    /// Calcula el cuerpo del loop dado un back edge (cola, cabecera)
+    fn calcular_cuerpo_bucle(
+        cola: IdBloque,
+        cabecera: IdBloque,
+        bloques: &[BloqueBasico],
+    ) -> HashSet<IdBloque> {
+        let mut cuerpo = HashSet::new();
+        cuerpo.insert(cabecera);
+        if cola != cabecera {
+            cuerpo.insert(cola);
+            // BFS backwards desde cola hasta cabecera
+            let mut pendientes = vec![cola];
+            let mut mapa_predecesores: HashMap<IdBloque, Vec<IdBloque>> = HashMap::new();
+            for bloque in bloques {
+                let bloques_sucesores = ArbolDominadores::sucesores(&bloque.terminador);
+                for &s in &bloques_sucesores {
+                    mapa_predecesores.entry(s).or_default().push(bloque.id);
                 }
             }
-            while let Some(current) = worklist.pop() {
-                if let Some(preds) = preds_map.get(&current) {
-                    for &p in preds {
-                        if !body.contains(&p) {
-                            body.insert(p);
-                            worklist.push(p);
+            while let Some(actual) = pendientes.pop() {
+                if let Some(predecesores) = mapa_predecesores.get(&actual) {
+                    for &p in predecesores {
+                        if !cuerpo.contains(&p) {
+                            cuerpo.insert(p);
+                            pendientes.push(p);
                         }
                     }
                 }
             }
         }
-        body
+        cuerpo
     }
 }
 
 /// φ-node de una variable de memoria en un bloque de unión.
 #[derive(Debug, Clone)]
-pub struct PhiVar {
+pub struct VariablePhi {
     /// Variable promovida.
-    pub mem: MemIdx,
+    pub memoria: IdxMemoria,
     /// Id provisional del valor que produce el φ (se renumera en el pase).
-    pub valor: ValueId,
+    pub valor: IdValor,
     /// Un operando por bloque predecesor, en orden de bloque.
-    pub operandos: Vec<(BlockId, ValueId)>,
+    pub operandos: Vec<(IdBloque, IdValor)>,
 }
 
 /// SSA Builder — inserta φ-nodes para variables mutables.
-pub struct SsaBuilder {
+pub struct ConstructorSsa {
     /// Variables que necesitan φ-nodes
-    phi_vars: HashSet<MemIdx>,
+    variables_phi: HashSet<IdxMemoria>,
     /// Definiciones de variable por bloque: (block_id, mem_idx) → value_id
-    pub defs: HashMap<(BlockId, MemIdx), ValueId>,
+    pub definiciones: HashMap<(IdBloque, IdxMemoria), IdValor>,
     /// φ por bloque, ordenados por variable (determinista).
-    pub phi_nodes: BTreeMap<BlockId, Vec<PhiVar>>,
+    pub nodos_phi: BTreeMap<IdBloque, Vec<VariablePhi>>,
     /// Siguiente id provisional para el valor de un φ.
-    next_valor: ValueId,
+    proximo_valor: IdValor,
 }
 
-impl SsaBuilder {
+impl ConstructorSsa {
     /// Base de los ids provisionales de los φ: por encima de cualquier id que
     /// produzca el constructor.
-    pub const BASE_VALOR: ValueId = 1 << 31;
+    pub const BASE_VALOR: IdValor = 1 << 31;
 
+    /// Crea un constructor de SSA sin definiciones ni φ registrados.
     pub fn new() -> Self {
-        SsaBuilder {
-            phi_vars: HashSet::new(),
-            defs: HashMap::new(),
-            phi_nodes: BTreeMap::new(),
-            next_valor: Self::BASE_VALOR,
+        ConstructorSsa {
+            variables_phi: HashSet::new(),
+            definiciones: HashMap::new(),
+            nodos_phi: BTreeMap::new(),
+            proximo_valor: Self::BASE_VALOR,
         }
     }
 
     /// Marca una variable como necesitando φ-nodes
-    pub fn mark_phi_variable(&mut self, mem: MemIdx) {
-        self.phi_vars.insert(mem);
+    pub fn marcar_variable_phi(&mut self, memoria: IdxMemoria) {
+        self.variables_phi.insert(memoria);
     }
 
     /// Registra una definición de variable en un bloque
-    pub fn record_def(&mut self, block: BlockId, mem: MemIdx, val: ValueId) {
-        self.defs.insert((block, mem), val);
+    pub fn registrar_definicion(&mut self, bloque: IdBloque, memoria: IdxMemoria, val: IdValor) {
+        self.definiciones.insert((bloque, memoria), val);
     }
 
     /// Analiza qué variables necesitan φ-nodes y los inserta.
@@ -316,26 +337,30 @@ impl SsaBuilder {
     /// dominance frontier* y coloca un φ en cada bloque de la IDF. Los operandos
     /// se resuelven como la *reaching definition* en cada predecesor, y el φ
     /// queda registrado como definición de su bloque (un φ encadenado lo ve).
-    pub fn compute_phi_nodes(&mut self, domtree: &DominatorTree, blocks: &[BasicBlock]) {
-        // Dominance frontier de cada bloque (DF[runner] → bloques join)
-        let df = domtree.dominance_frontier(blocks);
+    pub fn calcular_nodos_phi(
+        &mut self,
+        arbol_dominadores: &ArbolDominadores,
+        bloques: &[BloqueBasico],
+    ) {
+        // Dominance frontier de cada bloque (DF[bloque_recorrido] → bloques join)
+        let df = arbol_dominadores.frontera_dominancia(bloques);
 
         // Predecesores por bloque (para resolver los argumentos de los φ)
-        let mut block_predecessors: Vec<Vec<BlockId>> = vec![Vec::new(); blocks.len()];
-        for blk in blocks {
-            for t in DominatorTree::successors(&blk.terminator) {
+        let mut block_predecessors: Vec<Vec<IdBloque>> = vec![Vec::new(); bloques.len()];
+        for blk in bloques {
+            for t in ArbolDominadores::sucesores(&blk.terminador) {
                 if t < block_predecessors.len() {
                     block_predecessors[t].push(blk.id);
                 }
             }
         }
 
-        let mut vars: Vec<MemIdx> = self.phi_vars.iter().copied().collect();
+        let mut vars: Vec<IdxMemoria> = self.variables_phi.iter().copied().collect();
         vars.sort_unstable();
 
         for var in vars {
-            let def_blocks: HashSet<BlockId> = self
-                .defs
+            let def_blocks: HashSet<IdBloque> = self
+                .definiciones
                 .keys()
                 .filter(|(_, m)| *m == var)
                 .map(|(b, _)| *b)
@@ -346,67 +371,78 @@ impl SsaBuilder {
 
             // Iterated Dominance Frontier: los φ se colocan en el cierre de la
             // DF de los bloques con definición.
-            let mut has_phi: HashSet<BlockId> = HashSet::new();
-            let mut worklist: Vec<BlockId> = def_blocks.iter().copied().collect();
-            while let Some(block) = worklist.pop() {
-                if let Some(frontier) = df.get(&block) {
+            let mut has_phi: HashSet<IdBloque> = HashSet::new();
+            let mut pendientes: Vec<IdBloque> = def_blocks.iter().copied().collect();
+            while let Some(bloque) = pendientes.pop() {
+                if let Some(frontier) = df.get(&bloque) {
                     for &y in frontier {
                         if has_phi.insert(y) && !def_blocks.contains(&y) {
-                            worklist.push(y);
+                            pendientes.push(y);
                         }
                     }
                 }
             }
 
-            let mut bloques_phi: Vec<BlockId> = has_phi.into_iter().collect();
+            let mut bloques_phi: Vec<IdBloque> = has_phi.into_iter().collect();
             bloques_phi.sort_unstable();
             for phi_block in bloques_phi {
-                let preds = block_predecessors
+                let predecesores = block_predecessors
                     .get(phi_block)
                     .cloned()
                     .unwrap_or_default();
-                let operandos: Vec<(BlockId, ValueId)> = preds
+                let operandos: Vec<(IdBloque, IdValor)> = predecesores
                     .iter()
                     .map(|&pred| {
-                        let val = self.reaching_def(pred, var, domtree).unwrap_or(0);
+                        let val = self
+                            .definicion_alcanzante(pred, var, arbol_dominadores)
+                            .unwrap_or(0);
                         (pred, val)
                     })
                     .collect();
-                let valor = self.next_valor;
-                self.next_valor += 1;
+                let valor = self.proximo_valor;
+                self.proximo_valor += 1;
                 // El φ define la variable en su bloque.
-                self.defs.insert((phi_block, var), valor);
-                self.phi_nodes.entry(phi_block).or_default().push(PhiVar {
-                    mem: var,
-                    valor,
-                    operandos,
-                });
+                self.definiciones.insert((phi_block, var), valor);
+                self.nodos_phi
+                    .entry(phi_block)
+                    .or_default()
+                    .push(VariablePhi {
+                        memoria: var,
+                        valor,
+                        operandos,
+                    });
             }
         }
     }
 
-    /// Resuelve la *reaching definition* de `var` en `block`: la definición
-    /// más cercana en el camino `block → idom → idom → ...` hacia la raíz.
-    pub fn reaching_def(
+    /// Resuelve la *reaching definition* de `var` en `bloque`: la definición
+    /// más cercana en el camino `bloque → dominador_inmediato → dominador_inmediato → ...` hacia la raíz.
+    pub fn definicion_alcanzante(
         &self,
-        block: BlockId,
-        var: MemIdx,
-        domtree: &DominatorTree,
-    ) -> Option<ValueId> {
-        let mut current = block;
+        bloque: IdBloque,
+        var: IdxMemoria,
+        arbol_dominadores: &ArbolDominadores,
+    ) -> Option<IdValor> {
+        let mut actual = bloque;
         loop {
-            if let Some(&val) = self.defs.get(&(current, var)) {
+            if let Some(&val) = self.definiciones.get(&(actual, var)) {
                 return Some(val);
             }
-            match domtree.idom.get(current).and_then(|x| *x) {
-                Some(idom) if idom != current => current = idom,
+            match arbol_dominadores
+                .dominador_inmediato
+                .get(actual)
+                .and_then(|x| *x)
+            {
+                Some(dominador_inmediato) if dominador_inmediato != actual => {
+                    actual = dominador_inmediato
+                }
                 _ => return None, // raíz alcanzada sin definición
             }
         }
     }
 }
 
-impl Default for SsaBuilder {
+impl Default for ConstructorSsa {
     fn default() -> Self {
         Self::new()
     }
@@ -418,7 +454,7 @@ impl Default for SsaBuilder {
 /// todo el programa, incluidas las funciones anidadas (closures e hilos).
 ///
 /// Reglas:
-/// * Sólo se promueven slots **locales** (`MemIdx >= LOCAL_BASE`): los globales
+/// * Sólo se promueven slots **locales** (`IdxMemoria >= LOCAL_BASE`): los globales
 ///   del nivel superior pueden leerlos otras funciones y el REPL los persiste
 ///   entre líneas (`global_var_persist`), así que siguen en memoria.
 /// * Un φ se coloca en la frontera de dominancia de las definiciones de cada
@@ -426,29 +462,29 @@ impl Default for SsaBuilder {
 /// * Si una `Load` promovida no tiene definición alcanzable, la función se deja
 ///   tal cual (no se promueve nada de ella).
 ///
-/// La numeración de `ValueId` se recalcula (es posicional en el conversor), así
-/// que el resultado es un `SsaFunction` nuevo; los φ pueden referenciar valores
+/// La numeración de `IdValor` se recalcula (es posicional en el conversor), así
+/// que el resultado es un `FuncionSsa` nuevo; los φ pueden referenciar valores
 /// definidos más adelante en el orden de bloques (φ de un bucle).
-pub fn promover_programa(programa: &IrProgram) -> IrProgram {
-    IrProgram {
-        functions: programa
-            .functions
+pub fn promover_programa(programa: &ProgramaIr) -> ProgramaIr {
+    ProgramaIr {
+        funciones: programa
+            .funciones
             .iter()
             .map(promover_funcion)
             .collect::<Vec<_>>(),
-        symbols: programa.symbols.clone(),
+        simbolos: programa.simbolos.clone(),
     }
 }
 
 /// Promueve una función y las funciones anidadas que contenga.
-pub fn promover_funcion(func: &SsaFunction) -> SsaFunction {
+pub fn promover_funcion(func: &FuncionSsa) -> FuncionSsa {
     use crate::ir_constructor::LOCAL_BASE;
 
     // 1. Slots promovibles: declarados en esta función y locales del marco.
-    let mut promovibles: HashSet<MemIdx> = HashSet::new();
-    for b in &func.blocks {
-        for inst in &b.instructions {
-            if let Inst::Alloca(m) = inst {
+    let mut promovibles: HashSet<IdxMemoria> = HashSet::new();
+    for b in &func.bloques {
+        for inst in &b.instrucciones {
+            if let Instruccion::Reservar(m) = inst {
                 if *m >= LOCAL_BASE {
                     promovibles.insert(*m);
                 }
@@ -460,10 +496,10 @@ pub fn promover_funcion(func: &SsaFunction) -> SsaFunction {
     }
 
     // 2. Id posicional de cada instrucción que produce valor.
-    let mut id_de: HashMap<(BlockId, usize), ValueId> = HashMap::new();
-    let mut next: ValueId = 0;
-    for b in &func.blocks {
-        for (i, inst) in b.instructions.iter().enumerate() {
+    let mut id_de: HashMap<(IdBloque, usize), IdValor> = HashMap::new();
+    let mut next: IdValor = 0;
+    for b in &func.bloques {
+        for (i, inst) in b.instrucciones.iter().enumerate() {
             if produce_valor(inst) {
                 id_de.insert((b.id, i), next);
                 next += 1;
@@ -472,45 +508,45 @@ pub fn promover_funcion(func: &SsaFunction) -> SsaFunction {
     }
 
     // 3. Dominadores y colocación de φ-nodes.
-    let domtree = DominatorTree::compute(&func.blocks);
-    let mut sb = SsaBuilder::new();
+    let arbol_dominadores = ArbolDominadores::calcular(&func.bloques);
+    let mut sb = ConstructorSsa::new();
     for m in &promovibles {
-        sb.mark_phi_variable(*m);
+        sb.marcar_variable_phi(*m);
     }
-    for b in &func.blocks {
-        for inst in &b.instructions {
-            if let Inst::Store(m, v) = inst {
+    for b in &func.bloques {
+        for inst in &b.instrucciones {
+            if let Instruccion::Guardar(m, v) = inst {
                 if promovibles.contains(m) {
                     // Última definición del bloque: es la que alcanza al final.
-                    sb.record_def(b.id, *m, *v);
+                    sb.registrar_definicion(b.id, *m, *v);
                 }
             }
         }
     }
-    sb.compute_phi_nodes(&domtree, &func.blocks);
+    sb.calcular_nodos_phi(&arbol_dominadores, &func.bloques);
 
     // 4. Renombrado: recorrido del árbol de dominadores con el valor vigente de
     //    cada variable. Es lo que resuelve las cargas en orden *dentro* del
     //    bloque y los φ de un bucle (el valor que sale de cada predecesor).
-    let mut hijos: HashMap<BlockId, Vec<BlockId>> = HashMap::new();
-    for (b, idom) in domtree.idom.iter().enumerate() {
-        if let Some(d) = idom {
+    let mut hijos: HashMap<IdBloque, Vec<IdBloque>> = HashMap::new();
+    for (b, dominador_inmediato) in arbol_dominadores.dominador_inmediato.iter().enumerate() {
+        if let Some(d) = dominador_inmediato {
             if *d != b {
-                hijos.entry(*d).or_default().push(b as BlockId);
+                hijos.entry(*d).or_default().push(b as IdBloque);
             }
         }
     }
-    let bloques_por_id: HashMap<BlockId, &BasicBlock> =
-        func.blocks.iter().map(|b| (b.id, b)).collect();
+    let bloques_por_id: HashMap<IdBloque, &BloqueBasico> =
+        func.bloques.iter().map(|b| (b.id, b)).collect();
 
-    let mut alias: HashMap<ValueId, ValueId> = HashMap::new();
-    let mut salida: HashMap<(BlockId, MemIdx), ValueId> = HashMap::new();
-    let mut actual: HashMap<MemIdx, ValueId> = HashMap::new();
+    let mut alias: HashMap<IdValor, IdValor> = HashMap::new();
+    let mut salida: HashMap<(IdBloque, IdxMemoria), IdValor> = HashMap::new();
+    let mut actual: HashMap<IdxMemoria, IdValor> = HashMap::new();
     if !renombrar_bloque(
-        func.entry,
+        func.entrada,
         &bloques_por_id,
         &hijos,
-        &sb.phi_nodes,
+        &sb.nodos_phi,
         &promovibles,
         &id_de,
         &mut actual,
@@ -521,19 +557,19 @@ pub fn promover_funcion(func: &SsaFunction) -> SsaFunction {
     }
 
     // Rellenar los operandos de cada φ con el valor que sale de cada predecesor.
-    let mut phis_por_bloque: BTreeMap<BlockId, Vec<PhiVar>> = BTreeMap::new();
-    for (bloque, phis) in &sb.phi_nodes {
+    let mut phis_por_bloque: BTreeMap<IdBloque, Vec<VariablePhi>> = BTreeMap::new();
+    for (bloque, phis) in &sb.nodos_phi {
         let mut nuevos_phis = Vec::with_capacity(phis.len());
         for phi in phis {
             let mut operandos = Vec::with_capacity(phi.operandos.len());
             for (pred, _) in &phi.operandos {
-                let Some(&valor) = salida.get(&(*pred, phi.mem)) else {
+                let Some(&valor) = salida.get(&(*pred, phi.memoria)) else {
                     return clonar_promoviendo_anidadas(func);
                 };
                 operandos.push((*pred, valor));
             }
-            nuevos_phis.push(PhiVar {
-                mem: phi.mem,
+            nuevos_phis.push(VariablePhi {
+                memoria: phi.memoria,
                 valor: phi.valor,
                 operandos,
             });
@@ -543,32 +579,35 @@ pub fn promover_funcion(func: &SsaFunction) -> SsaFunction {
 
     // 5. Construir el flujo nuevo: φ al inicio de cada bloque y las
     //    instrucciones que no son de las variables promovidas.
-    type BloqueNuevo = (BlockId, Vec<(ValueId, Inst)>, Terminator);
-    let mut nuevo: Vec<BloqueNuevo> = Vec::with_capacity(func.blocks.len());
-    for b in &func.blocks {
-        let mut insts: Vec<(ValueId, Inst)> = Vec::new();
+    type BloqueNuevo = (IdBloque, Vec<(IdValor, Instruccion)>, Terminador);
+    let mut nuevo: Vec<BloqueNuevo> = Vec::with_capacity(func.bloques.len());
+    for b in &func.bloques {
+        let mut insts: Vec<(IdValor, Instruccion)> = Vec::new();
         if let Some(phis) = phis_por_bloque.get(&b.id) {
             for phi in phis {
-                insts.push((phi.valor, Inst::Phi(phi.mem, phi.operandos.clone())));
+                insts.push((
+                    phi.valor,
+                    Instruccion::Phi(phi.memoria, phi.operandos.clone()),
+                ));
             }
         }
-        for (i, inst) in b.instructions.iter().enumerate() {
+        for (i, inst) in b.instrucciones.iter().enumerate() {
             match inst {
-                Inst::Alloca(m) if promovibles.contains(m) => continue,
-                Inst::Store(m, _) if promovibles.contains(m) => continue,
-                Inst::Load(m) if promovibles.contains(m) => continue,
+                Instruccion::Reservar(m) if promovibles.contains(m) => continue,
+                Instruccion::Guardar(m, _) if promovibles.contains(m) => continue,
+                Instruccion::Cargar(m) if promovibles.contains(m) => continue,
                 _ => {
                     let token = id_de.get(&(b.id, i)).copied().unwrap_or(0);
                     insts.push((token, inst.clone()));
                 }
             }
         }
-        nuevo.push((b.id, insts, b.terminator.clone()));
+        nuevo.push((b.id, insts, b.terminador.clone()));
     }
 
     // 6. Renumerar: la numeración del conversor es posicional.
-    let mut mapa: HashMap<ValueId, ValueId> = HashMap::new();
-    let mut next: ValueId = 0;
+    let mut mapa: HashMap<IdValor, IdValor> = HashMap::new();
+    let mut next: IdValor = 0;
     for (_, insts, _) in &nuevo {
         for (token, inst) in insts {
             if produce_valor(inst) {
@@ -578,7 +617,7 @@ pub fn promover_funcion(func: &SsaFunction) -> SsaFunction {
         }
     }
     // `alias` colapsa cadenas (un store cuyo valor era otra load promovida).
-    let resolver = |v: ValueId| -> Option<ValueId> {
+    let resolver = |v: IdValor| -> Option<IdValor> {
         let mut actual = v;
         for _ in 0..=alias.len() {
             match alias.get(&actual) {
@@ -589,9 +628,9 @@ pub fn promover_funcion(func: &SsaFunction) -> SsaFunction {
         mapa.get(&actual).copied()
     };
     let mut sin_resolver = false;
-    for (_, insts, term) in &mut nuevo {
+    for (_, insts, terminador) in &mut nuevo {
         for (_, inst) in insts.iter_mut() {
-            inst.reasignar_valores(&mut |v: ValueId| match resolver(v) {
+            inst.reasignar_valores(&mut |v: IdValor| match resolver(v) {
                 Some(nv) => nv,
                 None => {
                     sin_resolver = true;
@@ -599,7 +638,7 @@ pub fn promover_funcion(func: &SsaFunction) -> SsaFunction {
                 }
             });
         }
-        term.reasignar_valores(&mut |v: ValueId| match resolver(v) {
+        terminador.reasignar_valores(&mut |v: IdValor| match resolver(v) {
             Some(nv) => nv,
             None => {
                 sin_resolver = true;
@@ -615,27 +654,27 @@ pub fn promover_funcion(func: &SsaFunction) -> SsaFunction {
     for (_, insts, _) in &mut nuevo {
         for (_, inst) in insts.iter_mut() {
             match inst {
-                Inst::MakeClosure(f, _) => **f = promover_funcion(f),
-                Inst::ThreadSpawn(f, _) => **f = promover_funcion(f),
+                Instruccion::CrearClausura(f, _) => **f = promover_funcion(f),
+                Instruccion::CrearHilo(f, _) => **f = promover_funcion(f),
                 _ => {}
             }
         }
     }
 
-    SsaFunction {
-        name: func.name,
-        return_type: func.return_type,
-        blocks: nuevo
+    FuncionSsa {
+        nombre: func.nombre,
+        tipo_retorno: func.tipo_retorno,
+        bloques: nuevo
             .into_iter()
-            .map(|(id, insts, terminator)| BasicBlock {
+            .map(|(id, insts, terminador)| BloqueBasico {
                 id,
-                instructions: insts.into_iter().map(|(_, i)| i).collect(),
-                terminator,
+                instrucciones: insts.into_iter().map(|(_, i)| i).collect(),
+                terminador,
             })
             .collect(),
-        entry: func.entry,
-        num_params: func.num_params,
-        params: func.params.clone(),
+        entrada: func.entrada,
+        cantidad_parametros: func.cantidad_parametros,
+        parametros: func.parametros.clone(),
     }
 }
 
@@ -645,30 +684,30 @@ pub fn promover_funcion(func: &SsaFunction) -> SsaFunction {
 /// de los φ). Devuelve `false` si una carga no tiene definición vigente.
 #[allow(clippy::too_many_arguments)]
 fn renombrar_bloque(
-    bloque: BlockId,
-    bloques: &HashMap<BlockId, &BasicBlock>,
-    hijos: &HashMap<BlockId, Vec<BlockId>>,
-    phis: &BTreeMap<BlockId, Vec<PhiVar>>,
-    promovibles: &HashSet<MemIdx>,
-    id_de: &HashMap<(BlockId, usize), ValueId>,
-    actual: &mut HashMap<MemIdx, ValueId>,
-    alias: &mut HashMap<ValueId, ValueId>,
-    salida: &mut HashMap<(BlockId, MemIdx), ValueId>,
+    bloque: IdBloque,
+    bloques: &HashMap<IdBloque, &BloqueBasico>,
+    hijos: &HashMap<IdBloque, Vec<IdBloque>>,
+    phis: &BTreeMap<IdBloque, Vec<VariablePhi>>,
+    promovibles: &HashSet<IdxMemoria>,
+    id_de: &HashMap<(IdBloque, usize), IdValor>,
+    actual: &mut HashMap<IdxMemoria, IdValor>,
+    alias: &mut HashMap<IdValor, IdValor>,
+    salida: &mut HashMap<(IdBloque, IdxMemoria), IdValor>,
 ) -> bool {
-    let mut guardados: Vec<(MemIdx, Option<ValueId>)> = Vec::new();
+    let mut guardados: Vec<(IdxMemoria, Option<IdValor>)> = Vec::new();
     if let Some(phis_bloque) = phis.get(&bloque) {
         for phi in phis_bloque {
-            guardados.push((phi.mem, actual.insert(phi.mem, phi.valor)));
+            guardados.push((phi.memoria, actual.insert(phi.memoria, phi.valor)));
         }
     }
 
     if let Some(b) = bloques.get(&bloque) {
-        for (i, inst) in b.instructions.iter().enumerate() {
+        for (i, inst) in b.instrucciones.iter().enumerate() {
             match inst {
-                Inst::Store(m, v) if promovibles.contains(m) => {
+                Instruccion::Guardar(m, v) if promovibles.contains(m) => {
                     guardados.push((*m, actual.insert(*m, *v)));
                 }
-                Inst::Load(m) if promovibles.contains(m) => {
+                Instruccion::Cargar(m) if promovibles.contains(m) => {
                     let Some(&vigente) = actual.get(m) else {
                         return false;
                     };
@@ -682,8 +721,8 @@ fn renombrar_bloque(
     }
 
     // Valor con el que sale el bloque (para los operandos de los φ del sucesor).
-    for (mem, valor) in actual.iter() {
-        salida.insert((bloque, *mem), *valor);
+    for (memoria, valor) in actual.iter() {
+        salida.insert((bloque, *memoria), *valor);
     }
 
     if let Some(hs) = hijos.get(&bloque) {
@@ -704,13 +743,13 @@ fn renombrar_bloque(
         }
     }
 
-    for (mem, previo) in guardados.into_iter().rev() {
+    for (memoria, previo) in guardados.into_iter().rev() {
         match previo {
             Some(v) => {
-                actual.insert(mem, v);
+                actual.insert(memoria, v);
             }
             None => {
-                actual.remove(&mem);
+                actual.remove(&memoria);
             }
         }
     }
@@ -719,13 +758,13 @@ fn renombrar_bloque(
 
 /// Copia la función promoviendo sólo sus funciones anidadas (los ids no cambian
 /// porque el flujo se mantiene igual).
-fn clonar_promoviendo_anidadas(func: &SsaFunction) -> SsaFunction {
+fn clonar_promoviendo_anidadas(func: &FuncionSsa) -> FuncionSsa {
     let mut nueva = func.clone();
-    for b in &mut nueva.blocks {
-        for inst in b.instructions.iter_mut() {
+    for b in &mut nueva.bloques {
+        for inst in b.instrucciones.iter_mut() {
             match inst {
-                Inst::MakeClosure(f, _) => **f = promover_funcion(f),
-                Inst::ThreadSpawn(f, _) => **f = promover_funcion(f),
+                Instruccion::CrearClausura(f, _) => **f = promover_funcion(f),
+                Instruccion::CrearHilo(f, _) => **f = promover_funcion(f),
                 _ => {}
             }
         }
@@ -739,170 +778,170 @@ mod tests {
 
     #[test]
     fn test_dominator_tree_single_block() {
-        let blocks = vec![BasicBlock {
+        let bloques = vec![BloqueBasico {
             id: 0,
-            instructions: vec![],
-            terminator: Terminator::Return(None),
+            instrucciones: vec![],
+            terminador: Terminador::Retorno(None),
         }];
-        let dt = DominatorTree::compute(&blocks);
-        assert_eq!(dt.idom[0], Some(0));
+        let dt = ArbolDominadores::calcular(&bloques);
+        assert_eq!(dt.dominador_inmediato[0], Some(0));
     }
 
     #[test]
     fn test_dominator_tree_linear() {
         // Block 0 → Block 1 → Block 2
-        let blocks = vec![
-            BasicBlock {
+        let bloques = vec![
+            BloqueBasico {
                 id: 0,
-                instructions: vec![],
-                terminator: Terminator::Jump(1),
+                instrucciones: vec![],
+                terminador: Terminador::Salto(1),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 1,
-                instructions: vec![],
-                terminator: Terminator::Jump(2),
+                instrucciones: vec![],
+                terminador: Terminador::Salto(2),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 2,
-                instructions: vec![],
-                terminator: Terminator::Return(None),
+                instrucciones: vec![],
+                terminador: Terminador::Retorno(None),
             },
         ];
-        let dt = DominatorTree::compute(&blocks);
-        assert_eq!(dt.idom[0], Some(0));
-        assert_eq!(dt.idom[1], Some(0));
-        assert_eq!(dt.idom[2], Some(1));
+        let dt = ArbolDominadores::calcular(&bloques);
+        assert_eq!(dt.dominador_inmediato[0], Some(0));
+        assert_eq!(dt.dominador_inmediato[1], Some(0));
+        assert_eq!(dt.dominador_inmediato[2], Some(1));
     }
 
     #[test]
     fn test_dominator_tree_diamond() {
         // 0 → 1, 0 → 2, 1 → 3, 2 → 3
-        let blocks = vec![
-            BasicBlock {
+        let bloques = vec![
+            BloqueBasico {
                 id: 0,
-                instructions: vec![],
-                terminator: Terminator::Branch(0, 1, 2),
+                instrucciones: vec![],
+                terminador: Terminador::Rama(0, 1, 2),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 1,
-                instructions: vec![],
-                terminator: Terminator::Jump(3),
+                instrucciones: vec![],
+                terminador: Terminador::Salto(3),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 2,
-                instructions: vec![],
-                terminator: Terminator::Jump(3),
+                instrucciones: vec![],
+                terminador: Terminador::Salto(3),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 3,
-                instructions: vec![],
-                terminator: Terminator::Return(None),
+                instrucciones: vec![],
+                terminador: Terminador::Retorno(None),
             },
         ];
-        let dt = DominatorTree::compute(&blocks);
-        assert_eq!(dt.idom[0], Some(0));
-        assert_eq!(dt.idom[1], Some(0));
-        assert_eq!(dt.idom[2], Some(0));
-        assert_eq!(dt.idom[3], Some(0));
+        let dt = ArbolDominadores::calcular(&bloques);
+        assert_eq!(dt.dominador_inmediato[0], Some(0));
+        assert_eq!(dt.dominador_inmediato[1], Some(0));
+        assert_eq!(dt.dominador_inmediato[2], Some(0));
+        assert_eq!(dt.dominador_inmediato[3], Some(0));
     }
 
     #[test]
     fn test_dominator_dominates() {
-        let blocks = vec![
-            BasicBlock {
+        let bloques = vec![
+            BloqueBasico {
                 id: 0,
-                instructions: vec![],
-                terminator: Terminator::Jump(1),
+                instrucciones: vec![],
+                terminador: Terminador::Salto(1),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 1,
-                instructions: vec![],
-                terminator: Terminator::Jump(2),
+                instrucciones: vec![],
+                terminador: Terminador::Salto(2),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 2,
-                instructions: vec![],
-                terminator: Terminator::Return(None),
+                instrucciones: vec![],
+                terminador: Terminador::Retorno(None),
             },
         ];
-        let dt = DominatorTree::compute(&blocks);
-        assert!(dt.dominates(0, 1));
-        assert!(dt.dominates(0, 2));
-        assert!(dt.dominates(1, 2));
-        assert!(!dt.dominates(2, 0));
+        let dt = ArbolDominadores::calcular(&bloques);
+        assert!(dt.domina(0, 1));
+        assert!(dt.domina(0, 2));
+        assert!(dt.domina(1, 2));
+        assert!(!dt.domina(2, 0));
     }
 
     #[test]
     fn test_loop_detection() {
         // Loop: 0 → 1 → 2 → 1 (back edge 2→1)
-        let blocks = vec![
-            BasicBlock {
+        let bloques = vec![
+            BloqueBasico {
                 id: 0,
-                instructions: vec![],
-                terminator: Terminator::Jump(1),
+                instrucciones: vec![],
+                terminador: Terminador::Salto(1),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 1,
-                instructions: vec![],
-                terminator: Terminator::Branch(0, 2, 3),
+                instrucciones: vec![],
+                terminador: Terminador::Rama(0, 2, 3),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 2,
-                instructions: vec![],
-                terminator: Terminator::Jump(1),
+                instrucciones: vec![],
+                terminador: Terminador::Salto(1),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 3,
-                instructions: vec![],
-                terminator: Terminator::Return(None),
+                instrucciones: vec![],
+                terminador: Terminador::Retorno(None),
             },
         ];
-        let dt = DominatorTree::compute(&blocks);
-        let loops = LoopInfo::detect(&blocks, &dt);
-        assert_eq!(loops.back_edges.len(), 1);
-        assert!(loops.loops.contains_key(&1)); // header del loop es block 1
+        let dt = ArbolDominadores::calcular(&bloques);
+        let bucles = InfoBucles::detectar(&bloques, &dt);
+        assert_eq!(bucles.aristas_de_retorno.len(), 1);
+        assert!(bucles.bucles.contains_key(&1)); // cabecera del loop es bloque 1
     }
 
     #[test]
     fn test_ssa_builder_phi_placement() {
-        let mut builder = SsaBuilder::new();
-        builder.mark_phi_variable(0);
+        let mut builder = ConstructorSsa::new();
+        builder.marcar_variable_phi(0);
 
         // Diamante: 0 → {1, 2}, 1 → 3, 2 → 3. La variable se define en 1 y 2
         // (los brazos del branch) y converge en 3 → ahí va el φ.
-        let blocks = vec![
-            BasicBlock {
+        let bloques = vec![
+            BloqueBasico {
                 id: 0,
-                instructions: vec![],
-                terminator: Terminator::Branch(0, 1, 2),
+                instrucciones: vec![],
+                terminador: Terminador::Rama(0, 1, 2),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 1,
-                instructions: vec![],
-                terminator: Terminator::Jump(3),
+                instrucciones: vec![],
+                terminador: Terminador::Salto(3),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 2,
-                instructions: vec![],
-                terminator: Terminator::Jump(3),
+                instrucciones: vec![],
+                terminador: Terminador::Salto(3),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 3,
-                instructions: vec![],
-                terminator: Terminator::Return(None),
+                instrucciones: vec![],
+                terminador: Terminador::Retorno(None),
             },
         ];
 
-        builder.record_def(1, 0, 10);
-        builder.record_def(2, 0, 20);
+        builder.registrar_definicion(1, 0, 10);
+        builder.registrar_definicion(2, 0, 20);
 
-        let dt = DominatorTree::compute(&blocks);
-        builder.compute_phi_nodes(&dt, &blocks);
+        let dt = ArbolDominadores::calcular(&bloques);
+        builder.calcular_nodos_phi(&dt, &bloques);
 
         // El φ debe colocarse en el join (bloque 3), con un argumento por
         // predecessor (1 → 10, 2 → 20).
         let phis = builder
-            .phi_nodes
+            .nodos_phi
             .get(&3)
             .expect("debe haber un φ en el join (bloque 3)");
         assert_eq!(phis.len(), 1, "un φ para la variable");
@@ -911,123 +950,126 @@ mod tests {
             2,
             "el φ debe tener 2 argumentos (uno por predecessor)"
         );
-        let mut vals: Vec<ValueId> = phis[0].operandos.iter().map(|&(_, v)| v).collect();
+        let mut vals: Vec<IdValor> = phis[0].operandos.iter().map(|&(_, v)| v).collect();
         vals.sort_unstable();
         assert_eq!(vals, vec![10, 20]);
         assert!(
-            !builder.phi_nodes.contains_key(&0),
+            !builder.nodos_phi.contains_key(&0),
             "el dominador común (bloque 0) no necesita φ"
         );
     }
 
     #[test]
     fn test_ssa_builder_no_phi_en_cadena_lineal() {
-        let mut builder = SsaBuilder::new();
-        builder.mark_phi_variable(0);
+        let mut builder = ConstructorSsa::new();
+        builder.marcar_variable_phi(0);
 
         // Cadena lineal 0 → 1 → 2: el def en 0 domina todo, no hace falta φ.
-        let blocks = vec![
-            BasicBlock {
+        let bloques = vec![
+            BloqueBasico {
                 id: 0,
-                instructions: vec![],
-                terminator: Terminator::Jump(1),
+                instrucciones: vec![],
+                terminador: Terminador::Salto(1),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 1,
-                instructions: vec![],
-                terminator: Terminator::Jump(2),
+                instrucciones: vec![],
+                terminador: Terminador::Salto(2),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 2,
-                instructions: vec![],
-                terminator: Terminator::Return(None),
+                instrucciones: vec![],
+                terminador: Terminador::Retorno(None),
             },
         ];
-        builder.record_def(0, 0, 7);
+        builder.registrar_definicion(0, 0, 7);
 
-        let dt = DominatorTree::compute(&blocks);
-        builder.compute_phi_nodes(&dt, &blocks);
+        let dt = ArbolDominadores::calcular(&bloques);
+        builder.calcular_nodos_phi(&dt, &bloques);
 
-        let total_phis: usize = builder.phi_nodes.values().map(|v| v.len()).sum();
+        let total_phis: usize = builder.nodos_phi.values().map(|v| v.len()).sum();
         assert_eq!(total_phis, 0, "no debe haber φ en una cadena lineal");
     }
 
     #[test]
     fn test_ssa_builder_phi_en_header_de_loop() {
-        let mut builder = SsaBuilder::new();
-        builder.mark_phi_variable(0);
+        let mut builder = ConstructorSsa::new();
+        builder.marcar_variable_phi(0);
 
-        // Loop: 0 → 1 (header) → {2, 3}, 2 → 1 (back edge). La variable se
-        // define en el cuerpo (bloque 2) → el header (bloque 1) necesita φ.
-        let blocks = vec![
-            BasicBlock {
+        // Loop: 0 → 1 (cabecera) → {2, 3}, 2 → 1 (back edge). La variable se
+        // define en el cuerpo (bloque 2) → el cabecera (bloque 1) necesita φ.
+        let bloques = vec![
+            BloqueBasico {
                 id: 0,
-                instructions: vec![],
-                terminator: Terminator::Jump(1),
+                instrucciones: vec![],
+                terminador: Terminador::Salto(1),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 1,
-                instructions: vec![],
-                terminator: Terminator::Branch(0, 2, 3),
+                instrucciones: vec![],
+                terminador: Terminador::Rama(0, 2, 3),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 2,
-                instructions: vec![],
-                terminator: Terminator::Jump(1),
+                instrucciones: vec![],
+                terminador: Terminador::Salto(1),
             },
-            BasicBlock {
+            BloqueBasico {
                 id: 3,
-                instructions: vec![],
-                terminator: Terminator::Return(None),
+                instrucciones: vec![],
+                terminador: Terminador::Retorno(None),
             },
         ];
-        builder.record_def(2, 0, 42);
+        builder.registrar_definicion(2, 0, 42);
 
-        let dt = DominatorTree::compute(&blocks);
-        builder.compute_phi_nodes(&dt, &blocks);
+        let dt = ArbolDominadores::calcular(&bloques);
+        builder.calcular_nodos_phi(&dt, &bloques);
 
         let phis = builder
-            .phi_nodes
+            .nodos_phi
             .get(&1)
-            .expect("el header del loop (bloque 1) debe tener un φ");
-        assert!(!phis.is_empty(), "el φ del header debe tener argumentos");
+            .expect("el cabecera del loop (bloque 1) debe tener un φ");
+        assert!(!phis.is_empty(), "el φ del cabecera debe tener argumentos");
     }
 
     // ─── F11-T6: mem2reg (promoción a SSA) ──────────────────────────────────
 
     /// Compila un programa a IR y devuelve la función pedida (ya promovida).
-    fn ir_de_fuente(fuente: &str) -> crate::ir::IrProgram {
+    fn ir_de_fuente(fuente: &str) -> crate::ir::ProgramaIr {
         let mut lexer = crate::lexer::Lexer::new(fuente);
         let tokens = lexer.tokenize().expect("lexer");
         let programa = crate::parser::Parser::new(tokens).parse().expect("parser");
-        let mut ctor = crate::ir_constructor::IrConstructor::new();
-        let ir = ctor.program_to_ir(&programa);
-        assert!(ctor.soportado, "el programa debe estar cubierto por IR");
+        let mut constructor_ir = crate::ir_constructor::ConstructorDesdeAst::new();
+        let ir = constructor_ir.programa_a_ir(&programa);
+        assert!(
+            constructor_ir.soportado,
+            "el programa debe estar cubierto por IR"
+        );
         ir
     }
 
-    fn funcion<'a>(prog: &'a crate::ir::IrProgram, nombre: &str) -> &'a crate::ir::SsaFunction {
-        prog.functions
+    fn funcion<'a>(prog: &'a crate::ir::ProgramaIr, nombre: &str) -> &'a crate::ir::FuncionSsa {
+        prog.funciones
             .iter()
-            .find(|f| prog.symbols.nombre_de(f.name) == nombre)
+            .find(|f| prog.simbolos.nombre_de(f.nombre) == nombre)
             .unwrap_or_else(|| panic!("no está la función {nombre}"))
     }
 
-    fn contar_phis(f: &crate::ir::SsaFunction) -> usize {
-        f.blocks
+    fn contar_phis(f: &crate::ir::FuncionSsa) -> usize {
+        f.bloques
             .iter()
-            .flat_map(|b| b.instructions.iter())
-            .filter(|i| matches!(i, Inst::Phi(_, _)))
+            .flat_map(|b| b.instrucciones.iter())
+            .filter(|i| matches!(i, Instruccion::Phi(_, _)))
             .count()
     }
 
-    fn contar_memoria(f: &crate::ir::SsaFunction, mem: MemIdx) -> usize {
-        f.blocks
+    fn contar_memoria(f: &crate::ir::FuncionSsa, memoria: IdxMemoria) -> usize {
+        f.bloques
             .iter()
-            .flat_map(|b| b.instructions.iter())
+            .flat_map(|b| b.instrucciones.iter())
             .filter(|i| match i {
-                Inst::Alloca(m) | Inst::Load(m) => *m == mem,
-                Inst::Store(m, _) => *m == mem,
+                Instruccion::Reservar(m) | Instruccion::Cargar(m) => *m == memoria,
+                Instruccion::Guardar(m, _) => *m == memoria,
                 _ => false,
             })
             .count()
@@ -1041,7 +1083,7 @@ mod tests {
 
         assert!(
             contar_phis(&ssa) >= 1,
-            "el acumulador del bucle debe tener un φ en el header"
+            "el acumulador del bucle debe tener un φ en el cabecera"
         );
         assert!(
             contar_memoria(&ssa, crate::ir_constructor::LOCAL_BASE + 1) == 0,
@@ -1067,29 +1109,29 @@ mod tests {
         let ir = ir_de_fuente(fuente);
         let ssa = promover_funcion(funcion(&ir, "suma"));
 
-        let locales: Vec<MemIdx> = ssa
-            .blocks
+        let locales: Vec<IdxMemoria> = ssa
+            .bloques
             .iter()
-            .flat_map(|b| b.instructions.iter())
+            .flat_map(|b| b.instrucciones.iter())
             .filter_map(|i| match i {
-                Inst::Alloca(m) => Some(*m),
+                Instruccion::Reservar(m) => Some(*m),
                 _ => None,
             })
             .collect();
         assert!(locales.is_empty(), "no deben quedar `Alloca` de locales");
-        assert!(contar_phis(&ssa) >= 2, "s e i necesitan φ en el header");
+        assert!(contar_phis(&ssa) >= 2, "s e i necesitan φ en el cabecera");
 
         // Los usos del φ deben estar resueltos: ningún operando apunta a un
         // valor inexistente (el conversor numera posicionalmente).
         let total = ssa
-            .blocks
+            .bloques
             .iter()
-            .flat_map(|b| b.instructions.iter())
+            .flat_map(|b| b.instrucciones.iter())
             .filter(|i| produce_valor(i))
-            .count() as ValueId;
-        let mut usos: Vec<ValueId> = Vec::new();
-        for b in &ssa.blocks {
-            for i in &b.instructions {
+            .count() as IdValor;
+        let mut usos: Vec<IdValor> = Vec::new();
+        for b in &ssa.bloques {
+            for i in &b.instrucciones {
                 let mut copia = i.clone();
                 copia.reasignar_valores(&mut |v| {
                     usos.push(v);
@@ -1120,8 +1162,8 @@ mod tests {
         let ssa = promover_funcion(funcion(&ir, "f"));
         assert_eq!(contar_phis(&ssa), 0);
         assert_eq!(
-            format!("{:?}", ssa.blocks),
-            format!("{:?}", funcion(&ir, "f").blocks),
+            format!("{:?}", ssa.bloques),
+            format!("{:?}", funcion(&ir, "f").bloques),
             "sin variables locales el IR no debe cambiar"
         );
     }
@@ -1133,18 +1175,18 @@ mod tests {
         let ssa = promover_programa(&ir);
         // El closure viaja dentro de `MakeClosure`: debe quedar promovido.
         let mut encontrado = false;
-        for f in &ssa.functions {
-            for b in &f.blocks {
-                for i in &b.instructions {
-                    if let Inst::MakeClosure(closure, _) = i {
+        for f in &ssa.funciones {
+            for b in &f.bloques {
+                for i in &b.instrucciones {
+                    if let Instruccion::CrearClausura(closure, _) = i {
                         encontrado = true;
                         // Los parámetros capturados viven en memoria; las
                         // variables locales del closure deben quedar en SSA.
                         let tiene_alloca = closure
-                            .blocks
+                            .bloques
                             .iter()
-                            .flat_map(|b| b.instructions.iter())
-                            .any(|i| matches!(i, Inst::Alloca(_)));
+                            .flat_map(|b| b.instrucciones.iter())
+                            .any(|i| matches!(i, Instruccion::Reservar(_)));
                         assert!(
                             !tiene_alloca,
                             "el cuerpo del closure debe quedar sin `Alloca`"
