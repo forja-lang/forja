@@ -117,7 +117,7 @@ pub enum CmpOp {
 
 /// Bloque básico del IR
 #[derive(Debug, Clone)]
-pub struct BasicBlock {
+pub struct BloqueBasico {
     pub label: usize,
     pub instructions: Vec<RegInstruction>,
     pub terminator: RegInstruction,
@@ -126,7 +126,7 @@ pub struct BasicBlock {
 /// Programa en IR register-based
 #[derive(Debug, Clone)]
 pub struct RegProgram {
-    pub blocks: Vec<BasicBlock>,
+    pub blocks: Vec<BloqueBasico>,
     pub next_vreg: VirtReg,
 }
 
@@ -392,7 +392,7 @@ mod tests {
     #[test]
     fn test_compute_live_intervals_simple() {
         let mut prog = RegProgram::new();
-        let block = BasicBlock {
+        let block = BloqueBasico {
             label: 0,
             instructions: vec![
                 RegInstruction::LoadImm { dst: 0, value: 5 }, // idx 0: def v0
@@ -425,7 +425,7 @@ mod tests {
     #[test]
     fn test_compute_live_intervals_no_overlap() {
         let mut prog = RegProgram::new();
-        let block = BasicBlock {
+        let block = BloqueBasico {
             label: 0,
             instructions: vec![
                 RegInstruction::LoadImm { dst: 0, value: 1 }, // idx 0
@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn test_reg_program_instruction_count() {
         let mut prog = RegProgram::new();
-        let block = BasicBlock {
+        let block = BloqueBasico {
             label: 0,
             instructions: vec![RegInstruction::Nop, RegInstruction::Nop],
             terminator: RegInstruction::Nop,
