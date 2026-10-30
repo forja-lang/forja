@@ -1,0 +1,87 @@
+=== FORJA DESDE FORJA (Mini-Compilador) ===
+
+Un mini-compilador escrito en Forja que procesa MiniForja.
+
+Código fuente:
+----------------------------------------
+// Mini programa de ejemplo
+escribir(Hola desde MiniForja!)
+variable x = 42
+variable y = 10
+escribir(Fin del programa)
+----------------------------------------
+
+--- Fase: Lexer ---
+  Tokens generados:
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+    [OPERADOR: '==']
+
+--- Fase: Ejecutor ---
+  Ejecutando programa MiniForja...
+
+
+Un compilador real tiene más fases:
+  1. Lexer (tokenización)
+  2. Parser (análisis sintáctico → AST)
+  3. Análisis semántico (tipos, alcance)
+  4. Generación de código (bytecode, máquina)
+  5. Optimización
+
+¡Forja puede compilar su propio código!
