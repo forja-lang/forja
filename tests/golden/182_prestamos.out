@@ -1,0 +1,39 @@
+=== REFERENCIAS Y PRÉSTAMOS ===
+
+Las referencias permiten acceder a datos sin tomar ownership.
+
+=== INVENTARIO ===
+  Producto: Laptop
+    Precio: $1200
+    Stock: 5 unidades
+  Producto: Mouse
+    Precio: $25
+    Stock: 50 unidades
+  Producto: Teclado
+    Precio: $80
+    Stock: 30 unidades
+
+Valor total del inventario: $9650
+
+--- Préstamo mutable (podemos modificar) ---
+  Aplicando descuento del 10%...
+
+--- Inventario después del descuento ---
+=== INVENTARIO ===
+  Producto: Laptop
+    Precio: $1080
+    Stock: 5 unidades
+  Producto: Mouse
+    Precio: $23
+    Stock: 50 unidades
+  Producto: Teclado
+    Precio: $72
+    Stock: 30 unidades
+
+Nuevo valor total: $8710
+
+Conceptos clave:
+  • & (préstamo): acceso temporal sin transferir ownership
+  • Múltiples préstamos de solo lectura son posibles
+  • El prestador original mantiene el ownership
+  • Evita copias innecesarias de datos grandes
