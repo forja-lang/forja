@@ -12,7 +12,7 @@ use super::*;
 /// tipo `bytecode::Opcode` coincida con el que consume la VM (válido tanto
 /// en la lib como en el binario, que declara sus propios módulos).
 fn compilar_programa(source: &str) -> Vec<bytecode::Opcode> {
-    use bytecode::BytecodeGenerator;
+    use bytecode::GeneradorBytecode;
 
     let mut lexer = crate::lexer::Lexer::new(source);
     let tokens = lexer.tokenize().expect("el programa debe tokenizar");
@@ -26,7 +26,7 @@ fn compilar_programa(source: &str) -> Vec<bytecode::Opcode> {
     let tipos_inferidos = type_checker.obtener_tipos_inferidos();
     let funciones_overload = type_checker.obtener_funciones();
 
-    let mut gen = BytecodeGenerator::new();
+    let mut gen = GeneradorBytecode::new();
     gen.set_tipos_inferidos(tipos_inferidos);
     gen.set_funciones_overload(funciones_overload);
     let bytecode = gen
