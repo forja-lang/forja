@@ -1,4 +1,4 @@
-use forja::bytecode::{deserializar_bytecode, serializar_bytecode, BytecodeGenerator, Opcode};
+use forja::bytecode::{deserializar_bytecode, serializar_bytecode, GeneradorBytecode, Opcode};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
 use forja::token::TokenKind;
@@ -203,134 +203,134 @@ fn test_expr_error_type() {
 
 #[test]
 fn test_opc_serialize_check_tag() {
-    let opcodes = vec![Opcode::CheckTag(5)];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::VerificarEtiqueta(5)];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::CheckTag(5));
+    assert_eq!(d[0], Opcode::VerificarEtiqueta(5));
 }
 
 #[test]
 fn test_opc_serialize_extract_field() {
-    let opcodes = vec![Opcode::ExtractField(3)];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::ExtraerCampo(3)];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::ExtractField(3));
+    assert_eq!(d[0], Opcode::ExtraerCampo(3));
 }
 
 #[test]
 fn test_opc_serialize_label() {
-    let opcodes = vec![Opcode::Label(999)];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::Etiqueta(999)];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::Label(999));
+    assert_eq!(d[0], Opcode::Etiqueta(999));
 }
 
 #[test]
 fn test_opc_serialize_function_def() {
-    let opcodes = vec![Opcode::FunctionDef(
+    let codigos = vec![Opcode::DefinirFuncion(
         Arc::from("test"),
         vec![Arc::from("a"), Arc::from("b")],
     )];
-    let s = serializar_bytecode(&opcodes);
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
     assert_eq!(
         d[0],
-        Opcode::FunctionDef(Arc::from("test"), vec![Arc::from("a"), Arc::from("b")])
+        Opcode::DefinirFuncion(Arc::from("test"), vec![Arc::from("a"), Arc::from("b")])
     );
 }
 
 #[test]
 fn test_opc_serialize_new_object() {
-    let opcodes = vec![Opcode::NewObject(Arc::from("Punto"))];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::NuevoObjeto(Arc::from("Punto"))];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::NewObject(Arc::from("Punto")));
+    assert_eq!(d[0], Opcode::NuevoObjeto(Arc::from("Punto")));
 }
 
 #[test]
 fn test_opc_serialize_set_field() {
-    let opcodes = vec![Opcode::SetField(Arc::from("x"))];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::FijarCampo(Arc::from("x"))];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::SetField(Arc::from("x")));
+    assert_eq!(d[0], Opcode::FijarCampo(Arc::from("x")));
 }
 
 #[test]
 fn test_opc_serialize_get_field() {
-    let opcodes = vec![Opcode::GetField(Arc::from("nombre"))];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::ObtenerCampo(Arc::from("nombre"))];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::GetField(Arc::from("nombre")));
+    assert_eq!(d[0], Opcode::ObtenerCampo(Arc::from("nombre")));
 }
 
 #[test]
 fn test_opc_serialize_call_method() {
-    let opcodes = vec![Opcode::CallMethod(Arc::from("saludar"), 1)];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::LlamarMetodo(Arc::from("saludar"), 1)];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::CallMethod(Arc::from("saludar"), 1));
+    assert_eq!(d[0], Opcode::LlamarMetodo(Arc::from("saludar"), 1));
 }
 
 #[test]
 fn test_opc_serialize_try() {
-    let opcodes = vec![Opcode::Try];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::Intentar];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::Try);
+    assert_eq!(d[0], Opcode::Intentar);
 }
 
 #[test]
 fn test_opc_serialize_channel_new() {
-    let opcodes = vec![Opcode::ChannelNew];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::NuevoCanal];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::ChannelNew);
+    assert_eq!(d[0], Opcode::NuevoCanal);
 }
 
 #[test]
 fn test_opc_serialize_thread_spawn() {
     // ThreadSpawn serialization may not support round-trip yet
-    let ops = vec![Opcode::ThreadSpawn(Arc::from("f"), 2)];
+    let ops = vec![Opcode::CrearHilo(Arc::from("f"), 2)];
     let s = serializar_bytecode(&ops);
     assert!(s.len() > 4);
 }
 
 #[test]
 fn test_opc_serialize_array_len() {
-    let opcodes = vec![Opcode::ArrayLen];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::LongitudArreglo];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::ArrayLen);
+    assert_eq!(d[0], Opcode::LongitudArreglo);
 }
 
 #[test]
 fn test_opc_serialize_parse_int() {
-    let opcodes = vec![Opcode::ParseInt];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::ParsearEntero];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::ParseInt);
+    assert_eq!(d[0], Opcode::ParsearEntero);
 }
 
 #[test]
 fn test_opc_serialize_read_line() {
-    let opcodes = vec![Opcode::ReadLine];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::LeerLinea];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::ReadLine);
+    assert_eq!(d[0], Opcode::LeerLinea);
 }
 
 #[test]
 fn test_opc_serialize_tiempo_actual() {
-    let opcodes = vec![Opcode::TiempoActual];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::TiempoActual];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
     assert_eq!(d[0], Opcode::TiempoActual);
 }
 
 #[test]
 fn test_opc_serialize_y() {
-    let opcodes = vec![Opcode::Y, Opcode::O, Opcode::No];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::Y, Opcode::O, Opcode::No];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
     assert_eq!(d[0], Opcode::Y);
     assert_eq!(d[1], Opcode::O);
@@ -339,8 +339,8 @@ fn test_opc_serialize_y() {
 
 #[test]
 fn test_opc_serialize_diferente_menor_igual() {
-    let opcodes = vec![Opcode::Diferente, Opcode::MenorIgual, Opcode::MayorIgual];
-    let s = serializar_bytecode(&opcodes);
+    let codigos = vec![Opcode::Diferente, Opcode::MenorIgual, Opcode::MayorIgual];
+    let s = serializar_bytecode(&codigos);
     let d = deserializar_bytecode(&s).unwrap();
     assert_eq!(d[0], Opcode::Diferente);
     assert_eq!(d[1], Opcode::MenorIgual);
@@ -351,13 +351,13 @@ fn test_opc_serialize_diferente_menor_igual() {
 fn test_opc_serialize_exacto() {
     let ops = vec![
         Opcode::PushExacto(123, 2),
-        Opcode::AddExact,
-        Opcode::SubExact,
-        Opcode::MulExact,
-        Opcode::DivExact,
-        Opcode::IgualExact,
-        Opcode::MenorExact,
-        Opcode::MayorExact,
+        Opcode::SumarExacto,
+        Opcode::RestarExacto,
+        Opcode::MultiplicarExacto,
+        Opcode::DividirExacto,
+        Opcode::IgualExacto,
+        Opcode::MenorExacto,
+        Opcode::MayorExacto,
         Opcode::EnteroAExacto,
         Opcode::DecimalAExacto,
     ];
@@ -365,17 +365,17 @@ fn test_opc_serialize_exacto() {
     let d = deserializar_bytecode(&s).unwrap();
     assert_eq!(d.len(), ops.len());
     assert_eq!(d[0], Opcode::PushExacto(123, 2));
-    assert_eq!(d[5], Opcode::IgualExact);
+    assert_eq!(d[5], Opcode::IgualExacto);
 }
 
 #[test]
 fn test_opc_serialize_float_comparisons() {
     let ops = vec![
-        Opcode::IgualFloat,
-        Opcode::DiferenteFloat,
-        Opcode::MayorFloat,
-        Opcode::MayorIgualFloat,
-        Opcode::MenorIgualFloat,
+        Opcode::IgualDecimal,
+        Opcode::DistintoDecimal,
+        Opcode::MayorDecimal,
+        Opcode::MayorIgualDecimal,
+        Opcode::MenorIgualDecimal,
     ];
     let s = serializar_bytecode(&ops);
     let d = deserializar_bytecode(&s).unwrap();
@@ -385,10 +385,10 @@ fn test_opc_serialize_float_comparisons() {
 #[test]
 fn test_opc_serialize_contract() {
     let ops = vec![
-        Opcode::CheckPre(0),
-        Opcode::CheckPost(1),
-        Opcode::SaveAnterior(2),
-        Opcode::CheckInv(3),
+        Opcode::VerificarPrecondicion(0),
+        Opcode::VerificarPostcondicion(1),
+        Opcode::GuardarAnterior(2),
+        Opcode::VerificarInvariante(3),
     ];
     let s = serializar_bytecode(&ops);
     let d = deserializar_bytecode(&s).unwrap();
@@ -397,56 +397,56 @@ fn test_opc_serialize_contract() {
 
 #[test]
 fn test_opc_serialize_set_line() {
-    let ops = vec![Opcode::SetLine(42)];
+    let ops = vec![Opcode::FijarLinea(42)];
     let s = serializar_bytecode(&ops);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::SetLine(42));
+    assert_eq!(d[0], Opcode::FijarLinea(42));
 }
 
 #[test]
 fn test_opc_serialize_store_entero_op() {
-    let ops = vec![Opcode::StoreEnteroOp(5, 100)];
+    let ops = vec![Opcode::GuardarOperacionEntero(5, 100)];
     let s = serializar_bytecode(&ops);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::StoreEnteroOp(5, 100));
+    assert_eq!(d[0], Opcode::GuardarOperacionEntero(5, 100));
 }
 
 #[test]
 fn test_opc_serialize_declare_float_op() {
-    let ops = vec![Opcode::DeclareFloatOp(3, 2.5)];
+    let ops = vec![Opcode::DeclararOperacionDecimal(3, 2.5)];
     let s = serializar_bytecode(&ops);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::DeclareFloatOp(3, 2.5));
+    assert_eq!(d[0], Opcode::DeclararOperacionDecimal(3, 2.5));
 }
 
 #[test]
 fn test_opc_serialize_store_float_op() {
-    let ops = vec![Opcode::StoreFloatOp(7, 1.5)];
+    let ops = vec![Opcode::GuardarOperacionDecimal(7, 1.5)];
     let s = serializar_bytecode(&ops);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::StoreFloatOp(7, 1.5));
+    assert_eq!(d[0], Opcode::GuardarOperacionDecimal(7, 1.5));
 }
 
 #[test]
 fn test_opc_serialize_call_native_roundtrip() {
-    let ops = vec![Opcode::CallNative(Arc::from("printf"), 2)];
+    let ops = vec![Opcode::LlamarNativa(Arc::from("printf"), 2)];
     let s = serializar_bytecode(&ops);
     assert!(s.len() > 4);
 }
 
 #[test]
 fn test_opc_serialize_socket_poll() {
-    let ops = vec![Opcode::SocketPoll(Arc::from("conn"))];
+    let ops = vec![Opcode::ConsultarSocket(Arc::from("conn"))];
     let s = serializar_bytecode(&ops);
     assert!(s.len() > 4);
 }
 
 #[test]
 fn test_opc_serialize_declare_exact_op() {
-    let ops = vec![Opcode::DeclareExactOp(0, 12345, 3)];
+    let ops = vec![Opcode::DeclararOperacionExacto(0, 12345, 3)];
     let s = serializar_bytecode(&ops);
     let d = deserializar_bytecode(&s).unwrap();
-    assert_eq!(d[0], Opcode::DeclareExactOp(0, 12345, 3));
+    assert_eq!(d[0], Opcode::DeclararOperacionExacto(0, 12345, 3));
 }
 
 // ============================================================
@@ -455,67 +455,67 @@ fn test_opc_serialize_declare_exact_op() {
 
 #[test]
 fn test_uop_expand_load_idx() {
-    let uops = expandir_a_uops(&[Opcode::LoadIdx(42)]);
+    let uops = expandir_a_uops(&[Opcode::CargarIndice(42)]);
     assert_eq!(uops[0], Uop::LoadIdx(42));
 }
 
 #[test]
 fn test_uop_expand_store_idx() {
-    let uops = expandir_a_uops(&[Opcode::StoreIdx(99)]);
+    let uops = expandir_a_uops(&[Opcode::GuardarIndice(99)]);
     assert_eq!(uops[0], Uop::StoreIdx(99));
 }
 
 #[test]
 fn test_uop_expand_try() {
-    let uops = expandir_a_uops(&[Opcode::Try]);
+    let uops = expandir_a_uops(&[Opcode::Intentar]);
     assert_eq!(uops[0], Uop::Try);
 }
 
 #[test]
 fn test_uop_expand_label() {
-    let uops = expandir_a_uops(&[Opcode::Label(7)]);
+    let uops = expandir_a_uops(&[Opcode::Etiqueta(7)]);
     assert_eq!(uops[0], Uop::Label(7));
 }
 
 #[test]
 fn test_uop_expand_function_def() {
-    let uops = expandir_a_uops(&[Opcode::FunctionDef(Arc::from("f"), vec![])]);
+    let uops = expandir_a_uops(&[Opcode::DefinirFuncion(Arc::from("f"), vec![])]);
     assert_eq!(uops.len(), 1);
 }
 
 #[test]
 fn test_uop_expand_new_object() {
-    let uops = expandir_a_uops(&[Opcode::NewObject(Arc::from("Punto"))]);
+    let uops = expandir_a_uops(&[Opcode::NuevoObjeto(Arc::from("Punto"))]);
     assert_eq!(uops[0], Uop::NewObject("Punto".to_string()));
 }
 
 #[test]
 fn test_uop_expand_set_field() {
-    let uops = expandir_a_uops(&[Opcode::SetField(Arc::from("x"))]);
+    let uops = expandir_a_uops(&[Opcode::FijarCampo(Arc::from("x"))]);
     assert_eq!(uops[0], Uop::SetField("x".to_string()));
 }
 
 #[test]
 fn test_uop_expand_get_field() {
-    let uops = expandir_a_uops(&[Opcode::GetField(Arc::from("nombre"))]);
+    let uops = expandir_a_uops(&[Opcode::ObtenerCampo(Arc::from("nombre"))]);
     assert_eq!(uops[0], Uop::GetField("nombre".to_string()));
 }
 
 #[test]
 fn test_uop_expand_call_method() {
-    let uops = expandir_a_uops(&[Opcode::CallMethod(Arc::from("saludar"), 1)]);
+    let uops = expandir_a_uops(&[Opcode::LlamarMetodo(Arc::from("saludar"), 1)]);
     assert_eq!(uops[0], Uop::CallMethod("saludar".to_string(), 1));
 }
 
 #[test]
 fn test_uop_expand_array_len() {
-    let uops = expandir_a_uops(&[Opcode::ArrayLen]);
+    let uops = expandir_a_uops(&[Opcode::LongitudArreglo]);
     assert_eq!(uops[0], Uop::ArrayLen);
 }
 
 #[test]
 fn test_uop_expand_parse_int() {
-    let uops = expandir_a_uops(&[Opcode::ParseInt]);
+    let uops = expandir_a_uops(&[Opcode::ParsearEntero]);
     assert_eq!(uops[0], Uop::ParseInt);
 }
 
@@ -527,13 +527,13 @@ fn test_uop_expand_tiempo_actual() {
 
 #[test]
 fn test_uop_expand_read_line() {
-    let uops = expandir_a_uops(&[Opcode::ReadLine]);
+    let uops = expandir_a_uops(&[Opcode::LeerLinea]);
     assert_eq!(uops[0], Uop::ReadLine);
 }
 
 #[test]
 fn test_uop_expand_channel_new() {
-    let uops = expandir_a_uops(&[Opcode::ChannelNew]);
+    let uops = expandir_a_uops(&[Opcode::NuevoCanal]);
     // ChannelNew expands to some sequence of uops
     assert!(!uops.is_empty());
 }
@@ -566,13 +566,13 @@ fn test_uop_expand_mayor_igual() {
 
 #[test]
 fn test_uop_expand_poll() {
-    let uops = expandir_a_uops(&[Opcode::SocketPoll(Arc::from("s"))]);
+    let uops = expandir_a_uops(&[Opcode::ConsultarSocket(Arc::from("s"))]);
     assert_eq!(uops[0], Uop::SocketPoll(Arc::from("s")));
 }
 
 #[test]
 fn test_uop_expand_call_native() {
-    let uops = expandir_a_uops(&[Opcode::CallNative(Arc::from("printf"), 1)]);
+    let uops = expandir_a_uops(&[Opcode::LlamarNativa(Arc::from("printf"), 1)]);
     assert_eq!(uops[0], Uop::CallNative(Arc::from("printf"), 1));
 }
 
@@ -584,7 +584,7 @@ fn test_uop_expand_exacto() {
 
 #[test]
 fn test_uop_expand_add_exact() {
-    let uops = expandir_a_uops(&[Opcode::AddExact]);
+    let uops = expandir_a_uops(&[Opcode::SumarExacto]);
     assert_eq!(uops[0], Uop::AddExact);
 }
 
@@ -602,31 +602,31 @@ fn test_uop_expand_decimal_a_exacto() {
 
 #[test]
 fn test_uop_expand_contract_check_pre() {
-    let uops = expandir_a_uops(&[Opcode::CheckPre(0)]);
+    let uops = expandir_a_uops(&[Opcode::VerificarPrecondicion(0)]);
     assert!(!uops.is_empty());
 }
 
 #[test]
 fn test_uop_expand_contract_check_post() {
-    let uops = expandir_a_uops(&[Opcode::CheckPost(1)]);
+    let uops = expandir_a_uops(&[Opcode::VerificarPostcondicion(1)]);
     assert!(!uops.is_empty());
 }
 
 #[test]
 fn test_uop_expand_contract_save_anterior() {
-    let uops = expandir_a_uops(&[Opcode::SaveAnterior(2)]);
+    let uops = expandir_a_uops(&[Opcode::GuardarAnterior(2)]);
     assert!(!uops.is_empty());
 }
 
 #[test]
 fn test_uop_expand_contract_check_inv() {
-    let uops = expandir_a_uops(&[Opcode::CheckInv(3)]);
+    let uops = expandir_a_uops(&[Opcode::VerificarInvariante(3)]);
     assert!(!uops.is_empty());
 }
 
 #[test]
 fn test_uop_expand_set_line() {
-    let uops = expandir_a_uops(&[Opcode::SetLine(10)]);
+    let uops = expandir_a_uops(&[Opcode::FijarLinea(10)]);
     assert!(!uops.is_empty());
 }
 
@@ -640,8 +640,8 @@ fn test_e2e_bytecode_gen_ok() {
     let tokens = lex.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let prog = parser.parse().unwrap();
-    let mut gen = BytecodeGenerator::new();
+    let mut gen = GeneradorBytecode::new();
     let bc = gen.generar(&prog).unwrap();
     assert!(bc.len() > 2);
-    assert!(bc.contains(&Opcode::Halt));
+    assert!(bc.contains(&Opcode::Detener));
 }
