@@ -1,0 +1,8 @@
+=== Match básico sobre enum ===
+
+Dirección: Hacia el norte 🧭
+Dirección: Hacia el sur 🧭
+Dirección: Hacia el este 🧭
+Dirección: Hacia el oeste 🧭
+
+Match permite ejecutar código diferente según la variante.
