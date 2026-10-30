@@ -1,45 +1,60 @@
 [submodule "vscode"]
 	path = vscode
 	url = https://github.com/forja-lang/vscode.git
+	branch = main
 [submodule "ejemplos"]
 	path = ejemplos
 	url = https://github.com/forja-lang/ejemplos.git
+	branch = main
 [submodule "benchmarks"]
 	path = benchmarks
 	url = https://github.com/forja-lang/benchmarks.git
+	branch = main
 [submodule "docs"]
 	path = docs
 	url = https://github.com/forja-lang/docs.git
+	branch = main
 [submodule "crates/forja-gui-rt"]
 	path = crates/forja-gui-rt
 	url = https://github.com/forja-lang/forja-gui-rt.git
+	branch = main
 [submodule "crates/forja-wasm"]
 	path = crates/forja-wasm
 	url = https://github.com/forja-lang/forja-wasm.git
+	branch = main
 [submodule "stdlib/std"]
 	path = stdlib/std
 	url = https://github.com/forja-lang/forja-stdlib-std.git
+	branch = main
 [submodule "stdlib/gui"]
 	path = stdlib/gui
 	url = https://github.com/forja-lang/forja-stdlib-gui.git
+	branch = main
 [submodule "crates/forja-rt"]
 	path = crates/forja-rt
 	url = https://github.com/forja-lang/forja-rt.git
+	branch = main
 [submodule "crates/forja-android-rt"]
 	path = crates/forja-android-rt
 	url = https://github.com/forja-lang/forja-android-rt.git
+	branch = main
 [submodule "crates/forja-wasm-gui"]
 	path = crates/forja-wasm-gui
 	url = https://github.com/forja-lang/forja-wasm-gui.git
+	branch = main
 [submodule "crates/forja-syntax"]
 	path = crates/forja-syntax
 	url = https://github.com/forja-lang/forja-syntax.git
+	branch = main
 [submodule "crates/forja-types"]
 	path = crates/forja-types
 	url = https://github.com/forja-lang/forja-types.git
+	branch = main
 [submodule "crates/forja-theme"]
 	path = crates/forja-theme
 	url = https://github.com/forja-lang/forja-theme.git
+	branch = main
 [submodule "crates/forja-gui-core"]
 	path = crates/forja-gui-core
 	url = https://github.com/forja-lang/forja-gui-core.git
+	branch = main
