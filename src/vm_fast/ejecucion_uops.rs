@@ -227,6 +227,12 @@ impl ForjaFast {
                         self.push_valor(ValorFast::flotante(a.a_entero() as f64 + b.a_flotante()));
                     } else if a.es_flotante() && b.es_entero() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_entero() as f64));
+                    } else if a.es_arreglo() && b.es_arreglo() {
+                        // F12-T3: `+` entre arreglos concatena (ver `ejecucion.rs`).
+                        let mut nuevo = self.get_arr(a.indice_arreglo()).clone();
+                        nuevo.extend_from_slice(self.get_arr(b.indice_arreglo()));
+                        let idx = self.alloc_arr(nuevo);
+                        self.push_valor(ValorFast::arreglo(idx));
                     } else if a.es_texto() {
                         let s = format!(
                             "{}{}",

@@ -279,6 +279,15 @@ impl ForjaFast {
                         let r = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
                         let v = self.exacto_valor(r, escala);
                         self.push_valor(v);
+                    } else if a.es_arreglo() && b.es_arreglo() {
+                        // F12-T3: `+` entre arreglos **concatena** (los ejemplos
+                        // del curso lo usan: `self.elementos = [valor] +
+                        // self.elementos`). Antes caía en el caso de texto y
+                        // devolvía la concatenación de sus representaciones.
+                        let mut nuevo = self.get_arr(a.indice_arreglo()).clone();
+                        nuevo.extend_from_slice(self.get_arr(b.indice_arreglo()));
+                        let idx = self.alloc_arr(nuevo);
+                        self.push_valor(ValorFast::arreglo(idx));
                     } else if a.es_texto() {
                         let s = format!(
                             "{}{}",

@@ -22,7 +22,7 @@
 |------|--------|
 | F11 (T1–T6) | HECHO |
 | F12-T1, F12-T2 | HECHO |
-| F12-T3 corpus ejecutable | EN-CURSO (246/260 compilan; 197/260 corren) |
+| F12-T3 corpus ejecutable | EN-CURSO (246/260 compilan; 209/260 corren) |
 | F12-T5 hilo no unido / rx en hijo | HECHO |
 | F12-T4 registry de producción | ABIERTO |
 | F13 (T1–T4) | BLOQUEADO-EXTERNO |
@@ -274,17 +274,30 @@ Hecho además:
 - `135` ya no diverge AST/IR; sólo queda `167` (bug del backend AST con la raíz
   de Newton en decimales).
 
-**Corpus ejecutable (medido con la VM, 10 s por ejemplo):** 197 corren con
-salida, 30 compilan pero no imprimen nada (GUI, red, stdin), 14 no compilan y 19
-fallan en runtime:
-- **6 necesitan stdin** (`leer()`): 151, 152, 154, 155, 159, 189 — el scanner no
-  puede alimentarlos, no son fallos del lenguaje.
-- **8 llaman funciones que no existen** en la stdlib ni en la VM: `mayuscula`
-  (153), `truncar` (169), `init` (199), `socket_tcp_conectar` (200_socket),
-  `stringificar` (209), `aleatorio.semilla` (213), `get` (218), `exacto_pow`
-  (400_exacto*).
-- **5 se cuelgan**: 103, 148, 160, 197 y `185_ffi_matematicas` (este último tiene
-  el mismo daño del formateador: `anon(...)` + líneas `1`/`""`).
+**Corpus ejecutable (medido con la VM, 10 s por ejemplo):** 209 corren con
+salida, 30 compilan pero no imprimen nada (GUI, red, stdin), 14 no compilan y 7
+son interactivos (`pedir_texto`/`leer` en bucle: 151, 152, 154, 155, 159, 160,
+189) — en un runner sin stdin agotan el límite de instrucciones, no es un fallo
+del lenguaje.
+
+Corregido en esta pasada (lenguaje y stdlib):
+- **`+` entre arreglos concatena** (antes caía en el caso de texto y devolvía
+  `"[1][2]"`): rompía pilas, colas y listas de adyacencia.
+- **`m[i][j] = valor`**: el parser perdía el primer índice en `campo[i][j] = v` y
+  descartaba la asignación en `m[i][j] = v`; las matrices 2D nunca se llenaban.
+- **`x[i].metodo(args)`**: el receptor se conserva como expresión
+  (`LlamadaMetodo`) en vez de un nombre punteado irresoluble.
+- **`modulo.funcion(...)` como sentencia** pierde el prefijo al inlinearse
+  (`aleatorio.semilla`).
+- stdlib: `std/json` llamaba a `stringificar` en vez de la nativa
+  `_json_stringificar`; `std/cliente_http` usaba `buscar` en vez de `indice_de`;
+  `std/matematica` gana `truncar`.
+- Ejemplos: `imprimir`/`a_numero`/`tiempo_actual`/`pedir_numero` por IR,
+  `max`/`min`/`abs` → `maximo`/`minimo`/`absoluto`, `exacto_pow` →
+  `exacto_potencia`, `get` → `obtener`, API de sockets, `escribir(x, falso)` →
+  `escribir(x)` (19 sitios), `144_cola` sin rebanadas, `148`/`147` con los bucles
+  que el formateador había dejado como `k`/`1`, y `185_ffi_matematicas`
+  reescrito.
 
 Se corrigieron en esta pasada: `imprimir`/`a_numero`/`tiempo_actual`/
 `pedir_numero` en el IR (antes sólo los conocía el backend AST, 20 ejemplos

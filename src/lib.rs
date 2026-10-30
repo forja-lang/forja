@@ -604,8 +604,13 @@ fn reescribir_llamadas_de_modulo(
                 expr(si_verdadero, alias);
                 expr(si_falso, alias);
             }
-            Expresion::LlamadaFuncion { argumentos, .. }
-            | Expresion::Instanciacion { argumentos, .. } => {
+            Expresion::LlamadaFuncion { nombre, argumentos } => {
+                sin_prefijo_de_modulo(nombre, alias);
+                for arg in argumentos.iter_mut() {
+                    expr(arg, alias);
+                }
+            }
+            Expresion::Instanciacion { argumentos, .. } => {
                 for arg in argumentos.iter_mut() {
                     expr(arg, alias);
                 }
@@ -669,6 +674,17 @@ fn reescribir_llamadas_de_modulo(
                 expr(valor, alias);
             }
             _ => {}
+        }
+    }
+
+    /// `modulo.funcion` como sentencia llega con el nombre punteado (no como
+    /// `LlamadaMetodo`): sin quitar el prefijo, el inlineado deja
+    /// `aleatorio.semilla(...)` y el runtime no encuentra la función.
+    fn sin_prefijo_de_modulo(nombre: &mut String, alias: &std::collections::HashSet<String>) {
+        if let Some((prefijo, resto)) = nombre.split_once('.') {
+            if alias.contains(prefijo) {
+                *nombre = resto.to_string();
+            }
         }
     }
 
@@ -769,7 +785,8 @@ fn reescribir_llamadas_de_modulo(
                     decl(d, alias);
                 }
             }
-            Declaracion::LlamadaFuncion { argumentos, .. } => {
+            Declaracion::LlamadaFuncion { nombre, argumentos } => {
+                sin_prefijo_de_modulo(nombre, alias);
                 for arg in argumentos.iter_mut() {
                     expr(arg, alias);
                 }

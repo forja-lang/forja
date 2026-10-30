@@ -1,4 +1,4 @@
-﻿// Quickening e inferencia de tipos de la VM canónica `ForjaFast` (F1-T7).
+// Quickening e inferencia de tipos de la VM canónica `ForjaFast` (F1-T7).
 // Extraído de `mod.rs` para mantener archivos por debajo de ~1500 líneas.
 
 use super::*;
@@ -61,7 +61,13 @@ impl ForjaFast {
                 // siguiente. Sin este reset, `LoadIdx(4)` de un método podía
                 // especializarse con el tipo que el slot 4 tenía en otra
                 // función (p. ej. un `self` objeto leído como entero).
-                Opcode::FunctionDef(_, _) => tipos_var.fill(None),
+                Opcode::FunctionDef(_, _) => {
+                    tipos_var.fill(None);
+                    // Los índices de `DeclareIdxGlobal` son del ámbito principal.
+                    // Los slots locales de cada función se renumeran desde 0 y no
+                    // tienen relación con ellos.
+                    global_indices.clear();
+                }
 
                 // ── Asignaciones literales: inferir tipo exacto ─────────────
                 // NOTA: Los opcodes fusionados (DeclareEnteroOp, etc.) solo se
@@ -184,6 +190,33 @@ impl ForjaFast {
                         };
                         if let Some(tipo) = prev_tipo {
                             tipos_var[idx] = Some(tipo);
+                        }
+                    }
+                }
+
+                // ── LoadStoreIdx → propagar el tipo al destino ──
+                // Es `LoadIdx(src); StoreIdx(dst)`. Sin esto, una copia de una
+                // variable entera dejaba `tipos_var[dst]` en desconocido y el
+                // `Add`/`Menor` posterior no se especializaba (hot loop ~20 %
+                // más lento).
+                Opcode::LoadStoreIdx(src, dst) => {
+                    if dst < tipos_var.len() {
+                        if let Some(tipo) = tipos_var[src] {
+                            tipos_var[dst] = Some(tipo);
+                        }
+                    }
+                }
+
+                // ── Add → AddInt/AddFloat ──
+                // La fusión `LoadIdx + Add + StoreIdx` → `StrAppend` se quitó
+                // por un bug de correctitud, pero la especialización de `Add`
+                // sigue siendo necesaria: en fast-math el runtime no la hace.
+                Opcode::Add => {
+                    if let Some((t1, t2)) = self.inferir_tipos_binarios(i, &tipos_var) {
+                        if t1 == TipoInferido::Entero && t2 == TipoInferido::Entero {
+                            self.bytecode[i] = Opcode::AddInt;
+                        } else if t1 == TipoInferido::Flotante && t2 == TipoInferido::Flotante {
+                            self.bytecode[i] = Opcode::AddFloat;
                         }
                     }
                 }
