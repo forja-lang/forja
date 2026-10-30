@@ -1,0 +1,42 @@
+=== PATRÓN VISITOR ===
+Operaciones separadas de la estructura de datos.
+
+--- Visitante 1: Descripción ---
+  ⭕ Círculo (radio=5)
+  📐 Rectángulo (4×6)
+  🔺 Triángulo (base=3, altura=8)
+  ⭕ Círculo (radio=10)
+  📐 Rectángulo (7×3)
+
+--- Visitante 2: Área ---
+  Área 01: 75
+  Área 11: 24
+  Área 21: 12
+  Área 31: 300
+  Área 41: 21
+  Área total: 432
+
+--- Visitante 3: Perímetro ---
+  Perímetro 01: 30
+  Perímetro 11: 20
+  Perímetro 21: 19
+  Perímetro 31: 60
+  Perímetro 41: 20
+  Perímetro total: 149
+
+--- Visitante 4: Escalar (×2) ---
+  ⭕ Círculo (radio=5) → ⭕ Círculo (radio=10)
+  📐 Rectángulo (4×6) → 📐 Rectángulo (8×12)
+  🔺 Triángulo (base=3, altura=8) → 🔺 Triángulo (base=6, altura=16)
+  ⭕ Círculo (radio=10) → ⭕ Círculo (radio=20)
+  📐 Rectángulo (7×3) → 📐 Rectángulo (14×6)
+
+--- Visitante 5: JSON ---
+  {"tipo": "circulo", "radio": ${r}}
+  {"tipo": "rectangulo", "base": ${b}, "altura": ${h}}
+  {"tipo": "triangulo", "base": ${b}, "altura": ${h}}
+  {"tipo": "circulo", "radio": ${r}}
+  {"tipo": "rectangulo", "base": ${b}, "altura": ${h}}
+
+Con `match` podemos añadir nuevas operaciones (visitantes)
+sin modificar las variantes originales del tipo.
