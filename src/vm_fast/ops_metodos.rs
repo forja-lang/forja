@@ -24,7 +24,7 @@ impl ForjaFast {
     #[inline]
     pub(crate) fn ejecutar_ops_metodos(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
-            Opcode::CallMethod(m, nargs) => {
+            Opcode::LlamarMetodo(m, nargs) => {
                 // Un método de usuario puede llamarse como un builtin
                 // (`c.obtener()` vs `arreglo.obtener(i)`). Los builtins no
                 // reciben el receptor como el resto de la pila, así que despachar
@@ -241,7 +241,7 @@ impl ForjaFast {
             }
 
             // ─── CALLMETHODCACHED (Fase 2b) — método con IdSimbolo e inline cache ───
-            Opcode::CallMethodCached(method_sym_id, nargs) => {
+            Opcode::LlamarMetodoCacheado(method_sym_id, nargs) => {
                 // Primero verificar si es un builtin (split, length, etc.), pero
                 // sólo si el receptor no es un objeto: si lo es, el nombre puede
                 // ser un método de usuario (`c.obtener()`) y los builtins
