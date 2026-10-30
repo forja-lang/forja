@@ -59,22 +59,39 @@ impl ForjaFast {
                 None => unsafe { &*self.bytecode.as_ptr().add(ip) },
             };
 
-            // Ramas autocontenidas (superinstrucciones float, stack bypass, fused ops,
-            // comparaciones y operadores lógicos) delegadas a `ops_float.rs` (F1-T7).
-            if self.ejecutar_ops_float(op)? {
-                continue;
-            }
-
-            // Ramas autocontenidas de operaciones Exacto (BigDecimal) delegadas a
-            // `ops_exacto.rs` (F1-T7).
-            if self.ejecutar_ops_exacto(op)? {
-                continue;
-            }
-
-            // Ramas autocontenidas de superinstrucciones fusionadas, comparaciones
-            // float, XorSign y pattern matching delegadas a `ops_fusionadas.rs` (F1-T7).
-            if self.ejecutar_ops_fusionadas(op)? {
-                continue;
+            // Fast path de control de flujo: `Jump`/`JumpSiFalso`/`Label` son
+            // las instrucciones más frecuentes de un loop y ningún helper las
+            // maneja; sin esto pagan los 11 `match` de la cadena de despacho.
+            match op {
+                Opcode::Jump(target) => {
+                    // PGO: un salto hacia atrás es un back-edge de loop
+                    if *target < ip {
+                        if let Some(p) = self.perfil_pgo.as_mut() {
+                            p.record_loop(&ip.to_string(), 1);
+                        }
+                    }
+                    self.ip = *target;
+                    continue;
+                }
+                Opcode::JumpSiFalso(target) => {
+                    let cond = self.pop_valor()?.es_verdadero_con_heap(&self.str_heap);
+                    // PGO: registrar el branch taken/not-taken
+                    if let Some(p) = self.perfil_pgo.as_mut() {
+                        p.record_branch(&ip.to_string(), !cond);
+                    }
+                    if !cond {
+                        self.ip = *target;
+                    } else {
+                        self.ip += 1;
+                    }
+                    continue;
+                }
+                Opcode::Label(_) | Opcode::FunctionDef(_, _) => {
+                    self.ip += 1;
+                    continue;
+                }
+                Opcode::Halt => break,
+                _ => {}
             }
 
             // Ramas simples (push/pop/dup, variables por índice/global, opcodes
@@ -82,43 +99,51 @@ impl ForjaFast {
             if self.ejecutar_ops_simples(op)? {
                 continue;
             }
-
-            // Ramas autocontenidas de colecciones (arreglos y mapas) delegadas a
-            // `ops_colecciones.rs` (F1-T7).
-            if self.ejecutar_ops_colecciones(op)? {
+            // Ramas autocontenidas de superinstrucciones fusionadas, comparaciones
+            // float, XorSign y pattern matching delegadas a `ops_fusionadas.rs` (F1-T7).
+            if self.ejecutar_ops_fusionadas(op)? {
                 continue;
             }
-
-            // Ramas autocontenidas de concurrencia (canales e hilos) delegadas a
-            // `ops_concurrencia.rs` (F1-T7).
-            if self.ejecutar_ops_concurrencia(op)? {
-                continue;
-            }
-
             // Handlers aritméticos especializados autocontenidos (`AddInt`,
             // `AddFloat`, `SubInt`, `MulInt`) delegados a `ops_aritmetica.rs` (F1-T7).
             if self.ejecutar_ops_aritmetica(op)? {
                 continue;
             }
-
+            // Ramas autocontenidas (superinstrucciones float, stack bypass, fused ops,
+            // comparaciones y operadores lógicos) delegadas a `ops_float.rs` (F1-T7).
+            if self.ejecutar_ops_float(op)? {
+                continue;
+            }
+            // Ramas autocontenidas de operaciones Exacto (BigDecimal) delegadas a
+            // `ops_exacto.rs` (F1-T7).
+            if self.ejecutar_ops_exacto(op)? {
+                continue;
+            }
+            // Ramas autocontenidas de colecciones (arreglos y mapas) delegadas a
+            // `ops_colecciones.rs` (F1-T7).
+            if self.ejecutar_ops_colecciones(op)? {
+                continue;
+            }
+            // Ramas autocontenidas de concurrencia (canales e hilos) delegadas a
+            // `ops_concurrencia.rs` (F1-T7).
+            if self.ejecutar_ops_concurrencia(op)? {
+                continue;
+            }
             // Ramas de IO y utilidades (`ParseInt`, `TiempoActual`, `Print`,
             // `ReadLine`) delegadas a `ops_io.rs` (F1-T7).
             if self.ejecutar_ops_io(op)? {
                 continue;
             }
-
             // Ramas de objetos (`NewObject`, `SetField`, `SetFieldIdx`,
             // `GetField`) delegadas a `ops_objetos.rs` (F1-T7).
             if self.ejecutar_ops_objetos(op)? {
                 continue;
             }
-
             // Ramas de llamada a metodos (`CallMethod`, `CallMethodCached`)
             // delegadas a `ops_metodos.rs` (F1-T7).
             if self.ejecutar_ops_metodos(op)? {
                 continue;
             }
-
             // Ramas de Design by Contract (`CheckPre`, `CheckPost`,
             // `SaveAnterior`, `CheckInv`) y packed SIMD delegadas a
             // `ops_contratos.rs` (F1-T7).
