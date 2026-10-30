@@ -1,4 +1,4 @@
-use forja::bytecode::{fusionar_opcodes, optimizar_indices, BytecodeGenerator};
+use forja::bytecode::{fusionar_opcodes, optimizar_indices, GeneradorBytecode};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
 use forja::vm_fast::ForjaFast;
@@ -11,7 +11,7 @@ fn ejecutar(source: &str) -> Result<Vec<String>, String> {
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
-    let mut gen = BytecodeGenerator::new();
+    let mut gen = GeneradorBytecode::new();
     let bytecode = gen
         .generar(&programa)
         .map_err(|_| "Error generando bytecode".to_string())?;
