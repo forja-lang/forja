@@ -127,7 +127,7 @@ const PROGRAMAS: &[(&str, &str, &[&str])] = &[
 ];
 
 /// Compila a bytecode con el pipeline de producción (optimizado: índices
-/// globales + fusión de opcodes). Es lo que consume ForjaFast.
+/// globales + fusión de codigos). Es lo que consume ForjaFast.
 fn bytecode(source: &str) -> Vec<forja::bytecode::Opcode> {
     forja::compilar_pipeline_completa(source)
         .expect("el pipeline debe compilar el programa")
@@ -135,15 +135,15 @@ fn bytecode(source: &str) -> Vec<forja::bytecode::Opcode> {
 }
 
 /// Compila a bytecode **raw** (sin `optimizar_indices`/`postprocesar_globales`),
-/// tal cual lo emite el `BytecodeGenerator`.
+/// tal cual lo emite el `GeneradorBytecode`.
 ///
 /// Se conserva solo para verificar que `TieredJit` ingiere la ruta RAW sin error
 /// (antes la ejecutaba `ForjaDT`, hoy archivado; `ForjaFast` requiere índices).
 fn bytecode_raw(source: &str) -> Vec<forja::bytecode::Opcode> {
-    use forja::bytecode::BytecodeGenerator;
+    use forja::bytecode::GeneradorBytecode;
     let tokens = forja::lexer::Lexer::new(source).tokenize().expect("lexer");
     let prog = forja::parser::Parser::new(tokens).parse().expect("parser");
-    let mut gen = BytecodeGenerator::new();
+    let mut gen = GeneradorBytecode::new();
     gen.generar(&prog).expect("generar bytecode")
 }
 
@@ -182,10 +182,10 @@ fn observar_tiered(bc: &[forja::bytecode::Opcode]) {
     let mut tiered = TieredJit::new();
     for (ip, op) in bc.iter().enumerate() {
         match op {
-            Opcode::FunctionDef(nombre, _) => {
+            Opcode::DefinirFuncion(nombre, _) => {
                 tiered.register_function(nombre.as_ref());
             }
-            Opcode::Call(nombre, _) => {
+            Opcode::Llamar(nombre, _) => {
                 // No importa el tier resultante en una única pasada; lo relevante
                 // es que el orquestador procese la llamada sin paniquear.
                 match tiered.on_function_call(nombre.as_ref()) {
