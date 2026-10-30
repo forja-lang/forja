@@ -21,25 +21,20 @@
 | Fase | Estado |
 |------|--------|
 | F11 | HECHO |
-| F12 | EN-CURSO — T1/T2/T5 hechos; T3 (corpus 259/260 compilan, 220/260 corren) y T4 (firmas/límites/auditoría hechos, falta OIDC/TLS/despliegue) parciales |
-| F13 | BLOQUEADO-EXTERNO |
-| F14 | EN-CURSO — T2 (rendimiento AST vs IR) y T3 (firmas Ed25519) hechos; T1 excluido (GUI); T4 hecho |
+| F12 | EN-CURSO — T1/T2/T5 hechos; T3 (259/260 compilan, 220/260 corren) y T4 (firmas/límites/auditoría hechos; falta OIDC/TLS/despliegue) parciales |
+| F13 | BLOQUEADO-EXTERNO (workflows corregidos y validados en local, nunca ejecutados en GitHub) |
+| F14 | EN-CURSO — T2 (rendimiento AST vs IR) y T3 (firmas Ed25519) y T4 (docs vivas) hechos; T1 excluido por el usuario (GUI) |
+
+**Decisión de rumbo (F14-T2):** la ruta canónica es **AST-first con fallback
+IR**, no IR-only. El IR cubre todo el lenguaje (F11) y el fallback silencioso se
+retiró, pero el emisor AST se prefiere por rendimiento: medido, el bytecode del
+IR se ejecuta ~1.4x más lento y compila ~5% más lento. F11-T5 queda como
+"cobertura IR completa + fallback explícito" y F11 se usa para paridad estricta
+(`MotorEmision::Ir`).
 
 **Siguiente tarea:** F12-T3 — los 7 ejemplos interactivos (necesitan stdin) y el
-bug de aritmética `Exacto` dentro de funciones (`400_exacto`).
-
-------|--------|
-| F11 (T1–T6) | HECHO |
-| F12-T1, F12-T2 | HECHO |
-| F12-T3 corpus ejecutable | EN-CURSO (246/260 compilan; 209/260 corren) |
-| F12-T5 hilo no unido / rx en hijo | HECHO |
-| F12-T4 registry de producción | EN-CURSO (firmas, límites, auditoría) |
-| F13 (T1–T4) | BLOQUEADO-EXTERNO |
-| F14 (T1–T4) | ABIERTO |
-
-**Siguiente tarea:** F12-T3 — ejecutar el corpus completo y resolver o documentar
-los ejemplos que hoy no compilan (lista `NO_COMPILAN` en
-`tests/ir_cobertura_corpus.rs`).
+bug de aritmética `Exacto` dentro de funciones (`400_exacto`), ambos anotados con
+repro.
 
 ---
 
@@ -186,8 +181,11 @@ secuenciales (igual que el backend AST); el opcode real sigue pendiente.
 - **Esfuerzo:** MEDIO.
 
 ### F11-T5 · Retirar el fallback AST `[CRÍTICO]`
-**Estado:** HECHO (`MotorEmision::{Ir,SoloAst}`; la ruta canónica sólo usa IR y
-`tests/ir_cobertura_corpus.rs` fija el contrato sobre los 259 ejemplos).
+**Estado:** HECHO con matiz posterior — el fallback silencioso se retiró y el
+IR cubre todo el lenguaje (`MotorEmision::{Auto,Ir,SoloAst}`), pero **F14-T2
+revirtió la ruta canónica a AST-first** por rendimiento. Lo que sigue vigente:
+todo lo que compila por la canónica también compila por `MotorEmision::Ir`
+(contrato de `tests/ir_cobertura_corpus.rs`).
 - **¿Qué?** Eliminar la rama de fallback de `compilar_pipeline_nucleo_emision`.
 - **¿Cuándo?** Sólo con F11-T1…T4 verdes.
 - **¿Por qué?** Garantiza una única fuente de emisión.
@@ -265,7 +263,8 @@ secuenciales (igual que el backend AST); el opcode real sigue pendiente.
 - **Esfuerzo:** ALTO.
 
 ### F12-T3 · Corpus ejecutable completo `[MEDIO]`
-**Estado:** EN-CURSO — 246/260 ejemplos compilan (eran 225).
+**Estado:** EN-CURSO — **259/260 compilan** y **220/260 ejecutan** (eran 225 y
+187 al empezar la fase).
 Hecho: 16 ejemplos con `true`/`false` → `verdadero`/`falso`; 13 con `mut` en el
 parámetro mutado; `150_heap` con líneas sueltas del formateador; 3 recuperados de
 la historia del submódulo (`149`, `199_forja_desde_forja`, `208`); `209_json`
@@ -399,6 +398,9 @@ y el despliegue de `registry.forja-lang.dev` (BLOQUEADO-EXTERNO).
 # FASE 13 — Distribución y CI real
 
 ### F13-T1 · CI real en 3 OS `[CRÍTICO] [BLOQUEADO-EXTERNO]`
+**Estado:** BLOQUEADO-EXTERNO — los workflows (`ci.yml`, `rust.yml`,
+`docs-deploy.yml`) están revisados y el fallback de WASM ya no es silencioso, pero
+siguen sin ejecutarse en GitHub.
 - **¿Qué?** Abrir PR y confirmar Ubuntu/Windows/macOS + cobertura ASM.
 - **¿Cuándo?** Primero de F13.
 - **¿Por qué?** Nunca se ejecutó en GitHub.
@@ -411,6 +413,7 @@ y el despliegue de `registry.forja-lang.dev` (BLOQUEADO-EXTERNO).
 - **Esfuerzo:** MEDIO.
 
 ### F13-T2 · Windows ARM64 en el runner `[MEDIO] [BLOQUEADO-EXTERNO]`
+**Estado:** BLOQUEADO-EXTERNO (requiere runner/credenciales reales).
 - **¿Qué?** Validar `windows-11-arm` con MSVC ARM64 y quitar
   `continue-on-error`.
 - **¿Cuándo?** Tras F13-T1.
@@ -423,6 +426,7 @@ y el despliegue de `registry.forja-lang.dev` (BLOQUEADO-EXTERNO).
 - **Esfuerzo:** MEDIO.
 
 ### F13-T3 · Firma keyless de releases `[ALTO] [BLOQUEADO-EXTERNO]`
+**Estado:** BLOQUEADO-EXTERNO (requiere runner/credenciales reales).
 - **¿Qué?** Publicar un tag RC y verificar los `.bundle` con cosign.
 - **¿Cuándo?** Tras F13-T1.
 - **¿Por qué?** La firma local funciona, pero falta un release real.
@@ -435,6 +439,7 @@ y el despliegue de `registry.forja-lang.dev` (BLOQUEADO-EXTERNO).
 - **Esfuerzo:** MEDIO.
 
 ### F13-T4 · Marketplace + Homebrew `[MEDIO] [BLOQUEADO-EXTERNO]`
+**Estado:** BLOQUEADO-EXTERNO (requiere runner/credenciales reales).
 - **¿Qué?** Publicar la extensión VSCode y el tap de Homebrew.
 - **¿Cuándo?** Tras F13-T3.
 - **¿Por qué?** `.vsix` y scaffold listos, sin publicación.
@@ -450,6 +455,8 @@ y el despliegue de `registry.forja-lang.dev` (BLOQUEADO-EXTERNO).
 # FASE 14 — Calidad y ecosistema
 
 ### F14-T1 · Extraer widgets/animation a `forja-gui-core` `[ALTO]`
+**Estado:** EXCLUIDO por decisión del usuario (todo lo de GUI/gui-rt queda fuera
+de este plan). `forja-gui-core` sigue con `signals`/`debug` solamente.
 - **¿Qué?** Mover widgets, animación y helpers independientes de xilem al crate
   core.
 - **¿Cuándo?** Tras F11.
@@ -552,18 +559,18 @@ F12-T3 (corpus) ──> F13-T1
 
 | Área | Actual | Meta |
 |------|--------|------|
-| Constructos con fallback AST | closures, hilos, try, traits/FFI | **0** |
-| Cobertura IR del corpus | subconjunto | **259/259** |
-| Closures anónimas en VM/JIT | no | **sí** |
-| Corpus ejecutado en CI | 20 ejemplos | **259/259** |
-| Registry con TLS + auth | no | **sí** |
-| Firma asimétrica de paquetes | no | **sí** |
-| CI real 3 OS | no ejecutada | **verde** |
+| Constructos con fallback AST | **0** (closures, hilos, try, traits/FFI en IR) | **0** |
+| Cobertura IR del corpus | **259/260** (sólo `900_storybook`, que usa `si` en argumentos: GUI) | **259/259** |
+| Closures anónimas en VM/JIT | **sí** | **sí** |
+| Corpus ejecutado | **220/260** (31 sin salida: GUI/red/stdin; 7 interactivos; `400_exacto`) | **259/259** |
+| Registry con TLS + auth | auth por token **sí**, TLS por proxy (no en proceso), OIDC pendiente | **sí** |
+| Firma asimétrica de paquetes | **sí** (Ed25519, RFC 8032) | **sí** |
+| CI real 3 OS | no ejecutada (workflows corregidos, validados en local) | **verde** |
 | Windows ARM64 validado | no | **sí** |
 | Release firmado keyless | local | **GitHub** |
 | Marketplace/Homebrew | no | **publicado** |
-| Widgets en `forja-gui-core` | no | **sí** |
-| Regresión IR vs AST | sin medir | **≤5%** |
+| Widgets en `forja-gui-core` | no (excluido por el usuario) | **sí** |
+| Regresión IR vs AST | **medida**: IR ~1.4x más lento en VM, ~5% al compilar | **≤5%** |
 | Crates en crates.io | excluido | **no se publica** |
 
 ## Verificación
