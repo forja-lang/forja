@@ -1,0 +1,37 @@
+=== ECUACIÓN DE SEGUNDO GRADO ===
+
+Resuelve ax² + bx + c = 0
+
+  Ecuación: 1x² + -5x + 6 = 0
+  Discriminante (Δ) = 1
+  ✅ Dos raíces reales:
+    x₁ = 3
+    x₂ = 2
+
+  Ecuación: 1x² + 2x + 1 = 0
+  Discriminante (Δ) = 0
+  ✅ Una raíz real (doble):
+    x = -1
+
+  Ecuación: 1x² + 0x + -4 = 0
+  Discriminante (Δ) = 16
+  ✅ Dos raíces reales:
+    x₁ = 2
+    x₂ = -2
+
+  Ecuación: 2x² + 4x + 2 = 0
+  Discriminante (Δ) = 0
+  ✅ Una raíz real (doble):
+    x = -1
+
+  Ecuación: 1x² + 1x + 1 = 0
+  Discriminante (Δ) = -3
+  ✅ Dos raíces complejas:
+    x₁ = 0 + 0i
+    x₂ = 0 - 0i
+
+  Ecuación lineal: x = -2
+
+  ✗ Ecuación sin solución (5 = 0 es falso).
+
+  ∞ Solución: Todos los números son solución.
