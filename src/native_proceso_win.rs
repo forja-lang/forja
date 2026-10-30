@@ -146,7 +146,7 @@ fn lower_u16(c: u16) -> u16 {
     }
 }
 
-/// Compara un buffer de WCHAR terminado en null con un nombre (case-insensitive).
+/// Compara un buffer de WCHAR esta_terminado en null con un nombre (case-insensitive).
 #[cfg(target_os = "windows")]
 fn wstr_igual(buf: &[u16], nombre: &[u16]) -> bool {
     let mut i = 0usize;
