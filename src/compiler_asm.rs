@@ -1,14 +1,16 @@
 // Compilador de Forja a assembly nativo multi-arquitectura
-// Soporta: x86-64 (Windows/MSVC, Linux/System V) y ARM64 (aarch64)
+// Soporta: x86-64 (Windows/MSVC, Linux/System V), ARM64 (aarch64) y RISC-V 64 (rv64, Linux)
 //
 // Compilar archivo generado:
 //   gcc -O2 -o output.exe output.s    (x86-64 Windows)
 //   gcc -O2 -o output output.s        (x86-64 Linux / ARM64)
+//   riscv64-linux-gnu-gcc -O2 -o output output.s   (RISC-V 64 Linux)
 //
 // Convenciones de llamada:
 //   Windows x64: RCX, RDX, R8, R9 (primeros 4 args) + 32 bytes shadow space
 //   Linux x64:   RDI, RSI, RDX, RCX, R8, R9 (primeros 6 args), sin shadow space
 //   ARM64:       X0..X7 (primeros 8 args), sin shadow space
+//   RISC-V 64:   A0..A7 (primeros 8 args), sin shadow space; enteros en A0, floats en FA0
 
 use crate::ast::*;
 use crate::error::ErrorForja;
@@ -23,6 +25,7 @@ pub enum TargetArch {
     X86_64Windows, // Microsoft x64 calling convention
     X86_64Linux,   // System V AMD64
     AArch64,       // ARM64 Linux / macOS
+    RiscV64,       // RISC-V 64 (RV64GC, psABI lp64d) sobre Linux
 }
 
 impl TargetArch {
@@ -42,6 +45,8 @@ impl TargetArch {
             TargetArch::X86_64Linux
         } else if arch == "aarch64" {
             TargetArch::AArch64
+        } else if arch == "riscv64" {
+            TargetArch::RiscV64
         } else {
             // fallback: Linux x86-64
             TargetArch::X86_64Linux
@@ -53,6 +58,7 @@ impl TargetArch {
             TargetArch::X86_64Windows => "x86-64 Windows",
             TargetArch::X86_64Linux => "x86-64 Linux",
             TargetArch::AArch64 => "ARM64 (aarch64)",
+            TargetArch::RiscV64 => "RISC-V 64 (rv64)",
         }
     }
 
@@ -65,6 +71,7 @@ impl TargetArch {
                 Some(TargetArch::X86_64Linux)
             }
             "aarch64" | "arm64" | "arm" => Some(TargetArch::AArch64),
+            "riscv64" | "riscv" | "rv64" | "risc_v" => Some(TargetArch::RiscV64),
             _ => None,
         }
     }
@@ -73,6 +80,7 @@ impl TargetArch {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => ".intel_syntax noprefix",
             TargetArch::AArch64 => "", // ARM64 GAS usa sintaxis nativa
+            TargetArch::RiscV64 => "", // RISC-V GAS usa sintaxis nativa
         }
     }
 
@@ -89,6 +97,7 @@ impl TargetArch {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => "rax",
             TargetArch::AArch64 => "x0",
+            TargetArch::RiscV64 => "a0",
         }
     }
 
@@ -96,6 +105,7 @@ impl TargetArch {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => "eax",
             TargetArch::AArch64 => "w0",
+            TargetArch::RiscV64 => "a0", // las ops de 32 bits se enmascaran con `andi`
         }
     }
 
@@ -104,6 +114,7 @@ impl TargetArch {
             TargetArch::X86_64Windows => &["rcx", "rdx", "r8", "r9"],
             TargetArch::X86_64Linux => &["rdi", "rsi", "rdx", "rcx", "r8", "r9"],
             TargetArch::AArch64 => &["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"],
+            TargetArch::RiscV64 => &["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"],
         }
     }
 
@@ -111,6 +122,7 @@ impl TargetArch {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => "rcx",
             TargetArch::AArch64 => "x1",
+            TargetArch::RiscV64 => "t0",
         }
     }
 
@@ -118,6 +130,7 @@ impl TargetArch {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => "rdx",
             TargetArch::AArch64 => "x2",
+            TargetArch::RiscV64 => "t1",
         }
     }
 
@@ -125,6 +138,7 @@ impl TargetArch {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => "rbp",
             TargetArch::AArch64 => "x29",
+            TargetArch::RiscV64 => "s0",
         }
     }
 
@@ -132,6 +146,7 @@ impl TargetArch {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => "rsp",
             TargetArch::AArch64 => "sp",
+            TargetArch::RiscV64 => "sp",
         }
     }
 
@@ -146,6 +161,7 @@ impl TargetArch {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => "xmm0",
             TargetArch::AArch64 => "d0",
+            TargetArch::RiscV64 => "fa0",
         }
     }
 
@@ -164,6 +180,7 @@ impl TargetArch {
                     format!("    mov {}, #{}", dst, val)
                 }
             }
+            TargetArch::RiscV64 => format!("    li {}, {}", dst, val),
         }
     }
 
@@ -175,6 +192,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    mov {}, {}", dst, src)
             }
+            TargetArch::RiscV64 => format!("    mv {}, {}", dst, src),
         }
     }
 
@@ -186,6 +204,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    str {}, [sp, #-16]!", reg)
             }
+            TargetArch::RiscV64 => format!("    addi sp, sp, -16\n    sd {}, 0(sp)", reg),
         }
     }
 
@@ -197,6 +216,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    ldr {}, [sp], #16", reg)
             }
+            TargetArch::RiscV64 => format!("    ld {}, 0(sp)\n    addi sp, sp, 16", reg),
         }
     }
 
@@ -208,6 +228,11 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 vec!["    stp x29, x30, [sp, #-16]!".to_string()]
             }
+            TargetArch::RiscV64 => vec![
+                "    addi sp, sp, -16".to_string(),
+                "    sd s0, 8(sp)".to_string(),
+                "    sd ra, 0(sp)".to_string(),
+            ],
         }
     }
 
@@ -219,6 +244,11 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 vec!["    ldp x29, x30, [sp], #16".to_string()]
             }
+            TargetArch::RiscV64 => vec![
+                "    ld s0, 8(sp)".to_string(),
+                "    ld ra, 0(sp)".to_string(),
+                "    addi sp, sp, 16".to_string(),
+            ],
         }
     }
 
@@ -226,6 +256,7 @@ impl TargetArch {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => "    mov rbp, rsp".to_string(),
             TargetArch::AArch64 => "    mov x29, sp".to_string(),
+            TargetArch::RiscV64 => "    mv s0, sp".to_string(),
         }
     }
 
@@ -237,6 +268,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    sub sp, sp, #{}", bytes)
             }
+            TargetArch::RiscV64 => format!("    addi sp, sp, -{}", bytes),
         }
     }
 
@@ -248,6 +280,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    add sp, sp, #{}", bytes)
             }
+            TargetArch::RiscV64 => format!("    addi sp, sp, {}", bytes),
         }
     }
 
@@ -255,6 +288,7 @@ impl TargetArch {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => "    mov rsp, rbp".to_string(),
             TargetArch::AArch64 => "    mov sp, x29".to_string(),
+            TargetArch::RiscV64 => "    mv sp, s0".to_string(),
         }
     }
 
@@ -266,6 +300,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    str {}, [{}, #-{}]", reg, base, offset)
             }
+            TargetArch::RiscV64 => format!("    sd {}, -{}({})", reg, offset, base),
         }
     }
 
@@ -281,6 +316,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    ldr {}, [{}, #-{}]", reg, base, offset)
             }
+            TargetArch::RiscV64 => format!("    ld {}, -{}({})", reg, offset, base),
         }
     }
 
@@ -293,6 +329,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    str {}, [{}, #{}]", reg, base, offset)
             }
+            TargetArch::RiscV64 => format!("    sd {}, {}({})", reg, offset, base),
         }
     }
 
@@ -305,6 +342,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    ldr {}, [{}, #{}]", reg, base, offset)
             }
+            TargetArch::RiscV64 => format!("    ld {}, {}({})", reg, offset, base),
         }
     }
 
@@ -322,6 +360,17 @@ impl TargetArch {
                     log2(scale)
                 )
             }
+            TargetArch::RiscV64 => match index.parse::<i32>() {
+                // Índice conocido en tiempo de compilación: `sd src, off(base)`.
+                Ok(i) => format!("    sd {}, {}({})", src, i * scale, base),
+                Err(_) => format!(
+                    "    slli t3, {}, {}\n    add t3, {}, t3\n    sd {}, 0(t3)",
+                    index,
+                    log2(scale),
+                    base,
+                    src
+                ),
+            },
         }
     }
 
@@ -333,6 +382,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    add {}, {}, {}", dst, dst, src)
             }
+            TargetArch::RiscV64 => format!("    add {}, {}, {}", dst, dst, src),
         }
     }
 
@@ -344,6 +394,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    sub {}, {}, {}", dst, dst, src)
             }
+            TargetArch::RiscV64 => format!("    sub {}, {}, {}", dst, dst, src),
         }
     }
 
@@ -355,6 +406,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    mul {}, {}, {}", dst, dst, src)
             }
+            TargetArch::RiscV64 => format!("    mul {}, {}, {}", dst, dst, src),
         }
     }
 
@@ -369,6 +421,45 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 vec![format!("    sdiv x0, x0, {}", divisor)]
             }
+            TargetArch::RiscV64 => vec![format!("    div a0, a0, {}", divisor)],
+        }
+    }
+
+    /// Resto de la división entera: deja `a % divisor` en `ret`.
+    fn mod_reg(&self, divisor: &str) -> Vec<String> {
+        match self {
+            TargetArch::X86_64Windows | TargetArch::X86_64Linux => vec![
+                "    cqto".to_string(),
+                format!("    idiv {}", divisor),
+                format!("    mov {}, rdx", self.ret_reg()),
+            ],
+            TargetArch::AArch64 => vec![
+                format!("    sdiv x2, x0, {}", divisor),
+                format!("    msub x0, x2, {}, x0", divisor),
+            ],
+            TargetArch::RiscV64 => vec![format!("    rem a0, a0, {}", divisor)],
+        }
+    }
+
+    /// `dst = dst & src` (bit a bit).
+    fn and_reg_reg(&self, dst: &str, src: &str) -> String {
+        match self {
+            TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
+                format!("    and {}, {}", dst, src)
+            }
+            TargetArch::AArch64 => format!("    and {}, {}, {}", dst, dst, src),
+            TargetArch::RiscV64 => format!("    and {}, {}, {}", dst, dst, src),
+        }
+    }
+
+    /// `dst = dst | src` (bit a bit).
+    fn or_reg_reg(&self, dst: &str, src: &str) -> String {
+        match self {
+            TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
+                format!("    or {}, {}", dst, src)
+            }
+            TargetArch::AArch64 => format!("    orr {}, {}, {}", dst, dst, src),
+            TargetArch::RiscV64 => format!("    or {}, {}, {}", dst, dst, src),
         }
     }
 
@@ -380,6 +471,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    neg {}, {}", reg, reg)
             }
+            TargetArch::RiscV64 => format!("    neg {}, {}", reg, reg),
         }
     }
 
@@ -391,6 +483,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    eor {}, {}, {}", dst, dst, src)
             }
+            TargetArch::RiscV64 => format!("    xor {}, {}, {}", dst, dst, src),
         }
     }
 
@@ -402,6 +495,9 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    cmp {}, {}", a, b)
             }
+            // RISC-V no tiene flags: los saltos y `set_*` derivan la condición
+            // del signo/cero de `t2 = a - b`.
+            TargetArch::RiscV64 => format!("    sub t2, {}, {}", a, b),
         }
     }
 
@@ -413,6 +509,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    cmp {}, #0", reg)
             }
+            TargetArch::RiscV64 => format!("    mv t2, {}", reg),
         }
     }
 
@@ -446,6 +543,7 @@ impl TargetArch {
                 format!("    setg {}", Self::to_8bit_reg(dst))
             }
             TargetArch::AArch64 => "    cset x0, gt".to_string(),
+            TargetArch::RiscV64 => "    sgt a0, t2, zero".to_string(),
         }
     }
 
@@ -455,6 +553,7 @@ impl TargetArch {
                 format!("    setl {}", Self::to_8bit_reg(dst))
             }
             TargetArch::AArch64 => "    cset x0, lt".to_string(),
+            TargetArch::RiscV64 => "    slt a0, t2, zero".to_string(),
         }
     }
 
@@ -464,6 +563,8 @@ impl TargetArch {
                 format!("    setge {}", Self::to_8bit_reg(dst))
             }
             TargetArch::AArch64 => "    cset x0, ge".to_string(),
+            // RISC-V no instruye `sge`: se invierte el resultado de `slt`.
+            TargetArch::RiscV64 => "    slt a0, t2, zero\n    xori a0, a0, 1".to_string(),
         }
     }
 
@@ -473,6 +574,8 @@ impl TargetArch {
                 format!("    setle {}", Self::to_8bit_reg(dst))
             }
             TargetArch::AArch64 => "    cset x0, le".to_string(),
+            // RISC-V no instruye `sle`: se invierte el resultado de `sgt`.
+            TargetArch::RiscV64 => "    sgt a0, t2, zero\n    xori a0, a0, 1".to_string(),
         }
     }
 
@@ -482,6 +585,7 @@ impl TargetArch {
                 format!("    sete {}", Self::to_8bit_reg(dst))
             }
             TargetArch::AArch64 => "    cset x0, eq".to_string(),
+            TargetArch::RiscV64 => "    seqz a0, t2".to_string(),
         }
     }
 
@@ -491,6 +595,46 @@ impl TargetArch {
                 format!("    setne {}", Self::to_8bit_reg(dst))
             }
             TargetArch::AArch64 => "    cset x0, ne".to_string(),
+            TargetArch::RiscV64 => "    snez a0, t2".to_string(),
+        }
+    }
+
+    /// Normaliza `reg` a booleano 0/1 **en el propio registro** (a diferencia de
+    /// `set_*`, que en ARM64/RISC-V escriben siempre en el registro de retorno).
+    fn bool_normalize(&self, reg: &str) -> Vec<String> {
+        match self {
+            TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
+                let b = Self::to_8bit_reg(reg);
+                vec![
+                    format!("    test {}, {}", reg, reg),
+                    format!("    setne {}", b),
+                    format!("    movzx {}, {}", reg, b),
+                ]
+            }
+            TargetArch::AArch64 => vec![
+                format!("    cmp {}, #0", reg),
+                format!("    cset {}, ne", reg),
+            ],
+            TargetArch::RiscV64 => vec![format!("    snez {}, {}", reg, reg)],
+        }
+    }
+
+    /// Invierte un booleano 0/1 **en el propio registro**.
+    fn bool_not(&self, reg: &str) -> Vec<String> {
+        match self {
+            TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
+                let b = Self::to_8bit_reg(reg);
+                vec![
+                    format!("    test {}, {}", reg, reg),
+                    format!("    sete {}", b),
+                    format!("    movzx {}, {}", reg, b),
+                ]
+            }
+            TargetArch::AArch64 => vec![
+                format!("    cmp {}, #0", reg),
+                format!("    cset {}, eq", reg),
+            ],
+            TargetArch::RiscV64 => vec![format!("    seqz {}, {}", reg, reg)],
         }
     }
 
@@ -509,6 +653,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    and {}, {}, #0xff", dst, src)
             }
+            TargetArch::RiscV64 => format!("    andi {}, {}, 0xff", dst, src),
         }
     }
 
@@ -520,6 +665,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    bl {}", label)
             }
+            TargetArch::RiscV64 => format!("    call {}", label),
         }
     }
 
@@ -527,6 +673,7 @@ impl TargetArch {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => "    ret".to_string(),
             TargetArch::AArch64 => "    ret".to_string(),
+            TargetArch::RiscV64 => "    ret".to_string(),
         }
     }
 
@@ -538,6 +685,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    b {}", label)
             }
+            TargetArch::RiscV64 => format!("    j {}", label),
         }
     }
 
@@ -549,6 +697,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    cbz x0, {}", label)
             }
+            TargetArch::RiscV64 => format!("    beqz t2, {}", label),
         }
     }
 
@@ -560,6 +709,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    b.ge {}", label)
             }
+            TargetArch::RiscV64 => format!("    bgez t2, {}", label),
         }
     }
 
@@ -575,6 +725,7 @@ impl TargetArch {
                     dst, label, dst, dst, label
                 )
             }
+            TargetArch::RiscV64 => format!("    la {}, {}", dst, label),
         }
     }
 
@@ -586,6 +737,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    str {}, [{}, #-{}]", float_reg, fp, offset)
             }
+            TargetArch::RiscV64 => format!("    fsd {}, -{}({})", float_reg, offset, fp),
         }
     }
 
@@ -597,6 +749,7 @@ impl TargetArch {
             TargetArch::AArch64 => {
                 format!("    ldr {}, [{}, #-{}]", float_reg, fp, offset)
             }
+            TargetArch::RiscV64 => format!("    fld {}, -{}({})", float_reg, offset, fp),
         }
     }
 
@@ -610,6 +763,9 @@ impl TargetArch {
                     "    adrp {}, {}\n    ldr {}, [x0, :lo12:{}]",
                     float_reg, label, float_reg, label
                 )
+            }
+            TargetArch::RiscV64 => {
+                format!("    la t3, {}\n    fld {}, 0(t3)", label, float_reg)
             }
         }
     }
@@ -633,6 +789,9 @@ impl TargetArch {
             }
             TargetArch::AArch64 => {
                 format!("    mov x1, #{}\n    str x1, [{}, #-{}]", val, base, offset)
+            }
+            TargetArch::RiscV64 => {
+                format!("    li t3, {}\n    sd t3, -{}({})", val, offset, base)
             }
         }
     }
@@ -682,6 +841,16 @@ impl TargetArch {
                     format!("    mov x1, {}", reg_buf), // buf
                     format!("    mov x2, {}", reg_len), // len
                     format!("    svc #0"),
+                ]
+            }
+            TargetArch::RiscV64 => {
+                // Linux RISC-V syscall (A7 = número): write(1, buf, len)
+                vec![
+                    format!("    li a7, 64"),          // syscall nr: write
+                    format!("    li a0, 1"),           // fd = stdout
+                    format!("    mv a1, {}", reg_buf), // buf
+                    format!("    mv a2, {}", reg_len), // len
+                    format!("    ecall"),
                 ]
             }
         }
@@ -832,6 +1001,14 @@ impl CompilerAsm {
                 let pool = vec![false; names.len()];
                 (names, pool)
             }
+            TargetArch::RiscV64 => {
+                // Callee-saved en RISC-V: S1-S11 (S0 es el frame pointer)
+                let names: Vec<&str> = vec![
+                    "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11",
+                ];
+                let pool = vec![false; names.len()];
+                (names, pool)
+            }
         }
     }
 
@@ -910,6 +1087,7 @@ impl CompilerAsm {
     /// ## Registros clobbereados:
     /// - rax, rcx, rdx, rbx, rdi (x86-64)
     /// - x0..x5 (ARM64)
+    /// - a0, t3..t6 (RISC-V 64)
     fn gen_itoa(&mut self, reg_num: &str) -> Vec<String> {
         let a = self.arch;
         let lp_pos = self.nueva_etiqueta("itoa_pos");
@@ -979,6 +1157,37 @@ impl CompilerAsm {
                     format!("    mov x1, x3"),
                 ]
             }
+            TargetArch::RiscV64 => {
+                // Contrato de salida: a1 = ptr al string, a0 = longitud.
+                // El valor original se guarda en 24(sp) para el test de signo.
+                vec![
+                    format!("    addi sp, sp, -32"),
+                    format!("    li t3, 10"),
+                    format!("    addi t5, sp, 20"),
+                    format!("    sb zero, 0(t5)"),
+                    format!("    sd {}, 24(sp)", reg_num),
+                    format!("    mv t4, {}", reg_num),
+                    format!("    bgez t4, {}", lp_pos),
+                    format!("    neg t4, t4"),
+                    format!("{}:", lp_pos),
+                    format!("{}:", lp_loop),
+                    format!("    addi t5, t5, -1"),
+                    format!("    rem t6, t4, t3"),
+                    format!("    div t4, t4, t3"),
+                    format!("    addi t6, t6, 48"),
+                    format!("    sb t6, 0(t5)"),
+                    format!("    bnez t4, {}", lp_loop),
+                    format!("    ld t4, 24(sp)"),
+                    format!("    bgez t4, {}", lp_done),
+                    format!("    addi t5, t5, -1"),
+                    format!("    li t6, 45"),
+                    format!("    sb t6, 0(t5)"),
+                    format!("{}:", lp_done),
+                    format!("    mv a1, t5"),
+                    format!("    addi a0, sp, 20"),
+                    format!("    sub a0, a0, t5"),
+                ]
+            }
         }
     }
 
@@ -1004,6 +1213,16 @@ impl CompilerAsm {
                 self.emit_line(a.lea_label("x1", &lbl));
                 self.emit_line(a.mov_reg_imm("x2", 1));
                 for line in &a.gen_syscall_write("x1", "x2") {
+                    self.emit_line(line);
+                }
+            }
+            TargetArch::RiscV64 => {
+                let lbl = self.nueva_etiqueta("nl");
+                self.rdata.push_str(&format!("{}:\n", lbl));
+                self.rdata.push_str("    .asciz \"\\n\"\n");
+                self.emit_line(a.lea_label("a1", &lbl));
+                self.emit_line(a.mov_reg_imm("a2", 1));
+                for line in &a.gen_syscall_write("a1", "a2") {
                     self.emit_line(line);
                 }
             }
@@ -1041,6 +1260,13 @@ impl CompilerAsm {
                     self.emit_line(line);
                 }
             }
+            TargetArch::RiscV64 => {
+                self.emit_line(a.lea_label("a1", &lbl));
+                self.emit_line(a.mov_reg_imm("a2", len as i64));
+                for line in &a.gen_syscall_write("a1", "a2") {
+                    self.emit_line(line);
+                }
+            }
         }
     }
 
@@ -1068,6 +1294,13 @@ impl CompilerAsm {
                     self.emit_line(line);
                 }
                 self.emit_line("    add sp, sp, #32");
+            }
+            TargetArch::RiscV64 => {
+                // Después de gen_itoa: a1 = ptr, a0 = len
+                for line in &a.gen_syscall_write("a1", "a0") {
+                    self.emit_line(line);
+                }
+                self.emit_line("    addi sp, sp, 32");
             }
         }
     }
@@ -1369,10 +1602,13 @@ impl CompilerAsm {
         let _fp = a.fp_reg();
         let _sp = a.sp_reg();
         let ret = a.ret_reg();
-        let tmp = a.tmp_reg();
         let ss = a.shadow_space();
 
         // forja_print_int
+        // Los argumentos van en los registros de argumento de la ABI: arg0 = formato,
+        // arg1 = valor (antes se usaban `tmp`/`tmp2`, que solo coinciden en Windows x64).
+        let arg0 = a.arg_regs()[0];
+        let arg1 = a.arg_regs()[1];
         self.emit_line("forja_print_int:");
         for line in &a.push_fp_lr() {
             self.emit_line(line);
@@ -1381,8 +1617,8 @@ impl CompilerAsm {
         if ss > 0 {
             self.emit_line(a.sub_sp(ss));
         }
-        self.emit_line(a.mov_reg_reg(a.tmp2_reg(), ret)); // arg en tmp2 (rdx/x2)
-        self.emit_line(a.lea_label(tmp, "fmt_int"));
+        self.emit_line(a.mov_reg_reg(arg1, ret));
+        self.emit_line(a.lea_label(arg0, "fmt_int"));
         self.emit_line(a.call("printf"));
         self.emit_line(a.mov_sp_fp());
         for line in &a.pop_fp_lr() {
@@ -1400,8 +1636,8 @@ impl CompilerAsm {
         if ss > 0 {
             self.emit_line(a.sub_sp(ss));
         }
-        self.emit_line(a.mov_reg_reg(a.tmp2_reg(), ret)); // arg string en tmp2
-        self.emit_line(a.lea_label(tmp, "fmt_str"));
+        self.emit_line(a.mov_reg_reg(arg1, ret)); // arg string
+        self.emit_line(a.lea_label(arg0, "fmt_str"));
         self.emit_line(a.call("printf"));
         self.emit_line(a.mov_sp_fp());
         for line in &a.pop_fp_lr() {
@@ -1425,8 +1661,9 @@ impl CompilerAsm {
         if ss > 0 {
             self.emit_line(a.sub_sp(ss));
         }
-        // El double viene en xmm0 (x86_64) o d0 (AArch64) — printf lo consume directamente
-        self.emit_line(a.lea_label(tmp, "fmt_float"));
+        // El double viene en xmm0 (x86_64), d0 (AArch64) o fa0 (RISC-V): printf lo
+        // consume directamente desde el registro de argumento flotante de la ABI.
+        self.emit_line(a.lea_label(arg0, "fmt_float"));
         self.emit_line(a.call("printf"));
         self.emit_line(a.mov_sp_fp());
         for line in &a.pop_fp_lr() {
@@ -1446,12 +1683,12 @@ impl CompilerAsm {
         }
         self.emit_line(a.test_reg(ret));
         self.emit_line(a.jump_if_zero(".Lprint_false"));
-        self.emit_line(a.lea_label(a.tmp2_reg(), "fmt_bool_true"));
+        self.emit_line(a.lea_label(arg1, "fmt_bool_true"));
         self.emit_line(a.jump(".Lprint_bool_end"));
         self.emit_line(".Lprint_false:");
-        self.emit_line(a.lea_label(a.tmp2_reg(), "fmt_bool_false"));
+        self.emit_line(a.lea_label(arg1, "fmt_bool_false"));
         self.emit_line(".Lprint_bool_end:");
-        self.emit_line(a.lea_label(tmp, "fmt_str"));
+        self.emit_line(a.lea_label(arg0, "fmt_str"));
         self.emit_line(a.call("printf"));
         self.emit_line(a.mov_sp_fp());
         for line in &a.pop_fp_lr() {
@@ -1469,7 +1706,7 @@ impl CompilerAsm {
         if ss > 0 {
             self.emit_line(a.sub_sp(ss));
         }
-        self.emit_line(a.lea_label(tmp, "fmt_newline"));
+        self.emit_line(a.lea_label(arg0, "fmt_newline"));
         self.emit_line(a.call("printf"));
         self.emit_line(a.mov_sp_fp());
         for line in &a.pop_fp_lr() {
@@ -1642,6 +1879,9 @@ impl CompilerAsm {
                     TargetArch::AArch64 => {
                         self.emit_line("    lsl x0, x0, #3");
                     }
+                    TargetArch::RiscV64 => {
+                        self.emit_line("    slli a0, a0, 3");
+                    }
                 }
                 // Guardar byte offset del índice en tmp2
                 self.emit_line(a.mov_reg_reg(a.tmp2_reg(), ret));
@@ -1670,6 +1910,9 @@ impl CompilerAsm {
                     }
                     TargetArch::AArch64 => {
                         self.emit_line(format!("    str {}, [{}]", ret, tmp));
+                    }
+                    TargetArch::RiscV64 => {
+                        self.emit_line(format!("    sd {}, 0({})", ret, tmp));
                     }
                 }
             }
@@ -1838,6 +2081,9 @@ impl CompilerAsm {
                         TargetArch::AArch64 => {
                             self.emit_line(self.arch.lea_label("x0", &lbl_msg));
                         }
+                        TargetArch::RiscV64 => {
+                            self.emit_line(self.arch.lea_label("a0", &lbl_msg));
+                        }
                     }
                     self.emit_line(self.arch.call("forja_contract_error"));
                     self.emit_line(format!("{}:", lbl_ok));
@@ -1862,11 +2108,7 @@ impl CompilerAsm {
                     self.emit_line(format!("{}:", self.end_label_fn));
                     // Load retval from stack
                     let rv_oa = 8; // offset from fp
-                    if a.ret_reg() == "rax" {
-                        self.emit_line(format!("    mov rax, [{} - {}]", a.fp_reg(), rv_oa));
-                    } else {
-                        self.emit_line(format!("    ldr x0, [{}, #-{}]", a.fp_reg(), rv_oa));
-                    }
+                    self.emit_line(a.ldr_reg_mem(a.ret_reg(), a.fp_reg(), rv_oa));
                     // Generate postcondición checks
                     for c in postcondiciones {
                         // We currently don't evaluate postcondición expressions in ASM for 'resultado'
@@ -2036,11 +2278,7 @@ impl CompilerAsm {
                     // Store retval (rax/x0) into stack slot
                     let a = self.arch;
                     let rv_oa = 8; // offset from fp
-                    if a.ret_reg() == "rax" {
-                        self.emit_line(format!("    mov [{} - {}], rax", a.fp_reg(), rv_oa));
-                    } else {
-                        self.emit_line(format!("    str x0, [{}, #-{}]", a.fp_reg(), rv_oa));
-                    }
+                    self.emit_line(a.str_reg_mem(ret, a.fp_reg(), rv_oa));
                     self.emit_line(a.jump(&self.end_label_fn));
                 } else {
                     if let Some(val) = valor {
@@ -2209,22 +2447,7 @@ impl CompilerAsm {
                     Operador::Resta => vec![a.sub_reg_reg(ret, tmp)],
                     Operador::Multiplicacion => vec![a.mul_reg_reg(ret, tmp)],
                     Operador::Division => a.div_reg(tmp),
-                    Operador::Modulo => {
-                        // a % b = a - (a/b)*b
-                        let mut lines = Vec::new();
-                        // Guardar a, hacer a/b, multiplicar por b, restar de a
-                        lines.push(format!("\tpush\t{ret}"));
-                        lines.extend(a.div_reg(tmp)); // ret = a / b (ret tiene a/b, tmp tiene b)
-                        lines.push(format!("\tpush\t{ret}")); // guardar a/b
-                        lines.push("\tpop\ttmp".to_string()); // tmp = a/b ... wait this is wrong for asm
-                                                              // For simplicity, use Rust-like modulo in asm:
-                        lines.push("\t; modulo: use idiv for remainder".to_string());
-                        lines.push("\tmov\trax, [rsp+8]  ; a".to_string());
-                        lines.push("\tcqto".to_string());
-                        lines.push("\tidiv\tr12         ; rdx = a % b".to_string());
-                        lines.push(format!("\tmov\t{ret}, rdx"));
-                        lines
-                    }
+                    Operador::Modulo => a.mod_reg(tmp),
                     Operador::Mayor => {
                         vec![a.cmp_reg_reg(ret, tmp), a.set_g(ret), a.movzx(ret, ret)]
                     }
@@ -2245,41 +2468,27 @@ impl CompilerAsm {
                     }
                     // AND lógico: normalizar ambos operandos a 0/1 y hacer AND bit a bit
                     Operador::Y => {
-                        // Normalizar ambos operandos a 0/1 y hacer AND bit a bit
-                        vec![
-                            a.test_reg(ret),
-                            "    setnz al".to_string(),
-                            a.movzx(a.ret_reg_32(), a.ret_reg_32()),
-                            // Guardar lhs booleano en pila
-                            a.push_reg(a.ret_reg()),
-                            // Normalizar rhs (tmp/rcx) a booleano 0/1
-                            a.test_reg(tmp),
-                            "    setnz cl".to_string(),
-                            a.movzx(tmp, tmp),
-                            // Recuperar lhs, combinar con AND
-                            a.pop_reg(ret),
-                            "    and eax, ecx".to_string(),
-                            a.movzx(a.ret_reg_32(), a.ret_reg_32()),
-                        ]
+                        let mut lines = a.bool_normalize(ret);
+                        // Guardar lhs booleano en pila
+                        lines.push(a.push_reg(a.ret_reg()));
+                        // Normalizar rhs y recuperar el lhs en `ret`
+                        lines.extend(a.bool_normalize(tmp));
+                        lines.push(a.pop_reg(a.ret_reg()));
+                        lines.push(a.and_reg_reg(ret, tmp));
+                        lines.push(a.movzx(a.ret_reg_32(), a.ret_reg_32()));
+                        lines
                     }
                     // OR lógico: normalizar ambos operandos a 0/1 y hacer OR bit a bit
                     Operador::O => {
-                        // Normalizar ambos operandos a 0/1 y hacer OR bit a bit
-                        vec![
-                            a.test_reg(ret),
-                            "    setnz al".to_string(),
-                            a.movzx(a.ret_reg_32(), a.ret_reg_32()),
-                            // Guardar lhs booleano en pila
-                            a.push_reg(a.ret_reg()),
-                            // Normalizar rhs (tmp/rcx) a booleano 0/1
-                            a.test_reg(tmp),
-                            "    setnz cl".to_string(),
-                            a.movzx(tmp, tmp),
-                            // Recuperar lhs, combinar con OR
-                            a.pop_reg(ret),
-                            "    or eax, ecx".to_string(),
-                            a.movzx(a.ret_reg_32(), a.ret_reg_32()),
-                        ]
+                        let mut lines = a.bool_normalize(ret);
+                        // Guardar lhs booleano en pila
+                        lines.push(a.push_reg(a.ret_reg()));
+                        // Normalizar rhs y recuperar el lhs en `ret`
+                        lines.extend(a.bool_normalize(tmp));
+                        lines.push(a.pop_reg(a.ret_reg()));
+                        lines.push(a.or_reg_reg(ret, tmp));
+                        lines.push(a.movzx(a.ret_reg_32(), a.ret_reg_32()));
+                        lines
                     }
                 };
 
@@ -2294,9 +2503,9 @@ impl CompilerAsm {
                 match operador {
                     // NOT lógico: invertir el valor booleano (0→1, no-0→0)
                     OperadorUnario::No => {
-                        self.emit_line(a.test_reg(ret));
-                        self.emit_line("    sete al");
-                        self.emit_line(a.movzx(a.ret_reg_32(), a.ret_reg_32()));
+                        for line in &a.bool_not(ret) {
+                            self.emit_line(line);
+                        }
                     }
                     OperadorUnario::Negar => {
                         self.emit_line(a.neg_reg(ret));
@@ -2426,6 +2635,14 @@ impl CompilerAsm {
                                 a.tmp2_reg(),
                             ));
                         }
+                        TargetArch::RiscV64 => {
+                            self.emit_line(a.str_mem_index(
+                                tmp,
+                                &format!("{}", i),
+                                8,
+                                a.tmp2_reg(),
+                            ));
+                        }
                         TargetArch::AArch64 => {
                             // ARM no admite índice inmediato: sumar el offset al
                             // puntero y hacer `str tmp2, [tmp]`.
@@ -2455,6 +2672,9 @@ impl CompilerAsm {
                     }
                     TargetArch::AArch64 => {
                         self.emit_line("    lsl x0, x0, #3");
+                    }
+                    TargetArch::RiscV64 => {
+                        self.emit_line("    slli a0, a0, 3");
                     }
                 }
                 // Restaurar base del array desde pila (rsp + 0 después del push)
@@ -2501,6 +2721,9 @@ impl CompilerAsm {
                                     }
                                     TargetArch::AArch64 => {
                                         self.emit_line(format!("    b.ne {}", next_label));
+                                    }
+                                    TargetArch::RiscV64 => {
+                                        self.emit_line(format!("    bnez t2, {}", next_label));
                                     }
                                 }
                             }
@@ -2559,11 +2782,7 @@ impl CompilerAsm {
                 }
 
                 // Limpiar el stack (pop del valor guardado)
-                if a.sp_reg() == "rsp" {
-                    self.emit_line("    add rsp, 8");
-                } else {
-                    self.emit_line("    add sp, sp, #8");
-                }
+                self.emit_line(a.add_sp(8));
                 self.emit_line(format!("{}:", end_label));
                 // Restaurar ret con el valor original (para usar como expresión)
                 // El valor matcheado ya no está disponible, poner 0
@@ -3390,6 +3609,21 @@ impl CompilerAsm {
                                         self.emit_line(line);
                                     }
                                 }
+                                TargetArch::RiscV64 => {
+                                    // strlen inline: a1 = string, a2 = longitud
+                                    self.emit_line(format!("    mv a1, {}", ret));
+                                    self.emit_line("    li a2, 0");
+                                    self.emit_line(format!("{}:", lp_strlen));
+                                    self.emit_line("    add t3, a1, a2");
+                                    self.emit_line("    lbu t4, 0(t3)");
+                                    self.emit_line(format!("    beqz t4, {}", lp_strlen_end));
+                                    self.emit_line("    addi a2, a2, 1");
+                                    self.emit_line(format!("    j {}", lp_strlen));
+                                    self.emit_line(format!("{}:", lp_strlen_end));
+                                    for line in &a.gen_syscall_write("a1", "a2") {
+                                        self.emit_line(line);
+                                    }
+                                }
                             }
                         }
                         TipoAsm::Entero | TipoAsm::Clase(_) => {
@@ -3633,6 +3867,30 @@ mod tests {
         assert!(result.contains("printf"));
     }
 
+    /// `CompilerAsm::default()` existe para no dejar `new()` sin `Default`
+    /// (clippy `new_without_default`); debe comportarse igual que `new()`.
+    #[test]
+    fn test_asm_default_equivale_a_new() {
+        let tokens = Lexer::new("escribir(1)").tokenize().unwrap();
+        let programa = Parser::new(tokens).parse().unwrap();
+        let con_default = CompilerAsm::default().compilar(&programa).unwrap();
+        let con_new = CompilerAsm::new().compilar(&programa).unwrap();
+        assert_eq!(con_default, con_new);
+    }
+
+    /// `si` usado como expresión no tiene equivalente trivial en ASM: el backend
+    /// debe rechazarlo con un diagnóstico explícito (F5-T6).
+    #[test]
+    fn test_asm_si_como_expresion_falla() {
+        let err = compilar_source("variable x = si (verdadero) { 1 } sino { 2 }")
+            .expect_err("el `si` como expresión debe rechazarse");
+        assert!(
+            err.iter()
+                .any(|e| e.mensaje.as_ref().contains("SiComoExpresion")),
+            "falta el diagnóstico SiComoExpresion: {err:?}"
+        );
+    }
+
     #[test]
     fn test_asm_variable() {
         let result = compilar_source("variable x = 5").unwrap();
@@ -3768,10 +4026,11 @@ c.sumar(5)";
 mod tests_targets {
     use super::*;
 
-    const TARGETS: [TargetArch; 3] = [
+    const TARGETS: [TargetArch; 4] = [
         TargetArch::X86_64Windows,
         TargetArch::X86_64Linux,
         TargetArch::AArch64,
+        TargetArch::RiscV64,
     ];
 
     #[test]
@@ -3788,14 +4047,19 @@ mod tests_targets {
             assert!(!t.float_reg().is_empty());
             assert!(!t.section_rodata().is_empty());
             assert!(t.shadow_space() >= 0);
-            assert!(!t.syntax_directive().is_empty() || t == TargetArch::AArch64);
+            assert!(
+                !t.syntax_directive().is_empty()
+                    || matches!(t, TargetArch::AArch64 | TargetArch::RiscV64)
+            );
         }
         assert_eq!(TargetArch::X86_64Windows.arg_regs().len(), 4);
         assert_eq!(TargetArch::X86_64Linux.arg_regs().len(), 6);
         assert_eq!(TargetArch::AArch64.arg_regs().len(), 8);
+        assert_eq!(TargetArch::RiscV64.arg_regs().len(), 8);
         assert_eq!(TargetArch::X86_64Windows.shadow_space(), 32);
         assert_eq!(TargetArch::X86_64Linux.shadow_space(), 0);
         assert_eq!(TargetArch::AArch64.shadow_space(), 0);
+        assert_eq!(TargetArch::RiscV64.shadow_space(), 0);
     }
 
     #[test]
