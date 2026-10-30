@@ -10,6 +10,12 @@
 #   ./scripts/bump-version.sh 0.9.3 --tag        # Actualiza + commit + tag
 #   ./scripts/bump-version.sh 0.9.3 --push       # Actualiza + commit + tag + push
 #   ./scripts/bump-version.sh 0.9.3 --all        # Actualiza + commit + tag + push
+#   ./scripts/bump-version.sh 0.9.3 --from 0.9.2 # Reparar usando esa versión vieja
+#
+# Re-ejecutar el script es seguro: las versiones de los `Cargo.toml` se fijan a
+# la nueva sin mirar la vieja, así que también repara archivos que quedaron
+# desfasados por un bump anterior incompleto. Para los textos (README, docs,
+# scripts) sí hace falta saber la vieja: se toma de `Cargo.toml` o de `--from`.
 #
 # Requisitos:
 #   - Bash 4+ (Linux, macOS, WSL, o Git Bash en Windows)
@@ -46,15 +52,54 @@ print_ok()   { echo -e "   \033[32m✅\033[0m $1"; }
 print_info() { echo -e "  \033[36mℹ️\033[0m  $1"; }
 print_warn() { echo -e "  \033[33m⚠️\033[0m  $1"; }
 
+# Fija la versión del paquete en un Cargo.toml.
+#
+# Solo toca la PRIMERA línea `version = "…"` del archivo, que es la de
+# `[package]`. Un reemplazo global también pisa dependencias declaradas como
+# tabla multilínea, por ejemplo:
+#
+#   [target.'cfg(target_os = "android")'.dependencies.winit]
+#   version = "0.30.13"
+#
+# y deja `winit = "0.9.6"`, con lo que el workspace deja de resolver.
+fijar_version_paquete() {
+    local archivo="$1"
+    awk -v v="$NEW_VERSION" '
+        !hecho && /^version = "/ { sub(/^version = ".*"/, "version = \"" v "\""); hecho = 1 }
+        { print }
+    ' "$archivo" > "$archivo.tmp" && mv "$archivo.tmp" "$archivo"
+}
+
 # ─── Parseo de argumentos ───────────────────────────────────────────────────
 if [ $# -lt 1 ]; then
-    echo "Uso: $0 <nueva_version> [--commit|--tag|--push|--all]"
+    echo "Uso: $0 <nueva_version> [--from <version_vieja>] [--commit|--tag|--push|--all]"
     echo "Ejemplo: $0 0.9.3 --all"
     exit 1
 fi
 
 NEW_VERSION="$1"
-GIT_MODE="${2:-none}"
+shift
+GIT_MODE="none"
+FROM_VERSION=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --from)
+            shift
+            if [ $# -lt 1 ]; then
+                echo "❌ Error: --from necesita una versión"
+                exit 1
+            fi
+            FROM_VERSION="$1"
+            ;;
+        --commit|--tag|--push|--all) GIT_MODE="$1" ;;
+        *)
+            echo "❌ Error: argumento desconocido '$1'"
+            exit 1
+            ;;
+    esac
+    shift
+done
 
 # Validar modo git
 case "$GIT_MODE" in
@@ -93,9 +138,17 @@ if [ -z "$OLD_VERSION" ]; then
     exit 1
 fi
 
+# `--from` manda: sirve para reparar cuando la raíz ya se movió a la nueva
+# versión pero quedaron textos con la vieja.
+if [ -n "$FROM_VERSION" ]; then
+    OLD_VERSION="$FROM_VERSION"
+fi
+
 if [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
-    echo "⚠️  La versión actual ya es $NEW_VERSION. No hay cambios que hacer."
-    exit 0
+    echo "⚠️  La versión ya es $NEW_VERSION."
+    echo "   Se revisan igual todos los archivos para reparar lugares"
+    echo "   desfasados. Para reemplazar textos viejos usá --from <version>."
+    echo ""
 fi
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -111,7 +164,9 @@ echo ""
 COUNT=0
 
 # 1. Cargo.toml raíz
-sed -i "s/^version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/" Cargo.toml
+#    La versión se fija sin mirar la vieja: así el script repara Cargo.toml que
+#    quedaron atrás en un bump anterior.
+fijar_version_paquete Cargo.toml
 print_ok "Cargo.toml"
 COUNT=$((COUNT + 1))
 
@@ -120,8 +175,11 @@ for crate in forja-rt forja-wasm forja-android-rt forja-gui-rt forja-wasm-gui \
              forja-syntax forja-types forja-theme forja-gui-core; do
     file="crates/$crate/Cargo.toml"
     if [ -f "$file" ]; then
-        sed -i "s/^version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/" "$file"
-        sed -i "s/version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/g" "$file"
+        # Versión del paquete (solo la primera `version =` del archivo).
+        fijar_version_paquete "$file"
+        # Dependencias internas del workspace: forja-x = { version = "…", path = "…" }.
+        # Solo se tocan claves forja-*, para no pisar versiones de crates externos.
+        sed -i -E "s/^(forja-[a-z0-9-]+ *= *\{ *version *= *)\"[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?\"/\1\"$NEW_VERSION\"/" "$file"
         print_ok "$file"
         COUNT=$((COUNT + 1))
     fi
@@ -144,9 +202,12 @@ if [ -f "$release_file" ]; then
 fi
 
 # 4. src/main.rs (templates de proyecto)
+#    Solo las dependencias `forja* = { version = … }` de los templates: el
+#    archivo también contiene versiones de otras dependencias (0.1.0 del
+#    proyecto nuevo, 0.30.13 de una librería) que no deben tocarse.
 rs_file="src/main.rs"
 if [ -f "$rs_file" ]; then
-    sed -i "s/version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/g" "$rs_file"
+    sed -i -E "s/(forja[a-z-]* *= *\{ *version *= *)\"[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?\"/\1\"$NEW_VERSION\"/g" "$rs_file"
     print_ok "$rs_file (templates)"
     COUNT=$((COUNT + 1))
 fi
@@ -233,14 +294,50 @@ if [ -f "$iss_file" ]; then
     COUNT=$((COUNT + 1))
 fi
 
-# 13. Actualizar Cargo.lock mediante cargo check
+# 13. Verificación: ningún Cargo.toml del workspace debe quedar desfasado.
+#     Es la red que faltaba: un bump incompleto dejaba el workspace sin resolver
+#     (`forja-gui-rt 0.9.6` exigiendo `forja-gui-core ^0.9.6` con 0.9.5).
+DESFASADOS=""
+for file in Cargo.toml crates/*/Cargo.toml; do
+    [ -f "$file" ] || continue
+    v=$(grep -m1 '^version = ' "$file" | cut -d'"' -f2)
+    if [ "$v" != "$NEW_VERSION" ]; then
+        DESFASADOS="$DESFASADOS\n   - $file: $v"
+    fi
+    while IFS= read -r linea; do
+        dep=$(printf '%s' "$linea" | sed -E 's/^(forja-[a-z0-9-]+).*/\1/')
+        depv=$(printf '%s' "$linea" | sed -E 's/.*version *= *"([^"]+)".*/\1/')
+        if [ "$depv" != "$NEW_VERSION" ]; then
+            DESFASADOS="$DESFASADOS\n   - $file: $dep = $depv"
+        fi
+    done < <(grep -E '^forja-[a-z0-9-]+ *= *\{ *version' "$file" || true)
+done
+
+if [ -n "$DESFASADOS" ]; then
+    echo ""
+    echo "❌ Quedaron versiones desfasadas:$DESFASADOS"
+    echo ""
+    exit 1
+fi
+print_ok "Verificación: todos los Cargo.toml del workspace en $NEW_VERSION"
+
+# 14. Actualizar Cargo.lock mediante cargo check
 if command -v cargo &>/dev/null; then
     print_info "Actualizando Cargo.lock con cargo check..."
     cargo check --quiet || true
     if [ -d "crates/forja-wasm" ]; then
         (cd crates/forja-wasm && cargo check --quiet || true)
     fi
-    print_ok "Cargo.lock actualizado"
+
+    # El workspace tiene que resolver después del bump. Sin esto, una versión
+    # mal escrita en una dependencia pasa desapercibida hasta el primer build.
+    if ! cargo metadata --no-deps --format-version 1 >/dev/null 2>&1; then
+        echo ""
+        echo "❌ El workspace no resuelve después del bump. Revisá los Cargo.toml."
+        cargo metadata --no-deps --format-version 1 2>&1 | head -10
+        exit 1
+    fi
+    print_ok "Cargo.lock actualizado y workspace resuelto"
 fi
 
 echo ""
