@@ -1,0 +1,80 @@
+=== ALGORITMO DE DIJKSTRA ===
+
+Encuentra la ruta más corta en un grafo ponderado.
+
+  Matriz de adyacencia:
+    
+0 
+4 
+2 
+0 
+0 
+0 
+
+    
+4 
+0 
+1 
+5 
+0 
+0 
+
+    
+2 
+1 
+0 
+8 
+10 
+0 
+
+    
+0 
+5 
+8 
+0 
+2 
+6 
+
+    
+0 
+0 
+10 
+2 
+0 
+3 
+
+    
+0 
+0 
+0 
+6 
+3 
+0 
+
+
+Calculando distancias desde el nodo 0...
+
+Distancias más cortas desde el nodo 0:
+  Hasta 0: 0
+  (ruta: [0])
+  Hasta 1: 3
+  (ruta: [0,2,1])
+  Hasta 2: 2
+  (ruta: [0,2])
+  Hasta 3: 8
+  (ruta: [0,2,1,3])
+  Hasta 4: 10
+  (ruta: [0,2,1,3,4])
+  Hasta 5: 13
+  (ruta: [0,2,1,3,4,5])
+
+Rutas detalladas:
+  0 → 5: [0,2,1,3,4,5], distancia: 13
+  0 → 3: [0,2,1,3], distancia: 8
+  0 → 4: [0,2,1,3,4], distancia: 10
+
+Características de Dijkstra:
+  • Encuentra la ruta más corta desde un origen a todos los nodos
+  • Los pesos deben ser no negativos
+  • Complejidad: O(V²) con matriz de adyacencia
+  • Usa una estrategia voraz (greedy)
