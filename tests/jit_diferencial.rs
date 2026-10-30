@@ -88,8 +88,8 @@ fn alimentar_tiered(bc: &[Opcode]) {
     let mut tiered = TieredJit::new();
     for (ip, op) in bc.iter().enumerate() {
         match op {
-            Opcode::FunctionDef(nombre, _) => tiered.register_function(nombre.as_ref()),
-            Opcode::Call(nombre, _) => {
+            Opcode::DefinirFuncion(nombre, _) => tiered.register_function(nombre.as_ref()),
+            Opcode::Llamar(nombre, _) => {
                 if let ShouldCompile::Yes(_tier) = tiered.on_function_call(nombre.as_ref()) {}
             }
             _ => {}
