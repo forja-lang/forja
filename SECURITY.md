@@ -22,7 +22,8 @@
 ## Prácticas de seguridad / Security Practices
 
 - No se ejecuta código binario externo
-- Las dependencias se auditan con `cargo audit`
+- Las dependencias se auditan con `cargo audit` en cada push/PR (job
+  `auditoria` de `.github/workflows/ci.yml`, bloqueante ante vulnerabilidades).
 - El código del usuario (programas .fa) corre aislado en la VM
 - Los releases tienen artifact attestations generadas por GitHub Actions (Sigstore)
 
