@@ -301,3 +301,29 @@ jobs:
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: bash scripts/build-android.sh "${{ matrix.target }}" release gui
+
+  # F14-T3: auditoría de dependencias (RUSTSEC) sobre `Cargo.lock`.
+  # Bloqueante: al 2026-10-30 no hay vulnerabilidades. Los 6 avisos que sí
+  # aparecen son de crates "unmaintained" en transitivas de GUI/DBus (paste,
+  # rustybuzz, ttf-parser, zbus_names, zvariant, zvariant_derive): `cargo audit`
+  # los reporta como warning y no fallan el job.
+  auditoria:
+    name: Auditoría de dependencias (RUSTSEC)
+    needs: [cambios, elige-runner]
+    if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
+    steps:
+      # Los manifiestos de `crates/` son submódulos: sin ellos no puede resolver
+      # las dependencias por ruta que figuran en el lock.
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          cache-bin: true
+      - name: Instalar cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: cargo audit
+        run: cargo audit
