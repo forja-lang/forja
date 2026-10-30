@@ -1,0 +1,6 @@
+=== Bubble Sort ===
+
+Original: [64,34,25,12,22,11,90]
+Ordenado: [11,12,22,25,34,64,90]
+
+Bubble sort compara pares adyacentes y los intercambia si están desordenados.
