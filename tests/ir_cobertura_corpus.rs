@@ -124,6 +124,8 @@ const NO_DETERMINISTAS: &[&str] = &[
     "importar \"gui\"",
     "entrada(",
     "tiempo_actual",
+    // 210_sistema imprime `tiempo_ms()`: cambia entre las dos ejecuciones.
+    "tiempo_ms",
     "aleatorio",
     "tcp",
     "http",
