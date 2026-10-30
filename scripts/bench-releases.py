@@ -64,6 +64,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_POR_DEFECTO = "forja-lang/forja"
+# Raíz del repo: `forja transpilar` la necesita para resolver sus crates locales.
+RAIZ_REPO = Path(__file__).resolve().parent.parent
 RUTAS_VALIDAS = ("aot", "vm", "pipeline", "startup")
 SUELO_FA = """// Suelo de medición: mismo volumen de I/O, sin cuentas.
 // Se usa para separar arranque + I/O de cálculo real.
@@ -417,11 +419,17 @@ def _binario_de(proyecto: Path) -> Path:
 
 
 def transpilar(forja: Path, fuente: Path, destino: Path) -> tuple[Path, str]:
-    """Transpila y compila con el release. Devuelve (binario, sha del main.rs)."""
+    """Transpila y compila con el release. Devuelve (binario, sha del main.rs).
+
+    Se corre desde la raíz del repo a propósito: `forja transpilar` busca
+    `crates/forja-gui-rt` subiendo desde el cwd y aborta si no lo encuentra
+    (en 0.9.5 pasa siempre, aunque el programa no use GUI).
+    """
     if destino.exists():
         shutil.rmtree(destino)
     destino.parent.mkdir(parents=True, exist_ok=True)
-    ejecutar([str(forja), "transpilar", str(fuente), "-o", str(destino)], cwd=fuente.parent)
+    ejecutar([str(forja), "transpilar", str(fuente), "-o", str(destino)],
+             cwd=RAIZ_REPO)
     generado = destino / "src" / "main.rs"
     sha = sha256_archivo(generado) if generado.exists() else "?"
     return _binario_de(destino), sha
