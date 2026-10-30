@@ -105,7 +105,7 @@ impl Debugger {
         self.line_to_ip.clear();
         self.ip_to_line.clear();
         for (ip, op) in bc.iter().enumerate() {
-            if let Opcode::SetLine(line) = op {
+            if let Opcode::FijarLinea(line) = op {
                 self.line_to_ip.entry(*line).or_default().push(ip);
                 self.ip_to_line.insert(ip, *line);
             }
@@ -204,7 +204,7 @@ impl Debugger {
             let op = self.vm.bytecode[self.vm.ip].clone();
 
             // Procesar SetLine: actualizar línea actual
-            if let Opcode::SetLine(line) = &op {
+            if let Opcode::FijarLinea(line) = &op {
                 self.current_line = *line;
                 self.vm.ip += 1;
 
@@ -298,49 +298,49 @@ impl Debugger {
                 self.vm.push_valor(ValorFast::nulo());
                 self.vm.ip += 1;
             }
-            Opcode::Pop => {
+            Opcode::Descartar => {
                 self.vm.pop_valor()?;
                 self.vm.ip += 1;
             }
-            Opcode::Dup => {
+            Opcode::Duplicar => {
                 let v = *self.vm.peek_valor(0);
                 self.vm.push_valor(v);
                 self.vm.ip += 1;
             }
-            Opcode::LoadIdx(idx) => {
+            Opcode::CargarIndice(idx) => {
                 self.vm.push_valor(self.vm.load_local(*idx));
                 self.vm.ip += 1;
             }
-            Opcode::StoreIdx(idx) => {
+            Opcode::GuardarIndice(idx) => {
                 let val = self.vm.pop_valor()?;
                 self.vm.store_local(*idx, val);
                 self.vm.ip += 1;
             }
-            Opcode::DeclareIdx(idx, _mutable) => {
+            Opcode::DeclararIndice(idx, _mutable) => {
                 // Ensure local slot exists
                 self.vm.store_local(*idx, self.vm.load_local(*idx));
                 self.vm.ip += 1;
             }
-            Opcode::Add => {
+            Opcode::Sumar => {
                 self.vm.ip += 1;
                 ejecutar_add(self)?;
             }
-            Opcode::Sub => {
+            Opcode::Restar => {
                 self.vm.ip += 1;
                 ejecutar_sub(self)?;
             }
-            Opcode::Mul => {
+            Opcode::Multiplicar => {
                 self.vm.ip += 1;
                 ejecutar_mul(self)?;
             }
-            Opcode::Div => {
+            Opcode::Dividir => {
                 self.vm.ip += 1;
                 ejecutar_div(self)?;
             }
-            Opcode::Jump(target) => {
+            Opcode::Salto(target) => {
                 self.vm.ip = *target;
             }
-            Opcode::JumpSiFalso(target) => {
+            Opcode::SaltoSiFalso(target) => {
                 let cond = self.vm.pop_valor()?;
                 if !cond.es_verdadero() {
                     self.vm.ip = *target;
@@ -348,24 +348,24 @@ impl Debugger {
                     self.vm.ip += 1;
                 }
             }
-            Opcode::Label(_) => {
+            Opcode::Etiqueta(_) => {
                 self.vm.ip += 1;
             }
-            Opcode::Halt => {
+            Opcode::Detener => {
                 self.vm.ip = self.vm.bytecode.len();
             }
-            Opcode::Call(nombre, nargs) => {
+            Opcode::Llamar(nombre, nargs) => {
                 self.vm.ip += 1;
                 let n = *nargs;
                 ejecutar_call_debug(self, nombre, n)?;
             }
-            Opcode::Return => {
+            Opcode::Retornar => {
                 ejecutar_return_debug(self)?;
             }
-            Opcode::FunctionDef(_, _) => {
+            Opcode::DefinirFuncion(_, _) => {
                 self.vm.ip += 1;
             }
-            Opcode::Print => {
+            Opcode::Imprimir => {
                 let val = self.vm.pop_valor()?;
                 let s = self.vm.mostrar_valor(&val);
                 self.vm.output.lock().unwrap().push(s);
@@ -1170,7 +1170,7 @@ fn comparar_igual(a: ValorFast, b: ValorFast) -> bool {
 }
 
 // ======================================================================
-// Funciones auxiliares de ejecución de opcodes para debug
+// Funciones auxiliares de ejecución de codigos para debug
 // ======================================================================
 
 fn ejecutar_add(dbg: &mut Debugger) -> Result<(), ErrFast> {
@@ -1440,6 +1440,6 @@ pub enum DebugEvent {
     StepCompletado { line: usize },
     /// Pausado manualmente en línea
     Pausado { line: usize },
-    /// Programa terminado
+    /// Programa esta_terminado
     Terminado,
 }
