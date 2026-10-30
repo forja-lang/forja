@@ -16,7 +16,7 @@ impl ForjaFast {
     #[inline]
     pub(crate) fn ejecutar_ops_io(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
-            Opcode::ParseInt => {
+            Opcode::ParsearEntero => {
                 let v = self.pop_valor()?;
                 // `leer()` sin stdin devuelve Nulo: convertirlo en 0 hacía que un
                 // bucle interactivo ("pedir número hasta acertar") girara para
@@ -57,12 +57,12 @@ impl ForjaFast {
                 self.push_valor(ValorFast::entero(ts));
                 self.ip += 1;
             }
-            Opcode::Print => {
+            Opcode::Imprimir => {
                 let v = self.pop_valor()?;
                 self.escribir_output(self.mostrar_valor(&v));
                 self.ip += 1;
             }
-            Opcode::ReadLine => {
+            Opcode::LeerLinea => {
                 let mut i = String::new();
                 if std::io::stdin().read_line(&mut i).is_ok() {
                     let trimmed = i.trim();
