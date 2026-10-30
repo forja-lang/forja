@@ -1,0 +1,8 @@
+=== Búsqueda Lineal ===
+
+Array: [45,12,78,23,56,12,89,34,12,67]
+  12 → primera vez en índice 1, aparece 3 vez/veces
+  89 → primera vez en índice 6, aparece 1 vez/veces
+  99 → no encontrado
+
+Búsqueda lineal: O(n), funciona con arrays desordenados.
