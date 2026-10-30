@@ -960,6 +960,7 @@ fn mostrar_ayuda() {
     println!("  forja compilar ejemplos/hola_mundo.fa -o programa.exe");
     println!("  forja compilar-asm ejemplos/hola_mundo.fa");
     println!("  forja compilar-asm ejemplos/hola_mundo.fa --target arm64 -o programa");
+    println!("  forja compilar-asm ejemplos/hola_mundo.fa --target riscv64 -o programa");
     println!("  forja formatear ejemplos/hola_mundo.fa");
     println!("  forja test ejemplos/mis_pruebas.fa");
     println!("  forja test                  (ejecuta todos los .fa en ejemplos/)");
@@ -1083,7 +1084,7 @@ fn cmd_bench(args: &[String]) {
     println!("{}", "=".repeat(55));
     println!("  🔬 Forja — Benchmark de VMs ({} iteraciones)", iters);
     println!("  📄 {}", path);
-    println!("  📊 {} opcodes en bytecode", bytecode.len());
+    println!("  📊 {} codigos en bytecode", bytecode.len());
     println!("{}", "=".repeat(55));
     println!();
 
@@ -2543,29 +2544,27 @@ fn cmd_transpile(args: &[String]) {
     }
 
     let usa_gui = transpiler.usa_gui();
-    // Las rutas a los crates locales salen de la raíz del repo (misma resolución
-    // que `ejecutar_nativo`) y se escriben con barras normales: en un string TOML
-    // básico las barras invertidas de Windows son escapes (`C:\Users` → `\U`).
-    // Las rutas a los crates locales salen de la raíz del repo (misma resolución
-    // que `ejecutar_nativo`) y se escriben con barras normales: en un string TOML
-    // básico las barras invertidas de Windows son escapes (`C:\Users` → `\U`).
-    let forja_root = match forja::raiz_forja() {
-        Some(raiz) => raiz,
-        None => {
-            eprintln!(
-                "Error: no encuentro la raíz del repo de forja (necesito `crates/forja-gui-rt`\n\
-                 para compilar apps GUI). Corré `forja` desde la raíz del repo."
-            );
-            process::exit(1);
-        }
-    };
-    let forja_toml = forja::ruta_para_toml(&forja_root);
-    let forja_gui_rt_toml = forja::ruta_para_toml(&forja_root.join("crates/forja-gui-rt"));
     let cargo_toml = if usa_gui {
+        // Las rutas a los crates locales salen de la raíz del repo (misma
+        // resolución que `ejecutar_nativo`) y se escriben con barras normales:
+        // en un string TOML básico las barras invertidas de Windows son escapes
+        // (`C:\Users` → `\U`).
+        let forja_root = match forja::raiz_forja() {
+            Some(raiz) => raiz,
+            None => {
+                eprintln!(
+                    "Error: no encuentro la raíz del repo de forja (necesito `crates/forja-gui-rt`\n\
+                     para compilar apps GUI). Corré `forja` desde la raíz del repo."
+                );
+                process::exit(1);
+            }
+        };
+        let forja_toml = forja::ruta_para_toml(&forja_root);
+        let forja_gui_rt_toml = forja::ruta_para_toml(&forja_root.join("crates/forja-gui-rt"));
         format!(
             r#"[package]
 name = "{}"
-version = "0.9.5"
+version = "0.9.6"
 edition = "2021"
 
 [workspace]
@@ -2601,7 +2600,7 @@ features = ["android-native-activity"]
         format!(
             r#"[package]
 name = "{}"
-version = "0.9.5"
+version = "0.9.6"
 edition = "2021"
 
 # Exportado por Forja (fa) desde {} (podés ejecutar directo con 'forja ejecutar')
@@ -2703,10 +2702,20 @@ edition = "2021"
     }
 }
 
+/// Nombre del gcc que necesita un target cruzado para enlazar su assembly.
+fn compilador_cruzado(target: compiler_asm::TargetArch) -> &'static str {
+    match target {
+        compiler_asm::TargetArch::AArch64 => "aarch64-linux-gnu-gcc",
+        compiler_asm::TargetArch::RiscV64 => "riscv64-linux-gnu-gcc",
+        _ => "gcc",
+    }
+}
+
 /// forja build-asm|compilar-asm|asm <archivo.fa> [--target <arch>] [-o <salida>]
-/// Compila Forja a assembly nativo (x86-64, ARM64) usando gcc
+/// Compila Forja a assembly nativo (x86-64, ARM64, RISC-V 64) y, si el target
+/// coincide con la máquina anfitriona, lo enlaza con gcc.
 ///
-/// --target:  x86_64-windows, x86_64-linux, arm64 (default: plataforma actual)
+/// --target:  x86_64-windows, x86_64-linux, arm64, riscv64 (default: plataforma actual)
 /// -o:       archivo de salida (default: nombre del .fa con extensión del SO)
 fn cmd_build_asm(args: &[String]) {
     if args.is_empty() {
@@ -2714,7 +2723,7 @@ fn cmd_build_asm(args: &[String]) {
             "Uso: forja build-asm|compilar-asm|asm <archivo.fa> [--target <arch>] [-o <salida>]"
         );
         eprintln!(
-            "  --target: x86_64-windows | x86_64-linux | arm64  (default: plataforma actual)"
+            "  --target: x86_64-windows | x86_64-linux | arm64 | riscv64  (default: plataforma actual)"
         );
         process::exit(1);
     }
@@ -2733,7 +2742,7 @@ fn cmd_build_asm(args: &[String]) {
                     target_str = Some(args[i].clone());
                 } else {
                     eprintln!(
-                        "Error: --target requiere un valor (x86_64-windows, x86_64-linux, arm64)"
+                        "Error: --target requiere un valor (x86_64-windows, x86_64-linux, arm64, riscv64)"
                     );
                     process::exit(1);
                 }
@@ -2769,7 +2778,7 @@ fn cmd_build_asm(args: &[String]) {
             Some(t) => t,
             None => {
                 eprintln!(
-                    "Error: target '{}' no soportado. Usá: x86_64-windows, x86_64-linux, arm64",
+                    "Error: target '{}' no soportado. Usá: x86_64-windows, x86_64-linux, arm64, riscv64",
                     ts
                 );
                 process::exit(1);
@@ -2836,7 +2845,23 @@ fn cmd_build_asm(args: &[String]) {
         }
     }
 
-    // Compilar con gcc
+    // Compilar con gcc: sólo tiene sentido si el target es el de la máquina anfitriona.
+    let anfitrion = compiler_asm::TargetArch::detect();
+    if target != anfitrion {
+        println!(
+            "ℹ️  Target cruzado ({}): no se compila con el gcc del host.",
+            target.name()
+        );
+        println!("   Compilá el assembly con el toolchain cruzado:");
+        println!(
+            "   {} -O2 -o {} {}",
+            compilador_cruzado(target),
+            output_path,
+            asm_path.display()
+        );
+        return;
+    }
+
     println!("📦 Compilando con gcc -O2...");
     let gcc_result = std::process::Command::new("gcc")
         .args(["-O2", "-o", &output_path, asm_path.to_str().unwrap()])
