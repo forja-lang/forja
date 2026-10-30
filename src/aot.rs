@@ -122,6 +122,18 @@ impl AOTCompiler {
         // 4. Escribir archivo de salida
         fs::write(salida, &output).map_err(|e| format!("Error escribiendo '{}': {}", salida, e))?;
 
+        // El stub tiene que quedar ejecutable: `fs::write` crea el archivo con
+        // 0644 y en Linux/macOS `./programa` falla con "Permission denied".
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let modo = fs::metadata(salida)
+                .map(|m| m.permissions().mode())
+                .unwrap_or(0o755);
+            fs::set_permissions(salida, fs::Permissions::from_mode(modo | 0o111))
+                .map_err(|e| format!("Error dando permisos a '{}': {}", salida, e))?;
+        }
+
         Ok(())
     }
 }

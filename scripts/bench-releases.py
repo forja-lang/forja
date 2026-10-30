@@ -471,6 +471,11 @@ def salida_de(cmd: list[str], cwd: Path | None = None) -> str:
     Incluye el código de salida: un ejecutable que falla no imprime nada y su
     hash vacío coincidiría con el de cualquier otro que también falle.
     """
+    # `forja compilar` dejaba el .exe en 0644 hasta 0.9.5 (corregido en aot.rs):
+    # sin bit de ejecución el binario no corre en Linux.
+    destino = Path(cmd[0]) if cmd else None
+    if destino and destino.is_file() and not os.access(destino, os.X_OK):
+        destino.chmod(0o755)
     res = subprocess.run(cmd, cwd=str(cwd) if cwd else None,
                          capture_output=True, text=True, timeout=900)
     if res.returncode != 0:
