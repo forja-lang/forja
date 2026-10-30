@@ -20,14 +20,14 @@ impl ForjaFast {
     #[inline]
     pub(crate) fn ejecutar_ops_aritmetica(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
-            Opcode::AddInt => {
+            Opcode::SumarEntero => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
                 // Fast path directo: quickening garantiza enteros
                 self.push_valor(get_small_int_fast(a.a_entero().wrapping_add(b.a_entero())));
                 self.ip += 1;
             }
-            Opcode::AddFloat => {
+            Opcode::SumarDecimal => {
                 prof_count!(add_float);
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
@@ -43,14 +43,14 @@ impl ForjaFast {
                 }
                 self.ip += 1;
             }
-            Opcode::SubInt => {
+            Opcode::RestarEntero => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
                 // Fast path directo: quickening garantiza enteros
                 self.push_valor(get_small_int_fast(a.a_entero().wrapping_sub(b.a_entero())));
                 self.ip += 1;
             }
-            Opcode::MulInt => {
+            Opcode::MultiplicarEntero => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
                 self.push_valor(get_small_int_fast(a.a_entero().wrapping_mul(b.a_entero())));
