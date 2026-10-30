@@ -1,0 +1,32 @@
+=== Algoritmo de Euclides ===
+
+MCD básico (iterativo):
+
+  mcd(48, 18) = 6
+  mcd(56, 42) = 14
+  mcd(101, 10) = 1
+  mcd(99, 36) = 9
+  mcd(17, 13) = 1
+
+MCD recursivo:
+
+  mcd_rec(48, 18) = 6
+  mcd_rec(56, 42) = 14
+  mcd_rec(101, 10) = 1
+  mcd_rec(99, 36) = 9
+  mcd_rec(17, 13) = 1
+
+MCM (mínimo común múltiplo):
+
+  mcm(48, 18) = 144
+  mcm(56, 42) = 168
+  mcm(101, 10) = 1010
+  mcm(99, 36) = 396
+  mcm(17, 13) = 221
+
+MCD extendido (coeficientes de Bezout):
+  MCD = 6
+  Coeficientes: x = -1, y = 3
+  Combinación: 6 = -1*a + 3*b
+
+El algoritmo de Euclides calcula el MCD eficientemente O(log n).
