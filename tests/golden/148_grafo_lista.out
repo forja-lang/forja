@@ -1,0 +1,12 @@
+=== Grafo con Lista de Adyacencia ===
+
+  Listas de adyacencia:
+
+  A: C(3) → B(5) → ∅
+  B: D(2) → ∅
+  C: D(7) → ∅
+  D: ∅
+
+¿Tiene ciclos? falso
+
+La lista de adyacencia es O(V+E) en memoria, ideal para grafos dispersos.
