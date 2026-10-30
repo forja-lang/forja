@@ -6,6 +6,38 @@
 // manejada.
 use super::*;
 
+/// Cuántos huecos se permite rellenar al escribir fuera de rango. Evita que un
+/// índice absurdo (`arr[1000000000] = x`) intente reservar memoria a lo loco.
+pub(crate) const CRECIMIENTO_MAXIMO_ARREGLO: usize = 1 << 20;
+
+/// F12-T3: `arr[i] = v`.
+///
+/// Con `i < longitud` escribe en su sitio. Con `i >= longitud` **extiende** el
+/// arreglo con Nulos hasta `i` (los ejemplos del curso construyen arreglos así:
+/// `variable a = []` + `a[i] = x`). Devuelve `false` si el índice es negativo o
+/// desmedido, en cuyo caso la escritura se ignora como antes.
+#[inline]
+pub(crate) fn escribir_indice_arreglo(
+    arr: &mut Vec<ValorFast>,
+    indice: i64,
+    valor: ValorFast,
+) -> bool {
+    if indice < 0 {
+        return false;
+    }
+    let idx = indice as usize;
+    if idx < arr.len() {
+        arr[idx] = valor;
+        return true;
+    }
+    if idx - arr.len() > CRECIMIENTO_MAXIMO_ARREGLO {
+        return false;
+    }
+    arr.resize(idx + 1, ValorFast::nulo());
+    arr[idx] = valor;
+    true
+}
+
 impl ForjaFast {
     /// Ejecuta las ramas de colecciones (arreglos y mapas) del `match op`.
     ///
@@ -104,9 +136,7 @@ impl ForjaFast {
                         let a = self.pop_valor()?;
                         let v = self.pop_valor()?;
                         let arr = self.get_arr_mut(a.indice_arreglo());
-                        let ii = i.a_entero();
-                        if ii >= 0 && (ii as usize) < arr.len() {
-                            arr[ii as usize] = v;
+                        if escribir_indice_arreglo(arr, i.a_entero(), v) {
                             self.push_valor(a);
                         } else {
                             self.push_valor(ValorFast::nulo());
@@ -126,9 +156,7 @@ impl ForjaFast {
                         let v = self.pop_valor()?;
                         if a.es_arreglo() && i.es_entero() {
                             let arr = self.get_arr_mut(a.indice_arreglo());
-                            let ii = i.a_entero();
-                            if ii >= 0 && (ii as usize) < arr.len() {
-                                arr[ii as usize] = v;
+                            if escribir_indice_arreglo(arr, i.a_entero(), v) {
                                 self.push_valor(a);
                             } else {
                                 self.push_valor(ValorFast::nulo());

@@ -46,6 +46,10 @@ pub enum Inst {
     ConstNil,
     /// F11-T5: lectura de una línea de entrada (`leer()`).
     ReadLine,
+    /// F12-T3: `a_numero(texto)` → entero, igual que el backend AST.
+    ParseInt(ValueId),
+    /// F12-T3: `tiempo_actual()` → milisegundos desde la época Unix.
+    TiempoActual,
 
     // === Parámetros ===
     /// Parámetro de función (el índice corresponde al orden de los parámetros)
@@ -210,6 +214,7 @@ impl Inst {
             | Inst::ConstStr(_)
             | Inst::ConstNil
             | Inst::ReadLine
+            | Inst::TiempoActual
             | Inst::Param(_)
             | Inst::ChannelNew
             | Inst::Alloca(_)
@@ -260,6 +265,7 @@ impl Inst {
             }
 
             Inst::ChannelNewCap(v) => *v = f(*v),
+            Inst::ParseInt(v) => *v = f(*v),
 
             Inst::Call(_, args) | Inst::ArrayNew(args) => {
                 for v in args.iter_mut() {
@@ -300,11 +306,19 @@ impl Inst {
                 }
             }
 
-            Inst::FieldSet(obj, _, v)
-            | Inst::FieldSetIdx(obj, _, v)
-            | Inst::ArraySet(obj, _, v)
-            | Inst::MapSet(obj, _, v) => {
+            // `FieldSet`/`FieldSetIdx` llevan un `SymId`/`usize` en el medio,
+            // que no se renumera. `ArraySet`/`MapSet` llevan un **valor**
+            // (índice o clave) y sí: saltárselo dejaba el operando apuntando a
+            // un `ValueId` ya reasignado (sin materializar), y el conversor
+            // caía en el global 0 → `a[0] = 5` escribía con índice Nulo.
+            Inst::FieldSet(obj, _, v) | Inst::FieldSetIdx(obj, _, v) => {
                 *obj = f(*obj);
+                *v = f(*v);
+            }
+
+            Inst::ArraySet(obj, indice, v) | Inst::MapSet(obj, indice, v) => {
+                *obj = f(*obj);
+                *indice = f(*indice);
                 *v = f(*v);
             }
 
@@ -686,6 +700,20 @@ impl IrBuilder {
     pub fn emit_try(&mut self, valor: ValueId) -> ValueId {
         let v = self.next_value();
         self.current_insts.push(Inst::Try(valor));
+        v
+    }
+
+    /// F12-T3: `a_numero(texto)` → entero (misma ruta que el backend AST).
+    pub fn emit_parse_int(&mut self, texto: ValueId) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::ParseInt(texto));
+        v
+    }
+
+    /// F12-T3: `tiempo_actual()` → milisegundos desde la época Unix.
+    pub fn emit_tiempo_actual(&mut self) -> ValueId {
+        let v = self.next_value();
+        self.current_insts.push(Inst::TiempoActual);
         v
     }
 

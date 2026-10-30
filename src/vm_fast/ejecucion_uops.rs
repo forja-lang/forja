@@ -1157,9 +1157,11 @@ impl ForjaFast {
                             let a = self.pop_valor()?;
                             let v = self.pop_valor()?;
                             let arr = self.get_arr_mut(a.indice_arreglo());
-                            let ii = i.a_entero();
-                            if ii >= 0 && (ii as usize) < arr.len() {
-                                arr[ii as usize] = v;
+                            if crate::vm_fast::ops_colecciones::escribir_indice_arreglo(
+                                arr,
+                                i.a_entero(),
+                                v,
+                            ) {
                                 self.push_valor(a);
                             } else {
                                 self.push_valor(ValorFast::nulo());

@@ -362,6 +362,16 @@ impl IrToBytecode {
                 bytecode.push(Opcode::PushNulo);
                 guardar!(bytecode);
             }
+            Inst::ParseInt(texto) => {
+                let var = self.operando(texto);
+                bytecode.push(self.load_var(var));
+                bytecode.push(Opcode::ParseInt);
+                guardar!(bytecode);
+            }
+            Inst::TiempoActual => {
+                bytecode.push(Opcode::TiempoActual);
+                guardar!(bytecode);
+            }
             Inst::ReadLine => {
                 bytecode.push(Opcode::ReadLine);
                 guardar!(bytecode);

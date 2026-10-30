@@ -22,7 +22,7 @@
 |------|--------|
 | F11 (T1–T6) | HECHO |
 | F12-T1, F12-T2 | HECHO |
-| F12-T3 corpus ejecutable | EN-CURSO (246/260) |
+| F12-T3 corpus ejecutable | EN-CURSO (246/260 compilan; 197/260 corren) |
 | F12-T5 hilo no unido / rx en hijo | HECHO |
 | F12-T4 registry de producción | ABIERTO |
 | F13 (T1–T4) | BLOQUEADO-EXTERNO |
@@ -262,9 +262,43 @@ parámetro mutado; `150_heap` con líneas sueltas del formateador; 3 recuperados
 la historia del submódulo (`149`, `199_forja_desde_forja`, `208`); `209_json`
 destapó un hueco del IR: los `importar` **anidados** dentro de funciones (la
 stdlib los usa) ahora son no-ops en el IR, como en el AST.
-Pendiente: los 14 de `NO_COMPILAN` (10 son contenido dañado por un
-`formato(ejemplos)` viejo, hay que reescribirlos) y la semántica de
-`arr[i] = v` para hacer crecer un arreglo (bloquea `135`/`167`).
+Hecho además:
+- `arr[i] = v` con `i >= longitud` **extiende** el arreglo con Nulos
+  (`escribir_indice_arreglo`, tope de 1M). Los ejemplos del curso construyen
+  arreglos así (`variable a = []` + `a[i] = x`).
+- **Bug del IR**: `Inst::reasignar_valores` no renumeraba el operando *índice*
+  de `ArraySet`/`MapSet` (el `_` del patrón). Tras el pase SSA el índice
+  apuntaba a un `ValueId` inexistente y el conversor caía al global 0: toda
+  escritura por índice usaba un índice Nulo. Por eso `a[0] = 5` dejaba
+  `a = nulo` y `135_ordenamiento_mergesort` no ordenaba.
+- `135` ya no diverge AST/IR; sólo queda `167` (bug del backend AST con la raíz
+  de Newton en decimales).
+
+**Corpus ejecutable (medido con la VM, 10 s por ejemplo):** 197 corren con
+salida, 30 compilan pero no imprimen nada (GUI, red, stdin), 14 no compilan y 19
+fallan en runtime:
+- **6 necesitan stdin** (`leer()`): 151, 152, 154, 155, 159, 189 — el scanner no
+  puede alimentarlos, no son fallos del lenguaje.
+- **8 llaman funciones que no existen** en la stdlib ni en la VM: `mayuscula`
+  (153), `truncar` (169), `init` (199), `socket_tcp_conectar` (200_socket),
+  `stringificar` (209), `aleatorio.semilla` (213), `get` (218), `exacto_pow`
+  (400_exacto*).
+- **5 se cuelgan**: 103, 148, 160, 197 y `185_ffi_matematicas` (este último tiene
+  el mismo daño del formateador: `anon(...)` + líneas `1`/`""`).
+
+Se corrigieron en esta pasada: `imprimir`/`a_numero`/`tiempo_actual`/
+`pedir_numero` en el IR (antes sólo los conocía el backend AST, 20 ejemplos
+fallaban con "función no definida"), `max`/`min`/`abs` → `maximo`/`minimo`/
+`absoluto` en 4 ejemplos, el import faltante de `std/matematica` en 146,
+`144_cola` reescrito sin rebanadas y el bucle de `147` (líneas `k`/`1` que dejó
+el formateador).
+
+Pendiente: los 14 de `NO_COMPILAN`. 10 son contenido dañado por un
+`formato(ejemplos)` viejo (su historia en git tampoco sirve: está truncada o
+traducida de otro lenguaje) y necesitan reescritura manual; `301` usa
+`convertir(x, Entero)` (función inexistente + tipo como valor), `199_prestamos`
+usa `ref_mut`, `900` usa `si` como argumento (sólo GUI) y `36` es inválido a
+propósito.
 - **¿Qué?** Ejecutar los 259 ejemplos parseables y resolver los 3 no parseables
   (`192`, `199`, `900`) o documentarlos como no ejecutables.
 - **¿Cuándo?** Tras F11/F12.

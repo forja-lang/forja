@@ -1642,7 +1642,7 @@ impl BytecodeGenerator {
             }
 
             Declaracion::LlamadaFuncion { nombre, argumentos } => {
-                if nombre == "escribir" || nombre == "escribir_linea" {
+                if nombre == "escribir" || nombre == "escribir_linea" || nombre == "imprimir" {
                     for arg in argumentos {
                         self.generar_expresion(arg);
                         self.emitir(Opcode::Print);
@@ -1952,7 +1952,7 @@ impl BytecodeGenerator {
             }
 
             Expresion::LlamadaFuncion { nombre, argumentos } => {
-                if nombre == "escribir" || nombre == "escribir_linea" {
+                if nombre == "escribir" || nombre == "escribir_linea" || nombre == "imprimir" {
                     for arg in argumentos {
                         self.generar_expresion(arg);
                         self.emitir(Opcode::Print);

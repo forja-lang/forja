@@ -309,6 +309,35 @@ impl IrConstructor {
             }
 
             Expresion::LlamadaFuncion { nombre, argumentos } => {
+                // F12-T3: `imprimir` es el alias de `escribir` que usan varios
+                // ejemplos del curso (el backend AST lo trata igual).
+                if nombre == "imprimir" {
+                    let escribir = builder.symbols.intern("escribir");
+                    for arg in argumentos {
+                        let v = self.expr_to_ir(builder, arg);
+                        builder.emit_call(escribir, vec![v]);
+                    }
+                    return builder.emit_const_nil();
+                }
+                // F12-T3: builtins de stdlib que el backend AST ya resolvía y el
+                // IR no cubría (`a_numero`, `tiempo_actual`, `pedir_numero`):
+                // sin esto los ejemplos fallaban con "función no definida".
+                if nombre == "a_numero" && argumentos.len() == 1 {
+                    let texto = self.expr_to_ir(builder, &argumentos[0]);
+                    return builder.emit_parse_int(texto);
+                }
+                if nombre == "tiempo_actual" && argumentos.is_empty() {
+                    return builder.emit_tiempo_actual();
+                }
+                if nombre == "pedir_numero" {
+                    let escribir = builder.symbols.intern("escribir");
+                    for arg in argumentos {
+                        let v = self.expr_to_ir(builder, arg);
+                        builder.emit_call(escribir, vec![v]);
+                    }
+                    let linea = builder.emit_read_line();
+                    return builder.emit_parse_int(linea);
+                }
                 // F11-T5: `escribir_linea(args)` = `escribir(args)` + "\n",
                 // igual que el backend AST (no está registrada en la VM).
                 if nombre == "escribir_linea" {

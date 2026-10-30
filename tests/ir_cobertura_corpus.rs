@@ -120,15 +120,16 @@ fn corpus_completo_por_ir_sin_fallback() {
 ///
 /// Si un ejemplo empieza a divergir, el test falla: es una regresión de paridad.
 ///
-/// Contenido actual (2026-10-30), ambos por el mismo hueco del lenguaje:
+/// Contenido actual (2026-10-30):
 ///
-/// * `135_ordenamiento_mergesort` y `167_estadistica` empezaron a compilar al
-///   arreglar sus `mut` de parámetro. Usan `variable a = []` + `a[i] = valor`
-///   para **hacer crecer** el arreglo; ningún backend lo soporta hoy: el AST
-///   deja `nulo` y el IR descarta la escritura. Falta decidir la semántica
-///   (`arr[i] = v` con `i >= longitud(arr)` debería extender el arreglo) y
-///   aplicarla en los dos motores.
-const DIVERGENCIAS_CONOCIDAS: &[&str] = &["135_ordenamiento_mergesort.fa", "167_estadistica.fa"];
+/// * `167_estadistica`: el **AST** imprime `nulo` en `Desviación Estándar`
+///   (raíz cuadrada por Newton con decimales); el IR da `1`, que es lo
+///   correcto. Es un bug del backend AST, que sólo se usa como comparación.
+///
+/// `135_ordenamiento_mergesort` ya no diverge: se corrigieron el crecimiento
+/// de arreglos por índice (`variable a = []` + `a[i] = v`) y la renumeración
+/// del índice en `Inst::ArraySet`/`MapSet`.
+const DIVERGENCIAS_CONOCIDAS: &[&str] = &["167_estadistica.fa"];
 
 /// Marcadores de ejemplos no deterministas o con dependencias externas: su
 /// salida no se puede comparar entre dos ejecuciones.
