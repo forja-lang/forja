@@ -1,0 +1,16 @@
+=== PROCESAMIENTO JSON ===
+
+JSON original:
+  {"nombre": "Ana", "edad": 30, "activo": true, "hobbies": ["leer", "correr", "codificar"]}
+
+Resultado del parseo:
+
+--- Construcción manual de JSON-like ---
+  Estructura de persona:
+    nombre:Juan
+    edad:25
+    email:juan@email.com
+    habilidades:[Python,Forja,Rust]
+
+JSON es el formato de intercambio de datos más usado en la web.
+Forja puede procesar JSON usando mapas y procesamiento de texto.
