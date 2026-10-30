@@ -118,14 +118,22 @@ impl IrConstructor {
             Expresion::LiteralExacto(..) => Some(NumKind::Exacto),
             Expresion::Grupo(inner) => self.tipo_num(inner),
             Expresion::Unaria { expr, .. } => self.tipo_num(expr),
-            Expresion::Binaria { izquierda, operador, derecha } => {
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
                 use Operador::*;
                 if !matches!(operador, Suma | Resta | Multiplicacion | Division | Modulo) {
                     return None;
                 }
                 match (self.tipo_num(izquierda), self.tipo_num(derecha)) {
-                    (Some(NumKind::Exacto), _) | (_, Some(NumKind::Exacto)) => Some(NumKind::Exacto),
-                    (Some(NumKind::Decimal), _) | (_, Some(NumKind::Decimal)) => Some(NumKind::Decimal),
+                    (Some(NumKind::Exacto), _) | (_, Some(NumKind::Exacto)) => {
+                        Some(NumKind::Exacto)
+                    }
+                    (Some(NumKind::Decimal), _) | (_, Some(NumKind::Decimal)) => {
+                        Some(NumKind::Decimal)
+                    }
                     (Some(NumKind::Entero), Some(NumKind::Entero)) => Some(NumKind::Entero),
                     _ => None,
                 }
@@ -134,7 +142,6 @@ impl IrConstructor {
             _ => None,
         }
     }
-
 
     pub fn new() -> Self {
         IrConstructor {

@@ -247,8 +247,8 @@ fn ruta_canonica_es_ast_first_y_coincide_con_ast_estricto() {
     let fuente = "funcion f() -> Entero {\n    retornar 7\n}\nescribir(f())";
     let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let (bc_canonico, _c) = forja::compilar_pipeline_completa(fuente).expect("ruta canónica");
-    let (bc_ast, _c) = forja::compilar_pipeline_completa_desde_ast(fuente, raiz)
-        .expect("backend AST explícito");
+    let (bc_ast, _c) =
+        forja::compilar_pipeline_completa_desde_ast(fuente, raiz).expect("backend AST explícito");
     assert_eq!(
         bc_canonico, bc_ast,
         "F14-T2: la ruta canónica debe usar el emisor AST (más compacto)"

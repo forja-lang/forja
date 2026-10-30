@@ -326,7 +326,10 @@ fn conformidad_decimal() {
             Op::Divide => "divide",
             Op::Compare => "compare",
         };
-        eprintln!("  {nombre:<10} {ok:>6}/{total:<6} ({:.1}%)", *ok as f64 * 100.0 / *total as f64);
+        eprintln!(
+            "  {nombre:<10} {ok:>6}/{total:<6} ({:.1}%)",
+            *ok as f64 * 100.0 / *total as f64
+        );
     }
     eprintln!(
         "  TOTAL      {}/{} ({:.1}%)\n",
