@@ -5,8 +5,8 @@ use super::*;
 
 impl ForjaFast {
     pub fn ejecutar(&mut self) -> Result<(), ErrFast> {
-        // NOTA: No redirigir automáticamente a ejecutar_uops() cuando hay opcodes compuestos.
-        // ejecutar() ya maneja correctamente todos los opcodes compuestos (DeclareEnteroOp, etc.)
+        // NOTA: No redirigir automáticamente a ejecutar_uops() cuando hay codigos compuestos.
+        // ejecutar() ya maneja correctamente todos los codigos compuestos (DeclareEnteroOp, etc.)
         // El pipeline de uops es una optimización opt-in que se llama explícitamente.
         // La redirección automática causaba bugs con DeclareIdx después de Add/Call,
         // ya que en uops DeclareIdx se expande a DeclareVar (sin pop del stack).
@@ -63,7 +63,7 @@ impl ForjaFast {
             // las instrucciones más frecuentes de un loop y ningún helper las
             // maneja; sin esto pagan los 11 `match` de la cadena de despacho.
             match op {
-                Opcode::Jump(target) => {
+                Opcode::Salto(target) => {
                     // PGO: un salto hacia atrás es un back-edge de loop
                     if *target < ip {
                         if let Some(p) = self.perfil_pgo.as_mut() {
@@ -73,7 +73,7 @@ impl ForjaFast {
                     self.ip = *target;
                     continue;
                 }
-                Opcode::JumpSiFalso(target) => {
+                Opcode::SaltoSiFalso(target) => {
                     let cond = self.pop_valor()?.es_verdadero_con_heap(&self.str_heap);
                     // PGO: registrar el branch taken/not-taken
                     if let Some(p) = self.perfil_pgo.as_mut() {
@@ -86,15 +86,15 @@ impl ForjaFast {
                     }
                     continue;
                 }
-                Opcode::Label(_) | Opcode::FunctionDef(_, _) => {
+                Opcode::Etiqueta(_) | Opcode::DefinirFuncion(_, _) => {
                     self.ip += 1;
                     continue;
                 }
-                Opcode::Halt => break,
+                Opcode::Detener => break,
                 _ => {}
             }
 
-            // Ramas simples (push/pop/dup, variables por índice/global, opcodes
+            // Ramas simples (push/pop/dup, variables por índice/global, codigos
             // fusionados de declaración) delegadas a `ops_simples.rs` (F1-T7).
             if self.ejecutar_ops_simples(op)? {
                 continue;
@@ -153,7 +153,7 @@ impl ForjaFast {
 
             match op {
                 // === ARITMÉTICA (con especialización adaptativa) ===
-                Opcode::Add => {
+                Opcode::Sumar => {
                     prof_count!(add_generic);
                     let ip = self.ip;
                     // Verificar tipos para especialización (omitido en fast-math:
@@ -183,9 +183,9 @@ impl ForjaFast {
                                     );
                                 }
                                 patch_op = Some(match ta {
-                                    0 => Opcode::AddInt,
-                                    1 => Opcode::AddFloat,
-                                    _ => Opcode::Add,
+                                    0 => Opcode::SumarEntero,
+                                    1 => Opcode::SumarDecimal,
+                                    _ => Opcode::Sumar,
                                 });
                             }
                         } else {
@@ -335,7 +335,7 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
-                Opcode::Sub => {
+                Opcode::Restar => {
                     let ip = self.ip;
                     // Verificar tipos para especialización (omitido en fast-math)
                     if !self.fast_math && self.top_len + self.stack.len() >= 2 {
@@ -348,9 +348,9 @@ impl ForjaFast {
                                 self.contador_especializacion[ip].saturating_add(1);
                             if self.contador_especializacion[ip] >= self.umbral_especializacion {
                                 patch_op = Some(match ta {
-                                    0 => Opcode::SubInt,
-                                    1 => Opcode::SubFloat,
-                                    _ => Opcode::Sub,
+                                    0 => Opcode::RestarEntero,
+                                    1 => Opcode::RestarDecimal,
+                                    _ => Opcode::Restar,
                                 });
                             }
                         } else {
@@ -431,7 +431,7 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
-                Opcode::Mul => {
+                Opcode::Multiplicar => {
                     let ip = self.ip;
                     // Verificar tipos para especialización (omitido en fast-math)
                     if !self.fast_math && self.top_len + self.stack.len() >= 2 {
@@ -444,9 +444,9 @@ impl ForjaFast {
                                 self.contador_especializacion[ip].saturating_add(1);
                             if self.contador_especializacion[ip] >= self.umbral_especializacion {
                                 patch_op = Some(match ta {
-                                    0 => Opcode::MulInt,
-                                    1 => Opcode::MulFloat,
-                                    _ => Opcode::Mul,
+                                    0 => Opcode::MultiplicarEntero,
+                                    1 => Opcode::MultiplicarDecimal,
+                                    _ => Opcode::Multiplicar,
                                 });
                             }
                         } else {
@@ -517,7 +517,7 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
-                Opcode::Div => {
+                Opcode::Dividir => {
                     let ip = self.ip;
                     // Verificar tipos para especialización (omitido en fast-math)
                     if !self.fast_math && self.top_len + self.stack.len() >= 2 {
@@ -530,9 +530,9 @@ impl ForjaFast {
                                 self.contador_especializacion[ip].saturating_add(1);
                             if self.contador_especializacion[ip] >= self.umbral_especializacion {
                                 patch_op = Some(match ta {
-                                    0 => Opcode::DivInt,
-                                    1 => Opcode::DivFloat,
-                                    _ => Opcode::Div,
+                                    0 => Opcode::DividirEntero,
+                                    1 => Opcode::DividirDecimal,
+                                    _ => Opcode::Dividir,
                                 });
                             }
                         } else {
@@ -666,7 +666,7 @@ impl ForjaFast {
                 // `AddInt`, `AddFloat`, `SubInt` y `MulInt` se delegaron a
                 // `ops_aritmetica.rs` (F1-T7). `SubFloat`/`MulFloat`/`DivFloat`
                 // permanecen aquí por usar `patch_op`/`continue`.
-                Opcode::SubFloat => {
+                Opcode::RestarDecimal => {
                     prof_count!(sub_float);
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
@@ -679,7 +679,7 @@ impl ForjaFast {
                         self.push_valor(ValorFast::flotante(a.a_flotante() - b.a_entero() as f64));
                     } else {
                         // Des-especializar si tipos no coinciden
-                        patch_op = Some(Opcode::Sub);
+                        patch_op = Some(Opcode::Restar);
                         if a.es_entero() && b.es_entero() {
                             self.push_valor(get_small_int_fast(
                                 a.a_entero().wrapping_sub(b.a_entero()),
@@ -692,7 +692,7 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
-                Opcode::MulFloat => {
+                Opcode::MultiplicarDecimal => {
                     prof_count!(mul_float);
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
@@ -704,7 +704,7 @@ impl ForjaFast {
                     } else if a.es_flotante() && b.es_entero() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() * b.a_entero() as f64));
                     } else {
-                        patch_op = Some(Opcode::Mul);
+                        patch_op = Some(Opcode::Multiplicar);
                         if a.es_entero() && b.es_entero() {
                             self.push_valor(get_small_int_fast(
                                 a.a_entero().wrapping_mul(b.a_entero()),
@@ -717,7 +717,7 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
-                Opcode::DivInt => {
+                Opcode::DividirEntero => {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
                     if b.a_entero() == 0 {
@@ -732,7 +732,7 @@ impl ForjaFast {
                     self.push_valor(get_small_int_fast(a.a_entero().wrapping_div(b.a_entero())));
                     self.ip += 1;
                 }
-                Opcode::DivFloat => {
+                Opcode::DividirDecimal => {
                     prof_count!(div_float);
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
@@ -775,7 +775,7 @@ impl ForjaFast {
                         }
                         self.push_valor(ValorFast::flotante(a.a_flotante() / b.a_entero() as f64));
                     } else {
-                        patch_op = Some(Opcode::Div);
+                        patch_op = Some(Opcode::Dividir);
                         self.push_valor(a);
                         self.push_valor(b);
                         let (b2, a2) = (self.pop_valor()?, self.pop_valor()?);
@@ -797,7 +797,7 @@ impl ForjaFast {
                     self.ip += 1;
                 }
 
-                Opcode::Jump(target) => {
+                Opcode::Salto(target) => {
                     // PGO: un salto hacia atrás es un back-edge de loop
                     if *target < ip {
                         if let Some(p) = self.perfil_pgo.as_mut() {
@@ -806,7 +806,7 @@ impl ForjaFast {
                     }
                     self.ip = *target;
                 }
-                Opcode::JumpSiFalso(target) => {
+                Opcode::SaltoSiFalso(target) => {
                     let cond = self.pop_valor()?.es_verdadero_con_heap(&self.str_heap);
                     // PGO: registrar el branch taken/not-taken
                     if let Some(p) = self.perfil_pgo.as_mut() {
@@ -818,14 +818,14 @@ impl ForjaFast {
                         self.ip += 1;
                     }
                 }
-                Opcode::Label(_) => {
+                Opcode::Etiqueta(_) => {
                     self.ip += 1;
                 }
-                Opcode::FunctionDef(_, _) => {
+                Opcode::DefinirFuncion(_, _) => {
                     self.ip += 1;
                 }
 
-                Opcode::Call(nombre, nargs) => {
+                Opcode::Llamar(nombre, nargs) => {
                     // PGO: registrar la llamada a función
                     if let Some(p) = self.perfil_pgo.as_mut() {
                         p.record_call(nombre.as_ref());
@@ -866,7 +866,7 @@ impl ForjaFast {
                         // no creamos un nuevo frame — reemplazamos args en el scope actual
                         let next_ip = call_ip + 1;
                         let is_tail = next_ip < len
-                            && matches!(self.bytecode.get(next_ip), Some(Opcode::Return));
+                            && matches!(self.bytecode.get(next_ip), Some(Opcode::Retornar));
 
                         if is_tail {
                             // Tail call: reemplazar args en el scope actual, sin guardar frame
@@ -969,7 +969,7 @@ impl ForjaFast {
                 // La variable local var_idx contiene el nombre de la función a
                 // llamar (el valor de un closure). Reescribe el opcode a Call y
                 // reprocesa la misma posición.
-                Opcode::CallClosure(nargs) => {
+                Opcode::LlamarClausura(nargs) => {
                     // Pila: [callee, arg1, ..., argN]. Se desempujan los
                     // argumentos para llegar al callee, y se vuelven a empujar
                     // para que `Call` los encuentre encima.
@@ -988,7 +988,7 @@ impl ForjaFast {
                         // Se ejecuta `Call` en el mismo ip, sin reescribir el
                         // opcode: en las llamadas siguientes el bytecode vuelve a
                         // empujar el destinatario antes de `CallClosure`.
-                        self.op_forzado = Some(Opcode::Call(nombre, n));
+                        self.op_forzado = Some(Opcode::Llamar(nombre, n));
                         self.hay_op_forzado = true;
                         continue;
                     }
@@ -1000,7 +1000,7 @@ impl ForjaFast {
                         for a in args {
                             self.push_valor(a);
                         }
-                        self.op_forzado = Some(Opcode::Call(nombre, n + 1));
+                        self.op_forzado = Some(Opcode::Llamar(nombre, n + 1));
                         self.hay_op_forzado = true;
                         continue;
                     }
@@ -1010,7 +1010,7 @@ impl ForjaFast {
                 }
 
                 // ─── TAIL CALL ────────────────────────────────────────────────
-                Opcode::TailCall(nombre, nargs) => {
+                Opcode::LlamadaFinal(nombre, nargs) => {
                     let sym_id = self.tabla_simbolos.internar(nombre.as_ref());
                     if let Some(entry) = self.lookup_func_entry(sym_id) {
                         self.flush_stack();
@@ -1058,7 +1058,7 @@ impl ForjaFast {
                 }
 
                 // ─── CALLDIRECT (Fase 2b) — llama por índice de función, directo a function_table ───
-                Opcode::CallDirect(func_idx, nargs) => {
+                Opcode::LlamarDirecto(func_idx, nargs) => {
                     // PGO: registrar la llamada directa (por nombre de función)
                     if let Some(p) = self.perfil_pgo.as_mut() {
                         if let Some(nombre) = self.func_names_pgo.get(*func_idx) {
@@ -1071,7 +1071,7 @@ impl ForjaFast {
                     if let Some(entry) = self.function_table.entries.get(*func_idx).copied() {
                         let next_ip = self.ip + 1;
                         let is_tail = next_ip < len
-                            && matches!(self.bytecode.get(next_ip), Some(Opcode::Return));
+                            && matches!(self.bytecode.get(next_ip), Some(Opcode::Retornar));
 
                         if is_tail {
                             self.flush_stack();
@@ -1131,15 +1131,15 @@ impl ForjaFast {
                 }
 
                 // ─── CALLBUILTIN (Fase 2b) — builtin directo, sin lookup ───
-                Opcode::CallBuiltin(kind, nargs) => {
+                Opcode::LlamarIncorporada(kind, nargs) => {
                     match kind {
-                        BuiltinKind::Escribir => {
+                        TipoIncorporada::Escribir => {
                             for _ in 0..*nargs {
                                 let v = self.pop_valor()?;
                                 self.escribir_output(self.mostrar_valor(&v));
                             }
                         }
-                        BuiltinKind::Longitud | BuiltinKind::Len => {
+                        TipoIncorporada::Longitud | TipoIncorporada::Len => {
                             if *nargs != 1 {
                                 self.push_valor(ValorFast::nulo());
                                 self.ip += 1;
@@ -1156,7 +1156,7 @@ impl ForjaFast {
                                 self.push_valor(get_small_int_fast(0));
                             }
                         }
-                        BuiltinKind::Tipo => {
+                        TipoIncorporada::Tipo => {
                             if *nargs != 1 {
                                 self.push_valor(ValorFast::nulo());
                                 self.ip += 1;
@@ -1167,7 +1167,7 @@ impl ForjaFast {
                             let idx = self.alloc_str(Arc::from(tipo_str));
                             self.push_valor(ValorFast::texto(idx));
                         }
-                        BuiltinKind::ATexto => {
+                        TipoIncorporada::ATexto => {
                             if *nargs != 1 {
                                 self.push_valor(ValorFast::nulo());
                                 self.ip += 1;
@@ -1178,7 +1178,7 @@ impl ForjaFast {
                             let idx = self.alloc_str(Arc::from(s.as_str()));
                             self.push_valor(ValorFast::texto(idx));
                         }
-                        BuiltinKind::EsNumero => {
+                        TipoIncorporada::EsNumero => {
                             if *nargs != 1 {
                                 self.push_valor(ValorFast::nulo());
                                 self.ip += 1;
@@ -1187,7 +1187,7 @@ impl ForjaFast {
                             let v = self.pop_valor()?;
                             self.push_valor(ValorFast::booleano(v.es_entero() || v.es_flotante()));
                         }
-                        BuiltinKind::EsTexto => {
+                        TipoIncorporada::EsTexto => {
                             if *nargs != 1 {
                                 self.push_valor(ValorFast::nulo());
                                 self.ip += 1;
@@ -1196,7 +1196,7 @@ impl ForjaFast {
                             let v = self.pop_valor()?;
                             self.push_valor(ValorFast::booleano(v.es_texto()));
                         }
-                        BuiltinKind::Empujar => {
+                        TipoIncorporada::Empujar => {
                             if *nargs != 2 {
                                 self.push_valor(ValorFast::nulo());
                                 self.ip += 1;
@@ -1212,7 +1212,7 @@ impl ForjaFast {
                                 self.push_valor(ValorFast::nulo());
                             }
                         }
-                        BuiltinKind::Obtener => {
+                        TipoIncorporada::Obtener => {
                             if *nargs != 2 {
                                 self.push_valor(ValorFast::nulo());
                                 self.ip += 1;
@@ -1232,7 +1232,7 @@ impl ForjaFast {
                                 self.push_valor(ValorFast::nulo());
                             }
                         }
-                        BuiltinKind::Remover => {
+                        TipoIncorporada::Remover => {
                             if *nargs != 2 {
                                 self.push_valor(ValorFast::nulo());
                                 self.ip += 1;
@@ -1252,7 +1252,7 @@ impl ForjaFast {
                                 self.push_valor(ValorFast::nulo());
                             }
                         }
-                        BuiltinKind::Nuevo => {
+                        TipoIncorporada::Nuevo => {
                             if *nargs < 1 {
                                 self.push_valor(ValorFast::nulo());
                                 self.ip += 1;
@@ -1266,7 +1266,7 @@ impl ForjaFast {
                 }
 
                 // ─── FUNCIONES NATIVAS (Native Registry) ─────────────────
-                Opcode::CallNative(nombre, nargs) => {
+                Opcode::LlamarNativa(nombre, nargs) => {
                     self.flush_stack();
                     let mut args: Vec<ValorFast> = Vec::with_capacity(*nargs);
                     for _ in 0..*nargs {
@@ -1294,14 +1294,14 @@ impl ForjaFast {
                     self.ip += 1;
                 }
 
-                Opcode::SocketPoll(var_nombre) => {
+                Opcode::ConsultarSocket(var_nombre) => {
                     // Poll no bloqueante: true si hay datos disponibles
                     let disponible = self.socket_poll_by_name(var_nombre.as_ref());
                     self.push_valor(ValorFast::booleano(disponible));
                     self.ip += 1;
                 }
 
-                Opcode::Return => {
+                Opcode::Retornar => {
                     if self.show_bytecode {
                         eprintln!(
                             "[DEBUG Return] frame_count={}, self.stack.len={}, top_len={}",
@@ -1348,10 +1348,10 @@ impl ForjaFast {
 
                 // `NewObject`, `SetField`, `SetFieldIdx` y `GetField` se delegaron
                 // a `ops_objetos.rs` (F1-T7).
-                Opcode::Halt => break,
+                Opcode::Detener => break,
 
                 // Propagación de errores con el operador ?
-                Opcode::Try => {
+                Opcode::Intentar => {
                     match self.aplicar_try()? {
                         None => {
                             // Flujo normal: la expresión produjo un valor `ok`/`some`.
@@ -1360,7 +1360,7 @@ impl ForjaFast {
                         Some(err) => {
                             // Propagación REAL: descartar los pendientes del frame
                             // actual (el TOS cache no cruza frames) y desenrollar el
-                            // frame EXACTAMENTE como `Opcode::Return`, dejando el
+                            // frame EXACTAMENTE como `Opcode::Retornar`, dejando el
                             // objeto de error/none como valor de retorno.
                             self.top_len = 0;
                             self.push_valor(err);
@@ -1378,7 +1378,7 @@ impl ForjaFast {
                 }
 
                 // Debug: SetLine — información de línea para el debugger
-                Opcode::SetLine(line) => {
+                Opcode::FijarLinea(line) => {
                     // F2-T7: registrar la línea actual para el backtrace de runtime.
                     self.linea_actual = *line;
                     self.ip += 1;
