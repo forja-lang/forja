@@ -1,0 +1,12 @@
+=== ESTADÍSTICA DESCRIPTIVA ===
+
+Datos: [4,8,6,5,3,8,7,5,9,4,6,7,5,8,6]
+Cantidad: 15
+Media: 6
+Mediana: 6
+Moda: [3,4,5,6,7,8,9]
+Varianza: 3
+Desviación Estándar: nulo
+
+La desviación estándar mide la dispersión de los datos.
+Un valor bajo significa datos cercanos a la media.
