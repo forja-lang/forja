@@ -1,0 +1,6 @@
+=== @derive(Mostrar) ===
+
+Persona: <Persona>
+Producto: <Producto>
+
+Los objetos se muestran automáticamente
