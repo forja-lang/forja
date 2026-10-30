@@ -1,0 +1,34 @@
+=== APROXIMACIÓN DEL NÚMERO e ===
+
+Valor real de e ≈ 2.718281828459045
+
+--- Método 1: Serie de Taylor (Σ 1/n!) ---
+
+  1 términos: e ≈ 2
+    error: -0.7182818284590451
+  3 términos: e ≈ 2
+    error: -0.7182818284590451
+  5 términos: e ≈ 2
+    error: -0.7182818284590451
+  10 términos: e ≈ 2
+    error: -0.7182818284590451
+  15 términos: e ≈ 2
+    error: -0.7182818284590451
+  20 términos: e ≈ 2
+    error: -0.7182818284590451
+
+--- Método 2: Límite (1 + 1/n)^n ---
+
+  n=10: e ≈ nulo
+    error: nulo
+  n=100: e ≈ nulo
+    error: nulo
+  n=1000: e ≈ nulo
+    error: nulo
+  n=10000: e ≈ nulo
+    error: nulo
+  n=100000: e ≈ nulo
+    error: nulo
+
+La serie de Taylor converge mucho más rápido que el límite.
+Con solo 20 términos obtenemos alta precisión.
