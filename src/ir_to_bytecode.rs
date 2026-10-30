@@ -24,19 +24,19 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Nodo φ de un bloque: (valor del φ, slot, operandos por predecesor).
-type Phi = (ValueId, usize, Vec<(BlockId, ValueId)>);
+type Phi = (IdValor, usize, Vec<(IdBloque, IdValor)>);
 
 /// φ por bloque de destino.
-type PhisPorBloque = HashMap<BlockId, Vec<Phi>>;
+type PhisPorBloque = HashMap<IdBloque, Vec<Phi>>;
 
 /// Conversor de IR SSA a bytecode
-pub struct IrToBytecode {
-    /// Mapa de ValueId → índice de variable en el bytecode
-    value_to_var: HashMap<ValueId, usize>,
+pub struct ConversorABytecode {
+    /// Mapa de IdValor → índice de variable en el bytecode
+    value_to_var: HashMap<IdValor, usize>,
     /// Siguiente índice de variable temporal
     next_var: usize,
     /// Tabla de símbolos
-    symbols: TablaSimbolosIr,
+    simbolos: TablaSimbolosIr,
     /// true si se está convirtiendo main.
     es_main: bool,
     /// Desplazamiento de labels para funciones múltiples.
@@ -46,22 +46,23 @@ pub struct IrToBytecode {
     /// F11-T1: siguiente label libre para las funciones diferidas. Usa un
     /// espacio propio para no colisionar con los bloques del programa.
     next_label_diferido: usize,
-    /// F11-T6: slot preasignado a cada `ValueId` (en el orden de emisión). Los
+    /// F11-T6: slot preasignado a cada `IdValor` (en el orden de emisión). Los
     /// φ pueden referenciar valores definidos más adelante en el orden de
     /// bloques (φ de bucles), así que el slot se resuelve por id y no por el
     /// orden en que se emitió.
-    slots_valor: HashMap<ValueId, usize>,
+    slots_valor: HashMap<IdValor, usize>,
 }
 
 /// Base del espacio de labels de las funciones diferidas (closures).
 const LABEL_BASE_DIFERIDO: usize = 1_000_000;
 
-impl IrToBytecode {
-    pub fn new(symbols: TablaSimbolosIr) -> Self {
-        IrToBytecode {
+impl ConversorABytecode {
+    /// Crea el conversor con la tabla de símbolos del programa IR.
+    pub fn new(simbolos: TablaSimbolosIr) -> Self {
+        ConversorABytecode {
             value_to_var: HashMap::new(),
             next_var: 0,
-            symbols,
+            simbolos,
             es_main: false,
             label_offset: 0,
             defs_diferidas: Vec::new(),
@@ -73,42 +74,42 @@ impl IrToBytecode {
     /// Carga una variable local o global según su rango (F8-T1).
     fn load_var(&self, var: usize) -> Opcode {
         if var >= LOCAL_BASE {
-            Opcode::LoadIdx(var - LOCAL_BASE)
+            Opcode::CargarIndice(var - LOCAL_BASE)
         } else {
-            Opcode::LoadIdxGlobal(var)
+            Opcode::CargarIndiceGlobal(var)
         }
     }
 
     /// Guarda una variable local o global según su rango (F8-T1).
     fn store_var(&self, var: usize) -> Opcode {
         if var >= LOCAL_BASE {
-            Opcode::StoreIdx(var - LOCAL_BASE)
+            Opcode::GuardarIndice(var - LOCAL_BASE)
         } else {
-            Opcode::StoreIdxGlobal(var)
+            Opcode::GuardarIndiceGlobal(var)
         }
     }
 
     /// Convierte un programa IR completo (main + funciones) a bytecode.
     /// `FunctionDef` delimita cada función; `main` termina en `Halt`.
-    pub fn convert_program(&mut self, ir: &IrProgram) -> Vec<Opcode> {
+    pub fn convertir_programa(&mut self, ir: &ProgramaIr) -> Vec<Opcode> {
         let mut bytecode = Vec::new();
-        for (i, func) in ir.functions.iter().enumerate() {
-            let nombre = ir.symbols.nombre_de(func.name).to_string();
+        for (i, func) in ir.funciones.iter().enumerate() {
+            let nombre = ir.simbolos.nombre_de(func.nombre).to_string();
             // F11-T2: el punto de entrada es la PRIMERA función (la `main`
-            // sintética que arma `program_to_ir`), no cualquiera llamada
+            // sintética que arma `programa_a_ir`), no cualquiera llamada
             // "main". Un programa que declara `funcion main()` tiene además esa
             // función de usuario, que sí debe emitirse con su `FunctionDef`.
             let es_main = i == 0;
             if !es_main {
-                let params: Vec<Arc<str>> = func
-                    .params
+                let parametros: Vec<Arc<str>> = func
+                    .parametros
                     .iter()
-                    .map(|(sym, _)| Arc::from(ir.symbols.nombre_de(*sym)))
+                    .map(|(sym, _)| Arc::from(ir.simbolos.nombre_de(*sym)))
                     .collect();
-                bytecode.push(Opcode::FunctionDef(Arc::from(nombre.as_str()), params));
+                bytecode.push(Opcode::DefinirFuncion(Arc::from(nombre.as_str()), parametros));
             }
             bytecode.extend(self.convert_function(func, es_main));
-            self.label_offset += func.blocks.len();
+            self.label_offset += func.bloques.len();
         }
         // F11-T1: los closures se definen al final, fuera del flujo principal
         // (la VM ejecuta secuencialmente; un `FunctionDef` inline haría que su
@@ -118,7 +119,7 @@ impl IrToBytecode {
     }
 
     /// Convierte una función IR completa a bytecode.
-    pub fn convert_function(&mut self, func: &SsaFunction, es_main: bool) -> Vec<Opcode> {
+    pub fn convert_function(&mut self, func: &FuncionSsa, es_main: bool) -> Vec<Opcode> {
         self.es_main = es_main;
         self.value_to_var.clear();
         let mut bytecode = Vec::new();
@@ -134,25 +135,25 @@ impl IrToBytecode {
         let minimo = if es_main {
             LOCAL_BASE
         } else {
-            LOCAL_BASE + func.params.len()
+            LOCAL_BASE + func.parametros.len()
         };
         self.next_var = max_mem.map(|m| (m + 1).max(minimo)).unwrap_or(minimo);
 
-        // Reconstruir los ValueId en el mismo orden en que el `IrBuilder` los
+        // Reconstruir los IdValor en el mismo orden en que el `ConstructorIr` los
         // asignó: secuencialmente, por instrucción que produce valor.
-        let mut next_value: ValueId = 0;
+        let mut siguiente_valor: IdValor = 0;
 
         // F11-T6: preasignar un slot a cada valor antes de emitir, para que un
         // φ pueda referenciar un valor definido más adelante en el orden de
         // bloques (φ de un bucle sobre su propia variable inductora).
         self.slots_valor.clear();
         let mut slot = self.next_var;
-        for block in &func.blocks {
-            for inst in &block.instructions {
+        for block in &func.bloques {
+            for inst in &block.instrucciones {
                 if produces_value(inst) {
-                    self.slots_valor.insert(next_value, slot);
+                    self.slots_valor.insert(siguiente_valor, slot);
                     slot += 1;
-                    next_value += 1;
+                    siguiente_valor += 1;
                 }
             }
         }
@@ -160,32 +161,32 @@ impl IrToBytecode {
 
         // φ por bloque de destino: (valor del φ, slot, operandos por predecesor).
         let mut phis_por_bloque: PhisPorBloque = HashMap::new();
-        let mut next_value: ValueId = 0;
-        for block in &func.blocks {
-            for inst in &block.instructions {
-                if let Inst::Phi(mem, operandos) = inst {
-                    let slot = self.slots_valor.get(&next_value).copied().unwrap_or(0);
+        let mut siguiente_valor: IdValor = 0;
+        for block in &func.bloques {
+            for inst in &block.instrucciones {
+                if let Instruccion::Phi(mem, operandos) = inst {
+                    let slot = self.slots_valor.get(&siguiente_valor).copied().unwrap_or(0);
                     phis_por_bloque.entry(block.id).or_default().push((
-                        next_value,
+                        siguiente_valor,
                         *mem,
                         operandos.clone(),
                     ));
                     let _ = slot;
                 }
                 if produces_value(inst) {
-                    next_value += 1;
+                    siguiente_valor += 1;
                 }
             }
         }
 
-        let mut next_value: ValueId = 0;
-        for block in &func.blocks {
-            bytecode.push(Opcode::Label(self.label_offset + block.id));
+        let mut siguiente_valor: IdValor = 0;
+        for block in &func.bloques {
+            bytecode.push(Opcode::Etiqueta(self.label_offset + block.id));
 
-            for inst in &block.instructions {
+            for inst in &block.instrucciones {
                 if produces_value(inst) {
-                    let v = next_value;
-                    next_value += 1;
+                    let v = siguiente_valor;
+                    siguiente_valor += 1;
                     self.emit_inst(&mut bytecode, inst, Some(v));
                 } else {
                     self.emit_inst(&mut bytecode, inst, None);
@@ -195,7 +196,7 @@ impl IrToBytecode {
             // F11-T6: bajar los φ del/los sucesor/es a copias en esta arista.
             // Todos los operandos son slots de valores distintos de los slots
             // destino, así que las copias no se pisan entre sí.
-            for succ in Self::sucesores(&block.terminator) {
+            for succ in Self::sucesores(&block.terminador) {
                 let Some(phis) = phis_por_bloque.get(&succ) else {
                     continue;
                 };
@@ -214,7 +215,7 @@ impl IrToBytecode {
                 }
             }
 
-            self.emit_terminator(&mut bytecode, &block.terminator);
+            self.emit_terminator(&mut bytecode, &block.terminador);
         }
 
         bytecode
@@ -226,12 +227,12 @@ impl IrToBytecode {
     ///
     /// La conversión usa un estado aislado: el mapeo de valores, el frame y el
     /// espacio de labels del host no deben tocarse.
-    fn definir_diferido(&mut self, func: &SsaFunction) -> String {
-        let nombre = self.symbols.nombre_de(func.name).to_string();
-        let params: Vec<Arc<str>> = func
-            .params
+    fn definir_diferido(&mut self, func: &FuncionSsa) -> String {
+        let nombre = self.simbolos.nombre_de(func.nombre).to_string();
+        let parametros: Vec<Arc<str>> = func
+            .parametros
             .iter()
-            .map(|(sym, _)| Arc::from(self.symbols.nombre_de(*sym)))
+            .map(|(sym, _)| Arc::from(self.simbolos.nombre_de(*sym)))
             .collect();
 
         let value_to_var_previo = std::mem::take(&mut self.value_to_var);
@@ -242,11 +243,11 @@ impl IrToBytecode {
         self.label_offset = self.next_label_diferido;
 
         let mut definicion = Vec::new();
-        definicion.push(Opcode::FunctionDef(Arc::from(nombre.as_str()), params));
+        definicion.push(Opcode::DefinirFuncion(Arc::from(nombre.as_str()), parametros));
         definicion.extend(self.convert_function(func, false));
-        definicion.push(Opcode::Return);
+        definicion.push(Opcode::Retornar);
 
-        self.next_label_diferido += func.blocks.len();
+        self.next_label_diferido += func.bloques.len();
         self.label_offset = label_offset_previo;
         self.es_main = es_main_previo;
         self.next_var = next_var_previo;
@@ -258,39 +259,39 @@ impl IrToBytecode {
     }
 
     /// Bloques sucesores de un terminador.
-    fn sucesores(term: &Terminator) -> Vec<BlockId> {
+    fn sucesores(term: &Terminador) -> Vec<IdBloque> {
         match term {
-            Terminator::Jump(t) => vec![*t],
-            Terminator::Branch(_, t, e) => vec![*t, *e],
+            Terminador::Salto(t) => vec![*t],
+            Terminador::Rama(_, t, e) => vec![*t, *e],
             _ => Vec::new(),
         }
     }
 
-    fn emit_terminator(&mut self, bytecode: &mut Vec<Opcode>, term: &Terminator) {
+    fn emit_terminator(&mut self, bytecode: &mut Vec<Opcode>, term: &Terminador) {
         match term {
-            Terminator::Jump(target) => bytecode.push(Opcode::Jump(self.label_offset + *target)),
-            Terminator::Branch(cond, then, else_) => {
+            Terminador::Salto(target) => bytecode.push(Opcode::Salto(self.label_offset + *target)),
+            Terminador::Rama(cond, then, else_) => {
                 let cvar = self.value_to_var.get(cond).copied().unwrap_or(0);
                 bytecode.push(self.load_var(cvar));
-                bytecode.push(Opcode::JumpSiFalso(self.label_offset + *else_));
-                bytecode.push(Opcode::Jump(self.label_offset + *then));
+                bytecode.push(Opcode::SaltoSiFalso(self.label_offset + *else_));
+                bytecode.push(Opcode::Salto(self.label_offset + *then));
             }
-            Terminator::Return(val) => {
+            Terminador::Retorno(val) => {
                 if let Some(v) = val {
                     if let Some(&var) = self.value_to_var.get(v) {
                         bytecode.push(self.load_var(var));
                     }
                 }
                 bytecode.push(if self.es_main {
-                    Opcode::Halt
+                    Opcode::Detener
                 } else {
-                    Opcode::Return
+                    Opcode::Retornar
                 });
             }
-            Terminator::Unreachable => bytecode.push(if self.es_main {
-                Opcode::Halt
+            Terminador::Inalcanzable => bytecode.push(if self.es_main {
+                Opcode::Detener
             } else {
-                Opcode::Return
+                Opcode::Retornar
             }),
         }
     }
@@ -303,11 +304,16 @@ impl IrToBytecode {
         var
     }
 
-    fn operando(&self, v: &ValueId) -> usize {
+    fn operando(&self, v: &IdValor) -> usize {
         self.value_to_var.get(v).copied().unwrap_or(0)
     }
 
-    fn emit_inst(&mut self, bytecode: &mut Vec<Opcode>, inst: &Inst, result: Option<ValueId>) {
+    fn emit_inst(
+        &mut self,
+        bytecode: &mut Vec<Opcode>,
+        inst: &Instruccion,
+        result: Option<IdValor>,
+    ) {
         // Helper local para terminar una instrucción de valor: saca el resultado
         // de la pila a su variable temporal y registra el mapeo.
         macro_rules! guardar {
@@ -325,26 +331,26 @@ impl IrToBytecode {
                     self.value_to_var.insert(v, var);
                 } else {
                     // Sin consumidor: descartar el valor de la pila.
-                    $b.push(Opcode::Pop);
+                    $b.push(Opcode::Descartar);
                 }
             };
         }
 
         match inst {
-            Inst::ConstInt(n) => {
+            Instruccion::ConstEntero(n) => {
                 bytecode.push(Opcode::PushEntero(*n));
                 guardar!(bytecode);
             }
-            Inst::ConstFloat(d) => {
+            Instruccion::ConstDecimal(d) => {
                 bytecode.push(Opcode::PushDecimal(*d));
                 guardar!(bytecode);
             }
-            Inst::ConstExacto(coeficiente, escala) => {
+            Instruccion::ConstExacto(coeficiente, escala) => {
                 bytecode.push(Opcode::PushExacto(*coeficiente, *escala));
                 guardar!(bytecode);
             }
 
-            Inst::AExacto(valor, desde_entero) => {
+            Instruccion::AExacto(valor, desde_entero) => {
                 let var = self.operando(valor);
                 bytecode.push(self.load_var(var));
                 bytecode.push(if *desde_entero {
@@ -354,45 +360,45 @@ impl IrToBytecode {
                 });
                 guardar!(bytecode);
             }
-            Inst::ConstBool(b) => {
+            Instruccion::ConstBooleano(b) => {
                 bytecode.push(Opcode::PushBooleano(*b));
                 guardar!(bytecode);
             }
-            Inst::ConstStr(sym) => {
-                let name = self.symbols.nombre_de(*sym).to_string();
-                bytecode.push(Opcode::PushTexto(Arc::from(name.as_str())));
+            Instruccion::ConstTexto(sym) => {
+                let nombre = self.simbolos.nombre_de(*sym).to_string();
+                bytecode.push(Opcode::PushTexto(Arc::from(nombre.as_str())));
                 guardar!(bytecode);
             }
-            Inst::ConstNil => {
+            Instruccion::ConstNulo => {
                 bytecode.push(Opcode::PushNulo);
                 guardar!(bytecode);
             }
-            Inst::ParseInt(texto) => {
+            Instruccion::ParsearEntero(texto) => {
                 let var = self.operando(texto);
                 bytecode.push(self.load_var(var));
-                bytecode.push(Opcode::ParseInt);
+                bytecode.push(Opcode::ParsearEntero);
                 guardar!(bytecode);
             }
-            Inst::TiempoActual => {
+            Instruccion::TiempoActual => {
                 bytecode.push(Opcode::TiempoActual);
                 guardar!(bytecode);
             }
-            Inst::ReadLine => {
-                bytecode.push(Opcode::ReadLine);
+            Instruccion::LeerLinea => {
+                bytecode.push(Opcode::LeerLinea);
                 guardar!(bytecode);
             }
-            Inst::Param(index) => {
+            Instruccion::Parametro(index) => {
                 // F8-T1: el parámetro ya está en frame_locals[index].
-                bytecode.push(Opcode::LoadIdx(*index));
+                bytecode.push(Opcode::CargarIndice(*index));
                 guardar!(bytecode);
             }
-            Inst::Alloca(_) => {
+            Instruccion::Reservar(_) => {
                 // El slot se declara al inicio; aquí sólo se materializa un valor
-                // nulo para no desalinear los `ValueId`.
+                // nulo para no desalinear los `IdValor`.
                 bytecode.push(Opcode::PushNulo);
                 guardar!(bytecode);
             }
-            Inst::Phi(_, _) => {
+            Instruccion::Phi(_, _) => {
                 // Un φ no emite código aquí: sus operandos se copian en las
                 // aristas de los predecesores (ver `convert_function`). Solo se
                 // registra el slot preasignado para que los usos lo resuelvan.
@@ -404,60 +410,64 @@ impl IrToBytecode {
                     self.value_to_var.insert(v, var);
                 }
             }
-            Inst::Load(mem) => {
+            Instruccion::Cargar(mem) => {
                 bytecode.push(self.load_var(*mem));
                 guardar!(bytecode);
             }
-            Inst::Store(mem, val) => {
+            Instruccion::Guardar(mem, val) => {
                 let v = self.operando(val);
                 bytecode.push(self.load_var(v));
                 bytecode.push(self.store_var(*mem));
             }
-            Inst::Add(l, r) => self.binaria(bytecode, l, r, Opcode::Add, result),
-            Inst::Sub(l, r) => self.binaria(bytecode, l, r, Opcode::Sub, result),
-            Inst::Mul(l, r) => self.binaria(bytecode, l, r, Opcode::Mul, result),
-            Inst::Div(l, r) => self.binaria(bytecode, l, r, Opcode::Div, result),
-            Inst::Eq(l, r) => self.binaria(bytecode, l, r, Opcode::Igual, result),
-            Inst::Neq(l, r) => self.binaria(bytecode, l, r, Opcode::Diferente, result),
-            Inst::Lt(l, r) => self.binaria(bytecode, l, r, Opcode::Menor, result),
-            Inst::Gt(l, r) => self.binaria(bytecode, l, r, Opcode::Mayor, result),
-            Inst::Lte(l, r) => self.binaria(bytecode, l, r, Opcode::MenorIgual, result),
-            Inst::Gte(l, r) => self.binaria(bytecode, l, r, Opcode::MayorIgual, result),
-            Inst::And(l, r) => self.binaria(bytecode, l, r, Opcode::Y, result),
-            Inst::Or(l, r) => self.binaria(bytecode, l, r, Opcode::O, result),
-            Inst::Mod(l, r) => {
+            Instruccion::Sumar(l, r) => self.binaria(bytecode, l, r, Opcode::Sumar, result),
+            Instruccion::Restar(l, r) => self.binaria(bytecode, l, r, Opcode::Restar, result),
+            Instruccion::Multiplicar(l, r) => self.binaria(bytecode, l, r, Opcode::Multiplicar, result),
+            Instruccion::Dividir(l, r) => self.binaria(bytecode, l, r, Opcode::Dividir, result),
+            Instruccion::Igual(l, r) => self.binaria(bytecode, l, r, Opcode::Igual, result),
+            Instruccion::Distinto(l, r) => self.binaria(bytecode, l, r, Opcode::Diferente, result),
+            Instruccion::Menor(l, r) => self.binaria(bytecode, l, r, Opcode::Menor, result),
+            Instruccion::Mayor(l, r) => self.binaria(bytecode, l, r, Opcode::Mayor, result),
+            Instruccion::MenorOIgual(l, r) => {
+                self.binaria(bytecode, l, r, Opcode::MenorIgual, result)
+            }
+            Instruccion::MayorOIgual(l, r) => {
+                self.binaria(bytecode, l, r, Opcode::MayorIgual, result)
+            }
+            Instruccion::Y(l, r) => self.binaria(bytecode, l, r, Opcode::Y, result),
+            Instruccion::O(l, r) => self.binaria(bytecode, l, r, Opcode::O, result),
+            Instruccion::Modulo(l, r) => {
                 // a % b = a - (a / b) * b
                 let lv = self.operando(l);
                 let rv = self.operando(r);
                 bytecode.push(self.load_var(lv)); // a
                 bytecode.push(self.load_var(lv)); // a, a
                 bytecode.push(self.load_var(rv)); // a, a, b
-                bytecode.push(Opcode::Div); // a, a/b
+                bytecode.push(Opcode::Dividir); // a, a/b
                 bytecode.push(self.load_var(rv)); // a, a/b, b
-                bytecode.push(Opcode::Mul); // a, (a/b)*b
-                bytecode.push(Opcode::Sub); // a - (a/b)*b
+                bytecode.push(Opcode::Multiplicar); // a, (a/b)*b
+                bytecode.push(Opcode::Restar); // a - (a/b)*b
                 guardar!(bytecode);
             }
-            Inst::Neg(v) => {
+            Instruccion::Negar(v) => {
                 let var = self.operando(v);
                 bytecode.push(Opcode::PushEntero(0));
                 bytecode.push(self.load_var(var));
-                bytecode.push(Opcode::Sub);
+                bytecode.push(Opcode::Restar);
                 guardar!(bytecode);
             }
-            Inst::Not(v) => {
+            Instruccion::No(v) => {
                 let var = self.operando(v);
                 bytecode.push(self.load_var(var));
                 bytecode.push(Opcode::No);
                 guardar!(bytecode);
             }
-            Inst::Call(func_sym, args) => {
-                let name = self.symbols.nombre_de(*func_sym).to_string();
-                if name == "escribir" {
+            Instruccion::Llamar(func_sym, args) => {
+                let nombre = self.simbolos.nombre_de(*func_sym).to_string();
+                if nombre == "escribir" {
                     for arg in args {
                         let var = self.operando(arg);
                         bytecode.push(self.load_var(var));
-                        bytecode.push(Opcode::Print);
+                        bytecode.push(Opcode::Imprimir);
                     }
                     // `escribir` devuelve nulo en el IR; materializar.
                     bytecode.push(Opcode::PushNulo);
@@ -469,36 +479,36 @@ impl IrToBytecode {
                         bytecode.push(self.load_var(var));
                     }
                     let nargs = args.len();
-                    bytecode.push(Opcode::Call(Arc::from(name.as_str()), nargs));
+                    bytecode.push(Opcode::Llamar(Arc::from(nombre.as_str()), nargs));
                     guardar!(bytecode);
                 }
             }
-            Inst::MakeClosure(func, capturados) => {
+            Instruccion::CrearClausura(func, capturados) => {
                 let nombre = self.definir_diferido(func);
                 // F12-T1: el valor del closure es un objeto `Closure` con el
                 // nombre de la función (`fn`) y el entorno capturado (`env`).
                 // Un objeto (y no un Texto) es lo que permite que `CallClosure`
                 // pase el entorno a la función anónima.
-                bytecode.push(Opcode::NewObject(Arc::from("Closure")));
+                bytecode.push(Opcode::NuevoObjeto(Arc::from("Closure")));
                 let obj_var = self.temp();
                 bytecode.push(self.store_var(obj_var));
                 // fn = "<nombre>"
                 bytecode.push(Opcode::PushTexto(Arc::from(nombre.as_str())));
                 bytecode.push(self.load_var(obj_var));
-                bytecode.push(Opcode::SetField(Arc::from("fn")));
+                bytecode.push(Opcode::FijarCampo(Arc::from("fn")));
                 // env = [capturado_0, ..., capturado_n]
                 for cap in capturados {
                     let c = self.operando(cap);
                     bytecode.push(self.load_var(c));
                 }
-                bytecode.push(Opcode::ArrayNew(capturados.len()));
+                bytecode.push(Opcode::NuevoArreglo(capturados.len()));
                 bytecode.push(self.load_var(obj_var));
-                bytecode.push(Opcode::SetField(Arc::from("env")));
+                bytecode.push(Opcode::FijarCampo(Arc::from("env")));
                 if let Some(v) = result {
                     self.value_to_var.insert(v, obj_var);
                 }
             }
-            Inst::ThreadSpawn(func, capturadas) => {
+            Instruccion::CrearHilo(func, capturadas) => {
                 let nombre = self.definir_diferido(func);
                 // `ThreadSpawn` desempuja los valores capturados: se cargan
                 // justo antes de lanzar el hilo.
@@ -506,27 +516,27 @@ impl IrToBytecode {
                     let c = self.operando(cap);
                     bytecode.push(self.load_var(c));
                 }
-                bytecode.push(Opcode::ThreadSpawn(
+                bytecode.push(Opcode::CrearHilo(
                     Arc::from(nombre.as_str()),
                     capturadas.len(),
                 ));
                 guardar!(bytecode);
             }
-            Inst::EnumObject(clase, valor, tipo) => {
-                let clase_name = self.symbols.nombre_de(*clase).to_string();
-                let tipo_txt = self.symbols.nombre_de(*tipo).to_string();
-                bytecode.push(Opcode::NewObject(Arc::from(clase_name.as_str())));
+            Instruccion::ObjetoDeEnum(clase, valor, tipo) => {
+                let clase_name = self.simbolos.nombre_de(*clase).to_string();
+                let tipo_txt = self.simbolos.nombre_de(*tipo).to_string();
+                bytecode.push(Opcode::NuevoObjeto(Arc::from(clase_name.as_str())));
                 // F11-T5: el objeto se materializa en un temporal anónimo del IR
                 // (no en una variable con nombre): `optimizar_indices` renumera
                 // los nombres sin conocer los slots que ya usa el IR y podía
                 // pisar un temporal (rompía `self.campo = Variante` en métodos).
                 let obj_var = self.temp();
                 bytecode.push(self.store_var(obj_var));
-                // `valor` primero y `tipo` después: `Opcode::Try` busca los
+                // `valor` primero y `tipo` después: `Opcode::Intentar` busca los
                 // campos en el descriptor por nombre, pero el orden de creación
                 // es el del backend AST (valor=0, tipo=1).
                 // El campo `valor` se fija siempre (Nulo si la variante no
-                // lleva datos): el backend AST hace lo mismo y `Opcode::Try`,
+                // lleva datos): el backend AST hace lo mismo y `Opcode::Intentar`,
                 // `GetField("valor")` y las cachés inline dependen de que ambos
                 // campos existan en el forma del objeto.
                 match valor {
@@ -537,35 +547,35 @@ impl IrToBytecode {
                     None => bytecode.push(Opcode::PushNulo),
                 }
                 bytecode.push(self.load_var(obj_var));
-                bytecode.push(Opcode::SetField(Arc::from("valor")));
+                bytecode.push(Opcode::FijarCampo(Arc::from("valor")));
                 bytecode.push(Opcode::PushTexto(Arc::from(tipo_txt.as_str())));
                 bytecode.push(self.load_var(obj_var));
-                bytecode.push(Opcode::SetField(Arc::from("tipo")));
+                bytecode.push(Opcode::FijarCampo(Arc::from("tipo")));
                 if let Some(v) = result {
                     self.value_to_var.insert(v, obj_var);
                 }
             }
-            Inst::Try(valor) => {
+            Instruccion::Intentar(valor) => {
                 let var = self.operando(valor);
                 bytecode.push(self.load_var(var));
-                bytecode.push(Opcode::Try);
+                bytecode.push(Opcode::Intentar);
                 guardar!(bytecode);
             }
-            Inst::ChannelNewCap(capacidad) => {
+            Instruccion::NuevoCanalConCapacidad(capacidad) => {
                 let var = self.operando(capacidad);
                 bytecode.push(self.load_var(var));
-                bytecode.push(Opcode::ChannelNewCap);
-                bytecode.push(Opcode::ArrayNew(2));
+                bytecode.push(Opcode::NuevoCanalConCapacidad);
+                bytecode.push(Opcode::NuevoArreglo(2));
                 guardar!(bytecode);
             }
-            Inst::ChannelNew => {
+            Instruccion::NuevoCanal => {
                 // `ChannelNew` empuja [emisor, receptor]; el valor del canal es
                 // el arreglo de 2 elementos que arma `ArrayNew(2)`.
-                bytecode.push(Opcode::ChannelNew);
-                bytecode.push(Opcode::ArrayNew(2));
+                bytecode.push(Opcode::NuevoCanal);
+                bytecode.push(Opcode::NuevoArreglo(2));
                 guardar!(bytecode);
             }
-            Inst::CallClosure(callee, args) => {
+            Instruccion::LlamarClausura(callee, args) => {
                 // Pila: [callee, arg1, ..., argN].
                 let c = self.operando(callee);
                 bytecode.push(self.load_var(c));
@@ -573,12 +583,12 @@ impl IrToBytecode {
                     let a = self.operando(arg);
                     bytecode.push(self.load_var(a));
                 }
-                bytecode.push(Opcode::CallClosure(args.len()));
+                bytecode.push(Opcode::LlamarClausura(args.len()));
                 guardar!(bytecode);
             }
-            Inst::ObjectNew(clase, campos) => {
-                let clase_name = self.symbols.nombre_de(*clase).to_string();
-                bytecode.push(Opcode::NewObject(Arc::from(clase_name.as_str())));
+            Instruccion::NuevoObjeto(clase, campos) => {
+                let clase_name = self.simbolos.nombre_de(*clase).to_string();
+                bytecode.push(Opcode::NuevoObjeto(Arc::from(clase_name.as_str())));
                 // F11-T5: temporal anónimo del IR en vez de `Declare(nombre)` (ver
                 // `EnumObject`).
                 let obj_var = self.temp();
@@ -588,73 +598,73 @@ impl IrToBytecode {
                     // vaciaría la pila y podría comerse un valor anterior
                     // (`f(nuevo P(1), x)`).
                     let v = self.operando(valor);
-                    let nombre = self.symbols.nombre_de(*campo).to_string();
+                    let nombre = self.simbolos.nombre_de(*campo).to_string();
                     bytecode.push(self.load_var(v));
                     bytecode.push(self.load_var(obj_var));
-                    bytecode.push(Opcode::SetField(Arc::from(nombre.as_str())));
+                    bytecode.push(Opcode::FijarCampo(Arc::from(nombre.as_str())));
                 }
                 if let Some(v) = result {
                     self.value_to_var.insert(v, obj_var);
                 }
             }
-            Inst::FieldGet(objeto, campo) => {
+            Instruccion::ObtenerCampo(objeto, campo) => {
                 let o = self.operando(objeto);
-                let nombre = self.symbols.nombre_de(*campo).to_string();
+                let nombre = self.simbolos.nombre_de(*campo).to_string();
                 bytecode.push(self.load_var(o));
-                bytecode.push(Opcode::GetField(Arc::from(nombre.as_str())));
+                bytecode.push(Opcode::ObtenerCampo(Arc::from(nombre.as_str())));
                 guardar!(bytecode);
             }
-            Inst::FieldSet(objeto, campo, valor) => {
+            Instruccion::FijarCampo(objeto, campo, valor) => {
                 let o = self.operando(objeto);
                 let v = self.operando(valor);
-                let nombre = self.symbols.nombre_de(*campo).to_string();
+                let nombre = self.simbolos.nombre_de(*campo).to_string();
                 bytecode.push(self.load_var(v));
                 bytecode.push(self.load_var(o));
-                bytecode.push(Opcode::SetField(Arc::from(nombre.as_str())));
-                bytecode.push(Opcode::Pop);
+                bytecode.push(Opcode::FijarCampo(Arc::from(nombre.as_str())));
+                bytecode.push(Opcode::Descartar);
             }
-            Inst::FieldSetIdx(objeto, idx, valor) => {
+            Instruccion::FijarCampoPorIndice(objeto, idx, valor) => {
                 let o = self.operando(objeto);
                 let v = self.operando(valor);
                 bytecode.push(self.load_var(v));
                 bytecode.push(self.load_var(o));
-                bytecode.push(Opcode::SetFieldIdx(*idx));
-                bytecode.push(Opcode::Pop);
+                bytecode.push(Opcode::FijarCampoPorIndice(*idx));
+                bytecode.push(Opcode::Descartar);
             }
-            Inst::ExtractField(objeto, idx) => {
+            Instruccion::ExtraerCampoPorIndice(objeto, idx) => {
                 let o = self.operando(objeto);
                 bytecode.push(self.load_var(o));
-                bytecode.push(Opcode::ExtractField(*idx));
+                bytecode.push(Opcode::ExtraerCampo(*idx));
                 guardar!(bytecode);
             }
-            Inst::CallMethod(objeto, metodo, args) => {
+            Instruccion::LlamarMetodo(objeto, metodo, args) => {
                 let o = self.operando(objeto);
-                let nombre = self.symbols.nombre_de(*metodo).to_string();
+                let nombre = self.simbolos.nombre_de(*metodo).to_string();
                 bytecode.push(self.load_var(o));
                 for arg in args {
                     let a = self.operando(arg);
                     bytecode.push(self.load_var(a));
                 }
-                bytecode.push(Opcode::CallMethod(Arc::from(nombre.as_str()), args.len()));
+                bytecode.push(Opcode::LlamarMetodo(Arc::from(nombre.as_str()), args.len()));
                 guardar!(bytecode);
             }
-            Inst::ArrayNew(valores) => {
+            Instruccion::NuevoArreglo(valores) => {
                 for v in valores {
                     let var = self.operando(v);
                     bytecode.push(self.load_var(var));
                 }
-                bytecode.push(Opcode::ArrayNew(valores.len()));
+                bytecode.push(Opcode::NuevoArreglo(valores.len()));
                 guardar!(bytecode);
             }
-            Inst::ArrayGet(array, indice) => {
+            Instruccion::ObtenerElemento(array, indice) => {
                 let a = self.operando(array);
                 let i = self.operando(indice);
                 bytecode.push(self.load_var(a));
                 bytecode.push(self.load_var(i));
-                bytecode.push(Opcode::ArrayGet);
+                bytecode.push(Opcode::ObtenerElemento);
                 guardar!(bytecode);
             }
-            Inst::ArraySet(array, indice, valor) => {
+            Instruccion::FijarElemento(array, indice, valor) => {
                 let a = self.operando(array);
                 let i = self.operando(indice);
                 let v = self.operando(valor);
@@ -663,39 +673,39 @@ impl IrToBytecode {
                 bytecode.push(self.load_var(v));
                 bytecode.push(self.load_var(a));
                 bytecode.push(self.load_var(i));
-                bytecode.push(Opcode::ArraySet);
+                bytecode.push(Opcode::FijarElemento);
                 guardar!(bytecode);
             }
-            Inst::MapNew(pares) => {
+            Instruccion::NuevoMapa(pares) => {
                 for (clave, valor) in pares {
                     let k = self.operando(clave);
                     let v = self.operando(valor);
                     bytecode.push(self.load_var(k));
                     bytecode.push(self.load_var(v));
                 }
-                bytecode.push(Opcode::MapNew(pares.len()));
+                bytecode.push(Opcode::NuevoMapa(pares.len()));
                 guardar!(bytecode);
             }
-            Inst::MapGet(mapa, clave) => {
+            Instruccion::ObtenerValorDeMapa(mapa, clave) => {
                 let m = self.operando(mapa);
                 let k = self.operando(clave);
                 bytecode.push(self.load_var(m));
                 bytecode.push(self.load_var(k));
-                bytecode.push(Opcode::MapGet);
+                bytecode.push(Opcode::ObtenerValorDeMapa);
                 guardar!(bytecode);
             }
-            Inst::MapSet(mapa, clave, valor) => {
+            Instruccion::FijarValorDeMapa(mapa, clave, valor) => {
                 let m = self.operando(mapa);
                 let k = self.operando(clave);
                 let v = self.operando(valor);
                 bytecode.push(self.load_var(m));
                 bytecode.push(self.load_var(k));
                 bytecode.push(self.load_var(v));
-                bytecode.push(Opcode::MapSet);
+                bytecode.push(Opcode::FijarValorDeMapa);
                 guardar!(bytecode);
             }
             _ => {
-                // Inst no cubierta: materializar nulo para no romper el conteo.
+                // Instruccion no cubierta: materializar nulo para no romper el conteo.
                 bytecode.push(Opcode::PushNulo);
                 guardar!(bytecode);
             }
@@ -705,10 +715,10 @@ impl IrToBytecode {
     fn binaria(
         &mut self,
         bytecode: &mut Vec<Opcode>,
-        l: &ValueId,
-        r: &ValueId,
+        l: &IdValor,
+        r: &IdValor,
         op: Opcode,
-        result: Option<ValueId>,
+        result: Option<IdValor>,
     ) {
         let lv = self.operando(l);
         let rv = self.operando(r);
@@ -724,27 +734,27 @@ impl IrToBytecode {
             bytecode.push(self.store_var(var));
             self.value_to_var.insert(v, var);
         } else {
-            bytecode.push(Opcode::Pop);
+            bytecode.push(Opcode::Descartar);
         }
     }
 }
 
-/// Indica si una instrucción produce un `ValueId` (debe coincidir con el orden
-/// en que `IrBuilder` los asigna).
-fn produces_value(inst: &Inst) -> bool {
+/// Indica si una instrucción produce un `IdValor` (debe coincidir con el orden
+/// en que `ConstructorIr` los asigna).
+fn produces_value(inst: &Instruccion) -> bool {
     crate::ir::produce_valor(inst)
 }
 
-/// Mayor `MemIdx` usado por una función (o `None` si no usa variables).
-fn max_mem_idx(func: &SsaFunction) -> Option<usize> {
+/// Mayor `IdxMemoria` usado por una función (o `None` si no usa variables).
+fn max_mem_idx(func: &FuncionSsa) -> Option<usize> {
     let mut max: Option<usize> = None;
     let mut considerar = |m: usize| {
         max = Some(max.map_or(m, |x| x.max(m)));
     };
-    for block in &func.blocks {
-        for inst in &block.instructions {
+    for block in &func.bloques {
+        for inst in &block.instrucciones {
             match inst {
-                Inst::Load(m) | Inst::Store(m, _) => considerar(*m),
+                Instruccion::Cargar(m) | Instruccion::Guardar(m, _) => considerar(*m),
                 _ => {}
             }
         }
@@ -760,47 +770,47 @@ mod tests {
     /// referencian por variables correctas (no todas `0`) y que hay `Add`.
     #[test]
     fn test_value_to_var_no_todo_cero() {
-        let mut symbols = TablaSimbolosIr::new();
-        let func_name = symbols.internar("doble");
+        let mut simbolos = TablaSimbolosIr::new();
+        let func_name = simbolos.internar("doble");
 
-        let mut builder = IrBuilder::new();
-        builder.symbols = symbols.clone();
-        let _entry = builder.new_block();
-        let param0 = builder.emit_param(0); // v0
-        let result = builder.emit_add(param0, param0); // v1
-        builder.terminate_return(Some(result));
+        let mut builder = ConstructorIr::new();
+        builder.simbolos = simbolos.clone();
+        let _entry = builder.nuevo_bloque();
+        let param0 = builder.emitir_parametro(0); // v0
+        let result = builder.emitir_suma(param0, param0); // v1
+        builder.terminar_con_retorno(Some(result));
 
-        let func = builder.build_function(func_name, IrType::Int, vec![]);
+        let func = builder.construir_funcion(func_name, TipoIr::Entero, vec![]);
 
-        let mut converter = IrToBytecode::new(symbols);
-        let bytecode = converter.convert_function(&func, true);
+        let mut conversor = ConversorABytecode::new(simbolos);
+        let bytecode = conversor.convert_function(&func, true);
 
-        assert!(bytecode.iter().any(|op| matches!(op, Opcode::Add)));
+        assert!(bytecode.iter().any(|op| matches!(op, Opcode::Sumar)));
         // F11-T6: los temporales viven en el espacio local (`>= LOCAL_BASE`)
         // aunque la función no tenga memorias; si empezaran en 0 pisarían los
         // slots de los parámetros (y se leerían como globales).
         let base = crate::ir_constructor::LOCAL_BASE;
-        assert_eq!(converter.value_to_var.get(&param0).copied(), Some(base));
-        assert_eq!(converter.value_to_var.get(&result).copied(), Some(base + 1));
+        assert_eq!(conversor.value_to_var.get(&param0).copied(), Some(base));
+        assert_eq!(conversor.value_to_var.get(&result).copied(), Some(base + 1));
     }
 
     #[test]
     fn test_const_generation() {
-        let mut symbols = TablaSimbolosIr::new();
-        let func_name = symbols.internar("test");
+        let mut simbolos = TablaSimbolosIr::new();
+        let func_name = simbolos.internar("test");
 
-        let mut builder = IrBuilder::new();
-        builder.symbols = symbols.clone();
-        let _entry = builder.new_block();
-        let _v0 = builder.emit_const_int(42);
-        let _v1 = builder.emit_const_float(2.5);
-        let _v2 = builder.emit_const_bool(true);
-        builder.terminate_return(None);
+        let mut builder = ConstructorIr::new();
+        builder.simbolos = simbolos.clone();
+        let _entry = builder.nuevo_bloque();
+        let _v0 = builder.emitir_const_entero(42);
+        let _v1 = builder.emitir_const_decimal(2.5);
+        let _v2 = builder.emitir_const_booleano(true);
+        builder.terminar_con_retorno(None);
 
-        let func = builder.build_function(func_name, IrType::Void, vec![]);
+        let func = builder.construir_funcion(func_name, TipoIr::Vacio, vec![]);
 
-        let mut converter = IrToBytecode::new(symbols);
-        let bytecode = converter.convert_function(&func, true);
+        let mut conversor = ConversorABytecode::new(simbolos);
+        let bytecode = conversor.convert_function(&func, true);
 
         assert!(bytecode
             .iter()
@@ -817,52 +827,52 @@ mod tests {
     /// a mano: debe emitir `Label`, `Jump`, `JumpSiFalso` y `Print`.
     #[test]
     fn test_bucle_emite_labels_y_jumps() {
-        let mut symbols = TablaSimbolosIr::new();
-        let func_name = symbols.internar("main");
-        let mut builder = IrBuilder::new();
-        builder.symbols = symbols.clone();
-        let _entry = builder.new_block();
+        let mut simbolos = TablaSimbolosIr::new();
+        let func_name = simbolos.internar("main");
+        let mut builder = ConstructorIr::new();
+        builder.simbolos = simbolos.clone();
+        let _entry = builder.nuevo_bloque();
 
         // s = 0
-        builder.emit_alloca(0);
-        let cero = builder.emit_const_int(0);
-        builder.emit_store(0, cero);
+        builder.emitir_reserva(0);
+        let cero = builder.emitir_const_entero(0);
+        builder.emitir_guardado(0, cero);
 
-        let header = builder.alloc_block_id();
-        let body = builder.alloc_block_id();
-        let exit = builder.alloc_block_id();
-        builder.terminate_jump(header);
+        let header = builder.reservar_id_bloque();
+        let body = builder.reservar_id_bloque();
+        let exit = builder.reservar_id_bloque();
+        builder.terminar_con_salto(header);
 
-        builder.start_block(header);
-        let s_load = builder.emit_load(0);
-        let tres = builder.emit_const_int(3);
-        let cond = builder.emit_lt(s_load, tres);
-        builder.terminate_branch(cond, body, exit);
+        builder.iniciar_bloque(header);
+        let s_load = builder.emitir_carga(0);
+        let tres = builder.emitir_const_entero(3);
+        let cond = builder.emitir_menor(s_load, tres);
+        builder.terminar_con_rama(cond, body, exit);
 
-        builder.start_block(body);
-        let s2 = builder.emit_load(0);
-        let uno = builder.emit_const_int(1);
-        let suma = builder.emit_add(s2, uno);
-        builder.emit_store(0, suma);
-        builder.terminate_jump(header);
+        builder.iniciar_bloque(body);
+        let s2 = builder.emitir_carga(0);
+        let uno = builder.emitir_const_entero(1);
+        let suma = builder.emitir_suma(s2, uno);
+        builder.emitir_guardado(0, suma);
+        builder.terminar_con_salto(header);
 
-        builder.start_block(exit);
-        let s3 = builder.emit_load(0);
-        let escribir = builder.symbols.internar("escribir");
-        builder.emit_call(escribir, vec![s3]);
-        builder.terminate_return(None);
+        builder.iniciar_bloque(exit);
+        let s3 = builder.emitir_carga(0);
+        let escribir = builder.simbolos.internar("escribir");
+        builder.emitir_llamada(escribir, vec![s3]);
+        builder.terminar_con_retorno(None);
 
-        let func = builder.build_function(func_name, IrType::Void, vec![]);
+        let func = builder.construir_funcion(func_name, TipoIr::Vacio, vec![]);
         // Usar la tabla de símbolos del builder (que ya incluye "escribir").
-        let mut converter = IrToBytecode::new(builder.symbols.clone());
-        let bytecode = converter.convert_function(&func, true);
+        let mut conversor = ConversorABytecode::new(builder.simbolos.clone());
+        let bytecode = conversor.convert_function(&func, true);
 
-        assert!(bytecode.iter().any(|op| matches!(op, Opcode::Label(_))));
-        assert!(bytecode.iter().any(|op| matches!(op, Opcode::Jump(_))));
+        assert!(bytecode.iter().any(|op| matches!(op, Opcode::Etiqueta(_))));
+        assert!(bytecode.iter().any(|op| matches!(op, Opcode::Salto(_))));
         assert!(bytecode
             .iter()
-            .any(|op| matches!(op, Opcode::JumpSiFalso(_))));
-        assert!(bytecode.iter().any(|op| matches!(op, Opcode::Print)));
-        assert!(bytecode.iter().any(|op| matches!(op, Opcode::Halt)));
+            .any(|op| matches!(op, Opcode::SaltoSiFalso(_))));
+        assert!(bytecode.iter().any(|op| matches!(op, Opcode::Imprimir)));
+        assert!(bytecode.iter().any(|op| matches!(op, Opcode::Detener)));
     }
 }
