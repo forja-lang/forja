@@ -1,0 +1,50 @@
+=== CIFRADO CÉSAR ===
+
+--- Prueba básica ---
+  Original: Hola Mundo Forja 2024
+  Desplazamiento: 3
+  Cifrado:  nulo
+  Descifrado: nulo
+
+--- Cifrado mejorado (con números) ---
+  Original:   Secreto 123
+  Cifrado:    nulo
+  Descifrado: nulo
+
+--- Probando diferentes desplazamientos ---
+  Cifrar 'ABC' con n=1: nulo
+  Cifrar 'ABC' con n=2: nulo
+  Cifrar 'ABC' con n=3: nulo
+  Cifrar 'ABC' con n=4: nulo
+  Cifrar 'ABC' con n=5: nulo
+
+  --- Ataque de fuerza bruta ---
+  Desplazamiento 1: nulo
+  Desplazamiento 2: nulo
+  Desplazamiento 3: nulo
+  Desplazamiento 4: nulo
+  Desplazamiento 5: nulo
+  Desplazamiento 6: nulo
+  Desplazamiento 7: nulo
+  Desplazamiento 8: nulo
+  Desplazamiento 9: nulo
+  Desplazamiento 10: nulo
+  Desplazamiento 11: nulo
+  Desplazamiento 12: nulo
+  Desplazamiento 13: nulo
+  Desplazamiento 14: nulo
+  Desplazamiento 15: nulo
+  Desplazamiento 16: nulo
+  Desplazamiento 17: nulo
+  Desplazamiento 18: nulo
+  Desplazamiento 19: nulo
+  Desplazamiento 20: nulo
+  Desplazamiento 21: nulo
+  Desplazamiento 22: nulo
+  Desplazamiento 23: nulo
+  Desplazamiento 24: nulo
+  Desplazamiento 25: nulo
+
+El cifrado César es un cifrado de sustitución simple.
+Es fácil de romper con fuerza bruta (solo 25 desplazamientos).
+¡No lo uses para información realmente sensible!
