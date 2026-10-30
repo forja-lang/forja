@@ -1,0 +1,10 @@
+=== Caja<T> con Métodos ===
+
+Valor inicial: 42
+Después de establecer(100): 100
+
+Texto inicial: Hola
+Después de establecer("Mundo"): Mundo
+
+Booleano: verdadero
+Array: [1,2,3]
