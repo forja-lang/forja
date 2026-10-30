@@ -1,0 +1,14 @@
+=== Pila (Stack) ===
+
+Apilando: 10, 20, 30, 40
+  Pila: [10,20,30,40]  (tope: 40)
+Desapilando: 40
+Desapilando: 40
+  Pila: [10,20,30,40]  (tope: 40)
+Tope actual: 40
+Tamaño: 4
+
+Evaluación postfija (3 4 + 5 *):
+  (3 + 4) * 5 = 25
+
+La pila sigue el principio LIFO (Last In, First Out).
