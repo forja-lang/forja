@@ -1,0 +1,11 @@
+=== Atributos personalizados ===
+
+Usando funciones documentadas con @atributos:
+
+Rectángulo: 5 x 3
+  Área: 15
+  Perímetro: 16
+
+Ejecutá 'forja test' para correr las pruebas.
+
+Los atributos permiten agregar metadatos y configurar comportamiento.
