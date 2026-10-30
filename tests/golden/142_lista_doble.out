@@ -1,0 +1,8 @@
+=== Lista Doblemente Enlazada ===
+
+Contenido:
+  Adelante: [1,5,10]
+  Atrás:    [30,20,10]
+
+Tamaño: 5
+La lista doble permite recorrer en ambas direcciones.
