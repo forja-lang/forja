@@ -1,0 +1,49 @@
+=== OWNERSHIP Y PRÉSTAMOS EN FORJA ===
+
+═══ 1. OWNERSHIP (PROPIEDAD) ═══
+
+  Array original: [1,2,3]
+  Después de mover a 'movido': [1,2,3]
+  ✔ El ownership se transfiere al asignar
+
+  datos: [10,20,30]
+  prestado: [10,20,30]
+  ✔ datos sigue siendo válido después del préstamo
+
+═══ 2. PRÉSTAMO INMUTABLE (&) ═══
+
+  Regla: muchos préstamos inmutables pueden coexistir
+
+  contador = 100
+  a = 100, b = 100, c = 100
+  ✔ Todos leen el mismo valor a la vez
+═══ 3. PRÉSTAMO MUTABLE (&mut) ═══
+
+  Regla: solo UN préstamo mutable a la vez
+
+  puntaje original = 50
+  ✔ (comentado) un segundo préstamo sería rechazado
+
+═══ 4. PARÁMETROS PRESTADOS ═══
+
+  lectura: texto prestado
+  antes: 10
+  modificado dentro: 11
+  después: 10
+
+═══ 5. LIBERACIÓN POR ÁMBITO ═══
+
+  dentro del bloque: [1,2]
+  fuera del bloque: [1,2]
+  ✔ valor vuelve a estar disponible
+
+═══ 6. ERRORES DETECTADOS ═══
+
+  • Usar una variable después de moverla
+  • Modificar mientras hay un préstamo inmutable activo
+  • Tener dos préstamos mutables a la vez
+  • Mover una variable que está prestada
+  El compilador los reporta antes de ejecutar.
+
+Fin del recorrido: el compilador garantiza memoria segura
+sin recolector de basura y sin fugas.
