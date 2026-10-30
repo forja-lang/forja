@@ -1,107 +1,108 @@
-//! # Mid-Level IR en SSA (Static Single Assignment)
+//! # IR de nivel medio en SSA (Static Single Assignment)
 //!
-//! Representación intermedia entre AST y bytecode.
-//! En SSA, cada variable se asigna exactamente una vez.
-//! Las φ-nodes manejan el merging de valores en junctions de control flow.
+//! Representación intermedia entre el AST y el bytecode. En SSA cada valor se
+//! asigna exactamente una vez y los nodos φ unen los valores de los distintos
+//! caminos en los puntos de convergencia del flujo de control.
 //!
-//! ## Pipeline
+//! ## Cadena de conversión
 //!
 //! ```text
-//! AST → (IrConstructor) → IR SSA → (IrOptimizer) → IR optimizado → (IrToBytecode) → Bytecode
+//! AST → (ConstructorDesdeAst) → IR → (ir_ssa) → IR promovido
+//!     → (ConversorABytecode) → Bytecode
 //! ```
 
 use std::collections::HashMap;
 
 /// Identificador de valor (cada instrucción produce un valor único)
-pub type ValueId = usize;
+pub type IdValor = usize;
 
 /// Identificador de bloque básico
-pub type BlockId = usize;
+pub type IdBloque = usize;
 
 /// Identificador de símbolo (nombre de variable, función, etc.)
 pub type IdSimboloIr = usize;
 
 /// Tipo de dato en el IR
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IrType {
-    Int,
-    Float,
-    Bool,
-    Ptr, // puntero genérico (texto, objeto, array)
-    Void,
+pub enum TipoIr {
+    Entero,
+    Decimal,
+    Booleano,
+    Puntero, // puntero genérico (texto, objeto, arreglo)
+    Vacio,
 }
 
 /// Una instrucción en el IR SSA
 #[derive(Debug, Clone)]
-pub enum Inst {
+pub enum Instruccion {
     // === Constantes ===
-    ConstInt(i64),
-    ConstFloat(f64),
+    ConstEntero(i64),
+    ConstDecimal(f64),
     /// F11-T5: literal de precisión arbitraria (`exacto`): coeficiente y escala.
     ConstExacto(i128, u32),
     /// F11-T5: conversión a `Exacto` (`true` si el origen es entero).
-    AExacto(ValueId, bool),
-    ConstBool(bool),
-    ConstStr(IdSimboloIr),
-    ConstNil,
+    AExacto(IdValor, bool),
+    ConstBooleano(bool),
+    ConstTexto(IdSimboloIr),
+    ConstNulo,
     /// F11-T5: lectura de una línea de entrada (`leer()`).
-    ReadLine,
+    LeerLinea,
     /// F12-T3: `a_numero(texto)` → entero, igual que el backend AST.
-    ParseInt(ValueId),
+    ParsearEntero(IdValor),
     /// F12-T3: `tiempo_actual()` → milisegundos desde la época Unix.
     TiempoActual,
 
     // === Parámetros ===
     /// Parámetro de función (el índice corresponde al orden de los parámetros)
-    Param(usize),
+    Parametro(usize),
 
     // === φ-node ===
-    /// φ-node: valor de la variable de memoria `mem` en una unión de caminos.
+    /// φ-node: valor de la variable de memoria `memoria` en una unión de caminos.
     /// Cada operando es `(bloque_predecesor, valor)`; el conversor los baja a
     /// copias en las aristas (predecesor → slot del φ).
-    Phi(MemIdx, Vec<(BlockId, ValueId)>),
+    Phi(IdxMemoria, Vec<(IdBloque, IdValor)>),
 
     // === Aritmética ===
-    Add(ValueId, ValueId),
-    Sub(ValueId, ValueId),
-    Mul(ValueId, ValueId),
-    Div(ValueId, ValueId),
-    Mod(ValueId, ValueId),
-    Neg(ValueId),
+    Sumar(IdValor, IdValor),
+    Restar(IdValor, IdValor),
+    Multiplicar(IdValor, IdValor),
+    Dividir(IdValor, IdValor),
+    Modulo(IdValor, IdValor),
+    Negar(IdValor),
 
     // === Comparación ===
-    Eq(ValueId, ValueId),
-    Neq(ValueId, ValueId),
-    Lt(ValueId, ValueId),
-    Gt(ValueId, ValueId),
-    Lte(ValueId, ValueId),
-    Gte(ValueId, ValueId),
+    Igual(IdValor, IdValor),
+    Distinto(IdValor, IdValor),
+    Menor(IdValor, IdValor),
+    Mayor(IdValor, IdValor),
+    MenorOIgual(IdValor, IdValor),
+    MayorOIgual(IdValor, IdValor),
 
     // === Lógica ===
-    And(ValueId, ValueId),
-    Or(ValueId, ValueId),
-    Not(ValueId),
+    Y(IdValor, IdValor),
+    O(IdValor, IdValor),
+    No(IdValor),
 
     // === Memoria ===
     /// Carga un valor de memoria (variable mutable)
-    Load(MemIdx),
+    Cargar(IdxMemoria),
     /// Guarda un valor en memoria (variable mutable)
-    Store(MemIdx, ValueId),
-    /// Declara el slot de memoria `mem` (su valor inicial es Nulo). Es el punto
+    Guardar(IdxMemoria, IdValor),
+    /// Declara el slot de memoria `memoria` (su valor inicial es Nulo). Es el punto
     /// de entrada de una variable para el paso `mem2reg`.
-    Alloca(MemIdx),
+    Reservar(IdxMemoria),
 
     // === Control flow ===
     /// Salto incondicional a un bloque
-    Jump(BlockId),
-    /// Salto condicional: si `cond` es verdadero, salta a `then`, sino a `else`
-    Branch(ValueId, BlockId, BlockId),
+    Salto(IdBloque),
+    /// Salto condicional: si `condicion` es verdadero, salta a `si_cierto`, sino a `else`
+    Rama(IdValor, IdBloque, IdBloque),
     /// Retorno de función con valor opcional
-    Return(Option<ValueId>),
+    Retorno(Option<IdValor>),
 
     // === Funciones ===
-    /// Llamada a función: `nombre(args...)`
-    Call(IdSimboloIr, Vec<ValueId>),
+    /// Llamada a función: `nombre(argumentos...)`
+    Llamar(IdSimboloIr, Vec<IdValor>),
     /// Crear un closure en este punto.
     ///
     /// F12-T1: el valor es un objeto `Closure` con el nombre de la función
@@ -112,195 +113,195 @@ pub enum Inst {
     /// principal: la VM ejecuta secuencialmente y un `FunctionDef` inline haría
     /// que el `Return` del closure corte el programa.
     ///
-    /// Los `ValueId` son los valores capturados, en el mismo orden en que la
+    /// Los `IdValor` son los valores capturados, en el mismo orden en que la
     /// función anónima los espera en su parámetro `__entorno`.
-    MakeClosure(Box<SsaFunction>, Vec<ValueId>),
+    CrearClausura(Box<FuncionSsa>, Vec<IdValor>),
     /// F11-T1: llamada indirecta. El destinatario es un valor (un closure
     /// guardado en variable o un callback recibido por parámetro).
-    CallClosure(ValueId, Vec<ValueId>),
+    LlamarClausura(IdValor, Vec<IdValor>),
     /// F11-T2: `hilo { ... }`. El cuerpo viaja como función sintética cuyos
     /// parámetros son las variables capturadas; los valores capturados se
     /// pasan al hilo como argumentos (copia, no referencia).
-    ThreadSpawn(Box<SsaFunction>, Vec<ValueId>),
+    CrearHilo(Box<FuncionSsa>, Vec<IdValor>),
     /// F11-T2: `canal()`. El valor es el arreglo `[emisor, receptor]`.
-    ChannelNew,
+    NuevoCanal,
     /// F12-T2: canal con capacidad explícita (backpressure).
-    ChannelNewCap(ValueId),
+    NuevoCanalConCapacidad(IdValor),
     /// F11-T3: construir un valor de `Resultado`/`Opcion`: objeto `<clase>` con
     /// campos `valor` (opcional) y `tipo` (`ok`/`error`/`some`/`none`).
-    EnumObject(IdSimboloIr, Option<ValueId>, IdSimboloIr),
+    ObjetoDeEnum(IdSimboloIr, Option<IdValor>, IdSimboloIr),
     /// F11-T3: `expr?` — desenvuelve el valor o propaga el error.
-    Try(ValueId),
+    Intentar(IdValor),
 
     // === Objetos ===
     /// Crear un nuevo objeto: `nuevo Clase { campo: valor, ... }`
-    ObjectNew(IdSimboloIr, Vec<(IdSimboloIr, ValueId)>),
+    NuevoObjeto(IdSimboloIr, Vec<(IdSimboloIr, IdValor)>),
     /// Obtener campo de objeto: `obj.campo`
-    FieldGet(ValueId, IdSimboloIr),
+    ObtenerCampo(IdValor, IdSimboloIr),
     /// Establecer campo de objeto: `obj.campo = valor`
-    FieldSet(ValueId, IdSimboloIr, ValueId),
-    /// Llamada a método: `obj.metodo(args...)`
-    CallMethod(ValueId, IdSimboloIr, Vec<ValueId>),
+    FijarCampo(IdValor, IdSimboloIr, IdValor),
+    /// Llamada a método: `obj.metodo(argumentos...)`
+    LlamarMetodo(IdValor, IdSimboloIr, Vec<IdValor>),
     /// F8-T3: fijar campo por índice (tags/campos de enum).
-    FieldSetIdx(ValueId, usize, ValueId),
+    FijarCampoPorIndice(IdValor, usize, IdValor),
     /// F8-T3: extraer campo por índice.
-    ExtractField(ValueId, usize),
+    ExtraerCampoPorIndice(IdValor, usize),
 
     // === Arrays ===
-    /// Crear un array: `[a, b, c]`
-    ArrayNew(Vec<ValueId>),
+    /// Crear un arreglo: `[a, b, c]`
+    NuevoArreglo(Vec<IdValor>),
     /// Obtener elemento por índice: `arr[i]`
-    ArrayGet(ValueId, ValueId),
+    ObtenerElemento(IdValor, IdValor),
     /// Establecer elemento por índice: `arr[i] = v`
-    ArraySet(ValueId, ValueId, ValueId),
+    FijarElemento(IdValor, IdValor, IdValor),
 
     // === Mapas ===
     /// Crear un mapa: `{"a": 1, ...}`
-    MapNew(Vec<(ValueId, ValueId)>),
+    NuevoMapa(Vec<(IdValor, IdValor)>),
     /// Obtener valor por clave: `mapa[clave]`
-    MapGet(ValueId, ValueId),
+    ObtenerValorDeMapa(IdValor, IdValor),
     /// Establecer valor por clave: `mapa[clave] = v`
-    MapSet(ValueId, ValueId, ValueId),
+    FijarValorDeMapa(IdValor, IdValor, IdValor),
 }
 
 /// Bloque básico — secuencia de instrucciones sin branches internos
 #[derive(Debug, Clone)]
-pub struct BasicBlock {
+pub struct BloqueBasico {
     /// ID único del bloque
-    pub id: BlockId,
+    pub id: IdBloque,
     /// Instrucciones del bloque (todasexcepto la última son no-terminadoras)
-    pub instructions: Vec<Inst>,
+    pub instrucciones: Vec<Instruccion>,
     /// Terminador: la última instrucción que define el flujo de control
-    pub terminator: Terminator,
+    pub terminador: Terminador,
 }
 
 /// Terminador de un bloque básico
 #[derive(Debug, Clone)]
-pub enum Terminator {
+pub enum Terminador {
     /// Salto incondicional a otro bloque
-    Jump(BlockId),
+    Salto(IdBloque),
     /// Branch condicional
-    Branch(ValueId, BlockId, BlockId),
+    Rama(IdValor, IdBloque, IdBloque),
     /// Retorno de función
-    Return(Option<ValueId>),
+    Retorno(Option<IdValor>),
     /// Unreachable (código muerto)
-    Unreachable,
+    Inalcanzable,
 }
 
-impl Terminator {
-    /// Reasigna los `ValueId` que usa el terminador.
-    pub fn reasignar_valores(&mut self, f: &mut impl FnMut(ValueId) -> ValueId) {
+impl Terminador {
+    /// Reasigna los `IdValor` que usa el terminador.
+    pub fn reasignar_valores(&mut self, f: &mut impl FnMut(IdValor) -> IdValor) {
         match self {
-            Terminator::Branch(cond, _, _) => *cond = f(*cond),
-            Terminator::Return(Some(v)) => *v = f(*v),
-            Terminator::Jump(_) | Terminator::Return(None) | Terminator::Unreachable => {}
+            Terminador::Rama(condicion, _, _) => *condicion = f(*condicion),
+            Terminador::Retorno(Some(v)) => *v = f(*v),
+            Terminador::Salto(_) | Terminador::Retorno(None) | Terminador::Inalcanzable => {}
         }
     }
 }
 
-impl Inst {
-    /// Reasigna todos los `ValueId` que usa la instrucción. Lo usan los pases
+impl Instruccion {
+    /// Reasigna todos los `IdValor` que usa la instrucción. Lo usan los pases
     /// que cambian la numeración de valores (p. ej. `mem2reg`).
     ///
     /// Las funciones anidadas (`MakeClosure`, `ThreadSpawn`) no se tocan aquí:
     /// el pase que renumera se encarga de ellas por separado.
-    pub fn reasignar_valores(&mut self, f: &mut impl FnMut(ValueId) -> ValueId) {
+    pub fn reasignar_valores(&mut self, f: &mut impl FnMut(IdValor) -> IdValor) {
         match self {
             // Sin operandos de valor.
-            Inst::ConstInt(_)
-            | Inst::ConstFloat(_)
-            | Inst::ConstExacto(_, _)
-            | Inst::ConstBool(_)
-            | Inst::ConstStr(_)
-            | Inst::ConstNil
-            | Inst::ReadLine
-            | Inst::TiempoActual
-            | Inst::Param(_)
-            | Inst::ChannelNew
-            | Inst::Alloca(_)
-            | Inst::Load(_)
-            | Inst::Jump(_) => {}
+            Instruccion::ConstEntero(_)
+            | Instruccion::ConstDecimal(_)
+            | Instruccion::ConstExacto(_, _)
+            | Instruccion::ConstBooleano(_)
+            | Instruccion::ConstTexto(_)
+            | Instruccion::ConstNulo
+            | Instruccion::LeerLinea
+            | Instruccion::TiempoActual
+            | Instruccion::Parametro(_)
+            | Instruccion::NuevoCanal
+            | Instruccion::Reservar(_)
+            | Instruccion::Cargar(_)
+            | Instruccion::Salto(_) => {}
 
-            Inst::MakeClosure(_, capturados) => {
+            Instruccion::CrearClausura(_, capturados) => {
                 for v in capturados.iter_mut() {
                     *v = f(*v);
                 }
             }
 
-            Inst::Return(None) => {}
+            Instruccion::Retorno(None) => {}
 
-            Inst::AExacto(v, _)
-            | Inst::Neg(v)
-            | Inst::Not(v)
-            | Inst::Try(v)
-            | Inst::ExtractField(v, _)
-            | Inst::FieldGet(v, _)
-            | Inst::Store(_, v)
-            | Inst::Return(Some(v))
-            | Inst::Branch(v, _, _) => *v = f(*v),
+            Instruccion::AExacto(v, _)
+            | Instruccion::Negar(v)
+            | Instruccion::No(v)
+            | Instruccion::Intentar(v)
+            | Instruccion::ExtraerCampoPorIndice(v, _)
+            | Instruccion::ObtenerCampo(v, _)
+            | Instruccion::Guardar(_, v)
+            | Instruccion::Retorno(Some(v))
+            | Instruccion::Rama(v, _, _) => *v = f(*v),
 
-            Inst::Phi(_, operandos) => {
+            Instruccion::Phi(_, operandos) => {
                 for (_, v) in operandos.iter_mut() {
                     *v = f(*v);
                 }
             }
 
-            Inst::Add(a, b)
-            | Inst::Sub(a, b)
-            | Inst::Mul(a, b)
-            | Inst::Div(a, b)
-            | Inst::Mod(a, b)
-            | Inst::Eq(a, b)
-            | Inst::Neq(a, b)
-            | Inst::Lt(a, b)
-            | Inst::Gt(a, b)
-            | Inst::Lte(a, b)
-            | Inst::Gte(a, b)
-            | Inst::And(a, b)
-            | Inst::Or(a, b)
-            | Inst::ArrayGet(a, b)
-            | Inst::MapGet(a, b) => {
+            Instruccion::Sumar(a, b)
+            | Instruccion::Restar(a, b)
+            | Instruccion::Multiplicar(a, b)
+            | Instruccion::Dividir(a, b)
+            | Instruccion::Modulo(a, b)
+            | Instruccion::Igual(a, b)
+            | Instruccion::Distinto(a, b)
+            | Instruccion::Menor(a, b)
+            | Instruccion::Mayor(a, b)
+            | Instruccion::MenorOIgual(a, b)
+            | Instruccion::MayorOIgual(a, b)
+            | Instruccion::Y(a, b)
+            | Instruccion::O(a, b)
+            | Instruccion::ObtenerElemento(a, b)
+            | Instruccion::ObtenerValorDeMapa(a, b) => {
                 *a = f(*a);
                 *b = f(*b);
             }
 
-            Inst::ChannelNewCap(v) => *v = f(*v),
-            Inst::ParseInt(v) => *v = f(*v),
+            Instruccion::NuevoCanalConCapacidad(v) => *v = f(*v),
+            Instruccion::ParsearEntero(v) => *v = f(*v),
 
-            Inst::Call(_, args) | Inst::ArrayNew(args) => {
-                for v in args.iter_mut() {
+            Instruccion::Llamar(_, argumentos) | Instruccion::NuevoArreglo(argumentos) => {
+                for v in argumentos.iter_mut() {
                     *v = f(*v);
                 }
             }
 
             // El destinatario de una llamada indirecta **es** un valor.
-            Inst::CallClosure(callee, args) => {
-                *callee = f(*callee);
-                for v in args.iter_mut() {
+            Instruccion::LlamarClausura(destinatario, argumentos) => {
+                *destinatario = f(*destinatario);
+                for v in argumentos.iter_mut() {
                     *v = f(*v);
                 }
             }
 
-            Inst::ThreadSpawn(_, args) => {
-                for v in args.iter_mut() {
+            Instruccion::CrearHilo(_, argumentos) => {
+                for v in argumentos.iter_mut() {
                     *v = f(*v);
                 }
             }
 
-            Inst::CallMethod(obj, _, args) => {
+            Instruccion::LlamarMetodo(obj, _, argumentos) => {
                 *obj = f(*obj);
-                for v in args.iter_mut() {
+                for v in argumentos.iter_mut() {
                     *v = f(*v);
                 }
             }
 
-            Inst::EnumObject(_, valor, _) => {
+            Instruccion::ObjetoDeEnum(_, valor, _) => {
                 if let Some(v) = valor {
                     *v = f(*v);
                 }
             }
 
-            Inst::ObjectNew(_, campos) => {
+            Instruccion::NuevoObjeto(_, campos) => {
                 for (_, v) in campos.iter_mut() {
                     *v = f(*v);
                 }
@@ -309,20 +310,21 @@ impl Inst {
             // `FieldSet`/`FieldSetIdx` llevan un `IdSimboloIr`/`usize` en el medio,
             // que no se renumera. `ArraySet`/`MapSet` llevan un **valor**
             // (índice o clave) y sí: saltárselo dejaba el operando apuntando a
-            // un `ValueId` ya reasignado (sin materializar), y el conversor
+            // un `IdValor` ya reasignado (sin materializar), y el conversor
             // caía en el global 0 → `a[0] = 5` escribía con índice Nulo.
-            Inst::FieldSet(obj, _, v) | Inst::FieldSetIdx(obj, _, v) => {
+            Instruccion::FijarCampo(obj, _, v) | Instruccion::FijarCampoPorIndice(obj, _, v) => {
                 *obj = f(*obj);
                 *v = f(*v);
             }
 
-            Inst::ArraySet(obj, indice, v) | Inst::MapSet(obj, indice, v) => {
+            Instruccion::FijarElemento(obj, indice, v)
+            | Instruccion::FijarValorDeMapa(obj, indice, v) => {
                 *obj = f(*obj);
                 *indice = f(*indice);
                 *v = f(*v);
             }
 
-            Inst::MapNew(pares) => {
+            Instruccion::NuevoMapa(pares) => {
                 for (k, v) in pares.iter_mut() {
                     *k = f(*k);
                     *v = f(*v);
@@ -332,39 +334,41 @@ impl Inst {
     }
 }
 
-/// `true` si la instrucción produce un `ValueId` (y por lo tanto ocupa un
+/// `true` si la instrucción produce un `IdValor` (y por lo tanto ocupa un
 /// número en la numeración posicional del IR).
-pub fn produce_valor(inst: &Inst) -> bool {
+pub fn produce_valor(inst: &Instruccion) -> bool {
     !matches!(
         inst,
-        Inst::Store(_, _) | Inst::FieldSet(_, _, _) | Inst::FieldSetIdx(_, _, _)
+        Instruccion::Guardar(_, _)
+            | Instruccion::FijarCampo(_, _, _)
+            | Instruccion::FijarCampoPorIndice(_, _, _)
     )
 }
 
 /// Función en SSA
 #[derive(Debug, Clone)]
-pub struct SsaFunction {
+pub struct FuncionSsa {
     /// Nombre de la función
-    pub name: IdSimboloIr,
+    pub nombre: IdSimboloIr,
     /// Tipo de retorno
-    pub return_type: IrType,
+    pub tipo_retorno: TipoIr,
     /// Bloques básicos
-    pub blocks: Vec<BasicBlock>,
+    pub bloques: Vec<BloqueBasico>,
     /// ID del bloque de entrada
-    pub entry: BlockId,
+    pub entrada: IdBloque,
     /// Número de parámetros
-    pub num_params: usize,
+    pub cantidad_parametros: usize,
     /// Mapa de nombre → índice de parámetro
-    pub params: Vec<(IdSimboloIr, IrType)>,
+    pub parametros: Vec<(IdSimboloIr, TipoIr)>,
 }
 
 /// Programa completo en IR SSA
 #[derive(Debug, Clone)]
-pub struct IrProgram {
+pub struct ProgramaIr {
     /// Funciones definidas
-    pub functions: Vec<SsaFunction>,
+    pub funciones: Vec<FuncionSsa>,
     /// Tabla de símbolos (nombre → id)
-    pub symbols: TablaSimbolosIr,
+    pub simbolos: TablaSimbolosIr,
 }
 
 /// Tabla de símbolos propia del IR.
@@ -450,462 +454,570 @@ impl Default for TablaSimbolosIr {
 }
 
 /// Builder para construir funciones IR de forma conveniente
-pub struct IrBuilder {
+pub struct ConstructorIr {
     /// Bloques construidos
-    blocks: Vec<BasicBlock>,
+    bloques: Vec<BloqueBasico>,
     /// Siguiente ID de bloque
-    next_block_id: BlockId,
+    proximo_id_bloque: IdBloque,
     /// ID del bloque que se está construyendo actualmente
-    current_block_id: BlockId,
+    id_bloque_actual: IdBloque,
     /// Siguiente ID de valor
-    next_value_id: ValueId,
+    proximo_id_valor: IdValor,
     /// Instrucciones del bloque actual
-    current_insts: Vec<Inst>,
+    instrucciones_actuales: Vec<Instruccion>,
     /// Terminador del bloque actual (None si aún no se puso)
-    current_terminator: Option<Terminator>,
+    terminador_actual: Option<Terminador>,
     /// Tabla de símbolos
-    pub symbols: TablaSimbolosIr,
+    pub simbolos: TablaSimbolosIr,
 }
 
-impl IrBuilder {
+impl ConstructorIr {
+    /// Crea un constructor de IR vacío.
     pub fn new() -> Self {
-        IrBuilder {
-            blocks: Vec::new(),
-            next_block_id: 0,
-            current_block_id: 0,
-            next_value_id: 0,
-            current_insts: Vec::new(),
-            current_terminator: None,
-            symbols: TablaSimbolosIr::new(),
+        ConstructorIr {
+            bloques: Vec::new(),
+            proximo_id_bloque: 0,
+            id_bloque_actual: 0,
+            proximo_id_valor: 0,
+            instrucciones_actuales: Vec::new(),
+            terminador_actual: None,
+            simbolos: TablaSimbolosIr::new(),
         }
     }
 
     /// Reserva el ID del siguiente bloque **sin** empezarlo todavía. Útil para
     /// crear bloques destino de un `branch` antes de cerrar el bloque actual.
-    pub fn alloc_block_id(&mut self) -> BlockId {
-        let id = self.next_block_id;
-        self.next_block_id += 1;
+    pub fn reservar_id_bloque(&mut self) -> IdBloque {
+        let id = self.proximo_id_bloque;
+        self.proximo_id_bloque += 1;
         id
     }
 
     /// Cierra el bloque actual y comienza a construir `id`.
-    pub fn start_block(&mut self, id: BlockId) {
+    pub fn iniciar_bloque(&mut self, id: IdBloque) {
         self.flush_block();
-        self.current_block_id = id;
-        self.current_insts = Vec::new();
-        self.current_terminator = None;
+        self.id_bloque_actual = id;
+        self.instrucciones_actuales = Vec::new();
+        self.terminador_actual = None;
     }
 
     /// Crea un nuevo bloque y retorna su ID
-    pub fn new_block(&mut self) -> BlockId {
-        let id = self.alloc_block_id();
-        self.start_block(id);
+    pub fn nuevo_bloque(&mut self) -> IdBloque {
+        let id = self.reservar_id_bloque();
+        self.iniciar_bloque(id);
         id
     }
 
     /// Obtiene el siguiente valor ID sin incrementarlo
-    pub fn peek_value(&self) -> ValueId {
-        self.next_value_id
+    pub fn ver_proximo_valor(&self) -> IdValor {
+        self.proximo_id_valor
     }
 
     /// Retorna y incrementa el siguiente valor ID
-    pub fn next_value(&mut self) -> ValueId {
-        let v = self.next_value_id;
-        self.next_value_id += 1;
+    pub fn siguiente_valor(&mut self) -> IdValor {
+        let v = self.proximo_id_valor;
+        self.proximo_id_valor += 1;
         v
     }
 
     // === Emitir instrucciones ===
 
-    pub fn emit_const_int(&mut self, value: i64) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::ConstInt(value));
+    /// Emite una constante `Entero` y devuelve su valor.
+    pub fn emitir_const_entero(&mut self, valor: i64) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::ConstEntero(valor));
         v
     }
 
-    pub fn emit_const_float(&mut self, value: f64) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::ConstFloat(value));
+    /// Emite una constante `Decimal` y devuelve su valor.
+    pub fn emitir_const_decimal(&mut self, valor: f64) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::ConstDecimal(valor));
         v
     }
 
     /// F11-T5: literal `exacto` (BigDecimal) del lenguaje.
-    pub fn emit_const_exacto(&mut self, coeficiente: i128, escala: u32) -> ValueId {
-        let v = self.next_value();
-        self.current_insts
-            .push(Inst::ConstExacto(coeficiente, escala));
+    pub fn emitir_const_exacto(&mut self, coeficiente: i128, escala: u32) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::ConstExacto(coeficiente, escala));
         v
     }
 
     /// F11-T5: conversión a `Exacto` de un entero o de un decimal (el backend
     /// AST la emite cuando la variable declara tipo `Exacto` y el valor es un
     /// literal).
-    pub fn emit_a_exacto(&mut self, valor: ValueId, desde_entero: bool) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::AExacto(valor, desde_entero));
+    pub fn emitir_a_exacto(&mut self, valor: IdValor, desde_entero: bool) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::AExacto(valor, desde_entero));
         v
     }
 
-    pub fn emit_const_bool(&mut self, value: bool) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::ConstBool(value));
+    /// Emite una constante `Booleano` y devuelve su valor.
+    pub fn emitir_const_booleano(&mut self, valor: bool) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::ConstBooleano(valor));
         v
     }
 
-    pub fn emit_const_str(&mut self, name: &str) -> ValueId {
-        let v = self.next_value();
-        let sym = self.symbols.internar(name);
-        self.current_insts.push(Inst::ConstStr(sym));
+    /// Interna `nombre`, emite la constante de texto y devuelve su valor.
+    pub fn emitir_const_texto(&mut self, nombre: &str) -> IdValor {
+        let v = self.siguiente_valor();
+        let sym = self.simbolos.internar(nombre);
+        self.instrucciones_actuales
+            .push(Instruccion::ConstTexto(sym));
         v
     }
 
-    pub fn emit_const_nil(&mut self) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::ConstNil);
+    /// Emite la constante `Nulo` y devuelve su valor.
+    pub fn emitir_const_nulo(&mut self) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales.push(Instruccion::ConstNulo);
         v
     }
 
-    pub fn emit_param(&mut self, index: usize) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Param(index));
+    /// Emite la lectura del parámetro número `indice` y devuelve su valor.
+    pub fn emitir_parametro(&mut self, indice: usize) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Parametro(indice));
         v
     }
 
-    /// φ-node para la variable de memoria `mem`, con un operando por predecesor.
-    pub fn emit_phi(&mut self, mem: MemIdx, operandos: Vec<(BlockId, ValueId)>) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Phi(mem, operandos));
+    /// φ-node para la variable de memoria `memoria`, con un operando por predecesor.
+    pub fn emitir_phi(
+        &mut self,
+        memoria: IdxMemoria,
+        operandos: Vec<(IdBloque, IdValor)>,
+    ) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Phi(memoria, operandos));
         v
     }
 
-    pub fn emit_add(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Add(lhs, rhs));
+    /// Emite `izquierda + derecha` y devuelve el valor resultante.
+    pub fn emitir_suma(&mut self, izquierda: IdValor, derecha: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Sumar(izquierda, derecha));
         v
     }
 
-    pub fn emit_sub(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Sub(lhs, rhs));
+    /// Emite `izquierda - derecha` y devuelve el valor resultante.
+    pub fn emitir_resta(&mut self, izquierda: IdValor, derecha: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Restar(izquierda, derecha));
         v
     }
 
-    pub fn emit_mul(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Mul(lhs, rhs));
+    /// Emite `izquierda * derecha` y devuelve el valor resultante.
+    pub fn emitir_multiplicacion(&mut self, izquierda: IdValor, derecha: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Multiplicar(izquierda, derecha));
         v
     }
 
-    pub fn emit_div(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Div(lhs, rhs));
+    /// Emite `izquierda / derecha` y devuelve el valor resultante.
+    pub fn emitir_division(&mut self, izquierda: IdValor, derecha: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Dividir(izquierda, derecha));
         v
     }
 
-    pub fn emit_eq(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Eq(lhs, rhs));
+    /// Emite `izquierda == derecha` y devuelve el valor booleano resultante.
+    pub fn emitir_igualdad(&mut self, izquierda: IdValor, derecha: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Igual(izquierda, derecha));
         v
     }
 
-    pub fn emit_lt(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Lt(lhs, rhs));
+    /// Emite `izquierda < derecha` y devuelve el valor booleano resultante.
+    pub fn emitir_menor(&mut self, izquierda: IdValor, derecha: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Menor(izquierda, derecha));
         v
     }
 
-    pub fn emit_neq(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Neq(lhs, rhs));
+    /// Emite `izquierda != derecha` y devuelve el valor booleano resultante.
+    pub fn emitir_desigualdad(&mut self, izquierda: IdValor, derecha: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Distinto(izquierda, derecha));
         v
     }
 
-    pub fn emit_gt(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Gt(lhs, rhs));
+    /// Emite `izquierda > derecha` y devuelve el valor booleano resultante.
+    pub fn emitir_mayor(&mut self, izquierda: IdValor, derecha: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Mayor(izquierda, derecha));
         v
     }
 
-    pub fn emit_lte(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Lte(lhs, rhs));
+    /// Emite `izquierda <= derecha` y devuelve el valor booleano resultante.
+    pub fn emitir_menor_o_igual(&mut self, izquierda: IdValor, derecha: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::MenorOIgual(izquierda, derecha));
         v
     }
 
-    pub fn emit_gte(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Gte(lhs, rhs));
+    /// Emite `izquierda >= derecha` y devuelve el valor booleano resultante.
+    pub fn emitir_mayor_o_igual(&mut self, izquierda: IdValor, derecha: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::MayorOIgual(izquierda, derecha));
         v
     }
 
-    pub fn emit_not(&mut self, val: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Not(val));
+    /// Emite `!valor` y devuelve el valor booleano resultante.
+    pub fn emitir_no(&mut self, valor: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales.push(Instruccion::No(valor));
         v
     }
 
-    pub fn emit_and(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::And(lhs, rhs));
+    /// Emite `izquierda && derecha` y devuelve el valor booleano resultante.
+    pub fn emitir_y(&mut self, izquierda: IdValor, derecha: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Y(izquierda, derecha));
         v
     }
 
-    pub fn emit_mod(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Mod(lhs, rhs));
+    /// Emite `izquierda % derecha` y devuelve el valor resultante.
+    pub fn emitir_modulo(&mut self, izquierda: IdValor, derecha: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Modulo(izquierda, derecha));
         v
     }
 
-    pub fn emit_or(&mut self, lhs: ValueId, rhs: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Or(lhs, rhs));
+    /// Emite `izquierda || derecha` y devuelve el valor booleano resultante.
+    pub fn emitir_o(&mut self, izquierda: IdValor, derecha: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::O(izquierda, derecha));
         v
     }
 
-    pub fn emit_load(&mut self, mem: MemIdx) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Load(mem));
+    /// Emite la carga de la variable de memoria `memoria` y devuelve su valor.
+    pub fn emitir_carga(&mut self, memoria: IdxMemoria) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Cargar(memoria));
         v
     }
 
-    pub fn emit_store(&mut self, mem: MemIdx, val: ValueId) {
-        self.current_insts.push(Inst::Store(mem, val));
+    /// Emite la escritura de `valor` en la variable de memoria `memoria`.
+    pub fn emitir_guardado(&mut self, memoria: IdxMemoria, valor: IdValor) {
+        self.instrucciones_actuales
+            .push(Instruccion::Guardar(memoria, valor));
     }
 
-    pub fn emit_call(&mut self, func: IdSimboloIr, args: Vec<ValueId>) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Call(func, args));
+    /// Emite la llamada a la función `funcion` con `argumentos` y devuelve su resultado.
+    pub fn emitir_llamada(&mut self, funcion: IdSimboloIr, argumentos: Vec<IdValor>) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Llamar(funcion, argumentos));
         v
     }
 
     /// F12-T1: define un closure con su entorno capturado y devuelve su valor.
-    pub fn emit_make_closure(&mut self, func: SsaFunction, capturados: Vec<ValueId>) -> ValueId {
-        let v = self.next_value();
-        self.current_insts
-            .push(Inst::MakeClosure(Box::new(func), capturados));
+    pub fn emitir_crear_clausura(
+        &mut self,
+        funcion: FuncionSsa,
+        capturados: Vec<IdValor>,
+    ) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::CrearClausura(Box::new(funcion), capturados));
         v
     }
 
     /// F11-T1: llamada indirecta a un closure/callback.
-    pub fn emit_call_closure(&mut self, callee: ValueId, args: Vec<ValueId>) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::CallClosure(callee, args));
+    pub fn emitir_llamada_clausura(
+        &mut self,
+        destinatario: IdValor,
+        argumentos: Vec<IdValor>,
+    ) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::LlamarClausura(destinatario, argumentos));
         v
     }
 
     /// F11-T2: lanza un hilo con el cuerpo y los valores capturados.
-    pub fn emit_thread_spawn(&mut self, func: SsaFunction, capturadas: Vec<ValueId>) -> ValueId {
-        let v = self.next_value();
-        self.current_insts
-            .push(Inst::ThreadSpawn(Box::new(func), capturadas));
+    pub fn emitir_crear_hilo(&mut self, funcion: FuncionSsa, capturadas: Vec<IdValor>) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::CrearHilo(Box::new(funcion), capturadas));
         v
     }
 
     /// F11-T2: crea un canal y devuelve el arreglo `[emisor, receptor]`.
-    pub fn emit_channel_new(&mut self) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::ChannelNew);
+    pub fn emitir_nuevo_canal(&mut self) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales.push(Instruccion::NuevoCanal);
         v
     }
 
     /// F12-T2: canal acotado; `capacidad` es un `Entero`.
-    pub fn emit_channel_new_cap(&mut self, capacidad: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::ChannelNewCap(capacidad));
+    pub fn emitir_nuevo_canal_con_capacidad(&mut self, capacidad: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::NuevoCanalConCapacidad(capacidad));
         v
     }
 
     /// F11-T3: construye un `Resultado`/`Opcion` con `valor` y `tipo`.
-    pub fn emit_enum_object(
+    pub fn emitir_objeto_de_enum(
         &mut self,
         clase: IdSimboloIr,
-        valor: Option<ValueId>,
+        valor: Option<IdValor>,
         tipo: IdSimboloIr,
-    ) -> ValueId {
-        let v = self.next_value();
-        self.current_insts
-            .push(Inst::EnumObject(clase, valor, tipo));
+    ) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::ObjetoDeEnum(clase, valor, tipo));
         v
     }
 
     /// F11-T3: propaga `?` sobre el valor dado.
-    pub fn emit_try(&mut self, valor: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Try(valor));
+    pub fn emitir_intento(&mut self, valor: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Intentar(valor));
         v
     }
 
     /// F12-T3: `a_numero(texto)` → entero (misma ruta que el backend AST).
-    pub fn emit_parse_int(&mut self, texto: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::ParseInt(texto));
+    pub fn emitir_parseo_entero(&mut self, texto: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::ParsearEntero(texto));
         v
     }
 
     /// F12-T3: `tiempo_actual()` → milisegundos desde la época Unix.
-    pub fn emit_tiempo_actual(&mut self) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::TiempoActual);
+    pub fn emitir_tiempo_actual(&mut self) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales.push(Instruccion::TiempoActual);
         v
     }
 
-    /// F11-T5: lee una línea de entrada (`leer()`), como `Opcode::ReadLine`.
-    pub fn emit_read_line(&mut self) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::ReadLine);
+    /// F11-T5: lee una línea de entrada (`leer()`), como `Opcode::LeerLinea`.
+    pub fn emitir_lectura_linea(&mut self) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales.push(Instruccion::LeerLinea);
         v
     }
 
-    /// Declara la variable de memoria `mem` en este punto (su valor inicial es
+    /// Declara la variable de memoria `memoria` en este punto (su valor inicial es
     /// Nulo). El slot identifica la variable para el paso `mem2reg`.
-    pub fn emit_alloca(&mut self, mem: MemIdx) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::Alloca(mem));
+    pub fn emitir_reserva(&mut self, memoria: IdxMemoria) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::Reservar(memoria));
         v
     }
 
-    pub fn emit_array_new(&mut self, valores: Vec<ValueId>) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::ArrayNew(valores));
+    /// Emite la construcción de un arreglo con `valores` y devuelve el arreglo.
+    pub fn emitir_nuevo_arreglo(&mut self, valores: Vec<IdValor>) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::NuevoArreglo(valores));
         v
     }
 
-    pub fn emit_array_get(&mut self, array: ValueId, indice: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::ArrayGet(array, indice));
+    /// Emite `arreglo[indice]` y devuelve el elemento.
+    pub fn emitir_obtener_elemento(&mut self, arreglo: IdValor, indice: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::ObtenerElemento(arreglo, indice));
         v
     }
 
-    pub fn emit_array_set(&mut self, array: ValueId, indice: ValueId, valor: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts
-            .push(Inst::ArraySet(array, indice, valor));
+    /// Emite `arreglo[indice] = valor` y devuelve el valor asignado.
+    pub fn emitir_fijar_elemento(
+        &mut self,
+        arreglo: IdValor,
+        indice: IdValor,
+        valor: IdValor,
+    ) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::FijarElemento(arreglo, indice, valor));
         v
     }
 
-    pub fn emit_map_new(&mut self, pares: Vec<(ValueId, ValueId)>) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::MapNew(pares));
+    /// Emite la construcción de un mapa con `pares` y devuelve el mapa.
+    pub fn emitir_nuevo_mapa(&mut self, pares: Vec<(IdValor, IdValor)>) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::NuevoMapa(pares));
         v
     }
 
-    pub fn emit_map_get(&mut self, mapa: ValueId, clave: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::MapGet(mapa, clave));
+    /// Emite `mapa[clave]` y devuelve el valor.
+    pub fn emitir_obtener_valor_de_mapa(&mut self, mapa: IdValor, clave: IdValor) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::ObtenerValorDeMapa(mapa, clave));
         v
     }
 
-    pub fn emit_map_set(&mut self, mapa: ValueId, clave: ValueId, valor: ValueId) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::MapSet(mapa, clave, valor));
+    /// Emite `mapa[clave] = valor` y devuelve el valor asignado.
+    pub fn emitir_fijar_valor_de_mapa(
+        &mut self,
+        mapa: IdValor,
+        clave: IdValor,
+        valor: IdValor,
+    ) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::FijarValorDeMapa(mapa, clave, valor));
         v
     }
 
-    pub fn emit_object_new(
+    /// Emite la construcción de un objeto de `clase` con `campos` y devuelve el objeto.
+    pub fn emitir_nuevo_objeto(
         &mut self,
         clase: IdSimboloIr,
-        campos: Vec<(IdSimboloIr, ValueId)>,
-    ) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::ObjectNew(clase, campos));
+        campos: Vec<(IdSimboloIr, IdValor)>,
+    ) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::NuevoObjeto(clase, campos));
         v
     }
 
-    pub fn emit_field_get(&mut self, objeto: ValueId, campo: IdSimboloIr) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::FieldGet(objeto, campo));
+    /// Emite la lectura del campo `campo` de `objeto` y devuelve su valor.
+    pub fn emitir_obtener_campo(&mut self, objeto: IdValor, campo: IdSimboloIr) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::ObtenerCampo(objeto, campo));
         v
     }
 
-    pub fn emit_field_set(&mut self, objeto: ValueId, campo: IdSimboloIr, valor: ValueId) {
-        self.current_insts
-            .push(Inst::FieldSet(objeto, campo, valor));
+    /// Emite la escritura de `valor` en el campo `campo` de `objeto`.
+    pub fn emitir_fijar_campo(&mut self, objeto: IdValor, campo: IdSimboloIr, valor: IdValor) {
+        self.instrucciones_actuales
+            .push(Instruccion::FijarCampo(objeto, campo, valor));
     }
 
-    pub fn emit_call_method(
+    /// Emite la llamada al método `metodo` de `objeto` con `argumentos` y devuelve su resultado.
+    pub fn emitir_llamada_metodo(
         &mut self,
-        objeto: ValueId,
+        objeto: IdValor,
         metodo: IdSimboloIr,
-        args: Vec<ValueId>,
-    ) -> ValueId {
-        let v = self.next_value();
-        self.current_insts
-            .push(Inst::CallMethod(objeto, metodo, args));
+        argumentos: Vec<IdValor>,
+    ) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::LlamarMetodo(objeto, metodo, argumentos));
         v
     }
 
-    pub fn emit_field_set_idx(&mut self, objeto: ValueId, idx: usize, valor: ValueId) {
-        self.current_insts
-            .push(Inst::FieldSetIdx(objeto, idx, valor));
+    /// Emite la escritura de `valor` en la posición `indice` del objeto (tags y campos de enum).
+    pub fn emitir_fijar_campo_por_indice(
+        &mut self,
+        objeto: IdValor,
+        indice: usize,
+        valor: IdValor,
+    ) {
+        self.instrucciones_actuales
+            .push(Instruccion::FijarCampoPorIndice(objeto, indice, valor));
     }
 
-    pub fn emit_extract_field(&mut self, objeto: ValueId, idx: usize) -> ValueId {
-        let v = self.next_value();
-        self.current_insts.push(Inst::ExtractField(objeto, idx));
+    /// Emite la lectura de la posición `indice` del objeto y devuelve su valor.
+    pub fn emitir_extraer_campo_por_indice(&mut self, objeto: IdValor, indice: usize) -> IdValor {
+        let v = self.siguiente_valor();
+        self.instrucciones_actuales
+            .push(Instruccion::ExtraerCampoPorIndice(objeto, indice));
         v
     }
 
     /// true si el bloque actual ya tiene terminador (retorno/salto).
-    pub fn terminado(&self) -> bool {
-        self.current_terminator.is_some()
+    pub fn esta_terminado(&self) -> bool {
+        self.terminador_actual.is_some()
     }
 
     // === Terminadores ===
 
-    pub fn terminate_jump(&mut self, target: BlockId) {
-        self.current_terminator = Some(Terminator::Jump(target));
+    /// Cierra el bloque actual con un salto incondicional a `destino`.
+    pub fn terminar_con_salto(&mut self, destino: IdBloque) {
+        self.terminador_actual = Some(Terminador::Salto(destino));
     }
 
-    pub fn terminate_branch(&mut self, cond: ValueId, then: BlockId, else_: BlockId) {
-        self.current_terminator = Some(Terminator::Branch(cond, then, else_));
-    }
-
-    pub fn terminate_return(&mut self, value: Option<ValueId>) {
-        self.current_terminator = Some(Terminator::Return(value));
-    }
-
-    /// Construye un SsaFunction a partir de los bloques construidos
-    pub fn build_function(
+    /// Cierra el bloque actual con una rama condicional: va a `si_cierto` cuando
+    ///     /// `condicion` es verdadero y a `si_falso` cuando no.
+    pub fn terminar_con_rama(
         &mut self,
-        name: IdSimboloIr,
-        return_type: IrType,
-        params: Vec<(IdSimboloIr, IrType)>,
-    ) -> SsaFunction {
+        condicion: IdValor,
+        si_cierto: IdBloque,
+        si_falso: IdBloque,
+    ) {
+        self.terminador_actual = Some(Terminador::Rama(condicion, si_cierto, si_falso));
+    }
+
+    /// Cierra el bloque actual con un retorno, con valor si la función devuelve algo.
+    pub fn terminar_con_retorno(&mut self, valor: Option<IdValor>) {
+        self.terminador_actual = Some(Terminador::Retorno(valor));
+    }
+
+    /// Construye un FuncionSsa a partir de los bloques construidos
+    pub fn construir_funcion(
+        &mut self,
+        nombre: IdSimboloIr,
+        tipo_retorno: TipoIr,
+        parametros: Vec<(IdSimboloIr, TipoIr)>,
+    ) -> FuncionSsa {
         self.flush_block();
-        // El entry block siempre es el primero (índice 0)
-        let entry = 0;
-        SsaFunction {
-            name,
-            return_type,
-            blocks: std::mem::take(&mut self.blocks),
-            entry,
-            num_params: params.len(),
-            params,
+        // El entrada block siempre es el primero (índice 0)
+        let entrada = 0;
+        FuncionSsa {
+            nombre,
+            tipo_retorno,
+            bloques: std::mem::take(&mut self.bloques),
+            entrada,
+            cantidad_parametros: parametros.len(),
+            parametros,
         }
     }
 
     fn flush_block(&mut self) {
-        if !self.current_insts.is_empty() || self.current_terminator.is_some() {
-            // El id del bloque lo asignó `alloc_block_id`/`new_block`; no se
+        if !self.instrucciones_actuales.is_empty() || self.terminador_actual.is_some() {
+            // El id del bloque lo asignó `reservar_id_bloque`/`nuevo_bloque`; no se
             // incrementa aquí para no desalinear las referencias de salto.
-            let terminator = self
-                .current_terminator
+            let terminador = self
+                .terminador_actual
                 .take()
-                .unwrap_or(Terminator::Unreachable);
-            let block = BasicBlock {
-                id: self.current_block_id,
-                instructions: std::mem::take(&mut self.current_insts),
-                terminator,
+                .unwrap_or(Terminador::Inalcanzable);
+            let block = BloqueBasico {
+                id: self.id_bloque_actual,
+                instrucciones: std::mem::take(&mut self.instrucciones_actuales),
+                terminador,
             };
-            self.blocks.push(block);
+            self.bloques.push(block);
         }
     }
 }
 
 /// Tipo de memoria (índice en la tabla de memoria del scope)
-pub type MemIdx = usize;
+pub type IdxMemoria = usize;
 
-impl Default for IrBuilder {
+impl Default for ConstructorIr {
     fn default() -> Self {
         Self::new()
     }
@@ -929,59 +1041,59 @@ mod tests {
 
     #[test]
     fn test_ir_builder_basic() {
-        let mut builder = IrBuilder::new();
-        let _entry = builder.new_block();
-        let v0 = builder.emit_const_int(42);
-        let v1 = builder.emit_const_int(10);
-        let v2 = builder.emit_add(v0, v1);
-        builder.terminate_return(Some(v2));
+        let mut builder = ConstructorIr::new();
+        let _entry = builder.nuevo_bloque();
+        let v0 = builder.emitir_const_entero(42);
+        let v1 = builder.emitir_const_entero(10);
+        let v2 = builder.emitir_suma(v0, v1);
+        builder.terminar_con_retorno(Some(v2));
 
-        let sym = builder.symbols.internar("test_fn");
-        let func = builder.build_function(sym, IrType::Int, vec![]);
-        assert_eq!(func.blocks.len(), 1);
+        let sym = builder.simbolos.internar("test_fn");
+        let funcion = builder.construir_funcion(sym, TipoIr::Entero, vec![]);
+        assert_eq!(funcion.bloques.len(), 1);
         assert!(matches!(
-            func.blocks[0].terminator,
-            Terminator::Return(Some(_))
+            funcion.bloques[0].terminador,
+            Terminador::Retorno(Some(_))
         ));
     }
 
     #[test]
     fn test_ir_builder_branches() {
-        let mut builder = IrBuilder::new();
-        let entry = builder.new_block(); // id 0
-        let cond = builder.emit_const_bool(true);
-        let then_bb = builder.alloc_block_id(); // id 1
-        let else_bb = builder.alloc_block_id(); // id 2
-        builder.terminate_branch(cond, then_bb, else_bb);
+        let mut builder = ConstructorIr::new();
+        let entrada = builder.nuevo_bloque(); // id 0
+        let condicion = builder.emitir_const_booleano(true);
+        let then_bb = builder.reservar_id_bloque(); // id 1
+        let else_bb = builder.reservar_id_bloque(); // id 2
+        builder.terminar_con_rama(condicion, then_bb, else_bb);
 
-        builder.start_block(then_bb);
-        let v1 = builder.emit_const_int(1);
-        builder.terminate_return(Some(v1));
+        builder.iniciar_bloque(then_bb);
+        let v1 = builder.emitir_const_entero(1);
+        builder.terminar_con_retorno(Some(v1));
 
-        builder.start_block(else_bb);
-        let v0 = builder.emit_const_int(0);
-        builder.terminate_return(Some(v0));
+        builder.iniciar_bloque(else_bb);
+        let v0 = builder.emitir_const_entero(0);
+        builder.terminar_con_retorno(Some(v0));
 
-        let sym = builder.symbols.internar("branch_fn");
-        let func = builder.build_function(sym, IrType::Int, vec![]);
-        // Tres bloques con ids 0 (entry), 1 (then), 2 (else).
-        assert_eq!(func.blocks.len(), 3);
-        assert_eq!(func.entry, entry);
-        let ids: Vec<BlockId> = func.blocks.iter().map(|b| b.id).collect();
+        let sym = builder.simbolos.internar("branch_fn");
+        let funcion = builder.construir_funcion(sym, TipoIr::Entero, vec![]);
+        // Tres bloques con ids 0 (entrada), 1 (si_cierto), 2 (else).
+        assert_eq!(funcion.bloques.len(), 3);
+        assert_eq!(funcion.entrada, entrada);
+        let ids: Vec<IdBloque> = funcion.bloques.iter().map(|b| b.id).collect();
         assert!(ids.contains(&then_bb));
         assert!(ids.contains(&else_bb));
     }
 
     #[test]
     fn test_ir_types() {
-        assert_eq!(IrType::Int, IrType::Int);
-        assert_ne!(IrType::Int, IrType::Float);
+        assert_eq!(TipoIr::Entero, TipoIr::Entero);
+        assert_ne!(TipoIr::Entero, TipoIr::Decimal);
     }
 
     #[test]
     fn test_inst_clone() {
-        let inst = Inst::Add(0, 1);
+        let inst = Instruccion::Sumar(0, 1);
         let cloned = inst.clone();
-        assert!(matches!(cloned, Inst::Add(0, 1)));
+        assert!(matches!(cloned, Instruccion::Sumar(0, 1)));
     }
 }
