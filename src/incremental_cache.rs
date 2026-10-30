@@ -54,13 +54,13 @@ impl IncrementalCache {
     }
 
     /// Intenta obtener bytecode cacheado para un módulo.
-    /// Retorna `Some(opcodes)` si el hash del fuente coincide.
+    /// Retorna `Some(codigos)` si el hash del fuente coincide.
     pub fn get(&mut self, module_path: &str, source_hash: u64) -> Option<Vec<Opcode>> {
         if let Some(entry) = self.entries.get(module_path) {
             if entry.source_hash == source_hash && entry.cache_version == CACHE_VERSION {
-                if let Some(opcodes) = deserializar_bytecode(&entry.bytecode_bin) {
+                if let Some(codigos) = deserializar_bytecode(&entry.bytecode_bin) {
                     self.hits += 1;
-                    return Some(opcodes);
+                    return Some(codigos);
                 }
             }
         }
@@ -73,10 +73,10 @@ impl IncrementalCache {
         &mut self,
         module_path: &str,
         source_hash: u64,
-        opcodes: &[Opcode],
+        codigos: &[Opcode],
         imports: &[String],
     ) {
-        let bytecode_bin = serializar_bytecode(opcodes);
+        let bytecode_bin = serializar_bytecode(codigos);
         let cached = CachedModule {
             source_hash,
             cache_version: CACHE_VERSION,
@@ -204,7 +204,7 @@ mod tests {
         std::fs::create_dir_all(&tmp).unwrap();
 
         let mut cache = IncrementalCache::new(&tmp);
-        let ops = vec![Opcode::PushEntero(1), Opcode::Add];
+        let ops = vec![Opcode::PushEntero(1), Opcode::Sumar];
         let hash = 12345u64;
 
         cache.put("test.fa", hash, &ops, &[]);
@@ -259,8 +259,8 @@ mod tests {
 
         let mut cache = IncrementalCache::new(&tmp);
         // base.fa es importado por lib.fa
-        cache.put("base.fa", 100, &[Opcode::Add], &[]);
-        cache.put("lib.fa", 200, &[Opcode::Sub], &["base.fa".to_string()]);
+        cache.put("base.fa", 100, &[Opcode::Sumar], &[]);
+        cache.put("lib.fa", 200, &[Opcode::Restar], &["base.fa".to_string()]);
 
         // Invalidar base.fa → lib.fa también se invalida
         cache.invalidate("base.fa");
