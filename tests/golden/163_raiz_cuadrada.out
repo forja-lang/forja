@@ -1,0 +1,47 @@
+=== RAÍZ CUADRADA (NEWTON-RAPHSON) ===
+
+
+Calculando √4 ...
+  Convergió en 1 iteraciones
+  Newton-Raphson: √4 ≈ 2
+  Babilónico:     √4 ≈ 2
+  Verificación: 2² = 4
+
+Calculando √9 ...
+  Convergió en 1 iteraciones
+  Newton-Raphson: √9 ≈ 5
+  Babilónico:     √9 ≈ 3
+  Verificación: 5² = 25
+
+Calculando √16 ...
+  Convergió en 1 iteraciones
+  Newton-Raphson: √16 ≈ 8
+  Babilónico:     √16 ≈ 4
+  Verificación: 8² = 64
+
+Calculando √25 ...
+  Convergió en 1 iteraciones
+  Newton-Raphson: √25 ≈ 13
+  Babilónico:     √25 ≈ 5
+  Verificación: 13² = 169
+
+Calculando √2 ...
+  Convergió en 1 iteraciones
+  Newton-Raphson: √2 ≈ 1
+  Babilónico:     √2 ≈ 1
+  Verificación: 1² = 1
+
+Calculando √3 ...
+  Convergió en 1 iteraciones
+  Newton-Raphson: √3 ≈ 2
+  Babilónico:     √3 ≈ 1
+  Verificación: 2² = 4
+
+Calculando √10 ...
+  Convergió en 1 iteraciones
+  Newton-Raphson: √10 ≈ 5
+  Babilónico:     √10 ≈ 3
+  Verificación: 5² = 25
+
+El método de Newton-Raphson tiene convergencia cuadrática:
+¡los dígitos correctos se duplican en cada iteración!
