@@ -28,6 +28,13 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   devuelven `ErrFast::Contrato` ("contrato violado: precondición no se cumple:
   …"). Antes el proceso abortaba, así que el CLI mostraba un crash y los
   llamadores en proceso (tests, LSP, WASM) no podían recuperarse.
+- **`asegura` ahora sí se verifica.** Los checks de postcondición se emitían
+  después del cuerpo, así que en cualquier función con `retornar` eran código
+  muerto. Ahora van antes de cada retorno (sin `TailCall` cuando hay
+  postcondiciones) y `resultado` ya se resuelve dentro del contrato (antes caía
+  en `Nulo`). `anterior(x)` distingue el snapshot de la entrada del valor actual,
+  así que `asegura x == anterior(x) + 1` funciona con parámetros mutados. Queda
+  pendiente que las condiciones puedan referenciar globales y campos.
 
 ### Pruebas — corpus completo bajo golden
 

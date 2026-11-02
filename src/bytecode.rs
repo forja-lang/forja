@@ -407,6 +407,9 @@ pub struct GeneradorBytecode {
     tipos_ambito: std::collections::HashMap<String, Tipo>,
     /// Tipos de retorno anotados de funciones y métodos, por nombre simple.
     retornos: std::collections::HashMap<String, Tipo>,
+    /// Índices de las postcondiciones de la función que se está emitiendo, para
+    /// emitir el check antes de cada `retornar` (F12-T6).
+    postcondiciones_activas: Vec<usize>,
     /// F12-T1: pila de nombres declarados por función. El tope es el ámbito en
     /// el que se está emitiendo; sirve para decidir qué captura un closure (sólo
     /// variables locales del ámbito envolvente, no globales).
@@ -476,6 +479,7 @@ impl GeneradorBytecode {
             tipos_inferidos: None,
             tipos_ambito: std::collections::HashMap::new(),
             retornos: std::collections::HashMap::new(),
+            postcondiciones_activas: Vec::new(),
             pila_locales: vec![std::collections::HashSet::new()],
             contratos: Vec::new(),
             var_indices: std::collections::HashMap::new(),
@@ -1520,17 +1524,25 @@ impl GeneradorBytecode {
                     }
                 }
 
+                // Las postcondiciones se registran ya (para que `retornar` pueda
+                // emitir su check) y quedan activas mientras se emite el cuerpo.
+                let post_previas = std::mem::take(&mut self.postcondiciones_activas);
+                let mut indices_post = Vec::with_capacity(postcondiciones.len());
+                for c in postcondiciones {
+                    let idx = self.registrar_contrato(c, TipoContrato::Postcondicion);
+                    indices_post.push(idx);
+                }
+                self.postcondiciones_activas = indices_post.clone();
+
                 // Cuerpo de la función
                 self.generar_declaraciones(cuerpo);
 
-                // Postcondiciones: emitir CheckPost DESPUÉS del cuerpo (antes del Return)
-                for c in postcondiciones {
-                    let idx = self.registrar_contrato(c, TipoContrato::Postcondicion);
-                    self.emitir(Opcode::VerificarPostcondicion(idx));
+                // Retorno implícito: los checks van antes del `Retornar`.
+                for idx in &indices_post {
+                    self.emitir(Opcode::VerificarPostcondicion(*idx));
                 }
-
-                // Al final de la función, hacemos return implícito
                 self.emitir(Opcode::Retornar);
+                self.postcondiciones_activas = post_previas;
 
                 // Restaurar los ámbitos del nivel superior.
                 self.tipos_ambito = ambito_previo;
@@ -1797,13 +1809,16 @@ impl GeneradorBytecode {
                 // enum (`retornar Circulo(r)`), un builtin (`retornar Algo(x)`) o
                 // una función de stdlib se emitían como `TailCall` y el runtime
                 // fallaba con "función no definida" al no existir esa función.
-                let tail_candidato = match valor {
-                    Some(Expresion::LlamadaFuncion { nombre, .. }) => {
-                        self.funciones_definidas.contains(nombre.as_str())
-                            && self.buscar_variante_enum(nombre).is_none()
-                    }
-                    _ => false,
-                };
+                // Con postcondiciones no se puede hacer TailCall: la cola
+                // reemplaza el frame y los checks del que retorna no correrían.
+                let tail_candidato = self.postcondiciones_activas.is_empty()
+                    && match valor {
+                        Some(Expresion::LlamadaFuncion { nombre, .. }) => {
+                            self.funciones_definidas.contains(nombre.as_str())
+                                && self.buscar_variante_enum(nombre).is_none()
+                        }
+                        _ => false,
+                    };
                 match valor {
                     Some(Expresion::LlamadaFuncion { nombre, argumentos }) if tail_candidato => {
                         let indirecta = self.emitir_callee_si_variable(nombre);
@@ -1830,10 +1845,12 @@ impl GeneradorBytecode {
                     }
                     Some(expr) => {
                         self.generar_expresion(expr);
+                        self.emitir_postcondiciones();
                         self.emitir(Opcode::Retornar);
                     }
                     None => {
                         self.emitir(Opcode::PushNulo);
+                        self.emitir_postcondiciones();
                         self.emitir(Opcode::Retornar);
                     }
                 }
@@ -2419,6 +2436,8 @@ impl GeneradorBytecode {
                     }
                 }
                 self.tipos_ambito = ambito;
+                // Un closure no hereda las postcondiciones de quien lo define.
+                let post_previas_closure = std::mem::take(&mut self.postcondiciones_activas);
 
                 self.emitir(Opcode::DefinirFuncion(nombre.clone(), param_names));
                 // Prólogo: cada variable capturada se materializa como
@@ -2438,6 +2457,7 @@ impl GeneradorBytecode {
                 self.emitir(Opcode::Retornar);
                 self.tipos_ambito = ambito_previo;
                 self.pila_locales = locales_previos;
+                self.postcondiciones_activas = post_previas_closure;
                 let definicion = std::mem::replace(&mut self.codigos, flujo_previo);
                 self.closure_defs.extend(definicion);
 
@@ -2520,6 +2540,8 @@ impl GeneradorBytecode {
                     }
                 }
                 self.tipos_ambito = ambito;
+                // El cuerpo de un hilo tampoco hereda las postcondiciones.
+                let post_previas_hilo = std::mem::take(&mut self.postcondiciones_activas);
                 // Emitir FunctionDef + cuerpo + Return en el buffer temporal
                 let func_name_for_def = func_name.clone();
                 self.emitir(Opcode::DefinirFuncion(func_name_for_def, params));
@@ -2528,6 +2550,7 @@ impl GeneradorBytecode {
                 }
                 self.emitir(Opcode::Retornar);
                 self.tipos_ambito = ambito_previo;
+                self.postcondiciones_activas = post_previas_hilo;
                 // Guardar el cuerpo generado
                 let body = std::mem::replace(&mut self.codigos, opcodes_previos);
                 self.hilo_funciones.push((func_name, vec![], body));
@@ -2744,6 +2767,17 @@ impl GeneradorBytecode {
         vars
     }
 
+    /// Emite los checks de postcondición activos (F12-T6).
+    ///
+    /// Antes se emitían sólo después del cuerpo: con un `retornar` explícito eso
+    /// era código muerto, así que `asegura` no se verificaba nunca en funciones
+    /// que devuelven con `retornar`.
+    fn emitir_postcondiciones(&mut self) {
+        for idx in self.postcondiciones_activas.clone() {
+            self.emitir(Opcode::VerificarPostcondicion(idx));
+        }
+    }
+
     /// Verifica si una expresión contiene `anterior()` para una variable específica
     fn tiene_anterior(&self, expr: &Expresion, var_name: &str) -> bool {
         match expr {
@@ -2851,9 +2885,28 @@ impl GeneradorBytecode {
 
             Expresion::Grupo(e) => self.expresion_a_uops_inner(e, output),
 
+            // `resultado` en una postcondición: el valor de retorno, que la VM
+            // pasa aparte de los locales. Sin esta rama caía en `PushNulo` y el
+            // check comparaba contra Nulo (F12-T6).
+            Expresion::Resultado => {
+                output.push(Uop::LoadIdx(crate::vm_fast::RESULTADO_IDX));
+            }
+
             Expresion::Anterior(inner) => {
-                // anterior(var): compilar como LoadIdx normal (VM busca en anterior_stack)
-                self.expresion_a_uops_inner(inner, output);
+                // anterior(var) lee el snapshot de la entrada (Uop::CargarAnterior).
+                // Cualquier otra forma se evalúa tal cual: el compilador de
+                // contratos sólo resuelve parámetros/locales (`var_indices`) y
+                // `resultado`, así que una global o un campo cae en PushNulo
+                // (F12-T6).
+                match inner.as_ref() {
+                    Expresion::Identificador { nombre, .. } => {
+                        match self.var_indices.get(nombre) {
+                            Some(&idx) => output.push(Uop::CargarAnterior(idx)),
+                            None => output.push(Uop::PushNulo),
+                        }
+                    }
+                    otra => self.expresion_a_uops_inner(otra, output),
+                }
             }
 
             Expresion::AccesoMiembro { objeto, miembro: _ } => {

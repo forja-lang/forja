@@ -697,13 +697,16 @@ impl ForjaFast {
                         } else {
                             stack.push(ValorFast::nulo());
                         }
-                    } else if let Some(&saved) = self.anterior_stack.get(idx) {
-                        // Variable guardada con SaveAnterior → usar valor anterior
-                        stack.push(saved);
                     } else {
-                        // Variable normal: cargar del frame actual
+                        // Valor actual: `anterior(x)` tiene su propia variante
+                        // (`CargarAnterior`), así una lectura normal no se
+                        // confunde con el snapshot de la entrada.
                         stack.push(self.load_local(*idx));
                     }
+                }
+                Uop::CargarAnterior(idx) => {
+                    let saved = self.anterior_stack.get(idx).copied();
+                    stack.push(saved.unwrap_or_else(|| self.load_local(*idx)));
                 }
                 Uop::StoreIdx(idx) => {
                     let val = stack.pop().unwrap_or_default();

@@ -15,6 +15,11 @@ pub enum Uop {
 
     // === Variable operations (ya son atómicas, sin expansión) ===
     LoadIdx(usize),
+    /// F12-T6: valor de `anterior(x)` dentro de un contrato. `LoadIdx` lee el
+    /// valor **actual**; esta variante lee el snapshot tomado al entrar a la
+    /// función. Sin la distinción, `asegura x == anterior(x) + 1` comparaba el
+    /// snapshot contra sí mismo y siempre fallaba.
+    CargarAnterior(usize),
     StoreIdx(usize),
     DeclareVar(usize),
     // Acceso directo a variables globales de módulo (global_var_persist)
