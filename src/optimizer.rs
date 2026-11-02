@@ -997,12 +997,28 @@ impl DeadCodeEliminator {
                     self.recolectar_usos(bloque);
                 }
                 Declaracion::Funcion {
-                    nombre: _, cuerpo, ..
-                } => self.recolectar_usos(cuerpo),
-                Declaracion::Clase { metodos, .. } => {
+                    cuerpo,
+                    precondiciones,
+                    postcondiciones,
+                    ..
+                } => {
+                    self.recolectar_usos(cuerpo);
+                    // F12-T6: lo que sólo se nombra en un contrato también es un
+                    // uso. Sin esto, `variable limite = 10` usada únicamente en
+                    // `asegura v < limite` la borraba el DCE y el contrato
+                    // comparaba contra Nulo.
+                    self.recolectar_contratos(precondiciones);
+                    self.recolectar_contratos(postcondiciones);
+                }
+                Declaracion::Clase {
+                    metodos, invariantes, ..
+                } => {
                     for m in metodos {
                         self.recolectar_usos(&m.cuerpo);
+                        self.recolectar_contratos(&m.precondiciones);
+                        self.recolectar_contratos(&m.postcondiciones);
                     }
+                    self.recolectar_contratos(invariantes);
                 }
                 Declaracion::Rasgo { nombre, .. } => {
                     self.rasgos_usados.insert(nombre.clone());
@@ -1023,6 +1039,14 @@ impl DeadCodeEliminator {
                 }
                 Declaracion::ImportarExterna(_) => {}
             }
+        }
+    }
+
+    /// Marca los usos de las condiciones de contrato (`requiere`/`asegura`/
+    /// invariantes): son expresiones como cualquier otra a efectos del DCE.
+    fn recolectar_contratos(&mut self, contratos: &[Contrato]) {
+        for c in contratos {
+            self.recolectar_en_expresion(&c.condicion);
         }
     }
 

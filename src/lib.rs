@@ -199,6 +199,10 @@ fn compilar_pipeline_nucleo_emision(
     // F8-T4: los contratos se compilan con el generador AST (sus condiciones no
     // forman parte del CFG de la función) y se adjuntan a la emisión IR.
     let mut gen_contratos = bytecode::GeneradorBytecode::new();
+    // F12-T6: las condiciones leen globales por índice y tipos declarados, igual
+    // que en la ruta AST.
+    gen_contratos.set_globales(globales.clone());
+    gen_contratos.set_tipos_inferidos(tipos_inferidos.clone());
     let contratos = match gen_contratos.generar(&programa) {
         Ok(_) => gen_contratos.contratos,
         Err(_) => Vec::new(),

@@ -708,6 +708,18 @@ impl ForjaFast {
                     let saved = self.anterior_stack.get(idx).copied();
                     stack.push(saved.unwrap_or_else(|| self.load_local(*idx)));
                 }
+                Uop::LoadIdxGlobal(idx) => {
+                    let v = self
+                        .global_var_persist
+                        .get(*idx)
+                        .copied()
+                        .unwrap_or_default();
+                    stack.push(v);
+                }
+                Uop::GetField(campo) => {
+                    let obj = stack.pop().unwrap_or_default();
+                    stack.push(self.campo_para_contrato(obj, campo.as_ref()));
+                }
                 Uop::StoreIdx(idx) => {
                     let val = stack.pop().unwrap_or_default();
                     self.store_local(*idx, val);
@@ -1538,6 +1550,36 @@ mod ops_metodos;
 // Ramas de objetos (`NewObject`, `SetField`, `SetFieldIdx`, `GetField`) extraídas
 // a `ops_objetos.rs` (F1-T7).
 mod ops_objetos;
+
+impl ForjaFast {
+    /// Acceso a campo sin caché ni efectos sobre la pila de la VM: lo usa el
+    /// intérprete de contratos (`GetField`), donde el objeto ya está en su
+    /// propia pila auxiliar (F12-T6).
+    pub(crate) fn campo_para_contrato(&mut self, obj: ValorFast, campo: &str) -> ValorFast {
+        if obj.es_mapa() {
+            return self.map_heap[obj.indice_mapa() as usize]
+                .get(campo)
+                .cloned()
+                .unwrap_or_else(ValorFast::nulo);
+        }
+        if !obj.es_objeto() {
+            return ValorFast::nulo();
+        }
+        let idx = obj.indice_objeto() as usize;
+        let clase = self.obj_heap[idx].clase;
+        let sym = self.tabla_simbolos.internar(campo);
+        match self
+            .class_descriptors
+            .get(&clase)
+            .and_then(|d| d.forma.obtener_indice(sym))
+        {
+            Some(sidx) if sidx < self.obj_heap[idx].campos_vec.len() => {
+                self.obj_heap[idx].campos_vec[sidx]
+            }
+            _ => ValorFast::nulo(),
+        }
+    }
+}
 
 // Ramas de Design by Contract (`CheckPre`, `CheckPost`, `SaveAnterior`,
 // `CheckInv`) y packed SIMD extraídas a `ops_contratos.rs` (F1-T7).

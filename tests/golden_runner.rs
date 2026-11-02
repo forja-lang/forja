@@ -83,10 +83,6 @@ const EXCLUIDOS: &[(&str, &str)] = &[
         "189_benchmark_manual.fa",
         "benchmark manual: imprime milisegundos y agota el límite de ejecución",
     ),
-    (
-        "500_contratos.fa",
-        "bug abierto: `anterior()` en una postcondición no snapshotea variables          globales ni campos (`variable v = 1` + `asegura v == anterior(v) + 1` falla)",
-    ),
 ];
 
 fn dir_golden() -> PathBuf {

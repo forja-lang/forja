@@ -60,13 +60,15 @@ impl ForjaFast {
                 self.push_valor(valor_retorno);
                 self.ip += 1;
             }
-            Opcode::GuardarAnterior(var_idx) => {
-                if !self.verificar_contratos {
-                    self.ip += 1;
-                    return Ok(true);
+            Opcode::GuardarAnterior(slot) => {
+                // El valor se empuja antes (la expresión de `anterior(expr)`), así
+                // vale para parámetros, globales y campos por igual. Se popea
+                // siempre para no desbalancear la pila si los contratos están
+                // desactivados.
+                let valor = self.pop_valor()?;
+                if self.verificar_contratos {
+                    self.anterior_stack.insert(*slot, valor);
                 }
-                let valor = self.load_local(*var_idx);
-                self.anterior_stack.insert(*var_idx, valor);
                 self.ip += 1;
             }
             Opcode::VerificarInvariante(idx) => {

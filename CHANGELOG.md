@@ -33,8 +33,15 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   muerto. Ahora van antes de cada retorno (sin `TailCall` cuando hay
   postcondiciones) y `resultado` ya se resuelve dentro del contrato (antes caía
   en `Nulo`). `anterior(x)` distingue el snapshot de la entrada del valor actual,
-  así que `asegura x == anterior(x) + 1` funciona con parámetros mutados. Queda
-  pendiente que las condiciones puedan referenciar globales y campos.
+  así que `asegura x == anterior(x) + 1` funciona con parámetros mutados.
+- **Los contratos ven globales y campos.** Una condición puede leer `global` o
+  `este.campo` (`LoadIdxGlobal` / `GetField`), y `anterior(expr)` se snapshotea
+  por expresión, así que también funciona con `anterior(este.valor)`. El DCE
+  además cuenta los usos que aparecen sólo en un contrato: antes borraba la
+  variable y el contrato comparaba contra Nulo. `ejemplos/500_contratos.fa`
+  vuelve al golden.
+- **Conocido (F12-T7):** los invariantes de clase (`siempre …`) todavía no se
+  emiten, así que no se verifican en runtime.
 
 ### Pruebas — corpus completo bajo golden
 

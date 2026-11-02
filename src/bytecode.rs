@@ -410,6 +410,13 @@ pub struct GeneradorBytecode {
     /// Índices de las postcondiciones de la función que se está emitiendo, para
     /// emitir el check antes de cada `retornar` (F12-T6).
     postcondiciones_activas: Vec<usize>,
+    /// Variables globales (nombre, mutable) en orden de declaración: las
+    /// condiciones de contrato las resuelven por índice (F12-T6).
+    globales: Vec<(String, bool)>,
+    /// `anterior(expr)` de las postcondiciones en curso: (clave de la expresión,
+    /// slot del snapshot). Ver [`Self::emitir_snapshots_anteriores`].
+    anteriores: Vec<(String, usize)>,
+    anterior_counter: usize,
     /// F12-T1: pila de nombres declarados por función. El tope es el ámbito en
     /// el que se está emitiendo; sirve para decidir qué captura un closure (sólo
     /// variables locales del ámbito envolvente, no globales).
@@ -480,6 +487,9 @@ impl GeneradorBytecode {
             tipos_ambito: std::collections::HashMap::new(),
             retornos: std::collections::HashMap::new(),
             postcondiciones_activas: Vec::new(),
+            globales: Vec::new(),
+            anteriores: Vec::new(),
+            anterior_counter: 0,
             pila_locales: vec![std::collections::HashSet::new()],
             contratos: Vec::new(),
             var_indices: std::collections::HashMap::new(),
@@ -501,6 +511,15 @@ impl GeneradorBytecode {
     /// Establece los tipos inferidos para usar en especialización de codigos
     pub fn set_tipos_inferidos(&mut self, tipos: std::collections::HashMap<String, Tipo>) {
         self.tipos_inferidos = Some(tipos);
+    }
+
+    /// Fija la tabla de globales (nombre, mutable) en orden de declaración.
+    ///
+    /// Hace falta antes de generar porque las condiciones de contrato leen
+    /// globales por índice (`LoadIdxGlobal`), y `postprocesar_globales` sólo
+    /// reescribe los opcodes del cuerpo, no la tabla de contratos.
+    pub fn set_globales(&mut self, globales: Vec<(String, bool)>) {
+        self.globales = globales;
     }
 
     /// Establece el mapa de overloads de funciones para name mangling.
@@ -1512,16 +1531,12 @@ impl GeneradorBytecode {
                     self.emitir(Opcode::VerificarPrecondicion(idx));
                 }
 
-                // SaveAnterior: guardar variables usadas en postcondiciones con anterior()
+                // `anterior(expr)`: se evalúa la expresión al entrar y se guarda
+                // en un slot; el contrato la lee con `CargarAnterior`. Así anda
+                // con parámetros, globales y campos (`anterior(este.valor)`).
+                let anteriores_previas = std::mem::take(&mut self.anteriores);
                 for c in postcondiciones {
-                    let vars_en_expr = self.encontrar_variables_en_expr(&c.condicion);
-                    for var_name in &vars_en_expr {
-                        if self.tiene_anterior(&c.condicion, var_name) {
-                            if let Some(&var_idx) = self.var_indices.get(var_name) {
-                                self.emitir(Opcode::GuardarAnterior(var_idx));
-                            }
-                        }
-                    }
+                    self.emitir_snapshots_anteriores(&c.condicion);
                 }
 
                 // Las postcondiciones se registran ya (para que `retornar` pueda
@@ -1543,6 +1558,7 @@ impl GeneradorBytecode {
                 }
                 self.emitir(Opcode::Retornar);
                 self.postcondiciones_activas = post_previas;
+                self.anteriores = anteriores_previas;
 
                 // Restaurar los ámbitos del nivel superior.
                 self.tipos_ambito = ambito_previo;
@@ -2727,44 +2743,61 @@ impl GeneradorBytecode {
 
     // ─── Design by Contract ─────────────────────────────────────────────────
 
-    /// Encuentra nombres de variables usadas en una expresión (para SaveAnterior)
-    fn encontrar_variables_en_expr(&self, expr: &Expresion) -> Vec<String> {
-        let mut vars = Vec::new();
+    /// Emite, al entrar a la función, el snapshot de cada `anterior(expr)` que
+    /// aparezca en una postcondición.
+    ///
+    /// Se evalúa la **expresión** (no la variable), así que funciona igual con un
+    /// parámetro, una global o un campo. El slot es sintético (fuera del rango de
+    /// locales) y el contrato lo busca por la misma clave.
+    fn emitir_snapshots_anteriores(&mut self, condicion: &Expresion) {
+        let mut exprs = Vec::new();
+        Self::expresiones_anteriores(condicion, &mut exprs);
+        for expr in exprs {
+            let clave = format!("{:?}", expr);
+            if self.anteriores.iter().any(|(k, _)| *k == clave) {
+                continue;
+            }
+            self.anterior_counter += 1;
+            let slot = 1_000_000 + self.anterior_counter;
+            self.anteriores.push((clave, slot));
+            self.generar_expresion(&expr);
+            self.emitir(Opcode::GuardarAnterior(slot));
+        }
+    }
+
+    /// Recorre una condición juntando las expresiones dentro de `anterior(...)`.
+    fn expresiones_anteriores(expr: &Expresion, salida: &mut Vec<Expresion>) {
         match expr {
-            Expresion::Identificador { nombre: n, .. } => {
-                // Solo variables reales, no keywords
-                match n.as_str() {
-                    "verdadero" | "falso" | "nulo" | "resultado" => {}
-                    _ => vars.push(n.clone()),
-                }
+            Expresion::Anterior(inner) => {
+                salida.push((**inner).clone());
+                Self::expresiones_anteriores(inner, salida);
             }
             Expresion::Binaria {
                 izquierda, derecha, ..
             } => {
-                vars.extend(self.encontrar_variables_en_expr(izquierda));
-                vars.extend(self.encontrar_variables_en_expr(derecha));
+                Self::expresiones_anteriores(izquierda, salida);
+                Self::expresiones_anteriores(derecha, salida);
             }
-            Expresion::Unaria { expr: e, .. } => {
-                vars.extend(self.encontrar_variables_en_expr(e));
+            Expresion::Unaria { expr, .. }
+            | Expresion::Grupo(expr)
+            | Expresion::AccesoMiembro { objeto: expr, .. } => {
+                Self::expresiones_anteriores(expr, salida);
             }
             Expresion::LlamadaFuncion { argumentos, .. } => {
-                for arg in argumentos {
-                    vars.extend(self.encontrar_variables_en_expr(arg));
+                for a in argumentos {
+                    Self::expresiones_anteriores(a, salida);
                 }
             }
-            Expresion::AccesoMiembro { objeto, .. } => {
-                vars.extend(self.encontrar_variables_en_expr(objeto));
-            }
-            Expresion::Grupo(e) => {
-                vars.extend(self.encontrar_variables_en_expr(e));
-            }
-            Expresion::Anterior(expr) => {
-                // recursivo: buscar variables dentro de anterior()
-                vars.extend(self.encontrar_variables_en_expr(expr));
+            Expresion::LlamadaMetodo {
+                objeto, argumentos, ..
+            } => {
+                Self::expresiones_anteriores(objeto, salida);
+                for a in argumentos {
+                    Self::expresiones_anteriores(a, salida);
+                }
             }
             _ => {}
         }
-        vars
     }
 
     /// Emite los checks de postcondición activos (F12-T6).
@@ -2775,29 +2808,6 @@ impl GeneradorBytecode {
     fn emitir_postcondiciones(&mut self) {
         for idx in self.postcondiciones_activas.clone() {
             self.emitir(Opcode::VerificarPostcondicion(idx));
-        }
-    }
-
-    /// Verifica si una expresión contiene `anterior()` para una variable específica
-    fn tiene_anterior(&self, expr: &Expresion, var_name: &str) -> bool {
-        match expr {
-            Expresion::Anterior(inner) => {
-                if let Expresion::Identificador { nombre: n, .. } = inner.as_ref() {
-                    if n == var_name {
-                        return true;
-                    }
-                }
-                false
-            }
-            Expresion::Binaria {
-                izquierda, derecha, ..
-            } => self.tiene_anterior(izquierda, var_name) || self.tiene_anterior(derecha, var_name),
-            Expresion::Unaria { expr: e, .. } => self.tiene_anterior(e, var_name),
-            Expresion::LlamadaFuncion { argumentos, .. } => {
-                argumentos.iter().any(|a| self.tiene_anterior(a, var_name))
-            }
-            Expresion::Grupo(e) => self.tiene_anterior(e, var_name),
-            _ => false,
         }
     }
 
@@ -2826,11 +2836,15 @@ impl GeneradorBytecode {
                         output.push(Uop::LoadIdx(crate::vm_fast::RESULTADO_IDX));
                     }
                     _ => {
-                        // Buscar el índice de la variable
+                        // Parámetro/local → slot; global → índice de global;
+                        // si no existe, Nulo (F12-T6).
                         if let Some(&idx) = self.var_indices.get(nombre) {
                             output.push(Uop::LoadIdx(idx));
+                        } else if let Some(idx) =
+                            self.globales.iter().position(|(n, _)| n == nombre)
+                        {
+                            output.push(Uop::LoadIdxGlobal(idx));
                         } else {
-                            // Fallback: push nulo (variable no encontrada)
                             output.push(Uop::PushNulo);
                         }
                     }
@@ -2893,25 +2907,20 @@ impl GeneradorBytecode {
             }
 
             Expresion::Anterior(inner) => {
-                // anterior(var) lee el snapshot de la entrada (Uop::CargarAnterior).
-                // Cualquier otra forma se evalúa tal cual: el compilador de
-                // contratos sólo resuelve parámetros/locales (`var_indices`) y
-                // `resultado`, así que una global o un campo cae en PushNulo
-                // (F12-T6).
-                match inner.as_ref() {
-                    Expresion::Identificador { nombre, .. } => {
-                        match self.var_indices.get(nombre) {
-                            Some(&idx) => output.push(Uop::CargarAnterior(idx)),
-                            None => output.push(Uop::PushNulo),
-                        }
-                    }
-                    otra => self.expresion_a_uops_inner(otra, output),
+                // `anterior(expr)` lee el snapshot que se tomó al entrar
+                // (Uop::CargarAnterior), buscado por la misma clave que usó
+                // `emitir_snapshots_anteriores`.
+                let clave = format!("{:?}", inner);
+                match self.anteriores.iter().find(|(k, _)| *k == clave) {
+                    Some((_, slot)) => output.push(Uop::CargarAnterior(*slot)),
+                    None => output.push(Uop::PushNulo),
                 }
             }
 
-            Expresion::AccesoMiembro { objeto, miembro: _ } => {
-                // Acceso a miembro: solo evaluar el objeto
+            Expresion::AccesoMiembro { objeto, miembro } => {
+                // `este.valor`, `obj.campo`: evaluar el receptor y leer el campo.
                 self.expresion_a_uops_inner(objeto, output);
+                output.push(Uop::GetField(miembro.to_string()));
             }
 
             Expresion::LlamadaFuncion { argumentos, .. } => {

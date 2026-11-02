@@ -1,0 +1,14 @@
+═══ Tests de Contratos ═══
+
+
+Test 1: dividir(10, 2) == 5
+  ✓ OK: 5
+Test 2: raiz_cuadrada_entera(25) == 5
+  ✓ OK: 5
+Test 3: duplicar(7) == 14
+  ✓ OK: 14
+Test 4: Contador con invariante
+  ✓ OK: 3
+
+
+Todos los tests pasaron ✅

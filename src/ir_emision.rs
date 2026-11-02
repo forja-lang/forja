@@ -31,11 +31,14 @@ pub fn emitir_bytecode_canonico(
     let mut gen = GeneradorBytecode::new();
     gen.set_tipos_inferidos(tipos);
     gen.set_funciones_overload(overloads);
+    // F12-T6: los contratos referencian globales por índice, así que el
+    // generador necesita la tabla antes de emitir (no después).
+    let globales = globales_de(programa);
+    gen.set_globales(globales.clone());
     let bytecode = gen
         .generar(programa)
         .map_err(|_| "Error generando bytecode".to_string())?;
 
-    let globales = globales_de(programa);
     let bytecode = crate::bytecode::postprocesar_globales(bytecode, &globales);
     let bytecode = crate::optimizer_pipeline::optimizar_bytecode(bytecode);
 
