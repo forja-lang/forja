@@ -30,10 +30,14 @@ mod tipos;
 // Re-export de los tipos base extraídos a `tipos.rs` para preservar la API
 // pública de `vm_fast` (fachada estable).
 pub use tipos::{
-    get_small_int_fast, mostrar_exacto, ChannelValue, ErrFast, ExactoVal, FuncVersion,
-    FunctionTable, ObjVal, ValorFast, ValorPortable, VersionedBytecode, RESULTADO_IDX,
+    entero_representable, get_small_int_fast, mostrar_exacto, ChannelValue, ErrFast, ExactoVal,
+    FuncVersion, FunctionTable, ObjVal, ValorFast, ValorPortable, VersionedBytecode, ENTERO_MAX,
+    ENTERO_MIN, RESULTADO_IDX,
 };
-pub(crate) use tipos::{homogeneizar_exacto_fast, FrmFast, FuncFast, Pic, TipoInferido};
+pub(crate) use tipos::{
+    entero_o_nulo, homogeneizar_exacto_fast, multiplicar_entero, restar_entero, sumar_entero,
+    FrmFast, FuncFast, Pic, TipoInferido,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::module::{ModuleId, ModuleInfo, ModuleResolver};
@@ -738,7 +742,7 @@ impl ForjaFast {
                     let b = stack.pop().unwrap_or_default();
                     let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() {
-                        stack.push(get_small_int_fast(a.a_entero() + b.a_entero()));
+                        stack.push(entero_o_nulo(sumar_entero(a.a_entero(), b.a_entero())));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
@@ -747,7 +751,7 @@ impl ForjaFast {
                     let b = stack.pop().unwrap_or_default();
                     let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() {
-                        stack.push(get_small_int_fast(a.a_entero() - b.a_entero()));
+                        stack.push(entero_o_nulo(restar_entero(a.a_entero(), b.a_entero())));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
@@ -756,7 +760,7 @@ impl ForjaFast {
                     let b = stack.pop().unwrap_or_default();
                     let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() {
-                        stack.push(get_small_int_fast(a.a_entero() * b.a_entero()));
+                        stack.push(entero_o_nulo(multiplicar_entero(a.a_entero(), b.a_entero())));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
@@ -774,7 +778,7 @@ impl ForjaFast {
                     let b = stack.pop().unwrap_or_default();
                     let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() {
-                        stack.push(get_small_int_fast(a.a_entero() + b.a_entero()));
+                        stack.push(entero_o_nulo(sumar_entero(a.a_entero(), b.a_entero())));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
@@ -783,7 +787,7 @@ impl ForjaFast {
                     let b = stack.pop().unwrap_or_default();
                     let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() {
-                        stack.push(get_small_int_fast(a.a_entero() - b.a_entero()));
+                        stack.push(entero_o_nulo(restar_entero(a.a_entero(), b.a_entero())));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
@@ -792,7 +796,7 @@ impl ForjaFast {
                     let b = stack.pop().unwrap_or_default();
                     let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() {
-                        stack.push(get_small_int_fast(a.a_entero() * b.a_entero()));
+                        stack.push(entero_o_nulo(multiplicar_entero(a.a_entero(), b.a_entero())));
                     } else {
                         stack.push(ValorFast::nulo());
                     }

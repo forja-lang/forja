@@ -37,7 +37,22 @@ pub fn emitir_bytecode_canonico(
     gen.set_globales(globales.clone());
     let bytecode = gen
         .generar(programa)
-        .map_err(|_| "Error generando bytecode".to_string())?;
+        .map_err(|errores| {
+            // Propagar el primer diagnóstico real: el fallback a IR vuelve a
+            // fallar con el mismo programa y este mensaje es el útil.
+            errores
+                .first()
+                .map(|e| {
+                    // El mensaje y la sugerencia viajan juntos: quien reciba
+                    // este `String` (fallback IR, CLI) muestra una sola línea.
+                    if e.sugerencia.is_empty() {
+                        e.mensaje.to_string()
+                    } else {
+                        format!("{} {}", e.mensaje, e.sugerencia)
+                    }
+                })
+                .unwrap_or_else(|| "Error generando bytecode".to_string())
+        })?;
 
     let bytecode = crate::bytecode::postprocesar_globales(bytecode, &globales);
     let bytecode = crate::optimizer_pipeline::optimizar_bytecode(bytecode);

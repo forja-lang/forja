@@ -23,9 +23,66 @@ thread_local! {
     static SMALL_INT_CACHE_FAST: OnceCell<[ValorFast; 529]> = const { OnceCell::new() };
 }
 
+/// Rango representable de un `Entero` de la VM (payload de 48 bits).
+///
+/// `ValorFast::entero` enmascara a `PAYLOAD_MASK`, así que un valor fuera de
+/// este rango se guardaría con el signo/valor equivocado sin avisar. Todo
+/// cálculo entero pasa por [`sumar_entero`], [`restar_entero`] y
+/// [`multiplicar_entero`] para que eso sea un error y no un dato corrupto.
+pub const ENTERO_MIN: i64 = -(1 << 47);
+pub const ENTERO_MAX: i64 = (1 << 47) - 1;
+
+/// ¿El valor cabe en un `Entero` de la VM?
+#[inline(always)]
+pub fn entero_representable(n: i64) -> bool {
+    (ENTERO_MIN..=ENTERO_MAX).contains(&n)
+}
+
+#[inline(always)]
+fn acotar(n: i64) -> Result<i64, ErrFast> {
+    if entero_representable(n) {
+        Ok(n)
+    } else {
+        Err(ErrFast::OverflowArit)
+    }
+}
+
+/// Suma de enteros con control de rango.
+#[inline(always)]
+pub fn sumar_entero(a: i64, b: i64) -> Result<i64, ErrFast> {
+    a.checked_add(b).ok_or(ErrFast::OverflowArit).and_then(acotar)
+}
+
+/// Resta de enteros con control de rango.
+#[inline(always)]
+pub fn restar_entero(a: i64, b: i64) -> Result<i64, ErrFast> {
+    a.checked_sub(b).ok_or(ErrFast::OverflowArit).and_then(acotar)
+}
+
+/// Multiplicación de enteros con control de rango.
+#[inline(always)]
+pub fn multiplicar_entero(a: i64, b: i64) -> Result<i64, ErrFast> {
+    a.checked_mul(b).ok_or(ErrFast::OverflowArit).and_then(acotar)
+}
+
+/// Para contextos infalibles (intérprete de contratos): un desbordamiento se
+/// evalúa como Nulo, así la comparación del contrato da falso y el contrato
+/// falla, en vez de comparar un número corrupto.
+#[inline(always)]
+pub fn entero_o_nulo(r: Result<i64, ErrFast>) -> ValorFast {
+    match r {
+        Ok(n) => get_small_int_fast(n),
+        Err(_) => ValorFast::nulo(),
+    }
+}
+
 /// Devuelve ValorFast::entero(n) usando la Small Integer Cache si n está en [-16, 512]
 #[inline(always)]
 pub fn get_small_int_fast(n: i64) -> ValorFast {
+    debug_assert!(
+        entero_representable(n),
+        "get_small_int_fast({n}) fuera del rango de Entero: la aritmética debe usar sumar_entero/restar_entero/multiplicar_entero"
+    );
     if (-16..=512).contains(&n) {
         SMALL_INT_CACHE_FAST.with(|cell| {
             let cache = cell.get_or_init(|| {

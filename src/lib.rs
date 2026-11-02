@@ -179,6 +179,7 @@ fn compilar_pipeline_nucleo_emision(
     // bytecode ~1.8x más lento. La ruta canónica usa el emisor AST y sólo cae a
     // IR cuando el AST no cubre el constructo. `MotorEmision::Ir` sigue
     // disponible para la paridad estricta de F11.
+    let mut error_ast: Option<String> = None;
     if motor != MotorEmision::Ir {
         let ast = ir_emision::emitir_bytecode_canonico(
             &programa,
@@ -188,12 +189,20 @@ fn compilar_pipeline_nucleo_emision(
         match ast {
             Ok(bc) => return Ok(bc),
             Err(e) if motor == MotorEmision::SoloAst => return Err(e),
-            Err(_) => { /* fallback IR */ }
+            // Se guarda el diagnóstico del AST: si el IR tampoco puede, el
+            // mensaje útil es éste (el del AST trae la causa del programa).
+            Err(e) => error_ast = Some(e),
         }
     }
 
-    let bc = ir_emision::emitir_bytecode_ir(&programa)
-        .map_err(|e| format!("emisión IR no soportada: {e}"))?;
+    let bc = match ir_emision::emitir_bytecode_ir(&programa) {
+        Ok(bc) => bc,
+        // Si ambos motores fallan, gana el error del AST: describe el programa.
+        Err(_) => {
+            return Err(error_ast
+                .unwrap_or_else(|| "el programa no se puede emitir".to_string()))
+        }
+    };
     let bc = bytecode::postprocesar_globales(bc, &globales);
     let bc = optimizer_pipeline::optimizar_bytecode(bc);
     // F8-T4: los contratos se compilan con el generador AST (sus condiciones no

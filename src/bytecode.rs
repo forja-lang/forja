@@ -2035,7 +2035,27 @@ impl GeneradorBytecode {
                 self.emitir(Opcode::PushNulo);
                 return;
             }
-            Expresion::LiteralNumero(n) => self.emitir(Opcode::PushEntero(*n)),
+            Expresion::LiteralNumero(n) => {
+                // El `Entero` de la VM es de 48 bits (payload de `ValorFast`):
+                // un literal mayor se guardaría con signo/valor equivocado.
+                if crate::vm_fast::entero_representable(*n) {
+                    self.emitir(Opcode::PushEntero(*n));
+                } else {
+                    let mensaje = format!(
+                        "Entero fuera de rango: el máximo es {} y el mínimo {}.",
+                        crate::vm_fast::ENTERO_MAX,
+                        crate::vm_fast::ENTERO_MIN
+                    );
+                    self.errores.push(ErrorForja::new(
+                        crate::error::ErrorTipo::ErrorSemantico,
+                        0,
+                        0,
+                        &mensaje,
+                        "Usá `Exacto` (precisión arbitraria) o `Decimal` para números grandes.",
+                    ));
+                    self.emitir(Opcode::PushNulo);
+                }
+            }
             Expresion::LiteralDecimal(d) => self.emitir(Opcode::PushDecimal(*d)),
             Expresion::LiteralTexto(s) => self.emitir(Opcode::PushTexto(Arc::from(s.as_str()))),
             Expresion::LiteralBooleano(b) => self.emitir(Opcode::PushBooleano(*b)),
@@ -2902,7 +2922,13 @@ impl GeneradorBytecode {
     fn expresion_a_uops_inner(&self, expr: &Expresion, output: &mut Vec<crate::uops::Uop>) {
         use crate::uops::Uop;
         match expr {
-            Expresion::LiteralNumero(n) => output.push(Uop::PushEntero(*n)),
+            Expresion::LiteralNumero(n) => {
+                if crate::vm_fast::entero_representable(*n) {
+                    output.push(Uop::PushEntero(*n));
+                } else {
+                    output.push(Uop::PushNulo);
+                }
+            }
             Expresion::LiteralDecimal(d) => output.push(Uop::PushDecimal(*d)),
             Expresion::LiteralTexto(s) => output.push(Uop::PushTexto(Arc::from(s.as_str()))),
             Expresion::LiteralBooleano(b) => output.push(Uop::PushBooleano(*b)),
