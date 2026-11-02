@@ -417,6 +417,16 @@ pub struct GeneradorBytecode {
     /// slot del snapshot). Ver [`Self::emitir_snapshots_anteriores`].
     anteriores: Vec<(String, usize)>,
     anterior_counter: usize,
+    /// Invariantes de clase (`siempre …`) y sus campos, por clase (F12-T7).
+    invariantes_clase: std::collections::HashMap<String, Vec<crate::ast::Contrato>>,
+    campos_por_clase: std::collections::HashMap<String, std::collections::HashSet<String>>,
+    /// Contratos de invariante ya registrados por clase (índices en `contratos`).
+    invariantes_registrados: std::collections::HashMap<String, Vec<usize>>,
+    /// Invariantes activos mientras se emite un método.
+    invariantes_activos: Vec<usize>,
+    /// Campos de la clase del método en curso: un identificador suelto en una
+    /// condición (`siempre valor >= 0`) se resuelve como `este.campo`.
+    campos_clase: Option<std::collections::HashSet<String>>,
     /// F12-T1: pila de nombres declarados por función. El tope es el ámbito en
     /// el que se está emitiendo; sirve para decidir qué captura un closure (sólo
     /// variables locales del ámbito envolvente, no globales).
@@ -490,6 +500,11 @@ impl GeneradorBytecode {
             globales: Vec::new(),
             anteriores: Vec::new(),
             anterior_counter: 0,
+            invariantes_clase: std::collections::HashMap::new(),
+            campos_por_clase: std::collections::HashMap::new(),
+            invariantes_registrados: std::collections::HashMap::new(),
+            invariantes_activos: Vec::new(),
+            campos_clase: None,
             pila_locales: vec![std::collections::HashSet::new()],
             contratos: Vec::new(),
             var_indices: std::collections::HashMap::new(),
@@ -1031,8 +1046,21 @@ impl GeneradorBytecode {
                     nuevas_funciones.push(decl.clone());
                 }
                 Declaracion::Clase {
-                    nombre, metodos, ..
+                    nombre,
+                    metodos,
+                    invariantes,
+                    campos,
+                    ..
                 } => {
+                    // F12-T7: los invariantes se emiten en cada método de la clase.
+                    if !invariantes.is_empty() {
+                        self.invariantes_clase
+                            .insert(nombre.clone(), invariantes.clone());
+                        self.campos_por_clase.insert(
+                            nombre.clone(),
+                            campos.iter().map(|c| c.nombre.clone()).collect(),
+                        );
+                    }
                     for metodo in metodos {
                         let params: Vec<crate::ast::Parametro> = metodo
                             .parametros
@@ -1531,6 +1559,46 @@ impl GeneradorBytecode {
                     self.emitir(Opcode::VerificarPrecondicion(idx));
                 }
 
+                // F12-T7: si esto es un método (`Clase.metodo`), activar los
+                // invariantes de su clase y sus campos (para que un identificador
+                // suelto en la condición se resuelva como `este.campo`).
+                let inv_previos = std::mem::take(&mut self.invariantes_activos);
+                let campos_previos = self.campos_clase.take();
+                if let Some((clase, _)) = nombre.split_once('.') {
+                    let clase = clase.to_string();
+                    if self.invariantes_clase.contains_key(&clase) {
+                        self.campos_clase = self.campos_por_clase.get(&clase).cloned();
+                        let indices = match self.invariantes_registrados.get(&clase) {
+                            Some(v) => v.clone(),
+                            None => {
+                                let contratos = self
+                                    .invariantes_clase
+                                    .get(&clase)
+                                    .cloned()
+                                    .unwrap_or_default();
+                                let mut v = Vec::with_capacity(contratos.len());
+                                for c in &contratos {
+                                    v.push(self.registrar_contrato(c, TipoContrato::Invariante));
+                                }
+                                self.invariantes_registrados.insert(clase.clone(), v.clone());
+                                v
+                            }
+                        };
+                        self.invariantes_activos = indices;
+                    }
+                }
+                // Al entrar al método el invariante ya debe cumplirse. En el
+                // constructor no: el objeto recién se está inicializando, el
+                // invariante se establece en su cuerpo (se verifica al salir).
+                let es_constructor = nombre
+                    .split_once('.')
+                    .is_some_and(|(_, m)| m == "nuevo");
+                if !es_constructor {
+                    for idx in self.invariantes_activos.clone() {
+                        self.emitir(Opcode::VerificarInvariante(idx));
+                    }
+                }
+
                 // `anterior(expr)`: se evalúa la expresión al entrar y se guarda
                 // en un slot; el contrato la lee con `CargarAnterior`. Así anda
                 // con parámetros, globales y campos (`anterior(este.valor)`).
@@ -1552,13 +1620,14 @@ impl GeneradorBytecode {
                 // Cuerpo de la función
                 self.generar_declaraciones(cuerpo);
 
-                // Retorno implícito: los checks van antes del `Retornar`.
-                for idx in &indices_post {
-                    self.emitir(Opcode::VerificarPostcondicion(*idx));
-                }
+                // Retorno implícito: los checks (postcondiciones + invariantes)
+                // van antes del `Retornar`, igual que en un `retornar` explícito.
+                self.emitir_postcondiciones();
                 self.emitir(Opcode::Retornar);
                 self.postcondiciones_activas = post_previas;
                 self.anteriores = anteriores_previas;
+                self.invariantes_activos = inv_previos;
+                self.campos_clase = campos_previos;
 
                 // Restaurar los ámbitos del nivel superior.
                 self.tipos_ambito = ambito_previo;
@@ -2753,7 +2822,7 @@ impl GeneradorBytecode {
         let mut exprs = Vec::new();
         Self::expresiones_anteriores(condicion, &mut exprs);
         for expr in exprs {
-            let clave = format!("{:?}", expr);
+            let clave = Self::clave_expresion(&expr);
             if self.anteriores.iter().any(|(k, _)| *k == clave) {
                 continue;
             }
@@ -2763,6 +2832,14 @@ impl GeneradorBytecode {
             self.generar_expresion(&expr);
             self.emitir(Opcode::GuardarAnterior(slot));
         }
+    }
+
+    /// Clave estructural de una expresión, para deduplicar `anterior(expr)`.
+    ///
+    /// Se usa el JSON de la AST (estable) en vez de `format!("{expr:?}")`: el
+    /// `Debug` cambia si se renombran variantes y la clave dejaría de coincidir.
+    fn clave_expresion(expr: &Expresion) -> String {
+        serde_json::to_string(expr).unwrap_or_default()
     }
 
     /// Recorre una condición juntando las expresiones dentro de `anterior(...)`.
@@ -2809,6 +2886,10 @@ impl GeneradorBytecode {
         for idx in self.postcondiciones_activas.clone() {
             self.emitir(Opcode::VerificarPostcondicion(idx));
         }
+        // F12-T7: el invariante también se verifica al salir del método.
+        for idx in self.invariantes_activos.clone() {
+            self.emitir(Opcode::VerificarInvariante(idx));
+        }
     }
 
     /// Compila una expresión de contrato a uops usando los índices de variable del ámbito actual
@@ -2844,6 +2925,16 @@ impl GeneradorBytecode {
                             self.globales.iter().position(|(n, _)| n == nombre)
                         {
                             output.push(Uop::LoadIdxGlobal(idx));
+                        } else if self
+                            .campos_clase
+                            .as_ref()
+                            .is_some_and(|campos| campos.contains(nombre))
+                            && self.var_indices.contains_key("self")
+                        {
+                            // Invariante de clase: `valor` es `este.valor`.
+                            let este_idx = self.var_indices["self"];
+                            output.push(Uop::LoadIdx(este_idx));
+                            output.push(Uop::GetField(nombre.clone()));
                         } else {
                             output.push(Uop::PushNulo);
                         }
@@ -2910,7 +3001,7 @@ impl GeneradorBytecode {
                 // `anterior(expr)` lee el snapshot que se tomó al entrar
                 // (Uop::CargarAnterior), buscado por la misma clave que usó
                 // `emitir_snapshots_anteriores`.
-                let clave = format!("{:?}", inner);
+                let clave = Self::clave_expresion(inner);
                 match self.anteriores.iter().find(|(k, _)| *k == clave) {
                     Some((_, slot)) => output.push(Uop::CargarAnterior(*slot)),
                     None => output.push(Uop::PushNulo),

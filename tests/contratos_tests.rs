@@ -141,3 +141,52 @@ escribir(con_closure())
     );
     assert_eq!(out, vec!["3"]);
 }
+
+#[test]
+fn invariante_de_clase_se_verifica_al_salir() {
+    // `siempre v >= 0` se escribe antes del cuerpo de la clase.
+    let e = error(
+        r#"
+clase Contador
+    siempre v >= 0, "v nunca negativo"
+{
+    variable v: Entero
+    constructor() {
+        este.v = 0
+    }
+    funcion restar() {
+        este.v = este.v - 1
+    }
+}
+variable c = nuevo Contador()
+c.restar()
+"#,
+    );
+    assert!(e.contains("invariante no se cumple"), "mensaje: {e}");
+    assert!(e.contains("v nunca negativo"), "mensaje: {e}");
+}
+
+#[test]
+fn invariante_respetado_y_constructor_no_lo_verifica_al_entrar() {
+    // El campo arranca en Nulo: si el invariante se comprobara al *entrar* al
+    // constructor, fallaría antes de inicializarlo.
+    let out = salida(
+        r#"
+clase Contador
+    siempre v >= 0, "v nunca negativo"
+{
+    variable v: Entero
+    constructor() {
+        este.v = 7
+    }
+    funcion sumar() {
+        este.v = este.v + 1
+    }
+}
+variable c = nuevo Contador()
+c.sumar()
+escribir(c.v)
+"#,
+    );
+    assert_eq!(out, vec!["8"]);
+}

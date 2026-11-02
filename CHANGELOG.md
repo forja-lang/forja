@@ -40,8 +40,12 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   además cuenta los usos que aparecen sólo en un contrato: antes borraba la
   variable y el contrato comparaba contra Nulo. `ejemplos/500_contratos.fa`
   vuelve al golden.
-- **Conocido (F12-T7):** los invariantes de clase (`siempre …`) todavía no se
-  emiten, así que no se verifican en runtime.
+- **Los invariantes de clase (`siempre …`) ahora se verifican.** Se emitían
+  nunca (el opcode sólo existía en la serialización). Ahora se comprueban al
+  entrar y al salir de cada método (no al entrar al constructor, que es donde se
+  establecen) y un identificador suelto en la condición se resuelve como
+  `este.campo`. Nota: los `siempre` van antes del cuerpo de la clase; escritos
+  dentro de las llaves el parser los ignora en silencio.
 
 ### Pruebas — corpus completo bajo golden
 
