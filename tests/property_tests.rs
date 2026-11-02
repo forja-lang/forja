@@ -44,3 +44,84 @@ proptest! {
         }
     }
 }
+
+// ─── F-T1: propiedades del compilador completo ─────────────────────────────
+//
+// El lexer y el parser ya tenían propiedades; esto cubre el **pipeline
+// completo** (tipos → contratos → bytecode). La propiedad es simple y dura:
+// compilar un programa arbitrario debe devolver `Ok` o `Err`, nunca panickear.
+// Proptest reduce el caso y deja el repro mínimo si algo explota.
+
+fn programa_arbitrario() -> impl Strategy<Value = String> {
+    prop::collection::vec(
+        prop_oneof![
+            Just("variable"),
+            Just("constante"),
+            Just("funcion"),
+            Just("clase"),
+            Just("tipo"),
+            Just("rasgo"),
+            Just("implementa"),
+            Just("para"),
+            Just("si"),
+            Just("sino"),
+            Just("mientras"),
+            Just("coincidir"),
+            Just("caso"),
+            Just("retornar"),
+            Just("requiere"),
+            Just("asegura"),
+            Just("siempre"),
+            Just("anterior"),
+            Just("resultado"),
+            Just("importar"),
+            Just("x"),
+            Just("f"),
+            Just("T"),
+            Just("0"),
+            Just("1"),
+            Just("-1"),
+            Just("140737488355327"),
+            Just("140737488355328"),
+            Just("1e-3"),
+            Just("\"a\""),
+            Just("verdadero"),
+            Just("nulo"),
+            Just("+"),
+            Just("-"),
+            Just("*"),
+            Just("/"),
+            Just("%"),
+            Just("=="),
+            Just("!="),
+            Just("="),
+            Just("<"),
+            Just(">"),
+            Just("?"),
+            Just("&"),
+            Just("->"),
+            Just("("),
+            Just(")"),
+            Just("{"),
+            Just("}"),
+            Just("["),
+            Just("]"),
+            Just(","),
+            Just(":"),
+            Just("\n"),
+        ],
+        1..60,
+    )
+    .prop_map(|tokens| tokens.join(" "))
+}
+
+proptest! {
+    // Menos casos que las propiedades de lexer/parser: acá se compila entero.
+    #![proptest_config(ProptestConfig { cases: 96, .. ProptestConfig::default() })]
+
+    #[test]
+    fn compilar_programa_aleatorio_no_panickea(programa in programa_arbitrario()) {
+        // Ok = compiló; Err = diagnóstico. Un panic rompe el test.
+        let _ = forja::compilar_pipeline_completa(&programa);
+    }
+}

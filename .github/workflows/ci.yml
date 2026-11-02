@@ -108,6 +108,13 @@ jobs:
       # del playground. Cuesta milisegundos y evita publicar un release roto.
       - name: Validar workflow de release
         run: bash scripts/validate-release-workflow.sh
+      # F-T1 (auditoría externa): propiedades del compilador con proptest.
+      # La suite completa ya las corre con 256 casos; acá se suben para que el
+      # CI haga fuzzing de verdad (compilar nunca debe panickear).
+      - name: Propiedades del compilador (proptest)
+        env:
+          PROPTEST_CASES: "512"
+        run: cargo test --locked --test property_tests
 
   # Las cifras publicadas (líneas de Rust, ejemplos, módulos) se derivan del
   # código, así que nadie las mantiene a mano: este job las recalcula y
