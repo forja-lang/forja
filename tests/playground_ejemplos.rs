@@ -13,7 +13,9 @@ fn parsear(codigo: &str) {
 }
 
 fn ejemplos_playground() -> Vec<String> {
-    let html = include_str!("../docs/src/pages/playground.astro");
+    // Los botones de ejemplo viven en el componente (la página quedó como
+    // cascarón que lo monta): leer la página daba 0 ejemplos.
+    let html = include_str!("../docs/src/components/Playground.astro");
     let mut ejemplos = Vec::new();
     let mut resto = html;
     while let Some(inicio) = resto.find("data-code='") {
@@ -83,20 +85,7 @@ fn test_ejemplos_playground_sin_sintaxis_obsoleta() {
     }
 }
 
-#[test]
-fn test_ejemplos_wasm_parsean() {
-    let fuente = include_str!("../crates/forja-wasm/src/lib.rs");
-    let mut resto = fuente;
-    let mut total = 0;
-    while let Some(inicio) = resto.find("r#\"") {
-        resto = &resto[inicio + 3..];
-        let fin = resto.find("\"#").expect("raw string sin cerrar");
-        let codigo = &resto[..fin];
-        if codigo.contains("escribir(") || codigo.contains("funcion ") {
-            parsear(codigo);
-            total += 1;
-        }
-        resto = &resto[fin + 2..];
-    }
-    assert!(total >= 15, "se esperaban los ejemplos del playground WASM");
-}
+// `test_ejemplos_wasm_parsean` se eliminó: las cadenas de ejemplo embebidas en
+// `crates/forja-wasm/src/lib.rs` ya no existen (los ejemplos viven en
+// `ejemplos/` y en `docs/src/components/Playground.astro`, ambos cubiertos por
+// los tests de arriba).
