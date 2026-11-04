@@ -63,7 +63,6 @@ coincidir (envuelve()) {
 }
 
 #[test]
-#[ignore = "bug abierto: un parámetro genérico usado en una llamada se marca como movido (falso positivo del BorrowChecker)"]
 fn question_en_funcion_generica() {
     let out = salida(
         r#"
