@@ -1,5 +1,7 @@
 # ── Directorios generados / temporales ──
 plans/
+# El sitio vive en su propio repo (forja-lang.github.io); clonarlo acá es opcional.
+/docs/
 fib_rs/
 target/
 test_inline_rs/

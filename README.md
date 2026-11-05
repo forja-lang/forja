@@ -6,14 +6,14 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/forja-lang/forja/ci.yml?style=flat-square&logo=github&label=CI)](https://github.com/forja-lang/forja/actions/workflows/ci.yml)
 [![CD](https://img.shields.io/github/actions/workflow/status/forja-lang/forja/cd.yml?style=flat-square&logo=github&label=CD)](https://github.com/forja-lang/forja/actions/workflows/cd.yml)
-[![Documentación](https://img.shields.io/badge/docs-forja--lang.github.io-blue?style=flat-square&logo=readthedocs)](https://forja-lang.github.io/docs)
+[![Documentación](https://img.shields.io/badge/docs-forja--lang.github.io-blue?style=flat-square&logo=readthedocs)](https://forja-lang.github.io)
 [![Rendimiento por versión](https://img.shields.io/badge/bench-por%20versi%C3%B3n-blue?style=flat-square&logo=speedtest)](https://forja-lang.github.io/forja/benchmarks/)
 
 </div>
 
 Forja es un lenguaje de programación educativo moderno con sintaxis y palabras clave completamente en español. Está diseñado para enseñar conceptos de sistemas, teoría de lenguajes de programación y diseño por contrato sin la complejidad sintáctica de Rust. Incluye un compilador nativo (AOT y ensamblador x86-64/ARM64), un compilador al vuelo (JIT *tiered*) para x86-64, un intérprete de bytecode (*ForjaFast*), transpilación a Rust y a WASM, y soporte de interfaces gráficas nativas.
 
-**[Leé la documentación oficial aquí](https://forja-lang.github.io/docs)**
+**[Leé la documentación oficial aquí](https://forja-lang.github.io)**
 
 ---
 
@@ -289,7 +289,7 @@ $ bash scripts/build-android.sh aarch64-linux-android
 
 Forja está en **v0.9.6** y en desarrollo activo. El estado verificable de cada
 componente —hecho / en progreso / planeado— vive en el
-**[roadmap oficial](https://forja-lang.github.io/docs/roadmap/)**.
+**[roadmap oficial](https://forja-lang.github.io/roadmap/)**.
 
 - **Motores de ejecución (2):** intérprete *ForjaFast* (`src/vm_fast/`) y JIT *tiered* (`src/jit_tiered.rs`).
 - **Frontend reutilizable:** crates `forja-syntax` y `forja-types` (lexer, parser, AST, tipos).

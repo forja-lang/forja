@@ -10,10 +10,6 @@
 	path = benchmarks
 	url = https://github.com/forja-lang/benchmarks.git
 	branch = main
-[submodule "docs"]
-	path = docs
-	url = https://github.com/forja-lang/docs.git
-	branch = main
 [submodule "crates/forja-gui-rt"]
 	path = crates/forja-gui-rt
 	url = https://github.com/forja-lang/forja-gui-rt.git
