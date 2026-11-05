@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/validate-release-workflow.sh — valida la configuración de release
-# (F6-T7/F6-T8/F9-T3/F9-T4) sin depender de GitHub Actions.
+# sin depender de GitHub Actions.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WF="$ROOT/.github/workflows/cd.yml"
