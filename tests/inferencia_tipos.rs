@@ -1,4 +1,4 @@
-//! F4-T4 — Inferencia de tipos.
+//! Inferencia de tipos.
 //!
 //! Verifica que:
 //! 1. El type checker **infiere** el tipo de retorno de funciones y métodos sin
@@ -7,7 +7,7 @@
 //! 2. La inferencia de campos (`objeto.campo`) e índice (`arr[i]`) funciona.
 //! 3. La aritmética con parámetros genéricos `<T>` no produce falsos positivos
 //!    (subtarea 2: restricciones y unifying mejorado).
-//! 4. **DoD F4-T4**: ≥90% de los ejemplos con anotaciones de retorno siguen
+//! 4. **DoD **: ≥90% de los ejemplos con anotaciones de retorno siguen
 //!    compilando si se eliminan esas anotaciones (es decir, eran redundantes).
 
 use std::path::Path;
@@ -195,7 +195,7 @@ fn dod_sin_anotaciones_de_retorno_el_corpus_sigue_compilando() {
 
     let ratio = siguen_compilando as f64 / con_anotaciones.max(1) as f64;
     eprintln!(
-        "F4-T4 DoD: {siguen_compilando}/{con_anotaciones} ejemplos compilan sin anotaciones de retorno ({:.1}%)",
+        "DoD: {siguen_compilando}/{con_anotaciones} ejemplos compilan sin anotaciones de retorno ({:.1}%)",
         ratio * 100.0
     );
     for f in fallos.iter().take(20) {
@@ -207,7 +207,7 @@ fn dod_sin_anotaciones_de_retorno_el_corpus_sigue_compilando() {
     );
     assert!(
         ratio >= 0.90,
-        "DoD F4-T4 no cumplido: {siguen_compilando}/{con_anotaciones} = {:.1}% (< 90%)",
+        "DoD no cumplido: {siguen_compilando}/{con_anotaciones} = {:.1}% (< 90%)",
         ratio * 100.0
     );
 }
