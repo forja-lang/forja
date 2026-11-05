@@ -1,4 +1,4 @@
-// Builtins de la VM canónica `ForjaFast` (F1-T7).
+// Builtins de la VM canónica `ForjaFast`.
 //
 // Extraído de `vm_fast/mod.rs` para reducir el tamaño del monolito. Contiene el
 // enum `BuiltinFast`, su resolución por nombre (`resolver_builtin_fast`) y la
@@ -60,6 +60,34 @@ pub(crate) fn resolver_builtin_fast(m: &str) -> Option<BuiltinFast> {
         _ => None,
     }
 }
+
+/// Nombres de los builtins que resuelve `resolver_builtin_fast`.
+///
+/// el modo estricto necesita la lista de llamadas válidas sin declarar.
+/// El test `builtins_nombres_coinciden` mantiene las dos listas en sincronía.
+pub(crate) const NOMBRES_BUILTINS: &[&str] = &[
+    "longitud",
+    "a_mayusculas",
+    "a_minusculas",
+    "contiene",
+    "dividir",
+    "recortar",
+    "invertir",
+    "obtener",
+    "empujar",
+    "remover",
+    "empieza_con",
+    "termina_con",
+    "caracter_en",
+    "indice_de",
+    "subcadena",
+    "reemplazar",
+    "a_entero",
+    "a_flotante",
+    "repetir",
+    "unir_elementos",
+    "esperar",
+];
 
 impl ForjaFast {
     pub(crate) fn exec_builtin(&mut self, b: BuiltinFast, _nargs: usize) -> Result<(), ErrFast> {
