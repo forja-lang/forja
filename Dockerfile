@@ -1,4 +1,4 @@
-# Forja — entorno reproducible (F7-T1)
+# Forja — entorno reproducible
 #
 # Imagen base para desarrollo y CI local. Reproduce el toolchain Linux que usa
 # GitHub Actions (ubuntu-latest) sin depender de WSL ni de cargo.exe.
