@@ -1,7 +1,7 @@
 // Superinstrucciones fusionadas, comparaciones float, XorSign y codigos de
-// pattern matching de la VM canónica `ForjaFast` (F1-T7).
+// pattern matching de la VM canónica `ForjaFast`.
 //
-// Extraído de `ejecucion.rs` durante el refactor F1-T7. Estas ramas del
+// Extraído de `ejecucion.rs` durante el refactor. Estas ramas del
 // `match op` son autocontenidas (no usan `continue`/`break`/`patch_op`), por lo
 // que se delegan a este helper que devuelve `Ok(true)` si la operación fue
 // manejada.
