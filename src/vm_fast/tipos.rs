@@ -1,4 +1,4 @@
-// Tipos base de la VM canónica `ForjaFast` (F1-T7).
+// Tipos base de la VM canónica `ForjaFast`.
 //
 // Extraído de `vm_fast/mod.rs` para reducir el tamaño del monolito. Contiene
 // los tipos de valor (NaN tagging), objetos, Exacto, frames, errores y las
@@ -469,7 +469,7 @@ pub struct VersionedBytecode {
 }
 
 /// Representación portable de un valor con referencias a heap, para cruzar
-/// canales entre VMs (F8-T9). Los índices de `obj_heap`/`array_heap`/`map_heap`
+/// canales entre VMs. Los índices de `obj_heap`/`array_heap`/`map_heap`
 /// son locales a cada VM; este árbol se reconstruye en el receptor.
 #[derive(Clone, Debug)]
 pub enum ValorPortable {
@@ -481,7 +481,7 @@ pub enum ValorPortable {
     Texto(Arc<str>),
     Arreglo(Vec<ValorPortable>),
     Mapa(Vec<(String, ValorPortable)>),
-    /// F12-T2: referencia a un contenedor ya serializado en este mismo mensaje.
+    /// referencia a un contenedor ya serializado en este mismo mensaje.
     /// Preserva ciclos y objetos compartidos (el receptor reutiliza el valor
     /// creado para ese id).
     Referencia(u32),
@@ -505,7 +505,7 @@ pub enum ChannelValue {
     /// Strings: el contenido real del string, para re-indexar en el str_heap
     /// del receptor.
     Texto(Arc<str>),
-    /// F8-T9: valor compuesto serializado (arreglo/mapa/objeto) para
+    /// valor compuesto serializado (arreglo/mapa/objeto) para
     /// reconstruirlo en los heaps del receptor.
     Portable(Box<ValorPortable>),
 }
@@ -520,7 +520,7 @@ pub(crate) struct FrmFast {
     // se lee; reservado para la verificación de versión en retorno.
     #[allow(dead_code)]
     pub(crate) func_version: u32,
-    // F2-T7: símbolo de la función que se está ejecutando en este frame.
+    // símbolo de la función que se está ejecutando en este frame.
     // Permite reconstruir el backtrace con nombres de función Forja.
     // `IdSimbolo(0)` = frame raíz (código de nivel superior, sin función).
     pub(crate) func_sym: IdSimbolo,
@@ -545,7 +545,7 @@ pub enum ErrFast {
 
 impl std::fmt::Display for ErrFast {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // F2-T7: mensajes claros en español para principiantes.
+        // mensajes claros en español para principiantes.
         match self {
             ErrFast::StackUnder(m) => write!(f, "pila insuficiente: {}", m),
             ErrFast::VarNoDecl(v) => {
