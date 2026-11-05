@@ -1,6 +1,6 @@
 // Tests de la VM canónica `ForjaFast`.
 //
-// Extraído de `vm_fast.rs` (F1-T7) para reducir el tamaño del monolito.
+// Extraído de `vm_fast.rs` para reducir el tamaño del monolito.
 // Al ser un submódulo de `vm_fast`, los tests conservan acceso a los items
 // privados del módulo padre (campos de `ForjaFast`, helpers internos, etc.).
 
@@ -45,7 +45,7 @@ fn compilar_programa(source: &str) -> Vec<bytecode::Opcode> {
         .collect();
     let bytecode = bytecode::postprocesar_globales(bytecode, &globales);
 
-    // Punto único de optimización de bytecode (F4-T3).
+    // Punto único de optimización de bytecode.
     crate::optimizer_pipeline::optimizar_bytecode(bytecode)
 }
 
@@ -244,7 +244,7 @@ fn trace_lb50_vs_leibniz_test() {
 
 #[test]
 fn errores_estrictos_division_por_cero() {
-    // F2-T7: con `errores_estrictos` activo, dividir entre un cero calculado
+    // con `errores_estrictos` activo, dividir entre un cero calculado
     // en runtime lanza `ErrFast::DivCero` en lugar de devolver nulo.
     let src = "funcion cero() {\n    retornar 0\n}\n\nfuncion dividir(a, b) {\n    retornar a / b\n}\n\nvariable r = dividir(10, cero())\nescribir(r)\n";
     let bc = compilar_programa(src);
@@ -273,7 +273,7 @@ fn errores_estrictos_division_por_cero_desactivado_devuelve_nulo() {
 
 #[test]
 fn errores_estrictos_indice_fuera_de_rango() {
-    // F2-T7: con `errores_estrictos` activo, acceder a un índice fuera de
+    // con `errores_estrictos` activo, acceder a un índice fuera de
     // rango lanza `ErrFast::IdxOut` en lugar de devolver nulo.
     let src = "variable arr = [1, 2, 3]\nvariable i = 99\nescribir(arr[i])\n";
     let bc = compilar_programa(src);
@@ -385,7 +385,7 @@ fn pgo_aplica_perfil_pre_especializando_ips_calientes() {
 fn try_operador_desempaqueta_resultado() {
     // Regresión: el DCE eliminaba funciones llamadas solo vía `?` porque
     // el recolector de usos ignoraba Expresion::Try.
-    // F1-T4 (S6): el `?` debe estar dentro de una función que devuelva
+    // (S6): el `?` debe estar dentro de una función que devuelva
     // Resultado/Opcion, por lo que envolvemos el desempaquetado.
     let src = r#"
 funcion dividir_seguro(a, b) -> Resultado<Entero, Texto> {
@@ -516,4 +516,16 @@ main()
         &["iron_90", "heroe_Thor_85", "joker_70", "villano_Lex_60"],
         "los literales en subpatrones deben seleccionar el brazo correcto"
     );
+}
+
+/// `NOMBRES_BUILTINS` (que usa el modo estricto para no reportar falsos
+/// positivos) debe cubrir exactamente los builtins que resuelve la VM.
+#[test]
+fn builtins_nombres_coinciden() {
+    for nombre in super::NOMBRES_BUILTINS {
+        assert!(
+            super::resolver_builtin_fast(nombre).is_some(),
+            "builtin declarado pero no resoluble: {nombre}"
+        );
+    }
 }
