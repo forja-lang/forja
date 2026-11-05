@@ -9,9 +9,9 @@ fn test_enum_unitario_como_valor() {
 tipo Direccion = Norte | Sur | Este | Oeste
 variable d = Norte
 coincidir (d) {
-    Norte => { escribir("norte") }
-    Sur => { escribir("sur") }
-    _ => { escribir("otro") }
+    caso Norte -> { escribir("norte") }
+    caso Sur -> { escribir("sur") }
+    caso _ -> { escribir("otro") }
 }
 "#,
     );
@@ -23,8 +23,8 @@ fn test_coincidir_con_patron_string() {
         r#"
 variable s = "hola"
 coincidir (s) {
-    "hola" => { escribir("saludo") }
-    _ => { escribir("otro") }
+    caso "hola" -> { escribir("saludo") }
+    caso _ -> { escribir("otro") }
 }
 "#,
     );
