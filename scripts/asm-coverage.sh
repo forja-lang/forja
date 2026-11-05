@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/asm-coverage.sh
 #
-# F4-T6 — Mide la cobertura de `src/compiler_asm.rs` (backend ASM multi-target)
+# Mide la cobertura de `src/compiler_asm.rs` (backend ASM multi-target)
 # ejecutando la batería por target (`tests/asm_targets.rs`) y los tests unitarios
 # del módulo (`--lib compiler_asm`), con `-C instrument-coverage`.
 #
@@ -163,7 +163,7 @@ echo "Reporte completo: $COVDIR/report.txt" >&2
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     {
-        echo "## 🧵 Cobertura backend ASM (F4-T6)"
+        echo "## 🧵 Cobertura backend ASM "
         echo ""
         echo "\`\`\`"
         echo "$LINEA"
