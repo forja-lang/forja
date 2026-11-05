@@ -315,7 +315,7 @@ fn handle_launch(state: &mut DAPState, seq: i64, args: serde_json::Value) {
         }
     };
 
-    // F2-T6: recuperar nombres reales de variables desde el AST para que el
+    // recuperar nombres reales de variables desde el AST para que el
     // panel de variables y la evaluación de expresiones muestren identificadores
     // legibles en lugar de `var_N`/`global_N`.
     if let Ok(programa) = forja::analizar(&program) {
@@ -345,7 +345,7 @@ fn handle_set_breakpoints(state: &mut DAPState, seq: i64, args: serde_json::Valu
         for bp in bps {
             if let Some(line) = bp.get("line").and_then(|v| v.as_u64()) {
                 let line_usize = line as usize;
-                // F2-T6: soportar breakpoints condicionales. El campo `condition`
+                // soportar breakpoints condicionales. El campo `condition`
                 // es opcional; si está presente y no vacío, el breakpoint solo
                 // se activa cuando la expresión evalúa a verdadero.
                 let condicion = bp
