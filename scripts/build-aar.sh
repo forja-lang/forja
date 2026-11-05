@@ -7,7 +7,7 @@
 #
 # Uso:
 #   bash scripts/build-aar.sh                          # todos los ABIs + AAR
-#   bash scripts/build-aar.sh 0.9.6                    # versión específica
+#   bash scripts/build-aar.sh 0.9.7                    # versión específica
 #   bash scripts/build-aar.sh --target aarch64-linux-android --build-only
 #   bash scripts/build-aar.sh --package-only           # empaqueta .so ya compilados
 #
@@ -55,7 +55,7 @@ usage() {
     cat <<'EOF'
 Uso:
   bash scripts/build-aar.sh                          # todos los ABIs + AAR
-  bash scripts/build-aar.sh 0.9.6                    # versión específica
+  bash scripts/build-aar.sh 0.9.7                    # versión específica
   bash scripts/build-aar.sh --target aarch64-linux-android --build-only
   bash scripts/build-aar.sh --package-only           # empaqueta .so ya compilados
 
@@ -219,9 +219,9 @@ for target in "${TARGETS[@]}"; do
     echo ""
     echo "  Building for $target → $abi"
 
-    # F0-T4: el AAR es un artefacto de distribución → perfil de tamaño
+    # el AAR es un artefacto de distribución → perfil de tamaño
     # (opt-level = "z", panic = "abort", strip = "symbols").
-    # F7-T6: `dist-android` usa ThinLTO para no pagar LTO fat en cada ABI.
+    # `dist-android` usa ThinLTO para no pagar LTO fat en cada ABI.
     cargo build \
         --package forja-android-rt \
         --target "$target" \
