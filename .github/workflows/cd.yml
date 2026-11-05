@@ -84,7 +84,7 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-      # F0-T3: `--locked` garantiza que el Cargo.lock raíz (workspace) es la
+      # `--locked` garantiza que el Cargo.lock raíz (workspace) es la
       # fuente de verdad y que la build no resuelve dependencias nuevas.
       - name: Compilación
         run: cargo build --locked --verbose
@@ -160,7 +160,7 @@ jobs:
           name: forja-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/forja
 
-  # F3-T7: matriz de compilación multiplataforma (x86_64 y aarch64).
+  # matriz de compilación multiplataforma (x86_64 y aarch64).
   # Cada entrada produce un archivo comprimido autocontenido (binarios + stdlib)
   # listo para descargar y ejecutar SIN toolchain de Rust.
   #   - Rust nativo cuando el runner coincide con la arquitectura.
@@ -188,7 +188,7 @@ jobs:
             os: windows-latest
             target: x86_64-pc-windows-msvc
             unix: false
-          # F6-T8: runner en preview; no bloquea el release hasta estabilizarse.
+          # runner en preview; no bloquea el release hasta estabilizarse.
           - name: windows-arm64
             os: windows-11-arm
             target: aarch64-pc-windows-msvc
@@ -284,7 +284,7 @@ jobs:
           path: dist/*
           if-no-files-found: warn
 
-  # F7-T6: los 4 ABIs se compilan en paralelo (un runner por target) en vez de
+  # los 4 ABIs se compilan en paralelo (un runner por target) en vez de
   # secuencialmente dentro de un solo job. El empaquetado del AAR es un job
   # aparte que solo descarga los .so ya compilados.
   build-aar-so:
@@ -456,7 +456,7 @@ jobs:
           find artifacts/forja-android-aar -name '*.aar' -exec cp -v {} dist/ \; 2>/dev/null || true
           echo "── Assets del release ──"
           ls -la dist/
-      # F3-T7: checksums SHA-256 de TODOS los assets, para verificación de descargas.
+      # checksums SHA-256 de TODOS los assets, para verificación de descargas.
       - name: Checksums (SHA-256)
         shell: bash
         run: |
@@ -469,7 +469,7 @@ jobs:
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*
-      # F6-T7: firma keyless (Sigstore/cosign) además del SHA256SUMS y la
+      # firma keyless (Sigstore/cosign) además del SHA256SUMS y la
       # atestación de procedencia. Las instalaciones pueden verificar el blob.
       - uses: sigstore/cosign-installer@v3
       - name: Firmar assets (cosign keyless)
