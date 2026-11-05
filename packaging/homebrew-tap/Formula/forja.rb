@@ -1,4 +1,4 @@
-# F3-T7 — Fórmula de Homebrew para Forja.
+# Fórmula de Homebrew para Forja.
 #
 # Este archivo es una PLANTILLA. Los `sha256` se reemplazan ejecutando:
 #
