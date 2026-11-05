@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="design/forge.png" alt="Logo de Forja" width="128">
+<img src="https://raw.githubusercontent.com/forja-lang/forja-design/main/forge.png" alt="Logo de Forja" width="128">
 
 # Forja (fa)
 
@@ -193,6 +193,37 @@ PS C:\forja> cargo build --release --features all
 
 ---
 
+### Configuración: `forja.yaml` (sin flags)
+
+La CLI **no usa flags** (`--x`). Al arrancar, si el directorio de ejecución no tiene `forja.yaml`, se crea con **todas** las claves y sus valores por defecto. Es un lenguaje en español: los booleanos son `verdadero`/`falso` y las opciones también (`rapido`, `maquina`, `ensamblador`, `nativo`).
+
+```yaml
+motor: rapido              # rapido | vm | jit | todas
+destino: maquina           # maquina | ensamblador | nativo
+estricto: falso            # modo estricto de tipos y ownership
+contratos: verdadero       # requiere/asegura/invariantes
+pila: falso                # pila de llamadas en errores
+matematica_rapida: falso   # aritmética rápida
+perfil: ''                 # '' | recoger | usar
+recarga: falso             # recarga de módulos (destino: nativo)
+permitir_red: ''           # hosts del sandbox de red (coma)
+permitir_puertos: ''       # puertos del sandbox de red (coma)
+max_archivo_mb: 10         # límite del archivo fuente
+arquitectura: ''           # '' | x86_64-windows | x86_64-linux | arm64 | riscv64
+iteraciones: 100           # iteraciones de `medir`
+consola: falso             # consola visible en el .exe
+verificar_formato: falso   # `formatear` sólo verifica
+lint_estricto: falso       # `lint`: advertencias = errores
+nivel: ''                  # '' | detallado | depuracion | traza
+json: falso                # diagnósticos JSON
+color: verdadero           # color en la salida
+puerto_registry: 8787      # servidor del registry
+```
+
+Cambiar el comportamiento = editar ese archivo. Si aparece un flag, la CLI lo avisa y sale con error.
+
+---
+
 ### Ejemplos Prácticos de Consola
 
 Aquí se ilustra cómo interactuar con el compilador en un entorno de comandos típico:
@@ -203,7 +234,8 @@ Aquí se ilustra cómo interactuar con el compilador en un entorno de comandos t
 PS C:\forja> forja ejecutar ejemplos/01_hola.fa
 
 # Ejecutar con el compilador al vuelo (JIT tiered) nativo
-PS C:\forja> forja ejecutar ejemplos/01_hola.fa --vm jit
+# motor: jit  en forja.yaml
+PS C:\forja> forja ejecutar ejemplos/01_hola.fa
 
 # (La VM original v1 fue removida en 0.9.0: solo quedan ForjaFast y el JIT.)
 ```
@@ -211,7 +243,7 @@ PS C:\forja> forja ejecutar ejemplos/01_hola.fa --vm jit
 #### 2. Compilar a un Ejecutable Autónomo Ligero
 ```powershell
 # Compilar script de consola
-PS C:\forja> forja compilar ejemplos/05_condicionales.fa -o condicionales.exe
+PS C:\forja> forja compilar ejemplos/05_condicionales.fa condicionales.exe
 Ejecutable generado: condicionales.exe
 
 # Ejecutar de forma directa e instantánea sin dependencias
@@ -223,13 +255,14 @@ Buen trabajo!
 #### 3. Realizar una Medición de Rendimiento (Benchmark)
 ```powershell
 # Comparar el script en los dos motores (ForjaFast y JIT)
-PS C:\forja> forja medir ejemplos/40_fibonacci.fa --vm todas --iters 100
+# iteraciones: 100  en forja.yaml
+PS C:\forja> forja medir ejemplos/40_fibonacci.fa
 ```
 
 #### 4. Modo Interactivo (Consola de Lectura y Ejecución Directa)
 ```powershell
 PS C:\forja> forja interactivo
-Forja v0.9.6 — Escribí 'salir' para terminar
+Forja v0.9.7 — Escribí 'salir' para terminar
 > variable x = 10
 > x = x + 5
 > escribir(x)
@@ -251,7 +284,7 @@ Forja genera distintos destinos a partir del mismo programa. Los dos **motores d
 | **Backend LLVM** | LLVM IR + `llc` | En desarrollo |
 | **JIT tiered** | Código máquina x86-64 en caliente | Con fallback seguro a la VM |
 | **ForjaFast (VM)** | Intérprete de bytecode | Motor por defecto (NaN tagging + GC) |
-| **AOT (`forja build`)** | Ejecutable con bytecode incrustado | Autónomo, sin dependencias |
+| **AOT (`forja compilar`)** | Ejecutable con bytecode incrustado | Autónomo, sin dependencias |
 
 ---
 
@@ -263,10 +296,11 @@ Al compilar un programa que usa GUI (`importar gui`), Forja genera un ejecutable
 
 ```powershell
 # Ejecutar un script con GUI (modo nativo)
-PS C:\forja> forja ejecutar ejemplos/gui.fa --native
+# destino: nativo  en forja.yaml
+PS C:\forja> forja ejecutar ejemplos/gui.fa
 
 # Compilar a ejecutable autónomo (autocontenido, sin transpilación)
-PS C:\forja> forja compilar ejemplos/gui.fa -o miapp.exe
+PS C:\forja> forja compilar ejemplos/gui.fa miapp.exe
 ```
 
 ---
@@ -287,7 +321,7 @@ $ bash scripts/build-android.sh aarch64-linux-android
 
 ## Estado del proyecto
 
-Forja está en **v0.9.6** y en desarrollo activo. El estado verificable de cada
+Forja está en **v0.9.7** y en desarrollo activo. El estado verificable de cada
 componente —hecho / en progreso / planeado— vive en el
 **[roadmap oficial](https://forja-lang.github.io/roadmap/)**.
 
@@ -296,6 +330,19 @@ componente —hecho / en progreso / planeado— vive en el
 - **Salidas:** bytecode (VM/JIT), ensamblador x86-64/ARM64, Rust, AOT, WASM, Android y GUI.
 - **Ecosistema:** `stdlib` (47 módulos), 263 ejemplos, curso de 30 días, LSP + DAP, GC generacional, registro de paquetes local y releases precompilados.
 - **En progreso:** IR real (emisión AST→IR), backend LLVM, extracción de `forja-gui-core` y registry remoto.
+
+---
+
+## Benchmarks por versión
+
+La corrida automática (`scripts/bench-releases.py`) compara las últimas
+releases publicadas (v0.9.3, v0.9.4, v0.9.5) con parejas intercaladas.
+Resultado destacado: v0.9.5 es **significativamente más rápido** que v0.9.3
+en la VM (bench_forja_aot -61.5 %, carga_flotantes -45.0 %) y en el
+pipeline de compilación (-45.8 %); el AOT se mantiene equivalente a Rust
+nativo. Detalle completo en
+[`benchmarks/RESULTADOS_BENCHMARK.md`](benchmarks/RESULTADOS_BENCHMARK.md)
+y en el dashboard de versiones.
 
 ---
 
