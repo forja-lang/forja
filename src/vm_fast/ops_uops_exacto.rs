@@ -1,5 +1,5 @@
 // Opcodes Exacto (BigDecimal) del pipeline de uops de la VM canónica
-// `ForjaFast` (F1-T7). Extraídos de `ejecucion_uops.rs` para mantener los
+// `ForjaFast`. Extraídos de `ejecucion_uops.rs` para mantener los
 // archivos por debajo de ~1500 líneas.
 //
 // Estas ramas del `match uop` son autocontenidas (terminan con `self.ip += 1;`)
