@@ -38,18 +38,18 @@ pub enum Instruccion {
     // === Constantes ===
     ConstEntero(i64),
     ConstDecimal(f64),
-    /// F11-T5: literal de precisión arbitraria (`exacto`): coeficiente y escala.
+    /// literal de precisión arbitraria (`exacto`): coeficiente y escala.
     ConstExacto(i128, u32),
-    /// F11-T5: conversión a `Exacto` (`true` si el origen es entero).
+    /// conversión a `Exacto` (`true` si el origen es entero).
     AExacto(IdValor, bool),
     ConstBooleano(bool),
     ConstTexto(IdSimboloIr),
     ConstNulo,
-    /// F11-T5: lectura de una línea de entrada (`leer()`).
+    /// lectura de una línea de entrada (`leer()`).
     LeerLinea,
-    /// F12-T3: `a_numero(texto)` → entero, igual que el backend AST.
+    /// `a_numero(texto)` → entero, igual que el backend AST.
     ParsearEntero(IdValor),
-    /// F12-T3: `tiempo_actual()` → milisegundos desde la época Unix.
+    /// `tiempo_actual()` → milisegundos desde la época Unix.
     TiempoActual,
 
     // === Parámetros ===
@@ -105,7 +105,7 @@ pub enum Instruccion {
     Llamar(IdSimboloIr, Vec<IdValor>),
     /// Crear un closure en este punto.
     ///
-    /// F12-T1: el valor es un objeto `Closure` con el nombre de la función
+    /// el valor es un objeto `Closure` con el nombre de la función
     /// anónima (`fn`) y el **entorno capturado** (`env`, un arreglo con el valor
     /// que tenían las variables libres al crear el closure). El cuerpo viaja
     /// dentro de la instrucción —con su propio marco de variables— porque el IR
@@ -116,21 +116,21 @@ pub enum Instruccion {
     /// Los `IdValor` son los valores capturados, en el mismo orden en que la
     /// función anónima los espera en su parámetro `__entorno`.
     CrearClausura(Box<FuncionSsa>, Vec<IdValor>),
-    /// F11-T1: llamada indirecta. El destinatario es un valor (un closure
+    /// llamada indirecta. El destinatario es un valor (un closure
     /// guardado en variable o un callback recibido por parámetro).
     LlamarClausura(IdValor, Vec<IdValor>),
-    /// F11-T2: `hilo { ... }`. El cuerpo viaja como función sintética cuyos
+    /// `hilo {... }`. El cuerpo viaja como función sintética cuyos
     /// parámetros son las variables capturadas; los valores capturados se
     /// pasan al hilo como argumentos (copia, no referencia).
     CrearHilo(Box<FuncionSsa>, Vec<IdValor>),
-    /// F11-T2: `canal()`. El valor es el arreglo `[emisor, receptor]`.
+    /// `canal()`. El valor es el arreglo `[emisor, receptor]`.
     NuevoCanal,
-    /// F12-T2: canal con capacidad explícita (backpressure).
+    /// canal con capacidad explícita (backpressure).
     NuevoCanalConCapacidad(IdValor),
-    /// F11-T3: construir un valor de `Resultado`/`Opcion`: objeto `<clase>` con
+    /// construir un valor de `Resultado`/`Opcion`: objeto `<clase>` con
     /// campos `valor` (opcional) y `tipo` (`ok`/`error`/`some`/`none`).
     ObjetoDeEnum(IdSimboloIr, Option<IdValor>, IdSimboloIr),
-    /// F11-T3: `expr?` — desenvuelve el valor o propaga el error.
+    /// `expr?` — desenvuelve el valor o propaga el error.
     Intentar(IdValor),
 
     // === Objetos ===
@@ -142,9 +142,9 @@ pub enum Instruccion {
     FijarCampo(IdValor, IdSimboloIr, IdValor),
     /// Llamada a método: `obj.metodo(argumentos...)`
     LlamarMetodo(IdValor, IdSimboloIr, Vec<IdValor>),
-    /// F8-T3: fijar campo por índice (tags/campos de enum).
+    /// fijar campo por índice (tags/campos de enum).
     FijarCampoPorIndice(IdValor, usize, IdValor),
-    /// F8-T3: extraer campo por índice.
+    /// extraer campo por índice.
     ExtraerCampoPorIndice(IdValor, usize),
 
     // === Arrays ===
@@ -538,7 +538,7 @@ impl ConstructorIr {
         v
     }
 
-    /// F11-T5: literal `exacto` (BigDecimal) del lenguaje.
+    /// literal `exacto` (BigDecimal) del lenguaje.
     pub fn emitir_const_exacto(&mut self, coeficiente: i128, escala: u32) -> IdValor {
         let v = self.siguiente_valor();
         self.instrucciones_actuales
@@ -546,7 +546,7 @@ impl ConstructorIr {
         v
     }
 
-    /// F11-T5: conversión a `Exacto` de un entero o de un decimal (el backend
+    /// conversión a `Exacto` de un entero o de un decimal (el backend
     /// AST la emite cuando la variable declara tipo `Exacto` y el valor es un
     /// literal).
     pub fn emitir_a_exacto(&mut self, valor: IdValor, desde_entero: bool) -> IdValor {
@@ -733,7 +733,7 @@ impl ConstructorIr {
         v
     }
 
-    /// F12-T1: define un closure con su entorno capturado y devuelve su valor.
+    /// define un closure con su entorno capturado y devuelve su valor.
     pub fn emitir_crear_clausura(
         &mut self,
         funcion: FuncionSsa,
@@ -745,7 +745,7 @@ impl ConstructorIr {
         v
     }
 
-    /// F11-T1: llamada indirecta a un closure/callback.
+    /// llamada indirecta a un closure/callback.
     pub fn emitir_llamada_clausura(
         &mut self,
         destinatario: IdValor,
@@ -757,7 +757,7 @@ impl ConstructorIr {
         v
     }
 
-    /// F11-T2: lanza un hilo con el cuerpo y los valores capturados.
+    /// lanza un hilo con el cuerpo y los valores capturados.
     pub fn emitir_crear_hilo(&mut self, funcion: FuncionSsa, capturadas: Vec<IdValor>) -> IdValor {
         let v = self.siguiente_valor();
         self.instrucciones_actuales
@@ -765,14 +765,14 @@ impl ConstructorIr {
         v
     }
 
-    /// F11-T2: crea un canal y devuelve el arreglo `[emisor, receptor]`.
+    /// crea un canal y devuelve el arreglo `[emisor, receptor]`.
     pub fn emitir_nuevo_canal(&mut self) -> IdValor {
         let v = self.siguiente_valor();
         self.instrucciones_actuales.push(Instruccion::NuevoCanal);
         v
     }
 
-    /// F12-T2: canal acotado; `capacidad` es un `Entero`.
+    /// canal acotado; `capacidad` es un `Entero`.
     pub fn emitir_nuevo_canal_con_capacidad(&mut self, capacidad: IdValor) -> IdValor {
         let v = self.siguiente_valor();
         self.instrucciones_actuales
@@ -780,7 +780,7 @@ impl ConstructorIr {
         v
     }
 
-    /// F11-T3: construye un `Resultado`/`Opcion` con `valor` y `tipo`.
+    /// construye un `Resultado`/`Opcion` con `valor` y `tipo`.
     pub fn emitir_objeto_de_enum(
         &mut self,
         clase: IdSimboloIr,
@@ -793,7 +793,7 @@ impl ConstructorIr {
         v
     }
 
-    /// F11-T3: propaga `?` sobre el valor dado.
+    /// propaga `?` sobre el valor dado.
     pub fn emitir_intento(&mut self, valor: IdValor) -> IdValor {
         let v = self.siguiente_valor();
         self.instrucciones_actuales
@@ -801,7 +801,7 @@ impl ConstructorIr {
         v
     }
 
-    /// F12-T3: `a_numero(texto)` → entero (misma ruta que el backend AST).
+    /// `a_numero(texto)` → entero (misma ruta que el backend AST).
     pub fn emitir_parseo_entero(&mut self, texto: IdValor) -> IdValor {
         let v = self.siguiente_valor();
         self.instrucciones_actuales
@@ -809,14 +809,14 @@ impl ConstructorIr {
         v
     }
 
-    /// F12-T3: `tiempo_actual()` → milisegundos desde la época Unix.
+    /// `tiempo_actual()` → milisegundos desde la época Unix.
     pub fn emitir_tiempo_actual(&mut self) -> IdValor {
         let v = self.siguiente_valor();
         self.instrucciones_actuales.push(Instruccion::TiempoActual);
         v
     }
 
-    /// F11-T5: lee una línea de entrada (`leer()`), como `Opcode::LeerLinea`.
+    /// lee una línea de entrada (`leer()`), como `Opcode::LeerLinea`.
     pub fn emitir_lectura_linea(&mut self) -> IdValor {
         let v = self.siguiente_valor();
         self.instrucciones_actuales.push(Instruccion::LeerLinea);
