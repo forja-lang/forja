@@ -1,6 +1,6 @@
-// Opcodes de concurrencia (canales mpsc e hilos) de la VM canónica `ForjaFast` (F1-T7).
+// Opcodes de concurrencia (canales mpsc e hilos) de la VM canónica `ForjaFast`.
 //
-// Extraído de `ejecucion.rs` durante el refactor F1-T7. Estas ramas del
+// Extraído de `ejecucion.rs` durante el refactor. Estas ramas del
 // `match op` son autocontenidas (no usan `continue`/`break`/`patch_op`), por lo
 // que se delegan a este helper que devuelve `Ok(true)` si la operación fue
 // manejada.
@@ -15,7 +15,7 @@ impl ForjaFast {
     pub(crate) fn ejecutar_ops_concurrencia(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
             Opcode::NuevoCanal | Opcode::NuevoCanalConCapacidad => {
-                // F12-T2: canal acotado → `enviar` bloquea con la cola llena.
+                // canal acotado → `enviar` bloquea con la cola llena.
                 // `ChannelNewCap` toma la capacidad de la pila (`canal(n)`).
                 let capacidad = match op {
                     Opcode::NuevoCanalConCapacidad => {
@@ -70,7 +70,7 @@ impl ForjaFast {
                     let thread_obj_heap = self.obj_heap.clone();
                     let thread_obj_shapes = self.formas_objeto.clone();
                     let thread_chan_tx_heap = self.chan_tx_heap.clone();
-                    // F12-T2: el hijo también necesita los receptores; sin esto
+                    // el hijo también necesita los receptores; sin esto
                     // `rx.recibir()` dentro de un `hilo` devolvía Nulo.
                     let thread_chan_rx_heap = self.chan_rx_heap.clone();
                     let thread_output = self.output.clone();
@@ -141,7 +141,7 @@ impl ForjaFast {
                                 || ret.es_objeto()
                                 || ret.es_exacto()
                             {
-                                // F8-T9: los índices de heap del hijo no son
+                                // los índices de heap del hijo no son
                                 // válidos en el padre; serializar.
                                 ChannelValue::Portable(Box::new(
                                     hilo_vm.serializar_portable(ret, 0),
