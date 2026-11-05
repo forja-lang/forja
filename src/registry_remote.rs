@@ -1,4 +1,4 @@
-//! F6-T6: cliente del registry remoto de Forja.
+//! cliente del registry remoto de Forja.
 //!
 //! Protocolo HTTP/1.1 mínimo sobre `TcpStream` (sin dependencias nuevas):
 //!
@@ -154,7 +154,7 @@ pub fn publicar_remoto(
         return Err(format!("versión no semver: '{}'", version));
     }
     let hash = sha256_hex(datos);
-    // F12-T4: el autor firma con su clave privada Ed25519 y adjunta la pública.
+    // el autor firma con su clave privada Ed25519 y adjunta la pública.
     let claves = crate::registry::clave_autor()?;
     let firma = crate::registry::firmar_hash_ed25519(&hash, &claves.privada);
     let clave_publica = claves
@@ -219,7 +219,7 @@ pub fn instalar_desde_remoto(nombre: &str, req: &str, destino: &Path) -> Result<
     {
         // La firma es del autor; si no coincide con la clave local se acepta por
         // SHA-256 y se deja constancia (la verificación fuerte de autor llega con
-        // firmas asimétricas, F6-T7).
+        // firmas asimétricas,).
         eprintln!(
             "⚠️  firma de autor no verificable localmente para {}@{}; se validó SHA-256",
             nombre, publicada.version
