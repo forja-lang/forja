@@ -160,7 +160,7 @@ impl ModuleResolver {
                         0, 0,
                         &format!("El módulo importado '{}' excede el límite de tamaño de {} MB (tamaño actual: {:.2} MB)",
                             ruta, forja::MAX_ARCHIVO_DEFAULT_MB, tamano as f64 / (1024.0 * 1024.0)),
-                        "Usa --max-archivo <MB> para aumentar el límite al compilar el archivo principal.",
+                        "Aumentá `max_archivo_mb` en forja.yaml para subir el límite al compilar el archivo principal.",
                     )]);
                 }
                 let source = std::fs::read_to_string(&canonical).map_err(|e| {
@@ -251,7 +251,7 @@ impl ModuleResolver {
                         0, 0,
                         &format!("El módulo importado '{}' excede el límite de tamaño de {} MB (tamaño actual: {:.2} MB)",
                             ruta, forja::MAX_ARCHIVO_DEFAULT_MB, tamano as f64 / (1024.0 * 1024.0)),
-                        "Usa --max-archivo <MB> para aumentar el límite al compilar el archivo principal.",
+                        "Aumentá `max_archivo_mb` en forja.yaml para subir el límite al compilar el archivo principal.",
                     )]);
                 }
                 let source = std::fs::read_to_string(&ruta_resuelta).map_err(|e| {
