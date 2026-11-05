@@ -73,7 +73,7 @@ impl SandboxRed {
         if let Some(puertos) = &self.puertos_permitidos {
             if puertos.is_empty() {
                 return Err(format!(
-                    "Puerto no permitido: {}. No hay puertos habilitados. Usa --allow-port para permitir puertos.",
+                    "Puerto no permitido: {}. No hay puertos habilitados. Agregá `allow_port: <puertos>` en forja.yaml para permitir puertos.",
                     puerto
                 ));
             }
