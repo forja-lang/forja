@@ -520,9 +520,30 @@ impl REPL {
     }
 
     fn chequear_completud(&self) -> bool {
-        let abiertos = self.buffer.matches('{').count();
-        let cerrados = self.buffer.matches('}').count();
-        abiertos == cerrados
+        // Se cuentan llaves, paréntesis y corchetes. Antes sólo se contaban las
+        // llaves, así que una línea como `escribir(hola(` se compilaba igual y
+        // el parser la descartaba en silencio: no pasaba nada y no había error.
+        //
+        // El contenido de los strings se ignora: un paréntesis dentro de un
+        // texto (`escribir("(falta")`) no abre un bloque.
+        let mut sin_texto = String::new();
+        let mut en_texto = false;
+        for caracter in self.buffer.chars() {
+            if caracter == '"' {
+                en_texto = !en_texto;
+                continue;
+            }
+            if !en_texto {
+                sin_texto.push(caracter);
+            }
+        }
+        let codigo: String = sin_texto
+            .lines()
+            .map(|linea| linea.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let cuenta = |c: char| codigo.matches(c).count();
+        cuenta('{') == cuenta('}') && cuenta('(') == cuenta(')') && cuenta('[') == cuenta(']')
     }
 
     /// Lista las variables de la sesión con su valor actual.
@@ -534,7 +555,7 @@ impl REPL {
     fn mostrar_variables(&self) {
         let nombres = variables_declaradas(&self.source_acumulado);
         if nombres.is_empty() {
-            println!("{}", error::info("📦 No hay variables declaradas todavía"));
+            println!("{}", error::info("No hay variables declaradas todavía"));
             return;
         }
 
@@ -565,13 +586,13 @@ impl REPL {
 
         match valores() {
             Some(vars) if !vars.is_empty() => {
-                println!("{}", color::negrita("📦 Variables de la sesión:"));
+                println!("{}", color::negrita("Variables de la sesión:"));
                 for var in vars {
                     println!("  {var}");
                 }
             }
             _ => {
-                println!("{}", color::negrita("📦 Variables declaradas:"));
+                println!("{}", color::negrita("Variables declaradas:"));
                 for nombre in nombres {
                     println!("  {nombre} (valor no disponible)");
                 }
@@ -956,6 +977,57 @@ variable n = 7
 
         let nombres = variables_declaradas(&repl.source_acumulado);
         assert_eq!(nombres, vec!["hola".to_string(), "n".to_string()]);
+    }
+
+    #[test]
+    fn secuencia_declaracion_y_uso() {
+        let mut repl = REPL::nuevo("rapido", None);
+        for linea in [
+            "var mut hola = \"adios\"
+",
+            "escribir(hola)
+",
+        ] {
+            match repl.compilar_y_ejecutar(linea) {
+                Ok(source) => repl.source_acumulado.push_str(&source),
+                Err(e) => panic!("error en {linea:?}: {e}"),
+            }
+        }
+        assert!(repl.source_acumulado.contains("var mut hola"));
+    }
+
+    #[test]
+    fn salida_no_se_duplica_entre_entradas() {
+        let mut repl = REPL::nuevo("rapido", None);
+        for linea in [
+            "escribir(\"a\")
+",
+            "escribir(\"b\")
+",
+            "escribir(\"c\")
+",
+        ] {
+            let source = repl.compilar_y_ejecutar(linea).unwrap();
+            repl.source_acumulado.push_str(&source);
+        }
+    }
+
+    #[test]
+    fn linea_incompleta_espera_continuacion() {
+        let mut repl = REPL::nuevo("rapido", None);
+
+        // Un paréntesis sin cerrar deja la entrada en modo continuación (antes
+        // se compilaba y el parser la tiraba en silencio).
+        repl.buffer = "escribir(hola(".to_string();
+        assert!(!repl.chequear_completud());
+
+        // Al cerrarla, la entrada queda completa.
+        repl.buffer = "escribir(\"x\")".to_string();
+        assert!(repl.chequear_completud());
+
+        // Paréntesis dentro de un string o de un comentario no cuentan.
+        repl.buffer = "escribir(\"(\") // (".to_string();
+        assert!(repl.chequear_completud());
     }
 
     #[test]
