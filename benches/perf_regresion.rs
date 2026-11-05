@@ -1,4 +1,4 @@
-//! # Benchmark de regresión de rendimiento (F4-T2 / F14-T2)
+//! # Benchmark de regresión de rendimiento
 //!
 //! Binario `harness = false` que mide un conjunto **determinista** de cargas de
 //! trabajo del compilador/VM y emite un JSON estable por `stdout` para que
@@ -7,7 +7,7 @@
 //!
 //! ## Por qué ratios y no tiempos absolutos
 //!
-//! Desde F14-T2 también se mide el mismo programa por los dos motores de
+//! Desde también se mide el mismo programa por los dos motores de
 //! emisión (**AST** y **IR**) y se emiten los cocientes `ir_vs_ast_*`: es lo que
 //! vigila que el IR no se aleje del AST (hoy la ruta canónica es AST-first con
 //! fallback IR, y el bytecode del IR se ejecuta ~1.4x más lento).
@@ -196,7 +196,7 @@ fn main() {
         black_box(ejecutar(&bc_anidado));
     });
 
-    // 6. F14-T2: comparación **AST vs IR** de los dos motores de emisión.
+    // 6. comparación **AST vs IR** de los dos motores de emisión.
     //    Se mide el mismo programa por las dos rutas y se emite además el cociente
     //    `ir/ast`, que es lo que se vigila: si el IR se aleja del AST (más lento o
     //    más rápido) la métrica se mueve aunque la máquina cambie.
@@ -219,7 +219,7 @@ fn main() {
     assert_eq!(
         ejecutar(&bc_ast),
         ejecutar(&bc_ir),
-        "AST e IR deben dar la misma salida (F14-T2)"
+        "AST e IR deben dar la misma salida "
     );
     let m_vm_ast = medir_con_calibracion(warmup, reps, calibracion, || {
         black_box(ejecutar(&bc_ast));
