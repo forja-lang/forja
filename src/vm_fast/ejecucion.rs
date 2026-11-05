@@ -1,4 +1,4 @@
-// Métodos de ejecución de la VM canónica `ForjaFast` (F1-T7).
+// Métodos de ejecución de la VM canónica `ForjaFast`.
 // Extraídos de `mod.rs` para mantener archivos por debajo de ~1500 líneas.
 
 use super::*;
@@ -22,7 +22,7 @@ impl ForjaFast {
             }
             self.ejecutadas += 1;
 
-            // F4-T5: punto seguro del GC (entre instrucciones, con todas las
+            // punto seguro del GC (entre instrucciones, con todas las
             // referencias vivas en la pila/globales). Solo actúa bajo presión.
             self.maybe_gc();
 
@@ -95,58 +95,58 @@ impl ForjaFast {
             }
 
             // Ramas simples (push/pop/dup, variables por índice/global, codigos
-            // fusionados de declaración) delegadas a `ops_simples.rs` (F1-T7).
+            // fusionados de declaración) delegadas a `ops_simples.rs`.
             if self.ejecutar_ops_simples(op)? {
                 continue;
             }
             // Ramas autocontenidas de superinstrucciones fusionadas, comparaciones
-            // float, XorSign y pattern matching delegadas a `ops_fusionadas.rs` (F1-T7).
+            // float, XorSign y pattern matching delegadas a `ops_fusionadas.rs`.
             if self.ejecutar_ops_fusionadas(op)? {
                 continue;
             }
             // Handlers aritméticos especializados autocontenidos (`AddInt`,
-            // `AddFloat`, `SubInt`, `MulInt`) delegados a `ops_aritmetica.rs` (F1-T7).
+            // `AddFloat`, `SubInt`, `MulInt`) delegados a `ops_aritmetica.rs`.
             if self.ejecutar_ops_aritmetica(op)? {
                 continue;
             }
             // Ramas autocontenidas (superinstrucciones float, stack bypass, fused ops,
-            // comparaciones y operadores lógicos) delegadas a `ops_float.rs` (F1-T7).
+            // comparaciones y operadores lógicos) delegadas a `ops_float.rs`.
             if self.ejecutar_ops_float(op)? {
                 continue;
             }
             // Ramas autocontenidas de operaciones Exacto (BigDecimal) delegadas a
-            // `ops_exacto.rs` (F1-T7).
+            // `ops_exacto.rs`.
             if self.ejecutar_ops_exacto(op)? {
                 continue;
             }
             // Ramas autocontenidas de colecciones (arreglos y mapas) delegadas a
-            // `ops_colecciones.rs` (F1-T7).
+            // `ops_colecciones.rs`.
             if self.ejecutar_ops_colecciones(op)? {
                 continue;
             }
             // Ramas autocontenidas de concurrencia (canales e hilos) delegadas a
-            // `ops_concurrencia.rs` (F1-T7).
+            // `ops_concurrencia.rs`.
             if self.ejecutar_ops_concurrencia(op)? {
                 continue;
             }
             // Ramas de IO y utilidades (`ParseInt`, `TiempoActual`, `Print`,
-            // `ReadLine`) delegadas a `ops_io.rs` (F1-T7).
+            // `ReadLine`) delegadas a `ops_io.rs`.
             if self.ejecutar_ops_io(op)? {
                 continue;
             }
             // Ramas de objetos (`NewObject`, `SetField`, `SetFieldIdx`,
-            // `GetField`) delegadas a `ops_objetos.rs` (F1-T7).
+            // `GetField`) delegadas a `ops_objetos.rs`.
             if self.ejecutar_ops_objetos(op)? {
                 continue;
             }
             // Ramas de llamada a metodos (`CallMethod`, `CallMethodCached`)
-            // delegadas a `ops_metodos.rs` (F1-T7).
+            // delegadas a `ops_metodos.rs`.
             if self.ejecutar_ops_metodos(op)? {
                 continue;
             }
             // Ramas de Design by Contract (`CheckPre`, `CheckPost`,
             // `SaveAnterior`, `CheckInv`) y packed SIMD delegadas a
-            // `ops_contratos.rs` (F1-T7).
+            // `ops_contratos.rs`.
             if self.ejecutar_ops_contratos(op)? {
                 continue;
             }
@@ -304,7 +304,7 @@ impl ForjaFast {
                         let v = self.exacto_valor(r, escala);
                         self.push_valor(v);
                     } else if a.es_arreglo() && b.es_arreglo() {
-                        // F12-T3: `+` entre arreglos **concatena** (los ejemplos
+                        // `+` entre arreglos **concatena** (los ejemplos
                         // del curso lo usan: `self.elementos = [valor] +
                         // self.elementos`). Antes caía en el caso de texto y
                         // devolvía la concatenación de sus representaciones.
@@ -551,7 +551,7 @@ impl ForjaFast {
                     // Check division by zero: pushear Nulo en lugar de error.
                     // Fast-Math omite el check float (x/0.0 → inf); el check
                     // entero se conserva siempre (wrapping_div panica con 0).
-                    // F2-T7: en modo estricto (--backtrace) se lanza un error
+                    // en modo estricto (`backtrace: true`) se lanza un error
                     // claro en lugar de devolver nulo silenciosamente.
                     if (b.es_entero() && b.a_entero() == 0)
                         || (!self.fast_math && b.es_flotante() && b.a_flotante() == 0.0)
@@ -670,7 +670,7 @@ impl ForjaFast {
 
                 // === HANDLERS ESPECIALIZADOS (PEP 659) ===
                 // `AddInt`, `AddFloat`, `SubInt` y `MulInt` se delegaron a
-                // `ops_aritmetica.rs` (F1-T7). `SubFloat`/`MulFloat`/`DivFloat`
+                // `ops_aritmetica.rs`. `SubFloat`/`MulFloat`/`DivFloat`
                 // permanecen aquí por usar `patch_op`/`continue`.
                 Opcode::RestarDecimal => {
                     prof_count!(sub_float);
@@ -729,7 +729,7 @@ impl ForjaFast {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
                     if b.a_entero() == 0 {
-                        // F2-T7: en modo estricto, error claro en lugar de nulo.
+                        // en modo estricto, error claro en lugar de nulo.
                         if self.errores_estrictos {
                             return Err(ErrFast::DivCero);
                         }
@@ -753,7 +753,7 @@ impl ForjaFast {
                         // Fast-Math automático: se omite SOLO el check de
                         // división por cero (los tipos se siguen verificando).
                         if !self.fast_math && b.a_flotante() == 0.0 {
-                            // F2-T7: en modo estricto, error claro en lugar de nulo.
+                            // en modo estricto, error claro en lugar de nulo.
                             if self.errores_estrictos {
                                 return Err(ErrFast::DivCero);
                             }
@@ -962,7 +962,9 @@ impl ForjaFast {
                                     self.push_valor(val);
                                 }
                                 Err(e) => {
-                                    eprintln!("[DEBUG] Native '{}' failed: {}", nombre_str, e);
+                                    if std::env::var("FORJA_DEBUG_NATIVAS").is_ok() {
+                                        eprintln!("[DEBUG] Native '{}' failed: {}", nombre_str, e);
+                                    }
                                     self.push_valor(ValorFast::nulo());
                                 }
                             }
@@ -1000,7 +1002,7 @@ impl ForjaFast {
                         self.hay_op_forzado = true;
                         continue;
                     }
-                    // F12-T1: un closure es un objeto `Closure` con `fn` y `env`.
+                    // un closure es un objeto `Closure` con `fn` y `env`.
                     // El entorno viaja como primer argumento (la función anónima
                     // lo espera en `__entorno`).
                     if let Some((nombre, env)) = self.desempaquetar_closure(&callee) {
@@ -1054,7 +1056,9 @@ impl ForjaFast {
                             match func(self, &args) {
                                 Ok(val) => self.push_valor(val),
                                 Err(e) => {
-                                    eprintln!("[DEBUG] Native '{}' failed: {}", nombre_str, e);
+                                    if std::env::var("FORJA_DEBUG_NATIVAS").is_ok() {
+                                        eprintln!("[DEBUG] Native '{}' failed: {}", nombre_str, e);
+                                    }
                                     self.push_valor(ValorFast::nulo());
                                 }
                             }
@@ -1105,7 +1109,7 @@ impl ForjaFast {
                                     "Stack overflow: demasiadas llamadas anidadas".into(),
                                 ));
                             }
-                            // F2-T7: derivar el símbolo de la función desde el
+                            // derivar el símbolo de la función desde el
                             // nombre PGO asociado al índice de la function_table.
                             let func_sym = self
                                 .func_names_pgo
@@ -1352,10 +1356,10 @@ impl ForjaFast {
                 }
 
                 // `ParseInt`, `TiempoActual`, `Print` y `ReadLine` se delegaron a
-                // `ops_io.rs` (F1-T7).
+                // `ops_io.rs`.
 
                 // `NewObject`, `SetField`, `SetFieldIdx` y `GetField` se delegaron
-                // a `ops_objetos.rs` (F1-T7).
+                // a `ops_objetos.rs`.
                 Opcode::Detener => break,
 
                 // Propagación de errores con el operador ?
@@ -1387,14 +1391,14 @@ impl ForjaFast {
 
                 // Debug: SetLine — información de línea para el debugger
                 Opcode::FijarLinea(line) => {
-                    // F2-T7: registrar la línea actual para el backtrace de runtime.
+                    // registrar la línea actual para el backtrace de runtime.
                     self.linea_actual = *line;
                     self.ip += 1;
                 }
 
                 // Las ramas autocontenidas (superinstrucciones float, stack bypass,
                 // fused ops, comparaciones y operadores lógicos) ya fueron manejadas
-                // por `ejecutar_ops_float` antes de este `match` (F1-T7). Este arm es
+                // por `ejecutar_ops_float` antes de este `match`. Este arm es
                 // inalcanzable en la práctica, pero el compilador exige exhaustividad.
                 _ => {
                     self.ip += 1;
