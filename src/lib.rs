@@ -1,12 +1,12 @@
 // Forja (fa) Compiler Library
 // Punto de entrada para uso como biblioteca
-// F1-T6: se retiró el `#![allow(dead_code)]` global para hacer visibles los
+// se retiró el `#![allow(dead_code)]` global para hacer visibles los
 // elementos realmente muertos. La API pública intencional se marca con
 // `#[allow(dead_code)]` local y justificado.
 
 extern crate self as forja;
 
-// F3-T8: el frontend (`token`, `ast`, `error`, `lexer`, `parser`) vive en el
+// el frontend (`token`, `ast`, `error`, `lexer`, `parser`) vive en el
 // crate reutilizable `forja-syntax`, y el análisis semántico (`semantics`) en
 // `forja-types`. Se reexportan aquí para preservar la API pública histórica
 // (`forja::lexer`, `forja::parser`, …).
@@ -19,11 +19,11 @@ pub mod bytecode;
 pub mod class_descriptor;
 pub mod codegen_reg;
 pub mod compiler_asm;
+pub mod config;
 pub mod dedup;
 pub mod desugar;
 pub mod ed25519;
 pub mod fprofiler;
-pub mod gc;
 pub mod gc_intrinsics;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod incremental_cache;
@@ -55,7 +55,7 @@ pub mod uops;
 pub mod vm_fast;
 
 // Motores de ejecución ARCHIVADOS (vm_jit, jit, jit_engine) — fuera de la ruta
-// por defecto. Ver `src/legacy/mod.rs` y nota F1-T2. Los dos motores vivos son
+// por defecto. Ver `src/legacy/mod.rs` y nota. Los dos motores vivos son
 // `vm_fast` (intérprete canónico) y `jit_tiered` (JIT único).
 pub mod legacy;
 
@@ -63,7 +63,7 @@ pub mod legacy;
 // RUTA CANÓNICA DE COMPILACIÓN A BYTECODE (única fuente de verdad)
 // ======================================================================
 //
-// Tras F1-B3 existe UNA sola ruta real de compilación a bytecode:
+// Tras existe UNA sola ruta real de compilación a bytecode:
 // [`compilar_pipeline_nucleo`] (AST → análisis → optimización → bytecode).
 // Todos los entrypoints públicos de bytecode desembocan en ella:
 //
@@ -75,7 +75,7 @@ pub mod legacy;
 // La ruta de **transpilación a Rust** ([`transpilar_a_rust`] /
 // [`transpilar_a_rust_con_ast`]) es independiente y NO genera bytecode.
 //
-// ## Estado del IR (F1-T1 / F4-T8)
+// ## Estado del IR
 //
 // El pipeline se concibió "IR-first": AST → IR SSA → bytecode. El
 // constructor/conversor IR ([`ir_constructor`], [`ir_to_bytecode`]) sigue
@@ -83,7 +83,7 @@ pub mod legacy;
 // bytecode se emite hoy directamente desde el AST con el generador canónico.
 // Con `FORJA_IR_DEBUG=1` la ruta canónica construye el IR como andamiaje
 // diagnóstico (imprime el nº de funciones IR) sin derivar de él el bytecode.
-// Completar el IR real es F4-T8 (fuera de F1-B3).
+// Completar el IR real es (fuera ).
 
 /// Núcleo único del pipeline de compilación a bytecode.
 ///
@@ -100,14 +100,21 @@ pub mod legacy;
 /// lógica de pipeline duplicada fuera de esta función.
 fn compilar_pipeline_nucleo(
     programa: ast::Programa,
+    hay_imports: bool,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    compilar_pipeline_nucleo_emision(programa, MotorEmision::Auto)
+    compilar_pipeline_nucleo_emision(programa, MotorEmision::Auto, hay_imports)
 }
 
-/// Motor de emisión que exige el llamador (F11-T5).
+/// BorrowChecker con el modo estricto de la configuración vigente
+/// (`estricto: true` en `forja.yaml`).
+fn borrow_checker() -> semantics::BorrowChecker {
+    semantics::BorrowChecker::con_estricto(config::actual().estricto)
+}
+
+/// Motor de emisión que exige el llamador.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MotorEmision {
-    /// Ruta canónica (F14-T2): **AST primero** y fallback a IR sólo si el
+    /// Ruta canónica: **AST primero** y fallback a IR sólo si el
     /// generador AST no cubre el programa. El emisor IR duplica el bytecode
     /// (~2.2x) y la VM lo ejecuta ~1.8x más lento en los bucles.
     Auto,
@@ -118,13 +125,56 @@ pub enum MotorEmision {
     SoloAst,
 }
 
-/// Variante del núcleo con el motor de emisión configurable (F14-T2):
+/// ¿el programa declara `importar`? Si sí, hay funciones que el checker no
+/// puede ver (stdlib inlineada después, módulos GUI resueltos por gui-rt).
+fn tiene_imports(source: &str) -> bool {
+    source.lines().any(|l| {
+        let l = l.trim_start();
+        l.starts_with("importar ") || l.starts_with("importar\"")
+    })
+}
+
+/// nombres que el runtime resuelve sin declaración en el programa
+/// (builtins de la VM, sentencias especiales del generador y funciones nativas).
+/// Sólo lo usa el modo estricto, para no reportar "función no declarada" en
+/// llamadas legítimas.
+fn nombres_funciones_externas() -> Vec<String> {
+    let mut nombres: Vec<String> = vm_fast::NOMBRES_BUILTINS
+        .iter()
+        .map(|n| n.to_string())
+        .collect();
+    nombres.extend(
+        [
+            "escribir",
+            "escribir_linea",
+            "imprimir",
+            "leer",
+            "pedir_numero",
+            "a_numero",
+            "tiempo_actual",
+            // Incorporadas de la VM (`TipoIncorporada`): se emiten como Llamar
+            // con el nombre genérico al serializar.
+            "tipo",
+            "a_texto",
+            "len",
+            "es_numero",
+            "es_texto",
+            "nuevo",
+        ]
+        .map(String::from),
+    );
+    nombres.extend(native_registry::NativeRegistry::new().nombres());
+    nombres
+}
+
+/// Variante del núcleo con el motor de emisión configurable:
 /// [`MotorEmision::Auto`] es la ruta canónica (AST-first con fallback IR);
 /// [`MotorEmision::Ir`] y [`MotorEmision::SoloAst`] quedan para paridad y
 /// benchmark.
 fn compilar_pipeline_nucleo_emision(
     mut programa: ast::Programa,
     motor: MotorEmision,
+    hay_imports: bool,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
     // FASE: Prelude — inyectar los tipos algebraicos básicos (`Resultado` y
     // `Opcion`) para que sus variantes queden registradas en `variantes_enum`
@@ -138,18 +188,29 @@ fn compilar_pipeline_nucleo_emision(
 
     // FASE: Type Checker + inferencia de tipos
     let mut type_checker = semantics::TypeChecker::new();
+    // modo estricto opt-in (`estricto: true` en forja.yaml).
+    let estricto = crate::config::actual().estricto;
+    type_checker.set_estricto(estricto);
+    if estricto {
+        type_checker.set_funciones_externas(nombres_funciones_externas());
+        // si el programa importa módulos, el checker no puede saber qué
+        // funciones aportan (la stdlib se inlinea después y los módulos GUI los
+        // resuelve gui-rt en runtime). El chequeo de "función declarada" queda
+        // entonces limitado a programas de un solo archivo.
+        type_checker.set_exigir_funciones_declaradas(!hay_imports);
+    }
     type_checker
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
     let tipos_inferidos = type_checker.obtener_tipos_inferidos();
 
     // FASE: Borrow Checker (ownership y préstamos)
-    let mut borrow_checker = semantics::BorrowChecker::new();
+    let mut borrow_checker = borrow_checker();
     borrow_checker
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
 
-    // FASE: Desugardo de `seleccionar` (F12-T2). Va después del análisis
+    // FASE: Desugardo de `seleccionar`. Va después del análisis
     // semántico: el código sintético (`__sel*`) no necesita comprobación y así
     // los dos backends consumen la misma forma.
     desugar::desugar_programa(&mut programa);
@@ -173,7 +234,7 @@ fn compilar_pipeline_nucleo_emision(
         })
         .collect();
 
-    // F14-T2: **AST first**. El emisor IR (prototipo F11) produce ~2.2x más
+    // **AST first**. El emisor IR (prototipo F11) produce ~2.2x más
     // bytecode porque baja cada valor SSA a un slot y no recupera las fusiones
     // del generador AST (`LoadStoreIdx`, `AddStoreIdx`, etc.); la VM ejecuta ese
     // bytecode ~1.8x más lento. La ruta canónica usa el emisor AST y sólo cae a
@@ -197,15 +258,16 @@ fn compilar_pipeline_nucleo_emision(
 
     let bc = match ir_emision::emitir_bytecode_ir(&programa) {
         Ok(bc) => bc,
-        // Si ambos motores fallan, gana el error del AST: describe el programa.
+        // Si ambos motores fallan, gana el error del AST (describe el programa);
+        // si no hubo intento AST (motor `Ir`), se propaga el diagnóstico del IR.
         Err(e) => return Err(error_ast.unwrap_or_else(|| format!("emisión IR no soportada: {e}"))),
     };
     let bc = bytecode::postprocesar_globales(bc, &globales);
     let bc = optimizer_pipeline::optimizar_bytecode(bc);
-    // F8-T4: los contratos se compilan con el generador AST (sus condiciones no
+    // los contratos se compilan con el generador AST (sus condiciones no
     // forman parte del CFG de la función) y se adjuntan a la emisión IR.
     let mut gen_contratos = bytecode::GeneradorBytecode::new();
-    // F12-T6: las condiciones leen globales por índice y tipos declarados, igual
+    // las condiciones leen globales por índice y tipos declarados, igual
     // que en la ruta AST.
     gen_contratos.set_globales(globales.clone());
     gen_contratos.set_tipos_inferidos(tipos_inferidos.clone());
@@ -216,14 +278,14 @@ fn compilar_pipeline_nucleo_emision(
     Ok((bc, contratos))
 }
 
-/// Alias histórico del pipeline de bytecode. **Deprecado** (F1-B3).
+/// Alias histórico del pipeline de bytecode. **Deprecado**.
 ///
-/// Antes de F1-B3 esta función era la ruta "IR-first" experimental; hoy
+/// Antes de esta función era la ruta "IR-first"experimental; hoy
 /// **delega** en la ruta canónica [`compilar_pipeline_completa`] para garantizar
 /// una única implementación real (su firma sólo devuelve `Vec<Opcode>`, sin
 /// contratos). Se conserva el nombre por compatibilidad (p. ej. la red de
 /// seguridad `tests/ir_paridad.rs`); su eliminación corresponde a fases
-/// posteriores (F4-T8).
+/// posteriores.
 #[deprecated(
     since = "0.9.2",
     note = "usa `compilar_pipeline_completa()` (devuelve bytecode + contratos); este alias sólo delega en ella"
@@ -232,11 +294,11 @@ pub fn compilar_con_ir(source: &str) -> Result<Vec<bytecode::Opcode>, String> {
     Ok(compilar_pipeline_completa(source)?.0)
 }
 
-/// (F4-T8) Compila forzando la **emisión de bytecode derivada del IR**. Devuelve
+/// Compila forzando la **emisión de bytecode derivada del IR**. Devuelve
 /// `Err` si el programa usa constructos fuera del subconjunto IR (funciones de
 /// usuario, clases, arrays, mapas, contratos, etc.), señalando que la ruta IR
 /// aún no lo cubre. La ruta IR sigue siendo **experimental**; la producción usa
-/// [`compilar_pipeline_completa`] (AST-first con fallback IR, F14-T2).
+/// [`compilar_pipeline_completa`] (AST-first con fallback IR,).
 pub fn compilar_desde_ir(
     source: &str,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
@@ -245,7 +307,7 @@ pub fn compilar_desde_ir(
     let programa = parser::Parser::new(tokens)
         .parse()
         .map_err(|e| format!("{}", e[0]))?;
-    compilar_pipeline_nucleo_emision(programa, MotorEmision::Ir)
+    compilar_pipeline_nucleo_emision(programa, MotorEmision::Ir, tiene_imports(source))
 }
 
 // Hash, codificación y crypto — implementaciones manuales sin dependencias externas
@@ -275,6 +337,8 @@ pub mod native_proceso_win {
 #[cfg(not(target_arch = "wasm32"))]
 pub mod aot;
 #[cfg(not(target_arch = "wasm32"))]
+// El REPL usa terminal interactiva (rustyline/crossterm): no aplica en wasm.
+#[cfg(not(target_arch = "wasm32"))]
 pub mod repl;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -297,14 +361,14 @@ pub mod package_config;
 pub mod diagrama;
 pub mod formatter;
 pub mod optimizer;
-// F4-T3: punto único de la fase de optimización (passes de AST + bytecode).
+// punto único de la fase de optimización (passes de AST + bytecode).
 pub mod optimizer_pipeline;
 
 // Debugger (modo paso a paso con breakpoints)
 #[cfg(not(target_arch = "wasm32"))]
 pub mod debugger;
 
-// (F1-T2) El antiguo "JIT Engine" (orquestador con fallback) quedó archivado en
+// El antiguo "JIT Engine"(orquestador con fallback) quedó archivado en
 // `src/legacy/jit_engine.rs`. Su rol lo cubre ahora `jit_tiered`.
 
 // Módulo de autocompletado para LSP (feature-gated)
@@ -375,7 +439,7 @@ pub fn analizar(source: &str) -> Result<ast::Programa, Vec<ErrorForja>> {
     type_checker.analizar(&programa)?;
 
     // FASE 5: Borrow Checker (ownership y préstamos)
-    let mut borrow_checker = semantics::BorrowChecker::new();
+    let mut borrow_checker = borrow_checker();
     borrow_checker.analizar(&programa)?;
 
     Ok(programa)
@@ -405,7 +469,7 @@ pub fn transpilar_a_rust(source: &str) -> Result<String, Vec<ErrorForja>> {
     type_checker.analizar(&programa)?;
 
     // FASE 5: Borrow Checker
-    let mut checker = semantics::BorrowChecker::new();
+    let mut checker = borrow_checker();
     checker.analizar(&programa)?;
 
     // FASE 5.5: Monomorfización
@@ -423,7 +487,7 @@ pub fn transpilar_a_rust(source: &str) -> Result<String, Vec<ErrorForja>> {
     Ok(rust_code)
 }
 
-/// Alias histórico de [`transpilar_a_rust`]. **Deprecado** (F1-B3).
+/// Alias histórico de [`transpilar_a_rust`]. **Deprecado**.
 ///
 /// El nombre `compilar()` era engañoso: **no** compila a bytecode, transpila a
 /// Rust. Se conserva como wrapper que **delega** para no romper consumidores.
@@ -456,7 +520,7 @@ pub fn transpilar_a_rust_con_ast(
     type_checker.analizar(&programa)?;
 
     // FASE 5: Borrow Checker
-    let mut checker = semantics::BorrowChecker::new();
+    let mut checker = borrow_checker();
     checker.analizar(&programa)?;
 
     // FASE 5.5: Monomorfización
@@ -473,7 +537,7 @@ pub fn transpilar_a_rust_con_ast(
     Ok((programa.declaraciones, rust_code))
 }
 
-/// Alias histórico de [`transpilar_a_rust_con_ast`]. **Deprecado** (F1-B3).
+/// Alias histórico de [`transpilar_a_rust_con_ast`]. **Deprecado**.
 ///
 /// El nombre `compilar_con_ast()` era engañoso: **no** compila a bytecode,
 /// transpila a Rust. Se conserva como wrapper que **delega**.
@@ -485,7 +549,7 @@ pub fn compilar_con_ast(source: &str) -> Result<(Vec<ast::Declaracion>, String),
     transpilar_a_rust_con_ast(source)
 }
 
-/// Alias histórico del pipeline de bytecode. **Deprecado** (F1-B3).
+/// Alias histórico del pipeline de bytecode. **Deprecado**.
 ///
 /// Devuelve sólo el bytecode (sin contratos) y **delega** en el entrypoint
 /// canónico [`compilar_pipeline_completa`]. Preferir esa función.
@@ -521,7 +585,7 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
     let mut module_resolver = ModuleResolver::new(project_dir.to_str().unwrap_or("."));
     module_resolver.package_resolver = Some(PackageResolver::new(project_dir));
 
-    // F5-T4: los imports se inlinean, así que `colecciones.mapa(...)` quedaría
+    // los imports se inlinean, así que `colecciones.mapa(...)` quedaría
     // como acceso a una variable inexistente. Registrar los alias de módulo
     // para reescribir las llamadas cualificadas a llamadas directas.
     let mut alias_modulos: HashSet<String> = HashSet::new();
@@ -564,7 +628,7 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
 }
 
 /// Reescribe `modulo.funcion(args)` como `funcion(args)` tras inlinearlos
-/// imports (F5-T4). Solo actúa sobre alias declarados por `importar`.
+/// imports. Solo actúa sobre alias declarados por `importar`.
 fn reescribir_llamadas_de_modulo(
     declaracion: &mut ast::Declaracion,
     alias: &std::collections::HashSet<String>,
@@ -692,6 +756,12 @@ fn reescribir_llamadas_de_modulo(
             }
             Expresion::ArraySet { array, valor } => {
                 expr(array, alias);
+                expr(valor, alias);
+            }
+            Expresion::AsignacionCompuesta {
+                objetivo, valor, ..
+            } => {
+                expr(objetivo, alias);
                 expr(valor, alias);
             }
             _ => {}
@@ -906,10 +976,10 @@ pub fn compilar_pipeline_completa_desde(
     let programa = resolver_imports(source, root_dir)?;
 
     // FASE 3+: núcleo único del pipeline a bytecode (sin lógica duplicada).
-    compilar_pipeline_nucleo(programa)
+    compilar_pipeline_nucleo(programa, tiene_imports(source))
 }
 
-/// F11-T5: variante **estricta** de [`compilar_pipeline_completa_desde`] que
+/// variante **estricta** de [`compilar_pipeline_completa_desde`] que
 /// exige la ruta IR en todos los constructos (sin fallback a AST). Es el punto
 /// de verificación de la cobertura IR del corpus y de la paridad funcional.
 #[cfg(not(target_arch = "wasm32"))]
@@ -918,18 +988,18 @@ pub fn compilar_pipeline_completa_desde_ir(
     root_dir: &std::path::Path,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
     let programa = resolver_imports(source, root_dir)?;
-    compilar_pipeline_nucleo_emision(programa, MotorEmision::Ir)
+    compilar_pipeline_nucleo_emision(programa, MotorEmision::Ir, tiene_imports(source))
 }
 
-/// F11-T5: variante que fuerza el **backend AST** (sin constructor IR). Es la
-/// base de comparación de paridad funcional y del benchmark AST vs IR (F14-T2).
+/// variante que fuerza el **backend AST** (sin constructor IR). Es la
+/// base de comparación de paridad funcional y del benchmark AST vs IR.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_pipeline_completa_desde_ast(
     source: &str,
     root_dir: &std::path::Path,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
     let programa = resolver_imports(source, root_dir)?;
-    compilar_pipeline_nucleo_emision(programa, MotorEmision::SoloAst)
+    compilar_pipeline_nucleo_emision(programa, MotorEmision::SoloAst, tiene_imports(source))
 }
 
 /// Compila código Forja a **bytecode** + tabla de contratos (Design by Contract).
@@ -947,7 +1017,8 @@ pub fn compilar_pipeline_completa(
     // En WASM no hay FS: los `importar` se resuelven contra la stdlib embebida.
     #[cfg(target_arch = "wasm32")]
     {
-        return compilar_pipeline_nucleo(resolver_imports_embebida(source)?);
+        // La stdlib embebida ya está inlineada (o es GUI, que resuelve el runtime).
+        return compilar_pipeline_nucleo(resolver_imports_embebida(source)?, true);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -961,7 +1032,7 @@ pub fn compilar_pipeline_completa(
         let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
         // FASE 4+: núcleo único del pipeline a bytecode (sin lógica duplicada).
-        compilar_pipeline_nucleo(programa)
+        compilar_pipeline_nucleo(programa, tiene_imports(source))
     }
 }
 
@@ -997,7 +1068,7 @@ pub fn compilar_modulo(
     let tipos_inferidos = type_checker.obtener_tipos_inferidos();
 
     // FASE 3b: Borrow Checker (verificación de ownership y préstamos)
-    let mut borrow_checker = semantics::BorrowChecker::new();
+    let mut borrow_checker = borrow_checker();
     borrow_checker
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
@@ -1049,12 +1120,12 @@ pub fn compilar_con_cache(
 
     // 4. Cache miss — compilar normalmente.
     // Resolver imports (el núcleo del pipeline se delega al entrypoint canónico
-    // `compilar_pipeline_nucleo`; comportamiento idéntico al previo a F1-B3).
+    // `compilar_pipeline_nucleo`; comportamiento idéntico al previo ).
     let programa = resolver_imports(source, root_dir)?;
 
     // Extraer imports (antes de consumir el AST) para invalidación transitiva.
     // Nota: `resolver_imports` ya inlinea los `Importar`, así que esta lista
-    // suele quedar vacía; se conserva el comportamiento previo a F1-B3.
+    // suele quedar vacía; se conserva el comportamiento previo.
     let imports: Vec<String> = programa
         .declaraciones
         .iter()
@@ -1065,7 +1136,7 @@ pub fn compilar_con_cache(
         .collect();
 
     // Núcleo único del pipeline a bytecode.
-    let (bytecode, _contratos) = compilar_pipeline_nucleo(programa)?;
+    let (bytecode, _contratos) = compilar_pipeline_nucleo(programa, tiene_imports(source))?;
 
     // 5. Guardar en caché
     cache.put(module_path, source_hash, &bytecode, &imports);
@@ -1110,6 +1181,7 @@ pub fn compilar_modulos_paralelo(
 
 /// Compila y ejecuta código Forja en ForjaFast (VM ultra-rápida)
 /// Usa sandbox air-gapped por defecto.
+/// **No resuelve `importar`**: para programas con imports, usar [`ejecutar_desde`].
 pub fn ejecutar(source: &str) -> Result<Vec<String>, String> {
     ejecutar_con_opciones(source, true, None)
 }
@@ -1199,7 +1271,7 @@ fn ejecutar_con_opciones_desde_impl(
     Ok(vm.obtener_output().to_vec())
 }
 
-/// (F2-T7) Igual que [`ejecutar_con_opciones_desde`] pero, en caso de error de
+/// Igual que [`ejecutar_con_opciones_desde`] pero, en caso de error de
 /// runtime, devuelve además el **backtrace** con nombres de función Forja.
 ///
 /// El error se representa como una tupla `(mensaje, backtrace)`:
@@ -1207,7 +1279,7 @@ fn ejecutar_con_opciones_desde_impl(
 /// - `backtrace`: pila de llamadas, del frame más interno al más externo, con
 ///   el nombre de la función Forja y la línea de código fuente cuando se conoce.
 ///
-/// Se usa desde la CLI con el flag `--backtrace`.
+/// Se usa desde la CLI con `backtrace: true` en forja.yaml.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn ejecutar_con_opciones_desde_backtrace(
     source: &str,
@@ -1221,7 +1293,7 @@ pub fn ejecutar_con_opciones_desde_backtrace(
     let mut vm = ForjaFast::new();
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
-    // F2-T7: en modo backtrace activamos errores estrictos para que la división
+    // en modo backtrace activamos errores estrictos para que la división
     // por cero y el índice fuera de rango produzcan mensajes claros con línea.
     vm.set_errores_estrictos(true);
     #[cfg(target_pointer_width = "64")]
@@ -1233,7 +1305,7 @@ pub fn ejecutar_con_opciones_desde_backtrace(
     }
     vm.cargar_bytecode(bytecode);
     if let Err(e) = vm.ejecutar() {
-        // F2-T7: capturar el backtrace ANTES de stringificar el error.
+        // capturar el backtrace ANTES de stringificar el error.
         let backtrace = vm.backtrace();
         return Err((format!("{}", e), backtrace));
     }
@@ -1242,6 +1314,7 @@ pub fn ejecutar_con_opciones_desde_backtrace(
 
 /// Compila y ejecuta código Forja en la VM ForjaFast (v5, la de producción).
 /// Antes de la v0.9.0 este era el modo "VM original"; la VM v1 fue removida.
+/// **No resuelve `importar`**: para programas con imports, usar [`ejecutar_desde`].
 pub fn ejecutar_vm(source: &str) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
     let (bytecode, _contratos) = compilar_pipeline_completa(source)?;
@@ -1251,22 +1324,22 @@ pub fn ejecutar_vm(source: &str) -> Result<Vec<String>, String> {
     Ok(vm.obtener_output().to_vec())
 }
 
-/// Compila y ejecuta código Forja en el motor seleccionado con `--vm jit`.
+/// Compila y ejecuta código Forja en el motor JIT (`motor: jit` en forja.yaml).
 ///
-/// (F1-T2) El JIT único de Forja es [`jit_tiered`] (orquestación por tiers), que
+/// El JIT único de Forja es [`jit_tiered`] (orquestación por tiers), que
 /// expone API de bajo nivel y **no** un entrypoint `ejecutar(source)`. El antiguo
 /// `jit_engine::JitOrchestrator` (que sí ejecutaba bytecode) quedó archivado.
 ///
-/// Cambio INTERINO: hasta conectar un ejecutor basado en `jit_tiered`, `--vm jit`
+/// Cambio INTERINO: hasta conectar un ejecutor basado en `jit_tiered`, `motor: jit`
 /// delega en la VM canónica [`vm_fast::ForjaFast`] para preservar la UX y la
-/// estabilidad de la CLI (misma salida que `--vm fast`). TODO(F1-T2): sustituir
+/// estabilidad de la CLI (misma salida que `motor: fast`). TODO: sustituir
 /// por una ruta de ejecución real sobre `jit_tiered`.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn ejecutar_jit(source: &str) -> Result<Vec<String>, String> {
     ejecutar_jit_con_fallback(source).map(|(salida, _uso_fallback)| salida)
 }
 
-/// (F4-T1) Ejecuta con la ruta JIT tiered y **fallback seguro a la VM**.
+/// Ejecuta con la ruta JIT tiered y **fallback seguro a la VM**.
 ///
 /// Devuelve `(salida, uso_fallback)`:
 /// - `uso_fallback == false`: la orquestación tiered ([`jit_tiered::TieredJit`])
@@ -1274,10 +1347,10 @@ pub fn ejecutar_jit(source: &str) -> Result<Vec<String>, String> {
 ///   iteraciones de bucle) sin incidentes.
 /// - `uso_fallback == true`: el orquestador JIT falló (error o *panic*) y se usó
 ///   directamente la VM canónica, **garantizando** la ejecución sin tumbar el
-///   proceso. Es la red de seguridad que exige F4-T1: la ejecución nunca depende
+/// proceso. Es la red de seguridad que exige la ejecución nunca depende
 ///   de que el JIT esté sano.
 ///
-/// Nota de arquitectura (F1-T2): mientras `jit_tiered` no exponga un ejecutor
+/// Nota de arquitectura: mientras `jit_tiered` no exponga un ejecutor
 /// nativo, la fase de ejecución la realiza siempre [`vm_fast::ForjaFast`]; el flag
 /// `uso_fallback` distingue si la capa JIT se pudo preparar con normalidad.
 #[cfg(not(target_arch = "wasm32"))]
@@ -1292,7 +1365,7 @@ pub fn ejecutar_jit_con_fallback(source: &str) -> Result<(Vec<String>, bool), St
     )
 }
 
-/// (F4-T1) Ejecuta `intento_jit` aislándolo con `catch_unwind` y, pase lo que
+/// Ejecuta `intento_jit` aislándolo con `catch_unwind` y, pase lo que
 /// pase, ejecuta `ejecutar_vm`. Devuelve `(salida, uso_fallback)` donde
 /// `uso_fallback` es `true` si el intento JIT entró en *panic*.
 ///
@@ -1307,7 +1380,7 @@ where
     ejecutar_vm().map(|salida| (salida, uso_fallback))
 }
 
-/// (F4-T1) Alimenta el orquestador [`jit_tiered::TieredJit`] con los eventos del
+/// Alimenta el orquestador [`jit_tiered::TieredJit`] con los eventos del
 /// bytecode compilado: registra funciones, señala llamadas (hotness) y cuenta
 /// iteraciones de bucle (OSR). No ejecuta código nativo; solo ejercita la
 /// política de compilación para que un fallo suyo sea detectable y aislable.
@@ -1334,7 +1407,7 @@ pub fn alimentar_tiered_jit(bc: &[bytecode::Opcode]) {
     }
 }
 
-/// (F4-T1) Ejecuta un bytecode ya compilado en la VM canónica.
+/// Ejecuta un bytecode ya compilado en la VM canónica.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn ejecutar_bytecode_en_vm(
     bytecode: Vec<bytecode::Opcode>,
@@ -1350,12 +1423,12 @@ pub(crate) fn ejecutar_bytecode_en_vm(
     Ok(vm.obtener_output().to_vec())
 }
 
-/// (F4-T1) Emite código máquina x86-64 para el bytecode dado aplicando el
+/// Emite código máquina x86-64 para el bytecode dado aplicando el
 /// pipeline completo de generación de código:
 /// `stack_to_reg → compute_live_intervals → RegisterAllocator → codegen_reg`.
 ///
 /// **No ejecuta** el código: solo lo genera. Es la superficie que usa el fuzzer
-/// de F4-T1 (`fuzz/fuzz_targets/jit_codegen.rs`) y los tests diferenciales para
+/// de (`fuzz/fuzz_targets/jit_codegen.rs`) y los tests diferenciales para
 /// verificar que la emisión nunca entra en *panic* ante cualquier bytecode válido.
 ///
 /// Puede devolver un `Vec` vacío si el codegen no soporta algún constructo (caso
@@ -1487,7 +1560,7 @@ pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
     type_checker.analizar(&programa)?;
 
     // FASE 5: Borrow Checker
-    let mut checker = semantics::BorrowChecker::new();
+    let mut checker = borrow_checker();
     checker.analizar(&programa)?;
 
     // FASE 5.5: Monomorfización
@@ -1525,7 +1598,7 @@ pub fn leer_archivo_con_limite(ruta: &str, max_mb: u64) -> Result<String, String
     if tamano > limite {
         return Err(format!(
             "Error: El archivo '{}' excede el límite de tamaño de {} MB (tamaño actual: {:.2} MB).\n\
-             Usa --max-archivo <MB> para aumentar el límite.",
+             Aumentá `max_archivo_mb` en forja.yaml para subir el límite.",
             ruta,
             max_mb,
             tamano as f64 / (1024.0 * 1024.0)
