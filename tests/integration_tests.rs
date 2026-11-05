@@ -437,7 +437,7 @@ fn test_fmt_si_sino() {
 
 #[test]
 fn test_fmt_canal_con_capacidad() {
-    // F12-T2: `canal(n)` (backpressure) debe formatearse y re-parsearse igual.
+    // `canal(n)` (backpressure) debe formatearse y re-parsearse igual.
     assert_format_roundtrip(
         "variable tx, rx = canal(4)
 variable t2, r2 = canal()
@@ -592,7 +592,7 @@ escribir(msg)
     assert_eq!(out, vec!["Hola Mundo!"]);
 }
 
-/// F5-T7: `${...}` funciona igual en VM y JIT, y las llaves sin `$` son
+/// `${...}` funciona igual en VM y JIT, y las llaves sin `$` son
 /// literales (la sintaxis `{expr}` antigua ya no interpola).
 #[test]
 fn test_interpolacion_vm_jit_y_llaves_literales() {
@@ -626,7 +626,7 @@ escribir(p.edad)
     assert_eq!(out, vec!["Ana", "25"]);
 }
 
-// ─── F12-T1: closures como valor con captura de entorno ─────────────────────
+// ─── closures como valor con captura de entorno ─────────────────────
 
 /// Ejecuta por los motores disponibles y exige la misma salida: ruta canónica
 /// (IR + VM), backend AST y la ruta JIT (`ejecutar_jit`, que orquesta
@@ -659,7 +659,7 @@ fn ejecutar_todos_los_motores(fuente: &str) -> Vec<String> {
     salida_ir
 }
 
-/// F12-T1 (DoD): un closure anónimo asignado a una variable y llamado funciona,
+/// (DoD): un closure anónimo asignado a una variable y llamado funciona,
 /// y captura por valor las variables locales del ámbito donde se crea.
 #[test]
 fn f12_t1_closure_captura_por_valor() {
@@ -768,4 +768,243 @@ contador = 41
 escribir(leer_contador())"#,
     );
     assert_eq!(salida, vec!["41"]);
+}
+
+/// Asignación compuesta: `x op= y` equivale a `x = x op y` en las cinco
+/// operaciones aritméticas.
+#[test]
+fn asignacion_compuesta_aritmetica() {
+    let salida = ejecutar_todos_los_motores(
+        r#"variable x = 10
+x += 5
+x -= 3
+x *= 2
+x /= 4
+x %= 5
+escribir(x)"#,
+    );
+    assert_eq!(salida, vec!["1"]);
+}
+
+/// La asignación compuesta también funciona sobre índices y campos.
+#[test]
+fn asignacion_compuesta_indice_y_campo() {
+    let salida = ejecutar_todos_los_motores(
+        r#"clase Caja {
+    valor
+    constructor() { este.valor = 1 }
+}
+variable c = nuevo Caja()
+c.valor += 41
+variable a = [7, 8]
+a[0] *= 6
+escribir(c.valor)
+escribir(a[0])"#,
+    );
+    assert_eq!(salida, vec!["42", "42"]);
+}
+
+/// `+=` también sirve en el incremento de un `para`.
+#[test]
+fn asignacion_compuesta_en_para() {
+    let salida = ejecutar_todos_los_motores(
+        r#"variable suma = 0
+para (variable i = 0; i < 4; i += 1) { suma += i }
+escribir(suma)"#,
+    );
+    assert_eq!(salida, vec!["6"]);
+}
+
+/// El índice de un `+=` se evalúa una sola vez (aunque tenga efectos).
+#[test]
+fn asignacion_compuesta_evalua_indice_una_vez() {
+    let salida = ejecutar_todos_los_motores(
+        r#"variable llamadas = 0
+funcion indice() -> Entero {
+    llamadas += 1
+    retornar 0
+}
+variable a = [10]
+a[indice()] += 5
+escribir(a[0])
+escribir(llamadas)"#,
+    );
+    assert_eq!(salida, vec!["15", "1"]);
+}
+
+/// Cadenas de índices: `m[i][j] += v`.
+#[test]
+fn asignacion_compuesta_indices_anidados() {
+    let salida = ejecutar_todos_los_motores(
+        r#"variable m = [[1, 2], [3, 4]]
+m[0][1] += 10
+m[1][0] *= 2
+escribir(m[0][1])
+escribir(m[1][0])"#,
+    );
+    assert_eq!(salida, vec!["12", "6"]);
+}
+
+/// `+=` como expresión devuelve el valor nuevo.
+#[test]
+fn asignacion_compuesta_como_expresion() {
+    let salida = ejecutar_todos_los_motores(
+        r#"variable x = 1
+variable y = (x += 2)
+escribir(y)
+escribir(x)"#,
+    );
+    assert_eq!(salida, vec!["3", "3"]);
+}
+
+/// `y`/`o` son operadores lógicos (documentados así) y además siguen sirviendo
+/// como nombre de variable: son contextuales, no keywords.
+#[test]
+fn operadores_logicos_en_espanol() {
+    let salida = ejecutar_todos_los_motores(
+        r#"variable y = 10
+variable x = 5
+escribir(verdadero y falso)
+escribir(verdadero o falso)
+escribir(x > 0 y y > 0)
+escribir(x > 0 o y < 0)"#,
+    );
+    assert_eq!(salida, vec!["falso", "verdadero", "verdadero", "verdadero"]);
+}
+
+/// `continuar` dentro de `para`/`repetir` salta al incremento; antes saltaba a
+/// la condición y el bucle no terminaba nunca.
+#[test]
+fn continuar_en_para_y_repetir_termina() {
+    let salida = ejecutar_todos_los_motores(
+        r#"para (variable i = 0; i < 4; i = i + 1) {
+    si (i % 2 == 0) { continuar }
+    escribir(i)
+}
+variable c = 0
+repetir(3) {
+    c = c + 1
+    continuar
+}
+escribir(c)"#,
+    );
+    assert_eq!(salida, vec!["1", "3", "3"]);
+}
+
+/// Comparar Decimal con Entero daba siempre falso (`8.5 >= 7` → falso).
+#[test]
+fn comparaciones_decimal_contra_entero() {
+    let salida = ejecutar_todos_los_motores(
+        r#"escribir(8.5 >= 7)
+escribir(7 <= 8.5)
+escribir(8.5 > 9)
+escribir(9 > 8.5)
+escribir(8.9999999999999 >= 9)"#,
+    );
+    assert_eq!(
+        salida,
+        vec!["verdadero", "verdadero", "falso", "verdadero", "falso"]
+    );
+}
+
+/// Indexar un texto devuelve el carácter; antes devolvía nulo (y rompía toda la
+/// stdlib de texto, que usa `s[i]`).
+#[test]
+fn indexar_texto_devuelve_caracter() {
+    let salida = ejecutar_todos_los_motores(
+        r#"variable s = "Forja"
+escribir(s[0])
+escribir(s.longitud())
+escribir(s[10])"#,
+    );
+    assert_eq!(salida, vec!["F", "5", "nulo"]);
+}
+
+/// `nuevo Clase` sin paréntesis equivale a `nuevo Clase()`.
+#[test]
+fn nuevo_sin_parentesis() {
+    let salida = ejecutar_todos_los_motores(
+        r#"clase Contador {
+    valor
+    constructor() { este.valor = 7 }
+    funcion valorActual() -> Entero { retornar este.valor }
+}
+variable c = nuevo Contador
+escribir(c.valorActual())"#,
+    );
+    assert_eq!(salida, vec!["7"]);
+}
+
+/// `{ clave: valor }` con clave sin comillas equivale a `{ "clave": valor }`.
+#[test]
+fn mapa_con_claves_sin_comillas() {
+    let salida = ejecutar_todos_los_motores(
+        r#"variable m = { clave: "valor", numero: 42 }
+escribir(m["clave"])
+escribir(m.numero)"#,
+    );
+    assert_eq!(salida, vec!["valor", "42"]);
+}
+
+/// `variable mut` es aceptado (el mensaje de error de las constantes y el LSP
+/// lo recomiendan).
+#[test]
+fn variable_mut_es_aceptada() {
+    let salida = ejecutar_todos_los_motores(
+        r#"variable mut x = 1
+x = x + 1
+escribir(x)"#,
+    );
+    assert_eq!(salida, vec!["2"]);
+}
+
+/// `resultado` es keyword (valor de retorno en postcondiciones) pero también se
+/// usa como variable corriente: `retornar resultado` devolvía nulo y
+/// `resultado = resultado + x` se perdía en silencio (rompía toda `std/texto`).
+#[test]
+fn resultado_como_variable_corriente() {
+    let salida = ejecutar_todos_los_motores(
+        r#"funcion armar(s) {
+    variable resultado = ""
+    variable i = 0
+    mientras (i < 2) {
+        resultado = resultado + s[i]
+        i = i + 1
+    }
+    retornar resultado
+}
+escribir(armar("hola"))
+funcion eco(resultado) {
+    retornar resultado
+}
+escribir(eco(9))"#,
+    );
+    assert_eq!(salida, vec!["ho", "9"]);
+}
+
+/// Un closure literal se puede retornar directamente (`retornar func(...) { }`).
+#[test]
+fn retornar_closure_literal() {
+    let salida = ejecutar_todos_los_motores(
+        r#"funcion sumador(base) {
+    retornar func(x) { retornar x + base }
+}
+variable mas_uno = sumador(1)
+escribir(mas_uno(41))"#,
+    );
+    assert_eq!(salida, vec!["42"]);
+}
+
+/// Comparar textos (`c >= "a"`) daba siempre falso; la stdlib de texto depende
+/// de eso para clasificar caracteres.
+#[test]
+fn comparaciones_de_texto() {
+    let salida = ejecutar_todos_los_motores(
+        r#"variable c = "b"
+escribir(c >= "a")
+escribir(c <= "z")
+escribir("a" < "b")
+escribir("b" < "a")"#,
+    );
+    assert_eq!(salida, vec!["verdadero", "verdadero", "verdadero", "falso"]);
 }
