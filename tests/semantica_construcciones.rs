@@ -82,7 +82,7 @@ fn test_simple_output() {
 
 #[test]
 fn test_enum_se_ejecuta_sin_mover_la_variable() {
-    // F5-T4: pasar un enum a una función no debe moverlo (es Copy).
+    // pasar un enum a una función no debe moverlo (es Copy).
     let out = forja::ejecutar_vm(
         r#"
 tipo Direccion = Norte | Sur
