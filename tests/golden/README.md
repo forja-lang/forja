@@ -1,4 +1,4 @@
-# Golden files — Red de seguridad F1-B1
+# Golden files — Red de seguridad
 
 Este directorio contiene las salidas esperadas (`<nombre>.out`) de un
 subconjunto **determinista** de `ejemplos/*.fa`, verificadas por
