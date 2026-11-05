@@ -1,7 +1,7 @@
 //! Servidor del registry remoto (HTTP/1.1, sin dependencias).
 //!
 //! Sirve el protocolo que consume [`crate::registry_remote`] y cubre la parte
-//! de **F12-T4** que no depende de infraestructura externa:
+//! de que no depende de infraestructura externa:
 //!
 //! * **Autenticación por token** (`--token`, cabecera `Authorization: Bearer`).
 //! * **Firmas asimétricas**: el autor firma el `sha256` del tarball con su clave
@@ -20,7 +20,7 @@
 //! Producción: el TLS se termina en un **proxy** (nginx/Caddy/Cloudflare) delante
 //! de este servidor, que sólo escucha en `127.0.0.1`; ahí también vive el rate
 //! limit de red. La verificación de firmas y la auditoría son de este proceso.
-//! Pendiente para F12-T4: OIDC (hoy es un token compartido) y `forja verify`
+//! Pendiente para OIDC (hoy es un token compartido) y `forja verify`
 //! como comando de usuario.
 
 use crate::registry::{firmar_hash, sha256_hex, Index, Semver, VersionPublicada};
@@ -32,7 +32,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-/// F12-T4: límite de peticiones por IP y registro de auditoría.
+/// límite de peticiones por IP y registro de auditoría.
 struct Estado {
     /// `ip -> (tokens disponibles, último instante)`
     cubos: std::collections::HashMap<std::net::IpAddr, (f64, std::time::Instant)>,
@@ -340,7 +340,7 @@ fn atender(
                 estado.auditar(ip, &pet.metodo, &pet.ruta, 409);
                 return Ok(());
             }
-            // F12-T4: si el autor manda su clave pública, la firma se verifica
+            // si el autor manda su clave pública, la firma se verifica
             // acá (el servidor no tiene ninguna clave privada). Un paquete
             // alterado o firmado con otra clave se rechaza.
             let hash_calculado = sha256_hex(&datos);
