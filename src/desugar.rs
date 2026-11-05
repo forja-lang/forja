@@ -1,4 +1,4 @@
-//! # Desugardo de `seleccionar` (F12-T2)
+//! # Desugardo de `seleccionar`
 //!
 //! `seleccionar` no tiene opcode propio: antes de la emisión se reescribe a
 //! código Forja equivalente, así que **una sola** implementación sirve a los dos
