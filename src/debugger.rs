@@ -710,7 +710,7 @@ fn recolectar_nombres_locales(cuerpo: &[crate::ast::Declaracion], out: &mut Vec<
 }
 
 // ======================================================================
-// Mini-evaluador de expresiones para el debugger (F2-T6)
+// Mini-evaluador de expresiones para el debugger
 // ======================================================================
 
 /// Operadores unarios soportados por el evaluador.
