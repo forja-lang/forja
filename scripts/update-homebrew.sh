@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
 # update-homebrew.sh — regenera packaging/homebrew/forja.rb con los SHA-256
-# reales de una release de Forja (F3-T7).
+# reales de una release de Forja.
 #
 # Uso:
 #   scripts/update-homebrew.sh [version] [--sums <archivo-o-url>] [--repo owner/repo]
@@ -73,7 +73,7 @@ OUT="$ROOT/packaging/homebrew/forja.rb"
 echo "📝 Generando $OUT para v$VERSION"
 
 cat > "$OUT" <<EOF
-# F3-T7 — Fórmula de Homebrew para Forja.
+# Fórmula de Homebrew para Forja.
 #
 # GENERADO por scripts/update-homebrew.sh v$VERSION — no editar a mano.
 # Publicar en un tap (p. ej. forja-lang/homebrew-tap):
