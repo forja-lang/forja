@@ -6,7 +6,7 @@
 //
 // El backend LLVM NUEVO en desarrollo es `backend_llvm.rs` (andamiaje de bajo
 // nivel IR→LLVM): usarlo para nuevos desarrollos, no agregar funcionalidades aquí.
-// Decisión F1-T3 (Opción 2): reubicado como módulo interno para eliminar la
+// Decisión (Opción 2): reubicado como módulo interno para eliminar la
 // confusión de los "dos backends LLVM" públicos.
 //
 // Forja (fa) — Backend LLVM-IR (generación de texto)
@@ -122,7 +122,7 @@ impl LlvmBackend {
     /// ADVERTENCIA: Este método escribe texto IR, NO bitcode real de LLVM.
     /// El nombre es engañoso — usar `emit_ir()` para obtener el texto directamente.
     ///
-    /// F1-T6: API pública del backend legacy retenida por compatibilidad; no se
+    /// API pública del backend legacy retenida por compatibilidad; no se
     /// usa internamente pero se conserva como superficie del módulo.
     #[allow(dead_code)]
     pub fn emit_ir_text(&self, path: &str) -> Result<(), String> {
@@ -1319,6 +1319,13 @@ impl LlvmBackend {
                 let _arr_reg = self.expr(array)?;
                 let _val_reg = self.expr(valor)?;
                 Err("ArraySet no soportado en el backend LLVM".into())
+            }
+            Expresion::AsignacionCompuesta {
+                objetivo, valor, ..
+            } => {
+                let _obj_reg = self.expr(objetivo)?;
+                let _val_reg = self.expr(valor)?;
+                Err("Asignación compuesta no soportada en el backend LLVM".into())
             }
             Expresion::Ok(expr) | Expresion::Error(expr) | Expresion::Algo(expr) => {
                 // No implementado en LLVM - evaluar la expresión interna
