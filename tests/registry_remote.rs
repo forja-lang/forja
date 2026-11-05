@@ -1,4 +1,4 @@
-//! F6-T6 / F12-T4: end-to-end del registry remoto (cliente + servidor HTTP).
+//! end-to-end del registry remoto (cliente + servidor HTTP).
 //!
 //! Cubre publicación/descarga/yank, la firma **asimétrica** del autor
 //! (Ed25519), el rechazo de firmas que no corresponden y el registro de
@@ -93,7 +93,7 @@ fn registry_remoto_publica_descarga_y_yank() {
         .expect("versión registrada");
     assert_eq!(version.autor, "tester");
     assert!(!version.yanked);
-    // F12-T4: la versión lleva la clave pública del autor (32 bytes en hex) y la
+    // la versión lleva la clave pública del autor (32 bytes en hex) y la
     // firma es asimétrica (Ed25519, 64 bytes en hex).
     assert_eq!(version.clave_publica.len(), 64, "clave pública hex");
     assert_eq!(version.firma.len(), 128, "firma Ed25519 hex");
@@ -139,7 +139,7 @@ fn registry_remoto_publica_descarga_y_yank() {
     let _ = std::fs::remove_dir_all(&raiz);
 }
 
-/// F12-T4: el servidor **verifica** la firma del autor. Una firma que no
+/// el servidor **verifica** la firma del autor. Una firma que no
 /// corresponde al paquete se rechaza con 403; la correcta se publica.
 #[test]
 fn servidor_rechaza_firma_que_no_corresponde() {
