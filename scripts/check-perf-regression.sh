@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/check-perf-regression.sh
 #
-# F4-T2 — Detección automática de regresiones de rendimiento.
+# Detección automática de regresiones de rendimiento.
 #
 # 1. Compila y ejecuta el benchmark `perf-regresion` (benches/perf_regresion.rs),
 #    que mide cargas deterministas del compilador/VM y normaliza cada una contra
@@ -63,7 +63,7 @@ if [ "$UPDATE" = "1" ] && [ -n "$BASELINE_OUT" ]; then
 fi
 
 # ── Medir ──────────────────────────────────────────────────────────────────
-echo "== F4-T2 · Medición de rendimiento ==" >&2
+echo "== Medición de rendimiento ==">&2
 # `cargo bench` compila el target en perfil `bench` (release-like) y lo ejecuta.
 # stdout contiene SOLO la línea JSON del benchmark; se descarta el ruido de cargo.
 RAW_FILE="$(mktemp -t perf-actual.XXXXXX.json)"
