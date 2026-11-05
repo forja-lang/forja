@@ -1,4 +1,4 @@
-//! F4-T8 — Emisión de bytecode derivada del IR (ruta experimental).
+//! Emisión de bytecode derivada del IR (ruta experimental).
 //!
 //! Verifica que [`forja::compilar_desde_ir`] emite bytecode a partir del IR para
 //! el subconjunto soportado y que su **comportamiento** coincide con la ruta AST
@@ -91,7 +91,7 @@ const SOPORTADOS: &[(&str, &str)] = &[
         "enums_con_datos",
         "tipo F = Circulo(Decimal) | Rect(Decimal, Decimal)\nfuncion area(f: F) -> Decimal {\n coincidir (f) {\n  caso Circulo(r) -> { retornar 3.0 * r * r }\n  caso Rect(a, b) -> { retornar a * b }\n }\n}\nescribir(area(Circulo(2.0)))\nescribir(area(Rect(2.0, 3.0)))",
     ),
-    // F11-T1: closures como valor y callbacks por nombre.
+    // closures como valor y callbacks por nombre.
     (
         "closure_en_global",
         "variable f = func(x) { retornar x + 2 }\nescribir(f(40))",
@@ -108,8 +108,8 @@ const SOPORTADOS: &[(&str, &str)] = &[
         "closure_con_dos_args",
         "variable suma = func(a, b) { retornar a + b }\nescribir(suma(20, 22))",
     ),
-    // F11-T2: hilos y canales.
-    // F11-T3: Resultado/Opcion y el operador `?`.
+    // hilos y canales.
+    // Resultado/Opcion y el operador `?`.
     (
         "resultado_y_try",
         "funcion validar(n: Entero) -> Resultado<Entero, Texto> {
@@ -155,7 +155,7 @@ funcion main() {
 }
 main()",
     ),
-    // F11-T4: rasgos/implementaciones y FFI.
+    // rasgos/implementaciones y FFI.
     (
         "rasgo_e_implementacion",
         "rasgo Saludable {
@@ -224,13 +224,13 @@ escribir(dividir(10, 2))
     let (_bc, contratos) = forja::compilar_desde_ir(fuente).expect("IR con contratos");
     assert!(
         !contratos.is_empty(),
-        "F8-T4: la ruta IR debe devolver los contratos"
+        "la ruta IR debe devolver los contratos"
     );
 }
 
 #[test]
 fn ir_emision_rechaza_fuera_del_subconjunto() {
-    // Con el constructor cubriendo todo el lenguaje (F11-T5), el diagnóstico
+    // Con el constructor cubriendo todo el lenguaje, el diagnóstico
     // sólo aparece ante programas inválidos: aquí `romper` fuera de un ciclo.
     let err = forja::compilar_desde_ir("escribir(1)\nromper")
         .expect_err("se esperaba Err (control de flujo inválido)");
@@ -240,7 +240,7 @@ fn ir_emision_rechaza_fuera_del_subconjunto() {
     );
 }
 
-/// F14-T2: la ruta canónica es **AST-first** (el emisor IR duplica el bytecode
+/// la ruta canónica es **AST-first** (el emisor IR duplica el bytecode
 /// y la VM lo ejecuta más lento); el backend AST explícito debe coincidir.
 #[test]
 fn ruta_canonica_es_ast_first_y_coincide_con_ast_estricto() {
@@ -251,13 +251,13 @@ fn ruta_canonica_es_ast_first_y_coincide_con_ast_estricto() {
         forja::compilar_pipeline_completa_desde_ast(fuente, raiz).expect("backend AST explícito");
     assert_eq!(
         bc_canonico, bc_ast,
-        "F14-T2: la ruta canónica debe usar el emisor AST (más compacto)"
+        "la ruta canónica debe usar el emisor AST (más compacto)"
     );
     assert_eq!(ejecutar(bc_canonico), vec!["7"]);
 }
 
-/// F11-T5: el backend AST sigue disponible de forma explícita para comparar
-/// comportamientos (base de paridad y del benchmark AST vs IR de F14-T2).
+/// el backend AST sigue disponible de forma explícita para comparar
+/// comportamientos (base de paridad y del benchmark AST vs IR ).
 #[test]
 fn backend_ast_explicito_sigue_disponible() {
     let fuente = "funcion f() -> Entero {\n    retornar 7\n}\nescribir(f())";
@@ -267,7 +267,7 @@ fn backend_ast_explicito_sigue_disponible() {
     assert_eq!(ejecutar(bc), vec!["7"]);
 }
 
-/// F11-T1 (DoD): un programa con closure guardado en variable y llamado, y otro
+/// (DoD): un programa con closure guardado en variable y llamado, y otro
 /// con un callback pasado a una función de usuario, compilan por la ruta IR
 /// **estricta** (`compilar_desde_ir`, sin fallback) y ejecutan igual que AST.
 #[test]
@@ -290,7 +290,7 @@ fn f11_t1_closures_por_ir_sin_fallback() {
     }
 }
 
-/// F11-T1: regresión del bug que rompía las closures end-to-end. El DCE borraba
+/// regresión del bug que rompía las closures end-to-end. El DCE borraba
 /// `variable f = func(...)` porque el nombre sólo aparecía como destinatario de
 /// una llamada, y la definición del closure se emitía inline (su `Return`
 /// cortaba el programa). Ambas cosas deben quedar cubiertas.
@@ -306,7 +306,7 @@ fn f11_t1_closure_en_variable_sobrevive_al_dce() {
     assert_eq!(ejecutar(bc), vec!["42"]);
 }
 
-/// F11-T2 (DoD): `hilo`, `canal` y su uso como expresión compilan por la ruta IR
+/// (DoD): `hilo`, `canal` y su uso como expresión compilan por la ruta IR
 /// **estricta** (sin fallback) y ejecutan correctamente.
 #[test]
 fn f11_t2_hilos_y_canales_por_ir_sin_fallback() {
@@ -319,7 +319,7 @@ fn f11_t2_hilos_y_canales_por_ir_sin_fallback() {
             "canal enviar/recibir",
             "variable tx, rx = canal()\nhilo { tx.enviar(21) }\nvariable r = rx.recibir()\nescribir(r * 2)",
         ),
-        // F11-T2: la función de usuario `main` no debe confundirse con el
+        // la función de usuario `main` no debe confundirse con el
         // punto de entrada sintético del IR (antes se emitía sin FunctionDef).
         (
             "main de usuario",
@@ -350,7 +350,7 @@ fn optimizador_no_duplica_llamadas_al_reducir_multiplicacion() {
     );
 }
 
-/// F11-T3 (DoD): `?`, `Resultado` y `Opcion` compilan por la ruta IR **estricta**
+/// (DoD): `?`, `Resultado` y `Opcion` compilan por la ruta IR **estricta**
 /// (sin fallback) y ejecutan con la semántica esperada, incluida la propagación
 /// del error y el desempaquetado del valor.
 #[test]
@@ -409,7 +409,7 @@ main()";
     }
 }
 
-/// F11-T4 (DoD): programas con rasgos/implementaciones y con FFI compilan por la
+/// (DoD): programas con rasgos/implementaciones y con FFI compilan por la
 /// ruta IR **estricta** (sin fallback); la implementación ejecuta como
 /// `Clase.metodo`.
 #[test]
@@ -439,9 +439,9 @@ escribir(1)";
     assert!(!bc.is_empty());
 }
 
-// ─── F11-T6: SSA real (mem2reg + φ) ─────────────────────────────────────────
+// ─── SSA real (mem2reg + φ) ─────────────────────────────────────────
 
-/// F11-T6 (DoD): la ruta canónica emite a partir de IR **en SSA**: un bucle con
+/// (DoD): la ruta canónica emite a partir de IR **en SSA**: un bucle con
 /// acumulador local produce un φ en el header y la variable deja de estar en
 /// memoria. Los globales de nivel superior siguen en memoria (los comparten las
 /// funciones y el REPL).
@@ -502,7 +502,7 @@ fn f11_t6_el_ir_emitido_es_ssa_con_phi_real() {
     assert_eq!(ejecutar(bc), vec!["6"]);
 }
 
-/// F11-T6: valores que se unen en ramas y bucles anidados dan el mismo
+/// valores que se unen en ramas y bucles anidados dan el mismo
 /// resultado por ambas rutas (la promoción no cambia la semántica).
 #[test]
 fn f11_t6_merges_de_ramas_y_bucles() {
