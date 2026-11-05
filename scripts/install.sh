@@ -1,6 +1,6 @@
 #!/bin/sh
 # ─────────────────────────────────────────────────────────────────────────────
-# Instalador de Forja (Linux / macOS) — F3-T7
+# Instalador de Forja (Linux / macOS)
 #
 # Descarga el paquete precompilado de la última release (o de una versión
 # concreta), verifica su SHA-256 y deja los binarios en el prefijo elegido.
@@ -8,7 +8,7 @@
 #
 # Uso:
 #   curl -fsSL https://raw.githubusercontent.com/forja-lang/forja/main/scripts/install.sh | sh
-#   sh install.sh --version v0.9.6 --prefix "$HOME/.forja" --bin-dir "$HOME/.local/bin"
+#   sh install.sh --version v0.9.7 --prefix "$HOME/.forja" --bin-dir "$HOME/.local/bin"
 #
 # Variables de entorno equivalentes: FORJA_VERSION, FORJA_PREFIX, FORJA_BIN_DIR.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -112,7 +112,7 @@ else
     echo "   ⚠️  SHA256SUMS no disponible; se omite la verificación."
 fi
 
-# ── F6-T7: verificar firma cosign (si el usuario tiene cosign) ──
+# ── verificar firma cosign (si el usuario tiene cosign) ──
 if command -v cosign >/dev/null 2>&1; then
     if curl -fsSL "$BASE/$ASSET.bundle" -o "$TMP/$ASSET.bundle" 2>/dev/null; then
         if cosign verify-blob \
