@@ -60,9 +60,12 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: benches/baseline-ci.json
-          key: perf-baseline-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          # v2: el baseline anterior es previo a las comprobaciones de
+          # desbordamiento de `Entero` (A-T1) y a la reescritura del parser;
+          # comparar contra él marcaba regresiones ya asumidas.
+          key: perf-baseline-v2-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            perf-baseline-${{ runner.os }}-
+            perf-baseline-v2-${{ runner.os }}-
 
       - name: ¿Hay baseline del runner?
         id: baseline
