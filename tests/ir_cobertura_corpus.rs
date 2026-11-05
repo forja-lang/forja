@@ -23,6 +23,25 @@ use std::path::Path;
 /// `900_storybook`…) están corregidos.
 const NO_COMPILAN: &[&str] = &[];
 
+/// Ejemplos que dependen de la stdlib de red con FFI de Unix: compilan en
+/// Linux, no en Windows/macOS.
+#[cfg(target_os = "linux")]
+const NO_COMPILAN_PLATAFORMA: &[&str] = &[];
+#[cfg(not(target_os = "linux"))]
+const NO_COMPILAN_PLATAFORMA: &[&str] = &[
+    "203_cliente_http.fa",
+    "217_servidor_web.fa",
+    "218_cliente_http.fa",
+    "219_websocket.fa",
+    "220_servidor_h2.fa",
+    "221_cliente_h2.fa",
+];
+
+/// ¿Está permitido que este ejemplo no compile aquí?
+fn no_compila_esperado(nombre: &str) -> bool {
+    NO_COMPILAN.contains(&nombre) || NO_COMPILAN_PLATAFORMA.contains(&nombre)
+}
+
 #[test]
 fn corpus_completo_por_ir_sin_fallback() {
     let raiz = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -65,7 +84,7 @@ fn corpus_completo_por_ir_sin_fallback() {
             }
             (Err(_), _) => {
                 no_compilan += 1;
-                if !NO_COMPILAN.contains(&nombre.as_str()) {
+                if !no_compila_esperado(&nombre) {
                     fallos.push(format!(
                         "{nombre}: no compila y no está en NO_COMPILAN — revisar o actualizar la lista"
                     ));
@@ -81,9 +100,9 @@ fn corpus_completo_por_ir_sin_fallback() {
         fallos.join("\n")
     );
     assert!(
-        no_compilan <= NO_COMPILAN.len(),
+        no_compilan <= NO_COMPILAN.len() + NO_COMPILAN_PLATAFORMA.len(),
         "la lista NO_COMPILAN tiene ejemplos que ya compilan: {no_compilan} vs {}",
-        NO_COMPILAN.len()
+        NO_COMPILAN.len() + NO_COMPILAN_PLATAFORMA.len()
     );
     assert!(
         por_ir > 0,
