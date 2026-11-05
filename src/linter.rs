@@ -1,4 +1,4 @@
-//! Linter de Forja (F2-T4).
+//! Linter de Forja.
 //!
 //! Motor de reglas configurables que analiza el AST y produce diagnósticos
 //! (advertencias) sin abortar la compilación. Se integra en la CLI
@@ -548,6 +548,12 @@ impl Linter {
                 self.analizar_expresion(array);
                 self.analizar_expresion(valor);
             }
+            Expresion::AsignacionCompuesta {
+                objetivo, valor, ..
+            } => {
+                self.analizar_expresion(objetivo);
+                self.analizar_expresion(valor);
+            }
             Expresion::Ok(e) | Expresion::Error(e) | Expresion::Algo(e) => {
                 self.analizar_expresion(e)
             }
@@ -802,6 +808,12 @@ fn recolectar_llamadas_expr(expr: &Expresion, llamadas: &mut HashSet<String>) {
             recolectar_llamadas_expr(array, llamadas);
             recolectar_llamadas_expr(valor, llamadas);
         }
+        Expresion::AsignacionCompuesta {
+            objetivo, valor, ..
+        } => {
+            recolectar_llamadas_expr(objetivo, llamadas);
+            recolectar_llamadas_expr(valor, llamadas);
+        }
         Expresion::Ok(e) | Expresion::Error(e) | Expresion::Algo(e) => {
             recolectar_llamadas_expr(e, llamadas)
         }
@@ -1012,6 +1024,12 @@ fn recolectar_uso_expr(expr: &Expresion, leidas: &mut HashSet<String>) {
         }
         Expresion::ArraySet { array, valor } => {
             recolectar_uso_expr(array, leidas);
+            recolectar_uso_expr(valor, leidas);
+        }
+        Expresion::AsignacionCompuesta {
+            objetivo, valor, ..
+        } => {
+            recolectar_uso_expr(objetivo, leidas);
             recolectar_uso_expr(valor, leidas);
         }
         Expresion::Ok(e) | Expresion::Error(e) | Expresion::Algo(e) => {
