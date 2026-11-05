@@ -1,6 +1,6 @@
-//! # IR → Bytecode Converter (F4-T8)
+//! # IR → Bytecode Converter
 //!
-//! Convierte IR SSA a bytecode stack-based de Forja. Correcciones de F4-T8:
+//! Convierte IR SSA a bytecode stack-based de Forja. Correcciones de
 //!
 //! * **`value_to_var`**: antes ninguna instrucción registraba su resultado, así
 //!   que los operandos SSA se leían de la variable `0`. Ahora cada instrucción
@@ -14,7 +14,7 @@
 //! Emisión IR → bytecode: cubre **todo** el lenguaje (código de nivel superior,
 //! funciones, clases, enums, contratos, closures, hilos/canales, `try`, rasgos
 //! y FFI). La ruta canónica emite por este conversor; si el constructor no puede
-//! con un programa, la compilación falla con diagnóstico (F11-T5: no hay
+//! con un programa, la compilación falla con diagnóstico (no hay
 //! *fallback* a AST).
 
 use crate::bytecode::Opcode;
@@ -41,12 +41,12 @@ pub struct ConversorABytecode {
     es_main: bool,
     /// Desplazamiento de labels para funciones múltiples.
     label_offset: usize,
-    /// F11-T1: definiciones de closures diferidas al final del programa.
+    /// definiciones de closures diferidas al final del programa.
     defs_diferidas: Vec<Opcode>,
-    /// F11-T1: siguiente label libre para las funciones diferidas. Usa un
+    /// siguiente label libre para las funciones diferidas. Usa un
     /// espacio propio para no colisionar con los bloques del programa.
     next_label_diferido: usize,
-    /// F11-T6: slot preasignado a cada `IdValor` (en el orden de emisión). Los
+    /// slot preasignado a cada `IdValor` (en el orden de emisión). Los
     /// φ pueden referenciar valores definidos más adelante en el orden de
     /// bloques (φ de bucles), así que el slot se resuelve por id y no por el
     /// orden en que se emitió.
@@ -71,7 +71,7 @@ impl ConversorABytecode {
         }
     }
 
-    /// Carga una variable local o global según su rango (F8-T1).
+    /// Carga una variable local o global según su rango.
     fn load_var(&self, var: usize) -> Opcode {
         if var >= LOCAL_BASE {
             Opcode::CargarIndice(var - LOCAL_BASE)
@@ -80,7 +80,7 @@ impl ConversorABytecode {
         }
     }
 
-    /// Guarda una variable local o global según su rango (F8-T1).
+    /// Guarda una variable local o global según su rango.
     fn store_var(&self, var: usize) -> Opcode {
         if var >= LOCAL_BASE {
             Opcode::GuardarIndice(var - LOCAL_BASE)
@@ -95,7 +95,7 @@ impl ConversorABytecode {
         let mut bytecode = Vec::new();
         for (i, func) in ir.funciones.iter().enumerate() {
             let nombre = ir.simbolos.nombre_de(func.nombre).to_string();
-            // F11-T2: el punto de entrada es la PRIMERA función (la `main`
+            // el punto de entrada es la PRIMERA función (la `main`
             // sintética que arma `programa_a_ir`), no cualquiera llamada
             // "main". Un programa que declara `funcion main()` tiene además esa
             // función de usuario, que sí debe emitirse con su `FunctionDef`.
@@ -114,7 +114,7 @@ impl ConversorABytecode {
             bytecode.extend(self.convert_function(func, es_main));
             self.label_offset += func.bloques.len();
         }
-        // F11-T1: los closures se definen al final, fuera del flujo principal
+        // los closures se definen al final, fuera del flujo principal
         // (la VM ejecuta secuencialmente; un `FunctionDef` inline haría que su
         // `Return` corte el programa).
         bytecode.extend(std::mem::take(&mut self.defs_diferidas));
@@ -130,7 +130,7 @@ impl ConversorABytecode {
         // Los temporales SSA se asignan por encima del mayor índice de memoria
         // usado por la función, para no colisionar con las variables.
         //
-        // F11-T6: en una función **totalmente promovida** a SSA ya no quedan
+        // en una función **totalmente promovida** a SSA ya no quedan
         // `Load`/`Store`, así que el máximo por memoria no alcanza. Los slots
         // deben empezar por encima de los parámetros (`LOCAL_BASE + i`); si no,
         // un temporal pisa el slot de un parámetro.
@@ -146,7 +146,7 @@ impl ConversorABytecode {
         // asignó: secuencialmente, por instrucción que produce valor.
         let mut siguiente_valor: IdValor = 0;
 
-        // F11-T6: preasignar un slot a cada valor antes de emitir, para que un
+        // preasignar un slot a cada valor antes de emitir, para que un
         // φ pueda referenciar un valor definido más adelante en el orden de
         // bloques (φ de un bucle sobre su propia variable inductora).
         self.slots_valor.clear();
@@ -196,7 +196,7 @@ impl ConversorABytecode {
                 }
             }
 
-            // F11-T6: bajar los φ del/los sucesor/es a copias en esta arista.
+            // bajar los φ del/los sucesor/es a copias en esta arista.
             // Todos los operandos son slots de valores distintos de los slots
             // destino, así que las copias no se pisan entre sí.
             for succ in Self::sucesores(&block.terminador) {
@@ -224,7 +224,7 @@ impl ConversorABytecode {
         bytecode
     }
 
-    /// F11-T1/F11-T2: convierte una función sintética (closure o cuerpo de
+    /// convierte una función sintética (closure o cuerpo de
     /// hilo) y la anexa a las definiciones diferidas, que el programa emite
     /// después del flujo principal. Devuelve su nombre.
     ///
@@ -394,7 +394,7 @@ impl ConversorABytecode {
                 guardar!(bytecode);
             }
             Instruccion::Parametro(index) => {
-                // F8-T1: el parámetro ya está en frame_locals[index].
+                // el parámetro ya está en frame_locals[index].
                 bytecode.push(Opcode::CargarIndice(*index));
                 guardar!(bytecode);
             }
@@ -493,7 +493,7 @@ impl ConversorABytecode {
             }
             Instruccion::CrearClausura(func, capturados) => {
                 let nombre = self.definir_diferido(func);
-                // F12-T1: el valor del closure es un objeto `Closure` con el
+                // el valor del closure es un objeto `Closure` con el
                 // nombre de la función (`fn`) y el entorno capturado (`env`).
                 // Un objeto (y no un Texto) es lo que permite que `CallClosure`
                 // pase el entorno a la función anónima.
@@ -534,7 +534,7 @@ impl ConversorABytecode {
                 let clase_name = self.simbolos.nombre_de(*clase).to_string();
                 let tipo_txt = self.simbolos.nombre_de(*tipo).to_string();
                 bytecode.push(Opcode::NuevoObjeto(Arc::from(clase_name.as_str())));
-                // F11-T5: el objeto se materializa en un temporal anónimo del IR
+                // el objeto se materializa en un temporal anónimo del IR
                 // (no en una variable con nombre): `optimizar_indices` renumera
                 // los nombres sin conocer los slots que ya usa el IR y podía
                 // pisar un temporal (rompía `self.campo = Variante` en métodos).
@@ -597,7 +597,7 @@ impl ConversorABytecode {
             Instruccion::NuevoObjeto(clase, campos) => {
                 let clase_name = self.simbolos.nombre_de(*clase).to_string();
                 bytecode.push(Opcode::NuevoObjeto(Arc::from(clase_name.as_str())));
-                // F11-T5: temporal anónimo del IR en vez de `Declare(nombre)` (ver
+                // temporal anónimo del IR en vez de `Declare(nombre)` (ver
                 // `EnumObject`).
                 let obj_var = self.temp();
                 bytecode.push(self.store_var(obj_var));
@@ -734,7 +734,7 @@ impl ConversorABytecode {
         bytecode.push(self.load_var(rv));
         bytecode.push(op);
         if let Some(v) = result {
-            // F11-T6: el slot del valor está preasignado (ver `convert_function`).
+            // el slot del valor está preasignado (ver `convert_function`).
             let var = match self.slots_valor.get(&v).copied() {
                 Some(var) => var,
                 None => self.temp(),
@@ -794,7 +794,7 @@ mod tests {
         let bytecode = conversor.convert_function(&func, true);
 
         assert!(bytecode.iter().any(|op| matches!(op, Opcode::Sumar)));
-        // F11-T6: los temporales viven en el espacio local (`>= LOCAL_BASE`)
+        // los temporales viven en el espacio local (`>= LOCAL_BASE`)
         // aunque la función no tenga memorias; si empezaran en 0 pisarían los
         // slots de los parámetros (y se leerían como globales).
         let base = crate::ir_constructor::LOCAL_BASE;
