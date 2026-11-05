@@ -11,9 +11,9 @@ Movimientos:
   Mover disco 2 de B a C
   Mover disco 1 de A a C
 
-Total de movimientos para 3 discos: nulo
+Total de movimientos para 3 discos: 1
 
-Con 4 discos serían nulo movimientos.
-Con 5 discos serían nulo movimientos.
+Con 4 discos serían 1 movimientos.
+Con 5 discos serían 1 movimientos.
 
 Las Torres de Hanoi es un problema clásico de recursividad.
