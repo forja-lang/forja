@@ -1,4 +1,4 @@
-//! F4-T5 — GC en producción: estrés con asignación intensiva y telemetría.
+//! GC en producción: estrés con asignación intensiva y telemetría.
 //!
 //! La VM canónica (`vm_fast`) usa un **mark-sweep** propio sobre sus heaps
 //! (objetos, strings, arreglos, mapas, Exacto). Estos tests verifican que:
@@ -146,7 +146,7 @@ main()
     );
 }
 
-/// F5-T5: canales de vida corta no deben acumular slots en los heaps de
+/// canales de vida corta no deben acumular slots en los heaps de
 /// canales ni liberar valores que aún están en cola.
 #[test]
 fn gc_recicla_canales_de_vida_corta() {
@@ -169,7 +169,7 @@ escribir(total)
     assert!(vm.gc_telemetry().colecciones > 0, "el GC no se ejecutó");
 }
 
-/// F5-T5: hilos de vida corta deben reciclar sus slots y resultados.
+/// hilos de vida corta deben reciclar sus slots y resultados.
 #[test]
 fn gc_recicla_hilos_de_vida_corta() {
     let fuente = r#"
@@ -194,7 +194,7 @@ escribir(total)
     );
 }
 
-/// Soak largo para el DoD de F4-T5 ("sin fugas en un benchmark de 30 min").
+/// Soak largo para el DoD de ("sin fugas en un benchmark de 30 min").
 ///
 /// Ignorado por defecto (no ralentiza CI). Para ejecutarlo:
 /// ```text
