@@ -2,7 +2,7 @@
 //!
 //! Este es el **backend LLVM NUEVO en desarrollo** (andamiaje de bajo nivel
 //! IR→LLVM). Todavía **NO implementa lowering AST→LLVM**: esa labor corresponde
-//! a F4-T8/F4-T1. El lowering real AST→LLVM hoy vive en el módulo interno/legacy
+//! . El lowering real AST→LLVM hoy vive en el módulo interno/legacy
 //! `compiler_llvm.rs`, retenido solo para respaldar `compilar_a_llvm()`.
 //!
 //! Backend que genera código máquina nativo usando LLVM como infraestructura.
@@ -1178,7 +1178,7 @@ mod tests {
     }
 }
 
-// ─── F6-T5: lowering AST → LLVM IR (texto) ──────────────────────────────────
+// ─── lowering AST → LLVM IR (texto) ──────────────────────────────────
 //
 // El lowering histórico (antes `compiler_llvm.rs`, módulo interno separado)
 // vive ahora bajo `backend_llvm` como `legado`. Así hay **un solo** backend
