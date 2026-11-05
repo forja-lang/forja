@@ -1,6 +1,6 @@
-//! # `optimizer_pipeline` — Punto ÚNICO de optimización (F4-T3)
+//! # `optimizer_pipeline` — Punto ÚNICO de optimización
 //!
-//! Antes de F4-T3, la secuencia de optimizaciones estaba **duplicada** en cada
+//! Antes , la secuencia de optimizaciones estaba **duplicada** en cada
 //! ruta de compilación (`compilar_pipeline_nucleo`, `transpilar_a_rust`,
 //! `transpilar_a_rust_con_ast`, `compilar_modulo`, `compilar_a_llvm`, `repl`…):
 //! cada una repetía a mano `Optimizer → DCE → ConstProp` (y el transpilador
