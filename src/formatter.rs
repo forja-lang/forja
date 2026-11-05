@@ -1,13 +1,13 @@
-//! Formatter determinista e idempotente para Forja (F2-T3).
+//! Formatter determinista e idempotente para Forja.
 //!
-//! Desde F5-T2 conserva los comentarios: `Formatter::formatear` reconstruye
+//! Desde conserva los comentarios: `Formatter::formatear` reconstruye
 //! desde el AST (sin comentarios), pero `formatear_con_comentarios` reinserta
 //! los comentarios extraídos del fuente por línea del token siguiente.
 
 use crate::ast::*;
 
 /// Re-escapa el valor de un literal de texto para que el código emitido vuelva
-/// a producir el mismo valor al parsearlo (F5-T1). Sin esto, un `\n` real en el
+/// a producir el mismo valor al parsearlo. Sin esto, un `\n` real en el
 /// valor del AST se escribía como salto de línea y corrompía el archivo.
 pub fn escapar_texto(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -46,7 +46,7 @@ fn empujar_comentario(out: &mut String, texto: &str, indent: &str) {
     }
 }
 
-/// Reinserta comentarios en el código ya formateado (F5-T2) usando como ancla
+/// Reinserta comentarios en el código ya formateado usando como ancla
 /// la línea del token que seguía a cada comentario en el fuente original.
 fn insertar_comentarios(base: String, comentarios: &[crate::lexer::Comentario]) -> String {
     if comentarios.is_empty() {
@@ -140,7 +140,7 @@ impl Formatter {
     }
 
     /// Formatea preservando los comentarios extraídos del fuente original
-    /// (F5-T2). Los comentarios se reinsertan antes de la línea del token que
+    ///. Los comentarios se reinsertan antes de la línea del token que
     /// les seguía; los doc comments se toman de la lista (no del AST) para no
     /// duplicarlos.
     pub fn formatear_con_comentarios(
@@ -706,7 +706,7 @@ impl Formatter {
                 } else {
                     // Exacto = coeff * 10^-scale. El lexer acepta `e-<scale>`;
                     // emitir `e<scale>` multiplicaría por 10^scale y podría
-                    // desbordar i128 al reformatear (F5-T1 round-trip).
+                    // desbordar i128 al reformatear (round-trip).
                     format!("{}e-{}", coeff, scale)
                 }
             }
@@ -913,6 +913,23 @@ impl Formatter {
                 let arr_str = self.expresion_a_string(array);
                 let val_str = self.expresion_a_string(valor);
                 format!("{} = {}", arr_str, val_str)
+            }
+            Expresion::AsignacionCompuesta {
+                objetivo,
+                operador,
+                valor,
+            } => {
+                let op = match operador {
+                    Operador::Suma => "+=",
+                    Operador::Resta => "-=",
+                    Operador::Multiplicacion => "*=",
+                    Operador::Division => "/=",
+                    Operador::Modulo => "%=",
+                    _ => "?=",
+                };
+                let obj_str = self.expresion_a_string(objetivo);
+                let val_str = self.expresion_a_string(valor);
+                format!("{} {} {}", obj_str, op, val_str)
             }
             Expresion::Ok(expr) => {
                 let exp_str = self.expresion_a_string(expr);
