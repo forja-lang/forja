@@ -1,4 +1,4 @@
-//! F10-T2/F10-T5: smoke de runtime sobre una muestra representativa del corpus.
+//! smoke de runtime sobre una muestra representativa del corpus.
 //! No compara salidas exactas (cada ejemplo evoluciona), pero exige que el
 //! programa compile y ejecute sin error, con salida no vacía.
 
@@ -47,7 +47,7 @@ fn corpus_smoke_vm() {
 
 #[test]
 fn corpus_no_parseables_conocidos() {
-    // Documentados en plan3/F10-T2; si alguno empieza a parsear, hay que
+    // Documentados en plan3/; si alguno empieza a parsear, hay que
     // actualizar la lista y el corpus.
     let raiz = Path::new(env!("CARGO_MANIFEST_DIR")).join("ejemplos");
     // `199_forja_desde_forja.fa` se recuperó de la historia del submódulo
