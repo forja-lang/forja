@@ -164,7 +164,7 @@ fn test_canal_multiple_mensajes() {
     assert_eq!(out, vec!["60"]);
 }
 
-/// F12-T2: `try_recibir` es no bloqueante pero **sí** entrega el mensaje cuando
+/// `try_recibir` es no bloqueante pero **sí** entrega el mensaje cuando
 /// lo hay (antes devolvía siempre Nulo, así que el test de "vacío" pasaba sin
 /// comprobar nada).
 #[test]
