@@ -1,4 +1,4 @@
-// Forja — `seleccionar` sobre canales (F12-T2)
+// Forja — `seleccionar` sobre canales
 //
 // La construcción `seleccionar { caso v = rx { … } tiempo 100 { … } otro { … } }`
 // se **desugara** a código Forja normal antes de la emisión (ver `crate::desugar`),
