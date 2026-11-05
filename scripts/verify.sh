@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/verify.sh — verificación reproducible (F7-T1)
+# scripts/verify.sh — verificación reproducible
 #
 # Reproduce localmente lo que corre el CI: formato, clippy, compilación y tests.
 # Uso:
