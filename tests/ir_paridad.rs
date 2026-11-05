@@ -1,6 +1,6 @@
-//! Red de seguridad F1-B2/B3 — **Paridad del alias `compilar_con_ir`**.
+//! Red de seguridad /B3 — **Paridad del alias `compilar_con_ir`**.
 //!
-//! Tras F1-B3 [`forja::compilar_con_ir`] es un alias **`#[deprecated]`** que
+//! Tras [`forja::compilar_con_ir`] es un alias **`#[deprecated]`** que
 //! delega en la ruta canónica [`forja::compilar_pipeline_completa`]. Esta suite
 //! sigue siendo la red de seguridad que garantiza que la delegación preserva
 //! el resultado **funcionalmente equivalente** sobre los mismos programas
