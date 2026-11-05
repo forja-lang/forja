@@ -1,10 +1,10 @@
-// Helpers de heap y GC de la VM canónica `ForjaFast` (F1-T7).
+// Helpers de heap y GC de la VM canónica `ForjaFast`.
 // Extraído de `mod.rs` para mantener archivos por debajo de ~1500 líneas.
 
 use super::*;
 
 /// Profundidad máxima de anidamiento al serializar un valor portable
-/// (F12-T2). Ver [`ForjaFast::serializar_portable`].
+///. Ver [`ForjaFast::serializar_portable`].
 const PROFUNDIDAD_MAXIMA_PORTABLE: usize = 1024;
 
 impl ForjaFast {
@@ -12,7 +12,7 @@ impl ForjaFast {
 
     #[inline(always)]
     pub fn alloc_obj(&mut self, obj: ObjVal) -> u32 {
-        // F4-T5: registrar presión; la recolección se dispara en un punto
+        // registrar presión; la recolección se dispara en un punto
         // seguro del bucle del intérprete (`maybe_gc`), no aquí, para evitar
         // liberar objetos que solo están referenciados por temporales de Rust.
         self.gc_pressure = self.gc_pressure.saturating_add(1);
@@ -32,7 +32,7 @@ impl ForjaFast {
 
     #[inline(always)]
     pub fn alloc_str(&mut self, s: Arc<str>) -> u32 {
-        // F4-T5: registrar presión; la recolección se dispara en un punto
+        // registrar presión; la recolección se dispara en un punto
         // seguro del bucle del intérprete (`maybe_gc`), no aquí, para evitar
         // liberar objetos que solo están referenciados por temporales de Rust.
         self.gc_pressure = self.gc_pressure.saturating_add(1);
@@ -48,7 +48,7 @@ impl ForjaFast {
 
     #[inline(always)]
     pub fn alloc_arr(&mut self, arr: Vec<ValorFast>) -> u32 {
-        // F4-T5: registrar presión; la recolección se dispara en un punto
+        // registrar presión; la recolección se dispara en un punto
         // seguro del bucle del intérprete (`maybe_gc`), no aquí, para evitar
         // liberar objetos que solo están referenciados por temporales de Rust.
         self.gc_pressure = self.gc_pressure.saturating_add(1);
@@ -64,7 +64,7 @@ impl ForjaFast {
 
     #[inline(always)]
     pub fn alloc_map(&mut self, m: HashMap<String, ValorFast>) -> u32 {
-        // F4-T5: registrar presión; la recolección se dispara en un punto
+        // registrar presión; la recolección se dispara en un punto
         // seguro del bucle del intérprete (`maybe_gc`), no aquí, para evitar
         // liberar objetos que solo están referenciados por temporales de Rust.
         self.gc_pressure = self.gc_pressure.saturating_add(1);
@@ -80,7 +80,7 @@ impl ForjaFast {
 
     #[inline(always)]
     pub fn alloc_exacto(&mut self, e: ExactoVal) -> u32 {
-        // F4-T5: registrar presión; la recolección se dispara en un punto
+        // registrar presión; la recolección se dispara en un punto
         // seguro del bucle del intérprete (`maybe_gc`), no aquí, para evitar
         // liberar objetos que solo están referenciados por temporales de Rust.
         self.gc_pressure = self.gc_pressure.saturating_add(1);
@@ -174,12 +174,12 @@ impl ForjaFast {
     }
 
     /// Serializa un valor con referencias a heap a una representación portable
-    /// (F8-T9). Los índices de heap no son válidos entre VMs.
+    ///. Los índices de heap no son válidos entre VMs.
     pub(crate) fn serializar_portable(&self, val: ValorFast, depth: usize) -> ValorPortable {
         self.serializar_portable_con(val, depth, &mut Vec::new())
     }
 
-    /// F12-T2: `visitados` lleva `(tipo, índice de heap) → id` de los contenedores
+    /// `visitados` lleva `(tipo, índice de heap) → id` de los contenedores
     /// ya emitidos en este mensaje. Una segunda visita emite `Referencia(id)`, así
     /// que los ciclos y los objetos compartidos sobreviven al envío en vez de
     /// cortarse a Nulo.
@@ -247,7 +247,7 @@ impl ForjaFast {
                 return r;
             }
             let obj = self.get_obj(val.indice_objeto());
-            // F12-T2: se envían `(campo, valor)`. Sin el nombre, la VM receptora
+            // se envían `(campo, valor)`. Sin el nombre, la VM receptora
             // no puede registrar el campo en el descriptor de la clase y la
             // lectura daría Nulo. El mapa autoritativo es el `DescriptorClase`
             // (el que usan `GetField`/`SetField`); el forma del `RegistroFormas`
@@ -285,12 +285,12 @@ impl ForjaFast {
         }
     }
 
-    /// Reconstruye un valor portable en los heaps de esta VM (F8-T9).
+    /// Reconstruye un valor portable en los heaps de esta VM.
     pub(crate) fn importar_portable(&mut self, valor: ValorPortable) -> ValorFast {
         self.importar_portable_con(valor, &mut HashMap::new())
     }
 
-    /// F12-T2: `creados` mapea el id del emisor al valor ya alocado aquí. Cada
+    /// `creados` mapea el id del emisor al valor ya alocado aquí. Cada
     /// contenedor se aloca **antes** de rellenarse (mismo orden de visita que el
     /// emisor), así que `Referencia(id)` reconstruye ciclos y alias en vez de
     /// recursar sin fin.
@@ -337,7 +337,7 @@ impl ForjaFast {
             }
             ValorPortable::Objeto { clase, campos } => {
                 let clase_sym = self.tabla_simbolos.internar(&clase);
-                // F12-T2: el objeto llega de otra VM, que puede haber creado la
+                // el objeto llega de otra VM, que puede haber creado la
                 // clase sin que ésta exista aquí. Sin descriptor de clase,
                 // `GetField`/`SetField` caen al fallback `campos_vec[sym]` y las
                 // lecturas dan Nulo. Se registra el descriptor con los campos en
@@ -418,7 +418,7 @@ impl ForjaFast {
         }
     }
 
-    /// F5-T5: envía un valor por un canal y registra el valor como raíz del GC
+    /// envía un valor por un canal y registra el valor como raíz del GC
     /// mientras esté en cola. Devuelve `true` si el envío tuvo éxito.
     #[inline]
     pub(crate) fn canal_enviar(&mut self, chan_idx: usize, val: ValorFast) -> bool {
@@ -443,7 +443,7 @@ impl ForjaFast {
         ok
     }
 
-    /// F5-T5: recibe un valor de un canal y descuenta el valor de la cola de
+    /// recibe un valor de un canal y descuenta el valor de la cola de
     /// raíces del GC.
     #[inline]
     pub(crate) fn canal_recibir(&mut self, chan_idx: usize) -> Option<ChannelValue> {
@@ -465,7 +465,7 @@ impl ForjaFast {
         res
     }
 
-    /// F12-T2: recepción **no bloqueante** (la usa `seleccionar` y
+    /// recepción **no bloqueante** (la usa `seleccionar` y
     /// `rx.try_recibir()`). Devuelve `None` si el canal no tiene mensajes;
     /// descuenta las raíces del GC igual que `canal_recibir`.
     #[inline]
@@ -507,14 +507,6 @@ impl ForjaFast {
             + self.array_free.len()
             + self.map_free.len()
             + self.exacto_free.len();
-        // Delegar tracking generacional a GenerationalGC
-        self.gc.young_collection();
-
-        // Si old generation también necesita colección, hacer full
-        if self.gc.should_collect_full() {
-            self.gc.full_collection();
-        }
-
         // --- FASE MARK: limpiar marcas viejas ---
         for m in &mut self.obj_marked {
             *m = false;
@@ -531,7 +523,7 @@ impl ForjaFast {
         for m in &mut self.exacto_marked {
             *m = false;
         }
-        // F5-T5: canales e hilos.
+        // canales e hilos.
         for m in &mut self.chan_tx_marked {
             *m = false;
         }
@@ -561,9 +553,9 @@ impl ForjaFast {
             roots.extend_from_slice(frame);
         }
 
-        // F4-T5: raíces adicionales que antes se omitían (fuga de objetos vivos).
+        // raíces adicionales que antes se omitían (fuga de objetos vivos).
         // Variables globales persistidas y valores `anterior()` de contratos.
-        // F5-T5: los resultados de hilos se marcan desde su handle (objeto Hilo),
+        // los resultados de hilos se marcan desde su handle (objeto Hilo),
         // no como raíz incondicional, para poder liberar hilos inalcanzables.
         roots.extend_from_slice(&self.global_var_persist);
         roots.extend(self.anterior_stack.values().copied());
@@ -574,7 +566,7 @@ impl ForjaFast {
         }
 
         // --- FASE SWEEP ---
-        // F4-T5: reconstruir las free lists desde cero. Si solo se *añadieran*
+        // reconstruir las free lists desde cero. Si solo se *añadieran*
         // los slots no marcados, los que ya estaban libres se re-añadirían en
         // cada colección (duplicados) y `alloc_*` reutilizaría el mismo índice
         // dos veces, corrompiendo el heap.
@@ -583,7 +575,7 @@ impl ForjaFast {
         self.array_free.clear();
         self.map_free.clear();
         self.exacto_free.clear();
-        // F5-T5: reconstruir también las free lists de canales e hilos.
+        // reconstruir también las free lists de canales e hilos.
         self.chan_tx_free.clear();
         self.chan_rx_free.clear();
         self.thread_free.clear();
@@ -630,7 +622,7 @@ impl ForjaFast {
             }
         }
 
-        // F5-T5: barrido de receptores. Primero se liberan los rx muertos y se
+        // barrido de receptores. Primero se liberan los rx muertos y se
         // descuentan las referencias a su tx; así un tx puede liberarse solo
         // cuando ningún rx vivo lo referencia.
         let mut rx_liberados: Vec<usize> = Vec::new();
@@ -653,7 +645,7 @@ impl ForjaFast {
             }
         }
 
-        // F5-T5: barrido de emisores. Un tx muerto se libera si ningún rx vivo
+        // barrido de emisores. Un tx muerto se libera si ningún rx vivo
         // lo referencia; en ese momento también se liberan sus mensajes en cola.
         for i in 0..self.chan_tx_heap.len() {
             let sin_refs = self.chan_tx_refs.get(i).copied().unwrap_or(0) == 0;
@@ -671,7 +663,7 @@ impl ForjaFast {
             *m = false;
         }
 
-        // F5-T5: barrido de hilos. Si el handle Hilo es inalcanzable, se libera
+        // barrido de hilos. Si el handle Hilo es inalcanzable, se libera
         // el slot y su resultado; el receptor pendiente se descarta.
         for i in 0..self.thread_heap.len() {
             if !self.thread_marked[i] {
@@ -682,7 +674,7 @@ impl ForjaFast {
             self.thread_marked[i] = false;
         }
 
-        // F4-T5: telemetría de la pausa y de los slots reciclados.
+        // telemetría de la pausa y de los slots reciclados.
         let libres_despues = self.obj_free.len()
             + self.str_free.len()
             + self.array_free.len()
@@ -699,7 +691,7 @@ impl ForjaFast {
         self.gc_telemetry.slots_recolectados += recolectados;
     }
 
-    /// F4-T5: punto seguro de GC. Llamado al inicio de cada instrucción del
+    /// punto seguro de GC. Llamado al inicio de cada instrucción del
     /// intérprete (donde todas las referencias vivas están en la pila, en
     /// `frame_locals`, en globales persistidas o en resultados de hilos).
     /// Si la presión de asignación supera el umbral, ejecuta la recolección.
@@ -711,35 +703,35 @@ impl ForjaFast {
         }
     }
 
-    /// F4-T5: fuerza una recolección inmediata (para tests y diagnóstico).
+    /// fuerza una recolección inmediata (para tests y diagnóstico).
     pub fn forzar_gc(&mut self) {
         self.gc_pressure = 0;
         self.gc_collect();
     }
 
-    /// F4-T5: ajusta el umbral de presión del GC (nº de allocs). Un valor muy
+    /// ajusta el umbral de presión del GC (nº de allocs). Un valor muy
     /// alto desactiva de facto la recolección automática.
     pub fn set_gc_pressure_threshold(&mut self, umbral: usize) {
         self.gc_pressure_threshold = umbral.max(1);
     }
 
-    /// F4-T5: telemetría de pausas del GC.
-    pub fn gc_telemetry(&self) -> crate::gc::GcTelemetry {
+    /// telemetría de pausas del GC.
+    pub fn gc_telemetry(&self) -> crate::legacy::gc::GcTelemetry {
         self.gc_telemetry.clone()
     }
 
-    /// F5-T5: slots activos en los heaps de canales (tx + rx).
+    /// slots activos en los heaps de canales (tx + rx).
     pub fn chan_heap_slots(&self) -> usize {
         (self.chan_tx_heap.len() - self.chan_tx_free.len())
             + (self.chan_rx_heap.len() - self.chan_rx_free.len())
     }
 
-    /// F5-T5: slots activos en el heap de hilos.
+    /// slots activos en el heap de hilos.
     pub fn thread_heap_slots(&self) -> usize {
         self.thread_heap.len() - self.thread_free.len()
     }
 
-    /// F4-T5: total de slots ocupados en todos los heaps de la VM.
+    /// total de slots ocupados en todos los heaps de la VM.
     pub fn heap_slots(&self) -> usize {
         (self.obj_heap.len() - self.obj_free.len())
             + (self.str_heap.len() - self.str_free.len())
@@ -748,7 +740,7 @@ impl ForjaFast {
             + (self.exacto_heap.len() - self.exacto_free.len())
     }
 
-    /// Marca los valores en cola de un canal (F5-T5).
+    /// Marca los valores en cola de un canal.
     fn mark_canal(&mut self, tx_idx: usize) {
         if tx_idx >= self.chan_payloads.len() || self.canal_marked[tx_idx] {
             return;
@@ -770,7 +762,7 @@ impl ForjaFast {
             if idx < self.obj_heap.len() && !self.obj_marked[idx] {
                 self.obj_marked[idx] = true;
                 let clase = self.obj_heap[idx].clase;
-                // F5-T5: los handles de canal/hilo son referencias a sus heaps;
+                // los handles de canal/hilo son referencias a sus heaps;
                 // marcarlos mantiene vivos los mensajes en cola y el resultado
                 // del hilo.
                 if clase == self.sym_canal_emisor || clase == self.sym_canal_receptor {
