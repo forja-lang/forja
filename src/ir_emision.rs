@@ -1,9 +1,9 @@
-//! # Emisión de bytecode desde IR (F4-T8)
+//! # Emisión de bytecode desde IR
 //!
 //! Orquesta el constructor IR ([`crate::ir_constructor`]) y el conversor
 //! ([`crate::ir_to_bytecode`]) para emitir bytecode **derivado del IR**.
 //!
-//! F11-T5: es el **único** motor de la ruta canónica. Cubre todo el lenguaje;
+//! es el **único** motor de la ruta canónica. Cubre todo el lenguaje;
 //! si el constructor IR no puede con un programa, devuelve `Err` con el
 //! diagnóstico del constructo (no hay *fallback* a la ruta AST).
 
@@ -19,10 +19,10 @@ pub type Overloads = HashMap<String, Vec<(Vec<Option<Tipo>>, Option<Tipo>, Vec<P
 /// **Backend AST** ([`GeneradorBytecode`]) con la post-producción común
 /// (`postprocesar_globales` + [`crate::optimizer_pipeline::optimizar_bytecode`]).
 ///
-/// F11-T5: la ruta canónica **no** pasa por aquí (emite por IR, ver
+/// la ruta canónica **no** pasa por aquí (emite por IR, ver
 /// [`emitir_bytecode_ir`]). Se conserva como motor alternativo explícito
 /// ([`crate::MotorEmision::SoloAst`]) para comparar comportamientos y como base
-/// del benchmark AST vs IR de F14-T2.
+/// del benchmark que compara AST contra IR.
 pub fn emitir_bytecode_canonico(
     programa: &Programa,
     tipos: HashMap<String, Tipo>,
@@ -31,7 +31,7 @@ pub fn emitir_bytecode_canonico(
     let mut gen = GeneradorBytecode::new();
     gen.set_tipos_inferidos(tipos);
     gen.set_funciones_overload(overloads);
-    // F12-T6: los contratos referencian globales por índice, así que el
+    // los contratos referencian globales por índice, así que el
     // generador necesita la tabla antes de emitir (no después).
     let globales = globales_de(programa);
     gen.set_globales(globales.clone());
@@ -78,14 +78,14 @@ pub fn emitir_bytecode_ir(programa: &Programa) -> Result<Vec<Opcode>, String> {
     let mut constructor_ir = ConstructorDesdeAst::new();
     let ir = constructor_ir.programa_a_ir(programa);
     if !constructor_ir.soportado {
-        // F11-T5: el diagnóstico dice qué constructo abortó la emisión IR.
+        // el diagnóstico dice qué constructo abortó la emisión IR.
         let motivo = constructor_ir
             .motivo_no_soportado
             .unwrap_or_else(|| "constructo no soportado".to_string());
         return Err(format!("programa fuera del subconjunto IR: {motivo}"));
     }
 
-    // F11-T6: promoción de memoria a SSA (mem2reg + φ) antes de bajar a
+    // promoción de memoria a SSA (mem2reg + φ) antes de bajar a
     // bytecode. Los φ se resuelven en las aristas al convertir.
     let ir = crate::ir_ssa::promover_programa(&ir);
     let mut conversor = ConversorABytecode::new(ir.simbolos.clone());
