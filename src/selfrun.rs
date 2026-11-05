@@ -61,9 +61,10 @@ pub fn try_selfrun() -> Option<()> {
     // Inicializar VM ForjaFast de producción
     let mut vm = crate::vm_fast::ForjaFast::new();
 
-    // Habilitar Fast-Math por defecto en el ejecutable autónomo (desactivable con FORJA_FAST_MATH=0)
-    let fast_math = std::env::var("FORJA_FAST_MATH")
-        .map(|v| v != "0" && v != "false")
+    // Matemática rápida: por defecto activa en el ejecutable autónomo;
+    // `matematica_rapida: falso` en un `forja.yaml` cercano la desactiva.
+    let fast_math = crate::config::leer_disco()
+        .map(|c| c.matematica_rapida)
         .unwrap_or(true);
     vm.set_fast_math(fast_math);
 
