@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Instalador de Forja para Windows (F3-T7).
+    Instalador de Forja para Windows.
 
 .DESCRIPTION
     Descarga el paquete precompilado (.zip) de la última release (o de una
@@ -11,7 +11,7 @@
     irm https://raw.githubusercontent.com/forja-lang/forja/main/scripts/install.ps1 | iex
 
 .EXAMPLE
-    .\install.ps1 -Version v0.9.6 -InstallDir "$env:LOCALAPPDATA\forja"
+    .\install.ps1 -Version v0.9.7 -InstallDir "$env:LOCALAPPDATA\forja"
 #>
 param(
     [string]$Version = "latest",
@@ -78,7 +78,7 @@ try {
         }
     }
 
-    # ── F6-T7: verificar firma cosign (si está instalado) ──
+    # ── verificar firma cosign (si está instalado) ──
     if (Get-Command cosign -ErrorAction SilentlyContinue) {
         $bundle = Join-Path $tmp "$asset.bundle"
         try {
