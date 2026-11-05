@@ -1,4 +1,4 @@
-# 🔨 Forja — Referencia Completa de Comandos
+# Forja — Referencia Completa de Comandos
 
 ## Compilar el compilador
 
@@ -136,7 +136,7 @@ Intérprete línea por línea. Las variables persisten entre líneas.
 
 ```bash
 cargo run --release --bin forja -- repl
-# 🔨 Forja v0.3.0 — Escribí 'salir' para terminar
+# Forja — Escribí 'salir' para terminar
 # > variable x = 5
 # > x = x + 10
 # > escribir(x)
