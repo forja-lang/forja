@@ -1,5 +1,5 @@
-﻿// Helpers de sockets e IO de la VM canónica ForjaFast (F1-T7).
-// Extraído de mod.rs durante el refactor F1-T7.
+﻿// Helpers de sockets e IO de la VM canónica ForjaFast.
+// Extraído de mod.rs durante el refactor.
 
 use super::*;
 
