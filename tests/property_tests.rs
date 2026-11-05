@@ -45,7 +45,7 @@ proptest! {
     }
 }
 
-// ─── F-T1: propiedades del compilador completo ─────────────────────────────
+// ─── propiedades del compilador completo ─────────────────────────────
 //
 // El lexer y el parser ya tenían propiedades; esto cubre el **pipeline
 // completo** (tipos → contratos → bytecode). La propiedad es simple y dura:
@@ -123,5 +123,29 @@ proptest! {
     fn compilar_programa_aleatorio_no_panickea(programa in programa_arbitrario()) {
         // Ok = compiló; Err = diagnóstico. Un panic rompe el test.
         let _ = forja::compilar_pipeline_completa(&programa);
+    }
+}
+
+// ─── P2 (§3.9): proptest *negativo* ─────────────────────────────────────────
+//
+// Las propiedades de arriba aceptan Ok o Err. Esta exige lo contrario: un
+// literal fuera del rango de 48 bits de `Entero` **debe** rechazarse en
+// compilación (, §2.1); si algún día se acepta en silencio, esto falla.
+
+fn literal_fuera_de_rango() -> impl Strategy<Value = i64> {
+    prop_oneof![
+        140_737_488_355_328i64..=i64::MAX,
+        i64::MIN..=-140_737_488_355_329,
+    ]
+}
+
+proptest! {
+    #[test]
+    fn literal_fuera_de_rango_siempre_se_rechaza(n in literal_fuera_de_rango()) {
+        let programa = format!("escribir({n})");
+        prop_assert!(
+            forja::compilar_pipeline_completa(&programa).is_err(),
+            "debía rechazar el literal fuera de rango `{n}`"
+        );
     }
 }
