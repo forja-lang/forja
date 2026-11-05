@@ -496,7 +496,7 @@ impl REPL {
     fn mostrar_ayuda(&self) {
         println!("{}", color::negrita("Comandos (siempre con '/'):"));
         println!("  /configurar            elige opciones con ↑/↓ y Enter");
-        println!("  /motor <vm|rapido|jit> cambia el motor de la sesión");
+        println!("  /motor <vm|jit> cambia el motor de la sesión");
         println!("  /variables             estado actual");
         println!("  /limpiar               reinicia el estado");
         println!("  /recargar [modulo]       recarga el código acumulado o un módulo");
@@ -624,11 +624,11 @@ fn variables_declaradas(source: &str) -> Vec<String> {
 }
 
 /// Nombre canónico del motor: igual que en la CLI y `forja.yaml`
-/// (`rapido` | `jit`). Acepta los alias viejos en inglés.
+/// (`vm` | `jit`). Acepta los alias viejos en inglés.
 fn motor_canonico(modo: &str) -> &'static str {
     match modo.trim().to_lowercase().as_str() {
         "jit" => "jit",
-        _ => "rapido",
+        _ => "vm",
     }
 }
 
@@ -853,17 +853,16 @@ impl REPL {
     fn configurar(&mut self) -> std::io::Result<()> {
         let motor = preguntar(
             "Motor",
-            &["vm", "rapido", "jit"],
+            &["vm", "jit"],
             match self.vm_mode.as_str() {
                 "vm" => 0,
-                "jit" => 2,
-                _ => 1,
+                "jit" => 1,
+                _ => 0,
             },
         )?;
         self.vm_mode = match motor {
-            0 => "vm".to_string(),
-            2 => "jit".to_string(),
-            _ => "rapido".to_string(),
+            1 => "jit".to_string(),
+            _ => "vm".to_string(),
         };
         self.vm_fast = None;
         self.source_acumulado.clear();
