@@ -1,6 +1,6 @@
-//! Red de seguridad F1-B1 — **Equivalencia de motores de ejecución**.
+//! Red de seguridad **Equivalencia de motores de ejecución**.
 //!
-//! Tras **F1-T2** Forja tiene DOS motores por defecto:
+//! Tras Forja tiene DOS motores por defecto:
 //!
 //!   * `vm_fast::ForjaFast`  — intérprete canónico de bytecode (la VM de producción).
 //!     Es la canónica desde la v0.9.0 (la antigua VM v1 `ForjaVM` fue removida).
@@ -10,7 +10,7 @@
 //!     `ejecutar(source: &str)`, por lo que se ejercita alimentándolo con los
 //!     eventos del bytecode.
 //!
-//! Motores archivados en F1-T2 (`src/legacy/`): `vm_jit::ForjaDT`, `jit::NativeJIT`
+//! Motores archivados en (`src/legacy/`): `vm_jit::ForjaDT`, `jit::NativeJIT`
 //! y `jit_engine::JitOrchestrator`. El archivado `ForjaDT` era el único motor que
 //! ejecutaba bytecode RAW (con nombres en vez de índices); al archivarlo, ningún
 //! motor vivo consume RAW, así que aquí solo se verifica que `TieredJit` lo
@@ -19,7 +19,7 @@
 //! Entradas públicas de alto nivel ejercitadas:
 //!   * [`forja::ejecutar`]      — ForjaFast, verifica contratos, sandbox air-gapped.
 //!   * [`forja::ejecutar_vm`]   — ForjaFast, sin contratos.
-//!   * [`forja::ejecutar_jit`]  — `--vm jit` (F1-T2: delega en ForjaFast mientras
+//! * [`forja::ejecutar_jit`] — `motor: jit` (delega en ForjaFast mientras
 //!     se conecta un ejecutor sobre `jit_tiered`).
 
 /// Programas deterministas soportados (variables, aritmética, condicionales,
@@ -61,7 +61,7 @@ const PROGRAMAS: &[(&str, &str, &[&str])] = &[
         &["10", "20", "30"],
     ),
     (
-        // F1-T4: propagación con `?` sobre `Resultado` y `Opcion` (prelude real).
+        // propagación con `?` sobre `Resultado` y `Opcion` (prelude real).
         // El primer fallo corta la cadena y propaga el Error/Ninguno.
         "propagacion_try",
         "funcion validar(n: Entero) -> Resultado<Entero, Texto> {\n\
@@ -103,7 +103,7 @@ const PROGRAMAS: &[(&str, &str, &[&str])] = &[
         &["ok=10", "err=negativo", "alguno=2", "ninguno"],
     ),
     (
-        // F1-T5: enums con datos (variantes con payload) y tuplas de primera
+        // enums con datos (variantes con payload) y tuplas de primera
         // clase (construcción, indexación y destructuring).
         "enums_y_tuplas",
         "tipo Color = RGB(Entero, Entero, Entero) | Hex(Texto)\n\
@@ -211,7 +211,7 @@ fn forjafast_y_tiered_producen_misma_salida() {
         // Ruta tiered: se alimenta el orquestador con eventos del bytecode
         // optimizado y se ejecuta en la VM canónica.
         let salida_tiered = ejecutar_con_tiered(&bytecode(fuente));
-        // (F1-T2) El bytecode RAW ya no lo ejecuta ningún motor vivo (lo hacía el
+        // El bytecode RAW ya no lo ejecuta ningún motor vivo (lo hacía el
         // archivado ForjaDT); solo se verifica que `TieredJit` lo ingiere sin error.
         observar_tiered(&bytecode_raw(fuente));
         assert_eq!(
@@ -255,9 +255,9 @@ fn ejecutar_coincide_con_ejecutar_vm() {
     }
 }
 
-/// `ejecutar_jit()` (`--vm jit`) debe coincidir con `ejecutar_vm()`.
+/// `ejecutar_jit()` (`motor: jit`) debe coincidir con `ejecutar_vm()`.
 ///
-/// (F1-T2) `ejecutar_jit` delega hoy en `ForjaFast` (el JIT único `jit_tiered`
+/// `ejecutar_jit` delega hoy en `ForjaFast` (el JIT único `jit_tiered`
 /// aún no expone un ejecutor de bytecode), así que este test pasa sin requerir
 /// enlazado nativo. Cuando se conecte un ejecutor tiered real, esta equivalencia
 /// seguirá siendo el invariante a preservar.
