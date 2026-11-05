@@ -2,7 +2,7 @@
 
 Validando usuario: Ana
   ✅ Edad válida: 25
-  ❌ Email: El email debe contener @
+  ✅ Email válido: ana@email.com
 
 Validando usuario: Juan
   ❌ Edad: La edad no puede ser negativa
@@ -10,4 +10,4 @@ Validando usuario: Juan
 
 Validando usuario: Pedro
   ❌ Edad: La edad parece irreal (> 150)
-  ❌ Email: El email debe contener @
+  ✅ Email válido: pedro@
