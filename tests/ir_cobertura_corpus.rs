@@ -1,4 +1,4 @@
-//! F11-T5 — **Cobertura IR del corpus**.
+//! **Cobertura IR del corpus**.
 //!
 //! La ruta canónica ya no tiene *fallback* a AST: o el programa se emite por IR
 //! o la compilación falla con diagnóstico. Este test fija el contrato sobre los
@@ -14,15 +14,14 @@
 
 use std::path::Path;
 
-/// Ejemplos que no compilan por errores ajenos a la emisión (F11-T5/F12-T3).
+/// Ejemplos que no compilan por errores ajenos a la emisión.
 /// Si alguno empieza a compilar, hay que quitarlo de la lista.
 ///
-/// Estado al 2026-10-30: **259/260 compilan**. Sólo queda `900_storybook`, que
-/// usa `si` como **elemento de argumentos** (layout condicional): eso lo
-/// entiende únicamente el runtime de GUI, no la VM. Los otros 13 que fallaban
-/// (contenido dañado por un `forja fmt` viejo, `convertir(x, Tipo)`, `ref_mut`,
-/// matrices 2D, operadores de bits en la stdlib…) están corregidos.
-const NO_COMPILAN: &[&str] = &["900_storybook.fa"];
+/// Estado al 2026-11-01: **260/260 compilan** (lista vacía). Los 14 que
+/// fallaban (contenido dañado por un `forja fmt` viejo, `convertir(x, Tipo)`,
+/// `ref_mut`, matrices 2D, operadores de bits en la stdlib, el `…` de
+/// `900_storybook`…) están corregidos.
+const NO_COMPILAN: &[&str] = &[];
 
 #[test]
 fn corpus_completo_por_ir_sin_fallback() {
@@ -52,7 +51,7 @@ fn corpus_completo_por_ir_sin_fallback() {
         ) {
             (Ok(_), Ok(_)) => {
                 // La ruta canónica es **AST-first con fallback IR** (decisión de
-                // F14-T2: el bytecode del IR es ~2.2x más grande y ~1.8x más
+                // el bytecode del IR es ~2.2x más grande y ~1.8x más
                 // lento), así que ya no se compara bytecode: lo que se exige es
                 // que todo lo que compila por la canónica **también** lo haga
                 // por la ruta IR estricta. Si no, habría un constructo que sólo
@@ -92,7 +91,7 @@ fn corpus_completo_por_ir_sin_fallback() {
     );
 }
 
-// ─── F11-T5 → F12-T3: divergencias conocidas AST vs IR ─────────────────────
+// ─── → divergencias conocidas AST vs IR ─────────────────────
 
 /// Ejemplos deterministas cuya salida **difiere** entre el backend AST y el IR
 /// (la ruta canónica). En todos los inspeccionados el IR da el valor correcto y
@@ -113,7 +112,10 @@ fn corpus_completo_por_ir_sin_fallback() {
 /// `135_ordenamiento_mergesort` ya no diverge: se corrigieron el crecimiento
 /// de arreglos por índice (`variable a = []` + `a[i] = v`) y la renumeración
 /// del índice en `Instruccion::FijarElemento`/`FijarValorDeMapa`.
-const DIVERGENCIAS_CONOCIDAS: &[&str] = &["167_estadistica.fa"];
+const DIVERGENCIAS_CONOCIDAS: &[&str] = &[
+    // 167: bug del backend AST con la raíz de Newton en decimales (plan4).
+    "167_estadistica.fa",
+];
 
 /// Marcadores de ejemplos no deterministas o con dependencias externas: su
 /// salida no se puede comparar entre dos ejecuciones.
