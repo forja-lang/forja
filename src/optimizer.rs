@@ -669,6 +669,15 @@ impl Optimizer {
                 array: Box::new(self.optimizar_expresion(array)),
                 valor: Box::new(self.optimizar_expresion(valor)),
             },
+            Expresion::AsignacionCompuesta {
+                objetivo,
+                operador,
+                valor,
+            } => Expresion::AsignacionCompuesta {
+                objetivo: Box::new(self.optimizar_expresion(objetivo)),
+                operador: operador.clone(),
+                valor: Box::new(self.optimizar_expresion(valor)),
+            },
             Expresion::Ok(e) => Expresion::Ok(Box::new(self.optimizar_expresion(e))),
             Expresion::Error(e) => Expresion::Error(Box::new(self.optimizar_expresion(e))),
             Expresion::Algo(e) => Expresion::Algo(Box::new(self.optimizar_expresion(e))),
@@ -861,7 +870,7 @@ pub struct DeadCodeEliminator {
     pub eliminados: usize,
     variables_usadas: HashSet<String>,
     funciones_llamadas: HashSet<String>,
-    /// F8-T7: todas las funciones declaradas (para conservar las usadas como valor).
+    /// todas las funciones declaradas (para conservar las usadas como valor).
     funciones_definidas: HashSet<String>,
     clases_usadas: HashSet<String>,
     rasgos_usados: HashSet<String>,
@@ -1003,7 +1012,7 @@ impl DeadCodeEliminator {
                     ..
                 } => {
                     self.recolectar_usos(cuerpo);
-                    // F12-T6: lo que sólo se nombra en un contrato también es un
+                    // lo que sólo se nombra en un contrato también es un
                     // uso. Sin esto, `variable limite = 10` usada únicamente en
                     // `asegura v < limite` la borraba el DCE y el contrato
                     // comparaba contra Nulo.
@@ -1055,7 +1064,7 @@ impl DeadCodeEliminator {
     fn recolectar_en_expresion(&mut self, expr: &Expresion) {
         match expr {
             Expresion::Identificador { nombre, .. } => {
-                // F8-T7: un identificador que referencia una función es un uso
+                // un identificador que referencia una función es un uso
                 // de esa función como valor (callback), no una variable.
                 if self.funciones_definidas.contains(nombre) {
                     self.funciones_llamadas.insert(nombre.clone());
@@ -1075,7 +1084,7 @@ impl DeadCodeEliminator {
                     let var_name = &nombre[..dot_pos];
                     self.variables_usadas.insert(var_name.to_string());
                 } else if !self.funciones_definidas.contains(nombre) {
-                    // F11-T1: un nombre invocado que no es una función declarada
+                    // un nombre invocado que no es una función declarada
                     // puede ser un closure/callback guardado en una variable
                     // (`variable f = func(x) {...}` + `f(1)`). Sin marcarlo, el
                     // DCE borraba la variable y la llamada quedaba como
@@ -1124,7 +1133,7 @@ impl DeadCodeEliminator {
             Expresion::Unaria { expr: e, .. } => {
                 self.recolectar_en_expresion(e);
             }
-            // F11-T5: el DCE no miraba dentro del ternario ni de `&expr`, así
+            // el DCE no miraba dentro del ternario ni de `&expr`, así
             // que borraba variables usadas sólo en una rama del ternario y
             // funciones pasadas como callback (`&funcion`).
             Expresion::Ternario {
@@ -1151,7 +1160,7 @@ impl DeadCodeEliminator {
             Expresion::Closure { cuerpo, .. } => {
                 self.recolectar_usos(cuerpo);
             }
-            // F8-T9: las funciones llamadas dentro de un hilo también son usos.
+            // las funciones llamadas dentro de un hilo también son usos.
             Expresion::Hilo { cuerpo } => {
                 self.recolectar_usos(cuerpo);
             }
@@ -1172,6 +1181,12 @@ impl DeadCodeEliminator {
             }
             Expresion::ArraySet { array, valor } => {
                 self.recolectar_en_expresion(array);
+                self.recolectar_en_expresion(valor);
+            }
+            Expresion::AsignacionCompuesta {
+                objetivo, valor, ..
+            } => {
+                self.recolectar_en_expresion(objetivo);
                 self.recolectar_en_expresion(valor);
             }
             Expresion::Try(expr) => {
@@ -1267,6 +1282,7 @@ fn tiene_efectos_secundarios(expr: &Expresion) -> bool {
         | Expresion::Asignacion { .. }
         | Expresion::AsignacionCampo { .. }
         | Expresion::ArraySet { .. }
+        | Expresion::AsignacionCompuesta { .. }
         | Expresion::Closure { .. } => true,
         Expresion::Binaria {
             izquierda, derecha, ..
@@ -2549,6 +2565,18 @@ impl CsePass {
                 format!(
                     "arrset:{}:{}",
                     Self::expr_hash_key(array),
+                    Self::expr_hash_key(valor)
+                )
+            }
+            Expresion::AsignacionCompuesta {
+                objetivo,
+                operador,
+                valor,
+            } => {
+                format!(
+                    "acomp:{:?}:{}:{}",
+                    operador,
+                    Self::expr_hash_key(objetivo),
                     Self::expr_hash_key(valor)
                 )
             }
