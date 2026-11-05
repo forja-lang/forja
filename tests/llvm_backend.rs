@@ -1,4 +1,4 @@
-//! F6-T5: el backend LLVM unificado debe generar LLVM IR textual funcional
+//! el backend LLVM unificado debe generar LLVM IR textual funcional
 //! para aritmética, control de flujo y funciones.
 
 #[test]
@@ -38,7 +38,7 @@ fn legacy_module_ya_no_es_un_modulo_paralelo() {
     let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     assert!(
         !raiz.join("src/compiler_llvm.rs").exists(),
-        "src/compiler_llvm.rs no debe existir (F6-T5)"
+        "src/compiler_llvm.rs no debe existir "
     );
     assert!(
         raiz.join("src/backend_llvm/legacy.rs").exists(),
