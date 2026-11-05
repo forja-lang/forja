@@ -58,8 +58,8 @@ impl REPL {
         }
 
         // Los motores se nombran igual que en la CLI y en `forja.yaml`:
-        // `vm`, `rapido` (ForjaFast) y `jit` (jit_tiered).
-        let modo = motor_canonico(if modo.is_empty() { "rapido" } else { modo });
+        // `vm`, y `jit`.
+        let modo = motor_canonico(if modo.is_empty() { "vm" } else { modo });
         let modo_desc = match modo {
             "jit" => "JIT",
             _ => "VM",
@@ -203,29 +203,27 @@ impl REPL {
                             "motor" => {
                                 let pedido = argumento.to_lowercase();
                                 if pedido.is_empty() {
-                                    println!(
-                                        "{}",
-                                        error::info("Usá: /motor vm | /motor rapido | /motor jit")
-                                    );
+                                    println!("{}", error::info("Usá: /motor vm | /motor jit"));
                                     continue;
                                 }
                                 let canonico = match pedido.as_str() {
                                     "vm" => Some("vm"),
-                                    "rapido" => Some("rapido"),
                                     "jit" => Some("jit"),
                                     _ => None,
                                 };
                                 match canonico {
-                                Some(modo) => {
-                                    self.vm_mode = modo.to_string();
-                                    self.source_acumulado.clear();
-                                    println!("Motor: {}", color::verde(modo));
+                                    Some(modo) => {
+                                        self.vm_mode = modo.to_string();
+                                        self.source_acumulado.clear();
+                                        println!("Motor: {}", color::verde(modo));
+                                    }
+                                    None => println!(
+                                        "{}",
+                                        error::info(
+                                            "Motor desconocido. Usá: /motor vm | /motor jit"
+                                        )
+                                    ),
                                 }
-                                None => println!(
-                                    "{}",
-                                    error::info("Motor desconocido. Usá: /motor vm | /motor rapido | /motor jit")
-                                ),
-                            }
                                 continue;
                             }
                             "configurar" | "config" => {
@@ -449,7 +447,7 @@ impl REPL {
         let (bytecode, contratos_vm) = crate::compilar_pipeline_completa(&full_source)?;
 
         match self.vm_mode.as_str() {
-            "rapido" | "vm" => {
+            "vm" => {
                 // Usar VM persistente si ya existe, o crear una nueva
                 let (show, contratos, rapida) = (
                     self.show_bytecode,
@@ -952,7 +950,7 @@ mod tests {
 
     #[test]
     fn lista_las_variables_declaradas() {
-        let mut repl = REPL::nuevo("rapido", None);
+        let mut repl = REPL::nuevo("vm", None);
         repl.source_acumulado = "variable hola = \"adios\"
 variable n = 7
 "
@@ -980,7 +978,7 @@ variable n = 7
 
     #[test]
     fn secuencia_declaracion_y_uso() {
-        let mut repl = REPL::nuevo("rapido", None);
+        let mut repl = REPL::nuevo("vm", None);
         for linea in [
             "var mut hola = \"adios\"
 ",
@@ -997,7 +995,7 @@ variable n = 7
 
     #[test]
     fn salida_no_se_duplica_entre_entradas() {
-        let mut repl = REPL::nuevo("rapido", None);
+        let mut repl = REPL::nuevo("vm", None);
         for linea in [
             "escribir(\"a\")
 ",
@@ -1013,7 +1011,7 @@ variable n = 7
 
     #[test]
     fn linea_incompleta_espera_continuacion() {
-        let mut repl = REPL::nuevo("rapido", None);
+        let mut repl = REPL::nuevo("vm", None);
 
         // Un paréntesis sin cerrar deja la entrada en modo continuación (antes
         // se compilaba y el parser la tiraba en silencio).
@@ -1031,7 +1029,7 @@ variable n = 7
 
     #[test]
     fn rechaza_variables_sin_declarar() {
-        let mut repl = REPL::nuevo("rapido", None);
+        let mut repl = REPL::nuevo("vm", None);
 
         // Un identificador suelto no declara nada: el lenguaje exige `variable`.
         let e = repl
