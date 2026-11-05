@@ -1,6 +1,6 @@
-//! Red de seguridad **F4-T1 — JIT estable y bien probado**.
+//! Red de seguridad ** JIT estable y bien probado**.
 //!
-//! Cubre las tres subtareas de la tarea F4-T1 del plan:
+//! Cubre las tres subtareas de la tarea del plan:
 //!
 //! 1. **Tests diferenciales JIT vs VM**: para el corpus determinista de
 //!    `ejemplos/`, la salida de [`forja::ejecutar_vm`] (VM canónica
@@ -15,7 +15,7 @@
 //!    VM incluso si la fase JIT falla; se comprueba que en el caso normal
 //!    `uso_fallback == false`.
 //!
-//! DoD (F4-T1): **0 fallos diferenciales** en el corpus de `ejemplos/`.
+//! DoD: **0 fallos diferenciales** en el corpus de `ejemplos/`.
 
 use std::path::{Path, PathBuf};
 
@@ -124,7 +124,7 @@ fn diferencial_jit_vs_vm_en_corpus() {
             }
         };
 
-        // Diferencial JIT vs VM (invariante central de F4-T1).
+        // Diferencial JIT vs VM (invariante central ).
         if vm != jit {
             fallos.push(format!(
                 "[{nombre}] divergencia VM vs JIT:\n  vm  = {vm:?}\n  jit = {jit:?}"
@@ -249,7 +249,7 @@ fn generacion_de_codigo_sobre_todo_el_corpus_sin_panico() {
         }
     }
 
-    eprintln!("F4-T1 corpus: {compilados}/{total} compilan y emiten sin panic");
+    eprintln!("corpus: {compilados}/{total} compilan y emiten sin panic");
     assert!(
         panics.is_empty(),
         "la generación de código entró en panic en {} ejemplo(s): {panics:?}",
