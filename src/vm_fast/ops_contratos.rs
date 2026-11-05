@@ -1,8 +1,8 @@
 // Opcodes de Design by Contract (CheckPre, CheckPost, SaveAnterior, CheckInv)
 // y codigos packed SIMD (JIT-only, no-op en VM) de la VM canonica `ForjaFast`
-// (F1-T7).
+//.
 //
-// Extraido de `ejecucion.rs` durante el refactor F1-T7. Las ramas de contrato
+// Extraido de `ejecucion.rs` durante el refactor. Las ramas de contrato
 // usan `continue` internamente; se convierten a `return Ok(true)` para que el
 // helper indique al bucle principal que la operacion fue manejada.
 
