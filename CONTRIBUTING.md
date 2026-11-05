@@ -64,14 +64,13 @@ El repositorio raíz es un **workspace de Cargo** que contiene el compilador
 | `crates/forja-gui-rt`, `crates/forja-wasm`, `crates/forja-wasm-gui` | Crates del ecosistema |
 | `crates/forja-rt`, `crates/forja-android-rt` | Runtimes |
 | `stdlib/std`, `stdlib/gui` | Librería estándar |
-| `vscode` | Extensión de VS Code |
 | `ejemplos` | Ejemplos del lenguaje |
 | `docs` | Sitio de documentación (Astro) |
 | `benchmarks` | Benchmarks (no se compila en el CI base) |
 
-## 5. Estrategia de `Cargo.lock` y submódulos (F0-T3)
+## 5. Estrategia de `Cargo.lock` y submódulos
 
-Decisión adoptada en **F0-T3**:
+Decisión adoptada:
 
 1. **El workspace de la raíz es la fuente de verdad.** El archivo
    [`Cargo.lock`](Cargo.lock) de la raíz bloquea las dependencias del crate
@@ -95,7 +94,7 @@ Decisión adoptada en **F0-T3**:
 > Todo cambio de dependencias debe reflejarse en `Cargo.lock` y validarse con
 > `cargo build --locked` antes de enviar el PR.
 
-## 6. Perfiles de build (F0-T4)
+## 6. Perfiles de build
 
 [`Cargo.toml`](Cargo.toml) define tres perfiles diferenciados:
 
@@ -115,7 +114,7 @@ Decisión adoptada en **F0-T3**:
   [`scripts/build-aar.sh`](scripts/build-aar.sh) lo usa por defecto
   (`FORJA_AAR_PROFILE` permite cambiarlo).
 
-## 7. Política de archivos ignorados (F0-T1)
+## 7. Política de archivos ignorados
 
 El [`.gitignore`](.gitignore) **no** usa wildcards amplios:
 
@@ -134,7 +133,7 @@ Al añadir reglas, **prefiere patrones específicos** sobre wildcards amplios.
 3. Rellena la plantilla de PR ([`.github/pull_request_template.md`](.github/pull_request_template.md)).
 4. Espera a que el CI quede en verde.
 
-### Trabajo concurrente y ownership (F7-T3)
+### Trabajo concurrente y ownership
 
 Para evitar ediciones cruzadas entre sesiones/agentes:
 
@@ -213,7 +212,7 @@ La línea base versionada es [`benches/baseline.json`](benches/baseline.json); l
 de CI se genera y cachea **en el propio runner** (`benches/baseline-ci.json`,
 ignorada por git) para no comparar entre máquinas distintas.
 
-## 9. Licencia y gobernanza (F0-T5)
+## 9. Licencia y gobernanza
 
 Forja se distribuye bajo **GPL-3.0-or-later**. Al enviar una contribución,
 aceptas que se licencie bajo esos mismos términos. Consulta
