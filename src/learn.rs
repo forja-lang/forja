@@ -1,4 +1,4 @@
-// F2-T8: `forja learn` — curso interactivo guiado con pasos y validación.
+// `forja learn` — curso interactivo guiado con pasos y validación.
 //
 // Convierte el antiguo esbozo de una sola lección en un curso real:
 //   * ≥10 lecciones jugables de inicio a fin.
