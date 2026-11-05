@@ -29,7 +29,7 @@
 
 ## Verificación de releases / Release Verification
 
-Todos los releases publicados en GitHub incluyen **artifact attestations** firmadas criptográficamente mediante [GitHub Artifact Attestations](https://github.com/actions/attest-build-provenance) (basado en Sigstore) y, desde **F6-T7**, una firma **cosign keyless** por cada asset (`.bundle`).
+Todos los releases publicados en GitHub incluyen **artifact attestations** firmadas criptográficamente mediante [GitHub Artifact Attestations](https://github.com/actions/attest-build-provenance) (basado en Sigstore) y, desde, una firma **cosign keyless** por cada asset (`.bundle`).
 
 ### Verificar con cosign (recomendado)
 
