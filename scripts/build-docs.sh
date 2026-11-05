@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/build-docs.sh — build reproducible del sitio Astro (F10-T3).
+# scripts/build-docs.sh — build reproducible del sitio Astro.
 #
 # En Windows el paquete `esbuild` puede haber sido instalado en otra plataforma;
 # `npm rebuild esbuild` descarga el binario correcto.
