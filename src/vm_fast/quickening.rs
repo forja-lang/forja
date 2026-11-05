@@ -1,4 +1,4 @@
-// Quickening e inferencia de tipos de la VM canónica `ForjaFast` (F1-T7).
+// Quickening e inferencia de tipos de la VM canónica `ForjaFast`.
 // Extraído de `mod.rs` para mantener archivos por debajo de ~1500 líneas.
 
 use super::*;
@@ -57,7 +57,7 @@ impl ForjaFast {
             let op = self.bytecode[i].clone();
 
             match op {
-                // F11-T5: los índices de slot locales se reutilizan en cada
+                // los índices de slot locales se reutilizan en cada
                 // función (parámetros desde 0 y temporales a continuación), así
                 // que un tipo inferido dentro de una función no vale en la
                 // siguiente. Sin este reset, `LoadIdx(4)` de un método podía
@@ -262,7 +262,7 @@ impl ForjaFast {
                     }
                 }
 
-                // (F11-T5) Ya no se fusiona `LoadIdx + Add + StoreIdx` en
+                // Ya no se fusiona `LoadIdx + Add + StoreIdx` en
                 // `StrAppend`: el buffer del builder sólo se materializaba en
                 // `Return` y `LoadIdx` no lo consultaba, así que acumular texto
                 // dentro de un bucle perdía lo concatenado. Se deja el `Add`
