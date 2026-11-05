@@ -5,8 +5,8 @@
 //! ## Flujo
 //!
 //! ```text
-//! forja run --profile=recoger programa.fa   → genera .forjaprof
-//! forja build --profile=usar programa.fa    → recompila con perfil
+//! forja.yaml: pgo: recoger;  forja ejecutar programa.fa  → genera .forjaprof
+//! forja.yaml: pgo: usar;     forja ejecutar programa.fa  → aplica el perfil
 //! ```
 //!
 //! ## Datos recolectados
