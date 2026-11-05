@@ -1,4 +1,4 @@
-//! F12-T2 — `seleccionar` sobre canales.
+//! `seleccionar` sobre canales.
 //!
 //! `seleccionar` se desugara a código Forja normal (`_seleccionar_canales` +
 //! cadena de `si`), así que estos tests cubren el comportamiento observable:
