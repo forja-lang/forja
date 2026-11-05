@@ -3,15 +3,15 @@
   a = 3 + 4i
   b = 1 - 2i
 
-  a + b = nulo
-  a - b = nulo
-  a × b = nulo
-  a ÷ b = Error: división por cero
+  a + b = 4 + 2i
+  a - b = 2 + 6i
+  a × b = 11 - 2i
+  a ÷ b = -1 + 2i
 
   |a| = 5
   |b| = 2
-  Conjugado de a = nulo
-  Conjugado de b = nulo
+  Conjugado de a = 3 - 4i
+  Conjugado de b = 1 + 2i
 
 Propiedades importantes:
   • Un número complejo es z = a + bi, donde i² = -1
