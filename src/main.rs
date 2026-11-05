@@ -69,10 +69,7 @@ fn main() {
     match comando.as_str() {
         // Versión de Forja
         "version" => {
-            println!(
-                "forja v{}",
-                color::negrita(env!("CARGO_PKG_VERSION"))
-            );
+            println!("forja v{}", color::negrita(env!("CARGO_PKG_VERSION")));
             std::process::exit(0);
         }
         // Benchmark / medición
