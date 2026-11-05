@@ -1,6 +1,6 @@
-//! # `src/legacy/` — Motores de ejecución archivados (F1-T2)
+//! # `src/legacy/` — Motores de ejecución archivados
 //!
-//! Tras **F1-T2** el lenguaje Forja expone **dos** motores por defecto:
+//! Tras el lenguaje Forja expone **dos** motores por defecto:
 //!
 //! * [`crate::vm_fast::ForjaFast`] — intérprete canónico de bytecode (la VM de producción).
 //! * [`crate::jit_tiered`]         — JIT único (orquestación por tiers: hotness, OSR, deopt).
@@ -32,9 +32,15 @@
 //! 3. Revisar `#[allow(dead_code)]` si fuese necesario.
 //!
 //! Actualmente **ningún** consumidor de `src/`, `tests/`, `benchmarks/` ni `crates/`
-//! los usa (verificado por grep en F1-T2).
+//! los usa (verificado por grep ).
 
 // ⚠️ Módulos archivados — NO compilados por defecto (ver nota de arriba).
 // pub mod vm_jit;
 // pub mod jit;
 // pub mod jit_engine;
+
+// Excepción: `gc` SÍ se compila porque de acá salen dos tipos todavía en uso
+// por la VM (`Generation` en `gc_intrinsics`, `GcTelemetry` en `vm_fast`).
+// `GenerationalGC` sigue sin usarse: no es el colector (ver, auditoría).
+#[allow(dead_code)]
+pub mod gc;
