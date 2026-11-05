@@ -1,4 +1,4 @@
-// Método `ejecutar_uops` de la VM canónica `ForjaFast` (F1-T7).
+// Método `ejecutar_uops` de la VM canónica `ForjaFast`.
 // Extraído de `ejecucion.rs` para mantener archivos por debajo de ~1500 líneas.
 
 use super::*;
@@ -84,7 +84,7 @@ impl ForjaFast {
             };
 
             // Ramas Exacto (BigDecimal) autocontenidas delegadas a
-            // `ops_uops_exacto.rs` (F1-T7).
+            // `ops_uops_exacto.rs`.
             if self.ejecutar_uops_exacto(&uop)? {
                 continue;
             }
@@ -232,7 +232,7 @@ impl ForjaFast {
                     } else if a.es_flotante() && b.es_entero() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_entero() as f64));
                     } else if a.es_arreglo() && b.es_arreglo() {
-                        // F12-T3: `+` entre arreglos concatena (ver `ejecucion.rs`).
+                        // `+` entre arreglos concatena (ver `ejecucion.rs`).
                         let mut nuevo = self.get_arr(a.indice_arreglo()).clone();
                         nuevo.extend_from_slice(self.get_arr(b.indice_arreglo()));
                         let idx = self.alloc_arr(nuevo);
@@ -283,7 +283,7 @@ impl ForjaFast {
                     if (b.es_entero() && b.a_entero() == 0)
                         || (b.es_flotante() && b.a_flotante() == 0.0)
                     {
-                        // F2-T7: en modo estricto, error claro en lugar de nulo.
+                        // en modo estricto, error claro en lugar de nulo.
                         if self.errores_estrictos {
                             return Err(ErrFast::DivCero);
                         }
@@ -374,7 +374,7 @@ impl ForjaFast {
                     let a = self.pop_valor()?;
                     if a.es_entero() && b.es_entero() {
                         if b.a_entero() == 0 {
-                            // F2-T7: en modo estricto, error claro en lugar de nulo.
+                            // en modo estricto, error claro en lugar de nulo.
                             if self.errores_estrictos {
                                 return Err(ErrFast::DivCero);
                             }
@@ -393,7 +393,7 @@ impl ForjaFast {
                     let a = self.pop_valor()?;
                     if a.es_flotante() && b.es_flotante() {
                         if b.a_flotante() == 0.0 {
-                            // F2-T7: en modo estricto, error claro en lugar de nulo.
+                            // en modo estricto, error claro en lugar de nulo.
                             if self.errores_estrictos {
                                 return Err(ErrFast::DivCero);
                             }
@@ -561,7 +561,7 @@ impl ForjaFast {
                         self.hay_uop_forzado = true;
                         continue;
                     }
-                    // F12-T1: closure con entorno (objeto `Closure`): el entorno
+                    // closure con entorno (objeto `Closure`): el entorno
                     // va como primer argumento.
                     if let Some((nombre, env)) = self.desempaquetar_closure(&callee) {
                         self.push_valor(env);
@@ -705,7 +705,9 @@ impl ForjaFast {
                             match func(self, &args) {
                                 Ok(val) => self.push_valor(val),
                                 Err(e) => {
-                                    eprintln!("[DEBUG] Native '{}' failed: {}", nombre_str, e);
+                                    if std::env::var("FORJA_DEBUG_NATIVAS").is_ok() {
+                                        eprintln!("[DEBUG] Native '{}' failed: {}", nombre_str, e);
+                                    }
                                     self.push_valor(ValorFast::nulo());
                                 }
                             }
@@ -1010,7 +1012,7 @@ impl ForjaFast {
                             } else if crate::vm_fast::ops_metodos::es_try_recibir(
                                 self.tabla_simbolos.texto(method_sym),
                             ) {
-                                // F12-T2: recepción no bloqueante.
+                                // recepción no bloqueante.
                                 match self.canal_try_recibir(chan_idx) {
                                     Some(cv) => {
                                         let val = self.valor_de_channel(cv);
@@ -1388,7 +1390,7 @@ impl ForjaFast {
                 }
 
                 // Las uops Exacto (BigDecimal) se manejan antes del `match`
-                // mediante `ejecutar_uops_exacto` (F1-T7).
+                // mediante `ejecutar_uops_exacto`.
                 _ => {
                     self.ip += 1;
                 }
