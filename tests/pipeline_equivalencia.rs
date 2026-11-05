@@ -1,4 +1,4 @@
-//! Red de seguridad F1-B1/B3 — **Equivalencia de pipelines**.
+//! Red de seguridad /B3 — **Equivalencia de pipelines**.
 //!
 //! Verifica que las variantes públicas del pipeline de compilación producen el
 //! MISMO bytecode (y la misma tabla de contratos) para un conjunto de programas
@@ -8,7 +8,7 @@
 //!   * [`forja::compilar_pipeline_completa_desde`]  — CANÓNICO, resuelve imports desde `root_dir`.
 //!   * [`forja::compilar_pipeline`]                 — alias `#[deprecated]` que delega en el canónico (`= completa().0`).
 //!
-//! Tras F1-B3 el alias `compilar_pipeline()` es un wrapper deprecado; este test
+//! Tras el alias `compilar_pipeline()` es un wrapper deprecado; este test
 //! comprueba que **sigue delegando** en el entrypoint canónico sin divergir.
 //!
 //! Estos tests **sólo compilan** (comparan bytecode/contratos/errores); no
