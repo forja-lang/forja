@@ -1,4 +1,4 @@
-﻿// API de Hot Reload: tabla de funciones e intercambio de módulos (F1-T7).
+﻿// API de Hot Reload: tabla de funciones e intercambio de módulos.
 // Extraído de `mod.rs` para mantener archivos por debajo de ~1500 líneas.
 
 use super::*;
@@ -200,7 +200,7 @@ impl ForjaFast {
         self.ic_mapget = vec![false; self.bytecode.len()];
         self.ic_mapset = vec![false; self.bytecode.len()];
 
-        // 8b. Descartar overrides de instrucción pendientes (F11-T5).
+        // 8b. Descartar overrides de instrucción pendientes.
         self.op_forzado = None;
         self.hay_op_forzado = false;
         self.uop_forzado = None;
