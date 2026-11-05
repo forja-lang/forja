@@ -1,7 +1,7 @@
 // Opcodes de objetos (NewObject, SetField, SetFieldIdx, GetField) de la VM
-// canónica `ForjaFast` (F1-T7).
+// canónica `ForjaFast`.
 //
-// Extraído de `ejecucion.rs` durante el refactor F1-T7. Las ramas `SetField` y
+// Extraído de `ejecucion.rs` durante el refactor. Las ramas `SetField` y
 // `GetField` usan `continue` internamente (fast-path del inline cache); se
 // convierten a `return Ok(true)` para que el helper indique al bucle principal
 // que la operación fue manejada.
@@ -9,7 +9,7 @@
 use super::*;
 
 impl ForjaFast {
-    /// F12-T1: extrae `(nombre de la función, entorno)` de un valor que sea un
+    /// extrae `(nombre de la función, entorno)` de un valor que sea un
     /// objeto `Closure`. Devuelve `None` si no lo es.
     pub(crate) fn desempaquetar_closure(&self, valor: &ValorFast) -> Option<(Arc<str>, ValorFast)> {
         if !valor.es_objeto() {
