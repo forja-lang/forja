@@ -198,7 +198,7 @@ fn compilar_pipeline_nucleo_emision(
     let bc = match ir_emision::emitir_bytecode_ir(&programa) {
         Ok(bc) => bc,
         // Si ambos motores fallan, gana el error del AST: describe el programa.
-        Err(_) => return Err(error_ast.unwrap_or_else(|| format!("emisión IR no soportada: {e}"))),
+        Err(e) => return Err(error_ast.unwrap_or_else(|| format!("emisión IR no soportada: {e}"))),
     };
     let bc = bytecode::postprocesar_globales(bc, &globales);
     let bc = optimizer_pipeline::optimizar_bytecode(bc);
