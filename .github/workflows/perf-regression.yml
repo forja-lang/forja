@@ -1,6 +1,6 @@
 name: CI / Rendimiento
 
-# F4-T2 — Regresión de rendimiento automática.
+# Regresión de rendimiento automática.
 #
 # Ejecuta el benchmark `perf-regresion` (cargas deterministas del compilador/VM
 # normalizadas contra una calibración) y compara contra la línea base.
