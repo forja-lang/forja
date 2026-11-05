@@ -582,6 +582,21 @@ impl DiagramGenerator {
             Expresion::ArraySet { array, valor } => {
                 format!("{} = {}", self.ec(array), self.ec(valor))
             }
+            Expresion::AsignacionCompuesta {
+                objetivo,
+                operador,
+                valor,
+            } => {
+                let op = match operador {
+                    Operador::Suma => "+=",
+                    Operador::Resta => "-=",
+                    Operador::Multiplicacion => "*=",
+                    Operador::Division => "/=",
+                    Operador::Modulo => "%=",
+                    _ => "?=",
+                };
+                format!("{} {} {}", self.ec(objetivo), op, self.ec(valor))
+            }
             Expresion::Ok(expr) => format!("Ok({})", self.ec(expr)),
             Expresion::Error(expr) => format!("Error({})", self.ec(expr)),
             Expresion::Algo(expr) => format!("Algo({})", self.ec(expr)),
