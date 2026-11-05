@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/package-vscode.sh — empaqueta la extensión VSCode (F6-T9).
+# scripts/package-vscode.sh — empaqueta la extensión VSCode.
 #
 # Requiere Node.js 20+ y `npx @vscode/vsce`. El .vsix resultante se publica con:
 #   npx @vscode/vsce publish --packagePath dist/forja-syntax-<version>.vsix
