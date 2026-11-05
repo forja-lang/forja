@@ -196,7 +196,7 @@ impl PackageResolver {
             return Ok(());
         }
 
-        // No es builtin: intentar consumir del registry local (F3-T1).
+        // No es builtin: intentar consumir del registry local.
         // El registry local vive en ~/.forja/registry y es el mismo formato
         // que usaría el servidor remoto registry.forja-lang.dev (deuda futura).
         match crate::registry::instalar_desde_registry(nombre, version, &pkg_dir) {
@@ -205,7 +205,7 @@ impl PackageResolver {
                 Ok(())
             }
             Err(e_registry) => {
-                // F6-T6: si hay registry remoto configurado, intentar allí antes
+                // si hay registry remoto configurado, intentar allí antes
                 // de fallar. El paquete se verifica por SHA-256 y se descomprime
                 // en el directorio de paquetes del proyecto.
                 #[cfg(not(target_arch = "wasm32"))]
