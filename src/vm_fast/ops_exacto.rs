@@ -1,6 +1,6 @@
-// Operaciones Exacto (BigDecimal) de la VM canónica ForjaFast (F1-T7).
+// Operaciones Exacto (BigDecimal) de la VM canónica ForjaFast.
 //
-// Extraído de ejecucion.rs durante el refactor F1-T7. Estas ramas del match op
+// Extraído de ejecucion.rs durante el refactor. Estas ramas del match op
 // son autocontenidas (no usan continue/break/patch_op), por lo que se delegan
 // a este helper que devuelve Ok(true) si la operación fue manejada.
 use super::*;
