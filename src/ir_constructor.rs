@@ -1,4 +1,4 @@
-//! # Constructor IR desde AST (F4-T8)
+//! # Constructor IR desde AST
 //!
 //! Convierte el AST de Forja a IR SSA intermedio. Implementa un **subconjunto
 //! verificable** del lenguaje: código de nivel superior y funciones de usuario
@@ -14,7 +14,7 @@ use crate::ast::*;
 use crate::ir::*;
 use std::collections::{HashMap, HashSet};
 
-/// F11-T3: `tipo` (campo `tipo` del objeto) de los constructores built-in de
+/// `tipo` (campo `tipo` del objeto) de los constructores built-in de
 /// `Resultado`/`Opcion`. Misma tabla que `bytecode.rs`.
 fn tipo_de_constructor_builtin(nombre: &str) -> Option<&'static str> {
     match nombre {
@@ -71,7 +71,7 @@ pub struct ConstructorDesdeAst {
     next_mem: IdxMemoria,
     next_local: IdxMemoria,
     in_function: bool,
-    /// F6-T1 etapa 3: tipo estático mínimo para elegir `ArrayGet` vs `MapGet`.
+    /// etapa 3: tipo estático mínimo para elegir `ArrayGet` vs `MapGet`.
     tipos_valor: HashMap<IdValor, TipoEstatico>,
     tipos_var: HashMap<String, TipoEstatico>,
     /// Tipo numérico de cada variable (`Exacto`/`Decimal`/`Entero`), para
@@ -79,23 +79,25 @@ pub struct ConstructorDesdeAst {
     num_var: HashMap<String, TipoNumerico>,
     /// `false` si se encontró un constructo que el constructor IR no soporta.
     pub soportado: bool,
-    /// F11-T5: primer constructo no soportado encontrado, con la forma del AST
+    /// primer constructo no soportado encontrado, con la forma del AST
     /// que lo disparó. Alimenta el diagnóstico del fallback a AST.
     pub motivo_no_soportado: Option<String>,
-    /// F8-T2: clases que declaran constructor (`nuevo`).
+    /// clases que declaran constructor (`nuevo`).
     clases_con_constructor: HashSet<String>,
-    /// F8-T3: variante → (enum, tag, tiene_datos).
+    /// variante → (enum, tag, tiene_datos).
     variantes_enum: HashMap<String, (String, usize, bool)>,
-    /// F11-T1: contador para nombrar las funciones anónimas (`__closure_N`).
+    /// contador para nombrar las funciones anónimas (`__closure_N`).
     closure_counter: usize,
-    /// F11-T1: nombres de funciones declaradas, para tratarlas como valor
+    /// nombres de funciones declaradas, para tratarlas como valor
     /// (`&funcion`, callbacks por nombre).
     funciones_definidas: HashSet<String>,
-    /// F11-T2: contador para nombrar las funciones de hilo (`__hilo_N`).
+    /// contador para nombrar las funciones de hilo (`__hilo_N`).
     hilo_counter: usize,
-    /// F11-T5: pila de ciclos activos `(salida, continuación)` para traducir
+    /// pila de ciclos activos `(salida, continuación)` para traducir
     /// `romper` y `continuar` a saltos.
     ciclos: Vec<(IdBloque, IdBloque)>,
+    /// Contador de temporales internos (`__ac_N`) de asignación compuesta.
+    next_temp: usize,
 }
 
 /// Base de índices de memoria local (los globales empiezan en 0).
@@ -168,6 +170,7 @@ impl ConstructorDesdeAst {
             funciones_definidas: HashSet::new(),
             hilo_counter: 0,
             ciclos: Vec::new(),
+            next_temp: 0,
         }
     }
 
@@ -181,7 +184,7 @@ impl ConstructorDesdeAst {
     }
 
     fn reservar_memoria(&mut self, nombre: &str) -> IdxMemoria {
-        // F8-T1: las variables de una función viven en el marco local; las de
+        // las variables de una función viven en el marco local; las de
         // nivel superior son globales.
         if let Some(&idx) = self.mapa_variables.get(nombre) {
             return idx;
@@ -226,9 +229,26 @@ impl ConstructorDesdeAst {
         expr: &Expresion,
     ) -> IdValor {
         match expr {
-            Expresion::LiteralNumero(n) => constructor_ir.emitir_const_entero(*n),
+            Expresion::LiteralNumero(n) => {
+                // El `Entero` de la VM es de 48 bits: el literal fuera de rango
+                // no se puede emitir. Se marca el programa como no soportado con
+                // el motivo, que es el canal de error que ya usa el IR.
+                if crate::vm_fast::entero_representable(*n) {
+                    constructor_ir.emitir_const_entero(*n)
+                } else {
+                    self.soportado = false;
+                    if self.motivo_no_soportado.is_none() {
+                        self.motivo_no_soportado = Some(format!(
+                            "Entero fuera de rango: el máximo es {} y el mínimo {}. Usá `Exacto` o `Decimal`.",
+                            crate::vm_fast::ENTERO_MAX,
+                            crate::vm_fast::ENTERO_MIN
+                        ));
+                    }
+                    constructor_ir.emitir_const_entero(0)
+                }
+            }
             Expresion::LiteralDecimal(d) => constructor_ir.emitir_const_decimal(*d),
-            // F11-T5: `exacto` (BigDecimal) se emite como constante de precisión
+            // `exacto` (BigDecimal) se emite como constante de precisión
             // arbitraria; la VM ya tiene `PushExacto`.
             Expresion::LiteralExacto(coeficiente, escala) => {
                 constructor_ir.emitir_const_exacto(*coeficiente, *escala)
@@ -243,7 +263,7 @@ impl ConstructorDesdeAst {
             }
 
             Expresion::Identificador { nombre, .. } => {
-                // F11-T1: función usada como valor (callback por nombre o
+                // función usada como valor (callback por nombre o
                 // `&funcion`): el valor es el nombre de la función, igual que
                 // en el backend AST.
                 if !self.mapa_variables.contains_key(nombre)
@@ -252,8 +272,8 @@ impl ConstructorDesdeAst {
                 {
                     return constructor_ir.emitir_const_texto(nombre);
                 }
-                // F8-T3: variante unitaria.
-                // F11-T5: las variantes vacías built-in de `Resultado`/`Opcion`
+                // variante unitaria.
+                // las variantes vacías built-in de `Resultado`/`Opcion`
                 // (`Ninguno`, `Nada`, `None`) se representan como objetos con
                 // campo `tipo` — igual que `Ninguno()` —, no con tag posicional:
                 // `Opcode::Intentar` y el pattern matching las distinguen por nombre.
@@ -380,7 +400,7 @@ impl ConstructorDesdeAst {
             Expresion::Index { objeto, indice } => {
                 let obj = self.expresion_a_ir(constructor_ir, objeto);
                 let idx = self.expresion_a_ir(constructor_ir, indice);
-                // F11-T5: sólo se distingue el mapa cuando el tipo es conocido.
+                // sólo se distingue el mapa cuando el tipo es conocido.
                 // En el resto de los casos se usa `ArrayGet`, que en la VM
                 // discrimina arreglo/mapa en runtime (igual que el backend AST).
                 if self.tipos_valor.get(&obj).copied() == Some(TipoEstatico::Mapa) {
@@ -395,7 +415,7 @@ impl ConstructorDesdeAst {
             }
 
             Expresion::LlamadaFuncion { nombre, argumentos } => {
-                // F12-T3: `imprimir` es el alias de `escribir` que usan varios
+                // `imprimir` es el alias de `escribir` que usan varios
                 // ejemplos del curso (el backend AST lo trata igual).
                 if nombre == "imprimir" {
                     let escribir = constructor_ir.simbolos.internar("escribir");
@@ -405,7 +425,7 @@ impl ConstructorDesdeAst {
                     }
                     return constructor_ir.emitir_const_nulo();
                 }
-                // F12-T3: builtins de stdlib que el backend AST ya resolvía y el
+                // builtins de stdlib que el backend AST ya resolvía y el
                 // IR no cubría (`a_numero`, `tiempo_actual`, `pedir_numero`):
                 // sin esto los ejemplos fallaban con "función no definida".
                 if nombre == "a_numero" && argumentos.len() == 1 {
@@ -424,7 +444,7 @@ impl ConstructorDesdeAst {
                     let linea = constructor_ir.emitir_lectura_linea();
                     return constructor_ir.emitir_parseo_entero(linea);
                 }
-                // F11-T5: `escribir_linea(args)` = `escribir(args)` + "\n",
+                // `escribir_linea(args)` = `escribir(args)` + "\n",
                 // igual que el backend AST (no está registrada en la VM).
                 if nombre == "escribir_linea" {
                     let escribir = constructor_ir.simbolos.internar("escribir");
@@ -435,16 +455,16 @@ impl ConstructorDesdeAst {
                     let salto = constructor_ir.emitir_const_texto("\n");
                     return constructor_ir.emitir_llamada(escribir, vec![salto]);
                 }
-                // F11-T3: `Ninguno()` / `Nada()` con paréntesis llegan como
+                // `Ninguno()` / `Nada()` con paréntesis llegan como
                 // llamada; son la variante vacía de `Opcion`.
                 if argumentos.is_empty() && matches!(nombre.as_str(), "Ninguno" | "Nada" | "None") {
                     let clase = constructor_ir.simbolos.internar("Opcion");
                     let tipo = constructor_ir.simbolos.internar("none");
                     return constructor_ir.emitir_objeto_de_enum(clase, None, tipo);
                 }
-                // F11-T2: el parser representa `objeto.metodo(args)` como una
+                // el parser representa `objeto.metodo(args)` como una
                 // llamada con nombre punteado cuando aparece como sentencia.
-                // F11-T5: el objeto puede ser una cadena de campos
+                // el objeto puede ser una cadena de campos
                 // (`self.encapsulado.enviar(...)`).
                 if let Some((objeto, metodo)) = nombre.rsplit_once('.') {
                     if let Some(obj) = self.objeto_de_nombre(constructor_ir, objeto) {
@@ -456,7 +476,7 @@ impl ConstructorDesdeAst {
                         return constructor_ir.emitir_llamada_metodo(obj, met, args);
                     }
                 }
-                // F8-T3: constructor de variante de enum con datos.
+                // constructor de variante de enum con datos.
                 if let Some((enum_nombre, tag, _)) = self.variantes_enum.get(nombre).cloned() {
                     let args: Vec<IdValor> = argumentos
                         .iter()
@@ -464,7 +484,7 @@ impl ConstructorDesdeAst {
                         .collect();
                     return self.crear_variante(constructor_ir, &enum_nombre, tag, args);
                 }
-                // F11-T1: si el nombre es una variable (closure guardado en una
+                // si el nombre es una variable (closure guardado en una
                 // variable local o global, o callback recibido por parámetro),
                 // la llamada es indirecta.
                 if let Some(mem) = self.mem_de_variable(nombre) {
@@ -475,13 +495,13 @@ impl ConstructorDesdeAst {
                         .collect();
                     return constructor_ir.emitir_llamada_clausura(callee, args);
                 }
-                // F12-T1: `leer()` es el builtin de lectura, pero una variable
+                // `leer()` es el builtin de lectura, pero una variable
                 // con ese nombre (un closure) tiene prioridad, igual que en el
                 // backend AST.
                 if nombre == "leer" && argumentos.is_empty() {
                     return constructor_ir.emitir_lectura_linea();
                 }
-                // F8-T1: llamadas a funciones de usuario y builtins.
+                // llamadas a funciones de usuario y builtins.
                 let args: Vec<IdValor> = argumentos
                     .iter()
                     .map(|a| self.expresion_a_ir(constructor_ir, a))
@@ -492,7 +512,7 @@ impl ConstructorDesdeAst {
 
             Expresion::Closure { parametros, cuerpo } => {
                 let (func, capturadas) = self.compilar_closure(constructor_ir, parametros, cuerpo);
-                // F12-T1: los valores capturados se leen del ámbito envolvente en
+                // los valores capturados se leen del ámbito envolvente en
                 // el punto de creación (captura por valor).
                 let mut valores = Vec::with_capacity(capturadas.len());
                 for cap in &capturadas {
@@ -504,7 +524,7 @@ impl ConstructorDesdeAst {
                 constructor_ir.emitir_crear_clausura(func, valores)
             }
 
-            // F11-T2: `hilo { ... }`. Las variables capturadas se pasan como
+            // `hilo {... }`. Las variables capturadas se pasan como
             // argumentos (copia) a la función del hilo.
             Expresion::Hilo { cuerpo } => {
                 let (func, capturadas) = self.compilar_hilo(constructor_ir, cuerpo);
@@ -526,7 +546,7 @@ impl ConstructorDesdeAst {
                 None => constructor_ir.emitir_nuevo_canal(),
             },
 
-            // F11-T3: `Resultado` y `Opcion` se representan como objetos con
+            // `Resultado` y `Opcion` se representan como objetos con
             // campos `valor` y `tipo`, igual que en el backend AST (lo consume
             // `Opcode::Intentar` y el pattern matching por campo).
             Expresion::Ok(e) => {
@@ -552,16 +572,16 @@ impl ConstructorDesdeAst {
                 let tipo = constructor_ir.simbolos.internar("none");
                 constructor_ir.emitir_objeto_de_enum(clase, None, tipo)
             }
-            // F11-T3: `?` — la VM desenvuelve el valor o propaga el error
+            // `?` — la VM desenvuelve el valor o propaga el error
             // desenrollando el frame (`Opcode::Intentar`).
             Expresion::Try(e) => {
                 let valor = self.expresion_a_ir(constructor_ir, e);
                 constructor_ir.emitir_intento(valor)
             }
 
-            // F11-T2: `seleccionar` no está implementado en la VM: se compilan
+            // `seleccionar` no está implementado en la VM: se compilan
             // los cuerpos (igual que el backend AST) y la expresión vale Nulo.
-            // F11-T5: el backend AST no liga la variable de recepción, así que
+            // el backend AST no liga la variable de recepción, así que
             // se declara con Nulo para que el cuerpo pueda referenciarla.
             Expresion::Seleccionar { brazos } => {
                 for brazo in brazos {
@@ -579,7 +599,7 @@ impl ConstructorDesdeAst {
             }
 
             Expresion::Instanciacion { clase, argumentos } => {
-                // F8-T2: crear objeto y, si existe, invocar el constructor.
+                // crear objeto y, si existe, invocar el constructor.
                 let clase_sym = constructor_ir.simbolos.internar(clase);
                 // Struct-literal: nuevo Clase { campo: valor }.
                 if argumentos.len() == 1 {
@@ -646,11 +666,11 @@ impl ConstructorDesdeAst {
                 constructor_ir.emitir_const_nulo()
             }
 
-            // F11-T5: `&expr` no cambia el valor (no hay referencias en la VM):
+            // `&expr` no cambia el valor (no hay referencias en la VM):
             // el backend AST emite la expresión tal cual.
             Expresion::Referencia { expr, .. } => self.expresion_a_ir(constructor_ir, expr),
 
-            // F11-T5: ternario como expresión. Sin `Phi` disponible, el valor se
+            // ternario como expresión. Sin `Phi` disponible, el valor se
             // materializa en un slot temporal y se recarga en el bloque de unión.
             Expresion::Ternario {
                 condicion,
@@ -680,7 +700,7 @@ impl ConstructorDesdeAst {
                 constructor_ir.emitir_carga(mem)
             }
 
-            // F11-T5: asignación como expresión (`variable y = (x = 5)`): el
+            // asignación como expresión (`variable y = (x = 5)`): el
             // valor de la expresión es el valor asignado.
             Expresion::Asignacion { variable, valor } => {
                 let mem = self.reservar_memoria(variable);
@@ -689,7 +709,7 @@ impl ConstructorDesdeAst {
                 val
             }
 
-            // F11-T5: `arr[i] = v` / `mapa[k] = v` como expresión evalúa al
+            // `arr[i] = v` / `mapa[k] = v` como expresión evalúa al
             // valor asignado (el backend AST lo deja en la pila).
             Expresion::ArraySet { array, valor } => {
                 let val = self.expresion_a_ir(constructor_ir, valor);
@@ -704,7 +724,52 @@ impl ConstructorDesdeAst {
                 val
             }
 
-            // F11-T5: `resultado` es a la vez la variable de retorno de las
+            // Asignación compuesta: el objetivo (incluido índice/objeto) se
+            // evalúa una sola vez; el valor viejo se guarda en un temporal.
+            Expresion::AsignacionCompuesta {
+                objetivo,
+                operador,
+                valor,
+            } => match objetivo.as_ref() {
+                Expresion::Identificador { nombre, .. } => {
+                    let mem = match self.obtener_memoria(nombre) {
+                        Some(m) => m,
+                        None => {
+                            return self.marcar_no_soportado(format!(
+                                "identificador `{nombre}` no declarado"
+                            ))
+                        }
+                    };
+                    let old = constructor_ir.emitir_carga(mem);
+                    let num = self.num_var.get(nombre.as_str()).copied();
+                    let newv = self.emitir_compuesta_ir(constructor_ir, old, operador, valor, num);
+                    constructor_ir.emitir_guardado(mem, newv);
+                    newv
+                }
+                Expresion::AccesoMiembro { objeto, miembro } => {
+                    let obj = self.expresion_a_ir(constructor_ir, objeto);
+                    let field = constructor_ir.simbolos.internar(miembro);
+                    let old = constructor_ir.emitir_obtener_campo(obj, field);
+                    let newv = self.emitir_compuesta_ir(constructor_ir, old, operador, valor, None);
+                    constructor_ir.emitir_fijar_campo(obj, field, newv);
+                    newv
+                }
+                Expresion::Index { objeto, indice } => {
+                    let obj = self.expresion_a_ir(constructor_ir, objeto);
+                    let idx = self.expresion_a_ir(constructor_ir, indice);
+                    let old = if self.tipos_valor.get(&obj).copied() == Some(TipoEstatico::Mapa) {
+                        constructor_ir.emitir_obtener_valor_de_mapa(obj, idx)
+                    } else {
+                        constructor_ir.emitir_obtener_elemento(obj, idx)
+                    };
+                    let newv = self.emitir_compuesta_ir(constructor_ir, old, operador, valor, None);
+                    self.emitir_asignacion_coleccion(constructor_ir, obj, idx, newv);
+                    newv
+                }
+                _ => self.marcar_no_soportado("objetivo de asignación compuesta no soportado"),
+            },
+
+            // `resultado` es a la vez la variable de retorno de las
             // postcondiciones y un nombre de variable corriente en la práctica.
             // El backend AST la resuelve como variable si existe y, si no, Nulo.
             Expresion::Resultado => match self.mem_de_variable("resultado") {
@@ -712,13 +777,13 @@ impl ConstructorDesdeAst {
                 None => constructor_ir.emitir_const_nulo(),
             },
 
-            // F11-T5: `anterior(expr)` sólo tiene sentido en contratos, que no
+            // `anterior(expr)` sólo tiene sentido en contratos, que no
             // forman parte del cuerpo IR: se evalúa la expresión interna.
             Expresion::Anterior(expr) => self.expresion_a_ir(constructor_ir, expr),
         }
     }
 
-    /// F11-T5: emite `coleccion[clave] = valor` eligiendo `ArraySet`/`MapSet`
+    /// emite `coleccion[clave] = valor` eligiendo `ArraySet`/`MapSet`
     /// según el tipo estático (o `ArraySet`, que discrimina en runtime).
     fn emitir_asignacion_coleccion(
         &mut self,
@@ -734,7 +799,37 @@ impl ConstructorDesdeAst {
         }
     }
 
-    /// F8-T3: crea un objeto variante con tag en el campo 0 y datos desde 1.
+    /// Emite `viejo <op> valor` reutilizando el camino normal de `Binaria`:
+    /// guarda el valor viejo en un temporal y lo lee como identificador.
+    fn emitir_compuesta_ir(
+        &mut self,
+        constructor_ir: &mut ConstructorIr,
+        old: IdValor,
+        operador: &Operador,
+        valor: &Expresion,
+        num: Option<TipoNumerico>,
+    ) -> IdValor {
+        let tmp = format!("__ac_{}", self.next_temp);
+        self.next_temp += 1;
+        let mem = self.reservar_memoria(&tmp);
+        constructor_ir.emitir_reserva(mem);
+        constructor_ir.emitir_guardado(mem, old);
+        if let Some(n) = num {
+            self.num_var.insert(tmp.clone(), n);
+        }
+        let sintetica = Expresion::Binaria {
+            izquierda: Box::new(Expresion::Identificador {
+                nombre: tmp,
+                linea: 0,
+                columna: 0,
+            }),
+            operador: operador.clone(),
+            derecha: Box::new(valor.clone()),
+        };
+        self.expresion_a_ir(constructor_ir, &sintetica)
+    }
+
+    /// crea un objeto variante con tag en el campo 0 y datos desde 1.
     fn crear_variante(
         &mut self,
         constructor_ir: &mut ConstructorIr,
@@ -752,7 +847,7 @@ impl ConstructorDesdeAst {
         obj
     }
 
-    /// F8-T3: `coincidir` como sentencia/CFG. Soporta patrones literales,
+    /// `coincidir` como sentencia/CFG. Soporta patrones literales,
     /// comodín, variable y constructor de variante con variables.
     fn compilar_match(
         &mut self,
@@ -774,7 +869,7 @@ impl ConstructorDesdeAst {
                     Some(constructor_ir.emitir_igualdad(valor, lit))
                 }
                 Patron::Constructor(nombre, _) => {
-                    // F11-T3: `Ok`/`Error`/`Alguno`/`Ninguno` no usan tag
+                    // `Ok`/`Error`/`Alguno`/`Ninguno` no usan tag
                     // posicional: son objetos con campos `tipo` (texto) y
                     // `valor`. Se compara el campo `tipo` por nombre, igual que
                     // el backend AST.
@@ -807,7 +902,7 @@ impl ConstructorDesdeAst {
                 }
                 Patron::Constructor(nombre_ctor, subs) => {
                     if tipo_de_constructor_builtin(nombre_ctor).is_some() {
-                        // F11-T3: el valor va en el campo `valor` (por nombre).
+                        // el valor va en el campo `valor` (por nombre).
                         for sub in subs {
                             if let Patron::Variable(nombre) = sub {
                                 let sym_valor = constructor_ir.simbolos.internar("valor");
@@ -856,7 +951,7 @@ impl ConstructorDesdeAst {
                 let val = match valor {
                     Some(e) => {
                         let mut v = self.expresion_a_ir(constructor_ir, e);
-                        // F11-T5 + fase 1 del plan decimal: el destino `Exacto`
+                        // + fase 1 del plan decimal: el destino `Exacto`
                         // convierte el valor según su tipo real, no según la forma
                         // del AST (`0.1 + 0.2` y `f()` también cuentan).
                         let num = self.tipo_numerico_de(e);
@@ -973,7 +1068,7 @@ impl ConstructorDesdeAst {
                 );
             }
 
-            // F11-T2: `variable tx, rx = canal()` / `variable (a, b) = ...`.
+            // `variable tx, rx = canal()` / `variable (, b) =...`.
             // Se evalúa el valor una sola vez y se extrae cada posición.
             Declaracion::AsignacionMultiple {
                 variables, valor, ..
@@ -1005,7 +1100,7 @@ impl ConstructorDesdeAst {
                     constructor_ir.emitir_fijar_campo(obj, field, val);
                     return;
                 }
-                // F6-T1 etapa 3: `arr[i] = v` / `mapa[k] = v` llega como
+                // etapa 3: `arr[i] = v` / `mapa[k] = v` llega como
                 // Expresion::ArraySet; la expresión genérica ya lo resuelve y el
                 // valor descartado queda en la pila sin consumidores.
                 // Expresión usada como sentencia: se evalúa y el valor se
@@ -1014,7 +1109,7 @@ impl ConstructorDesdeAst {
                 self.expresion_a_ir(constructor_ir, e);
             }
 
-            // F11-T5: `cuando` es un `si` sin rama falsa (bloque reactivo).
+            // `cuando` es un `si` sin rama falsa (bloque reactivo).
             Declaracion::Cuando {
                 condicion, cuerpo, ..
             } => {
@@ -1030,7 +1125,7 @@ impl ConstructorDesdeAst {
                 constructor_ir.iniciar_bloque(merge_bb);
             }
 
-            // F11-T5: `repetir (n) { ... }` con un contador oculto.
+            // `repetir (n) {... }` con un contador oculto.
             Declaracion::Repetir { cantidad, bloque } => {
                 let contador = self.reservar_memoria(&format!("__repetir_{}", self.next_local));
                 let cero = constructor_ir.emitir_const_entero(0);
@@ -1087,7 +1182,7 @@ impl ConstructorDesdeAst {
             }
 
             Declaracion::Retornar { valor } => {
-                // F8-T1: retorno explícito de una función IR.
+                // retorno explícito de una función IR.
                 let v = valor
                     .as_ref()
                     .map(|e| self.expresion_a_ir(constructor_ir, e));
@@ -1207,7 +1302,7 @@ impl ConstructorDesdeAst {
     /// Construye una función SSA sintética `main` con las declaraciones de
     /// nivel superior (variables, control de flujo y `escribir`).
     pub fn programa_a_ir(&mut self, programa: &Programa) -> ProgramaIr {
-        // F8-T1: primero se compilan las funciones (cada una con su propio
+        // primero se compilan las funciones (cada una con su propio
         // marco local); el código de nivel superior vive en `main`.
         self.clases_con_constructor.clear();
         self.variantes_enum.clear();
@@ -1241,7 +1336,7 @@ impl ConstructorDesdeAst {
             }
         }
 
-        // F11-T5: las variables de nivel superior son globales visibles desde
+        // las variables de nivel superior son globales visibles desde
         // cualquier función, así que se reservan ANTES de compilar las funciones
         // (que se emiten primero y no pueden depender del orden de `main`).
         self.in_function = false;
@@ -1273,7 +1368,7 @@ impl ConstructorDesdeAst {
                         funciones_usuario.push(self.compilar_metodo(nombre, m));
                     }
                 }
-                // F11-T4: los métodos de una implementación de rasgo se emiten
+                // los métodos de una implementación de rasgo se emiten
                 // como funciones `Clase.metodo`, que es lo que resuelve el
                 // despacho dinámico (`CallMethod`) por la clase del objeto.
                 Declaracion::Implementacion {
@@ -1299,7 +1394,7 @@ impl ConstructorDesdeAst {
                 Declaracion::Funcion { .. }
                 | Declaracion::Clase { .. }
                 | Declaracion::Enum { .. } => {}
-                // F11-T4: los rasgos se validan en el análisis semántico y no
+                // los rasgos se validan en el análisis semántico y no
                 // emiten bytecode (igual que en el backend AST); las
                 // implementaciones ya se compilaron arriba como funciones. Los
                 // imports ya los resolvió el cargador de módulos y
@@ -1334,7 +1429,7 @@ impl ConstructorDesdeAst {
             .or_else(|| self.mapa_globales.get(nombre).copied())
     }
 
-    /// F11-T5: resuelve un nombre punteado `a.b.c` a un valor: la variable raíz
+    /// resuelve un nombre punteado `.b.c` a un valor: la variable raíz
     /// y un `FieldGet` por cada nivel.
     fn objeto_de_nombre(
         &mut self,
@@ -1357,7 +1452,7 @@ impl ConstructorDesdeAst {
     /// Compila el cuerpo de un closure como función anónima con marco propio.
     ///
     /// El closure no captura el entorno (el runtime representa un closure como
-    /// el nombre de su función, sin entorno): eso llega con F12-T1.
+    /// el nombre de su función, sin entorno): eso llega después, en la llamada.
     fn compilar_closure(
         &mut self,
         host: &mut ConstructorIr,
@@ -1367,7 +1462,7 @@ impl ConstructorDesdeAst {
         let nombre = format!("__closure_{}", self.closure_counter);
         self.closure_counter += 1;
 
-        // F12-T1: variables libres del cuerpo que son **locales** del ámbito
+        // variables libres del cuerpo que son **locales** del ámbito
         // envolvente (los globales se siguen leyendo en tiempo de llamada). Se
         // capturan por valor en el momento de crear el closure.
         let capturadas = self.variables_libres_locales(parametros, cuerpo);
@@ -1545,7 +1640,7 @@ impl ConstructorDesdeAst {
         func
     }
 
-    /// F8-T2: compila un método como función `Clase.metodo`, con `este` en el
+    /// compila un método como función `Clase.metodo`, con `este` en el
     /// índice local 0 y los parámetros a continuación.
     fn compilar_metodo(&mut self, clase: &str, metodo: &Metodo) -> FuncionSsa {
         self.in_function = true;
@@ -1648,10 +1743,7 @@ mod tests {
         let prog = parsear_fuente("funcion f() { retornar 1 }\nescribir(f())");
         let mut constructor_ir = ConstructorDesdeAst::new();
         let ir = constructor_ir.programa_a_ir(&prog);
-        assert!(
-            constructor_ir.soportado,
-            "F8-T1: las funciones ya están en el IR"
-        );
+        assert!(constructor_ir.soportado, "las funciones ya están en el IR");
         assert_eq!(ir.funciones.len(), 2, "main + f");
         assert_eq!(ir.funciones[0].parametros.len(), 0);
         assert_eq!(ir.funciones[1].parametros.len(), 0);
