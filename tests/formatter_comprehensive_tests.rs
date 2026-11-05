@@ -179,7 +179,7 @@ escribir(r)
 }
 
 // ============================================================
-// F5-T1: escapes dentro de strings
+// escapes dentro de strings
 // ============================================================
 
 fn primer_literal_texto(source: &str) -> String {
@@ -236,7 +236,7 @@ fn test_fmt_round_trip_exacto() {
 }
 
 // ============================================================
-// F5-T2: preservación de comentarios
+// preservación de comentarios
 // ============================================================
 
 fn formatear_con_comentarios(source: &str) -> String {
