@@ -448,7 +448,7 @@ impl Default for ConstructorSsa {
     }
 }
 
-// ─── F11-T6: promoción de memoria a SSA (`mem2reg`) ─────────────────────────
+// ─── promoción de memoria a SSA (`mem2reg`) ─────────────────────────
 
 /// Promueve las variables en memoria (`Alloca`/`Store`/`Load`) a valores SSA en
 /// todo el programa, incluidas las funciones anidadas (closures e hilos).
@@ -1032,7 +1032,7 @@ mod tests {
         assert!(!phis.is_empty(), "el φ del cabecera debe tener argumentos");
     }
 
-    // ─── F11-T6: mem2reg (promoción a SSA) ──────────────────────────────────
+    // ─── mem2reg (promoción a SSA) ──────────────────────────────────
 
     /// Compila un programa a IR y devuelve la función pedida (ya promovida).
     fn ir_de_fuente(fuente: &str) -> crate::ir::ProgramaIr {
