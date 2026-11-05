@@ -1,6 +1,6 @@
-//! F12-T2 — **stress de concurrencia**: hilos + canales + GC.
+//! **stress de concurrencia**: hilos + canales + GC.
 //!
-//! Contrato que fija este archivo (DoD de F12-T2): un programa concurrente
+//! Contrato que fija este archivo (DoD ): un programa concurrente
 //! termina, no pierde mensajes, no deja índices de heap inválidos y no se cuelga
 //! aunque el emisor vaya por delante del receptor (los canales son acotados, ver
 //! `forja::vm_fast::CAPACIDAD_CANAL`).
@@ -188,7 +188,7 @@ main()"#,
     assert_eq!(salida, vec!["10", "7"]);
 }
 
-/// F12-T2: un `hilo` que **recibe** de un canal debe ver los mensajes reales.
+/// un `hilo` que **recibe** de un canal debe ver los mensajes reales.
 /// Antes el hijo no heredaba el heap de receptores y `recibir()` daba Nulo.
 #[test]
 fn f12_t2_hilo_que_recibe_de_un_canal() {
@@ -223,7 +223,7 @@ main()"#,
     assert_eq!(salida, vec!["60"]);
 }
 
-/// F12-T5: el DCE no debe borrar un `hilo` cuyo handle no se usa (el hilo es un
+/// el DCE no debe borrar un `hilo` cuyo handle no se usa (el hilo es un
 /// efecto observable: si desaparece, el padre espera un mensaje que no llega).
 #[test]
 fn f12_t5_dce_no_elimina_un_hilo_no_unido() {
