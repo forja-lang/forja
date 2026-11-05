@@ -7,6 +7,109 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [0.9.6] - sin publicar
 
+### Backend ASM nativo (P2 §3.9)
+
+- **Corregidos los bugs que destapó la comparación VM vs ASM nativo.** `cqto`
+  (inválido en sintaxis Intel) → `cqo`; registros de 32 bits bien nombrados
+  (`mov r14d, eax`, no `mov r14, eax`); el segundo operando de una `Binaria` ya
+  no queda en un registro que nadie lee (rompía `para (…; i < n; …)`); el primer
+  argumento de una llamada se copia a su registro ABI (la recursión recibía
+  basura) y los demás no se pisan; `variable (a, b) = …` hace destructuring;
+  hay ruta Decimal con SSE y `%g`, y `forja_print_float` funciona con la UCRT de
+  Windows y ya no desordena la salida; se define `forja_contract_error` (antes
+  el enlace de programas con contratos fallaba); `retornar` dentro de un inline
+  ya no vuelve de `main`; `nuevo C()` infiere el tipo de la variable (métodos
+  `c.m()` resolvían a un símbolo inexistente). `romper`/`continuar` eran
+  no-ops dentro de bucles; la concatenación de textos y la interpolación
+  (`"n=${n}"`) ahora usan `forja_concat`/`forja_entero_a_texto` (x86-64); los
+  campos sin tipo se infieren de `este.campo = …`. El test
+  `e2e_vm_vs_asm_nativo_misma_salida` compara toda la batería `PROGRAMAS`.
+
+### Lenguaje — Modo estricto de tipos
+
+- **Nuevo flag `--estricto` (y `FORJA_ESTRICTO=1`).** `variable t: Texto = nulo`,
+  `variable a: Entero[] = nulo`, `variable c: C = nulo` y
+  `variable x: Opcion<Entero> = 5` son error de compilación con el flag; sin él
+  el comportamiento permisivo no cambia.
+- **En modo estricto, llamar a una función no declarada es error de
+  compilación** (antes sólo fallaba al ejecutar). Se exceptúan builtins,
+  incorporadas (`tipo`, `a_texto`, …), nativas del registry, variantes de enum y
+  closures guardados en variables. El chequeo se desactiva en programas con
+  `importar`: la stdlib se inlinea después y los módulos GUI los resuelve
+  `gui-rt` en runtime.
+- El modo estricto también activa el ownership estricto ya existente.
+
+### Lenguaje — Ownership
+
+- **Un préstamo mutable bloquea también la lectura del original.** Antes sólo
+  bloqueaba escribir: `variable r = &mut v` y luego `escribir(v)` compilaba y
+  corría. Ahora es `● Pertenencia — No se puede leer 'v' porque tiene un
+  préstamo mutable activo.`
+- **En modo estricto, mover una clase se detecta.** `variable b = a` marca `a`
+  como movida y usarla después es error; antes `nuevo C()` no tenía tipo
+  inferido (`None` ⇒ `Copy`) y el move pasaba desapercibido. Pasar la clase
+  como argumento **no** la mueve (el runtime la comparte por índice), así que
+  `FORJA_ESTRICTO=1` sigue corriendo los ejemplos que reutilizan el objeto.
+  Fuera del modo estricto el comportamiento no cambia.
+- **Arreglo vacío: el elemento es desconocido, no `Nulo`.** `variable f = []`
+  infería `Arreglo(Nulo)` y `f[i]` propagaba `Nulo`, así que en modo estricto
+  `max: Entero = f[0]` se rechazaba por falso positivo (ejemplo
+  `167_estadistica`); ahora el elemento de un arreglo vacío es tipo
+  desconocido. `ejemplos/73_atributos.fa` además llamaba a `suma` sin definirla.
+
+### Lenguaje — `v` y `f` como alias de `verdadero` y `falso`
+
+- **`v` y `f` son literales booleanos** cuando no son un nombre declarado.
+  `si (v y no f) { … }` funciona igual que con `verdadero`/`falso`. No son
+  palabras reservadas: si el programa declara una variable, parámetro, campo,
+  método o variante llamada `v`/`f`, ese nombre sigue siendo un identificador
+  normal en todo el programa. La conversión la hace `forja-syntax` después de
+  parsear (`booleanos::normalizar`), y como antes un `v` sin declarar era un
+  error, ningún programa que ya compilaba cambia de significado.
+
+### CLI — sin flags: todo en `forja.yaml`
+
+- **REPL sin argumentos `--` y con comandos `/`.** Todos los comandos llevan
+  `/` obligatoriamente (`/salir`, `/motor`, `/configurar`, `/recargar`, `/ayuda`);
+  lo demás es código Forja. `/configurar` abre un asistente que elige con
+  ↑/↓ + Enter (no se escribe): motor (`vm`/`rapido`/`jit`), mostrar bytecode,
+  contratos, matemática rápida y nivel de diagnósticos, mostrando el valor
+  actual. Se van `--debug` / `--debug on|off`.
+- **Historial por archivo y acumulativo.** `forja repl [archivo.fa]` usa
+  `<nombre>_historial.txt` (o `repl_historial.txt` sin archivo); cada sesión
+  agrega una cabecera con fecha/hora local e instancia y los comandos se
+  **añaden**, nunca se pisa el archivo.
+- **El `forja.yaml` autogenerado explica cada opción.** Arriba de cada clave va
+  una línea `# Valores posibles: …` (p. ej. `verdadero | falso`, `rapido | jit |
+  todas`, `` '' | recoger | usar ``), así no hay que adivinar los valores. Sigue
+  escribiéndose solo cuando el archivo no existe.
+- **El REPL usa los mismos nombres de motor que la CLI y el YAML**: `motor
+  rapido` y `motor jit` (se aceptan `fast`/`vm` y `rápido` como alias). La ayuda
+  del REPL ahora dice `motor <rapido|jit>`.
+
+- **La CLI ya no acepta flags `--`.** Quedan sólo comandos y rutas: `forja
+  ejecutar <archivo>`, `forja compilar <archivo> [salida]`, `forja asm <archivo>
+  [salida]`, `forja formatear <ruta> [salida]`, `forja transpilar <archivo>
+  [dir]`, `forja diagrama <archivo> [salida]`, `forja documentar <archivo>
+  [salida]`, `forja lint <ruta>`, `forja medir <archivo>`, `forja publish
+  [ruta]`, `forja registry-serve [dir] [puerto]`. Si aparece un flag, se avisa
+  en vez de ignorarlo.
+- **Toda la configuración vive en `forja.yaml`.** Al arrancar, si el directorio
+  de ejecución no lo tiene, se crea con **todas** las claves y sus defaults
+  (`motor`, `destino`, `estricto`, `contratos`, `pila`, `matematica_rapida`,
+  `perfil`, `recarga`, `permitir_red`, `permitir_puertos`, `max_archivo_mb`,
+  `arquitectura`, `iteraciones`, `consola`, `verificar_formato`,
+  `lint_estricto`, `nivel`, `json`, `color`, `puerto_registry`). Los booleanos
+  se escriben `verdadero`/`falso` y las opciones van en español (`rapido`,
+  `maquina`, `ensamblador`, `nativo`, `detallado`, `depuracion`, `traza`). No hay variables de entorno para esto: `src/config.rs` las
+  lee del YAML y el resto del programa consulta `config::actual()`. El único
+  entorno que queda es el que no es del usuario (secretos del registry,
+  `FORJA_ORIGINAL_EXE` del runtime y los `FORJA_GUI_*` de depuración).
+- **`900_storybook.fa` compila.** Usaba `…` (no es un token) como cuerpo de un
+  layout condicional; ahora usa `etiqueta("")`. El corpus completo
+  (**260/260**) compila, incluso con `estricto: verdadero`, y `NO_COMPILAN` de
+  `tests/ir_cobertura_corpus.rs` quedó vacío.
+
 ### Lenguaje — `Exacto` y entrada por teclado
 
 - **Parámetro `Exacto` coerciona el argumento.** `funcion f(x: Exacto) { x * 2 }`
@@ -47,6 +150,45 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   `este.campo`. Nota: los `siempre` van antes del cuerpo de la clase; escritos
   dentro de las llaves el parser los ignora en silencio.
 
+### Lenguaje — bugs básicos reportados desde los ejemplos
+
+- **`y` y `o` funcionan como operadores lógicos.** `escribir(verdadero y falso)`
+  no imprimía nada: `o` era keyword y `y` no existía como operador. Ahora ambos
+  son **contextuales** (el lexer los emite como identificadores y el parser los
+  lee como operador solo si están en la misma línea que el operando anterior),
+  así `variable y = 2` sigue siendo válido, como en los ejemplos y la stdlib.
+- **`continuar` dentro de `para`/`repetir` ya no cuelga.** Saltaba a la
+  condición, antes del incremento, así que el contador nunca avanzaba
+  (`límite de ejecución alcanzado`). Ahora salta al incremento.
+- **Comparar `Decimal` con `Entero` daba siempre `falso`** (`8.5 >= 7` era
+  falso, `8.999 >= 7` imprimía "No aprobaste"). Faltaba la rama mixta en las
+  comparaciones de la VM (opcodes y uops).
+- **Indexar un texto devuelve el carácter** (`"Forja"[0]` era `nulo`). Esto
+  rompía toda la stdlib de texto, que usa `s[i]`.
+- **`nuevo Clase` sin paréntesis** ya no es error de gramática: equivale a
+  `nuevo Clase()`.
+- **`{ clave: valor }` con la clave sin comillas** equivale a
+  `{ "clave": valor }` (antes solo se aceptaba `=` al estilo Lua).
+- **`variable mut x = …`** se acepta (era lo que recomendaban el LSP y los
+  mensajes de error, pero el parser lo rechazaba).
+- **Comparar textos** (`c >= "a"`) daba siempre `falso`: toda la stdlib de texto
+  (que clasifica caracteres así) devolvía `nulo`.
+- **`resultado` como variable corriente.** Es keyword (valor de retorno de las
+  postcondiciones), pero `retornar resultado` devolvía `nulo` (el parser lo
+  partía en `retornar` + sentencia aparte) y `resultado = resultado + c` se
+  perdía en silencio. Rompía `std/texto`, `std/matematica` y cualquier función
+  con una local llamada `resultado`.
+- **`retornar func(x) { … }`** (closure literal como valor de retorno) se partía
+  igual que `resultado` y devolvía `nulo`.
+- **Las guardas en patrones (`caso Patron si (cond)`) se rechazan con un mensaje
+  claro** (`● Gramática — Las guardas en patrones todavía no están soportadas`)
+  en vez de compilar un AST mutilado. Antes el error de parseo se descartaba en
+  la recuperación y el usuario veía `La variable 'r' no está declarada`, o nada
+  La recuperación que descarta errores y trunca expresiones queda pendiente
+  (ver `plans/auditoria-externa-verificada.md`).
+- Goldens del corpus regenerados: 13 ejemplos grababan las salidas viejas
+  (`nulo`, `falso`, listas vacías) que estos bugs producían.
+
 ### Pruebas — corpus completo bajo golden
 
 - `tests/golden_runner.rs` ya no compara 13 ejemplos fijos: recorre **todo**
@@ -54,6 +196,18 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   aleatoriedad, tiempo, hilos/canales, red, GUI, ficheros, FFI, entorno) y avisa
   si queda un golden huérfano. Regeneración: `FORJA_UPDATE_GOLDEN=1 cargo test
   --test golden_runner`.
+
+### Lenguaje — rango de `Entero`
+
+- **Los enteros fuera de 48 bits ya no se truncan en silencio.** `ValorFast`
+  guarda el `Entero` en 48 bits y `ValorFast::entero` enmascaraba el resto:
+  `140737488355328` se imprimía como `-140737488355328` y `9223372036854775807`
+  como `-1`. Ahora un literal fuera de rango (`±140737488355327`) es error de
+  compilación con sugerencia de usar `Exacto`/`Decimal`, y cualquier suma, resta
+  o multiplicación que se salga del rango devuelve `desbordamiento aritmético`
+  (antes: dato corrupto). Cubre los cuatro caminos de ejecución (intérprete
+  general, quickening, fusión de opcodes y contratos). Tests:
+  `tests/enteros_rango.rs`.
 
 ### Seguridad
 
@@ -221,127 +375,127 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   VSCode. Se retiraron del repositorio y del historial los documentos internos
   de planificación y el documento del backend ASM.
 
-- **F8-T1 — IR de funciones de usuario.** `IrConstructor` compila cada
+- ** IR de funciones de usuario.** `IrConstructor` compila cada
   `Declaracion::Funcion` a su propio `SsaFunction` con marco local
   (`LOCAL_BASE`), parámetros, retorno y llamadas; `IrToBytecode::convert_program`
   emite `FunctionDef` + `Return` y distingue `LoadIdx/StoreIdx` de
   `LoadIdxGlobal/StoreIdxGlobal`. Paridad funcional con AST para `funciones` y
   `funciones_locales` en `tests/ir_emision.rs`.
-- **F8-T2 — IR de clases y métodos.** `Inst::ObjectNew/FieldGet/FieldSet/
+- ** IR de clases y métodos.** `Inst::ObjectNew/FieldGet/FieldSet/
   CallMethod`, compilación de métodos como `Clase.metodo` con `self` en el
   marco local, constructores `Clase.nuevo`, `Instanciacion` y acceso/asignación
   de campos. Paridad funcional del caso `clases` en `tests/ir_emision.rs`.
-- **F8-T3 — IR de enums y `coincidir`.** Variantes unitarias/con datos como
+- ** IR de enums y `coincidir`.** Variantes unitarias/con datos como
   objetos con tag (`FieldSetIdx`) y CFG de `coincidir` con comparación de tag y
   extracción de campos (`ExtractField`); paridad funcional de `enums` y
   `enums_con_datos` en `tests/ir_emision.rs`.
-- **F8-T4 — Contratos en la ruta IR.** `compilar_desde_ir` devuelve la tabla de
+- ** Contratos en la ruta IR.** `compilar_desde_ir` devuelve la tabla de
   contratos (`requiere`/`asegura`) junto al bytecode IR.
-- **F8-T5 — IR-first por defecto.** `compilar_pipeline_completa`
+- ** IR-first por defecto.** `compilar_pipeline_completa`
   intenta la emisión IR primero y conserva el fallback AST sólo para
   traits/implementaciones/FFI.
-- **F8-T6 — Numeración y ámbitos.** Se corrigió la numeración de
+- ** Numeración y ámbitos.** Se corrigió la numeración de
   `ValueId` para instrucciones no productoras (`FieldSet/FieldSetIdx`), se
-  separaron locales/globales y se desplazaron labels entre funciones.- **F8-T7 — Callbacks como valor.** `f()` y `retornar f(x)` emiten
+  separaron locales/globales y se desplazaron labels entre funciones.- ** Callbacks como valor.** `f()` y `retornar f(x)` emiten
   `CallClosure` cuando `f` es un parámetro; `&funcion` y `funcion` desnuda
   funcionan en VM y JIT. DCE conserva funciones usadas como valor.
-- **F8-T8 — Enums en runtime.** Las variantes unitarias se construyen como
+- ** Enums en runtime.** Las variantes unitarias se construyen como
   objetos con tag y `coincidir` compara `CheckTag` también en variantes sin
   campos; `111_match_enum.fa` imprime las cuatro direcciones.
-- **F8-T9 — Hilos y canales.** DCE recorre cuerpos de hilos; el VM hijo resuelve
+- ** Hilos y canales.** DCE recorre cuerpos de hilos; el VM hijo resuelve
   funciones de usuario; `ChannelValue::Portable` serializa arreglos/mapas/objetos
   entre heaps y las colas del GC se mantienen.
 - **TailCall corregido.** Los argumentos se empujan en orden natural; antes las
   llamadas recursivas con argumentos intercambiados entraban en bucle
   (`mcd_recursivo`).
-- **F10-T1 — Tests versionados.** `tests/` sale de `.gitignore`; las 19 rutas
+- ** Tests versionados.** `tests/` sale de `.gitignore`; las 19 rutas
   sin seguimiento (incluidas `integration_tests`, `ir_paridad`,
   `pipeline_equivalencia`) quedan en el índice.
-- **F10-T2 — Corpus validado.** `131_ordenamiento_burbuja.fa` y
+- ** Corpus validado.** `131_ordenamiento_burbuja.fa` y
   `140_algoritmo_euclides.fa` declaran parámetros `mut`; 259/262 parsean y los
   3 restantes quedan documentados.
-- **F10-T3 — Docs reproducibles.** `scripts/build-docs.sh` hace `npm ci` limpio
+- ** Docs reproducibles.** `scripts/build-docs.sh` hace `npm ci` limpio
   (esbuild/rollup por plataforma); job de CI; 180 páginas.
-- **F10-T4 — Playground ejecutable.** Ejemplos de `Resultado`, enum/match y
+- ** Playground ejecutable.** Ejemplos de `Resultado`, enum/match y
   JSON corregidos; 17/18 ejecutan en VM (GUI se valida en navegador).
-- **F10-T5 — Smoke del corpus.** `tests/corpus_smoke.rs` ejecuta 20 ejemplos
+- ** Smoke del corpus.** `tests/corpus_smoke.rs` ejecuta 20 ejemplos
   representativos.
 - **F9 — Distribución.** `.vsix` empaquetado e instalado localmente; scaffold de
   Homebrew tap; firma cosign validada con clave local; workflow de release
   validado (`scripts/validate-release-workflow.sh`).
 - **Native JSON.** `_json_parsear` implementado con `serde_json`; la stdlib
   declara `Resultado<Texto, ErrorJSON>` en `parsear`/`serializar`.
-- **F8-T1…T6 (IR completo) siguen abiertas:** el IR cubre arreglos/mapas pero
+- ** …T6 (IR completo) siguen abiertas:** el IR cubre arreglos/mapas pero
   no funciones de usuario, clases, enums, contratos ni emisión IR-first.
 
 ### plan2 — Bugs conocidos, deuda técnica y proceso (F5–F7)
 
-- **F5-T1 — `forja fmt` ya no corrompe strings.** Se re-escapan `\n`, `\r`,
+- ** `forja fmt` ya no corrompe strings.** Se re-escapan `\n`, `\r`,
   `\t`, `"` y `\\` (y `\${` para literales) al emitir `LiteralTexto`; tests de
   round-trip en `formatter_comprehensive_tests.rs`. Se corrigió además la
   emisión de `LiteralExacto`, que usaba `e<scale>` en vez de `e-<scale>` y podía
   desbordar `i128` al reformatear (detectado en `400_exacto.fa`). El corpus de
   `ejemplos/` quedó formateado y `forja fmt ejemplos --check` pasa.
-- **F5-T2 — `forja fmt` preserva comentarios.** `lexer::extraer_comentarios`
+- ** `forja fmt` preserva comentarios.** `lexer::extraer_comentarios`
   captura `//`, `///` y `/* */`; `Formatter::formatear_con_comentarios` los
   reinserta por la línea del token siguiente (idempotente).
-- **F5-T3 — Playground corregido.** Los 18 ejemplos usan `para (...)` y mapas
+- ** Playground corregido.** Los 18 ejemplos usan `para (...)` y mapas
   indexados por arreglo de claves; test headless `tests/playground_ejemplos.rs`
   valida playground y ejemplos embebidos del WASM.
-- **F5-T4 — Semántica más permisiva y correcta.** Enums unitarios como valores,
+- ** Semántica más permisiva y correcta.** Enums unitarios como valores,
   variantes pre-registradas, `coincidir` con strings, funciones como callbacks
   (con y sin `&`), enums `Copy` y reescritura de `modulo.funcion(...)` a llamada
   directa tras resolver imports.
-- **F5-T5 — GC rastrea canales e hilos.** `mark_value` marca handles, colas de
+- ** GC rastrea canales e hilos.** `mark_value` marca handles, colas de
   mensajes y resultados de hilos; sweep reconstruye las free lists de canales e
   hilos. Soak de 3000 canales y 120 hilos con heaps acotados.
-- **F5-T6 — ASM sin stubs silenciosos.** Los constructos no soportados
+- ** ASM sin stubs silenciosos.** Los constructos no soportados
   (`mapas`, `Try`, `hilo`, `canal`, `closures`, `LiteralExacto`, métodos en
   expresiones) fallan en compilación con mensaje claro; se actualizó
   el documento del backend ASM y la batería negativa.
-- **F5-T7 — Interpolación `${...}` verificada.** Sin usos obsoletos de `{expr}`
+- ** Interpolación `${...}` verificada.** Sin usos obsoletos de `{expr}`
   en docs/corpus; VM y JIT producen la misma salida y las llaves sin `$` son
   literales.
-- **F6-T1 (parcial) — IR con arrays y mapas.** `Inst::MapNew/MapGet/MapSet`,
+- ** (parcial) — IR con arrays y mapas.** `Inst::MapNew/MapGet/MapSet`,
   `IrBuilder` y `IrToBytecode` cubren arreglos y mapas (lectura/escritura) con
   paridad funcional vs AST; el corpus IR pasó de 10 a 14 programas. Siguen
   pendientes funciones de usuario, clases, enums, contratos e IR-first total.
-- **F6-T2 — Núcleo GUI extraído.** Nuevo crate `forja-gui-core` con
+- ** Núcleo GUI extraído.** Nuevo crate `forja-gui-core` con
   `signals` y `debug` (sin xilem ni compilador). `forja-gui-rt` depende de
   `forja-syntax` y de `forja-gui-core`, eliminando el ciclo con `forja`; los
   widgets específicos siguen en `forja-gui-rt`.
-- **F6-T3 — Fork de xilem/masonry pineado.** `[patch.crates-io]` usa `rev`
+- ** Fork de xilem/masonry pineado.** `[patch.crates-io]` usa `rev`
   exactos (los mismos de `Cargo.lock`), no ramas mutables.
-- **F6-T4 — Docs de arquitectura actualizadas.** Las páginas citan
+- ** Docs de arquitectura actualizadas.** Las páginas citan
   `crates/forja-syntax/src/*`, `crates/forja-types/src/semantics.rs` y
   `backend_llvm/legacy.rs`; ya no hay rutas inexistentes.
-- **F6-T5 — Un solo backend LLVM.** El lowering AST→LLVM textual se movió a
+- ** Un solo backend LLVM.** El lowering AST→LLVM textual se movió a
   `src/backend_llvm/legacy.rs`; `compilar_a_llvm()` usa
   `backend_llvm::compilar_a_llvm_texto` y se eliminó el módulo paralelo
   `compiler_llvm`. Tests en `tests/llvm_backend.rs`.
-- **F6-T6 — Registry remoto.** Protocolo HTTP (`/api/v1/index`, publicar,
+- ** Registry remoto.** Protocolo HTTP (`/api/v1/index`, publicar,
   descargar, yank), servidor de desarrollo `forja registry-serve`, cliente con
   fallback desde `PackageResolver` y test E2E (`tests/registry_remote.rs`).
   TLS se delega a un proxy en producción.
-- **F6-T7 — Firma de releases.** `cosign sign-blob --bundle` keyless en el
+- ** Firma de releases.** `cosign sign-blob --bundle` keyless en el
   workflow; `install.sh`/`install.ps1` verifican el bundle si `cosign` está
   disponible; identidad documentada en `SECURITY.md`. Se generó y verificó un
   artifact real local (`dist/forja-0.9.2-windows-x64.zip.bundle`) con
   `scripts/firmar-release-local.sh`.
-- **F6-T8 — Windows ARM64.** `windows-11-arm` agregado a la matriz con
+- ** Windows ARM64.** `windows-11-arm` agregado a la matriz con
   `continue-on-error` mientras el runner esté en preview.
-- **F6-T9 — Extensión VSCode.** `scripts/package-vscode.sh` genera el `.vsix`.
-- **F7-T1 — Verificación reproducible.** `scripts/verify.sh`, `Dockerfile`,
+- ** Extensión VSCode.** `scripts/package-vscode.sh` genera el `.vsix`.
+- ** Verificación reproducible.** `scripts/verify.sh`, `Dockerfile`,
   `.devcontainer/devcontainer.json` y `Makefile` (`make verify`).
-- **F7-T2 — planificación interna reparada.** Índice 38 tareas (F4=8), marcador eliminado,
+- ** planificación interna reparada.** Índice 38 tareas (F4=8), marcador eliminado,
   F0 con ✅, KPIs medidos y matriz/dependencias actualizadas.
-- **F7-T3 — Coordinación concurrente.** Ownership por área, archivos calientes
+- ** Coordinación concurrente.** Ownership por área, archivos calientes
   y un solo escritor de `CHANGELOG`/`plan*.md` en `CONTRIBUTING.md` + PR
   template.
-- **F7-T4 — CI real.** Jobs de 3 OS ya existentes; se suman cobertura ASM
+- ** CI real.** Jobs de 3 OS ya existentes; se suman cobertura ASM
   ≥80% bloqueante y artefacto de reporte. La corrida efectiva en GitHub
   Actions queda pendiente de publicar el PR.
-- **F7-T5 — Métricas automáticas.** `scripts/metricas.py`/`.sh` calculan líneas
+- ** Métricas automáticas.** `scripts/metricas.py`/`.sh` calculan líneas
   Rust, módulos y ejemplos; `--check` falla si README/roadmap derivan y el CI lo
   ejecuta.
 - **Higiene:** `.gitignore` deja de ignorar `tests/` (evita "tests fantasma") y
@@ -350,7 +504,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Corregido
 
-- **F4-T6 — Bugs del backend ASM nativo.** Al validar el código generado con
+- ** Bugs del backend ASM nativo.** Al validar el código generado con
   `gcc` se corrigieron: **(1)** el literal de arreglo reutilizaba `rax` como
   puntero tras sobrescribirlo con el valor del elemento → dirección inválida y
   *segfault* (y ARM64 usaba un número como registro índice); **(2)** las clases
@@ -358,7 +512,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   enlazado); **(3)** `log2` sólo cubría 1/2/4/8. Documentado en
   el documento del backend ASM.
 
-- **F4-T5 — El GC de la VM no recolectaba y perdía objetos vivos.** El
+- ** El GC de la VM no recolectaba y perdía objetos vivos.** El
   mark-sweep de `vm_fast` estaba desconectado (el bridge a `GenerationalGC`
   nunca recibía asignaciones, así que `should_collect_young()` era siempre falso)
   y sus raíces omitían globales, `anterior()` y resultados de hilos. Además, el
@@ -368,7 +522,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   Con GC activo el heap se mantiene acotado (soak de 1M iteraciones → 2 slots
   vivos, 4 999 998 reciclados).
 
-- **F4-T1 — Bugs de generación de código JIT descubiertos por fuzzing.** El
+- ** Bugs de generación de código JIT descubiertos por fuzzing.** El
   nuevo fuzzer de generación de código sobre el corpus de `ejemplos/` destapó y
   corrigió cuatro fallos en el pipeline `stack_to_reg → register allocation →
   codegen_reg`:
@@ -404,7 +558,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Agregado
 
-- **F4-T8 — IR: emisión AST→IR (parcial).** Se reparó el núcleo del IR y se
+- ** IR: emisión AST→IR (parcial).** Se reparó el núcleo del IR y se
   habilitó una emisión de bytecode **derivada del IR** para un subconjunto, con
   paridad **funcional** vs la ruta AST (no byte a byte):
   - [`IrBuilder`](src/ir.rs:1): bloques con ids/terminadores correctos
@@ -423,7 +577,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
     emisión SSA real (cobertura total del AST) es el trabajo restante.
   - **Pendiente (DoD):** que el bytecode se **derive del IR** para todo el
     lenguaje (funciones/overloads, clases, arrays, mapas, enums, contratos).
-- **F4-T7 — Alineación del roadmap y el README con la realidad.** Se corrigió la
+- ** Alineación del roadmap y el README con la realidad.** Se corrigió la
   documentación pública para que refleje el **estado verificable** del
   repositorio (hecho / en progreso / planeado) y se unificaron las métricas:
   - **[`docs/src/pages/roadmap.astro`](docs/src/pages/roadmap.astro:1)** reescrito:
@@ -436,9 +590,9 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
       `vm_fast` + `jit_tiered`; la v3 archivada y la v1 removida). Se eliminaron
       cifras de rendimiento no verificables.
     - **Optimizaciones de AST:** inline, CSE y optimización de bucles pasan de
-      “pendiente” a **hecho** (con el pipeline único de F4-T3).
+      “pendiente” a **hecho** (con el pipeline único ).
     - **IR SSA:** marcado como **prototipo** (`ir_constructor`/`ir_to_bytecode`),
-      aclarando que el bytecode se emite desde el AST y que completarlo es F4-T8.
+      aclarando que el bytecode se emite desde el AST y que falta completar el IR.
     - **Backend LLVM** marcado como 🚧 en desarrollo; se separó
       “En progreso / parcial” de “Planeado” (RISC-V/GPU, registry remoto, firma
       de releases, GC por defecto…).
@@ -455,7 +609,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   - **DoD cumplido:** la documentación refleja solo capacidades verificables.
     Verificado: `npm run build` (Astro) → **180 páginas, EXIT 0**.
 
-- **F4-T6 — Consolidación de los targets ASM x86-64/ARM64.** Nueva suite
+- ** Consolidación de los targets ASM x86-64/ARM64.** Nueva suite
   [`tests/asm_targets.rs`](tests/asm_targets.rs:1) que compila una batería de
   programas para las tres arquitecturas (x86-64 Windows, x86-64 Linux/System V,
   ARM64) con invariantes por target, más un test end-to-end en Linux que
@@ -463,7 +617,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   el documento del backend ASM y script de cobertura bloqueante
   [`scripts/asm-coverage.sh`](scripts/asm-coverage.sh:1) (**83.1%** de líneas,
   DoD ≥80%).
-- **F4-T3 — Fase única de optimización reutilizable.** Se centralizó **toda** la
+- ** Fase única de optimización reutilizable.** Se centralizó **toda** la
   fase de optimización en un módulo con passes y pipeline configurable,
   eliminando la duplicación que existía en cada ruta de compilación:
   - **Nuevo módulo [`optimizer_pipeline.rs`](src/optimizer_pipeline.rs:1)**:
@@ -493,7 +647,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
     `optimizer_comprehensive_tests` (34), `pipeline_equivalencia` (6),
     `ir_paridad` (3) y `golden_runner` (2) → todos verdes.
 
-- **F4-T5 — GC en producción (telemetría + stress tests).** La VM ahora
+- ** GC en producción (telemetría + stress tests).** La VM ahora
   recolecta bajo presión con un punto seguro por instrucción; se añade
   [`GcTelemetry`](src/gc.rs:739) (colecciones, pausa total/máx/media, slots
   reciclados) accesible vía `ForjaFast::gc_telemetry()`, más `forzar_gc()`,
@@ -501,7 +655,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   [`tests/gc_stress.rs`](tests/gc_stress.rs:1): asignación intensiva con heap
   acotado, globales que sobreviven al GC, recolección explícita y un soak
   parametrizable (ignorado por defecto) para el benchmark largo.
-- **F4-T4 — Inferencia de tipos completa.** El type checker
+- ** Inferencia de tipos completa.** El type checker
   ([`crates/forja-types/src/semantics.rs`](crates/forja-types/src/semantics.rs:1))
   ahora infiere:
   - **Tipo de retorno** de funciones y métodos sin `-> Tipo`, a partir de sus
@@ -514,7 +668,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
     compatibilidad se calculaba y se descartaba).
   - DoD verificado en [`tests/inferencia_tipos.rs`](tests/inferencia_tipos.rs:1):
     **89/90 ejemplos (98.9%)** compilan sin anotaciones de retorno.
-- **F4-T2 — Regresión de rendimiento automática en CI.** Puerta de rendimiento
+- ** Regresión de rendimiento automática en CI.** Puerta de rendimiento
   que detecta degradaciones silenciosas:
   - [`benches/perf_regresion.rs`](benches/perf_regresion.rs:1): benchmark
     determinista (compilación + VM) que normaliza cada carga contra una
@@ -527,7 +681,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   - [`.github/workflows/perf-regression.yml`](.github/workflows/perf-regression.yml:1):
     en cada PR, con baseline cacheada por runner (bootstrap si no existe) y
     resumen Markdown en el step. Nuevo `[profile.bench]` (thin LTO) para CI.
-- **F4-T1 — JIT estable y bien probado.** Red de seguridad para el JIT:
+- ** JIT estable y bien probado.** Red de seguridad para el JIT:
   - [`tests/jit_diferencial.rs`](tests/jit_diferencial.rs:1): diferencial JIT vs
     VM sobre el corpus determinista (0 divergencias, contra golden), emisión de
     código nativo en **todo** `ejemplos/` sin *panic*, y fuzzing determinista con
@@ -538,8 +692,8 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   - Nuevas APIs reutilizables [`forja::emitir_codigo_nativo`](src/lib.rs:963) y
     [`forja::alimentar_tiered_jit`](src/lib.rs:917), y fuzzer libFuzzer
     [`fuzz/fuzz_targets/jit_codegen.rs`](fuzz/fuzz_targets/jit_codegen.rs:1).
-- **F3-T8 — Separación de crates de frontend (`forja-syntax`, `forja-types`).**
-  Se extrajo el frontend del compilador a crates reutilizables, sin backend:
+- ** Separación de crates de frontend (`forja-syntax`, `forja-types`).**
+  Se extrajo el frontend del compilador a crates reutilizables, sin destino:
   - [`forja-syntax`](crates/forja-syntax/src/lib.rs:1): `token`, `ast`, `error`,
     `lexer` y `parser`. Única dependencia externa: `serde`. Permite que
     herramientas de terceros (linters, formateadores, editores, LSP) consuman el
@@ -551,7 +705,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
     `pub use forja_types::semantics;`), preservando la API pública histórica.
   - Verificado: `cargo check --locked` EXIT 0; tests verdes (`forja-syntax` 43,
     `forja-types` 30, `forja` lib 318, integración 105+62+94+19+6+3).
-- **F3-T7 — Releases pre-compilados multi-plataforma.** Se completó la
+- ** Releases pre-compilados multi-plataforma.** Se completó la
   publicación de binarios para que cualquiera pueda **descargar y ejecutar Forja
   sin instalar Rust**, en las tres plataformas y en x86_64/ARM64:
   - **Matriz de compilación** ([`.github/workflows/rust.yml`](.github/workflows/rust.yml:128))
@@ -592,7 +746,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
     atestación queda pendiente; (3) publicar la fórmula en un *tap* de Homebrew
     (`forja-lang/homebrew-tap`) es una acción externa al repo.
 
-- **F3-T6 — Landing + narrativa de lanzamiento.** Se reescribió la portada del
+- ** Landing + narrativa de lanzamiento.** Se reescribió la portada del
   sitio para pasar de una página que "intentaba ser todo" a una **landing con
   mensaje claro, demo embebida y narrativa de lanzamiento**:
   - **Pitch definido** — *"Aprende a programar en español, con contratos y
@@ -635,13 +789,13 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
     responsabilidad del workflow `deploy.yml` al hacer merge a `main`; y la
     difusión del post (HN/Reddit) es una acción externa al repo. La demo embebida
     depende de que `src/wasm/forja_wasm.js` + `_bg.wasm` estén presentes (el CI
-    los descarga del último release). **Hallazgo relacionado (deuda de F2-T2):**
+    los descarga del último release). **Hallazgo relacionado (deuda ):**
     varios botones de ejemplo de la página `/playground/` usan sintaxis que el
     parser canónico no soporta (`para i = 0 mientras …`, `para x en …`), por lo
     que fallan al ejecutarse; el componente de la landing **no** reutiliza esos
     ejemplos y usa sólo sintaxis verificada.
 
-- **F3-T2 — `forja-gui-rt` como crate independiente (alcance degradado).** Se
+- ** `forja-gui-rt` como crate independiente (alcance degradado).** Se
   extrajo el sistema de tema Material You a un **subcrate real del workspace**,
   [`forja-theme`](crates/forja-theme/Cargo.toml:1), y se preparó
   [`forja-gui-rt`](crates/forja-gui-rt/Cargo.toml:1) para publicación:
@@ -671,9 +825,9 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
     nada. Igualmente, la separación de `widgets/` y `animation` en subcrates
     queda pendiente. La **publicación efectiva a crates.io** también queda como
     deuda: requiere resolver el `[patch.crates-io]` del fork de `xilem`/`masonry`
-    (F3-T3) antes de publicar.
+    antes de publicar.
 
-- **F3-T5 — Guía y curso oficial ("Forja en 30 días").** Se publicó un
+- ** Guía y curso oficial ("Forja en 30 días").** Se publicó un
   **currículum completo y navegable** dentro del sitio de documentación Astro,
   bajo la nueva sección **Curso** del sidebar:
   - **30 capítulos progresivos** en [`docs/src/pages/curso/`](docs/src/pages/curso/index.astro:1),
@@ -704,9 +858,9 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
     — las funciones (`mapa`, `filtrar`, `reducir`, …) se llaman **directamente**
     tras `importar "std/colecciones"`; (4) los **callbacks requieren `&`**
     (`mapa(arr, &fn)`), no el identificador desnudo. Estas limitaciones quedan
-    como deuda para F1-T5 (enums nativos) y el análisis semántico.
+    como deuda para (enums nativos) y el análisis semántico.
 
-- **F3-T1 — Registry de paquetes (alcance pragmático local).** Se implementó un
+- ** Registry de paquetes (alcance pragmático local).** Se implementó un
   **registry de paquetes offline** completo en el nuevo módulo
   [`registry.rs`](src/registry.rs:1), habilitando el ciclo publicar → consumir
   sin depender de un servidor remoto:
@@ -734,7 +888,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
     ahora resuelve dependencias no-builtin contra el registry local vía
     [`instalar_desde_registry`](src/registry.rs:1), verificando integridad y
     desempaquetando en `~/.forja/paquetes/<nombre>/<version>`.
-  - **Deuda documentada (servidor remoto).** El objetivo original de F3-T1 era
+  - **Deuda documentada (servidor remoto).** El objetivo original de era
     levantar `registry.forja-lang.dev`; en este entorno se implementó el
     **registry local/offline** equivalente. Queda como deuda futura el **servidor
     HTTP remoto** (API de publicación + index distribuido + autenticación de
@@ -744,7 +898,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   real: `forja publish --dir <pkg>` → `forja install` en un proyecto consumidor
   (paquete desempaquetado en `~/.forja/paquetes/demo/1.0.0`) → `forja yank`.
 
-- **F2-T8 — `forja learn` como experiencia guiada real.** El antiguo esbozo de
+- ** `forja learn` como experiencia guiada real.** El antiguo esbozo de
   una sola lección se convirtió en un **curso interactivo** con pasos y
   validación automática, implementado en el nuevo módulo
   [`learn.rs`](src/learn.rs:1) y orquestado por
@@ -772,7 +926,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   Verificado: `cargo test --locked --lib learn::` → 7 passed; 0 failed, y flujo
   end-to-end `forja learn` / `learn 1` / `learn check 1 <archivo>` / `learn reset`
   funcionando con progreso persistente.
-- **F2-T7 — Mensajes de runtime con backtrace en español.** Los errores de
+- ** Mensajes de runtime con backtrace en español.** Los errores de
   ejecución de la VM canónica ([`vm_fast`](src/vm_fast/mod.rs:1)) ahora se
   presentan con **mensaje claro, línea y pila de llamadas con nombres de función
   Forja** en lugar de códigos crudos:
@@ -800,7 +954,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   Verificado: `cargo run --bin forja -- run <archivo> --backtrace` produce
   mensaje + pila para ambos casos; `cargo test --locked --lib errores_estrictos`
   → 3 passed; 0 failed.
-- **F2-T6 — Debugger DAP pulido.** El depurador
+- ** Debugger DAP pulido.** El depurador
   ([`debugger.rs`](src/debugger.rs:1) + [`forja_dap.rs`](src/bin/forja_dap.rs:1))
   ahora soporta:
   - **Breakpoints condicionales** — el mapa de breakpoints pasó de
@@ -823,7 +977,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
     con configuración de `launch.json`, breakpoints condicionales, inspección de
     variables, watch, control de ejecución y solución de problemas.
   Verificado: `cargo check --locked --features dap --bin forja-dap` EXIT 0.
-- **F2-T5 — LSP enriquecido (quick fixes + inlay hints).** El servidor LSP
+- ** LSP enriquecido (quick fixes + inlay hints).** El servidor LSP
   ([`forja_lsp.rs`](src/bin/forja_lsp.rs:1)) ahora ofrece **code actions de
   corrección automática** con `WorkspaceEdit` reales (antes solo sugerencias sin
   edición):
@@ -845,7 +999,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   `cargo check --locked --features lsp --bin forja-lsp` EXIT 0,
   `cargo test --locked --features lsp --bin forja-lsp` → 8 passed; 0 failed y
   `cargo fmt -- --check src/bin/forja_lsp.rs` EXIT 0.
-- **F2-T4 — Linter con reglas configurables.** Nuevo módulo
+- ** Linter con reglas configurables.** Nuevo módulo
   [`linter.rs`](src/linter.rs:1) con un motor de reglas sobre el AST y **6 reglas
   documentadas** (superando el DoD de ≥5):
   - `variable-sin-usar` (warn) — variable local declarada y nunca leída.
@@ -866,7 +1020,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   código `L1`–`L6`. Verificado: `cargo check --locked` EXIT 0,
   `cargo check --locked --features lsp --bin forja-lsp` EXIT 0 y
   `cargo test --locked --lib linter` → 12 passed; 0 failed.
-- **F2-T3 — Formatter estable + `forja fmt --check` en CI.** El formatter
+- ** Formatter estable + `forja fmt --check` en CI.** El formatter
   ([`formatter.rs`](src/formatter.rs:1)) ahora está cubierto por **11 tests de
   idempotencia** (formatear dos veces produce el mismo resultado) y es
   determinista (recorrido puramente sintáctico del AST). El comando
@@ -882,8 +1036,8 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   `cargo test --locked --lib` → 360 passed; 0 failed.
   **Deuda futura documentada:** el formatter reconstruye el código desde el AST y
   **descarta los comentarios** (`//` y `/* */`); preservarlos requeriría cambios
-  en lexer + parser + AST (fuera del alcance de F2-T3).
-- **F2-T2 — Playground WASM público de calidad.** El playground del navegador
+  en lexer + parser + AST (fuera del alcance ).
+- ** Playground WASM público de calidad.** El playground del navegador
   ([`crates/forja-wasm/`](crates/forja-wasm/src/lib.rs:1) y
   [`crates/forja-wasm-gui/`](crates/forja-wasm-gui/src/lib.rs:1)) ahora expone
   **18 ejemplos ejecutables a un clic** (superando el DoD de ≥15): Hola Mundo,
@@ -903,7 +1057,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   del crate WASM. Verificado: `cargo check --locked` EXIT 0,
   `cargo check --package forja-wasm --target wasm32-unknown-unknown` EXIT 0 y
   `cargo check --package forja-wasm-gui --target wasm32-unknown-unknown` EXIT 0.
-- **F1-T4 — Prelude real (`Resultado`/`Opcion` + `?`).** El prelude ahora define
+- ** Prelude real (`Resultado`/`Opcion` + `?`).** El prelude ahora define
   los tipos algebraicos nativos `Resultado<T, E>` (`Ok`/`Error`) y `Opcion<T>`
   (`Alguno`/`Ninguno`), inyectados en el pipeline antes del análisis semántico.
   El comprobador de exhaustividad de `coincidir` los reconoce, y el operador `?`
@@ -913,14 +1067,14 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - Ejemplos `ejemplos/182_propagacion_encadenada.fa` (cadena de `Resultado`) y
   `ejemplos/183_opcion_propagacion.fa` (propagación de `Opcion`), con golden y
   cobertura en la red de equivalencia de motores.
-- **F1-T5 — Enums con datos y tuplas de primera clase.** Se corrigió el
+- ** Enums con datos y tuplas de primera clase.** Se corrigió el
   desempaquetado de la asignación múltiple (`variable (a, b) = ...` y
   `variable x, y = f()`), que antes asignaba la tupla completa a la primera
   variable y `nulo` al resto. Ahora cada variable recibe el elemento
   correspondiente de la tupla/arreglo. Cobertura: ejemplo
   `ejemplos/194_enums_tuplas.fa` (golden) y programa `enums_y_tuplas` en la red
   de equivalencia de motores (VM y JIT).
-- **F1-T6 — Limpieza de código muerto.** Se eliminó el `#![allow(dead_code)]`
+- ** Limpieza de código muerto.** Se eliminó el `#![allow(dead_code)]`
   masivo de los 30 archivos de `src/`. La causa raíz de los 186 warnings del
   binario era la duplicación de módulos en [`main.rs`](src/main.rs:1): el
   binario redeclaraba 34 módulos como `mod X;`, compilando una copia privada de
@@ -930,7 +1084,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   reporte de errores ASM, IC megamórfico, versionado de hot-reload) se marcó con
   `#[allow(dead_code)]` local y justificado. `cargo check --locked` queda en
   EXIT 0 sin warnings de código muerto.
-- **F1-T7 — Refactor de `vm_fast.rs` (8.764 líneas).** El monolito se convirtió
+- ** Refactor de `vm_fast.rs` (8.764 líneas).** El monolito se convirtió
   en el directorio [`src/vm_fast/`](src/vm_fast/mod.rs:1) con `mod.rs` como
   fachada. Se extrajeron por responsabilidad: `tipos.rs` (tipos base y
   `ValorFast`), `builtins.rs`, `ejecucion.rs` (`ejecutar`), `ejecucion_uops.rs`
@@ -945,7 +1099,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   API pública se mantiene vía `pub use` en `mod.rs`. **DoD cumplido:** ningún
   archivo del VM supera las 1.500 líneas (mayor: `ejecucion_uops.rs` con 1.321);
   `cargo check --locked` EXIT 0, 349 tests en verde y `fib(40)` = 102334155.
-- **F1-T8 — Extracción de `native_registry.rs` (6.362 líneas).** El monolito se
+- ** Extracción de `native_registry.rs` (6.362 líneas).** El monolito se
  convirtió en el directorio [`src/native_registry/`](src/native_registry/mod.rs:1)
  con `mod.rs` como fachada. Se extrajeron 31 submódulos por dominio: `sockets`,
  `archivos`, `fechas`, `aleatorio`, `codificacion`, `hash`, `crypto`, `web`,
@@ -962,7 +1116,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
  `native_proceso_win.rs`) ya residían en archivos propios y se registran desde
  `new()`. **DoD cumplido:** registro modular por dominio; `cargo check --locked`
  EXIT 0 sin warnings y 349 tests en verde.
-- **F2-T1 — Diagnóstico con span + código + sugerencia.** Se rediseñó el
+- ** Diagnóstico con span + código + sugerencia.** Se rediseñó el
  diagnóstico del compilador al estilo `rustc`. [`ErrorForja`](src/error.rs:286)
  se extendió de forma retrocompatible con los campos `codigo: String` y
  `span: Option<Span>` (con valores por defecto, sin romper los ~103 sitios de
