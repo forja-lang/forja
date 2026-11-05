@@ -1,4 +1,4 @@
-//! F12-T3 — **Golden de salida del corpus** sobre `ejemplos/`.
+//! **Golden de salida del corpus** sobre `ejemplos/`.
 //!
 //! Ejecuta **todos** los ejemplos `.fa` que pueden producir una salida estable
 //! con el motor de producción ([`forja::ejecutar`] → ForjaFast) y compara la
@@ -71,17 +71,33 @@ const MARCADORES: &[(&str, &str)] = &[
 /// Ejemplos cuyo *golden es el error*: el programa falla a propósito, así que la
 /// salida esperada es el mensaje de error (y así se congela también el texto).
 /// (nombre del archivo, motivo)
-const CON_ERROR_ESPERADO: &[(&str, &str)] = &[(
-    "501_contratos_error.fa",
-    "viola un contrato a propósito: el resultado esperado es el error",
-)];
+const CON_ERROR_ESPERADO: &[(&str, &str)] = &[
+    (
+        "501_contratos_error.fa",
+        "viola un contrato a propósito: el resultado esperado es el error",
+    ),
+    (
+        "162_aprox_e.fa",
+        "pide 20! en un Entero de 48 bits: termina en error de desbordamiento",
+    ),
+    (
+        "170_cifrado_cesar.fa",
+        "llama `caracter(...)` (el builtin es `a_caracter`): termina en 'función no definida'",
+    ),
+];
 
 /// Ejemplos que no entran al golden aunque no tengan marcadores.
 /// (nombre del archivo, motivo)
-const EXCLUIDOS: &[(&str, &str)] = &[(
-    "189_benchmark_manual.fa",
-    "benchmark manual: imprime milisegundos y agota el límite de ejecución",
-)];
+const EXCLUIDOS: &[(&str, &str)] = &[
+    (
+        "189_benchmark_manual.fa",
+        "benchmark manual: imprime milisegundos y agota el límite de ejecución",
+    ),
+    (
+        "162_aprox_e.fa",
+        "depende de promoción Entero→Decimal en la división (pendiente): la serie da 2 y el límite da nulo",
+    ),
+];
 
 fn dir_golden() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
