@@ -1,4 +1,4 @@
-# Forja — tareas de verificación (F7-T1)
+# Forja — tareas de verificación
 #
 # `make verify` es equivalente a `bash scripts/verify.sh`.
 .PHONY: verify fmt clippy test metricas
