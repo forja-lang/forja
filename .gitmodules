@@ -1,7 +1,3 @@
-[submodule "vscode"]
-	path = vscode
-	url = https://github.com/forja-lang/vscode.git
-	branch = main
 [submodule "ejemplos"]
 	path = ejemplos
 	url = https://github.com/forja-lang/ejemplos.git
@@ -53,8 +49,4 @@
 [submodule "crates/forja-gui-core"]
 	path = crates/forja-gui-core
 	url = https://github.com/forja-lang/forja-gui-core.git
-	branch = main
-[submodule "design"]
-	path = design
-	url = https://github.com/forja-lang/forja-design.git
 	branch = main
