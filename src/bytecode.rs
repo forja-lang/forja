@@ -141,7 +141,7 @@ pub enum Opcode {
     // === Funciones ===
     DefinirFuncion(Arc<str>, Vec<Arc<str>>), // (nombre, parámetros)
     Llamar(Arc<str>, usize),
-    /// Llamada indirecta a closure (F11-T1).
+    /// Llamada indirecta a closure.
     ///
     /// El destinatario es un **valor** en la pila: se empuja el closure (el
     /// nombre de la función que representa) y después los argumentos, de modo
@@ -354,7 +354,7 @@ pub enum Opcode {
     // === Concurrencia: Canales mpsc e Hilos ===
     /// Crear un canal mpsc real, empuja [tx_obj, rx_obj]
     NuevoCanal,
-    /// F12-T2: como `ChannelNew` pero la capacidad (entero) se desempuja de la
+    /// como `ChannelNew` pero la capacidad (entero) se desempuja de la
     /// pila: `enviar` bloquea cuando la cola está llena (backpressure).
     NuevoCanalConCapacidad,
     /// Lanzar un hilo que ejecuta la función `func_name`
@@ -408,16 +408,16 @@ pub struct GeneradorBytecode {
     /// Tipos de retorno anotados de funciones y métodos, por nombre simple.
     retornos: std::collections::HashMap<String, Tipo>,
     /// Índices de las postcondiciones de la función que se está emitiendo, para
-    /// emitir el check antes de cada `retornar` (F12-T6).
+    /// emitir el check antes de cada `retornar`.
     postcondiciones_activas: Vec<usize>,
     /// Variables globales (nombre, mutable) en orden de declaración: las
-    /// condiciones de contrato las resuelven por índice (F12-T6).
+    /// condiciones de contrato las resuelven por índice.
     globales: Vec<(String, bool)>,
     /// `anterior(expr)` de las postcondiciones en curso: (clave de la expresión,
     /// slot del snapshot). Ver [`Self::emitir_snapshots_anteriores`].
     anteriores: Vec<(String, usize)>,
     anterior_counter: usize,
-    /// Invariantes de clase (`siempre …`) y sus campos, por clase (F12-T7).
+    /// Invariantes de clase (`siempre …`) y sus campos, por clase.
     invariantes_clase: std::collections::HashMap<String, Vec<crate::ast::Contrato>>,
     campos_por_clase: std::collections::HashMap<String, std::collections::HashSet<String>>,
     /// Contratos de invariante ya registrados por clase (índices en `contratos`).
@@ -427,7 +427,7 @@ pub struct GeneradorBytecode {
     /// Campos de la clase del método en curso: un identificador suelto en una
     /// condición (`siempre valor >= 0`) se resuelve como `este.campo`.
     campos_clase: Option<std::collections::HashSet<String>>,
-    /// F12-T1: pila de nombres declarados por función. El tope es el ámbito en
+    /// pila de nombres declarados por función. El tope es el ámbito en
     /// el que se está emitiendo; sirve para decidir qué captura un closure (sólo
     /// variables locales del ámbito envolvente, no globales).
     pila_locales: Vec<std::collections::HashSet<String>>,
@@ -460,7 +460,7 @@ pub struct GeneradorBytecode {
     /// Almacenar aquí evita que optimizar_indices mezcle índices del ámbito
     /// exterior con los del ámbito de la función del hilo.
     hilo_funciones: Vec<FuncionHilo>,
-    /// F11-T1: definiciones de closures (`FunctionDef` + cuerpo + `Return`)
+    /// definiciones de closures (`FunctionDef` + cuerpo + `Return`)
     /// diferidas al final del programa. No pueden emitirse en el punto de uso
     /// porque la VM ejecuta el flujo secuencialmente: al entrar en el cuerpo
     /// del closure ejecutaría su `Return` y saltaría el resto del programa.
@@ -477,7 +477,7 @@ pub struct GeneradorBytecode {
     /// Nombres de funciones declaradas como `asincrona`.
     /// Cuando se llama a una función en este set, se emite ThreadSpawn en vez de Call.
     funciones_asincronas: std::collections::HashSet<String>,
-    /// F8-T7: nombres de funciones de usuario (para usarlas como valores).
+    /// nombres de funciones de usuario (para usarlas como valores).
     funciones_definidas: std::collections::HashSet<String>,
 }
 
@@ -1020,7 +1020,7 @@ impl GeneradorBytecode {
         let mut globales: Vec<&Declaracion> = Vec::new();
         let mut nuevas_funciones: Vec<Declaracion> = Vec::new();
 
-        // F11-T5: tipos de retorno anotados (funciones y métodos), para
+        // tipos de retorno anotados (funciones y métodos), para
         // especializar llamadas sin depender del mapa global del TypeChecker.
         self.retornos.clear();
         for decl in &programa.declaraciones {
@@ -1068,7 +1068,7 @@ impl GeneradorBytecode {
                     campos,
                     ..
                 } => {
-                    // F12-T7: los invariantes se emiten en cada método de la clase.
+                    // los invariantes se emiten en cada método de la clase.
                     if !invariantes.is_empty() {
                         self.invariantes_clase
                             .insert(nombre.clone(), invariantes.clone());
@@ -1186,7 +1186,7 @@ impl GeneradorBytecode {
             self.codigos.extend(body);
         }
 
-        // F11-T1: definiciones de closures, también fuera del flujo principal.
+        // definiciones de closures, también fuera del flujo principal.
         for op in self.closure_defs.drain(..) {
             self.codigos.push(op);
         }
@@ -1207,7 +1207,7 @@ impl GeneradorBytecode {
             .any(|ambito| ambito.contains(nombre))
     }
 
-    /// F12-T1: variables libres del cuerpo de un closure que son **locales** del
+    /// variables libres del cuerpo de un closure que son **locales** del
     /// ámbito envolvente. Los globales no se capturan: se leen en tiempo de
     /// llamada.
     fn variables_libres_closure(
@@ -1293,7 +1293,7 @@ impl GeneradorBytecode {
         None
     }
 
-    /// Indica si una variante de enum no lleva campos (F8-T8).
+    /// Indica si una variante de enum no lleva campos.
     fn variante_sin_campos(&self, nombre_constructor: &str) -> bool {
         self.enum_variantes
             .values()
@@ -1521,7 +1521,7 @@ impl GeneradorBytecode {
                 } else {
                     nombre.to_string()
                 };
-                // F11-T5: ámbito de tipos propio. Se conservan los tipos de las
+                // ámbito de tipos propio. Se conservan los tipos de las
                 // variables de nivel superior (visibles dentro de la función) y se
                 // añaden los parámetros; al terminar se restaura el ámbito previo.
                 let ambito_previo = std::mem::take(&mut self.tipos_ambito);
@@ -1533,7 +1533,7 @@ impl GeneradorBytecode {
                 }
                 self.tipos_ambito = ambito;
 
-                // F12-T1: ámbito de locales propio (para decidir capturas de
+                // ámbito de locales propio (para decidir capturas de
                 // closures anidados): los parámetros son locales de la función.
                 let locales_previos = std::mem::take(&mut self.pila_locales);
                 self.pila_locales = vec![locales_previos
@@ -1575,7 +1575,7 @@ impl GeneradorBytecode {
                     self.emitir(Opcode::VerificarPrecondicion(idx));
                 }
 
-                // F12-T7: si esto es un método (`Clase.metodo`), activar los
+                // si esto es un método (`Clase.metodo`), activar los
                 // invariantes de su clase y sus campos (para que un identificador
                 // suelto en la condición se resuelva como `este.campo`).
                 let inv_previos = std::mem::take(&mut self.invariantes_activos);
@@ -1745,8 +1745,11 @@ impl GeneradorBytecode {
                         {
                             let label_inicio = self.nueva_label();
                             let label_fin = self.nueva_label();
+                            // `continuar` debe saltar al incremento, no a la
+                            // condición: si no, el contador nunca avanza.
+                            let label_continuar = self.nueva_label();
 
-                            self.loop_stack.push((label_inicio, label_fin));
+                            self.loop_stack.push((label_continuar, label_fin));
 
                             if let Some(init) = inicializacion {
                                 self.generar_declaracion(init);
@@ -1761,6 +1764,7 @@ impl GeneradorBytecode {
 
                             self.generar_declaraciones(bloque);
 
+                            self.emitir(Opcode::Etiqueta(label_continuar));
                             if let Some(inc) = incremento {
                                 self.generar_declaracion(inc);
                             }
@@ -1776,8 +1780,9 @@ impl GeneradorBytecode {
                 // Fallback: genérico
                 let label_inicio = self.nueva_label();
                 let label_fin = self.nueva_label();
+                let label_continuar = self.nueva_label();
 
-                self.loop_stack.push((label_inicio, label_fin));
+                self.loop_stack.push((label_continuar, label_fin));
 
                 if let Some(init) = inicializacion {
                     self.generar_declaracion(init);
@@ -1791,6 +1796,7 @@ impl GeneradorBytecode {
 
                 self.generar_declaraciones(bloque);
 
+                self.emitir(Opcode::Etiqueta(label_continuar));
                 if let Some(inc) = incremento {
                     self.generar_declaracion(inc);
                 }
@@ -1806,9 +1812,9 @@ impl GeneradorBytecode {
                 let var_contador = Arc::from("__repetir_counter");
                 let label_inicio = self.nueva_label();
                 let label_fin = self.nueva_label();
+                let label_continuar = self.nueva_label();
 
-                self.loop_stack.push((label_inicio, label_fin));
-
+                self.loop_stack.push((label_continuar, label_fin));
                 self.emitir(Opcode::PushEntero(0));
                 self.emitir(Opcode::Declarar(Arc::clone(&var_contador), true));
 
@@ -1820,6 +1826,7 @@ impl GeneradorBytecode {
 
                 self.generar_declaraciones(bloque);
 
+                self.emitir(Opcode::Etiqueta(label_continuar));
                 self.emitir(Opcode::Cargar(Arc::clone(&var_contador)));
                 self.emitir(Opcode::PushEntero(1));
                 self.emitir(Opcode::Sumar);
@@ -1933,7 +1940,7 @@ impl GeneradorBytecode {
                             self.emitir(Opcode::Retornar);
                         } else {
                             // Tail Call Optimization: el VM popea N args y los
-                            // invierte; se empujan en orden natural (F8-T9).
+                            // invierte; se empujan en orden natural.
                             for arg in argumentos.iter() {
                                 self.generar_expresion(arg);
                             }
@@ -2044,7 +2051,7 @@ impl GeneradorBytecode {
                     0,
                     0,
                     "`si` como elemento de una lista de argumentos sólo se admite en apps GUI.",
-                    "Usá el `si` como sentencia, o compilá la app con `forja ejecutar --native`.",
+                    "Usá el `si` como sentencia, o poné `backend: nativo` en forja.yaml y ejecutá la app con `forja ejecutar`.",
                 ));
                 self.profundidad_actual -= 1;
                 self.emitir(Opcode::PushNulo);
@@ -2102,7 +2109,7 @@ impl GeneradorBytecode {
                         self.emitir(Opcode::Cargar(tmp_nombre));
                     }
                     _ => {
-                        // F8-T8: variante unitaria (`Norte`) → objeto enum con tag.
+                        // variante unitaria (`Norte`) → objeto enum con tag.
                         if let Some((enum_nombre, tag)) = self.buscar_variante_enum(nombre) {
                             if self.variante_sin_campos(nombre) {
                                 let tmp: Arc<str> = Arc::from(
@@ -2126,7 +2133,7 @@ impl GeneradorBytecode {
                         } else if self.funciones_definidas.contains(nombre)
                             && !self.var_indices.contains_key(nombre)
                         {
-                            // F8-T7: función usada como valor (callback).
+                            // función usada como valor (callback).
                             self.emitir(Opcode::PushTexto(Arc::from(nombre.as_str())));
                         } else {
                             self.emitir(Opcode::Cargar(Arc::from(nombre.as_str())));
@@ -2457,7 +2464,7 @@ impl GeneradorBytecode {
                                     self.emitir(Opcode::Etiqueta(label_next));
                                 }
                             } else if subpatrones.is_empty() {
-                                // F8-T8: una variante unitaria también debe comparar
+                                // una variante unitaria también debe comparar
                                 // su tag; antes "siempre matcheaba" y `coincidir`
                                 // ejecutaba el primer brazo para cualquier variante.
                                 let tag = self.obtener_tag_constructor(nombre_ctor).unwrap_or(0);
@@ -2518,13 +2525,13 @@ impl GeneradorBytecode {
             }
 
             Expresion::Closure { parametros, cuerpo } => {
-                // Función anónima. F11-T1: la definición se acumula para
+                // Función anónima. la definición se acumula para
                 // emitirla al final del programa (junto a las funciones), NO en
                 // el punto de uso: un `FunctionDef` inline haría que la
                 // ejecución secuencial entre en el cuerpo y su `Return` corte el
                 // programa.
                 //
-                // F12-T1: el valor es un objeto `Closure` con el nombre de la
+                // el valor es un objeto `Closure` con el nombre de la
                 // función (`fn`) y el entorno capturado (`env`), y la función
                 // recibe ese entorno como primer parámetro (`__entorno`).
                 let nombre: Arc<str> =
@@ -2728,6 +2735,79 @@ impl GeneradorBytecode {
                 self.emitir(Opcode::FijarElemento);
                 self.emitir(Opcode::Descartar);
             }
+            Expresion::AsignacionCompuesta {
+                objetivo,
+                operador,
+                valor,
+            } => {
+                // Se guardan el objeto/índice y el valor viejo en temporales para
+                // evaluar el objetivo una sola vez (`arr[f()] += 1` llama a f() una vez).
+                let tipo_objetivo = self.inferir_tipo_expresion(objetivo);
+                let old_name: Arc<str> = Arc::from(format!("__ac_{}", self.nueva_label()).as_str());
+                let temp_expr = Expresion::Identificador {
+                    nombre: old_name.to_string(),
+                    linea: 0,
+                    columna: 0,
+                };
+                let guardar_old = |this: &mut Self| {
+                    this.emitir(Opcode::Declarar(old_name.clone(), false));
+                    this.emitir(Opcode::Guardar(old_name.clone()));
+                    if let Some(t) = tipo_objetivo.clone() {
+                        this.tipos_ambito.insert(old_name.to_string(), t);
+                    }
+                };
+                match objetivo.as_ref() {
+                    Expresion::Identificador { nombre, .. } => {
+                        self.emitir(Opcode::Cargar(Arc::from(nombre.as_str())));
+                        guardar_old(self);
+                        self.emitir_op_binaria(operador, &temp_expr, valor);
+                        self.emitir(Opcode::Duplicar);
+                        self.emitir(Opcode::Guardar(Arc::from(nombre.as_str())));
+                    }
+                    Expresion::AccesoMiembro { objeto, miembro } => {
+                        let obj_name: Arc<str> =
+                            Arc::from(format!("__ac_obj_{}", self.nueva_label()).as_str());
+                        self.generar_expresion(objeto);
+                        self.emitir(Opcode::Declarar(obj_name.clone(), false));
+                        self.emitir(Opcode::Guardar(obj_name.clone()));
+                        self.emitir(Opcode::Cargar(obj_name.clone()));
+                        self.emitir(Opcode::ObtenerCampo(Arc::from(miembro.as_str())));
+                        guardar_old(self);
+                        self.emitir_op_binaria(operador, &temp_expr, valor);
+                        self.emitir(Opcode::Duplicar);
+                        self.emitir(Opcode::Cargar(obj_name));
+                        self.emitir(Opcode::FijarCampo(Arc::from(miembro.as_str())));
+                    }
+                    Expresion::Index { objeto, indice } => {
+                        let obj_name: Arc<str> =
+                            Arc::from(format!("__ac_obj_{}", self.nueva_label()).as_str());
+                        let idx_name: Arc<str> =
+                            Arc::from(format!("__ac_idx_{}", self.nueva_label()).as_str());
+                        self.generar_expresion(objeto);
+                        self.emitir(Opcode::Declarar(obj_name.clone(), false));
+                        self.emitir(Opcode::Guardar(obj_name.clone()));
+                        self.generar_expresion(indice);
+                        self.emitir(Opcode::Declarar(idx_name.clone(), false));
+                        self.emitir(Opcode::Guardar(idx_name.clone()));
+                        self.emitir(Opcode::Cargar(obj_name.clone()));
+                        self.emitir(Opcode::Cargar(idx_name.clone()));
+                        self.emitir(Opcode::ObtenerElemento);
+                        guardar_old(self);
+                        self.emitir_op_binaria(operador, &temp_expr, valor);
+                        self.emitir(Opcode::Duplicar);
+                        self.emitir(Opcode::Cargar(obj_name));
+                        self.emitir(Opcode::Cargar(idx_name));
+                        self.emitir(Opcode::FijarElemento);
+                        self.emitir(Opcode::Descartar);
+                    }
+                    _ => {
+                        // El parser sólo produce objetivos asignables.
+                        self.generar_expresion(objetivo);
+                        self.generar_expresion(valor);
+                        self.emitir(Opcode::Descartar);
+                    }
+                }
+            }
             Expresion::Ok(expr) => {
                 // Crear objeto Resultado con campo tipo="ok" y campo valor=expr
                 // Stack order para SetField: [valor, valor_dup, objeto] con objeto en top
@@ -2914,7 +2994,7 @@ impl GeneradorBytecode {
         }
     }
 
-    /// Emite los checks de postcondición activos (F12-T6).
+    /// Emite los checks de postcondición activos.
     ///
     /// Antes se emitían sólo después del cuerpo: con un `retornar` explícito eso
     /// era código muerto, así que `asegura` no se verificaba nunca en funciones
@@ -2923,7 +3003,7 @@ impl GeneradorBytecode {
         for idx in self.postcondiciones_activas.clone() {
             self.emitir(Opcode::VerificarPostcondicion(idx));
         }
-        // F12-T7: el invariante también se verifica al salir del método.
+        // el invariante también se verifica al salir del método.
         for idx in self.invariantes_activos.clone() {
             self.emitir(Opcode::VerificarInvariante(idx));
         }
@@ -2961,7 +3041,7 @@ impl GeneradorBytecode {
                     }
                     _ => {
                         // Parámetro/local → slot; global → índice de global;
-                        // si no existe, Nulo (F12-T6).
+                        // si no existe, Nulo.
                         if let Some(&idx) = self.var_indices.get(nombre) {
                             output.push(Uop::LoadIdx(idx));
                         } else if let Some(idx) =
@@ -3035,7 +3115,7 @@ impl GeneradorBytecode {
 
             // `resultado` en una postcondición: el valor de retorno, que la VM
             // pasa aparte de los locales. Sin esta rama caía en `PushNulo` y el
-            // check comparaba contra Nulo (F12-T6).
+            // check comparaba contra Nulo.
             Expresion::Resultado => {
                 output.push(Uop::LoadIdx(crate::vm_fast::RESULTADO_IDX));
             }
@@ -3226,6 +3306,12 @@ impl GeneradorBytecode {
                 Self::extraer_ids_expr(array, usadas);
                 Self::extraer_ids_expr(valor, usadas);
             }
+            Expresion::AsignacionCompuesta {
+                objetivo, valor, ..
+            } => {
+                Self::extraer_ids_expr(objetivo, usadas);
+                Self::extraer_ids_expr(valor, usadas);
+            }
             Expresion::Ok(expr)
             | Expresion::Error(expr)
             | Expresion::Algo(expr)
@@ -3246,7 +3332,7 @@ impl GeneradorBytecode {
 
     /// Extrae variables declaradas e identificadores usados en una declaración recursivamente.
     ///
-    /// F11-T2: también lo usa el constructor IR para calcular las variables
+    /// también lo usa el constructor IR para calcular las variables
     /// capturadas por un `hilo { ... }`, para no duplicar el recorrido del AST.
     pub(crate) fn extraer_ids_decl(
         decl: &Declaracion,
