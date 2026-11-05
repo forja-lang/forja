@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Barrido del corpus (F12-T3): clasifica cada ejemplo como OK / NO_COMPILA / CUELGA.
+# Barrido del corpus: clasifica cada ejemplo como OK / NO_COMPILA / CUELGA.
 # Usa el binario release ya compilado (no toca el árbol de trabajo).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
