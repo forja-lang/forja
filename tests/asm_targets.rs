@@ -594,7 +594,7 @@ fn e2e_x86_64_linux_ensambla_y_ejecuta() {
         let stdout = String::from_utf8_lossy(&salida.stdout);
         assert_eq!(
             stdout.trim(),
-            esperado,
+            *esperado,
             "[{nombre}] salida inesperada de la ejecución"
         );
     }
