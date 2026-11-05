@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""F4-T2 — Comparador de regresiones de rendimiento.
+"""Comparador de regresiones de rendimiento.
 
 Lee la salida JSON del benchmark `perf-regresion` (ratios normalizados contra la
 calibración), la compara contra una línea base versionada y **falla con exit 1**
@@ -29,7 +29,7 @@ METRICA_CALIBRACION = "calibracion"
 # ruido; se le da un margen mayor sin dejar de detectar regresiones grandes.
 UMBRALES_POR_METRICA: dict[str, float] = {
     "compilar_fib": 20.0,
-    # F14-T2: los cocientes ir/ast son ruidosos (dividen dos medianas).
+    # los cocientes ir/ast son ruidosos (dividen dos medianas).
     "ir_vs_ast_compilar": 15.0,
     "ir_vs_ast_vm": 15.0,
 }
@@ -67,7 +67,7 @@ def construir_baseline(actual: dict, threshold: float) -> dict:
             "warmup": actual.get("warmup"),
             "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "note": (
-                "Baseline de rendimiento F4-T2. Los ratios se normalizan contra "
+                "Baseline de rendimiento. Los ratios se normalizan contra "
                 "la calibración; regenerar en el runner de referencia."
             ),
         },
@@ -85,7 +85,7 @@ def escribir(path: str, datos: dict) -> None:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Comparador de regresiones de rendimiento (F4-T2)")
+    p = argparse.ArgumentParser(description="Comparador de regresiones de rendimiento ")
     p.add_argument("--actual", required=True, help="JSON del benchmark actual")
     p.add_argument("--baseline", required=True, help="Ruta de la línea base")
     p.add_argument("--threshold", type=float, default=None, help="Umbral de regresión en %%")
@@ -165,7 +165,7 @@ def main() -> int:
         )
 
     cabecera = (
-        "## ⚡ Regresión de rendimiento (F4-T2)\n\n"
+        "## ⚡ Regresión de rendimiento \n\n"
         f"- **Umbral:** {threshold}%\n"
         f"- **Baseline:** `{args.baseline}`\n"
         f"- **Runner:** {actual.get('os')}/{actual.get('arch')}, "
