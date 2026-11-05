@@ -1011,7 +1011,9 @@ impl DeadCodeEliminator {
                     self.recolectar_contratos(postcondiciones);
                 }
                 Declaracion::Clase {
-                    metodos, invariantes, ..
+                    metodos,
+                    invariantes,
+                    ..
                 } => {
                     for m in metodos {
                         self.recolectar_usos(&m.cuerpo);

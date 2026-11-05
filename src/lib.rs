@@ -199,8 +199,7 @@ fn compilar_pipeline_nucleo_emision(
         Ok(bc) => bc,
         // Si ambos motores fallan, gana el error del AST: describe el programa.
         Err(_) => {
-            return Err(error_ast
-                .unwrap_or_else(|| "el programa no se puede emitir".to_string()))
+            return Err(error_ast.unwrap_or_else(|| "el programa no se puede emitir".to_string()))
         }
     };
     let bc = bytecode::postprocesar_globales(bc, &globales);
