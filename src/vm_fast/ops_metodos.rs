@@ -1,13 +1,13 @@
 // Opcodes de llamada a metodos (CallMethod y CallMethodCached) de la VM
-// canonica `ForjaFast` (F1-T7).
+// canonica `ForjaFast`.
 //
-// Extraido de `ejecucion.rs` durante el refactor F1-T7. Estas ramas del
+// Extraido de `ejecucion.rs` durante el refactor. Estas ramas del
 // `match op` usan `continue` internamente; se convierten a `return Ok(true)`
 // para que el helper indique al bucle principal que la operacion fue manejada.
 
 use super::*;
 
-/// F12-T2: nombres aceptados para la recepción **no bloqueante** de un
+/// nombres aceptados para la recepción **no bloqueante** de un
 /// `CanalReceptor` (`rx.try_recibir()` → valor o Nulo si no hay mensajes).
 pub(crate) fn es_try_recibir(nombre: &str) -> bool {
     matches!(
@@ -84,7 +84,7 @@ impl ForjaFast {
                                 None => self.push_valor(ValorFast::nulo()),
                             }
                         } else if es_try_recibir(self.tabla_simbolos.texto(method_sym)) {
-                            // F12-T2: `rx.try_recibir()` no bloquea; Nulo si vacío.
+                            // `rx.try_recibir()` no bloquea; Nulo si vacío.
                             match self.canal_try_recibir(chan_idx) {
                                 Some(cv) => {
                                     let val = self.valor_de_channel(cv);
@@ -359,7 +359,7 @@ impl ForjaFast {
                                 None => self.push_valor(ValorFast::nulo()),
                             }
                         } else if es_try_recibir(self.tabla_simbolos.texto(method_sym)) {
-                            // F12-T2: `rx.try_recibir()` no bloquea; Nulo si vacío.
+                            // `rx.try_recibir()` no bloquea; Nulo si vacío.
                             match self.canal_try_recibir(chan_idx) {
                                 Some(cv) => {
                                     let val = self.valor_de_channel(cv);
