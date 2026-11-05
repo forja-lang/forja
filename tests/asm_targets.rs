@@ -1,11 +1,11 @@
-//! F4-T6 — Suite de tests del backend ASM multi-target.
+//! Suite de tests del backend ASM multi-target.
 //!
 //! Verifica que el compilador a assembly ([`forja::compiler_asm`]) genera código
 //! **para las tres arquitecturas soportadas** (x86-64 Windows, x86-64 Linux/System V
 //! y ARM64/aarch64) sobre una batería de programas que cubre los constructos del
 //! lenguaje, y que cada target emite sus registros/directivas correctos.
 //!
-//! DoD F4-T6: consolidar x86-64 y ARM64 con cobertura de tests por target.
+//! DoD consolidar x86-64 y ARM64 con cobertura de tests por target.
 
 use forja::compiler_asm::{compilar_a_asm_con_target, CompilerAsm, TargetArch};
 
@@ -178,7 +178,7 @@ const PROGRAMAS: &[(&str, &str)] = &[
     ),
 ];
 
-/// F5-T6: constructos que el backend ASM debe **rechazar en compilación** con
+/// constructos que el backend ASM debe **rechazar en compilación** con
 /// un error claro (nunca emitir un stub silencioso `ud2`/`udf`).
 const PROGRAMAS_NO_SOPORTADOS: &[(&str, &str, &str)] = &[
     (
@@ -399,7 +399,7 @@ fn bateria_por_target() {
     );
 }
 
-/// F5-T6: un constructo no soportado no debe generar ASM con `ud2`/`udf`; el
+/// un constructo no soportado no debe generar ASM con `ud2`/`udf`; el
 /// compilador debe devolver un error de compilación con el nombre del constructo.
 #[test]
 fn constructos_no_soportados_fallan_en_compilacion() {
@@ -480,7 +480,7 @@ fn analisis_de_inlining_por_target() {
     }
 }
 
-/// F4-T6: una clase **sin** constructor no debe emitir una llamada a un símbolo
+/// una clase **sin** constructor no debe emitir una llamada a un símbolo
 /// `Clase.nuevo` inexistente (fallo de enlazado); con constructor sí.
 #[test]
 fn instanciacion_sin_constructor_no_llama_simbolo_inexistente() {
@@ -514,6 +514,42 @@ fn instanciacion_sin_constructor_no_llama_simbolo_inexistente() {
     }
 }
 
+/// Constructos que el backend ASM **ejecuta** correctamente: la batería que
+/// usan los e2e de x86-64 (nombre, fuente, salida esperada).
+#[allow(dead_code)] // en Windows sólo la usa el test de VM vs ASM
+const E2E_EJECUCION: &[(&str, &str, &str)] = &[
+    (
+        "suma",
+        "variable a = 7\nvariable b = 5\nescribir(a + b)",
+        "12",
+    ),
+    (
+        "bucle",
+        "variable s = 0\nmientras (s < 5) { s = s + 1 }\nescribir(s)",
+        "5",
+    ),
+    (
+        "funcion",
+        "funcion suma(a, b) -> Entero {\n    retornar a + b\n}\nescribir(suma(20, 22))",
+        "42",
+    ),
+    (
+        "arreglo",
+        "variable arr = [10, 20, 30]\nescribir(arr[1])",
+        "20",
+    ),
+    (
+        "arreglo_suma",
+        "variable a = [1, 2, 3, 4]\nvariable s = a[0] + a[1] + a[2] + a[3]\nescribir(s)",
+        "10",
+    ),
+    (
+        "clase",
+        "clase Punto {\n    x\n    y\n}\nvariable p = nuevo Punto()\np.x = 42\nescribir(p.x)",
+        "42",
+    ),
+];
+
 /// End-to-end real (sólo Linux): ensambla con `gcc`, enlaza y ejecuta el código
 /// x86-64 generado, comparando la salida. Valida que los constructos soportados
 /// por el backend **ejecutan** correctamente (no solo que se emitan).
@@ -528,43 +564,10 @@ fn e2e_x86_64_linux_ensambla_y_ejecuta() {
         return;
     }
 
-    let casos = [
-        (
-            "suma",
-            "variable a = 7\nvariable b = 5\nescribir(a + b)",
-            "12",
-        ),
-        (
-            "bucle",
-            "variable s = 0\nmientras (s < 5) { s = s + 1 }\nescribir(s)",
-            "5",
-        ),
-        (
-            "funcion",
-            "funcion suma(a, b) -> Entero {\n    retornar a + b\n}\nescribir(suma(20, 22))",
-            "42",
-        ),
-        (
-            "arreglo",
-            "variable arr = [10, 20, 30]\nescribir(arr[1])",
-            "20",
-        ),
-        (
-            "arreglo_suma",
-            "variable a = [1, 2, 3, 4]\nvariable s = a[0] + a[1] + a[2] + a[3]\nescribir(s)",
-            "10",
-        ),
-        (
-            "clase",
-            "clase Punto {\n    x\n    y\n}\nvariable p = nuevo Punto()\np.x = 42\nescribir(p.x)",
-            "42",
-        ),
-    ];
-
     let dir = std::env::temp_dir().join("forja_asm_e2e");
     fs::create_dir_all(&dir).unwrap();
 
-    for (nombre, fuente, esperado) in casos {
+    for (nombre, fuente, esperado) in E2E_EJECUCION {
         let programa = parsear(fuente).expect("parse");
         let asm = compilar_a_asm_con_target(&programa, TargetArch::X86_64Linux).expect("compila");
         let fuente_s = dir.join(format!("{nombre}.s"));
@@ -667,6 +670,92 @@ fn e2e_riscv64_ensambla() {
     assert!(
         fallos.is_empty(),
         "El assembly RISC-V no ensambla ({} casos):\n\n{}",
+        fallos.len(),
+        fallos.join("\n")
+    );
+}
+
+/// P2 (§3.9) — **VM vs ASM nativo**: toda la batería `PROGRAMAS` debe dar la
+/// misma salida en la VM canónica y compilada a assembly del host, ensamblada
+/// con `gcc` y ejecutada. Se salta si no hay `gcc` o el host no es x86-64.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn e2e_vm_vs_asm_nativo_misma_salida() {
+    use std::fs;
+    use std::process::Command;
+
+    let target = TargetArch::detect();
+    if !matches!(target, TargetArch::X86_64Windows | TargetArch::X86_64Linux) {
+        eprintln!("host {target:?}: sin ejecución ASM nativa en tests; se omite");
+        return;
+    }
+    if Command::new("gcc").arg("--version").output().is_err() {
+        eprintln!("gcc no disponible; se omite VM vs ASM nativo");
+        return;
+    }
+
+    let dir = std::env::temp_dir().join(format!("forja_asm_vm_diff_{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let exe_ext = if cfg!(target_os = "windows") {
+        ".exe"
+    } else {
+        ""
+    };
+
+    let mut comparados = 0;
+    let mut fallos = Vec::new();
+    for (nombre, fuente) in PROGRAMAS {
+        let salida_vm = forja::ejecutar_vm(fuente)
+            .unwrap_or_else(|e| panic!("[{nombre}] ejecutar_vm falló: {e}"));
+        let programa = parsear(fuente).unwrap_or_else(|e| panic!("[{nombre}] parse: {e}"));
+        let asm = compilar_a_asm_con_target(&programa, target)
+            .unwrap_or_else(|e| panic!("[{nombre}] compila a ASM: {e:?}"));
+
+        comparados += 1;
+        let ruta_s = dir.join(format!("{nombre}.s"));
+        let exe = dir.join(format!("{nombre}{exe_ext}"));
+        fs::write(&ruta_s, asm).expect("escribir .s");
+        let link = Command::new("gcc")
+            .arg("-O2")
+            .arg("-o")
+            .arg(&exe)
+            .arg(&ruta_s)
+            .output()
+            .expect("ejecutar gcc");
+        assert!(
+            link.status.success(),
+            "[{nombre}] gcc falló: {}",
+            String::from_utf8_lossy(&link.stderr).trim()
+        );
+
+        let corrida = Command::new(&exe).output().expect("ejecutar binario");
+        assert!(
+            corrida.status.success(),
+            "[{nombre}] el binario terminó con error"
+        );
+        let salida_asm: Vec<String> = String::from_utf8_lossy(&corrida.stdout)
+            .lines()
+            .map(str::to_string)
+            .collect();
+
+        if salida_asm != salida_vm {
+            fallos.push(format!(
+                "[{nombre}] VM != ASM nativo
+  vm  = {salida_vm:?}
+  asm = {salida_asm:?}"
+            ));
+        }
+    }
+    let _ = fs::remove_dir_all(&dir);
+
+    assert_eq!(
+        comparados,
+        PROGRAMAS.len(),
+        "casos omitidos: la VM o el backend ASM no aceptaron el programa"
+    );
+    assert!(
+        fallos.is_empty(),
+        "VM vs ASM nativo difiere en {} caso(s):\n{}",
         fallos.len(),
         fallos.join("\n")
     );
