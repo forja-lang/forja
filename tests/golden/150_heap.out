@@ -14,6 +14,6 @@ Desencolando (siempre el máximo):
 
 Heap Sort descendente:
   Original: [15,3,8,22,1,19,7,12]
-  Ordenado: nulo
+  Ordenado: []
 
 El heap garantiza que el máximo sea siempre accesible en O(1).
