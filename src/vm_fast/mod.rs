@@ -24,7 +24,7 @@ use crate::bytecode::{self, ContratoBytecode, Opcode, TipoIncorporada};
 use crate::class_descriptor::{DescriptorClase, FormaCampos};
 use crate::shape::{IdForma, RegistroFormas};
 
-// ─── Submódulos (F1-T7) ────────────────────────────────────────────────────
+// ─── Submódulos ────────────────────────────────────────────────────
 mod tipos;
 
 // Re-export de los tipos base extraídos a `tipos.rs` para preservar la API
@@ -48,7 +48,7 @@ use crate::uops::{expandir_a_uops, optimizar_uops, remapear_saltos_uops, Uop};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// F12-T2: capacidad de un canal creado con `canal()`.
+/// capacidad de un canal creado con `canal()`.
 ///
 /// Los canales son **acotados**: cuando la cola está llena, `enviar` bloquea al
 /// emisor (backpressure) en vez de crecer sin límite y agotar la memoria.
@@ -68,7 +68,7 @@ pub struct ForjaFast {
     // En Call se push un nuevo Vec, en Return se pop. Sin base_ptr ni flat_vars globales.
     pub(crate) frame_locals: Vec<Vec<ValorFast>>,
 
-    // ─── F2-T7: Backtrace de runtime ───────────────────────────────────────
+    // ─── Backtrace de runtime ───────────────────────────────────────
     /// Última línea de código fuente vista (actualizada por `SetLine`).
     /// 0 = desconocida (código sin información de línea).
     pub(crate) linea_actual: usize,
@@ -102,14 +102,12 @@ pub struct ForjaFast {
     obj_free: Vec<u32>,    // free list objetos
     str_free: Vec<u32>,    // free list strings
     array_free: Vec<u32>,  // free list arrays
-    /// Generational GC — coordina young/old generation collection
-    gc: crate::gc::GenerationalGC,
-    /// F4-T5: presión de asignación (nº de allocs) desde la última recolección.
+    /// presión de asignación (nº de allocs) desde la última recolección.
     gc_pressure: usize,
-    /// F4-T5: umbral de presión que dispara una recolección mark-sweep.
+    /// umbral de presión que dispara una recolección mark-sweep.
     gc_pressure_threshold: usize,
-    /// F4-T5: telemetría de pausas del GC (colecciones, duración, reciclados).
-    gc_telemetry: crate::gc::GcTelemetry,
+    /// telemetría de pausas del GC (colecciones, duración, reciclados).
+    gc_telemetry: crate::legacy::gc::GcTelemetry,
     map_free: Vec<u32>, // free list mapas
 
     // ─── Exacto Heap ─────────────────────────────────────────────────
@@ -123,7 +121,7 @@ pub struct ForjaFast {
     pub chan_tx_heap: Vec<Option<std::sync::mpsc::SyncSender<ChannelValue>>>,
     /// Canales de recepción. Van en `Arc<Mutex<…>>` porque `mpsc::Receiver` no
     /// es `Clone` y un `hilo { … }` necesita **compartir** el receptor con su VM
-    /// hijo (F12-T2: antes el hijo no lo recibía y `recibir()` daba Nulo).
+    /// hijo (antes el hijo no lo recibía y `recibir()` daba Nulo).
     pub chan_rx_heap: Vec<Option<Arc<std::sync::Mutex<std::sync::mpsc::Receiver<ChannelValue>>>>>,
     /// Marcas GC para canales tx
     pub chan_tx_marked: Vec<bool>,
@@ -133,14 +131,14 @@ pub struct ForjaFast {
     pub chan_tx_free: Vec<u32>,
     /// Free list para canales rx
     pub chan_rx_free: Vec<u32>,
-    /// F5-T5: índice de tx asociado a cada rx (para marcar los mensajes en cola
+    /// índice de tx asociado a cada rx (para marcar los mensajes en cola
     /// y no liberar objetos vivos que esperan ser recibidos).
     pub chan_rx_tx: Vec<u32>,
-    /// F5-T5: cantidad de receptores que referencian cada tx.
+    /// cantidad de receptores que referencian cada tx.
     pub chan_tx_refs: Vec<u32>,
-    /// F5-T5: valores en cola por canal tx (raíces adicionales del GC).
+    /// valores en cola por canal tx (raíces adicionales del GC).
     pub chan_payloads: Vec<Vec<ValorFast>>,
-    /// F5-T5: marca de canal ya recorrido durante el mark (evita ciclos).
+    /// marca de canal ya recorrido durante el mark (evita ciclos).
     pub canal_marked: Vec<bool>,
 
     // ─── Thread Heap ─────────────────────────────────────────────────────
@@ -218,7 +216,7 @@ pub struct ForjaFast {
     // ─── IdSimbolo para canales e hilos ────────────────────────────────────
     pub(crate) sym_canal_emisor: IdSimbolo,
     pub(crate) sym_canal_receptor: IdSimbolo,
-    /// F12-T1: campos del objeto que representa un closure.
+    /// campos del objeto que representa un closure.
     sym_closure_fn: IdSimbolo,
     sym_closure_env: IdSimbolo,
     sym_hilo: IdSimbolo,
@@ -271,10 +269,10 @@ pub struct ForjaFast {
     fast_math_manual: Option<bool>,
     pub show_bytecode: bool,
 
-    // ─── F2-T7: Errores de runtime estrictos ───────────────────────────────
+    // ─── Errores de runtime estrictos ───────────────────────────────
     /// Cuando es `true`, la VM lanza errores claros (`ErrFast::DivCero`,
     /// `ErrFast::IdxOut`) en lugar de devolver `nulo` silenciosamente ante
-    /// división por cero o índice fuera de rango. Se activa con `--backtrace`
+    /// división por cero o índice fuera de rango. Se activa con `backtrace: true`
     /// para dar mensajes educativos con línea y pila de llamadas.
     pub errores_estrictos: bool,
 
@@ -319,7 +317,7 @@ pub struct ForjaFast {
     pub sandbox_proc: forja::sandbox::SandboxProceso,
 }
 
-// `FrmFast`, `ErrFast` y `TipoInferido` se extrajeron a `tipos.rs` (F1-T7) y se
+// `FrmFast`, `ErrFast` y `TipoInferido` se extrajeron a `tipos.rs` y se
 // re-exportan arriba vía `pub use`/`pub(crate) use`.
 
 impl Default for ForjaFast {
@@ -329,7 +327,7 @@ impl Default for ForjaFast {
 }
 
 impl ForjaFast {
-    /// F4-T5: umbral por defecto de asignaciones entre recolecciones. Alto para
+    /// umbral por defecto de asignaciones entre recolecciones. Alto para
     /// no afectar a programas cortos (el GC solo se dispara en presión sostenida).
     pub(crate) const GC_PRESSURE_THRESHOLD_DEFECTO: usize = 250_000;
 
@@ -371,10 +369,9 @@ impl ForjaFast {
             exacto_heap: Vec::new(),
             exacto_marked: Vec::new(),
             exacto_free: Vec::new(),
-            gc: crate::gc::GenerationalGC::new(),
             gc_pressure: 0,
             gc_pressure_threshold: Self::GC_PRESSURE_THRESHOLD_DEFECTO,
-            gc_telemetry: crate::gc::GcTelemetry::default(),
+            gc_telemetry: crate::legacy::gc::GcTelemetry::default(),
             cache_add_type: None,
             cache_sub_type: None,
             cache_mul_type: None,
@@ -509,11 +506,11 @@ impl ForjaFast {
         self.fast_math
     }
 
-    /// (F2-T7) Activa los errores de runtime estrictos.
+    /// Activa los errores de runtime estrictos.
     ///
     /// Con `true`, la VM lanza `ErrFast::DivCero` ante una división por cero y
     /// `ErrFast::IdxOut` ante un índice fuera de rango, en lugar de devolver
-    /// `nulo` silenciosamente. Se usa desde la CLI con `--backtrace` para dar
+    /// `nulo` silenciosamente. Se usa desde la CLI con `backtrace: true` para dar
     /// mensajes educativos con línea y pila de llamadas.
     pub fn set_errores_estrictos(&mut self, enabled: bool) {
         self.errores_estrictos = enabled;
@@ -1243,7 +1240,7 @@ impl ForjaFast {
         self.hot_loop_ips = vec![false; self.bytecode.len()];
         self.init_ic();
 
-        // F2-T7: construir el mapa IP → línea de código fuente para el backtrace.
+        // construir el mapa IP → línea de código fuente para el backtrace.
         // Recorremos el bytecode final (post-fusión) propagando la última línea
         // vista en cada `SetLine`. `mapa_ip_linea[ip]` = línea del `SetLine` más
         // reciente en o antes de `ip` (0 = desconocida).
@@ -1433,7 +1430,7 @@ impl ForjaFast {
         self.output.lock().unwrap().clone()
     }
 
-    // ─── F2-T7: Backtrace de runtime ─────────────────────────────────────────
+    // ─── Backtrace de runtime ─────────────────────────────────────────
 
     /// Devuelve la línea de código fuente asociada a una IP del bytecode.
     /// Retorna 0 si no hay información de línea disponible.
@@ -1513,59 +1510,61 @@ impl ForjaFast {
 }
 
 // `BuiltinFast`, `resolver_builtin_fast` y `exec_builtin` se extrajeron a
-// `builtins.rs` (F1-T7).
+// `builtins.rs`.
 mod builtins;
 pub(crate) use builtins::resolver_builtin_fast;
+/// nombres de builtins, para el chequeo de "función declarada".
+pub(crate) use builtins::NOMBRES_BUILTINS;
 
 // `ejecutar` y `ejecutar_uops` se extrajeron a `ejecucion.rs` y
-// `ejecucion_uops.rs` respectivamente (F1-T7).
+// `ejecucion_uops.rs` respectivamente.
 mod ejecucion;
 mod ejecucion_uops;
 
 // Ramas autocontenidas del `match op` (superinstrucciones float, stack bypass,
-// fused ops, comparaciones y operadores lógicos) extraídas a `ops_float.rs` (F1-T7).
+// fused ops, comparaciones y operadores lógicos) extraídas a `ops_float.rs`.
 mod ops_float;
 
 // Ramas autocontenidas de operaciones Exacto (BigDecimal) extraídas a
-// `ops_exacto.rs` (F1-T7).
+// `ops_exacto.rs`.
 mod ops_exacto;
 
 // Ramas autocontenidas de superinstrucciones fusionadas, comparaciones float,
-// XorSign y pattern matching extraídas a `ops_fusionadas.rs` (F1-T7).
+// XorSign y pattern matching extraídas a `ops_fusionadas.rs`.
 mod ops_fusionadas;
 
 // Ramas simples del `match op` (push/pop/dup, variables por índice/global,
-// codigos fusionados de declaración) extraídas a `ops_simples.rs` (F1-T7).
+// codigos fusionados de declaración) extraídas a `ops_simples.rs`.
 mod ops_simples;
 
 // Ramas autocontenidas de colecciones (arreglos y mapas) extraídas a
-// `ops_colecciones.rs` (F1-T7).
+// `ops_colecciones.rs`.
 mod ops_colecciones;
 
 // Ramas autocontenidas de concurrencia (canales e hilos) extraídas a
-// `ops_concurrencia.rs` (F1-T7).
+// `ops_concurrencia.rs`.
 mod ops_concurrencia;
 
 // Handlers aritméticos especializados autocontenidos (`AddInt`, `AddFloat`,
-// `SubInt`, `MulInt`) extraídos a `ops_aritmetica.rs` (F1-T7).
+// `SubInt`, `MulInt`) extraídos a `ops_aritmetica.rs`.
 mod ops_aritmetica;
 
 // Ramas de IO y utilidades (`ParseInt`, `TiempoActual`, `Print`, `ReadLine`)
-// extraídas a `ops_io.rs` (F1-T7).
+// extraídas a `ops_io.rs`.
 mod ops_io;
 
 // Ramas de llamada a métodos (`CallMethod`, `CallMethodCached`) extraídas a
-// `ops_metodos.rs` (F1-T7).
+// `ops_metodos.rs`.
 mod ops_metodos;
 
 // Ramas de objetos (`NewObject`, `SetField`, `SetFieldIdx`, `GetField`) extraídas
-// a `ops_objetos.rs` (F1-T7).
+// a `ops_objetos.rs`.
 mod ops_objetos;
 
 impl ForjaFast {
     /// Acceso a campo sin caché ni efectos sobre la pila de la VM: lo usa el
     /// intérprete de contratos (`GetField`), donde el objeto ya está en su
-    /// propia pila auxiliar (F12-T6).
+    /// propia pila auxiliar.
     pub(crate) fn campo_para_contrato(&mut self, obj: ValorFast, campo: &str) -> ValorFast {
         if obj.es_mapa() {
             return self.map_heap[obj.indice_mapa() as usize]
@@ -1593,25 +1592,25 @@ impl ForjaFast {
 }
 
 // Ramas de Design by Contract (`CheckPre`, `CheckPost`, `SaveAnterior`,
-// `CheckInv`) y packed SIMD extraídas a `ops_contratos.rs` (F1-T7).
+// `CheckInv`) y packed SIMD extraídas a `ops_contratos.rs`.
 mod ops_contratos;
 
 // Ramas Exacto (BigDecimal) del pipeline de uops extraídas a
-// `ops_uops_exacto.rs` (F1-T7).
+// `ops_uops_exacto.rs`.
 mod ops_uops_exacto;
 
 // API de Hot Reload (tabla de funciones e intercambio de módulos) extraída a
-// `hot_reload.rs` (F1-T7).
+// `hot_reload.rs`.
 mod hot_reload;
 
-// `quickening` e `inferir_tipos_binarios` se extrajeron a `quickening.rs` (F1-T7).
+// `quickening` e `inferir_tipos_binarios` se extrajeron a `quickening.rs`.
 mod quickening;
 
 // Helpers de heap y GC (`alloc_*`, `gc_collect`, `mark_value`, …) extraídos a
-// `gc_bridge.rs` (F1-T7).
+// `gc_bridge.rs`.
 mod gc_bridge;
 
-// ─── F2-T7: helpers de backtrace ───────────────────────────────────────────
+// ─── helpers de backtrace ───────────────────────────────────────────
 
 /// Formatea una entrada del backtrace de runtime en español.
 ///
@@ -1626,7 +1625,7 @@ fn formatear_frame_backtrace(nombre: &str, linea: usize) -> String {
 }
 
 // Helpers de sockets e IO (`socket_*`, `aplicar_try`, `type_tag`, `push_valor`,
-// `flush_stack`, …) extraídos a `sockets.rs` (F1-T7).
+// `flush_stack`, …) extraídos a `sockets.rs`.
 mod sockets;
 
 #[cfg(test)]
