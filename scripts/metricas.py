@@ -2,11 +2,15 @@
 """Métricas automáticas de documentación.
 
 Calcula líneas de Rust, módulos de la stdlib y ejemplos, y verifica/actualiza
-las cifras publicadas en README.md y docs/src/pages/roadmap.astro.
+las cifras del README.md. Lo corre el CI (job `metricas`) en cada push a main;
+a mano sólo hace falta para ver los números o arreglar el README antes.
+
+El roadmap no se genera acá: vive en el repo del sitio
+(forja-lang.github.io) y desde este repo no se puede escribir.
 
 Uso:
-    python scripts/metricas.py --check   # falla si la documentación derivó
-    python scripts/metricas.py --write   # actualiza las cifras en los docs
+    python scripts/metricas.py --check   # falla si las cifras del README derivaron
+    python scripts/metricas.py --write   # actualiza las cifras del README
     python scripts/metricas.py           # imprime las métricas
 """
 from __future__ import annotations
