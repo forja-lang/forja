@@ -10,7 +10,7 @@
 //! - **Write Barriers**: Llamadas antes de escribir punteros GC en el heap
 //! - **GC Roots**: Registro de raíces GC en cada safe point
 
-use crate::gc::Generation;
+use crate::legacy::gc::Generation;
 
 /// Un slot en el stack que contiene un puntero GC
 #[derive(Debug, Clone, Copy)]
