@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/metricas.sh — envoltorio de scripts/metricas.py (F7-T5)
+# scripts/metricas.sh — envoltorio de scripts/metricas.py
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
