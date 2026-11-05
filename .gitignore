@@ -2,6 +2,10 @@
 plans/
 # El sitio vive en su propio repo (forja-lang.github.io); clonarlo acá es opcional.
 /docs/
+# Los diseños (PSD/PNG) viven en su propio repo (forja-lang/forja-design); no son código.
+/design/
+# La extensión de VS Code vive en su propio repo (forja-lang/vscode); se clona solo para empaquetarla.
+/vscode/
 fib_rs/
 target/
 test_inline_rs/
@@ -32,7 +36,7 @@ actions-runner/
 
 # ── Scripts ──
 *.ps1
-# F3-T7: el instalador de Windows del release debe versionarse.
+# el instalador de Windows del release debe versionarse.
 !scripts/install.ps1
 # El bump de versión debe versionarse en las dos plataformas: al estar ignorado,
 # la copia de Windows se desincronizó del .sh y dejó de actualizar lugares
@@ -62,7 +66,7 @@ COMPATIBILITY_BREAKING_CHANGES.md
 
 
 # ── Patrones específicos (reemplazan los wildcards peligrosos *test*/*tests*) ──
-# F0-T1: NO usar *test*/*tests*; ignoran archivos legítimos (p. ej. latest.fa, contest.rs).
+# NO usar *test*/*tests*; ignoran archivos legítimos (p. ej. latest.fa, contest.rs).
 # Los directorios de tests ya están cubiertos por `tests/` más arriba.
 *.tmp
 
@@ -70,11 +74,11 @@ COMPATIBILITY_BREAKING_CHANGES.md
 $null
 return$null
 
-# ── F4-T2: baseline de rendimiento generada en el runner de CI ──
+# ── baseline de rendimiento generada en el runner de CI ──
 benches/baseline-ci.json
 
 # ── Markdown ──
-# F0-T1: NO ignorar *.md globalmente (se perdía documentación en subcarpetas).
+# NO ignorar *.md globalmente (se perdía documentación en subcarpetas).
 # Solo se excluyen artefactos generados explícitos:
 dist/*.md
 
@@ -94,3 +98,10 @@ money_rs/
 node_modules/
 .astro/
 .pi/
+
+# ── Configuración en tiempo de ejecución ──
+# `forja` crea forja.yaml en el directorio donde se ejecuta, con los defaults.
+forja.yaml
+
+# ── Editores ──
+.openidea/
