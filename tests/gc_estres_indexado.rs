@@ -1,8 +1,8 @@
-//! E-T2 — estrés del colector **real** de la VM (mark-and-sweep sobre heaps
+//! estrés del colector **real** de la VM (mark-and-sweep sobre heaps
 //! indexados).
 //!
 //! Contexto (ver `plans/auditoria-externa-verificada.md` §3.7): la VM **no**
-//! usa el `GenerationalGC` de `src/gc.rs` (ese módulo sólo recibe avisos y no
+//! usa el `GenerationalGC` de `src/legacy/gc.rs` (ese módulo sólo recibe avisos y no
 //! almacena objetos). El colector efectivo es mark-and-sweep con heaps
 //! indexados + free lists, así que **no mueve** objetos y no puede invalidar
 //! referencias. Estos tests cuidan lo que sí puede fallar: que no crezca sin
