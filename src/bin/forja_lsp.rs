@@ -853,7 +853,7 @@ impl LanguageServer for Backend {
     }
 
     // ----------------------------------------------------------------
-    // Inlay Hints (F2-T5): tipo inferido junto a variables sin anotación
+    // Inlay Hints: tipo inferido junto a variables sin anotación
     // ----------------------------------------------------------------
 
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
@@ -901,7 +901,7 @@ impl LanguageServer for Backend {
     }
 
     // ----------------------------------------------------------------
-    // Workspace Symbols (F2-T5): búsqueda global de símbolos
+    // Workspace Symbols: búsqueda global de símbolos
     // ----------------------------------------------------------------
 
     async fn symbol(
@@ -1091,7 +1091,7 @@ impl Backend {
             }
         }
 
-        // 3. Diagnósticos del linter (F2-T4)
+        // 3. Diagnósticos del linter
         if let Ok(diags) = forja::linter::lint_source(texto, forja::linter::ConfigLint::default()) {
             for d in diags {
                 let severity = match d.severidad {
@@ -1616,7 +1616,7 @@ fn codigo_lint_lsp(regla: forja::linter::Regla) -> u32 {
     }
 }
 
-// ─── Helpers de quick fixes (F2-T5) ─────────────────────────────
+// ─── Helpers de quick fixes ─────────────────────────────
 
 /// Construye un `WorkspaceEdit` con un único `TextEdit` sobre `uri`.
 fn crear_workspace_edit(uri: &Url, edit: TextEdit) -> WorkspaceEdit {
@@ -1805,7 +1805,7 @@ fn reemplazar_tipo_en_linea(
 }
 
 /// Infiere el tipo de una variable a partir del literal asignado en su línea
-/// de declaración (F2-T5, inlay hints). Devuelve `None` si no se puede inferir.
+/// de declaración (, inlay hints). Devuelve `None` si no se puede inferir.
 fn inferir_tipo_variable(linea: &str, nombre: &str) -> Option<String> {
     // Buscar el `=` de la asignación tras el nombre de la variable.
     let pos_nombre = linea.find(nombre)?;
