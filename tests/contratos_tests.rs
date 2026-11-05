@@ -1,4 +1,4 @@
-//! F12-T6 — contratos de diseño (`requiere` / `asegura` / `anterior` / `resultado`).
+//! contratos de diseño (`requiere` / `asegura` / `anterior` / `resultado`).
 //!
 //! Fija los cuatro agujeros que se taparon:
 //!   1. `asegura` no se verificaba en funciones con `retornar` (los checks se
