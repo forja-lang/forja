@@ -1,4 +1,4 @@
-// F3-T1: Registry de paquetes de Forja (alcance pragmático local/offline).
+// Registry de paquetes de Forja (alcance pragmático local/offline).
 //
 // El plan original pedía "levantar registry.forja-lang.dev". Como el servidor
 // remoto no es viable en este entorno, este módulo implementa TODA la lógica
@@ -118,7 +118,7 @@ pub struct VersionPublicada {
     pub sha256: String,
     /// Firma del hash con la clave del autor (base64 o hex según el esquema).
     pub firma: String,
-    /// F12-T4/F14-T3: clave pública Ed25519 del autor (hex). Si está presente,
+    /// clave pública Ed25519 del autor (hex). Si está presente,
     /// `firma` es una firma Ed25519 (hex) del `sha256` y la verificación es
     /// asimétrica: el servidor no necesita la clave privada de nadie.
     #[serde(default)]
@@ -499,7 +499,7 @@ pub fn publicar(
 
     let datos = empaquetar(project_dir, nombre, version)?;
     let hash = sha256_hex(&datos);
-    // F12-T4: firma **asimétrica** con la clave del autor (el servidor sólo
+    // firma **asimétrica** con la clave del autor (el servidor sólo
     // necesita la pública para verificar).
     let claves = clave_autor()?;
     let firma = firmar_hash_ed25519(&hash, &claves.privada);
