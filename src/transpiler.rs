@@ -2719,6 +2719,25 @@ impl Transpiler {
                 let val_str = self.transpilar_expresion(valor);
                 format!("{{ let __tmp = {}; {} = __tmp; __tmp }}", val_str, arr_str)
             }
+            Expresion::AsignacionCompuesta {
+                objetivo,
+                operador,
+                valor,
+            } => {
+                let obj_str = self.transpilar_expresion(objetivo);
+                let val_str = self.transpilar_expresion(valor);
+                let op = match operador {
+                    Operador::Suma => "+=",
+                    Operador::Resta => "-=",
+                    Operador::Multiplicacion => "*=",
+                    Operador::Division => "/=",
+                    Operador::Modulo => "%=",
+                    _ => "?=",
+                };
+                // En Rust, `x += y` es una sentencia; se envuelve para usarla
+                // como expresión (el resultado es la unidad, no el valor nuevo).
+                format!("{{ {} {} {}; }}", obj_str, op, val_str)
+            }
             Expresion::Ok(expr) => {
                 format!("Ok({})", self.transpilar_expresion(expr))
             }
@@ -3317,6 +3336,16 @@ impl Transpiler {
                     self.generar_ast_expresion(valor)
                 )
             }
+            Expresion::AsignacionCompuesta {
+                objetivo,
+                operador,
+                valor,
+            } => format!(
+                "Expresion::AsignacionCompuesta {{ objetivo: Box::new({}), operador: {}, valor: Box::new({}) }}",
+                self.generar_ast_expresion(objetivo),
+                self.operador_a_ast(operador),
+                self.generar_ast_expresion(valor)
+            ),
             Expresion::Ok(inner) => format!(
                 "Expresion::Ok(Box::new({}))",
                 self.generar_ast_expresion(inner)
