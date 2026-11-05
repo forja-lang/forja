@@ -1,4 +1,4 @@
-// Forja — Registro de funciones nativas (F1-T8)
+// Forja — Registro de funciones nativas
 //
 // El registro se divide por dominio en submódulos. Cada submódulo define su
 // propio `impl NativeRegistry { pub(crate) fn registrar_X }` junto con las
@@ -35,7 +35,7 @@ mod codificacion;
 mod crypto;
 mod csv;
 mod env_ext;
-mod fechas;
+pub(crate) mod fechas;
 mod hash;
 mod helpers;
 mod hot_reload;
@@ -240,6 +240,16 @@ impl NativeRegistry {
     /// Interna un string como IdSimbolo (para resolver nombres en caliente desde la VM)
     pub fn internar(&mut self, nombre: &str) -> IdSimbolo {
         self.tabla_simbolos.internar(nombre)
+    }
+
+    /// Nombres de todas las funciones nativas registradas.
+    ///
+    /// el modo estricto lo usa para saber qué llamadas resuelve el
+    /// runtime sin declararse en el programa.
+    pub fn nombres(&self) -> Vec<String> {
+        (0..self.tabla_simbolos.len())
+            .map(|i| self.tabla_simbolos.texto(IdSimbolo(i as u32)).to_string())
+            .collect()
     }
 
     /// Busca una función nativa por IdSimbolo — lookup O(1), sin strings.
