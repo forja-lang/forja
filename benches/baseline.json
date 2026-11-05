@@ -6,7 +6,7 @@
     "reps": 9,
     "warmup": 2,
     "generated": "2026-10-30T07:16:11Z",
-    "note": "Baseline de rendimiento F4-T2. Los ratios se normalizan contra la calibración; regenerar en el runner de referencia."
+    "note": "Baseline de rendimiento. Los ratios se normalizan contra la calibración; regenerar en el runner de referencia."
   },
   "threshold_pct": 5.0,
   "thresholds_pct": {
