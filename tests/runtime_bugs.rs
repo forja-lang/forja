@@ -1,4 +1,4 @@
-//! F8-T7/T8/T9: regresiones de runtime para callbacks, enums, hilos y canales.
+//! /T8/T9: regresiones de runtime para callbacks, enums, hilos y canales.
 
 fn ejecutar(fuente: &str) -> Vec<String> {
     forja::ejecutar_vm(fuente).expect("el programa debe ejecutarse")
@@ -96,7 +96,7 @@ escribir(arr[2])
     assert_eq!(salida, vec!["6"]);
 }
 
-// ─── F11-T5: regresiones de quickening y de objetos en la ruta IR ───────────
+// ─── regresiones de quickening y de objetos en la ruta IR ───────────
 
 /// El *quickening* infería tipos de operandos escaneando hacia atrás sin
 /// respetar el efecto en la pila: en `escribir("x=" + f(2) + "")` tomaba como
@@ -209,7 +209,7 @@ escribir(es_mac("0-"))
     assert_eq!(salida, vec!["verdadero", "falso"]);
 }
 
-// ─── F11-T5: paridad de los backends y fusions del quickening ───────────────
+// ─── paridad de los backends y fusions del quickening ───────────────
 
 /// Ejecuta el programa por la ruta canónica (IR) y por el backend AST, y exige
 /// que ambas coincidan con la salida esperada.
