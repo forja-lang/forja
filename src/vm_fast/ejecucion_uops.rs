@@ -194,7 +194,10 @@ impl ForjaFast {
                 Uop::SubAssign(idx, n) => {
                     let val = self.load_local(idx);
                     if val.es_entero() {
-                        self.store_local(idx, get_small_int_fast(restar_entero(val.a_entero(), n)?));
+                        self.store_local(
+                            idx,
+                            get_small_int_fast(restar_entero(val.a_entero(), n)?),
+                        );
                     } else {
                         self.store_local(idx, get_small_int_fast(-n));
                     }
@@ -218,7 +221,10 @@ impl ForjaFast {
                 Uop::Add => {
                     let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                     if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(sumar_entero(a.a_entero(), b.a_entero())?));
+                        self.push_valor(get_small_int_fast(sumar_entero(
+                            a.a_entero(),
+                            b.a_entero(),
+                        )?));
                     } else if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_flotante()));
                     } else if a.es_entero() && b.es_flotante() {
@@ -247,7 +253,10 @@ impl ForjaFast {
                 Uop::Sub => {
                     let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                     if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(restar_entero(a.a_entero(), b.a_entero())?));
+                        self.push_valor(get_small_int_fast(restar_entero(
+                            a.a_entero(),
+                            b.a_entero(),
+                        )?));
                     } else if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() - b.a_flotante()));
                     } else {
@@ -258,7 +267,10 @@ impl ForjaFast {
                 Uop::Mul => {
                     let (b, a) = (self.pop_valor()?, self.pop_valor()?);
                     if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(multiplicar_entero(a.a_entero(), b.a_entero())?));
+                        self.push_valor(get_small_int_fast(multiplicar_entero(
+                            a.a_entero(),
+                            b.a_entero(),
+                        )?));
                     } else if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() * b.a_flotante()));
                     } else {
@@ -292,7 +304,10 @@ impl ForjaFast {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
                     if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(sumar_entero(a.a_entero(), b.a_entero())?));
+                        self.push_valor(get_small_int_fast(sumar_entero(
+                            a.a_entero(),
+                            b.a_entero(),
+                        )?));
                     } else {
                         self.push_valor(ValorFast::nulo());
                     }
@@ -312,7 +327,10 @@ impl ForjaFast {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
                     if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(restar_entero(a.a_entero(), b.a_entero())?));
+                        self.push_valor(get_small_int_fast(restar_entero(
+                            a.a_entero(),
+                            b.a_entero(),
+                        )?));
                     } else {
                         self.push_valor(ValorFast::nulo());
                     }
@@ -332,7 +350,10 @@ impl ForjaFast {
                     let b = self.pop_valor()?;
                     let a = self.pop_valor()?;
                     if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(multiplicar_entero(a.a_entero(), b.a_entero())?));
+                        self.push_valor(get_small_int_fast(multiplicar_entero(
+                            a.a_entero(),
+                            b.a_entero(),
+                        )?));
                     } else {
                         self.push_valor(ValorFast::nulo());
                     }

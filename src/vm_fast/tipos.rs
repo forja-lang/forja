@@ -50,19 +50,25 @@ fn acotar(n: i64) -> Result<i64, ErrFast> {
 /// Suma de enteros con control de rango.
 #[inline(always)]
 pub fn sumar_entero(a: i64, b: i64) -> Result<i64, ErrFast> {
-    a.checked_add(b).ok_or(ErrFast::OverflowArit).and_then(acotar)
+    a.checked_add(b)
+        .ok_or(ErrFast::OverflowArit)
+        .and_then(acotar)
 }
 
 /// Resta de enteros con control de rango.
 #[inline(always)]
 pub fn restar_entero(a: i64, b: i64) -> Result<i64, ErrFast> {
-    a.checked_sub(b).ok_or(ErrFast::OverflowArit).and_then(acotar)
+    a.checked_sub(b)
+        .ok_or(ErrFast::OverflowArit)
+        .and_then(acotar)
 }
 
 /// Multiplicación de enteros con control de rango.
 #[inline(always)]
 pub fn multiplicar_entero(a: i64, b: i64) -> Result<i64, ErrFast> {
-    a.checked_mul(b).ok_or(ErrFast::OverflowArit).and_then(acotar)
+    a.checked_mul(b)
+        .ok_or(ErrFast::OverflowArit)
+        .and_then(acotar)
 }
 
 /// Para contextos infalibles (intérprete de contratos): un desbordamiento se

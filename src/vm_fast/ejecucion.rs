@@ -225,9 +225,10 @@ impl ForjaFast {
                             0 => {
                                 prof_count!(type_check_int_pass);
                                 if a.es_entero() && b.es_entero() {
-                                    self.push_valor(get_small_int_fast(
-                                        sumar_entero(a.a_entero(), b.a_entero())?,
-                                    ));
+                                    self.push_valor(get_small_int_fast(sumar_entero(
+                                        a.a_entero(),
+                                        b.a_entero(),
+                                    )?));
                                     self.ip += 1;
                                     continue;
                                 }
@@ -258,9 +259,10 @@ impl ForjaFast {
                     }
                     self.cache_add_type = Some((ta, tb));
                     if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(
-                            sumar_entero(a.a_entero(), b.a_entero())?,
-                        ));
+                        self.push_valor(get_small_int_fast(sumar_entero(
+                            a.a_entero(),
+                            b.a_entero(),
+                        )?));
                     } else if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_flotante()));
                     } else if a.es_entero() && b.es_flotante() {
@@ -364,9 +366,10 @@ impl ForjaFast {
                         match ta {
                             0 => {
                                 if a.es_entero() && b.es_entero() {
-                                    self.push_valor(get_small_int_fast(
-                                        restar_entero(a.a_entero(), b.a_entero())?,
-                                    ));
+                                    self.push_valor(get_small_int_fast(restar_entero(
+                                        a.a_entero(),
+                                        b.a_entero(),
+                                    )?));
                                     self.ip += 1;
                                     continue;
                                 }
@@ -383,9 +386,10 @@ impl ForjaFast {
                     }
                     self.cache_sub_type = Some((ta, tb));
                     if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(
-                            restar_entero(a.a_entero(), b.a_entero())?,
-                        ));
+                        self.push_valor(get_small_int_fast(restar_entero(
+                            a.a_entero(),
+                            b.a_entero(),
+                        )?));
                     } else if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() - b.a_flotante()));
                     } else if a.es_entero() && b.es_flotante() {
@@ -460,9 +464,10 @@ impl ForjaFast {
                         match ta {
                             0 => {
                                 if a.es_entero() && b.es_entero() {
-                                    self.push_valor(get_small_int_fast(
-                                        multiplicar_entero(a.a_entero(), b.a_entero())?,
-                                    ));
+                                    self.push_valor(get_small_int_fast(multiplicar_entero(
+                                        a.a_entero(),
+                                        b.a_entero(),
+                                    )?));
                                     self.ip += 1;
                                     continue;
                                 }
@@ -479,9 +484,10 @@ impl ForjaFast {
                     }
                     self.cache_mul_type = Some((ta, tb));
                     if a.es_entero() && b.es_entero() {
-                        self.push_valor(get_small_int_fast(
-                            multiplicar_entero(a.a_entero(), b.a_entero())?,
-                        ));
+                        self.push_valor(get_small_int_fast(multiplicar_entero(
+                            a.a_entero(),
+                            b.a_entero(),
+                        )?));
                     } else if a.es_flotante() && b.es_flotante() {
                         self.push_valor(ValorFast::flotante(a.a_flotante() * b.a_flotante()));
                     } else if a.es_entero() && b.es_flotante() {
@@ -681,9 +687,10 @@ impl ForjaFast {
                         // Des-especializar si tipos no coinciden
                         patch_op = Some(Opcode::Restar);
                         if a.es_entero() && b.es_entero() {
-                            self.push_valor(get_small_int_fast(
-                                restar_entero(a.a_entero(), b.a_entero())?,
-                            ));
+                            self.push_valor(get_small_int_fast(restar_entero(
+                                a.a_entero(),
+                                b.a_entero(),
+                            )?));
                         } else if a.es_flotante() && b.es_flotante() {
                             self.push_valor(ValorFast::flotante(a.a_flotante() - b.a_flotante()));
                         } else {
@@ -706,9 +713,10 @@ impl ForjaFast {
                     } else {
                         patch_op = Some(Opcode::Multiplicar);
                         if a.es_entero() && b.es_entero() {
-                            self.push_valor(get_small_int_fast(
-                                multiplicar_entero(a.a_entero(), b.a_entero())?,
-                            ));
+                            self.push_valor(get_small_int_fast(multiplicar_entero(
+                                a.a_entero(),
+                                b.a_entero(),
+                            )?));
                         } else if a.es_flotante() && b.es_flotante() {
                             self.push_valor(ValorFast::flotante(a.a_flotante() * b.a_flotante()));
                         } else {

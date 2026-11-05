@@ -24,7 +24,10 @@ impl ForjaFast {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
                 // Fast path directo: quickening garantiza enteros
-                self.push_valor(get_small_int_fast(sumar_entero(a.a_entero(), b.a_entero())?));
+                self.push_valor(get_small_int_fast(sumar_entero(
+                    a.a_entero(),
+                    b.a_entero(),
+                )?));
                 self.ip += 1;
             }
             Opcode::SumarDecimal => {
@@ -47,13 +50,19 @@ impl ForjaFast {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
                 // Fast path directo: quickening garantiza enteros
-                self.push_valor(get_small_int_fast(restar_entero(a.a_entero(), b.a_entero())?));
+                self.push_valor(get_small_int_fast(restar_entero(
+                    a.a_entero(),
+                    b.a_entero(),
+                )?));
                 self.ip += 1;
             }
             Opcode::MultiplicarEntero => {
                 let b = self.pop_valor()?;
                 let a = self.pop_valor()?;
-                self.push_valor(get_small_int_fast(multiplicar_entero(a.a_entero(), b.a_entero())?));
+                self.push_valor(get_small_int_fast(multiplicar_entero(
+                    a.a_entero(),
+                    b.a_entero(),
+                )?));
                 self.ip += 1;
             }
             _ => return Ok(false),

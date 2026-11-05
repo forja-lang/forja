@@ -78,7 +78,7 @@ pub enum Opcode {
     // === Opcodes fusionados (opcode fusion — eliminan push/pop) ===
     DeclararOperacionEntero(usize, i64), // fusion: PushEntero(n) + DeclareIdx(idx, _)
     DeclararOperacionBooleano(usize, bool), // fusion: PushBooleano(b) + DeclareIdx(idx, _)
-    GuardarOperacionEntero(usize, i64),   // fusion: PushEntero(n) + StoreIdx(idx)
+    GuardarOperacionEntero(usize, i64),  // fusion: PushEntero(n) + StoreIdx(idx)
 
     // === Aritméticas ===
     Sumar,
@@ -111,10 +111,10 @@ pub enum Opcode {
     MayorIgualDecimal,
 
     // === Opcodes de carga/guardado especializados por tipo ===
-    CargarIndiceEntero(usize),  // La variable en idx siempre es entero
-    CargarIndiceDecimal(usize),   // La variable en idx siempre es float
-    GuardarIndiceEntero(usize), // Guardar entero directo en idx
-    GuardarIndiceDecimal(usize),  // Guardar float directo en idx
+    CargarIndiceEntero(usize),   // La variable en idx siempre es entero
+    CargarIndiceDecimal(usize),  // La variable en idx siempre es float
+    GuardarIndiceEntero(usize),  // Guardar entero directo en idx
+    GuardarIndiceDecimal(usize), // Guardar float directo en idx
 
     // === Comparaciones ===
     Igual,
@@ -156,9 +156,9 @@ pub enum Opcode {
     Retornar,
 
     // === POO ===
-    NuevoObjeto(Arc<str>), // crear instancia de clase
-    FijarCampo(Arc<str>),  // este.campo = pop()
-    ObtenerCampo(Arc<str>),  // push(este.campo)
+    NuevoObjeto(Arc<str>),  // crear instancia de clase
+    FijarCampo(Arc<str>),   // este.campo = pop()
+    ObtenerCampo(Arc<str>), // push(este.campo)
     /// Asigna el campo i-ésimo por posición (usado para construir variantes de
     /// enum: campos_vec = [tag, campo0, campo1, ...]). Pop valor, pop objeto.
     FijarCampoPorIndice(usize),
@@ -166,18 +166,18 @@ pub enum Opcode {
 
     // === Arrays ===
     NuevoArreglo(usize), // crear array con N elementos (pop N de la pila)
-    ObtenerElemento,        // pop índice, pop array, push valor
-    FijarElemento,        // pop valor, pop índice, pop array (asigna)
-    LongitudArreglo,        // pop array, push longitud
+    ObtenerElemento,     // pop índice, pop array, push valor
+    FijarElemento,       // pop valor, pop índice, pop array (asigna)
+    LongitudArreglo,     // pop array, push longitud
 
     // === Mapas ===
-    NuevoMapa(usize), // crear mapa con N pares
-    ObtenerValorDeMapa,        // pop clave, pop mapa, push valor
-    FijarValorDeMapa,        // pop valor, pop clave, push mapa actualizado
+    NuevoMapa(usize),   // crear mapa con N pares
+    ObtenerValorDeMapa, // pop clave, pop mapa, push valor
+    FijarValorDeMapa,   // pop valor, pop clave, push mapa actualizado
 
     // === Built-in functions (stdlib) ===
-    ParsearEntero,     // pop string from stack, push i64
-    TiempoActual, // push current unix timestamp (i64)
+    ParsearEntero, // pop string from stack, push i64
+    TiempoActual,  // push current unix timestamp (i64)
 
     // === I/O ===
     Imprimir,
@@ -730,10 +730,16 @@ impl GeneradorBytecode {
             (Operador::Multiplicacion, Some(Tipo::Entero), Some(Tipo::Entero)) => {
                 Some(Opcode::MultiplicarEntero)
             }
-            (Operador::Division, Some(Tipo::Entero), Some(Tipo::Entero)) => Some(Opcode::DividirEntero),
+            (Operador::Division, Some(Tipo::Entero), Some(Tipo::Entero)) => {
+                Some(Opcode::DividirEntero)
+            }
             // Aritméticas: Decimal-Decimal
-            (Operador::Suma, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::SumarDecimal),
-            (Operador::Resta, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::RestarDecimal),
+            (Operador::Suma, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
+                Some(Opcode::SumarDecimal)
+            }
+            (Operador::Resta, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
+                Some(Opcode::RestarDecimal)
+            }
             (Operador::Multiplicacion, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
                 Some(Opcode::MultiplicarDecimal)
             }
@@ -742,9 +748,13 @@ impl GeneradorBytecode {
             }
             // Aritméticas: mixto Entero-Decimal → Decimal
             (Operador::Suma, Some(Tipo::Entero), Some(Tipo::Decimal))
-            | (Operador::Suma, Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Opcode::SumarDecimal),
+            | (Operador::Suma, Some(Tipo::Decimal), Some(Tipo::Entero)) => {
+                Some(Opcode::SumarDecimal)
+            }
             (Operador::Resta, Some(Tipo::Entero), Some(Tipo::Decimal))
-            | (Operador::Resta, Some(Tipo::Decimal), Some(Tipo::Entero)) => Some(Opcode::RestarDecimal),
+            | (Operador::Resta, Some(Tipo::Decimal), Some(Tipo::Entero)) => {
+                Some(Opcode::RestarDecimal)
+            }
             (Operador::Multiplicacion, Some(Tipo::Entero), Some(Tipo::Decimal))
             | (Operador::Multiplicacion, Some(Tipo::Decimal), Some(Tipo::Entero)) => {
                 Some(Opcode::MultiplicarDecimal)
@@ -775,8 +785,12 @@ impl GeneradorBytecode {
             (Operador::Diferente, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
                 Some(Opcode::DistintoDecimal)
             }
-            (Operador::Menor, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MenorDecimal),
-            (Operador::Mayor, Some(Tipo::Decimal), Some(Tipo::Decimal)) => Some(Opcode::MayorDecimal),
+            (Operador::Menor, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
+                Some(Opcode::MenorDecimal)
+            }
+            (Operador::Mayor, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
+                Some(Opcode::MayorDecimal)
+            }
             (Operador::MenorIgual, Some(Tipo::Decimal), Some(Tipo::Decimal)) => {
                 Some(Opcode::MenorIgualDecimal)
             }
@@ -789,7 +803,9 @@ impl GeneradorBytecode {
             (Operador::Multiplicacion, Some(Tipo::Exacto), Some(Tipo::Exacto)) => {
                 Some(Opcode::MultiplicarExacto)
             }
-            (Operador::Division, Some(Tipo::Exacto), Some(Tipo::Exacto)) => Some(Opcode::DividirExacto),
+            (Operador::Division, Some(Tipo::Exacto), Some(Tipo::Exacto)) => {
+                Some(Opcode::DividirExacto)
+            }
             // Comparaciones: Exacto-Exacto
             (Operador::IgualIgual, Some(Tipo::Exacto), Some(Tipo::Exacto)) => {
                 Some(Opcode::IgualExacto)
@@ -1580,7 +1596,8 @@ impl GeneradorBytecode {
                                 for c in &contratos {
                                     v.push(self.registrar_contrato(c, TipoContrato::Invariante));
                                 }
-                                self.invariantes_registrados.insert(clase.clone(), v.clone());
+                                self.invariantes_registrados
+                                    .insert(clase.clone(), v.clone());
                                 v
                             }
                         };
@@ -1590,9 +1607,7 @@ impl GeneradorBytecode {
                 // Al entrar al método el invariante ya debe cumplirse. En el
                 // constructor no: el objeto recién se está inicializando, el
                 // invariante se establece en su cuerpo (se verifica al salir).
-                let es_constructor = nombre
-                    .split_once('.')
-                    .is_some_and(|(_, m)| m == "nuevo");
+                let es_constructor = nombre.split_once('.').is_some_and(|(_, m)| m == "nuevo");
                 if !es_constructor {
                     for idx in self.invariantes_activos.clone() {
                         self.emitir(Opcode::VerificarInvariante(idx));
@@ -2347,7 +2362,7 @@ impl GeneradorBytecode {
                             self.emitir(Opcode::Igual);
                             self.emitir(Opcode::SaltoSiFalso(label_next));
                             self.emitir(Opcode::Descartar); // remover input de la pila
-                                                      // Ejecutar cuerpo dejando el último valor en la pila
+                                                            // Ejecutar cuerpo dejando el último valor en la pila
                             self.generar_cuerpo_match(&brazo.cuerpo);
                             self.emitir(Opcode::Salto(label_end));
                             self.emitir(Opcode::Etiqueta(label_next));
@@ -2428,7 +2443,9 @@ impl GeneradorBytecode {
                                                 idx
                                             },
                                         );
-                                        self.emitir(Opcode::Guardar(Arc::from(var_nombre.as_str())));
+                                        self.emitir(Opcode::Guardar(Arc::from(
+                                            var_nombre.as_str(),
+                                        )));
                                     } else {
                                         self.emitir(Opcode::Descartar);
                                     }
@@ -3610,7 +3627,9 @@ impl ModuloBytecode {
             let mut max_idx = params.len();
             for j in (*range_start + 1)..*range_end {
                 match &self.codigos[j] {
-                    Opcode::CargarIndice(idx) | Opcode::GuardarIndice(idx) | Opcode::DeclararIndice(idx, _) => {
+                    Opcode::CargarIndice(idx)
+                    | Opcode::GuardarIndice(idx)
+                    | Opcode::DeclararIndice(idx, _) => {
                         if idx.saturating_add(1) > max_idx {
                             max_idx = idx.saturating_add(1);
                         }
@@ -5280,7 +5299,8 @@ pub fn optimizar_indices(bytecode: &[Opcode]) -> Vec<Opcode> {
                         next_idx += 1;
                         i
                     });
-                    if matches!(result.last(), Some(Opcode::DeclararIndice(last, _)) if *last == idx) {
+                    if matches!(result.last(), Some(Opcode::DeclararIndice(last, _)) if *last == idx)
+                    {
                         continue; // DeclareIdx ya hizo pop y store; no duplicar
                     }
                     result.push(Opcode::GuardarIndice(idx));
@@ -5565,8 +5585,10 @@ pub fn fusionar_direct_float_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
         // → FusedDivAddConst(dst, num, div) o FusedDivSubConst(dst, num, div)
         // StoreIdx (no Float) es común porque quickening no especializa StoreIdx
         if i + 5 < bc.len() {
-            let store_is_float =
-                matches!(&bc[i + 5], Opcode::GuardarIndiceDecimal(_b) | Opcode::GuardarIndice(_b));
+            let store_is_float = matches!(
+                &bc[i + 5],
+                Opcode::GuardarIndiceDecimal(_b) | Opcode::GuardarIndice(_b)
+            );
             let store_idx = match &bc[i + 5] {
                 Opcode::GuardarIndiceDecimal(b) | Opcode::GuardarIndice(b) => *b,
                 _ => usize::MAX,
@@ -5575,8 +5597,10 @@ pub fn fusionar_direct_float_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
                 Opcode::CargarIndiceDecimal(dst_a),
                 Opcode::PushDecimal(num_val),
                 Opcode::CargarIndiceDecimal(div_b),
-                arith1
-                @ (Opcode::DividirDecimal | Opcode::SumarDecimal | Opcode::RestarDecimal | Opcode::MultiplicarDecimal),
+                arith1 @ (Opcode::DividirDecimal
+                | Opcode::SumarDecimal
+                | Opcode::RestarDecimal
+                | Opcode::MultiplicarDecimal),
                 arith2 @ (Opcode::SumarDecimal | Opcode::RestarDecimal),
                 _,
             ) = (
@@ -5594,7 +5618,9 @@ pub fn fusionar_direct_float_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
                     if is_add {
                         result.push(Opcode::DividirSumarFusionadoConst(*dst_a, *num_val, *div_b));
                     } else {
-                        result.push(Opcode::DividirRestarFusionadoConst(*dst_a, *num_val, *div_b));
+                        result.push(Opcode::DividirRestarFusionadoConst(
+                            *dst_a, *num_val, *div_b,
+                        ));
                     }
                     i += 6;
                     continue;

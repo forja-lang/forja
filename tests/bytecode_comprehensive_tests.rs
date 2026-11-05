@@ -411,9 +411,12 @@ fn test_bc_map_new() {
 #[test]
 fn test_bc_map_get() {
     let bc = generar("variable m = {\"x\": 10}\nvariable v = m[\"x\"]");
-    let has_get = bc
-        .iter()
-        .any(|op| matches!(op, Opcode::ObtenerValorDeMapa | Opcode::Cargar(_) | Opcode::CargarIndice(_)));
+    let has_get = bc.iter().any(|op| {
+        matches!(
+            op,
+            Opcode::ObtenerValorDeMapa | Opcode::Cargar(_) | Opcode::CargarIndice(_)
+        )
+    });
     assert!(has_get);
 }
 

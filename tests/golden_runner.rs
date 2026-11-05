@@ -78,12 +78,10 @@ const CON_ERROR_ESPERADO: &[(&str, &str)] = &[(
 
 /// Ejemplos que no entran al golden aunque no tengan marcadores.
 /// (nombre del archivo, motivo)
-const EXCLUIDOS: &[(&str, &str)] = &[
-    (
-        "189_benchmark_manual.fa",
-        "benchmark manual: imprime milisegundos y agota el límite de ejecución",
-    ),
-];
+const EXCLUIDOS: &[(&str, &str)] = &[(
+    "189_benchmark_manual.fa",
+    "benchmark manual: imprime milisegundos y agota el límite de ejecución",
+)];
 
 fn dir_golden() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

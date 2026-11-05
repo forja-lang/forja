@@ -83,17 +83,26 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                 let (a, _) = stack.pop().unwrap_or((0, RegClass::Integer));
                 let dst = prog.alloc_vreg();
                 let instr = match op {
-                    Opcode::SumarEntero | Opcode::SumarDecimal => RegInstruction::RegAdd { dst, a, b },
-                    Opcode::RestarEntero | Opcode::RestarDecimal => RegInstruction::RegSub { dst, a, b },
-                    Opcode::MultiplicarEntero | Opcode::MultiplicarDecimal => RegInstruction::RegMul { dst, a, b },
-                    Opcode::DividirEntero | Opcode::DividirDecimal => RegInstruction::RegDiv { dst, a, b },
+                    Opcode::SumarEntero | Opcode::SumarDecimal => {
+                        RegInstruction::RegAdd { dst, a, b }
+                    }
+                    Opcode::RestarEntero | Opcode::RestarDecimal => {
+                        RegInstruction::RegSub { dst, a, b }
+                    }
+                    Opcode::MultiplicarEntero | Opcode::MultiplicarDecimal => {
+                        RegInstruction::RegMul { dst, a, b }
+                    }
+                    Opcode::DividirEntero | Opcode::DividirDecimal => {
+                        RegInstruction::RegDiv { dst, a, b }
+                    }
                     _ => unreachable!(),
                 };
                 current_block.instructions.push(instr);
                 let class = match op {
-                    Opcode::SumarDecimal | Opcode::RestarDecimal | Opcode::MultiplicarDecimal | Opcode::DividirDecimal => {
-                        RegClass::Float
-                    }
+                    Opcode::SumarDecimal
+                    | Opcode::RestarDecimal
+                    | Opcode::MultiplicarDecimal
+                    | Opcode::DividirDecimal => RegClass::Float,
                     _ => RegClass::Integer,
                 };
                 stack.push((dst, class));

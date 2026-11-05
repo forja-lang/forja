@@ -20,7 +20,7 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::bytecode::ModuloBytecode;
-use crate::bytecode::{self, TipoIncorporada, ContratoBytecode, Opcode};
+use crate::bytecode::{self, ContratoBytecode, Opcode, TipoIncorporada};
 use crate::class_descriptor::{DescriptorClase, FormaCampos};
 use crate::shape::{IdForma, RegistroFormas};
 
@@ -29,14 +29,14 @@ mod tipos;
 
 // Re-export de los tipos base extraídos a `tipos.rs` para preservar la API
 // pública de `vm_fast` (fachada estable).
+pub(crate) use tipos::{
+    entero_o_nulo, homogeneizar_exacto_fast, multiplicar_entero, restar_entero, sumar_entero,
+    FrmFast, FuncFast, Pic, TipoInferido,
+};
 pub use tipos::{
     entero_representable, get_small_int_fast, mostrar_exacto, ChannelValue, ErrFast, ExactoVal,
     FuncVersion, FunctionTable, ObjVal, ValorFast, ValorPortable, VersionedBytecode, ENTERO_MAX,
     ENTERO_MIN, RESULTADO_IDX,
-};
-pub(crate) use tipos::{
-    entero_o_nulo, homogeneizar_exacto_fast, multiplicar_entero, restar_entero, sumar_entero,
-    FrmFast, FuncFast, Pic, TipoInferido,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -760,7 +760,10 @@ impl ForjaFast {
                     let b = stack.pop().unwrap_or_default();
                     let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() {
-                        stack.push(entero_o_nulo(multiplicar_entero(a.a_entero(), b.a_entero())));
+                        stack.push(entero_o_nulo(multiplicar_entero(
+                            a.a_entero(),
+                            b.a_entero(),
+                        )));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
@@ -796,7 +799,10 @@ impl ForjaFast {
                     let b = stack.pop().unwrap_or_default();
                     let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() {
-                        stack.push(entero_o_nulo(multiplicar_entero(a.a_entero(), b.a_entero())));
+                        stack.push(entero_o_nulo(multiplicar_entero(
+                            a.a_entero(),
+                            b.a_entero(),
+                        )));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
@@ -1103,7 +1109,8 @@ impl ForjaFast {
                                 }
                             }
                             // Superinstructions (Fase 1a) con índices
-                            Opcode::CargarSumarEntero(idx, _) | Opcode::CargarSumarDecimal(idx, _) => {
+                            Opcode::CargarSumarEntero(idx, _)
+                            | Opcode::CargarSumarDecimal(idx, _) => {
                                 if *idx + 1 > max_idx {
                                     max_idx = *idx + 1;
                                 }

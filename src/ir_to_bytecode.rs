@@ -106,7 +106,10 @@ impl ConversorABytecode {
                     .iter()
                     .map(|(sym, _)| Arc::from(ir.simbolos.nombre_de(*sym)))
                     .collect();
-                bytecode.push(Opcode::DefinirFuncion(Arc::from(nombre.as_str()), parametros));
+                bytecode.push(Opcode::DefinirFuncion(
+                    Arc::from(nombre.as_str()),
+                    parametros,
+                ));
             }
             bytecode.extend(self.convert_function(func, es_main));
             self.label_offset += func.bloques.len();
@@ -243,7 +246,10 @@ impl ConversorABytecode {
         self.label_offset = self.next_label_diferido;
 
         let mut definicion = Vec::new();
-        definicion.push(Opcode::DefinirFuncion(Arc::from(nombre.as_str()), parametros));
+        definicion.push(Opcode::DefinirFuncion(
+            Arc::from(nombre.as_str()),
+            parametros,
+        ));
         definicion.extend(self.convert_function(func, false));
         definicion.push(Opcode::Retornar);
 
@@ -421,7 +427,9 @@ impl ConversorABytecode {
             }
             Instruccion::Sumar(l, r) => self.binaria(bytecode, l, r, Opcode::Sumar, result),
             Instruccion::Restar(l, r) => self.binaria(bytecode, l, r, Opcode::Restar, result),
-            Instruccion::Multiplicar(l, r) => self.binaria(bytecode, l, r, Opcode::Multiplicar, result),
+            Instruccion::Multiplicar(l, r) => {
+                self.binaria(bytecode, l, r, Opcode::Multiplicar, result)
+            }
             Instruccion::Dividir(l, r) => self.binaria(bytecode, l, r, Opcode::Dividir, result),
             Instruccion::Igual(l, r) => self.binaria(bytecode, l, r, Opcode::Igual, result),
             Instruccion::Distinto(l, r) => self.binaria(bytecode, l, r, Opcode::Diferente, result),

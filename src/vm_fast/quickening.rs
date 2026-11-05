@@ -17,7 +17,9 @@ impl ForjaFast {
             self.bytecode
                 .iter()
                 .filter_map(|op| match op {
-                    Opcode::CargarIndice(i) | Opcode::GuardarIndice(i) | Opcode::DeclararIndice(i, _) => Some(*i),
+                    Opcode::CargarIndice(i)
+                    | Opcode::GuardarIndice(i)
+                    | Opcode::DeclararIndice(i, _) => Some(*i),
                     Opcode::CargarIndiceGlobal(i)
                     | Opcode::GuardarIndiceGlobal(i)
                     | Opcode::DeclararIndiceGlobal(i, _) => Some(*i),
@@ -74,7 +76,8 @@ impl ForjaFast {
                 // generan para variables LOCALES (DeclareIdx). Las variables
                 // GLOBALES usan DeclareIdxGlobal y nunca se fusionan. Por eso,
                 // solo escribimos tipos_var si el índice NO es global.
-                Opcode::DeclararOperacionEntero(idx, _) | Opcode::GuardarOperacionEntero(idx, _) => {
+                Opcode::DeclararOperacionEntero(idx, _)
+                | Opcode::GuardarOperacionEntero(idx, _) => {
                     if idx < tipos_var.len() && !global_indices.contains(&idx) {
                         tipos_var[idx] = Some(TipoInferido::Entero);
                     }
@@ -84,7 +87,8 @@ impl ForjaFast {
                         tipos_var[idx] = Some(TipoInferido::Booleano);
                     }
                 }
-                Opcode::DeclararOperacionDecimal(idx, _) | Opcode::GuardarOperacionDecimal(idx, _) => {
+                Opcode::DeclararOperacionDecimal(idx, _)
+                | Opcode::GuardarOperacionDecimal(idx, _) => {
                     if idx < tipos_var.len() && !global_indices.contains(&idx) {
                         tipos_var[idx] = Some(TipoInferido::Flotante);
                     }
@@ -124,8 +128,11 @@ impl ForjaFast {
                                 | Opcode::GuardarOperacionDecimal(_, _)
                                 | Opcode::SumarGuardarDecimal(_)
                                 | Opcode::RestarGuardarDecimal(_)
-                                | Opcode::MultiplicarGuardarDecimal(_) => Some(TipoInferido::Flotante),
-                                Opcode::PushBooleano(_) | Opcode::DeclararOperacionBooleano(_, _) => {
+                                | Opcode::MultiplicarGuardarDecimal(_) => {
+                                    Some(TipoInferido::Flotante)
+                                }
+                                Opcode::PushBooleano(_)
+                                | Opcode::DeclararOperacionBooleano(_, _) => {
                                     Some(TipoInferido::Booleano)
                                 }
                                 Opcode::PushTexto(_) => Some(TipoInferido::Texto),
@@ -152,8 +159,11 @@ impl ForjaFast {
                                 Opcode::PushDecimal(_)
                                 | Opcode::CargarIndiceDecimal(_)
                                 | Opcode::DeclararOperacionDecimal(_, _)
-                                | Opcode::GuardarOperacionDecimal(_, _) => Some(TipoInferido::Flotante),
-                                Opcode::PushBooleano(_) | Opcode::DeclararOperacionBooleano(_, _) => {
+                                | Opcode::GuardarOperacionDecimal(_, _) => {
+                                    Some(TipoInferido::Flotante)
+                                }
+                                Opcode::PushBooleano(_)
+                                | Opcode::DeclararOperacionBooleano(_, _) => {
                                     Some(TipoInferido::Booleano)
                                 }
                                 Opcode::PushTexto(_) => Some(TipoInferido::Texto),
@@ -178,8 +188,11 @@ impl ForjaFast {
                                 Opcode::PushDecimal(_)
                                 | Opcode::CargarIndiceDecimal(_)
                                 | Opcode::DeclararOperacionDecimal(_, _)
-                                | Opcode::GuardarOperacionDecimal(_, _) => Some(TipoInferido::Flotante),
-                                Opcode::PushBooleano(_) | Opcode::DeclararOperacionBooleano(_, _) => {
+                                | Opcode::GuardarOperacionDecimal(_, _) => {
+                                    Some(TipoInferido::Flotante)
+                                }
+                                Opcode::PushBooleano(_)
+                                | Opcode::DeclararOperacionBooleano(_, _) => {
                                     Some(TipoInferido::Booleano)
                                 }
                                 Opcode::PushTexto(_) => Some(TipoInferido::Texto),
@@ -308,23 +321,31 @@ impl ForjaFast {
                     if let Some(&func_idx) = self.sym_to_func_idx.get(&sym) {
                         self.bytecode[i] = Opcode::LlamarDirecto(func_idx, nargs);
                     } else if sym == self.sym_escribir {
-                        self.bytecode[i] = Opcode::LlamarIncorporada(TipoIncorporada::Escribir, nargs);
+                        self.bytecode[i] =
+                            Opcode::LlamarIncorporada(TipoIncorporada::Escribir, nargs);
                     } else if sym == self.sym_longitud || sym == self.sym_len {
-                        self.bytecode[i] = Opcode::LlamarIncorporada(TipoIncorporada::Longitud, nargs);
+                        self.bytecode[i] =
+                            Opcode::LlamarIncorporada(TipoIncorporada::Longitud, nargs);
                     } else if sym == self.sym_tipo {
                         self.bytecode[i] = Opcode::LlamarIncorporada(TipoIncorporada::Tipo, nargs);
                     } else if sym == self.sym_a_texto {
-                        self.bytecode[i] = Opcode::LlamarIncorporada(TipoIncorporada::ATexto, nargs);
+                        self.bytecode[i] =
+                            Opcode::LlamarIncorporada(TipoIncorporada::ATexto, nargs);
                     } else if sym == self.sym_es_numero {
-                        self.bytecode[i] = Opcode::LlamarIncorporada(TipoIncorporada::EsNumero, nargs);
+                        self.bytecode[i] =
+                            Opcode::LlamarIncorporada(TipoIncorporada::EsNumero, nargs);
                     } else if sym == self.sym_es_texto {
-                        self.bytecode[i] = Opcode::LlamarIncorporada(TipoIncorporada::EsTexto, nargs);
+                        self.bytecode[i] =
+                            Opcode::LlamarIncorporada(TipoIncorporada::EsTexto, nargs);
                     } else if sym == self.sym_empujar {
-                        self.bytecode[i] = Opcode::LlamarIncorporada(TipoIncorporada::Empujar, nargs);
+                        self.bytecode[i] =
+                            Opcode::LlamarIncorporada(TipoIncorporada::Empujar, nargs);
                     } else if sym == self.sym_obtener {
-                        self.bytecode[i] = Opcode::LlamarIncorporada(TipoIncorporada::Obtener, nargs);
+                        self.bytecode[i] =
+                            Opcode::LlamarIncorporada(TipoIncorporada::Obtener, nargs);
                     } else if sym == self.sym_remover {
-                        self.bytecode[i] = Opcode::LlamarIncorporada(TipoIncorporada::Remover, nargs);
+                        self.bytecode[i] =
+                            Opcode::LlamarIncorporada(TipoIncorporada::Remover, nargs);
                     } else if sym == self.sym_nuevo {
                         self.bytecode[i] = Opcode::LlamarIncorporada(TipoIncorporada::Nuevo, nargs);
                     }
@@ -428,11 +449,15 @@ impl ForjaFast {
             }
             match &self.bytecode[j] {
                 // Productores de exactamente un valor con tipo conocido.
-                Opcode::PushEntero(_) | Opcode::CargarIndiceEntero(_) | Opcode::CargarSumarEntero(_, _) => {
+                Opcode::PushEntero(_)
+                | Opcode::CargarIndiceEntero(_)
+                | Opcode::CargarSumarEntero(_, _) => {
                     tipos[operandos_encontrados] = TipoInferido::Entero;
                     operandos_encontrados += 1;
                 }
-                Opcode::PushDecimal(_) | Opcode::CargarIndiceDecimal(_) | Opcode::CargarSumarDecimal(_, _) => {
+                Opcode::PushDecimal(_)
+                | Opcode::CargarIndiceDecimal(_)
+                | Opcode::CargarSumarDecimal(_, _) => {
                     tipos[operandos_encontrados] = TipoInferido::Flotante;
                     operandos_encontrados += 1;
                 }

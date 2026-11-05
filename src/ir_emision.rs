@@ -8,7 +8,7 @@
 //! diagnóstico del constructo (no hay *fallback* a la ruta AST).
 
 use crate::ast::{Declaracion, ParametroTipo, Programa, Tipo};
-use crate::bytecode::{GeneradorBytecode, ContratoBytecode, Opcode};
+use crate::bytecode::{ContratoBytecode, GeneradorBytecode, Opcode};
 use crate::ir_constructor::ConstructorDesdeAst;
 use crate::ir_to_bytecode::ConversorABytecode;
 use std::collections::HashMap;
@@ -35,24 +35,22 @@ pub fn emitir_bytecode_canonico(
     // generador necesita la tabla antes de emitir (no después).
     let globales = globales_de(programa);
     gen.set_globales(globales.clone());
-    let bytecode = gen
-        .generar(programa)
-        .map_err(|errores| {
-            // Propagar el primer diagnóstico real: el fallback a IR vuelve a
-            // fallar con el mismo programa y este mensaje es el útil.
-            errores
-                .first()
-                .map(|e| {
-                    // El mensaje y la sugerencia viajan juntos: quien reciba
-                    // este `String` (fallback IR, CLI) muestra una sola línea.
-                    if e.sugerencia.is_empty() {
-                        e.mensaje.to_string()
-                    } else {
-                        format!("{} {}", e.mensaje, e.sugerencia)
-                    }
-                })
-                .unwrap_or_else(|| "Error generando bytecode".to_string())
-        })?;
+    let bytecode = gen.generar(programa).map_err(|errores| {
+        // Propagar el primer diagnóstico real: el fallback a IR vuelve a
+        // fallar con el mismo programa y este mensaje es el útil.
+        errores
+            .first()
+            .map(|e| {
+                // El mensaje y la sugerencia viajan juntos: quien reciba
+                // este `String` (fallback IR, CLI) muestra una sola línea.
+                if e.sugerencia.is_empty() {
+                    e.mensaje.to_string()
+                } else {
+                    format!("{} {}", e.mensaje, e.sugerencia)
+                }
+            })
+            .unwrap_or_else(|| "Error generando bytecode".to_string())
+    })?;
 
     let bytecode = crate::bytecode::postprocesar_globales(bytecode, &globales);
     let bytecode = crate::optimizer_pipeline::optimizar_bytecode(bytecode);
