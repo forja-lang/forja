@@ -208,5 +208,15 @@
       "jit": [],
       "vms": []
     }
+  },
+  {
+    "date": "2026-11-05T22:59:35Z",
+    "version": "0.9.7",
+    "commit": "da36d09",
+    "benchmarks": {
+      "forjafast": [],
+      "jit": [],
+      "vms": []
+    }
   }
 ]
