@@ -1,6 +1,6 @@
-// Opcodes de colecciones (arreglos y mapas) de la VM canónica `ForjaFast` (F1-T7).
+// Opcodes de colecciones (arreglos y mapas) de la VM canónica `ForjaFast`.
 //
-// Extraído de `ejecucion.rs` durante el refactor F1-T7. Estas ramas del
+// Extraído de `ejecucion.rs` durante el refactor. Estas ramas del
 // `match op` son autocontenidas (no usan `continue`/`break`/`patch_op`), por lo
 // que se delegan a este helper que devuelve `Ok(true)` si la operación fue
 // manejada.
@@ -10,7 +10,7 @@ use super::*;
 /// índice absurdo (`arr[1000000000] = x`) intente reservar memoria a lo loco.
 pub(crate) const CRECIMIENTO_MAXIMO_ARREGLO: usize = 1 << 20;
 
-/// F12-T3: `arr[i] = v`.
+/// `arr[i] = v`.
 ///
 /// Con `i < longitud` escribe en su sitio. Con `i >= longitud` **extiende** el
 /// arreglo con Nulos hasta `i` (los ejemplos del curso construyen arreglos así:
@@ -67,7 +67,7 @@ impl ForjaFast {
                         let val = if ii >= 0 && (ii as usize) < arr.len() {
                             arr[ii as usize]
                         } else {
-                            // F2-T7: en modo estricto, error claro con índice.
+                            // en modo estricto, error claro con índice.
                             if self.errores_estrictos {
                                 return Err(ErrFast::IdxOut(format!(
                                     "índice {} en arreglo de longitud {}",
@@ -95,7 +95,7 @@ impl ForjaFast {
                             let val = if ii >= 0 && (ii as usize) < arr.len() {
                                 arr[ii as usize]
                             } else {
-                                // F2-T7: en modo estricto, error claro con índice.
+                                // en modo estricto, error claro con índice.
                                 if self.errores_estrictos {
                                     return Err(ErrFast::IdxOut(format!(
                                         "índice {} en arreglo de longitud {}",
@@ -116,6 +116,28 @@ impl ForjaFast {
                             );
                             self.ic_arrayget[ip] = Some(false);
                             self.ic_miss_count[ip] = 0;
+                        } else if a.es_texto() && i.es_entero() {
+                            // Indexar un texto devuelve el carácter (1 letra).
+                            let ii = i.a_entero();
+                            let c = self
+                                .get_str(a.indice_texto())
+                                .chars()
+                                .nth(usize::try_from(ii).unwrap_or(usize::MAX));
+                            match c {
+                                Some(c) => {
+                                    let idx = self.alloc_str(Arc::from(c.to_string().as_str()));
+                                    self.push_valor(ValorFast::texto(idx));
+                                }
+                                None => {
+                                    if self.errores_estrictos {
+                                        return Err(ErrFast::IdxOut(format!(
+                                            "índice {} en texto",
+                                            ii
+                                        )));
+                                    }
+                                    self.push_valor(ValorFast::nulo());
+                                }
+                            }
                         } else {
                             self.push_valor(ValorFast::nulo());
                             self.ic_miss_count[ip] = self.ic_miss_count[ip].saturating_add(1);
