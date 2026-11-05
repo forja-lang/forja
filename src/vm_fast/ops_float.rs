@@ -1,7 +1,7 @@
 // Superinstrucciones float, stack bypass, fused ops y comparaciones de la VM
-// canónica `ForjaFast` (F1-T7).
+// canónica `ForjaFast`.
 //
-// Extraído de `ejecucion.rs` durante el refactor F1-T7. Estas ramas del `match op`
+// Extraído de `ejecucion.rs` durante el refactor. Estas ramas del `match op`
 // son autocontenidas (no usan `continue`/`break`/`patch_op`), por lo que se
 // delegan a este helper que devuelve `Ok(true)` si la operación fue manejada.
 
@@ -13,6 +13,20 @@ impl ForjaFast {
     ///
     /// Devuelve `Ok(true)` si `op` fue manejada por este helper, `Ok(false)` en
     /// caso contrario (para que el `match` principal de `ejecutar` la procese).
+    /// Compara dos números cuando uno es Entero y el otro Decimal. Antes ese
+    /// caso no estaba cubierto y la comparación devolvía `false` siempre
+    /// (`8.5 >= 7` era falso). Devuelve `None` si no es un par mixto.
+    #[inline]
+    pub(crate) fn comparar_mixto(a: ValorFast, b: ValorFast) -> Option<std::cmp::Ordering> {
+        if a.es_flotante() && b.es_entero() {
+            a.a_flotante().partial_cmp(&(b.a_entero() as f64))
+        } else if a.es_entero() && b.es_flotante() {
+            (a.a_entero() as f64).partial_cmp(&b.a_flotante())
+        } else {
+            None
+        }
+    }
+
     #[inline]
     pub(crate) fn ejecutar_ops_float(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
@@ -325,6 +339,8 @@ impl ForjaFast {
                     a.a_entero() < b.a_entero()
                 } else if a.es_flotante() && b.es_flotante() {
                     a.a_flotante() < b.a_flotante()
+                } else if let Some(ord) = Self::comparar_mixto(a, b) {
+                    ord.is_lt()
                 } else if a.es_exacto() && b.es_exacto() {
                     let ae = self.get_exacto(a.indice_exacto());
                     let be = self.get_exacto(b.indice_exacto());
@@ -353,6 +369,8 @@ impl ForjaFast {
                         be.escala,
                     );
                     aa < bb
+                } else if a.es_texto() && b.es_texto() {
+                    self.get_str(a.indice_texto()) < self.get_str(b.indice_texto())
                 } else {
                     false
                 }));
@@ -364,6 +382,8 @@ impl ForjaFast {
                     a.a_entero() > b.a_entero()
                 } else if a.es_flotante() && b.es_flotante() {
                     a.a_flotante() > b.a_flotante()
+                } else if let Some(ord) = Self::comparar_mixto(a, b) {
+                    ord.is_gt()
                 } else if a.es_exacto() && b.es_exacto() {
                     let ae = self.get_exacto(a.indice_exacto());
                     let be = self.get_exacto(b.indice_exacto());
@@ -392,6 +412,8 @@ impl ForjaFast {
                         be.escala,
                     );
                     aa > bb
+                } else if a.es_texto() && b.es_texto() {
+                    self.get_str(a.indice_texto()) > self.get_str(b.indice_texto())
                 } else {
                     false
                 }));
@@ -403,6 +425,8 @@ impl ForjaFast {
                     a.a_entero() <= b.a_entero()
                 } else if a.es_flotante() && b.es_flotante() {
                     a.a_flotante() <= b.a_flotante()
+                } else if let Some(ord) = Self::comparar_mixto(a, b) {
+                    ord.is_le()
                 } else if a.es_exacto() && b.es_exacto() {
                     let ae = self.get_exacto(a.indice_exacto());
                     let be = self.get_exacto(b.indice_exacto());
@@ -431,6 +455,8 @@ impl ForjaFast {
                         be.escala,
                     );
                     aa <= bb
+                } else if a.es_texto() && b.es_texto() {
+                    self.get_str(a.indice_texto()) <= self.get_str(b.indice_texto())
                 } else {
                     false
                 }));
@@ -442,6 +468,8 @@ impl ForjaFast {
                     a.a_entero() >= b.a_entero()
                 } else if a.es_flotante() && b.es_flotante() {
                     a.a_flotante() >= b.a_flotante()
+                } else if let Some(ord) = Self::comparar_mixto(a, b) {
+                    ord.is_ge()
                 } else if a.es_exacto() && b.es_exacto() {
                     let ae = self.get_exacto(a.indice_exacto());
                     let be = self.get_exacto(b.indice_exacto());
@@ -470,6 +498,8 @@ impl ForjaFast {
                         be.escala,
                     );
                     aa >= bb
+                } else if a.es_texto() && b.es_texto() {
+                    self.get_str(a.indice_texto()) >= self.get_str(b.indice_texto())
                 } else {
                     false
                 }));
