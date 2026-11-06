@@ -706,19 +706,22 @@ fn e2e_vm_vs_asm_nativo_misma_salida() {
     let mut omitidos = 0;
     let mut fallos = Vec::new();
     for (nombre, fuente) in PROGRAMAS {
+        let programa = parsear(fuente).unwrap_or_else(|e| panic!("[{nombre}] parse: {e}"));
+        // Se compila siempre (así la cobertura del backend ASM sigue completa).
+        let asm = compilar_a_asm_con_target(&programa, target)
+            .unwrap_or_else(|e| panic!("[{nombre}] compila a ASM: {e:?}"));
+
         // shortcut: la concatenación de textos del backend ASM revienta al
         // ejecutarse en Linux (el binario termina con error); en Windows y en
         // la VM funciona. Queda pendiente del backend ASM para x86-64 Linux.
         if matches!(target, TargetArch::X86_64Linux) && *nombre == "texto_concatenacion" {
-            eprintln!("[{nombre}] omitido: concatenación ASM en Linux pendiente");
+            eprintln!("[{nombre}] compilado pero omitido al ejecutar: concatenación ASM en Linux pendiente");
             omitidos += 1;
             continue;
         }
+
         let salida_vm = forja::ejecutar_vm(fuente)
             .unwrap_or_else(|e| panic!("[{nombre}] ejecutar_vm falló: {e}"));
-        let programa = parsear(fuente).unwrap_or_else(|e| panic!("[{nombre}] parse: {e}"));
-        let asm = compilar_a_asm_con_target(&programa, target)
-            .unwrap_or_else(|e| panic!("[{nombre}] compila a ASM: {e:?}"));
 
         comparados += 1;
         let ruta_s = dir.join(format!("{nombre}.s"));
