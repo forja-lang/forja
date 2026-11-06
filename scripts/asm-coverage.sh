@@ -175,6 +175,9 @@ fi
 
 awk -v pct="$PCT" -v thr="$THRESHOLD" 'BEGIN { exit (pct + 0 >= thr + 0) ? 0 : 1 }' || {
     echo "❌ Cobertura ${PCT}% < ${THRESHOLD}%" >&2
+    # Diagnóstico: líneas de compiler_asm.rs sin ejecutar (para agregar tests).
+    echo "Líneas sin cubrir (primeras 80):" >&2
+    "$COV" show "$LIBEXE" -object "$ASMEXE" -instr-profile="$COVDIR/asm.profdata"         --format=text 2>/dev/null         | grep -E '^\s*[0-9]+\|\s*0\|' | head -80 >&2 || true
     exit 1
 }
 echo "✅ Cobertura ${PCT}% ≥ ${THRESHOLD}%" >&2
