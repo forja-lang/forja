@@ -114,7 +114,7 @@ jobs:
       # Guardas del workflow de entrega: matriz de release, firmas y par WASM
       # del playground. Cuesta milisegundos y evita publicar un release roto.
       - name: cargo xtask tidy
-        run: cargo xtask tidy
+        run: cargo run -p forja-bootstrap --bin xtask -- tidy
       - name: cargo doc (sin warnings)
         run: RUSTC_WRAPPER= cargo doc --workspace --no-deps --locked
       - name: cargo deny

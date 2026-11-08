@@ -1233,7 +1233,7 @@ pub fn ejecutar_con_cache(source: &str, root_dir: &std::path::Path) -> Result<Ve
 /// Compila múltiples módulos en paralelo usando rayon.
 /// Cada elemento de `modulos` es `(source_code, module_id)`.
 /// Los módulos deben ser independientes entre sí (sin dependencias mutuas).
-#[cfg(feature = "parallel")]
+#[cfg(all(feature = "parallel", not(target_arch = "wasm32")))]
 pub fn compilar_modulos_paralelo(
     modulos: Vec<(String, ModuleId)>,
 ) -> Result<Vec<bytecode::ModuloBytecode>, String> {

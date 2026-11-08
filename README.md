@@ -329,17 +329,51 @@ La frontera está protegida por `tests/frontera_nativos.rs` y
 `tests/stdlib_smoke.rs`. Clasificación generada (módulo/función → H/M):
 [`plans/frontera-modulos.generated.md`](plans/frontera-modulos.generated.md).
 
+## Estructura del repositorio
+
+Workspace de Cargo con el compilador (`forja`) y sus crates. El repositorio raíz
+usa submódulos git para lo que también se consume o publica por separado.
+
+```
+compiler/            crates del compilador (todos miembros del workspace)
+├── forja/           manifiesto del crate `forja` (el código vive en src/)
+├── forja-syntax/    submódulo · tokens, AST, lexer, parser
+├── forja-types/     submódulo · type checker, borrow checker
+├── forja-errors/    forja-span/   forja-session/   forja-hir/
+├── forja-ir/        forja-bytecode/   forja-driver/
+├── forja-runtime/   forja-vm/   forja-native/   forja-registry/
+└── forja-fmt/       forja-lint/
+src/                 código del crate `forja`: API pública, backends, AOT, LSP
+├── tools/           forja-cli, forja-repl, forja-lsp, forja-dap
+└── bootstrap/       xtask (automatización del repo)
+library/             submódulos · runtimes y librería estándar
+├── std/ gui/        librería estándar (`library/std`: 47 módulos .fa)
+├── rt/ android/     runtimes de ejecución autónoma
+└── gui-theme/ gui-core/ gui-rt/ wasm/ wasm-gui/
+tests/ benches/ scripts/ packaging/ vscode/ docs/
+ejemplos/            submódulo · ejemplos del lenguaje
+```
+
+- `library/*`, `compiler/forja-syntax`, `compiler/forja-types` y `ejemplos` son
+  **submódulos** (repos `forja-lang/forja-*`): sus crates los consumen el resto
+  del ecosistema y se publican por separado.
+- El resto de `compiler/` vive **en el árbol**: sus cambios son atómicos con el
+  compilador y no se publican de forma independiente.
+- Detalle de clonado, locks y submódulos: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+---
+
 ## Estado del proyecto
 
 Forja está en **v0.10.0** y en desarrollo activo. El estado verificable de cada
 componente —hecho / en progreso / planeado— vive en el
 **[roadmap oficial](https://forja-lang.github.io/roadmap/)**.
 
-- **Motores de ejecución (2):** intérprete *ForjaFast* (`src/vm_fast/`) y JIT *tiered* (`src/jit_tiered.rs`).
+- **Motores de ejecución (2):** intérprete *ForjaFast* (`compiler/forja-vm/src/vm_fast/`) y JIT *tiered* (`compiler/forja-vm/src/jit_tiered.rs`).
 - **Frontend reutilizable:** crates `forja-syntax` y `forja-types` (lexer, parser, AST, tipos).
 - **Salidas:** bytecode (VM/JIT), ensamblador x86-64/ARM64, Rust, AOT, WASM, Android y GUI.
-- **Ecosistema:** `stdlib` (47 módulos), 263 ejemplos, curso de 30 días, LSP + DAP, GC generacional, registro de paquetes local y releases precompilados.
-- **En progreso:** IR real (emisión AST→IR), backend LLVM, extracción de `forja-gui-core` y registry remoto.
+- **Ecosistema:** `library/std` (47 módulos), 263 ejemplos, curso de 30 días, LSP + DAP, GC generacional, registro de paquetes local y releases precompilados.
+- **En progreso:** IR real (emisión AST→IR), backend LLVM y registry remoto.
 
 ---
 
@@ -352,7 +386,7 @@ cargo bench --bench perf-regresion   # puerta de CI (ratios vs baseline)
 cargo bench --bench compilar-vm      # criterion: compilación y VM
 ```
 
-El detalle histórico por versión se retiró junto con el submódulo
+El detalle histórico por versión se retiró junto con el submódulo de benchmarks;
 la referencia actual es `benches/README.md`.
 
 ---
