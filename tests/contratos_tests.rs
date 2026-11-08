@@ -7,7 +7,7 @@
 //!   3. `anterior(x)` no se distinguía de `x` (ambos leían el snapshot).
 //!   4. Las condiciones no resolvían globales ni campos (`este.valor`).
 
-use forja::ejecutar;
+use forja_test_support::ejecutar;
 
 fn salida(fuente: &str) -> Vec<String> {
     ejecutar(fuente).unwrap_or_else(|e| panic!("no ejecutó: {e}\n{fuente}"))

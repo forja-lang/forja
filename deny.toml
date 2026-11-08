@@ -1,0 +1,36 @@
+# Política de dependencias (cargo-deny).
+# Uso: cargo deny check
+
+[graph]
+all-features = true
+
+[advisories]
+yanked = "deny"
+ignore = []
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "GPL-3.0-or-later",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+deny = []
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "deny"
+allow-git = [
+    "https://github.com/linebender/xilem",
+]

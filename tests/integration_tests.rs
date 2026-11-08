@@ -501,7 +501,7 @@ escribir(ipv4_valida)
 escribir(ipv6_valida)
 escribir(mac_valida)
 "#;
-    let root_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let out = forja::ejecutar_con_opciones_desde(code, root_dir, true, None).unwrap();
     assert_eq!(out, vec!["verdadero", "verdadero", "verdadero"]);
 }
@@ -529,7 +529,7 @@ coincidir (res_conn) {
     caso _ -> escribir("error conexion")
 }
 "#;
-    let root_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let out = forja::ejecutar_con_opciones_desde(code, root_dir, true, None).unwrap();
     assert_eq!(out, vec!["HTTP/3 QUIC Stream OK"]);
 }
@@ -548,7 +548,7 @@ coincidir (res) {
     caso _ -> escribir("error h3")
 }
 "#;
-    let root_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let out = forja::ejecutar_con_opciones_desde(code, root_dir, true, None).unwrap();
     assert_eq!(out, vec!["HTTP/3.0", "200"]);
 }
@@ -560,7 +560,7 @@ variable m = {"nombre": "Forja", "version": 1}
 escribir(m.nombre)
 escribir(m.version)
 "#;
-    let root_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let out = forja::ejecutar_con_opciones_desde(code, root_dir, true, None).unwrap();
     assert_eq!(out, vec!["Forja", "1"]);
 }
@@ -587,7 +587,7 @@ variable nombre = "Mundo"
 variable msg = "Hola ${nombre}!"
 escribir(msg)
 "#;
-    let root_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let out = forja::ejecutar_con_opciones_desde(code, root_dir, true, None).unwrap();
     assert_eq!(out, vec!["Hola Mundo!"]);
 }
@@ -621,7 +621,7 @@ variable p = nuevo Persona { nombre: "Ana", edad: 25 }
 escribir(p.nombre)
 escribir(p.edad)
 "#;
-    let root_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root_dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let out = forja::ejecutar_con_opciones_desde(code, root_dir, true, None).unwrap();
     assert_eq!(out, vec!["Ana", "25"]);
 }
@@ -648,7 +648,7 @@ fn ejecutar_todos_los_motores(fuente: &str) -> Vec<String> {
     let salida_ir = correr_vm(bc_ir);
     // Backend AST por la ruta real (con `postprocesar_globales`): el helper
     // `ejecutar` de este archivo no lo aplica y deja los globales como locales.
-    let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let raiz = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let (bc_ast, _) =
         forja::compilar_pipeline_completa_desde_ast(fuente, raiz).expect("backend AST");
     let salida_ast = correr_vm(bc_ast);

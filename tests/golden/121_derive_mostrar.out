@@ -1,7 +1,7 @@
 === @derive(Mostrar) ===
 
-Producto: <Producto>
-Usuario: <Usuario>
+Producto: Producto { nombre: Laptop Gamer, precio: 1500, stock: 10 }
+Usuario: Usuario { id: 42, nombre: Ana García, email: ana@example.com }
 Nivel bajo: <Nivel>
 Nivel crítico: <Nivel>
 

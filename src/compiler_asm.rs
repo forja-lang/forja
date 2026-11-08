@@ -1567,6 +1567,15 @@ impl CompilerAsm {
             return Err(self.errors.clone());
         }
 
+        let final_output = if matches!(
+            self.arch,
+            TargetArch::X86_64Windows | TargetArch::X86_64Linux
+        ) {
+            peephole_x86(final_output)
+        } else {
+            final_output
+        };
+
         Ok(final_output)
     }
 
@@ -4385,6 +4394,210 @@ fn extraer_variables_patron_asm(patron: &Patron) -> Vec<String> {
 // ──────────────────────────────────────────────────────────
 // Función pública
 // ──────────────────────────────────────────────────────────
+
+/// Peephole conservador para x86-64: elimina movimientos y ajustes de pila
+/// redundantes que el generador emite por comodidad.
+fn peephole_x86(texto: String) -> String {
+    let mut lineas: Vec<String> = texto.lines().map(str::to_string).collect();
+    // Reservar shadow space una vez por función, no por llamada.
+    let mut i = 0;
+    while i < lineas.len() {
+        if lineas[i].trim() == "mov rbp, rsp" && i + 1 < lineas.len() {
+            if let Some(n) = lineas[i + 1]
+                .trim()
+                .strip_prefix("sub rsp, ")
+                .and_then(|v| v.parse::<usize>().ok())
+            {
+                lineas[i + 1] = format!("    sub rsp, {}", n + 32);
+            }
+        }
+        i += 1;
+    }
+    // `sub rsp, 32; call X; add rsp, 32` → `call X`
+    let mut out = Vec::with_capacity(lineas.len());
+    let mut j = 0;
+    while j < lineas.len() {
+        if j + 2 < lineas.len()
+            && lineas[j].trim() == "sub rsp, 32"
+            && lineas[j + 1].trim().starts_with("call ")
+            && lineas[j + 2].trim() == "add rsp, 32"
+        {
+            out.push(lineas[j + 1].clone());
+            j += 3;
+            continue;
+        }
+        // `mov rax, X; mov R64, rax` → `mov R64, X` (solo registros de 64 bits)
+        if j + 1 < lineas.len() {
+            let a = lineas[j].trim();
+            let b = lineas[j + 1].trim();
+            if let Some(src) = a.strip_prefix("mov rax, ") {
+                if let Some(dst) = b.strip_prefix("mov ").and_then(|x| x.strip_suffix(", rax")) {
+                    let reg64 = |r: &str| {
+                        matches!(
+                            r,
+                            "rcx"
+                                | "rdx"
+                                | "rsi"
+                                | "rdi"
+                                | "rbx"
+                                | "r8"
+                                | "r9"
+                                | "r10"
+                                | "r11"
+                                | "r12"
+                                | "r13"
+                                | "r14"
+                                | "r15"
+                        )
+                    };
+                    if reg64(dst) && (src.parse::<i64>().is_ok() || reg64(src)) {
+                        out.push(format!("    mov {dst}, {src}"));
+                        j += 2;
+                        continue;
+                    }
+                }
+            }
+        }
+        // `push rax; pop rcx` → `mov rcx, rax`
+        if j + 1 < lineas.len() {
+            let a = lineas[j].trim();
+            let b = lineas[j + 1].trim();
+            if let Some(reg) = a.strip_prefix("push ") {
+                if let Some(dst) = b.strip_prefix("pop ") {
+                    if reg != dst {
+                        out.push(format!("    mov {dst}, {reg}"));
+                        j += 2;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(lineas[j].clone());
+        j += 1;
+    }
+    let texto = out.join(
+        "
+",
+    ) + "
+";
+    let texto = optimizar_condiciones(&texto);
+    optimizar_regs_calle_saved(&texto)
+}
+
+/// Convierte `mov rax, rX; cmp rax, rY; setcc al; movzx; test; jz L`
+/// en `cmp rX, rY; jcc_inverso L`.
+fn optimizar_condiciones(texto: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    let lines: Vec<&str> = texto.lines().collect();
+    while i < lines.len() {
+        if i + 6 < lines.len() {
+            let a = lines[i].trim();
+            let b = lines[i + 1].trim();
+            let c = lines[i + 2].trim();
+            let d = lines[i + 3].trim();
+            let e = lines[i + 4].trim();
+            let f = lines[i + 5].trim();
+            let reg = a.strip_prefix("mov rax, ");
+            let cmp = b.strip_prefix("cmp rax, ");
+            let set = c.strip_prefix("set").and_then(|x| x.strip_suffix(" al"));
+            if let (Some(reg), Some(cmp), Some(set)) = (reg, cmp, set) {
+                if d == "movzx rax, al" && e == "test rax, rax" && f.starts_with("jz ") {
+                    let inverso = match set {
+                        "le" => "jg",
+                        "l" => "jge",
+                        "ge" => "jl",
+                        "g" => "jle",
+                        "e" => "jne",
+                        "ne" => "je",
+                        _ => "",
+                    };
+                    if !inverso.is_empty() {
+                        out.push(format!("    cmp {reg}, {cmp}"));
+                        out.push(format!("    {inverso} {}", &f[3..]));
+                        i += 6;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(lines[i].to_string());
+        i += 1;
+    }
+    out.join(
+        "
+",
+    ) + "
+"
+}
+
+/// Quita `push`/`pop` de registros callee-saved que la función no usa y ajusta
+/// el frame para conservar la alineación.
+fn optimizar_regs_calle_saved(texto: &str) -> String {
+    let lineas: Vec<&str> = texto.lines().collect();
+    let mut out: Vec<String> = Vec::with_capacity(lineas.len());
+    let mut i = 0;
+    while i < lineas.len() {
+        let l = lineas[i];
+        let es_funcion =
+            l.ends_with(':') && !l.trim_start().starts_with('.') && !l.starts_with(' ');
+        if !es_funcion {
+            out.push(l.to_string());
+            i += 1;
+            continue;
+        }
+        let mut end = i + 1;
+        while end < lineas.len() {
+            let x = lineas[end];
+            if x.ends_with(':') && !x.starts_with(' ') && !x.starts_with('.') {
+                break;
+            }
+            end += 1;
+        }
+        let mut bloque: Vec<String> = lineas[i..end].iter().map(|s| s.to_string()).collect();
+        let cuerpo: String = bloque[1..].join(
+            "
+",
+        );
+        let mut quitados = 0usize;
+        for reg in ["r12", "r13", "r14", "r15", "rbx"] {
+            let push = format!("push {reg}");
+            let pop = format!("pop {reg}");
+            if bloque.iter().any(|x| x.trim() == push) {
+                let usos = cuerpo
+                    .lines()
+                    .filter(|x| x.trim() != push && x.trim() != pop)
+                    .any(|x| x.contains(reg));
+                if !usos {
+                    bloque.retain(|x| x.trim() != push && x.trim() != pop);
+                    quitados += 1;
+                }
+            }
+        }
+        if quitados > 0 {
+            if let Some(pos) = bloque
+                .iter()
+                .position(|x| x.trim_start().starts_with("sub rsp, "))
+            {
+                if let Some(n) = bloque[pos]
+                    .trim()
+                    .strip_prefix("sub rsp, ")
+                    .and_then(|v| v.parse::<usize>().ok())
+                {
+                    let nuevo = n.saturating_sub(quitados * 8);
+                    bloque[pos] = format!("    sub rsp, {nuevo}");
+                }
+            }
+        }
+        out.extend(bloque);
+        i = end;
+    }
+    out.join(
+        "
+",
+    ) + "
+"
+}
 
 pub fn compilar_a_asm(programa: &Programa) -> Result<String, Vec<ErrorForja>> {
     let mut compiler = CompilerAsm::new();

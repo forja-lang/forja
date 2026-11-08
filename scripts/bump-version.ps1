@@ -48,12 +48,43 @@ if (-not (Test-Path $CargoToml)) {
     exit 1
 }
 
-# Detect current version from root Cargo.toml
+# Detect current version.
+#
+# La raíz puede ser un workspace virtual (sin `[package]`): ahí la versión vive
+# en `[workspace.package]` o, si tampoco, en los crates miembros.
+function Get-VersionDe {
+    param([string]$Texto)
+    $m = [regex]::Match($Texto, '(?m)^version\s*=\s*"([^"]+)"')
+    if ($m.Success) { return $m.Groups[1].Value }
+    return ""
+}
+
 $Content = Get-Content $CargoToml -Raw
-if ($Content -match '(?m)^version\s*=\s*"([^"]+)"') {
-    $OldVersion = $Matches[1]
-} else {
-    Write-Error "❌ Error: No se pudo detectar la versión en Cargo.toml"
+
+# Lista de crates del workspace: `members` + `default-members`.
+# Cargo acepta en `default-members` crates que no están en `members`
+# (`compiler/forja`, `src/tools/forja-repl`) y quedaban en la versión vieja.
+function Get-Miembros {
+    param([string]$Clave)
+    [regex]::Matches([regex]::Match($Content, "(?ms)^$Clave\s*=\s*\[(.*?)\]").Groups[1].Value,
+        '"([^"]+)"') | ForEach-Object { $_.Groups[1].Value }
+}
+$WorkspaceCrates = @(Get-Miembros 'members') + @(Get-Miembros 'default-members') |
+    Select-Object -Unique
+
+$OldVersion = Get-VersionDe $Content
+if (-not $OldVersion) {
+    # Un bump anterior pudo dejar crates desfasados: manda la versión
+    # mayoritaria del workspace, no la del primer crate de la lista.
+    $OldVersion = ($WorkspaceCrates | ForEach-Object {
+            $toml = Join-Path $ProjectDir "$_\Cargo.toml"
+            if (-not (Test-Path $toml)) { return }
+            Get-VersionDe (Get-Content $toml -Raw)
+        } | Where-Object { $_ } | Group-Object | Sort-Object Count -Descending |
+        Select-Object -First 1).Name
+}
+if (-not $OldVersion) {
+    Write-Error "❌ Error: No se pudo detectar la versión en Cargo.toml ni en los crates del workspace"
     exit 1
 }
 
@@ -115,14 +146,10 @@ Update-FileContent "Cargo.toml" {
 }
 
 # 2. Workspace crates
-# Misma lista que scripts/bump-version.sh: si falta un crate, la versión del
-# workspace queda inconsistente y `cargo` no resuelve las dependencias por
-# ruta+versión (pasó con gui-core/theme/syntax/types en el bump a 0.9.6).
-$WorkspaceCrates = @("forja-rt", "forja-wasm", "forja-android-rt", "forja-gui-rt",
-                     "forja-wasm-gui", "forja-syntax", "forja-types", "forja-theme",
-                     "forja-gui-core")
-foreach ($crate in $WorkspaceCrates) {
-    $rel = "crates\$crate\Cargo.toml"
+# La lista sale de [workspace] members + default-members de Cargo.toml: una
+# lista fija acá se desfasó y dejó crates sueltos en la versión vieja.
+foreach ($dir in $WorkspaceCrates) {
+    $rel = "$dir\Cargo.toml"
     Update-FileContent $rel {
         param($txt)
         # Versión del paquete (solo la primera del archivo).
@@ -133,7 +160,7 @@ foreach ($crate in $WorkspaceCrates) {
     }
 
     # README del crate: también lleva la versión en prosa.
-    Update-FileContent "crates\$crate\README.md" {
+    Update-FileContent "$dir\README.md" {
         param($txt)
         $txt -replace [regex]::Escape($OldVersion), $NewVersion
     }
@@ -187,7 +214,7 @@ foreach ($doc in @("docs\src\pages\index.astro", "docs\src\pages\roadmap.astro")
 # 7b. Plantilla Android: nombre del AAR enlazado por Gradle.
 #     Sin esto el proyecto generado pide `forja-android-rt-0.9.5.aar` y no
 #     enlaza el AAR del release.
-Update-FileContent "crates\forja-android-rt\android\template\app\build.gradle.kts" {
+Update-FileContent "library\android\android\template\app\build.gradle.kts" {
     param($txt)
     $txt -replace "forja-android-rt-[0-9]+\.[0-9]+\.[0-9]+\.aar", "forja-android-rt-$NewVersion.aar"
 }
@@ -231,12 +258,29 @@ Update-FileContent "installer.iss" {
     $txt -replace "#define MyAppVersion `"$([regex]::Escape($OldVersion))`"", "#define MyAppVersion `"$NewVersion`""
 }
 
+# 10b. Crate de soporte de tests: no está en `[workspace] members`.
+Update-FileContent "tests\harness\Cargo.toml" {
+    param($txt)
+    Set-VersionPaquete $txt
+}
+
+# 10c. Instalador WiX y bootstrapper .NET (versión en prosa).
+foreach ($wxs in @("installer\Bundle.wxs", "installer\msi.wxs")) {
+    Update-FileContent $wxs {
+        param($txt)
+        $txt -replace '-d Version=[0-9]+\.[0-9]+\.[0-9]+', "-d Version=$NewVersion"
+    }
+}
+Update-FileContent "installer\bootstrapper\ForjaBA.csproj" {
+    param($txt)
+    $txt -replace '<Version>[0-9]+\.[0-9]+\.[0-9]+</Version>', "<Version>$NewVersion</Version>"
+}
+
 # 11. Verificación: ningún Cargo.toml del workspace debe quedar desfasado.
 #     Es la red que faltaba: un bump incompleto dejaba el workspace sin resolver
 #     (`forja-gui-rt 0.9.6` exigiendo `forja-gui-core ^0.9.6` con 0.9.5).
 $Desfasados = @()
-$tomls = @("Cargo.toml") + (Get-ChildItem -Path "crates" -Filter "Cargo.toml" -Recurse -Depth 1 |
-                                ForEach-Object { $_.FullName.Substring($ProjectDir.Length + 1) })
+$tomls = @("Cargo.toml") + ($WorkspaceCrates | ForEach-Object { "$_\Cargo.toml" })
 foreach ($toml in $tomls) {
     $full = Join-Path $ProjectDir $toml
     if (-not (Test-Path $full)) { continue }
@@ -263,8 +307,8 @@ Write-Host "   ✅ Verificación: todos los Cargo.toml del workspace en $NewVers
 if (Get-Command "cargo" -ErrorAction SilentlyContinue) {
     Write-Host "`n  ℹ️ Actualizando Cargo.lock con cargo check..." -ForegroundColor Cyan
     cargo check --quiet 2>$null
-    if (Test-Path (Join-Path $ProjectDir "crates\forja-wasm")) {
-        Push-Location (Join-Path $ProjectDir "crates\forja-wasm")
+    if (Test-Path (Join-Path $ProjectDir "library\wasm")) {
+        Push-Location (Join-Path $ProjectDir "library\wasm")
         cargo check --quiet 2>$null
         Pop-Location
     }

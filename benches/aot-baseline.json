@@ -1,0 +1,9 @@
+{
+  "fixture": "benches/fixtures/fib42.fa",
+  "aot_native_memo_ms": 133,
+  "aot_native_no_memo_ms": 989,
+  "rust_ms": 839,
+  "aot_native_bytes": 90112,
+  "aot_fallback_bytes": 6004385,
+  "nota": "AOT nativo = LLVM + clang -O3. Sin intérprete."
+}

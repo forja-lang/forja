@@ -1,150 +1,55 @@
-[package]
-name = "forja"
-version = "0.9.7"
-edition = "2021"
-description = "Forja (fa) - Lenguaje de programación educativo en español"
-authors = ["forja-lang"]
-license = "GPL-3.0-or-later"
-# no auto-descubrir benches; todos los targets se declaran explícitamente
-# (15 en el submódulo `benchmarks/` + el de regresión en `benches/`).
-autobenches = false
-
-[features]
-default = []
-lsp = ["tower-lsp", "tokio"]
-dap = []
-gui = []
-parallel = ["rayon"]
-ir = []
-h2-tls = ["rustls", "rustls-pki-types", "webpki-roots"]
-all = ["lsp", "dap", "gui", "crossbeam", "h2-tls", "parallel"]
-
-[dependencies]
-# Sin dependencias externas para el núcleo - solo std de Rust
-# base64, sha1, sha2: implementaciones manuales en hash.rs y base64.rs
-# frontend y análisis semántico extraídos a crates reutilizables.
-forja-syntax = { path = "crates/forja-syntax" }
-forja-types = { path = "crates/forja-types" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-crossbeam = { version = "0.8", optional = true }
-rayon = { version = "1", optional = true }
-rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std"] }
-rustls-pki-types = { version = "1", optional = true }
-webpki-roots = { version = "0.26", optional = true }
-
-[dev-dependencies]
-proptest = "1"
-criterion = "0.5"
-
-# Hora local del sistema para el historial del REPL (sin crates de zona horaria).
-[target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["minwindef", "minwinbase", "sysinfoapi"] }
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-# Configuración `forja.yaml` (no aplica en wasm, que no tiene archivos).
-serde_yaml = "0.9"
-rusqlite = { version = "0.31", features = ["bundled"] }
-# Menú de configuración del REPL con flechas y Enter.
-crossterm = "0.27"
-rustyline = "14"
-tower-lsp = { version = "0.20", optional = true }
-tokio = { version = "1", features = ["full"], optional = true }
-
-[[bin]]
-name = "forja-lsp"
-path = "src/bin/forja_lsp.rs"
-required-features = ["lsp"]
-
-[[bin]]
-name = "forja-dap"
-path = "src/bin/forja_dap.rs"
-required-features = ["dap"]
-
-[[bench]]
-name = "bench-fa"
-path = "benchmarks/bench_fa.rs"
-
-[[bench]]
-name = "bench-vm"
-path = "benchmarks/bench_vm.rs"
-
-[[bench]]
-name = "bench-compare"
-path = "benchmarks/bench_forja_vs_python.rs"
-
-[[bench]]
-name = "bench-vms"
-path = "benchmarks/bench_vms.rs"
-harness = false
-
-[[bench]]
-name = "bench-clean"
-path = "benchmarks/bench_clean.rs"
-
-[[bench]]
-name = "bench-completo"
-path = "benchmarks/bench_completo.rs"
-
-[[bench]]
-name = "bench-jit"
-path = "benchmarks/bench_jit.rs"
-harness = false
-
-[[bench]]
-name = "bench-jit-100k"
-path = "benchmarks/bench_jit_100k.rs"
-
-[[bench]]
-name = "bench-cpython-opt"
-path = "benchmarks/bench_cpython_opt.rs"
-
-[[bench]]
-name = "bench-vs-python"
-path = "benchmarks/bench_vs_python.rs"
-
-[[bench]]
-name = "bench-rust-native"
-path = "benchmarks/bench_rust_native.rs"
-
-[[bench]]
-name = "bench-forjafast"
-path = "benchmarks/bench_forjafast.rs"
-harness = false
-
-[[bench]]
-name = "debug-bytecode"
-path = "benchmarks/debug_bytecode.rs"
-
-[[bench]]
-name = "bench-criterion"
-path = "benchmarks/bench_criterion.rs"
-harness = false
-
-# benchmark de regresión de rendimiento (dentro del repo padre, no del
-# submódulo `benchmarks/`). Salida JSON estable comparada contra baseline.
-[[bench]]
-name = "perf-regresion"
-path = "benches/perf_regresion.rs"
-harness = false
-
-[target.'cfg(not(target_arch = "wasm32"))'.build-dependencies]
-winresource = "0.1"
-
 [workspace]
+resolver = "2"
 members = [
-    "crates/forja-syntax",
-    "crates/forja-types",
-    "crates/forja-theme",
-    "crates/forja-gui-core",
-    "crates/forja-gui-rt",
-    "crates/forja-wasm",
-    "crates/forja-wasm-gui",
-    "crates/forja-rt",
-    "crates/forja-android-rt",
+    "compiler/forja-errors",
+    "compiler/forja-span",
+    "compiler/forja-session",
+    "compiler/forja-hir",
+    "compiler/forja-ir",
+    "compiler/forja-bytecode",
+    "compiler/forja-driver",
+    "compiler/forja-runtime",
+    "compiler/forja-vm",
+    "compiler/forja-native",
+    "compiler/forja-registry",
+    "compiler/forja-syntax",
+    "compiler/forja-types",
+    "compiler/forja-fmt",
+    "compiler/forja-lint",
+    "library/gui-theme",
+    "library/gui-core",
+    "library/gui-rt",
+    "library/wasm",
+    "library/wasm-gui",
+    "library/rt",
+    "library/android",
+    "src/bootstrap",
+    "src/tools/forja-cli",
+    "src/tools/forja-lsp",
+    "src/tools/forja-dap",
+]
+
+# Build/test por defecto: compilador + CLI. GUI/Android/WASM se piden explícitos.
+default-members = [
+    "compiler/forja",
+    "compiler/forja-errors",
+    "compiler/forja-span",
+    "compiler/forja-session",
+    "compiler/forja-hir",
+    "compiler/forja-ir",
+    "compiler/forja-bytecode",
+    "compiler/forja-driver",
+    "compiler/forja-runtime",
+    "compiler/forja-vm",
+    "compiler/forja-native",
+    "compiler/forja-registry",
+    "compiler/forja-syntax",
+    "compiler/forja-types",
+    "compiler/forja-fmt",
+    "compiler/forja-lint",
+    "src/bootstrap",
+    "src/tools/forja-cli",
+    "src/tools/forja-repl",
 ]
 exclude = [".forja_gui_cache", "fuzz"]
 

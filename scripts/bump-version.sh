@@ -37,7 +37,6 @@
 #   - .github/workflows/cd.yml (tag_name y name)
 #   - src/main.rs (templates de proyecto nuevo)
 #   - README.md
-#   - benchmarks/README.md y benchmarks/RESULTADOS_BENCHMARK.md
 #   - docs/src/pages/index.astro, roadmap.astro y
 #     arquitectura/forja_android_rt.astro
 #   - scripts/build-aar.sh y scripts/build-aar.ps1
@@ -68,6 +67,14 @@ fijar_version_paquete() {
         !hecho && /^version = "/ { sub(/^version = ".*"/, "version = \"" v "\""); hecho = 1 }
         { print }
     ' "$archivo" > "$archivo.tmp" && mv "$archivo.tmp" "$archivo"
+}
+
+# Lee la primera `version = "…"` de un Cargo.toml (o vacío si no hay).
+#
+# La raíz puede ser un workspace virtual (sin `[package]`): ahí la versión vive
+# en `[workspace.package]` o, si tampoco, en los crates miembros.
+version_de() {
+    grep -m1 '^version = "' "$1" 2>/dev/null | cut -d'"' -f2 || true
 }
 
 # ─── Parseo de argumentos ───────────────────────────────────────────────────
@@ -131,10 +138,26 @@ if [ "$GIT_MODE" != "none" ]; then
 fi
 
 # ─── Detectar versión actual ───────────────────────────────────────────────
-OLD_VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+# Miembros del workspace (se reusan más abajo).
+#
+# Incluye `default-members`: Cargo acepta ahí crates que no están en `members`
+# (`compiler/forja`, `src/tools/forja-repl`) y quedaban en la versión vieja.
+MEMBERS=$(sed -n '/^\[workspace\]/,/^\[/p' Cargo.toml \
+    | sed -n '/^[[:space:]]*\(default-\)*members[[:space:]]*=[[:space:]]*\[/,/\]/p' \
+    | grep -o '"[^"]*"' | tr -d '"' | sort -u)
+
+OLD_VERSION=$(version_de Cargo.toml)
+if [ -z "$OLD_VERSION" ]; then
+    # Un bump anterior pudo dejar crates desfasados: manda la versión
+    # mayoritaria del workspace, no la del primer crate de la lista.
+    OLD_VERSION=$(while IFS= read -r dir; do
+        [ -n "$dir" ] || continue
+        version_de "$dir/Cargo.toml"
+    done <<< "$MEMBERS" | grep . | sort | uniq -c | sort -rn | awk 'NR==1{print $2}' || true)
+fi
 
 if [ -z "$OLD_VERSION" ]; then
-    echo "❌ Error: No se pudo detectar la versión actual en Cargo.toml"
+    echo "❌ Error: No se pudo detectar la versión actual en Cargo.toml ni en los crates del workspace"
     exit 1
 fi
 
@@ -165,15 +188,23 @@ COUNT=0
 
 # 1. Cargo.toml raíz
 #    La versión se fija sin mirar la vieja: así el script repara Cargo.toml que
-#    quedaron atrás en un bump anterior.
-fijar_version_paquete Cargo.toml
-print_ok "Cargo.toml"
-COUNT=$((COUNT + 1))
+#    quedaron atrás en un bump anterior. En un workspace virtual no hay versión
+#    en la raíz: la llevan los crates miembros (paso 2).
+if [ -n "$(version_de Cargo.toml)" ]; then
+    fijar_version_paquete Cargo.toml
+    print_ok "Cargo.toml"
+    COUNT=$((COUNT + 1))
+else
+    print_info "Cargo.toml raíz es un workspace virtual; la versión va en los crates"
+fi
 
-# 2. Workspace crates (Cargo.toml y README)
-for crate in forja-rt forja-wasm forja-android-rt forja-gui-rt forja-wasm-gui \
-             forja-syntax forja-types forja-theme forja-gui-core; do
-    file="crates/$crate/Cargo.toml"
+# 2. Crates del workspace (Cargo.toml y README)
+#    La lista sale de [workspace] members + default-members: una lista fija acá
+#    se desfasó y dejó media docena de crates en la versión vieja.
+while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    [ "$dir" = "." ] && continue
+    file="$dir/Cargo.toml"
     if [ -f "$file" ]; then
         # Versión del paquete (solo la primera `version =` del archivo).
         fijar_version_paquete "$file"
@@ -184,13 +215,13 @@ for crate in forja-rt forja-wasm forja-android-rt forja-gui-rt forja-wasm-gui \
         COUNT=$((COUNT + 1))
     fi
 
-    readme="crates/$crate/README.md"
+    readme="$dir/README.md"
     if [ -f "$readme" ]; then
         sed -i "s/$OLD_VERSION/$NEW_VERSION/g" "$readme"
         print_ok "$readme"
         COUNT=$((COUNT + 1))
     fi
-done
+done <<< "$MEMBERS"
 
 # 3. .github/workflows/cd.yml
 release_file=".github/workflows/cd.yml"
@@ -220,15 +251,6 @@ if [ -f "$readme_file" ]; then
     COUNT=$((COUNT + 1))
 fi
 
-# 6. benchmarks (README.md y RESULTADOS_BENCHMARK.md)
-for bench_file in benchmarks/README.md benchmarks/RESULTADOS_BENCHMARK.md; do
-    if [ -f "$bench_file" ]; then
-        sed -i "s/$OLD_VERSION/$NEW_VERSION/g" "$bench_file"
-        print_ok "$bench_file"
-        COUNT=$((COUNT + 1))
-    fi
-done
-
 # 7. docs (portada, roadmap y página del runtime Android)
 for docs_file in \
     docs/src/pages/index.astro \
@@ -251,7 +273,7 @@ for aar_script in scripts/build-aar.sh scripts/build-aar.ps1; do
 done
 
 # 9. Plantilla Android: nombre del AAR enlazado por Gradle
-gradle_file="crates/forja-android-rt/android/template/app/build.gradle.kts"
+gradle_file="library/android/android/template/app/build.gradle.kts"
 if [ -f "$gradle_file" ]; then
     sed -i "s/forja-android-rt-$OLD_VERSION\.aar/forja-android-rt-$NEW_VERSION.aar/g" "$gradle_file"
     print_ok "$gradle_file"
@@ -294,14 +316,41 @@ if [ -f "$iss_file" ]; then
     COUNT=$((COUNT + 1))
 fi
 
+# 12b. Crate de soporte de tests: no está en `[workspace] members`.
+harness_file="tests/harness/Cargo.toml"
+if [ -f "$harness_file" ]; then
+    fijar_version_paquete "$harness_file"
+    print_ok "$harness_file"
+    COUNT=$((COUNT + 1))
+fi
+
+# 12c. Instalador WiX y bootstrapper .NET (versión en prosa, no en Cargo.toml).
+for wxs_file in installer/Bundle.wxs installer/msi.wxs; do
+    if [ -f "$wxs_file" ]; then
+        sed -i -E "s/-d Version=[0-9]+\.[0-9]+\.[0-9]+/-d Version=$NEW_VERSION/g" "$wxs_file"
+        print_ok "$wxs_file"
+        COUNT=$((COUNT + 1))
+    fi
+done
+csproj_file="installer/bootstrapper/ForjaBA.csproj"
+if [ -f "$csproj_file" ]; then
+    sed -i -E "s#<Version>[0-9]+\.[0-9]+\.[0-9]+</Version>#<Version>$NEW_VERSION</Version>#" "$csproj_file"
+    print_ok "$csproj_file"
+    COUNT=$((COUNT + 1))
+fi
+
 # 13. Verificación: ningún Cargo.toml del workspace debe quedar desfasado.
 #     Es la red que faltaba: un bump incompleto dejaba el workspace sin resolver
 #     (`forja-gui-rt 0.9.6` exigiendo `forja-gui-core ^0.9.6` con 0.9.5).
 DESFASADOS=""
-for file in Cargo.toml crates/*/Cargo.toml; do
+while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    [ "$dir" = "." ] && continue
+    file="$dir/Cargo.toml"
     [ -f "$file" ] || continue
-    v=$(grep -m1 '^version = ' "$file" | cut -d'"' -f2)
-    if [ "$v" != "$NEW_VERSION" ]; then
+    v=$(grep -m1 '^version = ' "$file" | cut -d'"' -f2 || true)
+    # Un workspace virtual no tiene versión en la raíz: no es un desfase.
+    if [ -n "$v" ] && [ "$v" != "$NEW_VERSION" ]; then
         DESFASADOS="$DESFASADOS\n   - $file: $v"
     fi
     while IFS= read -r linea; do
@@ -325,8 +374,8 @@ print_ok "Verificación: todos los Cargo.toml del workspace en $NEW_VERSION"
 if command -v cargo &>/dev/null; then
     print_info "Actualizando Cargo.lock con cargo check..."
     cargo check --quiet || true
-    if [ -d "crates/forja-wasm" ]; then
-        (cd crates/forja-wasm && cargo check --quiet || true)
+    if [ -d "library/wasm" ]; then
+        (cd library/wasm && cargo check --quiet || true)
     fi
 
     # El workspace tiene que resolver después del bump. Sin esto, una versión
@@ -418,7 +467,10 @@ echo "  🎉  Release v$NEW_VERSION completado"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "  CI/CD generará el release automáticamente en:"
-echo "  https://github.com/$(git config --get remote.origin.url 2>/dev/null | sed 's/.*:\(.*\)\.git/\1/')/releases"
+# Acepta remotes https y scp-style (git@host:user/repo.git).
+repo_slug=$(git config --get remote.origin.url 2>/dev/null \
+    | sed -E 's#^git@[^:]+:##; s#^https?://[^/]+/##; s#\.git$##')
+echo "  https://github.com/${repo_slug:-forja-lang/forja}/releases"
 echo ""
 
 if [ "$DO_PUSH" = false ]; then

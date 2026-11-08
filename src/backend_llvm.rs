@@ -716,7 +716,7 @@ impl EnumLayout {
     }
 }
 
-/// Result[T,E] — tipo genérico popular en Forja
+/// Result\[T,E\] — tipo genérico popular en Forja
 pub fn result_type(_ok_type: LlvmType, _err_type: LlvmType) -> LlvmType {
     // Result se implementa como: { i8 (tag), max(T,E) (payload) }
     // Tag: 0 = Ok, 1 = Error
@@ -734,7 +734,7 @@ pub fn result_type(_ok_type: LlvmType, _err_type: LlvmType) -> LlvmType {
     )
 }
 
-/// Option[T] — tipo genérico popular en Forja
+/// Option\[T\] — tipo genérico popular en Forja
 pub fn option_type(inner: LlvmType) -> LlvmType {
     // Option se implementa como: { i1 (is_some), T (value) }
     // Para punteros: is_some=1 tiene valor, is_some=0 es None

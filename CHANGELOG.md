@@ -55,7 +55,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   infería `Arreglo(Nulo)` y `f[i]` propagaba `Nulo`, así que en modo estricto
   `max: Entero = f[0]` se rechazaba por falso positivo (ejemplo
   `167_estadistica`); ahora el elemento de un arreglo vacío es tipo
-  desconocido. `ejemplos/73_atributos.fa` además llamaba a `suma` sin definirla.
+  desconocido. `ejemplos/avanzado/73_atributos.fa` además llamaba a `suma` sin definirla.
 
 ### Lenguaje — `v` y `f` como alias de `verdadero` y `falso`
 
@@ -141,7 +141,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   `este.campo` (`LoadIdxGlobal` / `GetField`), y `anterior(expr)` se snapshotea
   por expresión, así que también funciona con `anterior(este.valor)`. El DCE
   además cuenta los usos que aparecen sólo en un contrato: antes borraba la
-  variable y el contrato comparaba contra Nulo. `ejemplos/500_contratos.fa`
+  variable y el contrato comparaba contra Nulo. `ejemplos/contratos/500_contratos.fa`
   vuelve al golden.
 - **Los invariantes de clase (`siempre …`) ahora se verifican.** Se emitían
   nunca (el opcode sólo existía en la serialización). Ahora se comprueban al
@@ -324,7 +324,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   nombres que acepta el parser tiene ahora su función en `stdlib/gui/gui.fa`.
 - **Documentación y ejemplo.** La página de GUI pasa a ser un catálogo completo
   por secciones (diseños, layouts, texto, iconos, botones, inputs, listas,
-  navegación, feedback, gráficos) y se agregó `ejemplos/208_gui_galeria.fa`,
+  navegación, feedback, gráficos) y se agregó `ejemplos/gui/208_gui_galeria.fa`,
   con scroll, grid de tarjetas, formulario, indicadores y un gráfico.
 - **Verificación visual con ventana real.** Se abrió la galería en Windows y se
   revisaron capturas de los cuatro modos (Fluent claro/oscuro, Liquid Glass
@@ -545,9 +545,9 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   `{` es un carácter literal dentro de los strings y la interpolación solo se
   activa con `${...}` (resuelve los ejemplos 192, 199 y 220, que usaban llaves
   literales en JSON/plantillas). Se corrigieron dos ejemplos malformados:
-  [`200_todo_junto.fa`](ejemplos/200_todo_junto.fa:231) usaba `funcion` (palabra
+  [`200_todo_junto.fa`](ejemplos/avanzado/200_todo_junto.fa:231) usaba `funcion` (palabra
   reservada) como nombre de parámetro, y
-  [`204_udp_eco.fa`](ejemplos/204_udp_eco.fa:11) estaba incompleto (placeholder
+  [`204_udp_eco.fa`](ejemplos/redes/204_udp_eco.fa:11) estaba incompleto (placeholder
   `?` y variable `rx` indefinida). Verificado: `forja fmt ejemplos --check` →
   **0 errores de parseo** (258/262 solo requieren formateo), `cargo check
   --locked` EXIT 0 y `cargo test --locked --lib` → 362 passed; 0 failed.
@@ -1064,15 +1064,15 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   valida que la función contenedora devuelva `Resultado`/`Opcion`.
 - `stdlib/std/resultado.fa` alineado con la semántica de `?` (`es_ok`, `es_error`,
   `desenvolver_o`, `desenvolver`).
-- Ejemplos `ejemplos/182_propagacion_encadenada.fa` (cadena de `Resultado`) y
-  `ejemplos/183_opcion_propagacion.fa` (propagación de `Opcion`), con golden y
+- Ejemplos `ejemplos/avanzado/182_propagacion_encadenada.fa` (cadena de `Resultado`) y
+  `ejemplos/avanzado/183_opcion_propagacion.fa` (propagación de `Opcion`), con golden y
   cobertura en la red de equivalencia de motores.
 - ** Enums con datos y tuplas de primera clase.** Se corrigió el
   desempaquetado de la asignación múltiple (`variable (a, b) = ...` y
   `variable x, y = f()`), que antes asignaba la tupla completa a la primera
   variable y `nulo` al resto. Ahora cada variable recibe el elemento
   correspondiente de la tupla/arreglo. Cobertura: ejemplo
-  `ejemplos/194_enums_tuplas.fa` (golden) y programa `enums_y_tuplas` en la red
+  `ejemplos/avanzado/194_enums_tuplas.fa` (golden) y programa `enums_y_tuplas` en la red
   de equivalencia de motores (VM y JIT).
 - ** Limpieza de código muerto.** Se eliminó el `#![allow(dead_code)]`
   masivo de los 30 archivos de `src/`. La causa raíz de los 186 warnings del

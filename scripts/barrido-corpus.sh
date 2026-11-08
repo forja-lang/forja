@@ -7,7 +7,7 @@ FORJA=./target/release/forja.exe
 salida=/tmp/corpus.tsv
 : > "$salida"
 compilan=0; diag=0; cuelgan=0; total=0
-for f in ejemplos/*.fa; do
+for f in $(find ejemplos -name "*.fa" | sort); do
     total=$((total + 1))
     out=$(timeout 6 "$FORJA" ejecutar "$f" 2>&1)
     estado=$?

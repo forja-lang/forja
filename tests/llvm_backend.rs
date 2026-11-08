@@ -35,7 +35,7 @@ si (x > 2) {
 fn legacy_module_ya_no_es_un_modulo_paralelo() {
     // El lowering vive bajo backend_llvm::legado; no debe existir un módulo
     // `compiler_llvm` separado en el árbol fuente.
-    let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let raiz = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     assert!(
         !raiz.join("src/compiler_llvm.rs").exists(),
         "src/compiler_llvm.rs no debe existir "

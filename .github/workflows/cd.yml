@@ -10,31 +10,33 @@ on:
     branches: [ main, master ]
     paths:
       - 'src/**'
+      - 'compiler/**'
+      - 'library/**'
       - 'crates/**'
-      - 'stdlib/**'
       - 'build.rs'
       - 'patches/**'
       - 'scripts/build-aar.sh'
       - 'scripts/toolchain-android.sh'
-      - 'scripts/bench-releases.py'
       - 'Cargo.lock'
       - 'Cargo.toml'
-      - 'installer.iss'
+      - 'installer.wxs'
+      - 'installer/**'
       - '.github/workflows/cd.yml'
   pull_request:
     branches: [ main, master ]
     paths:
       - 'src/**'
+      - 'compiler/**'
+      - 'library/**'
       - 'crates/**'
-      - 'stdlib/**'
       - 'build.rs'
       - 'patches/**'
       - 'scripts/build-aar.sh'
       - 'scripts/toolchain-android.sh'
-      - 'scripts/bench-releases.py'
       - 'Cargo.lock'
       - 'Cargo.toml'
-      - 'installer.iss'
+      - 'installer.wxs'
+      - 'installer/**'
       - '.github/workflows/cd.yml'
 
 env:
@@ -153,7 +155,7 @@ jobs:
           # (libsqlite3-sys bundled). El NDK expone <triple>23-clang.
           export "CC_$(echo ${{ matrix.target }} | tr '-' '_')=$CC_TARGET"
           export "TARGET_CC=$CC_TARGET"
-          cargo build --target ${{ matrix.target }} --features gui --release --verbose
+          cargo build --target ${{ matrix.target }} --release --verbose
       - name: Upload artifact (${{ matrix.target }})
         uses: actions/upload-artifact@v4
         with:
@@ -234,16 +236,26 @@ jobs:
              "target/${{ matrix.target }}/release/forja-rt-gui.exe" 2>/dev/null || \
           cp "target-gui/${{ matrix.target }}/release/forja-rt" \
              "target/${{ matrix.target }}/release/forja-rt-gui"
-      - name: Compilar instalador para Windows (x64)
+      # Instalador: MSI (WiX v5, la última sin el EULA de OSMF de v6+) + bundle
+      # de Burn con la UI propia (ForjaBA, WPF sobre .NET Framework 4.8).
+      - name: Compilar instalador (Windows x64)
         if: matrix.name == 'windows-x64'
-        shell: cmd
+        shell: pwsh
         run: |
-          mkdir target\release 2>nul
-          copy /Y target\${{ matrix.target }}\release\forja.exe     target\release\
-          copy /Y target\${{ matrix.target }}\release\forja-lsp.exe target\release\
-          copy /Y target\${{ matrix.target }}\release\forja-dap.exe target\release\
-          copy /Y target\${{ matrix.target }}\release\forja-rt.exe  target\release\
-          iscc /O. installer.iss
+          $bin = "target/${{ matrix.target }}/release"
+          New-Item -ItemType Directory -Force -Path target/release | Out-Null
+          foreach ($exe in 'forja','forja-lsp','forja-dap','forja-rt') {
+            Copy-Item "$bin/$exe.exe" target/release/ -Force
+          }
+          dotnet tool install --global wix --version 5.0.2
+          $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+          dotnet build installer/bootstrapper/ForjaBA.csproj -c Release
+          $version = (Select-String -Path Cargo.toml -Pattern '^version').Line.Split('"')[1]
+          # Un solo MSI per-user (sin pedir permisos) + bundle con la UI.
+          wix build -arch x64 -d Version=$version -d PathSystem=yes -d PathRoot=HKLM `
+                    -o forja-installer-x64.msi installer/msi.wxs
+          wix build -arch x64 -d Version=$version -o forja-setup-x64.exe installer/Bundle.wxs
+          Write-Host "✅ Empaquetado forja-setup-x64.exe (UI) y forja-installer-x64.msi (silencioso)"
       - name: Empaquetar (Unix)
         if: matrix.unix
         shell: bash
@@ -253,7 +265,9 @@ jobs:
           BIN="target/${{ matrix.target }}/release"
           mkdir -p "pack/$PKG"
           cp "$BIN/forja" "$BIN/forja-lsp" "$BIN/forja-dap" "$BIN/forja-rt" "$BIN/forja-rt-gui" "pack/$PKG/"
-          cp -r stdlib "pack/$PKG/stdlib"
+          cp -r library/std "pack/$PKG/stdlib"
+          # Modo portable: config, manifiesto y reportes al lado del ejecutable.
+          : > "pack/$PKG/forja.portable"
           for doc in README.md COMANDOS.md INSTRUCCIONES.md LICENSE.md; do
             [ -f "$doc" ] && cp "$doc" "pack/$PKG/" || true
           done
@@ -269,14 +283,18 @@ jobs:
           $bin = "target/${{ matrix.target }}/release"
           New-Item -ItemType Directory -Force -Path "pack/$pkg" | Out-Null
           Copy-Item "$bin/forja.exe","$bin/forja-lsp.exe","$bin/forja-dap.exe","$bin/forja-rt.exe","$bin/forja-rt-gui.exe" "pack/$pkg/"
-          Copy-Item -Recurse stdlib "pack/$pkg/stdlib"
-          if (Test-Path forja-installer-x64.exe) { Copy-Item forja-installer-x64.exe "pack/$pkg/" }
+          Copy-Item -Recurse library/std "pack/$pkg/stdlib"
+          # Modo portable: config, manifiesto y reportes al lado del ejecutable.
+          New-Item -ItemType File -Path "pack/$pkg/forja.portable" -Force | Out-Null
+          if (Test-Path forja-setup-x64.exe) { Copy-Item forja-setup-x64.exe,forja-installer-x64.msi "pack/$pkg/" -ErrorAction SilentlyContinue }
           foreach ($doc in @('README.md','COMANDOS.md','INSTRUCCIONES.md','LICENSE.md')) {
             if (Test-Path $doc) { Copy-Item $doc "pack/$pkg/" }
           }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Compress-Archive -Path "pack/$pkg" -DestinationPath "dist/$pkg.zip" -Force
-          Write-Host "✅ Empaquetado dist/$pkg.zip"
+          # El instalador es un asset suelto: es lo único que el usuario baja.
+          if (Test-Path forja-setup-x64.exe) { Copy-Item forja-setup-x64.exe dist/ -Force }
+          Write-Host "✅ Empaquetado dist/$pkg.zip y dist/forja-setup-x64.exe"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -441,11 +459,14 @@ jobs:
           mkdir -p dist
           # 1) Paquetes precompilados por plataforma
           #    (forja-<version>-<linux-x64|linux-arm64|windows-x64|macos-x64|macos-arm64>.tar.gz|.zip)
-          find artifacts -type f \( -name 'forja-*.tar.gz' -o -name 'forja-*.zip' \) -exec cp -v {} dist/ \;
+          find artifacts -type f \( -name 'forja-*.tar.gz' -o -name 'forja-*.zip' -o -name 'forja-setup-x64.exe' \) -exec cp -v {} dist/ \;
           # 2) stdlib portable (actualizaciones manuales)
-          if [ -d stdlib ]; then
+          if [ -d library/std ]; then
             mkdir -p pack-stdlib/forja-stdlib
-            cp -r stdlib/. pack-stdlib/forja-stdlib/
+            cp -r library/std pack-stdlib/forja-stdlib/std
+            if [ -d library/gui ]; then
+              cp -r library/gui pack-stdlib/forja-stdlib/gui
+            fi
             tar -C pack-stdlib -czf "dist/forja-${VERSION}-stdlib.tar.gz" forja-stdlib
           fi
           # 3) WASM + GUI WASM (playground / web)
@@ -456,6 +477,10 @@ jobs:
           find artifacts/forja-android-aar -name '*.aar' -exec cp -v {} dist/ \; 2>/dev/null || true
           echo "── Assets del release ──"
           ls -la dist/
+      # Manifiestos de Scoop y winget con la versión y el hash del release.
+      - name: Manifiestos Scoop / winget
+        shell: bash
+        run: bash scripts/generar-manifiestos.sh "${VERSION}" dist
       # checksums SHA-256 de TODOS los assets, para verificación de descargas.
       - name: Checksums (SHA-256)
         shell: bash
@@ -525,61 +550,3 @@ jobs:
             - Windows (PowerShell): `irm https://raw.githubusercontent.com/forja-lang/forja/main/scripts/install.ps1 | iex`
           generate_release_notes: true
           files: dist/*
-
-  # Bench por versión: mide el release recién publicado contra las versiones
-  # anteriores (parejas intercaladas, ver scripts/bench-releases.py) y
-  # republica el dashboard del submódulo `benchmarks` en gh-pages.
-  bench-versiones:
-    name: Bench por versión
-    needs: [release, elige-runner]
-    if: github.event_name == 'push'
-    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
-    timeout-minutes: 45
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: false
-      - name: Checkout del corpus de benchmarks
-        run: git submodule update --init benchmarks
-      - uses: dtolnay/rust-toolchain@stable
-      # El pico de memoria se mide con GNU time -v, que no viene en la imagen.
-      - name: Instalar GNU time
-        run: sudo apt-get update -qq && sudo apt-get install -y time
-      - name: Últimas versiones publicadas
-        id: tags
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api "repos/${{ github.repository }}/releases?per_page=3" --jq '[.[].tag_name] | reverse | join(" ")' > tags.txt
-          echo "Versiones: $(cat tags.txt)"
-          echo "tags=$(cat tags.txt)" >> "$GITHUB_OUTPUT"
-          echo "n=$(wc -w < tags.txt)" >> "$GITHUB_OUTPUT"
-      - name: Restaurar histórico del dashboard
-        uses: actions/cache/restore@v4
-        with:
-          path: benchmarks/dashboard/data/versions.json
-          key: bench-versions-${{ github.run_id }}
-          restore-keys: bench-versions-
-      - name: Medir las versiones
-        if: steps.tags.outputs.n > 1
-        run: |
-          python3 scripts/bench-releases.py ${{ steps.tags.outputs.tags }} --pairs 30 --json benchmarks/dashboard/corrida.json --md benchmarks/dashboard/informe.md
-      - name: Grafo comparativo
-        if: steps.tags.outputs.n > 1
-        run: python3 benchmarks/versions_graph.py --json benchmarks/dashboard/corrida.json
-      - name: Guardar histórico del dashboard
-        if: steps.tags.outputs.n > 1
-        uses: actions/cache/save@v4
-        with:
-          path: benchmarks/dashboard/data/versions.json
-          key: bench-versions-${{ github.run_id }}
-      - name: Publicar dashboard en gh-pages
-        if: steps.tags.outputs.n > 1
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./benchmarks/dashboard
-          destination_dir: benchmarks
-          keep_files: true

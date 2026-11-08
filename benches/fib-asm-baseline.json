@@ -1,0 +1,13 @@
+{
+  "fixture": "benches/fixtures/fib42.fa",
+  "runs": 3,
+  "forja_asm_ms": 1973,
+  "rust_ms": 838.94,
+  "ratio": 0.085,
+  "nota": "Medici\u00f3n real: binarios, 5 iteraciones. LLVM sin memo ~835 ms, Rust ~839 ms, LLVM+memo ~26 ms, ASM ~1717 ms.",
+  "forja_llvm_ms": 984,
+  "forja_llvm_memo_ms": 73,
+  "llvm_no_memo_ms": 835.17,
+  "llvm_memo_ms": 25.7,
+  "asm_ms": 1716.95
+}

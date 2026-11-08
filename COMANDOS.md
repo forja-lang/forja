@@ -40,8 +40,8 @@ Siempre usar `cargo run --release --bin forja -- <comando>` para ejecución opti
 Si el primer argumento termina en `.fa`, ejecuta automáticamente en **ForjaFast** 🏆:
 
 ```bash
-cargo run --release --bin forja -- ejemplos/01_hola.fa
-cargo run --release --bin forja -- ejemplos/40_fibonacci.fa
+cargo run --release --bin forja -- ejemplos/fundamentos/01_hola.fa
+cargo run --release --bin forja -- ejemplos/algoritmos/40_fibonacci.fa
 ```
 
 ### `forja run|ejecutar|correr <archivo> [--vm fast|vm|jit] [--asm] [--native] [--fast-math]`
@@ -50,27 +50,27 @@ Compila y ejecuta en la VM seleccionada. No necesitás Rust.
 
 ```bash
 # ForjaFast (default) — 🏆 recomendado
-cargo run --release --bin forja -- run ejemplos/01_hola.fa
+cargo run --release --bin forja -- run ejemplos/fundamentos/01_hola.fa
 
 # VM Original
-cargo run --release --bin forja -- run ejemplos/10_clases.fa --vm vm
+cargo run --release --bin forja -- run ejemplos/fundamentos/10_clases.fa --vm vm
 
 # VM JIT (Direct Threading)
-cargo run --release --bin forja -- run ejemplos/07_funciones.fa --vm jit
+cargo run --release --bin forja -- run ejemplos/fundamentos/07_funciones.fa --vm jit
 
 # Assembly nativo (⚡ más rápido, requiere gcc)
-cargo run --release --bin forja -- run ejemplos/01_hola.fa --asm
+cargo run --release --bin forja -- run ejemplos/fundamentos/01_hola.fa --asm
 
 # Fast-Math: omite verificaciones aritméticas (solo con --vm fast)
 # - En programas 100% Decimal se activa SOLO automáticamente (sin flag):
 #   omite el check de división por cero float (x / 0.0 → inf en vez de nulo)
 # - Con --fast-math se fuerza además sin checks de tipo (modo unsafe,
 #   puede producir valores indefinidos en código con tipos mixtos)
-cargo run --release --bin forja -- run benchmarks/leibniz_test.fa --fast-math
+cargo run --release --bin forja -- run ejemplos/algoritmos/40_fibonacci.fa --fast-math
 ```
 
 > **Apps GUI (`importar "gui"`) con `--native`**: generan un proyecto Cargo temporal que
-> depende por ruta de `crates/forja-gui-rt`, así que necesitan el **checkout del repo** y
+> depende por ruta de `library/gui-rt`, así que necesitan el **checkout del repo** y
 > Rust instalado (el primer build compila todo Xilem/wgpu en release y tarda varios
 > minutos). La app se abre sola al terminar.
 
@@ -79,7 +79,7 @@ cargo run --release --bin forja -- run benchmarks/leibniz_test.fa --fast-math
 Genera un `.exe` que contiene la VM + bytecode incrustado.
 
 ```bash
-cargo run --release --bin forja -- build ejemplos/01_hola.fa -o hola.exe
+cargo run --release --bin forja -- build ejemplos/fundamentos/01_hola.fa -o hola.exe
 # ✅ Ejecutable generado: hola.exe (1234 bytes)
 ./hola.exe
 # → ¡Hola, mundo desde Forja!
@@ -91,20 +91,20 @@ Compila directamente a assembly x86-64 o ARM64 + `gcc -O2`. Velocidad nativa.
 
 ```bash
 # Mínimo: detecta plataforma actual automáticamente
-cargo run --release --bin forja -- build-asm ejemplos/01_hola.fa
+cargo run --release --bin forja -- build-asm ejemplos/fundamentos/01_hola.fa
 
 # Con nombre de salida
-cargo run --release --bin forja -- build-asm ejemplos/01_hola.fa -o programa.exe
+cargo run --release --bin forja -- build-asm ejemplos/fundamentos/01_hola.fa -o programa.exe
 
 # Especificar arquitectura destino
-cargo run --release --bin forja -- build-asm ejemplos/01_hola.fa --target arm64 -o programa
+cargo run --release --bin forja -- build-asm ejemplos/fundamentos/01_hola.fa --target arm64 -o programa
 
 # Compilar manualmente el .s generado
-cargo run --release --bin forja -- build-asm ejemplos/01_hola.fa --target x86_64-linux -o prog
+cargo run --release --bin forja -- build-asm ejemplos/fundamentos/01_hola.fa --target x86_64-linux -o prog
 gcc -O2 -o prog prog.s
 
 # Target cruzado: el .s queda en disco y lo ensambla el toolchain cruzado
-cargo run --release --bin forja -- build-asm ejemplos/01_hola.fa --target riscv64 -o prog
+cargo run --release --bin forja -- build-asm ejemplos/fundamentos/01_hola.fa --target riscv64 -o prog
 riscv64-linux-gnu-gcc -O2 -o prog prog.s
 ```
 
@@ -121,7 +121,7 @@ Targets disponibles:
 ### `forja transpile|t|transpilar|transpilador <archivo> [-o <salida>]` — Transpilar a Rust
 
 ```bash
-cargo run --release --bin forja -- transpile ejemplos/01_hola.fa
+cargo run --release --bin forja -- transpile ejemplos/fundamentos/01_hola.fa
 cargo run --release --bin forja -- t ejemplos/clases.fa -o salida.rs
 ```
 
@@ -152,25 +152,27 @@ cargo run --release --bin forja -- repl --vm vm    # VM Original
 cargo run --release --bin forja -- repl --vm jit   # VM JIT (Direct Threading)
 ```
 
-### `forja medir|bench|medicion|benchmark <archivo> [--iters N] [--vm fast|vm|jit|todas] [--asm] [--fast-math]`
+### `forja medir|bench|medicion|benchmark [iteraciones] <archivo.fa>`
 
 Mide tiempos de ejecución: cold (primera ejecución) + hot (promedio de N iteraciones).
+El primer argumento numérico son las iteraciones (por defecto 1). Sin flags: el motor
+(`motor`), el backend ASM (`destino: ensamblador`) y `matematica_rapida` salen de `forja.yaml`.
 
 ```bash
-# Medir en ForjaFast (default)
-cargo run --release --bin forja -- medir ejemplos/01_hola.fa --iters 100
+# Medir en el motor configurado, 100 iteraciones
+cargo run --release --bin forja -- medir 100 ejemplos/fundamentos/01_hola.fa
 
-# Medir en todas las VMs
-cargo run --release --bin forja -- medir benchmarks/speed_comparison.fa --iters 50 --vm todas
+# Una sola iteración
+cargo run --release --bin forja -- medir ejemplos/fundamentos/01_hola.fa
 
-# Medir solo en VM Original
-cargo run --release --bin forja -- medir ejemplos/40_fibonacci.fa --iters 100 --vm vm
+# Todas las VMs: poner `motor: todas` en forja.yaml
+cargo run --release --bin forja -- medir 50 ejemplos/fundamentos/06_bucles.fa
 
-# Medir en ASM nativo (requiere gcc)
-cargo run --release --bin forja -- medir benchmarks/speed_comparison.fa --asm --iters 10
+# ASM nativo (requiere gcc): `destino: ensamblador` en forja.yaml
+cargo run --release --bin forja -- medir 10 ejemplos/fundamentos/06_bucles.fa
 
-# Medir ForjaFast con fast-math forzado (modo unsafe)
-cargo run --release --bin forja -- medir benchmarks/leibniz_test.fa --iters 50 --vm fast --fast-math
+# ForjaFast con fast-math: `matematica_rapida: verdadero` en forja.yaml
+cargo run --release --bin forja -- medir 50 ejemplos/algoritmos/40_fibonacci.fa
 ```
 
 ### `forja diagrama|grafico|diagram <archivo>` — Generar diagrama HTML
@@ -178,7 +180,7 @@ cargo run --release --bin forja -- medir benchmarks/leibniz_test.fa --iters 50 -
 Genera un HTML interactivo con el árbol AST del código:
 
 ```bash
-cargo run --release --bin forja -- diagrama ejemplos/01_hola.fa
+cargo run --release --bin forja -- diagrama ejemplos/fundamentos/01_hola.fa
 # Genera: ejemplos/hola_mundo.html
 ```
 
@@ -187,7 +189,7 @@ cargo run --release --bin forja -- diagrama ejemplos/01_hola.fa
 Aplica formato consistente al código Forja (indentación 4 espacios):
 
 ```bash
-cargo run --release --bin forja -- fmt ejemplos/01_hola.fa
+cargo run --release --bin forja -- fmt ejemplos/fundamentos/01_hola.fa
 ```
 
 ### `forja new|nuevo|crear <nombre>` — Crear nuevo proyecto
@@ -244,14 +246,14 @@ cargo run --release --bin forja -- keywords
 ### `forja highlight|color|colorear <archivo>` — Colorear código en terminal
 
 ```bash
-cargo run --release --bin forja -- highlight ejemplos/01_hola.fa
+cargo run --release --bin forja -- highlight ejemplos/fundamentos/01_hola.fa
 # Muestra el código con resaltado de sintaxis ANSI
 ```
 
 ### `forja doc|documentar <archivo>` — Generar documentación desde AST
 
 ```bash
-cargo run --release --bin forja -- doc ejemplos/10_clases.fa
+cargo run --release --bin forja -- doc ejemplos/fundamentos/10_clases.fa
 ```
 
 ### `forja help|ayuda|--help|-h [tema]` — Ayuda
@@ -268,76 +270,50 @@ cargo run --release --bin forja -- --help
 
 ```bash
 # Básicos
-cargo run --release --bin forja -- run ejemplos/01_hola.fa
-cargo run --release --bin forja -- run ejemplos/02_variables.fa
-cargo run --release --bin forja -- run ejemplos/03_tipos.fa
-cargo run --release --bin forja -- run ejemplos/04_operaciones.fa
-cargo run --release --bin forja -- run ejemplos/05_condicionales.fa
-cargo run --release --bin forja -- run ejemplos/06_bucles.fa
-cargo run --release --bin forja -- run ejemplos/07_funciones.fa
-cargo run --release --bin forja -- run ejemplos/08_arrays.fa
-cargo run --release --bin forja -- run ejemplos/09_strings.fa
+cargo run --release --bin forja -- run ejemplos/fundamentos/01_hola.fa
+cargo run --release --bin forja -- run ejemplos/fundamentos/02_variables.fa
+cargo run --release --bin forja -- run ejemplos/fundamentos/03_tipos.fa
+cargo run --release --bin forja -- run ejemplos/fundamentos/04_operaciones.fa
+cargo run --release --bin forja -- run ejemplos/fundamentos/05_condicionales.fa
+cargo run --release --bin forja -- run ejemplos/fundamentos/06_bucles.fa
+cargo run --release --bin forja -- run ejemplos/fundamentos/07_funciones.fa
+cargo run --release --bin forja -- run ejemplos/fundamentos/08_arrays.fa
+cargo run --release --bin forja -- run ejemplos/fundamentos/09_strings.fa
 
 # Intermedios
-cargo run --release --bin forja -- run ejemplos/10_clases.fa         # POO completa
-cargo run --release --bin forja -- run ejemplos/11_mapas.fa          # Diccionarios
-cargo run --release --bin forja -- run ejemplos/12_input.fa          # Entrada de usuario
-cargo run --release --bin forja -- run ejemplos/13_errores.fa        # Manejo de errores
+cargo run --release --bin forja -- run ejemplos/fundamentos/10_clases.fa         # POO completa
+cargo run --release --bin forja -- run ejemplos/fundamentos/11_mapas.fa          # Diccionarios
+cargo run --release --bin forja -- run ejemplos/fundamentos/12_input.fa          # Entrada de usuario
+cargo run --release --bin forja -- run ejemplos/fundamentos/13_errores.fa        # Manejo de errores
 
 # Avanzados
-cargo run --release --bin forja -- run ejemplos/14_adivina.fa        # Juego: adivina el número
-cargo run --release --bin forja -- run ejemplos/15_calculadora.fa    # Calculadora interactiva
+cargo run --release --bin forja -- run ejemplos/fundamentos/14_adivina.fa        # Juego: adivina el número
+cargo run --release --bin forja -- run ejemplos/fundamentos/15_calculadora.fa    # Calculadora interactiva
 
 # Conceptos
-cargo run --release --bin forja -- run ejemplos/181_ownership.fa         # Ownership y préstamos
+cargo run --release --bin forja -- run ejemplos/ownership/181_ownership.fa         # Ownership y préstamos
 ```
 
 ---
 
 ## Benchmarks
 
-### Benchmarks integrados (cargo bench bins)
-
-Los benchmarks se ejecutan como bins independientes con `cargo run --release --bin <nombre>`:
+Los benchmarks propios están en `benches/` y se ejecutan con Cargo:
 
 ```bash
-# JIT Nativo vs ForjaFast vs Rust
-cargo run --release --bin bench-jit
+# Puerta de rendimiento (ratios normalizados contra benches/baseline.json)
+cargo bench --bench perf-regresion
 
-# JIT Nativo 100k iteraciones (vs ForjaFast, Python, Rust)
-cargo run --release --bin bench-jit-100k
-
-# VM Original vs JIT(DT)
-cargo run --release --bin bench-vms
-
-# Todas las VMs (cold + hot, completo)
-cargo run --release --bin bench-forjafast
-
-# Rust nativo (baseline con black_box)
-cargo run --release --bin bench-rust-native
-
-# ForjaFast vs Python
-cargo run --release --bin bench-clean
-
-# Completo: Forja vs Rust vs Python vs Go
-cargo run --release --bin bench-completo
-
-# Optimizaciones CPython-style en todas las VMs
-cargo run --release --bin bench-cpython-opt
-
-# Forja vs Python (comparativa detallada)
-cargo run --release --bin bench-vs-python
+# Tiempos absolutos de compilación y VM (criterion)
+cargo bench --bench compilar-vm
 ```
 
-### Benchmarks con ASM nativo
+Para medir un programa concreto:
 
 ```bash
-# Medir un .fa compilado a ASM nativo (requiere gcc)
-cargo run --release --bin forja -- medir benchmarks/leibniz_10m.fa --asm --iters 5
-cargo run --release --bin forja -- medir benchmarks/speed_comparison.fa --asm --iters 10
+cargo run --release --bin forja -- medir ejemplos/fundamentos/06_bucles.fa --iters 100
+cargo run --release --bin forja -- medir ejemplos/algoritmos/40_fibonacci.fa --asm --iters 10
 ```
-
----
 
 ## Proyectos con módulos
 

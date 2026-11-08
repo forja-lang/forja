@@ -6,7 +6,7 @@
 //! rango = error de compilación; operación que se sale del rango =
 //! `desbordamiento aritmético`.
 
-use forja::ejecutar;
+use forja_test_support::ejecutar;
 
 fn salida(fuente: &str) -> Vec<String> {
     ejecutar(fuente).unwrap_or_else(|e| panic!("no ejecutó: {e}\n{fuente}"))

@@ -719,3 +719,18 @@ fn test_texto_caracteres_especiales() {
     let k = kinds("\"!@#$%^&*()\"");
     assert_eq!(k[0], TokenKind::Texto("!@#$%^&*()".to_string()));
 }
+
+#[test]
+fn tokens_traen_span_de_bytes() {
+    let fuente = "variable x = 42";
+    let tokens = Lexer::new(fuente).tokenize().unwrap();
+    let variable = &tokens[0];
+    let span = variable.span.expect("el token debe tener span");
+    assert_eq!(&fuente[span.inicio as usize..span.fin as usize], "variable");
+    let numero = tokens
+        .iter()
+        .find(|t| matches!(t.kind, TokenKind::Numero(_)))
+        .unwrap();
+    let span = numero.span.expect("el número debe tener span");
+    assert_eq!(&fuente[span.inicio as usize..span.fin as usize], "42");
+}

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- UI del instalador (bootstrapper de Burn). .NET Framework 4.8: viene con
+       Windows 10/11, así que el instalador no arrastra un runtime propio. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>latest</LangVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>forja-setup-ba</AssemblyName>
+    <RootNamespace>Forja.Setup</RootNamespace>
+    <ApplicationIcon>..\..\forge.ico</ApplicationIcon>
+    <Version>0.10.0</Version>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.BootstrapperApplicationApi" Version="5.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\LICENSE.md" LogicalName="LICENSE.md" />
+    <Resource Include="..\..\forge.ico" Link="forge.ico" />
+  </ItemGroup>
+
+</Project>

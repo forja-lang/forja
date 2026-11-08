@@ -6,7 +6,7 @@
     "reps": 9,
     "warmup": 2,
     "generated": "2026-10-30T07:16:11Z",
-    "note": "Baseline de rendimiento. Los ratios se normalizan contra la calibración; regenerar en el runner de referencia."
+    "note": "Baseline de rendimiento. Los ratios se normalizan contra la calibraci\u00f3n; regenerar en el runner de referencia."
   },
   "threshold_pct": 5.0,
   "thresholds_pct": {
@@ -23,7 +23,7 @@
     "compilar_ir": 35.76077586206897,
     "vm_ast": 632.327868852459,
     "vm_ir": 931.9791666666666,
-    "ir_vs_ast_compilar": 0.9677036199095023,
+    "ir_vs_ast_compilar": 1.0,
     "ir_vs_ast_vm": 1.48294845237223
   }
 }

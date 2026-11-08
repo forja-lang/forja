@@ -7,7 +7,6 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/forja-lang/forja/ci.yml?style=flat-square&logo=github&label=CI)](https://github.com/forja-lang/forja/actions/workflows/ci.yml)
 [![CD](https://img.shields.io/github/actions/workflow/status/forja-lang/forja/cd.yml?style=flat-square&logo=github&label=CD)](https://github.com/forja-lang/forja/actions/workflows/cd.yml)
 [![Documentación](https://img.shields.io/badge/docs-forja--lang.github.io-blue?style=flat-square&logo=readthedocs)](https://forja-lang.github.io)
-[![Rendimiento por versión](https://img.shields.io/badge/bench-por%20versi%C3%B3n-blue?style=flat-square&logo=speedtest)](https://forja-lang.github.io/forja/benchmarks/)
 
 </div>
 
@@ -39,10 +38,9 @@ graph TD
 
 > **Pipeline canónico:** la ruta de bytecode tiene un único punto de entrada documentado,
 > `compilar_pipeline_completa()` (con imports: `compilar_pipeline_completa_desde()`), que delega
-> en el núcleo `compilar_pipeline_nucleo()`. Los nombres antiguos `compilar_con_ir()` y
-> `compilar_pipeline()` quedan como aliases `#[deprecated]` que sólo delegan. La ruta de
+> en el núcleo `compilar_pipeline_nucleo()`. La ruta de
 > transpilación a Rust es independiente y no genera bytecode: `transpilar_a_rust()` (antes
-> `compilar()`) y `transpilar_a_rust_con_ast()` (antes `compilar_con_ast()`).
+> y `transpilar_a_rust_con_ast()`.
 
 ---
 
@@ -177,7 +175,7 @@ PS C:\forja> cargo build --release --features all
 | **`compilar <archivo.fa>`** | `construir` | Genera un ejecutable autónomo nativo. Si usa `importar gui`, usa `forja-rt-gui` (VM + runtime gráfico Xilem). Sin transpilación a Rust. |
 | **`interactivo`** | `repl` | Inicia la consola de lectura e interpretación línea por línea. |
 | **`probar [archivo.fa]`** | `test` | Corre los módulos de prueba unitaria marcados con `@test`. |
-| **`medir <archivo.fa>`** | `benchmark` | Analiza el rendimiento del código (mediciones en frío y en caliente). |
+| **`medir [iteraciones] <archivo.fa>`** | `benchmark` | Analiza el rendimiento del código (mediciones en frío y en caliente). |
 | **`diagrama <archivo.fa>`** | `grafico` | Genera un diagrama en formato Mermaid (.mmd) con la representación del AST. |
 | **`formatear <archivo.fa>`** | `fmt` | Aplica una indentación estándar de 4 espacios al código fuente. |
 | **`compilar-asm <archivo.fa>`**| `asm` | Genera código de ensamblador nativo para Windows o Linux. |
@@ -210,7 +208,6 @@ permitir_red: ''           # hosts del sandbox de red (coma)
 permitir_puertos: ''       # puertos del sandbox de red (coma)
 max_archivo_mb: 10         # límite del archivo fuente
 arquitectura: ''           # '' | x86_64-windows | x86_64-linux | arm64 | riscv64
-iteraciones: 100           # iteraciones de `medir`
 consola: falso             # consola visible en el .exe
 verificar_formato: falso   # `formatear` sólo verifica
 lint_estricto: falso       # `lint`: advertencias = errores
@@ -231,11 +228,11 @@ Aquí se ilustra cómo interactuar con el compilador en un entorno de comandos t
 #### 1. Ejecutar un Script en la Máquina Virtual
 ```powershell
 # Ejecución estándar (usa la máquina virtual optimizada ForjaFast por defecto)
-PS C:\forja> forja ejecutar ejemplos/01_hola.fa
+PS C:\forja> forja ejecutar ejemplos/fundamentos/01_hola.fa
 
 # Ejecutar con el compilador al vuelo (JIT tiered) nativo
 # motor: jit  en forja.yaml
-PS C:\forja> forja ejecutar ejemplos/01_hola.fa
+PS C:\forja> forja ejecutar ejemplos/fundamentos/01_hola.fa
 
 # (La VM original v1 fue removida en 0.9.0: solo quedan ForjaFast y el JIT.)
 ```
@@ -243,7 +240,7 @@ PS C:\forja> forja ejecutar ejemplos/01_hola.fa
 #### 2. Compilar a un Ejecutable Autónomo Ligero
 ```powershell
 # Compilar script de consola
-PS C:\forja> forja compilar ejemplos/05_condicionales.fa condicionales.exe
+PS C:\forja> forja compilar ejemplos/fundamentos/05_condicionales.fa condicionales.exe
 Ejecutable generado: condicionales.exe
 
 # Ejecutar de forma directa e instantánea sin dependencias
@@ -255,14 +252,14 @@ Buen trabajo!
 #### 3. Realizar una Medición de Rendimiento (Benchmark)
 ```powershell
 # Comparar el script en los dos motores (ForjaFast y JIT)
-# iteraciones: 100  en forja.yaml
-PS C:\forja> forja medir ejemplos/40_fibonacci.fa
+# sin número de iteraciones usa 1
+PS C:\forja> forja medir 100 ejemplos/algoritmos/40_fibonacci.fa
 ```
 
 #### 4. Modo Interactivo (Consola de Lectura y Ejecución Directa)
 ```powershell
 PS C:\forja> forja interactivo
-Forja v0.9.7 — Escribí 'salir' para terminar
+Forja v0.10.0 — Escribí 'salir' para terminar
 > variable x = 10
 > x = x + 5
 > escribir(x)
@@ -319,9 +316,22 @@ $ bash scripts/build-android.sh aarch64-linux-android
 
 ---
 
+## Nativo vs módulos
+
+Forja separa **primitivos nativos** (Rust: sistema operativo, red, crypto, UI,
+memoria, rendimiento crítico) de **módulos Forja** (composición pura, API en
+español y enseñanza). La regla: la seguridad y el acceso al sistema viven en
+nativo; el módulo es la fachada pública y nunca puede saltarse el sandbox.
+
+Ver el plan completo y la tabla módulo por módulo:
+[`plans/plan-nativo-vs-modulo-forja.md`](plans/plan-nativo-vs-modulo-forja.md).
+La frontera está protegida por `tests/frontera_nativos.rs` y
+`tests/stdlib_smoke.rs`. Clasificación generada (módulo/función → H/M):
+[`plans/frontera-modulos.generated.md`](plans/frontera-modulos.generated.md).
+
 ## Estado del proyecto
 
-Forja está en **v0.9.7** y en desarrollo activo. El estado verificable de cada
+Forja está en **v0.10.0** y en desarrollo activo. El estado verificable de cada
 componente —hecho / en progreso / planeado— vive en el
 **[roadmap oficial](https://forja-lang.github.io/roadmap/)**.
 
@@ -333,16 +343,17 @@ componente —hecho / en progreso / planeado— vive en el
 
 ---
 
-## Benchmarks por versión
+## Benchmarks
 
-La corrida automática (`scripts/bench-releases.py`) compara las últimas
-releases publicadas (v0.9.3, v0.9.4, v0.9.5) con parejas intercaladas.
-Resultado destacado: v0.9.5 es **significativamente más rápido** que v0.9.3
-en la VM (bench_forja_aot -61.5 %, carga_flotantes -45.0 %) y en el
-pipeline de compilación (-45.8 %); el AOT se mantiene equivalente a Rust
-nativo. Detalle completo en
-[`benchmarks/RESULTADOS_BENCHMARK.md`](benchmarks/RESULTADOS_BENCHMARK.md)
-y en el dashboard de versiones.
+Los benchmarks canónicos viven en `benches/`:
+
+```bash
+cargo bench --bench perf-regresion   # puerta de CI (ratios vs baseline)
+cargo bench --bench compilar-vm      # criterion: compilación y VM
+```
+
+El detalle histórico por versión se retiró junto con el submódulo
+la referencia actual es `benches/README.md`.
 
 ---
 

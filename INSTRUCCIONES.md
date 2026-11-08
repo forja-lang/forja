@@ -578,8 +578,6 @@ funcion saludar(nombre: Texto) {
 | `!` | NO lógico | `!verdadero` | `falso` |
 | `&` | Referencia / préstamo | `&x` | Referencia a `x` |
 | `->` | Flecha (retorno/match) | `-> Texto` / `caso 1 -> "uno"` | Tipo / brazo |
-| `::` | Acceso a módulo | `std::io` | Ruta cualificada |
-| `..` | Rango | `1..10` | 1 al 9 |
 | `+=` | Suma acumulada | `x += 1` | `x = x + 1` |
 | `-=` | Resta acumulada | `x -= 1` | `x = x - 1` |
 | `*=` | Multiplicación acumulada | `x *= 2` | `x = x * 2` |
@@ -603,6 +601,10 @@ escribir(frutas.longitud())    // 3  (alias: .length(), .len())
 variable persona = {"nombre": "Ana", "edad": 25}
 escribir(persona["nombre"])  // Ana
 persona["edad"] = 26
+
+// Las claves siempre son texto. Una clave numérica o calculada se convierte
+// a su representación: {1: "uno"} se accede con persona[1] o persona["1"].
+
 ```
 
 ---
@@ -748,11 +750,30 @@ seleccionar {
 
 ## 28. `externo` / `externa`
 
-Declara funciones externas (FFI).
+Declara funciones externas (FFI). Requiere punto y coma final.
 
 ```
-externo printf(texto: Texto) -> Entero
+externo printf(texto: Texto) -> Entero;
 ```
+
+También se acepta la forma larga `funcion externa printf(...) -> Entero;`.
+
+La librería se carga con `importar externa "ruta.dll"` y la función se llama
+directamente: el compilador busca el símbolo en las librerías cargadas y usa la
+convención C.
+
+```
+importar externa "kernel32.dll"
+funcion externa GetCurrentProcessId() -> Entero;
+funcion externa lstrlenA(s: Texto) -> Entero;
+
+escribir(GetCurrentProcessId())
+escribir(lstrlenA("hola"))
+```
+
+Soporta hasta 5 argumentos de tipo `Texto`, `Entero`, `Booleano` o `nulo`, y
+retorno `Entero` o `Texto`. Para casos avanzados (punteros, `std/ffi`) sigue
+disponible el módulo `std/ffi`.
 
 ---
 
@@ -771,7 +792,21 @@ clase Punto {
     x
     y
 }
+
+variable a = nuevo Punto()
+a.x = 1
+a.y = 2
+variable b = nuevo Punto()
+b.x = 1
+b.y = 2
+escribir(a == b)   // verdadero: compara campo por campo
+escribir(a)        // Punto { x: 1, y: 2 }
 ```
+
+- `Igual`: `==` y `!=` comparan todos los campos (en enums, variante + datos).
+  Sin `@derive(Igual)`, dos objetos distintos nunca son iguales.
+- `Mostrar`: `escribir(objeto)` muestra `Clase { campo: valor }`. En enums
+  todavía se muestra `<Tipo>`.
 
 ---
 

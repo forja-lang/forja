@@ -1149,28 +1149,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam"
-version = "0.8.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e71406cd8807725f7ac2f999a4cdd32e98f829fdf65f528343cebf945e41df1e"
-dependencies = [
- "crossbeam-channel",
- "crossbeam-deque",
- "crossbeam-epoch",
- "crossbeam-queue",
- "crossbeam-utils",
-]
-
-[[package]]
-name = "crossbeam-channel"
-version = "0.5.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98b0cc327b5bc766e7fda9c9260cc0fa81b43a8e240440422dff70788e3f9ef1"
-dependencies = [
- "crossbeam-utils",
-]
-
-[[package]]
 name = "crossbeam-deque"
 version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1185,15 +1163,6 @@ name = "crossbeam-epoch"
 version = "0.9.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc74980687109a3b14c72fd458107bf0baa1da1a1a805e178d15501ba9b86d9d"
-dependencies = [
- "crossbeam-utils",
-]
-
-[[package]]
-name = "crossbeam-queue"
-version = "0.3.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03e8bd762f7479489c70ed6c768ddca99d7296857de437a68dcb2a94365b3fae"
 dependencies = [
  "crossbeam-utils",
 ]
@@ -1630,13 +1599,23 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "forja"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "criterion",
- "crossbeam",
  "crossterm",
+ "forja-bytecode",
+ "forja-driver",
+ "forja-fmt",
+ "forja-hir",
+ "forja-ir",
+ "forja-lint",
+ "forja-native",
+ "forja-runtime",
+ "forja-session",
  "forja-syntax",
+ "forja-test-support",
  "forja-types",
+ "forja-vm",
  "libc",
  "proptest",
  "rayon",
@@ -1646,7 +1625,6 @@ dependencies = [
  "rustyline",
  "serde",
  "serde_json",
- "serde_yaml",
  "tokio",
  "tower-lsp",
  "webpki-roots 0.26.11",
@@ -1656,7 +1634,7 @@ dependencies = [
 
 [[package]]
 name = "forja-android-rt"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "android_logger",
  "forja",
@@ -1667,8 +1645,64 @@ dependencies = [
 ]
 
 [[package]]
+name = "forja-bootstrap"
+version = "0.10.0"
+
+[[package]]
+name = "forja-bytecode"
+version = "0.10.0"
+dependencies = [
+ "forja-syntax",
+ "forja-types",
+ "serde_json",
+]
+
+[[package]]
+name = "forja-cli"
+version = "0.10.0"
+dependencies = [
+ "forja",
+ "forja-driver",
+ "forja-repl",
+ "serde_json",
+]
+
+[[package]]
+name = "forja-dap"
+version = "0.10.0"
+dependencies = [
+ "forja",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "forja-driver"
+version = "0.10.0"
+dependencies = [
+ "forja-bytecode",
+ "forja-vm",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "forja-errors"
+version = "0.10.0"
+dependencies = [
+ "forja-span",
+]
+
+[[package]]
+name = "forja-fmt"
+version = "0.10.0"
+dependencies = [
+ "forja-syntax",
+]
+
+[[package]]
 name = "forja-gui-core"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "log",
  "serde_json",
@@ -1676,7 +1710,7 @@ dependencies = [
 
 [[package]]
 name = "forja-gui-rt"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "chrono",
  "forja-gui-core",
@@ -1694,37 +1728,158 @@ dependencies = [
 ]
 
 [[package]]
+name = "forja-hir"
+version = "0.10.0"
+dependencies = [
+ "forja-syntax",
+]
+
+[[package]]
+name = "forja-ir"
+version = "0.10.0"
+dependencies = [
+ "forja-bytecode",
+ "forja-syntax",
+]
+
+[[package]]
+name = "forja-lint"
+version = "0.10.0"
+dependencies = [
+ "forja-syntax",
+ "serde_json",
+]
+
+[[package]]
+name = "forja-lsp"
+version = "0.10.0"
+dependencies = [
+ "forja",
+ "tokio",
+ "tower-lsp",
+]
+
+[[package]]
+name = "forja-native"
+version = "0.10.0"
+dependencies = [
+ "forja-bytecode",
+ "forja-runtime",
+ "libc",
+ "rusqlite",
+ "rustls",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "webpki-roots 0.26.11",
+ "winapi",
+]
+
+[[package]]
+name = "forja-registry"
+version = "0.10.0"
+dependencies = [
+ "forja-native",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "forja-repl"
+version = "0.10.0"
+dependencies = [
+ "crossterm",
+ "forja",
+ "forja-driver",
+ "rustyline",
+ "winapi",
+]
+
+[[package]]
 name = "forja-rt"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "forja",
  "forja-gui-rt",
 ]
 
 [[package]]
-name = "forja-syntax"
-version = "0.9.7"
+name = "forja-runtime"
+version = "0.10.0"
 dependencies = [
+ "forja-bytecode",
+]
+
+[[package]]
+name = "forja-session"
+version = "0.10.0"
+dependencies = [
+ "forja-errors",
+ "forja-span",
+ "serde",
+ "serde_yaml",
+]
+
+[[package]]
+name = "forja-span"
+version = "0.10.0"
+
+[[package]]
+name = "forja-syntax"
+version = "0.10.0"
+dependencies = [
+ "forja-errors",
+ "forja-span",
  "serde",
 ]
 
 [[package]]
+name = "forja-test-support"
+version = "0.10.0"
+dependencies = [
+ "forja",
+]
+
+[[package]]
 name = "forja-theme"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "xilem",
 ]
 
 [[package]]
 name = "forja-types"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
+ "forja-hir",
  "forja-syntax",
 ]
 
 [[package]]
+name = "forja-vm"
+version = "0.10.0"
+dependencies = [
+ "forja-bytecode",
+ "forja-hir",
+ "forja-ir",
+ "forja-native",
+ "forja-registry",
+ "forja-runtime",
+ "forja-syntax",
+ "forja-types",
+ "libc",
+ "rusqlite",
+ "rustls",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "webpki-roots 0.26.11",
+ "winapi",
+]
+
+[[package]]
 name = "forja-wasm"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "forja",
  "serde",
@@ -1735,7 +1890,7 @@ dependencies = [
 
 [[package]]
 name = "forja-wasm-gui"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "forja",
  "js-sys",

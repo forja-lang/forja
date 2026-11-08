@@ -5,7 +5,13 @@ use super::*;
 
 /// Compila un `Programa` completo (encabezado, runtime, clases, funciones).
 fn compilar_programa(c: &mut CompilerAsm, declaraciones: Vec<Declaracion>) -> String {
-    let programa = Programa { declaraciones };
+    let programa = Programa {
+        spans: Vec::new(),
+        nombres: Vec::new(),
+        indice_nombres: std::collections::HashMap::new(),
+        span: None,
+        declaraciones,
+    };
     c.compilar(&programa).expect("el programa debe compilar")
 }
 
@@ -64,6 +70,10 @@ fn programa_sin_main_genera_el_main_sintetico() {
 fn programa_con_errores_devuelve_err() {
     let mut c = CompilerAsm::with_target(TargetArch::X86_64Linux);
     let programa = Programa {
+        spans: Vec::new(),
+        nombres: Vec::new(),
+        indice_nombres: std::collections::HashMap::new(),
+        span: None,
         declaraciones: vec![Declaracion::Expresion(Expresion::Mapa(vec![]))],
     };
     let resultado = c.compilar(&programa);

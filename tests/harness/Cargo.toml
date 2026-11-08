@@ -1,0 +1,10 @@
+[package]
+name = "forja-test-support"
+version = "0.10.0"
+edition = "2021"
+description = "Helpers compartidos para los tests de Forja"
+license = "GPL-3.0-or-later"
+publish = false
+
+[dependencies]
+forja = { path = "../../compiler/forja" }

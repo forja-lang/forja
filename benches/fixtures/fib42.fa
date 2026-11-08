@@ -1,0 +1,5 @@
+funcion fib(n: Entero) -> Entero {
+    si (n <= 1) { retornar n }
+    retornar fib(n - 1) + fib(n - 2)
+}
+escribir(fib(42))

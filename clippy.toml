@@ -1,0 +1,3 @@
+# Lints de Clippy compartidos por el workspace.
+# `msrv` evita que Clippy proponga APIs más nuevas que el mínimo soportado.
+msrv = "1.87"

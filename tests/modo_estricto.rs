@@ -3,17 +3,12 @@
 //! La configuración es global al proceso, así que los casos se serializan con
 //! un mutex para no pisarse entre hilos.
 
-use std::sync::Mutex;
-
-static CANDADO: Mutex<()> = Mutex::new(());
-
 fn ejecutar(estricto: bool, programa: &str) -> Result<Vec<String>, String> {
-    let _guardia = CANDADO.lock().unwrap_or_else(|e| e.into_inner());
-    forja::config::fijar(forja::config::Config {
+    let sesion = forja_session::Session::nueva(forja_session::Config {
         estricto,
         ..Default::default()
     });
-    forja::ejecutar(programa)
+    forja::ejecutar_con_sesion(programa, &sesion)
 }
 
 #[test]

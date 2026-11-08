@@ -1,5 +1,5 @@
 fn compilar(source: &str) {
-    forja::compilar_pipeline_completa(source).expect("el pipeline debe compilar");
+    forja_test_support::compilar(source).expect("el pipeline debe compilar");
 }
 
 #[test]
@@ -62,7 +62,7 @@ aplicar(&incrementar)
 
 #[test]
 fn test_llamada_cualificada_por_modulo() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let source = r#"
 importar std/colecciones
 funcion duplicar(x) { retornar x * 2 }

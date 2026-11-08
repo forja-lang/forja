@@ -1,0 +1,245 @@
+<Window x:Class="Forja.Setup.SetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:ClassModifier="internal"
+        Title="Forja"
+        Width="820" Height="680"
+        MinWidth="720" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource Bg}"
+        Foreground="{DynamicResource Text}"
+        FontFamily="Segoe UI" FontSize="13"
+        UseLayoutRounding="True">
+
+    <Window.Resources>
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource Accent}" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentText}" />
+            <Setter Property="Padding" Value="20,9" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentHover}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SecondaryButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource Text}" />
+            <Setter Property="Padding" Value="16,9" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{DynamicResource Border}" BorderThickness="1"
+                                CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Panel}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="LinkButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <ContentPresenter />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="Heading" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="19" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource Text}" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+
+        <Style x:Key="Body" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource Muted}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style x:Key="FeatureCheck" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{DynamicResource Text}" />
+            <Setter Property="Margin" Value="0,0,0,7" />
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Encabezado -->
+        <Border Grid.Row="0" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Border}"
+                BorderThickness="0,0,0,1" Padding="24,14">
+            <StackPanel Orientation="Horizontal">
+                <Image x:Name="Logo" Width="36" Height="36" Margin="0,0,14,0"
+                       RenderOptions.BitmapScalingMode="HighQuality" />
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Forja" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Text}" />
+                    <TextBlock x:Name="VersionText" Style="{StaticResource Body}" FontSize="12" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Contenido -->
+        <Grid Grid.Row="1" Margin="24,18,24,0">
+
+            <!-- Página: listo para instalar / desinstalar -->
+            <Grid x:Name="ReadyPage">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" MinHeight="90" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0">
+                    <TextBlock x:Name="ReadyHeading" Style="{StaticResource Heading}" />
+                    <TextBlock x:Name="ReadyIntro" Style="{StaticResource Body}" Margin="0,0,0,10" />
+                </StackPanel>
+
+                <!-- Aviso de alcance / permisos -->
+                <Border x:Name="ScopeBanner" Grid.Row="1" Background="{DynamicResource Panel}"
+                        BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="4"
+                        Padding="12,9" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock x:Name="ScopeText" Style="{StaticResource Body}" FontSize="12" />
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="2" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Border}"
+                        BorderThickness="1" CornerRadius="4">
+                    <TextBox x:Name="LicenseBox" IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                             Foreground="{DynamicResource Text}" FontFamily="Consolas" FontSize="11.5"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                             Padding="10" TextWrapping="Wrap" />
+                </Border>
+
+                <StackPanel Grid.Row="3" Margin="0,12,0,0">
+                    <CheckBox x:Name="AcceptCheck" Foreground="{DynamicResource Text}"
+                              Content="Acepto los términos de la licencia GNU GPL v3"
+                              Checked="AcceptCheck_Changed" Unchecked="AcceptCheck_Changed" />
+
+                    <TextBlock Text="Componentes a instalar" Foreground="{DynamicResource Muted}" Margin="0,12,0,6" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Forja (compilador + stdlib + ejemplos)" Foreground="{DynamicResource Text}"
+                                       FontWeight="SemiBold" Margin="0,0,0,7" />
+                            <CheckBox x:Name="FeatLsp" Style="{StaticResource FeatureCheck}"
+                                      Content="Servidor de lenguaje (LSP)" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1">
+                            <CheckBox x:Name="FeatDap" Style="{StaticResource FeatureCheck}"
+                                      Content="Depurador (DAP)" />
+                            <CheckBox x:Name="FeatRt" Style="{StaticResource FeatureCheck}"
+                                      Content="Runtime (forja-rt)" />
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Text="Carpeta de instalación" Foreground="{DynamicResource Muted}" Margin="0,12,0,6" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="DirBox" Grid.Column="0" Padding="8,7"
+                                 Background="{DynamicResource Panel}" Foreground="{DynamicResource Text}"
+                                 BorderBrush="{DynamicResource Border}" BorderThickness="1" />
+                        <Button x:Name="BrowseButton" Grid.Column="1" Content="Examinar…" Margin="8,0,0,0"
+                                Style="{StaticResource SecondaryButton}" Click="Browse_Click" />
+                    </Grid>
+                </StackPanel>
+            </Grid>
+
+            <!-- Página: progreso con detalle en vivo -->
+            <Grid x:Name="ProgressPage" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0">
+                    <TextBlock x:Name="ProgressHeading" Style="{StaticResource Heading}" />
+                    <TextBlock x:Name="ProgressIntro" Style="{StaticResource Body}" Margin="0,0,0,14" />
+                </StackPanel>
+
+                <ProgressBar x:Name="Bar" Grid.Row="1" Height="6" Minimum="0" Maximum="100" Value="0"
+                             Foreground="{DynamicResource Accent}" Background="{DynamicResource Border}"
+                             BorderThickness="0" />
+
+                <TextBlock x:Name="ProgressText" Grid.Row="2" Style="{StaticResource Body}" Margin="0,8,0,10" />
+
+                <Border Grid.Row="3" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Border}"
+                        BorderThickness="1" CornerRadius="4">
+                    <ListBox x:Name="ActivityList" Background="Transparent" BorderThickness="0"
+                             Foreground="{DynamicResource Muted}" FontFamily="Consolas" FontSize="11.5"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+                </Border>
+            </Grid>
+
+            <!-- Página: final -->
+            <StackPanel x:Name="FinishPage" Visibility="Collapsed" VerticalAlignment="Top">
+                <TextBlock x:Name="FinishHeading" Style="{StaticResource Heading}" FontSize="24" />
+                <TextBlock x:Name="FinishText" Style="{StaticResource Body}" Margin="0,8,0,0" />
+                <TextBlock x:Name="FinishHint" Style="{StaticResource Body}" Margin="0,16,0,0" FontSize="12" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Pie con botones -->
+        <Border Grid.Row="2" Padding="24,14" Background="{DynamicResource Bg}">
+            <Grid>
+                <TextBlock x:Name="FooterStatus" Style="{StaticResource Body}" VerticalAlignment="Center"
+                           HorizontalAlignment="Left" MaxWidth="430" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="CancelButton" Content="Cancelar" Margin="0,0,10,0"
+                            Style="{StaticResource SecondaryButton}" Click="Cancel_Click" />
+                    <Button x:Name="InstallButton" Content="Instalar" IsEnabled="False"
+                            Style="{StaticResource PrimaryButton}" Click="Install_Click" />
+                    <Button x:Name="CloseButton" Content="Cerrar" Visibility="Collapsed"
+                            Style="{StaticResource PrimaryButton}" Click="Close_Click" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

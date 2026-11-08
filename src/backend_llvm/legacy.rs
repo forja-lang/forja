@@ -129,13 +129,6 @@ impl LlvmBackend {
         std::fs::write(path, &self.out).map_err(|e| format!("Error: {}", e))
     }
 
-    /// Alias deprecado — usar `emit_ir_text` en su lugar.
-    #[allow(dead_code)]
-    #[deprecated(note = "Renombrado a emit_ir_text. Este método escribe texto IR, no bitcode.")]
-    pub fn emit_bitcode(&self, path: &str) -> Result<(), String> {
-        self.emit_ir_text(path)
-    }
-
     pub fn emit_ir(&self) -> String {
         self.out.clone()
     }

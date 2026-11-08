@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Instalador de Forja: bundle de Burn con UI propia (ForjaBA) y un único
+     MSI per-user. Se instala sin pedir permisos en %LOCALAPPDATA%\Programs\Forja
+     con el PATH en el entorno del usuario.
+
+     Si el usuario elige una carpeta protegida (Archivos de programa), la UI
+     relanza este mismo .exe elevado (UAC) y ahí sí escribe donde eligió; el
+     PATH sigue siendo del usuario. Sin elección protegida, cero UAC.
+
+       wix build -arch x64 -d Version=0.10.0 -o forja-setup-x64.exe installer\Bundle.wxs -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Bundle Name="Forja"
+          Version="$(var.Version)"
+          Manufacturer="Forja Lang"
+          UpgradeCode="b7f3c1d2-6a4e-4c8b-9e21-7d5f0a3b8c44"
+          IconSourceFile="forge.ico"
+          AboutUrl="https://github.com/forja-lang/forja"
+          HelpUrl="https://github.com/forja-lang/forja"
+          UpdateUrl="https://github.com/forja-lang/forja/releases">
+
+    <!-- Las setea la UI (ForjaBA) antes de planificar. -->
+    <Variable Name="InstallFolder" Value="" />
+    <Variable Name="Componentes" Value="" />
+
+    <BootstrapperApplication SourceFile="installer\bootstrapper\bin\Release\net48\forja-setup-ba.exe">
+      <Payload SourceFile="installer\bootstrapper\bin\Release\net48\WixToolset.BootstrapperApplicationApi.dll" />
+      <Payload SourceFile="installer\bootstrapper\bin\Release\net48\mbanative.dll" />
+    </BootstrapperApplication>
+
+    <Chain>
+      <MsiPackage SourceFile="forja-installer-x64.msi" Vital="yes">
+        <MsiProperty Name="INSTALLDIR" Value="[InstallFolder]" />
+        <!-- Restringida pero autorable (ALLUSERS no lo es): fuerza per-user
+             aunque el proceso venga elevado. Sin esto, MSI registra en HKLM y
+             la desinstalación sin admin no puede borrar los archivos. -->
+        <!-- La entrada en Agregar/Quitar programas la lleva el bundle. -->
+        <MsiProperty Name="ARPSYSTEMCOMPONENT" Value="1" />
+      </MsiPackage>
+    </Chain>
+  </Bundle>
+</Wix>

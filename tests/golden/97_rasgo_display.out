@@ -1,6 +1,6 @@
 === @derive(Mostrar) ===
 
-Persona: <Persona>
-Producto: <Producto>
+Persona: Persona { nombre: Ana, edad: 30 }
+Producto: Producto { nombre: Laptop, precio: 1200 }
 
 Los objetos se muestran automáticamente

@@ -1,0 +1,11 @@
+[package]
+name = "forja-bootstrap"
+version = "0.10.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "xtask"
+path = "src/main.rs"
+
+[dependencies]

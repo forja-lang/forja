@@ -21,7 +21,7 @@
 
 use std::path::{Path, PathBuf};
 
-use forja::ejecutar_vm;
+use forja_test_support::ejecutar_vm;
 
 /// Vectores embebidos: cubren exactitud de centavos, escalas y casos límite.
 const MINI_CORPUS: &str = r#"
@@ -265,7 +265,7 @@ fn evaluar(vectores: &[Vector]) -> Resumen {
 }
 
 fn corpus() -> (String, Vec<Vector>) {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/dec");
+    let dir = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join("tests/golden/dec");
     let mut archivos: Vec<PathBuf> = match std::fs::read_dir(&dir) {
         Ok(entradas) => entradas
             .filter_map(|e| e.ok())

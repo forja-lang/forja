@@ -1,0 +1,15 @@
+[package]
+name = "forja-session"
+version = "0.10.0"
+edition = "2021"
+description = "Configuración y sesión de compilación de Forja"
+authors = ["forja-lang"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/forja-lang/forja"
+publish = false
+
+[dependencies]
+forja-errors = { path = "../forja-errors" }
+forja-span = { path = "../forja-span" }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"

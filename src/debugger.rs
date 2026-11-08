@@ -1359,7 +1359,7 @@ fn ejecutar_o(dbg: &mut Debugger) -> Result<(), ErrFast> {
 /// 3. Push de nuevo frame_locals Vec para el nuevo ámbito
 /// 4. Paso de argumentos en los índices 0, 1, 2...
 fn ejecutar_call_debug(dbg: &mut Debugger, nombre: &str, nargs: usize) -> Result<(), ErrFast> {
-    let sym = dbg.vm.tabla_simbolos.internar(nombre);
+    let sym = dbg.vm.runtime.tabla_simbolos.internar(nombre);
     if let Some(entry) = dbg.vm.lookup_func_entry(sym) {
         // Sincronizar cache stack → stack real
         dbg.vm.flush_stack();

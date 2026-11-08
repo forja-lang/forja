@@ -1,13 +1,13 @@
 === @derive(Mostrar, Igual) múltiple ===
 
-p1 = <Persona>
-p2 = <Persona>
-p3 = <Persona>
-falso
-falso
+p1 = Persona { nombre: Carlos, edad: 28, ciudad: Buenos Aires }
+p2 = Persona { nombre: Carlos, edad: 28, ciudad: Buenos Aires }
+p3 = Persona { nombre: María, edad: 32, ciudad: Córdoba }
+p1 == p2? verdadero
+p1 == p3? falso
 
 Colores:
-falso
-falso
+  <Color> == <Color>: verdadero
+  <Color> == <Color>: falso
 
 Múltiples derives: un atributo, múltiples comportamientos.

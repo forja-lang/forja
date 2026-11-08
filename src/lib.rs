@@ -1,3 +1,4 @@
+use forja_syntax::error::ErrorForja;
 // Forja (fa) Compiler Library
 // Punto de entrada para uso como biblioteca
 // se retiró el `#![allow(dead_code)]` global para hacer visibles los
@@ -13,64 +14,52 @@ extern crate self as forja;
 pub use forja_syntax::{ast, error, lexer, parser, token};
 pub use forja_types::semantics;
 
-pub mod arena;
+pub mod actualizar;
 pub mod backend_llvm;
-pub mod bytecode;
-pub mod class_descriptor;
-pub mod codegen_reg;
+
 pub mod compiler_asm;
 pub mod config;
-pub mod dedup;
-pub mod desugar;
-pub mod ed25519;
-pub mod fprofiler;
-pub mod gc_intrinsics;
+pub use forja_bytecode as bytecode;
+pub use forja_bytecode::{symbol_table, uops};
+pub use forja_hir::{dedup, desugar};
+pub use forja_ir::{
+    arena, codegen_reg, ir, ir_constructor, ir_emision, ir_ssa, ir_to_bytecode, optimizer,
+    optimizer_pipeline, register_alloc, register_ir, stack_to_reg,
+};
+pub use forja_native::{base64, crypto, crypto_pq, ed25519, hash, mmap, sandbox, terminal};
+pub use forja_runtime::{fprofiler, shape, Host};
+#[cfg(feature = "h2-tls")]
+pub use forja_vm::native_h2_tls;
+#[cfg(not(target_arch = "wasm32"))]
+pub use forja_vm::native_proceso_win;
+#[cfg(all(not(target_arch = "wasm32"), feature = "sqlite"))]
+pub use forja_vm::native_sqlite;
+pub use forja_vm::{
+    class_descriptor, ffi, gc_intrinsics, jit_tiered, module, native_h2_core, native_registry,
+    package_resolver, pgo, registry, registry_remote, registry_server, stdlib_embedded, vm_fast,
+};
+pub use forja_vm::{ModuleCache, ModuleId, ModuleInfo};
 #[cfg(not(target_arch = "wasm32"))]
 pub mod incremental_cache;
-pub mod ir;
-pub mod ir_constructor;
-pub mod ir_emision;
-pub mod ir_ssa;
-pub mod ir_to_bytecode;
-pub mod jit_tiered;
-pub mod learn;
-pub mod linter;
+
+pub use forja_lint as linter;
 pub mod monomorph;
-pub mod native_registry;
-pub mod pgo;
-pub mod register_alloc;
-pub mod register_ir;
-pub mod registry;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod registry_remote;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod registry_server;
-pub mod sandbox;
-pub mod shape;
-pub mod stack_to_reg;
-pub mod stdlib_embedded;
-pub mod symbol_table;
 pub mod transpiler;
-pub mod uops;
-pub mod vm_fast;
 
 // Motores de ejecución ARCHIVADOS (vm_jit, jit, jit_engine) — fuera de la ruta
 // por defecto. Ver `src/legacy/mod.rs` y nota. Los dos motores vivos son
 // `vm_fast` (intérprete canónico) y `jit_tiered` (JIT único).
-pub mod legacy;
 
 // ======================================================================
 // RUTA CANÓNICA DE COMPILACIÓN A BYTECODE (única fuente de verdad)
 // ======================================================================
 //
-// Tras existe UNA sola ruta real de compilación a bytecode:
-// [`compilar_pipeline_nucleo`] (AST → análisis → optimización → bytecode).
+// Existe UNA sola ruta real de compilación a bytecode:
+// `compilar_pipeline_nucleo` (AST → análisis → optimización → bytecode).
 // Todos los entrypoints públicos de bytecode desembocan en ella:
 //
 //   * [`compilar_pipeline_completa`]        — CANÓNICO, sin imports.
 //   * [`compilar_pipeline_completa_desde`]  — CANÓNICO, resuelve `importar`.
-//   * [`compilar_con_ir`]                   — `#[deprecated]`, alias IR-first.
-//   * [`compilar_pipeline`]                 — `#[deprecated]`, alias histórico.
 //
 // La ruta de **transpilación a Rust** ([`transpilar_a_rust`] /
 // [`transpilar_a_rust_con_ast`]) es independiente y NO genera bytecode.
@@ -98,11 +87,17 @@ pub mod legacy;
 ///
 /// Todos los entrypoints públicos de bytecode delegan aquí; no debe existir
 /// lógica de pipeline duplicada fuera de esta función.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 fn compilar_pipeline_nucleo(
     programa: ast::Programa,
     hay_imports: bool,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    compilar_pipeline_nucleo_emision(programa, MotorEmision::Auto, hay_imports)
+    compilar_pipeline_nucleo_emision(
+        programa,
+        MotorEmision::Auto,
+        hay_imports,
+        crate::config::actual().estricto,
+    )
 }
 
 /// BorrowChecker con el modo estricto de la configuración vigente
@@ -175,7 +170,21 @@ fn compilar_pipeline_nucleo_emision(
     mut programa: ast::Programa,
     motor: MotorEmision,
     hay_imports: bool,
+    estricto: bool,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
+    // FASE: cargar librerías de `importar externa` también en la ruta sin
+    // resolución de módulos (`forja::ejecutar`), para que el enlace automático
+    // de `funcion externa` encuentre los símbolos.
+    // Best-effort: si la librería no existe, el error aparece recién al llamar
+    // a una `funcion externa` (o al resolver imports en la CLI). Así compilar
+    // un programa que solo declara el import sigue funcionando en cualquier OS.
+    #[cfg(not(target_arch = "wasm32"))]
+    for decl in &programa.declaraciones {
+        if let ast::Declaracion::ImportarExterna(ruta) = decl {
+            let _ = crate::ffi::cargar_libreria(ruta);
+        }
+    }
+
     // FASE: Prelude — inyectar los tipos algebraicos básicos (`Resultado` y
     // `Opcion`) para que sus variantes queden registradas en `variantes_enum`
     // (en el TypeChecker y el BorrowChecker) y el comprobador de exhaustividad
@@ -188,8 +197,7 @@ fn compilar_pipeline_nucleo_emision(
 
     // FASE: Type Checker + inferencia de tipos
     let mut type_checker = semantics::TypeChecker::new();
-    // modo estricto opt-in (`estricto: true` en forja.yaml).
-    let estricto = crate::config::actual().estricto;
+    // modo estricto opt-in (`estricto: true` en forja.yaml o en la sesión).
     type_checker.set_estricto(estricto);
     if estricto {
         type_checker.set_funciones_externas(nombres_funciones_externas());
@@ -205,7 +213,7 @@ fn compilar_pipeline_nucleo_emision(
     let tipos_inferidos = type_checker.obtener_tipos_inferidos();
 
     // FASE: Borrow Checker (ownership y préstamos)
-    let mut borrow_checker = borrow_checker();
+    let mut borrow_checker = semantics::BorrowChecker::con_estricto(estricto);
     borrow_checker
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
@@ -278,22 +286,6 @@ fn compilar_pipeline_nucleo_emision(
     Ok((bc, contratos))
 }
 
-/// Alias histórico del pipeline de bytecode. **Deprecado**.
-///
-/// Antes de esta función era la ruta "IR-first"experimental; hoy
-/// **delega** en la ruta canónica [`compilar_pipeline_completa`] para garantizar
-/// una única implementación real (su firma sólo devuelve `Vec<Opcode>`, sin
-/// contratos). Se conserva el nombre por compatibilidad (p. ej. la red de
-/// seguridad `tests/ir_paridad.rs`); su eliminación corresponde a fases
-/// posteriores.
-#[deprecated(
-    since = "0.9.2",
-    note = "usa `compilar_pipeline_completa()` (devuelve bytecode + contratos); este alias sólo delega en ella"
-)]
-pub fn compilar_con_ir(source: &str) -> Result<Vec<bytecode::Opcode>, String> {
-    Ok(compilar_pipeline_completa(source)?.0)
-}
-
 /// Compila forzando la **emisión de bytecode derivada del IR**. Devuelve
 /// `Err` si el programa usa constructos fuera del subconjunto IR (funciones de
 /// usuario, clases, arrays, mapas, contratos, etc.), señalando que la ruta IR
@@ -307,24 +299,21 @@ pub fn compilar_desde_ir(
     let programa = parser::Parser::new(tokens)
         .parse()
         .map_err(|e| format!("{}", e[0]))?;
-    compilar_pipeline_nucleo_emision(programa, MotorEmision::Ir, tiene_imports(source))
+    compilar_pipeline_nucleo_emision(
+        programa,
+        MotorEmision::Ir,
+        tiene_imports(source),
+        crate::config::actual().estricto,
+    )
 }
 
 // Hash, codificación y crypto — implementaciones manuales sin dependencias externas
-pub mod base64;
-pub mod crypto;
-pub mod crypto_pq;
-pub mod hash;
-pub mod mmap;
-pub mod terminal;
 
 // Módulos nativos que dependen del sistema de archivos o del SO
 // (no compilables a WASM)
-pub mod ffi;
 
 // Funciones nativas de procesos de Windows (PID, módulos, R/W de memoria)
 #[cfg(not(target_arch = "wasm32"))]
-pub mod native_proceso_win;
 #[cfg(target_arch = "wasm32")]
 #[allow(dead_code)]
 pub mod native_proceso_win {
@@ -336,22 +325,13 @@ pub mod native_proceso_win {
 // (no compilables a WASM)
 #[cfg(not(target_arch = "wasm32"))]
 pub mod aot;
-#[cfg(not(target_arch = "wasm32"))]
 // El REPL usa terminal interactiva (rustyline/crossterm): no aplica en wasm.
 #[cfg(not(target_arch = "wasm32"))]
-pub mod repl;
-
-#[cfg(not(target_arch = "wasm32"))]
-pub mod module;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod selfrun;
-#[cfg(not(target_arch = "wasm32"))]
-pub use module::{ModuleCache, ModuleId, ModuleInfo};
-#[cfg(not(target_arch = "wasm32"))]
-pub mod package_resolver;
 // El prelude sólo usa `crate::ast`, por lo que es compatible con WASM: no se
 // gatea (lo consume `compilar_pipeline_nucleo`, que tampoco está gateado).
-pub mod prelude;
+pub use forja_hir::prelude;
 
 // package_config usa serde/serde_json, compatible con WASM
 pub mod package_config;
@@ -359,10 +339,8 @@ pub mod package_config;
 // Módulos puramente algorítmicos (compatibles con WASM)
 // diagrama genera HTML, formatter y optimizer son puro AST
 pub mod diagrama;
-pub mod formatter;
-pub mod optimizer;
+pub use forja_fmt as formatter;
 // punto único de la fase de optimización (passes de AST + bytecode).
-pub mod optimizer_pipeline;
 
 // Debugger (modo paso a paso con breakpoints)
 #[cfg(not(target_arch = "wasm32"))]
@@ -374,19 +352,6 @@ pub mod debugger;
 // Módulo de autocompletado para LSP (feature-gated)
 #[cfg(feature = "lsp")]
 pub mod lsp;
-
-// HTTP/2 nativo — h2c (cleartext), sin dependencias externas
-#[cfg(not(target_arch = "wasm32"))]
-pub mod native_h2_core;
-
-#[cfg(not(target_arch = "wasm32"))]
-pub mod native_sqlite;
-
-// HTTP/2 con TLS (rustls) — feature flag "h2-tls"
-#[cfg(all(feature = "h2-tls", not(target_arch = "wasm32")))]
-pub mod native_h2_tls;
-
-use crate::error::ErrorForja;
 
 /// Calcula un hash u64 a partir de una cadena de código fuente.
 /// Usado por la compilación incremental para detectar cambios en el source.
@@ -487,18 +452,6 @@ pub fn transpilar_a_rust(source: &str) -> Result<String, Vec<ErrorForja>> {
     Ok(rust_code)
 }
 
-/// Alias histórico de [`transpilar_a_rust`]. **Deprecado**.
-///
-/// El nombre `compilar()` era engañoso: **no** compila a bytecode, transpila a
-/// Rust. Se conserva como wrapper que **delega** para no romper consumidores.
-#[deprecated(
-    since = "0.9.2",
-    note = "usa `transpilar_a_rust()`; `compilar()` no genera bytecode, transpila a Rust"
-)]
-pub fn compilar(source: &str) -> Result<String, Vec<ErrorForja>> {
-    transpilar_a_rust(source)
-}
-
 /// **Ruta de transpilación a Rust** que además devuelve el AST declarativo.
 ///
 /// Igual que [`transpilar_a_rust`] pero retorna también las declaraciones
@@ -537,28 +490,45 @@ pub fn transpilar_a_rust_con_ast(
     Ok((programa.declaraciones, rust_code))
 }
 
-/// Alias histórico de [`transpilar_a_rust_con_ast`]. **Deprecado**.
-///
-/// El nombre `compilar_con_ast()` era engañoso: **no** compila a bytecode,
-/// transpila a Rust. Se conserva como wrapper que **delega**.
-#[deprecated(
-    since = "0.9.2",
-    note = "usa `transpilar_a_rust_con_ast()`; `compilar_con_ast()` no genera bytecode, transpila a Rust"
-)]
-pub fn compilar_con_ast(source: &str) -> Result<(Vec<ast::Declaracion>, String), Vec<ErrorForja>> {
-    transpilar_a_rust_con_ast(source)
+/// Compila ASM consumiendo un `ProgramaIr` (usa el AST embebido en el IR).
+pub fn compilar_a_asm_desde_ir(
+    ir: &forja_ir::ir::ProgramaIr,
+) -> Result<String, Vec<error::ErrorForja>> {
+    let ast = ir.ast.as_ref().ok_or_else(|| {
+        vec![error::ErrorForja::new(
+            error::ErrorTipo::ErrorInterno,
+            0,
+            0,
+            "el IR no conserva AST",
+            "",
+        )]
+    })?;
+    compiler_asm::compilar_a_asm(ast)
 }
 
-/// Alias histórico del pipeline de bytecode. **Deprecado**.
-///
-/// Devuelve sólo el bytecode (sin contratos) y **delega** en el entrypoint
-/// canónico [`compilar_pipeline_completa`]. Preferir esa función.
-#[deprecated(
-    since = "0.9.2",
-    note = "usa `compilar_pipeline_completa()` (devuelve bytecode + contratos); este alias sólo delega en ella"
-)]
-pub fn compilar_pipeline(source: &str) -> Result<Vec<bytecode::Opcode>, String> {
-    Ok(compilar_pipeline_completa(source)?.0)
+/// Compila LLVM consumiendo un `ProgramaIr`.
+pub fn compilar_a_llvm_desde_ir(ir: &forja_ir::ir::ProgramaIr) -> Result<String, String> {
+    let ast = ir
+        .ast
+        .as_ref()
+        .ok_or_else(|| "el IR no conserva AST".to_string())?;
+    backend_llvm::compilar_a_llvm_texto(&ast.declaraciones)
+}
+
+/// Transpila a Rust consumiendo un `ProgramaIr`.
+pub fn transpilar_desde_ir(
+    ir: &forja_ir::ir::ProgramaIr,
+) -> Result<String, Vec<error::ErrorForja>> {
+    let ast = ir.ast.as_ref().ok_or_else(|| {
+        vec![error::ErrorForja::new(
+            error::ErrorTipo::ErrorInterno,
+            0,
+            0,
+            "el IR no conserva AST",
+            "",
+        )]
+    })?;
+    transpiler::Transpiler::new().transpilar(ast)
 }
 
 /// Resuelve los imports en un programa Forja usando un ModuleResolver.
@@ -568,7 +538,7 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
     use crate::dedup::dedup_declaraciones;
     use crate::module::ModuleResolver;
     use crate::package_resolver::PackageResolver;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     // 1. Lexer + Parser del código fuente principal
     let mut lexer = lexer::Lexer::new(source);
@@ -586,16 +556,10 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
     module_resolver.package_resolver = Some(PackageResolver::new(project_dir));
 
     // los imports se inlinean, así que `colecciones.mapa(...)` quedaría
-    // como acceso a una variable inexistente. Registrar los alias de módulo
-    // para reescribir las llamadas cualificadas a llamadas directas.
-    let mut alias_modulos: HashSet<String> = HashSet::new();
-    for decl in &programa.declaraciones {
-        if let ast::Declaracion::Importar(ruta) = decl {
-            if let Some(alias) = ruta.rsplit('/').next() {
-                alias_modulos.insert(alias.to_string());
-            }
-        }
-    }
+    // como acceso a una variable inexistente. El HIR dice qué nombres exporta
+    // cada módulo: solo se reescribe `alias.miembro` si el miembro existe.
+    let mut alias_modulos: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut hir = forja_hir::Hir::nuevo();
 
     let mut final_decls = Vec::new();
     for decl in programa.declaraciones {
@@ -604,12 +568,28 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
             // módulo Forja que inlinear. Además `stdlib/gui/gui.fa` desborda la
             // pila del parser en la ruta nativa.
             if ruta == "gui" || ruta == "std/gui" {
+                if let Some(alias) = ruta.rsplit('/').next() {
+                    // El runtime GUI resuelve el módulo; se marca el alias como
+                    // "cualquier miembro" para conservar el comportamiento previo.
+                    alias_modulos
+                        .entry(alias.to_string())
+                        .or_default()
+                        .insert("*".to_string());
+                }
                 final_decls.push(decl);
                 continue;
             }
             let sub_prog = module_resolver
                 .resolver(ruta)
                 .map_err(|e| format!("{}", e[0]))?;
+            let alias = ruta.rsplit('/').next().unwrap_or(ruta.as_str()).to_string();
+            let modulo = hir.agregar_modulo(ruta.as_str(), &sub_prog);
+            for nombre in hir.nombres(modulo) {
+                alias_modulos
+                    .entry(alias.clone())
+                    .or_default()
+                    .insert(nombre.to_string());
+            }
             final_decls.extend(sub_prog.declaraciones);
         } else if let ast::Declaracion::ImportarExterna(ref ruta) = decl {
             // Cargar la librería externa en el registro FFI
@@ -629,13 +609,32 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
 
 /// Reescribe `modulo.funcion(args)` como `funcion(args)` tras inlinearlos
 /// imports. Solo actúa sobre alias declarados por `importar`.
-fn reescribir_llamadas_de_modulo(
-    declaracion: &mut ast::Declaracion,
-    alias: &std::collections::HashSet<String>,
-) {
+/// Alias de módulo importado y los nombres que exporta.
+///
+/// El `HashSet` es el modo histórico (todo `alias.miembro` se reescribe). El
+/// `HashMap` es la resolución HIR: solo se reescribe si el miembro está
+/// realmente exportado por ese módulo.
+trait AliasModulos {
+    fn resuelve(&self, alias: &str, item: &str) -> bool;
+}
+
+impl AliasModulos for std::collections::HashSet<String> {
+    fn resuelve(&self, alias: &str, _item: &str) -> bool {
+        self.contains(alias)
+    }
+}
+
+impl AliasModulos for std::collections::HashMap<String, std::collections::HashSet<String>> {
+    fn resuelve(&self, alias: &str, item: &str) -> bool {
+        self.get(alias)
+            .is_some_and(|nombres| nombres.contains(item) || nombres.contains("*"))
+    }
+}
+
+fn reescribir_llamadas_de_modulo<A: AliasModulos>(declaracion: &mut ast::Declaracion, alias: &A) {
     use ast::{Declaracion, Expresion};
 
-    fn expr(e: &mut Expresion, alias: &std::collections::HashSet<String>) {
+    fn expr<A: AliasModulos>(e: &mut Expresion, alias: &A) {
         match e {
             Expresion::LlamadaMetodo {
                 objeto,
@@ -643,7 +642,7 @@ fn reescribir_llamadas_de_modulo(
                 argumentos,
             } => {
                 if let Expresion::Identificador { nombre, .. } = objeto.as_ref() {
-                    if alias.contains(nombre) {
+                    if alias.resuelve(nombre, metodo) {
                         let nombre_fn = metodo.clone();
                         for arg in argumentos.iter_mut() {
                             expr(arg, alias);
@@ -662,7 +661,7 @@ fn reescribir_llamadas_de_modulo(
             }
             Expresion::AccesoMiembro { objeto, miembro } => {
                 if let Expresion::Identificador { nombre, .. } = objeto.as_ref() {
-                    if alias.contains(nombre) {
+                    if alias.resuelve(nombre, miembro) {
                         *e = Expresion::Identificador {
                             nombre: miembro.clone(),
                             linea: 0,
@@ -771,15 +770,15 @@ fn reescribir_llamadas_de_modulo(
     /// `modulo.funcion` como sentencia llega con el nombre punteado (no como
     /// `LlamadaMetodo`): sin quitar el prefijo, el inlineado deja
     /// `aleatorio.semilla(...)` y el runtime no encuentra la función.
-    fn sin_prefijo_de_modulo(nombre: &mut String, alias: &std::collections::HashSet<String>) {
+    fn sin_prefijo_de_modulo<A: AliasModulos>(nombre: &mut String, alias: &A) {
         if let Some((prefijo, resto)) = nombre.split_once('.') {
-            if alias.contains(prefijo) {
+            if alias.resuelve(prefijo, resto) {
                 *nombre = resto.to_string();
             }
         }
     }
 
-    fn decl(d: &mut Declaracion, alias: &std::collections::HashSet<String>) {
+    fn decl<A: AliasModulos>(d: &mut Declaracion, alias: &A) {
         match d {
             Declaracion::Variable { valor: Some(v), .. } => expr(v, alias),
             Declaracion::Asignacion { valor, .. } => expr(valor, alias),
@@ -904,7 +903,7 @@ fn reescribir_llamadas_de_modulo(
 #[cfg(target_arch = "wasm32")]
 pub fn resolver_imports_embebida(source: &str) -> Result<ast::Programa, String> {
     use crate::dedup::dedup_declaraciones;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     fn parsear(source: &str) -> Result<ast::Programa, String> {
         let mut lexer = lexer::Lexer::new(source);
@@ -913,9 +912,25 @@ pub fn resolver_imports_embebida(source: &str) -> Result<ast::Programa, String> 
         parser.parse().map_err(|e| format!("{}", e[0]))
     }
 
+    fn registrar_alias(
+        ruta: &str,
+        programa: &ast::Programa,
+        alias: &mut HashMap<String, HashSet<String>>,
+    ) {
+        let Some(a) = ruta.rsplit('/').next() else {
+            return;
+        };
+        let mut hir = forja_hir::Hir::nuevo();
+        let m = hir.agregar_modulo(ruta, programa);
+        let destino = alias.entry(a.to_string()).or_default();
+        for nombre in hir.nombres(m) {
+            destino.insert(nombre.to_string());
+        }
+    }
+
     fn inlinear(
         ruta: &str,
-        alias: &mut HashSet<String>,
+        alias: &mut HashMap<String, HashSet<String>>,
         visitados: &mut HashSet<String>,
         salida: &mut Vec<ast::Declaracion>,
     ) -> Result<(), String> {
@@ -925,13 +940,18 @@ pub fn resolver_imports_embebida(source: &str) -> Result<ast::Programa, String> 
         let (fuente, es_gui) = crate::stdlib_embedded::obtener(ruta)
             .ok_or_else(|| format!("El módulo '{}' no está disponible en el navegador", ruta))?;
         if es_gui {
+            if let Some(a) = ruta.rsplit('/').next() {
+                alias
+                    .entry(a.to_string())
+                    .or_default()
+                    .insert("*".to_string());
+            }
             return Ok(());
         }
-        for decl in parsear(fuente)?.declaraciones {
+        let programa = parsear(fuente)?;
+        registrar_alias(ruta, &programa, alias);
+        for decl in programa.declaraciones {
             if let ast::Declaracion::Importar(sub) = &decl {
-                if let Some(a) = sub.rsplit('/').next() {
-                    alias.insert(a.to_string());
-                }
                 inlinear(sub, alias, visitados, salida)?;
             } else {
                 salida.push(decl);
@@ -941,14 +961,11 @@ pub fn resolver_imports_embebida(source: &str) -> Result<ast::Programa, String> 
     }
 
     let mut programa = parsear(source)?;
-    let mut alias: HashSet<String> = HashSet::new();
+    let mut alias: HashMap<String, HashSet<String>> = HashMap::new();
     let mut visitados: HashSet<String> = HashSet::new();
     let mut final_decls = Vec::new();
     for decl in programa.declaraciones {
         if let ast::Declaracion::Importar(ruta) = &decl {
-            if let Some(a) = ruta.rsplit('/').next() {
-                alias.insert(a.to_string());
-            }
             inlinear(ruta, &mut alias, &mut visitados, &mut final_decls)?;
         } else {
             final_decls.push(decl);
@@ -964,7 +981,7 @@ pub fn resolver_imports_embebida(source: &str) -> Result<ast::Programa, String> 
 /// Compila código Forja a **bytecode**, resolviendo `importar` desde un directorio raíz.
 ///
 /// **Entrypoint canónico (variante con imports).** Resuelve los imports con
-/// [`resolver_imports`] y delega en el núcleo único [`compilar_pipeline_nucleo`],
+/// [`resolver_imports`] y delega en el núcleo único `compilar_pipeline_nucleo`,
 /// por lo que comparte exactamente las mismas fases que
 /// [`compilar_pipeline_completa`]. Devuelve `(bytecode, contratos)`.
 #[cfg(not(target_arch = "wasm32"))]
@@ -979,6 +996,23 @@ pub fn compilar_pipeline_completa_desde(
     compilar_pipeline_nucleo(programa, tiene_imports(source))
 }
 
+/// Igual que [`compilar_pipeline_completa_desde`], pero con una sesión
+/// explícita (estricto y, a futuro, contratos/caché).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn compilar_pipeline_completa_desde_con_sesion(
+    source: &str,
+    root_dir: &std::path::Path,
+    sesion: &forja_session::Session,
+) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
+    let programa = resolver_imports(source, root_dir)?;
+    compilar_pipeline_nucleo_emision(
+        programa,
+        MotorEmision::Auto,
+        tiene_imports(source),
+        sesion.estricto(),
+    )
+}
+
 /// variante **estricta** de [`compilar_pipeline_completa_desde`] que
 /// exige la ruta IR en todos los constructos (sin fallback a AST). Es el punto
 /// de verificación de la cobertura IR del corpus y de la paridad funcional.
@@ -988,7 +1022,12 @@ pub fn compilar_pipeline_completa_desde_ir(
     root_dir: &std::path::Path,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
     let programa = resolver_imports(source, root_dir)?;
-    compilar_pipeline_nucleo_emision(programa, MotorEmision::Ir, tiene_imports(source))
+    compilar_pipeline_nucleo_emision(
+        programa,
+        MotorEmision::Ir,
+        tiene_imports(source),
+        crate::config::actual().estricto,
+    )
 }
 
 /// variante que fuerza el **backend AST** (sin constructor IR). Es la
@@ -999,26 +1038,50 @@ pub fn compilar_pipeline_completa_desde_ast(
     root_dir: &std::path::Path,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
     let programa = resolver_imports(source, root_dir)?;
-    compilar_pipeline_nucleo_emision(programa, MotorEmision::SoloAst, tiene_imports(source))
+    compilar_pipeline_nucleo_emision(
+        programa,
+        MotorEmision::SoloAst,
+        tiene_imports(source),
+        crate::config::actual().estricto,
+    )
 }
 
 /// Compila código Forja a **bytecode** + tabla de contratos (Design by Contract).
 ///
 /// **Entrypoint canónico de bytecode (source plano, sin imports).** Es la
 /// fuente única de verdad para la firma `(bytecode, contratos)`: parsea el
-/// source y delega en [`compilar_pipeline_nucleo`]. Para programas con
+/// source y delega en `compilar_pipeline_nucleo`. Para programas con
 /// `importar`, usar [`compilar_pipeline_completa_desde`].
 ///
-/// Los aliases históricos `#[deprecated]` [`compilar_con_ir`] y
-/// [`compilar_pipeline`] delegan aquí.
+/// Es la única implementación pública del pipeline de bytecode.
 pub fn compilar_pipeline_completa(
     source: &str,
+) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
+    compilar_pipeline_completa_con_estricto(source, crate::config::actual().estricto)
+}
+
+/// Igual que [`compilar_pipeline_completa`], pero con opciones explícitas.
+/// Es el primer entrypoint que no lee la configuración global.
+pub fn compilar_pipeline_completa_con_sesion(
+    source: &str,
+    sesion: &forja_session::Session,
+) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
+    compilar_pipeline_completa_con_estricto(source, sesion.estricto())
+}
+
+fn compilar_pipeline_completa_con_estricto(
+    source: &str,
+    estricto: bool,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
     // En WASM no hay FS: los `importar` se resuelven contra la stdlib embebida.
     #[cfg(target_arch = "wasm32")]
     {
-        // La stdlib embebida ya está inlineada (o es GUI, que resuelve el runtime).
-        return compilar_pipeline_nucleo(resolver_imports_embebida(source)?, true);
+        return compilar_pipeline_nucleo_emision(
+            resolver_imports_embebida(source)?,
+            MotorEmision::Auto,
+            true,
+            estricto,
+        );
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1032,7 +1095,12 @@ pub fn compilar_pipeline_completa(
         let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
         // FASE 4+: núcleo único del pipeline a bytecode (sin lógica duplicada).
-        compilar_pipeline_nucleo(programa, tiene_imports(source))
+        compilar_pipeline_nucleo_emision(
+            programa,
+            MotorEmision::Auto,
+            tiene_imports(source),
+            estricto,
+        )
     }
 }
 
@@ -1171,6 +1239,15 @@ pub fn compilar_modulos_paralelo(
 ) -> Result<Vec<bytecode::ModuloBytecode>, String> {
     use rayon::prelude::*;
 
+    // Los módulos pequeños no amortizan el coste de rayon.
+    const UMBRAL_PARALELO: usize = 8;
+    if modulos.len() < UMBRAL_PARALELO {
+        return modulos
+            .into_iter()
+            .map(|(source, module_id)| compilar_modulo(&source, module_id))
+            .collect();
+    }
+
     let resultados: Vec<Result<bytecode::ModuloBytecode, String>> = modulos
         .into_par_iter()
         .map(|(source, module_id)| compilar_modulo(&source, module_id))
@@ -1212,6 +1289,26 @@ pub fn ejecutar_con_opciones(
     if let Some(sb) = sandbox {
         vm.sandbox = sb;
     }
+    vm.cargar_bytecode(bytecode);
+    vm.ejecutar().map_err(|e| format!("{}", e))?;
+    Ok(vm.obtener_output().to_vec())
+}
+
+/// Compila y ejecuta con una [`forja_session::Session`] explícita.
+/// No lee la configuración global: estricto y contratos salen de la sesión.
+pub fn ejecutar_con_sesion(
+    source: &str,
+    sesion: &forja_session::Session,
+) -> Result<Vec<String>, String> {
+    use vm_fast::ForjaFast;
+    let (bytecode, contratos) = compilar_pipeline_completa_con_sesion(source, sesion)?;
+    let mut vm = ForjaFast::new();
+    vm.contratos = contratos;
+    vm.verificar_contratos = sesion.contratos();
+    #[cfg(target_pointer_width = "64")]
+    vm.set_max_inst(10_000_000_000);
+    #[cfg(not(target_pointer_width = "64"))]
+    vm.set_max_inst(2_000_000_000);
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
     Ok(vm.obtener_output().to_vec())
@@ -1581,7 +1678,313 @@ pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
         )]
     })?;
 
-    Ok(ir)
+    Ok(memoizar_puras(&normalizar_llvm(&ir)))
+}
+
+/// Normaliza el IR emitido por el backend LLVM legado:
+/// - mueve instrucciones de nivel superior dentro de `main`,
+/// - mueve strings globales fuera de las funciones,
+/// - elimina instrucciones después de `ret`,
+/// - renumera temporales `%N` por función,
+/// - corrige `%%label` y la firma de `main`.
+/// Memoiza funciones puras, recursivas, de un `i64` a `i64`.
+///
+/// Sólo aplica cuando el cuerpo no llama a otras funciones ni toca globals/I/O.
+/// La caché es directa, de 4096 entradas; una colisión sólo provoca un miss.
+fn memoizar_puras(ir: &str) -> String {
+    if !crate::config::actual().memoizacion {
+        return ir.to_string();
+    }
+    let lines: Vec<&str> = ir.lines().collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut globals: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let l = lines[i];
+        let t = l.trim_start();
+        if t.starts_with("define i64 @") && t.contains("(i64 %p0)") {
+            let name = t
+                .strip_prefix("define i64 @")
+                .and_then(|x| x.split('(').next())
+                .unwrap_or("");
+            let mut end = i + 1;
+            while end < lines.len() && lines[end].trim() != "}" {
+                end += 1;
+            }
+            if end < lines.len() {
+                let cuerpo: Vec<&str> = lines[i + 1..end].to_vec();
+                let body = cuerpo.join("\n");
+                let self_call = format!("call i64 @{name}(i64");
+                let mut pura = body.contains(&self_call);
+                for x in &cuerpo {
+                    let xt = x.trim_start();
+                    if xt.contains("call ") && !xt.contains(&format!("@{name}(")) {
+                        pura = false;
+                    }
+                    if xt.starts_with("store ") && xt.contains(" @") {
+                        pura = false;
+                    }
+                    if xt.contains("@printf")
+                        || xt.contains("@malloc")
+                        || xt.contains("@forja_contract_error")
+                    {
+                        pura = false;
+                    }
+                    if xt.contains("load") && xt.contains(" @") {
+                        pura = false;
+                    }
+                }
+                if pura {
+                    let key = format!("@forja_cache_keys_{name}");
+                    let val = format!("@forja_cache_values_{name}");
+                    globals.push(format!(
+                        "{key} = internal global [4096 x i64] zeroinitializer"
+                    ));
+                    globals.push(format!(
+                        "{val} = internal global [4096 x i64] zeroinitializer"
+                    ));
+                    out.push(l.to_string());
+                    out.push(format!("  %cache_idx_{name} = urem i64 %p0, 4096"));
+                    out.push(format!("  %cache_kp_{name} = getelementptr [4096 x i64], [4096 x i64]* {key}, i64 0, i64 %cache_idx_{name}"));
+                    out.push(format!("  %cache_vp_{name} = getelementptr [4096 x i64], [4096 x i64]* {val}, i64 0, i64 %cache_idx_{name}"));
+                    out.push(format!(
+                        "  %cache_k_{name} = load i64, i64* %cache_kp_{name}"
+                    ));
+                    out.push(format!("  %cache_exp_{name} = add i64 %p0, 1"));
+                    out.push(format!(
+                        "  %cache_es_hit_{name} = icmp eq i64 %cache_k_{name}, %cache_exp_{name}"
+                    ));
+                    out.push(format!("  br i1 %cache_es_hit_{name}, label %cache_hit_{name}, label %cache_miss_{name}"));
+                    out.push(format!("cache_hit_{name}:"));
+                    out.push(format!(
+                        "  %cache_v_{name} = load i64, i64* %cache_vp_{name}"
+                    ));
+                    out.push(format!("  ret i64 %cache_v_{name}"));
+                    out.push(format!("cache_miss_{name}:"));
+                    for x in cuerpo {
+                        let xt = x.trim_start();
+                        if xt == "entry:" {
+                            continue;
+                        }
+                        if let Some(v) = xt.strip_prefix("ret i64 ") {
+                            let v = v.trim();
+                            out.push(format!(
+                                "  store i64 %cache_exp_{name}, i64* %cache_kp_{name}"
+                            ));
+                            out.push(format!("  store i64 {v}, i64* %cache_vp_{name}"));
+                            out.push(format!("  ret i64 {v}"));
+                        } else {
+                            out.push(x.to_string());
+                        }
+                    }
+                    out.push("}".to_string());
+                    i = end + 1;
+                    continue;
+                }
+            }
+        }
+        out.push(l.to_string());
+        i += 1;
+    }
+    let mut texto = out.join("\n");
+    if !globals.is_empty() {
+        texto.push_str("\n\n");
+        texto.push_str(&globals.join("\n"));
+    }
+    texto + "\n"
+}
+
+fn normalizar_llvm(ir: &str) -> String {
+    use std::collections::HashMap;
+    let mut globals = Vec::new();
+    let mut lineas = Vec::new();
+    for l in ir.lines() {
+        let t = l.trim_start();
+        if t.starts_with('@') && t.contains("constant") {
+            globals.push(l.to_string());
+            continue;
+        }
+        if t.starts_with("target triple") {
+            continue;
+        }
+        lineas.push(l.to_string());
+    }
+    // Instrucciones de nivel superior (antes de main) → cuerpo de main.
+    let mut top = Vec::new();
+    let mut cuerpo = Vec::new();
+    let mut depth = 0i32;
+    let mut en_main = false;
+    for l in lineas {
+        let t = l.trim_start();
+        if t.starts_with("define ") && t.contains("@main") {
+            en_main = true;
+            cuerpo.push(l.clone());
+            depth = 1;
+            continue;
+        }
+        if !en_main {
+            if depth == 0 && (t.starts_with('%') || t.starts_with("call ")) {
+                top.push(l.clone());
+            } else {
+                cuerpo.push(l.clone());
+            }
+            if t.starts_with("define ") {
+                depth += 1;
+            }
+            if t.starts_with('}') {
+                depth -= 1;
+            }
+        } else {
+            cuerpo.push(l.clone());
+        }
+    }
+    let mut out = Vec::new();
+    let mut dentro_main = false;
+    let mut depth2 = 0i32;
+    let mut main_abierto = false;
+    for l in cuerpo {
+        let t = l.trim_start();
+        if t.starts_with("define ") && t.contains("@main") {
+            out.push("define i32 @main() {".to_string());
+            dentro_main = true;
+            main_abierto = true;
+            depth2 = 1;
+            continue;
+        }
+        if dentro_main {
+            if main_abierto && t.starts_with('%') && t.ends_with(':') {
+                out.push(l.clone());
+
+                main_abierto = false;
+                continue;
+            }
+            if t == "}" {
+                dentro_main = false;
+            }
+            if t.starts_with("ret i64 0") && depth2 == 1 {
+                out.push("  ret i32 0".to_string());
+                continue;
+            }
+        }
+        out.push(l.clone());
+    }
+    // Eliminar instrucciones después de ret hasta label/}.
+    let mut limpio = Vec::new();
+    let mut saltar = false;
+    for l in out {
+        let t = l.trim_start();
+        if saltar {
+            if t.ends_with(':') || t == "}" {
+                saltar = false;
+            } else {
+                continue;
+            }
+        }
+        limpio.push(l.clone());
+        if t.starts_with("ret ") {
+            saltar = true;
+        }
+    }
+    // Renumerar temporales por función.
+    let mut finales = Vec::new();
+    let mut i = 0;
+    while i < limpio.len() {
+        let l = &limpio[i];
+        let t = l.trim_start();
+        if t.starts_with("define ") {
+            let mut fin = i + 1;
+            while fin < limpio.len() && limpio[fin].trim() != "}" {
+                fin += 1;
+            }
+            if fin < limpio.len() {
+                fin += 1;
+            }
+            let mut mapa: HashMap<String, usize> = HashMap::new();
+            let mut orden = 0usize;
+            for x in &limpio[i..fin] {
+                let mut j = 0;
+                let b = x.as_bytes();
+                while j < b.len() {
+                    if b[j] == b'%' && j + 1 < b.len() && b[j + 1].is_ascii_digit() {
+                        let mut k = j + 1;
+                        while k < b.len() && b[k].is_ascii_digit() {
+                            k += 1;
+                        }
+                        let key = x[j + 1..k].to_string();
+                        mapa.entry(key).or_insert_with(|| {
+                            let v = orden;
+                            orden += 1;
+                            v
+                        });
+                        j = k;
+                    } else {
+                        j += 1;
+                    }
+                }
+            }
+            for x in &limpio[i..fin] {
+                let y = x.replace("%%", "%");
+                let mut out = String::with_capacity(y.len());
+                let mut j = 0;
+                let b = y.as_bytes();
+                while j < b.len() {
+                    if b[j] == b'%' && j + 1 < b.len() && b[j + 1].is_ascii_digit() {
+                        let mut k = j + 1;
+                        while k < b.len() && b[k].is_ascii_digit() {
+                            k += 1;
+                        }
+                        let key = &y[j + 1..k];
+                        if let Some(v) = mapa.get(key) {
+                            out.push_str(&format!("%v{v}"));
+                        } else {
+                            out.push_str(&y[j..k]);
+                        }
+                        j = k;
+                    } else {
+                        out.push(b[j] as char);
+                        j += 1;
+                    }
+                }
+                finales.push(out);
+            }
+            i = fin;
+        } else {
+            finales.push(l.replace("%%", "%"));
+            i += 1;
+        }
+    }
+    let mut texto = finales
+        .into_iter()
+        .map(|l| {
+            let t = l.trim_start();
+            if t == "entry:" {
+                String::new()
+            } else if t.starts_with('%') && t.ends_with(':') {
+                l.replacen('%', "", 1)
+            } else {
+                l
+            }
+        })
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        );
+    if !globals.is_empty() {
+        texto.push_str(
+            "
+
+",
+        );
+        texto.push_str(&globals.join(
+            "
+",
+        ));
+    }
+    texto
+        + "
+"
 }
 
 /// Lee un archivo de código fuente verificando que no supere el límite de tamaño.
@@ -1624,7 +2027,7 @@ pub fn ruta_para_toml(ruta: &std::path::Path) -> String {
 }
 
 /// Busca la raíz del repositorio de Forja, es decir el directorio que tiene
-/// `crates/forja-gui-rt`, necesario para compilar las apps GUI (el `Cargo.toml`
+/// `library/gui-rt`, necesario para compilar las apps GUI (el `Cargo.toml`
 /// generado apunta a esos crates por ruta).
 ///
 /// Prueba primero el directorio actual y sus ancestros, y después el directorio
@@ -1647,7 +2050,7 @@ pub fn raiz_forja() -> Option<std::path::PathBuf> {
     }
     candidatos
         .into_iter()
-        .find(|dir| dir.join("crates/forja-gui-rt/Cargo.toml").is_file())
+        .find(|dir| dir.join("library/gui-rt/Cargo.toml").is_file())
 }
 
 #[cfg(test)]
@@ -1657,11 +2060,8 @@ mod tests_ruta_para_toml {
 
     #[test]
     fn convierte_rutas_de_windows_a_barras_normales() {
-        let ruta = Path::new(r"C:\Users\gaucho\forja\crates\forja-gui-rt");
-        assert_eq!(
-            ruta_para_toml(ruta),
-            "C:/Users/gaucho/forja/crates/forja-gui-rt"
-        );
+        let ruta = Path::new(r"C:\Users\gaucho\forja\library\gui-rt");
+        assert_eq!(ruta_para_toml(ruta), "C:/Users/gaucho/forja/library/gui-rt");
         assert!(!ruta_para_toml(ruta).contains('\\'));
     }
 
@@ -1675,7 +2075,7 @@ mod tests_ruta_para_toml {
     fn encuentra_la_raiz_del_repo() {
         // Los tests corren con el directorio actual en la raíz del crate.
         let raiz = super::raiz_forja().expect("debería encontrar la raíz del repo de forja");
-        assert!(raiz.join("crates/forja-gui-rt/Cargo.toml").is_file());
+        assert!(raiz.join("library/gui-rt/Cargo.toml").is_file());
     }
 }
 

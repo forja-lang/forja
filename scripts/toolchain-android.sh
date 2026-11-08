@@ -223,7 +223,7 @@ Your NDK may be incomplete or corrupted. Reinstall the NDK (r25+ recommended)."
         export CARGO_TARGET_I686_LINUX_ANDROID_RUSTFLAGS="-C link-arg=-Wl,--no-undefined"
 
         echo "Done. Android toolchain is ready."
-        echo "Run: cargo build --target <target> --features gui --release"
+        echo "Run: cargo build --target <target> --release"
     else
         echo "NDK validation passed."
         echo "Run: source scripts/toolchain-android.sh  (to set up the environment)"

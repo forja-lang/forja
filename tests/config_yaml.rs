@@ -35,7 +35,7 @@ fn el_yaml_por_defecto_tiene_todas_las_claves() {
     // Los valores posibles van arriba de cada opción.
     assert!(
         texto.contains(
-            "# Valores posibles: verdadero | falso
+            "# Modo estricto de tipos y ownership: convierte advertencias en errores. Valores: verdadero | falso
 estricto: falso"
         ),
         "falta la lista de valores de 'estricto':
@@ -43,7 +43,7 @@ estricto: falso"
     );
     assert!(
         texto.contains(
-            "# Valores posibles: rapido | vm | jit | todas
+            "# Motor de ejecución: rapido = VM canónica; jit = tiered; todas = medir todas. Valores: rapido | vm | jit | todas
 motor: rapido"
         ),
         "falta la lista de valores de 'motor':

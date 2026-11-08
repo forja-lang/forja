@@ -5,10 +5,10 @@
 //! binario (el mismo bug clásico de `new BigDecimal(0.1)` en Java). Estos tests
 //! fijan el comportamiento correcto: los dígitos salen del fuente.
 
-use forja::ejecutar_vm;
+use forja_test_support::ejecutar;
 
 fn salida(fuente: &str) -> Vec<String> {
-    ejecutar_vm(fuente).unwrap_or_else(|e| panic!("no ejecutó: {e}\n{fuente}"))
+    ejecutar(fuente).unwrap_or_else(|e| panic!("no ejecutó: {e}\n{fuente}"))
 }
 
 #[test]

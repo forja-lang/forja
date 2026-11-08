@@ -1,0 +1,505 @@
+#![allow(unused_variables)]
+
+use crate::ast::*;
+use crate::bytecode::Opcode;
+use crate::error::ErrorForja;
+use crate::lexer::Lexer;
+use crate::package_resolver::PackageResolver;
+use crate::parser::Parser;
+use crate::symbol_table::IdSimbolo;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
+
+/// Identificador único de módulo = IdSimbolo de su ruta canónica
+pub type ModuleId = IdSimbolo;
+
+/// Metadatos de un módulo cargado
+#[derive(Debug, Clone)]
+pub struct ModuleInfo {
+    pub source_path: String,
+    pub source_hash: u64,
+    pub funciones: Vec<IdSimbolo>,
+    pub variables_globales: Vec<(String, bool)>, // (nombre, mutable)
+    pub imports: Vec<ModuleId>,
+    pub dependents: Vec<ModuleId>,
+    pub bytecode: Vec<Opcode>,
+    pub version: u32,
+}
+
+/// Caché central de módulos
+#[derive(Debug, Clone)]
+pub struct ModuleCache {
+    pub por_ruta: HashMap<String, ModuleId>,
+    pub por_id: HashMap<ModuleId, ModuleInfo>,
+    pub grafo_importaciones: HashMap<ModuleId, Vec<ModuleId>>,
+    pub grafo_dependientes: HashMap<ModuleId, Vec<ModuleId>>,
+}
+
+impl Default for ModuleCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ModuleCache {
+    pub fn new() -> Self {
+        ModuleCache {
+            por_ruta: HashMap::new(),
+            por_id: HashMap::new(),
+            grafo_importaciones: HashMap::new(),
+            grafo_dependientes: HashMap::new(),
+        }
+    }
+}
+
+pub struct ModuleResolver {
+    root_dir: PathBuf,
+    cache: HashMap<String, Programa>,
+    pub package_resolver: Option<PackageResolver>,
+    /// Caché de módulos enriquecido con metadatos (Fase 2)
+    pub module_cache: ModuleCache,
+}
+
+impl ModuleResolver {
+    pub fn new(root_dir: &str) -> Self {
+        ModuleResolver {
+            root_dir: PathBuf::from(root_dir),
+            cache: HashMap::new(),
+            package_resolver: None,
+            module_cache: ModuleCache::new(),
+        }
+    }
+
+    /// Calcula el hash de un archivo fuente usando DefaultHasher (SipHash)
+    pub fn hash_fuente(ruta: &str) -> u64 {
+        match std::fs::read(ruta) {
+            Ok(data) => {
+                let mut hasher = DefaultHasher::new();
+                data.hash(&mut hasher);
+                hasher.finish()
+            }
+            Err(_) => 0,
+        }
+    }
+
+    /// Resuelve un módulo y retorna su ModuleId junto con el Programa
+    pub fn resolver_con_id(&mut self, ruta: &str) -> Result<(Programa, ModuleId), Vec<ErrorForja>> {
+        let ruta_limpia = ruta.replace('\\', "/");
+        if ruta_limpia.contains("..") {
+            return Err(vec![ErrorForja::new(
+                crate::error::ErrorTipo::ErrorSemantico,
+                0,
+                0,
+                &format!("Ruta de módulo inválida: '{}'", ruta),
+                "Las rutas de módulo no pueden contener '..'.",
+            )]);
+        }
+
+        let es_absoluta = ruta_limpia.starts_with('/')
+            || (ruta_limpia.len() >= 3
+                && ruta_limpia.as_bytes()[0].is_ascii_alphabetic()
+                && ruta_limpia.as_bytes()[1] == b':'
+                && (ruta_limpia.as_bytes()[2] == b'/' || ruta_limpia.as_bytes()[2] == b'\\'));
+
+        let (ruta_key, path) = if es_absoluta {
+            (ruta_limpia.clone(), std::path::PathBuf::from(&ruta_limpia))
+        } else {
+            let clean = ruta_limpia.trim_start_matches('/');
+            let p = self.root_dir.join(format!("{}.fa", clean));
+            (clean.to_string(), p)
+        };
+
+        // Intentar obtener del cache primero
+        if let Some(prog) = self.cache.get(&ruta_key) {
+            let module_id = self
+                .module_cache
+                .por_ruta
+                .get(&ruta_key)
+                .copied()
+                .unwrap_or(IdSimbolo(0));
+            return Ok((prog.clone(), module_id));
+        }
+
+        // Intentar resolver la ruta localmente
+        if let Ok(canonical) = path.canonicalize() {
+            let canonical_str = canonical.to_str().unwrap_or("").to_string();
+            let module_id = IdSimbolo(
+                canonical_str
+                    .bytes()
+                    .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
+            );
+
+            if es_absoluta
+                || canonical.starts_with(
+                    self.root_dir
+                        .canonicalize()
+                        .unwrap_or(self.root_dir.clone()),
+                )
+            {
+                // Verificar límite de tamaño antes de leer
+                let meta = std::fs::metadata(&canonical).map_err(|e| {
+                    vec![ErrorForja::new(
+                        crate::error::ErrorTipo::ErrorSemantico,
+                        0,
+                        0,
+                        &format!("No se pudo leer el módulo '{}': {}", ruta, e),
+                        "Verificá que el archivo exista.",
+                    )]
+                })?;
+                let tamano = meta.len();
+                let max_bytes = crate::MAX_ARCHIVO_DEFAULT_MB * 1024 * 1024;
+                if tamano > max_bytes {
+                    return Err(vec![ErrorForja::new(
+                        crate::error::ErrorTipo::LimiteArchivo {
+                            ruta: canonical.to_string_lossy().into(),
+                            max: crate::MAX_ARCHIVO_DEFAULT_MB,
+                            actual: tamano,
+                        },
+                        0, 0,
+                        &format!("El módulo importado '{}' excede el límite de tamaño de {} MB (tamaño actual: {:.2} MB)",
+                            ruta, crate::MAX_ARCHIVO_DEFAULT_MB, tamano as f64 / (1024.0 * 1024.0)),
+                        "Aumentá `max_archivo_mb` en forja.yaml para subir el límite al compilar el archivo principal.",
+                    )]);
+                }
+                let source = std::fs::read_to_string(&canonical).map_err(|e| {
+                    vec![ErrorForja::new(
+                        crate::error::ErrorTipo::ErrorSemantico,
+                        0,
+                        0,
+                        &format!("No se pudo leer el módulo '{}': {}", ruta, e),
+                        "Verificá que el archivo exista.",
+                    )]
+                })?;
+                let mut lexer = Lexer::new(&source);
+                let tokens = lexer.tokenize()?;
+                let mut parser = Parser::new(tokens);
+                let mut programa = parser.parse()?;
+
+                // Resolver imports anidados
+                let mut final_decls = Vec::new();
+                for decl in programa.declaraciones {
+                    if let Declaracion::Importar(ref sub_ruta) = decl {
+                        let (sub, _sub_id) = self.resolver_con_id(sub_ruta)?;
+                        final_decls.extend(sub.declaraciones);
+                    } else if let Declaracion::ImportarExterna(ref ruta) = decl {
+                        // Cargar la librería externa en el registro FFI
+                        let ruta_clone = ruta.clone();
+                        crate::ffi::cargar_libreria(&ruta_clone).map_err(|e| {
+                            vec![ErrorForja::new(
+                                crate::error::ErrorTipo::ErrorSemantico,
+                                0,
+                                0,
+                                &format!("Error cargando librería externa '{}': {}", ruta, e),
+                                "Verificá que la ruta sea correcta y que la librería exista.",
+                            )]
+                        })?;
+                        final_decls.push(decl);
+                    } else {
+                        final_decls.push(decl);
+                    }
+                }
+                programa.declaraciones = dedup_declaraciones(final_decls);
+                self.cache.insert(ruta_key.clone(), programa.clone());
+
+                // Registrar en module_cache
+                self.module_cache.por_ruta.insert(ruta_key, module_id);
+
+                return Ok((programa, module_id));
+            }
+            if !es_absoluta {
+                return Err(vec![ErrorForja::new(
+                    crate::error::ErrorTipo::ErrorSemantico,
+                    0,
+                    0,
+                    "Intento de path traversal detectado",
+                    "Los módulos deben estar dentro del directorio del proyecto.",
+                )]);
+            }
+        }
+
+        // Si no se encuentra localmente, preguntar al package_resolver
+        if let Some(ref resolver) = self.package_resolver {
+            if let Some(ruta_resuelta) = resolver.resolver_modulo(ruta) {
+                let ruta_str = ruta_resuelta.to_string_lossy().to_string();
+
+                // Detectar módulo embebido (prefijo "embedded://")
+                if ruta_str.starts_with("embedded://") {
+                    return self.resolver_con_id_embebido(&ruta_str);
+                }
+
+                // Verificar límite de tamaño antes de leer
+                let meta = std::fs::metadata(&ruta_resuelta).map_err(|e| {
+                    vec![ErrorForja::new(
+                        crate::error::ErrorTipo::ErrorSemantico,
+                        0,
+                        0,
+                        &format!("No se pudo leer el módulo desde paquete '{}': {}", ruta, e),
+                        "Verificá que el paquete esté instalado.",
+                    )]
+                })?;
+                let tamano = meta.len();
+                let max_bytes = crate::MAX_ARCHIVO_DEFAULT_MB * 1024 * 1024;
+                if tamano > max_bytes {
+                    return Err(vec![ErrorForja::new(
+                        crate::error::ErrorTipo::LimiteArchivo {
+                            ruta: ruta_str.into(),
+                            max: crate::MAX_ARCHIVO_DEFAULT_MB,
+                            actual: tamano,
+                        },
+                        0, 0,
+                        &format!("El módulo importado '{}' excede el límite de tamaño de {} MB (tamaño actual: {:.2} MB)",
+                            ruta, crate::MAX_ARCHIVO_DEFAULT_MB, tamano as f64 / (1024.0 * 1024.0)),
+                        "Aumentá `max_archivo_mb` en forja.yaml para subir el límite al compilar el archivo principal.",
+                    )]);
+                }
+                let source = std::fs::read_to_string(&ruta_resuelta).map_err(|e| {
+                    vec![ErrorForja::new(
+                        crate::error::ErrorTipo::ErrorSemantico,
+                        0,
+                        0,
+                        &format!("No se pudo leer el módulo desde paquete '{}': {}", ruta, e),
+                        "Verificá que el paquete esté instalado.",
+                    )]
+                })?;
+                let mut lexer = Lexer::new(&source);
+                let tokens = lexer.tokenize()?;
+                let mut parser = Parser::new(tokens);
+                let mut programa = parser.parse()?;
+
+                let module_id = IdSimbolo(
+                    ruta_str
+                        .bytes()
+                        .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
+                );
+
+                // Resolver imports anidados
+                let mut final_decls = Vec::new();
+                for decl in programa.declaraciones {
+                    if let Declaracion::Importar(ref sub_ruta) = decl {
+                        let (sub, _) = self.resolver_con_id(sub_ruta)?;
+                        final_decls.extend(sub.declaraciones);
+                    } else if let Declaracion::ImportarExterna(ref ruta) = decl {
+                        // Cargar la librería externa en el registro FFI
+                        let ruta_clone = ruta.clone();
+                        crate::ffi::cargar_libreria(&ruta_clone).map_err(|e| {
+                            vec![ErrorForja::new(
+                                crate::error::ErrorTipo::ErrorSemantico,
+                                0,
+                                0,
+                                &format!("Error cargando librería externa '{}': {}", ruta, e),
+                                "Verificá que la ruta sea correcta y que la librería exista.",
+                            )]
+                        })?;
+                        final_decls.push(decl);
+                    } else {
+                        final_decls.push(decl);
+                    }
+                }
+                programa.declaraciones = dedup_declaraciones(final_decls);
+                self.cache.insert(ruta_key.clone(), programa.clone());
+                self.module_cache.por_ruta.insert(ruta_key, module_id);
+
+                return Ok((programa, module_id));
+            }
+        }
+
+        Err(vec![ErrorForja::new(
+            crate::error::ErrorTipo::ErrorSemantico,
+            0,
+            0,
+            &format!("No se pudo resolver la ruta del módulo '{}'", ruta),
+            "Verificá que el archivo exista o que el paquete esté instalado.",
+        )])
+    }
+
+    /// Resuelve un módulo (versión legacy, retorna solo Programa)
+    pub fn resolver(&mut self, ruta: &str) -> Result<Programa, Vec<ErrorForja>> {
+        let (programa, _) = self.resolver_con_id(ruta)?;
+        Ok(programa)
+    }
+
+    /// Recompila un módulo desde disco y retorna el nuevo Programa
+    pub fn recargar(&mut self, module_id: ModuleId) -> Result<Programa, Vec<ErrorForja>> {
+        // Buscar la ruta del módulo por su ModuleId
+        let ruta = self
+            .module_cache
+            .por_id
+            .get(&module_id)
+            .map(|info| info.source_path.clone());
+
+        let ruta = match ruta {
+            Some(r) => r,
+            None => {
+                // Buscar inversamente en por_ruta
+                let ruta_opt = self
+                    .module_cache
+                    .por_ruta
+                    .iter()
+                    .find(|(_, &id)| id == module_id)
+                    .map(|(ruta, _)| ruta.clone());
+                match ruta_opt {
+                    Some(r) => r,
+                    None => {
+                        return Err(vec![ErrorForja::new(
+                            crate::error::ErrorTipo::ErrorSemantico,
+                            0,
+                            0,
+                            "Módulo no encontrado en cache",
+                            "El módulo debe estar registrado antes de recargarse.",
+                        )])
+                    }
+                }
+            }
+        };
+
+        // Limpiar cache para forzar recompilación
+        self.cache.remove(&ruta);
+
+        // Volver a resolver (recompilar)
+        let (programa, _nuevo_id) = self.resolver_con_id(&ruta)?;
+        Ok(programa)
+    }
+
+    /// Verifica si un módulo cambió en disco comparando hashes
+    pub fn modulo_cambio(&mut self, ruta: &str) -> bool {
+        // Obtener ModuleId
+        let module_id = match self.module_cache.por_ruta.get(ruta) {
+            Some(&id) => id,
+            None => return false, // No registrado → no hay cambio detectable
+        };
+
+        let info = match self.module_cache.por_id.get(&module_id) {
+            Some(i) => i,
+            None => return false,
+        };
+
+        let path = self.root_dir.join(format!("{}.fa", ruta));
+        let ruta_archivo = path.to_str().unwrap_or(ruta);
+        let nuevo_hash = Self::hash_fuente(ruta_archivo);
+        nuevo_hash != info.source_hash && nuevo_hash != 0
+    }
+
+    /// Lista los módulos cuyo hash cambió en disco
+    pub fn modulos_cambiados(&self) -> Vec<(ModuleId, String)> {
+        let mut cambiados = Vec::new();
+        for (module_id, info) in &self.module_cache.por_id {
+            let ruta_archivo = self.root_dir.join(format!("{}.fa", info.source_path));
+            let ruta_str = ruta_archivo.to_str().unwrap_or(&info.source_path);
+            let nuevo_hash = Self::hash_fuente(ruta_str);
+            if nuevo_hash != info.source_hash && nuevo_hash != 0 {
+                cambiados.push((*module_id, info.source_path.clone()));
+            }
+        }
+        cambiados
+    }
+
+    /// Agrega un módulo al cache con su información completa
+    pub fn registrar_modulo(&mut self, module_id: ModuleId, info: ModuleInfo) {
+        self.module_cache
+            .por_ruta
+            .insert(info.source_path.clone(), module_id);
+        self.module_cache.por_id.insert(module_id, info.clone());
+        for import in &info.imports {
+            self.module_cache
+                .grafo_importaciones
+                .entry(module_id)
+                .or_default()
+                .push(*import);
+            self.module_cache
+                .grafo_dependientes
+                .entry(*import)
+                .or_default()
+                .push(module_id);
+        }
+    }
+
+    /// Retorna los dependientes directos de un módulo
+    pub fn dependientes_de(&self, module_id: ModuleId) -> Option<&[ModuleId]> {
+        self.module_cache
+            .grafo_dependientes
+            .get(&module_id)
+            .map(|v| v.as_slice())
+    }
+
+    /// Retorna las importaciones directas de un módulo
+    pub fn importaciones_de(&self, module_id: ModuleId) -> Option<&[ModuleId]> {
+        self.module_cache
+            .grafo_importaciones
+            .get(&module_id)
+            .map(|v| v.as_slice())
+    }
+
+    /// Resuelve un módulo desde la stdlib embebida (prefijo "embedded://").
+    fn resolver_con_id_embebido(
+        &mut self,
+        ruta_embedded: &str,
+    ) -> Result<(Programa, ModuleId), Vec<ErrorForja>> {
+        // Extraer el nombre real del módulo: "embedded://std/io" → "std/io"
+        let nombre_modulo = ruta_embedded
+            .strip_prefix("embedded://")
+            .unwrap_or(ruta_embedded);
+
+        // Intentar obtener del cache primero
+        if let Some(prog) = self.cache.get(nombre_modulo) {
+            let module_id = self
+                .module_cache
+                .por_ruta
+                .get(nombre_modulo)
+                .copied()
+                .unwrap_or(IdSimbolo(0));
+            return Ok((prog.clone(), module_id));
+        }
+
+        // Obtener fuente desde stdlib embebida
+        let (source, _es_gui) = crate::stdlib_embedded::obtener(nombre_modulo)
+            .ok_or_else(|| vec![ErrorForja::new(
+                crate::error::ErrorTipo::ErrorSemantico,
+                0, 0,
+                &format!("Módulo embebido no encontrado: '{}'", nombre_modulo),
+                "Esto es un error interno del compilador. Reportalo en https://github.com/forja-lang/forja",
+            )])?;
+
+        // Generar ModuleId a partir del nombre
+        let module_id = IdSimbolo(
+            nombre_modulo
+                .bytes()
+                .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
+        );
+
+        // Parsear el código fuente
+        let mut lexer = crate::lexer::Lexer::new(source);
+        let tokens = lexer.tokenize()?;
+        let mut parser = crate::parser::Parser::new(tokens);
+        let mut programa = parser.parse()?;
+
+        // Resolver imports anidados (una stdlib puede importar otra)
+        let mut final_decls = Vec::new();
+        for decl in programa.declaraciones {
+            if let crate::ast::Declaracion::Importar(ref sub_ruta) = decl {
+                // Los módulos embebidos se resuelven recursivamente
+                let (sub, _sub_id) = self.resolver_con_id(sub_ruta)?;
+                final_decls.extend(sub.declaraciones);
+            } else if let crate::ast::Declaracion::ImportarExterna(ref ruta) = decl {
+                // Cargar la librería externa en el registro FFI (módulos embebidos)
+                let _ = crate::ffi::cargar_libreria(ruta);
+                final_decls.push(decl);
+            } else {
+                final_decls.push(decl);
+            }
+        }
+        programa.declaraciones = dedup_declaraciones(final_decls);
+
+        // Cachear
+        self.cache
+            .insert(nombre_modulo.to_string(), programa.clone());
+        self.module_cache
+            .por_ruta
+            .insert(nombre_modulo.to_string(), module_id);
+
+        Ok((programa, module_id))
+    }
+}
+
+pub use crate::dedup::dedup_declaraciones;

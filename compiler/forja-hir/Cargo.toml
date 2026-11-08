@@ -1,0 +1,12 @@
+[package]
+name = "forja-hir"
+version = "0.10.0"
+edition = "2021"
+description = "HIR y resolución de nombres de Forja"
+authors = ["forja-lang"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/forja-lang/forja"
+publish = false
+
+[dependencies]
+forja-syntax = { path = "../forja-syntax" }

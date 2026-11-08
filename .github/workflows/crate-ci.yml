@@ -74,12 +74,30 @@ jobs:
           path: parent
           submodules: recursive
 
+      - name: Resolver ruta del crate
+        id: ruta
+        shell: bash
+        run: |
+          case "${{ inputs.crate }}" in
+            forja-syntax|forja-types) path="compiler/${{ inputs.crate }}" ;;
+            forja-theme) path="library/gui-theme" ;;
+            forja-gui-core) path="library/gui-core" ;;
+            forja-gui-rt) path="library/gui-rt" ;;
+            forja-rt) path="library/rt" ;;
+            forja-wasm) path="library/wasm" ;;
+            forja-wasm-gui) path="library/wasm-gui" ;;
+            forja-android-rt) path="library/android" ;;
+            *) path="crates/${{ inputs.crate }}" ;;
+          esac
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+
       - name: Superponer el crate en el workspace
         run: |
-          rm -rf "parent/crates/${{ inputs.crate }}"
-          mkdir -p "parent/crates/${{ inputs.crate }}"
-          cp -R crate/. "parent/crates/${{ inputs.crate }}/"
-          rm -rf "parent/crates/${{ inputs.crate }}/.git"
+          ruta="parent/${{ steps.ruta.outputs.path }}"
+          rm -rf "$ruta"
+          mkdir -p "$ruta"
+          cp -R crate/. "$ruta/"
+          rm -rf "$ruta/.git"
 
       - uses: dtolnay/rust-toolchain@stable
         with:

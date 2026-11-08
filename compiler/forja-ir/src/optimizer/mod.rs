@@ -1,0 +1,1465 @@
+use forja_syntax::ast::*;
+use std::collections::{HashMap, HashSet};
+
+/// Profundidad máxima de recursión para el optimizador.
+/// Previene stack overflow al recorrer ASTs con expresiones muy anidadas.
+const MAX_AST_PROFUNDIDAD: u32 = 10000;
+
+/// Optimizador de AST para Forja
+pub struct Optimizer {
+    pub cambios_realizados: usize,
+    /// Profundidad actual de recursión al optimizar expresiones.
+    /// Previene stack overflow en ASTs con expresiones muy anidadas.
+    profundidad_expresion: u32,
+    /// Arena para allocaciones temporales del compilador (opcional, para #18)
+    pub arena: Option<crate::arena::Arena>,
+}
+
+impl Default for Optimizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Optimizer {
+    pub fn new() -> Self {
+        Optimizer {
+            cambios_realizados: 0,
+            profundidad_expresion: 0,
+            arena: None,
+        }
+    }
+
+    /// Crea un optimizer con arena habilitada para allocaciones temporales
+    pub fn with_arena() -> Self {
+        Optimizer {
+            cambios_realizados: 0,
+            profundidad_expresion: 0,
+            arena: Some(crate::arena::Arena::new()),
+        }
+    }
+
+    /// Resetea la arena si está habilitada
+    pub fn reset_arena(&mut self) {
+        if let Some(ref mut arena) = self.arena {
+            arena.reset();
+        }
+    }
+
+    pub fn optimizar(&mut self, programa: &Programa) -> Programa {
+        let declaraciones = programa
+            .declaraciones
+            .iter()
+            .flat_map(|d| self.optimizar_declaracion(d))
+            .collect();
+        Programa {
+            spans: Vec::new(),
+            nombres: Vec::new(),
+            indice_nombres: std::collections::HashMap::new(),
+            span: None,
+            declaraciones,
+        }
+    }
+
+    /// Optimiza una declaración y retorna 0..N declaraciones resultantes.
+    /// Retorna más de una cuando un `Si`/`Mientras`/`Para`/`Repetir` con condición constante
+    /// se pliega y expande su cuerpo (dead branch elimination).
+    fn optimizar_declaracion(&mut self, decl: &Declaracion) -> Vec<Declaracion> {
+        match decl {
+            Declaracion::Variable {
+                mutable,
+                nombre,
+                tipo,
+                valor,
+                linea,
+                columna,
+            } => {
+                let valor_opt = valor.as_ref().map(|v| self.optimizar_expresion(v));
+                vec![Declaracion::Variable {
+                    mutable: *mutable,
+                    nombre: nombre.clone(),
+                    tipo: tipo.clone(),
+                    valor: valor_opt,
+                    linea: *linea,
+                    columna: *columna,
+                }]
+            }
+            Declaracion::Asignacion {
+                nombre,
+                valor,
+                linea,
+                columna,
+            } => vec![Declaracion::Asignacion {
+                nombre: nombre.clone(),
+                valor: Box::new(self.optimizar_expresion(valor)),
+                linea: *linea,
+                columna: *columna,
+            }],
+            Declaracion::AsignacionMiembro {
+                objeto,
+                miembro,
+                valor,
+                linea,
+                columna,
+            } => vec![Declaracion::AsignacionMiembro {
+                objeto: Box::new(self.optimizar_expresion(objeto)),
+                miembro: miembro.clone(),
+                valor: Box::new(self.optimizar_expresion(valor)),
+                linea: *linea,
+                columna: *columna,
+            }],
+            Declaracion::AsignacionIndex {
+                nombre,
+                indice,
+                valor,
+                linea,
+                columna,
+            } => vec![Declaracion::AsignacionIndex {
+                nombre: nombre.clone(),
+                indice: Box::new(self.optimizar_expresion(indice)),
+                valor: Box::new(self.optimizar_expresion(valor)),
+                linea: *linea,
+                columna: *columna,
+            }],
+            Declaracion::AsignacionMultiple {
+                variables,
+                mutable,
+                valor,
+            } => vec![Declaracion::AsignacionMultiple {
+                variables: variables.clone(),
+                mutable: *mutable,
+                valor: Box::new(self.optimizar_expresion(valor)),
+            }],
+            Declaracion::Funcion {
+                nombre,
+                parametros_tipo,
+                parametros,
+                tipo_retorno,
+                cuerpo,
+                externa,
+                asincrona,
+                enlace_nombre,
+                atributos,
+                doc,
+                precondiciones,
+                postcondiciones,
+            } => {
+                let cuerpo_opt = cuerpo
+                    .iter()
+                    .flat_map(|d| self.optimizar_declaracion(d))
+                    .collect();
+                vec![Declaracion::Funcion {
+                    nombre: nombre.clone(),
+                    parametros_tipo: parametros_tipo.clone(),
+                    parametros: parametros.clone(),
+                    tipo_retorno: tipo_retorno.clone(),
+                    cuerpo: cuerpo_opt,
+                    externa: *externa,
+                    asincrona: *asincrona,
+                    enlace_nombre: enlace_nombre.clone(),
+                    atributos: atributos.clone(),
+                    doc: doc.clone(),
+                    precondiciones: self.optimizar_contratos(precondiciones),
+                    postcondiciones: self.optimizar_contratos(postcondiciones),
+                }]
+            }
+            Declaracion::Clase {
+                nombre,
+                parametros_tipo,
+                campos,
+                metodos,
+                atributos,
+                invariantes,
+            } => {
+                let metodos_opt = metodos
+                    .iter()
+                    .map(|m| Metodo {
+                        nombre: m.nombre.clone(),
+                        parametros: m.parametros.clone(),
+                        tipo_retorno: m.tipo_retorno.clone(),
+                        cuerpo: m
+                            .cuerpo
+                            .iter()
+                            .flat_map(|d| self.optimizar_declaracion(d))
+                            .collect(),
+                        precondiciones: self.optimizar_contratos(&m.precondiciones),
+                        postcondiciones: self.optimizar_contratos(&m.postcondiciones),
+                    })
+                    .collect();
+                vec![Declaracion::Clase {
+                    nombre: nombre.clone(),
+                    parametros_tipo: parametros_tipo.clone(),
+                    campos: campos.clone(),
+                    metodos: metodos_opt,
+                    atributos: atributos.clone(),
+                    invariantes: self.optimizar_contratos(invariantes),
+                }]
+            }
+            Declaracion::Si {
+                condicion,
+                bloque_verdadero,
+                bloque_falso,
+            } => {
+                let cond_opt = self.optimizar_expresion(condicion);
+                // Dead branch elimination: Si la condición es constante, plegar
+                if matches!(&cond_opt, Expresion::LiteralBooleano(true)) {
+                    self.cambios_realizados += 1;
+                    return bloque_verdadero
+                        .iter()
+                        .flat_map(|d| self.optimizar_declaracion(d))
+                        .collect();
+                }
+                if matches!(&cond_opt, Expresion::LiteralBooleano(false)) {
+                    self.cambios_realizados += 1;
+                    return bloque_falso.as_ref().map_or_else(Vec::new, |bf| {
+                        bf.iter()
+                            .flat_map(|d| self.optimizar_declaracion(d))
+                            .collect()
+                    });
+                }
+                vec![Declaracion::Si {
+                    condicion: Box::new(cond_opt),
+                    bloque_verdadero: bloque_verdadero
+                        .iter()
+                        .flat_map(|d| self.optimizar_declaracion(d))
+                        .collect(),
+                    bloque_falso: bloque_falso.as_ref().map(|bf| {
+                        bf.iter()
+                            .flat_map(|d| self.optimizar_declaracion(d))
+                            .collect()
+                    }),
+                }]
+            }
+            Declaracion::Mientras { condicion, bloque } => {
+                let cond_opt = self.optimizar_expresion(condicion);
+                // Dead branch elimination: Si la condición es falsa, eliminar el loop
+                if matches!(&cond_opt, Expresion::LiteralBooleano(false)) {
+                    self.cambios_realizados += 1;
+                    return Vec::new();
+                }
+                vec![Declaracion::Mientras {
+                    condicion: Box::new(cond_opt),
+                    bloque: bloque
+                        .iter()
+                        .flat_map(|d| self.optimizar_declaracion(d))
+                        .collect(),
+                }]
+            }
+            Declaracion::Para {
+                inicializacion,
+                condicion,
+                incremento,
+                bloque,
+            } => {
+                let cond_opt = condicion.as_ref().map(|c| self.optimizar_expresion(c));
+                // Dead branch elimination: Si la condición es falsa, eliminar body e incremento
+                if matches!(&cond_opt, Some(Expresion::LiteralBooleano(false))) {
+                    self.cambios_realizados += 1;
+                    return inicializacion
+                        .as_ref()
+                        .map_or_else(Vec::new, |i| self.optimizar_declaracion(i));
+                }
+                let init_opt = inicializacion.as_ref().map(|i| {
+                    let mut v = self.optimizar_declaracion(i);
+                    // Para init: esperamos exactamente 1 declaración; si hay más, tomar la primera
+                    Box::new(v.remove(0))
+                });
+                let inc_opt = incremento.as_ref().map(|inc| {
+                    let mut v = self.optimizar_declaracion(inc);
+                    Box::new(v.remove(0))
+                });
+                vec![Declaracion::Para {
+                    inicializacion: init_opt,
+                    condicion: cond_opt.map(Box::new),
+                    incremento: inc_opt,
+                    bloque: bloque
+                        .iter()
+                        .flat_map(|d| self.optimizar_declaracion(d))
+                        .collect(),
+                }]
+            }
+            Declaracion::Repetir { cantidad, bloque } => {
+                let cant_opt = self.optimizar_expresion(cantidad);
+                // Dead branch elimination: Si la cantidad es 0, eliminar el bloque
+                if matches!(&cant_opt, Expresion::LiteralNumero(0)) {
+                    self.cambios_realizados += 1;
+                    return Vec::new();
+                }
+                vec![Declaracion::Repetir {
+                    cantidad: Box::new(cant_opt),
+                    bloque: bloque
+                        .iter()
+                        .flat_map(|d| self.optimizar_declaracion(d))
+                        .collect(),
+                }]
+            }
+            Declaracion::Cuando {
+                condicion,
+                cuerpo,
+                linea,
+                columna,
+            } => vec![Declaracion::Cuando {
+                condicion: Box::new(self.optimizar_expresion(condicion)),
+                cuerpo: cuerpo
+                    .iter()
+                    .flat_map(|d| self.optimizar_declaracion(d))
+                    .collect(),
+                linea: *linea,
+                columna: *columna,
+            }],
+            Declaracion::LlamadaFuncion { nombre, argumentos } => {
+                vec![Declaracion::LlamadaFuncion {
+                    nombre: nombre.clone(),
+                    argumentos: argumentos
+                        .iter()
+                        .map(|a| self.optimizar_expresion(a))
+                        .collect(),
+                }]
+            }
+            Declaracion::Retornar { valor } => vec![Declaracion::Retornar {
+                valor: valor.as_ref().map(|v| self.optimizar_expresion(v)),
+            }],
+            Declaracion::Romper => vec![Declaracion::Romper],
+            Declaracion::Continuar => vec![Declaracion::Continuar],
+            Declaracion::Expresion(expr) => {
+                vec![Declaracion::Expresion(self.optimizar_expresion(expr))]
+            }
+            Declaracion::Implementacion {
+                rasgo_nombre,
+                clase_nombre,
+                metodos,
+            } => {
+                let metodos_opt = metodos
+                    .iter()
+                    .map(|m| Metodo {
+                        nombre: m.nombre.clone(),
+                        parametros: m.parametros.clone(),
+                        tipo_retorno: m.tipo_retorno.clone(),
+                        cuerpo: m
+                            .cuerpo
+                            .iter()
+                            .flat_map(|d| self.optimizar_declaracion(d))
+                            .collect(),
+                        precondiciones: self.optimizar_contratos(&m.precondiciones),
+                        postcondiciones: self.optimizar_contratos(&m.postcondiciones),
+                    })
+                    .collect();
+                vec![Declaracion::Implementacion {
+                    rasgo_nombre: rasgo_nombre.clone(),
+                    clase_nombre: clase_nombre.clone(),
+                    metodos: metodos_opt,
+                }]
+            }
+            _ => vec![decl.clone()],
+        }
+    }
+
+    fn optimizar_contratos(&mut self, contratos: &[Contrato]) -> Vec<Contrato> {
+        let mut resultado = Vec::new();
+        for c in contratos {
+            let opt = self.optimizar_contrato(c);
+            if matches!(opt.condicion, Expresion::LiteralBooleano(true)) {
+                self.cambios_realizados += 1;
+            } else {
+                resultado.push(opt);
+            }
+        }
+        resultado
+    }
+
+    fn optimizar_contrato(&mut self, contrato: &Contrato) -> Contrato {
+        Contrato {
+            condicion: self.optimizar_expresion(&contrato.condicion),
+            mensaje: contrato.mensaje.clone(),
+        }
+    }
+
+    fn optimizar_expresion(&mut self, expr: &Expresion) -> Expresion {
+        // Verificar profundidad para prevenir stack overflow
+        self.profundidad_expresion += 1;
+        if self.profundidad_expresion > MAX_AST_PROFUNDIDAD {
+            self.profundidad_expresion -= 1;
+            return Expresion::LiteralNulo;
+        }
+        let result = self.optimizar_expresion_inner(expr);
+        self.profundidad_expresion -= 1;
+        result
+    }
+
+    fn optimizar_expresion_inner(&mut self, expr: &Expresion) -> Expresion {
+        match expr {
+            Expresion::Binaria {
+                izquierda,
+                operador,
+                derecha,
+            } => {
+                let izq = self.optimizar_expresion(izquierda);
+                let der = self.optimizar_expresion(derecha);
+
+                // 1. Evaluación de constantes
+                if let (Some(a), Some(b)) = (self.literal_a_valor(&izq), self.literal_a_valor(&der))
+                {
+                    if let Some(resultado) = self.evaluar_binaria(&a, operador, &b) {
+                        self.cambios_realizados += 1;
+                        return self.valor_a_expresion(&resultado);
+                    }
+                }
+
+                // 2. Concatenación de cadenas constantes
+                if *operador == Operador::Suma {
+                    if let (Expresion::LiteralTexto(a), Expresion::LiteralTexto(b)) = (&izq, &der) {
+                        self.cambios_realizados += 1;
+                        return Expresion::LiteralTexto(format!("{}{}", a, b));
+                    }
+                }
+
+                // 3. Cortocircuito de operadores lógicos (&& y ||)
+                match operador {
+                    Operador::Y => {
+                        if matches!(&izq, Expresion::LiteralBooleano(false)) {
+                            self.cambios_realizados += 1;
+                            return Expresion::LiteralBooleano(false);
+                        }
+                        if matches!(&izq, Expresion::LiteralBooleano(true)) {
+                            self.cambios_realizados += 1;
+                            return der;
+                        }
+                    }
+                    Operador::O => {
+                        if matches!(&izq, Expresion::LiteralBooleano(true)) {
+                            self.cambios_realizados += 1;
+                            return Expresion::LiteralBooleano(true);
+                        }
+                        if matches!(&izq, Expresion::LiteralBooleano(false)) {
+                            self.cambios_realizados += 1;
+                            return der;
+                        }
+                    }
+                    // 4. Identidades algebraicas (+ 0, - 0, * 1, * 0, / 1, * 2, % 1, x-x, 0-x)
+                    Operador::Suma => {
+                        if matches!(&der, Expresion::LiteralNumero(0))
+                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 0.0)
+                        {
+                            self.cambios_realizados += 1;
+                            return izq;
+                        }
+                        if matches!(&izq, Expresion::LiteralNumero(0))
+                            || matches!(&izq, Expresion::LiteralDecimal(d) if *d == 0.0)
+                        {
+                            self.cambios_realizados += 1;
+                            return der;
+                        }
+                    }
+                    Operador::Resta => {
+                        if matches!(&der, Expresion::LiteralNumero(0))
+                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 0.0)
+                        {
+                            self.cambios_realizados += 1;
+                            return izq;
+                        }
+                        // x - x → 0  (mismo identificador)
+                        if let (
+                            Expresion::Identificador { nombre: n1, .. },
+                            Expresion::Identificador { nombre: n2, .. },
+                        ) = (&izq, &der)
+                        {
+                            if n1 == n2 {
+                                self.cambios_realizados += 1;
+                                return Expresion::LiteralNumero(0);
+                            }
+                        }
+                        // 0 - x → -x
+                        if matches!(&izq, Expresion::LiteralNumero(0))
+                            || matches!(&izq, Expresion::LiteralDecimal(d) if *d == 0.0)
+                        {
+                            self.cambios_realizados += 1;
+                            return Expresion::Unaria {
+                                operador: OperadorUnario::Negar,
+                                expr: Box::new(der),
+                            };
+                        }
+                    }
+                    Operador::Multiplicacion => {
+                        if matches!(&der, Expresion::LiteralNumero(1))
+                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 1.0)
+                        {
+                            self.cambios_realizados += 1;
+                            return izq;
+                        }
+                        if matches!(&izq, Expresion::LiteralNumero(1))
+                            || matches!(&izq, Expresion::LiteralDecimal(d) if *d == 1.0)
+                        {
+                            self.cambios_realizados += 1;
+                            return der;
+                        }
+                        let der_es_cero = matches!(&der, Expresion::LiteralNumero(0))
+                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 0.0);
+                        let izq_es_cero = matches!(&izq, Expresion::LiteralNumero(0))
+                            || matches!(&izq, Expresion::LiteralDecimal(d) if *d == 0.0);
+                        if der_es_cero && !tiene_efectos_secundarios(&izq) {
+                            self.cambios_realizados += 1;
+                            return Expresion::LiteralNumero(0);
+                        }
+                        if izq_es_cero && !tiene_efectos_secundarios(&der) {
+                            self.cambios_realizados += 1;
+                            return Expresion::LiteralNumero(0);
+                        }
+                        // x * 2 → x + x  (strength reduction). Sólo con un
+                        // operando reevaluable: duplicarlo no debe repetir
+                        // efectos secundarios.
+                        if matches!(&der, Expresion::LiteralNumero(2))
+                            && !tiene_efectos_secundarios(&izq)
+                        {
+                            self.cambios_realizados += 1;
+                            return Expresion::Binaria {
+                                izquierda: Box::new(izq.clone()),
+                                operador: Operador::Suma,
+                                derecha: Box::new(izq),
+                            };
+                        }
+                    }
+                    Operador::Division => {
+                        if matches!(&der, Expresion::LiteralNumero(1))
+                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 1.0)
+                        {
+                            self.cambios_realizados += 1;
+                            return izq;
+                        }
+                    }
+                    Operador::Modulo
+                        // x % 1 → 0 (sólo si descartar `x` no pierde efectos)
+                        if (matches!(&der, Expresion::LiteralNumero(1))
+                            || matches!(&der, Expresion::LiteralDecimal(d) if *d == 1.0))
+                            && !tiene_efectos_secundarios(&izq)
+                        => {
+                            self.cambios_realizados += 1;
+                            return Expresion::LiteralNumero(0);
+                        }
+                    _ => {}
+                }
+
+                Expresion::Binaria {
+                    izquierda: Box::new(izq),
+                    operador: operador.clone(),
+                    derecha: Box::new(der),
+                }
+            }
+            Expresion::Unaria { operador, expr: e } => {
+                let mut inner = self.optimizar_expresion(e);
+                while let Expresion::Grupo(g) = inner {
+                    inner = *g;
+                }
+
+                // Doble negación
+                if let Expresion::Unaria {
+                    operador: inner_op,
+                    expr: inner_expr,
+                } = &inner
+                {
+                    if inner_op == operador {
+                        self.cambios_realizados += 1;
+                        return *inner_expr.clone();
+                    }
+                }
+
+                if let Some(valor) = self.literal_a_valor(&inner) {
+                    match operador {
+                        OperadorUnario::No => {
+                            if let Some(b) = valor.as_booleano() {
+                                self.cambios_realizados += 1;
+                                return Expresion::LiteralBooleano(!b);
+                            }
+                        }
+                        OperadorUnario::Negar => {
+                            if let Some(n) = valor.as_entero() {
+                                self.cambios_realizados += 1;
+                                return Expresion::LiteralNumero(-n);
+                            }
+                            if let ValorConstante::Exacto(coeff, scale) = valor {
+                                self.cambios_realizados += 1;
+                                return Expresion::LiteralExacto(-coeff, scale);
+                            }
+                        }
+                    }
+                }
+                Expresion::Unaria {
+                    operador: operador.clone(),
+                    expr: Box::new(inner),
+                }
+            }
+            Expresion::Ternario {
+                condicion,
+                si_verdadero,
+                si_falso,
+            } => {
+                let cond_opt = self.optimizar_expresion(condicion);
+                let v_opt = self.optimizar_expresion(si_verdadero);
+                let f_opt = self.optimizar_expresion(si_falso);
+                if let Some(valor) = self.literal_a_valor(&cond_opt) {
+                    if let Some(b) = valor.as_booleano() {
+                        self.cambios_realizados += 1;
+                        if b {
+                            return v_opt;
+                        } else {
+                            return f_opt;
+                        }
+                    }
+                }
+                Expresion::Ternario {
+                    condicion: Box::new(cond_opt),
+                    si_verdadero: Box::new(v_opt),
+                    si_falso: Box::new(f_opt),
+                }
+            }
+            Expresion::Grupo(expr) => {
+                let inner = self.optimizar_expresion(expr);
+                if self.es_literal(&inner) {
+                    self.cambios_realizados += 1;
+                    return inner;
+                }
+                Expresion::Grupo(Box::new(inner))
+            }
+            Expresion::LlamadaFuncion { nombre, argumentos } => Expresion::LlamadaFuncion {
+                nombre: nombre.clone(),
+                argumentos: argumentos
+                    .iter()
+                    .map(|a| self.optimizar_expresion(a))
+                    .collect(),
+            },
+            Expresion::AccesoMiembro { objeto, miembro } => Expresion::AccesoMiembro {
+                objeto: Box::new(self.optimizar_expresion(objeto)),
+                miembro: miembro.clone(),
+            },
+            Expresion::Instanciacion { clase, argumentos } => Expresion::Instanciacion {
+                clase: clase.clone(),
+                argumentos: argumentos
+                    .iter()
+                    .map(|a| self.optimizar_expresion(a))
+                    .collect(),
+            },
+            Expresion::Referencia { expr: e, mutable } => Expresion::Referencia {
+                expr: Box::new(self.optimizar_expresion(e)),
+                mutable: *mutable,
+            },
+            Expresion::Arreglo(elementos) => Expresion::Arreglo(
+                elementos
+                    .iter()
+                    .map(|e| self.optimizar_expresion(e))
+                    .collect(),
+            ),
+            Expresion::Mapa(pares) => Expresion::Mapa(
+                pares
+                    .iter()
+                    .map(|(k, v)| (self.optimizar_expresion(k), self.optimizar_expresion(v)))
+                    .collect(),
+            ),
+            Expresion::Index { objeto, indice } => Expresion::Index {
+                objeto: Box::new(self.optimizar_expresion(objeto)),
+                indice: Box::new(self.optimizar_expresion(indice)),
+            },
+            Expresion::Try(e) => Expresion::Try(Box::new(self.optimizar_expresion(e))),
+            Expresion::Asignacion { variable, valor } => Expresion::Asignacion {
+                variable: variable.clone(),
+                valor: Box::new(self.optimizar_expresion(valor)),
+            },
+            Expresion::AsignacionCampo {
+                objeto,
+                campo,
+                valor,
+            } => Expresion::AsignacionCampo {
+                objeto: Box::new(self.optimizar_expresion(objeto)),
+                campo: campo.clone(),
+                valor: Box::new(self.optimizar_expresion(valor)),
+            },
+            Expresion::ArraySet { array, valor } => Expresion::ArraySet {
+                array: Box::new(self.optimizar_expresion(array)),
+                valor: Box::new(self.optimizar_expresion(valor)),
+            },
+            Expresion::AsignacionCompuesta {
+                objetivo,
+                operador,
+                valor,
+            } => Expresion::AsignacionCompuesta {
+                objetivo: Box::new(self.optimizar_expresion(objetivo)),
+                operador: operador.clone(),
+                valor: Box::new(self.optimizar_expresion(valor)),
+            },
+            Expresion::Ok(e) => Expresion::Ok(Box::new(self.optimizar_expresion(e))),
+            Expresion::Error(e) => Expresion::Error(Box::new(self.optimizar_expresion(e))),
+            Expresion::Algo(e) => Expresion::Algo(Box::new(self.optimizar_expresion(e))),
+            Expresion::Nada => Expresion::Nada,
+            Expresion::Ninguno => Expresion::Ninguno,
+            Expresion::Anterior(e) => Expresion::Anterior(Box::new(self.optimizar_expresion(e))),
+            Expresion::Coincidir { expr: e, brazos } => {
+                let brazos_opt = brazos
+                    .iter()
+                    .map(|b| BrazoMatch {
+                        patron: b.patron.clone(),
+                        cuerpo: b
+                            .cuerpo
+                            .iter()
+                            .flat_map(|d| self.optimizar_declaracion(d))
+                            .collect(),
+                    })
+                    .collect();
+                Expresion::Coincidir {
+                    expr: Box::new(self.optimizar_expresion(e)),
+                    brazos: brazos_opt,
+                }
+            }
+            Expresion::Closure { parametros, cuerpo } => Expresion::Closure {
+                parametros: parametros.clone(),
+                cuerpo: cuerpo
+                    .iter()
+                    .flat_map(|d| self.optimizar_declaracion(d))
+                    .collect(),
+            },
+            Expresion::Hilo { cuerpo } => Expresion::Hilo {
+                cuerpo: cuerpo
+                    .iter()
+                    .flat_map(|d| self.optimizar_declaracion(d))
+                    .collect(),
+            },
+            Expresion::Seleccionar { brazos } => {
+                let brazos_opt = brazos
+                    .iter()
+                    .map(|b| BrazoSeleccionar {
+                        recepcion: b
+                            .recepcion
+                            .as_ref()
+                            .map(|(var, expr)| (var.clone(), self.optimizar_expresion(expr))),
+                        timeout_ms: b.timeout_ms,
+                        cuerpo: b
+                            .cuerpo
+                            .iter()
+                            .flat_map(|d| self.optimizar_declaracion(d))
+                            .collect(),
+                    })
+                    .collect();
+                Expresion::Seleccionar { brazos: brazos_opt }
+            }
+            _ => expr.clone(),
+        }
+    }
+
+    fn es_literal(&self, expr: &Expresion) -> bool {
+        matches!(
+            expr,
+            Expresion::LiteralNumero(_)
+                | Expresion::LiteralDecimal(_)
+                | Expresion::LiteralExacto(_, _)
+                | Expresion::LiteralTexto(_)
+                | Expresion::LiteralBooleano(_)
+                | Expresion::LiteralNulo
+        )
+    }
+
+    fn literal_a_valor(&self, expr: &Expresion) -> Option<ValorConstante> {
+        match expr {
+            Expresion::LiteralNumero(n) => Some(ValorConstante::Entero(*n)),
+            Expresion::LiteralDecimal(d) => Some(ValorConstante::Decimal(*d)),
+            Expresion::LiteralExacto(coeff, scale) => Some(ValorConstante::Exacto(*coeff, *scale)),
+            Expresion::LiteralTexto(s) => Some(ValorConstante::Texto(s.clone())),
+            Expresion::LiteralBooleano(b) => Some(ValorConstante::Booleano(*b)),
+            Expresion::LiteralNulo => Some(ValorConstante::Nulo),
+            _ => None,
+        }
+    }
+
+    fn valor_a_expresion(&self, valor: &ValorConstante) -> Expresion {
+        match valor {
+            ValorConstante::Entero(n) => Expresion::LiteralNumero(*n),
+            ValorConstante::Decimal(d) => Expresion::LiteralDecimal(*d),
+            ValorConstante::Exacto(coeff, scale) => Expresion::LiteralExacto(*coeff, *scale),
+            ValorConstante::Texto(s) => Expresion::LiteralTexto(s.clone()),
+            ValorConstante::Booleano(b) => Expresion::LiteralBooleano(*b),
+            ValorConstante::Nulo => Expresion::LiteralNulo,
+        }
+    }
+
+    fn evaluar_binaria(
+        &self,
+        a: &ValorConstante,
+        op: &Operador,
+        b: &ValorConstante,
+    ) -> Option<ValorConstante> {
+        use Operador::*;
+        match (a, b) {
+            (ValorConstante::Entero(a), ValorConstante::Entero(b)) => match op {
+                Suma => a.checked_add(*b).map(ValorConstante::Entero),
+                Resta => a.checked_sub(*b).map(ValorConstante::Entero),
+                Multiplicacion => a.checked_mul(*b).map(ValorConstante::Entero),
+                Division => {
+                    if *b == 0 {
+                        None
+                    } else {
+                        a.checked_div(*b).map(ValorConstante::Entero)
+                    }
+                }
+                IgualIgual => Some(ValorConstante::Booleano(a == b)),
+                Diferente => Some(ValorConstante::Booleano(a != b)),
+                Mayor => Some(ValorConstante::Booleano(a > b)),
+                Menor => Some(ValorConstante::Booleano(a < b)),
+                MayorIgual => Some(ValorConstante::Booleano(a >= b)),
+                MenorIgual => Some(ValorConstante::Booleano(a <= b)),
+                _ => None,
+            },
+            (ValorConstante::Decimal(a), ValorConstante::Decimal(b)) => match op {
+                Suma => Some(ValorConstante::Decimal(a + b)),
+                Resta => Some(ValorConstante::Decimal(a - b)),
+                Multiplicacion => Some(ValorConstante::Decimal(a * b)),
+                Division if *b != 0.0 => Some(ValorConstante::Decimal(a / b)),
+                IgualIgual => Some(ValorConstante::Booleano(a == b)),
+                Diferente => Some(ValorConstante::Booleano(a != b)),
+                Mayor => Some(ValorConstante::Booleano(a > b)),
+                Menor => Some(ValorConstante::Booleano(a < b)),
+                MayorIgual => Some(ValorConstante::Booleano(a >= b)),
+                MenorIgual => Some(ValorConstante::Booleano(a <= b)),
+                _ => None,
+            },
+            (ValorConstante::Exacto(a, sa), ValorConstante::Exacto(b, sb)) => {
+                // Constant folding solo si ambos son Exacto puro
+                let (a_adj, b_adj, escala) = homogeneizar_exacto(*a, *sa, *b, *sb)?;
+                match op {
+                    Suma => {
+                        let result = a_adj.checked_add(b_adj)?;
+                        Some(ValorConstante::Exacto(result, escala))
+                    }
+                    Resta => {
+                        let result = a_adj.checked_sub(b_adj)?;
+                        Some(ValorConstante::Exacto(result, escala))
+                    }
+                    Multiplicacion => {
+                        // Multiplicar coeficientes, sumar escalas
+                        let coeff = a.checked_mul(*b)?;
+                        let new_scale = sa.checked_add(*sb)?;
+                        Some(ValorConstante::Exacto(coeff, new_scale))
+                    }
+                    Division if *b != 0 => {
+                        // Expandir dividendo con 38 dígitos extra
+                        let extra = 38u32;
+                        let factor = 10i128.checked_pow(extra)?;
+                        let a_expandido = a.checked_mul(factor)?;
+                        let coeff = a_expandido / b;
+                        let escala_result = sa.checked_add(extra)?.checked_sub(*sb)?;
+                        Some(ValorConstante::Exacto(coeff, escala_result))
+                    }
+                    IgualIgual => Some(ValorConstante::Booleano(a_adj == b_adj)),
+                    Diferente => Some(ValorConstante::Booleano(a_adj != b_adj)),
+                    Mayor => Some(ValorConstante::Booleano(a_adj > b_adj)),
+                    Menor => Some(ValorConstante::Booleano(a_adj < b_adj)),
+                    MayorIgual => Some(ValorConstante::Booleano(a_adj >= b_adj)),
+                    MenorIgual => Some(ValorConstante::Booleano(a_adj <= b_adj)),
+                    _ => None,
+                }
+            }
+            (ValorConstante::Texto(a), ValorConstante::Texto(b)) => match op {
+                Suma => Some(ValorConstante::Texto(format!("{}{}", a, b))),
+                IgualIgual => Some(ValorConstante::Booleano(a == b)),
+                Diferente => Some(ValorConstante::Booleano(a != b)),
+                _ => None,
+            },
+            (ValorConstante::Booleano(a), ValorConstante::Booleano(b)) => match op {
+                Y => Some(ValorConstante::Booleano(*a && *b)),
+                O => Some(ValorConstante::Booleano(*a || *b)),
+                IgualIgual => Some(ValorConstante::Booleano(a == b)),
+                Diferente => Some(ValorConstante::Booleano(a != b)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+/// Dead Code Elimination
+pub mod passes;
+pub use passes::*;
+use passes::{homogeneizar_exacto, tiene_efectos_secundarios};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use forja_syntax::lexer::Lexer;
+    use forja_syntax::parser::Parser;
+
+    fn optimizar_source(source: &str) -> Programa {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let programa = parser.parse().unwrap();
+        let mut opt = Optimizer::new();
+        opt.optimizar(&programa)
+    }
+
+    #[test]
+    fn test_constant_folding_suma() {
+        let prog = optimizar_source("variable x = 2 + 3");
+        if let Declaracion::Variable {
+            valor: Some(Expresion::LiteralNumero(5)),
+            ..
+        } = &prog.declaraciones[0]
+        {
+        } else {
+            panic!("No se plegó 2+3");
+        }
+    }
+
+    #[test]
+    fn test_constant_folding_multi() {
+        let prog = optimizar_source("variable x = 6 * 7");
+        if let Declaracion::Variable {
+            valor: Some(Expresion::LiteralNumero(42)),
+            ..
+        } = &prog.declaraciones[0]
+        {
+        } else {
+            panic!("No se plegó 6*7");
+        }
+    }
+
+    #[test]
+    fn test_constant_folding_comparacion() {
+        let prog = optimizar_source("variable x = 5 > 3");
+        if let Declaracion::Variable {
+            valor: Some(Expresion::LiteralBooleano(true)),
+            ..
+        } = &prog.declaraciones[0]
+        {
+        } else {
+            panic!("No se plegó 5>3");
+        }
+    }
+
+    #[test]
+    fn test_constant_folding_no_fold_variable() {
+        let prog = optimizar_source("variable x = a + 3");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor: Some(Expresion::Binaria { .. }),
+                ..
+            } => {}
+            _ => panic!("Se plegó incorrectamente una expresión con variable"),
+        }
+    }
+
+    // DCE tests
+    fn dce_source(source: &str) -> Programa {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let programa = parser.parse().unwrap();
+        let mut dce = DeadCodeEliminator::new();
+        dce.eliminar(&programa)
+    }
+
+    // ─── Dead Function/Class Elimination tests ───────────────────────────
+    #[test]
+    fn test_dce_funcion_no_llamada_eliminada() {
+        let prog = dce_source("funcion aux() { retornar 1 }\nfuncion main() { retornar 0 }");
+        assert_eq!(prog.declaraciones.len(), 1);
+        assert!(
+            matches!(&prog.declaraciones[0], Declaracion::Funcion { nombre, .. } if nombre == "main")
+        );
+    }
+
+    #[test]
+    fn test_dce_funcion_llamada_conservada() {
+        let prog = dce_source(
+            "funcion suma(a, b) { retornar a + b }\nfuncion main() { variable x = suma(1, 2) }",
+        );
+        assert_eq!(prog.declaraciones.len(), 2);
+    }
+
+    #[test]
+    fn test_dce_funcion_main_siempre_conservada() {
+        let prog = dce_source("funcion main() { retornar 0 }");
+        assert_eq!(prog.declaraciones.len(), 1);
+    }
+
+    #[test]
+    fn test_dce_clase_no_instanciada_eliminada() {
+        let prog = dce_source("clase Aux { x: Entero }\nfuncion main() { retornar 0 }");
+        assert_eq!(prog.declaraciones.len(), 1);
+        assert!(
+            matches!(&prog.declaraciones[0], Declaracion::Funcion { nombre, .. } if nombre == "main")
+        );
+    }
+
+    #[test]
+    fn test_dce_clase_instanciada_conservada() {
+        let prog = dce_source("clase Punto { x: Entero, y: Entero }\nfuncion main() { variable p = nuevo Punto { x: 1, y: 2 } }");
+        assert_eq!(prog.declaraciones.len(), 2);
+    }
+
+    // ─── Strength Reduction tests ─────────────────────────────────────────
+    #[test]
+    fn test_strength_reduce_x_por_2() {
+        let prog = optimizar_source("variable y = x * 2");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor:
+                    Some(Expresion::Binaria {
+                        operador: Operador::Suma,
+                        ..
+                    }),
+                ..
+            } => {}
+            _ => panic!("x * 2 no se redujo a x + x"),
+        }
+    }
+
+    #[test]
+    fn test_strength_reduce_x_menos_x() {
+        let prog = optimizar_source("variable y = x - x");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralNumero(0)),
+                ..
+            } => {}
+            _ => panic!("x - x no se redujo a 0"),
+        }
+    }
+
+    #[test]
+    fn test_strength_reduce_0_menos_x() {
+        let prog = optimizar_source("variable y = 0 - x");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor:
+                    Some(Expresion::Unaria {
+                        operador: OperadorUnario::Negar,
+                        ..
+                    }),
+                ..
+            } => {}
+            _ => panic!("0 - x no se redujo a -x"),
+        }
+    }
+
+    #[test]
+    fn test_strength_reduce_modulo_1() {
+        let prog = optimizar_source("variable y = x % 1");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralNumero(0)),
+                ..
+            } => {}
+            _ => panic!("x % 1 no se redujo a 0"),
+        }
+    }
+
+    #[test]
+    fn test_strength_reduce_decimal_identities() {
+        let prog =
+            optimizar_source("variable a = x + 0.0\nvariable b = x * 1.0\nvariable c = x * 0.0");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor: Some(Expresion::Identificador { nombre, .. }),
+                ..
+            } => assert_eq!(nombre, "x"),
+            _ => panic!("x + 0.0 no se redujo"),
+        }
+        match &prog.declaraciones[1] {
+            Declaracion::Variable {
+                valor: Some(Expresion::Identificador { nombre, .. }),
+                ..
+            } => assert_eq!(nombre, "x"),
+            _ => panic!("x * 1.0 no se redujo"),
+        }
+        match &prog.declaraciones[2] {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralNumero(0)),
+                ..
+            } => {}
+            _ => panic!("x * 0.0 no se redujo a 0"),
+        }
+    }
+
+    #[test]
+    fn test_strength_reduce_division_por_1_decimal() {
+        let prog = optimizar_source("variable y = x / 1.0");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor: Some(Expresion::Identificador { nombre, .. }),
+                ..
+            } => assert_eq!(nombre, "x"),
+            _ => panic!("x / 1.0 no se redujo"),
+        }
+    }
+
+    #[test]
+    fn test_strength_reduce_0_menos_x_decimal() {
+        let prog = optimizar_source("variable y = 0.0 - x");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor:
+                    Some(Expresion::Unaria {
+                        operador: OperadorUnario::Negar,
+                        ..
+                    }),
+                ..
+            } => {}
+            _ => panic!("0.0 - x no se redujo a -x"),
+        }
+    }
+
+    // ─── ConstProp tests ─────────────────────────────────────────────────
+    fn constprop_source(source: &str) -> Programa {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let programa = parser.parse().unwrap();
+        let mut cp = ConstPropagator::new();
+        cp.propagar(&programa)
+    }
+
+    #[test]
+    fn test_constprop_entero_simple() {
+        let prog = constprop_source("constante x = 5\nvariable y = x + 3");
+        assert_eq!(prog.declaraciones.len(), 2);
+        match &prog.declaraciones[1] {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralNumero(8)),
+                ..
+            } => {}
+            _ => panic!("constante x = 5; y = x + 3 -> y debio ser 8"),
+        }
+    }
+
+    #[test]
+    fn test_constprop_mutable_no_propaga() {
+        let prog = constprop_source("variable x = 5\nvariable y = x + 3");
+        assert_eq!(prog.declaraciones.len(), 2);
+        match &prog.declaraciones[1] {
+            // x es mutable, no debe propagarse
+            Declaracion::Variable {
+                valor: Some(Expresion::Binaria { .. }),
+                ..
+            } => {}
+            _ => panic!("variable mutable no debe propagarse"),
+        }
+    }
+
+    #[test]
+    fn test_constprop_concat_texto() {
+        let prog = constprop_source("constante s = \"hola\"\nvariable t = s + \" mundo\"");
+        assert_eq!(prog.declaraciones.len(), 2);
+        match &prog.declaraciones[1] {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralTexto(t)),
+                ..
+            } => {
+                assert_eq!(t, "hola mundo");
+            }
+            _ => panic!("const s = hola; t = s + ' mundo' -> t debio ser 'hola mundo'"),
+        }
+    }
+
+    #[test]
+    fn test_constprop_booleano() {
+        let prog = constprop_source("constante a = verdadero\nvariable b = no a");
+        assert_eq!(prog.declaraciones.len(), 2);
+        match &prog.declaraciones[1] {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralBooleano(b)),
+                ..
+            } => {
+                assert!(!b);
+            }
+            _ => panic!("const a = verdadero; b = no a -> b debio ser falso"),
+        }
+    }
+
+    #[test]
+    fn test_constprop_asignacion_invalida() {
+        let prog =
+            constprop_source("constante x = 5\nvariable y = x + 2\nx = 10\nvariable z = x + 1");
+        assert_eq!(prog.declaraciones.len(), 4);
+        match &prog.declaraciones[1] {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralNumero(7)),
+                ..
+            } => {}
+            _ => panic!("y debio ser 7"),
+        }
+        match &prog.declaraciones[3] {
+            // x fue reasignado, así que z = x + 1 NO debe ser 11
+            Declaracion::Variable {
+                valor: Some(Expresion::Binaria { .. }),
+                ..
+            } => {}
+            _ => panic!("z debio mantener la expresion x+1 despues de reasignacion"),
+        }
+    }
+
+    #[test]
+    fn test_constprop_encadenado() {
+        let prog = constprop_source("constante a = 2\nconstante b = a + 3\nconstante c = b * 4");
+        assert_eq!(prog.declaraciones.len(), 3);
+        match &prog.declaraciones[2] {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralNumero(20)),
+                ..
+            } => {}
+            _ => panic!("a=2, b=a+3=5, c=b*4 -> c debio ser 20"),
+        }
+    }
+
+    #[test]
+    fn test_optimizar_identidad_algebraica_y_short_circuit() {
+        let prog = optimizar_source("variable x = a + 0\nvariable y = a * 1\nvariable z = a * 0\nvariable s = \"hola \" + \"mundo\"\nvariable b = no (no a)");
+        match &prog.declaraciones[0] {
+            Declaracion::Variable {
+                valor: Some(Expresion::Identificador { nombre, .. }),
+                ..
+            } => assert_eq!(nombre, "a"),
+            _ => panic!("Falló optimización x + 0"),
+        }
+        match &prog.declaraciones[1] {
+            Declaracion::Variable {
+                valor: Some(Expresion::Identificador { nombre, .. }),
+                ..
+            } => assert_eq!(nombre, "a"),
+            _ => panic!("Falló optimización a * 1"),
+        }
+        match &prog.declaraciones[2] {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralNumero(0)),
+                ..
+            } => {}
+            _ => panic!("Falló optimización a * 0"),
+        }
+        match &prog.declaraciones[3] {
+            Declaracion::Variable {
+                valor: Some(Expresion::LiteralTexto(s)),
+                ..
+            } => assert_eq!(s, "hola mundo"),
+            _ => panic!("Falló concatenación de cadenas"),
+        }
+        match &prog.declaraciones[4] {
+            Declaracion::Variable {
+                valor: Some(Expresion::Identificador { nombre, .. }),
+                ..
+            } => assert_eq!(nombre, "a"),
+            _ => panic!("Falló doble negación"),
+        }
+    }
+
+    // ─── Dead Branch Elimination tests ────────────────────────────────────
+
+    #[test]
+    fn test_dead_branch_si_verdadero() {
+        let prog = optimizar_source("si verdadero {\n  variable x = 1\n}");
+        // Debería expandir solo el bloque verdadero
+        assert_eq!(prog.declaraciones.len(), 1);
+        match &prog.declaraciones[0] {
+            Declaracion::Variable { nombre, .. } => assert_eq!(nombre, "x"),
+            _ => panic!("Se esperaba la declaración del bloque verdadero"),
+        }
+    }
+
+    #[test]
+    fn test_dead_branch_si_falso() {
+        let prog = optimizar_source("si falso {\n  variable x = 1\n}");
+        // Debería eliminar todo el si
+        assert_eq!(prog.declaraciones.len(), 0);
+    }
+
+    #[test]
+    fn test_dead_branch_si_falso_con_sino() {
+        let prog = optimizar_source("si falso {\n  variable x = 1\n} sino {\n  variable y = 2\n}");
+        // Debería expandir solo el bloque falso
+        assert_eq!(prog.declaraciones.len(), 1);
+        match &prog.declaraciones[0] {
+            Declaracion::Variable { nombre, .. } => assert_eq!(nombre, "y"),
+            _ => panic!("Se esperaba la declaración del bloque sino"),
+        }
+    }
+
+    #[test]
+    fn test_dead_branch_si_verdadero_con_sino() {
+        let prog =
+            optimizar_source("si verdadero {\n  variable x = 1\n} sino {\n  variable y = 2\n}");
+        // Debería expandir solo el bloque verdadero
+        assert_eq!(prog.declaraciones.len(), 1);
+        match &prog.declaraciones[0] {
+            Declaracion::Variable { nombre, .. } => assert_eq!(nombre, "x"),
+            _ => panic!("Se esperaba la declaración del bloque verdadero"),
+        }
+    }
+
+    #[test]
+    fn test_dead_branch_mientras_falso() {
+        let prog = optimizar_source("mientras (falso) {\n  variable x = 1\n}");
+        // Debería eliminar el loop completo
+        assert_eq!(prog.declaraciones.len(), 0);
+    }
+
+    #[test]
+    fn test_dead_branch_mientras_verdadero() {
+        let prog = optimizar_source("mientras (verdadero) {\n  variable x = 1\n}");
+        // Debería conservar el loop
+        assert_eq!(prog.declaraciones.len(), 1);
+        assert!(matches!(
+            &prog.declaraciones[0],
+            Declaracion::Mientras { .. }
+        ));
+    }
+
+    #[test]
+    fn test_dead_branch_repetir_0() {
+        let prog = optimizar_source("repetir (0) {\n  variable x = 1\n}");
+        // Debería eliminar el bloque
+        assert_eq!(prog.declaraciones.len(), 0);
+    }
+
+    #[test]
+    fn test_dead_branch_anidados() {
+        // si verdadero { si falso { x = 1 } } → se elimina internamente
+        let prog = optimizar_source("si verdadero {\n  si falso {\n    variable x = 1\n  }\n}");
+        // El si externo se expande (verdadero), el interno se elimina (falso)
+        assert_eq!(prog.declaraciones.len(), 0);
+    }
+
+    #[test]
+    fn test_dead_branch_condicion_no_constante() {
+        let prog = optimizar_source("si x {\n  variable y = 1\n}");
+        // No debería eliminar nada
+        assert_eq!(prog.declaraciones.len(), 1);
+        assert!(matches!(&prog.declaraciones[0], Declaracion::Si { .. }));
+    }
+
+    #[test]
+    fn test_dead_branch_si_verdadero_multiples_decl() {
+        let prog = optimizar_source("si verdadero {\n  variable a = 1\n  variable b = 2\n}");
+        // Debería expandir ambas declaraciones
+        assert_eq!(prog.declaraciones.len(), 2);
+        match &prog.declaraciones[0] {
+            Declaracion::Variable { nombre, .. } => assert_eq!(nombre, "a"),
+            _ => panic!("Se esperaba variable a"),
+        }
+        match &prog.declaraciones[1] {
+            Declaracion::Variable { nombre, .. } => assert_eq!(nombre, "b"),
+            _ => panic!("Se esperaba variable b"),
+        }
+    }
+
+    #[test]
+    fn test_dead_branch_repetir_no_zero() {
+        let prog = optimizar_source("repetir (3) {\n  variable x = 1\n}");
+        // No debería eliminar nada
+        assert_eq!(prog.declaraciones.len(), 1);
+        assert!(matches!(
+            &prog.declaraciones[0],
+            Declaracion::Repetir { .. }
+        ));
+    }
+
+    // ─── Inlining tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_inline_funcion_trivial() {
+        let source = "funcion doble(x) { retornar x + x }\nvariable y = doble(5)";
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let programa = parser.parse().unwrap();
+        let mut inliner = FunctionInliner::new();
+        let prog = inliner.inline(&programa);
+        // La función doble debería haber sido eliminada (inlined)
+        assert_eq!(inliner.inlines_realizados, 1);
+        // Solo queda la declaración de variable
+        let funcs: Vec<_> = prog
+            .declaraciones
+            .iter()
+            .filter(|d| matches!(d, Declaracion::Funcion { .. }))
+            .collect();
+        assert_eq!(funcs.len(), 0, "Function should have been inlined");
+    }
+
+    #[test]
+    fn test_inline_no_main() {
+        let source = "funcion main() { escribir(\"hola\") }\nfuncion aux(x) { retornar x }\nvariable y = aux(1)";
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let programa = parser.parse().unwrap();
+        let mut inliner = FunctionInliner::new();
+        let prog = inliner.inline(&programa);
+        // main no debería ser inlined, pero sí aux
+        assert_eq!(inliner.inlines_realizados, 1);
+        let main_funcs: Vec<_> = prog
+            .declaraciones
+            .iter()
+            .filter(|d| matches!(d, Declaracion::Funcion { nombre, .. } if nombre == "main"))
+            .collect();
+        assert_eq!(main_funcs.len(), 1, "main should be preserved");
+    }
+
+    #[test]
+    fn test_no_inline_too_large() {
+        let source = "funcion grande(x) {\n  variable a = 1\n  variable b = 2\n  variable c = 3\n  variable d = 4\n  variable e = 5\n  variable f = 6\n  variable g = 7\n  variable h = 8\n  variable i = 9\n  variable j = 10\n  variable k = 11\n  retornar x + k\n}\nvariable y = grande(5)";
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let programa = parser.parse().unwrap();
+        let mut inliner = FunctionInliner::new();
+        let prog = inliner.inline(&programa);
+        // La función tiene 11 declaraciones (> max_inline_size=10), no se inlinea
+        assert_eq!(inliner.inlines_realizados, 0);
+        let funcs: Vec<_> = prog
+            .declaraciones
+            .iter()
+            .filter(|d| matches!(d, Declaracion::Funcion { .. }))
+            .collect();
+        assert_eq!(funcs.len(), 1, "Large function should not be inlined");
+    }
+
+    // ─── Loop Unswitching tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_unswitch_simple() {
+        let source = "mientras (i < 10) {\n  si (modo_rapido) {\n    variable x = 1\n  } sino {\n    variable x = 2\n  }\n}";
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let programa = parser.parse().unwrap();
+        let mut unswitcher = LoopUnswitcher::new();
+        let prog = unswitcher.unswitch(&programa);
+        // Debería haber un Si externo con dos Mientras adentro
+        assert_eq!(unswitcher.unswitches_realizados, 1);
+        match &prog.declaraciones[0] {
+            Declaracion::Si {
+                bloque_verdadero,
+                bloque_falso,
+                ..
+            } => {
+                assert_eq!(bloque_verdadero.len(), 1);
+                assert!(matches!(&bloque_verdadero[0], Declaracion::Mientras { .. }));
+                assert!(bloque_falso.is_some());
+                assert!(matches!(
+                    &bloque_falso.as_ref().unwrap()[0],
+                    Declaracion::Mientras { .. }
+                ));
+            }
+            _ => panic!("Expected Si after unswitching"),
+        }
+    }
+
+    #[test]
+    fn test_no_unswitch_variant() {
+        // Si la condición del Si depende de i, no se puede unswitch
+        let source = "mientras (i < 10) {\n  si (i > 5) {\n    variable x = 1\n  }\n}";
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let programa = parser.parse().unwrap();
+        let mut unswitcher = LoopUnswitcher::new();
+        let prog = unswitcher.unswitch(&programa);
+        assert_eq!(unswitcher.unswitches_realizados, 0);
+        assert!(matches!(
+            &prog.declaraciones[0],
+            Declaracion::Mientras { .. }
+        ));
+    }
+}

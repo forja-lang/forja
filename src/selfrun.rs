@@ -6,7 +6,7 @@ use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 const FBC_MAGIC: &[u8; 4] = b"FBC\0";
 
 /// Intenta cargar y ejecutar bytecode incrustado al final del propio .exe
-/// Formato: [...stub.exe...][...bytecode...][4 bytes: size u32 LE][4 bytes: magic "FBC\0"]
+/// Formato: stub.exe + bytecode + 4 bytes de tamaño u32 LE + 4 bytes magic FBC
 pub fn try_selfrun() -> Option<()> {
     let exe_path = std::env::current_exe().ok()?;
 

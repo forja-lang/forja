@@ -112,7 +112,7 @@ class Forja < Formula
 
   def install
     bin.install "forja", "forja-lsp", "forja-dap", "forja-rt", "forja-rt-gui"
-    prefix.install "stdlib" if Dir.exist?("stdlib")
+    prefix.install "library/std" if Dir.exist?("library/std")
     doc.install "README.md" if File.exist?("README.md")
   end
 

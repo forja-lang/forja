@@ -97,7 +97,7 @@ jobs:
               comment += '- 📖 **[Guía completa del lenguaje](INSTRUCCIONES.md)** — Todas las palabras clave con ejemplos\n';
               comment += '- 💻 **[Ejemplos prácticos](ejemplos/)** — Más de 190 ejemplos listos para ejecutar\n';
               comment += '- 📚 **[Documentación oficial](https://forja-lang.github.io)** — Sitio web con documentación\n';
-              comment += '- 🔧 **Probá en el playground**: `forja ejecutar ejemplos/01_hola.fa`\n\n';
+              comment += '- 🔧 **Probá en el playground**: `forja ejecutar ejemplos/fundamentos/01_hola.fa`\n\n';
               comment += 'Si tenés una pregunta específica sobre alguna palabra clave, mencionala en el issue y voy a poder ayudarte mejor. 🙌\n';
             }
 

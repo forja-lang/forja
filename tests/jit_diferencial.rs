@@ -24,28 +24,31 @@ use forja::bytecode::Opcode;
 /// Subconjunto determinista del corpus (idéntico al de `golden_runner.rs`).
 /// (ruta al ejemplo, nombre del golden en `tests/golden/<nombre>.out`)
 const CORPUS: &[(&str, &str)] = &[
-    ("ejemplos/04_operaciones.fa", "04_operaciones"),
-    ("ejemplos/05_condicionales.fa", "05_condicionales"),
-    ("ejemplos/06_bucles.fa", "06_bucles"),
-    ("ejemplos/07_funciones.fa", "07_funciones"),
-    ("ejemplos/08_arrays.fa", "08_arrays"),
-    ("ejemplos/09_strings.fa", "09_strings"),
-    ("ejemplos/11_mapas.fa", "11_mapas"),
-    ("ejemplos/17_comparacion.fa", "17_comparacion"),
+    ("ejemplos/fundamentos/04_operaciones.fa", "04_operaciones"),
     (
-        "ejemplos/182_propagacion_encadenada.fa",
+        "ejemplos/fundamentos/05_condicionales.fa",
+        "05_condicionales",
+    ),
+    ("ejemplos/fundamentos/06_bucles.fa", "06_bucles"),
+    ("ejemplos/fundamentos/07_funciones.fa", "07_funciones"),
+    ("ejemplos/fundamentos/08_arrays.fa", "08_arrays"),
+    ("ejemplos/fundamentos/09_strings.fa", "09_strings"),
+    ("ejemplos/fundamentos/11_mapas.fa", "11_mapas"),
+    ("ejemplos/fundamentos/17_comparacion.fa", "17_comparacion"),
+    (
+        "ejemplos/avanzado/182_propagacion_encadenada.fa",
         "182_propagacion_encadenada",
     ),
     (
-        "ejemplos/183_opcion_propagacion.fa",
+        "ejemplos/avanzado/183_opcion_propagacion.fa",
         "183_opcion_propagacion",
     ),
-    ("ejemplos/194_enums_tuplas.fa", "194_enums_tuplas"),
+    ("ejemplos/avanzado/194_enums_tuplas.fa", "194_enums_tuplas"),
 ];
 
 /// Directorio raíz del crate (donde viven `ejemplos/` y `tests/golden/`).
 fn raiz() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
+    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).to_path_buf()
 }
 
 fn leer(ruta: &str) -> String {
@@ -215,13 +218,7 @@ fn generar_programa(rng: &mut Lcg) -> String {
 /// reales del lenguaje. Los programas que no compilan se omiten.
 #[test]
 fn generacion_de_codigo_sobre_todo_el_corpus_sin_panico() {
-    let dir = raiz().join("ejemplos");
-    let mut entradas: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .expect("leer ejemplos/")
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("fa"))
-        .collect();
-    entradas.sort();
+    let entradas = forja_test_support::ejemplos_fa();
 
     let mut total = 0usize;
     let mut compilados = 0usize;

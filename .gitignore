@@ -55,7 +55,6 @@ fix_astro_braces
 
 # ── Archivos de texto / resultados ──
 *.txt
-installer.iss
 logo.png
 forja_history.txt
 test_resultados.txt
@@ -105,3 +104,10 @@ forja.yaml
 
 # ── Editores ──
 .openidea/
+
+# Instalador: salidas de compilación del bootstrapper
+installer/bootstrapper/bin/
+installer/bootstrapper/obj/
+*.msi
+forja-setup-x64.exe
+*.wixpdb

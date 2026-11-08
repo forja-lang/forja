@@ -1,0 +1,20 @@
+[package]
+name = "forja-lsp"
+version = "0.10.0"
+edition = "2021"
+description = "Servidor LSP de Forja"
+license = "GPL-3.0-or-later"
+
+[features]
+default = []
+lsp = ["dep:tower-lsp", "dep:tokio"]
+
+[[bin]]
+name = "forja-lsp"
+path = "src/main.rs"
+required-features = ["lsp"]
+
+[dependencies]
+forja = { path = "../../../compiler/forja", features = ["lsp"] }
+tower-lsp = { version = "0.20", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }

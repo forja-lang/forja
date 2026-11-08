@@ -67,7 +67,7 @@ def metricas() -> dict[str, int]:
     return {
         "rust_lineas": contar_rust(),
         "ejemplos": contar("ejemplos"),
-        "modulos": contar("stdlib/std"),
+        "modulos": contar("library/std"),
     }
 
 

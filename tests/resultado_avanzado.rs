@@ -11,8 +11,11 @@ use std::path::Path;
 fn salida(fuente: &str) -> Vec<String> {
     // `forja::ejecutar` no resuelve `importar`: los tests que usan stdlib
     // necesitan la variante con raíz (hallazgo §2.4 de la auditoría).
-    forja::ejecutar_desde(fuente, Path::new(env!("CARGO_MANIFEST_DIR")))
-        .unwrap_or_else(|e| panic!("no ejecutó: {e} | fuente: {fuente}"))
+    forja_test_support::ejecutar_desde(
+        fuente,
+        Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")),
+    )
+    .unwrap_or_else(|e| panic!("no ejecutó: {e} | fuente: {fuente}"))
 }
 
 #[test]

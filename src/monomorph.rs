@@ -592,6 +592,10 @@ mod tests {
             nombre: "T".to_string(),
         }];
         let prog = Programa {
+            spans: Vec::new(),
+            nombres: Vec::new(),
+            indice_nombres: std::collections::HashMap::new(),
+            span: None,
             declaraciones: vec![Declaracion::Funcion {
                 nombre: "obtener".to_string(),
                 parametros_tipo: params_tipo,

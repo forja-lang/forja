@@ -3,7 +3,7 @@
 //! No son palabras reservadas: si el programa declara `v`/`f` (variable,
 //! parámetro, campo…), siguen siendo identificadores.
 
-use forja::ejecutar;
+use forja_test_support::ejecutar;
 
 fn salida(fuente: &str) -> Vec<String> {
     ejecutar(fuente).unwrap_or_else(|e| panic!("no ejecutó: {e}\n{fuente}"))

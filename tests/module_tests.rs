@@ -31,6 +31,10 @@ fn test_repl_compila() {
 fn test_formatter_disponible() {
     let mut f = forja::formatter::Formatter::new();
     let prog = forja::ast::Programa {
+        spans: Vec::new(),
+        nombres: Vec::new(),
+        indice_nombres: std::collections::HashMap::new(),
+        span: None,
         declaraciones: vec![],
     };
     let out = f.formatear(&prog);

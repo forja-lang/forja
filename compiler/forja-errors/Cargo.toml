@@ -1,0 +1,12 @@
+[package]
+name = "forja-errors"
+version = "0.10.0"
+edition = "2021"
+description = "Diagnósticos, códigos y spans de Forja"
+authors = ["forja-lang"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/forja-lang/forja"
+publish = false
+
+[dependencies]
+forja-span = { path = "../forja-span" }

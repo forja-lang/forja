@@ -60,8 +60,9 @@ jobs:
               - 'src/**'
               - 'tests/**'
               - 'benches/**'
+              - 'compiler/**'
+              - 'library/**'
               - 'crates/**'
-              - 'stdlib/**'
               - 'ejemplos/**'
               - 'scripts/**'
               - 'patches/**'
@@ -69,7 +70,8 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
               - '.cargo/**'
-              - 'installer.iss'
+              - 'installer.wxs'
+              - 'installer/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/cd.yml'
 
@@ -97,6 +99,10 @@ jobs:
         # `--workspace` incluye los crates de `crates/` (submódulos).
         # Sin esto, Cargo solo analiza el paquete raíz.
         run: cargo clippy --workspace --all-targets --locked
+      # Fase 0 del plan de reorganización: las crates limpias ya bloquean.
+      # El resto del workspace sigue reportándose sin bloquear hasta pagar su deuda.
+      - name: cargo clippy (crates limpias, bloqueante)
+        run: cargo clippy -p forja-syntax -p forja-types -p forja-errors -p forja-span -p forja-session -p forja-runtime -p forja-native -p forja-ir -p forja-bytecode -p forja-vm -p forja-fmt -p forja-lint -p forja-registry --all-targets --locked -- -D warnings
       # el formatter de Forja debe ser idempotente y determinista.
       # Se compila el binario y se valida `forja formatear` en modo verificación
       # (FORJA_FMT_CHECK=1; la CLI no usa flags) sobre los ejemplos.
@@ -107,6 +113,14 @@ jobs:
         run: FORJA_FMT_CHECK=1 ./target/debug/forja formatear ejemplos
       # Guardas del workflow de entrega: matriz de release, firmas y par WASM
       # del playground. Cuesta milisegundos y evita publicar un release roto.
+      - name: cargo xtask tidy
+        run: cargo xtask tidy
+      - name: cargo doc (sin warnings)
+        run: RUSTC_WRAPPER= cargo doc --workspace --no-deps --locked
+      - name: cargo deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
       - name: Validar workflow de release
         run: bash scripts/validate-release-workflow.sh
       # (auditoría externa): propiedades del compilador con proptest.
@@ -155,6 +169,105 @@ jobs:
           git add README.md
           git commit -m "chore(metricas): cifras de documentación al día"
           git push
+
+  crates:
+    name: Check por crate
+    needs: [cambios, elige-runner]
+    if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - forja-syntax
+          - forja-types
+          - forja-ir
+          - forja-bytecode
+          - forja-runtime
+          - forja-native
+          - forja-registry
+          - forja-vm
+          - forja-cli
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+      - name: cargo check -p ${{ matrix.crate }}
+        run: cargo check -p ${{ matrix.crate }} --locked
+
+  features:
+    name: Matriz de features
+    needs: [cambios, elige-runner]
+    if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: vm sin features
+            run: cargo check -p forja-vm --no-default-features --locked
+          - name: vm con sistema
+            run: cargo check -p forja-vm --features net,process,sqlite,h2-tls --locked
+          - name: cli
+            run: cargo check -p forja-cli --locked
+          - name: lsp
+            run: cargo check -p forja --features lsp --locked
+          - name: wasm
+            run: cargo check -p forja --target wasm32-unknown-unknown --lib --locked
+          - name: native sin features
+            run: cargo test -p forja-native --no-default-features --test features --locked
+          - name: AOT nativo
+            run: cargo test -p forja-cli --test cli cli_aot_nativo_compila_y_ejecuta --locked
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+      - name: ${{ matrix.name }}
+        run: ${{ matrix.run }}
+
+  miri:
+    name: Miri (crates sin FFI)
+    needs: [cambios, elige-runner]
+    if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+      - name: cargo miri test forja-span
+        run: cargo miri test -p forja-span
+
+  fuzz:
+    name: Fuzz (compile targets)
+    needs: [cambios, elige-runner]
+    if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "fuzz -> target"
+      - name: cargo check fuzz targets
+        run: cargo check --manifest-path fuzz/Cargo.toml --bins
 
   cobertura-asm:
     name: Cobertura ASM (100%)

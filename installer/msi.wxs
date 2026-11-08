@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MSI de Forja sólo para el usuario actual: %LOCALAPPDATA%\Programs\Forja y
+     PATH del usuario. No necesita permisos de administrador.
+
+       wix build -arch x64 -d Version=0.10.0 -o forja-installer-x64.msi ^
+                 installer\msi.wxs -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Forja"
+           Manufacturer="Forja Lang"
+           Version="$(var.Version)"
+           UpgradeCode="d1a2b3c4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
+           Scope="perMachine"
+           Compressed="yes"
+           Language="1033">
+
+    <SummaryInformation Description="Forja Language Toolchain" Manufacturer="Forja Lang" />
+    <MajorUpgrade DowngradeErrorMessage="Ya hay una version mas reciente de Forja instalada." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="forja.ico" SourceFile="forge.ico" />
+    <Property Id="ARPPRODUCTICON" Value="forja.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/forja-lang/forja" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <!-- ALLUSERS y MSIINSTALLPERUSER son propiedades restringidas: van por
+         la línea de comandos del bundle (abajo), no en la tabla Property.
+         sin esto, con permisos MSI elige per-machine (HKLM) y después la
+         desinstalación sin admin no puede borrar nada. -->
+
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLDIR" Name="Forja">
+        <Directory Id="StdlibDir" Name="stdlib" />
+        <Directory Id="EjemplosDir" Name="ejemplos" />
+      </Directory>
+    </StandardDirectory>
+
+    <?include msi-comun.wxi?>
+  </Package>
+</Wix>

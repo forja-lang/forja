@@ -17,7 +17,7 @@ fn ejemplos_playground() -> Option<Vec<String>> {
     // cascarón que lo monta): leer la página daba 0 ejemplos. El componente
     // vive en el repo del sitio (forja-lang.github.io), que no siempre está
     // clonado en `docs/`: sin él los tests se saltean en vez de no compilar.
-    let ruta = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let ruta = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
         .join("docs/src/components/Playground.astro");
     let html = std::fs::read_to_string(ruta).ok()?;
     let mut ejemplos = Vec::new();
@@ -52,7 +52,7 @@ fn test_ejemplos_playground_parsean() {
 /// valida en el navegador (requiere el host de widgets), así que aquí se omite.
 #[test]
 fn test_ejemplos_playground_ejecutan() {
-    let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let raiz = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let Some(ejemplos) = ejemplos_playground() else {
         eprintln!("⏭️  sin docs/src/components/Playground.astro: test salteado");
         return;
@@ -101,6 +101,6 @@ fn test_ejemplos_playground_sin_sintaxis_obsoleta() {
 }
 
 // `test_ejemplos_wasm_parsean` se eliminó: las cadenas de ejemplo embebidas en
-// `crates/forja-wasm/src/lib.rs` ya no existen (los ejemplos viven en
+// `src/tools/forja-wasm/src/lib.rs` ya no existen (los ejemplos viven en
 // `ejemplos/` y en `docs/src/components/Playground.astro`, ambos cubiertos por
 // los tests de arriba).

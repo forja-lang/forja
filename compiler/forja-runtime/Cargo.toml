@@ -1,0 +1,12 @@
+[package]
+name = "forja-runtime"
+version = "0.10.0"
+edition = "2021"
+description = "Runtime base de Forja: GC y telemetría"
+authors = ["forja-lang"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/forja-lang/forja"
+publish = false
+
+[dependencies]
+forja-bytecode = { path = "../forja-bytecode" }

@@ -15,7 +15,7 @@ Intentando obtener configuración (segunda vez):
   Idioma: en
 
 ¿Son la misma instancia?
-  ❌ No, son objetos diferentes.
+  ✅ Sí, config1 y config2 son el mismo objeto.
 
 El Singleton es útil para:
   • Configuración global de la aplicación

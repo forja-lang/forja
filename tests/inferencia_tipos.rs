@@ -153,13 +153,8 @@ fn quitar_anotaciones_retorno(fuente: &str) -> String {
 
 #[test]
 fn dod_sin_anotaciones_de_retorno_el_corpus_sigue_compilando() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("ejemplos");
-    let mut entradas: Vec<_> = std::fs::read_dir(&root)
-        .expect("leer ejemplos/")
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("fa"))
-        .collect();
-    entradas.sort();
+    let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join("ejemplos");
+    let entradas = forja_test_support::ejemplos_fa();
 
     let mut con_anotaciones = 0usize;
     let mut siguen_compilando = 0usize;

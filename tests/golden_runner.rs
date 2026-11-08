@@ -100,19 +100,19 @@ const EXCLUIDOS: &[(&str, &str)] = &[
 ];
 
 fn dir_golden() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
         .join("tests")
         .join("golden")
 }
 
 fn dir_ejemplos() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("ejemplos")
+    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join("ejemplos")
 }
 
 /// Raíz del proyecto: los ejemplos importan `std/...`, así que la ejecución
 /// tiene que resolver imports contra el workspace (no contra el cwd del test).
 fn dir_ejemplos_raiz() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
 }
 
 fn actualizar_golden() -> bool {
@@ -134,14 +134,7 @@ fn motivo_exclusion(nombre: &str, fuente: &str) -> Option<String> {
 
 /// Ejemplos candidatos: todos los `.fa` de `ejemplos/`, ordenados.
 fn ejemplos() -> Vec<(String, PathBuf)> {
-    let mut rutas: Vec<PathBuf> = std::fs::read_dir(dir_ejemplos())
-        .expect("ejemplos/ debe existir")
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.extension().map(|x| x == "fa").unwrap_or(false))
-        .collect();
-    rutas.sort();
-    rutas
+    forja_test_support::ejemplos_fa()
         .into_iter()
         .map(|p| {
             let nombre = p.file_name().unwrap().to_string_lossy().to_string();
@@ -221,8 +214,8 @@ fn golden_del_corpus() {
     // excluido) ensucia el repo y tapa regresiones: se avisa.
     let vigentes: Vec<String> = ejemplos()
         .into_iter()
-        .filter_map(|(nombre, _)| {
-            let fuente = std::fs::read_to_string(dir_ejemplos().join(&nombre)).ok()?;
+        .filter_map(|(nombre, ruta)| {
+            let fuente = std::fs::read_to_string(&ruta).ok()?;
             motivo_exclusion(&nombre, &fuente)
                 .is_none()
                 .then(|| nombre_golden(&nombre))

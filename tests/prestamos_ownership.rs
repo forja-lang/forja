@@ -3,22 +3,17 @@
 //! El chequeo de propiedad es léxico (no hay NLL): un préstamo vive hasta el
 //! final del ámbito donde se tomó, y un préstamo mutable es exclusivo.
 //!
-//! El move de clases sólo se detecta en modo estricto (`estricto: true` en
-//! `forja.yaml`; la configuración es global al proceso, así que se serializa
-//! con un mutex) porque fuera de él el runtime comparte los objetos por índice
-//! y marcar moves rompía ejemplos reales.
-
-use std::sync::Mutex;
-
-static CANDADO: Mutex<()> = Mutex::new(());
+//! El move de clases sólo se detecta en modo estricto (`estricto: true` en la
+//! sesión) porque fuera de él el runtime comparte los objetos por índice y
+//! marcar moves rompía ejemplos reales. La sesión explícita evita mutar la
+//! configuración global y permite tests en paralelo.
 
 fn ejecutar(estricto: bool, fuente: &str) -> Result<Vec<String>, String> {
-    let _guardia = CANDADO.lock().unwrap_or_else(|e| e.into_inner());
-    forja::config::fijar(forja::config::Config {
+    let sesion = forja_session::Session::nueva(forja_session::Config {
         estricto,
         ..Default::default()
     });
-    forja::ejecutar(fuente)
+    forja::ejecutar_con_sesion(fuente, &sesion)
 }
 
 fn salida(estricto: bool, fuente: &str) -> Vec<String> {

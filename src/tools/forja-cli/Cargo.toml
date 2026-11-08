@@ -1,0 +1,17 @@
+[package]
+name = "forja-cli"
+version = "0.10.0"
+edition = "2021"
+description = "CLI de Forja: despacha los comandos del compilador"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "forja"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+forja = { path = "../../../compiler/forja" }
+forja-repl = { path = "../forja-repl" }
+forja-driver = { path = "../../../compiler/forja-driver", features = ["vm"] }
+serde_json = "1"

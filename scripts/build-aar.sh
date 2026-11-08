@@ -7,7 +7,7 @@
 #
 # Uso:
 #   bash scripts/build-aar.sh                          # todos los ABIs + AAR
-#   bash scripts/build-aar.sh 0.9.7                    # versión específica
+#   bash scripts/build-aar.sh 0.10.0                    # versión específica
 #   bash scripts/build-aar.sh --target aarch64-linux-android --build-only
 #   bash scripts/build-aar.sh --package-only           # empaqueta .so ya compilados
 #
@@ -24,7 +24,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-CRATE_DIR="$PROJECT_DIR/crates/forja-android-rt"
+CRATE_DIR="$PROJECT_DIR/library/android"
 
 # Android targets
 TARGETS=(
@@ -55,7 +55,7 @@ usage() {
     cat <<'EOF'
 Uso:
   bash scripts/build-aar.sh                          # todos los ABIs + AAR
-  bash scripts/build-aar.sh 0.9.7                    # versión específica
+  bash scripts/build-aar.sh 0.10.0                    # versión específica
   bash scripts/build-aar.sh --target aarch64-linux-android --build-only
   bash scripts/build-aar.sh --package-only           # empaqueta .so ya compilados
 

@@ -1,6 +1,6 @@
 """Documenta las funciones faltantes de los módulos std de los docs.
 
-Lee cada stdlib/std/*.fa, extrae `funcion nombre(...)`, usa el comentario `#`
+Lee cada library/std/*.fa, extrae `funcion nombre(...)`, usa el comentario `#`
 previo como descripción (si es informativo) y agrega las filas que faltan a la
 tabla de funciones de la página correspondiente. Re-ejecutable.
 Uso: python scripts/documentar-std.py   (desde la raíz del repo)
@@ -232,7 +232,7 @@ def esc(s):
 
 
 def aplicar():
-    fa_files = {os.path.basename(f)[:-3]: f for f in glob.glob(os.path.join(RAIZ, "stdlib", "std", "*.fa"))}
+    fa_files = {os.path.basename(f)[:-3]: f for f in glob.glob(os.path.join(RAIZ, "library", "std", "*.fa"))}
     docs_dir = os.path.join(RAIZ, "docs", "src", "pages", "arquitectura", "std")
     total = 0
     for fa, path in fa_files.items():

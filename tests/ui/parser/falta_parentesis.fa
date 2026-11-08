@@ -1,0 +1,3 @@
+funcion suma(a: Entero, b: Entero -> Entero {
+    retornar a + b
+}

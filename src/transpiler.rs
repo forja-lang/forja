@@ -455,8 +455,8 @@ impl Transpiler {
             self.emit_line("// ─── Programa Forja como datos para el runtime ───");
             self.emit_line("use forja::ast::*;");
             self.emit_line("");
-            self.emit_line("fn programa() -> Programa {");
-            self.emit_line("    Programa {");
+            self.emit_line("fn programa() -> Programa {span: None, ");
+            self.emit_line("    Programa {spans: Vec::new(), nombres: Vec::new(), indice_nombres: std::collections::HashMap::new(), span: None, ");
             self.emit_line("        declaraciones: vec![");
             self.indent();
             self.indent();
@@ -3670,7 +3670,7 @@ mod tests {
         let result = transpilar_source(source).unwrap();
         // El programa se emite como función: `vec![…]` no es const, así que la
         // forma `static PROGRAMA` no compilaba en ninguna versión estable de Rust.
-        assert!(result.contains("fn programa() -> Programa {"));
+        assert!(result.contains("fn programa() -> Programa {span: None, "));
         assert!(result.contains("use forja::ast::*;"));
         assert!(
             !result.contains("static PROGRAMA"),

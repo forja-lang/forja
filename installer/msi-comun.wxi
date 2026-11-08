@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Componentes y features comunes a las dos variantes del MSI de Forja.
+     Se incluye dentro de <Package> desde installer/msi-machine.wxs y
+     installer/msi-user.wxs, que sólo cambian la carpeta destino y el alcance
+     del PATH. Los componentes apuntan a las carpetas por atributo Directory,
+     así no hace falta un DirectoryRef.
+
+     Variables a pasar con -d:
+       PathSystem   yes (PATH de máquina) | no (PATH del usuario)
+       PathRoot     HKLM | HKCU (clave de registro que marca el PATH) -->
+<Include xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <ComponentGroup Id="CoreFiles">
+    <Component Id="Compiler" Directory="INSTALLDIR" Guid="8f8b7d10-3c1e-4b52-9a11-2c6d0e5a7b01">
+      <File Id="ForjaExe" Source="target\release\forja.exe" KeyPath="yes" />
+    </Component>
+
+    <Component Id="Docs" Directory="INSTALLDIR" Guid="a7b1c3d5-e9f2-4b68-8c14-3d5e7f9a1b03">
+      <File Id="Instrucciones" Source="INSTRUCCIONES.md" KeyPath="yes" />
+      <File Id="Comandos" Source="COMANDOS.md" />
+      <File Id="Licencia" Source="LICENSE.md" />
+    </Component>
+
+    <!-- PATH: del sistema si hay admin, del usuario si no. -->
+    <Component Id="PathEnv" Directory="INSTALLDIR" Guid="4b2f9a63-71d4-4c8e-b3f7-9d5a1c8e6f02">
+      <Environment Id="PathEnvVar" Name="Path" Value="[INSTALLDIR]"
+                   Part="last" Action="set" System="$(var.PathSystem)" Permanent="no" />
+      <RegistryValue Root="$(var.PathRoot)" Key="Software\Forja" Name="Path"
+                     Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <!-- Asociación .fa (HKMU resuelve a HKCU o HKLM según el alcance). -->
+    <Component Id="FileAssoc" Directory="INSTALLDIR" Guid="c3d5e7a9-2f41-4a6b-8d0c-1e3b5f7a9c34">
+      <RegistryValue Root="HKMU" Key="Software\Classes\.fa" Type="string"
+                     Value="ForjaSourceFile" KeyPath="yes" />
+      <RegistryValue Root="HKMU" Key="Software\Classes\.fa" Name="Content Type"
+                     Type="string" Value="text/plain" />
+      <RegistryValue Root="HKMU" Key="Software\Classes\ForjaSourceFile" Type="string"
+                     Value="Archivo de codigo fuente Forja" />
+      <RegistryValue Root="HKMU" Key="Software\Classes\ForjaSourceFile\DefaultIcon"
+                     Type="string" Value="[INSTALLDIR]forja.exe,0" />
+      <RegistryValue Root="HKMU" Key="Software\Classes\ForjaSourceFile\shell\open\command"
+                     Type="string" Value="&quot;[INSTALLDIR]forja.exe&quot; &quot;%1&quot;" />
+    </Component>
+  </ComponentGroup>
+
+  <ComponentGroup Id="LspFiles">
+    <Component Id="LanguageServer" Directory="INSTALLDIR" Guid="1f6a8c22-9d3b-4e57-8a02-6c4d7b9e1a11">
+      <File Id="ForjaLspExe" Source="target\release\forja-lsp.exe" KeyPath="yes" />
+    </Component>
+  </ComponentGroup>
+
+  <ComponentGroup Id="DapFiles">
+    <Component Id="Debugger" Directory="INSTALLDIR" Guid="2c7b9d33-ae4c-4f68-9b13-7d5e8c0f2b22">
+      <File Id="ForjaDapExe" Source="target\release\forja-dap.exe" KeyPath="yes" />
+    </Component>
+  </ComponentGroup>
+
+  <ComponentGroup Id="RtFiles">
+    <Component Id="Runtime" Directory="INSTALLDIR" Guid="3d8cae44-bf5d-4a79-8c24-8e6f9d1a3c33">
+      <File Id="ForjaRtExe" Source="target\release\forja-rt.exe" KeyPath="yes" />
+    </Component>
+  </ComponentGroup>
+
+  <!-- Los .fa se cosechan del repo; las rutas son relativas a este .wxi
+       (installer/), así que suben un nivel. -->
+  <ComponentGroup Id="Stdlib">
+    <Files Include="..\library\std\*.fa" Directory="StdlibDir" />
+  </ComponentGroup>
+
+  <ComponentGroup Id="Ejemplos">
+    <Files Include="..\ejemplos\*.fa" Directory="EjemplosDir" />
+  </ComponentGroup>
+
+  <Feature Id="Core" Title="Forja (compilador, biblioteca estándar y ejemplos)" Level="1" AllowAbsent="no">
+    <ComponentGroupRef Id="CoreFiles" />
+    <ComponentGroupRef Id="Stdlib" />
+    <ComponentGroupRef Id="Ejemplos" />
+  </Feature>
+
+  <Feature Id="LanguageServer" Title="Servidor de lenguaje (LSP)" Level="1" AllowAbsent="yes">
+    <ComponentGroupRef Id="LspFiles" />
+  </Feature>
+
+  <Feature Id="Debugger" Title="Depurador (DAP)" Level="1" AllowAbsent="yes">
+    <ComponentGroupRef Id="DapFiles" />
+  </Feature>
+
+  <Feature Id="Runtime" Title="Runtime de Forja (forja-rt)" Level="1" AllowAbsent="yes">
+    <ComponentGroupRef Id="RtFiles" />
+  </Feature>
+</Include>

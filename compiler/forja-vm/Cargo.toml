@@ -1,0 +1,40 @@
+[package]
+name = "forja-vm"
+version = "0.10.0"
+edition = "2021"
+description = "VM, registro nativo y ejecución de Forja"
+authors = ["forja-lang"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/forja-lang/forja"
+publish = false
+
+[features]
+default = []
+net = ["forja-native/net"]
+process = ["forja-native/process"]
+sqlite = ["dep:rusqlite", "forja-native/sqlite"]
+h2-tls = ["dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots", "forja-native/h2-tls"]
+
+[dependencies]
+forja-syntax = { path = "../forja-syntax" }
+forja-types = { path = "../forja-types" }
+forja-hir = { path = "../forja-hir" }
+forja-ir = { path = "../forja-ir" }
+forja-bytecode = { path = "../forja-bytecode" }
+forja-runtime = { path = "../forja-runtime" }
+forja-native = { path = "../forja-native", default-features = false }
+forja-registry = { path = "../forja-registry" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rusqlite = { version = "0.31", features = ["bundled"], optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
+rustls-pki-types = { version = "1", optional = true }
+webpki-roots = { version = "0.26", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["minwindef", "minwinbase", "sysinfoapi"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

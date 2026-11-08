@@ -1,0 +1,4 @@
+funcion g() { retornar Algo(5) }
+funcion f() { variable v = g()?
+retornar v }
+f()

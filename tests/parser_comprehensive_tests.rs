@@ -822,3 +822,19 @@ fn test_parse_doc_comment_funcion() {
         _ => panic!("expected Funcion with doc"),
     }
 }
+
+#[test]
+fn errores_de_parser_traen_span_de_bytes() {
+    use forja::lexer::Lexer;
+    use forja::parser::Parser;
+
+    let fuente = "variable x = @
+";
+    let tokens = Lexer::new(fuente).tokenize().unwrap();
+    let err = Parser::new(tokens).parse().unwrap_err();
+    let span = err[0]
+        .span_bytes
+        .expect("el error debe traer span de bytes");
+    let texto = &fuente[span.inicio as usize..span.fin as usize];
+    assert!(!texto.is_empty(), "span vacío: {span:?}");
+}
