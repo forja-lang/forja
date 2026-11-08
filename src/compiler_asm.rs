@@ -4784,6 +4784,97 @@ c.sumar(5)";
         // Debe tener código para la función
         assert!(result.contains("push") || result.contains("stp") || result.contains("mov"));
     }
+    #[test]
+    fn cubre_peephole_condiciones_y_regs() {
+        let texto = "f:
+    push r8
+    pop r9
+    mov rax, r12
+    mov r13, rax
+    mov rax, 7
+    mov rcx, rax
+    mov rax, r13
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    test rax, rax
+    jz .Lx
+.Lx:
+    ret
+";
+        let salida = peephole_x86(texto.to_string());
+        assert!(salida.contains("mov r9, r8"));
+        assert!(salida.contains("mov r13, r12"));
+        assert!(salida.contains("mov rcx, 7"));
+        assert!(salida.contains("jg .Lx"));
+
+        for set in ["setl", "setge", "setg", "sete", "setne", "setz"] {
+            let t = format!("f:
+    mov rax, rcx
+    cmp rax, rdx
+    {set} al
+    movzx rax, al
+    test rax, rax
+    jz .L
+.L:
+    ret
+");
+            let _ = optimizar_condiciones(&t);
+        }
+
+        let t = "f:
+    push r12
+    push r13
+    push rbp
+    mov rbp, rsp
+    sub rsp, 48
+    mov r12, rcx
+    mov rsp, rbp
+    pop rbp
+    pop r13
+    pop r12
+    ret
+";
+        let out = optimizar_regs_calle_saved(t);
+        assert!(!out.contains("push r13"));
+
+        let c = CompilerAsm::new();
+        for r in ["rax", "r8", "r15", "foo"] {
+            assert!(!c.arch.reg32(r).is_empty());
+        }
+        for tipo in [
+            TipoAsm::Entero,
+            TipoAsm::Decimal,
+            TipoAsm::Texto,
+            TipoAsm::Booleano,
+            TipoAsm::Clase("C".into()),
+        ] {
+            let _ = c.tipo_asm_a_tipo(&tipo);
+        }
+    }
+
+    #[test]
+    fn cubre_decimales_compuestas_y_clases() {
+        let _ = compilar_source("variable a: Decimal = 1.5
+variable b: Decimal = a + 2.5
+escribir(b)").unwrap();
+        let _ = compilar_source("variable x = 1
+x += 2
+x -= 1
+x *= 3
+x /= 2
+escribir(x)").unwrap();
+        let _ = compilar_source("clase P {
+  variable x: Entero = 1
+  funcion obtener() -> Entero { retornar este.x }
+}
+variable p = P()
+escribir(p.x)").unwrap();
+        let _ = compilar_source("escribir(1.5 > 1.0)
+escribir(1.5 < 2.0)
+escribir(1.5 == 1.5)").unwrap();
+    }
+
 }
 
 /// cubre exhaustivamente los accesores y emisores de instrucciones de

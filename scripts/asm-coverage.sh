@@ -52,6 +52,20 @@ fi
 
 find_tool() {
     local name="$1"
+    # Preferir las herramientas del toolchain de Rust: la versión de LLVM debe
+    # coincidir con la que generó los .profraw.
+    if command -v rustc >/dev/null 2>&1; then
+        local sysroot host
+        sysroot="$(rustc --print sysroot 2>/dev/null || true)"
+        host="$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')"
+        if [ -n "$sysroot" ] && [ -n "$host" ]; then
+            local propio="$sysroot/lib/rustlib/$host/bin/${name}${EXE_SUFFIX}"
+            if [ -f "$propio" ]; then
+                echo "$propio"
+                return 0
+            fi
+        fi
+    fi
     if command -v "$name" >/dev/null 2>&1; then
         command -v "$name"
         return 0
@@ -124,7 +138,7 @@ print(exe)
 }
 
 LIBEXE="$(binario_de_test forja --lib compiler_asm)"
-ASMEXE="$(binario_de_test asm_targets --test asm_targets)"
+ASMEXE="$(binario_de_test codegen --test codegen)"
 if [ -z "$LIBEXE" ] || [ -z "$ASMEXE" ] || [ ! -f "$LIBEXE" ] || [ ! -f "$ASMEXE" ]; then
     echo "❌ No se encontraron los binarios de test instrumentados" >&2
     echo "   lib: '$LIBEXE'  asm_targets: '$ASMEXE'" >&2
@@ -133,7 +147,7 @@ fi
 
 # Si un test falla, la cobertura no es confiable (puede faltar ejecución de
 # caminos): el script falla en vez de ignorarlo con `|| true`.
-if ! LLVM_PROFILE_FILE="$COVDIR/lib-%p-%m.profraw" "$LIBEXE" compiler_asm > "$COVDIR/lib-tests.log" 2>&1; then
+if ! LLVM_PROFILE_FILE="$COVDIR/lib-%p-%m.profraw" "$LIBEXE" > "$COVDIR/lib-tests.log" 2>&1; then
     echo "❌ Fallaron los tests unitarios de compiler_asm" >&2
     tail -40 "$COVDIR/lib-tests.log" >&2
     exit 1
