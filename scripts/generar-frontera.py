@@ -9,7 +9,7 @@ Clasificación:
   M = función/módulo puramente Forja (no llama a nativas).
   N = primitivas nativas (viven en src/native_registry, no en stdlib).
 
-Escribe plans/frontera-modulos.generated.md. No modifica stdlib.
+Escribe frontera-modulos.generated.md en la raíz. No modifica stdlib.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 STDLIB = RAIZ / "library" / "std"
-SALIDA = RAIZ / "plans" / "frontera-modulos.generated.md"
+SALIDA = RAIZ / "frontera-modulos.generated.md"
 
 RE_FUNCION = re.compile(r"^funcion\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", re.MULTILINE)
 RE_NATIVA = re.compile(r"\b(_[A-Za-z][A-Za-z0-9_]*)\s*\(")

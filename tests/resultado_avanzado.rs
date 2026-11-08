@@ -4,7 +4,7 @@
 //! evidencia": propagación anidada, errores de distinto tipo, a través de
 //! funciones genéricas y en métodos. Si alguno falla, **no** se arregla acá: se
 //! abre una ficha con el repro mínimo (ver
-//! `plans/auditoria-externa-verificada.md` §).
+//! de la auditoría externa verificada).
 
 use std::path::Path;
 

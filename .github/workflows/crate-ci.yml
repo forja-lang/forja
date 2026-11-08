@@ -1,12 +1,12 @@
 name: CI / Crate (reutilizable)
 
-# Workflow reutilizable para los repos de `crates/` (submódulos).
+# Workflow reutilizable para los repos de los submódulos (`compiler/forja-syntax`
+# y `library/*`).
 #
-# Los crates de runtime dependen del paquete raíz `forja` por ruta
-# (`forja = { path = "../.." }`), así que un clon aislado del crate no compila.
-# Estrategia: se clona el workspace Forja con sus submódulos y se superpone el
-# crate que llama en `crates/<crate>`. Así se prueba exactamente el código del
-# PR dentro del workspace real.
+# Los crates de runtime dependen del paquete raíz `forja` por ruta relativa al
+# workspace, así que un clon aislado del crate no compila. Estrategia: se clona
+# el workspace Forja con sus submódulos y se superpone el crate que llama en su
+# ruta real. Así se prueba exactamente el código del PR dentro del workspace.
 #
 # Uso desde el repo del crate:
 #
@@ -79,7 +79,7 @@ jobs:
         shell: bash
         run: |
           case "${{ inputs.crate }}" in
-            forja-syntax|forja-types) path="compiler/${{ inputs.crate }}" ;;
+            forja-syntax) path="compiler/forja-syntax" ;;
             forja-theme) path="library/gui-theme" ;;
             forja-gui-core) path="library/gui-core" ;;
             forja-gui-rt) path="library/gui-rt" ;;
@@ -87,7 +87,7 @@ jobs:
             forja-wasm) path="library/wasm" ;;
             forja-wasm-gui) path="library/wasm-gui" ;;
             forja-android-rt) path="library/android" ;;
-            *) path="crates/${{ inputs.crate }}" ;;
+            *) echo "::error::crate desconocido: ${{ inputs.crate }}"; exit 1 ;;
           esac
           echo "path=$path" >> "$GITHUB_OUTPUT"
 

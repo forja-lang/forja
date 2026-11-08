@@ -1,5 +1,4 @@
 # ── Directorios generados / temporales ──
-plans/
 # El sitio vive en su propio repo (forja-lang.github.io); clonarlo acá es opcional.
 /docs/
 # Los diseños (PSD/PNG) viven en su propio repo (forja-lang/forja-design); no son código.
@@ -59,7 +58,6 @@ logo.png
 forja_history.txt
 test_resultados.txt
 SECURITY_TESTING.md
-plans/
 ANALISIS_MEJORAS.md
 COMPATIBILITY_BREAKING_CHANGES.md
 

@@ -1,7 +1,7 @@
 //! estrés del colector **real** de la VM (mark-and-sweep sobre heaps
 //! indexados).
 //!
-//! Contexto (ver `plans/auditoria-externa-verificada.md` §3.7): la VM **no**
+//! Contexto (auditoría externa verificada §3.7): la VM **no**
 //! usa el `GenerationalGC` de `src/legacy/gc.rs` (ese módulo sólo recibe avisos y no
 //! almacena objetos). El colector efectivo es mark-and-sweep con heaps
 //! indexados + free lists, así que **no mueve** objetos y no puede invalidar

@@ -53,7 +53,7 @@ fn verify(extra: &[String]) -> ExitCode {
     }
 
     // 2. Clippy de las crates ya limpias. El resto del workspace paga su deuda
-    //    por fase (ver plans/reorganizacion-estilo-rust.md, Fase 0).
+    //    por fase (reorganización estilo Rust, Fase 0).
     if !ok(
         "cargo",
         &[

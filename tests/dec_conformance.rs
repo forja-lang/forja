@@ -1,4 +1,4 @@
-//! Conformidad de aritmética decimal (fase 0 del plan `plans/DECIMAL_SILICIO.md`).
+//! Conformidad de aritmética decimal (fase 0 del decimal de silicio).
 //!
 //! Corre los vectores del corpus `decTest` (General Decimal Arithmetic
 //! Testcases) contra la aritmética `Exacto` de la VM.
@@ -196,7 +196,7 @@ fn programa(v: &Vector) -> String {
 /// El bloque de fallos es casi todo el mismo: los archivos declaran
 /// `precision: 9` y la VM ignora la precisión, así que no redondea a 9 dígitos
 /// significativos ni usa notación exponencial (`1.00000000E+13`). Eso es la
-/// fase 5 del plan (`plans/DECIMAL_SILICIO.md`), no un bug del corpus.
+/// fase 5 del decimal de silicio), no un bug del corpus.
 const PISO_FASE_0: f64 = 0.30;
 
 struct Resumen {

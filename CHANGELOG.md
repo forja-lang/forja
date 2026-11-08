@@ -184,8 +184,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   claro** (`● Gramática — Las guardas en patrones todavía no están soportadas`)
   en vez de compilar un AST mutilado. Antes el error de parseo se descartaba en
   la recuperación y el usuario veía `La variable 'r' no está declarada`, o nada
-  La recuperación que descarta errores y trunca expresiones queda pendiente
-  (ver `plans/auditoria-externa-verificada.md`).
+  La recuperación que descarta errores y trunca expresiones queda pendiente.
 - Goldens del corpus regenerados: 13 ejemplos grababan las salidas viejas
   (`nulo`, `falso`, listas vacías) que estos bugs producían.
 
@@ -1322,7 +1321,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - LSP: alias `ForjaSymbolKind` para el enum propio y uso de `SymbolKind` (lsp_types) en `document_symbol`
 - Warnings eliminados: `ORIG_TERMIOS` como `Mutex` (sin `static mut`), imports sin usar y función dead-code
 - Módulo `examples` renombrado a `ejemplos`
-- `.gitignore`: dejar de trackear `plans/`, `fix_astro_braces.py`, `main_rs/`, `tmp/`, `__pycache__` y scripts de fix
+- `.gitignore`: dejar de trackear `fix_astro_braces.py`, `main_rs/`, `tmp/`, `__pycache__` y scripts de fix
 
 ### Corregido
 - `ir_constructor`: AND/OR/Módulo correctos, limpieza de `var_map` y uso de comparaciones reales (`neq`/`gt`/`lte`/`gte`/`not`)

@@ -18,29 +18,39 @@ Forja es un lenguaje de programación educativo moderno con sintaxis y palabras 
 
 ## Arquitectura del Compilador e Intérprete
 
-El siguiente diagrama detalla cómo se procesa el código fuente de Forja hasta sus distintos entornos de ejecución:
+El compilador está partido en **crates por fase**, con dependencias que sólo van hacia abajo
+(`tests/frontera_crates.rs` lo verifica). El siguiente diagrama muestra el camino del código
+fuente hasta cada entorno de ejecución:
 
 ```mermaid
-graph TD
-    A["Código Fuente (.fa)"] --> B["Analizador Léxico (Lexer)"]
-    B --> C["Analizador Sintáctico (Parser)"]
-    C --> D["Árbol de Sintaxis Abstracta (AST)"]
-    D --> E["Verificador de Tipos (Type Checker)"]
-    E --> F["Optimizador (Plegado de Constantes y Eliminación de Código Muerto)"]
-    F --> G{"Generador de Código"}
-    
-    G -->|Código de Bytes Optimizado| H["Máquina Virtual ForjaFast (NaN Tagging)"]
-    G -->|Compilador al Vuelo| I["Código Máquina x86-64 (JIT)"]
-    G -->|Transpilador| J["Código Rust (Proyecto Cargo)"]
-    G -->|Ensamblador Nativo| K["Código Ensamblador (.s + GCC)"]
-    G -->|Representación Intermedia| L["LLVM IR (.ll + LLC)"]
+graph LR
+    A["Código Fuente (.fa)"] --> B["forja-syntax\ntokens · lexer · parser · AST"]
+    B --> C["forja-types\ntipos · préstamos · inferencia"]
+    C --> D["forja-hir\nDefId · módulos · desugar"]
+    D --> E["forja-ir\nSSA · optimizador · registros"]
+    E --> F["forja-bytecode\nopcodes · uops · contratos"]
+    F --> G{"Generador de salida"}
+
+    G -->|ForjaFast| H["forja-vm\nintérprete de bytecode"]
+    G -->|JIT tiered| I["forja-vm\nJIT x86-64 en caliente"]
+    G -->|Ensamblador| K["src/compiler_asm.rs\nx86-64 / ARM64 + gcc"]
+    G -->|LLVM IR| L["src/backend_llvm.rs\n.ll + llc"]
+    G -->|Transpilador| J["src/transpiler.rs\nRust + rustc"]
+
+    H --> M["forja-runtime + forja-native\nGC · heap · sistema"]
+    I --> M
 ```
 
-> **Pipeline canónico:** la ruta de bytecode tiene un único punto de entrada documentado,
-> `compilar_pipeline_completa()` (con imports: `compilar_pipeline_completa_desde()`), que delega
-> en el núcleo `compilar_pipeline_nucleo()`. La ruta de
-> transpilación a Rust es independiente y no genera bytecode: `transpilar_a_rust()` (antes
-> y `transpilar_a_rust_con_ast()`.
+> **Entrypoint canónico:** hay una sola ruta de bytecode,
+> `compilar_pipeline_completa()` (con imports: `compilar_pipeline_completa_desde()`), que
+> delega en el núcleo `compilar_pipeline_nucleo()`; las variantes `…_desde_ir()` y
+> `…_desde_ast()` sólo fuerzan el motor de emisión (IR o AST). La transpilación a Rust es
+> una ruta independiente que no genera bytecode: `transpilar_a_rust()` y
+> `transpilar_a_rust_con_ast()`.
+>
+> La documentación de arquitectura tiene **una página por crate**
+> ([forja-lang.github.io](https://forja-lang.github.io/arquitectura/pipeline/)), no una por
+> archivo: el detalle de cada fase vive en el `lib.rs` de su crate.
 
 ---
 
@@ -323,12 +333,10 @@ memoria, rendimiento crítico) de **módulos Forja** (composición pura, API en
 español y enseñanza). La regla: la seguridad y el acceso al sistema viven en
 nativo; el módulo es la fachada pública y nunca puede saltarse el sandbox.
 
-Ver el plan completo y la tabla módulo por módulo:
-[`plans/plan-nativo-vs-modulo-forja.md`](plans/plan-nativo-vs-modulo-forja.md).
-La frontera está protegida por `tests/frontera_nativos.rs` y
-`tests/stdlib_smoke.rs`. Clasificación generada (módulo/función → H/M):
-[`plans/frontera-modulos.generated.md`](plans/frontera-modulos.generated.md).
-
+La frontera nativo/módulo está protegida por [`tests/frontera_crates.rs`](tests/frontera_crates.rs)
+(solo dependencias hacia abajo entre crates de `compiler/`). Clasificación
+generada (módulo/función → H/M) por `scripts/generar-frontera.py`:
+[`frontera-modulos.generated.md`](frontera-modulos.generated.md).
 ## Estructura del repositorio
 
 Workspace de Cargo con el compilador (`forja`) y sus crates. El repositorio raíz
@@ -338,7 +346,7 @@ usa submódulos git para lo que también se consume o publica por separado.
 compiler/            crates del compilador (todos miembros del workspace)
 ├── forja/           manifiesto del crate `forja` (el código vive en src/)
 ├── forja-syntax/    submódulo · tokens, AST, lexer, parser
-├── forja-types/     submódulo · type checker, borrow checker
+├── forja-types/     type checker, borrow checker, inferencia
 ├── forja-errors/    forja-span/   forja-session/   forja-hir/
 ├── forja-ir/        forja-bytecode/   forja-driver/
 ├── forja-runtime/   forja-vm/   forja-native/   forja-registry/
@@ -354,9 +362,9 @@ tests/ benches/ scripts/ packaging/ vscode/ docs/
 ejemplos/            submódulo · ejemplos del lenguaje
 ```
 
-- `library/*`, `compiler/forja-syntax`, `compiler/forja-types` y `ejemplos` son
-  **submódulos** (repos `forja-lang/forja-*`): sus crates los consumen el resto
-  del ecosistema y se publican por separado.
+- `library/*`, `compiler/forja-syntax` y `ejemplos` son **submódulos** (repos
+  `forja-lang/forja-*`): sus crates los consumen el resto del ecosistema y se
+  publican por separado.
 - El resto de `compiler/` vive **en el árbol**: sus cambios son atómicos con el
   compilador y no se publican de forma independiente.
 - Detalle de clonado, locks y submódulos: [`CONTRIBUTING.md`](CONTRIBUTING.md).

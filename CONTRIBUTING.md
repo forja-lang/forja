@@ -30,9 +30,9 @@ git submodule update --init --recursive
 ```
 
 Los submódulos se usan **en el commit que registra este repositorio**, no en la
-punta de su rama: no uses `git submodule update --remote` (ni `branch = ...` en
-`.gitmodules`) para compilar o publicar. Actualizar un submódulo es un cambio
-deliberado: se commitea el submódulo y después el puntero.
+punta de su rama. El `branch = main` de `.gitmodules` es sólo una anotación:
+no uses `git submodule update --remote` para compilar o publicar. Actualizar un
+submódulo es un cambio deliberado: se commitea el submódulo y después el puntero.
 
 ## 3. Compilar, probar y verificar
 
@@ -57,16 +57,26 @@ cargo build --profile dist-android -p forja-android-rt   # AAR (ThinLTO)
 ## 4. Estructura del repositorio y submódulos
 
 El repositorio raíz es un **workspace de Cargo** que contiene el compilador
-(`forja`) y varios crates miembros. Además, hay **submódulos git**:
+(`forja`) y todos sus crates. Además, hay **submódulos git** con lo que se
+consume o publica por separado:
 
 | Submódulo | Rol |
 |---|---|
-| `crates/forja-gui-rt`, `crates/forja-wasm`, `crates/forja-wasm-gui` | Crates del ecosistema |
-| `crates/forja-rt`, `crates/forja-android-rt` | Runtimes |
-| `stdlib/std`, `stdlib/gui` | Librería estándar |
+| `compiler/forja-syntax` | Frontend reutilizable (lexer, parser, AST); lo consume `forja-gui-rt` |
+| `library/gui-theme`, `library/gui-core`, `library/gui-rt` | Stack GUI (Material You sobre xilem) |
+| `library/rt`, `library/android`, `library/wasm`, `library/wasm-gui` | Runtimes (escritorio, Android, WASM) |
+| `library/std`, `library/gui` | Librería estándar (`.fa`) |
 | `ejemplos` | Ejemplos del lenguaje |
-| `docs` | Sitio de documentación (Astro) |
-| `benchmarks` | Benchmarks (no se compila en el CI base) |
+
+El resto de `compiler/` (`forja`, `forja-types`, `forja-errors`, `forja-span`,
+`forja-session`, `forja-hir`, `forja-ir`, `forja-bytecode`, `forja-driver`,
+`forja-runtime`, `forja-vm`, `forja-native`, `forja-registry`, `forja-fmt`,
+`forja-lint`) vive **en el árbol**: cambia junto al compilador y no se publica de
+forma independiente. El código del crate `forja` está en `src/`;
+`compiler/forja/Cargo.toml` es sólo su manifiesto.
+
+Los directorios ignorados (`docs/`, `dist/`, `scratch/`) **no** son
+submódulos: son contenido local del checkout.
 
 ## 5. Estrategia de `Cargo.lock` y submódulos
 
@@ -74,14 +84,13 @@ Decisión adoptada:
 
 1. **El workspace de la raíz es la fuente de verdad.** El archivo
    [`Cargo.lock`](Cargo.lock) de la raíz bloquea las dependencias del crate
-   `forja` y de **todos** los crates listados en `[workspace].members` de
-   [`Cargo.toml`](Cargo.toml:113) (`crates/forja-gui-rt`, `crates/forja-wasm`,
-   `crates/forja-wasm-gui`, `crates/forja-rt`, `crates/forja-android-rt`).
+   `forja` y de **todos** los crates del workspace —los de `compiler/` y los de
+   `library/`—, estén en el árbol o en submódulos.
 2. **El CI usa `--locked`.** Los workflows construyen con `cargo build --locked`
    y `cargo test --locked` para garantizar que el lock versionado coincide con
    el manifiesto y que las builds no resuelven dependencias nuevas por sorpresa.
-3. **Locks de submódulos = builds independientes.** `crates/forja-wasm/Cargo.lock`
-   y `crates/forja-gui-rt/Cargo.lock` pertenecen a **submódulos git** (repos
+3. **Locks de submódulos = builds independientes.** `library/wasm/Cargo.lock`
+   y `library/gui-rt/Cargo.lock` pertenecen a **submódulos git** (repos
    propios). Se conservan porque esos repos pueden construirse de forma
    independiente (p. ej. publicación como crate suelto o builds WASM aislados).
    **No se borran** sin verificar antes que el crate ya no se construye por
@@ -140,14 +149,14 @@ Para evitar ediciones cruzadas entre sesiones/agentes:
 1. **Una sesión por área.** Definí un owner por área (`syntax`, `types`,
    `bytecode`/IR, `VM`/GC, `docs`, `CI`) antes de empezar. Si dos tareas tocan
    el mismo archivo, se serializan.
-2. **Archivos calientes.** `src/lib.rs`, `src/bytecode.rs`, `src/ir*.rs`,
-   `Cargo.toml`, `CHANGELOG.md`, `plan*.md` tienen **un solo escritor** por
-   ciclo. Anunciá el cambio en el PR/issue antes de editar.
+2. **Archivos calientes.** `src/lib.rs`, `compiler/forja-bytecode/src/**`,
+   `compiler/forja-ir/src/ir*.rs`, `Cargo.toml` y `CHANGELOG.md` tienen **un
+   solo escritor** por ciclo. Anunciá el cambio en el PR/issue antes de editar.
 3. **PRs pequeños.** Un PR = una tarea. No mezcles arreglos "ajenos a la tarea";
    si un cambio de otra área es necesario, registralo en `CHANGELOG.md`
    (§"Deudas ajenas tocadas") y enlazá la tarea correspondiente en el CHANGELOG.
-4. **`CHANGELOG.md` y `plan*.md`:** los actualiza únicamente quien cierra la
-   tarea (o el coordinador), no cada PR.
+4. **`CHANGELOG.md`:** lo actualiza únicamente quien cierra la tarea (o el
+   coordinador), no cada PR.
 5. **Verificación antes de mezclar:** `bash scripts/verify.sh` y, si tocaste
    `tests/`, `git add -f tests/<archivo>.rs` (ver §11).
 
@@ -159,17 +168,15 @@ Los workflows están separados por responsabilidad:
   clippy, tests en 3 SO, tests del workspace, cobertura ASM, build de docs,
   métricas y auditoría de dependencias RUSTSEC), [`perf-regression.yml`](.github/workflows/perf-regression.yml) y
   [`crate-ci.yml`](.github/workflows/crate-ci.yml) (reutilizable por los repos
-  de `crates/`).
+  de los submódulos).
 - **CD** — entrega, sólo en `main`/`master`: [`cd.yml`](.github/workflows/cd.yml)
   (binarios multiplataforma, AAR de Android, WASM y release firmado con
-  cosign), [`docs-deploy.yml`](.github/workflows/docs-deploy.yml) (GitHub Pages)
-  y [`benchmark-dashboard.yml`](.github/workflows/benchmark-dashboard.yml)
-  (dashboard en `gh-pages`).
+  cosign).
 
 Las cifras de documentación no se mantienen a mano: [`ci.yml`](.github/workflows/ci.yml)
-recalcula las del `README.md` y las commitea cuando cambian, y
-[`docs-deploy.yml`](.github/workflows/docs-deploy.yml) regenera el roadmap del
-sitio al publicar (ese archivo vive en el submódulo `docs`).
+recalcula las del `README.md` y las commitea cuando cambian. El sitio de
+documentación vive en su propio repo (`forja-lang.github.io`), así que este
+repositorio no lo publica.
 
 ### Runners: self-hosted primero
 
