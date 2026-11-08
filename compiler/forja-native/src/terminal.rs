@@ -13,7 +13,7 @@ mod unix {
         fn tcgetattr(fd: RawFd, termios: *mut Termios) -> i32;
         fn tcsetattr(fd: RawFd, action: i32, termios: *const Termios) -> i32;
         fn ioctl(fd: RawFd, request: u64, ...) -> i32;
-        fn read(fd: RawFd, buf: *mut u8, count: usize) -> isize;
+        fn read(fd: RawFd, buf: *mut std::ffi::c_void, count: usize) -> isize;
     }
 
     #[repr(C)]
@@ -112,7 +112,7 @@ mod unix {
 
     pub fn leer_tecla() -> Result<String, String> {
         let mut buf = [0u8; 16];
-        let n = unsafe { read(STDIN_FILENO, buf.as_mut_ptr(), buf.len()) };
+        let n = unsafe { read(STDIN_FILENO, buf.as_mut_ptr().cast(), buf.len()) };
         if n <= 0 {
             return Err("Error leyendo tecla".into());
         }

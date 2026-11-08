@@ -6,8 +6,7 @@
 // el struct `NativeRegistry`, el constructor `new()`, la API pública y los
 // registros que no dependen de un dominio externo.
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::symbol_table::{IdSimbolo, TablaSimbolos};
+use forja_bytecode::symbol_table::{IdSimbolo, TablaSimbolos};
 use forja_runtime::{ErrFast, Host, ValorFast};
 /// Registro de funciones nativas para la VM Forja
 use std::collections::HashMap;

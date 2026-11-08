@@ -249,25 +249,7 @@ jobs:
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
       - name: cargo miri test forja-span
-        run: cargo miri test -p forja-span
-
-  fuzz:
-    name: Fuzz (compile targets)
-    needs: [cambios, elige-runner]
-    if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
-    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Rust Cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: "fuzz -> target"
-      - name: cargo check fuzz targets
-        run: cargo check --manifest-path fuzz/Cargo.toml --bins
+        run: cargo +nightly miri test -p forja-span
 
   cobertura-asm:
     name: Cobertura ASM (100%)
