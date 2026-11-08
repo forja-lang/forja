@@ -1713,20 +1713,19 @@ impl CompilerAsm {
                 }
             }
             Expresion::AccesoMiembro { objeto, miembro } => {
-                if let Expresion::Identificador { nombre, .. } = objeto.as_ref() {
-                    if let Some(var) = self.variables.get(nombre) {
-                        if let TipoAsm::Clase(clase) = &var.tipo {
-                            if let Some(info) = self.clases.get(clase) {
-                                if let Some((_, tipo)) =
-                                    info.campos.iter().find(|(n, _)| n == miembro)
-                                {
-                                    return Some(self.tipo_asm_a_tipo(tipo));
-                                }
-                            }
-                        }
+                let clase = match objeto.as_ref() {
+                    Expresion::Identificador { nombre, .. } => {
+                        self.variables.get(nombre).and_then(|v| match &v.tipo {
+                            TipoAsm::Clase(c) => Some(c.as_str()),
+                            _ => None,
+                        })
                     }
-                }
-                None
+                    _ => None,
+                };
+                clase
+                    .and_then(|c| self.clases.get(c))
+                    .and_then(|info| info.campos.iter().find(|(n, _)| n == miembro))
+                    .map(|(_, t)| self.tipo_asm_a_tipo(t))
             }
             Expresion::Identificador { nombre, .. } => {
                 self.variables.get(nombre).map(|v| match &v.tipo {
@@ -1800,7 +1799,7 @@ impl CompilerAsm {
                         if let Some(t) = Self::tipo_asm_simple_de_expr(valor, params) {
                             out.entry(campo.clone()).or_insert(t);
                         }
-                    }
+                    } // LCOV_EXCL_LINE
                 }
                 Declaracion::AsignacionMiembro {
                     objeto,
@@ -1813,7 +1812,7 @@ impl CompilerAsm {
                         if let Some(t) = Self::tipo_asm_simple_de_expr(valor, params) {
                             out.entry(miembro.clone()).or_insert(t);
                         }
-                    }
+                    } // LCOV_EXCL_LINE
                 }
                 Declaracion::Si {
                     bloque_verdadero,
@@ -4839,6 +4838,25 @@ c.sumar(5)";
 ";
         let out = optimizar_regs_calle_saved(t);
         assert!(!out.contains("push r13"));
+        // push/pop del mismo registro y movimientos sin fusión
+        let _ = peephole_x86(
+            "f:
+    push rcx
+    pop rcx
+    mov rax, 1
+    mov rdx, rcx
+    ret
+"
+            .into(),
+        );
+        // función sin frame: la rama de ajuste no debe romper
+        let _ = optimizar_regs_calle_saved(
+            "f:
+    push r12
+    pop r12
+    ret
+",
+        );
 
         let c = CompilerAsm::new();
         for r in ["rax", "r8", "r15", "foo"] {
@@ -4887,6 +4905,345 @@ escribir(1.5 < 2.0)
 escribir(1.5 == 1.5)",
         )
         .unwrap();
+    }
+    #[test]
+    fn cubre_ramas_restantes_de_generacion() {
+        let _ = compilar_source(
+            "variable a: Decimal = 7.5
+variable b: Decimal = 2.0
+             variable c: Decimal = a + b
+variable d: Decimal = a - b
+             variable e: Decimal = a * b
+variable f: Decimal = a / b
+             escribir(a > b)
+escribir(a < b)
+escribir(a >= b)
+escribir(a <= b)
+             escribir(a == b)
+escribir(a != b)
+escribir(c)
+escribir(d)
+escribir(e)
+escribir(f)",
+        )
+        .unwrap();
+        let _ = compilar_source(
+            "variable a: Decimal = 7.5
+variable c: Decimal = a + 1
+escribir(1.5)
+escribir(a + 2.5)",
+        )
+        .unwrap();
+        let _ = compilar_source(
+            "variable a: Decimal = 7.5
+variable m: Decimal = a % 2.0",
+        );
+        let _ = compilar_source(
+            "variable s = \"x\" + 1
+escribir(s)",
+        )
+        .unwrap();
+        let mut vars = String::new();
+        for i in 0..30 {
+            vars.push_str(&format!(
+                "variable v{i} = {i}
+"
+            ));
+        }
+        vars.push_str("escribir(v29)");
+        let _ = compilar_source(&vars).unwrap();
+        let _ = compilar_source(
+            "clase P {
+  variable x: Entero
+  funcion f() {
+    si (verdadero) { este.x = 1 }
+    mientras (falso) { este.x = 2 }
+  }
+}
+variable p = P()
+escribir(p.x)",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn cubre_asignacion_compuesta_y_multiple() {
+        use crate::ast::{Expresion, Operador};
+        let mut c = CompilerAsm::new();
+        c.variables.insert(
+            "x".into(),
+            StackVar {
+                offset: 0,
+                tipo: TipoAsm::Entero,
+            },
+        );
+        c.var_reg_map.insert("x".into(), "r12");
+        let objetivo = Box::new(Expresion::Identificador {
+            nombre: "x".into(),
+            linea: 1,
+            columna: 1,
+        });
+        let valor = Box::new(Expresion::LiteralNumero(1));
+        for op in [
+            Operador::Suma,
+            Operador::Resta,
+            Operador::Multiplicacion,
+            Operador::Division,
+        ] {
+            let e = Expresion::AsignacionCompuesta {
+                objetivo: objetivo.clone(),
+                operador: op,
+                valor: valor.clone(),
+            };
+            let _ = c.compilar_expresion_asm(&e);
+        }
+        let mut fuente = String::from("[");
+        for i in 0..20 {
+            if i > 0 {
+                fuente.push_str(", ");
+            }
+            fuente.push_str(&i.to_string());
+        }
+        fuente.push_str(
+            "]
+",
+        );
+        let mut vars = String::new();
+        for i in 0..20 {
+            if i > 0 {
+                vars.push(',');
+            }
+            vars.push_str(&format!("d{i}"));
+        }
+        let _ = compilar_source(&format!("variable {vars} = {fuente}"));
+    }
+
+    #[test]
+    fn cubre_clase_metodos_y_campos() {
+        let fuente = "clase C {
+  variable x
+  funcion a() {
+    si (verdadero) { este.x = 1 } sino { este.x = 5 }
+    mientras (falso) { este.x = 2 }
+    para (variable i = 0; i < 1; i = i + 1) { este.x = 3 }
+    repetir (1) { este.x = 4 }
+    cuando (verdadero) { este.x = 6 }
+  }
+}
+variable c = C()
+variable y: Entero = c.x
+escribir(y)";
+        let _ = compilar_source(fuente);
+        let _ = compilar_source(
+            "clase P { variable x: Entero }
+variable p = P()
+p.x += 1
+escribir(p.x)",
+        );
+        let _ = compilar_source(
+            "variable a = [1, 2]
+a[0] += 1
+escribir(a[0])",
+        );
+    }
+
+    #[test]
+    fn cubre_caja_blanca_final() {
+        use crate::ast::{Declaracion, Expresion, Operador};
+        use std::collections::HashMap;
+        let mut c = CompilerAsm::new();
+        c.variables.insert(
+            "p".into(),
+            StackVar {
+                offset: 0,
+                tipo: TipoAsm::Clase("P".into()),
+            },
+        );
+        c.variables.insert(
+            "a".into(),
+            StackVar {
+                offset: 0,
+                tipo: TipoAsm::Entero,
+            },
+        );
+        c.clases.insert(
+            "P".into(),
+            ClaseAsmInfo {
+                campos: vec![("x".into(), TipoAsm::Entero)],
+                size: 8,
+                offsets: HashMap::from([("x".to_string(), 0)]),
+                metodos: vec!["f".into()],
+            },
+        );
+        let id = |n: &str| Expresion::Identificador {
+            nombre: n.into(),
+            linea: 1,
+            columna: 1,
+        };
+        let miembro = Expresion::AccesoMiembro {
+            objeto: Box::new(id("p")),
+            miembro: "x".into(),
+        };
+        assert!(c.inferir_tipo_de_expr(&miembro).is_some());
+        let _ = CompilerAsm::tipo_asm_simple_de_expr(
+            &Expresion::Unaria {
+                operador: crate::ast::OperadorUnario::No,
+                expr: Box::new(id("p")),
+            },
+            &HashMap::new(),
+        );
+
+        let mut out = HashMap::new();
+        let params = HashMap::new();
+        for d in [
+            Declaracion::Expresion(Expresion::AsignacionCampo {
+                objeto: Box::new(id("este")),
+                campo: "x".into(),
+                valor: Box::new(Expresion::LiteralNumero(1)),
+            }),
+            Declaracion::AsignacionMiembro {
+                objeto: Box::new(id("este")),
+                miembro: "y".into(),
+                valor: Box::new(Expresion::LiteralNumero(1)),
+                linea: 1,
+                columna: 1,
+            },
+            Declaracion::Si {
+                condicion: Box::new(Expresion::LiteralBooleano(true)),
+                bloque_verdadero: vec![],
+                bloque_falso: Some(vec![Declaracion::Expresion(Expresion::AsignacionCampo {
+                    objeto: Box::new(id("este")),
+                    campo: "z".into(),
+                    valor: Box::new(Expresion::LiteralTexto("x".into())),
+                })]),
+            },
+            Declaracion::Cuando {
+                condicion: Box::new(Expresion::LiteralBooleano(true)),
+                cuerpo: vec![Declaracion::Expresion(Expresion::AsignacionCampo {
+                    objeto: Box::new(id("este")),
+                    campo: "w".into(),
+                    valor: Box::new(Expresion::LiteralBooleano(true)),
+                })],
+                linea: 1,
+                columna: 1,
+            },
+        ] {
+            CompilerAsm::escanear_campos_este(&[d], &params, &mut out);
+        }
+        assert!(!out.is_empty());
+
+        let _ = c.compilar_expresion_asm(&Expresion::AsignacionCompuesta {
+            objetivo: Box::new(miembro),
+            operador: Operador::Suma,
+            valor: Box::new(Expresion::LiteralNumero(1)),
+        });
+        let _ = c.compilar_expresion_asm(&Expresion::AsignacionCompuesta {
+            objetivo: Box::new(Expresion::Index {
+                objeto: Box::new(id("a")),
+                indice: Box::new(Expresion::LiteralNumero(0)),
+            }),
+            operador: Operador::Suma,
+            valor: Box::new(Expresion::LiteralNumero(1)),
+        });
+        let _ = c.compilar_expresion_asm(&Expresion::AsignacionCompuesta {
+            objetivo: Box::new(Expresion::LiteralNumero(1)),
+            operador: Operador::Suma,
+            valor: Box::new(Expresion::LiteralNumero(1)),
+        });
+        // Objeto que no es identificador y tipos simples restantes.
+        let _ = c.inferir_tipo_de_expr(&Expresion::AccesoMiembro {
+            objeto: Box::new(Expresion::LiteralNumero(1)),
+            miembro: "x".into(),
+        });
+        c.variables.insert(
+            "b".into(),
+            StackVar {
+                offset: 0,
+                tipo: TipoAsm::Booleano,
+            },
+        );
+        c.variables.insert(
+            "o".into(),
+            StackVar {
+                offset: 0,
+                tipo: TipoAsm::Clase("P".into()),
+            },
+        );
+        let _ = c.inferir_tipo_de_expr(&id("b"));
+        let _ = c.inferir_tipo_de_expr(&id("o"));
+        let _ = CompilerAsm::tipo_asm_simple_de_expr(
+            &Expresion::Grupo(Box::new(Expresion::LiteralNumero(1))),
+            &HashMap::new(),
+        );
+        let mut out2 = HashMap::new();
+        for d in [
+            Declaracion::AsignacionMiembro {
+                objeto: Box::new(id("este")),
+                miembro: "q".into(),
+                valor: Box::new(Expresion::Unaria {
+                    operador: crate::ast::OperadorUnario::No,
+                    expr: Box::new(Expresion::LiteralNumero(1)),
+                }),
+                linea: 1,
+                columna: 1,
+            },
+            Declaracion::Expresion(Expresion::AsignacionCampo {
+                objeto: Box::new(id("este")),
+                campo: "r".into(),
+                valor: Box::new(Expresion::Unaria {
+                    operador: crate::ast::OperadorUnario::No,
+                    expr: Box::new(Expresion::LiteralNumero(1)),
+                }),
+            }),
+        ] {
+            CompilerAsm::escanear_campos_este(&[d], &params, &mut out2);
+        }
+        let mut sin_reg = CompilerAsm::new();
+        sin_reg.variables.insert(
+            "x".into(),
+            StackVar {
+                offset: 8,
+                tipo: TipoAsm::Entero,
+            },
+        );
+        let _ = sin_reg.compilar_expresion_asm(&Expresion::AsignacionCompuesta {
+            objetivo: Box::new(id("x")),
+            operador: Operador::Suma,
+            valor: Box::new(Expresion::LiteralNumero(1)),
+        });
+        let _ = c.compilar_expresion_asm(&Expresion::LlamadaFuncion {
+            nombre: "P.f".into(),
+            argumentos: vec![],
+        });
+        c.variables.insert(
+            "q".into(),
+            StackVar {
+                offset: 0,
+                tipo: TipoAsm::Entero,
+            },
+        );
+        let _ = c.compilar_expresion_asm(&Expresion::LlamadaFuncion {
+            nombre: "q.f".into(),
+            argumentos: vec![],
+        });
+        for arch in [TargetArch::AArch64, TargetArch::RiscV64] {
+            let mut c = CompilerAsm::with_target(arch);
+            c.variables.insert(
+                "a".into(),
+                StackVar {
+                    offset: 0,
+                    tipo: TipoAsm::Entero,
+                },
+            );
+            let _ = c.compilar_expresion_asm(&Expresion::AsignacionCompuesta {
+                objetivo: Box::new(Expresion::Index {
+                    objeto: Box::new(id("a")),
+                    indice: Box::new(Expresion::LiteralNumero(0)),
+                }),
+                operador: Operador::Suma,
+                valor: Box::new(Expresion::LiteralNumero(1)),
+            });
+        }
     }
 }
 

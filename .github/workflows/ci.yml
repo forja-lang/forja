@@ -272,7 +272,7 @@ jobs:
       # por defecto en local. Subir de nuevo al cubrirlas.
       - name: Cobertura del backend ASM
         env:
-          ASM_COVERAGE_THRESHOLD: '94'
+          ASM_COVERAGE_THRESHOLD: '100'
         run: bash scripts/asm-coverage.sh
       - name: Publicar reporte de cobertura
         if: always()

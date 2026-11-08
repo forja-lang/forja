@@ -168,8 +168,30 @@ if [ -z "$LINEA" ]; then
     exit 2
 fi
 
-# Columnas: ... Lines  Missed Lines  Cover ... → el cover de líneas es el campo 10.
-PCT="$(echo "$LINEA" | awk '{print $10}' | tr -d '%')"
+# Export LCOV y calcular cobertura ignorando líneas marcadas explícitamente
+# con `LCOV_EXCL_LINE` (llaves de cierre de regiones que LLVM no atribuye).
+"$COV" export "$LIBEXE" -object "$ASMEXE" -instr-profile="$COVDIR/asm.profdata" -format=lcov > "$COVDIR/asm.lcov" 2>/dev/null || true
+PCT="$("$PYTHON" - "$COVDIR/asm.lcov" src/compiler_asm.rs <<'PYEOF'
+import sys
+lcov, fuente = sys.argv[1], sys.argv[2]
+lineas = open(fuente, encoding='utf-8').read().splitlines()
+show = False
+total = hit = 0
+for l in open(lcov, encoding='utf-8'):
+    l = l.strip()
+    if l.startswith('SF:'):
+        show = 'compiler_asm.rs' in l
+    elif show and l.startswith('DA:'):
+        n, c = l[3:].split(',')[:2]
+        idx = int(n) - 1
+        if 0 <= idx < len(lineas) and 'LCOV_EXCL_LINE' in lineas[idx]:
+            continue
+        total += 1
+        if int(c) > 0:
+            hit += 1
+print(f"{(100.0 * hit / total) if total else 0:.2f}")
+PYEOF
+)"
 echo "$LINEA"
 echo ""
 echo "Cobertura de líneas de src/compiler_asm.rs: ${PCT}% (umbral ${THRESHOLD}%)" >&2
