@@ -34,10 +34,6 @@
 	path = compiler/forja-syntax
 	url = https://github.com/forja-lang/forja-syntax.git
 	branch = main
-[submodule "crates/forja-types"]
-	path = compiler/forja-types
-	url = https://github.com/forja-lang/forja-types.git
-	branch = main
 [submodule "crates/forja-theme"]
 	path = library/gui-theme
 	url = https://github.com/forja-lang/forja-theme.git
@@ -46,3 +42,6 @@
 	path = library/gui-core
 	url = https://github.com/forja-lang/forja-gui-core.git
 	branch = main
+[submodule "compiler/forja-types"]
+	path = compiler/forja-types
+	url = https://github.com/forja-lang/forja-types.git
