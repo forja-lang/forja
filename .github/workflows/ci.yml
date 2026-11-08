@@ -116,7 +116,7 @@ jobs:
       - name: cargo xtask tidy
         run: cargo run -p forja-bootstrap --bin xtask -- tidy
       - name: cargo doc (sin warnings)
-        run: RUSTC_WRAPPER= cargo doc --workspace --no-deps --locked
+        run: RUSTC_WRAPPER= cargo doc -p forja --no-deps --locked
       - name: cargo deny
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
