@@ -4809,7 +4809,8 @@ c.sumar(5)";
         assert!(salida.contains("jg .Lx"));
 
         for set in ["setl", "setge", "setg", "sete", "setne", "setz"] {
-            let t = format!("f:
+            let t = format!(
+                "f:
     mov rax, rcx
     cmp rax, rdx
     {set} al
@@ -4818,7 +4819,8 @@ c.sumar(5)";
     jz .L
 .L:
     ret
-");
+"
+            );
             let _ = optimizar_condiciones(&t);
         }
 
@@ -4855,26 +4857,37 @@ c.sumar(5)";
 
     #[test]
     fn cubre_decimales_compuestas_y_clases() {
-        let _ = compilar_source("variable a: Decimal = 1.5
+        let _ = compilar_source(
+            "variable a: Decimal = 1.5
 variable b: Decimal = a + 2.5
-escribir(b)").unwrap();
-        let _ = compilar_source("variable x = 1
+escribir(b)",
+        )
+        .unwrap();
+        let _ = compilar_source(
+            "variable x = 1
 x += 2
 x -= 1
 x *= 3
 x /= 2
-escribir(x)").unwrap();
-        let _ = compilar_source("clase P {
+escribir(x)",
+        )
+        .unwrap();
+        let _ = compilar_source(
+            "clase P {
   variable x: Entero = 1
   funcion obtener() -> Entero { retornar este.x }
 }
 variable p = P()
-escribir(p.x)").unwrap();
-        let _ = compilar_source("escribir(1.5 > 1.0)
+escribir(p.x)",
+        )
+        .unwrap();
+        let _ = compilar_source(
+            "escribir(1.5 > 1.0)
 escribir(1.5 < 2.0)
-escribir(1.5 == 1.5)").unwrap();
+escribir(1.5 == 1.5)",
+        )
+        .unwrap();
     }
-
 }
 
 /// cubre exhaustivamente los accesores y emisores de instrucciones de
