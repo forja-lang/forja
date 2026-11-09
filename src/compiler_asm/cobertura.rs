@@ -64,7 +64,7 @@ fn tabla_de_targets_completa() {
         assert!(!t.ret_reg().is_empty());
         assert!(!t.ret_reg_32().is_empty());
         assert!(!t.temporal_reg().is_empty());
-        assert!(!t.tmp2_reg().is_empty());
+        assert!(!t.registro_temporal2().is_empty());
         assert!(!t.fp_reg().is_empty());
         assert!(!t.sp_reg().is_empty());
         assert!(!t.float_reg().is_empty());
@@ -304,7 +304,7 @@ fn reservar_variable_reg_persistente_y_agotamiento() {
 
 #[test]
 fn tipos_forja_a_asm_cubre_todas_las_variantes() {
-    let c = CompilerAsm::new();
+    let c = CompilerAsm::nuevo();
     let casos = [
         (None, TipoAsm::Entero),
         (Some(Tipo::Entero), TipoAsm::Entero),
@@ -351,7 +351,7 @@ fn tipos_forja_a_asm_cubre_todas_las_variantes() {
 
 #[test]
 fn tipo_parametro_a_asm_cubre_todas_las_variantes() {
-    let c = CompilerAsm::new();
+    let c = CompilerAsm::nuevo();
     let param = |tipo: Option<Tipo>| Parametro {
         nombre: "p".into(),
         prestado: false,
@@ -381,7 +381,7 @@ fn tipo_parametro_a_asm_cubre_todas_las_variantes() {
 
 #[test]
 fn inferir_tipo_campo_e_inferir_tipo_de_expr() {
-    let c = CompilerAsm::new();
+    let c = CompilerAsm::nuevo();
     let campo = |tipo: Option<Tipo>| VariableClase {
         nombre: "campo".into(),
         tipo,

@@ -42,7 +42,7 @@ fn lectura_de_booleano_en_registro() {
 
 #[test]
 fn auto_llamada_con_todos_los_caminos_negativos() {
-    let c = CompilerAsm::new();
+    let c = CompilerAsm::nuevo();
     let auto = |cuerpo: Vec<Declaracion>| c.tiene_auto_llamada(&cuerpo, "f");
 
     // `si` sin rama falsa y sin llamadas: recorre el `if let` con None.
@@ -111,7 +111,7 @@ fn auto_llamada_con_todos_los_caminos_negativos() {
 
 #[test]
 fn constructos_complejos_con_todos_los_caminos_negativos() {
-    let c = CompilerAsm::new();
+    let c = CompilerAsm::nuevo();
     let complejo = |cuerpo: Vec<Declaracion>| c.tiene_constructos_complejos(&cuerpo);
 
     // `si` sin closures en la condición, el bloque ni la rama falsa.

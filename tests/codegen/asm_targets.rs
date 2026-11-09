@@ -280,7 +280,7 @@ fn detect_no_paniquea() {
 fn predeterminado_equivale_a_nuevo() {
     let programa = parsear("variable x = 1\nescribir(x)").expect("parse");
     let mut por_defecto = CompilerAsm::default();
-    let mut explicito = CompilerAsm::new();
+    let mut explicito = CompilerAsm::nuevo();
     assert_eq!(
         por_defecto.compilar(&programa).expect("default compila"),
         explicito.compilar(&programa).expect("new compila"),

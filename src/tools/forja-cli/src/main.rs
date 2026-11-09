@@ -76,7 +76,7 @@ fn main() {
     error::establecer_color_mode(cfg.color);
 
     if args.len() < 2 {
-        let mut repl = repl::REPL::new("rapido");
+        let mut repl = repl::REPL::sin_archivo("rapido");
         repl.iniciar();
         return;
     }

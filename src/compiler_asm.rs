@@ -33,7 +33,7 @@ impl DestinoArch {
         Self::desde_plataforma(std::env::consts::ARCH, std::env::consts::OS)
     }
 
-    /// Mapea `(arquitectura, sistema operativo)` al target del backend.
+    /// Mapea `(arquitectura, sistema operativo)` al destino del backend.
     ///
     /// Es una función pura (sin `cfg!`) para que todas las combinaciones sean
     /// alcanzables desde los tests: con `cfg!` las ramas de otras plataformas
@@ -162,7 +162,7 @@ impl DestinoArch {
         }
     }
 
-    fn tmp2_reg(&self) -> &str {
+    fn registro_temporal2(&self) -> &str {
         match self {
             DestinoArch::X86_64Windows | DestinoArch::X86_64Linux => "rdx",
             DestinoArch::AArch64 => "x2",
@@ -967,7 +967,7 @@ pub struct CompilerAsm {
     funciones: Vec<String>,
     funciones_declaraciones: HashMap<String, Declaracion>, // para inlining
     clases: HashMap<String, ClaseAsmInformacion>,
-    etiqueta_counter: usize,
+    etiqueta_cantidader: usize,
     funcion_actual: Option<String>,
     // Register allocator
     reg_pool: Vec<bool>,          // true = allocated
@@ -982,7 +982,7 @@ pub struct CompilerAsm {
     postcondiciones_activas: bool,
     retval_pila_etiqueta: String,
     end_etiqueta_fn: String,
-    contrato_etiqueta_counter: usize,
+    contrato_etiqueta_cantidader: usize,
     /// Etiqueta de fin cuando el cuerpo se compila inlineado (`retornar` no
     /// debe emitir `ret`, que volvería del `main` del caller).
     en_linea_end: Option<String>,
@@ -992,12 +992,12 @@ pub struct CompilerAsm {
 
 impl Default for CompilerAsm {
     fn default() -> Self {
-        Self::new()
+        Self::nuevo()
     }
 }
 
 impl CompilerAsm {
-    pub fn new() -> Self {
+    pub fn nuevo() -> Self {
         let (reg_names, reg_pool) = Self::inicializar_register_pool(DestinoArch::detect());
         CompilerAsm {
             salida: String::new(),
@@ -1009,7 +1009,7 @@ impl CompilerAsm {
             funciones: Vec::new(),
             funciones_declaraciones: HashMap::new(),
             clases: HashMap::new(),
-            etiqueta_counter: 0,
+            etiqueta_cantidader: 0,
             funcion_actual: None,
             reg_pool,
             reg_names,
@@ -1019,7 +1019,7 @@ impl CompilerAsm {
             postcondiciones_activas: false,
             retval_pila_etiqueta: String::new(),
             end_etiqueta_fn: String::new(),
-            contrato_etiqueta_counter: 0,
+            contrato_etiqueta_cantidader: 0,
             en_linea_end: None,
             bucle_actual: None,
         }
@@ -1402,19 +1402,19 @@ impl CompilerAsm {
         }
     }
 
-    pub fn con_destino(target: DestinoArch) -> Self {
-        let (reg_names, reg_pool) = Self::inicializar_register_pool(target);
+    pub fn con_destino(destino: DestinoArch) -> Self {
+        let (reg_names, reg_pool) = Self::inicializar_register_pool(destino);
         CompilerAsm {
             salida: String::new(),
             rdata: String::new(),
-            arch: target,
+            arch: destino,
             errores: Vec::new(),
             pila_offset: 0,
             variables: HashMap::new(),
             funciones: Vec::new(),
             funciones_declaraciones: HashMap::new(),
             clases: HashMap::new(),
-            etiqueta_counter: 0,
+            etiqueta_cantidader: 0,
             funcion_actual: None,
             reg_pool,
             reg_names,
@@ -1424,7 +1424,7 @@ impl CompilerAsm {
             postcondiciones_activas: false,
             retval_pila_etiqueta: String::new(),
             end_etiqueta_fn: String::new(),
-            contrato_etiqueta_counter: 0,
+            contrato_etiqueta_cantidader: 0,
             en_linea_end: None,
             bucle_actual: None,
         }
@@ -1435,7 +1435,7 @@ impl CompilerAsm {
 
         // Encabezado
         self.emitir_linea(format!(
-            "// Código assembly generado por Forja (fa) — target: {}",
+            "// Código assembly generado por Forja (fa) — destino: {}",
             self.arch.name()
         ));
         self.emitir_linea("// Compilar: gcc -O2 -o programa este_archivo.s");
@@ -2302,7 +2302,7 @@ impl CompilerAsm {
                     }
                 }
                 // Guardar byte offset del índice en tmp2
-                self.emitir_linea(a.mov_reg_reg(a.tmp2_reg(), ret));
+                self.emitir_linea(a.mov_reg_reg(a.registro_temporal2(), ret));
                 // Compilar valor → ret (rax/x0)
                 self.compilar_expresion_asm(valor);
                 // Mover valor a un registro temporal para no perderlo
@@ -2318,7 +2318,7 @@ impl CompilerAsm {
                     return;
                 }
                 // Calcular dirección: base + byte_offset
-                self.emitir_linea(a.add_reg_reg(temporal, a.tmp2_reg()));
+                self.emitir_linea(a.add_reg_reg(temporal, a.registro_temporal2()));
                 // Restaurar valor del array
                 self.emitir_linea(a.desapilar_reg(ret));
                 // Almacenar: [base + byte_offset] = valor
@@ -2412,21 +2412,22 @@ impl CompilerAsm {
                     self.postcondiciones_activas = true;
                     // Reserve stack slot for retval
                     self.pila_offset -= 8;
-                    let rv_etiqueta = format!(".Lrv_{}", self.contrato_etiqueta_counter);
+                    let rv_etiqueta = format!(".Lrv_{}", self.contrato_etiqueta_cantidader);
                     self.retval_pila_etiqueta = rv_etiqueta;
-                    let end_lbl = format!(".Lend_fn_{}", self.contrato_etiqueta_counter);
+                    let end_lbl = format!(".Lend_fn_{}", self.contrato_etiqueta_cantidader);
                     self.end_etiqueta_fn = end_lbl;
-                    self.contrato_etiqueta_counter += 1;
+                    self.contrato_etiqueta_cantidader += 1;
                     // Emit retval string messages in data section
                     for c in postcondiciones {
-                        let msg = c
+                        let mensaje = c
                             .mensaje
                             .clone()
                             .unwrap_or_else(|| "Postcondición falló".to_string());
-                        let mlbl = format!(".Lmsg_post_{}", self.contrato_etiqueta_counter);
+                        let mlbl = format!(".Lmensaje_post_{}", self.contrato_etiqueta_cantidader);
                         self.rdata.push_str(&format!("{}:\n", mlbl));
-                        self.rdata.push_str(&format!("    .asciz \"{}\"\n", msg));
-                        self.contrato_etiqueta_counter += 1;
+                        self.rdata
+                            .push_str(&format!("    .asciz \"{}\"\n", mensaje));
+                        self.contrato_etiqueta_cantidader += 1;
                     }
                 }
 
@@ -2475,16 +2476,18 @@ impl CompilerAsm {
 
                 // ─── Precondiciones ───
                 for c in precondiciones {
-                    let msg = c
+                    let mensaje = c
                         .mensaje
                         .clone()
                         .unwrap_or_else(|| "Precondición falló".to_string());
                     let lbl_fail = self.nueva_etiqueta("pre_fail");
                     let lbl_correcto = self.nueva_etiqueta("pre_ok");
-                    let lbl_mensaje = format!(".Lmsg_pre_{}", self.contrato_etiqueta_counter);
+                    let lbl_mensaje =
+                        format!(".Lmensaje_pre_{}", self.contrato_etiqueta_cantidader);
                     self.rdata.push_str(&format!("{}:\n", lbl_mensaje));
-                    self.rdata.push_str(&format!("    .asciz \"{}\"\n", msg));
-                    self.contrato_etiqueta_counter += 1;
+                    self.rdata
+                        .push_str(&format!("    .asciz \"{}\"\n", mensaje));
+                    self.contrato_etiqueta_cantidader += 1;
                     // Compile condition → resultado en ret (rax/x0)
                     self.compilar_expresion_asm(&c.condicion);
                     self.emitir_linea(a.test_reg(ret));
@@ -2531,11 +2534,11 @@ impl CompilerAsm {
                     for c in postcondiciones {
                         // We currently don't evaluate postcondición expressions in ASM for 'resultado'
                         // Por ahora emite un comentario que marca la verificación de la postcondición
-                        let msg = c
+                        let mensaje = c
                             .mensaje
                             .clone()
                             .unwrap_or_else(|| "Postcondición falló".to_string());
-                        self.emitir_linea(format!("    // postcondición: {}", msg));
+                        self.emitir_linea(format!("    // postcondición: {}", mensaje));
                         // Note: Full postcondición expression evaluation with 'resultado'
                         // would need a special expression compiler similar to generar_expr_con_resultado
                         // Por ahora el valor está en rax/x0
@@ -2654,7 +2657,7 @@ impl CompilerAsm {
             Declaracion::Repetir { cantidad, bloque } => {
                 let lloop = self.nueva_etiqueta("repeat_loop");
                 let lend = self.nueva_etiqueta("repeat_end");
-                let cname = format!("__repetir_{}", self.etiqueta_counter);
+                let cname = format!("__repetir_{}", self.etiqueta_cantidader);
                 self.pila_offset -= 8;
                 let oa = -self.pila_offset;
                 self.variables.insert(
@@ -2677,8 +2680,8 @@ impl CompilerAsm {
                 self.bucle_actual = previo;
                 // incrementar contador: [fp - oa] += 1
                 self.emitir_linea(a.ldr_reg_mem(temporal, fp, oa));
-                self.emitir_linea(a.mov_reg_imm(a.tmp2_reg(), 1));
-                self.emitir_linea(a.add_reg_reg(temporal, a.tmp2_reg()));
+                self.emitir_linea(a.mov_reg_imm(a.registro_temporal2(), 1));
+                self.emitir_linea(a.add_reg_reg(temporal, a.registro_temporal2()));
                 self.emitir_linea(a.str_reg_mem(temporal, fp, oa));
                 self.emitir_linea(a.jump(&lloop));
                 self.emitir_linea(format!("{}:", lend));
@@ -2835,27 +2838,27 @@ impl CompilerAsm {
             }
             // AND lógico: normalizar ambos operandos a 0/1 y combinar bit a bit
             Operador::Y => {
-                let mut lines = a.bool_normalize(ret);
+                let mut lineas = a.bool_normalize(ret);
                 // Guardar lhs booleano en pila
-                lines.push(a.empujar_reg(a.ret_reg()));
+                lineas.push(a.empujar_reg(a.ret_reg()));
                 // Normalizar rhs y recuperar el lhs en `ret`
-                lines.extend(a.bool_normalize(temporal));
-                lines.push(a.desapilar_reg(a.ret_reg()));
-                lines.push(a.and_reg_reg(ret, temporal));
-                lines.push(a.movzx(a.ret_reg_32(), a.ret_reg_32()));
-                lines
+                lineas.extend(a.bool_normalize(temporal));
+                lineas.push(a.desapilar_reg(a.ret_reg()));
+                lineas.push(a.and_reg_reg(ret, temporal));
+                lineas.push(a.movzx(a.ret_reg_32(), a.ret_reg_32()));
+                lineas
             }
             // OR lógico: normalizar ambos operandos a 0/1 y hacer OR bit a bit
             Operador::O => {
-                let mut lines = a.bool_normalize(ret);
+                let mut lineas = a.bool_normalize(ret);
                 // Guardar lhs booleano en pila
-                lines.push(a.empujar_reg(a.ret_reg()));
+                lineas.push(a.empujar_reg(a.ret_reg()));
                 // Normalizar rhs y recuperar el lhs en `ret`
-                lines.extend(a.bool_normalize(temporal));
-                lines.push(a.desapilar_reg(a.ret_reg()));
-                lines.push(a.or_reg_reg(ret, temporal));
-                lines.push(a.movzx(a.ret_reg_32(), a.ret_reg_32()));
-                lines
+                lineas.extend(a.bool_normalize(temporal));
+                lineas.push(a.desapilar_reg(a.ret_reg()));
+                lineas.push(a.or_reg_reg(ret, temporal));
+                lineas.push(a.movzx(a.ret_reg_32(), a.ret_reg_32()));
+                lineas
             }
         };
 
@@ -2975,7 +2978,7 @@ impl CompilerAsm {
             } => {
                 // Concatenación de textos (`Texto + …`, interpolación). Sólo
                 // x86-64: en ARM64/RISC-V se mantiene la suma de punteros de
-                // antes (no hay ejecución ASM nativa en tests para esos targets).
+                // antes (no hay ejecución ASM nativa en tests para esos destinos).
                 if *operador == Operador::Suma && self.expr_es_texto(expr) {
                     // shortcut: ARM64/RISC-V no ejecutan concat real, añadir
                     // `forja_concat` con ldrb/strb si se valida ASM ahí.
@@ -3186,8 +3189,8 @@ impl CompilerAsm {
             Expresion::Grupo(expr) => self.compilar_expresion_asm(expr),
 
             Expresion::Arreglo(elementos) => {
-                let count = elementos.len();
-                self.emitir_linea(a.mov_reg_imm(temporal, (count * 8) as i64));
+                let cantidad = elementos.len();
+                self.emitir_linea(a.mov_reg_imm(temporal, (cantidad * 8) as i64));
                 self.emitir_linea(a.call("malloc"));
                 // Guardar el puntero del array UNA sola vez: queda en el tope de
                 // la pila durante todo el bucle. (Antes se volvía a `push ret`
@@ -3198,7 +3201,7 @@ impl CompilerAsm {
                     // Compilar el elemento → resultado en ret (rax/x0)
                     self.compilar_expresion_asm(elem);
                     // Mover el valor a tmp2 para no perderlo
-                    self.emitir_linea(a.mov_reg_reg(a.tmp2_reg(), ret));
+                    self.emitir_linea(a.mov_reg_reg(a.registro_temporal2(), ret));
                     // Restaurar el puntero del array desde [sp] (sin pop)
                     self.emitir_linea(a.ldr_reg_mem(temporal, a.sp_reg(), 0));
                     match a {
@@ -3208,7 +3211,7 @@ impl CompilerAsm {
                                 temporal,
                                 &format!("{}", i),
                                 8,
-                                a.tmp2_reg(),
+                                a.registro_temporal2(),
                             ));
                         }
                         DestinoArch::RiscV64 => {
@@ -3216,7 +3219,7 @@ impl CompilerAsm {
                                 temporal,
                                 &format!("{}", i),
                                 8,
-                                a.tmp2_reg(),
+                                a.registro_temporal2(),
                             ));
                         }
                         DestinoArch::AArch64 => {
@@ -3230,7 +3233,7 @@ impl CompilerAsm {
                                     i * 8
                                 ));
                             }
-                            self.emitir_linea(a.str_reg_mem(a.tmp2_reg(), temporal, 0));
+                            self.emitir_linea(a.str_reg_mem(a.registro_temporal2(), temporal, 0));
                         }
                     }
                 }
@@ -3290,9 +3293,9 @@ impl CompilerAsm {
                                 // Cargar el valor original desde el stack
                                 self.emitir_linea(a.ldr_reg_mem(temporal, a.sp_reg(), 0));
                                 // Compilar el literal (resultado en ret/rax)
-                                let prev_stack = self.pila_offset;
+                                let pila_anterior = self.pila_offset;
                                 self.compilar_expresion_asm(lit);
-                                self.pila_offset = prev_stack;
+                                self.pila_offset = pila_anterior;
                                 // Comparar: tmp (original) vs ret (literal)
                                 self.emitir_linea(a.cmp_reg_reg(temporal, ret));
                                 // Saltar al siguiente brazo si NO son iguales (jne)
@@ -3604,7 +3607,7 @@ impl CompilerAsm {
         // el tipo de la variable y llamar a "Clase.metodo(self, args...)".
         if let Some(dot_pos) = nombre.find('.') {
             let base = &nombre[..dot_pos];
-            let method = &nombre[dot_pos + 1..];
+            let metodo = &nombre[dot_pos + 1..];
             // Buscar el tipo de 'base' en las variables (clonamos para evitar borrow issues)
             let clase_nombre: Option<String> = self.variables.get(base).and_then(|var| {
                 if let TipoAsm::Clase(clase) = &var.tipo {
@@ -3648,7 +3651,7 @@ impl CompilerAsm {
                     self.emitir_linea(a.empujar_reg(ret));
                 }
                 // Llamar a Clase.metodo
-                let metodo_name = format!("{}.{}", clase, method);
+                let metodo_name = format!("{}.{}", clase, metodo);
                 let ss = a.shadow_space();
                 if ss > 0 {
                     self.emitir_linea(a.sub_sp(ss));
@@ -4383,8 +4386,8 @@ impl CompilerAsm {
     }
 
     fn nueva_etiqueta(&mut self, prefijo: &str) -> String {
-        let n = self.etiqueta_counter;
-        self.etiqueta_counter += 1;
+        let n = self.etiqueta_cantidader;
+        self.etiqueta_cantidader += 1;
         format!(".L{}_{}", prefijo, n)
     }
 
@@ -4529,15 +4532,15 @@ fn peephole_x86(texto: String) -> String {
 fn optimizar_condiciones(texto: &str) -> String {
     let mut out: Vec<String> = Vec::new();
     let mut i = 0;
-    let lines: Vec<&str> = texto.lines().collect();
-    while i < lines.len() {
-        if i + 6 < lines.len() {
-            let a = lines[i].trim();
-            let b = lines[i + 1].trim();
-            let c = lines[i + 2].trim();
-            let d = lines[i + 3].trim();
-            let e = lines[i + 4].trim();
-            let f = lines[i + 5].trim();
+    let lineas: Vec<&str> = texto.lines().collect();
+    while i < lineas.len() {
+        if i + 6 < lineas.len() {
+            let a = lineas[i].trim();
+            let b = lineas[i + 1].trim();
+            let c = lineas[i + 2].trim();
+            let d = lineas[i + 3].trim();
+            let e = lineas[i + 4].trim();
+            let f = lineas[i + 5].trim();
             let reg = a.strip_prefix("mov rax, ");
             let cmp = b.strip_prefix("cmp rax, ");
             let fijar = c.strip_prefix("set").and_then(|x| x.strip_suffix(" al"));
@@ -4561,7 +4564,7 @@ fn optimizar_condiciones(texto: &str) -> String {
                 }
             }
         }
-        out.push(lines[i].to_string());
+        out.push(lineas[i].to_string());
         i += 1;
     }
     out.join(
@@ -4640,16 +4643,16 @@ fn optimizar_regs_calle_saved(texto: &str) -> String {
 }
 
 pub fn compilar_a_asm(programa: &Programa) -> Result<String, Vec<ErrorForja>> {
-    let mut compiler = CompilerAsm::new();
+    let mut compiler = CompilerAsm::nuevo();
     compiler.compilar(programa)
 }
 
 /// Compila un programa Forja a assembly nativo, especificando la arquitectura destino
 pub fn compilar_a_asm_con_destino(
     programa: &Programa,
-    target: DestinoArch,
+    destino: DestinoArch,
 ) -> Result<String, Vec<ErrorForja>> {
-    let mut compiler = CompilerAsm::con_destino(target);
+    let mut compiler = CompilerAsm::con_destino(destino);
     compiler.compilar(programa)
 }
 
@@ -4684,7 +4687,7 @@ mod tests {
         let tokens = Lexer::new("escribir(1)").tokenize().unwrap();
         let programa = Parser::nuevo(tokens).parse().unwrap();
         let con_default = CompilerAsm::default().compilar(&programa).unwrap();
-        let con_nuevo = CompilerAsm::new().compilar(&programa).unwrap();
+        let con_nuevo = CompilerAsm::nuevo().compilar(&programa).unwrap();
         assert_eq!(con_default, con_nuevo);
     }
 
@@ -4732,7 +4735,7 @@ mod tests {
 
     #[test]
     fn test_asm_destino_detect() {
-        // Verifica que el target se detecte sin panic
+        // Verifica que el destino se detecte sin panic
         let _arch = DestinoArch::detect();
     }
 
@@ -4901,7 +4904,7 @@ c.sumar(5)";
 ",
         );
 
-        let c = CompilerAsm::new();
+        let c = CompilerAsm::nuevo();
         for r in ["rax", "r8", "r15", "foo"] {
             assert!(!c.arch.reg32(r).is_empty());
         }
@@ -5012,7 +5015,7 @@ escribir(p.x)",
     #[test]
     fn cubre_asignacion_compuesta_y_multiple() {
         use crate::ast::{Expresion, Operador};
-        let mut c = CompilerAsm::new();
+        let mut c = CompilerAsm::nuevo();
         c.variables.insert(
             "x".into(),
             PilaVariable {
@@ -5094,7 +5097,7 @@ escribir(a[0])",
     fn cubre_caja_blanca_final() {
         use crate::ast::{Declaracion, Expresion, Operador};
         use std::collections::HashMap;
-        let mut c = CompilerAsm::new();
+        let mut c = CompilerAsm::nuevo();
         c.variables.insert(
             "p".into(),
             PilaVariable {
@@ -5245,7 +5248,7 @@ escribir(a[0])",
         ] {
             CompilerAsm::escanear_campos_este(&[d], &params, &mut out2);
         }
-        let mut sin_reg = CompilerAsm::new();
+        let mut sin_reg = CompilerAsm::nuevo();
         sin_reg.variables.insert(
             "x".into(),
             PilaVariable {
@@ -5297,12 +5300,12 @@ escribir(a[0])",
 
 /// cubre exhaustivamente los accesores y emisores de instrucciones de
 /// [`TargetArch`] para las tres arquitecturas. No valida semántica del código
-/// generado (eso lo hace `tests/asm_targets.rs` ejecutando la batería), sino que
-/// **ningún camino de emisión entra en panic** y que cada target devuelve
+/// generado (eso lo hace `tests/asm_destinos.rs` ejecutando la batería), sino que
+/// **ningún camino de emisión entra en panic** y que cada destino devuelve
 /// registros/directivas coherentes. Sube la cobertura del backend por encima del
 /// 80%.
 #[cfg(test)]
-mod tests_targets {
+mod tests_destinos {
     use super::*;
 
     const TARGETS: [DestinoArch; 4] = [
@@ -5320,7 +5323,7 @@ mod tests_targets {
             assert!(!t.ret_reg_32().is_empty());
             assert!(!t.arg_regs().is_empty());
             assert!(!t.temporal_reg().is_empty());
-            assert!(!t.tmp2_reg().is_empty());
+            assert!(!t.registro_temporal2().is_empty());
             assert!(!t.fp_reg().is_empty());
             assert!(!t.sp_reg().is_empty());
             assert!(!t.float_reg().is_empty());
@@ -5438,7 +5441,7 @@ mod tests_targets {
 
     #[test]
     fn tipos_forja_a_asm_y_tamanos() {
-        let c = CompilerAsm::new();
+        let c = CompilerAsm::nuevo();
         let tipos = [
             None,
             Some(Tipo::Entero),

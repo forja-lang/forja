@@ -376,7 +376,7 @@ fn clases_recolectadas_por_tipo_de_campo() {
         ("f", Some(Tipo::Clase("Otra".into()))),
         ("g", Some(Tipo::Nulo)),
     ];
-    let mut c = CompilerAsm::new();
+    let mut c = CompilerAsm::nuevo();
     c.recolectar_clases(&[decl_clase(
         "Completa",
         casos.iter().map(|(n, t)| campo(n, t.clone())).collect(),
@@ -389,12 +389,12 @@ fn clases_recolectadas_por_tipo_de_campo() {
     assert_eq!(informacion.metodos, vec!["m".to_string()]);
 
     // Clase sin campos: el tamaño mínimo es 8 bytes.
-    let mut c = CompilerAsm::new();
+    let mut c = CompilerAsm::nuevo();
     c.recolectar_clases(&[decl_clase("Vacia", vec![], vec![])]);
     assert_eq!(c.clases.get("Vacia").unwrap().tamano, 8);
 
     // `generar_clases_asm` documenta el layout en el asm generado.
-    let mut c = CompilerAsm::new();
+    let mut c = CompilerAsm::nuevo();
     c.recolectar_clases(&[decl_clase("P", vec![campo("x", None)], vec![])]);
     c.generar_clases_asm(&[]);
     assert!(c.salida.contains("struct de"));

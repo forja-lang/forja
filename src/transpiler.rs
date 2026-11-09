@@ -1400,11 +1400,11 @@ impl Transpiler {
                 self.emitir_linea("// ═══ Invariantes ═══");
                 for c in &invariantes {
                     let cond = self.transpilar_expresion(&c.condicion);
-                    let msg = c
+                    let mensaje = c
                         .mensaje
                         .clone()
                         .unwrap_or_else(|| "Invariante falló".to_string());
-                    self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                    self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, mensaje));
                 }
             }
 
@@ -1413,11 +1413,11 @@ impl Transpiler {
                 self.emitir_linea("// ═══ Precondiciones ═══");
                 for c in &metodo.precondiciones {
                     let cond = self.transpilar_expresion(&c.condicion);
-                    let msg = c
+                    let mensaje = c
                         .mensaje
                         .clone()
                         .unwrap_or_else(|| "Precondición falló".to_string());
-                    self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                    self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, mensaje));
                 }
             }
 
@@ -1452,11 +1452,11 @@ impl Transpiler {
                 self.emitir_linea("// ═══ Invariantes ═══");
                 for c in &invariantes {
                     let cond = self.transpilar_expresion(&c.condicion);
-                    let msg = c
+                    let mensaje = c
                         .mensaje
                         .clone()
                         .unwrap_or_else(|| "Invariante falló".to_string());
-                    self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                    self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, mensaje));
                 }
             }
 
@@ -1903,11 +1903,11 @@ impl Transpiler {
                     self.emitir_linea("// ═══ Precondiciones ═══");
                     for c in precondiciones {
                         let cond = self.transpilar_expresion(&c.condicion);
-                        let msg = c
+                        let mensaje = c
                             .mensaje
                             .clone()
                             .unwrap_or_else(|| "Precondición falló".to_string());
-                        self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                        self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, mensaje));
                     }
                 }
 
@@ -2263,22 +2263,28 @@ impl Transpiler {
                         // Emitir postcondiciones
                         for c in &postconds {
                             let cond = self.transpilar_expresion(&c.condicion);
-                            let msg = c
+                            let mensaje = c
                                 .mensaje
                                 .clone()
                                 .unwrap_or_else(|| "Postcondición falló".to_string());
-                            self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                            self.emitir_linea(&format!(
+                                "debug_assert!({}, \"{}\");",
+                                cond, mensaje
+                            ));
                         }
                         self.emitir_linea("return _return_value;");
                     } else {
                         // Sin valor de retorno: emitir postcondiciones y retornar
                         for c in &postconds {
                             let cond = self.transpilar_expresion(&c.condicion);
-                            let msg = c
+                            let mensaje = c
                                 .mensaje
                                 .clone()
                                 .unwrap_or_else(|| "Postcondición falló".to_string());
-                            self.emitir_linea(&format!("debug_assert!({}, \"{}\");", cond, msg));
+                            self.emitir_linea(&format!(
+                                "debug_assert!({}, \"{}\");",
+                                cond, mensaje
+                            ));
                         }
                         self.emitir_linea("return;");
                     }

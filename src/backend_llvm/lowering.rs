@@ -162,6 +162,9 @@ pub struct Lowering {
     lc: u64,
     rc: u64,
     sc: u64,
+    /// `FORJA_SIN_RANGOS=1`: acceso a arreglos sin chequeo de rango (UB si se
+    /// pasa, como `get_unchecked`). Es lo que permite vectorizar bucles.
+    sin_rangos: bool,
 }
 
 const RUNTIME: &[(&str, &str)] = &[
@@ -226,6 +229,9 @@ impl Lowering {
             lc: 0,
             rc: 0,
             sc: 0,
+            sin_rangos: std::env::var("FORJA_SIN_RANGOS")
+                .map(|v| matches!(v.to_lowercase().as_str(), "1" | "si" | "sí" | "on" | "verdadero"))
+                .unwrap_or(false),
         }
     }
 
@@ -551,7 +557,10 @@ impl Lowering {
             .collect();
 
         // 3. Runtime de soporte.
-        for (nombre, firma) in RUNTIME {
+        // `noalias` en el retorno de forja_alloc: el allocator nunca devuelve
+        // memoria que alias otra viva, lo que habilita LICM/vectorización.
+        let _ = writeln!(self.decls, "declare noalias ptr @forja_alloc(i64)");
+        for (nombre, firma) in RUNTIME.iter().filter(|(n, _)| *n != "forja_alloc") {
             let (ret, params) = firma.split_once(' ').unwrap_or(("i64", "()"));
             let _ = writeln!(self.decls, "declare {} @{}{}", ret, nombre, params);
         }

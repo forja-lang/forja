@@ -19,7 +19,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const REPO: &str = "forja-lang/forja";
-const SETUP_ASSET: &str = "forja-setup-x64.exe";
+const ASSET_INSTALADOR: &str = "forja-setup-x64.exe";
 const VENTANA_CACHE_SEGS: u64 = 24 * 60 * 60;
 
 // ── Manifiesto de instalación ──────────────────────────────────────────────
@@ -27,7 +27,7 @@ const VENTANA_CACHE_SEGS: u64 = 24 * 60 * 60;
 #[derive(Debug, Clone)]
 pub struct Manifiesto {
     pub version: String,
-    pub path: String,
+    pub ruta: String,
     pub features: Vec<String>,
 }
 
@@ -77,7 +77,7 @@ pub fn normalizar_componentes(texto: &str) -> Vec<String> {
 // ── Ubicaciones ───────────────────────────────────────────────────────────
 
 /// Ruta real del ejecutable. En Windows la CLI se re-lanza desde una copia en
-/// %TEMP% (selfrun), así que el path original viene en FORJA_ORIGINAL_EXE.
+/// %TEMP% (selfrun), así que el ruta original viene en FORJA_ORIGINAL_EXE.
 pub fn ruta_ejecutable() -> Option<PathBuf> {
     if let Ok(original) = std::env::var("FORJA_ORIGINAL_EXE") {
         let p = PathBuf::from(original);
@@ -141,7 +141,7 @@ pub fn leer_manifiesto() -> Option<Manifiesto> {
 
     Some(Manifiesto {
         version: json.get("version")?.as_str()?.to_string(),
-        path: json.get("path")?.as_str()?.to_string(),
+        ruta: json.get("ruta")?.as_str()?.to_string(),
         features: json
             .get("features")?
             .as_array()?
@@ -165,9 +165,9 @@ fn guardar_manifiesto(m: &Manifiesto) {
         .join(",");
 
     let json = format!(
-        "{{\n  \"version\": \"{}\",\n  \"path\": \"{}\",\n  \"features\": [{}]\n}}\n",
+        "{{\n  \"version\": \"{}\",\n  \"ruta\": \"{}\",\n  \"features\": [{}]\n}}\n",
         m.version,
-        m.path.replace('\\', "\\\\"),
+        m.ruta.replace('\\', "\\\\"),
         features
     );
 
@@ -349,7 +349,7 @@ fn nuevo_release(canal: Canal) -> Option<Release> {
     };
 
     let zip = buscar("-windows-x64.zip");
-    let configurar = buscar(SETUP_ASSET);
+    let configurar = buscar(ASSET_INSTALADOR);
 
     Some(Release {
         version,
@@ -599,7 +599,7 @@ fn aplicar_delta(release: &Release, manifiesto: &Manifiesto) -> i32 {
         }
     };
 
-    let destino = PathBuf::from(&manifiesto.path);
+    let destino = PathBuf::from(&manifiesto.ruta);
     let mut copiados = 0;
     let mut fallos = 0;
 
@@ -748,7 +748,7 @@ fn aplicar_actualizacion() -> i32 {
     );
     println!(
         "Carpeta: {}\nComponentes: {}",
-        manifiesto.path,
+        manifiesto.ruta,
         manifiesto.features.join(", ")
     );
 
@@ -763,7 +763,7 @@ fn aplicar_actualizacion() -> i32 {
 
     let Some(setup_url) = release.configurar.clone() else {
         eprintln!(
-            "El release no publica {SETUP_ASSET}. Actualizá a mano desde https://github.com/{REPO}/releases"
+            "El release no publica {ASSET_INSTALADOR}. Actualizá a mano desde https://github.com/{REPO}/releases"
         );
         return 1;
     };
@@ -850,7 +850,7 @@ pub fn actualizar(args: &[String]) -> i32 {
         println!(
             "Componentes nuevos: {} (carpeta {})",
             features.join(", "),
-            manifiesto.path
+            manifiesto.ruta
         );
 
         let Some(setup_original) = ruta_instalador() else {
@@ -871,7 +871,7 @@ pub fn actualizar(args: &[String]) -> i32 {
             return 1;
         }
 
-        escribir_pedido(&manifiesto.path, &features.join(","));
+        escribir_pedido(&manifiesto.ruta, &features.join(","));
 
         println!("Desinstalando la versión actual…");
         match Command::new(&configurar)
@@ -1129,7 +1129,7 @@ mod tests {
     fn lee_manifiesto_con_features() {
         let texto = r#"{
   "version": "0.9.7",
-  "path": "C:\\Users\\x\\AppData\\Local\\Programs\\Forja",
+  "ruta": "C:\\Users\\x\\AppData\\Local\\Programs\\Forja",
   "features": ["Core","LanguageServer"]
 }"#;
         let json: Value = serde_json::from_str(texto).unwrap();
@@ -1140,14 +1140,14 @@ mod tests {
             .map(|v| v.as_str().unwrap().to_string())
             .collect();
         assert_eq!(features, vec!["Core", "LanguageServer"]);
-        assert!(json["path"].as_str().unwrap().contains("Programs"));
+        assert!(json["ruta"].as_str().unwrap().contains("Programs"));
     }
 
     #[test]
     fn binarios_respetan_componentes() {
         let m = Manifiesto {
             version: "1.0.0".into(),
-            path: "C:\\Forja".into(),
+            ruta: "C:\\Forja".into(),
             features: vec!["Core".into(), "Runtime".into()],
         };
         assert_eq!(m.binarios(), vec!["forja", "forja-rt"]);

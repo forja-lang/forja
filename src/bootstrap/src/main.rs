@@ -10,18 +10,18 @@ fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("verify") => verify(&args[1..]),
-        Some("check") => run("cargo", &["check", "--workspace", "--locked"]),
+        Some("check") => ejecutar("cargo", &["check", "--workspace", "--locked"]),
         Some("test") => {
             let mut a = vec!["test", "--locked"];
             if !args[1..].iter().any(|x| x == "-p" || x == "--workspace") {
                 a.push("--workspace");
             }
             a.extend(args[1..].iter().map(String::as_str));
-            run("cargo", &a)
+            ejecutar("cargo", &a)
         }
-        Some("fmt") => run("cargo", &["fmt", "--all"]),
+        Some("fmt") => ejecutar("cargo", &["fmt", "--all"]),
         Some("clippy") => clippy(&args[1..]),
-        Some("docs") => run("cargo", &["doc", "--workspace", "--no-deps", "--locked"]),
+        Some("docs") => ejecutar("cargo", &["doc", "--workspace", "--no-deps", "--locked"]),
         Some("tidy") => tidy(),
         Some("dist") => dist(),
         Some("help") | None => {
@@ -131,7 +131,7 @@ fn clippy(args: &[String]) -> ExitCode {
     }
     a.extend(["--".to_string(), "-D".to_string(), "warnings".to_string()]);
     let refs: Vec<&str> = a.iter().map(String::as_str).collect();
-    run("cargo", &refs)
+    ejecutar("cargo", &refs)
 }
 
 fn tidy() -> ExitCode {
@@ -257,7 +257,7 @@ fn dist() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn run(program: &str, args: &[&str]) -> ExitCode {
+fn ejecutar(program: &str, args: &[&str]) -> ExitCode {
     println!("$ {program} {}", args.join(" "));
     match Command::new(program).args(args).status() {
         Ok(s) if s.success() => ExitCode::SUCCESS,
@@ -310,7 +310,7 @@ fn correcto_env(program: &str, args: &[&str], clave: &str, valor: &str) -> bool 
 }
 
 fn correcto(program: &str, args: &[&str]) -> bool {
-    run(program, args) == ExitCode::SUCCESS
+    ejecutar(program, args) == ExitCode::SUCCESS
 }
 
 /// Busca un Python real. En Windows el alias de la Store devuelve 9009.

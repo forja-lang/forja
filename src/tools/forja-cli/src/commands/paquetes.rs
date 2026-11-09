@@ -50,7 +50,7 @@ pub(crate) fn cmd_add() {
 
     let ruta_config = Path::new("forja.json");
     let mut config = if ruta_config.exists() {
-        ForjaConfig::load(ruta_config).unwrap_or_else(|_| ForjaConfig::nuevo("app", "0.1.0"))
+        ForjaConfig::cargar(ruta_config).unwrap_or_else(|_| ForjaConfig::nuevo("app", "0.1.0"))
     } else {
         ForjaConfig::nuevo("app", "0.1.0")
     };
@@ -80,7 +80,7 @@ pub(crate) fn cmd_quitar() {
         return;
     }
 
-    let mut config = match ForjaConfig::load(ruta_config) {
+    let mut config = match ForjaConfig::cargar(ruta_config) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{}", e);
@@ -111,7 +111,7 @@ pub(crate) fn cmd_install() {
         return;
     }
 
-    let config = match ForjaConfig::load(ruta_config) {
+    let config = match ForjaConfig::cargar(ruta_config) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{}", e);
@@ -171,7 +171,7 @@ pub(crate) fn cmd_publish(args: &[String]) {
         );
         process::exit(1);
     }
-    let config = match ForjaConfig::load(&ruta_config) {
+    let config = match ForjaConfig::cargar(&ruta_config) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{}", e);

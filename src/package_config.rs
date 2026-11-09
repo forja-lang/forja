@@ -29,7 +29,7 @@ fn predeterminado_entrada() -> String {
 }
 
 impl ForjaConfig {
-    pub fn load(ruta: &Path) -> Result<Self, String> {
+    pub fn cargar(ruta: &Path) -> Result<Self, String> {
         let content = fs::read_to_string(ruta)
             .map_err(|e| format!("Error leyendo {}: {}", ruta.display(), e))?;
         serde_json::from_str(&content)

@@ -95,9 +95,9 @@ pub enum LlvmInstruction {
     /// %name = alloca TYPE
     Alloca(String, LlvmTipo),
     /// store TYPE %val, ptr %ptr
-    Store(LlvmTipo, LlvmValor, LlvmValor),
+    Almacenar(LlvmTipo, LlvmValor, LlvmValor),
     /// %name = load TYPE, ptr %ptr
-    Load(String, LlvmTipo, LlvmValor),
+    Cargar(String, LlvmTipo, LlvmValor),
     /// %name = call TYPE @func(args...)
     Call(String, LlvmTipo, String, Vec<LlvmValor>),
     /// br label %target (jump incondicional)
@@ -312,10 +312,10 @@ impl LlvmModulo {
                 format!("%{} = xor i1 %{}, {}", name, a.name, b.name)
             }
             LlvmInstruction::Alloca(name, ty) => format!("%{} = alloca {}", name, ty.to_llvm_ir()),
-            LlvmInstruction::Store(ty, val, ptr) => {
+            LlvmInstruction::Almacenar(ty, val, ptr) => {
                 format!("store {} %{}, ptr %{}", ty.to_llvm_ir(), val.name, ptr.name)
             }
-            LlvmInstruction::Load(name, ty, ptr) => {
+            LlvmInstruction::Cargar(name, ty, ptr) => {
                 format!("%{} = load {}, ptr %{}", name, ty.to_llvm_ir(), ptr.name)
             }
             LlvmInstruction::Call(name, ret_ty, func, args) => {

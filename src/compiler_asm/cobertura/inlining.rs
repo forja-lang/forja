@@ -98,7 +98,7 @@ fn es_candidata_en_linea_por_nombre() {
 
 #[test]
 fn tiene_auto_llamada_recorre_todas_las_formas() {
-    let c = CompilerAsm::new();
+    let c = CompilerAsm::nuevo();
     let auto = |cuerpo: Vec<Declaracion>| c.tiene_auto_llamada(&cuerpo, "f");
 
     // Retorno con llamada a sí misma.
@@ -218,7 +218,7 @@ fn tiene_auto_llamada_recorre_todas_las_formas() {
 
 #[test]
 fn expr_llama_a_recorre_todas_las_expresiones() {
-    let c = CompilerAsm::new();
+    let c = CompilerAsm::nuevo();
     let muta = |e: Expresion| c.expr_llama_a(&e, "f");
 
     assert!(muta(llamada("f", vec![])));
@@ -287,7 +287,7 @@ fn expr_llama_a_recorre_todas_las_expresiones() {
 
 #[test]
 fn tiene_constructos_complejos_recorre_todas_las_formas() {
-    let c = CompilerAsm::new();
+    let c = CompilerAsm::nuevo();
     let complejo = |cuerpo: Vec<Declaracion>| c.tiene_constructos_complejos(&cuerpo);
 
     assert!(complejo(vec![retornar(Some(Expresion::Closure {
@@ -418,7 +418,7 @@ fn tiene_constructos_complejos_recorre_todas_las_formas() {
 
 #[test]
 fn expr_tiene_constructos_complejos_recorre_todas_las_expresiones() {
-    let c = CompilerAsm::new();
+    let c = CompilerAsm::nuevo();
     let complejo = |e: Expresion| c.expr_tiene_constructos_complejos(&e);
 
     assert!(complejo(Expresion::Closure {

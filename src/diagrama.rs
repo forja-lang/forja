@@ -399,7 +399,7 @@ impl DiagramGenerator {
                 nombre, variantes, ..
             } => {
                 let vars: Vec<String> = variantes.iter().map(|v| v.nombre.clone()).collect();
-                let _node =
+                let _nodo =
                     self.sumar_nodo(&format!("tipo {nombre} = {}", vars.join(" | ")), "[", "]");
                 (None, None)
             }

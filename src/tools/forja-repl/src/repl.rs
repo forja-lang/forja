@@ -36,7 +36,7 @@ pub struct REPL {
 
 impl REPL {
     /// REPL suelto (sin archivo): historial `repl_historial.txt`.
-    pub fn new(modo: &str) -> Self {
+    pub fn sin_archivo(modo: &str) -> Self {
         Self::nuevo(modo, None)
     }
 
