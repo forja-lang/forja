@@ -18,6 +18,7 @@ pub enum BuiltinFast {
     Invertir,
     Obtener,
     Empujar,
+    Reservar,
     Remover,
     // Self-hosting string ops
     EmpiezaCon,
@@ -45,6 +46,7 @@ pub fn resolver_builtin_fast(m: &str) -> Option<BuiltinFast> {
         "invertir" => Some(BuiltinFast::Invertir),
         "obtener" => Some(BuiltinFast::Obtener),
         "empujar" => Some(BuiltinFast::Empujar),
+        "reservar" | "reservar_capacidad" => Some(BuiltinFast::Reservar),
         "remover" => Some(BuiltinFast::Remover),
         // Self-hosting string ops
         "empieza_con" => Some(BuiltinFast::EmpiezaCon),
@@ -77,6 +79,8 @@ pub const NOMBRES_BUILTINS: &[&str] = &[
     "invertir",
     "obtener",
     "empujar",
+    "reservar",
+    "reservar_capacidad",
     "remover",
     "empieza_con",
     "termina_con",
@@ -215,6 +219,18 @@ impl ForjaFast {
                 let arr = vec![valor; n];
                 let idx = self.reservar_arr(arr);
                 self.empujar_valor(ValorFast::arreglo(idx));
+            }
+            BuiltinFast::Reservar => {
+                let n_val = self.desapilar_valor()?;
+                let arr_val = self.desapilar_valor()?;
+                if arr_val.es_arreglo() {
+                    let idx = arr_val.indice_arreglo();
+                    let n = n_val.a_entero().max(0) as usize;
+                    self.obtener_arr_mut(idx).reserve(n);
+                    self.empujar_valor(arr_val);
+                } else {
+                    self.empujar_valor(ValorFast::nulo());
+                }
             }
             BuiltinFast::Remover => {
                 let idx_val = self.desapilar_valor()?;

@@ -1006,6 +1006,14 @@ impl Lowering {
                 ));
                 V::Arreglo(r)
             }
+            "reservar" | "reservar_capacidad" => {
+                let arr = self.arg(nombre, args, 0)?;
+                let a = self.como(&arr, T::Arreglo);
+                let cant = self.arg(nombre, args, 1)?;
+                let n = self.como(&cant, T::Int);
+                self.linea(&format!("call void @forja_reservar(ptr {}, i64 {})", a, n));
+                V::Nulo
+            }
             "empujar" => {
                 let arg0 = self.arg(nombre, args, 0)?;
                 let arr = self.como(&arg0, T::Arreglo);

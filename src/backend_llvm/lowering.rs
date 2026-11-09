@@ -224,6 +224,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_arreglo_obtener", "i64 (ptr, i64)"),
     ("forja_arreglo_fijar", "void (ptr, i64, i64)"),
     ("forja_empujar", "void (ptr, i64)"),
+    ("forja_reservar", "void (ptr, i64)"),
     ("forja_mapa_nuevo", "ptr ()"),
     ("forja_mapa_longitud", "i64 (ptr)"),
     ("forja_mapa_fijar_i64", "void (ptr, i64, i64)"),

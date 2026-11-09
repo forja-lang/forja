@@ -267,6 +267,18 @@ void forja_imprimir_arreglo(void *pv) {
     fputc(']', stdout);
 }
 
+/* Reserva capacidad para `n` elementos (no cambia la longitud). */
+void forja_reservar(void *pv, int64_t n) {
+    ForjaArreglo *a = (ForjaArreglo *)pv;
+    if (!a || n <= a->cap) return;
+    int64_t cap = a->cap ? a->cap : 4;
+    while (cap < n) cap *= 2;
+    int64_t *d = (int64_t *)forja_alloc(cap * (int64_t)sizeof(int64_t));
+    if (a->datos) memcpy(d, a->datos, (size_t)(a->len * (int64_t)sizeof(int64_t)));
+    a->datos = d;
+    a->cap = cap;
+}
+
 void forja_empujar(void *pv, int64_t v) {
     ForjaArreglo *a = (ForjaArreglo *)pv;
     if (!a) return;

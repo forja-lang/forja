@@ -295,6 +295,27 @@ circulo de 3
 }
 
 #[test]
+fn reservar_capacidad_de_arreglo() {
+    let fuente = r#"
+variable v = []
+reservar(v, 100)
+variable j = 0
+mientras (j < 100) { empujar(v, j)
+ j = j + 1 }
+escribir(longitud(v))
+escribir(v[99])
+"#;
+    if let Some(salida) = ejecutar_nativo(fuente) {
+        assert_eq!(
+            salida,
+            "100
+99
+"
+        );
+    }
+}
+
+#[test]
 fn imprimir_agregados_y_repetir_arreglo() {
     let fuente = r#"
 variable a = [1, 2, 3]
