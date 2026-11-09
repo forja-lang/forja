@@ -1004,8 +1004,8 @@ impl ForjaFast {
                             if metodo_sym == self.sym_enviar || metodo_sym.0 == self.sym_send.0 {
                                 if !args.is_empty() {
                                     let val = args[0];
-                                    let ok = self.canal_enviar(chan_idx, val);
-                                    self.empujar_valor(ValorFast::booleano(ok));
+                                    let correcto = self.canal_enviar(chan_idx, val);
+                                    self.empujar_valor(ValorFast::booleano(correcto));
                                 } else {
                                     self.empujar_valor(ValorFast::nulo());
                                 }

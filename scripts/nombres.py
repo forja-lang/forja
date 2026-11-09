@@ -75,6 +75,7 @@ EXENTOS = {
     "src/tools/forja-lsp/src/main.rs",  # LSP / tower-lsp
     "src/tools/forja-dap/src/main.rs",  # DAP / VS Code
 }
+EXENTOS_PREFIJOS = ("src/lsp/",)  # structs del protocolo LSP que habla el editor
 
 # Directorios que no son código propio.
 EXCLUIDOS = ("target", "node_modules", "patches", "fuzz", ".git", "docs", "scratch")
@@ -147,7 +148,7 @@ def archivos_rs() -> list[Path]:
         rel = ruta.relative_to(RAIZ).as_posix()
         if any(f"/{x}/" in f"/{rel}" for x in EXCLUIDOS):
             continue
-        if rel in EXENTOS:
+        if rel in EXENTOS or rel.startswith(EXENTOS_PREFIJOS):
             continue
         out.append(ruta)
     return sorted(out)

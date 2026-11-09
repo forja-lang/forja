@@ -88,7 +88,7 @@ fn variable_en_pila_sin_valor_inicial() {
         let mut c = CompilerAsm::con_destino(t);
         llenar_pool(&mut c);
         c.compilar_declaracion(&decl_variable("x", Some(Tipo::Entero), None));
-        assert!(c.output.is_empty(), "{t:?}: sin valor no hay asm");
+        assert!(c.salida.is_empty(), "{t:?}: sin valor no hay asm");
     }
 }
 
@@ -102,9 +102,9 @@ fn variable_en_registro_sin_variables_registradas() {
         // Asignación: no emite nada porque falta el tipo de la variable.
         c.compilar_declaracion(&decl_asignacion("huerfana", num(1)));
         // Identificador: tampoco emite.
-        let antes = c.output.len();
+        let antes = c.salida.len();
         let _ = c.compilar_expresion_asm(&id("huerfana"));
-        assert_eq!(c.output.len(), antes, "{t:?}");
+        assert_eq!(c.salida.len(), antes, "{t:?}");
         // Con el nombre en ambos mapas sí emite.
         c.variables.insert(
             "huerfana".into(),
@@ -114,7 +114,7 @@ fn variable_en_registro_sin_variables_registradas() {
             },
         );
         let _ = c.compilar_expresion_asm(&id("huerfana"));
-        assert!(c.output.len() > antes, "{t:?}");
+        assert!(c.salida.len() > antes, "{t:?}");
     }
 }
 
@@ -129,13 +129,13 @@ fn emitir_mov_ret_a_reg_por_tipo() {
             TipoAsm::Clase("C".into()),
             TipoAsm::Booleano,
         ] {
-            let antes = c.output.clone();
+            let antes = c.salida.clone();
             c.emitir_mov_ret_a_reg(&tipo, "r12");
-            assert_ne!(c.output, antes, "{t:?}/{tipo:?}: debe emitir el mov");
+            assert_ne!(c.salida, antes, "{t:?}/{tipo:?}: debe emitir el mov");
         }
-        let antes = c.output.clone();
+        let antes = c.salida.clone();
         c.emitir_mov_ret_a_reg(&TipoAsm::Decimal, "r12");
-        assert_eq!(c.output, antes, "{t:?}: un decimal no se mueve a registro");
+        assert_eq!(c.salida, antes, "{t:?}: un decimal no se mueve a registro");
     }
 }
 
@@ -172,7 +172,7 @@ fn en_linea_funcion_con_declaracion_que_no_es_funcion() {
         .insert("no_fn".into(), decl_clase("no_fn", vec![], vec![]));
     c.en_linea_funcion("no_fn", &[]);
     // No emite nada: no es una función con cuerpo.
-    assert!(c.output.is_empty());
+    assert!(c.salida.is_empty());
 }
 
 #[test]

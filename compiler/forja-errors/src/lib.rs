@@ -101,7 +101,7 @@ pub fn informacion(mensaje: &str) -> String {
         color::cyan(mensaje)
     ))
 }
-pub fn ok(mensaje: &str) -> String {
+pub fn correcto(mensaje: &str) -> String {
     con_color(format!("{}{}{}", color::VERDE, mensaje, color::RESET))
 }
 pub fn exito(mensaje: &str) -> String {
@@ -198,7 +198,7 @@ pub fn registrar_informacion(mensaje: &str) {
 }
 pub fn registrar_correcto(mensaje: &str) {
     if nivel_actual() >= NivelDetallado::Normal {
-        eprintln!("{}", ok(mensaje));
+        eprintln!("{}", correcto(mensaje));
     }
 }
 pub fn registrar_aviso(mensaje: &str) {

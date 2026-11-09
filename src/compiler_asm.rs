@@ -956,7 +956,7 @@ struct ClaseAsmInformacion {
 // ──────────────────────────────────────────────────────────
 
 pub struct CompilerAsm {
-    output: String,
+    salida: String,
     rdata: String,
     arch: DestinoArch,
     /// Errores acumulados durante la compilación (reservado para reporte)
@@ -1000,7 +1000,7 @@ impl CompilerAsm {
     pub fn new() -> Self {
         let (reg_names, reg_pool) = Self::inicializar_register_pool(DestinoArch::detect());
         CompilerAsm {
-            output: String::new(),
+            salida: String::new(),
             rdata: String::new(),
             arch: DestinoArch::detect(),
             errores: Vec::new(),
@@ -1405,7 +1405,7 @@ impl CompilerAsm {
     pub fn con_destino(target: DestinoArch) -> Self {
         let (reg_names, reg_pool) = Self::inicializar_register_pool(target);
         CompilerAsm {
-            output: String::new(),
+            salida: String::new(),
             rdata: String::new(),
             arch: target,
             errores: Vec::new(),
@@ -1557,7 +1557,7 @@ impl CompilerAsm {
 
         // Combinar todo
         let mut final_output = String::new();
-        final_output.push_str(&self.output);
+        final_output.push_str(&self.salida);
         if !self.rdata.is_empty() {
             final_output.push_str(&format!("\n{}\n", self.arch.section_rodata()));
             final_output.push_str(&self.rdata);
@@ -2134,15 +2134,15 @@ impl CompilerAsm {
 
     fn generar_clases_asm(&mut self, _declaraciones: &[Declaracion]) {
         for (_nombre, informacion) in &self.clases {
-            self.output.push_str(&format!(
+            self.salida.push_str(&format!(
                 "// {}: struct de {} bytes\n",
                 _nombre, informacion.tamano
             ));
             for (i, (campo, tipo)) in informacion.campos.iter().enumerate() {
-                self.output
+                self.salida
                     .push_str(&format!("//   +{}: {} ({:?})\n", i * 8, campo, tipo));
             }
-            self.output.push('\n');
+            self.salida.push('\n');
         }
     }
 
@@ -4360,8 +4360,8 @@ impl CompilerAsm {
     }
 
     fn emitir_linea(&mut self, texto: impl AsRef<str>) {
-        self.output.push_str(texto.as_ref());
-        self.output.push('\n');
+        self.salida.push_str(texto.as_ref());
+        self.salida.push('\n');
     }
 
     /// registra un error de compilación para constructos no soportados

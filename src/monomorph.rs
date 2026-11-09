@@ -48,8 +48,8 @@ impl ConcreteTipo {
             Tipo::Exacto => Some(ConcreteTipo::Exacto),
             Tipo::Clase(nombre) => Some(ConcreteTipo::Clase(nombre.clone())),
             Tipo::Arreglo(inner) => Some(ConcreteTipo::Arreglo(Box::new(Self::from_tipo(inner)?))),
-            Tipo::Resultado(ok, err) => Some(ConcreteTipo::Resultado(
-                Box::new(Self::from_tipo(ok)?),
+            Tipo::Resultado(correcto, err) => Some(ConcreteTipo::Resultado(
+                Box::new(Self::from_tipo(correcto)?),
                 Box::new(Self::from_tipo(err)?),
             )),
             Tipo::Opcion(inner) => Some(ConcreteTipo::Opcion(Box::new(Self::from_tipo(inner)?))),
@@ -70,8 +70,8 @@ impl ConcreteTipo {
             ConcreteTipo::Exacto => "Exacto".to_string(),
             ConcreteTipo::Clase(n) => n.clone(),
             ConcreteTipo::Arreglo(inner) => format!("Arr_{}", inner.name()),
-            ConcreteTipo::Resultado(ok, err) => {
-                format!("Result_{}_{}", ok.name(), err.name())
+            ConcreteTipo::Resultado(correcto, err) => {
+                format!("Result_{}_{}", correcto.name(), err.name())
             }
             ConcreteTipo::Opcion(inner) => format!("Opt_{}", inner.name()),
         }
@@ -130,8 +130,8 @@ fn tipo_usa_parametro(tipo: &Tipo, param_name: &str) -> bool {
         Tipo::Parametro(nombre) => nombre == param_name,
         Tipo::Arreglo(inner) => tipo_usa_parametro(inner, param_name),
         Tipo::Opcion(inner) => tipo_usa_parametro(inner, param_name),
-        Tipo::Resultado(ok, err) => {
-            tipo_usa_parametro(ok, param_name) || tipo_usa_parametro(err, param_name)
+        Tipo::Resultado(correcto, err) => {
+            tipo_usa_parametro(correcto, param_name) || tipo_usa_parametro(err, param_name)
         }
         _ => false,
     }
@@ -536,8 +536,8 @@ impl Monomorphizer {
             ConcreteTipo::Exacto => Tipo::Exacto,
             ConcreteTipo::Clase(n) => Tipo::Clase(n.clone()),
             ConcreteTipo::Arreglo(inner) => Tipo::Arreglo(Box::new(self.concrete_to_tipo(inner))),
-            ConcreteTipo::Resultado(ok, err) => Tipo::Resultado(
-                Box::new(self.concrete_to_tipo(ok)),
+            ConcreteTipo::Resultado(correcto, err) => Tipo::Resultado(
+                Box::new(self.concrete_to_tipo(correcto)),
                 Box::new(self.concrete_to_tipo(err)),
             ),
             ConcreteTipo::Opcion(inner) => Tipo::Opcion(Box::new(self.concrete_to_tipo(inner))),

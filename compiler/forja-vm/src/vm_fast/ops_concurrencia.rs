@@ -73,7 +73,7 @@ impl ForjaFast {
                     // el hijo también necesita los receptores; sin esto
                     // `rx.recibir()` dentro de un `hilo` devolvía Nulo.
                     let hilo_chan_rx_monticulo = self.runtime.chan_rx_heap.clone();
-                    let hilo_salida = self.output.clone();
+                    let hilo_salida = self.salida.clone();
                     let hilo_ip = entry.ip;
                     let hilo_vars_tamano = entry.vars_size.max(nargs);
                     // Canal para recibir resultado del hilo (usa CanalValor
@@ -117,7 +117,7 @@ impl ForjaFast {
                             hilo_vm.runtime.formas_objeto = hilo_objeto_shapes;
                             hilo_vm.runtime.chan_tx_heap = hilo_chan_tx_monticulo;
                             hilo_vm.runtime.chan_rx_heap = hilo_chan_rx_monticulo;
-                            hilo_vm.output = hilo_salida;
+                            hilo_vm.salida = hilo_salida;
                             hilo_vm.frame_buffer[0] = FrmFast {
                                 ip_ret: hilo_vm.bytecode.len(),
                                 func_version: 0,

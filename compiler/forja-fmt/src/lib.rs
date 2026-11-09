@@ -176,9 +176,9 @@ impl Formatter {
                     self.tipo_a_texto(retorno)
                 )
             }
-            Tipo::Resultado(ok, err) => format!(
+            Tipo::Resultado(correcto, err) => format!(
                 "Resultado<{}, {}>",
-                self.tipo_a_texto(ok),
+                self.tipo_a_texto(correcto),
                 self.tipo_a_texto(err)
             ),
             Tipo::Opcion(val) => format!("Opcion<{}>", self.tipo_a_texto(val)),

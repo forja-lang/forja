@@ -109,7 +109,7 @@ fn existe_variable_resultado(declaraciones: &[Declaracion]) -> bool {
 
 /// Generador de código Rust a partir del AST de Forja
 pub struct Transpiler {
-    output: String,
+    salida: String,
     sangria_level: usize,
     #[allow(dead_code)]
     errores: Vec<ErrorForja>,
@@ -194,7 +194,7 @@ impl Default for Transpiler {
 impl Transpiler {
     pub fn nuevo() -> Self {
         Transpiler {
-            output: String::new(),
+            salida: String::new(),
             sangria_level: 0,
             errores: Vec::new(),
             temporal_counter: 0,
@@ -494,7 +494,7 @@ impl Transpiler {
                 "    forja_gui_rt::build_and_run_android(&programa(), None, None, true, app);",
             );
             self.emitir_linea("}");
-            return Ok(self.output.clone());
+            return Ok(self.salida.clone());
         }
 
         // Si no hay GUI, generar main con código global
@@ -515,7 +515,7 @@ impl Transpiler {
             self.emitir_linea("}");
         }
 
-        Ok(self.output.clone())
+        Ok(self.salida.clone())
     }
 
     fn es_funcion_externa(&self, nombre: &str) -> bool {
@@ -2601,15 +2601,15 @@ impl Transpiler {
                     let patron_str = self.patron_a_rust(&brazo.patron);
                     resultado.push_str(&format!("    {} => {{\n", patron_str));
                     // Save current output state and redirect to capture body
-                    let saved_salida = std::mem::take(&mut self.output);
+                    let saved_salida = std::mem::take(&mut self.salida);
                     let saved_sangria = self.sangria_level;
                     self.sangria_level += 2;
                     for decl in &brazo.cuerpo {
                         self.transpilar_declaracion(decl);
                     }
-                    resultado.push_str(&self.output);
+                    resultado.push_str(&self.salida);
                     // Restore state
-                    self.output = saved_salida;
+                    self.salida = saved_salida;
                     self.sangria_level = saved_sangria;
                     resultado.push_str("    },\n");
                 }
@@ -2631,15 +2631,15 @@ impl Transpiler {
                 let mut body_parts = Vec::new();
                 let anterior_decls = std::mem::take(&mut self.declaraciones_globales);
                 self.declaraciones_globales = cuerpo.clone();
-                let anterior_salida = std::mem::take(&mut self.output);
+                let anterior_salida = std::mem::take(&mut self.salida);
                 let anterior_sangria = self.sangria_level;
 
                 for d in cuerpo {
                     self.transpilar_declaracion(d);
                 }
 
-                body_parts.push(self.output.clone());
-                self.output = anterior_salida;
+                body_parts.push(self.salida.clone());
+                self.salida = anterior_salida;
                 self.sangria_level = anterior_sangria;
                 self.declaraciones_globales = anterior_decls;
 
@@ -2660,15 +2660,15 @@ impl Transpiler {
                 // Usamos un enfoque similar a Hilo: guardar/restaurar output state
                 let mut arms = Vec::new();
                 for brazo in brazos {
-                    let anterior_salida = std::mem::take(&mut self.output);
+                    let anterior_salida = std::mem::take(&mut self.salida);
                     let anterior_sangria = self.sangria_level;
 
                     for d in &brazo.cuerpo {
                         self.transpilar_declaracion(d);
                     }
 
-                    let cuerpo_str = self.output.trim().to_string();
-                    self.output = anterior_salida;
+                    let cuerpo_str = self.salida.trim().to_string();
+                    self.salida = anterior_salida;
                     self.sangria_level = anterior_sangria;
 
                     if let Some((var, expr_recv)) = &brazo.recepcion {
@@ -2798,9 +2798,9 @@ impl Transpiler {
                 let p: Vec<String> = params.iter().map(|t| self.tipo_a_rust(t)).collect();
                 format!("fn({}) -> {}", p.join(", "), self.tipo_a_rust(ret))
             }
-            Tipo::Resultado(ok, err) => format!(
+            Tipo::Resultado(correcto, err) => format!(
                 "Result<{}, {}>",
-                self.tipo_a_rust(ok),
+                self.tipo_a_rust(correcto),
                 self.tipo_a_rust(err)
             ),
             Tipo::Opcion(inner) => format!("Option<{}>", self.tipo_a_rust(inner)),
@@ -3463,9 +3463,9 @@ impl Transpiler {
                     self.tipo_a_ast(ret)
                 )
             }
-            Tipo::Resultado(ok, err) => format!(
+            Tipo::Resultado(correcto, err) => format!(
                 "Tipo::Resultado(Box::new({}), Box::new({}))",
-                self.tipo_a_ast(ok),
+                self.tipo_a_ast(correcto),
                 self.tipo_a_ast(err)
             ),
             Tipo::Opcion(inner) => format!("Tipo::Opcion(Box::new({}))", self.tipo_a_ast(inner)),
@@ -3505,14 +3505,14 @@ impl Transpiler {
 
     #[allow(dead_code)]
     fn emitir(&mut self, texto: &str) {
-        self.output.push_str(texto);
+        self.salida.push_str(texto);
     }
 
     fn emitir_linea(&mut self, texto: &str) {
         let sangria = "    ".repeat(self.sangria_level);
-        self.output.push_str(&sangria);
-        self.output.push_str(texto);
-        self.output.push('\n');
+        self.salida.push_str(&sangria);
+        self.salida.push_str(texto);
+        self.salida.push('\n');
     }
 
     fn sangria(&mut self) {

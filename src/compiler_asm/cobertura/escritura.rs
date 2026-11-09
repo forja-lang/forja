@@ -8,7 +8,7 @@ fn escribir_sin_argumentos_emite_salto_de_linea() {
     for t in TARGETS {
         let mut c = CompilerAsm::con_destino(t);
         c.compilar_escribir(&[]);
-        assert!(c.output.contains("nl"), "{t:?}");
+        assert!(c.salida.contains("nl"), "{t:?}");
         assert!(!c.rdata.is_empty(), "{t:?}: el literal va a .rodata");
     }
 }
@@ -27,7 +27,7 @@ fn escribir_literales() {
         c.compilar_escribir_expr(&Expresion::LiteralBooleano(false));
         assert!(c.rdata.contains("verdadero"), "{t:?}");
         assert!(c.rdata.contains("falso"), "{t:?}");
-        assert!(c.output.contains("forja_print_float"));
+        assert!(c.salida.contains("forja_print_float"));
     }
 }
 
@@ -51,14 +51,14 @@ fn escribir_identificadores_por_tipo() {
                     c.reservar_variable_reg(nombre);
                 }
                 c.compilar_escribir_expr(&id(nombre));
-                assert!(!c.output.is_empty(), "{t:?}/{nombre}/{en_registro}");
+                assert!(!c.salida.is_empty(), "{t:?}/{nombre}/{en_registro}");
             }
         }
 
         // Variable inexistente: escribe 0.
         let mut c = con_variables(t);
         c.compilar_escribir_expr(&id("fantasma"));
-        assert!(c.output.contains("itoa"), "{t:?}");
+        assert!(c.salida.contains("itoa"), "{t:?}");
     }
 }
 
@@ -73,12 +73,12 @@ fn escribir_binarias_y_concatenacion() {
         // Suma numérica: se evalúa y se escribe el resultado con itoa.
         let mut c = con_variables(t);
         c.compilar_escribir_expr(&bin(num(1), Operador::Suma, num(2)));
-        assert!(c.output.contains("itoa"), "{t:?}");
+        assert!(c.salida.contains("itoa"), "{t:?}");
 
         // Otra binaria (comparación): se evalúa y se escribe como entero.
         let mut c = con_variables(t);
         c.compilar_escribir_expr(&bin(num(1), Operador::Menor, num(2)));
-        assert!(c.output.contains("itoa"), "{t:?}");
+        assert!(c.salida.contains("itoa"), "{t:?}");
 
         // Grupo alrededor de texto también se considera texto.
         let mut c = con_variables(t);
@@ -88,7 +88,7 @@ fn escribir_binarias_y_concatenacion() {
         // Expresión que no es literal ni identificador (p. ej. llamada).
         let mut c = con_variables(t);
         c.compilar_escribir_expr(&llamada("f", vec![]));
-        assert!(c.output.contains("itoa"), "{t:?}");
+        assert!(c.salida.contains("itoa"), "{t:?}");
     }
 }
 

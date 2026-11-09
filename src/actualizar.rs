@@ -563,7 +563,7 @@ fn aplicar_delta(release: &Release, manifiesto: &Manifiesto) -> i32 {
     let _ = fs::remove_dir_all(&extraido);
     let _ = fs::create_dir_all(&extraido);
 
-    let ok = Command::new("tar")
+    let correcto = Command::new("tar")
         .args([
             "-xf",
             &zip.to_string_lossy(),
@@ -576,7 +576,7 @@ fn aplicar_delta(release: &Release, manifiesto: &Manifiesto) -> i32 {
 
     let _ = fs::remove_file(&zip);
 
-    if !ok {
+    if !correcto {
         eprintln!("No pude descomprimir el paquete (¿falta tar?).");
         return 1;
     }

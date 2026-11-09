@@ -2,7 +2,7 @@
 use crate::ast::*;
 
 pub struct DiagramGenerator {
-    output: String,
+    salida: String,
     nodo_id: usize,
 }
 
@@ -15,7 +15,7 @@ impl Default for DiagramGenerator {
 impl DiagramGenerator {
     pub fn nuevo() -> Self {
         DiagramGenerator {
-            output: String::new(),
+            salida: String::new(),
             nodo_id: 0,
         }
     }
@@ -29,7 +29,7 @@ impl DiagramGenerator {
     fn sumar_nodo(&mut self, etiqueta: &str, shape_start: &str, shape_end: &str) -> String {
         let id = format!("N{}", self.next_id());
         if etiqueta.is_empty() {
-            self.output
+            self.salida
                 .push_str(&format!("    {id}{shape_start}{shape_end}\n"));
         } else {
             let clean_etiqueta = etiqueta
@@ -37,7 +37,7 @@ impl DiagramGenerator {
                 .replace('"', "&quot;")
                 .replace('<', "&lt;")
                 .replace('>', "&gt;");
-            self.output.push_str(&format!(
+            self.salida.push_str(&format!(
                 "    {id}{shape_start}\"{clean_etiqueta}\"{shape_end}\n"
             ));
         }
@@ -50,36 +50,36 @@ impl DiagramGenerator {
                 let parts: Vec<&str> = exit.split('|').collect();
                 let node = parts[0];
                 let etiqueta = parts[1];
-                self.output
+                self.salida
                     .push_str(&format!("    {} -- {} --> {}\n", node, etiqueta, destino));
             } else {
-                self.output
+                self.salida
                     .push_str(&format!("    {} --> {}\n", exit, destino));
             }
         }
     }
 
     pub fn generar(&mut self, p: &Programa) -> String {
-        self.output = String::new();
+        self.salida = String::new();
         self.nodo_id = 0;
 
-        self.output.push_str("graph TD\n");
+        self.salida.push_str("graph TD\n");
 
         let inicio = self.sumar_nodo("Inicio", "([", "])");
         let (body_start, body_end) = self.gen_block(&p.declaraciones, "main");
         if let Some(bs) = body_start {
-            self.output
+            self.salida
                 .push_str(&format!("    {} --> {}\n", inicio, bs));
         }
         let end = self.sumar_nodo("Fin", "([", "])");
         if let Some(be) = body_end {
             self.connect_exits(&be, &end);
         } else {
-            self.output
+            self.salida
                 .push_str(&format!("    {} --> {}\n", inicio, end));
         }
 
-        self.output.clone()
+        self.salida.clone()
     }
 
     fn gen_block(
@@ -167,7 +167,7 @@ impl DiagramGenerator {
                     .map(|t| format!("->{}", self.ts(t)))
                     .unwrap_or_default();
 
-                self.output.push_str(&format!(
+                self.salida.push_str(&format!(
                     "\n    subgraph Fn_{} [\"funcion {}({}){}\"]\n",
                     nombre,
                     nombre,
@@ -177,29 +177,29 @@ impl DiagramGenerator {
                 let inicio = self.sumar_nodo("Inicio", "([", "])");
                 let (body_start, body_end) = self.gen_block(cuerpo, nombre);
                 if let Some(bs) = body_start {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} --> {}\n", inicio, bs));
                 }
                 let end = self.sumar_nodo("Fin", "([", "])");
                 if let Some(be) = body_end {
                     self.connect_exits(&be, &end);
                 } else {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} --> {}\n", inicio, end));
                 }
-                self.output.push_str("    end\n\n");
+                self.salida.push_str("    end\n\n");
                 (None, None) // Definitions don't connect sequentially
             }
             Declaracion::Clase {
                 nombre, metodos, ..
             } => {
-                self.output.push_str(&format!(
+                self.salida.push_str(&format!(
                     "\n    subgraph Class_{} [\"clase {}\"]\n",
                     nombre, nombre
                 ));
                 for m in metodos {
                     let ps: Vec<String> = m.parametros.iter().map(|p| p.nombre.clone()).collect();
-                    self.output.push_str(&format!(
+                    self.salida.push_str(&format!(
                         "        subgraph Met_{}_{} [\"metodo {}({})\"]\n",
                         nombre,
                         m.nombre,
@@ -209,19 +209,19 @@ impl DiagramGenerator {
                     let m_inicio = self.sumar_nodo("Inicio", "([", "])");
                     let (m_body_start, m_body_end) = self.gen_block(&m.cuerpo, &m.nombre);
                     if let Some(mbs) = m_body_start {
-                        self.output
+                        self.salida
                             .push_str(&format!("        {} --> {}\n", m_inicio, mbs));
                     }
                     let m_end = self.sumar_nodo("Fin", "([", "])");
                     if let Some(mbe) = m_body_end {
                         self.connect_exits(&mbe, &m_end);
                     } else {
-                        self.output
+                        self.salida
                             .push_str(&format!("        {} --> {}\n", m_inicio, m_end));
                     }
-                    self.output.push_str("        end\n");
+                    self.salida.push_str("        end\n");
                 }
-                self.output.push_str("    end\n\n");
+                self.salida.push_str("    end\n\n");
                 (None, None)
             }
             Declaracion::Si {
@@ -234,7 +234,7 @@ impl DiagramGenerator {
 
                 let (si_start, si_end) = self.gen_block(bloque_verdadero, "si");
                 if let Some(ss) = si_start {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} -- Si --> {}\n", cond_nodo, ss));
                 }
 
@@ -243,7 +243,7 @@ impl DiagramGenerator {
                 let sino_exit = if let Some(bf) = bloque_falso {
                     let (sino_start, sino_end) = self.gen_block(bf, "sino");
                     if let Some(sn) = sino_start {
-                        self.output
+                        self.salida
                             .push_str(&format!("    {} -- Sino --> {}\n", cond_nodo, sn));
                     }
                     sino_end.unwrap_or_else(|| cond_nodo.clone())
@@ -260,19 +260,19 @@ impl DiagramGenerator {
 
                 let (body_start, body_end) = self.gen_block(bloque, "mientras");
                 if let Some(bs) = body_start {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} -- Si --> {}\n", cond_nodo, bs));
                 }
                 if let Some(be) = body_end {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} --> {}\n", be, cond_nodo));
                 } else {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} --> {}\n", cond_nodo, cond_nodo));
                 }
 
                 let exit_nodo = self.sumar_nodo("Fin Mientras", "[", "]");
-                self.output
+                self.salida
                     .push_str(&format!("    {} -- No --> {}\n", cond_nodo, exit_nodo));
 
                 (Some(cond_nodo), Some(exit_nodo))
@@ -285,15 +285,15 @@ impl DiagramGenerator {
 
                 let (body_start, body_end) = self.gen_block(cuerpo, "cuando");
                 if let Some(bs) = body_start {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} --> {}\n", cond_nodo, bs));
                 }
                 let exit_nodo = self.sumar_nodo("Fin Cuando", "[", "]");
                 if let Some(be) = body_end {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} --> {}\n", be, exit_nodo));
                 } else {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} --> {}\n", cond_nodo, exit_nodo));
                 }
 
@@ -315,28 +315,28 @@ impl DiagramGenerator {
                 let inicializar_nodo =
                     self.sumar_nodo(&format!("Para Init: {inicializar}"), "[", "]");
                 let cond_nodo = self.sumar_nodo(&format!("Para Cond: {cond}"), "{", "}");
-                self.output
+                self.salida
                     .push_str(&format!("    {} --> {}\n", inicializar_nodo, cond_nodo));
 
                 let (body_start, body_end) = self.gen_block(bloque, "para");
                 if let Some(bs) = body_start {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} -- Si --> {}\n", cond_nodo, bs));
                 }
 
                 let inc_nodo = self.sumar_nodo(&format!("Para Inc: {inc}"), "[", "]");
                 if let Some(be) = body_end {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} --> {}\n", be, inc_nodo));
                 } else {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} --> {}\n", cond_nodo, inc_nodo));
                 }
-                self.output
+                self.salida
                     .push_str(&format!("    {} --> {}\n", inc_nodo, cond_nodo));
 
                 let exit_nodo = self.sumar_nodo("Fin Para", "[", "]");
-                self.output
+                self.salida
                     .push_str(&format!("    {} -- No --> {}\n", cond_nodo, exit_nodo));
 
                 (Some(inicializar_nodo), Some(exit_nodo))
@@ -347,19 +347,19 @@ impl DiagramGenerator {
 
                 let (body_start, body_end) = self.gen_block(bloque, "repetir");
                 if let Some(bs) = body_start {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} -- Bucle --> {}\n", cond_nodo, bs));
                 }
                 if let Some(be) = body_end {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} --> {}\n", be, cond_nodo));
                 } else {
-                    self.output
+                    self.salida
                         .push_str(&format!("    {} --> {}\n", cond_nodo, cond_nodo));
                 }
 
                 let exit_nodo = self.sumar_nodo("Fin Repetir", "[", "]");
-                self.output
+                self.salida
                     .push_str(&format!("    {} -- Fin --> {}\n", cond_nodo, exit_nodo));
 
                 (Some(cond_nodo), Some(exit_nodo))
@@ -391,7 +391,7 @@ impl DiagramGenerator {
                 (Some(node.clone()), Some(node))
             }
             Declaracion::Importar(r) => {
-                self.output
+                self.salida
                     .push_str(&format!("    %% Importar \"{}\"\n", r));
                 (None, None)
             }
@@ -405,14 +405,14 @@ impl DiagramGenerator {
             }
             Declaracion::Rasgo { nombre, metodos } => {
                 let mnames: Vec<String> = metodos.iter().map(|m| m.nombre.clone()).collect();
-                self.output.push_str(&format!(
+                self.salida.push_str(&format!(
                     "\n    subgraph Rasgo_{} [\"rasgo {}\"]\n",
                     nombre, nombre
                 ));
                 for m in mnames {
                     self.sumar_nodo(&format!("metodo {m}"), "[", "]");
                 }
-                self.output.push_str("    end\n\n");
+                self.salida.push_str("    end\n\n");
                 (None, None)
             }
             Declaracion::Implementacion {
@@ -420,13 +420,13 @@ impl DiagramGenerator {
                 clase_nombre,
                 metodos,
             } => {
-                self.output.push_str(&format!(
+                self.salida.push_str(&format!(
                     "\n    subgraph Impl_{}_{} [\"impl {} para {}\"]\n",
                     rasgo_nombre, clase_nombre, rasgo_nombre, clase_nombre
                 ));
                 for m in metodos {
                     let ps: Vec<String> = m.parametros.iter().map(|p| p.nombre.clone()).collect();
-                    self.output.push_str(&format!(
+                    self.salida.push_str(&format!(
                         "        subgraph ImplMet_{} [\"metodo {}({})\"]\n",
                         m.nombre,
                         m.nombre,
@@ -435,19 +435,19 @@ impl DiagramGenerator {
                     let m_inicio = self.sumar_nodo("Inicio", "([", "])");
                     let (m_body_start, m_body_end) = self.gen_block(&m.cuerpo, &m.nombre);
                     if let Some(mbs) = m_body_start {
-                        self.output
+                        self.salida
                             .push_str(&format!("        {} --> {}\n", m_inicio, mbs));
                     }
                     let m_end = self.sumar_nodo("Fin", "([", "])");
                     if let Some(mbe) = m_body_end {
                         self.connect_exits(&mbe, &m_end);
                     } else {
-                        self.output
+                        self.salida
                             .push_str(&format!("        {} --> {}\n", m_inicio, m_end));
                     }
-                    self.output.push_str("        end\n");
+                    self.salida.push_str("        end\n");
                 }
-                self.output.push_str("    end\n\n");
+                self.salida.push_str("    end\n\n");
                 (None, None)
             }
             Declaracion::Expresion(expr) => {
@@ -648,8 +648,8 @@ impl DiagramGenerator {
                 let p: Vec<String> = params.iter().map(|t| self.ts(t)).collect();
                 format!("({}) -> {}", p.join(", "), self.ts(ret))
             }
-            Tipo::Resultado(ok, err) => {
-                format!("Resultado<{}, {}>", self.ts(ok), self.ts(err))
+            Tipo::Resultado(correcto, err) => {
+                format!("Resultado<{}, {}>", self.ts(correcto), self.ts(err))
             }
             Tipo::Opcion(inner) => format!("Opcion<{}>", self.ts(inner)),
             Tipo::RasgoObjeto(n) => format!("Rasgo<{}>", n),

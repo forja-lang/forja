@@ -107,14 +107,14 @@ pub fn nativo_atomico_cas(
     let esperado = obtener_entero(args[1])?;
     let nuevo = obtener_entero(args[2])?;
     let almacen = atomicos_mutex().lock().unwrap();
-    let ok = almacen
+    let correcto = almacen
         .get(indice)
         .map(|a| {
             a.compare_exchange(esperado, nuevo, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
         })
         .unwrap_or(false);
-    Ok(ValorFast::booleano(ok))
+    Ok(ValorFast::booleano(correcto))
 }
 
 pub fn nativo_atomico_booleano_nuevo(

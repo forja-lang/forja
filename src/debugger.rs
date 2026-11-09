@@ -369,7 +369,7 @@ impl Debugger {
             Opcode::Imprimir => {
                 let val = self.vm.desapilar_valor()?;
                 let s = self.vm.mostrar_valor(&val);
-                self.vm.output.lock().unwrap().push(s);
+                self.vm.salida.lock().unwrap().push(s);
                 self.vm.ip += 1;
             }
             Opcode::Igual => {

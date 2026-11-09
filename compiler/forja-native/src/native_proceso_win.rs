@@ -220,13 +220,13 @@ pub fn nativo_proceso_obtener_pid(
         let mut pid: i64 = 0;
         let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
         entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
-        let mut ok = unsafe { Process32FirstW(snap, &mut entry) };
-        while ok != 0 {
+        let mut correcto = unsafe { Process32FirstW(snap, &mut entry) };
+        while correcto != 0 {
             if wstr_igual(&entry.szExeFile, &nombre_w) {
                 pid = entry.th32ProcessID as i64;
                 break;
             }
-            ok = unsafe { Process32NextW(snap, &mut entry) };
+            correcto = unsafe { Process32NextW(snap, &mut entry) };
         }
         unsafe { CloseHandle(snap) };
         Ok(ValorFast::entero(pid))
@@ -340,13 +340,13 @@ pub fn nativo_proceso_modulo_base(
         let mut base: i64 = 0;
         let mut entry: MODULEENTRY32W = unsafe { std::mem::zeroed() };
         entry.dwSize = std::mem::size_of::<MODULEENTRY32W>() as u32;
-        let mut ok = unsafe { Module32FirstW(snap, &mut entry) };
-        while ok != 0 {
+        let mut correcto = unsafe { Module32FirstW(snap, &mut entry) };
+        while correcto != 0 {
             if wstr_igual(&entry.szModule, &nombre_w) {
                 base = entry.modBaseAddr as i64;
                 break;
             }
-            ok = unsafe { Module32NextW(snap, &mut entry) };
+            correcto = unsafe { Module32NextW(snap, &mut entry) };
         }
         unsafe { CloseHandle(snap) };
         Ok(ValorFast::entero(base))
@@ -383,13 +383,13 @@ pub fn nativo_proceso_modulo_tamano(
         let mut tamano: i64 = 0;
         let mut entry: MODULEENTRY32W = unsafe { std::mem::zeroed() };
         entry.dwSize = std::mem::size_of::<MODULEENTRY32W>() as u32;
-        let mut ok = unsafe { Module32FirstW(snap, &mut entry) };
-        while ok != 0 {
+        let mut correcto = unsafe { Module32FirstW(snap, &mut entry) };
+        while correcto != 0 {
             if wstr_igual(&entry.szModule, &nombre_w) {
                 tamano = entry.modBaseSize as i64;
                 break;
             }
-            ok = unsafe { Module32NextW(snap, &mut entry) };
+            correcto = unsafe { Module32NextW(snap, &mut entry) };
         }
         unsafe { CloseHandle(snap) };
         Ok(ValorFast::entero(tamano))
@@ -487,7 +487,7 @@ pub fn nativo_proceso_escribir_bytes(
     #[cfg(target_os = "windows")]
     {
         let mut escritos: usize = 0;
-        let ok = unsafe {
+        let correcto = unsafe {
             WriteProcessMemory(
                 manejador as *mut std::ffi::c_void,
                 direccion as *mut std::ffi::c_void,
@@ -496,7 +496,9 @@ pub fn nativo_proceso_escribir_bytes(
                 &mut escritos,
             )
         };
-        Ok(ValorFast::booleano(ok != 0 && escritos == buffer.len()))
+        Ok(ValorFast::booleano(
+            correcto != 0 && escritos == buffer.len(),
+        ))
     }
 
     #[cfg(not(target_os = "windows"))]

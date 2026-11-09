@@ -467,7 +467,7 @@ fn salida_fast(fuente: &str) -> Vec<String> {
     // ForjaFast empieza en ip=0 (FunctionDef se skipean solos)
     vm.fijar_max_inst(50000);
     vm.ejecutar().unwrap();
-    let salida = vm.output.lock().unwrap().clone();
+    let salida = vm.salida.lock().unwrap().clone();
     salida
 }
 

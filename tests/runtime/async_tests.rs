@@ -17,7 +17,7 @@ fn salida_fast(fuente: &str) -> Vec<String> {
     vm.cargar_bytecode(bc);
     vm.fijar_max_inst(50000);
     vm.ejecutar().unwrap();
-    let salida = vm.output.lock().unwrap().clone();
+    let salida = vm.salida.lock().unwrap().clone();
     salida
 }
 

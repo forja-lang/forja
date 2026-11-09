@@ -176,17 +176,17 @@ impl LlvmModulo {
 
     /// Serializa el módulo a texto LLVM IR
     pub fn to_llvm_ir(&self) -> String {
-        let mut output = String::new();
+        let mut salida = String::new();
 
         // Header
-        output.push_str(&format!("; Module '{}'\n", self.name));
-        output.push_str("target datalayout = \"e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n80:32:128-S128\"\n");
-        output.push_str(&format!("target triple = \"{}\"\n\n", destino_triple()));
+        salida.push_str(&format!("; Module '{}'\n", self.name));
+        salida.push_str("target datalayout = \"e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n80:32:128-S128\"\n");
+        salida.push_str(&format!("target triple = \"{}\"\n\n", destino_triple()));
 
         // Global type declarations
         for (name, ty) in &self.global_types {
             if let LlvmTipo::Struct(_, fields) = ty {
-                output.push_str(&format!(
+                salida.push_str(&format!(
                     "%{} = type {{ {} }}\n",
                     name,
                     fields
@@ -197,26 +197,26 @@ impl LlvmModulo {
                 ));
             }
         }
-        output.push('\n');
+        salida.push('\n');
 
         // Global strings
         for (name, valor) in &self.global_strings {
-            output.push_str(&format!(
+            salida.push_str(&format!(
                 "@{} = private unnamed_addr constant [{} x i8] c\"{}\\00\"\n",
                 name,
                 valor.len() + 1,
                 escapar_texto(valor)
             ));
         }
-        output.push('\n');
+        salida.push('\n');
 
         // Functions
         for func in &self.functions {
-            output.push_str(&self.funcion_to_ir(func));
-            output.push('\n');
+            salida.push_str(&self.funcion_to_ir(func));
+            salida.push('\n');
         }
 
-        output
+        salida
     }
 
     fn funcion_to_ir(&self, func: &LlvmFuncion) -> String {

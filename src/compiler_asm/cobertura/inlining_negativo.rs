@@ -21,7 +21,7 @@ fn retorno_con_valor_en_funcion_contratada() {
             });
         }
         c.compilar_declaracion(&f);
-        assert!(c.output.contains("con_retorno:"), "{t:?}");
+        assert!(c.salida.contains("con_retorno:"), "{t:?}");
     }
 }
 
@@ -33,9 +33,9 @@ fn lectura_de_booleano_en_registro() {
         let _ = c.compilar_expresion_asm(&id("bool"));
         // El valor booleano se mueve usando la mitad de 32 bits.
         assert!(
-            c.output.contains("eax") || c.output.contains("w0") || c.output.contains("a0"),
-            "{t:?}: {output}",
-            output = c.output
+            c.salida.contains("eax") || c.salida.contains("w0") || c.salida.contains("a0"),
+            "{t:?}: {salida}",
+            salida = c.salida
         );
     }
 }

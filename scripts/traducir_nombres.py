@@ -153,8 +153,8 @@ def traducir_partes(parte: str) -> str | None:
     return destino
 
 
-def traducir(nombre: str) -> str | None:
-    if nombre in renombrar.PROTEGIDOS or nombre in NO_TOCAR:
+def traducir(nombre: str, forzar: bool = False) -> str | None:
+    if nombre in renombrar.PROTEGIDOS or (nombre in NO_TOCAR and not forzar):
         return None
     original = nombre
     prefijo = ""
@@ -221,7 +221,8 @@ def planificar(datos: dict) -> tuple[dict[str, str], list[str]]:
     saltados: list[str] = []
     destinos: Counter[str] = Counter()
     for nombre in sorted(datos["violaciones"]):
-        destino = traducir(nombre)
+        # un campo declarado en nuestros structs sí se renombra aunque su nombre choque con std
+        destino = traducir(nombre, forzar=nombre in datos["campos"])
         if destino is None:
             saltados.append(nombre)
             continue

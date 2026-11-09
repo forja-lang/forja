@@ -48,13 +48,13 @@ fn main() -> ExitCode {
 
 fn verify(extra: &[String]) -> ExitCode {
     // 1. Formato.
-    if !ok("cargo", &["fmt", "--all", "--", "--check"]) {
+    if !correcto("cargo", &["fmt", "--all", "--", "--check"]) {
         return ExitCode::FAILURE;
     }
 
     // 2. Clippy de las crates ya limpias. El resto del workspace paga su deuda
     //    por fase (reorganización estilo Rust, Fase 0).
-    if !ok(
+    if !correcto(
         "cargo",
         &[
             "clippy",
@@ -100,14 +100,14 @@ fn verify(extra: &[String]) -> ExitCode {
     if !extra.iter().any(|x| x == "-p" || x == "--workspace") {
         test.push("--workspace");
     }
-    if !ok("cargo", &test) {
+    if !correcto("cargo", &test) {
         return ExitCode::FAILURE;
     }
 
     // 4. Métricas de documentación si hay Python.
     match buscar_python() {
         Some(python) => {
-            if !ok(&python, &["scripts/metricas.py", "--check"]) {
+            if !correcto(&python, &["scripts/metricas.py", "--check"]) {
                 return ExitCode::FAILURE;
             }
         }
@@ -226,7 +226,7 @@ fn dist() -> ExitCode {
     let release = std::path::Path::new("target").join("release").join(exe);
     let dist_bin = dist_directorio.join(exe);
     let release_copia = dist_directorio.join(format!("{exe}.release"));
-    if !ok(
+    if !correcto(
         "cmd",
         &[
             "/C",
@@ -309,7 +309,7 @@ fn correcto_env(program: &str, args: &[&str], clave: &str, valor: &str) -> bool 
     }
 }
 
-fn ok(program: &str, args: &[&str]) -> bool {
+fn correcto(program: &str, args: &[&str]) -> bool {
     run(program, args) == ExitCode::SUCCESS
 }
 

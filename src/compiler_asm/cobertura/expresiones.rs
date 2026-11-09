@@ -35,16 +35,16 @@ fn literales_e_identificadores() {
         for expr in expresiones {
             let _ = c.compilar_expresion_asm(&expr);
         }
-        assert!(c.output.contains("la ") || !c.output.is_empty());
+        assert!(c.salida.contains("la ") || !c.salida.is_empty());
     }
 
     // Identificador en registro con tipo decimal (rama defensiva).
     let mut c = con_variables(DestinoArch::X86_64Linux);
     c.reservar_variable_reg("dec");
-    let antes = c.output.len();
+    let antes = c.salida.len();
     let _ = c.compilar_expresion_asm(&id("dec"));
     assert!(
-        c.output.len() > antes,
+        c.salida.len() > antes,
         "un decimal en registro se mueve igual"
     );
 
@@ -52,7 +52,7 @@ fn literales_e_identificadores() {
     let mut c = CompilerAsm::con_destino(DestinoArch::X86_64Linux);
     c.funciones.push("mi_funcion".into());
     let _ = c.compilar_expresion_asm(&id("mi_funcion"));
-    assert!(c.output.contains("call") || c.output.contains("bl "));
+    assert!(c.salida.contains("call") || c.salida.contains("bl "));
 }
 
 #[test]
@@ -79,13 +79,13 @@ fn operadores_binarios_y_unarios() {
         }
         let _ = c.compilar_expresion_asm(&expr_unaria(OperadorUnario::No, id("bool")));
         let _ = c.compilar_expresion_asm(&expr_unaria(OperadorUnario::Negar, num(5)));
-        assert!(!c.output.is_empty(), "{t:?}");
+        assert!(!c.salida.is_empty(), "{t:?}");
 
         // Con el pool agotado la binaria usa push/pop en vez de registro.
         let mut c = con_variables(t);
         llenar_pool(&mut c);
         let _ = c.compilar_expresion_asm(&bin(num(1), Operador::Suma, num(2)));
-        assert!(!c.output.is_empty(), "{t:?}: sin registros usa la pila");
+        assert!(!c.salida.is_empty(), "{t:?}: sin registros usa la pila");
     }
 }
 
@@ -104,7 +104,7 @@ fn ternario_arreglo_e_indice() {
             objeto: Box::new(id("ent")),
             indice: Box::new(num(1)),
         });
-        assert!(c.output.contains("malloc"), "{t:?}");
+        assert!(c.salida.contains("malloc"), "{t:?}");
     }
 }
 
@@ -118,7 +118,7 @@ fn acceso_a_miembros_e_instanciacion() {
             objeto: Box::new(id("obj")),
             miembro: "x".into(),
         });
-        assert!(!c.output.is_empty());
+        assert!(!c.salida.is_empty());
 
         // Instanciación sin constructor: solo malloc.
         let mut c = CompilerAsm::con_destino(t);
@@ -132,7 +132,7 @@ fn acceso_a_miembros_e_instanciacion() {
             argumentos: vec![],
         });
         assert!(!asm.is_empty());
-        assert!(!c.output.contains("Punto.nuevo"));
+        assert!(!c.salida.contains("Punto.nuevo"));
 
         // Instanciación con constructor y más argumentos que registros.
         let mut c = CompilerAsm::con_destino(t);
@@ -146,7 +146,7 @@ fn acceso_a_miembros_e_instanciacion() {
             clase: "ConCtor".into(),
             argumentos,
         });
-        assert!(c.output.contains("ConCtor.nuevo"), "{t:?}");
+        assert!(c.salida.contains("ConCtor.nuevo"), "{t:?}");
 
         // Instanciación de una clase inexistente: ret = 0.
         let mut c = CompilerAsm::con_destino(t);
@@ -154,7 +154,7 @@ fn acceso_a_miembros_e_instanciacion() {
             clase: "NoExiste".into(),
             argumentos: vec![],
         });
-        assert!(!c.output.is_empty());
+        assert!(!c.salida.is_empty());
     }
 }
 
@@ -184,9 +184,9 @@ fn coincidir_con_todos_los_patrones() {
             expr: Box::new(id("ent")),
             brazos,
         });
-        assert!(c.output.contains("match_end"), "{t:?}");
+        assert!(c.salida.contains("match_end"), "{t:?}");
         assert!(
-            c.output.contains("jne") || c.output.contains("b.ne") || c.output.contains("bnez"),
+            c.salida.contains("jne") || c.salida.contains("b.ne") || c.salida.contains("bnez"),
             "{t:?}"
         );
         // Las variables del patrón quedan registradas en el stack.
@@ -285,13 +285,13 @@ fn asignaciones_como_expresion() {
         });
 
         // ArraySet: no implementado, pero compila valor y arreglo.
-        let antes = c.output.len();
+        let antes = c.salida.len();
         let _ = c.compilar_expresion_asm(&Expresion::ArraySet {
             array: Box::new(id("ent")),
             valor: Box::new(num(7)),
         });
         assert!(
-            c.output.len() > antes,
+            c.salida.len() > antes,
             "{t:?}: ArraySet compila valor y arreglo"
         );
     }
@@ -304,17 +304,17 @@ fn resultado_anterior_y_opciones() {
         let mut c = CompilerAsm::con_destino(t);
         c.postcondiciones_activas = true;
         let _ = c.compilar_expresion_asm(&Expresion::Resultado);
-        assert!(c.output.contains("resultado"));
+        assert!(c.salida.contains("resultado"));
 
         // `resultado` sin postcondiciones activas.
         let mut c = CompilerAsm::con_destino(t);
         let _ = c.compilar_expresion_asm(&Expresion::Resultado);
-        assert!(c.output.contains("sin postcondición activa"), "{t:?}");
+        assert!(c.salida.contains("sin postcondición activa"), "{t:?}");
 
         // `anterior`, `Nada` y `Ninguno`.
         let mut c = CompilerAsm::con_destino(t);
         let _ = c.compilar_expresion_asm(&Expresion::Anterior(Box::new(num(1))));
-        assert!(c.output.contains("anterior()"));
+        assert!(c.salida.contains("anterior()"));
         assert_eq!(c.compilar_expresion_asm(&Expresion::Nada), "");
         assert_eq!(c.compilar_expresion_asm(&Expresion::Ninguno), "");
 
@@ -344,13 +344,13 @@ fn llamadas_con_muchos_argumentos() {
         // Más argumentos que registros: los extra van a la pila.
         let argumentos: Vec<Expresion> = (0..9).map(num).collect();
         c.compilar_llamada_funcion("funcion", &argumentos, true);
-        assert!(!c.output.is_empty(), "{t:?}");
+        assert!(!c.salida.is_empty(), "{t:?}");
 
         // Llamada a `escribir` con y sin argumentos.
         let mut c = con_variables(t);
         c.compilar_llamada_funcion("escribir", &[], false);
         c.compilar_llamada_funcion("escribir", &[num(1), txt("x")], false);
-        assert!(!c.output.is_empty());
+        assert!(!c.salida.is_empty());
     }
 }
 
@@ -361,7 +361,7 @@ fn llamadas_a_metodos() {
         let mut c = con_variables(t);
         registrar_clase_c(&mut c);
         c.compilar_llamada_funcion("obj.metodo", &[num(1)], true);
-        assert!(c.output.contains("C.metodo"), "{t:?}");
+        assert!(c.salida.contains("C.metodo"), "{t:?}");
 
         // Objeto en registro y argumentos extra a la pila.
         let mut c = con_variables(t);
@@ -369,12 +369,12 @@ fn llamadas_a_metodos() {
         c.reservar_variable_reg("obj");
         let argumentos: Vec<Expresion> = (0..9).map(num).collect();
         c.compilar_llamada_funcion("obj.metodo", &argumentos, true);
-        assert!(c.output.contains("C.metodo"), "{t:?}");
+        assert!(c.salida.contains("C.metodo"), "{t:?}");
 
         // Nombre con punto pero objeto no resoluble: cae en la llamada normal.
         let mut c = con_variables(t);
         c.compilar_llamada_funcion("fantasma.metodo", &[], true);
-        assert!(c.output.contains("call") || c.output.contains("bl "));
+        assert!(c.salida.contains("call") || c.salida.contains("bl "));
     }
 }
 
@@ -427,7 +427,7 @@ fn metodos_de_clase_se_generan_como_funciones() {
             vec![decl_asignacion("v", bin(id("v"), Operador::Suma, num(1)))],
         );
         c.generar_metodo_asm("C", &m);
-        assert!(c.output.contains("C.sumar:"), "{t:?}");
+        assert!(c.salida.contains("C.sumar:"), "{t:?}");
         assert!(c.funciones.contains(&"C.sumar".to_string()));
         assert!(c.funciones_declaraciones.contains_key("C.sumar"));
     }

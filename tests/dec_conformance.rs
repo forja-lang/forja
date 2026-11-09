@@ -201,7 +201,7 @@ const PISO_FASE_0: f64 = 0.30;
 
 struct Resumen {
     total: usize,
-    ok: usize,
+    correcto: usize,
     por_op: Vec<(Op, usize, usize)>,
     fallos: Vec<String>,
 }
@@ -209,7 +209,7 @@ struct Resumen {
 fn evaluar(vectores: &[Vector]) -> Resumen {
     let mut resumen = Resumen {
         total: 0,
-        ok: 0,
+        correcto: 0,
         por_op: Vec::new(),
         fallos: Vec::new(),
     };
@@ -220,11 +220,11 @@ fn evaluar(vectores: &[Vector]) -> Resumen {
             Ok(salida) => salida.join(" "),
             Err(e) => format!("<error: {}>", e.lines().next().unwrap_or("")),
         };
-        let ok = normalizar(&obtenido) == normalizar(&v.esperado);
+        let correcto = normalizar(&obtenido) == normalizar(&v.esperado);
 
         resumen.total += 1;
-        if ok {
-            resumen.ok += 1;
+        if correcto {
+            resumen.correcto += 1;
         } else if resumen.fallos.len() < 25 {
             resumen.fallos.push(format!(
                 "{} ({}): {} {} {} -> esperado {}, obtenido {}",
@@ -253,11 +253,11 @@ fn evaluar(vectores: &[Vector]) -> Resumen {
         match resumen.por_op.iter_mut().find(|(op, _, _)| *op == v.op) {
             Some((_, t, o)) => {
                 *t += 1;
-                if ok {
+                if correcto {
                     *o += 1;
                 }
             }
-            None => resumen.por_op.push((v.op, 1, ok as usize)),
+            None => resumen.por_op.push((v.op, 1, correcto as usize)),
         }
     }
 
@@ -319,7 +319,7 @@ fn conformidad_decimal() {
     let resumen = evaluar(&vectores);
 
     eprintln!("\n== decTest ({origen}) ==");
-    for (op, total, ok) in &resumen.por_op {
+    for (op, total, correcto) in &resumen.por_op {
         let nombre = match op {
             Op::Add => "add",
             Op::Subtract => "subtract",
@@ -328,15 +328,15 @@ fn conformidad_decimal() {
             Op::Compare => "compare",
         };
         eprintln!(
-            "  {nombre:<10} {ok:>6}/{total:<6} ({:.1}%)",
-            *ok as f64 * 100.0 / *total as f64
+            "  {nombre:<10} {correcto:>6}/{total:<6} ({:.1}%)",
+            *correcto as f64 * 100.0 / *total as f64
         );
     }
     eprintln!(
         "  TOTAL      {}/{} ({:.1}%)\n",
-        resumen.ok,
+        resumen.correcto,
         resumen.total,
-        resumen.ok as f64 * 100.0 / resumen.total as f64
+        resumen.correcto as f64 * 100.0 / resumen.total as f64
     );
     if !resumen.fallos.is_empty() {
         eprintln!("  primeros fallos:");
@@ -348,13 +348,13 @@ fn conformidad_decimal() {
 
     // Baseline de la fase 0: no es un gate de corrección todavía. El gate se
     // endurece en la fase 5 (100% en add/subtract/multiply, banderas incluidas).
-    let proporcion = resumen.ok as f64 / resumen.total as f64;
+    let proporcion = resumen.correcto as f64 / resumen.total as f64;
     let piso = if depuracion { 1.0 } else { PISO_FASE_0 };
     assert!(
         proporcion >= piso,
         "conformidad decimal cayó a {:.1}% ({}/{}), por debajo del piso de la fase 0 ({:.0}%)",
         proporcion * 100.0,
-        resumen.ok,
+        resumen.correcto,
         resumen.total,
         piso * 100.0
     );

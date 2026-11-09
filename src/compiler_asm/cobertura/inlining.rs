@@ -526,7 +526,7 @@ fn en_linea_funcion_emite_cuerpo_en_el_punto_de_llamada() {
     let mut c = CompilerAsm::con_destino(DestinoArch::X86_64Linux);
     c.en_linea_funcion("no_existe", &[]);
     assert!(c
-        .output
+        .salida
         .contains("ERROR: función 'no_existe' no encontrada"));
 }
 
@@ -542,11 +542,11 @@ fn llamada_a_funcion_candidata_se_inlinea() {
         c.arch = t;
         c.compilar_llamada_funcion("inc", &[num(41)], true);
         assert!(
-            c.output.contains("// inline inc"),
+            c.salida.contains("// inline inc"),
             "{t:?}: una función simple debe inlinarse"
         );
         assert!(
-            !c.output.contains(&"call inc".to_string()),
+            !c.salida.contains(&"call inc".to_string()),
             "{t:?}: no debe emitir la llamada"
         );
     }

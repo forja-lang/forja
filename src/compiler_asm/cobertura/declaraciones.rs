@@ -60,7 +60,7 @@ fn asignacion_a_variable_en_registro_y_en_pila() {
             let mut c = con_variables(t);
             c.reservar_variable_reg(nombre);
             c.compilar_declaracion(&decl_asignacion(nombre, num(7)));
-            assert!(!c.output.is_empty(), "{t:?}/{nombre}");
+            assert!(!c.salida.is_empty(), "{t:?}/{nombre}");
         }
 
         // Rama defensiva: un decimal nunca recibe registro, pero si el mapa lo
@@ -72,7 +72,7 @@ fn asignacion_a_variable_en_registro_y_en_pila() {
         let mut control = con_variables(t);
         let _ = control.compilar_expresion_asm(&num(7));
         assert_eq!(
-            c.output, control.output,
+            c.salida, control.salida,
             "{t:?}: un decimal en registro no emite store"
         );
 
@@ -81,7 +81,7 @@ fn asignacion_a_variable_en_registro_y_en_pila() {
             let mut c = con_variables(t);
             llenar_pool(&mut c);
             c.compilar_declaracion(&decl_asignacion(nombre, num(7)));
-            assert!(!c.output.is_empty(), "{t:?}/{nombre}");
+            assert!(!c.salida.is_empty(), "{t:?}/{nombre}");
         }
 
         // Variable inexistente: no emite store ni paniquea.
@@ -104,14 +104,14 @@ fn asignacion_a_miembro_con_y_sin_registro_libre() {
             columna: 0,
         });
         assert!(
-            c.output.contains(" + 0]") || c.output.contains("#0]") || c.output.contains(", 0(")
+            c.salida.contains(" + 0]") || c.salida.contains("#0]") || c.salida.contains(", 0(")
         );
 
         // Sin registros libres: el puntero se guarda en la pila.
         let mut c = con_variables(t);
         registrar_clase_c(&mut c);
         llenar_pool(&mut c);
-        let antes = c.output.len();
+        let antes = c.salida.len();
         c.compilar_declaracion(&Declaracion::AsignacionMiembro {
             objeto: Box::new(id("obj")),
             miembro: "desconocido".into(),
@@ -119,7 +119,7 @@ fn asignacion_a_miembro_con_y_sin_registro_libre() {
             linea: 0,
             columna: 0,
         });
-        assert!(c.output.len() > antes, "{t:?}: debe emitir el store");
+        assert!(c.salida.len() > antes, "{t:?}: debe emitir el store");
     }
 }
 
@@ -136,7 +136,7 @@ fn asignacion_por_indice_en_registro_pila_e_inexistente() {
             linea: 0,
             columna: 0,
         });
-        assert!(!c.output.is_empty());
+        assert!(!c.salida.is_empty());
 
         // Array en stack.
         let mut c = con_variables(t);
@@ -185,7 +185,7 @@ fn funciones_con_parametros_en_registro_y_en_pila() {
                 retornar(Some(num(1))),
             ],
         ));
-        assert!(c.output.contains("f:"));
+        assert!(c.salida.contains("f:"));
 
         // Parámetros decimales: van a stack (no hay registros de FP).
         let mut c = CompilerAsm::con_destino(t);
@@ -197,14 +197,14 @@ fn funciones_con_parametros_en_registro_y_en_pila() {
             ],
             vec![retornar(Some(num(0)))],
         ));
-        assert!(c.output.contains("g:"));
+        assert!(c.salida.contains("g:"));
 
         // Más parámetros que registros de argumentos: los extra se ignoran en
         // el prólogo (no hay soporte de paso por stack en el prólogo).
         let mut c = CompilerAsm::con_destino(t);
         let params: Vec<Parametro> = (0..9).map(|i| param(&format!("p{i}"), None)).collect();
         c.compilar_declaracion(&decl_funcion("h", params, vec![retornar(None)]));
-        assert!(c.output.contains("h:"));
+        assert!(c.salida.contains("h:"));
     }
 }
 
@@ -218,8 +218,8 @@ fn funciones_externas_y_con_contratos() {
             *e = true;
         }
         c.compilar_declaracion(&externa);
-        assert!(c.output.contains(".extern puts"), "{t:?}");
-        assert!(c.output.contains("puts:"));
+        assert!(c.salida.contains(".extern puts"), "{t:?}");
+        assert!(c.salida.contains("puts:"));
 
         // Precondiciones con y sin mensaje + postcondiciones sin retorno
         // explícito (emite el salto al label de fin).
@@ -253,9 +253,9 @@ fn funciones_externas_y_con_contratos() {
             });
         }
         c.compilar_declaracion(&f);
-        assert!(c.output.contains("contratada:"));
-        assert!(c.output.contains("forja_contract_error"));
-        assert!(c.output.contains("Postcondición falló"), "{t:?}");
+        assert!(c.salida.contains("contratada:"));
+        assert!(c.salida.contains("forja_contract_error"));
+        assert!(c.salida.contains("Postcondición falló"), "{t:?}");
 
         // Retorno sin valor dentro de una función con postcondiciones.
         let mut c = CompilerAsm::con_destino(t);
@@ -270,7 +270,7 @@ fn funciones_externas_y_con_contratos() {
             });
         }
         c.compilar_declaracion(&f);
-        assert!(c.output.contains("vacia:"));
+        assert!(c.salida.contains("vacia:"));
     }
 }
 
@@ -358,10 +358,10 @@ fn declaraciones_sin_emision_y_control_de_flujo() {
             valor: Some(num(1)),
         });
 
-        assert!(c.output.contains("while_start"), "{t:?}");
-        assert!(c.output.contains("for_start"));
-        assert!(c.output.contains("repeat_loop"));
-        assert!(c.output.contains("cuando_end"));
+        assert!(c.salida.contains("while_start"), "{t:?}");
+        assert!(c.salida.contains("for_start"));
+        assert!(c.salida.contains("repeat_loop"));
+        assert!(c.salida.contains("cuando_end"));
     }
 }
 
@@ -397,5 +397,5 @@ fn clases_recolectadas_por_tipo_de_campo() {
     let mut c = CompilerAsm::new();
     c.recolectar_clases(&[decl_clase("P", vec![campo("x", None)], vec![])]);
     c.generar_clases_asm(&[]);
-    assert!(c.output.contains("struct de"));
+    assert!(c.salida.contains("struct de"));
 }

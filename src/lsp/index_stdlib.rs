@@ -382,8 +382,8 @@ fn format_tipo(t: &Tipo) -> String {
             let ps: Vec<String> = params.iter().map(format_tipo).collect();
             format!("({}) -> {}", ps.join(", "), format_tipo(ret))
         }
-        Tipo::Resultado(ok, err) => {
-            format!("Resultado<{}, {}>", format_tipo(ok), format_tipo(err))
+        Tipo::Resultado(correcto, err) => {
+            format!("Resultado<{}, {}>", format_tipo(correcto), format_tipo(err))
         }
         Tipo::Opcion(inner) => format!("Opcion<{}>", format_tipo(inner)),
         Tipo::RasgoObjeto(n) => format!("dyn {}", n),

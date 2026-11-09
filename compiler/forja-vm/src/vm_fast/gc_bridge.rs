@@ -437,19 +437,19 @@ impl ForjaFast {
         } else {
             CanalValor::Valor(val)
         };
-        let ok = self
+        let correcto = self
             .runtime
             .chan_tx_heap
             .get(chan_idx)
             .and_then(|s| s.as_ref())
             .map(|s| s.send(mensaje).is_ok())
             .unwrap_or(false);
-        if ok {
+        if correcto {
             if let Some(payloads) = self.runtime.chan_payloads.get_mut(chan_idx) {
                 payloads.push(val);
             }
         }
-        ok
+        correcto
     }
 
     /// recibe un valor de un canal y descuenta el valor de la cola de

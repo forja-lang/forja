@@ -201,7 +201,7 @@ impl REPL {
                                 self.buffer.clear();
                                 self.fuente_acumulado.clear();
                                 self.salida_mostrado = 0;
-                                println!("{}", error::ok("Todo reiniciado"));
+                                println!("{}", error::correcto("Todo reiniciado"));
                                 continue;
                             }
                             "ayuda" | "help" => {
@@ -240,7 +240,9 @@ impl REPL {
                             }
                             "configurar" | "config" => {
                                 match self.configurar() {
-                                    Ok(()) => println!("{}", error::ok("Configuración aplicada")),
+                                    Ok(()) => {
+                                        println!("{}", error::correcto("Configuración aplicada"))
+                                    }
                                     Err(e) => println!("{}", error::error(&format!("{e}"))),
                                 }
                                 continue;

@@ -118,6 +118,16 @@ def segmentar(texto: str) -> list[tuple[str, bool]]:
     return trozos
 
 
+METODOS_STD = set(
+    """
+    ok err len map get set insert push pop read write load store clear reset update clone
+    drop iter next collect filter find contains trim split join replace take wait spawn
+    lock borrow hash eq cmp fmt default from into to_string to_owned parse capacity
+    truncate reserve as_str as_slice as_ref as_mut unwrap expect chars bytes
+    """.split()
+)
+
+
 RE_PALABRA = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
 RE_LOCAL = re.compile(r"\blet\s+(?:mut\s+)?([a-z_][a-z0-9_]*)\b")
 RE_PARAM = re.compile(r"[(,]\s*(?:mut\s+)?([a-z_][a-z0-9_]*)\s*:")
@@ -213,6 +223,8 @@ def reemplazar_codigo(
         inicio = m.start()
         # `std::ruta`, `foo::ruta`, `#[cfg(...)]`, `x.ruta(`
         anterior = codigo[max(0, inicio - 2):inicio]
+        previo = codigo[:inicio].rstrip()
+        siguiente = codigo[m.end():].lstrip()
         if anterior.endswith("::"):
             # `use crossterm::event;`: el último tramo de una ruta externa no se renombra
             ruta_use = re.search(r"use\s+([\w:]+)::$", previo)
@@ -229,13 +241,16 @@ def reemplazar_codigo(
             return palabra
         if anterior.endswith("#["):
             return palabra
-        previo = codigo[:inicio].rstrip()
-        siguiente = codigo[m.end():].lstrip()
         if inicio >= 1 and codigo[inicio - 1] == "." and not anterior.endswith(".."):
             # `self.campo` se renombra si el campo se declara en este archivo; `algo.metodo(`
             # sólo si el método es un `fn` de este archivo (`.len()`, `.map()` quedan quietos).
             es_campo_local = campos is not None and palabra in campos and siguiente[:1] != "("
-            es_metodo_local = funciones is not None and palabra in funciones and siguiente[:1] == "("
+            es_metodo_local = (
+                funciones is not None
+                and palabra in funciones
+                and siguiente[:1] == "("
+                and palabra not in METODOS_STD
+            )
             if not (es_campo_local or es_metodo_local):
                 return palabra
         # campo de struct/patrón (`nombre: tipo`): puede ser de un tipo de otra crate.
@@ -243,7 +258,13 @@ def reemplazar_codigo(
         # `use a::{B, C}` no es un campo de struct: se renombra
         es_use = re.search(r"\buse\s+[^;]*$", previo) is not None
         # campo abreviado de patrón o de literal: `Expresion::Unaria { expr, .. }`
-        if not es_use and previo[-1:] in "{," and siguiente[:1] in "}," and en_llaves(codigo, inicio):
+        if (
+            not es_use
+            and previo[-1:] in "{,"
+            and siguiente[:1] in "},"
+            and en_llaves(codigo, inicio)
+            and palabra not in (campos or set())
+        ):
             return palabra
         # campo de patrón o de literal con valor: `Unaria { expr: e }`
         if (

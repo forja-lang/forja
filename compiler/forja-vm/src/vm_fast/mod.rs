@@ -154,7 +154,7 @@ pub struct ForjaFast {
     /// Nombres de parámetros por función (necesario para mapear args en Call)
     funcion_params: HashMap<IdSimbolo, Vec<String>>,
     pub bytecode: Vec<Opcode>,
-    pub output: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    pub salida: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 
     // ─── Hot Reload: Function Table (indirección) ──────────────────────────
     pub function_table: FuncionTabla, // Tabla de indirección
@@ -317,7 +317,7 @@ impl ForjaFast {
             funciones: HashMap::new(),
             funcion_params: HashMap::new(),
             bytecode: Vec::new(),
-            output: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            salida: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             max_inst: usize::MAX,
             ejecutadas: 0,
             fast_math: false,
@@ -849,7 +849,7 @@ impl ForjaFast {
             root.clear();
         }
         self.top_longitud = 0;
-        self.output.lock().unwrap().clear();
+        self.salida.lock().unwrap().clear();
         self.ejecutadas = 0;
     }
 
@@ -1199,7 +1199,7 @@ impl ForjaFast {
         self.stack.clear();
         self.frame_count = 0;
         self.linea_actual = 0;
-        self.output.lock().unwrap().clear();
+        self.salida.lock().unwrap().clear();
         self.frame_locals.clear();
         self.frame_locals.push(Vec::with_capacity(64)); // root frame
         self.pila_top = [
@@ -1454,7 +1454,7 @@ impl ForjaFast {
     }
 
     pub fn obtener_salida(&self) -> Vec<String> {
-        self.output.lock().unwrap().clone()
+        self.salida.lock().unwrap().clone()
     }
 
     // ─── Backtrace de runtime ─────────────────────────────────────────
@@ -1532,7 +1532,7 @@ impl ForjaFast {
 
     /// Escribe un valor al output (a través del Arc<Mutex<...>> compartido entre hilos)
     fn escribir_salida(&mut self, s: String) {
-        self.output.lock().unwrap().push(s);
+        self.salida.lock().unwrap().push(s);
     }
 }
 

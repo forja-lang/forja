@@ -557,7 +557,7 @@ const HUFFMAN_TABLE: &[(u32, u8)] = &[
 fn huffman_codificar(entrada: &str) -> Vec<u8> {
     let mut bits: u64 = 0;
     let mut n_bits: u32 = 0;
-    let mut output = Vec::new();
+    let mut salida = Vec::new();
 
     for &byte in entrada.as_bytes() {
         let (code, len) = HUFFMAN_TABLE[byte as usize];
@@ -566,7 +566,7 @@ fn huffman_codificar(entrada: &str) -> Vec<u8> {
 
         while n_bits >= 8 {
             n_bits -= 8;
-            output.push((bits >> n_bits) as u8);
+            salida.push((bits >> n_bits) as u8);
             bits &= (1 << n_bits) - 1;
         }
     }
@@ -574,10 +574,10 @@ fn huffman_codificar(entrada: &str) -> Vec<u8> {
     // Padding con bits 1 (EOS symbol)
     if n_bits > 0 {
         bits = (bits << (8 - n_bits)) | ((1 << (8 - n_bits)) - 1);
-        output.push(bits as u8);
+        salida.push(bits as u8);
     }
 
-    output
+    salida
 }
 
 /// Árbol de Huffman para decodificación
@@ -620,7 +620,7 @@ fn construir_huffman_arbol() -> HuffmanNodo {
 /// Decodifica un string desde Huffman HPACK
 fn huffman_decodificar(entrada: &[u8]) -> Result<Vec<u8>, ()> {
     let arbol = construir_huffman_arbol();
-    let mut output = Vec::new();
+    let mut salida = Vec::new();
     let mut nodo = &arbol;
     let mut bits_remaining = entrada.len() * 8;
 
@@ -640,28 +640,28 @@ fn huffman_decodificar(entrada: &[u8]) -> Result<Vec<u8>, ()> {
                         if val == 0x00 && nodo.children[0].is_none() && nodo.children[1].is_none() {
                             // Podría ser EOS o byte 0x00 real. Verificamos bits restantes.
                             // Simplificación: si todos los bits restantes son 1, es padding EOS
-                            let _remaining_bits = (entrada.len() - output.len()) * 8;
+                            let _remaining_bits = (entrada.len() - salida.len()) * 8;
                             if bits_remaining > 0 {
-                                let all_ones = verificar_all_ones_remaining(entrada, output.len());
+                                let all_ones = verificar_all_ones_remaining(entrada, salida.len());
                                 if all_ones {
-                                    return Ok(output);
+                                    return Ok(salida);
                                 }
                             }
                         }
-                        output.push(val);
+                        salida.push(val);
                         nodo = &arbol;
                     }
                 }
                 None => {
                     // Padding: si todos los bits restantes son 1, terminar
-                    return Ok(output);
+                    return Ok(salida);
                 }
             }
             bits_remaining -= 1;
         }
     }
 
-    Ok(output)
+    Ok(salida)
 }
 
 fn verificar_all_ones_remaining(data: &[u8], inicio: usize) -> bool {
@@ -765,34 +765,34 @@ fn decodificar_texto(data: &[u8], offset: &mut usize) -> Result<String, ()> {
 
 /// Codifica cabeceras Forja (HashMap) a bloque HPACK (RFC 7541)
 pub fn hpack_codificar(cabeceras: &HashMap<String, String>, tabla: &mut TablaDinamica) -> Vec<u8> {
-    let mut output = Vec::new();
+    let mut salida = Vec::new();
 
     for (name, valor) in cabeceras {
         // ─── Tipo 1: Indexed Header Field (1xxxxxxx) ───
         if let Some(idx) = tabla.buscar(name, valor) {
-            let pos = output.len();
-            codificar_integer(idx as u64, 7, &mut output);
-            output[pos] |= 0x80; // flag de indexed
+            let pos = salida.len();
+            codificar_integer(idx as u64, 7, &mut salida);
+            salida[pos] |= 0x80; // flag de indexed
             continue;
         }
 
         // ─── Tipo 01: Literal with Incremental Indexing ───
         if let Some(idx) = tabla.buscar_nombre(name) {
             // Nombre indexado, valor literal
-            let pos = output.len();
-            codificar_integer(idx as u64, 6, &mut output);
-            output[pos] |= 0x40; // tipo 01
-            codificar_texto(valor, true, &mut output);
+            let pos = salida.len();
+            codificar_integer(idx as u64, 6, &mut salida);
+            salida[pos] |= 0x40; // tipo 01
+            codificar_texto(valor, true, &mut salida);
         } else {
             // Nombre literal + valor literal
-            output.push(0x40); // tipo 01, índice 0 (nombre no indexado)
-            codificar_texto(name, true, &mut output);
-            codificar_texto(valor, true, &mut output);
+            salida.push(0x40); // tipo 01, índice 0 (nombre no indexado)
+            codificar_texto(name, true, &mut salida);
+            codificar_texto(valor, true, &mut salida);
         }
         tabla.add(name, valor);
     }
 
-    output
+    salida
 }
 
 // ═══════════════════════════════════════════════════════════════════════
