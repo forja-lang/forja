@@ -3,7 +3,7 @@
 // La construcción `seleccionar { caso v = rx { … } tiempo 100 { … } otro { … } }`
 // se **desugara** a código Forja normal antes de la emisión (ver `crate::desugar`),
 // y ese código llama a esta nativa: devuelve `[indice, valor]` del primer canal
-// listo, sin exponer el heap de canales al AST.
+// listo, sin exponer el monticulo de canales al AST.
 //
 // El sondeo usa `try_recv` con una espera corta entre rondas: `std::sync::mpsc`
 // no ofrece `select!`, así que no hay notificación a la que suscribirse.
@@ -22,7 +22,7 @@ const SIN_ESPERA: i64 = -1;
 const ESPERA_INFINITA: i64 = 0;
 
 /// Índice de recepción del canal contenido en `val`:
-/// `CanalReceptor` → su índice de heap; `[tx, rx]` → el del receptor.
+/// `CanalReceptor` → su índice de monticulo; `[tx, rx]` → el del receptor.
 fn indice_receptor(vm: &dyn Host, val: ValorFast) -> Option<usize> {
     if val.es_objeto() {
         let obj = vm.get_obj(val.indice_objeto());
@@ -35,8 +35,8 @@ fn indice_receptor(vm: &dyn Host, val: ValorFast) -> Option<usize> {
         let arr = vm.get_arr(val.indice_arreglo());
         // `[emisor, receptor]` como lo devuelve `canal()`.
         for v in arr.iter().rev() {
-            if let Some(idx) = indice_receptor(vm, *v) {
-                return Some(idx);
+            if let Some(indice) = indice_receptor(vm, *v) {
+                return Some(indice);
             }
         }
     }
@@ -67,8 +67,8 @@ pub fn native_seleccionar_canales(
         for (i, &rx) in receptores.iter().enumerate() {
             if let Some(cv) = vm.canal_try_recibir(rx) {
                 let valor = vm.valor_de_channel(cv);
-                let idx = vm.alloc_arr(vec![ValorFast::entero(i as i64), valor]);
-                return Ok(ValorFast::arreglo(idx));
+                let indice = vm.alloc_arr(vec![ValorFast::entero(i as i64), valor]);
+                return Ok(ValorFast::arreglo(indice));
             }
         }
         if modo == SIN_ESPERA {
@@ -80,6 +80,6 @@ pub fn native_seleccionar_canales(
         std::thread::sleep(std::time::Duration::from_micros(200));
     }
     // Ningún canal listo: índice -1 (el `sino` del desugardo corre el `otro`/`tiempo`).
-    let idx = vm.alloc_arr(vec![ValorFast::entero(-1), ValorFast::nulo()]);
-    Ok(ValorFast::arreglo(idx))
+    let indice = vm.alloc_arr(vec![ValorFast::entero(-1), ValorFast::nulo()]);
+    Ok(ValorFast::arreglo(indice))
 }
