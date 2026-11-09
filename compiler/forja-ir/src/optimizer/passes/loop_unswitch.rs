@@ -18,7 +18,7 @@ impl LoopUnswitcher {
 
     /// Ejecuta el pase de loop unswitching.
     pub fn unswitch(&mut self, programa: &Programa) -> Programa {
-        let new_decls: Vec<Declaracion> = programa
+        let declaraciones_nuevas: Vec<Declaracion> = programa
             .declaraciones
             .iter()
             .flat_map(|d| self.unswitch_decl(d))
@@ -28,7 +28,7 @@ impl LoopUnswitcher {
             nombres: Vec::new(),
             indice_nombres: std::collections::HashMap::new(),
             span: None,
-            declaraciones: new_decls,
+            declaraciones: declaraciones_nuevas,
         }
     }
 
@@ -67,17 +67,17 @@ impl LoopUnswitcher {
                 bloque_verdadero,
                 bloque_falso,
             } => {
-                let new_verdadero: Vec<Declaracion> = bloque_verdadero
+                let verdadero_nuevo: Vec<Declaracion> = bloque_verdadero
                     .iter()
                     .flat_map(|d| self.unswitch_decl(d))
                     .collect();
-                let new_falso = bloque_falso
+                let falso_nuevo = bloque_falso
                     .as_ref()
                     .map(|bf| bf.iter().flat_map(|d| self.unswitch_decl(d)).collect());
                 vec![Declaracion::Si {
                     condicion: condicion.clone(),
-                    bloque_verdadero: new_verdadero,
-                    bloque_falso: new_falso,
+                    bloque_verdadero: verdadero_nuevo,
+                    bloque_falso: falso_nuevo,
                 }]
             }
             Declaracion::Funcion {
