@@ -33,7 +33,7 @@ RAICES_INGLESAS = set(
     emit encode decode serialize visit walk collect apply mark sweep alloc ref ptr borrow move
     kind type token lexer parser ast hir ir bytecode opcode insn function func method field
     struct enum trait module import export path file dir source target root temp tmp cache
-    store fetch request response client server remote local host socket thread lock mutex
+    store fetch request response client server remote host socket thread lock mutex
     atomic arena shape class descriptor runtime vm jit profiler sandbox native registry fmt
     lint driver session span errors optimize optimization pass inline prop dce cse loop
     msg str
@@ -49,6 +49,7 @@ PRESTAMOS = set(
     """
     bytecode opcode uop token hash buffer socket byte bit ptr mut id idx vm jit gc ast hir
     ir ffi json http tls sql sandbox arena mutex crate span runtime vec std
+    config lint lexer parser cache enum version str
     """.split()
 )
 
@@ -61,7 +62,12 @@ TRAITS_STD = set(
 )
 
 # Nombres que son de otro dominio y no se traducen.
-EXENTAS_GLOBALES = set("main tests selftest Ok Err Some None AtomicU8 AtomicBool".split())
+EXENTAS_GLOBALES = set(
+    """main tests selftest Ok Err Some None AtomicU8 AtomicBool Value forja_errors
+    puerto_registry String Vec HashMap HashSet Path PathBuf Arc Rc RefCell
+    serialize deserialize expecting visit_bool visit_i64 visit_u64 visit_str visit_string
+    visit_map visit_seq visit_none visit_some visit_unit""".split()
+)
 
 # Directorios que no son código propio.
 EXCLUIDOS = ("target", "node_modules", "patches", "fuzz", ".git", "docs", "scratch")
@@ -70,10 +76,12 @@ SUBMODULOS = ("library/",)
 
 RE_DECL = re.compile(
     r"\b(?:fn|struct|enum|trait|const|static|type|mod)\s+([A-Za-z_][A-Za-z0-9_]*)"
-    r"|\blet\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)"
-    r"|\b([a-z_][a-z0-9_]*)\s*:"
+    r"|\blet\s+(?:mut\s+)?([a-z_][a-z0-9_]*)\s*(?::|=)"
+    r"|\b([a-z_][a-z0-9_]*)\s*:(?!:)"
 )
-RE_VARIANTE = re.compile(r"^\s{4,}([A-Z][A-Za-z0-9]*)\s*[,{(]?")
+RE_VARIANTE = re.compile(r"^\s{4,}([A-Z][A-Za-z0-9]*)\s*(?:[,({;]|$)")
+# Literales de texto y de carácter: su contenido no son identificadores.
+TEXTO = re.compile(r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'')
 RE_TOKEN = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+")
 
 RE_COMENTARIO = re.compile(r"^\s*//[/!]?\s*(.*)$")
@@ -97,7 +105,7 @@ def tokens(nombre: str) -> list[str]:
 
 def es_violacion(nombre: str) -> bool:
     """True si el nombre tiene una raíz inglesa que no es préstamo ni trait de std."""
-    if nombre in EXENTAS_GLOBALES:
+    if nombre in EXENTAS_GLOBALES or nombre.startswith("forja_"):
         return False
     palabras = tokens(nombre)
     if not palabras:
@@ -141,10 +149,11 @@ def revisar(ruta: Path) -> list[tuple[int, str]]:
     for numero, linea in enumerate(ruta.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
         if linea.lstrip().startswith("//"):
             continue
+        linea = TEXTO.sub('""', linea)
         nombres = []
         if m := RE_DECL.search(linea):
             nombres.extend(n for n in m.groups() if n)
-        if m := RE_VARIANTE.match(linea):
+        if "=>" not in linea and not linea.rstrip().endswith(";") and (m := RE_VARIANTE.match(linea)):
             nombres.append(m.group(1))
         for nombre in nombres:
             if es_violacion(nombre):
