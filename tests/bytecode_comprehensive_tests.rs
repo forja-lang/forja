@@ -4,8 +4,8 @@ use forja::parser::Parser;
 use forja::semantics::TypeChecker;
 use std::sync::Arc;
 
-fn generar(source: &str) -> Vec<Opcode> {
-    let mut lexer = Lexer::new(source);
+fn generar(fuente: &str) -> Vec<Opcode> {
+    let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
@@ -13,8 +13,8 @@ fn generar(source: &str) -> Vec<Opcode> {
     gen.generar(&programa).unwrap()
 }
 
-fn generar_con_tipos(source: &str) -> Vec<Opcode> {
-    let mut lexer = Lexer::new(source);
+fn generar_con_tipos(fuente: &str) -> Vec<Opcode> {
+    let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
@@ -443,8 +443,8 @@ fn test_bc_load_variable_con_indice() {
 
 #[test]
 fn test_bc_string_length_ok() {
-    let result = generar("variable n = \"hola\".length()");
-    assert!(!result.is_empty());
+    let resultado = generar("variable n = \"hola\".length()");
+    assert!(!resultado.is_empty());
 }
 
 #[test]
