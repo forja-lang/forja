@@ -1,6 +1,6 @@
 // native_h2_tls.rs — Wrapper TLS para HTTP/2 (feature flag "h2-tls")
 // Usa rustls para conexiones TLS 1.2/1.3 sobre TCP.
-// Almacena conexiones en un heap global con bloqueo Mutex.
+// Almacena conexiones en un monticulo global con bloqueo Mutex.
 // La VM Forja es single-threaded para ejecución de scripts,
 // por lo que el Mutex nunca tiene contención real.
 
@@ -78,10 +78,10 @@ fn native_tls_conectar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFas
 
     let stream_tls = rustls::StreamOwned::new(conn, stream);
 
-    // Almacenar en heap global
-    let mut heap = TLS_HEAP.lock().unwrap();
-    let idx = heap.len() as u32;
-    heap.push(Some(ConexionTls { stream: stream_tls }));
+    // Almacenar en monticulo global
+    let mut monticulo = TLS_HEAP.lock().unwrap();
+    let idx = monticulo.len() as u32;
+    monticulo.push(Some(ConexionTls { stream: stream_tls }));
 
     Ok(ValorFast::entero(idx as i64))
 }
@@ -96,8 +96,8 @@ fn native_tls_enviar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast,
     let tls_idx = obtener_entero(args[0])? as usize;
     let datos = obtener_texto(vm, args[1])?;
 
-    let mut heap = TLS_HEAP.lock().unwrap();
-    let conn = heap
+    let mut monticulo = TLS_HEAP.lock().unwrap();
+    let conn = monticulo
         .get_mut(tls_idx)
         .and_then(|c| c.as_mut())
         .ok_or_else(|| ErrFast::TipoInv("tls_error: conexión cerrada".into()))?;
@@ -118,8 +118,8 @@ fn native_tls_recibir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast
     }
     let tls_idx = obtener_entero(args[0])? as usize;
 
-    let mut heap = TLS_HEAP.lock().unwrap();
-    let conn = heap
+    let mut monticulo = TLS_HEAP.lock().unwrap();
+    let conn = monticulo
         .get_mut(tls_idx)
         .and_then(|c| c.as_mut())
         .ok_or_else(|| ErrFast::TipoInv("tls_error: conexión cerrada".into()))?;
@@ -148,10 +148,10 @@ fn native_tls_cerrar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast
     }
     let tls_idx = obtener_entero(args[0])? as usize;
 
-    let mut heap = TLS_HEAP.lock().unwrap();
-    if let Some(Some(conn)) = heap.get_mut(tls_idx) {
+    let mut monticulo = TLS_HEAP.lock().unwrap();
+    if let Some(Some(conn)) = monticulo.get_mut(tls_idx) {
         let _ = conn.stream.sock.shutdown(std::net::Shutdown::Both);
-        heap[tls_idx] = None;
+        monticulo[tls_idx] = None;
     }
 
     Ok(ValorFast::nulo())
@@ -166,8 +166,8 @@ fn native_tls_activo(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast
     }
     let tls_idx = obtener_entero(args[0])? as usize;
 
-    let heap = TLS_HEAP.lock().unwrap();
-    let activo = heap
+    let monticulo = TLS_HEAP.lock().unwrap();
+    let activo = monticulo
         .get(tls_idx)
         .and_then(|c| c.as_ref())
         .map(|conn| conn.stream.sock.peer_addr().is_ok())
