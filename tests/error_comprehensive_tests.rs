@@ -10,8 +10,8 @@ use forja::semantics::BorrowChecker;
 #[test]
 fn test_error_tipo_display_lexico() {
     let err = ErrorForja::new(ErrorTipo::ErrorLexico, 1, 1, "test", "sug");
-    let msg = format!("{}", err);
-    assert!(!msg.is_empty());
+    let mensaje = format!("{}", err);
+    assert!(!mensaje.is_empty());
 }
 
 #[test]
@@ -129,9 +129,9 @@ fn test_error_con_linea_cero() {
 #[test]
 fn test_lexer_error_cadena_sin_cerrar() {
     let mut lexer = Lexer::new("\"cadena sin cerrar");
-    let result = lexer.tokenize();
-    assert!(result.is_err());
-    let errors = result.unwrap_err();
+    let resultado = lexer.tokenize();
+    assert!(resultado.is_err());
+    let errors = resultado.unwrap_err();
     assert_eq!(errors[0].tipo, ErrorTipo::ErrorLexico);
 }
 
@@ -144,8 +144,8 @@ fn test_parser_error_expression_invalida() {
     let mut lexer = Lexer::new("variable x = +");
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
-    let result = parser.parse();
-    assert!(result.is_err());
+    let resultado = parser.parse();
+    assert!(resultado.is_err());
 }
 
 // ============================================================
@@ -159,9 +159,9 @@ fn test_semantic_error_var_no_declarada() {
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
     let mut checker = BorrowChecker::new();
-    let result = checker.analizar(&programa);
-    assert!(result.is_err());
-    let errors = result.unwrap_err();
+    let resultado = checker.analizar(&programa);
+    assert!(resultado.is_err());
+    let errors = resultado.unwrap_err();
     assert_eq!(errors[0].tipo, ErrorTipo::ErrorSemantico);
 }
 
@@ -172,8 +172,8 @@ fn test_semantic_error_asignacion_inmutable() {
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
     let mut checker = BorrowChecker::new();
-    let result = checker.analizar(&programa);
-    assert!(result.is_err());
+    let resultado = checker.analizar(&programa);
+    assert!(resultado.is_err());
 }
 
 // ============================================================
@@ -244,8 +244,8 @@ fn test_error_debug() {
 #[test]
 fn test_multiples_errores_lexer() {
     let mut lexer = Lexer::new("\"a\n\"b\n\"c\n");
-    let result = lexer.tokenize();
-    if let Err(errors) = result {
+    let resultado = lexer.tokenize();
+    if let Err(errors) = resultado {
         assert!(!errors.is_empty());
     }
 }
