@@ -476,8 +476,8 @@ pub fn firmar(privada: &[u8; 32], mensaje: &[u8]) -> [u8; 64] {
 
     // r = SHA512(prefijo ‖ M) mod L
     let mut hasher = Sha512::nuevo();
-    hasher.update(prefijo);
-    hasher.update(mensaje);
+    hasher.actualizar(prefijo);
+    hasher.actualizar(mensaje);
     let r = sc_reduce(&hasher.finalize());
 
     let r_bytes = sc_a_bytes(&r);
@@ -485,9 +485,9 @@ pub fn firmar(privada: &[u8; 32], mensaje: &[u8]) -> [u8; 64] {
 
     // k = SHA512(R ‖ A ‖ M) mod L
     let mut hasher = Sha512::nuevo();
-    hasher.update(&punto_r);
-    hasher.update(&publica);
-    hasher.update(mensaje);
+    hasher.actualizar(&punto_r);
+    hasher.actualizar(&publica);
+    hasher.actualizar(mensaje);
     let k = sc_reduce(&hasher.finalize());
 
     // S = (r + k·a) mod L
@@ -518,9 +518,9 @@ pub fn verificar(publica: &[u8; 32], mensaje: &[u8], firma: &[u8; 64]) -> bool {
     }
 
     let mut hasher = Sha512::nuevo();
-    hasher.update(&r_bytes);
-    hasher.update(publica);
-    hasher.update(mensaje);
+    hasher.actualizar(&r_bytes);
+    hasher.actualizar(publica);
+    hasher.actualizar(mensaje);
     let k = sc_reduce(&hasher.finalize());
 
     let base = punto_base();

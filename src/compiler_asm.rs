@@ -677,7 +677,7 @@ impl DestinoArch {
     fn movzx(&self, dst: &str, src: &str) -> String {
         match self {
             DestinoArch::X86_64Windows | DestinoArch::X86_64Linux => {
-                // movzx requires the source to be 8-bit or 16-bit.
+                // movzx requires the codigo_fuente to be 8-bit or 16-bit.
                 // Si destino == origen, el origen viene de un setcc: hay que usar el nombre de 8 bits.
                 let src8 = if dst == src {
                     Self::to_8bit_reg(src)
@@ -4662,8 +4662,8 @@ mod tests {
     use crate::lexer::Lexer;
     use crate::parser::Parser;
 
-    fn compilar_fuente(source: &str) -> Result<String, Vec<ErrorForja>> {
-        let mut lexer = Lexer::new(source);
+    fn compilar_fuente(codigo_fuente: &str) -> Result<String, Vec<ErrorForja>> {
+        let mut lexer = Lexer::new(codigo_fuente);
         let tokens = lexer.tokenize()?;
         let mut parser = Parser::nuevo(tokens);
         let programa = parser.parse()?;
@@ -4709,23 +4709,23 @@ mod tests {
 
     #[test]
     fn test_asm_si_sino() {
-        let source = "variable x = 5\nsi (x > 0) { variable y = 1 } sino { variable z = 2 }";
-        let resultado = compilar_fuente(source).unwrap();
+        let codigo_fuente = "variable x = 5\nsi (x > 0) { variable y = 1 } sino { variable z = 2 }";
+        let resultado = compilar_fuente(codigo_fuente).unwrap();
         assert!(resultado.contains("test") || resultado.contains("cmp"));
         assert!(resultado.contains("endif") || resultado.contains("cbz"));
     }
 
     #[test]
     fn test_asm_mientras() {
-        let source = "variable x = 0\nmientras (x < 10) { x = x + 1 }";
-        let resultado = compilar_fuente(source).unwrap();
+        let codigo_fuente = "variable x = 0\nmientras (x < 10) { x = x + 1 }";
+        let resultado = compilar_fuente(codigo_fuente).unwrap();
         assert!(resultado.contains("while_start"));
     }
 
     #[test]
     fn test_asm_funcion() {
-        let source = "funcion suma(a, b) { retornar a + b }";
-        let resultado = compilar_fuente(source).unwrap();
+        let codigo_fuente = "funcion suma(a, b) { retornar a + b }";
+        let resultado = compilar_fuente(codigo_fuente).unwrap();
         assert!(resultado.contains("suma:"));
         assert!(resultado.contains("ret"));
     }
@@ -4741,8 +4741,8 @@ mod tests {
     #[test]
     fn test_asm_clase_simple() {
         // Define una clase, la instancia y accede a campos
-        let source = "clase Punto { x y }";
-        let resultado = compilar_fuente(source).unwrap();
+        let codigo_fuente = "clase Punto { x y }";
+        let resultado = compilar_fuente(codigo_fuente).unwrap();
         assert!(resultado.contains("Punto"));
         assert!(resultado.contains("struct"));
         assert!(resultado.contains("x"));
@@ -4752,7 +4752,7 @@ mod tests {
     #[test]
     fn test_asm_instanciacion() {
         // Crea una instancia de clase
-        let source = "\
+        let codigo_fuente = "\
 clase Punto {
     x
     y
@@ -4760,7 +4760,7 @@ clase Punto {
 variable p = nuevo Punto()
 p.x = 42
 p.y = 10";
-        let resultado = compilar_fuente(source).unwrap();
+        let resultado = compilar_fuente(codigo_fuente).unwrap();
         // Debe contener el label de la clase
         assert!(resultado.contains("Punto"));
         // Debe contener asignación a campo (store en offset)
@@ -4772,7 +4772,7 @@ p.y = 10";
     #[test]
     fn test_asm_acceso_campo() {
         // Accede a un campo de una instancia y lo escribe
-        let source = "\
+        let codigo_fuente = "\
 clase Punto {
     x
     y
@@ -4780,7 +4780,7 @@ clase Punto {
 variable p = nuevo Punto()
 p.x = 42
 escribir(p.x)";
-        let resultado = compilar_fuente(source).unwrap();
+        let resultado = compilar_fuente(codigo_fuente).unwrap();
         // Debe haber el label main
         assert!(resultado.contains("main:"));
         // Debe haber acceso a campo (load desde offset)
@@ -4790,7 +4790,7 @@ escribir(p.x)";
     #[test]
     fn test_asm_clase_con_constructor() {
         // Clase con constructor que inicializa campos
-        let source = "\
+        let codigo_fuente = "\
 clase Persona {
     nombre
     constructor() {
@@ -4799,7 +4799,7 @@ clase Persona {
 }
 variable p = nuevo Persona()
 escribir(p.nombre)";
-        let resultado = compilar_fuente(source).unwrap();
+        let resultado = compilar_fuente(codigo_fuente).unwrap();
         // Debe generar la función del constructor
         assert!(resultado.contains("Persona.nuevo"));
         // Debe llamar al constructor desde instanciacion
@@ -4809,7 +4809,7 @@ escribir(p.nombre)";
     #[test]
     fn test_asm_metodo_simple() {
         // Clase con un método que usa self (implícito como 'este')
-        let source = "\
+        let codigo_fuente = "\
 clase Calculadora {
     resultado
     funcion sumar(valor) {
@@ -4818,7 +4818,7 @@ clase Calculadora {
 }
 variable c = nuevo Calculadora()
 c.sumar(5)";
-        let resultado = compilar_fuente(source).unwrap();
+        let resultado = compilar_fuente(codigo_fuente).unwrap();
         // Debe generar la función del método
         assert!(resultado.contains("Calculadora.sumar"));
         // Debe tener código para la función

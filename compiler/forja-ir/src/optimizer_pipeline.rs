@@ -165,7 +165,7 @@ impl PipelineAst {
     }
 
     /// `true` si no hay passes.
-    pub fn is_empty(&self) -> bool {
+    pub fn es_vacio(&self) -> bool {
         self.passes.is_empty()
     }
 

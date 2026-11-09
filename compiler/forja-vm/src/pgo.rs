@@ -291,7 +291,7 @@ impl Instrumenter {
     }
 
     /// Resetea todos los contadores
-    pub fn reset(&mut self) {
+    pub fn reiniciar(&mut self) {
         self.counters.iter_mut().for_each(|c| *c = 0);
         self.cantidad_actual = 0;
     }

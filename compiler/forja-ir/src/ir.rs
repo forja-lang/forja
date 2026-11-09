@@ -579,7 +579,7 @@ impl TablaSimbolosIr {
     ///
     /// # Devuelve
     /// `true` si no se internó ningún nombre todavía.
-    pub fn is_empty(&self) -> bool {
+    pub fn es_vacio(&self) -> bool {
         self.nombres.is_empty()
     }
 }

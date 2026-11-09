@@ -30,7 +30,7 @@ impl Sha256 {
         }
     }
 
-    pub fn update(&mut self, data: &[u8]) {
+    pub fn actualizar(&mut self, data: &[u8]) {
         let mut off = 0;
         let remaining = self.longitud as usize % 64;
         if remaining > 0 {
@@ -60,11 +60,11 @@ impl Sha256 {
         // FIPS 180-4 §5.1.1: agrega 0x80, luego ceros hasta que (len + 8) % 64 == 0,
         // y al final la longitud en bits como entero de 64 bits
         let bit_longitud = self.longitud.wrapping_mul(8).to_be_bytes();
-        self.update(&[0x80]);
+        self.actualizar(&[0x80]);
         while (self.longitud as usize) % 64 != 56 {
-            self.update(&[0]);
+            self.actualizar(&[0]);
         }
-        self.update(&bit_longitud);
+        self.actualizar(&bit_longitud);
 
         let mut resultado = [0u8; 32];
         for (i, &h) in self.h.iter().enumerate() {
@@ -75,7 +75,7 @@ impl Sha256 {
 
     pub fn digest(data: &[u8]) -> [u8; 32] {
         let mut sha = Self::nuevo();
-        sha.update(data);
+        sha.actualizar(data);
         sha.finalize()
     }
 }
@@ -168,7 +168,7 @@ impl Sha1 {
         }
     }
 
-    pub fn update(&mut self, data: &[u8]) {
+    pub fn actualizar(&mut self, data: &[u8]) {
         let mut off = 0;
         let remaining = self.longitud as usize % 64;
         if remaining > 0 {
@@ -198,11 +198,11 @@ impl Sha1 {
         // FIPS 180-4 §5.1.1: agrega 0x80, luego ceros hasta que (len + 8) % 64 == 0,
         // y al final la longitud en bits como entero de 64 bits
         let bit_longitud = self.longitud.wrapping_mul(8).to_be_bytes();
-        self.update(&[0x80]);
+        self.actualizar(&[0x80]);
         while (self.longitud as usize) % 64 != 56 {
-            self.update(&[0]);
+            self.actualizar(&[0]);
         }
-        self.update(&bit_longitud);
+        self.actualizar(&bit_longitud);
 
         let mut resultado = [0u8; 20];
         for (i, &h) in self.h.iter().enumerate() {
@@ -213,7 +213,7 @@ impl Sha1 {
 
     pub fn digest(data: &[u8]) -> [u8; 20] {
         let mut sha = Self::nuevo();
-        sha.update(data);
+        sha.actualizar(data);
         sha.finalize()
     }
 }
@@ -284,8 +284,8 @@ impl Sha224 {
         };
         Self(inner)
     }
-    pub fn update(&mut self, data: &[u8]) {
-        self.0.update(data);
+    pub fn actualizar(&mut self, data: &[u8]) {
+        self.0.actualizar(data);
     }
     pub fn finalize(self) -> [u8; 28] {
         let full = self.0.finalize();
@@ -295,7 +295,7 @@ impl Sha224 {
     }
     pub fn digest(data: &[u8]) -> [u8; 28] {
         let mut h = Self::nuevo();
-        h.update(data);
+        h.actualizar(data);
         h.finalize()
     }
 }
@@ -332,7 +332,7 @@ impl Sha512 {
         }
     }
 
-    pub fn update(&mut self, data: &[u8]) {
+    pub fn actualizar(&mut self, data: &[u8]) {
         let mut off = 0;
         let remaining = self.longitud as usize % 128;
         if remaining > 0 {
@@ -364,9 +364,9 @@ impl Sha512 {
         // nunca se comprimía: `digest` devolvía el estado inicial para cualquier
         // entrada.
         let bit_longitud = self.longitud.wrapping_mul(8).to_be_bytes();
-        self.update(&[0x80]);
+        self.actualizar(&[0x80]);
         while (self.longitud as usize) % 128 != 112 {
-            self.update(&[0]);
+            self.actualizar(&[0]);
         }
         // `buf` tiene 112 bytes rellenos y sin comprimir: completar el bloque.
         self.buf[112..120].copy_from_slice(&[0u8; 8]);
@@ -382,7 +382,7 @@ impl Sha512 {
 
     pub fn digest(data: &[u8]) -> [u8; 64] {
         let mut h = Self::nuevo();
-        h.update(data);
+        h.actualizar(data);
         h.finalize()
     }
 }
@@ -553,8 +553,8 @@ impl Sha384 {
             longitud: 0,
         })
     }
-    pub fn update(&mut self, data: &[u8]) {
-        self.0.update(data);
+    pub fn actualizar(&mut self, data: &[u8]) {
+        self.0.actualizar(data);
     }
     pub fn finalize(self) -> [u8; 48] {
         let full = self.0.finalize();
@@ -564,7 +564,7 @@ impl Sha384 {
     }
     pub fn digest(data: &[u8]) -> [u8; 48] {
         let mut h = Self::nuevo();
-        h.update(data);
+        h.actualizar(data);
         h.finalize()
     }
 }
@@ -593,14 +593,14 @@ pub fn hmac_sha256(clave: &[u8], data: &[u8]) -> [u8; 32] {
 
     // 3. inner = SHA256(ipad || data)
     let mut inner = Sha256::nuevo();
-    inner.update(&ipad);
-    inner.update(data);
+    inner.actualizar(&ipad);
+    inner.actualizar(data);
     let inner_hash = inner.finalize();
 
     // 4. outer = SHA256(opad || inner_hash)
     let mut outer = Sha256::nuevo();
-    outer.update(&opad);
-    outer.update(&inner_hash);
+    outer.actualizar(&opad);
+    outer.actualizar(&inner_hash);
     outer.finalize()
 }
 

@@ -375,8 +375,8 @@ impl ModuloResolver {
             None => return false,
         };
 
-        let path = self.raiz_directorio.join(format!("{}.fa", ruta));
-        let ruta_archivo = path.to_str().unwrap_or(ruta);
+        let ruta_fa = self.raiz_directorio.join(format!("{}.fa", ruta));
+        let ruta_archivo = ruta_fa.to_str().unwrap_or(ruta);
         let nuevo_hash = Self::hash_fuente(ruta_archivo);
         nuevo_hash != informacion.fuente_hash && nuevo_hash != 0
     }

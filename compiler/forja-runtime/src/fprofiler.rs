@@ -95,7 +95,7 @@ impl DatosPerfiladorFlotante {
         }
     }
 
-    pub fn reset(&self) {
+    pub fn reiniciar(&self) {
         self.empujar_decimal.store(0, Ordering::Relaxed);
         self.sumar_flotante.store(0, Ordering::Relaxed);
         self.restar_flotante.store(0, Ordering::Relaxed);

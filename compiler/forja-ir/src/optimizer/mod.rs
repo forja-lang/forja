@@ -42,7 +42,7 @@ impl Optimizer {
     /// Resetea la arena si está habilitada
     pub fn reiniciar_arena(&mut self) {
         if let Some(ref mut arena) = self.arena {
-            arena.reset();
+            arena.reiniciar();
         }
     }
 

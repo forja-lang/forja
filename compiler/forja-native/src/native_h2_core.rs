@@ -215,7 +215,7 @@ impl TablaDinamica {
         name.len() + valor.len() + 32
     }
 
-    pub fn get(&self, idx: usize) -> Option<(&str, &str)> {
+    pub fn obtener(&self, idx: usize) -> Option<(&str, &str)> {
         let static_longitud = STATIC_TABLE.len();
         if idx >= 1 && idx <= static_longitud {
             return static_tabla_entrada(idx);
@@ -254,7 +254,7 @@ impl TablaDinamica {
         self.entries.len()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub fn es_vacio(&self) -> bool {
         self.longitud() == 0
     }
 
@@ -1060,7 +1060,7 @@ pub fn hpack_decodificar(
             if idx == 0 {
                 return None;
             }
-            if let Some((name, valor)) = tabla.get(idx as usize) {
+            if let Some((name, valor)) = tabla.obtener(idx as usize) {
                 cabeceras.insert(name.to_string(), valor.to_string());
             } else {
                 return None;
@@ -1072,7 +1072,7 @@ pub fn hpack_decodificar(
                 let idx = decodificar_integer(data, &mut offset, 6).ok()?;
                 let valor = decodificar_texto(data, &mut offset).ok()?;
                 let entrada = tabla
-                    .get(idx as usize)
+                    .obtener(idx as usize)
                     .map(|(n, _)| (n.to_string(), valor.clone()));
                 if let Some((name, val)) = entrada {
                     cabeceras.insert(name.clone(), val.clone());
@@ -1094,7 +1094,7 @@ pub fn hpack_decodificar(
                     let idx = decodificar_integer(data, &mut offset, 6).ok()?;
                     let valor = decodificar_texto(data, &mut offset).ok()?;
                     let entrada = tabla
-                        .get(idx as usize)
+                        .obtener(idx as usize)
                         .map(|(n, _)| (n.to_string(), valor.clone()));
                     if let Some((name, val)) = entrada {
                         cabeceras.insert(name.clone(), val.clone());
@@ -1116,7 +1116,7 @@ pub fn hpack_decodificar(
             if use_name_index {
                 let idx = decodificar_integer(data, &mut offset, 4).ok()?;
                 let valor = decodificar_texto(data, &mut offset).ok()?;
-                if let Some((name, _)) = tabla.get(idx as usize) {
+                if let Some((name, _)) = tabla.obtener(idx as usize) {
                     cabeceras.insert(name.to_string(), valor);
                 } else {
                     return None;

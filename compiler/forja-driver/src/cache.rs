@@ -14,6 +14,7 @@ const VERSION_CACHE: u32 = 2;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CachedModulo {
     /// Hash del código fuente al momento de compilar
+    #[serde(rename = "source_hash")]
     pub fuente_hash: u64,
     /// Versión del formato de caché
     pub cache_version: u32,
@@ -55,7 +56,7 @@ impl IncrementalCache {
 
     /// Intenta obtener bytecode cacheado para un módulo.
     /// Retorna `Some(codigos)` si el hash del fuente coincide.
-    pub fn get(&mut self, ruta_modulo: &str, fuente_hash: u64) -> Option<Vec<Opcode>> {
+    pub fn obtener(&mut self, ruta_modulo: &str, fuente_hash: u64) -> Option<Vec<Opcode>> {
         if let Some(entrada) = self.entries.get(ruta_modulo) {
             if entrada.fuente_hash == fuente_hash && entrada.cache_version == VERSION_CACHE {
                 if let Some((codigos, _cab)) = deserializar_con_metadata(&entrada.bytecode_bin) {
@@ -226,12 +227,12 @@ mod tests {
         cache.put("test.fa", hash, &ops, &[]);
 
         // Get con hash ok → hit
-        let resultado = cache.get("test.fa", hash);
+        let resultado = cache.obtener("test.fa", hash);
         assert!(resultado.is_some());
         assert_eq!(resultado.unwrap().len(), 2);
 
         // Get con hash incorrecto → miss
-        let resultado = cache.get("test.fa", 99999);
+        let resultado = cache.obtener("test.fa", 99999);
         assert!(resultado.is_none());
 
         // Estadísticas
@@ -259,7 +260,7 @@ mod tests {
         // Cargar en nueva instancia
         {
             let mut cache = IncrementalCache::nuevo(&temporal);
-            let resultado = cache.get("mod.fa", 111);
+            let resultado = cache.obtener("mod.fa", 111);
             assert!(resultado.is_some());
             assert_eq!(resultado.unwrap().len(), 1);
         }
@@ -281,8 +282,8 @@ mod tests {
         // Invalidar base.fa → lib.fa también se invalida
         cache.invalidate("base.fa");
 
-        assert!(cache.get("base.fa", 100).is_none());
-        assert!(cache.get("lib.fa", 200).is_none());
+        assert!(cache.obtener("base.fa", 100).is_none());
+        assert!(cache.obtener("lib.fa", 200).is_none());
         assert_eq!(cache.invalidated, 2);
 
         let _ = std::fs::remove_dir_all(&temporal);

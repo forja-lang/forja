@@ -61,7 +61,7 @@ impl Drop for Chunk {
 /// let arena = Arena::new();
 /// let x = arena.alloc(42u64);
 /// let slice = arena.alloc_slice(&[1, 2, 3]);
-/// // Al final, todo se libera de golpe con `arena.reset()`
+/// // Al final, todo se libera de golpe con `arena.reiniciar()`
 /// ```
 pub struct Arena {
     chunks: Vec<Chunk>,
@@ -138,7 +138,7 @@ impl Arena {
 
     /// Resetea la arena — libera toda la memoria asignada.
     /// Los chunks se reutilizan para la siguiente ronda.
-    pub fn reset(&mut self) {
+    pub fn reiniciar(&mut self) {
         // Mantener los chunks pero resetear offsets
         // (realmente no podemos "dealloc" individualmente porque los chunks
         // pueden tener múltiples objetos, así que solo reseteamos)
@@ -231,8 +231,8 @@ impl ScopedArena {
         self.arena.reservar_slice(slice)
     }
 
-    pub fn reset(&mut self) {
-        self.arena.reset();
+    pub fn reiniciar(&mut self) {
+        self.arena.reiniciar();
         self.pila_ambitos.clear();
     }
 
@@ -274,7 +274,7 @@ mod tests {
         arena.alloc(100u64);
         assert!(arena.bytes_allocated() > 0);
 
-        arena.reset();
+        arena.reiniciar();
         assert_eq!(arena.bytes_allocated(), 0);
     }
 

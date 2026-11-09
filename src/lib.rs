@@ -122,8 +122,8 @@ pub enum MotorEmision {
 
 /// ¿el programa declara `importar`? Si sí, hay funciones que el checker no
 /// puede ver (stdlib inlineada después, módulos GUI resueltos por gui-rt).
-fn tiene_imports(source: &str) -> bool {
-    source.lines().any(|l| {
+fn tiene_imports(codigo_fuente: &str) -> bool {
+    codigo_fuente.lines().any(|l| {
         let l = l.trim_start();
         l.starts_with("importar ") || l.starts_with("importar\"")
     })
@@ -292,9 +292,9 @@ fn compilar_pipeline_nucleo_emision(
 /// aún no lo cubre. La ruta IR sigue siendo **experimental**; la producción usa
 /// [`compilar_pipeline_completa`] (AST-first con fallback IR,).
 pub fn compilar_desde_ir(
-    source: &str,
+    codigo_fuente: &str,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    let mut lexer = lexer::Lexer::new(source);
+    let mut lexer = lexer::Lexer::new(codigo_fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
     let programa = parser::Parser::nuevo(tokens)
         .parse()
@@ -302,7 +302,7 @@ pub fn compilar_desde_ir(
     compilar_pipeline_nucleo_emision(
         programa,
         MotorEmision::Ir,
-        tiene_imports(source),
+        tiene_imports(codigo_fuente),
         crate::config::actual().estricto,
     )
 }
@@ -354,13 +354,13 @@ pub mod debugger;
 pub mod lsp;
 
 /// Calcula un hash u64 a partir de una cadena de código fuente.
-/// Usado por la compilación incremental para detectar cambios en el source.
+/// Usado por la compilación incremental para detectar cambios en el codigo_fuente.
 #[cfg(not(target_arch = "wasm32"))]
-fn hash_fuente(source: &str) -> u64 {
+fn hash_fuente(codigo_fuente: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();
-    source.hash(&mut hasher);
+    codigo_fuente.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -390,9 +390,9 @@ fn monomorphize_programa(programa: &mut ast::Programa) {
 /// [`compilar_pipeline_completa`] (y su variante con imports
 /// [`compilar_pipeline_completa_desde`]), pero se detiene tras el
 /// PrestamoChecker: no optimiza ni genera bytecode.
-pub fn analizar(source: &str) -> Result<ast::Programa, Vec<ErrorForja>> {
+pub fn analizar(codigo_fuente: &str) -> Result<ast::Programa, Vec<ErrorForja>> {
     // FASE 1: Lexer
-    let mut lexer = lexer::Lexer::new(source);
+    let mut lexer = lexer::Lexer::new(codigo_fuente);
     let tokens = lexer.tokenize()?;
 
     // FASE 2-3: Parser
@@ -420,9 +420,9 @@ pub fn analizar(source: &str) -> Result<ast::Programa, Vec<ErrorForja>> {
 ///
 /// Para obtener **bytecode** (y contratos) usar la ruta canónica
 /// [`compilar_pipeline_completa`] / [`compilar_pipeline_completa_desde`].
-pub fn transpilar_a_rust(source: &str) -> Result<String, Vec<ErrorForja>> {
+pub fn transpilar_a_rust(codigo_fuente: &str) -> Result<String, Vec<ErrorForja>> {
     // FASE 1: Lexer
-    let mut lexer = lexer::Lexer::new(source);
+    let mut lexer = lexer::Lexer::new(codigo_fuente);
     let tokens = lexer.tokenize()?;
 
     // FASE 2-3: Parser
@@ -458,10 +458,10 @@ pub fn transpilar_a_rust(source: &str) -> Result<String, Vec<ErrorForja>> {
 /// (`Vec<ast::Declaracion>`) tras las optimizaciones de AST, antes de la
 /// transpilación. NO genera bytecode.
 pub fn transpilar_a_rust_con_ast(
-    source: &str,
+    codigo_fuente: &str,
 ) -> Result<(Vec<ast::Declaracion>, String), Vec<ErrorForja>> {
     // FASE 1: Lexer
-    let mut lexer = lexer::Lexer::new(source);
+    let mut lexer = lexer::Lexer::new(codigo_fuente);
     let tokens = lexer.tokenize()?;
 
     // FASE 2-3: Parser
@@ -535,7 +535,7 @@ pub fn transpilar_desde_ir(
 /// Reemplaza nodos `Importar` con las declaraciones reales de los módulos.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn resolver_imports(
-    source: &str,
+    codigo_fuente: &str,
     directorio_raiz: &std::path::Path,
 ) -> Result<ast::Programa, String> {
     use crate::dedup::dedup_declaraciones;
@@ -544,7 +544,7 @@ pub fn resolver_imports(
     use std::collections::{HashMap, HashSet};
 
     // 1. Lexer + Parser del código fuente principal
-    let mut lexer = lexer::Lexer::new(source);
+    let mut lexer = lexer::Lexer::new(codigo_fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
     let mut parser = parser::Parser::nuevo(tokens);
     let mut programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
@@ -906,12 +906,12 @@ fn reescribir_llamadas_de_modulo<A: AliasModulos>(declaracion: &mut ast::Declara
 /// esto `importar std/json` se ignoraba en silencio y el playground fallaba con
 /// "función no definida". La GUI se omite a propósito (la resuelve su runtime).
 #[cfg(target_arch = "wasm32")]
-pub fn resolver_imports_embebida(source: &str) -> Result<ast::Programa, String> {
+pub fn resolver_imports_embebida(codigo_fuente: &str) -> Result<ast::Programa, String> {
     use crate::dedup::dedup_declaraciones;
     use std::collections::{HashMap, HashSet};
 
-    fn parsear(source: &str) -> Result<ast::Programa, String> {
-        let mut lexer = lexer::Lexer::new(source);
+    fn parsear(codigo_fuente: &str) -> Result<ast::Programa, String> {
+        let mut lexer = lexer::Lexer::new(codigo_fuente);
         let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
         let mut parser = parser::Parser::nuevo(tokens);
         parser.parse().map_err(|e| format!("{}", e[0]))
@@ -965,7 +965,7 @@ pub fn resolver_imports_embebida(source: &str) -> Result<ast::Programa, String> 
         Ok(())
     }
 
-    let mut programa = parsear(source)?;
+    let mut programa = parsear(codigo_fuente)?;
     let mut alias: HashMap<String, HashSet<String>> = HashMap::new();
     let mut visitados: HashSet<String> = HashSet::new();
     let mut final_decls = Vec::new();
@@ -991,29 +991,29 @@ pub fn resolver_imports_embebida(source: &str) -> Result<ast::Programa, String> 
 /// [`compilar_pipeline_completa`]. Devuelve `(bytecode, contratos)`.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_pipeline_completa_desde(
-    source: &str,
+    codigo_fuente: &str,
     directorio_raiz: &std::path::Path,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
     // FASE 1-2: Resolver imports y obtener el AST completo.
-    let programa = resolver_imports(source, directorio_raiz)?;
+    let programa = resolver_imports(codigo_fuente, directorio_raiz)?;
 
     // FASE 3+: núcleo único del pipeline a bytecode (sin lógica duplicada).
-    compilar_pipeline_nucleo(programa, tiene_imports(source))
+    compilar_pipeline_nucleo(programa, tiene_imports(codigo_fuente))
 }
 
 /// Igual que [`compilar_pipeline_completa_desde`], pero con una sesión
 /// explícita (estricto y, a futuro, contratos/caché).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_pipeline_completa_desde_con_sesion(
-    source: &str,
+    codigo_fuente: &str,
     directorio_raiz: &std::path::Path,
     sesion: &forja_session::Sesion,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    let programa = resolver_imports(source, directorio_raiz)?;
+    let programa = resolver_imports(codigo_fuente, directorio_raiz)?;
     compilar_pipeline_nucleo_emision(
         programa,
         MotorEmision::Auto,
-        tiene_imports(source),
+        tiene_imports(codigo_fuente),
         sesion.estricto(),
     )
 }
@@ -1023,14 +1023,14 @@ pub fn compilar_pipeline_completa_desde_con_sesion(
 /// de verificación de la cobertura IR del corpus y de la paridad funcional.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_pipeline_completa_desde_ir(
-    source: &str,
+    codigo_fuente: &str,
     directorio_raiz: &std::path::Path,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    let programa = resolver_imports(source, directorio_raiz)?;
+    let programa = resolver_imports(codigo_fuente, directorio_raiz)?;
     compilar_pipeline_nucleo_emision(
         programa,
         MotorEmision::Ir,
-        tiene_imports(source),
+        tiene_imports(codigo_fuente),
         crate::config::actual().estricto,
     )
 }
@@ -1039,50 +1039,50 @@ pub fn compilar_pipeline_completa_desde_ir(
 /// base de comparación de paridad funcional y del benchmark AST vs IR.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_pipeline_completa_desde_ast(
-    source: &str,
+    codigo_fuente: &str,
     directorio_raiz: &std::path::Path,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    let programa = resolver_imports(source, directorio_raiz)?;
+    let programa = resolver_imports(codigo_fuente, directorio_raiz)?;
     compilar_pipeline_nucleo_emision(
         programa,
         MotorEmision::SoloAst,
-        tiene_imports(source),
+        tiene_imports(codigo_fuente),
         crate::config::actual().estricto,
     )
 }
 
 /// Compila código Forja a **bytecode** + tabla de contratos (Design by Contract).
 ///
-/// **Entrypoint canónico de bytecode (source plano, sin imports).** Es la
+/// **Entrypoint canónico de bytecode (codigo_fuente plano, sin imports).** Es la
 /// fuente única de verdad para la firma `(bytecode, contratos)`: parsea el
-/// source y delega en `compilar_pipeline_nucleo`. Para programas con
+/// codigo_fuente y delega en `compilar_pipeline_nucleo`. Para programas con
 /// `importar`, usar [`compilar_pipeline_completa_desde`].
 ///
 /// Es la única implementación pública del pipeline de bytecode.
 pub fn compilar_pipeline_completa(
-    source: &str,
+    codigo_fuente: &str,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    compilar_pipeline_completa_con_estricto(source, crate::config::actual().estricto)
+    compilar_pipeline_completa_con_estricto(codigo_fuente, crate::config::actual().estricto)
 }
 
 /// Igual que [`compilar_pipeline_completa`], pero con opciones explícitas.
 /// Es el primer entrypoint que no lee la configuración global.
 pub fn compilar_pipeline_completa_con_sesion(
-    source: &str,
+    codigo_fuente: &str,
     sesion: &forja_session::Sesion,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
-    compilar_pipeline_completa_con_estricto(source, sesion.estricto())
+    compilar_pipeline_completa_con_estricto(codigo_fuente, sesion.estricto())
 }
 
 fn compilar_pipeline_completa_con_estricto(
-    source: &str,
+    codigo_fuente: &str,
     estricto: bool,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
     // En WASM no hay FS: los `importar` se resuelven contra la stdlib embebida.
     #[cfg(target_arch = "wasm32")]
     {
         return compilar_pipeline_nucleo_emision(
-            resolver_imports_embebida(source)?,
+            resolver_imports_embebida(codigo_fuente)?,
             MotorEmision::Auto,
             true,
             estricto,
@@ -1092,7 +1092,7 @@ fn compilar_pipeline_completa_con_estricto(
     #[cfg(not(target_arch = "wasm32"))]
     {
         // FASE 1: Lexer
-        let mut lexer = lexer::Lexer::new(source);
+        let mut lexer = lexer::Lexer::new(codigo_fuente);
         let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
 
         // FASE 2-3: Parser
@@ -1103,30 +1103,30 @@ fn compilar_pipeline_completa_con_estricto(
         compilar_pipeline_nucleo_emision(
             programa,
             MotorEmision::Auto,
-            tiene_imports(source),
+            tiene_imports(codigo_fuente),
             estricto,
         )
     }
 }
 
 /// Compila un módulo Forja a ModuloBytecode, sin resolución de imports.
-/// El caller debe proveer el source completo del módulo (con imports ya resueltos
+/// El caller debe proveer el codigo_fuente completo del módulo (con imports ya resueltos
 /// inline, o un módulo sin imports externos).
 ///
 /// Acepta una caché incremental opcional para reutilizar bytecode de módulos no modificados.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_modulo(
-    source: &str,
+    codigo_fuente: &str,
     modulo_id: ModuleId,
 ) -> Result<bytecode::ModuloBytecode, String> {
     use bytecode::GeneradorBytecode;
 
     // FASE 0: Caché incremental
-    // El caller puede usar IncrementalCache para verificar si el hash del source
+    // El caller puede usar IncrementalCache para verificar si el hash del codigo_fuente
     // cambió antes de llamar a esta función. Aquí generamos bytecode nuevo siempre.
 
     // FASE 1: Lexer
-    let mut lexer = lexer::Lexer::new(source);
+    let mut lexer = lexer::Lexer::new(codigo_fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
 
     // FASE 2: Parser
@@ -1169,24 +1169,24 @@ pub fn compilar_modulo(
 }
 
 /// Compila código Forja a bytecode con caché incremental.
-/// Si el hash del source coincide con una entrada cacheada, retorna el bytecode cacheado.
+/// Si el hash del codigo_fuente coincide con una entrada cacheada, retorna el bytecode cacheado.
 /// Si no, compila normalmente y guarda el resultado en la caché.
 ///
 /// La caché es transparente: la API externa no cambia.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compilar_con_cache(
-    source: &str,
+    codigo_fuente: &str,
     modulo_ruta: &str,
     directorio_raiz: &std::path::Path,
 ) -> Result<Vec<bytecode::Opcode>, String> {
-    // 1. Calcular hash del source
-    let fuente_hash = hash_fuente(source);
+    // 1. Calcular hash del codigo_fuente
+    let fuente_hash = hash_fuente(codigo_fuente);
 
     // 2. Intentar cargar caché incremental
     let mut cache = incremental_cache::IncrementalCache::nuevo(directorio_raiz);
 
     // 3. Verificar cache hit
-    if let Some(cached_opcodes) = cache.get(modulo_ruta, fuente_hash) {
+    if let Some(cached_opcodes) = cache.obtener(modulo_ruta, fuente_hash) {
         // Cache hit — retornar bytecode cacheado
         return Ok(cached_opcodes);
     }
@@ -1194,7 +1194,7 @@ pub fn compilar_con_cache(
     // 4. Cache miss — compilar normalmente.
     // Resolver imports (el núcleo del pipeline se delega al entrypoint canónico
     // `compilar_pipeline_nucleo`; comportamiento idéntico al previo ).
-    let programa = resolver_imports(source, directorio_raiz)?;
+    let programa = resolver_imports(codigo_fuente, directorio_raiz)?;
 
     // Extraer imports (antes de consumir el AST) para invalidación transitiva.
     // Nota: `resolver_imports` ya inlinea los `Importar`, así que esta lista
@@ -1209,7 +1209,7 @@ pub fn compilar_con_cache(
         .collect();
 
     // Núcleo único del pipeline a bytecode.
-    let (bytecode, _contratos) = compilar_pipeline_nucleo(programa, tiene_imports(source))?;
+    let (bytecode, _contratos) = compilar_pipeline_nucleo(programa, tiene_imports(codigo_fuente))?;
 
     // 5. Guardar en caché
     cache.put(modulo_ruta, fuente_hash, &bytecode, &imports);
@@ -1219,15 +1219,15 @@ pub fn compilar_con_cache(
 }
 
 /// Compila y ejecuta código Forja usando caché incremental.
-/// Reutiliza bytecode cacheado cuando el source no ha cambiado.
+/// Reutiliza bytecode cacheado cuando el codigo_fuente no ha cambiado.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn ejecutar_con_cache(
-    source: &str,
+    codigo_fuente: &str,
     directorio_raiz: &std::path::Path,
 ) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
 
-    let bytecode = compilar_con_cache(source, "main", directorio_raiz)?;
+    let bytecode = compilar_con_cache(codigo_fuente, "main", directorio_raiz)?;
     let mut vm = ForjaFast::nuevo();
     #[cfg(target_pointer_width = "64")]
     vm.fijar_max_inst(10_000_000_000);
@@ -1252,13 +1252,13 @@ pub fn compilar_modulos_paralelo(
     if modulos.len() < UMBRAL_PARALELO {
         return modulos
             .into_iter()
-            .map(|(source, modulo_id)| compilar_modulo(&source, modulo_id))
+            .map(|(codigo_fuente, modulo_id)| compilar_modulo(&codigo_fuente, modulo_id))
             .collect();
     }
 
     let resultados: Vec<Result<bytecode::ModuloBytecode, String>> = modulos
         .into_par_iter()
-        .map(|(source, modulo_id)| compilar_modulo(&source, modulo_id))
+        .map(|(codigo_fuente, modulo_id)| compilar_modulo(&codigo_fuente, modulo_id))
         .collect();
 
     resultados.into_iter().collect()
@@ -1267,29 +1267,29 @@ pub fn compilar_modulos_paralelo(
 /// Compila y ejecuta código Forja en ForjaFast (VM ultra-rápida)
 /// Usa sandbox air-gapped por defecto.
 /// **No resuelve `importar`**: para programas con imports, usar [`ejecutar_desde`].
-pub fn ejecutar(source: &str) -> Result<Vec<String>, String> {
-    ejecutar_con_opciones(source, true, None)
+pub fn ejecutar(codigo_fuente: &str) -> Result<Vec<String>, String> {
+    ejecutar_con_opciones(codigo_fuente, true, None)
 }
 
 /// Compila y ejecuta código Forja en ForjaFast con opciones y resolución de imports.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn ejecutar_desde(
-    source: &str,
+    codigo_fuente: &str,
     directorio_raiz: &std::path::Path,
 ) -> Result<Vec<String>, String> {
-    ejecutar_con_opciones_desde(source, directorio_raiz, true, None)
+    ejecutar_con_opciones_desde(codigo_fuente, directorio_raiz, true, None)
 }
 
 /// Compila y ejecuta código Forja en ForjaFast con opciones
 /// - `verificar_contratos`: si true, verifica pre/post condiciones en runtime
 /// - `sandbox`: configuración opcional de sandbox de red (None = air-gapped)
 pub fn ejecutar_con_opciones(
-    source: &str,
+    codigo_fuente: &str,
     verificar_contratos: bool,
     sandbox: Option<crate::sandbox::SandboxRed>,
 ) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
-    let (bytecode, contratos) = compilar_pipeline_completa(source)?;
+    let (bytecode, contratos) = compilar_pipeline_completa(codigo_fuente)?;
     let mut vm = ForjaFast::nuevo();
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
@@ -1308,11 +1308,11 @@ pub fn ejecutar_con_opciones(
 /// Compila y ejecuta con una [`forja_session::Sesion`] explícita.
 /// No lee la configuración global: estricto y contratos salen de la sesión.
 pub fn ejecutar_con_sesion(
-    source: &str,
+    codigo_fuente: &str,
     sesion: &forja_session::Sesion,
 ) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
-    let (bytecode, contratos) = compilar_pipeline_completa_con_sesion(source, sesion)?;
+    let (bytecode, contratos) = compilar_pipeline_completa_con_sesion(codigo_fuente, sesion)?;
     let mut vm = ForjaFast::nuevo();
     vm.contratos = contratos;
     vm.verificar_contratos = sesion.contratos();
@@ -1329,12 +1329,18 @@ pub fn ejecutar_con_sesion(
 /// - `sandbox`: configuración opcional de sandbox de red (None = air-gapped)
 #[cfg(not(target_arch = "wasm32"))]
 pub fn ejecutar_con_opciones_desde(
-    source: &str,
+    codigo_fuente: &str,
     directorio_raiz: &std::path::Path,
     verificar_contratos: bool,
     sandbox: Option<crate::sandbox::SandboxRed>,
 ) -> Result<Vec<String>, String> {
-    ejecutar_con_opciones_desde_impl(source, directorio_raiz, verificar_contratos, sandbox, false)
+    ejecutar_con_opciones_desde_impl(
+        codigo_fuente,
+        directorio_raiz,
+        verificar_contratos,
+        sandbox,
+        false,
+    )
 }
 
 /// Igual que `ejecutar_con_opciones_desde` pero fuerza el modo fast-math
@@ -1343,24 +1349,30 @@ pub fn ejecutar_con_opciones_desde(
 /// se activa automáticamente, este flag fuerza también en código mixto.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn ejecutar_con_opciones_desde_fast_math(
-    source: &str,
+    codigo_fuente: &str,
     directorio_raiz: &std::path::Path,
     verificar_contratos: bool,
     sandbox: Option<crate::sandbox::SandboxRed>,
 ) -> Result<Vec<String>, String> {
-    ejecutar_con_opciones_desde_impl(source, directorio_raiz, verificar_contratos, sandbox, true)
+    ejecutar_con_opciones_desde_impl(
+        codigo_fuente,
+        directorio_raiz,
+        verificar_contratos,
+        sandbox,
+        true,
+    )
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn ejecutar_con_opciones_desde_impl(
-    source: &str,
+    codigo_fuente: &str,
     directorio_raiz: &std::path::Path,
     verificar_contratos: bool,
     sandbox: Option<crate::sandbox::SandboxRed>,
     fast_math: bool,
 ) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
-    let (bytecode, contratos) = compilar_pipeline_completa_desde(source, directorio_raiz)?;
+    let (bytecode, contratos) = compilar_pipeline_completa_desde(codigo_fuente, directorio_raiz)?;
     let mut vm = ForjaFast::nuevo();
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
@@ -1390,14 +1402,14 @@ fn ejecutar_con_opciones_desde_impl(
 /// Se usa desde la CLI con `backtrace: true` en forja.yaml.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn ejecutar_con_opciones_desde_backtrace(
-    source: &str,
+    codigo_fuente: &str,
     directorio_raiz: &std::path::Path,
     verificar_contratos: bool,
     sandbox: Option<crate::sandbox::SandboxRed>,
 ) -> Result<Vec<String>, (String, Vec<String>)> {
     use vm_fast::ForjaFast;
-    let (bytecode, contratos) =
-        compilar_pipeline_completa_desde(source, directorio_raiz).map_err(|e| (e, Vec::new()))?;
+    let (bytecode, contratos) = compilar_pipeline_completa_desde(codigo_fuente, directorio_raiz)
+        .map_err(|e| (e, Vec::new()))?;
     let mut vm = ForjaFast::nuevo();
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
@@ -1423,9 +1435,9 @@ pub fn ejecutar_con_opciones_desde_backtrace(
 /// Compila y ejecuta código Forja en la VM ForjaFast (v5, la de producción).
 /// Antes de la v0.9.0 este era el modo "VM original"; la VM v1 fue removida.
 /// **No resuelve `importar`**: para programas con imports, usar [`ejecutar_desde`].
-pub fn ejecutar_vm(source: &str) -> Result<Vec<String>, String> {
+pub fn ejecutar_vm(codigo_fuente: &str) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
-    let (bytecode, _contratos) = compilar_pipeline_completa(source)?;
+    let (bytecode, _contratos) = compilar_pipeline_completa(codigo_fuente)?;
     let mut vm = ForjaFast::nuevo();
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
@@ -1435,7 +1447,7 @@ pub fn ejecutar_vm(source: &str) -> Result<Vec<String>, String> {
 /// Compila y ejecuta código Forja en el motor JIT (`motor: jit` en forja.yaml).
 ///
 /// El JIT único de Forja es [`jit_tiered`] (orquestación por tiers), que
-/// expone API de bajo nivel y **no** un entrypoint `ejecutar(source)`. El antiguo
+/// expone API de bajo nivel y **no** un entrypoint `ejecutar(codigo_fuente)`. El antiguo
 /// `jit_engine::JitOrchestrator` (que sí ejecutaba bytecode) quedó archivado.
 ///
 /// Cambio INTERINO: hasta conectar un ejecutor basado en `jit_tiered`, `motor: jit`
@@ -1443,8 +1455,8 @@ pub fn ejecutar_vm(source: &str) -> Result<Vec<String>, String> {
 /// estabilidad de la CLI (misma salida que `motor: fast`). TODO: sustituir
 /// por una ruta de ejecución real sobre `jit_tiered`.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn ejecutar_jit(source: &str) -> Result<Vec<String>, String> {
-    ejecutar_jit_con_fallback(source).map(|(salida, _uso_fallback)| salida)
+pub fn ejecutar_jit(codigo_fuente: &str) -> Result<Vec<String>, String> {
+    ejecutar_jit_con_fallback(codigo_fuente).map(|(salida, _uso_fallback)| salida)
 }
 
 /// Ejecuta con la ruta JIT tiered y **fallback seguro a la VM**.
@@ -1462,8 +1474,8 @@ pub fn ejecutar_jit(source: &str) -> Result<Vec<String>, String> {
 /// nativo, la fase de ejecución la realiza siempre [`vm_fast::ForjaFast`]; el flag
 /// `uso_fallback` distingue si la capa JIT se pudo preparar con normalidad.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn ejecutar_jit_con_fallback(source: &str) -> Result<(Vec<String>, bool), String> {
-    let (bytecode, _contratos) = compilar_pipeline_completa(source)?;
+pub fn ejecutar_jit_con_fallback(codigo_fuente: &str) -> Result<(Vec<String>, bool), String> {
+    let (bytecode, _contratos) = compilar_pipeline_completa(codigo_fuente)?;
 
     // La fase JIT se aísla con `catch_unwind`: cualquier fallo se degrada a la VM.
     let bc_jit = bytecode.clone();
@@ -1572,37 +1584,37 @@ pub fn emitir_codigo_nativo(bc: &[bytecode::Opcode]) -> Vec<u8> {
 /// El flujo conecta los componentes de `pgo` con la VM `ForjaFast`:
 /// `ProfileManager` (persistencia) → `aplicar_pgo` (guía la ejecución) →
 /// instrumentación de la VM (recolección) → `ProfileManager::save` (merge).
-pub fn ejecutar_con_pgo(source: &str) -> Result<Vec<String>, String> {
-    ejecutar_con_pgo_impl(source, std::path::Path::new("."), false)
+pub fn ejecutar_con_pgo(codigo_fuente: &str) -> Result<Vec<String>, String> {
+    ejecutar_con_pgo_impl(codigo_fuente, std::path::Path::new("."), false)
 }
 
 /// Igual que `ejecutar_con_pgo` pero con directorio raíz explícito (ahí se
 /// lee/escribe `.forjaprof`).
 pub fn ejecutar_con_pgo_desde(
-    source: &str,
+    codigo_fuente: &str,
     directorio_raiz: &std::path::Path,
 ) -> Result<Vec<String>, String> {
-    ejecutar_con_pgo_impl(source, directorio_raiz, false)
+    ejecutar_con_pgo_impl(codigo_fuente, directorio_raiz, false)
 }
 
 /// Ejecuta aplicando un perfil existente (`.forjaprof`) sin volver a
 /// recolectar: las decisiones del perfil guían la ejecución actual.
 pub fn ejecutar_con_pgo_usar(
-    source: &str,
+    codigo_fuente: &str,
     directorio_raiz: &std::path::Path,
 ) -> Result<Vec<String>, String> {
-    ejecutar_con_pgo_impl(source, directorio_raiz, true)
+    ejecutar_con_pgo_impl(codigo_fuente, directorio_raiz, true)
 }
 
 fn ejecutar_con_pgo_impl(
-    source: &str,
+    codigo_fuente: &str,
     directorio_raiz: &std::path::Path,
     solo_usar: bool,
 ) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
 
     // 1. Compilar
-    let (bytecode, contratos) = compilar_pipeline_completa(source)?;
+    let (bytecode, contratos) = compilar_pipeline_completa(codigo_fuente)?;
 
     // 2. Cargar perfil previo si existe
     let mgr = pgo::ProfileManager::nuevo(directorio_raiz);

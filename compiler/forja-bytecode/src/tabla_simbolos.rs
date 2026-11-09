@@ -111,7 +111,7 @@ impl TablaSimbolos {
     ///
     /// # Devuelve
     /// `true` si no se internó ningún texto todavía.
-    pub fn is_empty(&self) -> bool {
+    pub fn es_vacio(&self) -> bool {
         self.longitud() == 0
     }
 }

@@ -186,7 +186,7 @@ pub(crate) fn cmd_bench(args: &[String]) {
     if todas || matches!(motor.as_str(), "rapido" | "vm") {
         // Activar profiling de f64
         forja::fprofiler::PERFILADOR_ACTIVO.store(1, std::sync::atomic::Ordering::Relaxed);
-        forja::fprofiler::PERFILADOR_DATOS.reset();
+        forja::fprofiler::PERFILADOR_DATOS.reiniciar();
         let nombre_fast = if fast_math_flag {
             "ForjaFast (fm)"
         } else {
