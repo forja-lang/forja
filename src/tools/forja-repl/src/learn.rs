@@ -191,9 +191,9 @@ impl Progreso {
     /// Guarda el progreso en disco (crea el directorio si hace falta).
     pub fn guardar(&self) -> Result<(), String> {
         let ruta = Self::ruta();
-        if let Some(dir) = ruta.parent() {
-            fs::create_dir_all(dir)
-                .map_err(|e| format!("no se pudo crear {}: {}", dir.display(), e))?;
+        if let Some(directorio) = ruta.parent() {
+            fs::create_dir_all(directorio)
+                .map_err(|e| format!("no se pudo crear {}: {}", directorio.display(), e))?;
         }
         let lista = self
             .completadas
