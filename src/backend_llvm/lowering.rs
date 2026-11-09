@@ -692,16 +692,20 @@ impl Lowering {
         // un `alloca` de `@forja_init` y LLVM lo promoverá a registro.
         let usados_en_funciones = nombres_usados_en_funciones(decls);
         // Si la stdlib inlineada y el programa declaran el mismo nombre, gana la
-        // última declaración (la del usuario): si no, el tipo sale del módulo
-        // equivocado (`variable x: Exacto` con `x` entero de la stdlib).
+        // Misma variable declarada por un módulo inlineado y por el programa:
+        // gana la ÚLTIMA (el programa va después del `importar`), que es la del
+        // usuario. Si no, el tipo y el slot salen del módulo equivocado
+        // (`variable x: Exacto` terminaba siendo un entero de la stdlib).
         let mut ultima_declaracion: HashMap<&str, usize> = HashMap::new();
         for (i, d) in decls.iter().enumerate() {
             if let Declaracion::Variable { nombre, .. } = d {
                 ultima_declaracion.insert(nombre.as_str(), i);
             }
         }
-        let mut globals_iniciales: Vec<(String, T, Option<Expresion>)> = Vec::new();
-        let mut locales_iniciales: Vec<(String, T, Option<Expresion>)> = Vec::new();
+        // Se guardan en orden de fuente: un `variable a = 1` seguido de
+        // `variable b = a + 1` necesita inicializarse en ese orden, sea global o
+        // local (`@forja_init` los emite así).
+        let mut iniciales: Vec<(String, T, Option<Expresion>, bool)> = Vec::new();
         for (idx, d) in decls.iter().enumerate() {
             if let Declaracion::Variable {
                 nombre,
@@ -711,7 +715,7 @@ impl Lowering {
             } = d
             {
                 if ultima_declaracion.get(nombre.as_str()).copied() != Some(idx) {
-                    continue; // sombra de una declaración posterior
+                    continue; // redeclarado más adelante (programa del usuario)
                 }
                 let t = self.tipo_declarado(tipo).unwrap_or_else(|| {
                     valor
@@ -735,9 +739,9 @@ impl Lowering {
                             t: t.clone(),
                         },
                     );
-                    globals_iniciales.push((nombre.clone(), t, valor.clone()));
+                    iniciales.push((nombre.clone(), t, valor.clone(), true));
                 } else {
-                    locales_iniciales.push((nombre.clone(), t, valor.clone()));
+                    iniciales.push((nombre.clone(), t, valor.clone(), false));
                 }
             }
         }
@@ -796,31 +800,23 @@ impl Lowering {
         // `self.vars` ya tiene los globals registrados: el init los necesita.
         self.prologo.clear();
         self.termina = false;
-        for (nombre, t, valor) in &locales_iniciales {
-            let slot = self.alloca(t, nombre);
-            self.vars.insert(
-                nombre.clone(),
-                Var {
-                    slot: slot.clone(),
-                    t: t.clone(),
-                },
-            );
+        for (nombre, t, valor, es_global) in &iniciales {
+            let slot = if *es_global {
+                format!("@g_{}", nombre)
+            } else {
+                let slot = self.alloca(t, nombre);
+                self.vars.insert(
+                    nombre.clone(),
+                    Var {
+                        slot: slot.clone(),
+                        t: t.clone(),
+                    },
+                );
+                slot
+            };
             if let Some(v) = valor {
                 let val = self.expr(v)?;
                 self.guardar(&slot, val, t);
-            }
-        }
-        for (nombre, t, valor) in &globals_iniciales {
-            if let Some(v) = valor {
-                let val = self.expr(v)?;
-                let r = self.como(&val, t.clone());
-                let _ = writeln!(
-                    self.cuerpos,
-                    "  store {} {}, ptr @g_{}",
-                    t.llvm().to_llvm_ir(),
-                    r,
-                    nombre
-                );
             }
         }
         for d in decls {
@@ -975,6 +971,8 @@ impl Lowering {
                 T::Enum(self.variantes[nombre].0.clone())
             }
             Expresion::Grupo(g) => self.tipo_estatico(g),
+            // `-x` conserva el tipo del operando (p. ej. un Exacto negativo).
+            Expresion::Unaria { expr, .. } => self.tipo_estatico(expr),
             Expresion::Instanciacion { clase, .. } => T::Clase(clase.clone()),
             Expresion::Binaria {
                 izquierda,
@@ -1021,6 +1019,18 @@ impl Lowering {
                         .map(|(en, _, _)| T::Enum(en.clone()))
                 })
                 .unwrap_or(T::Int),
+            // `absoluto(exacto)` devuelve Exacto (el builtin), aunque la
+            // stdlib declare `absoluto` sin tipos.
+            Expresion::LlamadaFuncion {
+                nombre, argumentos, ..
+            } if nombre == "absoluto"
+                && argumentos
+                    .first()
+                    .map(|a| self.tipo_estatico(a) == T::Exacto)
+                    .unwrap_or(false) =>
+            {
+                T::Exacto
+            }
             Expresion::LlamadaFuncion { nombre, .. } => self
                 .firmas
                 .get(nombre)
