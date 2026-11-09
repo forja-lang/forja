@@ -2,8 +2,8 @@ use forja::ast::{Declaracion, Expresion, Operador, Programa, Tipo};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
 
-fn parse(source: &str) -> Programa {
-    let mut lexer = Lexer::new(source);
+fn parse(fuente: &str) -> Programa {
+    let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     parser.parse().unwrap()
