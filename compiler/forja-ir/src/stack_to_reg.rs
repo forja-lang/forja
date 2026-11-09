@@ -12,7 +12,7 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
     let mut prog = RegProgram::new();
     let mut stack: Vec<(VirtReg, RegClass)> = Vec::new();
     let mut current_block = BloqueBasico {
-        label: 0,
+        etiqueta: 0,
         instructions: Vec::new(),
         terminator: RegInstruction::Nop,
     };
@@ -25,21 +25,21 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                 let v = prog.alloc_vreg();
                 current_block
                     .instructions
-                    .push(RegInstruction::LoadImm { dst: v, value: *n });
+                    .push(RegInstruction::LoadImm { dst: v, valor: *n });
                 stack.push((v, RegClass::Integer));
             }
             Opcode::PushDecimal(d) => {
                 let v = prog.alloc_vreg();
                 current_block
                     .instructions
-                    .push(RegInstruction::LoadFloat { dst: v, value: *d });
+                    .push(RegInstruction::LoadFloat { dst: v, valor: *d });
                 stack.push((v, RegClass::Float));
             }
             Opcode::PushBooleano(b) => {
                 let v = prog.alloc_vreg();
                 current_block.instructions.push(RegInstruction::LoadImm {
                     dst: v,
-                    value: if *b { 1 } else { 0 },
+                    valor: if *b { 1 } else { 0 },
                 });
                 stack.push((v, RegClass::Integer));
             }
@@ -47,7 +47,7 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                 let v = prog.alloc_vreg();
                 current_block
                     .instructions
-                    .push(RegInstruction::LoadImm { dst: v, value: 0 });
+                    .push(RegInstruction::LoadImm { dst: v, valor: 0 });
                 stack.push((v, RegClass::Integer));
             }
             Opcode::Descartar => {
@@ -98,14 +98,14 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                     _ => unreachable!(),
                 };
                 current_block.instructions.push(instr);
-                let class = match op {
+                let clase = match op {
                     Opcode::SumarDecimal
                     | Opcode::RestarDecimal
                     | Opcode::MultiplicarDecimal
                     | Opcode::DividirDecimal => RegClass::Float,
                     _ => RegClass::Integer,
                 };
-                stack.push((dst, class));
+                stack.push((dst, clase));
             }
 
             // === Carga de variables ===
@@ -114,7 +114,7 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                 current_block.instructions.push(RegInstruction::LoadVar {
                     dst: v,
                     var_idx: *idx,
-                    class: RegClass::Integer,
+                    clase: RegClass::Integer,
                 });
                 stack.push((v, RegClass::Integer));
             }
@@ -123,7 +123,7 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                 current_block.instructions.push(RegInstruction::LoadVar {
                     dst: v,
                     var_idx: *idx,
-                    class: RegClass::Float,
+                    clase: RegClass::Float,
                 });
                 stack.push((v, RegClass::Float));
             }
@@ -132,7 +132,7 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                 current_block.instructions.push(RegInstruction::StoreVar {
                     src,
                     var_idx: *idx,
-                    class: RegClass::Integer,
+                    clase: RegClass::Integer,
                 });
             }
             Opcode::GuardarIndiceDecimal(idx) => {
@@ -140,7 +140,7 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                 current_block.instructions.push(RegInstruction::StoreVar {
                     src,
                     var_idx: *idx,
-                    class: RegClass::Float,
+                    clase: RegClass::Float,
                 });
             }
 
@@ -232,25 +232,27 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
             }
 
             // === Control de flujo ===
-            Opcode::Salto(label) => {
-                current_block.terminator = RegInstruction::Jump { label: *label };
+            Opcode::Salto(etiqueta) => {
+                current_block.terminator = RegInstruction::Jump {
+                    etiqueta: *etiqueta,
+                };
                 prog.blocks.push(current_block);
                 current_block = BloqueBasico {
-                    label: label_counter,
+                    etiqueta: label_counter,
                     instructions: Vec::new(),
                     terminator: RegInstruction::Nop,
                 };
                 label_counter += 1;
             }
-            Opcode::SaltoSiFalso(label) => {
+            Opcode::SaltoSiFalso(etiqueta) => {
                 let (cond, _) = stack.pop().unwrap_or((0, RegClass::Integer));
                 current_block.terminator = RegInstruction::JumpIfFalse {
                     cond,
-                    label: *label,
+                    etiqueta: *etiqueta,
                 };
                 prog.blocks.push(current_block);
                 current_block = BloqueBasico {
-                    label: label_counter,
+                    etiqueta: label_counter,
                     instructions: Vec::new(),
                     terminator: RegInstruction::Nop,
                 };
@@ -259,7 +261,7 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
             Opcode::Etiqueta(l) => {
                 prog.blocks.push(current_block);
                 current_block = BloqueBasico {
-                    label: *l,
+                    etiqueta: *l,
                     instructions: Vec::new(),
                     terminator: RegInstruction::Nop,
                 };
@@ -268,7 +270,7 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                 current_block.terminator = RegInstruction::Return { src: 0 };
                 prog.blocks.push(current_block);
                 current_block = BloqueBasico {
-                    label: label_counter,
+                    etiqueta: label_counter,
                     instructions: Vec::new(),
                     terminator: RegInstruction::Nop,
                 };
@@ -276,7 +278,7 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
             }
 
             // === Funciones ===
-            Opcode::Llamar(func_name, nargs) => {
+            Opcode::Llamar(nombre_funcion, nargs) => {
                 let mut args = Vec::new();
                 for _ in 0..*nargs {
                     args.push(stack.pop().unwrap_or((0, RegClass::Integer)).0);
@@ -284,7 +286,7 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                 args.reverse(); // Los args se pasan en orden original
                 let v = prog.alloc_vreg();
                 current_block.instructions.push(RegInstruction::Call {
-                    func_name: func_name.to_string(),
+                    nombre_funcion: nombre_funcion.to_string(),
                     args,
                 });
                 // La función empuja un resultado en la pila virtual
@@ -295,7 +297,7 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                 current_block.terminator = RegInstruction::Return { src };
                 prog.blocks.push(current_block);
                 current_block = BloqueBasico {
-                    label: label_counter,
+                    etiqueta: label_counter,
                     instructions: Vec::new(),
                     terminator: RegInstruction::Nop,
                 };
@@ -349,18 +351,18 @@ mod tests {
 
         // Verificar LoadImm para 5
         match &block.instructions[0] {
-            RegInstruction::LoadImm { dst, value } => {
+            RegInstruction::LoadImm { dst, valor } => {
                 assert_eq!(*dst, 0);
-                assert_eq!(*value, 5);
+                assert_eq!(*valor, 5);
             }
             _ => panic!("Expected LoadImm"),
         }
 
         // Verificar LoadImm para 3
         match &block.instructions[1] {
-            RegInstruction::LoadImm { dst, value } => {
+            RegInstruction::LoadImm { dst, valor } => {
                 assert_eq!(*dst, 1);
-                assert_eq!(*value, 3);
+                assert_eq!(*valor, 3);
             }
             _ => panic!("Expected LoadImm"),
         }
@@ -431,11 +433,11 @@ mod tests {
             RegInstruction::StoreVar {
                 src,
                 var_idx,
-                class,
+                clase,
             } => {
                 assert_eq!(*src, 0);
                 assert_eq!(*var_idx, 0);
-                assert_eq!(*class, RegClass::Integer);
+                assert_eq!(*clase, RegClass::Integer);
             }
             _ => panic!("Expected StoreVar"),
         }
@@ -445,11 +447,11 @@ mod tests {
             RegInstruction::LoadVar {
                 dst,
                 var_idx,
-                class,
+                clase,
             } => {
                 assert_eq!(*dst, 1);
                 assert_eq!(*var_idx, 0);
-                assert_eq!(*class, RegClass::Integer);
+                assert_eq!(*clase, RegClass::Integer);
             }
             _ => panic!("Expected LoadVar"),
         }
@@ -493,9 +495,9 @@ mod tests {
 
         // El primer bloque termina con JumpIfFalse
         match &prog.blocks[0].terminator {
-            RegInstruction::JumpIfFalse { cond, label } => {
+            RegInstruction::JumpIfFalse { cond, etiqueta } => {
                 assert_eq!(*cond, 0); // vreg de PushEntero(1)
-                assert_eq!(*label, 1);
+                assert_eq!(*etiqueta, 1);
             }
             _ => panic!("Expected JumpIfFalse terminator"),
         }
@@ -514,9 +516,9 @@ mod tests {
 
         let block = &prog.blocks[0];
         match &block.instructions[0] {
-            RegInstruction::LoadFloat { dst, value } => {
+            RegInstruction::LoadFloat { dst, valor } => {
                 assert_eq!(*dst, 0);
-                assert_eq!(*value, 2.5);
+                assert_eq!(*valor, 2.5);
             }
             _ => panic!("Expected LoadFloat"),
         }
