@@ -14,20 +14,20 @@ fn salida(fuente: &str) -> Vec<String> {
 
 fn error(fuente: &str) -> String {
     match ejecutar(fuente) {
-        Ok(out) => panic!("debía fallar y devolvió: {out:?}\n{fuente}"),
+        Ok(salida) => panic!("debía fallar y devolvió: {salida:?}\n{fuente}"),
         Err(e) => e,
     }
 }
 
 #[test]
 fn los_limites_son_representables() {
-    let out = salida(
+    let salida = salida(
         r#"
 escribir(140737488355327)
 escribir(-140737488355328)
 "#,
     );
-    assert_eq!(out, vec!["140737488355327", "-140737488355328"]);
+    assert_eq!(salida, vec!["140737488355327", "-140737488355328"]);
 }
 
 #[test]
@@ -80,7 +80,7 @@ escribir(a * b)
 #[test]
 fn aritmetica_normal_no_se_ve_afectada() {
     // Sin falsos positivos: un acumulador grande pero representable.
-    let out = salida(
+    let salida = salida(
         r#"
 variable s = 0
 variable i = 0
@@ -93,5 +93,5 @@ variable limite = 140737488355327
 escribir(limite + 0)
 "#,
     );
-    assert_eq!(out, vec!["4999950000", "140737488355327"]);
+    assert_eq!(salida, vec!["4999950000", "140737488355327"]);
 }
