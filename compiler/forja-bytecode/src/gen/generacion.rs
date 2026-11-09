@@ -117,7 +117,7 @@ impl GeneradorBytecode {
                         } else {
                             &metodo.nombre
                         };
-                        let func_decl = Declaracion::Funcion {
+                        let declaracion_funcion = Declaracion::Funcion {
                             nombre: format!("{}.{}", nombre, nombre_metodo),
                             parametros_tipo: vec![],
                             parametros: {
@@ -140,7 +140,7 @@ impl GeneradorBytecode {
                             precondiciones: metodo.precondiciones.clone(),
                             postcondiciones: metodo.postcondiciones.clone(),
                         };
-                        nuevas_funciones.push(func_decl);
+                        nuevas_funciones.push(declaracion_funcion);
                     }
                     globales.push(decl);
                 }
@@ -161,7 +161,7 @@ impl GeneradorBytecode {
                                 tipo: None,
                             })
                             .collect();
-                        let func_decl = Declaracion::Funcion {
+                        let declaracion_funcion = Declaracion::Funcion {
                             nombre: format!("{}.{}", clase_nombre, metodo.nombre),
                             parametros_tipo: vec![],
                             parametros: {
@@ -184,7 +184,7 @@ impl GeneradorBytecode {
                             precondiciones: metodo.precondiciones.clone(),
                             postcondiciones: metodo.postcondiciones.clone(),
                         };
-                        nuevas_funciones.push(func_decl);
+                        nuevas_funciones.push(declaracion_funcion);
                     }
                     // No lo agregamos a globales porque se maneja solo con las funciones
                 }
@@ -386,12 +386,12 @@ impl GeneradorBytecode {
     /// Emite bytecode para extraer campos de un constructor según subpatrones.
     ///
     /// Preserva el objeto original en la pila (Dup por cada extracción) para
-    /// que un literal que no coincida salte a `label_fail` con la pila en
+    /// que un literal que no coincida salte a `etiqueta_fallo` con la pila en
     /// `[objeto]` (así el siguiente brazo del match puede intentar matchear).
     pub(crate) fn emitir_subpatrones_constructor(
         &mut self,
         subpatrones: &[Patron],
-        label_fail: usize,
+        etiqueta_fallo: usize,
     ) {
         for (i, sub) in subpatrones.iter().enumerate() {
             // La posición 0 del objeto de enum guarda el tag; los campos
@@ -419,7 +419,7 @@ impl GeneradorBytecode {
                     // Constructor anidado: duplicar, extraer campo y procesar recursivamente
                     self.emitir(Opcode::Duplicar);
                     self.emitir(Opcode::ExtraerCampo(campo));
-                    self.emitir_subpatrones_constructor(sub_sub, label_fail);
+                    self.emitir_subpatrones_constructor(sub_sub, etiqueta_fallo);
                     // Pop del objeto extraído (el original queda preservado por el Dup)
                     self.emitir(Opcode::Descartar);
                 }
@@ -432,8 +432,8 @@ impl GeneradorBytecode {
                     self.generar_expresion(valor);
                     self.emitir(Opcode::Igual);
                     // JumpSiFalso consume el bool: si no coincide salta a
-                    // label_fail dejando [obj] (el original preservado por el Dup).
-                    self.emitir(Opcode::SaltoSiFalso(label_fail));
+                    // etiqueta_fallo dejando [obj] (el original preservado por el Dup).
+                    self.emitir(Opcode::SaltoSiFalso(etiqueta_fallo));
                 }
             }
         }
