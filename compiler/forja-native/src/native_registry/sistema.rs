@@ -34,8 +34,8 @@ impl NativeRegistry {
 
 /// Nombre del sistema operativo (`_sistema_so()`), como lo reporta Rust.
 pub fn native_sistema_so(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let idx = vm.alloc_str(Arc::from(std::env::consts::OS));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(std::env::consts::OS));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Directorio de trabajo actual (`_sistema_directorio_actual()`).
@@ -43,16 +43,16 @@ pub fn native_sistema_directorio_actual(
     vm: &mut dyn Host,
     _args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let dir = std::env::current_dir()
+    let directorio = std::env::current_dir()
         .map_err(|e| ErrFast::TipoInv(format!("no se pudo leer el directorio actual: {e}")))?;
-    let idx = vm.alloc_str(Arc::from(dir.to_string_lossy().as_ref()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(directorio.to_string_lossy().as_ref()));
+    Ok(ValorFast::texto(indice))
 }
 pub fn native_args(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let args: Vec<ValorFast> = std::env::args()
         .map(|a| {
-            let idx = vm.alloc_str(Arc::from(a.as_str()));
-            ValorFast::texto(idx)
+            let indice = vm.alloc_str(Arc::from(a.as_str()));
+            ValorFast::texto(indice)
         })
         .collect();
     let arr_idx = vm.alloc_arr(args);
@@ -62,12 +62,12 @@ pub fn native_args(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<ValorFast, 
 /// Termina el proceso con el código dado.
 /// _salir(codigo: Entero)
 pub fn native_salir(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let code = if args.is_empty() {
+    let codigo = if args.is_empty() {
         0i32
     } else {
         obtener_entero(args[0])? as i32
     };
-    std::process::exit(code);
+    std::process::exit(codigo);
 }
 
 /// Obtiene el valor de una variable de entorno.
@@ -79,8 +79,8 @@ pub fn native_env(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, Er
     let nombre = obtener_texto(vm, args[0])?;
     match std::env::var(&nombre) {
         Ok(val) => {
-            let idx = vm.alloc_str(Arc::from(val.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(val.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(_) => Ok(ValorFast::nulo()),
     }
@@ -107,8 +107,8 @@ pub fn native_ejecutar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFas
     match resultado {
         Ok(out) => {
             let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            let idx = vm.alloc_str(Arc::from(stdout.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(stdout.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("_ejecutar: {}", e))),
     }
@@ -119,18 +119,18 @@ pub fn native_ejecutar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFas
 pub fn native_leer_linea(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     use std::io::BufRead;
     let stdin = std::io::stdin();
-    let mut line = String::new();
-    match stdin.lock().read_line(&mut line) {
+    let mut linea = String::new();
+    match stdin.lock().read_line(&mut linea) {
         Ok(_) => {
             // Eliminar el salto de línea final
-            if line.ends_with('\n') {
-                line.pop();
+            if linea.ends_with('\n') {
+                linea.pop();
             }
-            if line.ends_with('\r') {
-                line.pop();
+            if linea.ends_with('\r') {
+                linea.pop();
             }
-            let idx = vm.alloc_str(Arc::from(line.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(linea.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("_leer_linea: {}", e))),
     }
@@ -143,8 +143,8 @@ pub fn native_imprimir_error(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
         eprintln!();
         return Ok(ValorFast::nulo());
     }
-    let msg = obtener_texto(vm, args[0])?;
-    eprintln!("{}", msg);
+    let mensaje = obtener_texto(vm, args[0])?;
+    eprintln!("{}", mensaje);
     Ok(ValorFast::nulo())
 }
 
@@ -154,12 +154,12 @@ pub fn native_char(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, E
     if args.is_empty() {
         return Ok(ValorFast::nulo());
     }
-    let code = obtener_entero(args[0])?;
-    match u32::try_from(code).ok().and_then(char::from_u32) {
+    let codigo = obtener_entero(args[0])?;
+    match u32::try_from(codigo).ok().and_then(char::from_u32) {
         Some(c) => {
             let s: String = c.to_string();
-            let idx = vm.alloc_str(Arc::from(s.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = vm.alloc_str(Arc::from(s.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         None => Ok(ValorFast::nulo()),
     }
@@ -200,7 +200,7 @@ pub fn native_numero_a_texto_base(
     }
 
     let base = base as u32;
-    let result = if n < 0 {
+    let resultado = if n < 0 {
         let mut digits = Vec::new();
         let mut val = (n as i128).unsigned_abs();
         if val == 0 {
@@ -236,6 +236,6 @@ pub fn native_numero_a_texto_base(
         String::from_utf8(digits).unwrap_or_default()
     };
 
-    let idx = vm.alloc_str(Arc::from(result.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(resultado.as_str()));
+    Ok(ValorFast::texto(indice))
 }
