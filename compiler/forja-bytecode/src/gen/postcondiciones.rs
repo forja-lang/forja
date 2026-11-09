@@ -91,39 +91,39 @@ impl GeneradorBytecode {
     pub(crate) fn expresion_a_uops_inner(
         &self,
         expr: &Expresion,
-        output: &mut Vec<crate::uops::Uop>,
+        salida: &mut Vec<crate::uops::Uop>,
     ) {
         use crate::uops::Uop;
         match expr {
             Expresion::LiteralNumero(n) => {
                 if entero_representable(*n) {
-                    output.push(Uop::PushEntero(*n));
+                    salida.push(Uop::PushEntero(*n));
                 } else {
-                    output.push(Uop::PushNulo);
+                    salida.push(Uop::PushNulo);
                 }
             }
-            Expresion::LiteralDecimal(d) => output.push(Uop::PushDecimal(*d)),
-            Expresion::LiteralTexto(s) => output.push(Uop::PushTexto(Arc::from(s.as_str()))),
-            Expresion::LiteralBooleano(b) => output.push(Uop::PushBooleano(*b)),
-            Expresion::LiteralNulo => output.push(Uop::PushNulo),
+            Expresion::LiteralDecimal(d) => salida.push(Uop::PushDecimal(*d)),
+            Expresion::LiteralTexto(s) => salida.push(Uop::PushTexto(Arc::from(s.as_str()))),
+            Expresion::LiteralBooleano(b) => salida.push(Uop::PushBooleano(*b)),
+            Expresion::LiteralNulo => salida.push(Uop::PushNulo),
 
             Expresion::Identificador { nombre, .. } => {
                 match nombre.as_str() {
-                    "verdadero" => output.push(Uop::PushBooleano(true)),
-                    "falso" => output.push(Uop::PushBooleano(false)),
+                    "verdadero" => salida.push(Uop::PushBooleano(true)),
+                    "falso" => salida.push(Uop::PushBooleano(false)),
                     "resultado" => {
                         // 'resultado' en postcondiciones: usar índice especial
-                        output.push(Uop::LoadIdx(RESULTADO_IDX));
+                        salida.push(Uop::LoadIdx(RESULTADO_IDX));
                     }
                     _ => {
                         // Parámetro/local → slot; global → índice de global;
                         // si no existe, Nulo.
                         if let Some(&idx) = self.var_indices.get(nombre) {
-                            output.push(Uop::LoadIdx(idx));
+                            salida.push(Uop::LoadIdx(idx));
                         } else if let Some(idx) =
                             self.globales.iter().position(|(n, _)| n == nombre)
                         {
-                            output.push(Uop::LoadIdxGlobal(idx));
+                            salida.push(Uop::LoadIdxGlobal(idx));
                         } else if self
                             .campos_clase
                             .as_ref()
@@ -132,10 +132,10 @@ impl GeneradorBytecode {
                         {
                             // Invariante de clase: `valor` es `este.valor`.
                             let este_idx = self.var_indices["self"];
-                            output.push(Uop::LoadIdx(este_idx));
-                            output.push(Uop::GetField(nombre.clone()));
+                            salida.push(Uop::LoadIdx(este_idx));
+                            salida.push(Uop::GetField(nombre.clone()));
                         } else {
-                            output.push(Uop::PushNulo);
+                            salida.push(Uop::PushNulo);
                         }
                     }
                 }
@@ -146,54 +146,54 @@ impl GeneradorBytecode {
                 operador,
                 derecha,
             } => {
-                self.expresion_a_uops_inner(izquierda, output);
-                self.expresion_a_uops_inner(derecha, output);
+                self.expresion_a_uops_inner(izquierda, salida);
+                self.expresion_a_uops_inner(derecha, salida);
                 match operador {
-                    Operador::Suma => output.push(Uop::Add),
-                    Operador::Resta => output.push(Uop::Sub),
-                    Operador::Multiplicacion => output.push(Uop::Mul),
-                    Operador::Division => output.push(Uop::Div),
+                    Operador::Suma => salida.push(Uop::Add),
+                    Operador::Resta => salida.push(Uop::Sub),
+                    Operador::Multiplicacion => salida.push(Uop::Mul),
+                    Operador::Division => salida.push(Uop::Div),
                     Operador::Modulo => {
                         // a % b = a - (a/b)*b
-                        self.expresion_a_uops_inner(izquierda, output); // [a]
-                        output.push(Uop::Dup); // [a, a]
-                        self.expresion_a_uops_inner(derecha, output); // [a, a, b]
-                        output.push(Uop::Div); // [a, a/b]
-                        self.expresion_a_uops_inner(derecha, output); // [a, a/b, b]
-                        output.push(Uop::Mul); // [a, (a/b)*b]
-                        output.push(Uop::Sub); // [a % b]
+                        self.expresion_a_uops_inner(izquierda, salida); // [a]
+                        salida.push(Uop::Dup); // [a, a]
+                        self.expresion_a_uops_inner(derecha, salida); // [a, a, b]
+                        salida.push(Uop::Div); // [a, a/b]
+                        self.expresion_a_uops_inner(derecha, salida); // [a, a/b, b]
+                        salida.push(Uop::Mul); // [a, (a/b)*b]
+                        salida.push(Uop::Sub); // [a % b]
                     }
-                    Operador::IgualIgual => output.push(Uop::Igual),
-                    Operador::Diferente => output.push(Uop::Diferente),
-                    Operador::Menor => output.push(Uop::Menor),
-                    Operador::Mayor => output.push(Uop::Mayor),
-                    Operador::MenorIgual => output.push(Uop::MenorIgual),
-                    Operador::MayorIgual => output.push(Uop::MayorIgual),
-                    Operador::Y => output.push(Uop::Y),
-                    Operador::O => output.push(Uop::O),
+                    Operador::IgualIgual => salida.push(Uop::Igual),
+                    Operador::Diferente => salida.push(Uop::Diferente),
+                    Operador::Menor => salida.push(Uop::Menor),
+                    Operador::Mayor => salida.push(Uop::Mayor),
+                    Operador::MenorIgual => salida.push(Uop::MenorIgual),
+                    Operador::MayorIgual => salida.push(Uop::MayorIgual),
+                    Operador::Y => salida.push(Uop::Y),
+                    Operador::O => salida.push(Uop::O),
                 }
             }
 
             Expresion::Unaria { operador, expr: e } => {
-                self.expresion_a_uops_inner(e, output);
+                self.expresion_a_uops_inner(e, salida);
                 match operador {
-                    OperadorUnario::No => output.push(Uop::No),
+                    OperadorUnario::No => salida.push(Uop::No),
                     OperadorUnario::Negar => {
                         // -expr → 0 - expr
-                        output.push(Uop::PushEntero(0));
-                        self.expresion_a_uops_inner(e, output);
-                        output.push(Uop::Sub);
+                        salida.push(Uop::PushEntero(0));
+                        self.expresion_a_uops_inner(e, salida);
+                        salida.push(Uop::Sub);
                     }
                 }
             }
 
-            Expresion::Grupo(e) => self.expresion_a_uops_inner(e, output),
+            Expresion::Grupo(e) => self.expresion_a_uops_inner(e, salida),
 
             // `resultado` en una postcondición: el valor de retorno, que la VM
             // pasa aparte de los locales. Sin esta rama caía en `PushNulo` y el
             // check comparaba contra Nulo.
             Expresion::Resultado => {
-                output.push(Uop::LoadIdx(RESULTADO_IDX));
+                salida.push(Uop::LoadIdx(RESULTADO_IDX));
             }
 
             Expresion::Anterior(inner) => {
@@ -202,30 +202,30 @@ impl GeneradorBytecode {
                 // `emitir_snapshots_anteriores`.
                 let clave = Self::clave_expresion(inner);
                 match self.anteriores.iter().find(|(k, _)| *k == clave) {
-                    Some((_, slot)) => output.push(Uop::CargarAnterior(*slot)),
-                    None => output.push(Uop::PushNulo),
+                    Some((_, slot)) => salida.push(Uop::CargarAnterior(*slot)),
+                    None => salida.push(Uop::PushNulo),
                 }
             }
 
             Expresion::AccesoMiembro { objeto, miembro } => {
                 // `este.valor`, `obj.campo`: evaluar el receptor y leer el campo.
-                self.expresion_a_uops_inner(objeto, output);
-                output.push(Uop::GetField(miembro.to_string()));
+                self.expresion_a_uops_inner(objeto, salida);
+                salida.push(Uop::GetField(miembro.to_string()));
             }
 
             Expresion::LlamadaFuncion { argumentos, .. } => {
                 // En contratos, las llamadas se evalúan recursivamente
                 for arg in argumentos {
-                    self.expresion_a_uops_inner(arg, output);
+                    self.expresion_a_uops_inner(arg, salida);
                 }
                 // Las llamadas a función no se pueden ejecutar en contratos simples
                 // push nulo como valor de retorno
-                output.push(Uop::PushNulo);
+                salida.push(Uop::PushNulo);
             }
 
             _ => {
                 // Cualquier otra expresión: no soportada en contratos, push nulo
-                output.push(Uop::PushNulo);
+                salida.push(Uop::PushNulo);
             }
         }
     }
