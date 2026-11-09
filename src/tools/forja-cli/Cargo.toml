@@ -1,6 +1,6 @@
 [package]
 name = "forja-cli"
-version = "0.10.1"
+version = "0.10.2"
 edition = "2021"
 description = "CLI de Forja: despacha los comandos del compilador"
 license = "GPL-3.0-or-later"
