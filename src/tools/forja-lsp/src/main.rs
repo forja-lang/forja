@@ -20,8 +20,8 @@ fn completar_locales(analisis: &AnalisisDocumento) -> Vec<SymbolEntry> {
         .simbolos
         .iter()
         .map(|s| SymbolEntry {
-            name: s.nombre.clone(),
-            kind: match s.tipo_simbolo {
+            nombre: s.nombre.clone(),
+            tipo: match s.tipo_simbolo {
                 SimboloTipo::Variable => ForjaSymbolKind::Variable,
                 SimboloTipo::Funcion => ForjaSymbolKind::Funcion,
                 SimboloTipo::Clase => ForjaSymbolKind::Clase,
@@ -29,7 +29,7 @@ fn completar_locales(analisis: &AnalisisDocumento) -> Vec<SymbolEntry> {
                 SimboloTipo::Rasgo => ForjaSymbolKind::Rasgo,
                 SimboloTipo::Parametro => ForjaSymbolKind::Parametro,
             },
-            params: Vec::new(),
+            parametros: Vec::new(),
             doc: s.doc.clone().unwrap_or_default(),
         })
         .collect()
@@ -184,13 +184,13 @@ fn keyword_description(keyword: &str) -> Option<String> {
 
 /// Encuentra el índice del token más cercano a la posición del cursor
 fn encontrar_cursor_en_tokens(tokens: &[Token], pos: tower_lsp::lsp_types::Position) -> usize {
-    let line = pos.line as usize;
+    let linea = pos.line as usize;
     let col = pos.character as usize;
     for (i, t) in tokens.iter().enumerate() {
-        if t.linea > line + 1 {
+        if t.linea > linea + 1 {
             return i.saturating_sub(1);
         }
-        if t.linea == line + 1 && t.columna > col {
+        if t.linea == linea + 1 && t.columna > col {
             return i.saturating_sub(1);
         }
     }
@@ -273,32 +273,32 @@ impl LanguageServer for Backend {
     // Document Synchronization
     // ----------------------------------------------------------------
 
-    async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        let uri = params.text_document.uri;
-        let text = params.text_document.text;
-        self._actualizar_documento(uri, text).await;
+    async fn did_open(&self, parametros: DidOpenTextDocumentParams) {
+        let uri = parametros.text_document.uri;
+        let texto = parametros.text_document.text;
+        self._actualizar_documento(uri, texto).await;
     }
 
-    async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        let uri = params.text_document.uri;
-        let text = params
+    async fn did_change(&self, parametros: DidChangeTextDocumentParams) {
+        let uri = parametros.text_document.uri;
+        let texto = parametros
             .content_changes
             .into_iter()
             .next()
             .map(|c| c.text)
             .unwrap_or_default();
-        self._actualizar_documento(uri, text).await;
+        self._actualizar_documento(uri, texto).await;
     }
 
-    async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        let uri = params.text_document.uri;
+    async fn did_save(&self, parametros: DidSaveTextDocumentParams) {
+        let uri = parametros.text_document.uri;
         let documentos = self.documentos.lock().await;
-        if let Some(text) = documentos.get(&uri) {
-            let analisis = analizar_documento(text);
+        if let Some(texto) = documentos.get(&uri) {
+            let analisis = analizar_documento(texto);
             let mut cache = self.analisis_cache.lock().await;
             cache.insert(uri.clone(), analisis);
             // Enviar diagnostics
-            self._enviar_diagnostics(uri, text).await;
+            self._enviar_diagnostics(uri, texto).await;
         }
     }
 
@@ -306,10 +306,13 @@ impl LanguageServer for Backend {
     // Formatting
     // ----------------------------------------------------------------
 
-    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        let uri = params.text_document.uri;
-        let text = self._get_text(&uri).await;
-        Ok(Some(self._generar_text_edits(&text)))
+    async fn formatting(
+        &self,
+        parametros: DocumentFormattingParams,
+    ) -> Result<Option<Vec<TextEdit>>> {
+        let uri = parametros.text_document.uri;
+        let texto = self._get_text(&uri).await;
+        Ok(Some(self._generar_text_edits(&texto)))
     }
 
     // ----------------------------------------------------------------
@@ -318,9 +321,9 @@ impl LanguageServer for Backend {
 
     async fn semantic_tokens_full(
         &self,
-        params: SemanticTokensParams,
+        parametros: SemanticTokensParams,
     ) -> Result<Option<SemanticTokensResult>> {
-        let uri = params.text_document.uri;
+        let uri = parametros.text_document.uri;
         let texto = self._get_text(&uri).await;
         let tokens_semanticos = generar_tokens_semanticos(&texto);
         Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
@@ -335,10 +338,10 @@ impl LanguageServer for Backend {
 
     async fn goto_definition(
         &self,
-        params: GotoDefinitionParams,
+        parametros: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
-        let uri = params.text_document_position_params.text_document.uri;
-        let pos = params.text_document_position_params.position;
+        let uri = parametros.text_document_position_params.text_document.uri;
+        let pos = parametros.text_document_position_params.position;
         let texto = self._get_text(&uri).await;
         let analisis = self._get_analisis(&uri).await;
 
@@ -346,12 +349,12 @@ impl LanguageServer for Backend {
             return Ok(Some(GotoDefinitionResponse::Scalar(Location {
                 uri: uri.clone(),
                 range: Range {
-                    start: Position {
-                        line: info.linea,
+                    inicio: Position {
+                        linea: info.linea,
                         character: info.col_inicio,
                     },
                     end: Position {
-                        line: info.linea,
+                        linea: info.linea,
                         character: info.col_fin,
                     },
                 },
@@ -368,12 +371,12 @@ impl LanguageServer for Backend {
                             return Ok(Some(GotoDefinitionResponse::Scalar(Location {
                                 uri: uri.clone(),
                                 range: Range {
-                                    start: Position {
-                                        line: s.linea,
+                                    inicio: Position {
+                                        linea: s.linea,
                                         character: s.col_inicio,
                                     },
                                     end: Position {
-                                        line: s.linea,
+                                        linea: s.linea,
                                         character: s.col_fin,
                                     },
                                 },
@@ -391,9 +394,9 @@ impl LanguageServer for Backend {
     // Find References
     // ----------------------------------------------------------------
 
-    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
-        let uri = params.text_document_position.text_document.uri;
-        let pos = params.text_document_position.position;
+    async fn references(&self, parametros: ReferenceParams) -> Result<Option<Vec<Location>>> {
+        let uri = parametros.text_document_position.text_document.uri;
+        let pos = parametros.text_document_position.position;
         let analisis = self._get_analisis(&uri).await;
 
         // Buscar el nombre del símbolo en la posición actual
@@ -420,12 +423,12 @@ impl LanguageServer for Backend {
                     locs.push(Location {
                         uri: uri.clone(),
                         range: Range {
-                            start: Position {
-                                line: s.linea,
+                            inicio: Position {
+                                linea: s.linea,
                                 character: s.col_inicio,
                             },
                             end: Position {
-                                line: s.linea,
+                                linea: s.linea,
                                 character: s.col_fin,
                             },
                         },
@@ -438,12 +441,12 @@ impl LanguageServer for Backend {
                     locs.push(Location {
                         uri: uri.clone(),
                         range: Range {
-                            start: Position {
-                                line: *l,
+                            inicio: Position {
+                                linea: *l,
                                 character: *ci,
                             },
                             end: Position {
-                                line: *l,
+                                linea: *l,
                                 character: *cf,
                             },
                         },
@@ -460,9 +463,9 @@ impl LanguageServer for Backend {
     // Hover
     // ----------------------------------------------------------------
 
-    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-        let uri = params.text_document_position_params.text_document.uri;
-        let pos = params.text_document_position_params.position;
+    async fn hover(&self, parametros: HoverParams) -> Result<Option<Hover>> {
+        let uri = parametros.text_document_position_params.text_document.uri;
+        let pos = parametros.text_document_position_params.position;
         let texto = self._get_text(&uri).await;
 
         // 1. Intentar hover sobre keyword
@@ -517,8 +520,11 @@ impl LanguageServer for Backend {
     // Code Actions
     // ----------------------------------------------------------------
 
-    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
-        let uri = params.text_document.uri;
+    async fn code_action(
+        &self,
+        parametros: CodeActionParams,
+    ) -> Result<Option<CodeActionResponse>> {
+        let uri = parametros.text_document.uri;
         let analisis = self._get_analisis(&uri).await;
 
         let mut actions: Vec<CodeActionOrCommand> = Vec::new();
@@ -526,7 +532,7 @@ impl LanguageServer for Backend {
         // 1. Code Action: Formatear documento
         actions.push(CodeActionOrCommand::CodeAction(CodeAction {
             title: "Formatear documento".to_string(),
-            kind: Some(CodeActionKind::SOURCE_FIX_ALL),
+            tipo: Some(CodeActionKind::SOURCE_FIX_ALL),
             diagnostics: None,
             edit: None,
             command: Some(Command {
@@ -538,13 +544,13 @@ impl LanguageServer for Backend {
             ..Default::default()
         }));
 
-        let text = self._get_text(&uri).await;
+        let texto = self._get_text(&uri).await;
         for err in &analisis.errores {
-            let rango = calcular_rango_error_palabra(&text, err.linea, err.columna);
+            let rango = calcular_rango_error_palabra(&texto, err.linea, err.columna);
             let diag = Diagnostic {
                 range: rango,
                 severity: Some(DiagnosticSeverity::ERROR),
-                source: Some("forja".to_string()),
+                fuente: Some("forja".to_string()),
                 message: err.mensaje.to_string(),
                 ..Default::default()
             };
@@ -553,10 +559,10 @@ impl LanguageServer for Backend {
             //    existe en la stdlib).
             if let Some(nombre) = extraer_nombre_variable_error(&err.mensaje) {
                 if let Some(modulo) = modulo_stdlib_para_simbolo(&nombre) {
-                    let edit = insertar_importacion(&uri, &text, &modulo);
+                    let edit = insertar_importacion(&uri, &texto, &modulo);
                     actions.push(CodeActionOrCommand::CodeAction(CodeAction {
                         title: format!("🔧 Importar `{}` desde std/{}", nombre, modulo),
-                        kind: Some(CodeActionKind::QUICKFIX),
+                        tipo: Some(CodeActionKind::QUICKFIX),
                         diagnostics: Some(vec![diag.clone()]),
                         edit: Some(edit),
                         command: None,
@@ -569,10 +575,10 @@ impl LanguageServer for Backend {
             // 3. Quick fix: añadir `mut` a una variable reasignada.
             if let Some(nombre) = extraer_nombre_variable_error(&err.mensaje) {
                 if es_error_de_mutabilidad(&err.mensaje) {
-                    if let Some(edit) = insertar_mut(&uri, &text, &nombre) {
+                    if let Some(edit) = insertar_mut(&uri, &texto, &nombre) {
                         actions.push(CodeActionOrCommand::CodeAction(CodeAction {
                             title: format!("🔧 Añadir `mut` a `{}`", nombre),
-                            kind: Some(CodeActionKind::QUICKFIX),
+                            tipo: Some(CodeActionKind::QUICKFIX),
                             diagnostics: Some(vec![diag.clone()]),
                             edit: Some(edit),
                             command: None,
@@ -586,10 +592,10 @@ impl LanguageServer for Backend {
             // 4. Quick fix: corregir tipo (usa la sugerencia del compilador si
             //    menciona un tipo esperado).
             if let Some(tipo) = extraer_tipo_sugerido(&err.mensaje, &err.sugerencia) {
-                if let Some(edit) = reemplazar_tipo_en_linea(&uri, &text, err.linea, &tipo) {
+                if let Some(edit) = reemplazar_tipo_en_linea(&uri, &texto, err.linea, &tipo) {
                     actions.push(CodeActionOrCommand::CodeAction(CodeAction {
                         title: format!("🔧 Cambiar tipo a `{}`", tipo),
-                        kind: Some(CodeActionKind::QUICKFIX),
+                        tipo: Some(CodeActionKind::QUICKFIX),
                         diagnostics: Some(vec![diag.clone()]),
                         edit: Some(edit),
                         command: None,
@@ -603,7 +609,7 @@ impl LanguageServer for Backend {
             if !err.sugerencia.is_empty() {
                 actions.push(CodeActionOrCommand::CodeAction(CodeAction {
                     title: format!("💡 {}: {}", err.sugerencia, err.mensaje),
-                    kind: Some(CodeActionKind::QUICKFIX),
+                    tipo: Some(CodeActionKind::QUICKFIX),
                     diagnostics: Some(vec![diag]),
                     edit: None,
                     command: None,
@@ -620,10 +626,10 @@ impl LanguageServer for Backend {
     // Rename
     // ----------------------------------------------------------------
 
-    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
-        let uri = params.text_document_position.text_document.uri;
-        let pos = params.text_document_position.position;
-        let new_name = params.new_name;
+    async fn rename(&self, parametros: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let uri = parametros.text_document_position.text_document.uri;
+        let pos = parametros.text_document_position.position;
+        let new_name = parametros.new_name;
 
         let analisis = self._get_analisis(&uri).await;
         let texto = self._get_text(&uri).await;
@@ -649,12 +655,12 @@ impl LanguageServer for Backend {
                 if s.nombre == nombre {
                     changes.push(TextEdit {
                         range: Range {
-                            start: Position {
-                                line: s.linea,
+                            inicio: Position {
+                                linea: s.linea,
                                 character: s.col_inicio,
                             },
                             end: Position {
-                                line: s.linea,
+                                linea: s.linea,
                                 character: s.col_fin,
                             },
                         },
@@ -667,12 +673,12 @@ impl LanguageServer for Backend {
                 if ref_name == &nombre {
                     changes.push(TextEdit {
                         range: Range {
-                            start: Position {
-                                line: *l,
+                            inicio: Position {
+                                linea: *l,
                                 character: *ci,
                             },
                             end: Position {
-                                line: *l,
+                                linea: *l,
                                 character: *cf,
                             },
                         },
@@ -698,8 +704,11 @@ impl LanguageServer for Backend {
     // Folding Range
     // ----------------------------------------------------------------
 
-    async fn folding_range(&self, params: FoldingRangeParams) -> Result<Option<Vec<FoldingRange>>> {
-        let uri = params.text_document.uri;
+    async fn folding_range(
+        &self,
+        parametros: FoldingRangeParams,
+    ) -> Result<Option<Vec<FoldingRange>>> {
+        let uri = parametros.text_document.uri;
         let texto = self._get_text(&uri).await;
         Ok(Some(generar_folding_ranges(&texto)))
     }
@@ -708,8 +717,8 @@ impl LanguageServer for Backend {
     // Completion
     // ----------------------------------------------------------------
 
-    async fn completion_resolve(&self, item: CompletionItem) -> Result<CompletionItem> {
-        let label = item.label.clone();
+    async fn completion_resolve(&self, elemento: CompletionItem) -> Result<CompletionItem> {
+        let label = elemento.label.clone();
         let stdlib = cached_stdlib();
 
         // Buscar documentación detallada en stdlib
@@ -734,7 +743,7 @@ impl LanguageServer for Backend {
                 }
                 return Ok(CompletionItem {
                     documentation: Some(Documentation::String(doc)),
-                    ..item
+                    ..elemento
                 });
             }
         }
@@ -744,16 +753,16 @@ impl LanguageServer for Backend {
         if let Some(doc) = keyword_doc {
             return Ok(CompletionItem {
                 documentation: Some(Documentation::String(doc)),
-                ..item
+                ..elemento
             });
         }
 
-        Ok(item)
+        Ok(elemento)
     }
 
-    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        let uri = params.text_document_position.text_document.uri;
-        let pos = params.text_document_position.position;
+    async fn completion(&self, parametros: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let uri = parametros.text_document_position.text_document.uri;
+        let pos = parametros.text_document_position.position;
         let texto = self._get_text(&uri).await;
 
         let tokens = tokenizar(&texto).unwrap_or_default();
@@ -766,7 +775,7 @@ impl LanguageServer for Backend {
         let lsp_items: Vec<CompletionItem> = forja_items
             .iter()
             .map(|fi| {
-                let kind = match fi.kind {
+                let tipo = match fi.kind {
                     1 => Some(CompletionItemKind::TEXT),
                     3 => Some(CompletionItemKind::FUNCTION),
                     6 => Some(CompletionItemKind::VARIABLE),
@@ -785,7 +794,7 @@ impl LanguageServer for Backend {
                 };
                 CompletionItem {
                     label: fi.label.clone(),
-                    kind,
+                    tipo,
                     detail: Some(fi.detail.clone()),
                     documentation: if fi.documentation.is_empty() {
                         None
@@ -811,14 +820,14 @@ impl LanguageServer for Backend {
 
     async fn document_symbol(
         &self,
-        params: DocumentSymbolParams,
+        parametros: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
-        let uri = params.text_document.uri;
+        let uri = parametros.text_document.uri;
         let analisis = self._get_analisis(&uri).await;
 
         let mut symbols: Vec<DocumentSymbol> = Vec::new();
         for s in &analisis.simbolos {
-            let kind = match s.tipo_simbolo {
+            let tipo = match s.tipo_simbolo {
                 SimboloTipo::Variable => SymbolKind::VARIABLE,
                 SimboloTipo::Funcion => SymbolKind::FUNCTION,
                 SimboloTipo::Clase => SymbolKind::CLASS,
@@ -827,26 +836,26 @@ impl LanguageServer for Backend {
                 SimboloTipo::Rasgo => SymbolKind::INTERFACE,
             };
             symbols.push(DocumentSymbol {
-                name: s.nombre.clone(),
+                nombre: s.nombre.clone(),
                 detail: Some(format!("{:?}", s.tipo_simbolo)),
-                kind,
+                tipo,
                 range: Range {
-                    start: Position {
-                        line: s.linea,
+                    inicio: Position {
+                        linea: s.linea,
                         character: s.col_inicio,
                     },
                     end: Position {
-                        line: s.linea,
+                        linea: s.linea,
                         character: s.col_fin,
                     },
                 },
                 selection_range: Range {
-                    start: Position {
-                        line: s.linea,
+                    inicio: Position {
+                        linea: s.linea,
                         character: s.col_inicio,
                     },
                     end: Position {
-                        line: s.linea,
+                        linea: s.linea,
                         character: s.col_fin,
                     },
                 },
@@ -864,8 +873,8 @@ impl LanguageServer for Backend {
     // Inlay Hints: tipo inferido junto a variables sin anotación
     // ----------------------------------------------------------------
 
-    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
-        let uri = params.text_document.uri;
+    async fn inlay_hint(&self, parametros: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        let uri = parametros.text_document.uri;
         let texto = self._get_text(&uri).await;
         let analisis = self._get_analisis(&uri).await;
 
@@ -889,11 +898,11 @@ impl LanguageServer for Backend {
             };
             hints.push(InlayHint {
                 position: Position {
-                    line: s.linea,
+                    linea: s.linea,
                     character: s.col_fin,
                 },
                 label: InlayHintLabel::String(format!(": {}", tipo)),
-                kind: Some(InlayHintKind::TYPE),
+                tipo: Some(InlayHintKind::TYPE),
                 text_edits: None,
                 tooltip: Some(InlayHintTooltip::String(format!(
                     "Tipo inferido para `{}`",
@@ -914,9 +923,9 @@ impl LanguageServer for Backend {
 
     async fn symbol(
         &self,
-        params: WorkspaceSymbolParams,
+        parametros: WorkspaceSymbolParams,
     ) -> Result<Option<Vec<SymbolInformation>>> {
-        let consulta = params.query.to_lowercase();
+        let consulta = parametros.query.to_lowercase();
         let documentos = self.documentos.lock().await;
         let mut resultados: Vec<SymbolInformation> = Vec::new();
 
@@ -926,7 +935,7 @@ impl LanguageServer for Backend {
                 if !consulta.is_empty() && !s.nombre.to_lowercase().contains(&consulta) {
                     continue;
                 }
-                let kind = match s.tipo_simbolo {
+                let tipo = match s.tipo_simbolo {
                     SimboloTipo::Variable => SymbolKind::VARIABLE,
                     SimboloTipo::Funcion => SymbolKind::FUNCTION,
                     SimboloTipo::Clase => SymbolKind::CLASS,
@@ -936,19 +945,19 @@ impl LanguageServer for Backend {
                 };
                 #[allow(deprecated)]
                 resultados.push(SymbolInformation {
-                    name: s.nombre.clone(),
-                    kind,
+                    nombre: s.nombre.clone(),
+                    tipo,
                     tags: None,
                     deprecated: None,
                     location: Location {
                         uri: uri.clone(),
                         range: Range {
-                            start: Position {
-                                line: s.linea,
+                            inicio: Position {
+                                linea: s.linea,
                                 character: s.col_inicio,
                             },
                             end: Position {
-                                line: s.linea,
+                                linea: s.linea,
                                 character: s.col_fin,
                             },
                         },
@@ -965,9 +974,12 @@ impl LanguageServer for Backend {
     // Signature Help
     // ----------------------------------------------------------------
 
-    async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
-        let uri = params.text_document_position_params.text_document.uri;
-        let pos = params.text_document_position_params.position;
+    async fn signature_help(
+        &self,
+        parametros: SignatureHelpParams,
+    ) -> Result<Option<SignatureHelp>> {
+        let uri = parametros.text_document_position_params.text_document.uri;
+        let pos = parametros.text_document_position_params.position;
         let texto = self._get_text(&uri).await;
 
         let tokens = tokenizar(&texto).unwrap_or_default();
@@ -976,7 +988,7 @@ impl LanguageServer for Backend {
         let locales = completar_locales(&analisis);
 
         if let Some(info) = self.signature_resolver.resolver(&tokens, cursor, &locales) {
-            let params: Vec<ParameterInformation> = info
+            let parametros: Vec<ParameterInformation> = info
                 .params
                 .iter()
                 .map(|p| ParameterInformation {
@@ -996,7 +1008,7 @@ impl LanguageServer for Backend {
                     } else {
                         Some(Documentation::String(info.documentation))
                     },
-                    parameters: Some(params),
+                    parameters: Some(parametros),
                     active_parameter: Some(info.active_param as u32),
                 }],
                 active_signature: Some(0),
@@ -1013,22 +1025,22 @@ impl LanguageServer for Backend {
 // ======================================================================
 
 impl Backend {
-    async fn _actualizar_documento(&self, uri: Url, text: String) {
+    async fn _actualizar_documento(&self, uri: Url, texto: String) {
         // Guardar documento
         {
             let mut docs = self.documentos.lock().await;
-            docs.insert(uri.clone(), text.clone());
+            docs.insert(uri.clone(), texto.clone());
         }
 
         // Analizar
-        let analisis = analizar_documento(&text);
+        let analisis = analizar_documento(&texto);
         {
             let mut cache = self.analisis_cache.lock().await;
             cache.insert(uri.clone(), analisis);
         }
 
         // Enviar diagnostics
-        self._enviar_diagnostics(uri, &text).await;
+        self._enviar_diagnostics(uri, &texto).await;
     }
 
     async fn _get_text(&self, uri: &Url) -> String {
@@ -1059,8 +1071,8 @@ impl Backend {
                     // cuando hay un "caso Ok(valor) -> { ... }" en el código
                     if err.mensaje.contains("no está declarada") {
                         let var_name = extraer_nombre_variable_error(&err.mensaje);
-                        if let Some(ref name) = var_name {
-                            if es_variable_de_patron(texto, err.linea, name) {
+                        if let Some(ref nombre) = var_name {
+                            if es_variable_de_patron(texto, err.linea, nombre) {
                                 continue 'next_err; // filtrar falso positivo
                             }
                         }
@@ -1077,7 +1089,7 @@ impl Backend {
                     diagnostics.push(Diagnostic {
                         range: calcular_rango_error_palabra(texto, err.linea, err.columna),
                         severity: Some(severity),
-                        source: Some("forja".to_string()),
+                        fuente: Some("forja".to_string()),
                         message: mensaje,
                         ..Default::default()
                     });
@@ -1092,7 +1104,7 @@ impl Backend {
                 diagnostics.push(Diagnostic {
                     range: calcular_rango_error_palabra(texto, err.linea, err.columna),
                     severity: Some(DiagnosticSeverity::ERROR),
-                    source: Some("forja".to_string()),
+                    fuente: Some("forja".to_string()),
                     message: err.mensaje.to_string(),
                     ..Default::default()
                 });
@@ -1114,8 +1126,8 @@ impl Backend {
                 diagnostics.push(Diagnostic {
                     range: calcular_rango_error_palabra(texto, d.linea, d.columna),
                     severity: Some(severity),
-                    source: Some("forja-lint".to_string()),
-                    code: Some(NumberOrString::String(format!(
+                    fuente: Some("forja-lint".to_string()),
+                    codigo: Some(NumberOrString::String(format!(
                         "L{}",
                         codigo_lint_lsp(d.regla)
                     ))),
@@ -1135,12 +1147,12 @@ impl Backend {
         if formateado != texto {
             vec![TextEdit {
                 range: Range {
-                    start: Position {
-                        line: 0,
+                    inicio: Position {
+                        linea: 0,
                         character: 0,
                     },
                     end: Position {
-                        line: texto.lines().count() as u32,
+                        linea: texto.lines().count() as u32,
                         character: 0,
                     },
                 },
@@ -1158,10 +1170,10 @@ impl Backend {
 
 /// Analiza un documento (token-walking) para extraer símbolos y referencias.
 /// Funciona incluso si el parseo falla.
-fn analizar_documento(source: &str) -> AnalisisDocumento {
+fn analizar_documento(fuente: &str) -> AnalisisDocumento {
     let mut analisis = AnalisisDocumento::vacio();
 
-    let tokens = match tokenizar(source) {
+    let tokens = match tokenizar(fuente) {
         Ok(t) => t,
         Err(_) => return analisis,
     };
@@ -1169,7 +1181,7 @@ fn analizar_documento(source: &str) -> AnalisisDocumento {
     extraer_info(&tokens, &mut analisis);
 
     // Intentar parse real para obtener errores de compilación
-    if let Err(errors) = forja::transpilar_a_rust(source) {
+    if let Err(errors) = forja::transpilar_a_rust(fuente) {
         analisis.errores = errors;
     }
 
@@ -1359,8 +1371,8 @@ fn buscar_nombre_en_posicion(
 // Token Helpers
 // ======================================================================
 
-fn tokenizar(source: &str) -> std::result::Result<Vec<Token>, ()> {
-    let mut lexer = forja::lexer::Lexer::new(source);
+fn tokenizar(fuente: &str) -> std::result::Result<Vec<Token>, ()> {
+    let mut lexer = forja::lexer::Lexer::new(fuente);
     lexer.tokenize().map_err(|_| ())
 }
 
@@ -1376,8 +1388,8 @@ fn token_en_posicion(tokens: &[Token], pos: Position) -> Option<&Token> {
 // Semantic Token Generation
 // ======================================================================
 
-fn generar_tokens_semanticos(source: &str) -> Vec<SemanticToken> {
-    let tokens = match tokenizar(source) {
+fn generar_tokens_semanticos(fuente: &str) -> Vec<SemanticToken> {
+    let tokens = match tokenizar(fuente) {
         Ok(t) => t,
         Err(_) => return vec![],
     };
@@ -1511,27 +1523,27 @@ fn clasificar_token(token: &Token) -> (u32, u32) {
 // Folding Range Generation
 // ======================================================================
 
-fn generar_folding_ranges(source: &str) -> Vec<FoldingRange> {
-    let lines: Vec<&str> = source.lines().collect();
+fn generar_folding_ranges(fuente: &str) -> Vec<FoldingRange> {
+    let lines: Vec<&str> = fuente.lines().collect();
     let mut stack: Vec<u32> = Vec::new(); // (start_line)
     let mut ranges = Vec::new();
 
-    for (i, line) in lines.iter().enumerate() {
-        let trimmed = line.trim();
+    for (i, linea) in lines.iter().enumerate() {
+        let trimmed = linea.trim();
         // Detectar apertura de bloque
         if trimmed.ends_with('{') || keyword_abre_bloque(trimmed) {
             stack.push(i as u32);
         }
         // Detectar cierre de bloque
         if trimmed.starts_with('}') {
-            if let Some(start) = stack.pop() {
-                if i as u32 > start + 1 {
+            if let Some(inicio) = stack.pop() {
+                if i as u32 > inicio + 1 {
                     ranges.push(FoldingRange {
-                        start_line: start,
+                        start_line: inicio,
                         start_character: Some(0),
                         end_line: i as u32,
                         end_character: Some(0),
-                        kind: Some(FoldingRangeKind::Region),
+                        tipo: Some(FoldingRangeKind::Region),
                         collapsed_text: None,
                     });
                 }
@@ -1601,8 +1613,8 @@ async fn main() {
 /// Extrae el nombre de variable de un error "La variable 'X' no está declarada"
 fn extraer_nombre_variable_error(mensaje: &str) -> Option<String> {
     for delim in ["'", "\""] {
-        if let Some(start) = mensaje.find(delim) {
-            let rest = &mensaje[start + 1..];
+        if let Some(inicio) = mensaje.find(delim) {
+            let rest = &mensaje[inicio + 1..];
             if let Some(end) = rest.find(delim) {
                 return Some(rest[..end].to_string());
             }
@@ -1700,12 +1712,12 @@ fn insertar_importacion(uri: &Url, texto: &str, modulo: &str) -> WorkspaceEdit {
     };
     let edit = TextEdit {
         range: Range {
-            start: Position {
-                line: 0,
+            inicio: Position {
+                linea: 0,
                 character: 0,
             },
             end: Position {
-                line: 0,
+                linea: 0,
                 character: 0,
             },
         },
@@ -1741,12 +1753,12 @@ fn insertar_mut(uri: &Url, texto: &str, nombre: &str) -> Option<WorkspaceEdit> {
                 let col = linea.len() - trimmed.len() + "variable ".len();
                 let edit = TextEdit {
                     range: Range {
-                        start: Position {
-                            line: idx as u32,
+                        inicio: Position {
+                            linea: idx as u32,
                             character: col as u32,
                         },
                         end: Position {
-                            line: idx as u32,
+                            linea: idx as u32,
                             character: col as u32,
                         },
                     },
@@ -1798,12 +1810,12 @@ fn reemplazar_tipo_en_linea(
     let col_fin = col_inicio + fin_tipo;
     let edit = TextEdit {
         range: Range {
-            start: Position {
-                line: idx as u32,
+            inicio: Position {
+                linea: idx as u32,
                 character: col_inicio as u32,
             },
             end: Position {
-                line: idx as u32,
+                linea: idx as u32,
                 character: col_fin as u32,
             },
         },
@@ -1857,18 +1869,18 @@ fn inferir_tipo_variable(linea: &str, nombre: &str) -> Option<String> {
 }
 
 /// Verifica si una variable aparece como patrón en un `caso` cerca de la línea
-fn es_variable_de_patron(source: &str, linea: usize, var_name: &str) -> bool {
-    let lines: Vec<&str> = source.lines().collect();
+fn es_variable_de_patron(fuente: &str, linea: usize, var_name: &str) -> bool {
+    let lines: Vec<&str> = fuente.lines().collect();
     let line_idx = linea.saturating_sub(1);
-    let start = line_idx.saturating_sub(5);
+    let inicio = line_idx.saturating_sub(5);
     let end = std::cmp::min(line_idx + 5, lines.len());
 
-    for linea in &lines[start..end] {
-        let line = linea.trim();
-        if line.starts_with("caso ") {
-            if let Some(paren_start) = line.find('(') {
-                if let Some(paren_end) = line.rfind(')') {
-                    let inner = &line[paren_start + 1..paren_end];
+    for linea in &lines[inicio..end] {
+        let linea = linea.trim();
+        if linea.starts_with("caso ") {
+            if let Some(paren_start) = linea.find('(') {
+                if let Some(paren_end) = linea.rfind(')') {
+                    let inner = &linea[paren_start + 1..paren_end];
                     if inner.split(',').any(|part| part.trim() == var_name) {
                         return true;
                     }
@@ -1902,12 +1914,12 @@ fn calcular_rango_error_palabra(texto: &str, linea: usize, columna: usize) -> Ra
             }
 
             return Range {
-                start: Position {
-                    line: line_idx,
+                inicio: Position {
+                    linea: line_idx,
                     character: start_col,
                 },
                 end: Position {
-                    line: line_idx,
+                    linea: line_idx,
                     character: end_col as u32,
                 },
             };
@@ -1915,12 +1927,12 @@ fn calcular_rango_error_palabra(texto: &str, linea: usize, columna: usize) -> Ra
     }
 
     Range {
-        start: Position {
-            line: line_idx,
+        inicio: Position {
+            linea: line_idx,
             character: start_col,
         },
         end: Position {
-            line: line_idx,
+            linea: line_idx,
             character: start_col + 1,
         },
     }
@@ -1956,9 +1968,9 @@ mod tests {
 
     #[test]
     fn test_extraer_nombre_variable_error() {
-        let msg = "ErrorSemantico: La variable 'valor' no está declarada";
+        let mensaje = "ErrorSemantico: La variable 'valor' no está declarada";
         assert_eq!(
-            extraer_nombre_variable_error(msg),
+            extraer_nombre_variable_error(mensaje),
             Some("valor".to_string())
         );
     }
