@@ -5,26 +5,26 @@ use std::sync::Arc;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Uop {
     // === Stack operations ===
-    PushEntero(i64),
-    PushDecimal(f64),
-    PushTexto(Arc<str>),
-    PushBooleano(bool),
-    PushNulo,
-    Pop,
+    EmpujarEntero(i64),
+    EmpujarDecimal(f64),
+    EmpujarTexto(Arc<str>),
+    EmpujarBooleano(bool),
+    EmpujarNulo,
+    Desapilar,
     Dup,
 
     // === Variable operations (ya son atómicas, sin expansión) ===
-    LoadIdx(usize),
+    CargarIndice(usize),
     /// valor de `anterior(x)` dentro de un contrato. `LoadIdx` lee el
     /// valor **actual**; esta variante lee el snapshot tomado al entrar a la
     /// función. Sin la distinción, `asegura x == anterior(x) + 1` comparaba el
     /// snapshot contra sí mismo y siempre fallaba.
     CargarAnterior(usize),
-    StoreIdx(usize),
+    FijarIndice(usize),
     DeclareVar(usize),
     // Acceso directo a variables globales de módulo (global_var_persist)
-    LoadIdxGlobal(usize),
-    StoreIdxGlobal(usize),
+    CargarIndiceGlobal(usize),
+    FijarIndiceGlobal(usize),
 
     // === Arithmetic (ya especializados o atómicos) ===
     Add,
@@ -49,35 +49,35 @@ pub enum Uop {
     Call(String, usize),
     TailCall(String, usize),
     Return,
-    FunctionDef(String, Vec<String>),
+    DefinirFuncion(String, Vec<String>),
 
     // === Object operations ===
-    NewObject(String),
-    SetField(String),
-    GetField(String),
+    NuevoObjeto(String),
+    FijarCampo(String),
+    ObtenerCampo(String),
     /// Asigna campo i-ésimo por posición (construcción de variantes de enum)
-    SetFieldIdx(usize),
+    FijarCampoIndice(usize),
     /// Llamada indirecta a closure: el nombre de la función está en la pila,
     /// debajo de los argumentos.
     CallClosure(usize),
-    CallMethod(String, usize),
+    LlamarMetodo(String, usize),
 
     // === Array/Map operations ===
-    ArrayNew(usize),
-    ArrayGet,
-    ArraySet,
-    ArrayLen,
-    MapNew(usize),
-    MapGet,
-    MapSet,
+    ArregloNuevo(usize),
+    ArregloObtener,
+    ArregloFijar,
+    ArregloLongitud,
+    MapaNuevo(usize),
+    MapaObtener,
+    MapaFijar,
 
     // === Built-in functions (stdlib) ===
-    ParseInt,     // pop string, push i64
-    TiempoActual, // push current unix timestamp
+    ParsearEntero, // pop string, push i64
+    TiempoActual,  // push current unix timestamp
 
     // === I/O ===
     Print,
-    ReadLine,
+    LeerLinea,
 
     // === Propagación de errores ===
     Try,
@@ -94,21 +94,21 @@ pub enum Uop {
     No,
 
     // === Label (marcador, no ejecuta) ===
-    Label(usize),
+    Etiqueta(usize),
 
     // === Micro-operaciones de expansión (NUEVAS) ===
     /// Prepara el frame para llamada a función
     PrepCall(usize), // usize = número de args
     /// Resuelve método en objeto
-    ResolveMethod(String),
+    ResolverMetodo(String),
     /// Carga self en tope de stack
-    LoadSelf,
+    CargarPropio,
     /// Almacena un valor en variable por índice (con pop implícito)
-    StorePop(usize), // pop + store en uno
+    FijarDesapilado(usize), // pop + store en uno
     /// Carga y deja en tope (load + push combinado)
-    LoadPush(usize), // load + push fusionado
+    CargarEmpujar(usize), // load + push fusionado
     /// Declara variable con valor inicial
-    DeclareInit(usize), // declara y asigna en un solo uop
+    DeclararInicializar(usize), // declara y asigna en un solo uop
 
     // === Optimizaciones de uops ===
     /// vars[a] += 1
@@ -119,7 +119,7 @@ pub enum Uop {
     SubAssign(usize, i64),
 
     // === Opcodes para Exacto (BigDecimal) ===
-    PushExacto(i128, u32),
+    EmpujarExacto(i128, u32),
     AddExact,
     SubExact,
     MulExact,
@@ -132,7 +132,7 @@ pub enum Uop {
 
     // === Funciones Nativas ===
     /// Llama a una función nativa registrada
-    CallNative(Arc<str>, usize),
+    LlamarNativo(Arc<str>, usize),
 
     /// Polling no bloqueante de socket
     SocketPoll(Arc<str>),
@@ -144,34 +144,34 @@ pub enum Uop {
 pub fn opcode_to_uop(op: &Opcode) -> Uop {
     match op {
         // Stack
-        Opcode::PushEntero(n) => Uop::PushEntero(*n),
-        Opcode::PushDecimal(d) => Uop::PushDecimal(*d),
-        Opcode::PushTexto(s) => Uop::PushTexto(Arc::clone(s)),
-        Opcode::PushBooleano(b) => Uop::PushBooleano(*b),
-        Opcode::PushNulo => Uop::PushNulo,
-        Opcode::Descartar => Uop::Pop,
+        Opcode::EmpujarEntero(n) => Uop::EmpujarEntero(*n),
+        Opcode::EmpujarDecimal(d) => Uop::EmpujarDecimal(*d),
+        Opcode::EmpujarTexto(s) => Uop::EmpujarTexto(Arc::clone(s)),
+        Opcode::EmpujarBooleano(b) => Uop::EmpujarBooleano(*b),
+        Opcode::EmpujarNulo => Uop::EmpujarNulo,
+        Opcode::Descartar => Uop::Desapilar,
         Opcode::Duplicar => Uop::Dup,
 
         // Variables por índice
-        Opcode::CargarIndice(idx) => Uop::LoadIdx(*idx),
-        Opcode::GuardarIndice(idx) => Uop::StoreIdx(*idx),
+        Opcode::CargarIndice(idx) => Uop::CargarIndice(*idx),
+        Opcode::GuardarIndice(idx) => Uop::FijarIndice(*idx),
         // DeclareIdx hace POP del stack (el valor a asignar), igual que Declare
-        Opcode::DeclararIndice(idx, _) => Uop::DeclareInit(*idx),
-        Opcode::DeclararIndiceGlobal(idx, _) => Uop::DeclareInit(*idx),
+        Opcode::DeclararIndice(idx, _) => Uop::DeclararInicializar(*idx),
+        Opcode::DeclararIndiceGlobal(idx, _) => Uop::DeclararInicializar(*idx),
         // Acceso directo a globales (no usan base_ptr)
-        Opcode::CargarIndiceGlobal(idx) => Uop::LoadIdxGlobal(*idx),
-        Opcode::GuardarIndiceGlobal(idx) => Uop::StoreIdxGlobal(*idx),
+        Opcode::CargarIndiceGlobal(idx) => Uop::CargarIndiceGlobal(*idx),
+        Opcode::GuardarIndiceGlobal(idx) => Uop::FijarIndiceGlobal(*idx),
 
         // Opcodes compuestos (que se expandirán)
         Opcode::DeclararOperacionEntero(idx, _n) => {
             // Se expandirá en expandir_a_uops, pero como fallback:
-            Uop::DeclareInit(*idx) // marcador
+            Uop::DeclararInicializar(*idx) // marcador
         }
         Opcode::GuardarOperacionEntero(idx, _n) => {
-            Uop::StorePop(*idx) // marcador
+            Uop::FijarDesapilado(*idx) // marcador
         }
         Opcode::DeclararOperacionBooleano(idx, _b) => {
-            Uop::DeclareInit(*idx) // marcador
+            Uop::DeclararInicializar(*idx) // marcador
         }
 
         // Aritméticas
@@ -191,39 +191,39 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         // Control flow
         Opcode::Salto(t) => Uop::Jump(*t),
         Opcode::SaltoSiFalso(t) => Uop::JumpSiFalso(*t),
-        Opcode::Etiqueta(l) => Uop::Label(*l),
+        Opcode::Etiqueta(l) => Uop::Etiqueta(*l),
         Opcode::Detener => Uop::Halt,
 
         // Funciones
         Opcode::Llamar(n, a) => Uop::Call(n.to_string(), *a),
         Opcode::LlamadaFinal(n, a) => Uop::TailCall(n.to_string(), *a),
         Opcode::Retornar => Uop::Return,
-        Opcode::DefinirFuncion(n, p) => Uop::FunctionDef(n.to_string(), p.iter().map(|s| s.to_string()).collect()),
+        Opcode::DefinirFuncion(n, p) => Uop::DefinirFuncion(n.to_string(), p.iter().map(|s| s.to_string()).collect()),
 
         // Objetos
-        Opcode::NuevoObjeto(c) => Uop::NewObject(c.to_string()),
-        Opcode::FijarCampo(c) => Uop::SetField(c.to_string()),
-        Opcode::ObtenerCampo(c) => Uop::GetField(c.to_string()),
-        Opcode::FijarCampoPorIndice(idx) => Uop::SetFieldIdx(*idx),
+        Opcode::NuevoObjeto(c) => Uop::NuevoObjeto(c.to_string()),
+        Opcode::FijarCampo(c) => Uop::FijarCampo(c.to_string()),
+        Opcode::ObtenerCampo(c) => Uop::ObtenerCampo(c.to_string()),
+        Opcode::FijarCampoPorIndice(idx) => Uop::FijarCampoIndice(*idx),
         Opcode::LlamarClausura(nargs) => Uop::CallClosure(*nargs),
-        Opcode::LlamarMetodo(m, n) => Uop::CallMethod(m.to_string(), *n),
+        Opcode::LlamarMetodo(m, n) => Uop::LlamarMetodo(m.to_string(), *n),
 
         // Arrays & Maps
-        Opcode::NuevoArreglo(n) => Uop::ArrayNew(*n),
-        Opcode::ObtenerElemento => Uop::ArrayGet,
-        Opcode::FijarElemento => Uop::ArraySet,
-        Opcode::LongitudArreglo => Uop::ArrayLen,
-        Opcode::NuevoMapa(n) => Uop::MapNew(*n),
-        Opcode::ObtenerValorDeMapa => Uop::MapGet,
-        Opcode::FijarValorDeMapa => Uop::MapSet,
+        Opcode::NuevoArreglo(n) => Uop::ArregloNuevo(*n),
+        Opcode::ObtenerElemento => Uop::ArregloObtener,
+        Opcode::FijarElemento => Uop::ArregloFijar,
+        Opcode::LongitudArreglo => Uop::ArregloLongitud,
+        Opcode::NuevoMapa(n) => Uop::MapaNuevo(*n),
+        Opcode::ObtenerValorDeMapa => Uop::MapaObtener,
+        Opcode::FijarValorDeMapa => Uop::MapaFijar,
 
         // Built-in functions
-        Opcode::ParsearEntero => Uop::ParseInt,
+        Opcode::ParsearEntero => Uop::ParsearEntero,
         Opcode::TiempoActual => Uop::TiempoActual,
 
         // I/O
         Opcode::Imprimir => Uop::Print,
-        Opcode::LeerLinea => Uop::ReadLine,
+        Opcode::LeerLinea => Uop::LeerLinea,
 
         // Comparaciones y lógica
         Opcode::Igual => Uop::Igual,
@@ -249,21 +249,21 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::MayorDecimal => Uop::Mayor,
         Opcode::MenorIgualDecimal => Uop::MenorIgual,
         Opcode::MayorIgualDecimal => Uop::MayorIgual,
-        Opcode::CargarIndiceEntero(idx) => Uop::LoadIdx(*idx),
-        Opcode::CargarIndiceDecimal(idx) => Uop::LoadIdx(*idx),
-        Opcode::GuardarIndiceEntero(idx) => Uop::StoreIdx(*idx),
-        Opcode::GuardarIndiceDecimal(idx) => Uop::StoreIdx(*idx),
+        Opcode::CargarIndiceEntero(idx) => Uop::CargarIndice(*idx),
+        Opcode::CargarIndiceDecimal(idx) => Uop::CargarIndice(*idx),
+        Opcode::GuardarIndiceEntero(idx) => Uop::FijarIndice(*idx),
+        Opcode::GuardarIndiceDecimal(idx) => Uop::FijarIndice(*idx),
 
         // Superinstructions (Fase 1a) — se expanden a su forma atómica base
         Opcode::CargarIndice2(a, _b) => {
             // Se expandirá en expandir_a_uops, fallback: LoadIdx
-            Uop::LoadIdx(*a)
+            Uop::CargarIndice(*a)
         }
         Opcode::CargarGuardarIndice(src, _dst) => {
-            Uop::LoadIdx(*src)
+            Uop::CargarIndice(*src)
         }
         Opcode::CargarSumarEntero(idx, _n) => {
-            Uop::LoadIdx(*idx)
+            Uop::CargarIndice(*idx)
         }
         Opcode::SumarGuardarIndice(_idx) => {
             Uop::AddInt
@@ -275,13 +275,13 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
             Uop::MulInt
         }
         Opcode::EmpujarSumarEntero(_n) => {
-            Uop::PushEntero(0) // marcador
+            Uop::EmpujarEntero(0) // marcador
         }
         Opcode::CargarSaltoSiFalso(idx, _target) => {
-            Uop::LoadIdx(*idx)
+            Uop::CargarIndice(*idx)
         }
         Opcode::CargarSalto(idx, _target) => {
-            Uop::LoadIdx(*idx)
+            Uop::CargarIndice(*idx)
         }
         Opcode::DuplicarSumarEntero => {
             Uop::Dup
@@ -289,16 +289,16 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
 
         // Nuevos codigos float
         Opcode::DeclararOperacionDecimal(idx, _d) => {
-            Uop::DeclareInit(*idx) // marcador, se expande en expandir_a_uops
+            Uop::DeclararInicializar(*idx) // marcador, se expande en expandir_a_uops
         }
         Opcode::GuardarOperacionDecimal(idx, _d) => {
-            Uop::StorePop(*idx) // marcador, se expande en expandir_a_uops
+            Uop::FijarDesapilado(*idx) // marcador, se expande en expandir_a_uops
         }
         Opcode::CargarSumarDecimal(idx, _d) => {
-            Uop::LoadIdx(*idx) // marcador
+            Uop::CargarIndice(*idx) // marcador
         }
         Opcode::InvertirSigno(idx) => {
-            Uop::LoadIdx(*idx) // marcador, se expande en expandir_a_uops
+            Uop::CargarIndice(*idx) // marcador, se expande en expandir_a_uops
         }
         Opcode::SumarGuardarDecimal(_idx) => {
             Uop::AddFloat
@@ -326,8 +326,8 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::ReducirSuma(_, _) | Opcode::CargarSumarEmpaquetado(_, _, _) => Uop::AddInt, // placeholder JIT-only
 
         // Opcodes por nombre (ya reemplazados por índices)
-        Opcode::Cargar(_) => Uop::LoadIdx(0),      // fallback
-        Opcode::Guardar(_) => Uop::StoreIdx(0),     // fallback
+        Opcode::Cargar(_) => Uop::CargarIndice(0),      // fallback
+        Opcode::Guardar(_) => Uop::FijarIndice(0),     // fallback
         Opcode::Declarar(_, _) => Uop::DeclareVar(0), // fallback
 
         // Call especializados (Fase 2b) — solo existen en vm_fast.rs post-quickening,
@@ -335,7 +335,7 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         Opcode::LlamarDirecto(idx, nargs) => Uop::Call(format!("%direct_{}", idx), *nargs),
         Opcode::LlamarIncorporada(tipo, nargs) => Uop::Call(format!("%builtin_{:?}", tipo), *nargs),
         Opcode::LlamarMetodoCacheado(method_sym_id, nargs) => {
-            Uop::CallMethod(format!("%cached_{}", method_sym_id), *nargs)
+            Uop::LlamarMetodo(format!("%cached_{}", method_sym_id), *nargs)
         }
 
         // Fase 3a: Stack Bypass — placeholder JIT-only
@@ -350,7 +350,7 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         | Opcode::DividirRestarFusionadoConst(_, _, _) => Uop::AddFloat,
 
         // === Exacto (BigDecimal) codigos ===
-        Opcode::PushExacto(coeff, scale) => Uop::PushExacto(*coeff, *scale),
+        Opcode::EmpujarExacto(coeff, scale) => Uop::EmpujarExacto(*coeff, *scale),
         Opcode::SumarExacto => Uop::AddExact,
         Opcode::RestarExacto => Uop::SubExact,
         Opcode::MultiplicarExacto => Uop::MulExact,
@@ -363,7 +363,7 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
 
         // Superinstructions Exacto — marcadores que se expanden en expandir_a_uops
         Opcode::DeclararOperacionExacto(idx, _coeff, _scale) => {
-            Uop::DeclareInit(*idx) // marcador
+            Uop::DeclararInicializar(*idx) // marcador
         }
         Opcode::SumarGuardarExacto(_idx) => {
             Uop::AddExact // marcador
@@ -372,22 +372,22 @@ pub fn opcode_to_uop(op: &Opcode) -> Uop {
         // Design by Contract codigos (VM-level, no uop equivalent)
         // Se mapean a Label(0) (no-op) porque solo se ejecutan en dispatch directo
         // Pattern matching codigos (no-op en uops, se manejan en dispatch directo)
-        Opcode::VerificarEtiqueta(_) | Opcode::ExtraerCampo(_) => Uop::Label(0),
+        Opcode::VerificarEtiqueta(_) | Opcode::ExtraerCampo(_) => Uop::Etiqueta(0),
         Opcode::VerificarPrecondicion(_)
         | Opcode::VerificarPostcondicion(_)
         | Opcode::GuardarAnterior(_)
-        | Opcode::VerificarInvariante(_) => Uop::Label(0), // no-op en uops
+        | Opcode::VerificarInvariante(_) => Uop::Etiqueta(0), // no-op en uops
 
         // Funciones Nativas
-        Opcode::LlamarNativa(nombre, nargs) => Uop::CallNative(Arc::clone(nombre), *nargs),
+        Opcode::LlamarNativa(nombre, nargs) => Uop::LlamarNativo(Arc::clone(nombre), *nargs),
         Opcode::ConsultarSocket(var) => Uop::SocketPoll(Arc::clone(var)),
 
         // Concurrencia: codigos atómicos manejados por dispatch directo
-        Opcode::NuevoCanal | Opcode::NuevoCanalConCapacidad => Uop::Label(0), // no-op en uops
-        Opcode::CrearHilo(_, _) => Uop::Label(0), // no-op en uops
+        Opcode::NuevoCanal | Opcode::NuevoCanalConCapacidad => Uop::Etiqueta(0), // no-op en uops
+        Opcode::CrearHilo(_, _) => Uop::Etiqueta(0), // no-op en uops
 
         // Debug: SetLine es ignorado en uops (la info de línea se maneja aparte)
-        Opcode::FijarLinea(_) => Uop::Label(0),
+        Opcode::FijarLinea(_) => Uop::Etiqueta(0),
 
         // String Builder
         Opcode::AnexarTexto(idx) => Uop::StrAppend(*idx),
@@ -404,65 +404,65 @@ pub fn expandir_a_uops(bytecode: &[Opcode]) -> Vec<Uop> {
             Opcode::DeclararOperacionEntero(idx, n) => {
                 // Expandir: DeclareVar + PushEntero + StorePop
                 uops.push(Uop::DeclareVar(*idx));
-                uops.push(Uop::PushEntero(*n));
-                uops.push(Uop::StorePop(*idx));
+                uops.push(Uop::EmpujarEntero(*n));
+                uops.push(Uop::FijarDesapilado(*idx));
             }
             Opcode::GuardarOperacionEntero(idx, n) => {
-                uops.push(Uop::PushEntero(*n));
-                uops.push(Uop::StorePop(*idx));
+                uops.push(Uop::EmpujarEntero(*n));
+                uops.push(Uop::FijarDesapilado(*idx));
             }
             Opcode::DeclararOperacionBooleano(idx, b) => {
                 uops.push(Uop::DeclareVar(*idx));
-                uops.push(Uop::PushBooleano(*b));
-                uops.push(Uop::StorePop(*idx));
+                uops.push(Uop::EmpujarBooleano(*b));
+                uops.push(Uop::FijarDesapilado(*idx));
             }
 
             // === SUPERINSTRUCTIONS (Fase 1a) — expansión a uops ===
 
             // LoadIdx2(a,b) → LoadIdx(a), LoadIdx(b)
             Opcode::CargarIndice2(a, b) => {
-                uops.push(Uop::LoadIdx(*a));
-                uops.push(Uop::LoadIdx(*b));
+                uops.push(Uop::CargarIndice(*a));
+                uops.push(Uop::CargarIndice(*b));
             }
             // LoadStoreIdx(src, dst) → LoadIdx(src), StoreIdx(dst)
             Opcode::CargarGuardarIndice(src, dst) => {
-                uops.push(Uop::LoadIdx(*src));
-                uops.push(Uop::StoreIdx(*dst));
+                uops.push(Uop::CargarIndice(*src));
+                uops.push(Uop::FijarIndice(*dst));
             }
             // LoadAddInt(idx, n) → LoadIdx(idx), PushEntero(n), AddInt
             Opcode::CargarSumarEntero(idx, n) => {
-                uops.push(Uop::LoadIdx(*idx));
-                uops.push(Uop::PushEntero(*n));
+                uops.push(Uop::CargarIndice(*idx));
+                uops.push(Uop::EmpujarEntero(*n));
                 uops.push(Uop::AddInt);
             }
             // AddStoreIdx(idx) → AddInt, StoreIdx(idx)
             Opcode::SumarGuardarIndice(idx) => {
                 uops.push(Uop::AddInt);
-                uops.push(Uop::StoreIdx(*idx));
+                uops.push(Uop::FijarIndice(*idx));
             }
             // SubStoreIdx(idx) → SubInt, StoreIdx(idx)
             Opcode::RestarGuardarIndice(idx) => {
                 uops.push(Uop::SubInt);
-                uops.push(Uop::StoreIdx(*idx));
+                uops.push(Uop::FijarIndice(*idx));
             }
             // MulStoreIdx(idx) → MulInt, StoreIdx(idx)
             Opcode::MultiplicarGuardarIndice(idx) => {
                 uops.push(Uop::MulInt);
-                uops.push(Uop::StoreIdx(*idx));
+                uops.push(Uop::FijarIndice(*idx));
             }
             // PushAddInt(n) → PushEntero(n), AddInt
             Opcode::EmpujarSumarEntero(n) => {
-                uops.push(Uop::PushEntero(*n));
+                uops.push(Uop::EmpujarEntero(*n));
                 uops.push(Uop::AddInt);
             }
             // LoadJumpSiFalso(idx, destino) → LoadIdx(idx), JumpSiFalso(destino)
             Opcode::CargarSaltoSiFalso(idx, destino) => {
-                uops.push(Uop::LoadIdx(*idx));
+                uops.push(Uop::CargarIndice(*idx));
                 uops.push(Uop::JumpSiFalso(*destino));
             }
             // LoadJump(idx, destino) → LoadIdx(idx), Jump(destino)
             Opcode::CargarSalto(idx, destino) => {
-                uops.push(Uop::LoadIdx(*idx));
+                uops.push(Uop::CargarIndice(*idx));
                 uops.push(Uop::Jump(*destino));
             }
             // DupAddInt → Dup, AddInt
@@ -476,34 +476,34 @@ pub fn expandir_a_uops(bytecode: &[Opcode]) -> Vec<Uop> {
             // DeclareFloatOp(idx, d) → DeclareVar(idx), PushDecimal(d), StorePop(idx)
             Opcode::DeclararOperacionDecimal(idx, d) => {
                 uops.push(Uop::DeclareVar(*idx));
-                uops.push(Uop::PushDecimal(*d));
-                uops.push(Uop::StorePop(*idx));
+                uops.push(Uop::EmpujarDecimal(*d));
+                uops.push(Uop::FijarDesapilado(*idx));
             }
             // StoreFloatOp(idx, d) → PushDecimal(d), StorePop(idx)
             Opcode::GuardarOperacionDecimal(idx, d) => {
-                uops.push(Uop::PushDecimal(*d));
-                uops.push(Uop::StorePop(*idx));
+                uops.push(Uop::EmpujarDecimal(*d));
+                uops.push(Uop::FijarDesapilado(*idx));
             }
             // LoadAddFloat(idx, d) → LoadIdx(idx), PushDecimal(d), AddFloat
             Opcode::CargarSumarDecimal(idx, d) => {
-                uops.push(Uop::LoadIdx(*idx));
-                uops.push(Uop::PushDecimal(*d));
+                uops.push(Uop::CargarIndice(*idx));
+                uops.push(Uop::EmpujarDecimal(*d));
                 uops.push(Uop::AddFloat);
             }
             // AddStoreFloat(idx) → AddFloat, StoreIdx(idx)
             Opcode::SumarGuardarDecimal(idx) => {
                 uops.push(Uop::AddFloat);
-                uops.push(Uop::StoreIdx(*idx));
+                uops.push(Uop::FijarIndice(*idx));
             }
             // SubStoreFloat(idx) → SubFloat, StoreIdx(idx)
             Opcode::RestarGuardarDecimal(idx) => {
                 uops.push(Uop::SubFloat);
-                uops.push(Uop::StoreIdx(*idx));
+                uops.push(Uop::FijarIndice(*idx));
             }
             // MulStoreFloat(idx) → MulFloat, StoreIdx(idx)
             Opcode::MultiplicarGuardarDecimal(idx) => {
                 uops.push(Uop::MulFloat);
-                uops.push(Uop::StoreIdx(*idx));
+                uops.push(Uop::FijarIndice(*idx));
             }
 
             // XorSign(idx) → LoadIdx(idx), PushFloat(0.0) [via bits], XOR sign, StoreIdx(idx)
@@ -511,68 +511,68 @@ pub fn expandir_a_uops(bytecode: &[Opcode]) -> Vec<Uop> {
             // que los optimizadores posteriores pueden manejar.
             Opcode::InvertirSigno(idx) => {
                 // Representación: PushDecimal(0.0), LoadIdx(idx), SubFloat, StoreIdx(idx)
-                uops.push(Uop::PushDecimal(0.0));
-                uops.push(Uop::LoadIdx(*idx));
+                uops.push(Uop::EmpujarDecimal(0.0));
+                uops.push(Uop::CargarIndice(*idx));
                 uops.push(Uop::SubFloat);
-                uops.push(Uop::StoreIdx(*idx));
+                uops.push(Uop::FijarIndice(*idx));
             }
 
             // AVX2 packed codigos: expandir a operaciones escalares (fallback VM)
             Opcode::SumarEmpaquetado(d1, s1, d2, s2) => {
                 // vars[d1..d1+3] += vars[s1..s1+3]; vars[d2..d2+3] += vars[s2..s2+3]
                 for i in 0..4 {
-                    uops.push(Uop::LoadIdx(*d1 + i));
-                    uops.push(Uop::LoadIdx(*s1 + i));
+                    uops.push(Uop::CargarIndice(*d1 + i));
+                    uops.push(Uop::CargarIndice(*s1 + i));
                     uops.push(Uop::AddFloat);
-                    uops.push(Uop::StoreIdx(*d1 + i));
+                    uops.push(Uop::FijarIndice(*d1 + i));
                 }
                 for i in 0..4 {
-                    uops.push(Uop::LoadIdx(*d2 + i));
-                    uops.push(Uop::LoadIdx(*s2 + i));
+                    uops.push(Uop::CargarIndice(*d2 + i));
+                    uops.push(Uop::CargarIndice(*s2 + i));
                     uops.push(Uop::AddFloat);
-                    uops.push(Uop::StoreIdx(*d2 + i));
+                    uops.push(Uop::FijarIndice(*d2 + i));
                 }
             }
             Opcode::RestarEmpaquetado(d1, s1, d2, s2) => {
                 for i in 0..4 {
-                    uops.push(Uop::LoadIdx(*d1 + i));
-                    uops.push(Uop::LoadIdx(*s1 + i));
+                    uops.push(Uop::CargarIndice(*d1 + i));
+                    uops.push(Uop::CargarIndice(*s1 + i));
                     uops.push(Uop::SubFloat);
-                    uops.push(Uop::StoreIdx(*d1 + i));
+                    uops.push(Uop::FijarIndice(*d1 + i));
                 }
                 for i in 0..4 {
-                    uops.push(Uop::LoadIdx(*d2 + i));
-                    uops.push(Uop::LoadIdx(*s2 + i));
+                    uops.push(Uop::CargarIndice(*d2 + i));
+                    uops.push(Uop::CargarIndice(*s2 + i));
                     uops.push(Uop::SubFloat);
-                    uops.push(Uop::StoreIdx(*d2 + i));
+                    uops.push(Uop::FijarIndice(*d2 + i));
                 }
             }
             Opcode::MultiplicarEmpaquetado(d1, s1, d2, s2) => {
                 for i in 0..4 {
-                    uops.push(Uop::LoadIdx(*d1 + i));
-                    uops.push(Uop::LoadIdx(*s1 + i));
+                    uops.push(Uop::CargarIndice(*d1 + i));
+                    uops.push(Uop::CargarIndice(*s1 + i));
                     uops.push(Uop::MulFloat);
-                    uops.push(Uop::StoreIdx(*d1 + i));
+                    uops.push(Uop::FijarIndice(*d1 + i));
                 }
                 for i in 0..4 {
-                    uops.push(Uop::LoadIdx(*d2 + i));
-                    uops.push(Uop::LoadIdx(*s2 + i));
+                    uops.push(Uop::CargarIndice(*d2 + i));
+                    uops.push(Uop::CargarIndice(*s2 + i));
                     uops.push(Uop::MulFloat);
-                    uops.push(Uop::StoreIdx(*d2 + i));
+                    uops.push(Uop::FijarIndice(*d2 + i));
                 }
             }
             Opcode::DividirEmpaquetado(d1, s1, d2, s2) => {
                 for i in 0..4 {
-                    uops.push(Uop::LoadIdx(*d1 + i));
-                    uops.push(Uop::LoadIdx(*s1 + i));
+                    uops.push(Uop::CargarIndice(*d1 + i));
+                    uops.push(Uop::CargarIndice(*s1 + i));
                     uops.push(Uop::DivFloat);
-                    uops.push(Uop::StoreIdx(*d1 + i));
+                    uops.push(Uop::FijarIndice(*d1 + i));
                 }
                 for i in 0..4 {
-                    uops.push(Uop::LoadIdx(*d2 + i));
-                    uops.push(Uop::LoadIdx(*s2 + i));
+                    uops.push(Uop::CargarIndice(*d2 + i));
+                    uops.push(Uop::CargarIndice(*s2 + i));
                     uops.push(Uop::DivFloat);
-                    uops.push(Uop::StoreIdx(*d2 + i));
+                    uops.push(Uop::FijarIndice(*d2 + i));
                 }
             }
 
@@ -581,20 +581,20 @@ pub fn expandir_a_uops(bytecode: &[Opcode]) -> Vec<Uop> {
             // DeclareExactOp(idx, coeff, scale) → DeclareVar(idx), PushExacto(coeff, scale), StorePop(idx)
             Opcode::DeclararOperacionExacto(idx, coeff, scale) => {
                 uops.push(Uop::DeclareVar(*idx));
-                uops.push(Uop::PushExacto(*coeff, *scale));
-                uops.push(Uop::StorePop(*idx));
+                uops.push(Uop::EmpujarExacto(*coeff, *scale));
+                uops.push(Uop::FijarDesapilado(*idx));
             }
             // AddStoreExact(idx) → AddExact, StoreIdx(idx)
             Opcode::SumarGuardarExacto(idx) => {
                 uops.push(Uop::AddExact);
-                uops.push(Uop::StoreIdx(*idx));
+                uops.push(Uop::FijarIndice(*idx));
             }
 
             // Fase A: Modulo2(src) → push(vars[src] & 1)
             Opcode::ModuloDos(src) => {
                 // En uops expandimos a: LoadIdx(src), PushEntero(1), And (aproximado como Add)
-                uops.push(Uop::LoadIdx(*src));
-                uops.push(Uop::PushEntero(1));
+                uops.push(Uop::CargarIndice(*src));
+                uops.push(Uop::EmpujarEntero(1));
                 uops.push(Uop::Add); // placeholder, VM handler lo maneja directo
             }
 
@@ -626,7 +626,7 @@ pub fn optimizar_uops(uops: &[Uop]) -> Vec<Uop> {
     while i < uops.len() {
         // Detectar patrones de 4 uops: LoadIdx(a), PushEntero(n), Add/Sub, StoreIdx(a)
         if i + 3 < uops.len() {
-            if let (Uop::LoadIdx(a), Uop::PushEntero(n), Uop::Add, Uop::StoreIdx(b)) =
+            if let (Uop::CargarIndice(a), Uop::EmpujarEntero(n), Uop::Add, Uop::FijarIndice(b)) =
                 (&uops[i], &uops[i + 1], &uops[i + 2], &uops[i + 3])
             {
                 if a == b && *n == 1 {
@@ -642,7 +642,7 @@ pub fn optimizar_uops(uops: &[Uop]) -> Vec<Uop> {
                 }
             }
             // Patrón: LoadIdx(a), PushEntero(n), Sub, StoreIdx(a) → i = i - n
-            if let (Uop::LoadIdx(a), Uop::PushEntero(n), Uop::Sub, Uop::StoreIdx(b)) =
+            if let (Uop::CargarIndice(a), Uop::EmpujarEntero(n), Uop::Sub, Uop::FijarIndice(b)) =
                 (&uops[i], &uops[i + 1], &uops[i + 2], &uops[i + 3])
             {
                 if a == b {
@@ -657,9 +657,9 @@ pub fn optimizar_uops(uops: &[Uop]) -> Vec<Uop> {
         if i + 1 < uops.len()
             && matches!(
                 (&uops[i], &uops[i + 1]),
-                (Uop::PushEntero(_), Uop::Pop)
-                    | (Uop::PushBooleano(_), Uop::Pop)
-                    | (Uop::PushNulo, Uop::Pop)
+                (Uop::EmpujarEntero(_), Uop::Desapilar)
+                    | (Uop::EmpujarBooleano(_), Uop::Desapilar)
+                    | (Uop::EmpujarNulo, Uop::Desapilar)
             )
         {
             // Eliminar ambos (Push + Pop se cancelan mutuamente)
@@ -669,9 +669,9 @@ pub fn optimizar_uops(uops: &[Uop]) -> Vec<Uop> {
 
         // Detectar StorePop que sigue a DeclareVar del mismo índice → fusionar a DeclareInit
         if i + 1 < uops.len() {
-            if let (Uop::DeclareVar(a), Uop::StorePop(b)) = (&uops[i], &uops[i + 1]) {
+            if let (Uop::DeclareVar(a), Uop::FijarDesapilado(b)) = (&uops[i], &uops[i + 1]) {
                 if a == b {
-                    optimizados.push(Uop::DeclareInit(*a));
+                    optimizados.push(Uop::DeclararInicializar(*a));
                     i += 2;
                     continue;
                 }
@@ -744,7 +744,7 @@ pub fn remapear_saltos_uops(uops: &mut [Uop], bytecode: &[Opcode]) {
 
     for uop in uops.iter_mut() {
         match uop {
-            Uop::Jump(destino) | Uop::JumpSiFalso(destino) | Uop::Label(destino)
+            Uop::Jump(destino) | Uop::JumpSiFalso(destino) | Uop::Etiqueta(destino)
                 if *destino < mapeo.len() =>
             {
                 *destino = mapeo[*destino];
@@ -808,8 +808,8 @@ mod tests {
         let uops = expandir_a_uops(&bc);
         assert_eq!(uops.len(), 3);
         assert_eq!(uops[0], Uop::DeclareVar(0));
-        assert_eq!(uops[1], Uop::PushEntero(42));
-        assert_eq!(uops[2], Uop::StorePop(0));
+        assert_eq!(uops[1], Uop::EmpujarEntero(42));
+        assert_eq!(uops[2], Uop::FijarDesapilado(0));
     }
 
     #[test]
@@ -817,8 +817,8 @@ mod tests {
         let bc = vec![Opcode::GuardarOperacionEntero(1, 99)];
         let uops = expandir_a_uops(&bc);
         assert_eq!(uops.len(), 2);
-        assert_eq!(uops[0], Uop::PushEntero(99));
-        assert_eq!(uops[1], Uop::StorePop(1));
+        assert_eq!(uops[0], Uop::EmpujarEntero(99));
+        assert_eq!(uops[1], Uop::FijarDesapilado(1));
     }
 
     #[test]
@@ -827,16 +827,16 @@ mod tests {
         let uops = expandir_a_uops(&bc);
         assert_eq!(uops.len(), 3);
         assert_eq!(uops[0], Uop::DeclareVar(2));
-        assert_eq!(uops[1], Uop::PushBooleano(true));
-        assert_eq!(uops[2], Uop::StorePop(2));
+        assert_eq!(uops[1], Uop::EmpujarBooleano(true));
+        assert_eq!(uops[2], Uop::FijarDesapilado(2));
     }
 
     #[test]
     fn expandir_pasa_atomicos() {
-        let bc = vec![Opcode::PushEntero(10), Opcode::Sumar, Opcode::Detener];
+        let bc = vec![Opcode::EmpujarEntero(10), Opcode::Sumar, Opcode::Detener];
         let uops = expandir_a_uops(&bc);
         assert_eq!(uops.len(), 3);
-        assert_eq!(uops[0], Uop::PushEntero(10));
+        assert_eq!(uops[0], Uop::EmpujarEntero(10));
         assert_eq!(uops[1], Uop::Add);
         assert_eq!(uops[2], Uop::Halt);
     }
@@ -845,10 +845,10 @@ mod tests {
     fn optimizar_incr_var() {
         // Patrón: LoadIdx(0), PushEntero(1), Add, StoreIdx(0) → IncrVar(0)
         let uops = vec![
-            Uop::LoadIdx(0),
-            Uop::PushEntero(1),
+            Uop::CargarIndice(0),
+            Uop::EmpujarEntero(1),
             Uop::Add,
-            Uop::StoreIdx(0),
+            Uop::FijarIndice(0),
         ];
         let opt = optimizar_uops(&uops);
         assert_eq!(opt.len(), 1);
@@ -859,10 +859,10 @@ mod tests {
     fn optimizar_add_assign() {
         // Patrón: LoadIdx(0), PushEntero(5), Add, StoreIdx(0) → AddAssign(0, 5)
         let uops = vec![
-            Uop::LoadIdx(0),
-            Uop::PushEntero(5),
+            Uop::CargarIndice(0),
+            Uop::EmpujarEntero(5),
             Uop::Add,
-            Uop::StoreIdx(0),
+            Uop::FijarIndice(0),
         ];
         let opt = optimizar_uops(&uops);
         assert_eq!(opt.len(), 1);
@@ -873,10 +873,10 @@ mod tests {
     fn optimizar_sub_assign() {
         // Patrón: LoadIdx(0), PushEntero(3), Sub, StoreIdx(0) → SubAssign(0, 3)
         let uops = vec![
-            Uop::LoadIdx(0),
-            Uop::PushEntero(3),
+            Uop::CargarIndice(0),
+            Uop::EmpujarEntero(3),
             Uop::Sub,
-            Uop::StoreIdx(0),
+            Uop::FijarIndice(0),
         ];
         let opt = optimizar_uops(&uops);
         assert_eq!(opt.len(), 1);
@@ -886,17 +886,17 @@ mod tests {
     #[test]
     fn optimizar_empujar_desapilar_eliminacion() {
         // Patrón: PushEntero(n), Pop → eliminar ambos
-        let uops = vec![Uop::PushEntero(42), Uop::Pop];
+        let uops = vec![Uop::EmpujarEntero(42), Uop::Desapilar];
         let opt = optimizar_uops(&uops);
         assert_eq!(opt.len(), 0);
 
         // PushBooleano(b), Pop → eliminar ambos
-        let uops2 = vec![Uop::PushBooleano(true), Uop::Pop];
+        let uops2 = vec![Uop::EmpujarBooleano(true), Uop::Desapilar];
         let opt2 = optimizar_uops(&uops2);
         assert_eq!(opt2.len(), 0);
 
         // PushNulo, Pop → eliminar ambos
-        let uops3 = vec![Uop::PushNulo, Uop::Pop];
+        let uops3 = vec![Uop::EmpujarNulo, Uop::Desapilar];
         let opt3 = optimizar_uops(&uops3);
         assert_eq!(opt3.len(), 0);
     }
@@ -904,10 +904,10 @@ mod tests {
     #[test]
     fn optimizar_declarar_inicializar_fusion() {
         // Patrón: DeclareVar(0), StorePop(0) → DeclareInit(0)
-        let uops = vec![Uop::DeclareVar(0), Uop::StorePop(0)];
+        let uops = vec![Uop::DeclareVar(0), Uop::FijarDesapilado(0)];
         let opt = optimizar_uops(&uops);
         assert_eq!(opt.len(), 1);
-        assert_eq!(opt[0], Uop::DeclareInit(0));
+        assert_eq!(opt[0], Uop::DeclararInicializar(0));
     }
 
     #[test]
@@ -915,7 +915,7 @@ mod tests {
         let bc = vec![Opcode::DeclararOperacionEntero(0, 42)];
         assert!(tiene_opcodes_compuestos(&bc));
 
-        let bc2 = vec![Opcode::PushEntero(42)];
+        let bc2 = vec![Opcode::EmpujarEntero(42)];
         assert!(!tiene_opcodes_compuestos(&bc2));
     }
 }

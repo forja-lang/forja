@@ -200,6 +200,25 @@ impl Lowering {
                 let a = self.como(&arr, T::Arreglo);
                 let iv = self.expr(indice)?;
                 let i = self.como(&iv, T::Int);
+                if self.sin_rangos {
+                    // FORJA_SIN_RANGOS=1: sin chequeo de rango (UB si se pasa,
+                    // equivalente a `get_unchecked`). Permite vectorizar al -O3.
+                    let datos = self.r();
+                    self.linea(&format!(
+                        "{} = getelementptr inbounds %ForjaArreglo, ptr {}, i32 0, i32 2",
+                        datos, a
+                    ));
+                    let base = self.r();
+                    self.linea(&format!("{} = load ptr, ptr {}", base, datos));
+                    let p = self.r();
+                    self.linea(&format!(
+                        "{} = getelementptr inbounds i64, ptr {}, i64 {}",
+                        p, base, i
+                    ));
+                    let v = self.r();
+                    self.linea(&format!("{} = load i64, ptr {}", v, p));
+                    return Ok(V::Int(v));
+                }
                 // Acceso directo (sin llamada al runtime): GEP + load con
                 // chequeo de rango, para que clang pueda optimizarlo.
                 let longitud = self.r();

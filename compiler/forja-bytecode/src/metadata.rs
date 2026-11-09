@@ -151,7 +151,7 @@ mod tests_contenedor {
 
     #[test]
     fn contenedor_con_metadata_ida_y_vuelta() {
-        let codigos = vec![crate::Opcode::PushEntero(7), crate::Opcode::Descartar];
+        let codigos = vec![crate::Opcode::EmpujarEntero(7), crate::Opcode::Descartar];
         let bytes = crate::serializar_con_metadata(&codigos, &[]);
         let (leidos, cab) = crate::deserializar_con_metadata(&bytes).unwrap();
         assert_eq!(leidos, codigos);
@@ -161,7 +161,7 @@ mod tests_contenedor {
 
     #[test]
     fn contenedor_rechaza_cabecera_vieja() {
-        let codigos = vec![crate::Opcode::PushEntero(1)];
+        let codigos = vec![crate::Opcode::EmpujarEntero(1)];
         let mut bytes = crate::serializar_con_metadata(&codigos, &[]);
         bytes[4..8].copy_from_slice(&1u32.to_le_bytes());
         assert!(crate::deserializar_con_metadata(&bytes).is_none());

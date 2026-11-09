@@ -31,7 +31,7 @@ impl ForjaFast {
     pub fn ejecutar_ops_exacto(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
             // ── Exacto operations (BigDecimal) ─────────────────────────
-            Opcode::PushExacto(coeff, scale) => {
+            Opcode::EmpujarExacto(coeff, scale) => {
                 let v = self.exacto_valor(*coeff, *scale);
                 self.empujar_valor(v);
                 self.ip += 1;

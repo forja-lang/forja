@@ -327,3 +327,115 @@ int64_t forja_mapa_obtener_texto(void *pm, const char *clave) {
     ForjaPar *p = forja_mapa_slot(m, forja_hash_texto(clave), -1, clave);
     return p->usado ? p->valor : 0;
 }
+
+/* ── canales e hilos ──────────────────────────────────────────────────── */
+/* Canal MPSC simétrico: una cola FIFO con mutex + condición. El emisor y el
+ * receptor son el mismo puntero (lo que simplifica `variable e, r = canal()`). */
+#ifdef _WIN32
+typedef CRITICAL_SECTION ForjaMutex;
+typedef CONDITION_VARIABLE ForjaCond;
+static void forja_mutex_init(ForjaMutex *m) { InitializeCriticalSection(m); }
+static void forja_mutex_lock(ForjaMutex *m) { EnterCriticalSection(m); }
+static void forja_mutex_unlock(ForjaMutex *m) { LeaveCriticalSection(m); }
+static void forja_cond_init(ForjaCond *c) { InitializeConditionVariable(c); }
+static void forja_cond_wait(ForjaCond *c, ForjaMutex *m) { SleepConditionVariableCS(c, m, INFINITE); }
+static void forja_cond_signal(ForjaCond *c) { WakeConditionVariable(c); }
+#else
+#include <pthread.h>
+typedef pthread_mutex_t ForjaMutex;
+typedef pthread_cond_t ForjaCond;
+static void forja_mutex_init(ForjaMutex *m) { pthread_mutex_init(m, NULL); }
+static void forja_mutex_lock(ForjaMutex *m) { pthread_mutex_lock(m); }
+static void forja_mutex_unlock(ForjaMutex *m) { pthread_mutex_unlock(m); }
+static void forja_cond_init(ForjaCond *c) { pthread_cond_init(c, NULL); }
+static void forja_cond_wait(ForjaCond *c, ForjaMutex *m) { pthread_cond_wait(c, m); }
+static void forja_cond_signal(ForjaCond *c) { pthread_cond_signal(c); }
+#endif
+
+typedef struct ForjaNodo {
+    int64_t valor;
+    struct ForjaNodo *sig;
+} ForjaNodo;
+
+typedef struct {
+    ForjaMutex mutex;
+    ForjaCond cond;
+    ForjaNodo *cabeza;
+    ForjaNodo *cola;
+} ForjaCanal;
+
+void *forja_canal_nuevo(void) {
+    ForjaCanal *c = (ForjaCanal *)forja_alloc((int64_t)sizeof(ForjaCanal));
+    forja_mutex_init(&c->mutex);
+    forja_cond_init(&c->cond);
+    c->cabeza = NULL;
+    c->cola = NULL;
+    return c;
+}
+
+void forja_canal_enviar(void *pc, int64_t valor) {
+    ForjaCanal *c = (ForjaCanal *)pc;
+    if (!c) return;
+    ForjaNodo *n = (ForjaNodo *)forja_alloc((int64_t)sizeof(ForjaNodo));
+    n->valor = valor;
+    n->sig = NULL;
+    forja_mutex_lock(&c->mutex);
+    if (c->cola) {
+        c->cola->sig = n;
+    } else {
+        c->cabeza = n;
+    }
+    c->cola = n;
+    forja_cond_signal(&c->cond);
+    forja_mutex_unlock(&c->mutex);
+}
+
+int64_t forja_canal_recibir(void *pc) {
+    ForjaCanal *c = (ForjaCanal *)pc;
+    if (!c) return 0;
+    forja_mutex_lock(&c->mutex);
+    while (!c->cabeza) {
+        forja_cond_wait(&c->cond, &c->mutex);
+    }
+    ForjaNodo *n = c->cabeza;
+    c->cabeza = n->sig;
+    if (!c->cabeza) c->cola = NULL;
+    forja_mutex_unlock(&c->mutex);
+    return n->valor;
+}
+
+/* Lanza `fn(entorno, indice)` en un hilo del sistema. */
+typedef void (*ForjaHiloFn)(void *entorno, int64_t indice);
+
+#ifdef _WIN32
+static DWORD WINAPI forja_hilo_trampoline(LPVOID p) {
+    void **args = (void **)p;
+    ForjaHiloFn fn = (ForjaHiloFn)args[0];
+    fn(args[1], 0);
+    return 0;
+}
+void forja_hilo_lanzar(void *fn, void *entorno) {
+    void **args = (void **)forja_alloc((int64_t)(2 * sizeof(void *)));
+    args[0] = fn;
+    args[1] = entorno;
+    HANDLE h = CreateThread(NULL, 0, forja_hilo_trampoline, args, 0, NULL);
+    if (h) CloseHandle(h);
+}
+#else
+typedef void (*ForjaHiloFnPosix)(void *, int64_t);
+static void *forja_hilo_trampoline_posix(void *p) {
+    void **args = (void **)p;
+    ForjaHiloFnPosix fn = (ForjaHiloFnPosix)args[0];
+    fn(args[1], 0);
+    return NULL;
+}
+void forja_hilo_lanzar(void *fn, void *entorno) {
+    void **args = (void **)forja_alloc((int64_t)(2 * sizeof(void *)));
+    args[0] = fn;
+    args[1] = entorno;
+    pthread_t t;
+    if (pthread_create(&t, NULL, forja_hilo_trampoline_posix, args) == 0) {
+        pthread_detach(t);
+    }
+}
+#endif

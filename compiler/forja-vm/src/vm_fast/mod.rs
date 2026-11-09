@@ -562,23 +562,23 @@ impl ForjaFast {
 
         while ip < longitud {
             match &uops[ip] {
-                Uop::PushEntero(n) => pila.push(obtener_small_entero_fast(*n)),
-                Uop::PushDecimal(d) => pila.push(ValorFast::flotante(*d)),
-                Uop::PushTexto(s) => {
+                Uop::EmpujarEntero(n) => pila.push(obtener_small_entero_fast(*n)),
+                Uop::EmpujarDecimal(d) => pila.push(ValorFast::flotante(*d)),
+                Uop::EmpujarTexto(s) => {
                     let idx = self.reservar_texto(Arc::clone(s));
                     pila.push(ValorFast::texto(idx));
                 }
-                Uop::PushBooleano(b) => pila.push(ValorFast::booleano(*b)),
-                Uop::PushNulo => pila.push(ValorFast::nulo()),
+                Uop::EmpujarBooleano(b) => pila.push(ValorFast::booleano(*b)),
+                Uop::EmpujarNulo => pila.push(ValorFast::nulo()),
                 Uop::Dup => {
                     let v = pila.last().copied().unwrap_or(ValorFast::nulo());
                     pila.push(v);
                 }
-                Uop::Pop => {
+                Uop::Desapilar => {
                     pila.pop();
                 }
 
-                Uop::LoadIdx(idx) => {
+                Uop::CargarIndice(idx) => {
                     if *idx == RESULTADO_IDX {
                         // resultado especial: usar valor_retorno
                         if let Some(ret) = valor_retorno {
@@ -597,7 +597,7 @@ impl ForjaFast {
                     let saved = self.anterior_stack.get(idx).copied();
                     pila.push(saved.unwrap_or_else(|| self.cargar_local(*idx)));
                 }
-                Uop::LoadIdxGlobal(idx) => {
+                Uop::CargarIndiceGlobal(idx) => {
                     let v = self
                         .global_var_persist
                         .get(*idx)
@@ -605,11 +605,11 @@ impl ForjaFast {
                         .unwrap_or_default();
                     pila.push(v);
                 }
-                Uop::GetField(campo) => {
+                Uop::ObtenerCampo(campo) => {
                     let obj = pila.pop().unwrap_or_default();
                     pila.push(self.campo_para_contrato(obj, campo.as_ref()));
                 }
-                Uop::StoreIdx(idx) => {
+                Uop::FijarIndice(idx) => {
                     let val = pila.pop().unwrap_or_default();
                     self.almacen_local(*idx, val);
                 }
@@ -617,7 +617,7 @@ impl ForjaFast {
                     // Ensure local slot exists
                     self.almacen_local(*idx, self.cargar_local(*idx));
                 }
-                Uop::DeclareInit(idx) => {
+                Uop::DeclararInicializar(idx) => {
                     let val = pila.pop().unwrap_or_default();
                     self.almacen_local(*idx, val);
                 }
@@ -831,7 +831,7 @@ impl ForjaFast {
                 }
 
                 // Saltos (no deberían aparecer en contratos simples)
-                Uop::Jump(_) | Uop::JumpSiFalso(_) | Uop::Label(_) => {}
+                Uop::Jump(_) | Uop::JumpSiFalso(_) | Uop::Etiqueta(_) => {}
 
                 // Otros codigos: ignorar
                 _ => {}

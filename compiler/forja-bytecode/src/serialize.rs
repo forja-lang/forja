@@ -29,7 +29,7 @@ pub fn sanitizar_para_serializacion(bc: &[Opcode]) -> Vec<Opcode> {
     for op in bc {
         match op {
             Opcode::EmpujarSumarEntero(n) => {
-                resultado.push(Opcode::PushEntero(*n));
+                resultado.push(Opcode::EmpujarEntero(*n));
                 resultado.push(Opcode::SumarEntero);
             }
             Opcode::DuplicarSumarEntero => {
@@ -41,7 +41,6 @@ pub fn sanitizar_para_serializacion(bc: &[Opcode]) -> Vec<Opcode> {
                 let name = match tipo {
                     TipoIncorporada::Escribir => "escribir",
                     TipoIncorporada::Longitud => "longitud",
-                    TipoIncorporada::Len => "len",
                     TipoIncorporada::Tipo => "tipo",
                     TipoIncorporada::ATexto => "a_texto",
                     TipoIncorporada::EsNumero => "es_numero",
@@ -82,7 +81,7 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
 
     for op in codigos {
         match op {
-            Opcode::PushTexto(s)
+            Opcode::EmpujarTexto(s)
             | Opcode::Cargar(s)
             | Opcode::Guardar(s)
             | Opcode::Declarar(s, _)
@@ -117,9 +116,9 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
     for op in codigos {
         bytes.push(opcode_to_byte(op));
         match op {
-            Opcode::PushEntero(n) => bytes.extend_from_slice(&n.to_le_bytes()),
-            Opcode::PushDecimal(d) => bytes.extend_from_slice(&d.to_le_bytes()),
-            Opcode::PushTexto(s) | Opcode::Cargar(s) | Opcode::Guardar(s) => {
+            Opcode::EmpujarEntero(n) => bytes.extend_from_slice(&n.to_le_bytes()),
+            Opcode::EmpujarDecimal(d) => bytes.extend_from_slice(&d.to_le_bytes()),
+            Opcode::EmpujarTexto(s) | Opcode::Cargar(s) | Opcode::Guardar(s) => {
                 let idx = indices_textos.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
             }
@@ -156,7 +155,7 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
                 bytes.extend_from_slice(&(*a as u32).to_le_bytes());
                 bytes.extend_from_slice(&(*b as u32).to_le_bytes());
             }
-            Opcode::PushBooleano(b) => bytes.push(if *b { 1 } else { 0 }),
+            Opcode::EmpujarBooleano(b) => bytes.push(if *b { 1 } else { 0 }),
             Opcode::Salto(destino) | Opcode::SaltoSiFalso(destino) | Opcode::Etiqueta(destino) => {
                 bytes.extend_from_slice(&(*destino as u32).to_le_bytes());
             }
@@ -256,7 +255,7 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
                 bytes.extend_from_slice(&(*div_src as u32).to_le_bytes());
             }
             // Opcodes para Exacto (BigDecimal)
-            Opcode::PushExacto(coeff, scale) => {
+            Opcode::EmpujarExacto(coeff, scale) => {
                 bytes.extend_from_slice(&coeff.to_le_bytes());
                 bytes.extend_from_slice(&scale.to_le_bytes());
             }
@@ -320,11 +319,11 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
 
 fn opcode_to_byte(op: &Opcode) -> u8 {
     match op {
-        Opcode::PushEntero(_) => 0,
-        Opcode::PushDecimal(_) => 1,
-        Opcode::PushTexto(_) => 2,
-        Opcode::PushBooleano(_) => 3,
-        Opcode::PushNulo => 4,
+        Opcode::EmpujarEntero(_) => 0,
+        Opcode::EmpujarDecimal(_) => 1,
+        Opcode::EmpujarTexto(_) => 2,
+        Opcode::EmpujarBooleano(_) => 3,
+        Opcode::EmpujarNulo => 4,
         Opcode::Descartar => 5,
         Opcode::Duplicar => 6,
         Opcode::Cargar(_) => 10,
@@ -396,7 +395,7 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
         Opcode::DividirSumarFusionadoConst(_, _, _) => 102,
         Opcode::DividirRestarFusionadoConst(_, _, _) => 103,
         // Opcodes para Exacto (BigDecimal) — Fase Exacto
-        Opcode::PushExacto(_, _) => 110,
+        Opcode::EmpujarExacto(_, _) => 110,
         Opcode::SumarExacto => 111,
         Opcode::RestarExacto => 112,
         Opcode::MultiplicarExacto => 113,
@@ -473,11 +472,11 @@ fn opcode_to_byte(op: &Opcode) -> u8 {
 fn byte_to_opcode(byte: u8) -> Option<Opcode> {
     // Los codigos con payload se reconstruyen en el deserializador
     match byte {
-        0 => Some(Opcode::PushEntero(0)),
-        1 => Some(Opcode::PushDecimal(0.0)),
-        2 => Some(Opcode::PushTexto(Arc::from(""))),
-        3 => Some(Opcode::PushBooleano(false)),
-        4 => Some(Opcode::PushNulo),
+        0 => Some(Opcode::EmpujarEntero(0)),
+        1 => Some(Opcode::EmpujarDecimal(0.0)),
+        2 => Some(Opcode::EmpujarTexto(Arc::from(""))),
+        3 => Some(Opcode::EmpujarBooleano(false)),
+        4 => Some(Opcode::EmpujarNulo),
         5 => Some(Opcode::Descartar),
         6 => Some(Opcode::Duplicar),
         10 => Some(Opcode::Cargar(Arc::from(""))),
@@ -535,7 +534,7 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
         70 => Some(Opcode::Imprimir),
         71 => Some(Opcode::LeerLinea),
         // Opcodes para Exacto (BigDecimal)
-        110 => Some(Opcode::PushExacto(0, 0)),
+        110 => Some(Opcode::EmpujarExacto(0, 0)),
         111 => Some(Opcode::SumarExacto),
         112 => Some(Opcode::RestarExacto),
         113 => Some(Opcode::MultiplicarExacto),
@@ -771,7 +770,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                     data[pos + 7],
                 ]);
                 pos += 8;
-                codigos.push(Opcode::PushEntero(n));
+                codigos.push(Opcode::EmpujarEntero(n));
             }
             1 => {
                 // PushDecimal
@@ -789,7 +788,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                     data[pos + 7],
                 ]);
                 pos += 8;
-                codigos.push(Opcode::PushDecimal(d));
+                codigos.push(Opcode::EmpujarDecimal(d));
             }
             2 | 10 | 11 => {
                 // PushTexto | Load | Store
@@ -803,7 +802,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 // Validación de seguridad: el índice debe estar dentro del reserva_textos
                 let s = texto_de_reserva(&reserva_textos, idx)?;
                 codigos.push(match byte {
-                    2 => Opcode::PushTexto(s),
+                    2 => Opcode::EmpujarTexto(s),
                     10 => Opcode::Cargar(s),
                     _ => Opcode::Guardar(s),
                 });
@@ -904,7 +903,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 }
                 let b = data[pos] == 1;
                 pos += 1;
-                codigos.push(Opcode::PushBooleano(b));
+                codigos.push(Opcode::EmpujarBooleano(b));
             }
             16 => {
                 // DeclareEnteroOp
@@ -1326,7 +1325,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 let scale =
                     u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
                 pos += 4;
-                codigos.push(Opcode::PushExacto(coeff, scale));
+                codigos.push(Opcode::EmpujarExacto(coeff, scale));
             }
             // Superinstructions Exacto: DeclareExactOp(idx, coeff, scale) — 4 + 16 + 4 = 24 bytes
             120 => {

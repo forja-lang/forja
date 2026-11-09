@@ -216,7 +216,7 @@ impl GeneradorBytecode {
                         "mostrar" | "display" | "debug" if !es_enum => "_derive_mostrar",
                         _ => continue,
                     };
-                    self.emitir(Opcode::PushTexto(Arc::from(nombre.as_str())));
+                    self.emitir(Opcode::EmpujarTexto(Arc::from(nombre.as_str())));
                     self.emitir(Opcode::Llamar(Arc::from(nativa), 1));
                     self.emitir(Opcode::Descartar);
                 }
@@ -300,7 +300,7 @@ impl GeneradorBytecode {
     /// - Si el cuerpo está vacío, push nulo.
     pub(crate) fn generar_cuerpo_match(&mut self, cuerpo: &[Declaracion]) {
         if cuerpo.is_empty() {
-            self.emitir(Opcode::PushNulo);
+            self.emitir(Opcode::EmpujarNulo);
             return;
         }
         // Procesar todas las declaraciones excepto la última normalmente
@@ -317,7 +317,7 @@ impl GeneradorBytecode {
                 // Cualquier otra declaración (ej. llamada a función, retornar):
                 // se genera normalmente y se push nulo como valor del match
                 self.generar_declaracion(&cuerpo[cuerpo.len() - 1]);
-                self.emitir(Opcode::PushNulo);
+                self.emitir(Opcode::EmpujarNulo);
             }
         }
     }

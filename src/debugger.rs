@@ -278,24 +278,24 @@ impl Debugger {
     /// Ejecuta un solo opcode (equivalente a una iteración del loop de ForjaFast::ejecutar)
     fn ejecutar_un_paso(&mut self, op: &Opcode) -> Result<(), ErrFast> {
         match op {
-            Opcode::PushEntero(n) => {
+            Opcode::EmpujarEntero(n) => {
                 self.vm.empujar_valor(obtener_small_entero_fast(*n));
                 self.vm.ip += 1;
             }
-            Opcode::PushDecimal(d) => {
+            Opcode::EmpujarDecimal(d) => {
                 self.vm.empujar_valor(ValorFast::flotante(*d));
                 self.vm.ip += 1;
             }
-            Opcode::PushTexto(s) => {
+            Opcode::EmpujarTexto(s) => {
                 let idx = self.vm.reservar_texto(s.clone());
                 self.vm.empujar_valor(ValorFast::texto(idx));
                 self.vm.ip += 1;
             }
-            Opcode::PushBooleano(b) => {
+            Opcode::EmpujarBooleano(b) => {
                 self.vm.empujar_valor(ValorFast::booleano(*b));
                 self.vm.ip += 1;
             }
-            Opcode::PushNulo => {
+            Opcode::EmpujarNulo => {
                 self.vm.empujar_valor(ValorFast::nulo());
                 self.vm.ip += 1;
             }

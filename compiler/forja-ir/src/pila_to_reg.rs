@@ -21,21 +21,21 @@ pub fn pila_to_reg(ops: &[Opcode]) -> RegProgram {
     for op in ops {
         match op {
             // === Pila ===
-            Opcode::PushEntero(n) => {
+            Opcode::EmpujarEntero(n) => {
                 let v = prog.reservar_vreg();
                 actual_block
                     .instructions
                     .push(RegInstruction::LoadImm { dst: v, valor: *n });
                 pila.push((v, RegClase::Integer));
             }
-            Opcode::PushDecimal(d) => {
+            Opcode::EmpujarDecimal(d) => {
                 let v = prog.reservar_vreg();
                 actual_block
                     .instructions
                     .push(RegInstruction::LoadFloat { dst: v, valor: *d });
                 pila.push((v, RegClase::Float));
             }
-            Opcode::PushBooleano(b) => {
+            Opcode::EmpujarBooleano(b) => {
                 let v = prog.reservar_vreg();
                 actual_block.instructions.push(RegInstruction::LoadImm {
                     dst: v,
@@ -43,7 +43,7 @@ pub fn pila_to_reg(ops: &[Opcode]) -> RegProgram {
                 });
                 pila.push((v, RegClase::Integer));
             }
-            Opcode::PushNulo => {
+            Opcode::EmpujarNulo => {
                 let v = prog.reservar_vreg();
                 actual_block
                     .instructions
@@ -334,8 +334,8 @@ mod tests {
     fn test_simple_empujar_sumar() {
         // PushEntero(5) + PushEntero(3) + Add
         let ops = vec![
-            Opcode::PushEntero(5),
-            Opcode::PushEntero(3),
+            Opcode::EmpujarEntero(5),
+            Opcode::EmpujarEntero(3),
             Opcode::Sumar,
             Opcode::Detener,
         ];
@@ -382,10 +382,10 @@ mod tests {
     fn test_empujar_sub_mul() {
         // PushEntero(10) + PushEntero(2) + Sub + PushEntero(3) + Mul
         let ops = vec![
-            Opcode::PushEntero(10),
-            Opcode::PushEntero(2),
+            Opcode::EmpujarEntero(10),
+            Opcode::EmpujarEntero(2),
             Opcode::Restar,
-            Opcode::PushEntero(3),
+            Opcode::EmpujarEntero(3),
             Opcode::Multiplicar,
             Opcode::Detener,
         ];
@@ -419,7 +419,7 @@ mod tests {
     fn test_cargar_almacen_variables() {
         // PushEntero(42) + StoreIdx(0) + LoadIdx(0)
         let ops = vec![
-            Opcode::PushEntero(42),
+            Opcode::EmpujarEntero(42),
             Opcode::GuardarIndice(0),
             Opcode::CargarIndice(0),
             Opcode::Detener,
@@ -460,8 +460,8 @@ mod tests {
     #[test]
     fn test_comparisons() {
         let ops = vec![
-            Opcode::PushEntero(5),
-            Opcode::PushEntero(3),
+            Opcode::EmpujarEntero(5),
+            Opcode::EmpujarEntero(3),
             Opcode::Mayor,
             Opcode::Detener,
         ];
@@ -482,9 +482,9 @@ mod tests {
     #[test]
     fn test_jump_creates_blocks() {
         let ops = vec![
-            Opcode::PushEntero(1),
+            Opcode::EmpujarEntero(1),
             Opcode::SaltoSiFalso(1),
-            Opcode::PushEntero(2),
+            Opcode::EmpujarEntero(2),
             Opcode::Etiqueta(1),
             Opcode::Detener,
         ];
@@ -511,7 +511,7 @@ mod tests {
 
     #[test]
     fn test_empujar_decimal() {
-        let ops = vec![Opcode::PushDecimal(2.5), Opcode::Detener];
+        let ops = vec![Opcode::EmpujarDecimal(2.5), Opcode::Detener];
         let prog = pila_to_reg(&ops);
 
         let block = &prog.blocks[0];
@@ -527,8 +527,8 @@ mod tests {
     #[test]
     fn test_logic_operators() {
         let ops = vec![
-            Opcode::PushBooleano(true),
-            Opcode::PushBooleano(false),
+            Opcode::EmpujarBooleano(true),
+            Opcode::EmpujarBooleano(false),
             Opcode::Y,
             Opcode::Detener,
         ];

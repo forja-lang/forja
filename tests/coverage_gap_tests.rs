@@ -350,7 +350,7 @@ fn test_opcode_serializar_diferente_menor_igual() {
 #[test]
 fn test_opcode_serializar_exacto() {
     let ops = vec![
-        Opcode::PushExacto(123, 2),
+        Opcode::EmpujarExacto(123, 2),
         Opcode::SumarExacto,
         Opcode::RestarExacto,
         Opcode::MultiplicarExacto,
@@ -364,7 +364,7 @@ fn test_opcode_serializar_exacto() {
     let s = serializar_bytecode(&ops);
     let d = deserializar_bytecode(&s).unwrap();
     assert_eq!(d.len(), ops.len());
-    assert_eq!(d[0], Opcode::PushExacto(123, 2));
+    assert_eq!(d[0], Opcode::EmpujarExacto(123, 2));
     assert_eq!(d[5], Opcode::IgualExacto);
 }
 
@@ -456,13 +456,13 @@ fn test_opcode_serializar_declarar_exacto_op() {
 #[test]
 fn test_uop_expandir_cargar_indice() {
     let uops = expandir_a_uops(&[Opcode::CargarIndice(42)]);
-    assert_eq!(uops[0], Uop::LoadIdx(42));
+    assert_eq!(uops[0], Uop::CargarIndice(42));
 }
 
 #[test]
 fn test_uop_expandir_almacen_indice() {
     let uops = expandir_a_uops(&[Opcode::GuardarIndice(99)]);
-    assert_eq!(uops[0], Uop::StoreIdx(99));
+    assert_eq!(uops[0], Uop::FijarIndice(99));
 }
 
 #[test]
@@ -474,7 +474,7 @@ fn test_uop_expand_try() {
 #[test]
 fn test_uop_expandir_etiqueta() {
     let uops = expandir_a_uops(&[Opcode::Etiqueta(7)]);
-    assert_eq!(uops[0], Uop::Label(7));
+    assert_eq!(uops[0], Uop::Etiqueta(7));
 }
 
 #[test]
@@ -486,37 +486,37 @@ fn test_uop_expandir_funcion_definicion() {
 #[test]
 fn test_uop_expandir_nuevo_objeto() {
     let uops = expandir_a_uops(&[Opcode::NuevoObjeto(Arc::from("Punto"))]);
-    assert_eq!(uops[0], Uop::NewObject("Punto".to_string()));
+    assert_eq!(uops[0], Uop::NuevoObjeto("Punto".to_string()));
 }
 
 #[test]
 fn test_uop_expandir_fijar_campo() {
     let uops = expandir_a_uops(&[Opcode::FijarCampo(Arc::from("x"))]);
-    assert_eq!(uops[0], Uop::SetField("x".to_string()));
+    assert_eq!(uops[0], Uop::FijarCampo("x".to_string()));
 }
 
 #[test]
 fn test_uop_expandir_obtener_campo() {
     let uops = expandir_a_uops(&[Opcode::ObtenerCampo(Arc::from("nombre"))]);
-    assert_eq!(uops[0], Uop::GetField("nombre".to_string()));
+    assert_eq!(uops[0], Uop::ObtenerCampo("nombre".to_string()));
 }
 
 #[test]
 fn test_uop_expandir_llamada_metodo() {
     let uops = expandir_a_uops(&[Opcode::LlamarMetodo(Arc::from("saludar"), 1)]);
-    assert_eq!(uops[0], Uop::CallMethod("saludar".to_string(), 1));
+    assert_eq!(uops[0], Uop::LlamarMetodo("saludar".to_string(), 1));
 }
 
 #[test]
 fn test_uop_expandir_arreglo_longitud() {
     let uops = expandir_a_uops(&[Opcode::LongitudArreglo]);
-    assert_eq!(uops[0], Uop::ArrayLen);
+    assert_eq!(uops[0], Uop::ArregloLongitud);
 }
 
 #[test]
 fn test_uop_expandir_parsear_entero() {
     let uops = expandir_a_uops(&[Opcode::ParsearEntero]);
-    assert_eq!(uops[0], Uop::ParseInt);
+    assert_eq!(uops[0], Uop::ParsearEntero);
 }
 
 #[test]
@@ -528,7 +528,7 @@ fn test_uop_expand_tiempo_actual() {
 #[test]
 fn test_uop_expandir_leer_linea() {
     let uops = expandir_a_uops(&[Opcode::LeerLinea]);
-    assert_eq!(uops[0], Uop::ReadLine);
+    assert_eq!(uops[0], Uop::LeerLinea);
 }
 
 #[test]
@@ -573,13 +573,13 @@ fn test_uop_expand_poll() {
 #[test]
 fn test_uop_expandir_llamada_nativo() {
     let uops = expandir_a_uops(&[Opcode::LlamarNativa(Arc::from("printf"), 1)]);
-    assert_eq!(uops[0], Uop::CallNative(Arc::from("printf"), 1));
+    assert_eq!(uops[0], Uop::LlamarNativo(Arc::from("printf"), 1));
 }
 
 #[test]
 fn test_uop_expand_exacto() {
-    let uops = expandir_a_uops(&[Opcode::PushExacto(100, 2)]);
-    assert_eq!(uops[0], Uop::PushExacto(100, 2));
+    let uops = expandir_a_uops(&[Opcode::EmpujarExacto(100, 2)]);
+    assert_eq!(uops[0], Uop::EmpujarExacto(100, 2));
 }
 
 #[test]

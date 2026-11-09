@@ -8,8 +8,6 @@ pub enum TipoIncorporada {
     Escribir,
     /// `longitud` — cantidad de elementos o caracteres.
     Longitud,
-    /// Alias en inglés de `longitud` (`len`): mismo comportamiento.
-    Len,
     /// `tipo` — nombre del tipo en tiempo de ejecución.
     Tipo,
     /// `a_texto` — conversión a texto.
@@ -32,11 +30,11 @@ pub enum TipoIncorporada {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Opcode {
     // === Gestión de pila ===
-    PushEntero(i64),
-    PushDecimal(f64),
-    PushTexto(Arc<str>),
-    PushBooleano(bool),
-    PushNulo,
+    EmpujarEntero(i64),
+    EmpujarDecimal(f64),
+    EmpujarTexto(Arc<str>),
+    EmpujarBooleano(bool),
+    EmpujarNulo,
     Descartar,
     Duplicar,
 
@@ -297,7 +295,7 @@ pub enum Opcode {
 
     // === Opcodes para Exacto (BigDecimal) ===
     /// Push valor Exacto al stack (coeff, scale)
-    PushExacto(i128, u32),
+    EmpujarExacto(i128, u32),
     /// Sumar dos Exacto del stack
     SumarExacto,
     /// Restar dos Exacto del stack

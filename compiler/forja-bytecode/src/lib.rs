@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn bytecode_variable() {
         let bc = generar_bytecode("variable x = 5").unwrap();
-        assert_eq!(bc[0], Opcode::PushEntero(5));
+        assert_eq!(bc[0], Opcode::EmpujarEntero(5));
         assert_eq!(bc[1], Opcode::Declarar(Arc::from("x"), true));
         assert_eq!(bc[2], Opcode::Detener);
     }
@@ -60,7 +60,7 @@ mod tests {
     #[test]
     fn bytecode_constante() {
         let bc = generar_bytecode("constante x = 10").unwrap();
-        assert_eq!(bc[0], Opcode::PushEntero(10));
+        assert_eq!(bc[0], Opcode::EmpujarEntero(10));
         assert_eq!(bc[1], Opcode::Declarar(Arc::from("x"), false));
         assert_eq!(bc[2], Opcode::Detener);
     }
@@ -68,8 +68,8 @@ mod tests {
     #[test]
     fn bytecode_aritmetica() {
         let bc = generar_bytecode("variable x = 2 + 3").unwrap();
-        assert_eq!(bc[0], Opcode::PushEntero(2));
-        assert_eq!(bc[1], Opcode::PushEntero(3));
+        assert_eq!(bc[0], Opcode::EmpujarEntero(2));
+        assert_eq!(bc[1], Opcode::EmpujarEntero(3));
         // Ahora se emite AddInt porque ambos literales se infieren como Entero
         assert_eq!(bc[2], Opcode::SumarEntero);
         assert_eq!(bc[3], Opcode::Declarar(Arc::from("x"), true));
@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn bytecode_escribir() {
         let bc = generar_bytecode("escribir(\"Hola\")").unwrap();
-        assert_eq!(bc[0], Opcode::PushTexto(Arc::from("Hola")));
+        assert_eq!(bc[0], Opcode::EmpujarTexto(Arc::from("Hola")));
         assert_eq!(bc[1], Opcode::Imprimir);
         assert_eq!(bc[2], Opcode::Detener);
     }
@@ -88,7 +88,9 @@ mod tests {
     fn bytecode_si() {
         let bc = generar_bytecode("si (verdadero) { variable x = 1 }").unwrap();
         // debe contener: PushBooleano(true), JumpSiFalso, PushEntero(1), Declare("x"), Jump, Label, Halt
-        assert!(bc.iter().any(|op| matches!(op, Opcode::PushBooleano(true))));
+        assert!(bc
+            .iter()
+            .any(|op| matches!(op, Opcode::EmpujarBooleano(true))));
         assert!(bc.iter().any(|op| matches!(op, Opcode::SaltoSiFalso(_))));
         assert!(bc.iter().any(|op| matches!(op, Opcode::Declarar(_, _))));
     }
@@ -96,20 +98,22 @@ mod tests {
     #[test]
     fn bytecode_mientras() {
         let bc = generar_bytecode("mientras (verdadero) { }").unwrap();
-        assert!(bc.iter().any(|op| matches!(op, Opcode::PushBooleano(true))));
+        assert!(bc
+            .iter()
+            .any(|op| matches!(op, Opcode::EmpujarBooleano(true))));
         assert!(bc.iter().any(|op| matches!(op, Opcode::SaltoSiFalso(_))));
     }
 
     #[test]
     fn bytecode_repetir() {
         let bc = generar_bytecode("repetir (3) { }").unwrap();
-        assert!(bc.iter().any(|op| matches!(op, Opcode::PushEntero(3))));
+        assert!(bc.iter().any(|op| matches!(op, Opcode::EmpujarEntero(3))));
     }
 
     #[test]
     fn serializacion() {
         let bc = vec![
-            Opcode::PushEntero(42),
+            Opcode::EmpujarEntero(42),
             Opcode::Declarar(Arc::from("x"), true),
             Opcode::Detener,
         ];

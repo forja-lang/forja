@@ -230,7 +230,12 @@ impl Lowering {
             rc: 0,
             sc: 0,
             sin_rangos: std::env::var("FORJA_SIN_RANGOS")
-                .map(|v| matches!(v.to_lowercase().as_str(), "1" | "si" | "sí" | "on" | "verdadero"))
+                .map(|v| {
+                    matches!(
+                        v.to_lowercase().as_str(),
+                        "1" | "si" | "sí" | "on" | "verdadero"
+                    )
+                })
                 .unwrap_or(false),
         }
     }

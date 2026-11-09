@@ -97,33 +97,33 @@ impl GeneradorBytecode {
         match expr {
             Expresion::LiteralNumero(n) => {
                 if entero_representable(*n) {
-                    salida.push(Uop::PushEntero(*n));
+                    salida.push(Uop::EmpujarEntero(*n));
                 } else {
-                    salida.push(Uop::PushNulo);
+                    salida.push(Uop::EmpujarNulo);
                 }
             }
-            Expresion::LiteralDecimal(d) => salida.push(Uop::PushDecimal(*d)),
-            Expresion::LiteralTexto(s) => salida.push(Uop::PushTexto(Arc::from(s.as_str()))),
-            Expresion::LiteralBooleano(b) => salida.push(Uop::PushBooleano(*b)),
-            Expresion::LiteralNulo => salida.push(Uop::PushNulo),
+            Expresion::LiteralDecimal(d) => salida.push(Uop::EmpujarDecimal(*d)),
+            Expresion::LiteralTexto(s) => salida.push(Uop::EmpujarTexto(Arc::from(s.as_str()))),
+            Expresion::LiteralBooleano(b) => salida.push(Uop::EmpujarBooleano(*b)),
+            Expresion::LiteralNulo => salida.push(Uop::EmpujarNulo),
 
             Expresion::Identificador { nombre, .. } => {
                 match nombre.as_str() {
-                    "verdadero" => salida.push(Uop::PushBooleano(true)),
-                    "falso" => salida.push(Uop::PushBooleano(false)),
+                    "verdadero" => salida.push(Uop::EmpujarBooleano(true)),
+                    "falso" => salida.push(Uop::EmpujarBooleano(false)),
                     "resultado" => {
                         // 'resultado' en postcondiciones: usar índice especial
-                        salida.push(Uop::LoadIdx(RESULTADO_IDX));
+                        salida.push(Uop::CargarIndice(RESULTADO_IDX));
                     }
                     _ => {
                         // Parámetro/local → slot; global → índice de global;
                         // si no existe, Nulo.
                         if let Some(&idx) = self.var_indices.get(nombre) {
-                            salida.push(Uop::LoadIdx(idx));
+                            salida.push(Uop::CargarIndice(idx));
                         } else if let Some(idx) =
                             self.globales.iter().position(|(n, _)| n == nombre)
                         {
-                            salida.push(Uop::LoadIdxGlobal(idx));
+                            salida.push(Uop::CargarIndiceGlobal(idx));
                         } else if self
                             .campos_clase
                             .as_ref()
@@ -132,10 +132,10 @@ impl GeneradorBytecode {
                         {
                             // Invariante de clase: `valor` es `este.valor`.
                             let este_idx = self.var_indices["self"];
-                            salida.push(Uop::LoadIdx(este_idx));
-                            salida.push(Uop::GetField(nombre.clone()));
+                            salida.push(Uop::CargarIndice(este_idx));
+                            salida.push(Uop::ObtenerCampo(nombre.clone()));
                         } else {
-                            salida.push(Uop::PushNulo);
+                            salida.push(Uop::EmpujarNulo);
                         }
                     }
                 }
@@ -180,7 +180,7 @@ impl GeneradorBytecode {
                     OperadorUnario::No => salida.push(Uop::No),
                     OperadorUnario::Negar => {
                         // -expr → 0 - expr
-                        salida.push(Uop::PushEntero(0));
+                        salida.push(Uop::EmpujarEntero(0));
                         self.expresion_a_uops_inner(e, salida);
                         salida.push(Uop::Sub);
                     }
@@ -193,7 +193,7 @@ impl GeneradorBytecode {
             // pasa aparte de los locales. Sin esta rama caía en `PushNulo` y el
             // check comparaba contra Nulo.
             Expresion::Resultado => {
-                salida.push(Uop::LoadIdx(RESULTADO_IDX));
+                salida.push(Uop::CargarIndice(RESULTADO_IDX));
             }
 
             Expresion::Anterior(inner) => {
@@ -203,14 +203,14 @@ impl GeneradorBytecode {
                 let clave = Self::clave_expresion(inner);
                 match self.anteriores.iter().find(|(k, _)| *k == clave) {
                     Some((_, slot)) => salida.push(Uop::CargarAnterior(*slot)),
-                    None => salida.push(Uop::PushNulo),
+                    None => salida.push(Uop::EmpujarNulo),
                 }
             }
 
             Expresion::AccesoMiembro { objeto, miembro } => {
                 // `este.valor`, `obj.campo`: evaluar el receptor y leer el campo.
                 self.expresion_a_uops_inner(objeto, salida);
-                salida.push(Uop::GetField(miembro.to_string()));
+                salida.push(Uop::ObtenerCampo(miembro.to_string()));
             }
 
             Expresion::LlamadaFuncion { argumentos, .. } => {
@@ -220,12 +220,12 @@ impl GeneradorBytecode {
                 }
                 // Las llamadas a función no se pueden ejecutar en contratos simples
                 // push nulo como valor de retorno
-                salida.push(Uop::PushNulo);
+                salida.push(Uop::EmpujarNulo);
             }
 
             _ => {
                 // Cualquier otra expresión: no soportada en contratos, push nulo
-                salida.push(Uop::PushNulo);
+                salida.push(Uop::EmpujarNulo);
             }
         }
     }

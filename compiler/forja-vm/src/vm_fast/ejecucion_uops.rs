@@ -24,7 +24,7 @@ impl ForjaFast {
             let nombre_str = self.runtime.tabla_simbolos.texto(sym_id);
             let mut encontrada = false;
             for (i, uop) in uops.iter().enumerate() {
-                if let Uop::FunctionDef(n, _) = uop {
+                if let Uop::DefinirFuncion(n, _) = uop {
                     if n == nombre_str {
                         nuevas_funciones.insert(
                             sym_id,
@@ -91,28 +91,28 @@ impl ForjaFast {
 
             match uop {
                 // === STACK OPERATIONS ===
-                Uop::PushEntero(n) => {
+                Uop::EmpujarEntero(n) => {
                     self.empujar_valor(obtener_small_entero_fast(n));
                     self.ip += 1;
                 }
-                Uop::PushDecimal(d) => {
+                Uop::EmpujarDecimal(d) => {
                     self.empujar_valor(ValorFast::flotante(d));
                     self.ip += 1;
                 }
-                Uop::PushTexto(s) => {
+                Uop::EmpujarTexto(s) => {
                     let idx = self.reservar_texto(s);
                     self.empujar_valor(ValorFast::texto(idx));
                     self.ip += 1;
                 }
-                Uop::PushBooleano(b) => {
+                Uop::EmpujarBooleano(b) => {
                     self.empujar_valor(ValorFast::booleano(b));
                     self.ip += 1;
                 }
-                Uop::PushNulo => {
+                Uop::EmpujarNulo => {
                     self.empujar_valor(ValorFast::nulo());
                     self.ip += 1;
                 }
-                Uop::Pop => {
+                Uop::Desapilar => {
                     self.desapilar_valor()?;
                     self.ip += 1;
                 }
@@ -123,17 +123,17 @@ impl ForjaFast {
                 }
 
                 // === VARIABLE OPERATIONS (Frame Locals) ===
-                Uop::LoadIdx(idx) => {
+                Uop::CargarIndice(idx) => {
                     self.empujar_valor(self.cargar_local(idx));
                     self.ip += 1;
                 }
-                Uop::StoreIdx(idx) => {
+                Uop::FijarIndice(idx) => {
                     let val = self.desapilar_valor()?;
                     self.almacen_local(idx, val);
                     self.ip += 1;
                 }
                 // Acceso directo a globales de módulo (no usan base_ptr)
-                Uop::LoadIdxGlobal(idx) => {
+                Uop::CargarIndiceGlobal(idx) => {
                     if idx < self.global_var_persist.len() {
                         self.empujar_valor(self.global_var_persist[idx]);
                     } else {
@@ -141,7 +141,7 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
-                Uop::StoreIdxGlobal(idx) => {
+                Uop::FijarIndiceGlobal(idx) => {
                     let val = self.desapilar_valor()?;
                     if idx >= self.global_var_persist.len() {
                         self.global_var_persist.resize(idx + 1, ValorFast::nulo());
@@ -156,17 +156,17 @@ impl ForjaFast {
                 }
 
                 // === MICRO-OP FUSIONADOS (StorePop, LoadPush, DeclareInit) ===
-                Uop::StorePop(idx) => {
+                Uop::FijarDesapilado(idx) => {
                     let val = self.desapilar_valor()?;
                     self.almacen_local(idx, val);
                     self.ip += 1;
                 }
-                Uop::LoadPush(idx) => {
+                Uop::CargarEmpujar(idx) => {
                     let val = self.cargar_local(idx);
                     self.empujar_valor(val);
                     self.ip += 1;
                 }
-                Uop::DeclareInit(idx) => {
+                Uop::DeclararInicializar(idx) => {
                     let val = self.desapilar_valor()?;
                     self.almacen_local(idx, val);
                     self.ip += 1;
@@ -214,10 +214,10 @@ impl ForjaFast {
                 Uop::PrepCall(_nargs) => {
                     self.ip += 1;
                 }
-                Uop::ResolveMethod(_name) => {
+                Uop::ResolverMetodo(_name) => {
                     self.ip += 1;
                 }
-                Uop::LoadSelf => {
+                Uop::CargarPropio => {
                     let val = self.cargar_local(0); // self siempre es idx 0
                     self.empujar_valor(val);
                     self.ip += 1;
@@ -549,7 +549,7 @@ impl ForjaFast {
                         self.ip += 1;
                     }
                 }
-                Uop::Label(_) => {
+                Uop::Etiqueta(_) => {
                     self.ip += 1;
                 }
                 Uop::Halt => break,
@@ -742,12 +742,12 @@ impl ForjaFast {
                     self.liberar_locals();
                     self.ip = frame.ip_ret;
                 }
-                Uop::FunctionDef(_, _) => {
+                Uop::DefinirFuncion(_, _) => {
                     self.ip += 1;
                 }
 
                 // === Built-in functions (stdlib) ===
-                Uop::ParseInt => {
+                Uop::ParsearEntero => {
                     let v = self.desapilar_valor()?;
                     // `leer()` sin stdin devuelve Nulo: convertirlo en 0 hacía que
                     // un bucle interactivo ("pedir número hasta acertar") girara
@@ -804,7 +804,7 @@ impl ForjaFast {
                     self.escribir_salida(self.mostrar_valor(&v));
                     self.ip += 1;
                 }
-                Uop::ReadLine => {
+                Uop::LeerLinea => {
                     let mut i = String::new();
                     // Sin prompt: el programa decide qué escribir (la ruta de
                     // codigos tampoco lo imprime) y así las dos VM coinciden.
@@ -822,7 +822,7 @@ impl ForjaFast {
                 }
 
                 // === OBJECT OPERATIONS ===
-                Uop::NewObject(c) => {
+                Uop::NuevoObjeto(c) => {
                     let clase_sym = self.runtime.tabla_simbolos.internar(&c);
                     self.runtime
                         .descriptores_clase
@@ -844,7 +844,7 @@ impl ForjaFast {
                     self.empujar_valor(ValorFast::objeto(idx));
                     self.ip += 1;
                 }
-                Uop::SetField(c) => {
+                Uop::FijarCampo(c) => {
                     let obj_val = *self.peek_valor(1);
                     if obj_val.es_objeto() {
                         let campo_sym = self.runtime.tabla_simbolos.internar(&c);
@@ -922,7 +922,7 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
-                Uop::SetFieldIdx(idx) => {
+                Uop::FijarCampoIndice(idx) => {
                     // Asignación posicional (convención del dispatch principal):
                     // [valor, objeto] con objeto en top.
                     let obj_val = *self.peek_valor(0);
@@ -945,7 +945,7 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
-                Uop::GetField(c) => {
+                Uop::ObtenerCampo(c) => {
                     let obj_val = *self.peek_valor(0);
                     if obj_val.es_objeto() {
                         let campo_sym = self.runtime.tabla_simbolos.internar(&c);
@@ -997,7 +997,7 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
-                Uop::CallMethod(m, nargs) => {
+                Uop::LlamarMetodo(m, nargs) => {
                     if let Some(b) = resolver_builtin_fast(&m) {
                         self.exec_builtin(b, nargs)?;
                         self.ip += 1;
@@ -1161,7 +1161,7 @@ impl ForjaFast {
                 }
 
                 // === ARRAY / MAP OPERATIONS ===
-                Uop::ArrayNew(n) => {
+                Uop::ArregloNuevo(n) => {
                     let mut e = Vec::with_capacity(n);
                     for _ in 0..n {
                         e.push(self.desapilar_valor()?);
@@ -1171,7 +1171,7 @@ impl ForjaFast {
                     self.empujar_valor(ValorFast::arreglo(idx));
                     self.ip += 1;
                 }
-                Uop::ArrayGet => {
+                Uop::ArregloObtener => {
                     let ip = self.ip;
                     match self.ic_arrayget[ip] {
                         Some(true) => {
@@ -1230,7 +1230,7 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
-                Uop::ArraySet => {
+                Uop::ArregloFijar => {
                     let ip = self.ip;
                     match self.ic_arrayset[ip] {
                         Some(true) => {
@@ -1290,7 +1290,7 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
-                Uop::ArrayLen => {
+                Uop::ArregloLongitud => {
                     let a = self.desapilar_valor()?;
                     if a.es_arreglo() {
                         let arr = self.obtener_arr(a.indice_arreglo());
@@ -1300,7 +1300,7 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
-                Uop::MapNew(n) => {
+                Uop::MapaNuevo(n) => {
                     let mut m = HashMap::with_capacity(n);
                     for _ in 0..n {
                         let v = self.desapilar_valor()?;
@@ -1313,7 +1313,7 @@ impl ForjaFast {
                     self.empujar_valor(ValorFast::mapa(idx));
                     self.ip += 1;
                 }
-                Uop::MapGet => {
+                Uop::MapaObtener => {
                     let ip = self.ip;
                     if self.ic_mapget[ip] {
                         let k = self.desapilar_valor()?;
@@ -1345,7 +1345,7 @@ impl ForjaFast {
                     }
                     self.ip += 1;
                 }
-                Uop::MapSet => {
+                Uop::MapaFijar => {
                     let ip = self.ip;
                     if self.ic_mapset[ip] {
                         let v = self.desapilar_valor()?;
@@ -1400,7 +1400,7 @@ impl ForjaFast {
                     }
                 }
                 // === Funciones Nativas (Native Registry) ===
-                Uop::CallNative(nombre, nargs) => {
+                Uop::LlamarNativo(nombre, nargs) => {
                     self.flush_pila();
                     let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
                     for _ in 0..nargs {

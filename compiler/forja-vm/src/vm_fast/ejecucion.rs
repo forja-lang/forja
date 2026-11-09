@@ -1200,7 +1200,7 @@ impl ForjaFast {
                                 self.escribir_salida(self.mostrar_valor(&v));
                             }
                         }
-                        TipoIncorporada::Longitud | TipoIncorporada::Len => {
+                        TipoIncorporada::Longitud => {
                             if *nargs != 1 {
                                 self.empujar_valor(ValorFast::nulo());
                                 self.ip += 1;

@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn pipeline_bytecode_sin_passes_no_cambia_la_entrada() {
-        let codigos = vec![Opcode::PushEntero(1), Opcode::PushEntero(2)];
+        let codigos = vec![Opcode::EmpujarEntero(1), Opcode::EmpujarEntero(2)];
         let salida = PipelineBytecode::ninguno().ejecutar(codigos.clone());
         assert_eq!(salida.len(), codigos.len());
     }

@@ -197,9 +197,9 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
             if let (
                 Opcode::CargarIndice(a1),
                 Opcode::CargarIndice(a2),
-                Opcode::PushEntero(n1),
+                Opcode::EmpujarEntero(n1),
                 _,
-                Opcode::PushEntero(n2),
+                Opcode::EmpujarEntero(n2),
                 _,
                 _,
             ) = (
@@ -231,15 +231,15 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
             // Intentar fusión de 3 codigos primero
             if i + 2 < bc.len() {
                 match (&bc[i], &bc[i + 1], &bc[i + 2]) {
-                    (Opcode::CargarIndice(a), Opcode::PushEntero(n), Opcode::Sumar)
-                    | (Opcode::CargarIndice(a), Opcode::PushEntero(n), Opcode::SumarEntero) => {
+                    (Opcode::CargarIndice(a), Opcode::EmpujarEntero(n), Opcode::Sumar)
+                    | (Opcode::CargarIndice(a), Opcode::EmpujarEntero(n), Opcode::SumarEntero) => {
                         resultado.push(Opcode::CargarSumarEntero(*a, *n));
                         i += 3;
                         continue;
                     }
                     // LoadIdx(idx) + PushDecimal(d) + Add/AddFloat → LoadAddFloat(idx, d)
-                    (Opcode::CargarIndice(a), Opcode::PushDecimal(d), Opcode::Sumar)
-                    | (Opcode::CargarIndice(a), Opcode::PushDecimal(d), Opcode::SumarDecimal) => {
+                    (Opcode::CargarIndice(a), Opcode::EmpujarDecimal(d), Opcode::Sumar)
+                    | (Opcode::CargarIndice(a), Opcode::EmpujarDecimal(d), Opcode::SumarDecimal) => {
                         resultado.push(Opcode::CargarSumarDecimal(*a, *d));
                         i += 3;
                         continue;
@@ -251,17 +251,17 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
             // Fusiones de 2 codigos
             match (&bc[i], &bc[i + 1]) {
                 // Existentes
-                (Opcode::PushEntero(n), Opcode::DeclararIndice(idx, _)) => {
+                (Opcode::EmpujarEntero(n), Opcode::DeclararIndice(idx, _)) => {
                     resultado.push(Opcode::DeclararOperacionEntero(*idx, *n));
                     i += 2;
                     continue;
                 }
-                (Opcode::PushBooleano(b), Opcode::DeclararIndice(idx, _)) => {
+                (Opcode::EmpujarBooleano(b), Opcode::DeclararIndice(idx, _)) => {
                     resultado.push(Opcode::DeclararOperacionBooleano(*idx, *b));
                     i += 2;
                     continue;
                 }
-                (Opcode::PushEntero(n), Opcode::GuardarIndice(idx)) => {
+                (Opcode::EmpujarEntero(n), Opcode::GuardarIndice(idx)) => {
                     resultado.push(Opcode::GuardarOperacionEntero(*idx, *n));
                     i += 2;
                     continue;
@@ -297,7 +297,7 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
                     continue;
                 }
                 // PushEntero(n) + AddInt → PushAddInt(n)
-                (Opcode::PushEntero(n), Opcode::SumarEntero) => {
+                (Opcode::EmpujarEntero(n), Opcode::SumarEntero) => {
                     resultado.push(Opcode::EmpujarSumarEntero(*n));
                     i += 2;
                     continue;
@@ -321,13 +321,13 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
                     continue;
                 }
                 // Nuevas: PushDecimal(d) + DeclareIdx(idx, _) → DeclareFloatOp(idx, d)
-                (Opcode::PushDecimal(d), Opcode::DeclararIndice(idx, _)) => {
+                (Opcode::EmpujarDecimal(d), Opcode::DeclararIndice(idx, _)) => {
                     resultado.push(Opcode::DeclararOperacionDecimal(*idx, *d));
                     i += 2;
                     continue;
                 }
                 // PushDecimal(d) + StoreIdx(idx) → StoreFloatOp(idx, d)
-                (Opcode::PushDecimal(d), Opcode::GuardarIndice(idx)) => {
+                (Opcode::EmpujarDecimal(d), Opcode::GuardarIndice(idx)) => {
                     resultado.push(Opcode::GuardarOperacionDecimal(*idx, *d));
                     i += 2;
                     continue;
@@ -352,7 +352,7 @@ pub fn fusionar_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
                 }
                 // === Fusiones Exacto (BigDecimal) ===
                 // PushExacto(coeff, scale) + DeclareIdx(idx) → DeclareExactOp(idx, coeff, scale)
-                (Opcode::PushExacto(coeff, scale), Opcode::DeclararIndice(idx, _)) => {
+                (Opcode::EmpujarExacto(coeff, scale), Opcode::DeclararIndice(idx, _)) => {
                     resultado.push(Opcode::DeclararOperacionExacto(*idx, *coeff, *scale));
                     i += 2;
                     continue;
@@ -434,7 +434,7 @@ pub fn fusionar_direct_float_opcodes(bc: &[Opcode]) -> Vec<Opcode> {
             };
             if let (
                 Opcode::CargarIndiceDecimal(dst_a),
-                Opcode::PushDecimal(num_val),
+                Opcode::EmpujarDecimal(num_val),
                 Opcode::CargarIndiceDecimal(div_b),
                 arith1 @ (Opcode::DividirDecimal
                 | Opcode::SumarDecimal

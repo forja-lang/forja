@@ -118,10 +118,10 @@ impl ForjaFast {
                     if idx < tipos_var.len() {
                         let anterior_tipo = if i > 0 {
                             match &self.bytecode[i - 1] {
-                                Opcode::PushEntero(_) | Opcode::CargarIndiceEntero(_) => {
+                                Opcode::EmpujarEntero(_) | Opcode::CargarIndiceEntero(_) => {
                                     Some(TipoInferido::Entero)
                                 }
-                                Opcode::PushDecimal(_)
+                                Opcode::EmpujarDecimal(_)
                                 | Opcode::CargarIndiceDecimal(_)
                                 | Opcode::GuardarIndiceDecimal(_)
                                 | Opcode::DeclararOperacionDecimal(_, _)
@@ -131,11 +131,11 @@ impl ForjaFast {
                                 | Opcode::MultiplicarGuardarDecimal(_) => {
                                     Some(TipoInferido::Flotante)
                                 }
-                                Opcode::PushBooleano(_)
+                                Opcode::EmpujarBooleano(_)
                                 | Opcode::DeclararOperacionBooleano(_, _) => {
                                     Some(TipoInferido::Booleano)
                                 }
-                                Opcode::PushTexto(_) => Some(TipoInferido::Texto),
+                                Opcode::EmpujarTexto(_) => Some(TipoInferido::Texto),
                                 _ => None,
                             }
                         } else {
@@ -153,20 +153,20 @@ impl ForjaFast {
                     if idx < tipos_var.len() && !global_indices.contains(&idx) {
                         let anterior_tipo = if i > 0 {
                             match &self.bytecode[i - 1] {
-                                Opcode::PushEntero(_) | Opcode::CargarIndiceEntero(_) => {
+                                Opcode::EmpujarEntero(_) | Opcode::CargarIndiceEntero(_) => {
                                     Some(TipoInferido::Entero)
                                 }
-                                Opcode::PushDecimal(_)
+                                Opcode::EmpujarDecimal(_)
                                 | Opcode::CargarIndiceDecimal(_)
                                 | Opcode::DeclararOperacionDecimal(_, _)
                                 | Opcode::GuardarOperacionDecimal(_, _) => {
                                     Some(TipoInferido::Flotante)
                                 }
-                                Opcode::PushBooleano(_)
+                                Opcode::EmpujarBooleano(_)
                                 | Opcode::DeclararOperacionBooleano(_, _) => {
                                     Some(TipoInferido::Booleano)
                                 }
-                                Opcode::PushTexto(_) => Some(TipoInferido::Texto),
+                                Opcode::EmpujarTexto(_) => Some(TipoInferido::Texto),
                                 _ => None,
                             }
                         } else {
@@ -182,20 +182,20 @@ impl ForjaFast {
                     if idx < tipos_var.len() {
                         let anterior_tipo = if i > 0 {
                             match &self.bytecode[i - 1] {
-                                Opcode::PushEntero(_) | Opcode::CargarIndiceEntero(_) => {
+                                Opcode::EmpujarEntero(_) | Opcode::CargarIndiceEntero(_) => {
                                     Some(TipoInferido::Entero)
                                 }
-                                Opcode::PushDecimal(_)
+                                Opcode::EmpujarDecimal(_)
                                 | Opcode::CargarIndiceDecimal(_)
                                 | Opcode::DeclararOperacionDecimal(_, _)
                                 | Opcode::GuardarOperacionDecimal(_, _) => {
                                     Some(TipoInferido::Flotante)
                                 }
-                                Opcode::PushBooleano(_)
+                                Opcode::EmpujarBooleano(_)
                                 | Opcode::DeclararOperacionBooleano(_, _) => {
                                     Some(TipoInferido::Booleano)
                                 }
-                                Opcode::PushTexto(_) => Some(TipoInferido::Texto),
+                                Opcode::EmpujarTexto(_) => Some(TipoInferido::Texto),
                                 _ => None,
                             }
                         } else {
@@ -449,27 +449,27 @@ impl ForjaFast {
             }
             match &self.bytecode[j] {
                 // Productores de exactamente un valor con tipo conocido.
-                Opcode::PushEntero(_)
+                Opcode::EmpujarEntero(_)
                 | Opcode::CargarIndiceEntero(_)
                 | Opcode::CargarSumarEntero(_, _) => {
                     tipos[operandos_encontrados] = TipoInferido::Entero;
                     operandos_encontrados += 1;
                 }
-                Opcode::PushDecimal(_)
+                Opcode::EmpujarDecimal(_)
                 | Opcode::CargarIndiceDecimal(_)
                 | Opcode::CargarSumarDecimal(_, _) => {
                     tipos[operandos_encontrados] = TipoInferido::Flotante;
                     operandos_encontrados += 1;
                 }
-                Opcode::PushBooleano(_) => {
+                Opcode::EmpujarBooleano(_) => {
                     tipos[operandos_encontrados] = TipoInferido::Booleano;
                     operandos_encontrados += 1;
                 }
-                Opcode::PushTexto(_) => {
+                Opcode::EmpujarTexto(_) => {
                     tipos[operandos_encontrados] = TipoInferido::Texto;
                     operandos_encontrados += 1;
                 }
-                Opcode::PushNulo => {
+                Opcode::EmpujarNulo => {
                     tipos[operandos_encontrados] = TipoInferido::Desconocido;
                     operandos_encontrados += 1;
                 }

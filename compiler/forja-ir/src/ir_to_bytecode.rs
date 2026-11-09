@@ -346,15 +346,15 @@ impl ConversorABytecode {
 
         match inst {
             Instruccion::ConstEntero(n) => {
-                bytecode.push(Opcode::PushEntero(*n));
+                bytecode.push(Opcode::EmpujarEntero(*n));
                 guardar!(bytecode);
             }
             Instruccion::ConstDecimal(d) => {
-                bytecode.push(Opcode::PushDecimal(*d));
+                bytecode.push(Opcode::EmpujarDecimal(*d));
                 guardar!(bytecode);
             }
             Instruccion::ConstExacto(coeficiente, escala) => {
-                bytecode.push(Opcode::PushExacto(*coeficiente, *escala));
+                bytecode.push(Opcode::EmpujarExacto(*coeficiente, *escala));
                 guardar!(bytecode);
             }
 
@@ -369,16 +369,16 @@ impl ConversorABytecode {
                 guardar!(bytecode);
             }
             Instruccion::ConstBooleano(b) => {
-                bytecode.push(Opcode::PushBooleano(*b));
+                bytecode.push(Opcode::EmpujarBooleano(*b));
                 guardar!(bytecode);
             }
             Instruccion::ConstTexto(sym) => {
                 let nombre = self.simbolos.nombre_de(*sym).to_string();
-                bytecode.push(Opcode::PushTexto(Arc::from(nombre.as_str())));
+                bytecode.push(Opcode::EmpujarTexto(Arc::from(nombre.as_str())));
                 guardar!(bytecode);
             }
             Instruccion::ConstNulo => {
-                bytecode.push(Opcode::PushNulo);
+                bytecode.push(Opcode::EmpujarNulo);
                 guardar!(bytecode);
             }
             Instruccion::ParsearEntero(texto) => {
@@ -403,7 +403,7 @@ impl ConversorABytecode {
             Instruccion::Reservar(_) => {
                 // El slot se declara al inicio; aquí sólo se materializa un valor
                 // nulo para no desalinear los `IdValor`.
-                bytecode.push(Opcode::PushNulo);
+                bytecode.push(Opcode::EmpujarNulo);
                 guardar!(bytecode);
             }
             Instruccion::Phi(_, _) => {
@@ -462,7 +462,7 @@ impl ConversorABytecode {
             }
             Instruccion::Negar(v) => {
                 let var = self.operando(v);
-                bytecode.push(Opcode::PushEntero(0));
+                bytecode.push(Opcode::EmpujarEntero(0));
                 bytecode.push(self.cargar_variable(var));
                 bytecode.push(Opcode::Restar);
                 guardar!(bytecode);
@@ -482,7 +482,7 @@ impl ConversorABytecode {
                         bytecode.push(Opcode::Imprimir);
                     }
                     // `escribir` devuelve nulo en el IR; materializar.
-                    bytecode.push(Opcode::PushNulo);
+                    bytecode.push(Opcode::EmpujarNulo);
                     guardar!(bytecode);
                 } else {
                     // Llamadas a funciones de usuario no están en el subconjunto.
@@ -505,7 +505,7 @@ impl ConversorABytecode {
                 let obj_var = self.temporal();
                 bytecode.push(self.almacen_variable(obj_var));
                 // fn = "<nombre>"
-                bytecode.push(Opcode::PushTexto(Arc::from(nombre.as_str())));
+                bytecode.push(Opcode::EmpujarTexto(Arc::from(nombre.as_str())));
                 bytecode.push(self.cargar_variable(obj_var));
                 bytecode.push(Opcode::FijarCampo(Arc::from("fn")));
                 // env = [capturado_0, ..., capturado_n]
@@ -556,11 +556,11 @@ impl ConversorABytecode {
                         let var = self.operando(v);
                         bytecode.push(self.cargar_variable(var));
                     }
-                    None => bytecode.push(Opcode::PushNulo),
+                    None => bytecode.push(Opcode::EmpujarNulo),
                 }
                 bytecode.push(self.cargar_variable(obj_var));
                 bytecode.push(Opcode::FijarCampo(Arc::from("valor")));
-                bytecode.push(Opcode::PushTexto(Arc::from(tipo_txt.as_str())));
+                bytecode.push(Opcode::EmpujarTexto(Arc::from(tipo_txt.as_str())));
                 bytecode.push(self.cargar_variable(obj_var));
                 bytecode.push(Opcode::FijarCampo(Arc::from("tipo")));
                 if let Some(v) = resultado {
@@ -718,7 +718,7 @@ impl ConversorABytecode {
             }
             _ => {
                 // Instruccion no cubierta: materializar nulo para no romper el conteo.
-                bytecode.push(Opcode::PushNulo);
+                bytecode.push(Opcode::EmpujarNulo);
                 guardar!(bytecode);
             }
         }
@@ -832,13 +832,13 @@ mod tests {
 
         assert!(bytecode
             .iter()
-            .any(|op| matches!(op, Opcode::PushEntero(42))));
+            .any(|op| matches!(op, Opcode::EmpujarEntero(42))));
         assert!(bytecode
             .iter()
-            .any(|op| matches!(op, Opcode::PushBooleano(true))));
+            .any(|op| matches!(op, Opcode::EmpujarBooleano(true))));
         assert!(bytecode
             .iter()
-            .any(|op| matches!(op, Opcode::PushDecimal(d) if (*d - 2.5).abs() < 1e-9)));
+            .any(|op| matches!(op, Opcode::EmpujarDecimal(d) if (*d - 2.5).abs() < 1e-9)));
     }
 
     /// `variable s = 0; mientras (s < 3) { s = s + 1 }; escribir(s)` construido

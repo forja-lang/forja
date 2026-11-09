@@ -11,7 +11,7 @@ impl GeneradorBytecode {
                 "Expresión demasiado grande: se excedió la profundidad máxima en generación de bytecode.",
                 "Simplificá la expresión dividiéndola en partes más pequeñas.",
             ));
-            self.emitir(Opcode::PushNulo);
+            self.emitir(Opcode::EmpujarNulo);
             return;
         }
         match expr {
@@ -26,14 +26,14 @@ impl GeneradorBytecode {
                     "Usá el `si` como sentencia, o poné `backend: nativo` en forja.yaml y ejecutá la app con `forja ejecutar`.",
                 ));
                 self.profundidad_actual -= 1;
-                self.emitir(Opcode::PushNulo);
+                self.emitir(Opcode::EmpujarNulo);
                 return;
             }
             Expresion::LiteralNumero(n) => {
                 // El `Entero` de la VM es de 48 bits (payload de `ValorFast`):
                 // un literal mayor se guardaría con signo/valor equivocado.
                 if entero_representable(*n) {
-                    self.emitir(Opcode::PushEntero(*n));
+                    self.emitir(Opcode::EmpujarEntero(*n));
                 } else {
                     let mensaje = format!(
                         "Entero fuera de rango: el máximo es {} y el mínimo {}.",
@@ -46,22 +46,22 @@ impl GeneradorBytecode {
                         &mensaje,
                         "Usá `Exacto` (precisión arbitraria) o `Decimal` para números grandes.",
                     ));
-                    self.emitir(Opcode::PushNulo);
+                    self.emitir(Opcode::EmpujarNulo);
                 }
             }
-            Expresion::LiteralDecimal(d) => self.emitir(Opcode::PushDecimal(*d)),
-            Expresion::LiteralTexto(s) => self.emitir(Opcode::PushTexto(Arc::from(s.as_str()))),
-            Expresion::LiteralBooleano(b) => self.emitir(Opcode::PushBooleano(*b)),
+            Expresion::LiteralDecimal(d) => self.emitir(Opcode::EmpujarDecimal(*d)),
+            Expresion::LiteralTexto(s) => self.emitir(Opcode::EmpujarTexto(Arc::from(s.as_str()))),
+            Expresion::LiteralBooleano(b) => self.emitir(Opcode::EmpujarBooleano(*b)),
             Expresion::LiteralExacto(coeff, scale) => {
-                self.emitir(Opcode::PushExacto(*coeff, *scale))
+                self.emitir(Opcode::EmpujarExacto(*coeff, *scale))
             }
-            Expresion::LiteralNulo => self.emitir(Opcode::PushNulo),
+            Expresion::LiteralNulo => self.emitir(Opcode::EmpujarNulo),
 
             Expresion::Identificador { nombre, .. } => {
                 // Keywords que son valores en Forja
                 match nombre.as_str() {
-                    "verdadero" => self.emitir(Opcode::PushBooleano(true)),
-                    "falso" => self.emitir(Opcode::PushBooleano(false)),
+                    "verdadero" => self.emitir(Opcode::EmpujarBooleano(true)),
+                    "falso" => self.emitir(Opcode::EmpujarBooleano(false)),
                     "None" => {
                         // None es Opcion con tipo="none": creamos NewObject y dejamos como resultado
                         let nombre_temporal: Arc<str> =
@@ -71,7 +71,7 @@ impl GeneradorBytecode {
                         self.emitir(Opcode::NuevoObjeto(Arc::from("Opcion")));
                         self.emitir(Opcode::Declarar(nombre_temporal.clone(), true));
                         // Establecer tipo="none": push "none", Dup, Load obj, SetField
-                        self.emitir(Opcode::PushTexto(Arc::from("none")));
+                        self.emitir(Opcode::EmpujarTexto(Arc::from("none")));
                         self.emitir(Opcode::Duplicar);
                         self.emitir(Opcode::Cargar(nombre_temporal.clone()));
                         self.emitir(Opcode::FijarCampo(Arc::from("tipo")));
@@ -90,7 +90,7 @@ impl GeneradorBytecode {
                                 self.contador_etiquetas += 1;
                                 self.emitir(Opcode::NuevoObjeto(Arc::from(enum_nombre.as_str())));
                                 self.emitir(Opcode::Declarar(temporal.clone(), true));
-                                self.emitir(Opcode::PushEntero(tag as i64));
+                                self.emitir(Opcode::EmpujarEntero(tag as i64));
                                 self.emitir(Opcode::Duplicar);
                                 self.emitir(Opcode::Cargar(temporal.clone()));
                                 self.emitir(Opcode::FijarCampoPorIndice(0));
@@ -105,7 +105,7 @@ impl GeneradorBytecode {
                             && !self.var_indices.contains_key(nombre)
                         {
                             // función usada como valor (callback).
-                            self.emitir(Opcode::PushTexto(Arc::from(nombre.as_str())));
+                            self.emitir(Opcode::EmpujarTexto(Arc::from(nombre.as_str())));
                         } else {
                             self.emitir(Opcode::Cargar(Arc::from(nombre.as_str())));
                         }
@@ -131,7 +131,7 @@ impl GeneradorBytecode {
                         // Para -expr, necesitamos 0 - expr.
                         // Primero push 0, luego evaluamos la expresión para que
                         // el stack quede [0, expr_val] y Sub calcule 0 - expr_val = -expr_val
-                        self.emitir(Opcode::PushEntero(0));
+                        self.emitir(Opcode::EmpujarEntero(0));
                         self.generar_expresion(e);
                         self.emitir(Opcode::Restar);
                     }
@@ -165,7 +165,7 @@ impl GeneradorBytecode {
                         self.emitir(Opcode::Imprimir);
                     }
                     if nombre == "escribir_linea" {
-                        self.emitir(Opcode::PushTexto(Arc::from("\n")));
+                        self.emitir(Opcode::EmpujarTexto(Arc::from("\n")));
                         self.emitir(Opcode::Imprimir);
                     }
                 } else if nombre == "leer" && !self.es_variable_visible(nombre) {
@@ -186,7 +186,7 @@ impl GeneradorBytecode {
                     if obj_name.starts_with('"') {
                         // Es un literal string: "texto".metodo()
                         let texto = obj_name.trim_matches('"');
-                        self.emitir(Opcode::PushTexto(Arc::from(texto)));
+                        self.emitir(Opcode::EmpujarTexto(Arc::from(texto)));
                     } else if obj_name.contains('.') {
                         // Cadena multi-nivel: cargar primer identificador,
                         // luego GetField para cada nivel
@@ -214,7 +214,7 @@ impl GeneradorBytecode {
                     self.emitir(Opcode::NuevoObjeto(Arc::from(enum_nombre.as_str())));
                     self.emitir(Opcode::Declarar(temporal.clone(), true));
                     // tag en posición 0 (convención de CheckTag)
-                    self.emitir(Opcode::PushEntero(tag as i64));
+                    self.emitir(Opcode::EmpujarEntero(tag as i64));
                     self.emitir(Opcode::Duplicar);
                     self.emitir(Opcode::Cargar(temporal.clone()));
                     self.emitir(Opcode::FijarCampoPorIndice(0));
@@ -391,7 +391,7 @@ impl GeneradorBytecode {
                                         // Brazo intermedio sin subpatrones: Dup, check tipo, ejecutar o saltar
                                         self.emitir(Opcode::Duplicar);
                                         self.emitir(Opcode::ObtenerCampo(Arc::from("tipo")));
-                                        self.emitir(Opcode::PushTexto(Arc::from(tipo_str)));
+                                        self.emitir(Opcode::EmpujarTexto(Arc::from(tipo_str)));
                                         self.emitir(Opcode::Igual);
                                         let etiqueta_siguiente = self.nueva_etiqueta();
                                         self.emitir(Opcode::SaltoSiFalso(etiqueta_siguiente));
@@ -406,7 +406,7 @@ impl GeneradorBytecode {
                                     // Brazo con subpatrones (Some(v), Ok(v)): Dup para conservar
                                     self.emitir(Opcode::Duplicar);
                                     self.emitir(Opcode::ObtenerCampo(Arc::from("tipo")));
-                                    self.emitir(Opcode::PushTexto(Arc::from(tipo_str)));
+                                    self.emitir(Opcode::EmpujarTexto(Arc::from(tipo_str)));
                                     self.emitir(Opcode::Igual);
                                     let etiqueta_siguiente = self.nueva_etiqueta();
                                     self.emitir(Opcode::SaltoSiFalso(etiqueta_siguiente));
@@ -458,7 +458,7 @@ impl GeneradorBytecode {
                                     self.emitir(Opcode::Salto(etiqueta_final));
                                     self.emitir(Opcode::Etiqueta(etiqueta_sin_coincidencia));
                                     self.emitir(Opcode::Descartar);
-                                    self.emitir(Opcode::PushNulo);
+                                    self.emitir(Opcode::EmpujarNulo);
                                 }
                             } else {
                                 // Constructor con subpatrones: extraer campos con CheckTag
@@ -492,7 +492,7 @@ impl GeneradorBytecode {
                                     self.emitir(Opcode::Salto(etiqueta_final));
                                     self.emitir(Opcode::Etiqueta(etiqueta_sin_coincidencia));
                                     self.emitir(Opcode::Descartar);
-                                    self.emitir(Opcode::PushNulo);
+                                    self.emitir(Opcode::EmpujarNulo);
                                 }
                             }
                         }
@@ -550,7 +550,7 @@ impl GeneradorBytecode {
                 // `entorno[k]` en una variable local de la función.
                 for (k, capturada) in capturadas.iter().enumerate() {
                     self.emitir(Opcode::Cargar(Arc::from("__entorno")));
-                    self.emitir(Opcode::PushEntero(k as i64));
+                    self.emitir(Opcode::EmpujarEntero(k as i64));
                     self.emitir(Opcode::ObtenerElemento);
                     self.emitir(Opcode::Declarar(Arc::from(capturada.as_str()), true));
                     if let Some(ambito) = self.pila_locales.last_mut() {
@@ -573,7 +573,7 @@ impl GeneradorBytecode {
                 self.contador_etiquetas += 1;
                 self.emitir(Opcode::NuevoObjeto(Arc::from("Closure")));
                 self.emitir(Opcode::Declarar(temporal.clone(), true));
-                self.emitir(Opcode::PushTexto(nombre));
+                self.emitir(Opcode::EmpujarTexto(nombre));
                 self.emitir(Opcode::Cargar(temporal.clone()));
                 self.emitir(Opcode::FijarCampo(Arc::from("fn")));
                 for capturada in &capturadas {
@@ -681,7 +681,7 @@ impl GeneradorBytecode {
                     }
                 }
                 // Seleccionar como expresión retorna Nulo
-                self.emitir(Opcode::PushNulo);
+                self.emitir(Opcode::EmpujarNulo);
             }
             Expresion::Asignacion { variable, valor } => {
                 // Generar valor, duplicar (para retornar como expresión), store en variable
@@ -801,7 +801,7 @@ impl GeneradorBytecode {
                 self.emitir(Opcode::FijarCampo(Arc::from("valor")));
                 self.emitir(Opcode::Descartar);
                 // obj.tipo = "ok"
-                self.emitir(Opcode::PushTexto(Arc::from("ok")));
+                self.emitir(Opcode::EmpujarTexto(Arc::from("ok")));
                 self.emitir(Opcode::Duplicar);
                 self.emitir(Opcode::Cargar(temporal.clone()));
                 self.emitir(Opcode::FijarCampo(Arc::from("tipo")));
@@ -823,7 +823,7 @@ impl GeneradorBytecode {
                 self.emitir(Opcode::FijarCampo(Arc::from("valor")));
                 self.emitir(Opcode::Descartar);
                 // obj.tipo = "error"
-                self.emitir(Opcode::PushTexto(Arc::from("error")));
+                self.emitir(Opcode::EmpujarTexto(Arc::from("error")));
                 self.emitir(Opcode::Duplicar);
                 self.emitir(Opcode::Cargar(temporal.clone()));
                 self.emitir(Opcode::FijarCampo(Arc::from("tipo")));
@@ -845,7 +845,7 @@ impl GeneradorBytecode {
                 self.emitir(Opcode::FijarCampo(Arc::from("valor")));
                 self.emitir(Opcode::Descartar);
                 // obj.tipo = "some"
-                self.emitir(Opcode::PushTexto(Arc::from("some")));
+                self.emitir(Opcode::EmpujarTexto(Arc::from("some")));
                 self.emitir(Opcode::Duplicar);
                 self.emitir(Opcode::Cargar(temporal.clone()));
                 self.emitir(Opcode::FijarCampo(Arc::from("tipo")));
@@ -860,13 +860,13 @@ impl GeneradorBytecode {
                 self.emitir(Opcode::NuevoObjeto(Arc::from("Opcion")));
                 self.emitir(Opcode::Declarar(temporal.clone(), true));
                 // obj.valor = nulo
-                self.emitir(Opcode::PushNulo);
+                self.emitir(Opcode::EmpujarNulo);
                 self.emitir(Opcode::Duplicar);
                 self.emitir(Opcode::Cargar(temporal.clone()));
                 self.emitir(Opcode::FijarCampo(Arc::from("valor")));
                 self.emitir(Opcode::Descartar);
                 // obj.tipo = "none"
-                self.emitir(Opcode::PushTexto(Arc::from("none")));
+                self.emitir(Opcode::EmpujarTexto(Arc::from("none")));
                 self.emitir(Opcode::Duplicar);
                 self.emitir(Opcode::Cargar(temporal.clone()));
                 self.emitir(Opcode::FijarCampo(Arc::from("tipo")));
@@ -883,7 +883,7 @@ impl GeneradorBytecode {
                     self.emitir(Opcode::Cargar(Arc::from("resultado")));
                 } else {
                     // resultado en postcondición - no implementado en bytecode
-                    self.emitir(Opcode::PushNulo);
+                    self.emitir(Opcode::EmpujarNulo);
                 }
             }
             Expresion::Anterior(expr) => {

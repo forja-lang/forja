@@ -33,7 +33,7 @@ fn generar_con_tipos(fuente: &str) -> Vec<Opcode> {
 #[test]
 fn test_bytecode_empujar_entero() {
     let bc = generar("variable x = 42");
-    assert_eq!(bc[0], Opcode::PushEntero(42));
+    assert_eq!(bc[0], Opcode::EmpujarEntero(42));
 }
 
 #[test]
@@ -45,31 +45,33 @@ fn test_bytecode_empujar_entero_negativo() {
 #[test]
 fn test_bytecode_empujar_entero_grande() {
     let bc = generar("variable x = 1000000");
-    assert_eq!(bc[0], Opcode::PushEntero(1000000));
+    assert_eq!(bc[0], Opcode::EmpujarEntero(1000000));
 }
 
 #[test]
 fn test_bytecode_empujar_decimal() {
     let bc = generar("variable x = 3.14");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::PushDecimal(_))));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::EmpujarDecimal(_))));
 }
 
 #[test]
 fn test_bytecode_empujar_texto() {
     let bc = generar("escribir(\"hola\")");
-    assert_eq!(bc[0], Opcode::PushTexto(Arc::from("hola")));
+    assert_eq!(bc[0], Opcode::EmpujarTexto(Arc::from("hola")));
 }
 
 #[test]
 fn test_bytecode_empujar_texto_vacio() {
     let bc = generar("escribir(\"\")");
-    assert_eq!(bc[0], Opcode::PushTexto(Arc::from("")));
+    assert_eq!(bc[0], Opcode::EmpujarTexto(Arc::from("")));
 }
 
 #[test]
 fn test_bytecode_empujar_booleano_true() {
     let bc = generar("variable x = verdadero");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::PushBooleano(true))));
+    assert!(bc
+        .iter()
+        .any(|op| matches!(op, Opcode::EmpujarBooleano(true))));
 }
 
 #[test]
@@ -77,13 +79,13 @@ fn test_bytecode_empujar_booleano_false() {
     let bc = generar("variable x = falso");
     assert!(bc
         .iter()
-        .any(|op| matches!(op, Opcode::PushBooleano(false))));
+        .any(|op| matches!(op, Opcode::EmpujarBooleano(false))));
 }
 
 #[test]
 fn test_bytecode_empujar_nulo() {
     let bc = generar("variable x = nulo");
-    assert!(bc.contains(&Opcode::PushNulo));
+    assert!(bc.contains(&Opcode::EmpujarNulo));
 }
 
 // ============================================================
@@ -197,7 +199,7 @@ fn test_bytecode_mientras_tiene_salto_si_falso() {
 #[test]
 fn test_bytecode_repetir_empujar_cantidad() {
     let bc = generar("repetir (5) { }");
-    assert!(bc.iter().any(|op| matches!(op, Opcode::PushEntero(5))));
+    assert!(bc.iter().any(|op| matches!(op, Opcode::EmpujarEntero(5))));
 }
 
 // ============================================================
@@ -260,26 +262,29 @@ fn test_bc_multiples_declaraciones() {
 
 #[test]
 fn test_bytecode_serializacion_empujar_entero() {
-    let bc = vec![Opcode::PushEntero(123)];
+    let bc = vec![Opcode::EmpujarEntero(123)];
     let serialized = serializar_bytecode(&bc);
     let deserialized = deserializar_bytecode(&serialized).unwrap();
-    assert_eq!(deserialized[0], Opcode::PushEntero(123));
+    assert_eq!(deserialized[0], Opcode::EmpujarEntero(123));
 }
 
 #[test]
 fn test_bytecode_serializacion_empujar_decimal() {
-    let bc = vec![Opcode::PushDecimal(std::f64::consts::PI)];
+    let bc = vec![Opcode::EmpujarDecimal(std::f64::consts::PI)];
     let serialized = serializar_bytecode(&bc);
     let deserialized = deserializar_bytecode(&serialized).unwrap();
-    assert_eq!(deserialized[0], Opcode::PushDecimal(std::f64::consts::PI));
+    assert_eq!(
+        deserialized[0],
+        Opcode::EmpujarDecimal(std::f64::consts::PI)
+    );
 }
 
 #[test]
 fn test_bytecode_serializacion_empujar_texto() {
-    let bc = vec![Opcode::PushTexto(Arc::from("test"))];
+    let bc = vec![Opcode::EmpujarTexto(Arc::from("test"))];
     let serialized = serializar_bytecode(&bc);
     let deserialized = deserializar_bytecode(&serialized).unwrap();
-    assert_eq!(deserialized[0], Opcode::PushTexto(Arc::from("test")));
+    assert_eq!(deserialized[0], Opcode::EmpujarTexto(Arc::from("test")));
 }
 
 #[test]
@@ -460,7 +465,7 @@ fn test_bytecode_texto_concat() {
 #[test]
 fn test_bc_hola_mundo() {
     let bc = generar("escribir(\"Hola mundo\")");
-    assert_eq!(bc[0], Opcode::PushTexto(Arc::from("Hola mundo")));
+    assert_eq!(bc[0], Opcode::EmpujarTexto(Arc::from("Hola mundo")));
     assert!(bc.contains(&Opcode::Imprimir));
     assert!(bc.contains(&Opcode::Detener));
 }

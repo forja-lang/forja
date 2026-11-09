@@ -13,7 +13,7 @@ impl ForjaFast {
     pub fn ejecutar_uops_exacto(&mut self, uop: &Uop) -> Result<bool, ErrFast> {
         match uop {
             // ── Exacto operations (BigDecimal) ─────────────────────────
-            Uop::PushExacto(coeff, scale) => {
+            Uop::EmpujarExacto(coeff, scale) => {
                 let v = self.exacto_valor(*coeff, *scale);
                 self.empujar_valor(v);
                 self.ip += 1;

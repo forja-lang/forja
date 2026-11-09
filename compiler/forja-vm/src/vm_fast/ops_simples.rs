@@ -16,25 +16,25 @@ impl ForjaFast {
     #[inline]
     pub fn ejecutar_ops_simples(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
-            Opcode::PushEntero(n) => {
+            Opcode::EmpujarEntero(n) => {
                 self.empujar_valor(obtener_small_entero_fast(*n));
                 self.ip += 1;
             }
-            Opcode::PushDecimal(d) => {
+            Opcode::EmpujarDecimal(d) => {
                 prof_count!(empujar_decimal);
                 self.empujar_valor(ValorFast::flotante(*d));
                 self.ip += 1;
             }
-            Opcode::PushTexto(s) => {
+            Opcode::EmpujarTexto(s) => {
                 let idx = self.reservar_texto(s.clone());
                 self.empujar_valor(ValorFast::texto(idx));
                 self.ip += 1;
             }
-            Opcode::PushBooleano(b) => {
+            Opcode::EmpujarBooleano(b) => {
                 self.empujar_valor(ValorFast::booleano(*b));
                 self.ip += 1;
             }
-            Opcode::PushNulo => {
+            Opcode::EmpujarNulo => {
                 self.empujar_valor(ValorFast::nulo());
                 self.ip += 1;
             }

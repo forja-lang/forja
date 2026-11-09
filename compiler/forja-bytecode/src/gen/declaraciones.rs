@@ -32,7 +32,7 @@ impl GeneradorBytecode {
                         }
                     }
                 } else {
-                    self.emitir(Opcode::PushNulo);
+                    self.emitir(Opcode::EmpujarNulo);
                 }
                 self.emitir(Opcode::Declarar(Arc::from(nombre.as_str()), *mutable));
                 if let Some(ambito) = self.pila_locales.last_mut() {
@@ -440,7 +440,7 @@ impl GeneradorBytecode {
                 let etiqueta_continuar = self.nueva_etiqueta();
 
                 self.pila_bucles.push((etiqueta_continuar, etiqueta_fin));
-                self.emitir(Opcode::PushEntero(0));
+                self.emitir(Opcode::EmpujarEntero(0));
                 self.emitir(Opcode::Declarar(Arc::clone(&var_contador), true));
 
                 self.emitir(Opcode::Etiqueta(etiqueta_inicio));
@@ -453,7 +453,7 @@ impl GeneradorBytecode {
 
                 self.emitir(Opcode::Etiqueta(etiqueta_continuar));
                 self.emitir(Opcode::Cargar(Arc::clone(&var_contador)));
-                self.emitir(Opcode::PushEntero(1));
+                self.emitir(Opcode::EmpujarEntero(1));
                 self.emitir(Opcode::Sumar);
                 self.emitir(Opcode::Guardar(Arc::clone(&var_contador)));
 
@@ -469,7 +469,7 @@ impl GeneradorBytecode {
                         self.emitir(Opcode::Imprimir);
                     }
                     if nombre == "escribir_linea" {
-                        self.emitir(Opcode::PushTexto(Arc::from("\n")));
+                        self.emitir(Opcode::EmpujarTexto(Arc::from("\n")));
                         self.emitir(Opcode::Imprimir);
                     }
                 } else if nombre == "BD" {
@@ -582,7 +582,7 @@ impl GeneradorBytecode {
                         self.emitir(Opcode::Retornar);
                     }
                     None => {
-                        self.emitir(Opcode::PushNulo);
+                        self.emitir(Opcode::EmpujarNulo);
                         self.emitir_postcondiciones();
                         self.emitir(Opcode::Retornar);
                     }
@@ -625,7 +625,7 @@ impl GeneradorBytecode {
                     }
                     // Si hay más de 2 variables, llenar resto con Nulo
                     for _ in 2..variables.len() {
-                        self.emitir(Opcode::PushNulo);
+                        self.emitir(Opcode::EmpujarNulo);
                     }
                     // Declarar en orden inverso (pop rx primero, luego tx)
                     for varname in variables.iter().rev() {
@@ -645,7 +645,7 @@ impl GeneradorBytecode {
                     self.emitir(Opcode::Declarar(temporal.clone(), true));
                     for (i, var) in variables.iter().enumerate() {
                         self.emitir(Opcode::Cargar(temporal.clone()));
-                        self.emitir(Opcode::PushEntero(i as i64));
+                        self.emitir(Opcode::EmpujarEntero(i as i64));
                         self.emitir(Opcode::ObtenerElemento);
                         self.emitir(Opcode::Declarar(Arc::from(var.as_str()), *mutable));
                     }

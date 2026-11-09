@@ -221,7 +221,7 @@ mod tests {
         std::fs::create_dir_all(&temporal).unwrap();
 
         let mut cache = IncrementalCache::nuevo(&temporal);
-        let ops = vec![Opcode::PushEntero(1), Opcode::Sumar];
+        let ops = vec![Opcode::EmpujarEntero(1), Opcode::Sumar];
         let hash = 12345u64;
 
         cache.put("test.fa", hash, &ops, &[]);
@@ -252,7 +252,7 @@ mod tests {
         // Guardar
         {
             let mut cache = IncrementalCache::nuevo(&temporal);
-            let ops = vec![Opcode::PushEntero(42)];
+            let ops = vec![Opcode::EmpujarEntero(42)];
             cache.put("mod.fa", 111, &ops, &[]);
             cache.guardar_en_disco().unwrap();
         }
