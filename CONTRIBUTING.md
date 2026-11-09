@@ -45,7 +45,13 @@ cargo test --workspace       # tests del paquete raíz y de los crates
 cargo fmt --all -- --check   # verifica el formato
 cargo clippy --workspace --all-targets   # análisis estático (incluye crates)
 python scripts/nombres.py    # nombres en inglés pendientes (ver CONVENCIONES.md)
+bash scripts/verificar-rapido.sh forja-repl forja-cli   # sólo las crates que tocaste
 ```
+
+> **No uses `cargo test -p forja` ni `cargo check --workspace --all-targets` para verificar un
+> cambio de una crate**: compilan los ~60 binarios de test del compilador, el corpus, los goldens
+> y las crates de GUI (decenas de minutos). `verificar-rapido.sh` chequea y testea sólo la lib de
+> las crates que nombrás, en segundos. `--todo` queda para antes de mezclar.
 
 Los nombres de tipos, funciones, campos y módulos siguen
 [`CONVENCIONES.md`](CONVENCIONES.md): identificadores en español, ASCII, una sola palabra por
