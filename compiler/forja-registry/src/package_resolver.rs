@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 pub struct PackageResolver {
     /// Directorio del proyecto actual
-    project_dir: PathBuf,
+    directorio_proyecto: PathBuf,
     /// Directorio global de paquetes (~/.forja/paquetes)
     global_cache: PathBuf,
     /// Paquetes instalados: nombre -> version
@@ -12,14 +12,14 @@ pub struct PackageResolver {
 }
 
 impl PackageResolver {
-    pub fn new(project_dir: &Path) -> Self {
+    pub fn new(directorio_proyecto: &Path) -> Self {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_else(|_| ".".to_string());
         let global_cache = Path::new(&home).join(".forja").join("paquetes");
 
         PackageResolver {
-            project_dir: project_dir.to_path_buf(),
+            directorio_proyecto: directorio_proyecto.to_path_buf(),
             global_cache,
             installed: HashMap::new(),
         }
@@ -40,55 +40,55 @@ impl PackageResolver {
             return Some(PathBuf::from(format!("embedded://{}", ruta)));
         }
 
-        let path = Path::new(ruta);
+        let ruta_paquete = Path::new(ruta);
 
         // 1. Ruta absoluta o relativa directa
-        if path.is_absolute() && path.exists() {
-            return Some(path.to_path_buf());
+        if ruta_paquete.is_absolute() && ruta_paquete.exists() {
+            return Some(ruta_paquete.to_path_buf());
         }
 
         // 2. Relativa al directorio del proyecto
-        let local = self.project_dir.join(path);
-        if local.with_extension("fa").is_file() {
-            return Some(local.with_extension("fa"));
+        let ruta_local = self.directorio_proyecto.join(ruta_paquete);
+        if ruta_local.with_extension("fa").is_file() {
+            return Some(ruta_local.with_extension("fa"));
         }
-        let local_entrypoint = local.join(format!("{}.fa", path.display()));
-        if local_entrypoint.is_file() {
-            return Some(local_entrypoint);
+        let entrada_local = ruta_local.join(format!("{}.fa", ruta_paquete.display()));
+        if entrada_local.is_file() {
+            return Some(entrada_local);
         }
-        if local.is_file() {
-            return Some(local);
+        if ruta_local.is_file() {
+            return Some(ruta_local);
         }
 
         // 3. En la biblioteca estándar del proyecto y sus ancestros.
         //    Se aceptan `library/` (estructura nueva) y `stdlib/` (proyectos
         //    viejos) para no romper código existente.
-        let mut base_dir = self.project_dir.clone();
+        let mut directorio_base = self.directorio_proyecto.clone();
         let mut found_stdlib = None;
         loop {
-            if let Some(p) = buscar_en_stdlib(&base_dir, path) {
+            if let Some(p) = buscar_en_stdlib(&directorio_base, ruta_paquete) {
                 found_stdlib = Some(p);
                 break;
             }
-            if !base_dir.pop() {
+            if !directorio_base.pop() {
                 break;
             }
         }
 
         // Fallback: Buscar stdlib relativo al ejecutable de Forja (usando FORJA_ORIGINAL_EXE si existe debido al shadow copy en Windows)
         if found_stdlib.is_none() {
-            let exe_path_opt = std::env::var("FORJA_ORIGINAL_EXE")
+            let ruta_exe = std::env::var("FORJA_ORIGINAL_EXE")
                 .map(PathBuf::from)
                 .or_else(|_| std::env::current_exe());
-            if let Ok(exe_path) = exe_path_opt {
+            if let Ok(exe_path) = ruta_exe {
                 if let Some(exe_dir) = exe_path.parent() {
-                    let mut base_dir = exe_dir.to_path_buf();
+                    let mut directorio_base = exe_dir.to_path_buf();
                     loop {
-                        if let Some(p) = buscar_en_stdlib(&base_dir, path) {
+                        if let Some(p) = buscar_en_stdlib(&directorio_base, ruta_paquete) {
                             found_stdlib = Some(p);
                             break;
                         }
-                        if !base_dir.pop() {
+                        if !directorio_base.pop() {
                             break;
                         }
                     }
@@ -101,11 +101,11 @@ impl PackageResolver {
         }
 
         // 4. En paquetes globales
-        let pkg = self.global_cache.join(path);
+        let pkg = self.global_cache.join(ruta_paquete);
         if pkg.with_extension("fa").is_file() {
             return Some(pkg.with_extension("fa"));
         }
-        let pkg_entrypoint = pkg.join(format!("{}.fa", path.display()));
+        let pkg_entrypoint = pkg.join(format!("{}.fa", ruta_paquete.display()));
         if pkg_entrypoint.is_file() {
             return Some(pkg_entrypoint);
         }
@@ -118,21 +118,22 @@ impl PackageResolver {
 
     /// Instala una dependencia desde el registro
     pub fn instalar_dependencia(&mut self, nombre: &str, version: &str) -> Result<(), String> {
-        let pkg_dir = self.global_cache.join(nombre).join(version);
-        if pkg_dir.exists() {
+        let directorio_paquete = self.global_cache.join(nombre).join(version);
+        if directorio_paquete.exists() {
             self.installed
                 .insert(nombre.to_string(), version.to_string());
             return Ok(());
         }
 
-        fs::create_dir_all(&pkg_dir).map_err(|e| format!("Error creando directorio: {}", e))?;
+        fs::create_dir_all(&directorio_paquete)
+            .map_err(|e| format!("Error creando directorio: {}", e))?;
 
         // Buscar paquete builtin en stdlib (ej: stdlib/gui/gui.fa)
-        let mut base_dir = self.project_dir.clone();
+        let mut directorio_base = self.directorio_proyecto.clone();
         let mut builtin_src = None;
         loop {
             let candidate = ["library", "stdlib"].iter().find_map(|dir| {
-                let p = base_dir
+                let p = directorio_base
                     .join(dir)
                     .join(nombre)
                     .join(format!("{}.fa", nombre));
@@ -142,22 +143,22 @@ impl PackageResolver {
                 builtin_src = Some(candidate);
                 break;
             }
-            if !base_dir.pop() {
+            if !directorio_base.pop() {
                 break;
             }
         }
 
         // Fallback para builtin: Buscar stdlib relativo al ejecutable de Forja (considerando shadow copy en Windows)
         if builtin_src.is_none() {
-            let exe_path_opt = std::env::var("FORJA_ORIGINAL_EXE")
+            let ruta_exe = std::env::var("FORJA_ORIGINAL_EXE")
                 .map(PathBuf::from)
                 .or_else(|_| std::env::current_exe());
-            if let Ok(exe_path) = exe_path_opt {
+            if let Ok(exe_path) = ruta_exe {
                 if let Some(exe_dir) = exe_path.parent() {
-                    let mut base_dir = exe_dir.to_path_buf();
+                    let mut directorio_base = exe_dir.to_path_buf();
                     loop {
                         let candidate = ["library", "stdlib"].iter().find_map(|dir| {
-                            let p = base_dir
+                            let p = directorio_base
                                 .join(dir)
                                 .join(nombre)
                                 .join(format!("{}.fa", nombre));
@@ -167,7 +168,7 @@ impl PackageResolver {
                             builtin_src = Some(candidate);
                             break;
                         }
-                        if !base_dir.pop() {
+                        if !directorio_base.pop() {
                             break;
                         }
                     }
@@ -176,7 +177,7 @@ impl PackageResolver {
         }
 
         if let Some(src) = builtin_src {
-            let dest = pkg_dir.join(format!("{}.fa", nombre));
+            let dest = directorio_paquete.join(format!("{}.fa", nombre));
             fs::copy(&src, &dest)
                 .map_err(|e| format!("Error copiando paquete builtin '{}': {}", nombre, e))?;
             self.installed
@@ -184,10 +185,10 @@ impl PackageResolver {
             return Ok(());
         }
 
-        // No es builtin: intentar consumir del registry local.
-        // El registry local vive en ~/.forja/registry y es el mismo formato
+        // No es builtin: intentar consumir del registry ruta_local.
+        // El registry ruta_local vive en ~/.forja/registry y es el mismo formato
         // que usaría el servidor remoto registry.forja-lang.dev (deuda futura).
-        match crate::registry::instalar_desde_registry(nombre, version, &pkg_dir) {
+        match crate::registry::instalar_desde_registry(nombre, version, &directorio_paquete) {
             Ok(version_instalada) => {
                 self.installed.insert(nombre.to_string(), version_instalada);
                 Ok(())
@@ -198,14 +199,18 @@ impl PackageResolver {
                 // en el directorio de paquetes del proyecto.
                 #[cfg(not(target_arch = "wasm32"))]
                 if crate::registry_remote::configurado() {
-                    match crate::registry_remote::instalar_desde_remoto(nombre, version, &pkg_dir) {
+                    match crate::registry_remote::instalar_desde_remoto(
+                        nombre,
+                        version,
+                        &directorio_paquete,
+                    ) {
                         Ok(version_instalada) => {
                             self.installed.insert(nombre.to_string(), version_instalada);
                             return Ok(());
                         }
                         Err(e_remoto) => {
                             return Err(format!(
-                                "Paquete '{}' versión '{}' no encontrado. Registry local: {}. \
+                                "Paquete '{}' versión '{}' no encontrado. Registry ruta_local: {}. \
                                  Registry remoto ({}): {}",
                                 nombre,
                                 version,
@@ -216,32 +221,32 @@ impl PackageResolver {
                         }
                     }
                 }
-                // Ni builtin ni en el registry local: falla explícito en vez de
+                // Ni builtin ni en el registry ruta_local: falla explícito en vez de
                 // fingir que el paquete quedó instalado.
                 Err(format!(
                     "Paquete '{}' versión '{}' no encontrado. No es builtin y no \
-                     está en el registry local ({}). Detalle: {}. Publicá el \
+                     está en el registry ruta_local ({}). Detalle: {}. Publicá el \
                      paquete con 'forja publish' o instalalo manualmente en {}",
                     nombre,
                     version,
                     crate::registry::ruta_index().display(),
                     e_registry,
-                    pkg_dir.display()
+                    directorio_paquete.display()
                 ))
             }
         }
     }
 }
 
-fn buscar_en_stdlib(base: &Path, path: &Path) -> Option<PathBuf> {
+fn buscar_en_stdlib(base: &Path, ruta_paquete: &Path) -> Option<PathBuf> {
     for dir in ["library", "stdlib"] {
-        let stdlib = base.join(dir).join(path);
+        let stdlib = base.join(dir).join(ruta_paquete);
         if stdlib.with_extension("fa").is_file() {
             return Some(stdlib.with_extension("fa"));
         }
-        let dir_entrypoint = stdlib.join(format!("{}.fa", path.display()));
-        if dir_entrypoint.is_file() {
-            return Some(dir_entrypoint);
+        let entrada_directorio = stdlib.join(format!("{}.fa", ruta_paquete.display()));
+        if entrada_directorio.is_file() {
+            return Some(entrada_directorio);
         }
         if stdlib.is_file() {
             return Some(stdlib);
