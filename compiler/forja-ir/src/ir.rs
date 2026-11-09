@@ -571,7 +571,7 @@ impl TablaSimbolosIr {
     ///
     /// # Devuelve
     /// Número de nombres distintos que contiene la tabla.
-    pub fn len(&self) -> usize {
+    pub fn longitud(&self) -> usize {
         self.nombres.len()
     }
 
