@@ -196,10 +196,10 @@ pub enum Opcode {
     /// PushEntero(n) + AddInt → push entero + add (el otro operando está en tos)
     EmpujarSumarEntero(i64),
 
-    /// LoadIdx(idx) + JumpSiFalso(target) → carga condicional y salta
+    /// LoadIdx(idx) + JumpSiFalso(destino) → carga condicional y salta
     CargarSaltoSiFalso(usize, usize),
 
-    /// LoadIdx(idx) + Jump(target) → goto calculado
+    /// LoadIdx(idx) + Jump(destino) → goto calculado
     CargarSalto(usize, usize),
 
     /// Dup + AddInt → duplica y suma
@@ -348,8 +348,8 @@ pub enum Opcode {
     /// como `ChannelNew` pero la capacidad (entero) se desempuja de la
     /// pila: `enviar` bloquea cuando la cola está llena (backpressure).
     NuevoCanalConCapacidad,
-    /// Lanzar un hilo que ejecuta la función `func_name`
-    /// Los valores capturados ya están en la pila (captured_count)
+    /// Lanzar un hilo que ejecuta la función `nombre_funcion`
+    /// Los valores capturados ya están en la pila (cantidad_capturadas)
     CrearHilo(Arc<str>, usize),
 
     // === Debug: Información de línea de código fuente ===
