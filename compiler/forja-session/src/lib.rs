@@ -120,7 +120,7 @@ pub struct Config {
     /// Color en la salida.
     #[serde(with = "bool_es")]
     pub color: bool,
-    /// Puerto del servidor de registry.
+    /// Puerto del servidor de registro.
     pub puerto_registry: u16,
 }
 
@@ -399,25 +399,25 @@ pub fn leer_de(ruta: &Path) -> Option<Config> {
 /// reemplaza al pipeline; permite crear dos compilaciones con opciones distintas
 /// en el mismo proceso (tests, LSP, wasm).
 #[derive(Debug, Clone)]
-pub struct Session {
+pub struct Sesion {
     pub config: Config,
-    pub source_map: forja_span::SourceMap,
+    pub source_map: forja_span::FuenteMapa,
     pub diagnosticos: Vec<forja_errors::Diagnostico>,
 }
 
-impl Session {
+impl Sesion {
     pub fn nueva(config: Config) -> Self {
-        Session {
+        Sesion {
             config,
-            source_map: forja_span::SourceMap::new(),
+            source_map: forja_span::FuenteMapa::new(),
             diagnosticos: Vec::new(),
         }
     }
 
     pub fn por_defecto() -> Self {
-        Session {
+        Sesion {
             config: Config::default(),
-            source_map: forja_span::SourceMap::new(),
+            source_map: forja_span::FuenteMapa::new(),
             diagnosticos: Vec::new(),
         }
     }
@@ -426,7 +426,7 @@ impl Session {
         &mut self,
         nombre: impl Into<std::path::PathBuf>,
         fuente: impl Into<String>,
-    ) -> forja_span::FileId {
+    ) -> forja_span::ArchivoId {
         self.source_map.agregar(nombre, fuente)
     }
 
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn sesion_registra_fuente_y_diagnostico() {
-        let mut s = Session::por_defecto();
+        let mut s = Sesion::por_defecto();
         let f = s.agregar_fuente(
             "a.fa", "uno
 dos",
@@ -463,11 +463,11 @@ dos",
 
     #[test]
     fn dos_sesiones_no_comparten_opciones() {
-        let a = Session::nueva(Config {
+        let a = Sesion::nueva(Config {
             estricto: true,
             ..Config::default()
         });
-        let b = Session::por_defecto();
+        let b = Sesion::por_defecto();
         assert!(a.estricto());
         assert!(!b.estricto());
     }

@@ -1,4 +1,4 @@
-//! Ed25519 (RFC 8032) — firmas **asimétricas** para paquetes del registry.
+//! Ed25519 (RFC 8032) — firmas **asimétricas** para paquetes del registro.
 //!
 //! Implementación propia, sin dependencias criptográficas (el resto del
 //! proyecto también es manual: AES, ChaCha20-Poly1305, PBKDF2, SHA-2). Usa el
@@ -7,7 +7,7 @@
 //!
 //! Con esto, la firma de un paquete la produce **el autor** con su clave
 //! privada y cualquiera puede verificarla con la pública: un paquete alterado
-//! no valida, y el servidor del registry no necesita la clave de nadie.
+//! no valida, y el servidor del registro no necesita la clave de nadie.
 //!
 //! shortcut: la multiplicación escalar es double-and-add (no constante en
 //! tiempo). Alcanza para firmar paquetes en la máquina del autor; migrar a una

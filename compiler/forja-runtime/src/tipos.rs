@@ -76,14 +76,14 @@ pub fn multiplicar_entero(a: i64, b: i64) -> Result<i64, ErrFast> {
 #[inline(always)]
 pub fn entero_o_nulo(r: Result<i64, ErrFast>) -> ValorFast {
     match r {
-        Ok(n) => get_small_int_fast(n),
+        Ok(n) => obtener_small_entero_fast(n),
         Err(_) => ValorFast::nulo(),
     }
 }
 
 /// Devuelve ValorFast::entero(n) usando la Small Integer Cache si n está en [-16, 512]
 #[inline(always)]
-pub fn get_small_int_fast(n: i64) -> ValorFast {
+pub fn obtener_small_entero_fast(n: i64) -> ValorFast {
     debug_assert!(
         entero_representable(n),
         "get_small_int_fast({n}) fuera del rango de Entero: la aritmética debe usar sumar_entero/restar_entero/multiplicar_entero"
@@ -314,7 +314,7 @@ impl ValorFast {
             self.a_flotante() != 0.0
         } else {
             // ⚠️ Sin str_heap no se puede verificar si el string está vacío
-            // (usar `es_verdadero_con_heap`). Exacto, objetos, arrays y mapas
+            // (usar `es_verdadero_con_monticulo`). Exacto, objetos, arrays y mapas
             // siempre son verdadero.
             true
         }
@@ -323,7 +323,7 @@ impl ValorFast {
     /// Versión de `es_verdadero` con acceso al heap de strings para verificar
     /// correctamente que texto vacío es falso (consistente con vm.rs:460).
     #[inline(always)]
-    pub fn es_verdadero_con_heap(&self, str_heap: &[Arc<str>]) -> bool {
+    pub fn es_verdadero_con_monticulo(&self, texto_monticulo: &[Arc<str>]) -> bool {
         if self.es_nulo() {
             false
         } else if self.es_booleano() {
@@ -334,7 +334,7 @@ impl ValorFast {
             self.a_flotante() != 0.0
         } else if self.es_texto() {
             let idx = self.indice_texto() as usize;
-            idx < str_heap.len() && !str_heap[idx].is_empty()
+            idx < texto_monticulo.len() && !texto_monticulo[idx].is_empty()
         } else {
             true // exacto, objetos, arrays, mapas siempre son verdadero
         }
@@ -370,15 +370,15 @@ impl ValorFast {
 #[derive(Clone)]
 pub struct ObjVal {
     pub clase: IdSimbolo,           // IdSimbolo de la clase (comparación O(1))
-    pub shape_id: IdForma,          // IdForma actual (puede cambiar por transiciones)
+    pub forma_id: IdForma,          // IdForma actual (puede cambiar por transiciones)
     pub campos_vec: Vec<ValorFast>, // índice → valor (forma compartido)
 }
 
 impl ObjVal {
-    pub fn new(clase: IdSimbolo, shape_id: IdForma) -> Self {
+    pub fn new(clase: IdSimbolo, forma_id: IdForma) -> Self {
         ObjVal {
             clase,
-            shape_id,
+            forma_id,
             campos_vec: Vec::new(),
         }
     }
@@ -439,7 +439,7 @@ pub fn homogeneizar_exacto_fast(a: i128, sa: u32, b: i128, sb: u32) -> (i128, i1
 // ─── Frame de Call ─────────────────────────────────────────────────────────
 
 #[derive(Clone)]
-pub struct FuncFast {
+pub struct FuncionFast {
     pub ip: usize,
     pub vars_size: usize,
     pub version: u32,
@@ -447,7 +447,7 @@ pub struct FuncFast {
 
 /// Versión de una función: permite reemplazarla en caliente
 #[derive(Clone, Copy, Debug)]
-pub struct FuncVersion {
+pub struct FuncionVersion {
     pub ip: usize,                    // Instruction pointer dentro del bytecode
     pub vars_size: usize,             // Tamaño del frame de variables locales
     pub version: u32,                 // Número de versión (se incrementa en cada recarga)
@@ -456,8 +456,8 @@ pub struct FuncVersion {
 
 /// Tabla de indirección de funciones con soporte de versionado
 #[derive(Clone)]
-pub struct FunctionTable {
-    pub entries: Vec<FuncVersion>,
+pub struct FuncionTabla {
+    pub entries: Vec<FuncionVersion>,
 }
 
 /// Bytecode versionado: preserva versiones antiguas para frames en ejecución
@@ -498,7 +498,7 @@ pub enum ValorPortable {
 /// VM-local a `str_heap`, ya que cada VM tiene su propio `str_heap` y los
 /// índices no son portables entre instancias de VM.
 #[derive(Clone, Debug)]
-pub enum ChannelValue {
+pub enum CanalValor {
     /// Valores auto-contenidos: int, bool, nil.
     Valor(ValorFast),
     /// Strings: el contenido real del string, para re-indexar en el str_heap

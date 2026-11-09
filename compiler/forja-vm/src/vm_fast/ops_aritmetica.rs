@@ -21,10 +21,10 @@ impl ForjaFast {
     pub fn ejecutar_ops_aritmetica(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
             Opcode::SumarEntero => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 // Fast path directo: quickening garantiza enteros
-                self.push_valor(get_small_int_fast(sumar_entero(
+                self.empujar_valor(obtener_small_entero_fast(sumar_entero(
                     a.a_entero(),
                     b.a_entero(),
                 )?));
@@ -32,34 +32,34 @@ impl ForjaFast {
             }
             Opcode::SumarDecimal => {
                 prof_count!(add_float);
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 // Fast-Math total (solo manual): sin checks de tipo.
                 if self.fast_math_total() || (a.es_flotante() && b.es_flotante()) {
-                    self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_flotante()));
+                    self.empujar_valor(ValorFast::flotante(a.a_flotante() + b.a_flotante()));
                 } else if a.es_entero() && b.es_flotante() {
-                    self.push_valor(ValorFast::flotante(a.a_entero() as f64 + b.a_flotante()));
+                    self.empujar_valor(ValorFast::flotante(a.a_entero() as f64 + b.a_flotante()));
                 } else if a.es_flotante() && b.es_entero() {
-                    self.push_valor(ValorFast::flotante(a.a_flotante() + b.a_entero() as f64));
+                    self.empujar_valor(ValorFast::flotante(a.a_flotante() + b.a_entero() as f64));
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
                 self.ip += 1;
             }
             Opcode::RestarEntero => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 // Fast path directo: quickening garantiza enteros
-                self.push_valor(get_small_int_fast(restar_entero(
+                self.empujar_valor(obtener_small_entero_fast(restar_entero(
                     a.a_entero(),
                     b.a_entero(),
                 )?));
                 self.ip += 1;
             }
             Opcode::MultiplicarEntero => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
-                self.push_valor(get_small_int_fast(multiplicar_entero(
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
+                self.empujar_valor(obtener_small_entero_fast(multiplicar_entero(
                     a.a_entero(),
                     b.a_entero(),
                 )?));

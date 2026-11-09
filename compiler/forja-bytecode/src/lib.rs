@@ -37,7 +37,7 @@ mod tests {
     use forja_syntax::error::ErrorForja;
     use forja_syntax::lexer::Lexer;
     use forja_syntax::parser::Parser;
-    use forja_types::semantics::TypeChecker;
+    use forja_types::semantics::TipoChecker;
     use std::sync::Arc;
 
     fn generar_bytecode(fuente: &str) -> Result<Vec<Opcode>, Vec<ErrorForja>> {
@@ -126,21 +126,21 @@ mod tests {
     fn generar_bytecode_con_tipos(fuente: &str) -> Result<Vec<Opcode>, String> {
         use forja_syntax::lexer::Lexer;
         use forja_syntax::parser::Parser;
-        use forja_types::semantics::TypeChecker;
+        use forja_types::semantics::TipoChecker;
 
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
-        let mut verificador = TypeChecker::new();
+        let mut verificador = TipoChecker::new();
         verificador
             .analizar(&programa)
             .map_err(|e| format!("{}", e[0]))?;
         let tipos_inferidos = verificador.obtener_tipos_inferidos();
 
         let mut gen = GeneradorBytecode::new();
-        gen.set_tipos_inferidos(tipos_inferidos);
+        gen.fijar_tipos_inferidos(tipos_inferidos);
         gen.generar(&programa)
             .map_err(|_| "Error generando bytecode".to_string())
     }
@@ -232,12 +232,12 @@ mod tests {
         let mut parser = Parser::new(tokens);
         let programa = parser.parse()?;
 
-        let mut verificador = semantics::TypeChecker::new();
+        let mut verificador = semantics::TipoChecker::new();
         verificador.analizar(&programa)?;
         let tipos_inferidos = verificador.obtener_tipos_inferidos();
 
         let mut gen = GeneradorBytecode::new();
-        gen.set_tipos_inferidos(tipos_inferidos);
+        gen.fijar_tipos_inferidos(tipos_inferidos);
         gen.generar_para_modulo(&programa, id_modulo)
     }
 
@@ -307,7 +307,7 @@ fun obtener() {
     }
 
     #[test]
-    fn module_bytecode_desglosar() {
+    fn modulo_bytecode_desglosar() {
         let fuente = "\
 fun foo(a, b) {
     escribir(a + b)
@@ -429,7 +429,7 @@ fun bar(x) {
     }
 
     #[test]
-    fn module_bytecode_serializacion() {
+    fn modulo_bytecode_serializacion() {
         let fuente = "\
 variable global_x = 42
 
@@ -490,7 +490,7 @@ variable y = mcd(10, 20)
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
 
-        let mut verificador = TypeChecker::new();
+        let mut verificador = TipoChecker::new();
         // Debe analizar sin errores: ambas funciones deben coexistir
         verificador.analizar(&programa).unwrap();
         let tipos_inferidos = verificador.obtener_tipos_inferidos();
@@ -503,8 +503,8 @@ variable y = mcd(10, 20)
 
         // Generar bytecode con overloads
         let mut gen = GeneradorBytecode::new();
-        gen.set_tipos_inferidos(tipos_inferidos);
-        gen.set_funciones_overload(funciones_overload);
+        gen.fijar_tipos_inferidos(tipos_inferidos);
+        gen.fijar_funciones_overload(funciones_overload);
         gen.generar(&programa).unwrap();
 
         let bytecode = gen.codigos.clone();
@@ -550,7 +550,7 @@ variable y = mcd(10, 20)
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
 
-        let mut verificador = TypeChecker::new();
+        let mut verificador = TipoChecker::new();
         verificador.analizar(&programa).unwrap();
         let funciones_overload = verificador.obtener_funciones();
 
@@ -559,8 +559,8 @@ variable y = mcd(10, 20)
         assert_eq!(overloads.unwrap().len(), 2, "sumar debe tener 2 overloads");
 
         let mut gen = GeneradorBytecode::new();
-        gen.set_tipos_inferidos(verificador.obtener_tipos_inferidos());
-        gen.set_funciones_overload(funciones_overload);
+        gen.fijar_tipos_inferidos(verificador.obtener_tipos_inferidos());
+        gen.fijar_funciones_overload(funciones_overload);
         gen.generar(&programa).unwrap();
 
         let bytecode = gen.codigos.clone();
@@ -600,7 +600,7 @@ variable y = mcd(10, 20)
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
 
-        let mut verificador = TypeChecker::new();
+        let mut verificador = TipoChecker::new();
         verificador.analizar(&programa).unwrap();
         let funciones_overload = verificador.obtener_funciones();
 
@@ -610,8 +610,8 @@ variable y = mcd(10, 20)
         assert_eq!(overloads.unwrap().len(), 1);
 
         let mut gen = GeneradorBytecode::new();
-        gen.set_tipos_inferidos(verificador.obtener_tipos_inferidos());
-        gen.set_funciones_overload(funciones_overload);
+        gen.fijar_tipos_inferidos(verificador.obtener_tipos_inferidos());
+        gen.fijar_funciones_overload(funciones_overload);
         gen.generar(&programa).unwrap();
 
         let bytecode = gen.codigos.clone();

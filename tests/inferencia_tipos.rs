@@ -22,9 +22,9 @@ fn analizar(fuente: &str) -> Result<(), String> {
         .parse()
         .map_err(|e| format!("parser: {e:?}"))?;
 
-    let mut tc = forja::semantics::TypeChecker::new();
+    let mut tc = forja::semantics::TipoChecker::new();
     tc.analizar(&programa).map_err(|e| format!("{e:?}"))?;
-    let mut bc = forja::semantics::BorrowChecker::new();
+    let mut bc = forja::semantics::PrestamoChecker::new();
     bc.analizar(&programa).map_err(|e| format!("{e:?}"))?;
     Ok(())
 }

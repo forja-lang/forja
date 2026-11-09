@@ -195,11 +195,11 @@ pub(crate) fn cmd_bench(args: &[String]) {
         medir_vm!(nombre_fast, {
             let mut v = forja_driver::vm_fast::ForjaFast::new();
             if fast_math_flag {
-                v.set_fast_math(true);
+                v.fijar_fast_math(true);
             }
             v
         });
-        forja::fprofiler::print_profiler_report();
+        forja::fprofiler::imprimir_perfilador_report();
         forja::fprofiler::PROFILER_ENABLED.store(0, std::sync::atomic::Ordering::Relaxed);
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -212,7 +212,7 @@ pub(crate) fn cmd_bench(args: &[String]) {
         let t0 = std::time::Instant::now();
         let mut jit = forja_driver::vm_fast::ForjaFast::new();
         if fast_math_flag {
-            jit.set_fast_math(true);
+            jit.fijar_fast_math(true);
         }
         let crear = t0.elapsed().as_secs_f64() * 1_000_000_000.0;
 

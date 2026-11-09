@@ -143,8 +143,8 @@ impl GeneradorBytecode {
                 si_verdadero,
                 si_falso,
             } => {
-                let etiqueta_sino = self.nueva_label();
-                let etiqueta_final = self.nueva_label();
+                let etiqueta_sino = self.nueva_etiqueta();
+                let etiqueta_final = self.nueva_etiqueta();
 
                 self.generar_expresion(condicion);
                 self.emitir(Opcode::SaltoSiFalso(etiqueta_sino));
@@ -328,13 +328,13 @@ impl GeneradorBytecode {
 
             Expresion::Coincidir { expr, brazos } => {
                 self.generar_expresion(expr);
-                let etiqueta_final = self.nueva_label();
+                let etiqueta_final = self.nueva_etiqueta();
                 let num_brazos = brazos.len();
                 for (i, brazo) in brazos.iter().enumerate() {
                     let es_ultimo = i == num_brazos - 1;
                     match &brazo.patron {
                         Patron::Literal(pat_expr) => {
-                            let etiqueta_siguiente = self.nueva_label();
+                            let etiqueta_siguiente = self.nueva_etiqueta();
                             self.emitir(Opcode::Duplicar);
                             self.generar_expresion(pat_expr);
                             self.emitir(Opcode::Igual);
@@ -393,7 +393,7 @@ impl GeneradorBytecode {
                                         self.emitir(Opcode::ObtenerCampo(Arc::from("tipo")));
                                         self.emitir(Opcode::PushTexto(Arc::from(tipo_str)));
                                         self.emitir(Opcode::Igual);
-                                        let etiqueta_siguiente = self.nueva_label();
+                                        let etiqueta_siguiente = self.nueva_etiqueta();
                                         self.emitir(Opcode::SaltoSiFalso(etiqueta_siguiente));
                                         // Matcheó: pop el objeto original y ejecutar
                                         self.emitir(Opcode::Descartar);
@@ -408,7 +408,7 @@ impl GeneradorBytecode {
                                     self.emitir(Opcode::ObtenerCampo(Arc::from("tipo")));
                                     self.emitir(Opcode::PushTexto(Arc::from(tipo_str)));
                                     self.emitir(Opcode::Igual);
-                                    let etiqueta_siguiente = self.nueva_label();
+                                    let etiqueta_siguiente = self.nueva_etiqueta();
                                     self.emitir(Opcode::SaltoSiFalso(etiqueta_siguiente));
                                     // Matcheó: extraer "valor" del objeto original (stack: [obj])
                                     if let Some(Patron::Variable(var_nombre)) = subpatrones.first()
@@ -442,14 +442,14 @@ impl GeneradorBytecode {
                                 if !es_ultimo {
                                     self.emitir(Opcode::Duplicar);
                                     self.emitir(Opcode::VerificarEtiqueta(tag));
-                                    let etiqueta_siguiente = self.nueva_label();
+                                    let etiqueta_siguiente = self.nueva_etiqueta();
                                     self.emitir(Opcode::SaltoSiFalso(etiqueta_siguiente));
                                     self.emitir(Opcode::Descartar);
                                     self.generar_cuerpo_match(&brazo.cuerpo);
                                     self.emitir(Opcode::Salto(etiqueta_final));
                                     self.emitir(Opcode::Etiqueta(etiqueta_siguiente));
                                 } else {
-                                    let etiqueta_sin_coincidencia = self.nueva_label();
+                                    let etiqueta_sin_coincidencia = self.nueva_etiqueta();
                                     self.emitir(Opcode::Duplicar);
                                     self.emitir(Opcode::VerificarEtiqueta(tag));
                                     self.emitir(Opcode::SaltoSiFalso(etiqueta_sin_coincidencia));
@@ -467,7 +467,7 @@ impl GeneradorBytecode {
                                 if !es_ultimo {
                                     self.emitir(Opcode::Duplicar);
                                     self.emitir(Opcode::VerificarEtiqueta(tag));
-                                    let etiqueta_siguiente = self.nueva_label();
+                                    let etiqueta_siguiente = self.nueva_etiqueta();
                                     self.emitir(Opcode::SaltoSiFalso(etiqueta_siguiente));
                                     self.emitir_subpatrones_constructor(
                                         subpatrones,
@@ -482,7 +482,7 @@ impl GeneradorBytecode {
                                     // consumir el objeto; extraer campos verificando
                                     // literales. Si un literal no coincide, el match
                                     // produce Nulo.
-                                    let etiqueta_sin_coincidencia = self.nueva_label();
+                                    let etiqueta_sin_coincidencia = self.nueva_etiqueta();
                                     self.emitir_subpatrones_constructor(
                                         subpatrones,
                                         etiqueta_sin_coincidencia,
@@ -720,7 +720,8 @@ impl GeneradorBytecode {
                 // Se guardan el objeto/índice y el valor viejo en temporales para
                 // evaluar el objetivo una sola vez (`arr[f()] += 1` llama a f() una vez).
                 let tipo_objetivo = self.inferir_tipo_expresion(objetivo);
-                let old_name: Arc<str> = Arc::from(format!("__ac_{}", self.nueva_label()).as_str());
+                let old_name: Arc<str> =
+                    Arc::from(format!("__ac_{}", self.nueva_etiqueta()).as_str());
                 let expresion_temporal = Expresion::Identificador {
                     nombre: old_name.to_string(),
                     linea: 0,
@@ -743,7 +744,7 @@ impl GeneradorBytecode {
                     }
                     Expresion::AccesoMiembro { objeto, miembro } => {
                         let obj_name: Arc<str> =
-                            Arc::from(format!("__ac_obj_{}", self.nueva_label()).as_str());
+                            Arc::from(format!("__ac_obj_{}", self.nueva_etiqueta()).as_str());
                         self.generar_expresion(objeto);
                         self.emitir(Opcode::Declarar(obj_name.clone(), false));
                         self.emitir(Opcode::Guardar(obj_name.clone()));
@@ -757,9 +758,9 @@ impl GeneradorBytecode {
                     }
                     Expresion::Index { objeto, indice } => {
                         let obj_name: Arc<str> =
-                            Arc::from(format!("__ac_obj_{}", self.nueva_label()).as_str());
+                            Arc::from(format!("__ac_obj_{}", self.nueva_etiqueta()).as_str());
                         let idx_name: Arc<str> =
-                            Arc::from(format!("__ac_idx_{}", self.nueva_label()).as_str());
+                            Arc::from(format!("__ac_idx_{}", self.nueva_etiqueta()).as_str());
                         self.generar_expresion(objeto);
                         self.emitir(Opcode::Declarar(obj_name.clone(), false));
                         self.emitir(Opcode::Guardar(obj_name.clone()));

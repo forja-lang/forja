@@ -24,10 +24,10 @@ pub use forja_bytecode::{symbol_table, uops};
 pub use forja_hir::{dedup, desugar};
 pub use forja_ir::{
     arena, codegen_reg, ir, ir_constructor, ir_emision, ir_ssa, ir_to_bytecode, optimizer,
-    optimizer_pipeline, register_alloc, register_ir, stack_to_reg,
+    optimizer_pipeline, pila_to_reg, register_alloc, register_ir,
 };
 pub use forja_native::{base64, crypto, crypto_pq, ed25519, hash, mmap, sandbox, terminal};
-pub use forja_runtime::{fprofiler, shape, Host};
+pub use forja_runtime::{fprofiler, shape, Anfitrion};
 #[cfg(feature = "h2-tls")]
 pub use forja_vm::native_h2_tls;
 #[cfg(not(target_arch = "wasm32"))]
@@ -36,9 +36,9 @@ pub use forja_vm::native_proceso_win;
 pub use forja_vm::native_sqlite;
 pub use forja_vm::{
     class_descriptor, ffi, gc_intrinsics, jit_tiered, module, native_h2_core, native_registry,
-    package_resolver, pgo, registry, registry_remote, registry_server, stdlib_embedded, vm_fast,
+    package_resolver, pgo, registro, registry_remote, registry_server, stdlib_embedded, vm_fast,
 };
-pub use forja_vm::{ModuleCache, ModuleId, ModuleInfo};
+pub use forja_vm::{ModuleId, ModuloCache, ModuloInformacion};
 #[cfg(not(target_arch = "wasm32"))]
 pub mod incremental_cache;
 
@@ -78,7 +78,7 @@ pub mod transpiler;
 ///
 /// Es la **única fuente de verdad**: recibe el AST ya parseado (y, si aplica,
 /// con los imports resueltos por [`resolver_imports`]) y ejecuta las fases
-/// compartidas: TypeChecker + inferencia, BorrowChecker, monomorfización,
+/// compartidas: TipoChecker + inferencia, PrestamoChecker, monomorfización,
 /// optimizaciones de AST (punto único [`optimizer_pipeline::PipelineAst::basico`]:
 /// Optimizer → DCE → ConstProp), emisión de bytecode con el generador AST
 /// canónico, `postprocesar_globales`, y [`optimizer_pipeline::optimizar_bytecode`]
@@ -100,10 +100,10 @@ fn compilar_pipeline_nucleo(
     )
 }
 
-/// BorrowChecker con el modo estricto de la configuración vigente
+/// PrestamoChecker con el modo estricto de la configuración vigente
 /// (`estricto: true` en `forja.yaml`).
-fn borrow_checker() -> semantics::BorrowChecker {
-    semantics::BorrowChecker::con_estricto(config::actual().estricto)
+fn borrow_checker() -> semantics::PrestamoChecker {
+    semantics::PrestamoChecker::con_estricto(config::actual().estricto)
 }
 
 /// Motor de emisión que exige el llamador.
@@ -158,7 +158,7 @@ fn nombres_funciones_externas() -> Vec<String> {
         ]
         .map(String::from),
     );
-    nombres.extend(native_registry::NativeRegistry::new().nombres());
+    nombres.extend(native_registry::NativoRegistro::new().nombres());
     nombres
 }
 
@@ -187,7 +187,7 @@ fn compilar_pipeline_nucleo_emision(
 
     // FASE: Prelude — inyectar los tipos algebraicos básicos (`Resultado` y
     // `Opcion`) para que sus variantes queden registradas en `variantes_enum`
-    // (en el TypeChecker y el BorrowChecker) y el comprobador de exhaustividad
+    // (en el TipoChecker y el PrestamoChecker) y el comprobador de exhaustividad
     // de `coincidir` pueda validarlas. Son `Declaracion::Enum`, que NO emiten
     // bytecode y son eliminadas por el DCE cuando no se usan: la paridad de
     // bytecode de los programas que no manejan `Resultado`/`Opcion` es intacta.
@@ -196,16 +196,16 @@ fn compilar_pipeline_nucleo_emision(
         .splice(0..0, prelude::generar_prelude());
 
     // FASE: Type Checker + inferencia de tipos
-    let mut type_checker = semantics::TypeChecker::new();
+    let mut type_checker = semantics::TipoChecker::new();
     // modo estricto opt-in (`estricto: true` en forja.yaml o en la sesión).
-    type_checker.set_estricto(estricto);
+    type_checker.fijar_estricto(estricto);
     if estricto {
-        type_checker.set_funciones_externas(nombres_funciones_externas());
+        type_checker.fijar_funciones_externas(nombres_funciones_externas());
         // si el programa importa módulos, el checker no puede saber qué
         // funciones aportan (la stdlib se inlinea después y los módulos GUI los
         // resuelve gui-rt en runtime). El chequeo de "función declarada" queda
         // entonces limitado a programas de un solo archivo.
-        type_checker.set_exigir_funciones_declaradas(!hay_imports);
+        type_checker.fijar_exigir_funciones_declaradas(!hay_imports);
     }
     type_checker
         .analizar(&programa)
@@ -213,7 +213,7 @@ fn compilar_pipeline_nucleo_emision(
     let tipos_inferidos = type_checker.obtener_tipos_inferidos();
 
     // FASE: Borrow Checker (ownership y préstamos)
-    let mut borrow_checker = semantics::BorrowChecker::con_estricto(estricto);
+    let mut borrow_checker = semantics::PrestamoChecker::con_estricto(estricto);
     borrow_checker
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
@@ -277,8 +277,8 @@ fn compilar_pipeline_nucleo_emision(
     let mut gen_contratos = bytecode::GeneradorBytecode::new();
     // las condiciones leen globales por índice y tipos declarados, igual
     // que en la ruta AST.
-    gen_contratos.set_globales(globales.clone());
-    gen_contratos.set_tipos_inferidos(tipos_inferidos.clone());
+    gen_contratos.fijar_globales(globales.clone());
+    gen_contratos.fijar_tipos_inferidos(tipos_inferidos.clone());
     let contratos = match gen_contratos.generar(&programa) {
         Ok(_) => gen_contratos.contratos,
         Err(_) => Vec::new(),
@@ -381,7 +381,7 @@ fn monomorphize_programa(programa: &mut ast::Programa) {
 
 /// Ejecuta el análisis semántico sobre código Forja **sin compilar a Rust**.
 ///
-/// Realiza: Lexer → Parser → TypeChecker → BorrowChecker y, si todo es válido,
+/// Realiza: Lexer → Parser → TipoChecker → PrestamoChecker y, si todo es válido,
 /// devuelve el AST (`ast::Programa`) resultante. Es el punto de entrada pensado
 /// para herramientas que sólo necesitan validar/inferir tipos (p. ej. el LSP y
 /// los tests de la red de seguridad F1), evitando el coste de la transpilación.
@@ -389,7 +389,7 @@ fn monomorphize_programa(programa: &mut ast::Programa) {
 /// Reutiliza las mismas fases de análisis que la ruta canónica de bytecode
 /// [`compilar_pipeline_completa`] (y su variante con imports
 /// [`compilar_pipeline_completa_desde`]), pero se detiene tras el
-/// BorrowChecker: no optimiza ni genera bytecode.
+/// PrestamoChecker: no optimiza ni genera bytecode.
 pub fn analizar(source: &str) -> Result<ast::Programa, Vec<ErrorForja>> {
     // FASE 1: Lexer
     let mut lexer = lexer::Lexer::new(source);
@@ -400,7 +400,7 @@ pub fn analizar(source: &str) -> Result<ast::Programa, Vec<ErrorForja>> {
     let programa = parser.parse()?;
 
     // FASE 4: Type Checker (inferencia de tipos + compatibilidad)
-    let mut type_checker = semantics::TypeChecker::new();
+    let mut type_checker = semantics::TipoChecker::new();
     type_checker.analizar(&programa)?;
 
     // FASE 5: Borrow Checker (ownership y préstamos)
@@ -413,10 +413,10 @@ pub fn analizar(source: &str) -> Result<ast::Programa, Vec<ErrorForja>> {
 /// **Ruta de transpilación a Rust** (NO genera bytecode).
 ///
 /// Compila un archivo `.fa` completo y devuelve el código Rust equivalente.
-/// Fases: Lexer → Parser → TypeChecker → BorrowChecker → monomorfización →
+/// Fases: Lexer → Parser → TipoChecker → PrestamoChecker → monomorfización →
 /// optimizaciones de AST (punto único [`optimizer_pipeline::PipelineAst::completo`]:
 /// Optimizer → DCE → ConstProp → Inliner → LoopUnswitching → CSE →
-/// CopyPropagation) → `Transpiler::transpilar`.
+/// CopiaPropagation) → `Transpiler::transpilar`.
 ///
 /// Para obtener **bytecode** (y contratos) usar la ruta canónica
 /// [`compilar_pipeline_completa`] / [`compilar_pipeline_completa_desde`].
@@ -430,7 +430,7 @@ pub fn transpilar_a_rust(source: &str) -> Result<String, Vec<ErrorForja>> {
     let mut programa = parser.parse()?;
 
     // FASE 4: Type Checker
-    let mut type_checker = semantics::TypeChecker::new();
+    let mut type_checker = semantics::TipoChecker::new();
     type_checker.analizar(&programa)?;
 
     // FASE 5: Borrow Checker
@@ -469,7 +469,7 @@ pub fn transpilar_a_rust_con_ast(
     let mut programa = parser.parse()?;
 
     // FASE 4: Type Checker
-    let mut type_checker = semantics::TypeChecker::new();
+    let mut type_checker = semantics::TipoChecker::new();
     type_checker.analizar(&programa)?;
 
     // FASE 5: Borrow Checker
@@ -531,13 +531,13 @@ pub fn transpilar_desde_ir(
     transpiler::Transpiler::new().transpilar(ast)
 }
 
-/// Resuelve los imports en un programa Forja usando un ModuleResolver.
+/// Resuelve los imports en un programa Forja usando un ModuloResolver.
 /// Reemplaza nodos `Importar` con las declaraciones reales de los módulos.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast::Programa, String> {
     use crate::dedup::dedup_declaraciones;
-    use crate::module::ModuleResolver;
-    use crate::package_resolver::PackageResolver;
+    use crate::module::ModuloResolver;
+    use crate::package_resolver::PaqueteResolver;
     use std::collections::{HashMap, HashSet};
 
     // 1. Lexer + Parser del código fuente principal
@@ -546,14 +546,14 @@ pub fn resolver_imports(source: &str, root_dir: &std::path::Path) -> Result<ast:
     let mut parser = parser::Parser::new(tokens);
     let mut programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
-    // 2. Resolver imports recursivamente con ModuleResolver
+    // 2. Resolver imports recursivamente con ModuloResolver
     let project_dir = if root_dir.is_file() {
         root_dir.parent().unwrap_or(std::path::Path::new("."))
     } else {
         root_dir
     };
-    let mut module_resolver = ModuleResolver::new(project_dir.to_str().unwrap_or("."));
-    module_resolver.package_resolver = Some(PackageResolver::new(project_dir));
+    let mut module_resolver = ModuloResolver::new(project_dir.to_str().unwrap_or("."));
+    module_resolver.package_resolver = Some(PaqueteResolver::new(project_dir));
 
     // los imports se inlinean, así que `colecciones.mapa(...)` quedaría
     // como acceso a una variable inexistente. El HIR dice qué nombres exporta
@@ -897,7 +897,7 @@ fn reescribir_llamadas_de_modulo<A: AliasModulos>(declaracion: &mut ast::Declara
 
 /// Resuelve los `importar` inlineando la **stdlib embebida** en el binario.
 ///
-/// En WASM no hay sistema de archivos, así que `ModuleResolver` no existe: sin
+/// En WASM no hay sistema de archivos, así que `ModuloResolver` no existe: sin
 /// esto `importar std/json` se ignoraba en silencio y el playground fallaba con
 /// "función no definida". La GUI se omite a propósito (la resuelve su runtime).
 #[cfg(target_arch = "wasm32")]
@@ -1002,7 +1002,7 @@ pub fn compilar_pipeline_completa_desde(
 pub fn compilar_pipeline_completa_desde_con_sesion(
     source: &str,
     root_dir: &std::path::Path,
-    sesion: &forja_session::Session,
+    sesion: &forja_session::Sesion,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
     let programa = resolver_imports(source, root_dir)?;
     compilar_pipeline_nucleo_emision(
@@ -1064,7 +1064,7 @@ pub fn compilar_pipeline_completa(
 /// Es el primer entrypoint que no lee la configuración global.
 pub fn compilar_pipeline_completa_con_sesion(
     source: &str,
-    sesion: &forja_session::Session,
+    sesion: &forja_session::Sesion,
 ) -> Result<(Vec<bytecode::Opcode>, Vec<bytecode::ContratoBytecode>), String> {
     compilar_pipeline_completa_con_estricto(source, sesion.estricto())
 }
@@ -1129,7 +1129,7 @@ pub fn compilar_modulo(
     let mut programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
     // FASE 3: Type Checker + Type Inference
-    let mut type_checker = semantics::TypeChecker::new();
+    let mut type_checker = semantics::TipoChecker::new();
     type_checker
         .analizar(&programa)
         .map_err(|e| format!("{}", e[0]))?;
@@ -1151,8 +1151,8 @@ pub fn compilar_modulo(
     // FASE 5: Generar ModuloBytecode con generar_para_modulo()
     let funciones_overload = type_checker.obtener_funciones();
     let mut gen = GeneradorBytecode::new();
-    gen.set_tipos_inferidos(tipos_inferidos);
-    gen.set_funciones_overload(funciones_overload);
+    gen.fijar_tipos_inferidos(tipos_inferidos);
+    gen.fijar_funciones_overload(funciones_overload);
     let mut module_bc = gen
         .generar_para_modulo(&programa, module_id)
         .map_err(|_| "Error generando bytecode para módulo".to_string())?;
@@ -1208,7 +1208,7 @@ pub fn compilar_con_cache(
 
     // 5. Guardar en caché
     cache.put(module_path, source_hash, &bytecode, &imports);
-    let _ = cache.save_to_disk();
+    let _ = cache.guardar_en_disco();
 
     Ok(bytecode)
 }
@@ -1222,12 +1222,12 @@ pub fn ejecutar_con_cache(source: &str, root_dir: &std::path::Path) -> Result<Ve
     let bytecode = compilar_con_cache(source, "main", root_dir)?;
     let mut vm = ForjaFast::new();
     #[cfg(target_pointer_width = "64")]
-    vm.set_max_inst(10_000_000_000);
+    vm.fijar_max_inst(10_000_000_000);
     #[cfg(not(target_pointer_width = "64"))]
-    vm.set_max_inst(2_000_000_000);
+    vm.fijar_max_inst(2_000_000_000);
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
-    Ok(vm.obtener_output().to_vec())
+    Ok(vm.obtener_salida().to_vec())
 }
 
 /// Compila múltiples módulos en paralelo usando rayon.
@@ -1283,22 +1283,22 @@ pub fn ejecutar_con_opciones(
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
     #[cfg(target_pointer_width = "64")]
-    vm.set_max_inst(10_000_000_000); // límite de seguridad para evitar bucles infinitos
+    vm.fijar_max_inst(10_000_000_000); // límite de seguridad para evitar bucles infinitos
     #[cfg(not(target_pointer_width = "64"))]
-    vm.set_max_inst(2_000_000_000); // límite más bajo para sistemas de 32 bits (como wasm)
+    vm.fijar_max_inst(2_000_000_000); // límite más bajo para sistemas de 32 bits (como wasm)
     if let Some(sb) = sandbox {
         vm.sandbox = sb;
     }
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
-    Ok(vm.obtener_output().to_vec())
+    Ok(vm.obtener_salida().to_vec())
 }
 
-/// Compila y ejecuta con una [`forja_session::Session`] explícita.
+/// Compila y ejecuta con una [`forja_session::Sesion`] explícita.
 /// No lee la configuración global: estricto y contratos salen de la sesión.
 pub fn ejecutar_con_sesion(
     source: &str,
-    sesion: &forja_session::Session,
+    sesion: &forja_session::Sesion,
 ) -> Result<Vec<String>, String> {
     use vm_fast::ForjaFast;
     let (bytecode, contratos) = compilar_pipeline_completa_con_sesion(source, sesion)?;
@@ -1306,12 +1306,12 @@ pub fn ejecutar_con_sesion(
     vm.contratos = contratos;
     vm.verificar_contratos = sesion.contratos();
     #[cfg(target_pointer_width = "64")]
-    vm.set_max_inst(10_000_000_000);
+    vm.fijar_max_inst(10_000_000_000);
     #[cfg(not(target_pointer_width = "64"))]
-    vm.set_max_inst(2_000_000_000);
+    vm.fijar_max_inst(2_000_000_000);
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
-    Ok(vm.obtener_output().to_vec())
+    Ok(vm.obtener_salida().to_vec())
 }
 
 /// Compila y ejecuta código Forja en ForjaFast con opciones y resolución de imports.
@@ -1354,18 +1354,18 @@ fn ejecutar_con_opciones_desde_impl(
     vm.contratos = contratos;
     vm.verificar_contratos = verificar_contratos;
     #[cfg(target_pointer_width = "64")]
-    vm.set_max_inst(10_000_000_000); // límite de seguridad para evitar bucles infinitos
+    vm.fijar_max_inst(10_000_000_000); // límite de seguridad para evitar bucles infinitos
     #[cfg(not(target_pointer_width = "64"))]
-    vm.set_max_inst(2_000_000_000); // límite más bajo para sistemas de 32 bits (como wasm)
+    vm.fijar_max_inst(2_000_000_000); // límite más bajo para sistemas de 32 bits (como wasm)
     if let Some(sb) = sandbox {
         vm.sandbox = sb;
     }
     if fast_math {
-        vm.set_fast_math(true);
+        vm.fijar_fast_math(true);
     }
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
-    Ok(vm.obtener_output().to_vec())
+    Ok(vm.obtener_salida().to_vec())
 }
 
 /// Igual que [`ejecutar_con_opciones_desde`] pero, en caso de error de
@@ -1392,11 +1392,11 @@ pub fn ejecutar_con_opciones_desde_backtrace(
     vm.verificar_contratos = verificar_contratos;
     // en modo backtrace activamos errores estrictos para que la división
     // por cero y el índice fuera de rango produzcan mensajes claros con línea.
-    vm.set_errores_estrictos(true);
+    vm.fijar_errores_estrictos(true);
     #[cfg(target_pointer_width = "64")]
-    vm.set_max_inst(10_000_000_000); // límite de seguridad para evitar bucles infinitos
+    vm.fijar_max_inst(10_000_000_000); // límite de seguridad para evitar bucles infinitos
     #[cfg(not(target_pointer_width = "64"))]
-    vm.set_max_inst(2_000_000_000); // límite más bajo para sistemas de 32 bits (como wasm)
+    vm.fijar_max_inst(2_000_000_000); // límite más bajo para sistemas de 32 bits (como wasm)
     if let Some(sb) = sandbox {
         vm.sandbox = sb;
     }
@@ -1406,7 +1406,7 @@ pub fn ejecutar_con_opciones_desde_backtrace(
         let backtrace = vm.backtrace();
         return Err((format!("{}", e), backtrace));
     }
-    Ok(vm.obtener_output().to_vec())
+    Ok(vm.obtener_salida().to_vec())
 }
 
 /// Compila y ejecuta código Forja en la VM ForjaFast (v5, la de producción).
@@ -1418,7 +1418,7 @@ pub fn ejecutar_vm(source: &str) -> Result<Vec<String>, String> {
     let mut vm = ForjaFast::new();
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
-    Ok(vm.obtener_output().to_vec())
+    Ok(vm.obtener_salida().to_vec())
 }
 
 /// Compila y ejecuta código Forja en el motor JIT (`motor: jit` en forja.yaml).
@@ -1483,16 +1483,16 @@ where
 /// política de compilación para que un fallo suyo sea detectable y aislable.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn alimentar_tiered_jit(bc: &[bytecode::Opcode]) {
-    use jit_tiered::{ShouldCompile, TieredJit};
+    use jit_tiered::{ShouldCompilar, TieredJit};
 
     let mut tiered = TieredJit::new();
     for (ip, op) in bc.iter().enumerate() {
         match op {
             bytecode::Opcode::DefinirFuncion(nombre, _) => {
-                tiered.register_function(nombre.as_ref());
+                tiered.register_funcion(nombre.as_ref());
             }
             bytecode::Opcode::Llamar(nombre, _) => {
-                if let ShouldCompile::Yes(_tier) = tiered.on_function_call(nombre.as_ref()) {
+                if let ShouldCompilar::Yes(_tier) = tiered.on_funcion_llamada(nombre.as_ref()) {
                     // Cuando exista un codegen nativo conectado aquí se marcará
                     // `mark_compiled`; hoy la ejecución sigue en la VM.
                 }
@@ -1500,7 +1500,7 @@ pub fn alimentar_tiered_jit(bc: &[bytecode::Opcode]) {
             _ => {}
         }
         // Cada instrucción cuenta como una iteración a efectos de OSR.
-        let _osr = tiered.on_loop_iteration("main", ip);
+        let _osr = tiered.on_bucle_iteration("main", ip);
     }
 }
 
@@ -1512,17 +1512,17 @@ pub(crate) fn ejecutar_bytecode_en_vm(
     use vm_fast::ForjaFast;
     let mut vm = ForjaFast::new();
     #[cfg(target_pointer_width = "64")]
-    vm.set_max_inst(10_000_000_000);
+    vm.fijar_max_inst(10_000_000_000);
     #[cfg(not(target_pointer_width = "64"))]
-    vm.set_max_inst(2_000_000_000);
+    vm.fijar_max_inst(2_000_000_000);
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
-    Ok(vm.obtener_output().to_vec())
+    Ok(vm.obtener_salida().to_vec())
 }
 
 /// Emite código máquina x86-64 para el bytecode dado aplicando el
 /// pipeline completo de generación de código:
-/// `stack_to_reg → compute_live_intervals → RegisterAllocator → codegen_reg`.
+/// `pila_to_reg → compute_live_intervals → RegisterAllocator → codegen_reg`.
 ///
 /// **No ejecuta** el código: solo lo genera. Es la superficie que usa el fuzzer
 /// de (`fuzz/fuzz_targets/jit_codegen.rs`) y los tests diferenciales para
@@ -1531,13 +1531,13 @@ pub(crate) fn ejecutar_bytecode_en_vm(
 /// Puede devolver un `Vec` vacío si el codegen no soporta algún constructo (caso
 /// previsto: el caller cae a la VM), pero nunca debe paniquear.
 pub fn emitir_codigo_nativo(bc: &[bytecode::Opcode]) -> Vec<u8> {
-    use codegen_reg::emit_program_with_calls;
+    use codegen_reg::emitir_program_con_calls;
+    use pila_to_reg::pila_to_reg;
     use register_alloc::RegisterAllocator;
     use register_ir::compute_live_intervals;
-    use stack_to_reg::stack_to_reg;
     use std::collections::HashMap;
 
-    let prog = stack_to_reg(bc);
+    let prog = pila_to_reg(bc);
     let intervals = compute_live_intervals(&prog);
     let mut allocator = RegisterAllocator::new();
     for intervalo in intervals {
@@ -1546,7 +1546,12 @@ pub fn emitir_codigo_nativo(bc: &[bytecode::Opcode]) -> Vec<u8> {
     let _ = allocator.allocate();
     let spill = allocator.cantidad_derrames();
     let sin_llamadas: HashMap<String, u64> = HashMap::new();
-    emit_program_with_calls(&prog, allocator.get_assignments(), spill, &sin_llamadas)
+    emitir_program_con_calls(
+        &prog,
+        allocator.obtener_asignaciones(),
+        spill,
+        &sin_llamadas,
+    )
 }
 
 /// Ejecuta con Profile-Guided Optimization: recolecta perfil durante la
@@ -1595,9 +1600,9 @@ fn ejecutar_con_pgo_impl(
     let mut vm = ForjaFast::new();
     vm.contratos = contratos;
     #[cfg(target_pointer_width = "64")]
-    vm.set_max_inst(10_000_000_000);
+    vm.fijar_max_inst(10_000_000_000);
     #[cfg(not(target_pointer_width = "64"))]
-    vm.set_max_inst(2_000_000_000);
+    vm.fijar_max_inst(2_000_000_000);
     vm.cargar_bytecode(bytecode);
 
     // 3. Aplicar perfil previo (si existe) y habilitar recolección
@@ -1635,11 +1640,11 @@ fn ejecutar_con_pgo_impl(
                 *perfil.hot_ips.entry(ip).or_insert(0) += c;
             }
             let _ = mgr.save(&perfil);
-            eprintln!("[PGO] Perfil guardado en {}", mgr.profile_path().display());
+            eprintln!("[PGO] Perfil guardado en {}", mgr.profile_ruta().display());
         }
     }
 
-    Ok(vm.obtener_output().to_vec())
+    Ok(vm.obtener_salida().to_vec())
 }
 
 /// Compila código Forja a LLVM IR usando el backend generador de texto LLVM
@@ -1653,7 +1658,7 @@ pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
     let mut programa = parser.parse()?;
 
     // FASE 4: Type Checker
-    let mut type_checker = semantics::TypeChecker::new();
+    let mut type_checker = semantics::TipoChecker::new();
     type_checker.analizar(&programa)?;
 
     // FASE 5: Borrow Checker

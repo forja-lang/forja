@@ -1,6 +1,6 @@
 // Registry de paquetes de Forja (alcance pragmático local/offline).
 //
-// El plan original pedía "levantar registry.forja-lang.dev". Como el servidor
+// El plan original pedía "levantar registro.forja-lang.dev". Como el servidor
 // remoto no es viable en este entorno, este módulo implementa TODA la lógica
 // verificable localmente:
 //   - Index de paquetes (JSON) con versiones, hashes y firmas.
@@ -9,8 +9,8 @@
 //   - Versionado semver (parseo, validación y comparación).
 //   - `publish` (empaquetar + indexar + firmar) y `yank` (retirar versión).
 //
-// El cliente (`PackageResolver`) consume este registry local. La capa de red
-// (HTTP hacia registry.forja-lang.dev) queda documentada como deuda futura:
+// El cliente (`PaqueteResolver`) consume este registro local. La capa de red
+// (HTTP hacia registro.forja-lang.dev) queda documentada como deuda futura:
 // el formato del index y de los tarballs es el mismo que usaría el servidor,
 // por lo que conectar un backend HTTP real no requiere cambiar este módulo.
 
@@ -142,7 +142,7 @@ pub struct EntradaPaquete {
     pub versiones: BTreeMap<String, VersionPublicada>,
 }
 
-/// Index completo del registry.
+/// Index completo del registro.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Index {
     /// nombre -> entrada.
@@ -262,10 +262,10 @@ pub fn clave_autor() -> Result<forja_native::ed25519::ParClaves, String> {
         return Ok(forja_native::ed25519::par_desde_semilla(&semilla));
     }
 
-    let ruta = dir_registry()
+    let ruta = directorio_registro()
         .parent()
         .map(|p| p.join("keys"))
-        .unwrap_or_else(dir_registry)
+        .unwrap_or_else(directorio_registro)
         .join("author.key");
     if let Ok(texto) = fs::read_to_string(&ruta) {
         let bytes = forja_native::crypto::hex_to_bytes(texto.trim())
@@ -341,22 +341,22 @@ pub fn clave_firma() -> String {
     std::env::var("FORJA_SIGNING_KEY").unwrap_or_else(|_| "forja-clave-local-dev".to_string())
 }
 
-/// Directorio raíz del registry local (`~/.forja/registry`).
-pub fn dir_registry() -> PathBuf {
+/// Directorio raíz del registro local (`~/.forja/registro`).
+pub fn directorio_registro() -> PathBuf {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| ".".to_string());
     Path::new(&home).join(".forja").join("registry")
 }
 
-/// Ruta del index del registry local.
+/// Ruta del index del registro local.
 pub fn ruta_index() -> PathBuf {
-    dir_registry().join("index.json")
+    directorio_registro().join("index.json")
 }
 
-/// Ruta del tarball de un paquete/versión dentro del registry.
+/// Ruta del tarball de un paquete/versión dentro del registro.
 pub fn ruta_tarball(nombre: &str, version: &str) -> PathBuf {
-    dir_registry()
+    directorio_registro()
         .join("paquetes")
         .join(nombre)
         .join(format!("{}-{}.fapkg", nombre, version))
@@ -568,10 +568,10 @@ pub fn yank(nombre: &str, version: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Instala un paquete desde el registry local en `destino`.
+/// Instala un paquete desde el registro local en `destino`.
 ///
 /// Verifica la firma antes de desempaquetar. Devuelve la versión instalada.
-pub fn instalar_desde_registry(nombre: &str, req: &str, destino: &Path) -> Result<String, String> {
+pub fn instalar_desde_registro(nombre: &str, req: &str, destino: &Path) -> Result<String, String> {
     let index = Index::cargar(&ruta_index())?;
     let version = index
         .resolver_version(nombre, req)

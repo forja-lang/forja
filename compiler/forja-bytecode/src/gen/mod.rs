@@ -153,7 +153,7 @@ impl GeneradorBytecode {
     }
 
     /// Establece los tipos inferidos para usar en especialización de codigos
-    pub fn set_tipos_inferidos(&mut self, tipos: std::collections::HashMap<String, Tipo>) {
+    pub fn fijar_tipos_inferidos(&mut self, tipos: std::collections::HashMap<String, Tipo>) {
         self.tipos_inferidos = Some(tipos);
     }
 
@@ -162,13 +162,13 @@ impl GeneradorBytecode {
     /// Hace falta antes de generar porque las condiciones de contrato leen
     /// globales por índice (`LoadIdxGlobal`), y `postprocesar_globales` sólo
     /// reescribe los opcodes del cuerpo, no la tabla de contratos.
-    pub fn set_globales(&mut self, globales: Vec<(String, bool)>) {
+    pub fn fijar_globales(&mut self, globales: Vec<(String, bool)>) {
         self.globales = globales;
     }
 
     /// Establece el mapa de overloads de funciones para name mangling.
     /// Permite que el generador distinga entre funciones con mismo nombre pero diferentes tipos.
-    pub fn set_funciones_overload(&mut self, funcs: forja_types::semantics::MapaSobrecargas) {
+    pub fn fijar_funciones_overload(&mut self, funcs: forja_types::semantics::MapaSobrecargas) {
         self.funciones_overload = Some(funcs);
     }
 

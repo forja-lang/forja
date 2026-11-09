@@ -1,46 +1,46 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_sockets(&mut self) {
         // ─── TCP Cliente ─────────────────────────────────────────────────
-        self.registrar("_socket_tcp_conectar", native_socket_tcp_conectar);
-        self.registrar("_socket_enviar", native_socket_enviar);
-        self.registrar("_socket_recibir", native_socket_recibir);
-        self.registrar("_socket_recibir_binario", native_socket_recibir_binario);
-        self.registrar("_socket_cerrar", native_socket_cerrar);
-        self.registrar("_socket_activo", native_socket_activo);
-        self.registrar("_socket_fijar_timeout", native_socket_fijar_timeout);
-        self.registrar("_socket_direccion_local", native_socket_direccion_local);
-        self.registrar("_socket_direccion_remota", native_socket_direccion_remota);
+        self.registrar("_socket_tcp_conectar", nativo_socket_tcp_conectar);
+        self.registrar("_socket_enviar", nativo_socket_enviar);
+        self.registrar("_socket_recibir", nativo_socket_recibir);
+        self.registrar("_socket_recibir_binario", nativo_socket_recibir_binario);
+        self.registrar("_socket_cerrar", nativo_socket_cerrar);
+        self.registrar("_socket_activo", nativo_socket_activo);
+        self.registrar("_socket_fijar_timeout", nativo_socket_fijar_timeout);
+        self.registrar("_socket_direccion_local", nativo_socket_direccion_local);
+        self.registrar("_socket_direccion_remota", nativo_socket_direccion_remota);
 
         // ─── TCP Servidor ─────────────────────────────────────────────────
-        self.registrar("_socket_tcp_escuchar", native_socket_tcp_escuchar);
-        self.registrar("_socket_aceptar", native_socket_aceptar);
+        self.registrar("_socket_tcp_escuchar", nativo_socket_tcp_escuchar);
+        self.registrar("_socket_aceptar", nativo_socket_aceptar);
 
         // ─── UDP ─────────────────────────────────────────────────────────
-        self.registrar("_socket_udp_escuchar", native_socket_udp_escuchar);
-        self.registrar("_socket_udp_enviar", native_socket_udp_enviar);
-        self.registrar("_socket_udp_recibir", native_socket_udp_recibir);
+        self.registrar("_socket_udp_escuchar", nativo_socket_udp_escuchar);
+        self.registrar("_socket_udp_enviar", nativo_socket_udp_enviar);
+        self.registrar("_socket_udp_recibir", nativo_socket_udp_recibir);
         self.registrar(
             "_socket_udp_enviar_binario",
-            native_socket_udp_enviar_binario,
+            nativo_socket_udp_enviar_binario,
         );
         self.registrar(
             "_socket_udp_recibir_binario",
-            native_socket_udp_recibir_binario,
+            nativo_socket_udp_recibir_binario,
         );
 
         // ─── BitTorrent P2P ──────────────────────────────────────────────
-        self.registrar("_bt_handshake", native_bt_handshake);
-        self.registrar("_bt_recibir_mensaje", native_bt_recibir_mensaje);
-        self.registrar("_bt_enviar_mensaje", native_bt_enviar_mensaje);
+        self.registrar("_bt_handshake", nativo_bt_handshake);
+        self.registrar("_bt_recibir_mensaje", nativo_bt_recibir_mensaje);
+        self.registrar("_bt_enviar_mensaje", nativo_bt_enviar_mensaje);
     }
 }
 
 /// Verifica el sandbox de red antes de una conexión.
 /// Si el sandbox bloquea la operación, retorna un error con mensaje claro.
 pub fn verificar_sandbox_red(
-    vm: &mut dyn Host,
+    vm: &mut dyn Anfitrion,
     anfitrion: &str,
     puerto: u16,
 ) -> Result<(), ErrFast> {
@@ -49,8 +49,8 @@ pub fn verificar_sandbox_red(
         .map_err(|mensaje| ErrFast::TipoInv(format!("sandbox_red: {}", mensaje)))
 }
 
-pub fn native_socket_tcp_conectar(
-    vm: &mut dyn Host,
+pub fn nativo_socket_tcp_conectar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
@@ -86,12 +86,12 @@ pub fn native_socket_tcp_conectar(
             let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(3)));
             let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(3)));
 
-            let socket_idx = vm.socket_alloc(SocketState::new_tcp_stream(stream));
+            let socket_idx = vm.socket_reservar(SocketState::nuevo_tcp_stream(stream));
             let val = crear_valor_socket(vm, socket_idx);
             Ok(val)
         }
         Err(e) => {
-            let error_kind = match e.kind() {
+            let error_tipo = match e.kind() {
                 std::io::ErrorKind::ConnectionRefused => "conexion_rechazada",
                 std::io::ErrorKind::TimedOut => "tiempo_agotado",
                 std::io::ErrorKind::AddrNotAvailable => "direccion_invalida",
@@ -99,12 +99,15 @@ pub fn native_socket_tcp_conectar(
                 std::io::ErrorKind::InvalidInput => "direccion_invalida",
                 _ => "error_interno",
             };
-            Err(ErrFast::TipoInv(format!("{}: {}", error_kind, e)))
+            Err(ErrFast::TipoInv(format!("{}: {}", error_tipo, e)))
         }
     }
 }
 
-pub fn native_socket_enviar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_socket_enviar(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
             "_socket_enviar requiere 2 argumentos: socket, datos (texto)".into(),
@@ -114,13 +117,13 @@ pub fn native_socket_enviar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
     let socket_idx = extraer_indice_socket(vm, args[0])?;
     let datos = obtener_texto(vm, args[1])?;
 
-    if !vm.socket_get(socket_idx).connected {
+    if !vm.socket_obtener(socket_idx).connected {
         return Err(ErrFast::TipoInv(
             "socket_cerrado: el socket no está conectado".into(),
         ));
     }
 
-    let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
+    let stream_arc = match &vm.socket_obtener(socket_idx).tcp_stream {
         Some(arc) => Arc::clone(arc),
         None => {
             return Err(ErrFast::TipoInv(
@@ -136,7 +139,10 @@ pub fn native_socket_enviar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
     }
 }
 
-pub fn native_socket_recibir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_socket_recibir(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
             "_socket_recibir requiere 2 argumentos: socket, buffer_tamano (entero)".into(),
@@ -147,13 +153,13 @@ pub fn native_socket_recibir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
     let buffer_tamano = obtener_entero(args[1])?;
     let buffer_tamano = buffer_tamano.clamp(1, 65536) as usize;
 
-    if !vm.socket_get(socket_idx).connected {
+    if !vm.socket_obtener(socket_idx).connected {
         return Err(ErrFast::TipoInv(
             "socket_cerrado: el socket no está conectado".into(),
         ));
     }
 
-    let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
+    let stream_arc = match &vm.socket_obtener(socket_idx).tcp_stream {
         Some(arc) => Arc::clone(arc),
         None => {
             return Err(ErrFast::TipoInv(
@@ -167,13 +173,13 @@ pub fn native_socket_recibir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
     match stream.read(&mut buffer) {
         Ok(0) => {
             drop(stream);
-            vm.socket_get_mut(socket_idx).connected = false;
-            let indice = vm.alloc_str(Arc::from(""));
+            vm.socket_obtener_mut(socket_idx).connected = false;
+            let indice = vm.reservar_texto(Arc::from(""));
             Ok(ValorFast::texto(indice))
         }
         Ok(n) => {
             let datos = String::from_utf8_lossy(&buffer[..n]).to_string();
-            let indice = vm.alloc_str(Arc::from(datos.as_str()));
+            let indice = vm.reservar_texto(Arc::from(datos.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(e)
@@ -183,7 +189,7 @@ pub fn native_socket_recibir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
                 || e.kind() == std::io::ErrorKind::BrokenPipe =>
         {
             drop(stream);
-            let indice = vm.alloc_str(Arc::from(""));
+            let indice = vm.reservar_texto(Arc::from(""));
             Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
@@ -194,8 +200,8 @@ pub fn native_socket_recibir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
 /// args[0]: socket
 /// args[1]: buffer_tamano (entero)
 /// Retorna: datos en hexadecimal (Texto), cadena vacía si conexión cerrada
-pub fn native_socket_recibir_binario(
-    vm: &mut dyn Host,
+pub fn nativo_socket_recibir_binario(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
@@ -208,13 +214,13 @@ pub fn native_socket_recibir_binario(
     let buffer_tamano = obtener_entero(args[1])?;
     let buffer_tamano = buffer_tamano.clamp(1, 65536) as usize;
 
-    if !vm.socket_get(socket_idx).connected {
+    if !vm.socket_obtener(socket_idx).connected {
         return Err(ErrFast::TipoInv(
             "socket_cerrado: el socket no está conectado".into(),
         ));
     }
 
-    let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
+    let stream_arc = match &vm.socket_obtener(socket_idx).tcp_stream {
         Some(arc) => Arc::clone(arc),
         None => {
             return Err(ErrFast::TipoInv(
@@ -228,8 +234,8 @@ pub fn native_socket_recibir_binario(
     match stream.read(&mut buffer) {
         Ok(0) => {
             drop(stream);
-            vm.socket_get_mut(socket_idx).connected = false;
-            let indice = vm.alloc_str(Arc::from(""));
+            vm.socket_obtener_mut(socket_idx).connected = false;
+            let indice = vm.reservar_texto(Arc::from(""));
             Ok(ValorFast::texto(indice))
         }
         Ok(n) => {
@@ -237,19 +243,22 @@ pub fn native_socket_recibir_binario(
                 .iter()
                 .map(|b| format!("{:02x}", b))
                 .collect::<String>();
-            let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+            let indice = vm.reservar_texto(Arc::from(hex_texto.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
             drop(stream);
-            let indice = vm.alloc_str(Arc::from(""));
+            let indice = vm.reservar_texto(Arc::from(""));
             Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
     }
 }
 
-pub fn native_socket_cerrar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_socket_cerrar(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_socket_cerrar requiere 1 argumento: socket".into(),
@@ -260,19 +269,22 @@ pub fn native_socket_cerrar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
     Ok(ValorFast::nulo())
 }
 
-pub fn native_socket_activo(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_socket_activo(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_socket_activo requiere 1 argumento: socket".into(),
         ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
-    let state = vm.socket_get(socket_idx);
+    let state = vm.socket_obtener(socket_idx);
     Ok(ValorFast::booleano(state.connected))
 }
 
-pub fn native_socket_fijar_timeout(
-    vm: &mut dyn Host,
+pub fn nativo_socket_fijar_timeout(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
@@ -290,7 +302,7 @@ pub fn native_socket_fijar_timeout(
     };
 
     // Aplicar timeout al stream o socket UDP subyacente
-    let state = vm.socket_get(socket_idx);
+    let state = vm.socket_obtener(socket_idx);
     if let Some(arc) = &state.tcp_stream {
         let stream = arc.clone();
         let stream_guard = stream.lock().unwrap();
@@ -302,7 +314,7 @@ pub fn native_socket_fijar_timeout(
         let _ = udp_guard.set_read_timeout(timeout);
         let _ = udp_guard.set_write_timeout(timeout);
     }
-    vm.socket_get_mut(socket_idx).timeout_ms = if tiempo_ms > 0 {
+    vm.socket_obtener_mut(socket_idx).timeout_ms = if tiempo_ms > 0 {
         Some(tiempo_ms as u64)
     } else {
         None
@@ -310,8 +322,8 @@ pub fn native_socket_fijar_timeout(
     Ok(ValorFast::nulo())
 }
 
-pub fn native_socket_direccion_local(
-    vm: &mut dyn Host,
+pub fn nativo_socket_direccion_local(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -320,10 +332,10 @@ pub fn native_socket_direccion_local(
         ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
-    let state = vm.socket_get(socket_idx);
+    let state = vm.socket_obtener(socket_idx);
     match &state.local_addr {
         Some(addr) => {
-            let indice = vm.alloc_str(Arc::from(addr.as_str()));
+            let indice = vm.reservar_texto(Arc::from(addr.as_str()));
             Ok(ValorFast::texto(indice))
         }
         None => Err(ErrFast::TipoInv(
@@ -332,8 +344,8 @@ pub fn native_socket_direccion_local(
     }
 }
 
-pub fn native_socket_direccion_remota(
-    vm: &mut dyn Host,
+pub fn nativo_socket_direccion_remota(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -342,10 +354,10 @@ pub fn native_socket_direccion_remota(
         ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
-    let state = vm.socket_get(socket_idx);
+    let state = vm.socket_obtener(socket_idx);
     match &state.peer_addr {
         Some(addr) => {
-            let indice = vm.alloc_str(Arc::from(addr.as_str()));
+            let indice = vm.reservar_texto(Arc::from(addr.as_str()));
             Ok(ValorFast::texto(indice))
         }
         None => Err(ErrFast::TipoInv(
@@ -362,8 +374,8 @@ pub fn native_socket_direccion_remota(
 /// args[0]: puerto (Entero)
 /// args[1]: backlog (Entero, opcional, default 128)
 /// Retorna: el índice del socket (Entero) encapsulado en objeto @Socket
-pub fn native_socket_tcp_escuchar(
-    vm: &mut dyn Host,
+pub fn nativo_socket_tcp_escuchar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -394,17 +406,17 @@ pub fn native_socket_tcp_escuchar(
             // espere hasta que llegue una conexión real
             let _ = listener.set_nonblocking(false);
 
-            let socket_idx = vm.socket_alloc(SocketState::new_tcp_listener(listener));
+            let socket_idx = vm.socket_reservar(SocketState::nuevo_tcp_listener(listener));
             let val = crear_valor_socket(vm, socket_idx);
             Ok(val)
         }
         Err(e) => {
-            let error_kind = match e.kind() {
+            let error_tipo = match e.kind() {
                 std::io::ErrorKind::AddrInUse => "direccion_en_uso",
                 std::io::ErrorKind::PermissionDenied => "permiso_denegado",
                 _ => "error_interno",
             };
-            Err(ErrFast::TipoInv(format!("{}: {}", error_kind, e)))
+            Err(ErrFast::TipoInv(format!("{}: {}", error_tipo, e)))
         }
     }
 }
@@ -412,7 +424,10 @@ pub fn native_socket_tcp_escuchar(
 /// Acepta una conexión entrante de un TcpListener.
 /// args[0]: socket (objeto Socket, debe ser TcpListener)
 /// Retorna: nuevo índice de socket TcpStream (Entero) o -1 si WouldBlock
-pub fn native_socket_aceptar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_socket_aceptar(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_socket_aceptar requiere 1 argumento: socket".into(),
@@ -422,7 +437,7 @@ pub fn native_socket_aceptar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
     let socket_idx = extraer_indice_socket(vm, args[0])?;
 
     // Verificar que sea un TcpListener
-    let listener_arc = match &vm.socket_get(socket_idx).tcp_listener {
+    let listener_arc = match &vm.socket_obtener(socket_idx).tcp_listener {
         Some(arc) => Arc::clone(arc),
         None => {
             return Err(ErrFast::TipoInv(
@@ -437,7 +452,7 @@ pub fn native_socket_aceptar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
             let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
             let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(30)));
 
-            let nuevo_idx = vm.socket_alloc(SocketState::new_tcp_stream(stream));
+            let nuevo_idx = vm.socket_reservar(SocketState::nuevo_tcp_stream(stream));
             let val = crear_valor_socket(vm, nuevo_idx);
             Ok(val)
         }
@@ -451,8 +466,8 @@ pub fn native_socket_aceptar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
 // ═════════════════════════════════════════════════════════════════════════
 
 /// Crea un socket UDP a la escucha (bind) en el puerto especificado.
-pub fn native_socket_udp_escuchar(
-    vm: &mut dyn Host,
+pub fn nativo_socket_udp_escuchar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -482,24 +497,24 @@ pub fn native_socket_udp_escuchar(
             let _ = socket.set_nonblocking(false);
             let _ = socket.set_read_timeout(Some(std::time::Duration::from_secs(2)));
 
-            let socket_idx = vm.socket_alloc(SocketState::new_udp_socket(socket));
+            let socket_idx = vm.socket_reservar(SocketState::nuevo_udp_socket(socket));
             let val = crear_valor_socket(vm, socket_idx);
             Ok(val)
         }
         Err(e) => {
-            let error_kind = match e.kind() {
+            let error_tipo = match e.kind() {
                 std::io::ErrorKind::AddrInUse => "direccion_en_uso",
                 std::io::ErrorKind::PermissionDenied => "permiso_denegado",
                 _ => "error_interno",
             };
-            Err(ErrFast::TipoInv(format!("{}: {}", error_kind, e)))
+            Err(ErrFast::TipoInv(format!("{}: {}", error_tipo, e)))
         }
     }
 }
 
 /// Envía datos a través de un socket UDP.
-pub fn native_socket_udp_enviar(
-    vm: &mut dyn Host,
+pub fn nativo_socket_udp_enviar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 4 {
@@ -523,7 +538,7 @@ pub fn native_socket_udp_enviar(
     // Verificar sandbox antes de enviar UDP (hostname)
     verificar_sandbox_red(vm, &direccion, puerto as u16)?;
 
-    let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
+    let socket_arc = match &vm.socket_obtener(socket_idx).udp_socket {
         Some(arc) => Arc::clone(arc),
         None => {
             return Err(ErrFast::TipoInv(
@@ -549,8 +564,8 @@ pub fn native_socket_udp_enviar(
 }
 
 /// Recibe datos de un socket UDP.
-pub fn native_socket_udp_recibir(
-    vm: &mut dyn Host,
+pub fn nativo_socket_udp_recibir(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
@@ -563,7 +578,7 @@ pub fn native_socket_udp_recibir(
     let buffer_tamano = obtener_entero(args[1])?;
     let buffer_tamano = buffer_tamano.clamp(1, 65536) as usize;
 
-    let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
+    let socket_arc = match &vm.socket_obtener(socket_idx).udp_socket {
         Some(arc) => Arc::clone(arc),
         None => {
             return Err(ErrFast::TipoInv(
@@ -578,14 +593,14 @@ pub fn native_socket_udp_recibir(
     match socket.recv_from(&mut buffer) {
         Ok((n, _origen)) => {
             let datos = String::from_utf8_lossy(&buffer[..n]).to_string();
-            let indice = vm.alloc_str(Arc::from(datos.as_str()));
+            let indice = vm.reservar_texto(Arc::from(datos.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(e)
             if e.kind() == std::io::ErrorKind::WouldBlock
                 || e.kind() == std::io::ErrorKind::TimedOut =>
         {
-            let indice = vm.alloc_str(Arc::from(""));
+            let indice = vm.reservar_texto(Arc::from(""));
             Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("error_interno: {}", e))),
@@ -593,8 +608,8 @@ pub fn native_socket_udp_recibir(
 }
 
 /// Envía datos binarios (hex string) a través de un socket UDP.
-pub fn native_socket_udp_enviar_binario(
-    vm: &mut dyn Host,
+pub fn nativo_socket_udp_enviar_binario(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 4 {
@@ -617,7 +632,7 @@ pub fn native_socket_udp_enviar_binario(
 
     verificar_sandbox_red(vm, &direccion, puerto as u16)?;
 
-    let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
+    let socket_arc = match &vm.socket_obtener(socket_idx).udp_socket {
         Some(arc) => Arc::clone(arc),
         None => {
             return Err(ErrFast::TipoInv(
@@ -653,8 +668,8 @@ pub fn native_socket_udp_enviar_binario(
 }
 
 /// Recibe datos binarios de un socket UDP y los retorna codificados en hex string.
-pub fn native_socket_udp_recibir_binario(
-    vm: &mut dyn Host,
+pub fn nativo_socket_udp_recibir_binario(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
@@ -668,7 +683,7 @@ pub fn native_socket_udp_recibir_binario(
     let buffer_tamano = obtener_entero(args[1])?;
     let buffer_tamano = buffer_tamano.clamp(1, 65536) as usize;
 
-    let socket_arc = match &vm.socket_get(socket_idx).udp_socket {
+    let socket_arc = match &vm.socket_obtener(socket_idx).udp_socket {
         Some(arc) => Arc::clone(arc),
         None => {
             return Err(ErrFast::TipoInv(
@@ -683,7 +698,7 @@ pub fn native_socket_udp_recibir_binario(
     match socket.recv_from(&mut buffer) {
         Ok((n, _origen)) => {
             let hex_string: String = buffer[..n].iter().map(|b| format!("{:02x}", b)).collect();
-            let indice = vm.alloc_str(Arc::from(hex_string.as_str()));
+            let indice = vm.reservar_texto(Arc::from(hex_string.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(e) => {
@@ -691,7 +706,7 @@ pub fn native_socket_udp_recibir_binario(
                 "[DEBUG] native_socket_udp_recibir_binario recv_from err: {}",
                 e
             );
-            let indice = vm.alloc_str(Arc::from(""));
+            let indice = vm.reservar_texto(Arc::from(""));
             Ok(ValorFast::texto(indice))
         }
     }

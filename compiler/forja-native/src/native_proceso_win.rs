@@ -13,7 +13,7 @@
 #![allow(non_snake_case)]
 
 use crate::native_registry::{obtener_entero, obtener_texto};
-use forja_runtime::{ErrFast, Host, ValorFast};
+use forja_runtime::{Anfitrion, ErrFast, ValorFast};
 #[cfg(target_os = "windows")]
 use std::sync::Mutex;
 
@@ -175,26 +175,26 @@ fn a_utf16(s: &str) -> Vec<u16> {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-// Registro en el NativeRegistry
+// Registro en el NativoRegistro
 // ═════════════════════════════════════════════════════════════════════════
 
-impl crate::native_registry::NativeRegistry {
+impl crate::native_registry::NativoRegistro {
     /// Registra las funciones nativas de procesos de Windows.
     pub fn registrar_proceso_win(&mut self) {
-        self.registrar("_proceso_obtener_pid", native_proceso_obtener_pid);
-        self.registrar("_proceso_abrir_pid", native_proceso_abrir_pid);
-        self.registrar("_proceso_ultimo_error", native_proceso_ultimo_error);
-        self.registrar("_proceso_cerrar", native_proceso_cerrar);
-        self.registrar("_proceso_modulo_base", native_proceso_modulo_base);
-        self.registrar("_proceso_modulo_tamano", native_proceso_modulo_tamano);
-        self.registrar("_proceso_leer_bytes", native_proceso_leer_bytes);
-        self.registrar("_proceso_escribir_bytes", native_proceso_escribir_bytes);
-        self.registrar("_buscar_firma", native_buscar_firma);
-        self.registrar("_tecla_presionada", native_tecla_presionada);
-        self.registrar("_consola_ocultar", native_consola_ocultar);
-        self.registrar("_restaurar_al_salir", native_restaurar_al_salir);
-        self.registrar("_imprimir_stdout", native_imprimir_stdout);
-        self.registrar("_flanco_tecla", native_flanco_tecla);
+        self.registrar("_proceso_obtener_pid", nativo_proceso_obtener_pid);
+        self.registrar("_proceso_abrir_pid", nativo_proceso_abrir_pid);
+        self.registrar("_proceso_ultimo_error", nativo_proceso_ultimo_error);
+        self.registrar("_proceso_cerrar", nativo_proceso_cerrar);
+        self.registrar("_proceso_modulo_base", nativo_proceso_modulo_base);
+        self.registrar("_proceso_modulo_tamano", nativo_proceso_modulo_tamano);
+        self.registrar("_proceso_leer_bytes", nativo_proceso_leer_bytes);
+        self.registrar("_proceso_escribir_bytes", nativo_proceso_escribir_bytes);
+        self.registrar("_buscar_firma", nativo_buscar_firma);
+        self.registrar("_tecla_presionada", nativo_tecla_presionada);
+        self.registrar("_consola_ocultar", nativo_consola_ocultar);
+        self.registrar("_restaurar_al_salir", nativo_restaurar_al_salir);
+        self.registrar("_imprimir_stdout", nativo_imprimir_stdout);
+        self.registrar("_flanco_tecla", nativo_flanco_tecla);
     }
 }
 
@@ -204,8 +204,8 @@ impl crate::native_registry::NativeRegistry {
 // o 0 si no se encuentra.
 // ═════════════════════════════════════════════════════════════════════════
 
-pub fn native_proceso_obtener_pid(
-    vm: &mut dyn Host,
+pub fn nativo_proceso_obtener_pid(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let nombre = obtener_texto(vm, args[0])?;
@@ -220,13 +220,13 @@ pub fn native_proceso_obtener_pid(
         let mut pid: i64 = 0;
         let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
         entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
-        let mut ok = unsafe { Process32FirstW(snap, &mut entry) };
-        while ok != 0 {
+        let mut correcto = unsafe { Process32FirstW(snap, &mut entry) };
+        while correcto != 0 {
             if wstr_igual(&entry.szExeFile, &nombre_w) {
                 pid = entry.th32ProcessID as i64;
                 break;
             }
-            ok = unsafe { Process32NextW(snap, &mut entry) };
+            correcto = unsafe { Process32NextW(snap, &mut entry) };
         }
         unsafe { CloseHandle(snap) };
         Ok(ValorFast::entero(pid))
@@ -244,8 +244,8 @@ pub fn native_proceso_obtener_pid(
 // Abre el proceso con OpenProcess y devuelve el manejador (0 si falla).
 // ═════════════════════════════════════════════════════════════════════════
 
-pub fn native_proceso_abrir_pid(
-    _vm: &mut dyn Host,
+pub fn nativo_proceso_abrir_pid(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let pid = obtener_entero(args[0])?;
@@ -276,8 +276,8 @@ pub fn native_proceso_abrir_pid(
 // Devuelve el último código de error de la API de Windows (GetLastError).
 // ═════════════════════════════════════════════════════════════════════════
 
-pub fn native_proceso_ultimo_error(
-    _vm: &mut dyn Host,
+pub fn nativo_proceso_ultimo_error(
+    _vm: &mut dyn Anfitrion,
     _args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     #[cfg(target_os = "windows")]
@@ -297,7 +297,10 @@ pub fn native_proceso_ultimo_error(
 // Cierra el manejador del proceso (CloseHandle).
 // ═════════════════════════════════════════════════════════════════════════
 
-pub fn native_proceso_cerrar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_proceso_cerrar(
+    _vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let manejador = obtener_entero(args[0])?;
 
     #[cfg(target_os = "windows")]
@@ -318,8 +321,8 @@ pub fn native_proceso_cerrar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<V
 // Devuelve la dirección base del módulo en el proceso (0 si no se encuentra).
 // ═════════════════════════════════════════════════════════════════════════
 
-pub fn native_proceso_modulo_base(
-    vm: &mut dyn Host,
+pub fn nativo_proceso_modulo_base(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let pid = obtener_entero(args[0])?;
@@ -337,13 +340,13 @@ pub fn native_proceso_modulo_base(
         let mut base: i64 = 0;
         let mut entry: MODULEENTRY32W = unsafe { std::mem::zeroed() };
         entry.dwSize = std::mem::size_of::<MODULEENTRY32W>() as u32;
-        let mut ok = unsafe { Module32FirstW(snap, &mut entry) };
-        while ok != 0 {
+        let mut correcto = unsafe { Module32FirstW(snap, &mut entry) };
+        while correcto != 0 {
             if wstr_igual(&entry.szModule, &nombre_w) {
                 base = entry.modBaseAddr as i64;
                 break;
             }
-            ok = unsafe { Module32NextW(snap, &mut entry) };
+            correcto = unsafe { Module32NextW(snap, &mut entry) };
         }
         unsafe { CloseHandle(snap) };
         Ok(ValorFast::entero(base))
@@ -361,8 +364,8 @@ pub fn native_proceso_modulo_base(
 // Devuelve el tamaño en bytes del módulo (0 si no se encuentra).
 // ═════════════════════════════════════════════════════════════════════════
 
-pub fn native_proceso_modulo_tamano(
-    vm: &mut dyn Host,
+pub fn nativo_proceso_modulo_tamano(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let pid = obtener_entero(args[0])?;
@@ -380,13 +383,13 @@ pub fn native_proceso_modulo_tamano(
         let mut tamano: i64 = 0;
         let mut entry: MODULEENTRY32W = unsafe { std::mem::zeroed() };
         entry.dwSize = std::mem::size_of::<MODULEENTRY32W>() as u32;
-        let mut ok = unsafe { Module32FirstW(snap, &mut entry) };
-        while ok != 0 {
+        let mut correcto = unsafe { Module32FirstW(snap, &mut entry) };
+        while correcto != 0 {
             if wstr_igual(&entry.szModule, &nombre_w) {
                 tamano = entry.modBaseSize as i64;
                 break;
             }
-            ok = unsafe { Module32NextW(snap, &mut entry) };
+            correcto = unsafe { Module32NextW(snap, &mut entry) };
         }
         unsafe { CloseHandle(snap) };
         Ok(ValorFast::entero(tamano))
@@ -406,8 +409,8 @@ pub fn native_proceso_modulo_tamano(
 // arreglo de enteros 0-255. Si falla, devuelve un arreglo vacío.
 // ═════════════════════════════════════════════════════════════════════════
 
-pub fn native_proceso_leer_bytes(
-    vm: &mut dyn Host,
+pub fn nativo_proceso_leer_bytes(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let manejador = obtener_entero(args[0])?;
@@ -449,14 +452,14 @@ pub fn native_proceso_leer_bytes(
             .iter()
             .map(|b| ValorFast::entero(*b as i64))
             .collect();
-        let idx = vm.alloc_arr(vals);
+        let idx = vm.reservar_arr(vals);
         Ok(ValorFast::arreglo(idx))
     }
 
     #[cfg(not(target_os = "windows"))]
     {
         let _ = (manejador, direccion, tamano);
-        let idx = vm.alloc_arr(Vec::new());
+        let idx = vm.reservar_arr(Vec::new());
         Ok(ValorFast::arreglo(idx))
     }
 }
@@ -467,15 +470,15 @@ pub fn native_proceso_leer_bytes(
 // Escribe los bytes del arreglo en la memoria del proceso.
 // ═════════════════════════════════════════════════════════════════════════
 
-pub fn native_proceso_escribir_bytes(
-    vm: &mut dyn Host,
+pub fn nativo_proceso_escribir_bytes(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let manejador = obtener_entero(args[0])?;
     let direccion = obtener_entero(args[1])?;
 
     let arr_idx = args[2].indice_arreglo();
-    let arr = vm.get_arr(arr_idx);
+    let arr = vm.obtener_arr(arr_idx);
     let mut buffer: Vec<u8> = Vec::with_capacity(arr.len());
     for v in arr.iter() {
         buffer.push((v.a_entero() & 0xFF) as u8);
@@ -484,7 +487,7 @@ pub fn native_proceso_escribir_bytes(
     #[cfg(target_os = "windows")]
     {
         let mut escritos: usize = 0;
-        let ok = unsafe {
+        let correcto = unsafe {
             WriteProcessMemory(
                 manejador as *mut std::ffi::c_void,
                 direccion as *mut std::ffi::c_void,
@@ -493,7 +496,9 @@ pub fn native_proceso_escribir_bytes(
                 &mut escritos,
             )
         };
-        Ok(ValorFast::booleano(ok != 0 && escritos == buffer.len()))
+        Ok(ValorFast::booleano(
+            correcto != 0 && escritos == buffer.len(),
+        ))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -511,13 +516,16 @@ pub fn native_proceso_escribir_bytes(
 // Devuelve el offset del match, o -1 si no lo encuentra.
 // ═════════════════════════════════════════════════════════════════════════
 
-pub fn native_buscar_firma(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_buscar_firma(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let bytes_idx = args[0].indice_arreglo();
-    let bytes = vm.get_arr(bytes_idx);
+    let bytes = vm.obtener_arr(bytes_idx);
     let firma_idx = args[1].indice_arreglo();
-    let firma = vm.get_arr(firma_idx);
+    let firma = vm.obtener_arr(firma_idx);
     let mascara_idx = args[2].indice_arreglo();
-    let mascara = vm.get_arr(mascara_idx);
+    let mascara = vm.obtener_arr(mascara_idx);
 
     let n = bytes.len();
     let m = firma.len();
@@ -554,13 +562,16 @@ pub fn native_buscar_firma(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
 // _flanco_tecla(vk: Entero) -> Booleano
 // Devuelve verdadero SOLO en la transición no-presionada → presionada
 // (flanco de subida). El estado anterior se guarda en Rust (no depende de
-// variables de Forja, que dyn Host puede corromper en bucles).
+// variables de Forja, que dyn Anfitrion puede corromper en bucles).
 // ═════════════════════════════════════════════════════════════════════════
 
 #[cfg(target_os = "windows")]
 static ESTADO_TECLA_ANTERIOR: Mutex<Option<(i32, bool)>> = Mutex::new(None);
 
-pub fn native_flanco_tecla(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_flanco_tecla(
+    _vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let vk = obtener_entero(args[0])? as i32;
 
     #[cfg(target_os = "windows")]
@@ -583,8 +594,8 @@ pub fn native_flanco_tecla(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
     }
 }
 
-pub fn native_tecla_presionada(
-    _vm: &mut dyn Host,
+pub fn nativo_tecla_presionada(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let vk = obtener_entero(args[0])?;
@@ -607,8 +618,8 @@ pub fn native_tecla_presionada(
 // Oculta (true) o muestra (false) la ventana de consola del proceso actual.
 // ═════════════════════════════════════════════════════════════════════════
 
-pub fn native_consola_ocultar(
-    _vm: &mut dyn Host,
+pub fn nativo_consola_ocultar(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let ocultar = args[0].a_entero() != 0;
@@ -639,7 +650,10 @@ pub fn native_consola_ocultar(
 // el output en vivo.
 // ═════════════════════════════════════════════════════════════════════════
 
-pub fn native_imprimir_stdout(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_imprimir_stdout(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(vm, args[0])?;
     println!("{}", s);
     use std::io::Write;
@@ -654,8 +668,8 @@ pub fn native_imprimir_stdout(vm: &mut dyn Host, args: &[ValorFast]) -> Result<V
 // bytes originales (WriteProcessMemory) automáticamente al salir.
 // ═════════════════════════════════════════════════════════════════════════
 
-pub fn native_restaurar_al_salir(
-    _vm: &mut dyn Host,
+pub fn nativo_restaurar_al_salir(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let manejador = obtener_entero(args[0])?;

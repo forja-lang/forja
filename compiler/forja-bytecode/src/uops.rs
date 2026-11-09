@@ -813,7 +813,7 @@ mod tests {
     }
 
     #[test]
-    fn expandir_store_entero() {
+    fn expandir_almacen_entero() {
         let bc = vec![Opcode::GuardarOperacionEntero(1, 99)];
         let uops = expandir_a_uops(&bc);
         assert_eq!(uops.len(), 2);
@@ -884,7 +884,7 @@ mod tests {
     }
 
     #[test]
-    fn optimizar_push_pop_eliminacion() {
+    fn optimizar_empujar_desapilar_eliminacion() {
         // Patrón: PushEntero(n), Pop → eliminar ambos
         let uops = vec![Uop::PushEntero(42), Uop::Pop];
         let opt = optimizar_uops(&uops);
@@ -902,7 +902,7 @@ mod tests {
     }
 
     #[test]
-    fn optimizar_declare_init_fusion() {
+    fn optimizar_declarar_inicializar_fusion() {
         // Patrón: DeclareVar(0), StorePop(0) → DeclareInit(0)
         let uops = vec![Uop::DeclareVar(0), Uop::StorePop(0)];
         let opt = optimizar_uops(&uops);

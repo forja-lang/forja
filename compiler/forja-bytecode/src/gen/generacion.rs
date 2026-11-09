@@ -15,11 +15,12 @@ impl GeneradorBytecode {
                 nombre, variantes, ..
             } = decl
             {
-                let var_info: Vec<(String, Vec<Tipo>)> = variantes
+                let variable_informacion: Vec<(String, Vec<Tipo>)> = variantes
                     .iter()
                     .map(|v| (v.nombre.clone(), v.tipos.clone()))
                     .collect();
-                self.enum_variantes.insert(nombre.clone(), var_info);
+                self.enum_variantes
+                    .insert(nombre.clone(), variable_informacion);
             }
         }
         for decl in &programa.declaraciones {

@@ -17,7 +17,7 @@ impl ForjaFast {
     pub fn ejecutar_ops_io(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
             Opcode::ParsearEntero => {
-                let v = self.pop_valor()?;
+                let v = self.desapilar_valor()?;
                 // `leer()` sin stdin devuelve Nulo: convertirlo en 0 hacía que un
                 // bucle interactivo ("pedir número hasta acertar") girara para
                 // siempre. Nulo se propaga (misma regla que en la ruta de uops).
@@ -31,7 +31,7 @@ impl ForjaFast {
                     Some(v.a_flotante() as i64)
                 } else if v.es_exacto() {
                     let idx = v.indice_exacto();
-                    let exacto = self.get_exacto(idx);
+                    let exacto = self.obtener_exacto(idx);
                     if exacto.escala == 0 {
                         Some(exacto.coeficiente as i64)
                     } else {
@@ -44,8 +44,8 @@ impl ForjaFast {
                     Some(0)
                 };
                 match n {
-                    Some(n) => self.push_valor(ValorFast::entero(n)),
-                    None => self.push_valor(ValorFast::nulo()),
+                    Some(n) => self.empujar_valor(ValorFast::entero(n)),
+                    None => self.empujar_valor(ValorFast::nulo()),
                 }
                 self.ip += 1;
             }
@@ -54,12 +54,12 @@ impl ForjaFast {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs() as i64;
-                self.push_valor(ValorFast::entero(ts));
+                self.empujar_valor(ValorFast::entero(ts));
                 self.ip += 1;
             }
             Opcode::Imprimir => {
-                let v = self.pop_valor()?;
-                self.escribir_output(self.mostrar_valor(&v));
+                let v = self.desapilar_valor()?;
+                self.escribir_salida(self.mostrar_valor(&v));
                 self.ip += 1;
             }
             Opcode::LeerLinea => {
@@ -68,13 +68,13 @@ impl ForjaFast {
                     let trimmed = i.trim();
                     if trimmed.is_empty() {
                         // EOF: push Nulo para que el programa pueda detectar fin de entrada
-                        self.push_valor(ValorFast::nulo());
+                        self.empujar_valor(ValorFast::nulo());
                     } else {
-                        let idx = self.alloc_str(Arc::from(trimmed));
-                        self.push_valor(ValorFast::texto(idx));
+                        let idx = self.reservar_texto(Arc::from(trimmed));
+                        self.empujar_valor(ValorFast::texto(idx));
                     }
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
                 self.ip += 1;
             }

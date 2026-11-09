@@ -7,19 +7,19 @@ impl ForjaFast {
     // ─── Socket Heap Management ───────────────────────────────────────────
 
     /// Aloca un nuevo socket en el socket heap y retorna su índice
-    pub fn socket_alloc(&mut self, state: SocketState) -> u32 {
+    pub fn socket_reservar(&mut self, state: SocketState) -> u32 {
         let idx = self.runtime.socket_heap.len() as u32;
         self.runtime.socket_heap.push(state);
         idx
     }
 
     /// Obtiene referencia al estado de un socket por índice
-    pub fn socket_get(&self, idx: u32) -> &SocketState {
+    pub fn socket_obtener(&self, idx: u32) -> &SocketState {
         &self.runtime.socket_heap[idx as usize]
     }
 
     /// Obtiene referencia mutable al estado de un socket
-    pub fn socket_get_mut(&mut self, idx: u32) -> &mut SocketState {
+    pub fn socket_obtener_mut(&mut self, idx: u32) -> &mut SocketState {
         &mut self.runtime.socket_heap[idx as usize]
     }
 
@@ -73,7 +73,7 @@ impl ForjaFast {
     /// `ErrFast::ErrorPropagado`, que permanece reservado y sin usar). Usado por
     /// `Opcode::Intentar` y `Uop::Try`.
     pub fn aplicar_try(&mut self) -> Result<Option<ValorFast>, ErrFast> {
-        let valor = self.pop_valor()?;
+        let valor = self.desapilar_valor()?;
         if valor.es_objeto() {
             let obj_idx = valor.indice_objeto();
             let clase_sym = self.runtime.obj_heap[obj_idx as usize].clase;
@@ -115,10 +115,10 @@ impl ForjaFast {
             } else {
                 ValorFast::nulo()
             };
-            self.push_valor(valor_interno);
+            self.empujar_valor(valor_interno);
         } else {
             // Si no es objeto, ignorar
-            self.push_valor(ValorFast::nulo());
+            self.empujar_valor(ValorFast::nulo());
         }
         Ok(None)
     }
@@ -133,7 +133,7 @@ impl ForjaFast {
     // ─── Type tagging (para especialización adaptativa) ───────────────────────
 
     #[inline(always)]
-    pub fn type_tag(v: &ValorFast) -> u8 {
+    pub fn tipo_etiqueta(v: &ValorFast) -> u8 {
         prof_count!(tipo_tag_calls);
         if v.es_entero() {
             0
@@ -151,23 +151,23 @@ impl ForjaFast {
     // ─── Stack Caching Helpers ───────────────────────────────────────────────
 
     /// Push un valor al tope del stack cache (array fijo de 4).
-    /// Si el cache está lleno (top_len == 4), mueve el más viejo al stack real
+    /// Si el cache está lleno (top_longitud == 4), mueve el más viejo al stack real
     /// y hace shift left.
     #[inline(always)]
-    pub fn push_valor(&mut self, val: ValorFast) {
+    pub fn empujar_valor(&mut self, val: ValorFast) {
         prof_count!(push_valor_calls);
-        if self.top_len < 4 {
-            self.stack_top[self.top_len] = val;
-            self.top_len += 1;
+        if self.top_longitud < 4 {
+            self.pila_top[self.top_longitud] = val;
+            self.top_longitud += 1;
         } else {
             // Hacer espacio: mover el más viejo al stack real
-            self.stack.push(self.stack_top[0]);
+            self.stack.push(self.pila_top[0]);
             // Shift left
-            self.stack_top[0] = self.stack_top[1];
-            self.stack_top[1] = self.stack_top[2];
-            self.stack_top[2] = self.stack_top[3];
-            self.stack_top[3] = val;
-            // top_len se mantiene en 4
+            self.pila_top[0] = self.pila_top[1];
+            self.pila_top[1] = self.pila_top[2];
+            self.pila_top[2] = self.pila_top[3];
+            self.pila_top[3] = val;
+            // top_longitud se mantiene en 4
         }
     }
 
@@ -175,11 +175,11 @@ impl ForjaFast {
     /// Si el cache está vacío, pop del stack real.
     /// Si el stack está vacío, retorna Nulo en lugar de error.
     #[inline(always)]
-    pub fn pop_valor(&mut self) -> Result<ValorFast, ErrFast> {
+    pub fn desapilar_valor(&mut self) -> Result<ValorFast, ErrFast> {
         prof_count!(pop_valor_calls);
-        if self.top_len > 0 {
-            self.top_len -= 1;
-            Ok(self.stack_top[self.top_len])
+        if self.top_longitud > 0 {
+            self.top_longitud -= 1;
+            Ok(self.pila_top[self.top_longitud])
         } else if !self.stack.is_empty() {
             Ok(self.stack.pop().unwrap())
         } else {
@@ -194,25 +194,25 @@ impl ForjaFast {
     pub fn peek_valor(&self, depth: usize) -> &ValorFast {
         // Nulo estático para retorno seguro cuando depth excede el stack
         static NULO_VAL: ValorFast = ValorFast(0x7FF8000000000000);
-        if depth >= self.top_len + self.stack.len() {
+        if depth >= self.top_longitud + self.stack.len() {
             return &NULO_VAL;
         }
-        if depth < self.top_len {
-            &self.stack_top[self.top_len - 1 - depth]
+        if depth < self.top_longitud {
+            &self.pila_top[self.top_longitud - 1 - depth]
         } else {
-            let idx = self.stack.len() - (depth - self.top_len) - 1;
+            let idx = self.stack.len() - (depth - self.top_longitud) - 1;
             &self.stack[idx]
         }
     }
 
-    /// Drena todo el cache (stack_top) al stack real.
+    /// Drena todo el cache (pila_top) al stack real.
     /// Útil antes de operaciones que manipulan self.stack directamente
     /// (como Call/Return argument passing).
     #[inline(always)]
     /// Convierte los string builders activos a `Arc<str>` y los guarda en flat_vars.
     /// Se llama al salir de una función para persistir los buffers acumulados.
     /// Extrae la primera entrada válida de un PIC para el inline cache de CallMethod.
-    pub fn extract_pic_entry(&self, pic: Pic) -> Option<(IdSimbolo, usize)> {
+    pub fn extraer_pic_entrada(&self, pic: Pic) -> Option<(IdSimbolo, usize)> {
         match pic {
             Pic::Mono(c, idx) => Some((c, idx)),
             Pic::Poly(arr, _) => Some(arr[0]),
@@ -220,22 +220,22 @@ impl ForjaFast {
         }
     }
 
-    pub fn flush_string_builders(&mut self) {
+    pub fn flush_texto_builders(&mut self) {
         let keys: Vec<usize> = self.str_builders.keys().copied().collect();
         for idx in keys {
             if let Some(buf) = self.str_builders.remove(&idx) {
                 if !buf.is_empty() {
-                    let str_idx = self.alloc_str(Arc::from(buf.as_str()));
-                    self.store_local(idx, ValorFast::texto(str_idx));
+                    let str_idx = self.reservar_texto(Arc::from(buf.as_str()));
+                    self.almacen_local(idx, ValorFast::texto(str_idx));
                 }
             }
         }
     }
 
-    pub fn flush_stack(&mut self) {
-        for i in 0..self.top_len {
-            self.stack.push(self.stack_top[i]);
+    pub fn flush_pila(&mut self) {
+        for i in 0..self.top_longitud {
+            self.stack.push(self.pila_top[i]);
         }
-        self.top_len = 0;
+        self.top_longitud = 0;
     }
 }

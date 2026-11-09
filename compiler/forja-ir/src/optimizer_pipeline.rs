@@ -9,7 +9,7 @@
 //!
 //! Este módulo centraliza **toda** la fase de optimización:
 //!
-//! * [`AstPass`] — trait uniforme para los passes que operan sobre el AST.
+//! * [`AstPasada`] — trait uniforme para los passes que operan sobre el AST.
 //! * [`PipelineAst`] — pipeline **configurable** de passes de AST. Los niveles
 //!   [`PipelineAst::basico`] y [`PipelineAst::completo`] reproducen exactamente
 //!   los órdenes históricos, por lo que la paridad de comportamiento es total.
@@ -27,8 +27,8 @@ use forja_syntax::ast::Programa;
 /// Un *pass* de optimización sobre el AST.
 ///
 /// El trait es *object-safe* para poder componer pipelines en tiempo de
-/// ejecución (`Vec<Box<dyn AstPass>>`).
-pub trait AstPass {
+/// ejecución (`Vec<Box<dyn AstPasada>>`).
+pub trait AstPasada {
     /// Nombre estable del pass (para diagnóstico y tests).
     fn nombre(&self) -> &'static str;
 
@@ -38,7 +38,7 @@ pub trait AstPass {
 
 // ── Implementaciones: cada pass existente se adapta al trait uniforme ──
 
-impl AstPass for optimizer::Optimizer {
+impl AstPasada for optimizer::Optimizer {
     fn nombre(&self) -> &'static str {
         "const-fold"
     }
@@ -47,7 +47,7 @@ impl AstPass for optimizer::Optimizer {
     }
 }
 
-impl AstPass for optimizer::DeadCodeEliminator {
+impl AstPasada for optimizer::DeadCodeEliminator {
     fn nombre(&self) -> &'static str {
         "dce"
     }
@@ -56,7 +56,7 @@ impl AstPass for optimizer::DeadCodeEliminator {
     }
 }
 
-impl AstPass for optimizer::ConstPropagator {
+impl AstPasada for optimizer::ConstPropagator {
     fn nombre(&self) -> &'static str {
         "const-prop"
     }
@@ -65,25 +65,25 @@ impl AstPass for optimizer::ConstPropagator {
     }
 }
 
-impl AstPass for optimizer::FunctionInliner {
+impl AstPasada for optimizer::FuncionInliner {
     fn nombre(&self) -> &'static str {
         "inline"
     }
     fn aplicar(&mut self, programa: &Programa) -> Programa {
-        self.inline(programa)
+        self.en_linea(programa)
     }
 }
 
-impl AstPass for optimizer::LoopUnswitcher {
+impl AstPasada for optimizer::BucleUnswitcher {
     fn nombre(&self) -> &'static str {
         "loop-unswitch"
     }
     fn aplicar(&mut self, programa: &Programa) -> Programa {
-        self.unswitch(programa)
+        self.desanidar(programa)
     }
 }
 
-impl AstPass for optimizer::CsePass {
+impl AstPasada for optimizer::CsePasada {
     fn nombre(&self) -> &'static str {
         "cse"
     }
@@ -92,7 +92,7 @@ impl AstPass for optimizer::CsePass {
     }
 }
 
-impl AstPass for optimizer::CopyPropagation {
+impl AstPasada for optimizer::CopiaPropagation {
     fn nombre(&self) -> &'static str {
         "copy-prop"
     }
@@ -106,7 +106,7 @@ impl AstPass for optimizer::CopyPropagation {
 /// Los passes se ejecutan **en orden**, encadenando la salida de uno como
 /// entrada del siguiente.
 pub struct PipelineAst {
-    passes: Vec<Box<dyn AstPass>>,
+    passes: Vec<Box<dyn AstPasada>>,
 }
 
 impl PipelineAst {
@@ -130,14 +130,14 @@ impl PipelineAst {
         let mut pipeline = Self::basico();
         pipeline
             .passes
-            .push(Box::new(optimizer::FunctionInliner::new()));
+            .push(Box::new(optimizer::FuncionInliner::new()));
         pipeline
             .passes
-            .push(Box::new(optimizer::LoopUnswitcher::new()));
-        pipeline.passes.push(Box::new(optimizer::CsePass::new()));
+            .push(Box::new(optimizer::BucleUnswitcher::new()));
+        pipeline.passes.push(Box::new(optimizer::CsePasada::new()));
         pipeline
             .passes
-            .push(Box::new(optimizer::CopyPropagation::new()));
+            .push(Box::new(optimizer::CopiaPropagation::new()));
         pipeline
     }
 
@@ -147,7 +147,7 @@ impl PipelineAst {
     }
 
     /// Añade un pass al final del pipeline (builder).
-    pub fn con(mut self, pass: Box<dyn AstPass>) -> Self {
+    pub fn con(mut self, pass: Box<dyn AstPasada>) -> Self {
         self.passes.push(pass);
         self
     }

@@ -1208,7 +1208,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_symbol_table() {
+    fn test_symbol_tabla() {
         let mut st = TablaSimbolosIr::new();
         let id1 = st.internar("main");
         let id2 = st.internar("foo");

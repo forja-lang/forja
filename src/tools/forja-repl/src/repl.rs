@@ -251,9 +251,7 @@ impl REPL {
                                         if full_fuente.is_empty() {
                                             eprintln!(
                                                 "{}",
-                                                error::warning(
-                                                    "No hay código cargado para recargar"
-                                                )
+                                                error::aviso("No hay código cargado para recargar")
                                             );
                                         } else {
                                             let mut lexer = Lexer::new(&full_fuente);
@@ -312,7 +310,7 @@ impl REPL {
                                     } else {
                                         eprintln!(
                                             "{}",
-                                            error::warning(
+                                            error::aviso(
                                                 "No hay VM activa. Ejecutá código primero."
                                             )
                                         );
@@ -372,7 +370,7 @@ impl REPL {
                                             .map(|info| info.version)
                                             .unwrap_or(0);
                                         // Hacer hot-swap en la VM
-                                        match vm.hot_swap_module(modulo_sym, &modulo_bytecode) {
+                                        match vm.hot_swap_modulo(modulo_sym, &modulo_bytecode) {
                                             Ok(()) => {
                                                 println!(
                                                     "{} Módulo '{}' recargado (v{})",
@@ -394,7 +392,7 @@ impl REPL {
                                     } else {
                                         eprintln!(
                                             "{}",
-                                            error::warning(
+                                            error::aviso(
                                                 "No hay VM activa. Ejecutá código primero."
                                             )
                                         );
@@ -461,12 +459,12 @@ impl REPL {
         let mut vm = forja_driver::vm_fast::ForjaFast::new();
         vm.show_bytecode = self.show_bytecode;
         vm.verificar_contratos = self.verificar_contratos;
-        vm.set_fast_math(self.matematica_rapida);
+        vm.fijar_fast_math(self.matematica_rapida);
         vm.contratos = contratos_vm;
         vm.reset();
         vm.cargar_bytecode(bytecode);
         let resultado = vm.ejecutar().map_err(|e| format!("{e}"));
-        let salida = vm.obtener_output();
+        let salida = vm.obtener_salida();
         self.vm_fast = Some(vm);
 
         // La salida vieja se re-imprime en cada corrida: se descarta.
@@ -566,11 +564,11 @@ impl REPL {
             let mut vm = forja_driver::vm_fast::ForjaFast::new();
             vm.contratos = contratos;
             vm.verificar_contratos = self.verificar_contratos;
-            vm.set_fast_math(self.matematica_rapida);
+            vm.fijar_fast_math(self.matematica_rapida);
             vm.cargar_bytecode(bytecode);
             vm.ejecutar().ok()?;
             Some(
-                vm.obtener_output()
+                vm.obtener_salida()
                     .iter()
                     .filter_map(|l| l.strip_prefix("__VAR__ ").map(|s| s.to_string()))
                     .collect(),
@@ -899,10 +897,10 @@ impl REPL {
             _ => "",
         };
         forja::error::establecer_nivel(match nivel {
-            "detallado" => forja::error::NivelVerbose::Verbose,
-            "depuracion" => forja::error::NivelVerbose::Debug,
-            "traza" => forja::error::NivelVerbose::Trace,
-            _ => forja::error::NivelVerbose::Normal,
+            "detallado" => forja::error::NivelDetallado::Verbose,
+            "depuracion" => forja::error::NivelDetallado::Debug,
+            "traza" => forja::error::NivelDetallado::Trace,
+            _ => forja::error::NivelDetallado::Normal,
         });
 
         let mut cfg = forja::config::actual();
@@ -964,7 +962,7 @@ variable n = 7
         vm.cargar_bytecode(bc);
         vm.ejecutar().expect("ejecuta");
         assert!(vm
-            .obtener_output()
+            .obtener_salida()
             .iter()
             .any(|l| l == "__VAR__ hola = adios"));
 

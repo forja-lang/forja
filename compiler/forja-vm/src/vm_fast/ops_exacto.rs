@@ -33,45 +33,45 @@ impl ForjaFast {
             // ── Exacto operations (BigDecimal) ─────────────────────────
             Opcode::PushExacto(coeff, scale) => {
                 let v = self.exacto_valor(*coeff, *scale);
-                self.push_valor(v);
+                self.empujar_valor(v);
                 self.ip += 1;
             }
             Opcode::SumarExacto => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 let a = self.normalizar_a_exacto(a);
                 let b = self.normalizar_a_exacto(b);
                 let val = if a.es_exacto() && b.es_exacto() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let be = self.get_exacto(b.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
                         ae.coeficiente,
                         ae.escala,
                         be.coeficiente,
                         be.escala,
                     );
-                    let result = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
-                    self.exacto_valor(result, escala)
+                    let resultado = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
+                    self.exacto_valor(resultado, escala)
                 } else if a.es_entero() && b.es_exacto() {
-                    let be = self.get_exacto(b.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
                         a.a_entero() as i128,
                         0,
                         be.coeficiente,
                         be.escala,
                     );
-                    let result = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
-                    self.exacto_valor(result, escala)
+                    let resultado = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
+                    self.exacto_valor(resultado, escala)
                 } else if a.es_exacto() && b.es_entero() {
-                    let ae = self.get_exacto(a.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
                     let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
                         ae.coeficiente,
                         ae.escala,
                         b.a_entero() as i128,
                         0,
                     );
-                    let result = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
-                    self.exacto_valor(result, escala)
+                    let resultado = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
+                    self.exacto_valor(resultado, escala)
                 } else {
                     // Un exacto con un operando que no lo es (p. ej. un literal
                     // Decimal asignado a una variable Exacto) no debe dar Nulo en
@@ -81,45 +81,45 @@ impl ForjaFast {
                             .to_string(),
                     ));
                 };
-                self.push_valor(val);
+                self.empujar_valor(val);
                 self.ip += 1;
             }
             Opcode::RestarExacto => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 let a = self.normalizar_a_exacto(a);
                 let b = self.normalizar_a_exacto(b);
                 let val = if a.es_exacto() && b.es_exacto() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let be = self.get_exacto(b.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
                         ae.coeficiente,
                         ae.escala,
                         be.coeficiente,
                         be.escala,
                     );
-                    let result = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
-                    self.exacto_valor(result, escala)
+                    let resultado = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
+                    self.exacto_valor(resultado, escala)
                 } else if a.es_entero() && b.es_exacto() {
-                    let be = self.get_exacto(b.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
                         a.a_entero() as i128,
                         0,
                         be.coeficiente,
                         be.escala,
                     );
-                    let result = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
-                    self.exacto_valor(result, escala)
+                    let resultado = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
+                    self.exacto_valor(resultado, escala)
                 } else if a.es_exacto() && b.es_entero() {
-                    let ae = self.get_exacto(a.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
                     let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
                         ae.coeficiente,
                         ae.escala,
                         b.a_entero() as i128,
                         0,
                     );
-                    let result = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
-                    self.exacto_valor(result, escala)
+                    let resultado = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
+                    self.exacto_valor(resultado, escala)
                 } else {
                     // Un exacto con un operando que no lo es (p. ej. un literal
                     // Decimal asignado a una variable Exacto) no debe dar Nulo en
@@ -129,36 +129,36 @@ impl ForjaFast {
                             .to_string(),
                     ));
                 };
-                self.push_valor(val);
+                self.empujar_valor(val);
                 self.ip += 1;
             }
             Opcode::MultiplicarExacto => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 let a = self.normalizar_a_exacto(a);
                 let b = self.normalizar_a_exacto(b);
                 let val = if a.es_exacto() && b.es_exacto() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let be = self.get_exacto(b.indice_exacto());
-                    let result = ae
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
+                    let resultado = ae
                         .coeficiente
                         .checked_mul(be.coeficiente)
                         .ok_or(ErrFast::OverflowArit)?;
                     let escala = ae.escala + be.escala;
-                    self.exacto_valor(result, escala)
+                    self.exacto_valor(resultado, escala)
                 } else if a.es_entero() && b.es_exacto() {
-                    let be = self.get_exacto(b.indice_exacto());
-                    let result = (a.a_entero() as i128)
+                    let be = self.obtener_exacto(b.indice_exacto());
+                    let resultado = (a.a_entero() as i128)
                         .checked_mul(be.coeficiente)
                         .ok_or(ErrFast::OverflowArit)?;
-                    self.exacto_valor(result, be.escala)
+                    self.exacto_valor(resultado, be.escala)
                 } else if a.es_exacto() && b.es_entero() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let result = ae
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let resultado = ae
                         .coeficiente
                         .checked_mul(b.a_entero() as i128)
                         .ok_or(ErrFast::OverflowArit)?;
-                    self.exacto_valor(result, ae.escala)
+                    self.exacto_valor(resultado, ae.escala)
                 } else {
                     // Un exacto con un operando que no lo es (p. ej. un literal
                     // Decimal asignado a una variable Exacto) no debe dar Nulo en
@@ -168,17 +168,17 @@ impl ForjaFast {
                             .to_string(),
                     ));
                 };
-                self.push_valor(val);
+                self.empujar_valor(val);
                 self.ip += 1;
             }
             Opcode::DividirExacto => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 let a = self.normalizar_a_exacto(a);
                 let b = self.normalizar_a_exacto(b);
                 let val = if a.es_exacto() && b.es_exacto() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let be = self.get_exacto(b.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     if be.coeficiente == 0 {
                         ValorFast::nulo()
                     } else {
@@ -197,7 +197,7 @@ impl ForjaFast {
                         self.exacto_valor(cociente, extra)
                     }
                 } else if a.es_entero() && b.es_exacto() {
-                    let be = self.get_exacto(b.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     if be.coeficiente == 0 {
                         ValorFast::nulo()
                     } else {
@@ -214,7 +214,7 @@ impl ForjaFast {
                         self.exacto_valor(cociente, extra)
                     }
                 } else if a.es_exacto() && b.es_entero() {
-                    let ae = self.get_exacto(a.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
                     if b.a_entero() == 0 {
                         ValorFast::nulo()
                     } else {
@@ -239,17 +239,17 @@ impl ForjaFast {
                             .to_string(),
                     ));
                 };
-                self.push_valor(val);
+                self.empujar_valor(val);
                 self.ip += 1;
             }
             Opcode::IgualExacto => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 let a = self.normalizar_a_exacto(a);
                 let b = self.normalizar_a_exacto(b);
                 let igual = if a.es_exacto() && b.es_exacto() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let be = self.get_exacto(b.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let (a_adj, b_adj, _) = homogeneizar_exacto_fast(
                         ae.coeficiente,
                         ae.escala,
@@ -260,17 +260,17 @@ impl ForjaFast {
                 } else {
                     false
                 };
-                self.push_valor(ValorFast::booleano(igual));
+                self.empujar_valor(ValorFast::booleano(igual));
                 self.ip += 1;
             }
             Opcode::MenorExacto => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 let a = self.normalizar_a_exacto(a);
                 let b = self.normalizar_a_exacto(b);
                 let menor = if a.es_exacto() && b.es_exacto() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let be = self.get_exacto(b.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let (a_adj, b_adj, _) = homogeneizar_exacto_fast(
                         ae.coeficiente,
                         ae.escala,
@@ -281,17 +281,17 @@ impl ForjaFast {
                 } else {
                     false
                 };
-                self.push_valor(ValorFast::booleano(menor));
+                self.empujar_valor(ValorFast::booleano(menor));
                 self.ip += 1;
             }
             Opcode::MayorExacto => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 let a = self.normalizar_a_exacto(a);
                 let b = self.normalizar_a_exacto(b);
                 let mayor = if a.es_exacto() && b.es_exacto() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let be = self.get_exacto(b.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let (a_adj, b_adj, _) = homogeneizar_exacto_fast(
                         ae.coeficiente,
                         ae.escala,
@@ -302,57 +302,57 @@ impl ForjaFast {
                 } else {
                     false
                 };
-                self.push_valor(ValorFast::booleano(mayor));
+                self.empujar_valor(ValorFast::booleano(mayor));
                 self.ip += 1;
             }
             Opcode::EnteroAExacto => {
-                let val = self.pop_valor()?;
+                let val = self.desapilar_valor()?;
                 if val.es_entero() {
                     let v = self.exacto_valor(val.a_entero() as i128, 0);
-                    self.push_valor(v);
+                    self.empujar_valor(v);
                 } else {
-                    self.push_valor(val);
+                    self.empujar_valor(val);
                 }
                 self.ip += 1;
             }
             Opcode::DecimalAExacto => {
-                let val = self.pop_valor()?;
+                let val = self.desapilar_valor()?;
                 if val.es_flotante() {
                     let d = val.a_flotante();
                     // Convertir f64 a Exacto con escala 10 (10 dígitos decimales)
                     let escala = 10u32;
                     let coeff = (d * 10_f64.powi(escala as i32)) as i128;
                     let v = self.exacto_valor(coeff, escala);
-                    self.push_valor(v);
+                    self.empujar_valor(v);
                 } else {
-                    self.push_valor(val);
+                    self.empujar_valor(val);
                 }
                 self.ip += 1;
             }
             Opcode::DeclararOperacionExacto(idx, coeff, scale) => {
                 // Declarar variable con valor Exacto literal
                 let v = self.exacto_valor(*coeff, *scale);
-                self.store_local(*idx, v);
-                self.push_valor(v);
+                self.almacen_local(*idx, v);
+                self.empujar_valor(v);
                 self.ip += 1;
             }
             Opcode::SumarGuardarExacto(idx) => {
                 // Pop valor, sumar a variable en idx (acumulador Exacto)
-                let b = self.pop_valor()?;
-                let var_val = self.load_local(*idx);
+                let b = self.desapilar_valor()?;
+                let var_val = self.cargar_local(*idx);
                 if var_val.es_exacto() {
-                    let ae = self.get_exacto(var_val.indice_exacto());
+                    let ae = self.obtener_exacto(var_val.indice_exacto());
                     if b.es_exacto() {
-                        let be = self.get_exacto(b.indice_exacto());
+                        let be = self.obtener_exacto(b.indice_exacto());
                         let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
                             ae.coeficiente,
                             ae.escala,
                             be.coeficiente,
                             be.escala,
                         );
-                        let result = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
-                        let v = self.exacto_valor(result, escala);
-                        self.store_local(*idx, v);
+                        let resultado = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
+                        let v = self.exacto_valor(resultado, escala);
+                        self.almacen_local(*idx, v);
                     } else if b.es_entero() {
                         let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
                             ae.coeficiente,
@@ -360,12 +360,12 @@ impl ForjaFast {
                             b.a_entero() as i128,
                             0,
                         );
-                        let result = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
-                        let v = self.exacto_valor(result, escala);
-                        self.store_local(*idx, v);
+                        let resultado = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
+                        let v = self.exacto_valor(resultado, escala);
+                        self.almacen_local(*idx, v);
                     }
                 }
-                self.push_valor(ValorFast::nulo());
+                self.empujar_valor(ValorFast::nulo());
                 self.ip += 1;
             }
             _ => return Ok(false),

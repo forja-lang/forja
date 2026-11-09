@@ -1,6 +1,9 @@
 use super::*;
 
-pub fn native_bt_handshake(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_bt_handshake(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 {
         return Err(ErrFast::TipoInv(
             "_bt_handshake requiere 3 argumentos: socket, info_hash_hex, peer_id_hex".into(),
@@ -8,25 +11,25 @@ pub fn native_bt_handshake(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
     }
 
     let socket_idx = extraer_indice_socket(vm, args[0])?;
-    let info_hash_hex = obtener_texto(vm, args[1])?;
+    let informacion_hash_hex = obtener_texto(vm, args[1])?;
     let peer_id_hex = obtener_texto(vm, args[2])?;
 
     // Validar longitud de hex strings (40 chars = 20 bytes)
-    if info_hash_hex.len() != 40 {
-        let indice = vm.alloc_str(Arc::from(""));
+    if informacion_hash_hex.len() != 40 {
+        let indice = vm.reservar_texto(Arc::from(""));
         return Ok(ValorFast::texto(indice));
     }
     if peer_id_hex.len() != 40 {
-        let indice = vm.alloc_str(Arc::from(""));
+        let indice = vm.reservar_texto(Arc::from(""));
         return Ok(ValorFast::texto(indice));
     }
 
     // Decodificar hex a bytes
-    let info_hash = hex_a_bytes(&info_hash_hex);
+    let informacion_hash = hex_a_bytes(&informacion_hash_hex);
     let peer_id = hex_a_bytes(&peer_id_hex);
 
-    if info_hash.len() != 20 || peer_id.len() != 20 {
-        let indice = vm.alloc_str(Arc::from(""));
+    if informacion_hash.len() != 20 || peer_id.len() != 20 {
+        let indice = vm.reservar_texto(Arc::from(""));
         return Ok(ValorFast::texto(indice));
     }
 
@@ -35,18 +38,18 @@ pub fn native_bt_handshake(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
     handshake.push(19); // 1 byte: longitud del protocolo
     handshake.extend_from_slice(b"BitTorrent protocol"); // 19 bytes
     handshake.extend_from_slice(&[0u8; 8]); // 8 bytes reserved (ceros)
-    handshake.extend_from_slice(&info_hash); // 20 bytes info_hash
+    handshake.extend_from_slice(&informacion_hash); // 20 bytes info_hash
     handshake.extend_from_slice(&peer_id); // 20 bytes peer_id
 
     // Verificar socket conectado
-    if !vm.socket_get(socket_idx).connected {
+    if !vm.socket_obtener(socket_idx).connected {
         return Err(ErrFast::TipoInv(
             "socket_cerrado: el socket no está conectado".into(),
         ));
     }
 
     // Clonar Arc del stream TCP
-    let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
+    let stream_arc = match &vm.socket_obtener(socket_idx).tcp_stream {
         Some(arc) => Arc::clone(arc),
         None => {
             return Err(ErrFast::TipoInv(
@@ -60,7 +63,7 @@ pub fn native_bt_handshake(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
     // Enviar handshake (raw bytes)
     if let Err(_e) = stream.write_all(&handshake) {
         // Error al enviar, retornar vacío
-        let indice = vm.alloc_str(Arc::from(""));
+        let indice = vm.reservar_texto(Arc::from(""));
         return Ok(ValorFast::texto(indice));
     }
 
@@ -72,12 +75,12 @@ pub fn native_bt_handshake(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
                 .iter()
                 .map(|b| format!("{:02x}", b))
                 .collect::<String>();
-            let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+            let indice = vm.reservar_texto(Arc::from(hex_texto.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(_e) => {
             // Timeout o desconexión, retornar vacío
-            let indice = vm.alloc_str(Arc::from(""));
+            let indice = vm.reservar_texto(Arc::from(""));
             Ok(ValorFast::texto(indice))
         }
     }
@@ -87,8 +90,8 @@ pub fn native_bt_handshake(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
 /// Formato: 4 bytes de longitud (big-endian) + payload
 /// args[0]: socket
 /// Retorna: hex del mensaje completo (longitud + payload), "keepalive" si longitud=0, o "" si error
-pub fn native_bt_recibir_mensaje(
-    vm: &mut dyn Host,
+pub fn nativo_bt_recibir_mensaje(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -99,13 +102,13 @@ pub fn native_bt_recibir_mensaje(
 
     let socket_idx = extraer_indice_socket(vm, args[0])?;
 
-    if !vm.socket_get(socket_idx).connected {
+    if !vm.socket_obtener(socket_idx).connected {
         return Err(ErrFast::TipoInv(
             "socket_cerrado: el socket no está conectado".into(),
         ));
     }
 
-    let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
+    let stream_arc = match &vm.socket_obtener(socket_idx).tcp_stream {
         Some(arc) => Arc::clone(arc),
         None => {
             return Err(ErrFast::TipoInv(
@@ -117,37 +120,37 @@ pub fn native_bt_recibir_mensaje(
     let mut stream = stream_arc.lock().unwrap();
 
     // Leer 4 bytes de longitud (big-endian)
-    let mut len_buf = [0u8; 4];
-    if let Err(_e) = stream.read_exact(&mut len_buf) {
-        let indice = vm.alloc_str(Arc::from(""));
+    let mut longitud_buf = [0u8; 4];
+    if let Err(_e) = stream.read_exact(&mut longitud_buf) {
+        let indice = vm.reservar_texto(Arc::from(""));
         return Ok(ValorFast::texto(indice));
     }
 
-    let payload_len = u32::from_be_bytes(len_buf) as usize;
+    let payload_longitud = u32::from_be_bytes(longitud_buf) as usize;
 
-    if payload_len == 0 {
+    if payload_longitud == 0 {
         // Keepalive
-        let indice = vm.alloc_str(Arc::from("keepalive"));
+        let indice = vm.reservar_texto(Arc::from("keepalive"));
         return Ok(ValorFast::texto(indice));
     }
 
     // Leer payload
-    let mut payload = vec![0u8; payload_len];
+    let mut payload = vec![0u8; payload_longitud];
     if let Err(_e) = stream.read_exact(&mut payload) {
-        let indice = vm.alloc_str(Arc::from(""));
+        let indice = vm.reservar_texto(Arc::from(""));
         return Ok(ValorFast::texto(indice));
     }
 
     // Construir mensaje completo: 4 bytes de longitud + payload, retornar como hex
-    let mut msg_bytes = Vec::with_capacity(4 + payload_len);
-    msg_bytes.extend_from_slice(&len_buf);
-    msg_bytes.extend_from_slice(&payload);
+    let mut mensaje_bytes = Vec::with_capacity(4 + payload_longitud);
+    mensaje_bytes.extend_from_slice(&longitud_buf);
+    mensaje_bytes.extend_from_slice(&payload);
 
-    let hex_texto = msg_bytes
+    let hex_texto = mensaje_bytes
         .iter()
         .map(|b| format!("{:02x}", b))
         .collect::<String>();
-    let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+    let indice = vm.reservar_texto(Arc::from(hex_texto.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
@@ -156,8 +159,8 @@ pub fn native_bt_recibir_mensaje(
 /// args[0]: socket
 /// args[1]: hex_payload (payload en hex para enviar)
 /// Retorna: número de bytes enviados (incluyendo longitud)
-pub fn native_bt_enviar_mensaje(
-    vm: &mut dyn Host,
+pub fn nativo_bt_enviar_mensaje(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
@@ -170,15 +173,15 @@ pub fn native_bt_enviar_mensaje(
     let hex_payload = obtener_texto(vm, args[1])?;
 
     let payload = hex_a_bytes(&hex_payload);
-    let payload_len = payload.len();
+    let payload_longitud = payload.len();
 
-    if !vm.socket_get(socket_idx).connected {
+    if !vm.socket_obtener(socket_idx).connected {
         return Err(ErrFast::TipoInv(
             "socket_cerrado: el socket no está conectado".into(),
         ));
     }
 
-    let stream_arc = match &vm.socket_get(socket_idx).tcp_stream {
+    let stream_arc = match &vm.socket_obtener(socket_idx).tcp_stream {
         Some(arc) => Arc::clone(arc),
         None => {
             return Err(ErrFast::TipoInv(
@@ -190,8 +193,8 @@ pub fn native_bt_enviar_mensaje(
     let mut stream = stream_arc.lock().unwrap();
 
     // Construir mensaje: 4 bytes de longitud (big-endian) + payload
-    let mut mensaje = Vec::with_capacity(4 + payload_len);
-    mensaje.extend_from_slice(&(payload_len as u32).to_be_bytes());
+    let mut mensaje = Vec::with_capacity(4 + payload_longitud);
+    mensaje.extend_from_slice(&(payload_longitud as u32).to_be_bytes());
     mensaje.extend_from_slice(&payload);
 
     match stream.write_all(&mensaje) {
@@ -204,8 +207,8 @@ pub fn native_bt_enviar_mensaje(
 /// args[0]: data_hex (datos en hex)
 /// args[1]: expected_hash_hex (hash SHA-1 esperado en hex, 40 caracteres)
 /// Retorna: "true" si coincide, "false" si no
-pub fn native_bt_verificar_pieza(
-    vm: &mut dyn Host,
+pub fn nativo_bt_verificar_pieza(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
@@ -219,7 +222,7 @@ pub fn native_bt_verificar_pieza(
 
     let data = hex_a_bytes(&data_hex);
     let hash = crate::hash::Sha1::digest(&data);
-    let computed_hex = crate::hash::hex_encode(&hash);
+    let computed_hex = crate::hash::hex_codificar(&hash);
 
     let resultado = if computed_hex == expected_hash_hex {
         "true"
@@ -227,6 +230,6 @@ pub fn native_bt_verificar_pieza(
         "false"
     };
 
-    let indice = vm.alloc_str(Arc::from(resultado));
+    let indice = vm.reservar_texto(Arc::from(resultado));
     Ok(ValorFast::texto(indice))
 }

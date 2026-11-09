@@ -17,7 +17,7 @@ fn ejecutar(fuente: &str) -> Result<Vec<String>, String> {
     let mut vm = ForjaFast::new();
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
-    Ok(vm.obtener_output().to_vec())
+    Ok(vm.obtener_salida().to_vec())
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn test_formatter_disponible() {
 #[test]
 fn test_vm_limites() {
     let vm = ForjaFast::new();
-    assert!(vm.obtener_output().is_empty());
+    assert!(vm.obtener_salida().is_empty());
 }
 
 #[test]

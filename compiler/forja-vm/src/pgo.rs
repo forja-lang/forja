@@ -45,8 +45,11 @@ impl ProfileData {
     }
 
     /// Registra una llamada a función
-    pub fn record_call(&mut self, func: &str) {
-        *self.function_hotness.entry(func.to_string()).or_insert(0) += 1;
+    pub fn record_call(&mut self, funcion: &str) {
+        *self
+            .function_hotness
+            .entry(funcion.to_string())
+            .or_insert(0) += 1;
     }
 
     /// Registra un branch taken/not-taken
@@ -60,12 +63,12 @@ impl ProfileData {
     }
 
     /// Registra iteraciones de loop
-    pub fn record_loop(&mut self, block: &IdBloque, iterations: u64) {
+    pub fn record_bucle(&mut self, block: &IdBloque, iterations: u64) {
         *self.loop_iterations.entry(block.clone()).or_insert(0) += iterations;
     }
 
     /// Registra un tipo visto en un IC
-    pub fn record_type_at_ic(&mut self, block: &IdBloque, tipo: &str) {
+    pub fn record_tipo_at_ic(&mut self, block: &IdBloque, tipo: &str) {
         let dist = self.type_distribution.entry(block.clone()).or_default();
         *dist.entry(tipo.to_string()).or_insert(0) += 1;
     }
@@ -102,7 +105,7 @@ impl ProfileData {
     }
 
     /// Retorna la función más caliente
-    pub fn hottest_function(&self) -> Option<(&FuncId, &u64)> {
+    pub fn hottest_funcion(&self) -> Option<(&FuncId, &u64)> {
         self.function_hotness.iter().max_by_key(|(_, &count)| count)
     }
 
@@ -167,12 +170,12 @@ impl ProfileGuidedDecisions {
         };
 
         // 1. Funciones calientes → candidatas a inline
-        for (func, count) in &profile.function_hotness {
+        for (funcion, count) in &profile.function_hotness {
             if *count >= 1000 {
-                decisions.tier2_candidates.push(func.clone());
+                decisions.tier2_candidates.push(funcion.clone());
             }
             if *count >= 100 {
-                decisions.inline_candidates.push(func.clone());
+                decisions.inline_candidates.push(funcion.clone());
             }
         }
 
@@ -214,7 +217,7 @@ impl ProfileGuidedDecisions {
 
     /// Retorna un conjunto de IPs que corresponden a back-edges de loops hot.
     /// La VM puede usar esto para priorizar quickening en estos IPs.
-    pub fn hot_loop_back_edges(&self) -> std::collections::HashSet<usize> {
+    pub fn hot_bucle_back_edges(&self) -> std::collections::HashSet<usize> {
         self.hot_loops
             .iter()
             .filter_map(|(block_id, _)| {
@@ -245,7 +248,7 @@ impl Instrumenter {
         }
     }
 
-    pub fn with_sample_rate(bytecode_len: usize, rate: u64) -> Self {
+    pub fn con_sample_rate(bytecode_len: usize, rate: u64) -> Self {
         Instrumenter {
             counters: vec![0; bytecode_len],
             sample_rate: rate,
@@ -306,19 +309,19 @@ impl ProfileManager {
     }
 
     /// Retorna la ruta del archivo de perfil
-    pub fn profile_path(&self) -> std::path::PathBuf {
+    pub fn profile_ruta(&self) -> std::path::PathBuf {
         self.project_dir.join(".forjaprof")
     }
 
     /// Guarda un perfil a disco
     pub fn save(&self, profile: &ProfileData) -> Result<(), std::io::Error> {
         let data = profile.serialize();
-        std::fs::write(self.profile_path(), data)
+        std::fs::write(self.profile_ruta(), data)
     }
 
     /// Carga un perfil desde disco
     pub fn load(&self) -> Option<ProfileData> {
-        let data = std::fs::read(self.profile_path()).ok()?;
+        let data = std::fs::read(self.profile_ruta()).ok()?;
         ProfileData::deserialize(&data)
     }
 }
@@ -351,13 +354,13 @@ mod tests {
     }
 
     #[test]
-    fn test_hottest_function() {
+    fn test_hottest_funcion() {
         let mut profile = ProfileData::new();
         profile.record_call("foo"); // 1
         for _ in 0..10 {
             profile.record_call("bar"); // 10
         }
-        let (name, count) = profile.hottest_function().unwrap();
+        let (name, count) = profile.hottest_funcion().unwrap();
         assert_eq!(name, "bar");
         assert_eq!(*count, 10);
     }
@@ -375,7 +378,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serialize_deserialize() {
+    fn test_serializar_deserialize() {
         let mut profile = ProfileData::new();
         profile.record_call("main");
         profile.record_branch(&"b0".to_string(), true);
@@ -398,7 +401,7 @@ mod tests {
         for _ in 0..5 {
             profile.record_branch(&"b0".to_string(), false);
         }
-        profile.record_loop(&"l0".to_string(), 50000);
+        profile.record_bucle(&"l0".to_string(), 50000);
 
         let decisions = ProfileGuidedDecisions::from_profile(&profile);
         assert!(decisions.tier2_candidates.contains(&"hot_fn".to_string()));
@@ -422,7 +425,7 @@ mod tests {
 
     #[test]
     fn test_instrumenter_sample_rate() {
-        let mut inst = Instrumenter::with_sample_rate(100, 10);
+        let mut inst = Instrumenter::con_sample_rate(100, 10);
         for _ in 0..100 {
             inst.record(0);
         }

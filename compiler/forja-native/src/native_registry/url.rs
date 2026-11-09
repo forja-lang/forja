@@ -1,12 +1,15 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_url(&mut self) {
-        self.registrar("_url_parsear", native_url_parsear);
-        self.registrar("_url_construir", native_url_construir);
+        self.registrar("_url_parsear", nativo_url_parsear);
+        self.registrar("_url_construir", nativo_url_construir);
     }
 }
-pub fn native_url_parsear(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_url_parsear(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let url_str = obtener_texto(vm, args[0])?;
     let parts: Vec<&str> = url_str.split("://").collect();
     let (esquema, resto) = if parts.len() == 2 {
@@ -38,30 +41,33 @@ pub fn native_url_parsear(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valor
     let mut obj = forja_runtime::ObjVal::new(sym, id_forma);
     obj.campos_vec = vec![
         {
-            let indice = vm.alloc_str(Arc::from(esquema));
+            let indice = vm.reservar_texto(Arc::from(esquema));
             ValorFast::texto(indice)
         },
         {
-            let indice = vm.alloc_str(Arc::from(hostname));
+            let indice = vm.reservar_texto(Arc::from(hostname));
             ValorFast::texto(indice)
         },
         {
-            let indice = vm.alloc_str(Arc::from(puerto));
+            let indice = vm.reservar_texto(Arc::from(puerto));
             ValorFast::texto(indice)
         },
         {
-            let indice = vm.alloc_str(Arc::from(ruta));
+            let indice = vm.reservar_texto(Arc::from(ruta));
             ValorFast::texto(indice)
         },
         {
-            let indice = vm.alloc_str(Arc::from(query.unwrap_or("")));
+            let indice = vm.reservar_texto(Arc::from(query.unwrap_or("")));
             ValorFast::texto(indice)
         },
     ];
-    Ok(ValorFast::objeto(vm.alloc_obj(obj)))
+    Ok(ValorFast::objeto(vm.reservar_objeto(obj)))
 }
 
-pub fn native_url_construir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_url_construir(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let esq = obtener_texto(vm, args[0])?;
     let anfitrion = obtener_texto(vm, args[1])?;
     let puerto = obtener_entero(args[2])?;
@@ -79,7 +85,7 @@ pub fn native_url_construir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
     };
     let salida = format!("{}://{}{}{}{}", esq, anfitrion, port_str, ruta, qs);
     Ok({
-        let indice = vm.alloc_str(Arc::from(salida.as_str()));
+        let indice = vm.reservar_texto(Arc::from(salida.as_str()));
         ValorFast::texto(indice)
     })
 }

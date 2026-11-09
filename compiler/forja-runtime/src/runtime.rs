@@ -5,7 +5,7 @@
 use crate::class_descriptor::DescriptorClase;
 use crate::shape::{IdForma, RegistroFormas};
 use crate::socket::SocketState;
-use crate::tipos::{ChannelValue, ExactoVal, ObjVal, ValorFast};
+use crate::tipos::{CanalValor, ExactoVal, ObjVal, ValorFast};
 use forja_bytecode::symbol_table::{IdSimbolo, TablaSimbolos};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -51,13 +51,13 @@ pub struct Runtime {
     pub exacto_free: Vec<u32>,       // free list Exacto
 
     // ─── Channel Heaps (mpsc) ────────────────────────────────────────────
-    /// Canales de transmisión (Sender acotado) — usa ChannelValue para
+    /// Canales de transmisión (Sender acotado) — usa CanalValor para
     /// transportar strings como contenido real en lugar de índices VM-locales.
-    pub chan_tx_heap: Vec<Option<std::sync::mpsc::SyncSender<ChannelValue>>>,
+    pub chan_tx_heap: Vec<Option<std::sync::mpsc::SyncSender<CanalValor>>>,
     /// Canales de recepción. Van en `Arc<Mutex<…>>` porque `mpsc::Receiver` no
     /// es `Clone` y un `hilo { … }` necesita **compartir** el receptor con su VM
     /// hijo (antes el hijo no lo recibía y `recibir()` daba Nulo).
-    pub chan_rx_heap: Vec<Option<Arc<std::sync::Mutex<std::sync::mpsc::Receiver<ChannelValue>>>>>,
+    pub chan_rx_heap: Vec<Option<Arc<std::sync::Mutex<std::sync::mpsc::Receiver<CanalValor>>>>>,
     /// Marcas GC para canales tx
     pub chan_tx_marked: Vec<bool>,
     /// Marcas GC para canales rx
@@ -80,7 +80,7 @@ pub struct Runtime {
     /// Resultados de hilos ya ejecutados (None si no se ha unido aún)
     pub thread_heap: Vec<Option<ValorFast>>,
     /// Receptores para resultados de hilos (para unir())
-    pub thread_rx: Vec<Option<std::sync::mpsc::Receiver<ChannelValue>>>,
+    pub thread_rx: Vec<Option<std::sync::mpsc::Receiver<CanalValor>>>,
     /// Marcas GC para hilos
     pub thread_marked: Vec<bool>,
     /// Free list para hilos

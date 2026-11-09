@@ -1,27 +1,30 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_archivos(&mut self) {
         // ─── Archivos ────────────────────────────────────────────────────
-        self.registrar("_archivo_leer", native_archivo_leer);
-        self.registrar("_archivo_escribir", native_archivo_escribir);
-        self.registrar("_archivo_existe", native_archivo_existe);
-        self.registrar("_archivo_eliminar", native_archivo_eliminar);
-        self.registrar("_archivo_copiar", native_archivo_copiar);
-        self.registrar("_archivo_mover", native_archivo_mover);
-        self.registrar("_archivo_tamano", native_archivo_tamano);
-        self.registrar("_archivo_info", native_archivo_info);
+        self.registrar("_archivo_leer", nativo_archivo_leer);
+        self.registrar("_archivo_escribir", nativo_archivo_escribir);
+        self.registrar("_archivo_existe", nativo_archivo_existe);
+        self.registrar("_archivo_eliminar", nativo_archivo_eliminar);
+        self.registrar("_archivo_copiar", nativo_archivo_copiar);
+        self.registrar("_archivo_mover", nativo_archivo_mover);
+        self.registrar("_archivo_tamano", nativo_archivo_tamano);
+        self.registrar("_archivo_info", nativo_archivo_informacion);
         // ─── Archivos Binarios ───────────────────────────────────────────
-        self.registrar("_archivo_leer_binario", native_archivo_leer_binario);
-        self.registrar("_archivo_escribir_binario", native_archivo_escribir_binario);
+        self.registrar("_archivo_leer_binario", nativo_archivo_leer_binario);
+        self.registrar("_archivo_escribir_binario", nativo_archivo_escribir_binario);
 
         // ─── Directorios ─────────────────────────────────────────────────
-        self.registrar("_directorio_crear", native_directorio_crear);
-        self.registrar("_directorio_eliminar", native_directorio_eliminar);
-        self.registrar("_directorio_listar", native_directorio_listar);
+        self.registrar("_directorio_crear", nativo_directorio_crear);
+        self.registrar("_directorio_eliminar", nativo_directorio_eliminar);
+        self.registrar("_directorio_listar", nativo_directorio_listar);
     }
 }
-pub fn native_archivo_leer(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_archivo_leer(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_archivo_leer requiere 1 argumento: ruta (texto)".into(),
@@ -39,7 +42,7 @@ pub fn native_archivo_leer(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
     }
     match std::fs::read_to_string(&ruta) {
         Ok(contenido) => {
-            let indice = vm.alloc_str(Arc::from(contenido.as_str()));
+            let indice = vm.reservar_texto(Arc::from(contenido.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!(
@@ -50,8 +53,8 @@ pub fn native_archivo_leer(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
     }
 }
 
-pub fn native_archivo_escribir(
-    vm: &mut dyn Host,
+pub fn nativo_archivo_escribir(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
@@ -80,7 +83,10 @@ pub fn native_archivo_escribir(
     }
 }
 
-pub fn native_archivo_existe(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_archivo_existe(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_archivo_existe requiere 1 argumento: ruta (texto)".into(),
@@ -90,8 +96,8 @@ pub fn native_archivo_existe(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
     Ok(ValorFast::booleano(std::path::Path::new(&ruta).exists()))
 }
 
-pub fn native_archivo_eliminar(
-    vm: &mut dyn Host,
+pub fn nativo_archivo_eliminar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -115,7 +121,10 @@ pub fn native_archivo_eliminar(
     }
 }
 
-pub fn native_archivo_copiar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_archivo_copiar(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
             "_archivo_copiar requiere 2 argumentos: origen (texto), destino (texto)".into(),
@@ -138,7 +147,10 @@ pub fn native_archivo_copiar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
     }
 }
 
-pub fn native_archivo_mover(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_archivo_mover(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
             "_archivo_mover requiere 2 argumentos: origen (texto), destino (texto)".into(),
@@ -161,7 +173,10 @@ pub fn native_archivo_mover(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
     }
 }
 
-pub fn native_archivo_tamano(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_archivo_tamano(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_archivo_tamano requiere 1 argumento: ruta (texto)".into(),
@@ -186,8 +201,8 @@ pub fn native_archivo_tamano(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
     }
 }
 
-pub fn native_directorio_crear(
-    vm: &mut dyn Host,
+pub fn nativo_directorio_crear(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -211,8 +226,8 @@ pub fn native_directorio_crear(
     }
 }
 
-pub fn native_directorio_eliminar(
-    vm: &mut dyn Host,
+pub fn nativo_directorio_eliminar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -236,8 +251,8 @@ pub fn native_directorio_eliminar(
     }
 }
 
-pub fn native_directorio_listar(
-    vm: &mut dyn Host,
+pub fn nativo_directorio_listar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -260,7 +275,7 @@ pub fn native_directorio_listar(
                 }
             }
             let resultado = nombres.join("\n");
-            let indice = vm.alloc_str(Arc::from(resultado.as_str()));
+            let indice = vm.reservar_texto(Arc::from(resultado.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!(
@@ -271,7 +286,10 @@ pub fn native_directorio_listar(
     }
 }
 
-pub fn native_archivo_info(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_archivo_informacion(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_archivo_info requiere 1 argumento: ruta (texto)".into(),
@@ -293,7 +311,7 @@ pub fn native_archivo_info(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
                         .unwrap_or_else(|_| "0".to_string())
                 })
                 .unwrap_or_else(|_| "0".to_string());
-            let info = format!(
+            let informacion = format!(
                 "tamano:{};es_directorio:{};es_archivo:{};permisos:{};modificado:{}",
                 meta.len(),
                 meta.is_dir(),
@@ -305,7 +323,7 @@ pub fn native_archivo_info(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
                 },
                 modificado
             );
-            let indice = vm.alloc_str(Arc::from(info.as_str()));
+            let indice = vm.reservar_texto(Arc::from(informacion.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!(
@@ -321,8 +339,8 @@ pub fn native_archivo_info(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
 /// Lee un archivo como bytes y retorna su contenido como hexadecimal
 /// args[0]: ruta (Texto)
 /// Retorna: contenido del archivo en hexadecimal (Texto)
-pub fn native_archivo_leer_binario(
-    vm: &mut dyn Host,
+pub fn nativo_archivo_leer_binario(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -342,7 +360,7 @@ pub fn native_archivo_leer_binario(
                 .iter()
                 .map(|b| format!("{:02x}", b))
                 .collect::<String>();
-            let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+            let indice = vm.reservar_texto(Arc::from(hex_texto.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!(
@@ -357,8 +375,8 @@ pub fn native_archivo_leer_binario(
 /// args[0]: ruta (Texto)
 /// args[1]: contenido_hex (Texto) - datos en hexadecimal
 /// Retorna: 0 si éxito, -1 si error
-pub fn native_archivo_escribir_binario(
-    vm: &mut dyn Host,
+pub fn nativo_archivo_escribir_binario(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {

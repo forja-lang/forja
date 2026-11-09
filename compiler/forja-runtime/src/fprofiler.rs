@@ -18,7 +18,7 @@ macro_rules! prof_count {
 }
 
 /// Datos del profiler – contadores atómicos para cada opcode/check relevante
-pub struct FloatProfilerData {
+pub struct FlotantePerfiladorData {
     pub push_decimal: AtomicU64,
     pub add_float: AtomicU64,
     pub sub_float: AtomicU64,
@@ -52,15 +52,15 @@ pub struct FloatProfilerData {
     pub type_check_int_fail: AtomicU64,
 }
 
-impl Default for FloatProfilerData {
+impl Default for FlotantePerfiladorData {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl FloatProfilerData {
+impl FlotantePerfiladorData {
     pub const fn new() -> Self {
-        FloatProfilerData {
+        FlotantePerfiladorData {
             push_decimal: AtomicU64::new(0),
             add_float: AtomicU64::new(0),
             sub_float: AtomicU64::new(0),
@@ -130,10 +130,10 @@ impl FloatProfilerData {
     }
 }
 
-pub static PROFILER_DATA: FloatProfilerData = FloatProfilerData::new();
+pub static PROFILER_DATA: FlotantePerfiladorData = FlotantePerfiladorData::new();
 
 /// Imprime el reporte del profiler
-pub fn print_profiler_report() {
+pub fn imprimir_perfilador_report() {
     if PROFILER_ENABLED.load(Ordering::Relaxed) == 0 {
         return;
     }

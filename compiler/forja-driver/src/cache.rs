@@ -12,7 +12,7 @@ const VERSION_CACHE: u32 = 2;
 
 /// Entrada serializada en disco para un módulo cacheado.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct CachedModule {
+pub struct CachedModulo {
     /// Hash del código fuente al momento de compilar
     pub source_hash: u64,
     /// Versión del formato de caché
@@ -29,8 +29,8 @@ pub struct IncrementalCache {
     directorio_raiz: PathBuf,
     /// Directorio de caché: `.forja/cache/`
     directorio_cache: PathBuf,
-    /// Caché en memoria (ruta → CachedModule)
-    entries: HashMap<String, CachedModule>,
+    /// Caché en memoria (ruta → CachedModulo)
+    entries: HashMap<String, CachedModulo>,
     /// Estadísticas
     pub hits: usize,
     pub misses: usize,
@@ -77,7 +77,7 @@ impl IncrementalCache {
         imports: &[String],
     ) {
         let bytecode_bin = serializar_con_metadata(codigos, &[]);
-        let cached = CachedModule {
+        let cached = CachedModulo {
             source_hash,
             cache_version: VERSION_CACHE,
             bytecode_bin,
@@ -149,7 +149,7 @@ impl IncrementalCache {
     }
 
     /// Persiste la caché a disco.
-    pub fn save_to_disk(&self) -> Result<(), std::io::Error> {
+    pub fn guardar_en_disco(&self) -> Result<(), std::io::Error> {
         std::fs::create_dir_all(&self.directorio_cache)?;
 
         let ruta_manifiesto = self.directorio_cache.join("manifest.json");
@@ -160,7 +160,7 @@ impl IncrementalCache {
     }
 
     /// Carga la caché desde disco.
-    fn cargar_desde_disco(directorio_cache: &Path) -> HashMap<String, CachedModule> {
+    fn cargar_desde_disco(directorio_cache: &Path) -> HashMap<String, CachedModulo> {
         let ruta_manifiesto = directorio_cache.join("manifest.json");
         if !ruta_manifiesto.exists() {
             return HashMap::new();
@@ -253,7 +253,7 @@ mod tests {
             let mut cache = IncrementalCache::new(&temporal);
             let ops = vec![Opcode::PushEntero(42)];
             cache.put("mod.fa", 111, &ops, &[]);
-            cache.save_to_disk().unwrap();
+            cache.guardar_en_disco().unwrap();
         }
 
         // Cargar en nueva instancia

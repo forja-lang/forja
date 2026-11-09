@@ -1,5 +1,5 @@
 use crate::lsp::index_stdlib::StdlibIndex;
-use crate::token::{Token, TokenKind};
+use crate::token::{Token, TokenTipo};
 
 #[derive(Debug, Clone)]
 pub struct SignatureInfo {
@@ -102,19 +102,19 @@ impl SignatureResolver {
                 continue;
             }
             match &tokens[i].kind {
-                TokenKind::ParenCerrar => paren_depth += 1,
-                TokenKind::ParenAbrir => {
+                TokenTipo::ParenCerrar => paren_depth += 1,
+                TokenTipo::ParenAbrir => {
                     if paren_depth == 0 {
                         found_open = true;
                         // Buscar el identificador o método antes de este (
                         if i > 0 {
                             for j in (0..i).rev() {
                                 match &tokens[j].kind {
-                                    TokenKind::Identificador(name) => {
+                                    TokenTipo::Identificador(name) => {
                                         return Some((name.clone(), arg_index));
                                     }
-                                    TokenKind::Punto => continue,
-                                    TokenKind::ParenAbrir | TokenKind::ParenCerrar => break,
+                                    TokenTipo::Punto => continue,
+                                    TokenTipo::ParenAbrir | TokenTipo::ParenCerrar => break,
                                     _ => break,
                                 }
                             }
@@ -123,7 +123,7 @@ impl SignatureResolver {
                     }
                     paren_depth -= 1;
                 }
-                TokenKind::Coma if paren_depth == 0 && found_open => {
+                TokenTipo::Coma if paren_depth == 0 && found_open => {
                     arg_index += 1;
                 }
                 _ => {}
@@ -133,7 +133,7 @@ impl SignatureResolver {
         if found_open {
             if let Some(prev) = cursor.checked_sub(2) {
                 if prev < tokens.len() {
-                    if let TokenKind::Identificador(name) = &tokens[prev].kind {
+                    if let TokenTipo::Identificador(name) = &tokens[prev].kind {
                         return Some((name.clone(), arg_index));
                     }
                 }

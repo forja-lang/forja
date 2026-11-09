@@ -11,12 +11,12 @@ use forja::vm_fast::ForjaFast;
 fn ejecutar(bytecode: Vec<Opcode>) -> Vec<String> {
     let mut vm = ForjaFast::new();
     #[cfg(target_pointer_width = "64")]
-    vm.set_max_inst(10_000_000_000);
+    vm.fijar_max_inst(10_000_000_000);
     #[cfg(not(target_pointer_width = "64"))]
-    vm.set_max_inst(2_000_000_000);
+    vm.fijar_max_inst(2_000_000_000);
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().expect("la VM debe ejecutar sin error");
-    vm.obtener_output().to_vec()
+    vm.obtener_salida().to_vec()
 }
 
 /// Programas dentro del subconjunto IR.

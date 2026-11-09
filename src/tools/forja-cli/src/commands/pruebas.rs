@@ -70,7 +70,7 @@ pub(crate) fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
         };
 
         // FASE 4: Type Checker
-        let mut verificador = semantics::TypeChecker::new();
+        let mut verificador = semantics::TipoChecker::new();
         if let Err(errors) = verificador.analizar(&programa) {
             for err in &errors {
                 eprintln!("{}", err);
@@ -80,7 +80,8 @@ pub(crate) fn cmd_test_ejecutar(archivos: Vec<String>) -> Result<(), String> {
         }
 
         // FASE 5: Borrow Checker
-        let mut checker = semantics::BorrowChecker::con_estricto(forja::config::actual().estricto);
+        let mut checker =
+            semantics::PrestamoChecker::con_estricto(forja::config::actual().estricto);
         if let Err(errors) = checker.analizar(&programa) {
             for err in &errors {
                 eprintln!("{}", err);

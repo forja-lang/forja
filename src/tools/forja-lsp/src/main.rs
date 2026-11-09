@@ -13,7 +13,7 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 use forja::lsp::completado::{CompletionResolver, SymbolEntry, SymbolKind as ForjaSymbolKind};
 use forja::lsp::firma::SignatureResolver;
 use forja::lsp::index_stdlib::StdlibIndex;
-use forja::token::{Token, TokenKind};
+use forja::token::{Token, TokenTipo};
 
 fn completar_locales(analisis: &AnalisisDocumento) -> Vec<SymbolEntry> {
     analisis
@@ -364,7 +364,7 @@ impl LanguageServer for Backend {
         // Token-walking: buscar el token en esa posición
         if let Ok(tokens) = tokenizar(&texto) {
             if let Some(token) = token_en_posicion(&tokens, pos) {
-                if let TokenKind::Identificador(nombre) = &token.kind {
+                if let TokenTipo::Identificador(nombre) = &token.kind {
                     // Buscar declaración de ese nombre en el análisis
                     for s in &analisis.simbolos {
                         if &s.nombre == nombre {
@@ -403,7 +403,7 @@ impl LanguageServer for Backend {
         let texto = self.obtener_texto(&uri).await;
         let nombre_buscado = if let Ok(tokens) = tokenizar(&texto) {
             if let Some(token) = token_en_posicion(&tokens, pos) {
-                if let TokenKind::Identificador(nombre) = &token.kind {
+                if let TokenTipo::Identificador(nombre) = &token.kind {
                     Some(nombre.clone())
                 } else {
                     None
@@ -636,7 +636,7 @@ impl LanguageServer for Backend {
 
         let nombre_buscado = if let Ok(tokens) = tokenizar(&texto) {
             if let Some(token) = token_en_posicion(&tokens, pos) {
-                if let TokenKind::Identificador(n) = &token.kind {
+                if let TokenTipo::Identificador(n) = &token.kind {
                     Some(n.clone())
                 } else {
                     None
@@ -1112,7 +1112,7 @@ impl Backend {
         }
 
         // 3. Diagnósticos del linter
-        if let Ok(diags) = forja::linter::lint_source(texto, forja::linter::ConfigLint::default()) {
+        if let Ok(diags) = forja::linter::lint_fuente(texto, forja::linter::ConfigLint::default()) {
             for d in diags {
                 let severity = match d.severidad {
                     forja::linter::Severidad::Error => DiagnosticSeverity::ERROR,
@@ -1194,9 +1194,9 @@ fn extraer_informacion(tokens: &[Token], analisis: &mut AnalisisDocumento) {
         let token = &tokens[i];
 
         match token.kind {
-            TokenKind::Funcion => {
+            TokenTipo::Funcion => {
                 if i + 1 < tokens.len() {
-                    if let TokenKind::Identificador(ref nombre) = tokens[i + 1].kind {
+                    if let TokenTipo::Identificador(ref nombre) = tokens[i + 1].kind {
                         let doc = buscar_doc_previo(tokens, i);
                         analisis.simbolos.push(SimboloInformacion {
                             nombre: nombre.clone(),
@@ -1209,9 +1209,9 @@ fn extraer_informacion(tokens: &[Token], analisis: &mut AnalisisDocumento) {
                     }
                 }
             }
-            TokenKind::Clase => {
+            TokenTipo::Clase => {
                 if i + 1 < tokens.len() {
-                    if let TokenKind::Identificador(ref nombre) = tokens[i + 1].kind {
+                    if let TokenTipo::Identificador(ref nombre) = tokens[i + 1].kind {
                         let doc = buscar_doc_previo(tokens, i);
                         analisis.simbolos.push(SimboloInformacion {
                             nombre: nombre.clone(),
@@ -1224,17 +1224,17 @@ fn extraer_informacion(tokens: &[Token], analisis: &mut AnalisisDocumento) {
                     }
                 }
             }
-            TokenKind::Variable | TokenKind::Constante => {
-                let es_const = matches!(token.kind, TokenKind::Constante);
+            TokenTipo::Variable | TokenTipo::Constante => {
+                let es_const = matches!(token.kind, TokenTipo::Constante);
                 let mut skip = 1;
                 // Saltar mut si existe
                 if i + 1 < tokens.len() {
-                    if let TokenKind::Mut = tokens[i + 1].kind {
+                    if let TokenTipo::Mut = tokens[i + 1].kind {
                         skip = 2;
                     }
                 }
                 if i + skip < tokens.len() {
-                    if let TokenKind::Identificador(ref nombre) = tokens[i + skip].kind {
+                    if let TokenTipo::Identificador(ref nombre) = tokens[i + skip].kind {
                         let doc = buscar_doc_previo(tokens, i);
                         let _es_const = es_const;
                         analisis.simbolos.push(SimboloInformacion {
@@ -1248,9 +1248,9 @@ fn extraer_informacion(tokens: &[Token], analisis: &mut AnalisisDocumento) {
                     }
                 }
             }
-            TokenKind::Tipo => {
+            TokenTipo::Tipo => {
                 if i + 1 < tokens.len() {
-                    if let TokenKind::Identificador(ref nombre) = tokens[i + 1].kind {
+                    if let TokenTipo::Identificador(ref nombre) = tokens[i + 1].kind {
                         let doc = buscar_doc_previo(tokens, i);
                         analisis.simbolos.push(SimboloInformacion {
                             nombre: nombre.clone(),
@@ -1263,9 +1263,9 @@ fn extraer_informacion(tokens: &[Token], analisis: &mut AnalisisDocumento) {
                     }
                 }
             }
-            TokenKind::Rasgo => {
+            TokenTipo::Rasgo => {
                 if i + 1 < tokens.len() {
-                    if let TokenKind::Identificador(ref nombre) = tokens[i + 1].kind {
+                    if let TokenTipo::Identificador(ref nombre) = tokens[i + 1].kind {
                         let doc = buscar_doc_previo(tokens, i);
                         analisis.simbolos.push(SimboloInformacion {
                             nombre: nombre.clone(),
@@ -1278,28 +1278,28 @@ fn extraer_informacion(tokens: &[Token], analisis: &mut AnalisisDocumento) {
                     }
                 }
             }
-            TokenKind::Identificador(ref _nombre) => {
+            TokenTipo::Identificador(ref _nombre) => {
                 // Referencia a un identificador
                 // Verificar si es parte de una declaración (evitar duplicados)
                 let es_decl = if i > 0 {
                     matches!(
                         tokens[i - 1].kind,
-                        TokenKind::Funcion
-                            | TokenKind::Clase
-                            | TokenKind::Variable
-                            | TokenKind::Constante
-                            | TokenKind::Tipo
-                            | TokenKind::Rasgo
+                        TokenTipo::Funcion
+                            | TokenTipo::Clase
+                            | TokenTipo::Variable
+                            | TokenTipo::Constante
+                            | TokenTipo::Tipo
+                            | TokenTipo::Rasgo
                     )
                 } else {
                     false
                 };
 
                 if !es_decl {
-                    if let TokenKind::Identificador(ref nombre) = token.kind {
+                    if let TokenTipo::Identificador(ref nombre) = token.kind {
                         // Detectar si es llamada a función (siguiente token es '(')
                         let es_llamada = i + 1 < tokens.len()
-                            && matches!(tokens[i + 1].kind, TokenKind::ParenAbrir);
+                            && matches!(tokens[i + 1].kind, TokenTipo::ParenAbrir);
 
                         analisis.referencias.push((
                             token.linea as u32,
@@ -1325,7 +1325,7 @@ fn buscar_doc_previo(tokens: &[Token], pos: usize) -> Option<String> {
     while i > 0 {
         i -= 1;
         match &tokens[i].kind {
-            TokenKind::DocComment(doc_line) => {
+            TokenTipo::DocComment(doc_line) => {
                 docs.push(doc_line.trim().to_string());
             }
             _ => break,
@@ -1348,7 +1348,7 @@ fn buscar_nombre_en_posicion(
     let tokens = tokenizar(texto).ok()?;
     let token = token_en_posicion(&tokens, pos)?;
     let nombre = match &token.kind {
-        TokenKind::Identificador(n) => n.clone(),
+        TokenTipo::Identificador(n) => n.clone(),
         _ => return None,
     };
 
@@ -1399,7 +1399,7 @@ fn generar_tokens_semanticos(fuente: &str) -> Vec<SemanticToken> {
     let mut anterior_col: u32 = 0;
 
     for token in &tokens {
-        if token.kind == TokenKind::EOF {
+        if token.kind == TokenTipo::EOF {
             continue;
         }
         let (tipo_idx, modifier_bitset) = clasificar_token(token);
@@ -1433,87 +1433,87 @@ fn generar_tokens_semanticos(fuente: &str) -> Vec<SemanticToken> {
 fn clasificar_token(token: &Token) -> (u32, u32) {
     match token.kind {
         // Keywords
-        TokenKind::Variable
-        | TokenKind::Constante
-        | TokenKind::Mut
-        | TokenKind::Si
-        | TokenKind::Sino
-        | TokenKind::O
-        | TokenKind::Mientras
-        | TokenKind::Para
-        | TokenKind::Repetir
-        | TokenKind::Funcion
-        | TokenKind::Clase
-        | TokenKind::Constructor
-        | TokenKind::Este
-        | TokenKind::Nuevo
-        | TokenKind::Retornar
-        | TokenKind::Importar
-        | TokenKind::Prestado
-        | TokenKind::Escribir
-        | TokenKind::Leer
-        | TokenKind::BD
-        | TokenKind::Verdadero
-        | TokenKind::Falso
-        | TokenKind::Nulo
-        | TokenKind::Externo
-        | TokenKind::Tipo
-        | TokenKind::Coincidir
-        | TokenKind::Caso
-        | TokenKind::Rasgo
-        | TokenKind::Implementa
-        | TokenKind::Donde
-        | TokenKind::Seleccionar
-        | TokenKind::Tiempo
-        | TokenKind::Otro
-        | TokenKind::Cuando
-        | TokenKind::Hilo
-        | TokenKind::Canal
-        | TokenKind::Enviar
-        | TokenKind::Recibir
-        | TokenKind::Unir
-        | TokenKind::Requiere
-        | TokenKind::Asegura
-        | TokenKind::Siempre
-        | TokenKind::ResultadoKw
-        | TokenKind::Anterior => {
+        TokenTipo::Variable
+        | TokenTipo::Constante
+        | TokenTipo::Mut
+        | TokenTipo::Si
+        | TokenTipo::Sino
+        | TokenTipo::O
+        | TokenTipo::Mientras
+        | TokenTipo::Para
+        | TokenTipo::Repetir
+        | TokenTipo::Funcion
+        | TokenTipo::Clase
+        | TokenTipo::Constructor
+        | TokenTipo::Este
+        | TokenTipo::Nuevo
+        | TokenTipo::Retornar
+        | TokenTipo::Importar
+        | TokenTipo::Prestado
+        | TokenTipo::Escribir
+        | TokenTipo::Leer
+        | TokenTipo::BD
+        | TokenTipo::Verdadero
+        | TokenTipo::Falso
+        | TokenTipo::Nulo
+        | TokenTipo::Externo
+        | TokenTipo::Tipo
+        | TokenTipo::Coincidir
+        | TokenTipo::Caso
+        | TokenTipo::Rasgo
+        | TokenTipo::Implementa
+        | TokenTipo::Donde
+        | TokenTipo::Seleccionar
+        | TokenTipo::Tiempo
+        | TokenTipo::Otro
+        | TokenTipo::Cuando
+        | TokenTipo::Hilo
+        | TokenTipo::Canal
+        | TokenTipo::Enviar
+        | TokenTipo::Recibir
+        | TokenTipo::Unir
+        | TokenTipo::Requiere
+        | TokenTipo::Asegura
+        | TokenTipo::Siempre
+        | TokenTipo::ResultadoKw
+        | TokenTipo::Anterior => {
             let mut bits = 0u32;
-            if matches!(token.kind, TokenKind::Constante) {
+            if matches!(token.kind, TokenTipo::Constante) {
                 bits |= 2; // readonly modifier
             }
             (0, bits) // keyword
         }
         // Tipos predefinidos
-        TokenKind::TipoTexto
-        | TokenKind::TipoEntero
-        | TokenKind::TipoDecimal
-        | TokenKind::TipoBooleano
-        | TokenKind::TipoExacto => (1, 0), // type
+        TokenTipo::TipoTexto
+        | TokenTipo::TipoEntero
+        | TokenTipo::TipoDecimal
+        | TokenTipo::TipoBooleano
+        | TokenTipo::TipoExacto => (1, 0), // type
         // Identificadores
-        TokenKind::Identificador(_) => (9, 0), // variable (default)
+        TokenTipo::Identificador(_) => (9, 0), // variable (default)
         // Literales
-        TokenKind::Numero(_) | TokenKind::Decimal { .. } | TokenKind::LiteralExacto(..) => (3, 0), // number
-        TokenKind::Texto(_) | TokenKind::Caracter(_) => (2, 0), // string
+        TokenTipo::Numero(_) | TokenTipo::Decimal { .. } | TokenTipo::LiteralExacto(..) => (3, 0), // number
+        TokenTipo::Texto(_) | TokenTipo::Caracter(_) => (2, 0), // string
         // Operadores aritméticos y relacionales
-        TokenKind::Mas
-        | TokenKind::Menos
-        | TokenKind::Por
-        | TokenKind::Dividido
-        | TokenKind::Porcentaje
-        | TokenKind::Igual
-        | TokenKind::IgualIgual
-        | TokenKind::Diferente
-        | TokenKind::Mayor
-        | TokenKind::MayorIgual
-        | TokenKind::Menor
-        | TokenKind::MenorIgual
-        | TokenKind::Y
-        | TokenKind::No
-        | TokenKind::Pipe => (5, 0), // operator
+        TokenTipo::Mas
+        | TokenTipo::Menos
+        | TokenTipo::Por
+        | TokenTipo::Dividido
+        | TokenTipo::Porcentaje
+        | TokenTipo::Igual
+        | TokenTipo::IgualIgual
+        | TokenTipo::Diferente
+        | TokenTipo::Mayor
+        | TokenTipo::MayorIgual
+        | TokenTipo::Menor
+        | TokenTipo::MenorIgual
+        | TokenTipo::Y
+        | TokenTipo::No
+        | TokenTipo::Pipe => (5, 0), // operator
         // Comentarios doc
-        TokenKind::DocComment(_) => (4, 0), // comment
+        TokenTipo::DocComment(_) => (4, 0), // comment
         // Decorador
-        TokenKind::Arroba => (6, 0), // decorator
+        TokenTipo::Arroba => (6, 0), // decorator
 
         _ => (0, 0), // default: keyword-like
     }

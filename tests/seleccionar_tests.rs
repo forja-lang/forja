@@ -16,10 +16,10 @@ fn ejecutar(fuente: &str) -> Result<Vec<String>, String> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let mut vm = ForjaFast::new();
-        vm.set_max_inst(5_000_000);
+        vm.fijar_max_inst(5_000_000);
         vm.cargar_bytecode(bc);
         let resultado = vm.ejecutar().map_err(|e| format!("{}", e));
-        let salida = vm.obtener_output().to_vec();
+        let salida = vm.obtener_salida().to_vec();
         tx.send((resultado, salida)).ok();
     });
     match rx.recv_timeout(LIMITE) {

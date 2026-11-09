@@ -24,9 +24,9 @@ use forja::transpiler;
 use forja_repl::repl;
 
 use ast::Declaracion;
-use error::{color, mostrar_errores, NivelVerbose};
+use error::{color, mostrar_errores, NivelDetallado};
 use package_config::ForjaConfig;
-use package_resolver::PackageResolver;
+use package_resolver::PaqueteResolver;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -58,9 +58,9 @@ fn main() {
     forja::config::recargar();
     let cfg = forja::config::actual();
     match cfg.nivel.to_lowercase().as_str() {
-        "detallado" | "verbose" => error::establecer_nivel(NivelVerbose::Verbose),
-        "depuracion" | "debug" => error::establecer_nivel(NivelVerbose::Debug),
-        "traza" | "trace" => error::establecer_nivel(NivelVerbose::Trace),
+        "detallado" | "verbose" => error::establecer_nivel(NivelDetallado::Verbose),
+        "depuracion" | "debug" => error::establecer_nivel(NivelDetallado::Debug),
+        "traza" | "trace" => error::establecer_nivel(NivelDetallado::Trace),
         _ => {}
     }
     if cfg.json {

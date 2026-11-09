@@ -13,7 +13,7 @@
 //! ```
 
 use forja::lexer::Lexer;
-use forja::token::TokenKind;
+use forja::token::TokenTipo;
 
 /// Compila, ejecuta y compara la salida exacta.
 macro_rules! caso {
@@ -87,7 +87,7 @@ macro_rules! ignorado {
     };
 }
 
-fn tipos(fuente: &str) -> Vec<TokenKind> {
+fn tipos(fuente: &str) -> Vec<TokenTipo> {
     Lexer::new(fuente)
         .tokenize()
         .unwrap_or_else(|e| panic!("no tokenizó: {e:?}\n{fuente}"))
@@ -102,62 +102,62 @@ fn tipos(fuente: &str) -> Vec<TokenKind> {
 
 #[test]
 fn lex_todas_las_palabras_clave() {
-    let pares: &[(&str, TokenKind)] = &[
-        ("variable", TokenKind::Variable),
-        ("var", TokenKind::Variable),
-        ("constante", TokenKind::Constante),
-        ("const", TokenKind::Constante),
-        ("mut", TokenKind::Mut),
-        ("si", TokenKind::Si),
-        ("sino", TokenKind::Sino),
-        ("mientras", TokenKind::Mientras),
-        ("para", TokenKind::Para),
-        ("repetir", TokenKind::Repetir),
-        ("romper", TokenKind::Romper),
-        ("break", TokenKind::Romper),
-        ("continuar", TokenKind::Continuar),
-        ("continue", TokenKind::Continuar),
-        ("clase", TokenKind::Clase),
-        ("constructor", TokenKind::Constructor),
-        ("este", TokenKind::Este),
-        ("nuevo", TokenKind::Nuevo),
-        ("funcion", TokenKind::Funcion),
-        ("fun", TokenKind::Funcion),
-        ("func", TokenKind::Funcion),
-        ("prestado", TokenKind::Prestado),
-        ("escribir", TokenKind::Escribir),
-        ("leer", TokenKind::Leer),
-        ("BD", TokenKind::BD),
-        ("verdadero", TokenKind::Verdadero),
-        ("falso", TokenKind::Falso),
-        ("nulo", TokenKind::Nulo),
-        ("retornar", TokenKind::Retornar),
-        ("externo", TokenKind::Externo),
-        ("externa", TokenKind::Externo),
-        ("importar", TokenKind::Importar),
-        ("tipo", TokenKind::Tipo),
-        ("coincidir", TokenKind::Coincidir),
-        ("caso", TokenKind::Caso),
-        ("hilo", TokenKind::Hilo),
-        ("canal", TokenKind::Canal),
-        ("enviar", TokenKind::Enviar),
-        ("recibir", TokenKind::Recibir),
-        ("unir", TokenKind::Unir),
-        ("rasgo", TokenKind::Rasgo),
-        ("implementa", TokenKind::Implementa),
-        ("donde", TokenKind::Donde),
-        ("seleccionar", TokenKind::Seleccionar),
-        ("tiempo", TokenKind::Tiempo),
-        ("otro", TokenKind::Otro),
-        ("cuando", TokenKind::Cuando),
-        ("asincrona", TokenKind::Asincrona),
-        ("await", TokenKind::Await),
-        ("requiere", TokenKind::Requiere),
-        ("asegura", TokenKind::Asegura),
-        ("siempre", TokenKind::Siempre),
-        ("resultado", TokenKind::ResultadoKw),
-        ("anterior", TokenKind::Anterior),
-        ("no", TokenKind::No),
+    let pares: &[(&str, TokenTipo)] = &[
+        ("variable", TokenTipo::Variable),
+        ("var", TokenTipo::Variable),
+        ("constante", TokenTipo::Constante),
+        ("const", TokenTipo::Constante),
+        ("mut", TokenTipo::Mut),
+        ("si", TokenTipo::Si),
+        ("sino", TokenTipo::Sino),
+        ("mientras", TokenTipo::Mientras),
+        ("para", TokenTipo::Para),
+        ("repetir", TokenTipo::Repetir),
+        ("romper", TokenTipo::Romper),
+        ("break", TokenTipo::Romper),
+        ("continuar", TokenTipo::Continuar),
+        ("continue", TokenTipo::Continuar),
+        ("clase", TokenTipo::Clase),
+        ("constructor", TokenTipo::Constructor),
+        ("este", TokenTipo::Este),
+        ("nuevo", TokenTipo::Nuevo),
+        ("funcion", TokenTipo::Funcion),
+        ("fun", TokenTipo::Funcion),
+        ("func", TokenTipo::Funcion),
+        ("prestado", TokenTipo::Prestado),
+        ("escribir", TokenTipo::Escribir),
+        ("leer", TokenTipo::Leer),
+        ("BD", TokenTipo::BD),
+        ("verdadero", TokenTipo::Verdadero),
+        ("falso", TokenTipo::Falso),
+        ("nulo", TokenTipo::Nulo),
+        ("retornar", TokenTipo::Retornar),
+        ("externo", TokenTipo::Externo),
+        ("externa", TokenTipo::Externo),
+        ("importar", TokenTipo::Importar),
+        ("tipo", TokenTipo::Tipo),
+        ("coincidir", TokenTipo::Coincidir),
+        ("caso", TokenTipo::Caso),
+        ("hilo", TokenTipo::Hilo),
+        ("canal", TokenTipo::Canal),
+        ("enviar", TokenTipo::Enviar),
+        ("recibir", TokenTipo::Recibir),
+        ("unir", TokenTipo::Unir),
+        ("rasgo", TokenTipo::Rasgo),
+        ("implementa", TokenTipo::Implementa),
+        ("donde", TokenTipo::Donde),
+        ("seleccionar", TokenTipo::Seleccionar),
+        ("tiempo", TokenTipo::Tiempo),
+        ("otro", TokenTipo::Otro),
+        ("cuando", TokenTipo::Cuando),
+        ("asincrona", TokenTipo::Asincrona),
+        ("await", TokenTipo::Await),
+        ("requiere", TokenTipo::Requiere),
+        ("asegura", TokenTipo::Asegura),
+        ("siempre", TokenTipo::Siempre),
+        ("resultado", TokenTipo::ResultadoKw),
+        ("anterior", TokenTipo::Anterior),
+        ("no", TokenTipo::No),
     ];
     for (texto, esperado) in pares {
         let k = tipos(texto);
@@ -175,7 +175,7 @@ fn lex_tipos_son_palabras_suaves() {
         let k = tipos(nombre);
         assert_eq!(
             k[0],
-            TokenKind::Identificador(nombre.to_string()),
+            TokenTipo::Identificador(nombre.to_string()),
             "los tipos deben ser identificadores suaves"
         );
     }
@@ -184,47 +184,47 @@ fn lex_tipos_son_palabras_suaves() {
 #[test]
 fn lex_y_o_son_identificadores() {
     // `y`/`o` no son keywords para poder usarse como variables.
-    assert_eq!(tipos("y")[0], TokenKind::Identificador("y".into()));
-    assert_eq!(tipos("o")[0], TokenKind::Identificador("o".into()));
+    assert_eq!(tipos("y")[0], TokenTipo::Identificador("y".into()));
+    assert_eq!(tipos("o")[0], TokenTipo::Identificador("o".into()));
 }
 
 #[test]
 fn lex_simbolos_y_operadores() {
-    let casos: &[(&str, TokenKind)] = &[
-        ("@", TokenKind::Arroba),
-        ("&", TokenKind::Amp),
-        ("{", TokenKind::LlaveAbrir),
-        ("}", TokenKind::LlaveCerrar),
-        ("(", TokenKind::ParenAbrir),
-        (")", TokenKind::ParenCerrar),
-        ("[", TokenKind::CorcheteAbrir),
-        ("]", TokenKind::CorcheteCerrar),
-        (",", TokenKind::Coma),
-        (".", TokenKind::Punto),
-        (":", TokenKind::DosPuntos),
-        (";", TokenKind::PuntoComa),
-        ("?", TokenKind::Interrogacion),
-        ("=", TokenKind::Igual),
-        ("+", TokenKind::Mas),
-        ("-", TokenKind::Menos),
-        ("*", TokenKind::Por),
-        ("/", TokenKind::Dividido),
-        ("%", TokenKind::Porcentaje),
-        ("+=", TokenKind::MasIgual),
-        ("-=", TokenKind::MenosIgual),
-        ("*=", TokenKind::PorIgual),
-        ("/=", TokenKind::DivididoIgual),
-        ("%=", TokenKind::PorcentajeIgual),
-        (">", TokenKind::Mayor),
-        ("<", TokenKind::Menor),
-        (">=", TokenKind::MayorIgual),
-        ("<=", TokenKind::MenorIgual),
-        ("==", TokenKind::IgualIgual),
-        ("!=", TokenKind::Diferente),
-        ("&&", TokenKind::Y),
-        ("||", TokenKind::O),
-        ("|", TokenKind::Pipe),
-        ("!", TokenKind::No),
+    let casos: &[(&str, TokenTipo)] = &[
+        ("@", TokenTipo::Arroba),
+        ("&", TokenTipo::Amp),
+        ("{", TokenTipo::LlaveAbrir),
+        ("}", TokenTipo::LlaveCerrar),
+        ("(", TokenTipo::ParenAbrir),
+        (")", TokenTipo::ParenCerrar),
+        ("[", TokenTipo::CorcheteAbrir),
+        ("]", TokenTipo::CorcheteCerrar),
+        (",", TokenTipo::Coma),
+        (".", TokenTipo::Punto),
+        (":", TokenTipo::DosPuntos),
+        (";", TokenTipo::PuntoComa),
+        ("?", TokenTipo::Interrogacion),
+        ("=", TokenTipo::Igual),
+        ("+", TokenTipo::Mas),
+        ("-", TokenTipo::Menos),
+        ("*", TokenTipo::Por),
+        ("/", TokenTipo::Dividido),
+        ("%", TokenTipo::Porcentaje),
+        ("+=", TokenTipo::MasIgual),
+        ("-=", TokenTipo::MenosIgual),
+        ("*=", TokenTipo::PorIgual),
+        ("/=", TokenTipo::DivididoIgual),
+        ("%=", TokenTipo::PorcentajeIgual),
+        (">", TokenTipo::Mayor),
+        ("<", TokenTipo::Menor),
+        (">=", TokenTipo::MayorIgual),
+        ("<=", TokenTipo::MenorIgual),
+        ("==", TokenTipo::IgualIgual),
+        ("!=", TokenTipo::Diferente),
+        ("&&", TokenTipo::Y),
+        ("||", TokenTipo::O),
+        ("|", TokenTipo::Pipe),
+        ("!", TokenTipo::No),
     ];
     for (texto, esperado) in casos {
         let k = tipos(texto);
@@ -239,50 +239,50 @@ fn lex_simbolos_y_operadores() {
 #[test]
 fn lex_flecha_se_dos_tokens() {
     let k = tipos("->");
-    assert_eq!(k[0], TokenKind::Menos);
-    assert_eq!(k[1], TokenKind::Mayor);
+    assert_eq!(k[0], TokenTipo::Menos);
+    assert_eq!(k[1], TokenTipo::Mayor);
 }
 
 #[test]
 fn lex_dos_puntos_dobles_no_existen() {
     // `::` y `..` no son tokens propios (la documentación los menciona).
     let k = tipos("::");
-    assert_eq!(k[0], TokenKind::DosPuntos);
-    assert_eq!(k[1], TokenKind::DosPuntos);
+    assert_eq!(k[0], TokenTipo::DosPuntos);
+    assert_eq!(k[1], TokenTipo::DosPuntos);
     let k = tipos("..");
-    assert_eq!(k[0], TokenKind::Punto);
-    assert_eq!(k[1], TokenKind::Punto);
+    assert_eq!(k[0], TokenTipo::Punto);
+    assert_eq!(k[1], TokenTipo::Punto);
 }
 
 #[test]
 fn lex_numeros_enteros_y_decimales() {
-    assert_eq!(tipos("42")[0], TokenKind::Numero(42));
-    assert_eq!(tipos("007")[0], TokenKind::Numero(7));
+    assert_eq!(tipos("42")[0], TokenTipo::Numero(42));
+    assert_eq!(tipos("007")[0], TokenTipo::Numero(7));
     match tipos("3.5")[0] {
-        TokenKind::Decimal { valor, .. } => assert_eq!(valor, 3.5),
+        TokenTipo::Decimal { valor, .. } => assert_eq!(valor, 3.5),
         ref otro => panic!("se esperaba Decimal, llegó {otro:?}"),
     }
 }
 
 #[test]
 fn lex_exponentes() {
-    assert!(matches!(tipos("1e3")[0], TokenKind::LiteralExacto(1000, 0)));
+    assert!(matches!(tipos("1e3")[0], TokenTipo::LiteralExacto(1000, 0)));
     assert!(matches!(
         tipos("1.5e3")[0],
-        TokenKind::LiteralExacto(1500, 0)
+        TokenTipo::LiteralExacto(1500, 0)
     ));
     assert!(matches!(
         tipos("1.5e-2")[0],
-        TokenKind::LiteralExacto(15, 3)
+        TokenTipo::LiteralExacto(15, 3)
     ));
-    assert!(matches!(tipos("2E+2")[0], TokenKind::LiteralExacto(200, 0)));
+    assert!(matches!(tipos("2E+2")[0], TokenTipo::LiteralExacto(200, 0)));
 }
 
 #[test]
 fn lex_decimal_muy_largo_es_exacto() {
     assert!(matches!(
         tipos("0.123456789012345678")[0],
-        TokenKind::LiteralExacto(_, 18)
+        TokenTipo::LiteralExacto(_, 18)
     ));
 }
 
@@ -290,68 +290,68 @@ fn lex_decimal_muy_largo_es_exacto() {
 fn lex_entero_fuera_de_i64_es_error() {
     assert!(matches!(
         tipos("9223372036854775808")[0],
-        TokenKind::Error(_)
+        TokenTipo::Error(_)
     ));
 }
 
 #[test]
 fn lex_textos_y_escapes() {
-    assert_eq!(tipos(r#""hola""#)[0], TokenKind::Texto("hola".into()));
-    assert_eq!(tipos(r#""a\nb""#)[0], TokenKind::Texto("a\nb".into()));
-    assert_eq!(tipos(r#""a\tb""#)[0], TokenKind::Texto("a\tb".into()));
-    assert_eq!(tipos(r#""a\\b""#)[0], TokenKind::Texto("a\\b".into()));
-    assert_eq!(tipos(r#""a\"b""#)[0], TokenKind::Texto("a\"b".into()));
-    assert_eq!(tipos(r#""a\rb""#)[0], TokenKind::Texto("a\rb".into()));
-    assert_eq!(tipos(r#""\${x}""#)[0], TokenKind::Texto("${x}".into()));
-    assert_eq!(tipos(r#""\{x}""#)[0], TokenKind::Texto("{x}".into()));
-    assert_eq!(tipos(r#""$$5""#)[0], TokenKind::Texto("$$5".into()));
+    assert_eq!(tipos(r#""hola""#)[0], TokenTipo::Texto("hola".into()));
+    assert_eq!(tipos(r#""a\nb""#)[0], TokenTipo::Texto("a\nb".into()));
+    assert_eq!(tipos(r#""a\tb""#)[0], TokenTipo::Texto("a\tb".into()));
+    assert_eq!(tipos(r#""a\\b""#)[0], TokenTipo::Texto("a\\b".into()));
+    assert_eq!(tipos(r#""a\"b""#)[0], TokenTipo::Texto("a\"b".into()));
+    assert_eq!(tipos(r#""a\rb""#)[0], TokenTipo::Texto("a\rb".into()));
+    assert_eq!(tipos(r#""\${x}""#)[0], TokenTipo::Texto("${x}".into()));
+    assert_eq!(tipos(r#""\{x}""#)[0], TokenTipo::Texto("{x}".into()));
+    assert_eq!(tipos(r#""$$5""#)[0], TokenTipo::Texto("$$5".into()));
 }
 
 #[test]
 fn lex_comillas_simples_son_texto() {
     // En Forja las comillas simples producen Texto, no un literal de carácter.
-    assert_eq!(tipos("'a'")[0], TokenKind::Texto("a".into()));
+    assert_eq!(tipos("'a'")[0], TokenTipo::Texto("a".into()));
     assert_eq!(
         tipos("'hola mundo'")[0],
-        TokenKind::Texto("hola mundo".into())
+        TokenTipo::Texto("hola mundo".into())
     );
 }
 
 #[test]
 fn lex_comentarios_y_doc_comments() {
-    assert_eq!(tipos("// x\nescribir")[0], TokenKind::Escribir);
-    assert_eq!(tipos("/* a */ escribir")[0], TokenKind::Escribir);
-    assert_eq!(tipos("/* a\nb */ escribir")[0], TokenKind::Escribir);
+    assert_eq!(tipos("// x\nescribir")[0], TokenTipo::Escribir);
+    assert_eq!(tipos("/* a */ escribir")[0], TokenTipo::Escribir);
+    assert_eq!(tipos("/* a\nb */ escribir")[0], TokenTipo::Escribir);
     match &tipos("/// doc\nfuncion")[0] {
-        TokenKind::DocComment(s) => assert!(s.contains("doc")),
+        TokenTipo::DocComment(s) => assert!(s.contains("doc")),
         otro => panic!("se esperaba DocComment, llegó {otro:?}"),
     }
     // Los comentarios de bloque no anidan.
     let k = tipos("/* a /* b */ c */");
-    assert_eq!(k[0], TokenKind::Identificador("c".into()));
+    assert_eq!(k[0], TokenTipo::Identificador("c".into()));
 }
 
 #[test]
 fn lex_identificadores_unicode_y_guion_bajo() {
-    assert_eq!(tipos("año")[0], TokenKind::Identificador("año".into()));
-    assert_eq!(tipos("_x")[0], TokenKind::Identificador("_x".into()));
-    assert_eq!(tipos("x1")[0], TokenKind::Identificador("x1".into()));
+    assert_eq!(tipos("año")[0], TokenTipo::Identificador("año".into()));
+    assert_eq!(tipos("_x")[0], TokenTipo::Identificador("_x".into()));
+    assert_eq!(tipos("x1")[0], TokenTipo::Identificador("x1".into()));
 }
 
 #[test]
 fn lex_interpolacion_genera_fragmentos() {
     let k = tipos(r#""Hola ${nombre}""#);
-    assert_eq!(k[0], TokenKind::Texto("Hola ".into()));
-    assert_eq!(k[1], TokenKind::Identificador("nombre".into()));
-    assert_eq!(k[2], TokenKind::Texto("".into()));
+    assert_eq!(k[0], TokenTipo::Texto("Hola ".into()));
+    assert_eq!(k[1], TokenTipo::Identificador("nombre".into()));
+    assert_eq!(k[2], TokenTipo::Texto("".into()));
 }
 
 #[test]
 fn lex_interpolacion_acepta_literales() {
     let k = tipos(r#""${verdadero}${nulo}${falso}""#);
-    assert!(k.iter().any(|t| *t == TokenKind::Verdadero));
-    assert!(k.iter().any(|t| *t == TokenKind::Nulo));
-    assert!(k.iter().any(|t| *t == TokenKind::Falso));
+    assert!(k.iter().any(|t| *t == TokenTipo::Verdadero));
+    assert!(k.iter().any(|t| *t == TokenTipo::Nulo));
+    assert!(k.iter().any(|t| *t == TokenTipo::Falso));
 }
 
 // ============================================================================

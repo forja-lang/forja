@@ -1,9 +1,9 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_log(&mut self) {
-        self.registrar("_log_escribir", native_log_escribir);
-        self.registrar("_log_configurar", native_log_configurar);
+        self.registrar("_log_escribir", nativo_registrar_escribir);
+        self.registrar("_log_configurar", nativo_registrar_configurar);
     }
 }
 
@@ -37,7 +37,10 @@ pub fn nivel_num(nivel: &str) -> i32 {
     }
 }
 
-pub fn native_log_escribir(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_registrar_escribir(
+    _vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let nivel = obtener_texto(_vm, args[0])?;
     let mensaje = obtener_texto(_vm, args[1])?;
     if nivel_num(&nivel) < log_nivel_min() {
@@ -61,7 +64,10 @@ pub fn native_log_escribir(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
     Ok(ValorFast::nulo())
 }
 
-pub fn native_log_configurar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_registrar_configurar(
+    _vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let nivel = obtener_texto(_vm, args[0])?;
     let archivo = obtener_texto(_vm, args[1])?;
     *LOG_LEVEL

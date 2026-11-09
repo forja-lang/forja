@@ -50,7 +50,7 @@ pub fn eliminar(manejador: i64) -> Option<MmapRegion> {
 
 // ─── Page tamano ─────────────────────────────────────────────────────────────
 
-pub fn page_size() -> usize {
+pub fn page_tamano() -> usize {
     #[cfg(target_os = "windows")]
     {
         // Windows: GetSystemInfo -> dwPageSize, default 4096
@@ -73,14 +73,14 @@ mod unix {
     extern "C" {
         fn mmap(
             addr: *mut u8,
-            length: usize,
+            longitud: usize,
             prot: i32,
             flags: i32,
             fd: i32,
             offset: i64,
         ) -> *mut u8;
-        fn munmap(addr: *mut u8, length: usize) -> i32;
-        fn msync(addr: *mut u8, length: usize, flags: i32) -> i32;
+        fn munmap(addr: *mut u8, longitud: usize) -> i32;
+        fn msync(addr: *mut u8, longitud: usize, flags: i32) -> i32;
         fn close(fd: i32) -> i32;
     }
 
@@ -94,16 +94,16 @@ mod unix {
     pub fn abrir(
         ruta: &str,
         aligned_offset: u64,
-        map_len: usize,
+        mapa_longitud: usize,
         writable: bool,
     ) -> Result<i64, String> {
-        let file = std::fs::OpenOptions::new()
+        let archivo = std::fs::OpenOptions::new()
             .read(true)
             .write(writable)
             .open(ruta)
             .map_err(|e| format!("Error al abrir '{}': {}", ruta, e))?;
 
-        let fd = file.into_raw_fd();
+        let fd = archivo.into_raw_fd();
         let prot = if writable {
             PROT_READ | PROT_WRITE
         } else {
@@ -114,7 +114,7 @@ mod unix {
         let addr = unsafe {
             mmap(
                 std::ptr::null_mut(),
-                map_len,
+                mapa_longitud,
                 prot,
                 flags,
                 fd,
@@ -131,7 +131,7 @@ mod unix {
 
         Ok(registrar(MmapRegion {
             addr,
-            len: map_len,
+            len: mapa_longitud,
             file_offset: aligned_offset,
             writable,
         }))
@@ -192,16 +192,16 @@ mod windows_impl {
     pub fn abrir(
         ruta: &str,
         aligned_offset: u64,
-        map_len: usize,
+        mapa_longitud: usize,
         writable: bool,
     ) -> Result<i64, String> {
-        let file = std::fs::OpenOptions::new()
+        let archivo = std::fs::OpenOptions::new()
             .read(true)
             .write(writable)
             .open(ruta)
             .map_err(|e| format!("Error al abrir '{}': {}", ruta, e))?;
 
-        let h_file = file.into_raw_handle();
+        let h_archivo = archivo.into_raw_handle();
         let protect = if writable {
             PAGE_READWRITE
         } else {
@@ -209,9 +209,9 @@ mod windows_impl {
         };
 
         // Crear el objeto de mapping sin nombre (NULL)
-        let h_map = unsafe {
+        let h_mapa = unsafe {
             CreateFileMappingW(
-                h_file,
+                h_archivo,
                 std::ptr::null_mut(),
                 protect,
                 0, // max tamano high
@@ -220,9 +220,9 @@ mod windows_impl {
             )
         };
 
-        if h_map.is_null() {
+        if h_mapa.is_null() {
             unsafe {
-                CloseHandle(h_file);
+                CloseHandle(h_archivo);
             }
             return Err(format!("CreateFileMappingW falló para '{}'", ruta));
         }
@@ -235,19 +235,19 @@ mod windows_impl {
         let offset_high = (aligned_offset >> 32) as u32;
         let offset_low = (aligned_offset & 0xFFFF_FFFF) as u32;
 
-        let addr = unsafe { MapViewOfFile(h_map, access, offset_high, offset_low, map_len) };
+        let addr = unsafe { MapViewOfFile(h_mapa, access, offset_high, offset_low, mapa_longitud) };
 
         if addr.is_null() {
             unsafe {
-                CloseHandle(h_map);
-                CloseHandle(h_file);
+                CloseHandle(h_mapa);
+                CloseHandle(h_archivo);
             }
             return Err(format!("MapViewOfFile falló para '{}'", ruta));
         }
 
         Ok(registrar(MmapRegion {
             addr,
-            len: map_len,
+            len: mapa_longitud,
             file_offset: aligned_offset,
             writable,
         }))
@@ -273,29 +273,29 @@ mod windows_impl {
 // ─── API pública ───────────────────────────────────────────────────────────
 
 /// Abre un archivo y lo mapea en memoria.
-/// `offset`: se alinea automáticamente al page_size.
+/// `offset`: se alinea automáticamente al page_tamano.
 /// `len`: 0 = mapear todo el archivo desde offset.
 pub fn mmap_abrir(ruta: &str, offset: u64, len: usize, _writable: bool) -> Result<i64, String> {
-    let ps = page_size() as u64;
+    let ps = page_tamano() as u64;
     let aligned = (offset / ps) * ps;
-    let map_len = if len == 0 {
+    let mapa_longitud = if len == 0 {
         let meta = std::fs::metadata(ruta).map_err(|e| e.to_string())?;
         (meta.len() - aligned) as usize
     } else {
         len
     };
 
-    if map_len == 0 {
+    if mapa_longitud == 0 {
         return Err("Longitud de mapeo cero".into());
     }
 
     #[cfg(unix)]
     {
-        unix::abrir(ruta, aligned, map_len, _writable)
+        unix::abrir(ruta, aligned, mapa_longitud, _writable)
     }
     #[cfg(windows)]
     {
-        windows_impl::abrir(ruta, aligned, map_len, _writable)
+        windows_impl::abrir(ruta, aligned, mapa_longitud, _writable)
     }
     #[cfg(target_arch = "wasm32")]
     {

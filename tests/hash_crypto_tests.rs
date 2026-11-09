@@ -1,6 +1,6 @@
 use forja::base64;
 use forja::crypto;
-use forja::hash::{hex_encode, Sha1, Sha256};
+use forja::hash::{hex_codificar, Sha1, Sha256};
 
 // ============================================================
 // SHA-256 tests
@@ -10,7 +10,7 @@ use forja::hash::{hex_encode, Sha1, Sha256};
 fn test_sha256_empty() {
     let hash = Sha256::digest(b"");
     assert_eq!(
-        hex_encode(&hash),
+        hex_codificar(&hash),
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
 }
@@ -19,7 +19,7 @@ fn test_sha256_empty() {
 fn test_sha256_abc() {
     let hash = Sha256::digest(b"abc");
     assert_eq!(
-        hex_encode(&hash),
+        hex_codificar(&hash),
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
 }
@@ -28,7 +28,7 @@ fn test_sha256_abc() {
 fn test_sha256_hello() {
     let hash = Sha256::digest(b"hello world");
     assert_eq!(
-        hex_encode(&hash),
+        hex_codificar(&hash),
         "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
     );
 }
@@ -38,7 +38,7 @@ fn test_sha256_largo() {
     let data = b"a".repeat(1000);
     let hash = Sha256::digest(&data);
     assert_eq!(
-        hex_encode(&hash),
+        hex_codificar(&hash),
         "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3"
     );
 }
@@ -70,7 +70,7 @@ fn test_sha256_numeros() {
 fn test_sha1_empty() {
     let hash = Sha1::digest(b"");
     assert_eq!(
-        hex_encode(&hash),
+        hex_codificar(&hash),
         "da39a3ee5e6b4b0d3255bfef95601890afd80709"
     );
 }
@@ -79,7 +79,7 @@ fn test_sha1_empty() {
 fn test_sha1_abc() {
     let hash = Sha1::digest(b"abc");
     assert_eq!(
-        hex_encode(&hash),
+        hex_codificar(&hash),
         "a9993e364706816aba3e25717850c26c9cd0d89d"
     );
 }
@@ -88,7 +88,7 @@ fn test_sha1_abc() {
 fn test_sha1_hello() {
     let hash = Sha1::digest(b"hello world");
     assert_eq!(
-        hex_encode(&hash),
+        hex_codificar(&hash),
         "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed"
     );
 }
@@ -108,12 +108,12 @@ fn test_sha1_largo() {
 }
 
 // ============================================================
-// hex_encode tests
+// hex_codificar tests
 // ============================================================
 
 #[test]
 fn test_hex_codificar_vacio() {
-    assert_eq!(hex_encode(b""), "");
+    assert_eq!(hex_codificar(b""), "");
 }
 
 // ============================================================

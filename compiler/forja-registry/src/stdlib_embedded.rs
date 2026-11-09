@@ -4,7 +4,7 @@
 // se compilan dentro del ejecutable mediante include_str!().
 // Esto elimina la dependencia del sistema de archivos en tiempo de ejecución.
 //
-// El PackageResolver busca aquí primero antes de ir a disco.
+// El PaqueteResolver busca aquí primero antes de ir a disco.
 
 // ═════════════════════════════════════════════════════════════════════════
 // stdlib/std/

@@ -31,7 +31,7 @@ impl Optimizer {
     }
 
     /// Crea un optimizer con arena habilitada para allocaciones temporales
-    pub fn with_arena() -> Self {
+    pub fn con_arena() -> Self {
         Optimizer {
             cambios_realizados: 0,
             profundidad_expresion: 0,
@@ -40,7 +40,7 @@ impl Optimizer {
     }
 
     /// Resetea la arena si está habilitada
-    pub fn reset_arena(&mut self) {
+    pub fn reiniciar_arena(&mut self) {
         if let Some(ref mut arena) = self.arena {
             arena.reset();
         }
@@ -259,7 +259,7 @@ impl Optimizer {
                         .as_ref()
                         .map_or_else(Vec::new, |i| self.optimizar_declaracion(i));
                 }
-                let init_opt = inicializacion.as_ref().map(|i| {
+                let inicializar_opt = inicializacion.as_ref().map(|i| {
                     let mut v = self.optimizar_declaracion(i);
                     // Para init: esperamos exactamente 1 declaración; si hay más, tomar la primera
                     Box::new(v.remove(0))
@@ -269,7 +269,7 @@ impl Optimizer {
                     Box::new(v.remove(0))
                 });
                 vec![Declaracion::Para {
-                    inicializacion: init_opt,
+                    inicializacion: inicializar_opt,
                     condicion: cond_opt.map(Box::new),
                     incremento: inc_opt,
                     bloque: bloque
@@ -832,8 +832,8 @@ impl Optimizer {
                     Multiplicacion => {
                         // Multiplicar coeficientes, sumar escalas
                         let coeff = a.checked_mul(*b)?;
-                        let new_scale = sa.checked_add(*sb)?;
-                        Some(ValorConstante::Exacto(coeff, new_scale))
+                        let nuevo_scale = sa.checked_add(*sb)?;
+                        Some(ValorConstante::Exacto(coeff, nuevo_scale))
                     }
                     Division if *b != 0 => {
                         // Expandir dividendo con 38 dígitos extra
@@ -841,8 +841,8 @@ impl Optimizer {
                         let factor = 10i128.checked_pow(extra)?;
                         let a_expandido = a.checked_mul(factor)?;
                         let coeff = a_expandido / b;
-                        let escala_result = sa.checked_add(extra)?.checked_sub(*sb)?;
-                        Some(ValorConstante::Exacto(coeff, escala_result))
+                        let escala_resultado = sa.checked_add(extra)?.checked_sub(*sb)?;
+                        Some(ValorConstante::Exacto(coeff, escala_resultado))
                     }
                     IgualIgual => Some(ValorConstante::Booleano(a_adj == b_adj)),
                     Diferente => Some(ValorConstante::Booleano(a_adj != b_adj)),
@@ -882,7 +882,7 @@ mod tests {
     use forja_syntax::lexer::Lexer;
     use forja_syntax::parser::Parser;
 
-    fn optimizar_source(fuente: &str) -> Programa {
+    fn optimizar_fuente(fuente: &str) -> Programa {
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
@@ -893,7 +893,7 @@ mod tests {
 
     #[test]
     fn test_constant_folding_suma() {
-        let prog = optimizar_source("variable x = 2 + 3");
+        let prog = optimizar_fuente("variable x = 2 + 3");
         if let Declaracion::Variable {
             valor: Some(Expresion::LiteralNumero(5)),
             ..
@@ -906,7 +906,7 @@ mod tests {
 
     #[test]
     fn test_constant_folding_multi() {
-        let prog = optimizar_source("variable x = 6 * 7");
+        let prog = optimizar_fuente("variable x = 6 * 7");
         if let Declaracion::Variable {
             valor: Some(Expresion::LiteralNumero(42)),
             ..
@@ -919,7 +919,7 @@ mod tests {
 
     #[test]
     fn test_constant_folding_comparacion() {
-        let prog = optimizar_source("variable x = 5 > 3");
+        let prog = optimizar_fuente("variable x = 5 > 3");
         if let Declaracion::Variable {
             valor: Some(Expresion::LiteralBooleano(true)),
             ..
@@ -932,7 +932,7 @@ mod tests {
 
     #[test]
     fn test_constant_folding_no_fold_variable() {
-        let prog = optimizar_source("variable x = a + 3");
+        let prog = optimizar_fuente("variable x = a + 3");
         match &prog.declaraciones[0] {
             Declaracion::Variable {
                 valor: Some(Expresion::Binaria { .. }),
@@ -943,7 +943,7 @@ mod tests {
     }
 
     // DCE tests
-    fn dce_source(fuente: &str) -> Programa {
+    fn dce_fuente(fuente: &str) -> Programa {
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
@@ -955,7 +955,7 @@ mod tests {
     // ─── Dead Function/Class Elimination tests ───────────────────────────
     #[test]
     fn test_dce_funcion_no_llamada_eliminada() {
-        let prog = dce_source("funcion aux() { retornar 1 }\nfuncion main() { retornar 0 }");
+        let prog = dce_fuente("funcion aux() { retornar 1 }\nfuncion main() { retornar 0 }");
         assert_eq!(prog.declaraciones.len(), 1);
         assert!(
             matches!(&prog.declaraciones[0], Declaracion::Funcion { nombre, .. } if nombre == "main")
@@ -964,21 +964,21 @@ mod tests {
 
     #[test]
     fn test_dce_funcion_llamada_conservada() {
-        let prog = dce_source(
+        let prog = dce_fuente(
             "funcion suma(a, b) { retornar a + b }\nfuncion main() { variable x = suma(1, 2) }",
         );
         assert_eq!(prog.declaraciones.len(), 2);
     }
 
     #[test]
-    fn test_dce_funcion_main_siempre_conservada() {
-        let prog = dce_source("funcion main() { retornar 0 }");
+    fn test_dce_funcion_principal_siempre_conservada() {
+        let prog = dce_fuente("funcion main() { retornar 0 }");
         assert_eq!(prog.declaraciones.len(), 1);
     }
 
     #[test]
     fn test_dce_clase_no_instanciada_eliminada() {
-        let prog = dce_source("clase Aux { x: Entero }\nfuncion main() { retornar 0 }");
+        let prog = dce_fuente("clase Aux { x: Entero }\nfuncion main() { retornar 0 }");
         assert_eq!(prog.declaraciones.len(), 1);
         assert!(
             matches!(&prog.declaraciones[0], Declaracion::Funcion { nombre, .. } if nombre == "main")
@@ -987,14 +987,14 @@ mod tests {
 
     #[test]
     fn test_dce_clase_instanciada_conservada() {
-        let prog = dce_source("clase Punto { x: Entero, y: Entero }\nfuncion main() { variable p = nuevo Punto { x: 1, y: 2 } }");
+        let prog = dce_fuente("clase Punto { x: Entero, y: Entero }\nfuncion main() { variable p = nuevo Punto { x: 1, y: 2 } }");
         assert_eq!(prog.declaraciones.len(), 2);
     }
 
     // ─── Strength Reduction tests ─────────────────────────────────────────
     #[test]
     fn test_strength_reduce_x_por_2() {
-        let prog = optimizar_source("variable y = x * 2");
+        let prog = optimizar_fuente("variable y = x * 2");
         match &prog.declaraciones[0] {
             Declaracion::Variable {
                 valor:
@@ -1010,7 +1010,7 @@ mod tests {
 
     #[test]
     fn test_strength_reduce_x_menos_x() {
-        let prog = optimizar_source("variable y = x - x");
+        let prog = optimizar_fuente("variable y = x - x");
         match &prog.declaraciones[0] {
             Declaracion::Variable {
                 valor: Some(Expresion::LiteralNumero(0)),
@@ -1022,7 +1022,7 @@ mod tests {
 
     #[test]
     fn test_strength_reduce_0_menos_x() {
-        let prog = optimizar_source("variable y = 0 - x");
+        let prog = optimizar_fuente("variable y = 0 - x");
         match &prog.declaraciones[0] {
             Declaracion::Variable {
                 valor:
@@ -1038,7 +1038,7 @@ mod tests {
 
     #[test]
     fn test_strength_reduce_modulo_1() {
-        let prog = optimizar_source("variable y = x % 1");
+        let prog = optimizar_fuente("variable y = x % 1");
         match &prog.declaraciones[0] {
             Declaracion::Variable {
                 valor: Some(Expresion::LiteralNumero(0)),
@@ -1051,7 +1051,7 @@ mod tests {
     #[test]
     fn test_strength_reduce_decimal_identities() {
         let prog =
-            optimizar_source("variable a = x + 0.0\nvariable b = x * 1.0\nvariable c = x * 0.0");
+            optimizar_fuente("variable a = x + 0.0\nvariable b = x * 1.0\nvariable c = x * 0.0");
         match &prog.declaraciones[0] {
             Declaracion::Variable {
                 valor: Some(Expresion::Identificador { nombre, .. }),
@@ -1077,7 +1077,7 @@ mod tests {
 
     #[test]
     fn test_strength_reduce_division_por_1_decimal() {
-        let prog = optimizar_source("variable y = x / 1.0");
+        let prog = optimizar_fuente("variable y = x / 1.0");
         match &prog.declaraciones[0] {
             Declaracion::Variable {
                 valor: Some(Expresion::Identificador { nombre, .. }),
@@ -1089,7 +1089,7 @@ mod tests {
 
     #[test]
     fn test_strength_reduce_0_menos_x_decimal() {
-        let prog = optimizar_source("variable y = 0.0 - x");
+        let prog = optimizar_fuente("variable y = 0.0 - x");
         match &prog.declaraciones[0] {
             Declaracion::Variable {
                 valor:
@@ -1104,7 +1104,7 @@ mod tests {
     }
 
     // ─── ConstProp tests ─────────────────────────────────────────────────
-    fn constprop_source(fuente: &str) -> Programa {
+    fn constprop_fuente(fuente: &str) -> Programa {
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
@@ -1115,7 +1115,7 @@ mod tests {
 
     #[test]
     fn test_constprop_entero_simple() {
-        let prog = constprop_source("constante x = 5\nvariable y = x + 3");
+        let prog = constprop_fuente("constante x = 5\nvariable y = x + 3");
         assert_eq!(prog.declaraciones.len(), 2);
         match &prog.declaraciones[1] {
             Declaracion::Variable {
@@ -1128,7 +1128,7 @@ mod tests {
 
     #[test]
     fn test_constprop_mutable_no_propaga() {
-        let prog = constprop_source("variable x = 5\nvariable y = x + 3");
+        let prog = constprop_fuente("variable x = 5\nvariable y = x + 3");
         assert_eq!(prog.declaraciones.len(), 2);
         match &prog.declaraciones[1] {
             // x es mutable, no debe propagarse
@@ -1142,7 +1142,7 @@ mod tests {
 
     #[test]
     fn test_constprop_concat_texto() {
-        let prog = constprop_source("constante s = \"hola\"\nvariable t = s + \" mundo\"");
+        let prog = constprop_fuente("constante s = \"hola\"\nvariable t = s + \" mundo\"");
         assert_eq!(prog.declaraciones.len(), 2);
         match &prog.declaraciones[1] {
             Declaracion::Variable {
@@ -1157,7 +1157,7 @@ mod tests {
 
     #[test]
     fn test_constprop_booleano() {
-        let prog = constprop_source("constante a = verdadero\nvariable b = no a");
+        let prog = constprop_fuente("constante a = verdadero\nvariable b = no a");
         assert_eq!(prog.declaraciones.len(), 2);
         match &prog.declaraciones[1] {
             Declaracion::Variable {
@@ -1173,7 +1173,7 @@ mod tests {
     #[test]
     fn test_constprop_asignacion_invalida() {
         let prog =
-            constprop_source("constante x = 5\nvariable y = x + 2\nx = 10\nvariable z = x + 1");
+            constprop_fuente("constante x = 5\nvariable y = x + 2\nx = 10\nvariable z = x + 1");
         assert_eq!(prog.declaraciones.len(), 4);
         match &prog.declaraciones[1] {
             Declaracion::Variable {
@@ -1194,7 +1194,7 @@ mod tests {
 
     #[test]
     fn test_constprop_encadenado() {
-        let prog = constprop_source("constante a = 2\nconstante b = a + 3\nconstante c = b * 4");
+        let prog = constprop_fuente("constante a = 2\nconstante b = a + 3\nconstante c = b * 4");
         assert_eq!(prog.declaraciones.len(), 3);
         match &prog.declaraciones[2] {
             Declaracion::Variable {
@@ -1207,7 +1207,7 @@ mod tests {
 
     #[test]
     fn test_optimizar_identidad_algebraica_y_short_circuit() {
-        let prog = optimizar_source("variable x = a + 0\nvariable y = a * 1\nvariable z = a * 0\nvariable s = \"hola \" + \"mundo\"\nvariable b = no (no a)");
+        let prog = optimizar_fuente("variable x = a + 0\nvariable y = a * 1\nvariable z = a * 0\nvariable s = \"hola \" + \"mundo\"\nvariable b = no (no a)");
         match &prog.declaraciones[0] {
             Declaracion::Variable {
                 valor: Some(Expresion::Identificador { nombre, .. }),
@@ -1249,7 +1249,7 @@ mod tests {
 
     #[test]
     fn test_dead_branch_si_verdadero() {
-        let prog = optimizar_source("si verdadero {\n  variable x = 1\n}");
+        let prog = optimizar_fuente("si verdadero {\n  variable x = 1\n}");
         // Debería expandir solo el bloque verdadero
         assert_eq!(prog.declaraciones.len(), 1);
         match &prog.declaraciones[0] {
@@ -1260,14 +1260,14 @@ mod tests {
 
     #[test]
     fn test_dead_branch_si_falso() {
-        let prog = optimizar_source("si falso {\n  variable x = 1\n}");
+        let prog = optimizar_fuente("si falso {\n  variable x = 1\n}");
         // Debería eliminar todo el si
         assert_eq!(prog.declaraciones.len(), 0);
     }
 
     #[test]
     fn test_dead_branch_si_falso_con_sino() {
-        let prog = optimizar_source("si falso {\n  variable x = 1\n} sino {\n  variable y = 2\n}");
+        let prog = optimizar_fuente("si falso {\n  variable x = 1\n} sino {\n  variable y = 2\n}");
         // Debería expandir solo el bloque falso
         assert_eq!(prog.declaraciones.len(), 1);
         match &prog.declaraciones[0] {
@@ -1279,7 +1279,7 @@ mod tests {
     #[test]
     fn test_dead_branch_si_verdadero_con_sino() {
         let prog =
-            optimizar_source("si verdadero {\n  variable x = 1\n} sino {\n  variable y = 2\n}");
+            optimizar_fuente("si verdadero {\n  variable x = 1\n} sino {\n  variable y = 2\n}");
         // Debería expandir solo el bloque verdadero
         assert_eq!(prog.declaraciones.len(), 1);
         match &prog.declaraciones[0] {
@@ -1290,14 +1290,14 @@ mod tests {
 
     #[test]
     fn test_dead_branch_mientras_falso() {
-        let prog = optimizar_source("mientras (falso) {\n  variable x = 1\n}");
+        let prog = optimizar_fuente("mientras (falso) {\n  variable x = 1\n}");
         // Debería eliminar el loop completo
         assert_eq!(prog.declaraciones.len(), 0);
     }
 
     #[test]
     fn test_dead_branch_mientras_verdadero() {
-        let prog = optimizar_source("mientras (verdadero) {\n  variable x = 1\n}");
+        let prog = optimizar_fuente("mientras (verdadero) {\n  variable x = 1\n}");
         // Debería conservar el loop
         assert_eq!(prog.declaraciones.len(), 1);
         assert!(matches!(
@@ -1308,7 +1308,7 @@ mod tests {
 
     #[test]
     fn test_dead_branch_repetir_0() {
-        let prog = optimizar_source("repetir (0) {\n  variable x = 1\n}");
+        let prog = optimizar_fuente("repetir (0) {\n  variable x = 1\n}");
         // Debería eliminar el bloque
         assert_eq!(prog.declaraciones.len(), 0);
     }
@@ -1316,14 +1316,14 @@ mod tests {
     #[test]
     fn test_dead_branch_anidados() {
         // si verdadero { si falso { x = 1 } } → se elimina internamente
-        let prog = optimizar_source("si verdadero {\n  si falso {\n    variable x = 1\n  }\n}");
+        let prog = optimizar_fuente("si verdadero {\n  si falso {\n    variable x = 1\n  }\n}");
         // El si externo se expande (verdadero), el interno se elimina (falso)
         assert_eq!(prog.declaraciones.len(), 0);
     }
 
     #[test]
     fn test_dead_branch_condicion_no_constante() {
-        let prog = optimizar_source("si x {\n  variable y = 1\n}");
+        let prog = optimizar_fuente("si x {\n  variable y = 1\n}");
         // No debería eliminar nada
         assert_eq!(prog.declaraciones.len(), 1);
         assert!(matches!(&prog.declaraciones[0], Declaracion::Si { .. }));
@@ -1331,7 +1331,7 @@ mod tests {
 
     #[test]
     fn test_dead_branch_si_verdadero_multiples_decl() {
-        let prog = optimizar_source("si verdadero {\n  variable a = 1\n  variable b = 2\n}");
+        let prog = optimizar_fuente("si verdadero {\n  variable a = 1\n  variable b = 2\n}");
         // Debería expandir ambas declaraciones
         assert_eq!(prog.declaraciones.len(), 2);
         match &prog.declaraciones[0] {
@@ -1346,7 +1346,7 @@ mod tests {
 
     #[test]
     fn test_dead_branch_repetir_no_zero() {
-        let prog = optimizar_source("repetir (3) {\n  variable x = 1\n}");
+        let prog = optimizar_fuente("repetir (3) {\n  variable x = 1\n}");
         // No debería eliminar nada
         assert_eq!(prog.declaraciones.len(), 1);
         assert!(matches!(
@@ -1358,14 +1358,14 @@ mod tests {
     // ─── Inlining tests ─────────────────────────────────────────────────
 
     #[test]
-    fn test_inline_funcion_trivial() {
+    fn test_en_linea_funcion_trivial() {
         let fuente = "funcion doble(x) { retornar x + x }\nvariable y = doble(5)";
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
-        let mut inliner = FunctionInliner::new();
-        let prog = inliner.inline(&programa);
+        let mut inliner = FuncionInliner::new();
+        let prog = inliner.en_linea(&programa);
         // La función doble debería haber sido eliminada (inlined)
         assert_eq!(inliner.inlines_realizados, 1);
         // Solo queda la declaración de variable
@@ -1378,33 +1378,33 @@ mod tests {
     }
 
     #[test]
-    fn test_inline_no_main() {
+    fn test_en_linea_no_principal() {
         let fuente = "funcion main() { escribir(\"hola\") }\nfuncion aux(x) { retornar x }\nvariable y = aux(1)";
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
-        let mut inliner = FunctionInliner::new();
-        let prog = inliner.inline(&programa);
+        let mut inliner = FuncionInliner::new();
+        let prog = inliner.en_linea(&programa);
         // main no debería ser inlined, pero sí aux
         assert_eq!(inliner.inlines_realizados, 1);
-        let main_funcs: Vec<_> = prog
+        let principal_funcs: Vec<_> = prog
             .declaraciones
             .iter()
             .filter(|d| matches!(d, Declaracion::Funcion { nombre, .. } if nombre == "main"))
             .collect();
-        assert_eq!(main_funcs.len(), 1, "main should be preserved");
+        assert_eq!(principal_funcs.len(), 1, "main should be preserved");
     }
 
     #[test]
-    fn test_no_inline_too_large() {
+    fn test_no_en_linea_too_large() {
         let fuente = "funcion grande(x) {\n  variable a = 1\n  variable b = 2\n  variable c = 3\n  variable d = 4\n  variable e = 5\n  variable f = 6\n  variable g = 7\n  variable h = 8\n  variable i = 9\n  variable j = 10\n  variable k = 11\n  retornar x + k\n}\nvariable y = grande(5)";
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
-        let mut inliner = FunctionInliner::new();
-        let prog = inliner.inline(&programa);
+        let mut inliner = FuncionInliner::new();
+        let prog = inliner.en_linea(&programa);
         // La función tiene 11 declaraciones (> max_inline_size=10), no se inlinea
         assert_eq!(inliner.inlines_realizados, 0);
         let funcs: Vec<_> = prog
@@ -1418,14 +1418,14 @@ mod tests {
     // ─── Loop Unswitching tests ──────────────────────────────────────────
 
     #[test]
-    fn test_unswitch_simple() {
+    fn test_desanidar_simple() {
         let fuente = "mientras (i < 10) {\n  si (modo_rapido) {\n    variable x = 1\n  } sino {\n    variable x = 2\n  }\n}";
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
-        let mut unswitcher = LoopUnswitcher::new();
-        let prog = unswitcher.unswitch(&programa);
+        let mut unswitcher = BucleUnswitcher::new();
+        let prog = unswitcher.desanidar(&programa);
         // Debería haber un Si externo con dos Mientras adentro
         assert_eq!(unswitcher.unswitches_realizados, 1);
         match &prog.declaraciones[0] {
@@ -1447,15 +1447,15 @@ mod tests {
     }
 
     #[test]
-    fn test_no_unswitch_variant() {
+    fn test_no_desanidar_variant() {
         // Si la condición del Si depende de i, no se puede unswitch
         let fuente = "mientras (i < 10) {\n  si (i > 5) {\n    variable x = 1\n  }\n}";
         let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
-        let mut unswitcher = LoopUnswitcher::new();
-        let prog = unswitcher.unswitch(&programa);
+        let mut unswitcher = BucleUnswitcher::new();
+        let prog = unswitcher.desanidar(&programa);
         assert_eq!(unswitcher.unswitches_realizados, 0);
         assert!(matches!(
             &prog.declaraciones[0],

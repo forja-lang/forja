@@ -15,7 +15,7 @@ fn salida_fast(fuente: &str) -> Vec<String> {
     let bc = fusionar_opcodes(&bc);
     let mut vm = ForjaFast::new();
     vm.cargar_bytecode(bc);
-    vm.set_max_inst(50000);
+    vm.fijar_max_inst(50000);
     vm.ejecutar().unwrap();
     let salida = vm.output.lock().unwrap().clone();
     salida

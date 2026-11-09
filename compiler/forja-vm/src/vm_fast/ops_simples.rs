@@ -17,50 +17,50 @@ impl ForjaFast {
     pub fn ejecutar_ops_simples(&mut self, op: &Opcode) -> Result<bool, ErrFast> {
         match op {
             Opcode::PushEntero(n) => {
-                self.push_valor(get_small_int_fast(*n));
+                self.empujar_valor(obtener_small_entero_fast(*n));
                 self.ip += 1;
             }
             Opcode::PushDecimal(d) => {
                 prof_count!(push_decimal);
-                self.push_valor(ValorFast::flotante(*d));
+                self.empujar_valor(ValorFast::flotante(*d));
                 self.ip += 1;
             }
             Opcode::PushTexto(s) => {
-                let idx = self.alloc_str(s.clone());
-                self.push_valor(ValorFast::texto(idx));
+                let idx = self.reservar_texto(s.clone());
+                self.empujar_valor(ValorFast::texto(idx));
                 self.ip += 1;
             }
             Opcode::PushBooleano(b) => {
-                self.push_valor(ValorFast::booleano(*b));
+                self.empujar_valor(ValorFast::booleano(*b));
                 self.ip += 1;
             }
             Opcode::PushNulo => {
-                self.push_valor(ValorFast::nulo());
+                self.empujar_valor(ValorFast::nulo());
                 self.ip += 1;
             }
             Opcode::Descartar => {
-                self.pop_valor()?;
+                self.desapilar_valor()?;
                 self.ip += 1;
             }
             Opcode::Duplicar => {
                 let v = *self.peek_valor(0);
-                self.push_valor(v);
+                self.empujar_valor(v);
                 self.ip += 1;
             }
 
             // === VARIABLES POR ÍNDICE (O(1) — acceso directo a Flat Var Stack) ===
             Opcode::CargarIndice(idx) => {
-                self.push_valor(self.load_local(*idx));
+                self.empujar_valor(self.cargar_local(*idx));
                 self.ip += 1;
             }
             Opcode::GuardarIndice(idx) => {
-                let val = self.pop_valor()?;
-                self.store_local(*idx, val);
+                let val = self.desapilar_valor()?;
+                self.almacen_local(*idx, val);
                 self.ip += 1;
             }
             Opcode::DeclararIndice(idx, _) => {
-                let val = self.pop_valor()?;
-                self.store_local(*idx, val);
+                let val = self.desapilar_valor()?;
+                self.almacen_local(*idx, val);
                 self.ip += 1;
             }
             Opcode::DeclararIndiceGlobal(idx, _) => {
@@ -71,12 +71,12 @@ impl ForjaFast {
                 }
                 if !self.global_var_inited.contains(&idx) {
                     // Primera inicialización: tomar el valor del stack
-                    let val = self.pop_valor()?;
+                    let val = self.desapilar_valor()?;
                     self.global_var_persist[idx] = val;
                     self.global_var_inited.insert(idx);
                 } else {
                     // Hot-reload: preservar valor anterior, descartar el nuevo
-                    self.pop_valor()?;
+                    self.desapilar_valor()?;
                 }
                 self.ip += 1;
             }
@@ -99,15 +99,15 @@ impl ForjaFast {
                     );
                 }
                 if idx < self.global_var_persist.len() {
-                    self.push_valor(self.global_var_persist[idx]);
+                    self.empujar_valor(self.global_var_persist[idx]);
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
                 self.ip += 1;
             }
             Opcode::GuardarIndiceGlobal(idx) => {
                 let idx = *idx;
-                let val = self.pop_valor()?;
+                let val = self.desapilar_valor()?;
                 if idx >= self.global_var_persist.len() {
                     self.global_var_persist.resize(idx + 1, ValorFast::nulo());
                 }
@@ -127,15 +127,15 @@ impl ForjaFast {
 
             // === OPCODES FUSIONADOS (sin push/pop — asignación directa) ===
             Opcode::DeclararOperacionEntero(idx, n) => {
-                self.store_local(*idx, get_small_int_fast(*n));
+                self.almacen_local(*idx, obtener_small_entero_fast(*n));
                 self.ip += 1;
             }
             Opcode::DeclararOperacionBooleano(idx, b) => {
-                self.store_local(*idx, ValorFast::booleano(*b));
+                self.almacen_local(*idx, ValorFast::booleano(*b));
                 self.ip += 1;
             }
             Opcode::GuardarOperacionEntero(idx, n) => {
-                self.store_local(*idx, get_small_int_fast(*n));
+                self.almacen_local(*idx, obtener_small_entero_fast(*n));
                 self.ip += 1;
             }
 

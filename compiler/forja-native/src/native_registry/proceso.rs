@@ -1,12 +1,12 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_proceso(&mut self) {
-        self.registrar("_proceso_ejecutar", native_proceso_ejecutar);
+        self.registrar("_proceso_ejecutar", nativo_proceso_ejecutar);
     }
 }
-pub fn native_proceso_ejecutar(
-    vm: &mut dyn Host,
+pub fn nativo_proceso_ejecutar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let cmd = obtener_texto(vm, args[0])?;
@@ -16,7 +16,7 @@ pub fn native_proceso_ejecutar(
         return Err(ErrFast::TipoInv(format!("Sandbox: {}", e)));
     }
 
-    let stdin_input = if args.len() > 1 {
+    let stdin_entrada = if args.len() > 1 {
         obtener_texto(vm, args[1])?
     } else {
         String::new()
@@ -41,7 +41,7 @@ pub fn native_proceso_ejecutar(
         command.current_dir(&directorio);
     }
 
-    if !stdin_input.is_empty() {
+    if !stdin_entrada.is_empty() {
         command.stdin(std::process::Stdio::piped());
     }
 
@@ -60,15 +60,15 @@ pub fn native_proceso_ejecutar(
     let mut obj = forja_runtime::ObjVal::new(sym, id_forma);
     obj.campos_vec = vec![
         {
-            let indice = vm.alloc_str(Arc::from(stdout.as_str()));
+            let indice = vm.reservar_texto(Arc::from(stdout.as_str()));
             ValorFast::texto(indice)
         },
         {
-            let indice = vm.alloc_str(Arc::from(stderr.as_str()));
+            let indice = vm.reservar_texto(Arc::from(stderr.as_str()));
             ValorFast::texto(indice)
         },
         ValorFast::entero(codigo),
     ];
-    let indice = vm.alloc_obj(obj);
+    let indice = vm.reservar_objeto(obj);
     Ok(ValorFast::objeto(indice))
 }

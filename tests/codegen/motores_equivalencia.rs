@@ -5,7 +5,7 @@
 //!   * `vm_fast::ForjaFast`  — intérprete canónico de bytecode (la VM de producción).
 //!     Es la canónica desde la v0.9.0 (la antigua VM v1 `ForjaVM` fue removida).
 //!   * `jit_tiered::TieredJit` — JIT único (orquestación por tiers: hotness, OSR,
-//!     deopt). Expone API de bajo nivel (`HotnessThresholds`, `FunctionState`,
+//!     deopt). Expone API de bajo nivel (`HotnessThresholds`, `FuncionState`,
 //!     `CompiledCode`, `DeoptFrame`, `JitStats`) y **no** un entrypoint
 //!     `ejecutar(source: &str)`, por lo que se ejercita alimentándolo con los
 //!     eventos del bytecode.
@@ -152,12 +152,12 @@ fn ejecutar_forjafast(bc: Vec<forja::bytecode::Opcode>) -> Vec<String> {
     use forja::vm_fast::ForjaFast;
     let mut vm = ForjaFast::new();
     #[cfg(target_pointer_width = "64")]
-    vm.set_max_inst(10_000_000_000);
+    vm.fijar_max_inst(10_000_000_000);
     #[cfg(not(target_pointer_width = "64"))]
-    vm.set_max_inst(2_000_000_000);
+    vm.fijar_max_inst(2_000_000_000);
     vm.cargar_bytecode(bc);
     vm.ejecutar().expect("ForjaFast debe ejecutar sin error");
-    vm.obtener_output().to_vec()
+    vm.obtener_salida().to_vec()
 }
 
 /// Alimenta el orquestador `jit_tiered::TieredJit` con los eventos del bytecode
@@ -177,7 +177,7 @@ fn ejecutar_con_tiered(bc: &[forja::bytecode::Opcode]) -> Vec<String> {
 /// No ejecuta nada: solo valida que el orquestador procesa los eventos sin error.
 fn observar_tiered(bc: &[forja::bytecode::Opcode]) {
     use forja::bytecode::Opcode;
-    use forja::jit_tiered::{ShouldCompile, TieredJit};
+    use forja::jit_tiered::{ShouldCompilar, TieredJit};
 
     let mut tiered = TieredJit::new();
     for (ip, op) in bc.iter().enumerate() {
@@ -189,7 +189,7 @@ fn observar_tiered(bc: &[forja::bytecode::Opcode]) {
                 // No importa el tier resultante en una única pasada; lo relevante
                 // es que el orquestador procese la llamada sin paniquear.
                 match tiered.on_function_call(nombre.as_ref()) {
-                    ShouldCompile::No | ShouldCompile::Yes(_) => (),
+                    ShouldCompilar::No | ShouldCompilar::Yes(_) => (),
                 };
             }
             _ => {}

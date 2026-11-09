@@ -1,7 +1,7 @@
 use forja::error::{ErrorForja, ErrorTipo};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
-use forja::semantics::BorrowChecker;
+use forja::semantics::PrestamoChecker;
 
 // ============================================================
 // ErrorTipo enum coverage
@@ -158,7 +158,7 @@ fn test_semantic_error_var_no_declarada() {
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
-    let mut checker = BorrowChecker::new();
+    let mut checker = PrestamoChecker::new();
     let resultado = checker.analizar(&programa);
     assert!(resultado.is_err());
     let errores = resultado.unwrap_err();
@@ -171,7 +171,7 @@ fn test_semantic_error_asignacion_inmutable() {
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
-    let mut checker = BorrowChecker::new();
+    let mut checker = PrestamoChecker::new();
     let resultado = checker.analizar(&programa);
     assert!(resultado.is_err());
 }

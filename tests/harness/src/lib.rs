@@ -17,12 +17,12 @@ pub fn ejecutar(fuente: &str) -> Result<Vec<String>, String> {
     let mut vm = forja::vm_fast::ForjaFast::new();
     vm.contratos = contratos;
     #[cfg(target_pointer_width = "64")]
-    vm.set_max_inst(10_000_000_000);
+    vm.fijar_max_inst(10_000_000_000);
     #[cfg(not(target_pointer_width = "64"))]
-    vm.set_max_inst(2_000_000_000);
+    vm.fijar_max_inst(2_000_000_000);
     vm.cargar_bytecode(bc);
     vm.ejecutar().map_err(|e| e.to_string())?;
-    Ok(vm.obtener_output().to_vec())
+    Ok(vm.obtener_salida().to_vec())
 }
 
 /// Exige que la compilación falle con un fragmento del diagnóstico.
@@ -147,12 +147,12 @@ pub fn ejecutar_vm(fuente: &str) -> Result<Vec<String>, String> {
     let bc = compilar(fuente)?;
     let mut vm = forja::vm_fast::ForjaFast::new();
     #[cfg(target_pointer_width = "64")]
-    vm.set_max_inst(10_000_000_000);
+    vm.fijar_max_inst(10_000_000_000);
     #[cfg(not(target_pointer_width = "64"))]
-    vm.set_max_inst(2_000_000_000);
+    vm.fijar_max_inst(2_000_000_000);
     vm.cargar_bytecode(bc);
     vm.ejecutar().map_err(|e| e.to_string())?;
-    Ok(vm.obtener_output().to_vec())
+    Ok(vm.obtener_salida().to_vec())
 }
 
 /// Compila y ejecuta resolviendo imports contra `raiz`.

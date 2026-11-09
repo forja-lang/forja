@@ -15,7 +15,7 @@
 //! como red de seguridad previa a los refactors de F1 (B2/B3).
 //!
 //! Además se ejercita el helper público [`forja::analizar`] (Lexer → Parser →
-//! TypeChecker → BorrowChecker sin transpilar), que el LSP y el resto de la red
+//! TipoChecker → PrestamoChecker sin transpilar), que el LSP y el resto de la red
 //! de seguridad F1 usarán para validar código sin coste de transpilación.
 //!
 //! Se permite el uso de la API deprecada **sólo aquí**: el propósito explícito
@@ -168,7 +168,7 @@ fn analizar_acepta_programas_validos() {
 }
 
 /// `analizar()` debe detectar errores semánticos (no sólo de parseo),
-/// confirmando que ejecuta TypeChecker/BorrowChecker.
+/// confirmando que ejecuta TipoChecker/PrestamoChecker.
 #[test]
 fn analizar_detecta_error_de_variable_no_declarada() {
     let resultado = forja::analizar("escribir(no_existe)");

@@ -1,13 +1,13 @@
 use forja::lexer::Lexer;
 use forja::parser::Parser;
-use forja::semantics::BorrowChecker;
+use forja::semantics::PrestamoChecker;
 
 fn verificar(fuente: &str) -> Result<(), Vec<forja::error::ErrorForja>> {
     let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize()?;
     let mut parser = Parser::new(tokens);
     let programa = parser.parse()?;
-    let mut checker = BorrowChecker::new();
+    let mut checker = PrestamoChecker::new();
     checker.analizar(&programa)
 }
 

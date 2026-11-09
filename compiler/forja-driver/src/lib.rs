@@ -5,7 +5,7 @@
 
 pub mod aot;
 pub mod cache;
-pub use cache::{CachedModule, IncrementalCache};
+pub use cache::{CachedModulo, IncrementalCache};
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};

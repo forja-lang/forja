@@ -8,7 +8,7 @@
 // Los índices son GLOBALES: cada variable única tiene un slot fijo.
 // optimizar_indices() asigna índices únicos globales.
 //
-// Stack Caching: Array fijo de 4 registros (stack_top) + contador (top_len)
+// Stack Caching: Array fijo de 4 registros (pila_top) + contador (top_longitud)
 // elimina branches impredecibles de Option<ValorFast> y reduce espacio.
 //
 // NaN Tagging: ValorFast es un u64 con repr(transparent).
@@ -25,11 +25,11 @@ use crate::class_descriptor::{DescriptorClase, FormaCampos};
 
 // ─── Submódulos ────────────────────────────────────────────────────
 pub use forja_runtime::tipos::*;
-pub use forja_runtime::Host;
+pub use forja_runtime::Anfitrion;
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::module::{ModuleId, ModuleInfo, ModuleResolver};
-use crate::native_registry::{NativeRegistry, SocketState};
+use crate::module::{ModuleId, ModuloInformacion, ModuloResolver};
+use crate::native_registry::{NativoRegistro, SocketState};
 use crate::symbol_table::IdSimbolo;
 use crate::uops::{expandir_a_uops, optimizar_uops, remapear_saltos_uops, Uop};
 use std::collections::HashMap;
@@ -66,16 +66,16 @@ pub struct ForjaFast {
     pub(crate) mapa_ip_linea: Vec<usize>,
 
     // Stack caching — Top 4 registros en array fijo + contador
-    stack_top: [ValorFast; 4], // Los 4 registros superiores del stack
-    top_len: usize,            // 0..4, cuántos están ocupados
+    pila_top: [ValorFast; 4], // Los 4 registros superiores del stack
+    top_longitud: usize,      // 0..4, cuántos están ocupados
     /// Heaps e interner separados en `forja-runtime`.
     pub runtime: forja_runtime::Runtime,
 
     // Type cache for arithmetic operations
-    cache_add_type: Option<(u8, u8)>, // (type_of_a, type_of_b) para Add
-    cache_sub_type: Option<(u8, u8)>,
-    cache_mul_type: Option<(u8, u8)>,
-    cache_div_type: Option<(u8, u8)>,
+    cache_sumar_tipo: Option<(u8, u8)>, // (type_of_a, type_of_b) para Add
+    cache_sub_tipo: Option<(u8, u8)>,
+    cache_mul_tipo: Option<(u8, u8)>,
+    cache_div_tipo: Option<(u8, u8)>,
 
     // Sistema de especialización adaptativa (PEP 659)
     contador_especializacion: Vec<u8>, // contadores por IP de bytecode
@@ -89,7 +89,7 @@ pub struct ForjaFast {
     pub(crate) instrumenter_pgo: Option<crate::pgo::Instrumenter>,
     /// Nombres de función por índice de `function_table` (para profiling de
     /// `CallDirect`, que solo tiene el índice).
-    func_names_pgo: Vec<String>,
+    funcion_names_pgo: Vec<String>,
     /// Funciones calientes detectadas por un perfil aplicado (candidatas a
     /// tiered JIT / inlining). Expuestas para el orquestador JIT y reportes.
     pub(crate) funciones_calientes_pgo: Vec<String>,
@@ -99,12 +99,12 @@ pub struct ForjaFast {
     hot_branch_ips: Vec<bool>,
     /// IPs de back-edges de loops hot (iteraciones > 10000).
     /// La VM boostea el counter de especialización en estos IPs.
-    hot_loop_ips: Vec<bool>,
+    hot_bucle_ips: Vec<bool>,
 
     // Inline Caches para GetField/SetField (Polymorphic: Empty → Mono → Poly → Mega)
     ic_getfield: Vec<Pic>,
     ic_setfield: Vec<Pic>,
-    ic_miss_count: Vec<u8>,
+    ic_miss_cantidad: Vec<u8>,
 
     // Inline Cache para CallMethod (Polymorphic)
     ic_callmethod: Vec<Pic>,
@@ -145,27 +145,27 @@ pub struct ForjaFast {
     sym_join: IdSimbolo,
     sym_valor: IdSimbolo,
 
-    pub(crate) funciones: HashMap<IdSimbolo, FuncFast>,
+    pub(crate) funciones: HashMap<IdSimbolo, FuncionFast>,
     /// Nombres de parámetros por función (necesario para mapear args en Call)
-    func_params: HashMap<IdSimbolo, Vec<String>>,
+    funcion_params: HashMap<IdSimbolo, Vec<String>>,
     pub bytecode: Vec<Opcode>,
     pub output: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 
     // ─── Hot Reload: Function Table (indirección) ──────────────────────────
-    pub function_table: FunctionTable, // Tabla de indirección
+    pub function_table: FuncionTabla, // Tabla de indirección
     pub(crate) sym_to_func_idx: HashMap<IdSimbolo, usize>, // Mapeo IdSimbolo → índice en function_table
     pub(crate) function_versions: HashMap<IdSimbolo, u32>, // Versión actual de cada función
     pub(crate) bytecode_pool: Vec<VersionedBytecode>,      // Pool de bytecode versionado
 
     // ─── Hot Reload: Module Registry ───────────────────────────────────────
-    /// Registro de módulos cargados (ModuleId → ModuleInfo)
+    /// Registro de módulos cargados (ModuleId → ModuloInformacion)
     #[cfg(not(target_arch = "wasm32"))]
-    pub module_registry: HashMap<ModuleId, ModuleInfo>,
+    pub module_registry: HashMap<ModuleId, ModuloInformacion>,
     /// Módulo propietario de cada función (IdSimbolo → ModuleId)
     #[cfg(not(target_arch = "wasm32"))]
     /// Resolver de módulos (para recargar)
     #[cfg(not(target_arch = "wasm32"))]
-    pub module_resolver: ModuleResolver,
+    pub module_resolver: ModuloResolver,
     /// Variables globales de módulo (IdSimbolo del nombre → (índice_global, mutable))
     /// Valores persistentes de variables globales de módulo (idx → ValorFast)
     /// Persisten entre hot-reloads para que el estado de la variable se preserve.
@@ -213,7 +213,7 @@ pub struct ForjaFast {
     pub(crate) hay_uop_forzado: bool,
 
     // ─── Native Functions Registry ──────────────────────────────────────
-    pub native_registry: NativeRegistry,
+    pub native_registry: NativoRegistro,
 
     // ─── SocketPoll: mapeo nombre → índice local ────────────────────────
     // Se construye en cargar_bytecode desde Opcode::Declarar con nombre, para
@@ -256,28 +256,28 @@ impl ForjaFast {
             frame_locals_pool: Vec::new(),
             linea_actual: 0,
             mapa_ip_linea: Vec::new(),
-            stack_top: [
+            pila_top: [
                 ValorFast::nulo(),
                 ValorFast::nulo(),
                 ValorFast::nulo(),
                 ValorFast::nulo(),
             ],
-            top_len: 0,
-            cache_add_type: None,
-            cache_sub_type: None,
-            cache_mul_type: None,
-            cache_div_type: None,
+            top_longitud: 0,
+            cache_sumar_tipo: None,
+            cache_sub_tipo: None,
+            cache_mul_tipo: None,
+            cache_div_tipo: None,
             contador_especializacion: Vec::new(),
             umbral_especializacion: 3,
             perfil_pgo: None,
             instrumenter_pgo: None,
-            func_names_pgo: Vec::new(),
+            funcion_names_pgo: Vec::new(),
             funciones_calientes_pgo: Vec::new(),
             hot_branch_ips: Vec::new(),
-            hot_loop_ips: Vec::new(),
+            hot_bucle_ips: Vec::new(),
             ic_getfield: Vec::new(),
             ic_setfield: Vec::new(),
-            ic_miss_count: Vec::new(),
+            ic_miss_cantidad: Vec::new(),
             ic_callmethod: Vec::new(),
             ic_arrayget: Vec::new(),
             ic_arrayset: Vec::new(),
@@ -309,7 +309,7 @@ impl ForjaFast {
             sym_join: IdSimbolo(0),
             sym_valor: IdSimbolo(0),
             funciones: HashMap::new(),
-            func_params: HashMap::new(),
+            funcion_params: HashMap::new(),
             bytecode: Vec::new(),
             output: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             max_inst: usize::MAX,
@@ -328,7 +328,7 @@ impl ForjaFast {
             hay_uop_forzado: false,
             runtime: forja_runtime::Runtime::new(),
             native_registry: {
-                let mut reg = NativeRegistry::new();
+                let mut reg = NativoRegistro::new();
                 #[cfg(not(target_arch = "wasm32"))]
                 crate::natives_vm::registrar_hot_reload(&mut reg);
                 reg
@@ -340,7 +340,7 @@ impl ForjaFast {
             // Canales mpsc
             // Threads
             // Hot Reload: Function Table
-            function_table: FunctionTable {
+            function_table: FuncionTabla {
                 entries: Vec::new(),
             },
             sym_to_func_idx: HashMap::new(),
@@ -351,17 +351,17 @@ impl ForjaFast {
             module_registry: HashMap::new(),
             #[cfg(not(target_arch = "wasm32"))]
             #[cfg(not(target_arch = "wasm32"))]
-            module_resolver: ModuleResolver::new("."),
+            module_resolver: ModuloResolver::new("."),
             global_var_persist: Vec::new(),
             global_var_inited: std::collections::HashSet::new(),
             #[cfg(not(target_arch = "wasm32"))]
             modulo_bytecode_ranges: HashMap::new(),
         };
-        vm.init_symbols();
+        vm.inicializar_symbols();
         vm
     }
 
-    pub fn set_max_inst(&mut self, n: usize) {
+    pub fn fijar_max_inst(&mut self, n: usize) {
         self.max_inst = n;
     }
 
@@ -375,7 +375,7 @@ impl ForjaFast {
     /// Con `None` (o sin llamar a esta función) el modo se activa
     /// automáticamente en `cargar_bytecode()` cuando TODAS las variables
     /// inferidas por quickening son `Decimal` (flotantes).
-    pub fn set_fast_math(&mut self, enabled: bool) {
+    pub fn fijar_fast_math(&mut self, enabled: bool) {
         self.fast_math_manual = Some(enabled);
         self.fast_math = enabled;
     }
@@ -391,7 +391,7 @@ impl ForjaFast {
     /// `ErrFast::IdxOut` ante un índice fuera de rango, en lugar de devolver
     /// `nulo` silenciosamente. Se usa desde la CLI con `backtrace: true` para dar
     /// mensajes educativos con línea y pila de llamadas.
-    pub fn set_errores_estrictos(&mut self, enabled: bool) {
+    pub fn fijar_errores_estrictos(&mut self, enabled: bool) {
         self.errores_estrictos = enabled;
     }
 
@@ -415,7 +415,7 @@ impl ForjaFast {
     pub fn habilitar_pgo(&mut self) {
         let len = self.bytecode.len().max(1);
         self.perfil_pgo = Some(crate::pgo::ProfileData::new());
-        self.instrumenter_pgo = Some(crate::pgo::Instrumenter::with_sample_rate(len, 8));
+        self.instrumenter_pgo = Some(crate::pgo::Instrumenter::con_sample_rate(len, 8));
     }
 
     /// Finaliza la recolección: vuelca los contadores del instrumenter al
@@ -446,23 +446,23 @@ impl ForjaFast {
     /// 4. **Funciones calientes**: expone `tier2_candidates` + `inline_candidates`
     ///    en `funciones_calientes_pgo` para el orquestador JIT tiered y reportes.
     pub fn aplicar_pgo(&mut self, perfil: &crate::pgo::ProfileData) {
-        let bc_len = self.contador_especializacion.len();
+        let bytecode_longitud = self.contador_especializacion.len();
         let decisiones = crate::pgo::ProfileGuidedDecisions::from_profile(perfil);
 
         // 1. Pre-especializar IPs calientes del perfil
         for (ip, count) in &perfil.hot_ips {
-            if *count > 0 && *ip < bc_len {
+            if *count > 0 && *ip < bytecode_longitud {
                 self.contador_especializacion[*ip] = self.umbral_especializacion;
             }
         }
 
         // 2. Branch hotness: popular el mapa de IPs de branches hot
-        self.hot_branch_ips = vec![false; bc_len];
-        self.hot_loop_ips = vec![false; bc_len];
-        let hot_branch_set = decisiones.hot_branch_ips();
-        let hot_loop_set = decisiones.hot_loop_back_edges();
-        for ip in &hot_branch_set {
-            if *ip < bc_len {
+        self.hot_branch_ips = vec![false; bytecode_longitud];
+        self.hot_bucle_ips = vec![false; bytecode_longitud];
+        let hot_branch_fijar = decisiones.hot_branch_ips();
+        let hot_bucle_fijar = decisiones.hot_bucle_back_edges();
+        for ip in &hot_branch_fijar {
+            if *ip < bytecode_longitud {
                 self.hot_branch_ips[*ip] = true;
                 // Boost: branches hot también llevan counter al umbral
                 // para que se especialicen en la primera pasada
@@ -471,9 +471,9 @@ impl ForjaFast {
         }
 
         // 3. Loop hotness: boostear counter de especialización en back-edges
-        for ip in &hot_loop_set {
-            if *ip < bc_len {
-                self.hot_loop_ips[*ip] = true;
+        for ip in &hot_bucle_fijar {
+            if *ip < bytecode_longitud {
+                self.hot_bucle_ips[*ip] = true;
                 // Los back-edges de loops hot se especializan con prioridad máxima
                 self.contador_especializacion[*ip] = self.umbral_especializacion;
             }
@@ -504,8 +504,8 @@ impl ForjaFast {
 
     /// Retorna true si el IP dado es un back-edge de loop hot según el perfil PGO.
     #[inline(always)]
-    pub fn es_loop_hot(&self, ip: usize) -> bool {
-        ip < self.hot_loop_ips.len() && self.hot_loop_ips[ip]
+    pub fn es_bucle_hot(&self, ip: usize) -> bool {
+        ip < self.hot_bucle_ips.len() && self.hot_bucle_ips[ip]
     }
 
     /// Configura el sandbox de red para esta VM.
@@ -553,10 +553,10 @@ impl ForjaFast {
 
         while ip < len {
             match &uops[ip] {
-                Uop::PushEntero(n) => stack.push(get_small_int_fast(*n)),
+                Uop::PushEntero(n) => stack.push(obtener_small_entero_fast(*n)),
                 Uop::PushDecimal(d) => stack.push(ValorFast::flotante(*d)),
                 Uop::PushTexto(s) => {
-                    let idx = self.alloc_str(Arc::clone(s));
+                    let idx = self.reservar_texto(Arc::clone(s));
                     stack.push(ValorFast::texto(idx));
                 }
                 Uop::PushBooleano(b) => stack.push(ValorFast::booleano(*b)),
@@ -581,12 +581,12 @@ impl ForjaFast {
                         // Valor actual: `anterior(x)` tiene su propia variante
                         // (`CargarAnterior`), así una lectura normal no se
                         // confunde con el snapshot de la entrada.
-                        stack.push(self.load_local(*idx));
+                        stack.push(self.cargar_local(*idx));
                     }
                 }
                 Uop::CargarAnterior(idx) => {
                     let saved = self.anterior_stack.get(idx).copied();
-                    stack.push(saved.unwrap_or_else(|| self.load_local(*idx)));
+                    stack.push(saved.unwrap_or_else(|| self.cargar_local(*idx)));
                 }
                 Uop::LoadIdxGlobal(idx) => {
                     let v = self
@@ -602,15 +602,15 @@ impl ForjaFast {
                 }
                 Uop::StoreIdx(idx) => {
                     let val = stack.pop().unwrap_or_default();
-                    self.store_local(*idx, val);
+                    self.almacen_local(*idx, val);
                 }
                 Uop::DeclareVar(idx) => {
                     // Ensure local slot exists
-                    self.store_local(*idx, self.load_local(*idx));
+                    self.almacen_local(*idx, self.cargar_local(*idx));
                 }
                 Uop::DeclareInit(idx) => {
                     let val = stack.pop().unwrap_or_default();
-                    self.store_local(*idx, val);
+                    self.almacen_local(*idx, val);
                 }
 
                 // Aritméticas
@@ -648,7 +648,7 @@ impl ForjaFast {
                     let b = stack.pop().unwrap_or_default();
                     let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() && b.a_entero() != 0 {
-                        stack.push(get_small_int_fast(a.a_entero() / b.a_entero()));
+                        stack.push(obtener_small_entero_fast(a.a_entero() / b.a_entero()));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
@@ -687,7 +687,7 @@ impl ForjaFast {
                     let b = stack.pop().unwrap_or_default();
                     let a = stack.pop().unwrap_or_default();
                     if a.es_entero() && b.es_entero() && b.a_entero() != 0 {
-                        stack.push(get_small_int_fast(a.a_entero() / b.a_entero()));
+                        stack.push(obtener_small_entero_fast(a.a_entero() / b.a_entero()));
                     } else {
                         stack.push(ValorFast::nulo());
                     }
@@ -801,23 +801,23 @@ impl ForjaFast {
                 Uop::No => {
                     let a = stack.pop().unwrap_or_default();
                     stack.push(ValorFast::booleano(
-                        !a.es_verdadero_con_heap(&self.runtime.str_heap),
+                        !a.es_verdadero_con_monticulo(&self.runtime.str_heap),
                     ));
                 }
                 Uop::Y => {
                     let b = stack.pop().unwrap_or_default();
                     let a = stack.pop().unwrap_or_default();
                     stack.push(ValorFast::booleano(
-                        a.es_verdadero_con_heap(&self.runtime.str_heap)
-                            && b.es_verdadero_con_heap(&self.runtime.str_heap),
+                        a.es_verdadero_con_monticulo(&self.runtime.str_heap)
+                            && b.es_verdadero_con_monticulo(&self.runtime.str_heap),
                     ));
                 }
                 Uop::O => {
                     let b = stack.pop().unwrap_or_default();
                     let a = stack.pop().unwrap_or_default();
                     stack.push(ValorFast::booleano(
-                        a.es_verdadero_con_heap(&self.runtime.str_heap)
-                            || b.es_verdadero_con_heap(&self.runtime.str_heap),
+                        a.es_verdadero_con_monticulo(&self.runtime.str_heap)
+                            || b.es_verdadero_con_monticulo(&self.runtime.str_heap),
                     ));
                 }
 
@@ -834,7 +834,7 @@ impl ForjaFast {
         stack.pop().unwrap_or(ValorFast::booleano(false))
     }
 
-    pub fn reset_ejecucion(&mut self) {
+    pub fn reiniciar_ejecucion(&mut self) {
         self.ip = 0;
         self.stack.clear();
         self.frame_count = 0;
@@ -842,7 +842,7 @@ impl ForjaFast {
         if let Some(root) = self.frame_locals.first_mut() {
             root.clear();
         }
-        self.top_len = 0;
+        self.top_longitud = 0;
         self.output.lock().unwrap().clear();
         self.ejecutadas = 0;
     }
@@ -880,7 +880,7 @@ impl ForjaFast {
 
     /// Carga una variable local por índice (O(1)).
     #[inline(always)]
-    pub fn load_local(&self, idx: usize) -> ValorFast {
+    pub fn cargar_local(&self, idx: usize) -> ValorFast {
         let l = self.locals();
         if idx < l.len() {
             l[idx]
@@ -892,7 +892,7 @@ impl ForjaFast {
     /// Guarda un valor en una variable local por índice (O(1)).
     /// Asegura que el Vec tenga suficiente espacio (resize si necesario).
     #[inline(always)]
-    pub fn store_local(&mut self, idx: usize, val: ValorFast) {
+    pub fn almacen_local(&mut self, idx: usize, val: ValorFast) {
         let l = self.locals_mut();
         if idx >= l.len() {
             l.resize(idx + 1, ValorFast::nulo());
@@ -901,7 +901,7 @@ impl ForjaFast {
     }
 
     /// Inicializa IdSimbolo para builtins comunes — permite comparaciones O(1)
-    fn init_symbols(&mut self) {
+    fn inicializar_symbols(&mut self) {
         self.sym_escribir = self.runtime.tabla_simbolos.internar("escribir");
         self.sym_retornar = self.runtime.tabla_simbolos.internar("retornar");
         self.sym_longitud = self.runtime.tabla_simbolos.internar("longitud");
@@ -929,11 +929,11 @@ impl ForjaFast {
         self.sym_valor = self.runtime.tabla_simbolos.internar("valor");
     }
 
-    fn init_ic(&mut self) {
+    fn inicializar_ic(&mut self) {
         let len = self.bytecode.len();
         self.ic_getfield = vec![Pic::Empty; len];
         self.ic_setfield = vec![Pic::Empty; len];
-        self.ic_miss_count = vec![0u8; len];
+        self.ic_miss_cantidad = vec![0u8; len];
         self.ic_callmethod = vec![Pic::Empty; len];
         self.ic_arrayget = vec![None; len];
         self.ic_arrayset = vec![None; len];
@@ -947,21 +947,21 @@ impl ForjaFast {
         self.runtime.clases_derive_igual.clear();
         self.runtime.clases_derive_mostrar.clear();
         self.contador_especializacion = vec![0u8; self.bytecode.len()];
-        self.init_ic();
+        self.inicializar_ic();
         self.funciones.clear();
-        self.func_params.clear();
+        self.funcion_params.clear();
 
         // Primera pasada: indexar labels, funciones, y calcular vars_size
-        let mut label_positions: HashMap<usize, usize> = HashMap::new();
+        let mut etiqueta_positions: HashMap<usize, usize> = HashMap::new();
         let mut registos_pendientes: Vec<(IdSimbolo, usize, usize, Option<IdSimbolo>)> = Vec::new();
         // Pre-calcular rangos de funciones para limitar escaneo de vars_size
-        let mut func_ranges: Vec<(usize, usize)> = Vec::new(); // (start, end)
+        let mut funcion_ranges: Vec<(usize, usize)> = Vec::new(); // (start, end)
         for (i, op) in self.bytecode.iter().enumerate() {
             if let Opcode::DefinirFuncion(_, _) = op {
-                func_ranges.push((i, self.bytecode.len())); // end temporal
-                if func_ranges.len() > 1 {
-                    let prev = func_ranges.len() - 2;
-                    func_ranges[prev].1 = i; // el FunctionDef anterior termina aquí
+                funcion_ranges.push((i, self.bytecode.len())); // end temporal
+                if funcion_ranges.len() > 1 {
+                    let anterior = funcion_ranges.len() - 2;
+                    funcion_ranges[anterior].1 = i; // el FunctionDef anterior termina aquí
                 }
             }
         }
@@ -971,7 +971,7 @@ impl ForjaFast {
                 Opcode::DefinirFuncion(n, params) => {
                     // Calcular vars_size: solo escanear el cuerpo de la función
                     let mut max_idx: usize = params.len();
-                    let end = func_ranges
+                    let end = funcion_ranges
                         .iter()
                         .find(|r| r.0 == i)
                         .map(|r| r.1)
@@ -1046,19 +1046,19 @@ impl ForjaFast {
                     let sym_id = self.runtime.tabla_simbolos.internar(n.as_ref());
                     self.funciones.insert(
                         sym_id,
-                        FuncFast {
+                        FuncionFast {
                             ip: i + 1,
                             vars_size: max_idx,
                             version: 1u32,
                         },
                     );
-                    self.func_params
+                    self.funcion_params
                         .insert(sym_id, params.iter().map(|p| p.to_string()).collect());
                     // Diferir registro en function_table para evitar E0502 (self.bytecode.iter() inmutable vs self.registrar_funcion() mutable)
                     registos_pendientes.push((sym_id, i + 1, max_idx, None));
                 }
                 Opcode::Etiqueta(l) => {
-                    label_positions.insert(*l, i);
+                    etiqueta_positions.insert(*l, i);
                 }
                 _ => {}
             }
@@ -1091,14 +1091,14 @@ impl ForjaFast {
             let replacement = {
                 let op = &self.bytecode[j];
                 match op {
-                    Opcode::Salto(t) => label_positions.get(t).map(|&pos| Opcode::Salto(pos)),
-                    Opcode::SaltoSiFalso(t) => {
-                        label_positions.get(t).map(|&pos| Opcode::SaltoSiFalso(pos))
-                    }
-                    Opcode::CargarSalto(idx, t) => label_positions
+                    Opcode::Salto(t) => etiqueta_positions.get(t).map(|&pos| Opcode::Salto(pos)),
+                    Opcode::SaltoSiFalso(t) => etiqueta_positions
+                        .get(t)
+                        .map(|&pos| Opcode::SaltoSiFalso(pos)),
+                    Opcode::CargarSalto(idx, t) => etiqueta_positions
                         .get(t)
                         .map(|&pos| Opcode::CargarSalto(*idx, pos)),
-                    Opcode::CargarSaltoSiFalso(idx, t) => label_positions
+                    Opcode::CargarSaltoSiFalso(idx, t) => etiqueta_positions
                         .get(t)
                         .map(|&pos| Opcode::CargarSaltoSiFalso(*idx, pos)),
                     _ => None,
@@ -1151,8 +1151,8 @@ impl ForjaFast {
         // Re-inicializar inline caches porque el bytecode cambió de tamaño
         self.contador_especializacion = vec![0u8; self.bytecode.len()];
         self.hot_branch_ips = vec![false; self.bytecode.len()];
-        self.hot_loop_ips = vec![false; self.bytecode.len()];
-        self.init_ic();
+        self.hot_bucle_ips = vec![false; self.bytecode.len()];
+        self.inicializar_ic();
 
         // construir el mapa IP → línea de código fuente para el backtrace.
         // Recorremos el bytecode final (post-fusión) propagando la última línea
@@ -1177,24 +1177,24 @@ impl ForjaFast {
         self.output.lock().unwrap().clear();
         self.frame_locals.clear();
         self.frame_locals.push(Vec::with_capacity(64)); // root frame
-        self.stack_top = [
+        self.pila_top = [
             ValorFast::nulo(),
             ValorFast::nulo(),
             ValorFast::nulo(),
             ValorFast::nulo(),
         ];
-        self.top_len = 0;
-        self.cache_add_type = None;
-        self.cache_sub_type = None;
-        self.cache_mul_type = None;
-        self.cache_div_type = None;
+        self.top_longitud = 0;
+        self.cache_sumar_tipo = None;
+        self.cache_sub_tipo = None;
+        self.cache_mul_tipo = None;
+        self.cache_div_tipo = None;
         self.contador_especializacion
             .iter_mut()
             .for_each(|c| *c = 0);
         // Reset inline caches
         self.ic_getfield.iter_mut().for_each(|c| *c = Pic::Empty);
         self.ic_setfield.iter_mut().for_each(|c| *c = Pic::Empty);
-        self.ic_miss_count.iter_mut().for_each(|c| *c = 0);
+        self.ic_miss_cantidad.iter_mut().for_each(|c| *c = 0);
         self.ic_callmethod.iter_mut().for_each(|c| *c = Pic::Empty);
         self.ic_arrayget.iter_mut().for_each(|c| *c = None);
         self.ic_arrayset.iter_mut().for_each(|c| *c = None);
@@ -1241,12 +1241,12 @@ impl ForjaFast {
     }
 
     #[inline(always)]
-    pub fn get_obj(&self, idx: u32) -> &ObjVal {
+    pub fn obtener_objeto(&self, idx: u32) -> &ObjVal {
         &self.runtime.obj_heap[idx as usize]
     }
 
     #[inline(always)]
-    pub fn get_obj_mut(&mut self, idx: u32) -> &mut ObjVal {
+    pub fn obtener_objeto_mut(&mut self, idx: u32) -> &mut ObjVal {
         &mut self.runtime.obj_heap[idx as usize]
     }
 
@@ -1256,22 +1256,22 @@ impl ForjaFast {
     }
 
     #[inline(always)]
-    pub fn get_arr(&self, idx: u32) -> &Vec<ValorFast> {
+    pub fn obtener_arr(&self, idx: u32) -> &Vec<ValorFast> {
         &self.runtime.array_heap[idx as usize]
     }
 
     #[inline(always)]
-    pub fn get_arr_mut(&mut self, idx: u32) -> &mut Vec<ValorFast> {
+    pub fn obtener_arr_mut(&mut self, idx: u32) -> &mut Vec<ValorFast> {
         &mut self.runtime.array_heap[idx as usize]
     }
 
     #[inline(always)]
-    pub fn get_map(&self, idx: u32) -> &HashMap<String, ValorFast> {
+    pub fn obtener_mapa(&self, idx: u32) -> &HashMap<String, ValorFast> {
         &self.runtime.map_heap[idx as usize]
     }
 
     #[inline(always)]
-    pub fn get_map_mut(&mut self, idx: u32) -> &mut HashMap<String, ValorFast> {
+    pub fn obtener_mapa_mut(&mut self, idx: u32) -> &mut HashMap<String, ValorFast> {
         &mut self.runtime.map_heap[idx as usize]
     }
 
@@ -1282,13 +1282,13 @@ impl ForjaFast {
     fn resolver_metodo_mro(
         &self,
         clase_sym: IdSimbolo,
-        method_sym: IdSimbolo,
+        metodo_sym: IdSimbolo,
     ) -> Option<IdSimbolo> {
         if let Some(desc) = self.runtime.class_descriptors.get(&clase_sym) {
             // Buscar método en la clase y su MRO
             for &clase_id in &desc.mro {
                 if let Some(ancestor) = self.runtime.class_descriptors.get(&clase_id) {
-                    if let Some(&func_sym) = ancestor.metodos.get(&method_sym) {
+                    if let Some(&func_sym) = ancestor.metodos.get(&metodo_sym) {
                         return Some(func_sym);
                     }
                 }
@@ -1305,8 +1305,8 @@ impl ForjaFast {
         if a.indice_objeto() == b.indice_objeto() {
             return true;
         }
-        let oa = self.get_obj(a.indice_objeto());
-        let ob = self.get_obj(b.indice_objeto());
+        let oa = self.obtener_objeto(a.indice_objeto());
+        let ob = self.obtener_objeto(b.indice_objeto());
         if oa.clase != ob.clase || !self.runtime.clases_derive_igual.contains(&oa.clase) {
             return false;
         }
@@ -1342,8 +1342,8 @@ impl ForjaFast {
             if a.indice_objeto() == b.indice_objeto() {
                 return true;
             }
-            let oa = self.get_obj(a.indice_objeto());
-            let ob = self.get_obj(b.indice_objeto());
+            let oa = self.obtener_objeto(a.indice_objeto());
+            let ob = self.obtener_objeto(b.indice_objeto());
             if oa.clase != ob.clase || !self.runtime.clases_derive_igual.contains(&oa.clase) {
                 return false;
             }
@@ -1355,8 +1355,8 @@ impl ForjaFast {
                     .all(|(x, y)| self.valores_iguales(x, y, prof + 1));
         }
         if a.es_arreglo() && b.es_arreglo() {
-            let aa = self.get_arr(a.indice_arreglo());
-            let bb = self.get_arr(b.indice_arreglo());
+            let aa = self.obtener_arr(a.indice_arreglo());
+            let bb = self.obtener_arr(b.indice_arreglo());
             return aa.len() == bb.len()
                 && aa
                     .iter()
@@ -1386,11 +1386,11 @@ impl ForjaFast {
             return "nulo".to_string();
         }
         if v.es_exacto() {
-            let e = self.get_exacto(v.indice_exacto());
+            let e = self.obtener_exacto(v.indice_exacto());
             return mostrar_exacto(e.coeficiente, e.escala);
         }
         if v.es_objeto() {
-            let o = self.get_obj(v.indice_objeto());
+            let o = self.obtener_objeto(v.indice_objeto());
             let nombre_clase = self.runtime.tabla_simbolos.texto(o.clase);
             if !self.runtime.clases_derive_mostrar.contains(&o.clase) {
                 return format!("<{}>", nombre_clase);
@@ -1413,12 +1413,12 @@ impl ForjaFast {
             return format!("{} {{ {} }}", nombre_clase, partes.join(", "));
         }
         if v.es_arreglo() {
-            let arr = self.get_arr(v.indice_arreglo());
+            let arr = self.obtener_arr(v.indice_arreglo());
             let s: Vec<String> = arr.iter().map(|v| self.mostrar_valor(v)).collect();
             return format!("[{}]", s.join(","));
         }
         if v.es_mapa() {
-            let m = self.get_map(v.indice_mapa());
+            let m = self.obtener_mapa(v.indice_mapa());
             let s: Vec<String> = m
                 .iter()
                 .map(|(k, v)| format!("\"{}\":{}", k, self.mostrar_valor(v)))
@@ -1428,7 +1428,7 @@ impl ForjaFast {
         "?".to_string()
     }
 
-    pub fn obtener_output(&self) -> Vec<String> {
+    pub fn obtener_salida(&self) -> Vec<String> {
         self.output.lock().unwrap().clone()
     }
 
@@ -1506,7 +1506,7 @@ impl ForjaFast {
     }
 
     /// Escribe un valor al output (a través del Arc<Mutex<...>> compartido entre hilos)
-    fn escribir_output(&mut self, s: String) {
+    fn escribir_salida(&mut self, s: String) {
         self.output.lock().unwrap().push(s);
     }
 }
@@ -1627,8 +1627,8 @@ fn formatear_frame_backtrace(nombre: &str, linea: usize) -> String {
     }
 }
 
-// Helpers de sockets e IO (`socket_*`, `aplicar_try`, `type_tag`, `push_valor`,
-// `flush_stack`, …) extraídos a `sockets.rs`.
+// Helpers de sockets e IO (`socket_*`, `aplicar_try`, `tipo_etiqueta`, `empujar_valor`,
+// `flush_pila`, …) extraídos a `sockets.rs`.
 mod sockets;
 
 #[cfg(test)]

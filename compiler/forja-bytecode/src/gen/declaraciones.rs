@@ -290,11 +290,12 @@ impl GeneradorBytecode {
                 nombre, variantes, ..
             } => {
                 // Almacenar información de variantes para pattern matching
-                let var_info: Vec<(String, Vec<Tipo>)> = variantes
+                let variable_informacion: Vec<(String, Vec<Tipo>)> = variantes
                     .iter()
                     .map(|v| (v.nombre.clone(), v.tipos.clone()))
                     .collect();
-                self.enum_variantes.insert(nombre.clone(), var_info);
+                self.enum_variantes
+                    .insert(nombre.clone(), variable_informacion);
             }
 
             Declaracion::Si {
@@ -302,8 +303,8 @@ impl GeneradorBytecode {
                 bloque_verdadero,
                 bloque_falso,
             } => {
-                let etiqueta_sino = self.nueva_label();
-                let etiqueta_final = self.nueva_label();
+                let etiqueta_sino = self.nueva_etiqueta();
+                let etiqueta_final = self.nueva_etiqueta();
 
                 self.generar_expresion(condicion);
                 self.emitir(Opcode::SaltoSiFalso(etiqueta_sino));
@@ -322,8 +323,8 @@ impl GeneradorBytecode {
             }
 
             Declaracion::Mientras { condicion, bloque } => {
-                let etiqueta_inicio = self.nueva_label();
-                let etiqueta_fin = self.nueva_label();
+                let etiqueta_inicio = self.nueva_etiqueta();
+                let etiqueta_fin = self.nueva_etiqueta();
 
                 self.pila_bucles.push((etiqueta_inicio, etiqueta_fin));
 
@@ -341,7 +342,7 @@ impl GeneradorBytecode {
             Declaracion::Cuando {
                 condicion, cuerpo, ..
             } => {
-                let etiqueta_final = self.nueva_label();
+                let etiqueta_final = self.nueva_etiqueta();
                 self.generar_expresion(condicion);
                 self.emitir(Opcode::SaltoSiFalso(etiqueta_final));
                 self.generar_declaraciones(cuerpo);
@@ -367,11 +368,11 @@ impl GeneradorBytecode {
                             ..
                         } = izquierda.as_ref()
                         {
-                            let etiqueta_inicio = self.nueva_label();
-                            let etiqueta_fin = self.nueva_label();
+                            let etiqueta_inicio = self.nueva_etiqueta();
+                            let etiqueta_fin = self.nueva_etiqueta();
                             // `continuar` debe saltar al incremento, no a la
                             // condición: si no, el contador nunca avanza.
-                            let etiqueta_continuar = self.nueva_label();
+                            let etiqueta_continuar = self.nueva_etiqueta();
 
                             self.pila_bucles.push((etiqueta_continuar, etiqueta_fin));
 
@@ -402,9 +403,9 @@ impl GeneradorBytecode {
                 }
 
                 // Fallback: genérico
-                let etiqueta_inicio = self.nueva_label();
-                let etiqueta_fin = self.nueva_label();
-                let etiqueta_continuar = self.nueva_label();
+                let etiqueta_inicio = self.nueva_etiqueta();
+                let etiqueta_fin = self.nueva_etiqueta();
+                let etiqueta_continuar = self.nueva_etiqueta();
 
                 self.pila_bucles.push((etiqueta_continuar, etiqueta_fin));
 
@@ -434,9 +435,9 @@ impl GeneradorBytecode {
                 // repetir(N) { ... } → for _ in 0..N { ... }
                 // Variable temporal para contador
                 let var_contador = Arc::from("__repetir_counter");
-                let etiqueta_inicio = self.nueva_label();
-                let etiqueta_fin = self.nueva_label();
-                let etiqueta_continuar = self.nueva_label();
+                let etiqueta_inicio = self.nueva_etiqueta();
+                let etiqueta_fin = self.nueva_etiqueta();
+                let etiqueta_continuar = self.nueva_etiqueta();
 
                 self.pila_bucles.push((etiqueta_continuar, etiqueta_fin));
                 self.emitir(Opcode::PushEntero(0));
@@ -527,7 +528,7 @@ impl GeneradorBytecode {
                     // en la pila. Para llamadas a nivel de declaración, descartamos ese valor.
                     // Las funciones de Forja están balanceadas (no dejan valor de retorno
                     // en la pila), así que descartar es seguro incluso con la pila vacía
-                    // (pop_valor devuelve nulo en vez de fallar).
+                    // (desapilar_valor devuelve nulo en vez de fallar).
                     self.emitir(Opcode::Descartar);
                 }
             }

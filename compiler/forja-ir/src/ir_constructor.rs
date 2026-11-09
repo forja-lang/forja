@@ -70,7 +70,7 @@ pub struct ConstructorDesdeAst {
     mapa_globales: HashMap<String, IdxMemoria>,
     next_mem: IdxMemoria,
     next_local: IdxMemoria,
-    in_function: bool,
+    in_funcion: bool,
     /// etapa 3: tipo estático mínimo para elegir `ArrayGet` vs `MapGet`.
     tipos_valor: HashMap<IdValor, TipoEstatico>,
     tipos_var: HashMap<String, TipoEstatico>,
@@ -97,7 +97,7 @@ pub struct ConstructorDesdeAst {
     /// `romper` y `continuar` a saltos.
     ciclos: Vec<(IdBloque, IdBloque)>,
     /// Contador de temporales internos (`__ac_N`) de asignación compuesta.
-    next_temp: usize,
+    siguiente_temporal: usize,
 }
 
 /// Base de índices de memoria local (los globales empiezan en 0).
@@ -158,7 +158,7 @@ impl ConstructorDesdeAst {
             mapa_globales: HashMap::new(),
             next_mem: IdxMemoria(0),
             next_local: IdxMemoria(0),
-            in_function: false,
+            in_funcion: false,
             tipos_valor: HashMap::new(),
             tipos_var: HashMap::new(),
             num_var: HashMap::new(),
@@ -170,7 +170,7 @@ impl ConstructorDesdeAst {
             funciones_definidas: HashSet::new(),
             hilo_counter: 0,
             ciclos: Vec::new(),
-            next_temp: 0,
+            siguiente_temporal: 0,
         }
     }
 
@@ -192,7 +192,7 @@ impl ConstructorDesdeAst {
         if let Some(&idx) = self.mapa_globales.get(nombre) {
             return idx;
         }
-        if self.in_function {
+        if self.in_funcion {
             let idx = LOCAL_BASE + self.next_local;
             self.mapa_variables.insert(nombre.to_string(), idx);
             self.next_local += 1;
@@ -810,8 +810,8 @@ impl ConstructorDesdeAst {
         valor: &Expresion,
         num: Option<TipoNumerico>,
     ) -> IdValor {
-        let tmp = format!("__ac_{}", self.next_temp);
-        self.next_temp += 1;
+        let tmp = format!("__ac_{}", self.siguiente_temporal);
+        self.siguiente_temporal += 1;
         let mem = self.reservar_memoria(&tmp);
         constructor_ir.emitir_reserva(mem);
         constructor_ir.emitir_guardado(mem, old);
@@ -1350,7 +1350,7 @@ impl ConstructorDesdeAst {
         // las variables de nivel superior son globales visibles desde
         // cualquier función, así que se reservan ANTES de compilar las funciones
         // (que se emiten primero y no pueden depender del orden de `main`).
-        self.in_function = false;
+        self.in_funcion = false;
         for decl in &programa.declaraciones {
             if let Declaracion::Variable { nombre, .. } = decl {
                 self.reservar_memoria(nombre);
@@ -1398,7 +1398,7 @@ impl ConstructorDesdeAst {
         let name_sym = self.simbolos.internar("main");
         let mut constructor_ir = ConstructorIr::new();
         constructor_ir.simbolos = self.simbolos.clone();
-        let _entry = constructor_ir.nuevo_bloque();
+        let entrada = constructor_ir.nuevo_bloque();
 
         // Marcas @derive: la VM las consulta al comparar/imprimir objetos.
         // Deben emitirse en `main` igual que en el backend AST para que las
@@ -1500,7 +1500,7 @@ impl ConstructorDesdeAst {
     /// el nombre de su función, sin entorno): eso llega después, en la llamada.
     fn compilar_closure(
         &mut self,
-        host: &mut ConstructorIr,
+        anfitrion: &mut ConstructorIr,
         parametros: &[Parametro],
         cuerpo: &[Declaracion],
     ) -> (FuncionSsa, Vec<String>) {
@@ -1515,16 +1515,16 @@ impl ConstructorDesdeAst {
         // Marco propio: guardar y restaurar el del host.
         let vars_previas = std::mem::take(&mut self.mapa_variables);
         let next_local_previo = self.next_local;
-        let in_function_previo = self.in_function;
+        let in_funcion_previo = self.in_funcion;
         self.next_local = IdxMemoria(0);
 
         let mut constructor_ir = ConstructorIr::new();
         // La tabla del host es la fuente de verdad de los `IdSimboloIr`: el closure la
         // clona y el resultado se devuelve al host, para que los ids del nombre
         // del closure y de sus parámetros signifiquen lo mismo en ambos.
-        constructor_ir.simbolos = host.simbolos.clone();
+        constructor_ir.simbolos = anfitrion.simbolos.clone();
         let name_sym = constructor_ir.simbolos.internar(&nombre);
-        let _entry = constructor_ir.nuevo_bloque();
+        let entrada = constructor_ir.nuevo_bloque();
 
         // La firma es `(__entorno, p1, ..., pn)`: el entorno viaja como primer
         // argumento para que una llamada indirecta lo pase siempre.
@@ -1559,12 +1559,12 @@ impl ConstructorDesdeAst {
         }
         constructor_ir.terminar_con_retorno(None);
         let funcion = constructor_ir.construir_funcion(name_sym, TipoIr::Puntero, params_ir);
-        host.simbolos = constructor_ir.simbolos.clone();
+        anfitrion.simbolos = constructor_ir.simbolos.clone();
         self.simbolos = constructor_ir.simbolos.clone();
 
         self.mapa_variables = vars_previas;
         self.next_local = next_local_previo;
-        self.in_function = in_function_previo;
+        self.in_funcion = in_funcion_previo;
         (funcion, capturadas)
     }
 
@@ -1594,7 +1594,7 @@ impl ConstructorDesdeAst {
     /// parámetros son las variables que captura del entorno.
     fn compilar_hilo(
         &mut self,
-        host: &mut ConstructorIr,
+        anfitrion: &mut ConstructorIr,
         cuerpo: &[Declaracion],
     ) -> (FuncionSsa, Vec<String>) {
         // Capturadas = usadas - declaradas dentro del cuerpo (misma regla que
@@ -1612,13 +1612,13 @@ impl ConstructorDesdeAst {
 
         let vars_previas = std::mem::take(&mut self.mapa_variables);
         let next_local_previo = self.next_local;
-        let in_function_previo = self.in_function;
+        let in_funcion_previo = self.in_funcion;
         self.next_local = IdxMemoria(0);
 
         let mut constructor_ir = ConstructorIr::new();
-        constructor_ir.simbolos = host.simbolos.clone();
+        constructor_ir.simbolos = anfitrion.simbolos.clone();
         let name_sym = constructor_ir.simbolos.internar(&nombre);
-        let _entry = constructor_ir.nuevo_bloque();
+        let entrada = constructor_ir.nuevo_bloque();
 
         let mut params_ir = Vec::with_capacity(capturadas.len());
         for (i, cap) in capturadas.iter().enumerate() {
@@ -1633,12 +1633,12 @@ impl ConstructorDesdeAst {
         }
         constructor_ir.terminar_con_retorno(None);
         let funcion = constructor_ir.construir_funcion(name_sym, TipoIr::Puntero, params_ir);
-        host.simbolos = constructor_ir.simbolos.clone();
+        anfitrion.simbolos = constructor_ir.simbolos.clone();
         self.simbolos = constructor_ir.simbolos.clone();
 
         self.mapa_variables = vars_previas;
         self.next_local = next_local_previo;
-        self.in_function = in_function_previo;
+        self.in_funcion = in_funcion_previo;
         (funcion, capturadas)
     }
 
@@ -1649,14 +1649,14 @@ impl ConstructorDesdeAst {
         tipo_retorno: Option<&Tipo>,
         cuerpo: &[Declaracion],
     ) -> FuncionSsa {
-        self.in_function = true;
+        self.in_funcion = true;
         self.mapa_variables.clear();
         self.next_local = IdxMemoria(0);
 
         let mut constructor_ir = ConstructorIr::new();
         constructor_ir.simbolos = self.simbolos.clone();
         let name_sym = constructor_ir.simbolos.internar(nombre);
-        let _entry = constructor_ir.nuevo_bloque();
+        let entrada = constructor_ir.nuevo_bloque();
 
         let mut params_ir = Vec::with_capacity(parametros.len());
         for (i, p) in parametros.iter().enumerate() {
@@ -1679,7 +1679,7 @@ impl ConstructorDesdeAst {
         let funcion = constructor_ir.construir_funcion(name_sym, ret, params_ir);
         self.simbolos = constructor_ir.simbolos.clone();
 
-        self.in_function = false;
+        self.in_funcion = false;
         self.mapa_variables.clear();
         self.next_local = IdxMemoria(0);
         funcion
@@ -1688,7 +1688,7 @@ impl ConstructorDesdeAst {
     /// compila un método como función `Clase.metodo`, con `este` en el
     /// índice local 0 y los parámetros a continuación.
     fn compilar_metodo(&mut self, clase: &str, metodo: &Metodo) -> FuncionSsa {
-        self.in_function = true;
+        self.in_funcion = true;
         self.mapa_variables.clear();
         self.next_local = IdxMemoria(0);
 
@@ -1701,7 +1701,7 @@ impl ConstructorDesdeAst {
         };
         let nombre_completo = format!("{}.{}", clase, nombre_metodo);
         let name_sym = constructor_ir.simbolos.internar(&nombre_completo);
-        let _entry = constructor_ir.nuevo_bloque();
+        let entrada = constructor_ir.nuevo_bloque();
 
         self.mapa_variables.insert("self".to_string(), LOCAL_BASE);
         let mut params_ir = vec![(constructor_ir.simbolos.internar("self"), TipoIr::Puntero)];
@@ -1729,7 +1729,7 @@ impl ConstructorDesdeAst {
         let funcion = constructor_ir.construir_funcion(name_sym, ret, params_ir);
         self.simbolos = constructor_ir.simbolos.clone();
 
-        self.in_function = false;
+        self.in_funcion = false;
         self.mapa_variables.clear();
         self.next_local = IdxMemoria(0);
         funcion

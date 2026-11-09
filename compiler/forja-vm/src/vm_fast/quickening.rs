@@ -116,7 +116,7 @@ impl ForjaFast {
                 // Solo actualizamos tipos. Incluye StoreIdxGlobal (variables de módulo).
                 Opcode::GuardarIndice(idx) | Opcode::GuardarIndiceGlobal(idx) => {
                     if idx < tipos_var.len() {
-                        let prev_tipo = if i > 0 {
+                        let anterior_tipo = if i > 0 {
                             match &self.bytecode[i - 1] {
                                 Opcode::PushEntero(_) | Opcode::CargarIndiceEntero(_) => {
                                     Some(TipoInferido::Entero)
@@ -141,7 +141,7 @@ impl ForjaFast {
                         } else {
                             None
                         };
-                        if let Some(tipo) = prev_tipo {
+                        if let Some(tipo) = anterior_tipo {
                             tipos_var[idx] = Some(tipo);
                         }
                     }
@@ -151,7 +151,7 @@ impl ForjaFast {
                 // NOTA: No fusionamos codigos aquí (eso ya lo hace optimizar_indices).
                 Opcode::DeclararIndice(idx, _) => {
                     if idx < tipos_var.len() && !global_indices.contains(&idx) {
-                        let prev_tipo = if i > 0 {
+                        let anterior_tipo = if i > 0 {
                             match &self.bytecode[i - 1] {
                                 Opcode::PushEntero(_) | Opcode::CargarIndiceEntero(_) => {
                                     Some(TipoInferido::Entero)
@@ -172,7 +172,7 @@ impl ForjaFast {
                         } else {
                             None
                         };
-                        if let Some(tipo) = prev_tipo {
+                        if let Some(tipo) = anterior_tipo {
                             tipos_var[idx] = Some(tipo);
                         }
                     }
@@ -180,7 +180,7 @@ impl ForjaFast {
                 Opcode::DeclararIndiceGlobal(idx, _) => {
                     global_indices.insert(idx);
                     if idx < tipos_var.len() {
-                        let prev_tipo = if i > 0 {
+                        let anterior_tipo = if i > 0 {
                             match &self.bytecode[i - 1] {
                                 Opcode::PushEntero(_) | Opcode::CargarIndiceEntero(_) => {
                                     Some(TipoInferido::Entero)
@@ -201,7 +201,7 @@ impl ForjaFast {
                         } else {
                             None
                         };
-                        if let Some(tipo) = prev_tipo {
+                        if let Some(tipo) = anterior_tipo {
                             tipos_var[idx] = Some(tipo);
                         }
                     }
@@ -361,8 +361,8 @@ impl ForjaFast {
                 // Convertir el método a IdSimbolo (como u32) para comparaciones O(1) en runtime.
                 // El inline cache (clase_id, método_idx) se maneja en ic_callmethod.
                 Opcode::LlamarMetodo(m, nargs) => {
-                    let method_sym = self.runtime.tabla_simbolos.internar(m.as_ref());
-                    self.bytecode[i] = Opcode::LlamarMetodoCacheado(method_sym.0, nargs);
+                    let metodo_sym = self.runtime.tabla_simbolos.internar(m.as_ref());
+                    self.bytecode[i] = Opcode::LlamarMetodoCacheado(metodo_sym.0, nargs);
                 }
 
                 _ => {}
@@ -400,13 +400,13 @@ impl ForjaFast {
         }
 
         // ── PGO: mapeo de nombre de función por índice (para profiling) ─────
-        let mut func_names = vec![String::new(); self.function_table.entries.len()];
+        let mut funcion_names = vec![String::new(); self.function_table.entries.len()];
         for (sym, idx) in &self.sym_to_func_idx {
-            if *idx < func_names.len() {
-                func_names[*idx] = self.runtime.tabla_simbolos.texto(*sym).to_string();
+            if *idx < funcion_names.len() {
+                funcion_names[*idx] = self.runtime.tabla_simbolos.texto(*sym).to_string();
             }
         }
-        self.func_names_pgo = func_names;
+        self.funcion_names_pgo = funcion_names;
 
         // ── SocketPoll: construir mapa nombre → índice local ────────────────
         // Los locales se asignan en orden de aparición de Declare; el índice

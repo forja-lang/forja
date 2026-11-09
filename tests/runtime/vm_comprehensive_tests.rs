@@ -19,7 +19,7 @@ fn ejecutar(fuente: &str) -> ForjaFast {
 }
 
 fn salida_texto(fuente: &str) -> Vec<String> {
-    ejecutar(fuente).obtener_output().to_vec()
+    ejecutar(fuente).obtener_salida().to_vec()
 }
 
 // ============================================================
@@ -465,7 +465,7 @@ fn salida_fast(fuente: &str) -> Vec<String> {
     let mut vm = ForjaFast::new();
     vm.cargar_bytecode(bc);
     // ForjaFast empieza en ip=0 (FunctionDef se skipean solos)
-    vm.set_max_inst(50000);
+    vm.fijar_max_inst(50000);
     vm.ejecutar().unwrap();
     let salida = vm.output.lock().unwrap().clone();
     salida

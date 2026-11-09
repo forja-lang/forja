@@ -1,7 +1,7 @@
 use forja::bytecode::{deserializar_bytecode, serializar_bytecode, GeneradorBytecode, Opcode};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
-use forja::semantics::TypeChecker;
+use forja::semantics::TipoChecker;
 use std::sync::Arc;
 
 fn generar(fuente: &str) -> Vec<Opcode> {
@@ -18,7 +18,7 @@ fn generar_con_tipos(fuente: &str) -> Vec<Opcode> {
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
-    let mut tc = TypeChecker::new();
+    let mut tc = TipoChecker::new();
     tc.analizar(&programa).unwrap();
     let tipos = tc.obtener_tipos_inferidos();
     let mut gen = GeneradorBytecode::new();

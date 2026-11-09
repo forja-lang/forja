@@ -44,6 +44,8 @@ pub struct LlvmBackend {
     lc: u64, // label counter
     rc: u64, // register counter
     sc: u64, // string counter
+    // Variables que guardan Texto (para imprimir con %s y concatenar al escribir).
+    texto_vars: std::collections::HashSet<String>,
     // Design by Contract
     postcondiciones_activas: bool,
     retval_ptr: Option<String>,
@@ -79,6 +81,7 @@ impl LlvmBackend {
             lc: 0,
             rc: 0,
             sc: 0,
+            texto_vars: std::collections::HashSet::new(),
             postcondiciones_activas: false,
             retval_ptr: None,
             end_label: None,
@@ -110,11 +113,26 @@ impl LlvmBackend {
         let has_main = decls
             .iter()
             .any(|d| matches!(d, Declaracion::Funcion { nombre, .. } if nombre == "main"));
+        // Solo las funciones se emiten a nivel de módulo. Las sentencias de nivel
+        // superior (incluidas las `variable` globales) van dentro de una función:
+        // emitirlas aquí producía `store i64 …, i64* %a.x` fuera de `define` y
+        // LLVM rechazaba el módulo entero ("expected top-level entity").
+        let mut hay_nivel_superior = false;
         for d in decls {
-            self.decl(d)?;
+            match d {
+                Declaracion::Funcion { .. } | Declaracion::Clase { .. } => self.decl(d)?,
+                _ => hay_nivel_superior = true,
+            }
         }
         if !has_main {
             self.auto_main(decls)?;
+        } else if hay_nivel_superior {
+            // TODO(Fase 3): inyectar el init de globals al inicio del `main` del usuario.
+            return Err(
+                "el backend LLVM todavía no ejecuta sentencias de nivel superior cuando el \
+                 programa define `funcion main()`: movelas a main o compilá con la VM"
+                    .to_string(),
+            );
         }
         Ok(())
     }
@@ -569,6 +587,8 @@ impl LlvmBackend {
     fn decl(&mut self, d: &Declaracion) -> Result<(), String> {
         match d {
             Declaracion::Variable { nombre, valor, .. } => {
+                let es_texto = valor.as_ref().is_some_and(|v| self.expr_es_texto(v));
+                self.anotar_texto(nombre, es_texto);
                 let p = self.alloca(nombre);
                 if let Some(v) = valor {
                     let r = self.expr(v)?;
@@ -576,6 +596,8 @@ impl LlvmBackend {
                 }
             }
             Declaracion::Asignacion { nombre, valor, .. } => {
+                let es_texto = self.expr_es_texto(valor);
+                self.anotar_texto(nombre, es_texto);
                 if let Some(p) = self.vars.get(nombre).cloned() {
                     let r = self.expr(valor)?;
                     self.store(&p, &r);
@@ -936,9 +958,66 @@ impl LlvmBackend {
         }
     }
 
+    fn anotar_texto(&mut self, nombre: &str, es_texto: bool) {
+        if es_texto {
+            self.texto_vars.insert(nombre.to_string());
+        } else {
+            self.texto_vars.remove(nombre);
+        }
+    }
+
+    /// `true` si la expresión produce Texto (literal, variable de texto o
+    /// concatenación con `+` de al menos un lado textual).
+    fn expr_es_texto(&self, e: &Expresion) -> bool {
+        match e {
+            Expresion::LiteralTexto(_) => true,
+            Expresion::Identificador { nombre, .. } => self.texto_vars.contains(nombre),
+            Expresion::Binaria {
+                izquierda,
+                operador: Operador::Suma,
+                derecha,
+            } => self.expr_es_texto(izquierda) || self.expr_es_texto(derecha),
+            Expresion::Grupo(inner) => self.expr_es_texto(inner),
+            _ => false,
+        }
+    }
+
     fn escribir(&mut self, args: &[Expresion], _ret: bool) -> Result<Option<String>, String> {
         for arg in args {
+            self.escribir_valor(arg)?;
+        }
+        let nl = self.sl();
+        raw!(
+            self.out,
+            "@{} = private unnamed_addr constant [2 x i8] c\"\\0A\\00\"",
+            nl
+        );
+        let nr = self.r();
+        line!(
+            self.out,
+            "{} = getelementptr [2 x i8], [2 x i8]* @{}, i64 0, i64 0",
+            nr,
+            nl
+        );
+        line!(self.out, "call i32 (i8*, ...) @printf(i8* {})", nr);
+        Ok(Some("0".to_string()))
+    }
+
+    /// Imprime un valor con su formato real: texto con `%s`, enteros con `%lld`.
+    /// Una concatenación textual se imprime parte por parte, así `escribir("x = " + n)`
+    /// no cae en la suma de punteros.
+    fn escribir_valor(&mut self, arg: &Expresion) -> Result<(), String> {
+        {
             match arg {
+                Expresion::Binaria {
+                    izquierda,
+                    operador: Operador::Suma,
+                    derecha,
+                } if self.expr_es_texto(izquierda) || self.expr_es_texto(derecha) => {
+                    self.escribir_valor(izquierda)?;
+                    return self.escribir_valor(derecha);
+                }
+                Expresion::Grupo(inner) => return self.escribir_valor(inner),
                 Expresion::LiteralTexto(s) => {
                     let lbl = self.sl();
                     let esc = s
@@ -964,6 +1043,31 @@ impl LlvmBackend {
                         lbl
                     );
                     line!(self.out, "call i32 (i8*, ...) @printf(i8* {})", r);
+                    return Ok(());
+                }
+                _ if self.expr_es_texto(arg) => {
+                    let v = self.expr(arg)?;
+                    let p = self.r();
+                    line!(self.out, "{} = inttoptr i64 {} to i8*", p, v);
+                    let fl = self.sl();
+                    raw!(
+                        self.out,
+                        "@{} = private unnamed_addr constant [3 x i8] c\"%s\\00\"",
+                        fl
+                    );
+                    let fr = self.r();
+                    line!(
+                        self.out,
+                        "{} = getelementptr [3 x i8], [3 x i8]* @{}, i64 0, i64 0",
+                        fr,
+                        fl
+                    );
+                    line!(
+                        self.out,
+                        "call i32 (i8*, ...) @printf(i8* {}, i8* {})",
+                        fr,
+                        p
+                    );
                 }
                 _ => {
                     let v = self.expr(arg)?;
@@ -1006,21 +1110,7 @@ impl LlvmBackend {
                 }
             }
         }
-        let nl = self.sl();
-        raw!(
-            self.out,
-            "@{} = private unnamed_addr constant [2 x i8] c\"\\0A\\00\"",
-            nl
-        );
-        let nr = self.r();
-        line!(
-            self.out,
-            "{} = getelementptr [2 x i8], [2 x i8]* @{}, i64 0, i64 0",
-            nr,
-            nl
-        );
-        line!(self.out, "call i32 (i8*, ...) @printf(i8* {})", nr);
-        Ok(Some("0".to_string()))
+        Ok(())
     }
 
     // ── Expresiones ──

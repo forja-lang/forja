@@ -13,18 +13,18 @@ use std::sync::{Arc, Mutex, OnceLock};
 // ─────────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy)]
-struct LibHandle(*mut c_void);
+struct LibManejar(*mut c_void);
 
-unsafe impl Send for LibHandle {}
-unsafe impl Sync for LibHandle {}
+unsafe impl Send for LibManejar {}
+unsafe impl Sync for LibManejar {}
 
 // ─────────────────────────────────────────────────────────────────────
 // Registro global de librerías cargadas
 // ─────────────────────────────────────────────────────────────────────
 
-static FFI_REGISTRY: OnceLock<Mutex<HashMap<String, LibHandle>>> = OnceLock::new();
+static FFI_REGISTRY: OnceLock<Mutex<HashMap<String, LibManejar>>> = OnceLock::new();
 
-fn registry() -> &'static Mutex<HashMap<String, LibHandle>> {
+fn registro() -> &'static Mutex<HashMap<String, LibManejar>> {
     FFI_REGISTRY.get_or_init(|| {
         let map = HashMap::new();
         Mutex::new(map)
@@ -33,7 +33,7 @@ fn registry() -> &'static Mutex<HashMap<String, LibHandle>> {
 
 /// Determina si una librería ya está cargada en el registro.
 pub fn esta_cargada(ruta: &str) -> bool {
-    if let Ok(reg) = registry().lock() {
+    if let Ok(reg) = registro().lock() {
         reg.contains_key(ruta)
     } else {
         false
@@ -44,7 +44,7 @@ pub fn esta_cargada(ruta: &str) -> bool {
 /// Si ya está cargada, retorna el manejador existente.
 /// Internamente usa LoadLibraryW (Windows) o dlopen (Unix).
 pub fn cargar_libreria(ruta: &str) -> Result<i64, String> {
-    let mut reg = registry()
+    let mut reg = registro()
         .lock()
         .map_err(|e| format!("Error de lock: {}", e))?;
 
@@ -72,9 +72,9 @@ pub fn cargar_libreria(ruta: &str) -> Result<i64, String> {
         }
         #[cfg(not(target_os = "windows"))]
         {
-            let c_path =
+            let c_ruta =
                 CString::new(ruta).map_err(|_| "Ruta inválida (contiene null)".to_string())?;
-            let h = dlopen(c_path.as_ptr(), RTLD_LAZY | RTLD_LOCAL);
+            let h = dlopen(c_ruta.as_ptr(), RTLD_LAZY | RTLD_LOCAL);
             if h.is_null() {
                 let err = dlerror_str();
                 return Err(format!("dlopen falló: {}", err));
@@ -84,14 +84,14 @@ pub fn cargar_libreria(ruta: &str) -> Result<i64, String> {
     };
 
     let id = manejador as i64;
-    reg.insert(ruta.to_string(), LibHandle(manejador));
+    reg.insert(ruta.to_string(), LibManejar(manejador));
     Ok(id)
 }
 
 /// Obtiene un puntero a función desde una librería cargada.
 /// Usa GetProcAddress (Windows) o dlsym (Unix).
 pub fn obtener_funcion(ruta: &str, nombre: &str) -> Result<i64, String> {
-    let reg = registry()
+    let reg = registro()
         .lock()
         .map_err(|e| format!("Error de lock: {}", e))?;
 
@@ -139,7 +139,7 @@ pub fn obtener_funcion(ruta: &str, nombre: &str) -> Result<i64, String> {
 /// Libera una librería cargada.
 /// Usa FreeLibrary (Windows) o dlclose (Unix).
 pub fn liberar_libreria(ruta: &str) -> Result<(), String> {
-    let mut reg = registry()
+    let mut reg = registro()
         .lock()
         .map_err(|e| format!("Error de lock: {}", e))?;
     if let Some(manejador) = reg.remove(ruta) {
@@ -238,13 +238,13 @@ fn dlerror_str() -> String {
 // ─────────────────────────────────────────────────────────────────────
 
 use crate::native_registry::{obtener_entero, obtener_texto};
-use forja_runtime::Host;
+use forja_runtime::Anfitrion;
 use forja_runtime::{ErrFast, ValorFast};
 
 /// _ffi_obtener_funcion(ruta, nombre) -> Entero (puntero a función)
 /// retorna -1 si falla
-pub fn native_ffi_obtener_funcion(
-    vm: &mut dyn Host,
+pub fn nativo_ffi_obtener_funcion(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
@@ -262,8 +262,8 @@ pub fn native_ffi_obtener_funcion(
 }
 
 /// _ffi_llamar_entero(fn_ptr, args) -> Entero
-pub fn native_ffi_llamar_entero(
-    vm: &mut dyn Host,
+pub fn nativo_ffi_llamar_entero(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
@@ -277,7 +277,7 @@ pub fn native_ffi_llamar_entero(
 
     // Extraer argumentos del arreglo
     let arr_idx = args[1].indice_arreglo() as usize;
-    let arr = vm.get_arr(arr_idx as u32);
+    let arr = vm.obtener_arr(arr_idx as u32);
     let call_args: Vec<i64> = arr.iter().map(|v| v.a_entero()).collect();
 
     // Llamar a la función externa con cantidad variable de argumentos.
@@ -330,8 +330,8 @@ pub fn native_ffi_llamar_entero(
 
 /// _ffi_llamar_texto(fn_ptr, args) -> Texto
 /// Llama una función FFI que retorna un `char*`
-pub fn native_ffi_llamar_texto(
-    vm: &mut dyn Host,
+pub fn nativo_ffi_llamar_texto(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
@@ -345,7 +345,7 @@ pub fn native_ffi_llamar_texto(
 
     // Extraer argumentos del arreglo (para texto, los pasamos como CString)
     let arr_idx = args[1].indice_arreglo() as usize;
-    let arr = vm.get_arr(arr_idx as u32);
+    let arr = vm.obtener_arr(arr_idx as u32);
     let call_args: Vec<String> = arr
         .iter()
         .map(|v| {
@@ -356,7 +356,7 @@ pub fn native_ffi_llamar_texto(
         .collect();
 
     let fn_ptr: *const () = fn_ptr_val as usize as *const ();
-    let result_ptr: *mut c_char = unsafe {
+    let resultado_ptr: *mut c_char = unsafe {
         match call_args.len() {
             0 => {
                 let f: extern "C" fn() -> *mut c_char = std::mem::transmute(fn_ptr);
@@ -382,13 +382,13 @@ pub fn native_ffi_llamar_texto(
         }
     };
 
-    if result_ptr.is_null() {
+    if resultado_ptr.is_null() {
         return Ok(ValorFast::texto(0)); // string vacío
     }
 
-    let c_str = unsafe { std::ffi::CStr::from_ptr(result_ptr) };
+    let c_str = unsafe { std::ffi::CStr::from_ptr(resultado_ptr) };
     let s = c_str.to_string_lossy().to_string();
-    let idx = vm.alloc_str(std::sync::Arc::from(s.as_str()));
+    let idx = vm.reservar_texto(std::sync::Arc::from(s.as_str()));
     Ok(ValorFast::texto(idx))
 }
 
@@ -399,7 +399,7 @@ pub fn native_ffi_llamar_texto(
 /// Busca un símbolo en **todas** las librerías cargadas con
 /// `importar externa`. Devuelve el puntero o `None`.
 pub fn buscar_funcion_cargada(nombre: &str) -> Option<i64> {
-    let reg = registry().lock().ok()?;
+    let reg = registro().lock().ok()?;
     let c_name = CString::new(nombre).ok()?;
     for manejador in reg.values() {
         let fn_ptr: *mut c_void = unsafe {
@@ -420,8 +420,8 @@ pub fn buscar_funcion_cargada(nombre: &str) -> Option<i64> {
 }
 
 /// `_ffi_buscar_funcion(nombre) -> Entero` (puntero o -1).
-pub fn native_ffi_buscar_funcion(
-    vm: &mut dyn Host,
+pub fn nativo_ffi_buscar_funcion(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let nombre = obtener_texto(vm, args.first().copied().unwrap_or(ValorFast::nulo()))?;
@@ -435,7 +435,7 @@ pub fn native_ffi_buscar_funcion(
 /// A diferencia de `_ffi_llamar_entero`/`_ffi_llamar_texto`, acepta argumentos
 /// mixtos (texto → `char*`, entero/booleano → registro de 64 bits). Soporta
 /// hasta 5 argumentos, suficiente para la API C habitual.
-pub fn native_ffi_llamar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_ffi_llamar(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 {
         return Err(ErrFast::TipoInv(
             "_ffi_llamar requiere 3 argumentos: fn_ptr, args, retorna_texto".into(),
@@ -449,7 +449,7 @@ pub fn native_ffi_llamar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorF
     }
     let ret_texto = args[2].a_booleano();
     let idx = args[1].indice_arreglo();
-    let valores = vm.get_arr(idx).clone();
+    let valores = vm.obtener_arr(idx).clone();
     if valores.len() > 5 {
         return Err(ErrFast::TipoInv(
             "_ffi_llamar soporta hasta 5 argumentos".into(),
@@ -509,7 +509,7 @@ pub fn native_ffi_llamar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorF
         let s = unsafe { std::ffi::CStr::from_ptr(r as *const c_char) }
             .to_string_lossy()
             .to_string();
-        let idx = vm.alloc_str(Arc::from(s.as_str()));
+        let idx = vm.reservar_texto(Arc::from(s.as_str()));
         Ok(ValorFast::texto(idx))
     } else {
         Ok(ValorFast::entero(r as i64))

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub struct PackageResolver {
+pub struct PaqueteResolver {
     /// Directorio del proyecto actual
     directorio_proyecto: PathBuf,
     /// Directorio global de paquetes (~/.forja/paquetes)
@@ -11,14 +11,14 @@ pub struct PackageResolver {
     installed: HashMap<String, String>,
 }
 
-impl PackageResolver {
+impl PaqueteResolver {
     pub fn new(directorio_proyecto: &Path) -> Self {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_else(|_| ".".to_string());
         let global_cache = Path::new(&home).join(".forja").join("paquetes");
 
-        PackageResolver {
+        PaqueteResolver {
             directorio_proyecto: directorio_proyecto.to_path_buf(),
             global_cache,
             installed: HashMap::new(),
@@ -185,16 +185,16 @@ impl PackageResolver {
             return Ok(());
         }
 
-        // No es builtin: intentar consumir del registry ruta_local.
-        // El registry ruta_local vive en ~/.forja/registry y es el mismo formato
-        // que usaría el servidor remoto registry.forja-lang.dev (deuda futura).
-        match crate::registry::instalar_desde_registry(nombre, version, &directorio_paquete) {
+        // No es builtin: intentar consumir del registro ruta_local.
+        // El registro ruta_local vive en ~/.forja/registro y es el mismo formato
+        // que usaría el servidor remoto registro.forja-lang.dev (deuda futura).
+        match crate::registro::instalar_desde_registro(nombre, version, &directorio_paquete) {
             Ok(version_instalada) => {
                 self.installed.insert(nombre.to_string(), version_instalada);
                 Ok(())
             }
             Err(e_registry) => {
-                // si hay registry remoto configurado, intentar allí antes
+                // si hay registro remoto configurado, intentar allí antes
                 // de fallar. El paquete se verifica por SHA-256 y se descomprime
                 // en el directorio de paquetes del proyecto.
                 #[cfg(not(target_arch = "wasm32"))]
@@ -221,7 +221,7 @@ impl PackageResolver {
                         }
                     }
                 }
-                // Ni builtin ni en el registry ruta_local: falla explícito en vez de
+                // Ni builtin ni en el registro ruta_local: falla explícito en vez de
                 // fingir que el paquete quedó instalado.
                 Err(format!(
                     "Paquete '{}' versión '{}' no encontrado. No es builtin y no \
@@ -229,7 +229,7 @@ impl PackageResolver {
                      paquete con 'forja publish' o instalalo manualmente en {}",
                     nombre,
                     version,
-                    crate::registry::ruta_index().display(),
+                    crate::registro::ruta_index().display(),
                     e_registry,
                     directorio_paquete.display()
                 ))

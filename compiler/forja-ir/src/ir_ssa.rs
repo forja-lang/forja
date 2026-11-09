@@ -57,15 +57,15 @@ impl ArbolDominadores {
                 }
 
                 // Encontrar el primer predecessor con dominador_inmediato definido
-                let mut new_idom = None;
+                let mut nuevo_idom = None;
                 for &p in &predecesores[bloque.id] {
                     if dominador_inmediato[p].is_some() {
-                        new_idom = Some(p);
+                        nuevo_idom = Some(p);
                         break;
                     }
                 }
 
-                if let Some(mut dominador) = new_idom {
+                if let Some(mut dominador) = nuevo_idom {
                     // Intersect con otros predecessors
                     for &p in &predecesores[bloque.id] {
                         if dominador_inmediato[p].is_some() && p != dominador {
@@ -215,14 +215,14 @@ impl ArbolDominadores {
 }
 
 /// Natural loop detector
-pub struct InfoBucles {
+pub struct InformacionBucles {
     /// aristas_de_retorno[i] = (from, to) donde to domina from (arista de retorno)
     pub aristas_de_retorno: Vec<(IdBloque, IdBloque)>,
     /// bucles[i] = conjunto de bloques en el loop cuyo cabecera es i
     pub bucles: HashMap<IdBloque, HashSet<IdBloque>>,
 }
 
-impl InfoBucles {
+impl InformacionBucles {
     /// Detecta bucles naturales a partir del dominator tree y los edges
     pub fn detectar(bloques: &[BloqueBasico], arbol_dominadores: &ArbolDominadores) -> Self {
         let mut aristas_de_retorno = Vec::new();
@@ -242,7 +242,7 @@ impl InfoBucles {
             }
         }
 
-        InfoBucles {
+        InformacionBucles {
             aristas_de_retorno,
             bucles: mapa_bucles,
         }
@@ -371,19 +371,19 @@ impl ConstructorSsa {
 
             // Iterated Dominance Frontier: los φ se colocan en el cierre de la
             // DF de los bloques con definición.
-            let mut has_phi: HashSet<IdBloque> = HashSet::new();
+            let mut tiene_phi: HashSet<IdBloque> = HashSet::new();
             let mut pendientes: Vec<IdBloque> = def_blocks.iter().copied().collect();
             while let Some(bloque) = pendientes.pop() {
                 if let Some(frontier) = df.get(&bloque) {
                     for &y in frontier {
-                        if has_phi.insert(y) && !def_blocks.contains(&y) {
+                        if tiene_phi.insert(y) && !def_blocks.contains(&y) {
                             pendientes.push(y);
                         }
                     }
                 }
             }
 
-            let mut bloques_phi: Vec<IdBloque> = has_phi.into_iter().collect();
+            let mut bloques_phi: Vec<IdBloque> = tiene_phi.into_iter().collect();
             bloques_phi.sort_unstable();
             for phi_block in bloques_phi {
                 let predecesores = block_predecessors
@@ -778,7 +778,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_dominator_tree_single_block() {
+    fn test_dominator_arbol_simple_block() {
         let bloques = vec![BloqueBasico {
             id: IdBloque(0),
             instrucciones: vec![],
@@ -789,7 +789,7 @@ mod tests {
     }
 
     #[test]
-    fn test_dominator_tree_linear() {
+    fn test_dominator_arbol_linear() {
         // Block 0 → Block 1 → Block 2
         let bloques = vec![
             BloqueBasico {
@@ -815,7 +815,7 @@ mod tests {
     }
 
     #[test]
-    fn test_dominator_tree_diamond() {
+    fn test_dominator_arbol_diamond() {
         // 0 → 1, 0 → 2, 1 → 3, 2 → 3
         let bloques = vec![
             BloqueBasico {
@@ -873,7 +873,7 @@ mod tests {
     }
 
     #[test]
-    fn test_loop_detection() {
+    fn test_bucle_detection() {
         // Loop: 0 → 1 → 2 → 1 (back edge 2→1)
         let bloques = vec![
             BloqueBasico {
@@ -898,7 +898,7 @@ mod tests {
             },
         ];
         let dt = ArbolDominadores::calcular(&bloques);
-        let bucles = InfoBucles::detectar(&bloques, &dt);
+        let bucles = InformacionBucles::detectar(&bloques, &dt);
         assert_eq!(bucles.aristas_de_retorno.len(), 1);
         assert!(bucles.bucles.contains_key(&IdBloque(1))); // cabecera del loop es bloque 1
     }
@@ -993,7 +993,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ssa_builder_phi_en_header_de_loop() {
+    fn test_ssa_builder_phi_en_header_de_bucle() {
         let mut builder = ConstructorSsa::new();
         builder.marcar_variable_phi(IdxMemoria(0));
 
@@ -1095,7 +1095,7 @@ mod tests {
     }
 
     #[test]
-    fn mem2reg_no_promueve_globales_de_main() {
+    fn mem2reg_no_promueve_globales_de_principal() {
         let fuente = "variable i = 0\nmientras (i < 3) { i = i + 1 }\nescribir(i)";
         let ir = ir_de_fuente(fuente);
         let ssa = promover_funcion(funcion(&ir, "main"));

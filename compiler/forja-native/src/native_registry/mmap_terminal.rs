@@ -1,6 +1,6 @@
 use super::*;
 
-pub fn native_mmap_abrir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_mmap_abrir(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 4 {
         return Err(ErrFast::TipoInv(
             "_mmap_abrir requiere 4 args: ruta, offset, longitud, modo".into(),
@@ -17,7 +17,10 @@ pub fn native_mmap_abrir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorF
     }
 }
 
-pub fn native_mmap_cerrar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_mmap_cerrar(
+    _vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_mmap_cerrar requiere 1 arg: handle".into(),
@@ -30,7 +33,7 @@ pub fn native_mmap_cerrar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
     }
 }
 
-pub fn native_mmap_leer(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_mmap_leer(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 {
         return Err(ErrFast::TipoInv(
             "_mmap_leer requiere 3 args: handle, offset, longitud".into(),
@@ -42,14 +45,17 @@ pub fn native_mmap_leer(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFa
     match crate::mmap::mmap_leer(manejador, desplazamiento, longitud) {
         Ok(bytes) => {
             let s = String::from_utf8_lossy(&bytes).to_string();
-            let indice = vm.alloc_str(Arc::from(s.as_str()));
+            let indice = vm.reservar_texto(Arc::from(s.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(e)),
     }
 }
 
-pub fn native_mmap_escribir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_mmap_escribir(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 {
         return Err(ErrFast::TipoInv(
             "_mmap_escribir requiere 3 args: handle, offset, datos".into(),
@@ -64,8 +70,8 @@ pub fn native_mmap_escribir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
     }
 }
 
-pub fn native_mmap_sincronizar(
-    _vm: &mut dyn Host,
+pub fn nativo_mmap_sincronizar(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -80,7 +86,10 @@ pub fn native_mmap_sincronizar(
     }
 }
 
-pub fn native_mmap_tamano(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_mmap_tamano(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv("_mmap_tamano requiere 1 arg: ruta".into()));
     }
@@ -91,30 +100,33 @@ pub fn native_mmap_tamano(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valor
     }
 }
 
-pub fn native_mmap_page_size(
-    _vm: &mut dyn Host,
+pub fn nativo_mmap_page_tamano(
+    _vm: &mut dyn Anfitrion,
     _args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    Ok(ValorFast::entero(crate::mmap::page_size() as i64))
+    Ok(ValorFast::entero(crate::mmap::page_tamano() as i64))
 }
 
 // ─── Terminal ────────────────────────────────────────────────────────────
 
-pub fn native_terminal_tamano(
-    _vm: &mut dyn Host,
+pub fn nativo_terminal_tamano(
+    _vm: &mut dyn Anfitrion,
     _args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     match crate::terminal::tamano_terminal() {
         Ok((cols, rows)) => {
             let s = format!("{},{}", cols, rows);
-            let ret = ValorFast::texto(_vm.alloc_str(Arc::from(s.as_str())));
+            let ret = ValorFast::texto(_vm.reservar_texto(Arc::from(s.as_str())));
             Ok(ret)
         }
         Err(e) => Err(ErrFast::TipoInv(e)),
     }
 }
 
-pub fn native_terminal_raw(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_terminal_raw(
+    _vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_terminal_raw requiere 1 arg: 1=raw, 0=normal".into(),
@@ -127,13 +139,13 @@ pub fn native_terminal_raw(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
     }
 }
 
-pub fn native_terminal_leer_tecla(
-    vm: &mut dyn Host,
+pub fn nativo_terminal_leer_tecla(
+    vm: &mut dyn Anfitrion,
     _args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     match crate::terminal::leer_tecla() {
         Ok(s) => {
-            let indice = vm.alloc_str(Arc::from(s.as_str()));
+            let indice = vm.reservar_texto(Arc::from(s.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(e)),

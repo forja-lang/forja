@@ -93,7 +93,7 @@ fn con_color(s: String) -> String {
     }
 }
 
-/// Helpers de log: info (cyan), ok (verde), warning (ámbar), error (rojo), debug (gris).
+/// Helpers de log: info (cyan), ok (verde), aviso (ámbar), error (rojo), debug (gris).
 pub fn info(mensaje: &str) -> String {
     con_color(format!(
         "{} {}",
@@ -111,7 +111,7 @@ pub fn exito(mensaje: &str) -> String {
         color::verde(mensaje)
     ))
 }
-pub fn warning(mensaje: &str) -> String {
+pub fn aviso(mensaje: &str) -> String {
     con_color(format!(
         "{} {}",
         distintivo("AVISO", color::AMARILLO_FONDO),
@@ -125,7 +125,7 @@ pub fn error(mensaje: &str) -> String {
         color::rojo(mensaje)
     ))
 }
-pub fn debug_msg(mensaje: &str) -> String {
+pub fn depuracion_mensaje(mensaje: &str) -> String {
     con_color(format!(
         "{} {}",
         color::negrita("DEBUG"),
@@ -151,7 +151,7 @@ pub fn numero(mensaje: &str) -> String {
 // ============================================================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum NivelVerbose {
+pub enum NivelDetallado {
     Silencioso = 0,
     Normal = 1,
     Verbose = 2,
@@ -159,17 +159,17 @@ pub enum NivelVerbose {
     Trace = 4,
 }
 
-pub fn establecer_nivel(nivel: NivelVerbose) {
+pub fn establecer_nivel(nivel: NivelDetallado) {
     NIVEL_DETALLE.store(nivel as u8, Ordering::Relaxed);
 }
 
-pub fn nivel_actual() -> NivelVerbose {
+pub fn nivel_actual() -> NivelDetallado {
     match NIVEL_DETALLE.load(Ordering::Relaxed) {
-        0 => NivelVerbose::Normal,
-        1 => NivelVerbose::Verbose,
-        2 => NivelVerbose::Debug,
-        3 => NivelVerbose::Trace,
-        _ => NivelVerbose::Normal,
+        0 => NivelDetallado::Normal,
+        1 => NivelDetallado::Verbose,
+        2 => NivelDetallado::Debug,
+        3 => NivelDetallado::Trace,
+        _ => NivelDetallado::Normal,
     }
 }
 
@@ -191,39 +191,39 @@ pub fn color_mode() -> bool {
     MODO_COLOR.load(Ordering::Relaxed)
 }
 
-pub fn log_info(mensaje: &str) {
-    if nivel_actual() >= NivelVerbose::Normal {
+pub fn registrar_informacion(mensaje: &str) {
+    if nivel_actual() >= NivelDetallado::Normal {
         eprintln!("{}", info(mensaje));
     }
 }
-pub fn log_ok(mensaje: &str) {
-    if nivel_actual() >= NivelVerbose::Normal {
+pub fn registrar_correcto(mensaje: &str) {
+    if nivel_actual() >= NivelDetallado::Normal {
         eprintln!("{}", ok(mensaje));
     }
 }
-pub fn log_warn(mensaje: &str) {
-    if nivel_actual() >= NivelVerbose::Normal {
-        eprintln!("{}", warning(mensaje));
+pub fn registrar_aviso(mensaje: &str) {
+    if nivel_actual() >= NivelDetallado::Normal {
+        eprintln!("{}", aviso(mensaje));
     }
 }
 pub fn log_error(mensaje: &str) {
-    if nivel_actual() >= NivelVerbose::Normal {
+    if nivel_actual() >= NivelDetallado::Normal {
         eprintln!("{}", error(mensaje));
     }
 }
-pub fn log_verbose(mensaje: &str) {
-    if nivel_actual() >= NivelVerbose::Verbose {
-        eprintln!("{}", debug_msg(mensaje));
+pub fn registrar_detallado(mensaje: &str) {
+    if nivel_actual() >= NivelDetallado::Verbose {
+        eprintln!("{}", depuracion_mensaje(mensaje));
     }
 }
-pub fn log_debug(mensaje: &str) {
-    if nivel_actual() >= NivelVerbose::Debug {
-        eprintln!("{}", debug_msg(mensaje));
+pub fn registrar_depuracion(mensaje: &str) {
+    if nivel_actual() >= NivelDetallado::Debug {
+        eprintln!("{}", depuracion_mensaje(mensaje));
     }
 }
-pub fn log_trace(mensaje: &str) {
-    if nivel_actual() >= NivelVerbose::Trace {
-        eprintln!("{}", debug_msg(mensaje));
+pub fn registrar_traza(mensaje: &str) {
+    if nivel_actual() >= NivelDetallado::Trace {
+        eprintln!("{}", depuracion_mensaje(mensaje));
     }
 }
 

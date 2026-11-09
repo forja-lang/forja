@@ -45,20 +45,20 @@ impl ForjaFast {
             Opcode::NuevoArreglo(n) => {
                 let mut e = Vec::with_capacity(*n);
                 for _ in 0..*n {
-                    e.push(self.pop_valor()?);
+                    e.push(self.desapilar_valor()?);
                 }
                 e.reverse();
-                let idx = self.alloc_arr(e);
-                self.push_valor(ValorFast::arreglo(idx));
+                let idx = self.reservar_arr(e);
+                self.empujar_valor(ValorFast::arreglo(idx));
                 self.ip += 1;
             }
             Opcode::ObtenerElemento => {
                 let ip = self.ip;
                 match self.ic_arrayget[ip] {
                     Some(true) => {
-                        let i = self.pop_valor()?;
-                        let a = self.pop_valor()?;
-                        let arr = self.get_arr(a.indice_arreglo());
+                        let i = self.desapilar_valor()?;
+                        let a = self.desapilar_valor()?;
+                        let arr = self.obtener_arr(a.indice_arreglo());
                         let ii = i.a_entero();
                         let val = if ii >= 0 && (ii as usize) < arr.len() {
                             arr[ii as usize]
@@ -73,20 +73,22 @@ impl ForjaFast {
                             }
                             ValorFast::nulo()
                         };
-                        self.push_valor(val);
+                        self.empujar_valor(val);
                     }
                     Some(false) => {
-                        let k = self.pop_valor()?;
-                        let m = self.pop_valor()?;
-                        let map = self.get_map(m.indice_mapa());
+                        let k = self.desapilar_valor()?;
+                        let m = self.desapilar_valor()?;
+                        let map = self.obtener_mapa(m.indice_mapa());
                         let ks = self.get_str(k.indice_texto());
-                        self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
+                        self.empujar_valor(
+                            map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()),
+                        );
                     }
                     None => {
-                        let i = self.pop_valor()?;
-                        let a = self.pop_valor()?;
+                        let i = self.desapilar_valor()?;
+                        let a = self.desapilar_valor()?;
                         if a.es_arreglo() && i.es_entero() {
-                            let arr = self.get_arr(a.indice_arreglo());
+                            let arr = self.obtener_arr(a.indice_arreglo());
                             let ii = i.a_entero();
                             let val = if ii >= 0 && (ii as usize) < arr.len() {
                                 arr[ii as usize]
@@ -101,22 +103,22 @@ impl ForjaFast {
                                 }
                                 ValorFast::nulo()
                             };
-                            self.push_valor(val);
+                            self.empujar_valor(val);
                             self.ic_arrayget[ip] = Some(true);
-                            self.ic_miss_count[ip] = 0;
+                            self.ic_miss_cantidad[ip] = 0;
                         } else if a.es_mapa() {
-                            let map = self.get_map(a.indice_mapa());
+                            let map = self.obtener_mapa(a.indice_mapa());
                             let ks = if i.es_texto() {
                                 self.get_str(i.indice_texto()).to_string()
                             } else {
                                 self.mostrar_valor(&i)
                             };
-                            self.push_valor(
+                            self.empujar_valor(
                                 map.get(ks.as_str()).copied().unwrap_or(ValorFast::nulo()),
                             );
                             if i.es_texto() {
                                 self.ic_arrayget[ip] = Some(false);
-                                self.ic_miss_count[ip] = 0;
+                                self.ic_miss_cantidad[ip] = 0;
                             }
                         } else if a.es_texto() && i.es_entero() {
                             // Indexar un texto devuelve el carácter (1 letra).
@@ -127,8 +129,9 @@ impl ForjaFast {
                                 .nth(usize::try_from(ii).unwrap_or(usize::MAX));
                             match c {
                                 Some(c) => {
-                                    let idx = self.alloc_str(Arc::from(c.to_string().as_str()));
-                                    self.push_valor(ValorFast::texto(idx));
+                                    let idx =
+                                        self.reservar_texto(Arc::from(c.to_string().as_str()));
+                                    self.empujar_valor(ValorFast::texto(idx));
                                 }
                                 None => {
                                     if self.errores_estrictos {
@@ -137,15 +140,15 @@ impl ForjaFast {
                                             ii
                                         )));
                                     }
-                                    self.push_valor(ValorFast::nulo());
+                                    self.empujar_valor(ValorFast::nulo());
                                 }
                             }
                         } else {
-                            self.push_valor(ValorFast::nulo());
-                            self.ic_miss_count[ip] = self.ic_miss_count[ip].saturating_add(1);
-                            if self.ic_miss_count[ip] >= 3 {
+                            self.empujar_valor(ValorFast::nulo());
+                            self.ic_miss_cantidad[ip] = self.ic_miss_cantidad[ip].saturating_add(1);
+                            if self.ic_miss_cantidad[ip] >= 3 {
                                 self.ic_arrayget[ip] = None;
-                                self.ic_miss_count[ip] = 0;
+                                self.ic_miss_cantidad[ip] = 0;
                             }
                         }
                     }
@@ -156,55 +159,55 @@ impl ForjaFast {
                 let ip = self.ip;
                 match self.ic_arrayset[ip] {
                     Some(true) => {
-                        let i = self.pop_valor()?;
-                        let a = self.pop_valor()?;
-                        let v = self.pop_valor()?;
-                        let arr = self.get_arr_mut(a.indice_arreglo());
+                        let i = self.desapilar_valor()?;
+                        let a = self.desapilar_valor()?;
+                        let v = self.desapilar_valor()?;
+                        let arr = self.obtener_arr_mut(a.indice_arreglo());
                         if escribir_indice_arreglo(arr, i.a_entero(), v) {
-                            self.push_valor(a);
+                            self.empujar_valor(a);
                         } else {
-                            self.push_valor(ValorFast::nulo());
+                            self.empujar_valor(ValorFast::nulo());
                         }
                     }
                     Some(false) => {
-                        let k = self.pop_valor()?;
-                        let m = self.pop_valor()?;
-                        let v = self.pop_valor()?;
+                        let k = self.desapilar_valor()?;
+                        let m = self.desapilar_valor()?;
+                        let v = self.desapilar_valor()?;
                         let ks = self.get_str(k.indice_texto()).to_string();
-                        self.get_map_mut(m.indice_mapa()).insert(ks, v);
-                        self.push_valor(m);
+                        self.obtener_mapa_mut(m.indice_mapa()).insert(ks, v);
+                        self.empujar_valor(m);
                     }
                     None => {
-                        let i = self.pop_valor()?;
-                        let a = self.pop_valor()?;
-                        let v = self.pop_valor()?;
+                        let i = self.desapilar_valor()?;
+                        let a = self.desapilar_valor()?;
+                        let v = self.desapilar_valor()?;
                         if a.es_arreglo() && i.es_entero() {
-                            let arr = self.get_arr_mut(a.indice_arreglo());
+                            let arr = self.obtener_arr_mut(a.indice_arreglo());
                             if escribir_indice_arreglo(arr, i.a_entero(), v) {
-                                self.push_valor(a);
+                                self.empujar_valor(a);
                             } else {
-                                self.push_valor(ValorFast::nulo());
+                                self.empujar_valor(ValorFast::nulo());
                             }
                             self.ic_arrayset[ip] = Some(true);
-                            self.ic_miss_count[ip] = 0;
+                            self.ic_miss_cantidad[ip] = 0;
                         } else if a.es_mapa() {
                             let ks = if i.es_texto() {
                                 self.get_str(i.indice_texto()).to_string()
                             } else {
                                 self.mostrar_valor(&i)
                             };
-                            self.get_map_mut(a.indice_mapa()).insert(ks, v);
-                            self.push_valor(a);
+                            self.obtener_mapa_mut(a.indice_mapa()).insert(ks, v);
+                            self.empujar_valor(a);
                             if i.es_texto() {
                                 self.ic_arrayset[ip] = Some(false);
-                                self.ic_miss_count[ip] = 0;
+                                self.ic_miss_cantidad[ip] = 0;
                             }
                         } else {
-                            self.push_valor(ValorFast::nulo());
-                            self.ic_miss_count[ip] = self.ic_miss_count[ip].saturating_add(1);
-                            if self.ic_miss_count[ip] >= 3 {
+                            self.empujar_valor(ValorFast::nulo());
+                            self.ic_miss_cantidad[ip] = self.ic_miss_cantidad[ip].saturating_add(1);
+                            if self.ic_miss_cantidad[ip] >= 3 {
                                 self.ic_arrayset[ip] = None;
-                                self.ic_miss_count[ip] = 0;
+                                self.ic_miss_cantidad[ip] = 0;
                             }
                         }
                     }
@@ -212,20 +215,20 @@ impl ForjaFast {
                 self.ip += 1;
             }
             Opcode::LongitudArreglo => {
-                let a = self.pop_valor()?;
+                let a = self.desapilar_valor()?;
                 if a.es_arreglo() {
-                    let arr = self.get_arr(a.indice_arreglo());
-                    self.push_valor(get_small_int_fast(arr.len() as i64));
+                    let arr = self.obtener_arr(a.indice_arreglo());
+                    self.empujar_valor(obtener_small_entero_fast(arr.len() as i64));
                 } else {
-                    self.push_valor(get_small_int_fast(0));
+                    self.empujar_valor(obtener_small_entero_fast(0));
                 }
                 self.ip += 1;
             }
             Opcode::NuevoMapa(n) => {
                 let mut m = HashMap::with_capacity(*n);
                 for _ in 0..*n {
-                    let v = self.pop_valor()?;
-                    let k = self.pop_valor()?;
+                    let v = self.desapilar_valor()?;
+                    let k = self.desapilar_valor()?;
                     // Las claves de mapa son texto: un número o cualquier otro
                     // valor se convierte con su representación (antes se
                     // descartaba el par en silencio).
@@ -236,39 +239,41 @@ impl ForjaFast {
                     };
                     m.insert(ks, v);
                 }
-                let idx = self.alloc_map(m);
-                self.push_valor(ValorFast::mapa(idx));
+                let idx = self.reservar_mapa(m);
+                self.empujar_valor(ValorFast::mapa(idx));
                 self.ip += 1;
             }
             Opcode::ObtenerValorDeMapa => {
                 let ip = self.ip;
                 if self.ic_mapget[ip] {
-                    let k = self.pop_valor()?;
-                    let m = self.pop_valor()?;
-                    let map = self.get_map(m.indice_mapa());
+                    let k = self.desapilar_valor()?;
+                    let m = self.desapilar_valor()?;
+                    let map = self.obtener_mapa(m.indice_mapa());
                     let ks = self.get_str(k.indice_texto());
-                    self.push_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
+                    self.empujar_valor(map.get(ks.as_ref()).copied().unwrap_or(ValorFast::nulo()));
                 } else {
-                    let k = self.pop_valor()?;
-                    let m = self.pop_valor()?;
+                    let k = self.desapilar_valor()?;
+                    let m = self.desapilar_valor()?;
                     if m.es_mapa() {
-                        let map = self.get_map(m.indice_mapa());
+                        let map = self.obtener_mapa(m.indice_mapa());
                         let ks = if k.es_texto() {
                             self.get_str(k.indice_texto()).to_string()
                         } else {
                             self.mostrar_valor(&k)
                         };
-                        self.push_valor(map.get(ks.as_str()).copied().unwrap_or(ValorFast::nulo()));
+                        self.empujar_valor(
+                            map.get(ks.as_str()).copied().unwrap_or(ValorFast::nulo()),
+                        );
                         if k.es_texto() {
                             self.ic_mapget[ip] = true;
-                            self.ic_miss_count[ip] = 0;
+                            self.ic_miss_cantidad[ip] = 0;
                         }
                     } else {
-                        self.push_valor(ValorFast::nulo());
-                        self.ic_miss_count[ip] = self.ic_miss_count[ip].saturating_add(1);
-                        if self.ic_miss_count[ip] >= 3 {
+                        self.empujar_valor(ValorFast::nulo());
+                        self.ic_miss_cantidad[ip] = self.ic_miss_cantidad[ip].saturating_add(1);
+                        if self.ic_miss_cantidad[ip] >= 3 {
                             self.ic_mapget[ip] = false;
-                            self.ic_miss_count[ip] = 0;
+                            self.ic_miss_cantidad[ip] = 0;
                         }
                     }
                 }
@@ -277,34 +282,34 @@ impl ForjaFast {
             Opcode::FijarValorDeMapa => {
                 let ip = self.ip;
                 if self.ic_mapset[ip] {
-                    let v = self.pop_valor()?;
-                    let k = self.pop_valor()?;
-                    let m = self.pop_valor()?;
+                    let v = self.desapilar_valor()?;
+                    let k = self.desapilar_valor()?;
+                    let m = self.desapilar_valor()?;
                     let ks = self.get_str(k.indice_texto()).to_string();
-                    self.get_map_mut(m.indice_mapa()).insert(ks, v);
-                    self.push_valor(m);
+                    self.obtener_mapa_mut(m.indice_mapa()).insert(ks, v);
+                    self.empujar_valor(m);
                 } else {
-                    let v = self.pop_valor()?;
-                    let k = self.pop_valor()?;
-                    let m = self.pop_valor()?;
+                    let v = self.desapilar_valor()?;
+                    let k = self.desapilar_valor()?;
+                    let m = self.desapilar_valor()?;
                     if m.es_mapa() {
                         let ks = if k.es_texto() {
                             self.get_str(k.indice_texto()).to_string()
                         } else {
                             self.mostrar_valor(&k)
                         };
-                        self.get_map_mut(m.indice_mapa()).insert(ks, v);
-                        self.push_valor(m);
+                        self.obtener_mapa_mut(m.indice_mapa()).insert(ks, v);
+                        self.empujar_valor(m);
                         if k.es_texto() {
                             self.ic_mapset[ip] = true;
-                            self.ic_miss_count[ip] = 0;
+                            self.ic_miss_cantidad[ip] = 0;
                         }
                     } else {
-                        self.push_valor(ValorFast::nulo());
-                        self.ic_miss_count[ip] = self.ic_miss_count[ip].saturating_add(1);
-                        if self.ic_miss_count[ip] >= 3 {
+                        self.empujar_valor(ValorFast::nulo());
+                        self.ic_miss_cantidad[ip] = self.ic_miss_cantidad[ip].saturating_add(1);
+                        if self.ic_miss_cantidad[ip] >= 3 {
                             self.ic_mapset[ip] = false;
-                            self.ic_miss_count[ip] = 0;
+                            self.ic_miss_cantidad[ip] = 0;
                         }
                     }
                 }

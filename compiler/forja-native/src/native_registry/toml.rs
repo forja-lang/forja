@@ -5,10 +5,10 @@
 use super::*;
 use std::collections::BTreeMap;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_toml(&mut self) {
-        self.registrar("_toml_parsear", native_toml_parsear);
-        self.registrar("_toml_generar", native_toml_generar);
+        self.registrar("_toml_parsear", nativo_toml_parsear);
+        self.registrar("_toml_generar", nativo_toml_generar);
     }
 }
 
@@ -26,7 +26,10 @@ fn error_toml(mensaje: impl Into<String>) -> ErrFast {
     ErrFast::TipoInv(format!("toml_invalido: {}", mensaje.into()))
 }
 
-pub fn native_toml_parsear(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_toml_parsear(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let texto = obtener_texto(vm, args.first().copied().unwrap_or(ValorFast::nulo()))?;
     let mut raiz: BTreeMap<String, TomlVal> = BTreeMap::new();
     let mut tabla: Vec<String> = Vec::new();
@@ -180,18 +183,18 @@ fn unescape(s: &str) -> String {
     salida
 }
 
-fn convertir_tabla(vm: &mut dyn Host, tabla: BTreeMap<String, TomlVal>) -> ValorFast {
+fn convertir_tabla(vm: &mut dyn Anfitrion, tabla: BTreeMap<String, TomlVal>) -> ValorFast {
     let mut mapa = HashMap::new();
     for (k, v) in tabla {
         mapa.insert(k, convertir_valor(vm, v));
     }
-    ValorFast::mapa(vm.alloc_map(mapa))
+    ValorFast::mapa(vm.reservar_mapa(mapa))
 }
 
-fn convertir_valor(vm: &mut dyn Host, v: TomlVal) -> ValorFast {
+fn convertir_valor(vm: &mut dyn Anfitrion, v: TomlVal) -> ValorFast {
     match v {
         TomlVal::Texto(s) => {
-            let indice = vm.alloc_str(Arc::from(s.as_str()));
+            let indice = vm.reservar_texto(Arc::from(s.as_str()));
             ValorFast::texto(indice)
         }
         TomlVal::Entero(n) => ValorFast::entero(n),
@@ -199,13 +202,16 @@ fn convertir_valor(vm: &mut dyn Host, v: TomlVal) -> ValorFast {
         TomlVal::Booleano(b) => ValorFast::booleano(b),
         TomlVal::Arreglo(a) => {
             let elems = a.into_iter().map(|x| convertir_valor(vm, x)).collect();
-            ValorFast::arreglo(vm.alloc_arr(elems))
+            ValorFast::arreglo(vm.reservar_arr(elems))
         }
         TomlVal::Tabla(t) => convertir_tabla(vm, t),
     }
 }
 
-pub fn native_toml_generar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_toml_generar(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let mapa = args
         .first()
         .copied()
@@ -217,14 +223,14 @@ pub fn native_toml_generar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
     }
     let mut salida = String::new();
     escribir_tabla(vm, mapa.indice_mapa(), "", &mut salida);
-    let indice = vm.alloc_str(Arc::from(salida.as_str()));
+    let indice = vm.reservar_texto(Arc::from(salida.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
-fn escribir_tabla(vm: &dyn Host, indice: u32, prefijo: &str, salida: &mut String) {
+fn escribir_tabla(vm: &dyn Anfitrion, indice: u32, prefijo: &str, salida: &mut String) {
     let mut escalares = Vec::new();
     let mut tablas = Vec::new();
-    for (k, v) in vm.get_map(indice).iter() {
+    for (k, v) in vm.obtener_mapa(indice).iter() {
         if v.es_mapa() {
             tablas.push((k.clone(), v.indice_mapa()));
         } else {
@@ -251,7 +257,7 @@ fn escribir_tabla(vm: &dyn Host, indice: u32, prefijo: &str, salida: &mut String
     }
 }
 
-fn valor_toml(vm: &dyn Host, v: &ValorFast) -> String {
+fn valor_toml(vm: &dyn Anfitrion, v: &ValorFast) -> String {
     if v.es_texto() {
         let s = vm.get_str(v.indice_texto());
         return format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
@@ -260,7 +266,7 @@ fn valor_toml(vm: &dyn Host, v: &ValorFast) -> String {
         return if v.a_booleano() { "true" } else { "false" }.to_string();
     }
     if v.es_arreglo() {
-        let arr = vm.get_arr(v.indice_arreglo());
+        let arr = vm.obtener_arr(v.indice_arreglo());
         let elems: Vec<String> = arr.iter().map(|x| valor_toml(vm, x)).collect();
         return format!("[{}]", elems.join(", "));
     }

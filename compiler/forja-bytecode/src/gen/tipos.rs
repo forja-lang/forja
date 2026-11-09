@@ -406,10 +406,10 @@ impl GeneradorBytecode {
         }
     }
 
-    pub(crate) fn nueva_label(&mut self) -> usize {
-        let label = self.contador_etiquetas;
+    pub(crate) fn nueva_etiqueta(&mut self) -> usize {
+        let etiqueta = self.contador_etiquetas;
         self.contador_etiquetas += 1;
-        label
+        etiqueta
     }
 
     pub(crate) fn emitir(&mut self, opcode: Opcode) {

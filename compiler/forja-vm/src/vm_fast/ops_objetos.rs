@@ -57,10 +57,10 @@ impl ForjaFast {
                             rasgos: Vec::new(),
                         }
                     });
-                let shape_id = self.runtime.registro_formas.obtener_o_crear(clase_sym);
-                let obj = ObjVal::new(clase_sym, shape_id);
-                let idx = self.alloc_obj(obj);
-                self.push_valor(ValorFast::objeto(idx));
+                let forma_id = self.runtime.registro_formas.obtener_o_crear(clase_sym);
+                let obj = ObjVal::new(clase_sym, forma_id);
+                let idx = self.reservar_objeto(obj);
+                self.empujar_valor(ValorFast::objeto(idx));
                 self.ip += 1;
                 Ok(true)
             }
@@ -74,18 +74,18 @@ impl ForjaFast {
                     if !matches!(cache, Pic::Mega) {
                         let clase_actual = self.runtime.obj_heap[obj_idx as usize].clase;
                         if let Some(idx_cache) = cache.hit(clase_actual) {
-                            if idx_cache < self.get_obj(obj_idx).campos_vec.len() {
-                                let _ = self.pop_valor()?;
-                                let v = self.pop_valor()?;
-                                self.get_obj_mut(obj_idx).campos_vec[idx_cache] = v;
+                            if idx_cache < self.obtener_objeto(obj_idx).campos_vec.len() {
+                                let _ = self.desapilar_valor()?;
+                                let v = self.desapilar_valor()?;
+                                self.obtener_objeto_mut(obj_idx).campos_vec[idx_cache] = v;
                                 self.ip += 1;
                                 return Ok(true);
                             }
                         }
                     }
                     // Fallback
-                    let _ = self.pop_valor()?; // objeto
-                    let v = self.pop_valor()?; // valor
+                    let _ = self.desapilar_valor()?; // objeto
+                    let v = self.desapilar_valor()?; // valor
                     let clase_sym = self.runtime.obj_heap[obj_idx as usize].clase;
                     if self.show_bytecode {
                         let clase_str = self.runtime.tabla_simbolos.texto(clase_sym);
@@ -122,13 +122,13 @@ impl ForjaFast {
                             let sidx = desc_mut.forma.agregar_campo(field_sym);
                             // Transición de forma del objeto (RegistroFormas) para
                             // inline caches basados en IdForma.
-                            let shape_id = self.runtime.formas_objeto[obj_idx as usize];
+                            let forma_id = self.runtime.formas_objeto[obj_idx as usize];
                             let (nuevo_shape, _) = self
                                 .runtime
                                 .registro_formas
-                                .agregar_campo_dinamico(shape_id, field_sym);
+                                .agregar_campo_dinamico(forma_id, field_sym);
                             self.runtime.formas_objeto[obj_idx as usize] = nuevo_shape;
-                            self.runtime.obj_heap[obj_idx as usize].shape_id = nuevo_shape;
+                            self.runtime.obj_heap[obj_idx as usize].forma_id = nuevo_shape;
                             if sidx < self.runtime.obj_heap[obj_idx as usize].campos_vec.len() {
                                 self.runtime.obj_heap[obj_idx as usize].campos_vec[sidx] = v;
                             } else {
@@ -166,9 +166,9 @@ impl ForjaFast {
                 let obj_val = *self.peek_valor(0);
                 if obj_val.es_objeto() {
                     let obj_idx = obj_val.indice_objeto();
-                    let _ = self.pop_valor()?; // objeto (top)
-                    let v = self.pop_valor()?; // valor (debajo)
-                    let campos = &mut self.get_obj_mut(obj_idx).campos_vec;
+                    let _ = self.desapilar_valor()?; // objeto (top)
+                    let v = self.desapilar_valor()?; // valor (debajo)
+                    let campos = &mut self.obtener_objeto_mut(obj_idx).campos_vec;
                     if *idx < campos.len() {
                         campos[*idx] = v;
                     } else {
@@ -179,8 +179,8 @@ impl ForjaFast {
                     }
                 } else {
                     // No es objeto: descartar valor y objeto
-                    let _ = self.pop_valor()?;
-                    let _ = self.pop_valor()?;
+                    let _ = self.desapilar_valor()?;
+                    let _ = self.desapilar_valor()?;
                 }
                 self.ip += 1;
                 Ok(true)
@@ -192,7 +192,7 @@ impl ForjaFast {
                         "[GetField] campo={:?}, es_objeto={}, top_len={}, stack.len={}",
                         c,
                         obj_val.es_objeto(),
-                        self.top_len,
+                        self.top_longitud,
                         self.stack.len()
                     );
                 }
@@ -206,17 +206,17 @@ impl ForjaFast {
                         let obj_idx = obj_val.indice_objeto();
                         let clase_sym = self.runtime.obj_heap[obj_idx as usize].clase;
                         if let Some(idx_cache) = cache.hit(clase_sym) {
-                            if idx_cache < self.get_obj(obj_idx).campos_vec.len() {
-                                let valor = self.get_obj(obj_idx).campos_vec[idx_cache];
-                                self.pop_valor()?;
-                                self.push_valor(valor);
+                            if idx_cache < self.obtener_objeto(obj_idx).campos_vec.len() {
+                                let valor = self.obtener_objeto(obj_idx).campos_vec[idx_cache];
+                                self.desapilar_valor()?;
+                                self.empujar_valor(valor);
                                 self.ip += 1;
                                 return Ok(true);
                             }
                         }
                     }
                     // Fallback: búsqueda con Shape
-                    let obj = self.pop_valor()?;
+                    let obj = self.desapilar_valor()?;
                     let idx = obj.indice_objeto();
                     let clase_sym = self.runtime.obj_heap[idx as usize].clase;
                     if self.show_bytecode {
@@ -239,7 +239,7 @@ impl ForjaFast {
                     } else {
                         ValorFast::nulo()
                     };
-                    self.push_valor(valor);
+                    self.empujar_valor(valor);
                     // Actualizar PIC
                     let ip = self.ip;
                     if let Some(desc) = self.runtime.class_descriptors.get(&clase_sym) {
@@ -249,20 +249,20 @@ impl ForjaFast {
                         }
                     }
                 } else if obj_val.es_mapa() {
-                    let mapa_obj = self.pop_valor()?;
+                    let mapa_obj = self.desapilar_valor()?;
                     let midx = mapa_obj.indice_mapa();
                     let key_str = c.as_ref();
                     let valor = self.runtime.map_heap[midx as usize]
                         .get(key_str)
                         .cloned()
                         .unwrap_or_else(ValorFast::nulo);
-                    self.push_valor(valor);
+                    self.empujar_valor(valor);
                 } else {
                     if self.show_bytecode {
                         eprintln!("[GetField] not an object or map, pushing nulo");
                     }
-                    let _ = self.pop_valor();
-                    self.push_valor(ValorFast::nulo());
+                    let _ = self.desapilar_valor();
+                    self.empujar_valor(ValorFast::nulo());
                 }
                 self.ip += 1;
                 Ok(true)

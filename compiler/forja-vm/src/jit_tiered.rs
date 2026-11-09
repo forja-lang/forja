@@ -65,7 +65,7 @@ impl Default for HotnessThresholds {
 
 /// Estado de compilación de una función
 #[derive(Debug, Clone)]
-pub struct FunctionState {
+pub struct FuncionState {
     /// Tier actual de la función
     pub tier: Tier,
     /// Contador de hotness (número de llamadas)
@@ -76,9 +76,9 @@ pub struct FunctionState {
     pub deopt_frame: Option<DeoptFrame>,
 }
 
-impl FunctionState {
+impl FuncionState {
     pub fn new() -> Self {
-        FunctionState {
+        FuncionState {
             tier: Tier::Interpret,
             call_count: 0,
             compiled_code: None,
@@ -87,29 +87,29 @@ impl FunctionState {
     }
 
     /// Incrementa el contador y retorna true si debería compilarse
-    pub fn tick(&mut self, thresholds: &HotnessThresholds) -> ShouldCompile {
+    pub fn tick(&mut self, thresholds: &HotnessThresholds) -> ShouldCompilar {
         self.call_count += 1;
         match self.tier {
             Tier::Interpret => {
                 if self.call_count >= thresholds.interpret_to_jit_simple {
-                    ShouldCompile::Yes(Tier::JitSimple)
+                    ShouldCompilar::Yes(Tier::JitSimple)
                 } else {
-                    ShouldCompile::No
+                    ShouldCompilar::No
                 }
             }
             Tier::JitSimple => {
                 if self.call_count >= thresholds.jit_simple_to_optimized {
-                    ShouldCompile::Yes(Tier::JitOptimized)
+                    ShouldCompilar::Yes(Tier::JitOptimized)
                 } else {
-                    ShouldCompile::No
+                    ShouldCompilar::No
                 }
             }
-            Tier::JitOptimized => ShouldCompile::No,
+            Tier::JitOptimized => ShouldCompilar::No,
         }
     }
 }
 
-impl Default for FunctionState {
+impl Default for FuncionState {
     fn default() -> Self {
         Self::new()
     }
@@ -117,7 +117,7 @@ impl Default for FunctionState {
 
 /// Resultado del tick de hotness
 #[derive(Debug)]
-pub enum ShouldCompile {
+pub enum ShouldCompilar {
     /// No necesita compilación
     No,
     /// Debería compilarse al tier dado
@@ -159,7 +159,7 @@ pub struct DeoptFrame {
 /// Sistema de JIT tiered completo
 pub struct TieredJit {
     /// Estado por función (key = function name o ID)
-    pub functions: HashMap<String, FunctionState>,
+    pub functions: HashMap<String, FuncionState>,
     /// Umbrales de hotness
     pub thresholds: HotnessThresholds,
     /// Contadores de OSR por loop (key = "func_id:loop_pc")
@@ -192,7 +192,7 @@ impl TieredJit {
         }
     }
 
-    pub fn with_thresholds(thresholds: HotnessThresholds) -> Self {
+    pub fn con_thresholds(thresholds: HotnessThresholds) -> Self {
         TieredJit {
             functions: HashMap::new(),
             thresholds,
@@ -202,27 +202,27 @@ impl TieredJit {
     }
 
     /// Registra una función
-    pub fn register_function(&mut self, name: &str) {
+    pub fn register_funcion(&mut self, name: &str) {
         self.functions.entry(name.to_string()).or_default();
     }
 
     /// Notifica una ejecución de función y retorna si debe compilarse
-    pub fn on_function_call(&mut self, name: &str) -> ShouldCompile {
+    pub fn on_funcion_llamada(&mut self, name: &str) -> ShouldCompilar {
         let state = self.functions.entry(name.to_string()).or_default();
         state.tick(&self.thresholds)
     }
 
     /// Notifica una iteración de loop para OSR
     /// Retorna true si debería activarse OSR
-    pub fn on_loop_iteration(&mut self, func_id: &str, loop_pc: usize) -> bool {
-        let key = format!("{}:{}", func_id, loop_pc);
-        let counter = self.osr_counters.entry(key).or_insert(0);
+    pub fn on_bucle_iteration(&mut self, func_id: &str, loop_pc: usize) -> bool {
+        let clave = format!("{}:{}", func_id, loop_pc);
+        let counter = self.osr_counters.entry(clave).or_insert(0);
         *counter += 1;
         *counter >= self.thresholds.osr_loop_iterations
     }
 
     /// Marca una función como compilada al tier dado
-    pub fn mark_compiled(&mut self, name: &str, tier: Tier, code: CompiledCode) {
+    pub fn marcar_compiled(&mut self, name: &str, tier: Tier, code: CompiledCode) {
         if let Some(state) = self.functions.get_mut(name) {
             state.tier = tier;
             state.compiled_code = Some(code);
@@ -274,33 +274,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_function_starts_at_interpret() {
+    fn test_funcion_empieza_at_interpret() {
         let mut jit = TieredJit::new();
-        jit.register_function("main");
+        jit.register_funcion("main");
         assert_eq!(jit.tier_of("main"), Tier::Interpret);
     }
 
     #[test]
     fn test_hotness_threshold() {
         let mut jit = TieredJit::new();
-        jit.register_function("foo");
+        jit.register_funcion("foo");
 
         // Ejecutar 999 veces → no compilar
         for _ in 0..999 {
-            assert!(matches!(jit.on_function_call("foo"), ShouldCompile::No));
+            assert!(matches!(jit.on_funcion_llamada("foo"), ShouldCompilar::No));
         }
 
         // Ejecutar la vez 1000 → compilar
         assert!(matches!(
-            jit.on_function_call("foo"),
-            ShouldCompile::Yes(Tier::JitSimple)
+            jit.on_funcion_llamada("foo"),
+            ShouldCompilar::Yes(Tier::JitSimple)
         ));
     }
 
     #[test]
-    fn test_mark_compiled() {
+    fn test_marcar_compiled() {
         let mut jit = TieredJit::new();
-        jit.register_function("bar");
+        jit.register_funcion("bar");
 
         // Simular compilación
         let code = CompiledCode {
@@ -308,7 +308,7 @@ mod tests {
             code_size: 100,
             tier: Tier::JitSimple,
         };
-        jit.mark_compiled("bar", Tier::JitSimple, code);
+        jit.marcar_compiled("bar", Tier::JitSimple, code);
 
         assert_eq!(jit.tier_of("bar"), Tier::JitSimple);
         assert_eq!(jit.stats().compiled_interpret_to_simple, 1);
@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn test_deoptimization() {
         let mut jit = TieredJit::new();
-        jit.register_function("baz");
+        jit.register_funcion("baz");
 
         // Compilar
         let code = CompiledCode {
@@ -325,7 +325,7 @@ mod tests {
             code_size: 100,
             tier: Tier::JitSimple,
         };
-        jit.mark_compiled("baz", Tier::JitSimple, code);
+        jit.marcar_compiled("baz", Tier::JitSimple, code);
         assert_eq!(jit.tier_of("baz"), Tier::JitSimple);
 
         // Deoptimizar
@@ -348,11 +348,11 @@ mod tests {
 
         // Iterar menos del umbral
         for _ in 0..9999 {
-            assert!(!jit.on_loop_iteration("main", 100));
+            assert!(!jit.on_bucle_iteration("main", 100));
         }
 
         // Iteración 10000 → OSR
-        assert!(jit.on_loop_iteration("main", 100));
+        assert!(jit.on_bucle_iteration("main", 100));
     }
 
     #[test]
@@ -370,16 +370,16 @@ mod tests {
             osr_loop_iterations: 5,
         };
         let mut jit = TieredJit::with_thresholds(thresholds);
-        jit.register_function("fast");
+        jit.register_funcion("fast");
 
         // 9 calls → no compile
         for _ in 0..9 {
-            assert!(matches!(jit.on_function_call("fast"), ShouldCompile::No));
+            assert!(matches!(jit.on_funcion_llamada("fast"), ShouldCompilar::No));
         }
         // 10th call → compile
         assert!(matches!(
-            jit.on_function_call("fast"),
-            ShouldCompile::Yes(Tier::JitSimple)
+            jit.on_funcion_llamada("fast"),
+            ShouldCompilar::Yes(Tier::JitSimple)
         ));
     }
 }

@@ -1,13 +1,13 @@
 // Forja — Registro de funciones nativas
 //
 // El registro se divide por dominio en submódulos. Cada submódulo define su
-// propio `impl NativeRegistry { pub(crate) fn registrar_X }` junto con las
+// propio `impl NativoRegistro { pub(crate) fn registrar_X }` junto con las
 // funciones `native_*` que registra. Este `mod.rs` conserva los tipos base,
-// el struct `NativeRegistry`, el constructor `new()`, la API pública y los
+// el struct `NativoRegistro`, el constructor `new()`, la API pública y los
 // registros que no dependen de un dominio externo.
 
 use forja_bytecode::symbol_table::{IdSimbolo, TablaSimbolos};
-use forja_runtime::{ErrFast, Host, ValorFast};
+use forja_runtime::{Anfitrion, ErrFast, ValorFast};
 /// Registro de funciones nativas para la VM Forja
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -71,18 +71,18 @@ pub use helpers::{
 // Re-exports internos: funciones compartidas entre submódulos (accesibles vía
 // `use super::*;` en cada submódulo).
 pub(crate) use aleatorio::codigo_error_archivo;
-pub(crate) use bencode::native_url_encode_binario;
+pub(crate) use bencode::nativo_url_codificar_binario;
 #[cfg(feature = "net")]
 pub(crate) use bittorrent::{
-    native_bt_enviar_mensaje, native_bt_handshake, native_bt_recibir_mensaje,
-    native_bt_verificar_pieza,
+    nativo_bt_enviar_mensaje, nativo_bt_handshake, nativo_bt_recibir_mensaje,
+    nativo_bt_verificar_pieza,
 };
 pub(crate) use mmap_terminal::{
-    native_mmap_abrir, native_mmap_cerrar, native_mmap_escribir, native_mmap_leer,
-    native_mmap_page_size, native_mmap_sincronizar, native_mmap_tamano, native_terminal_leer_tecla,
-    native_terminal_raw, native_terminal_tamano,
+    nativo_mmap_abrir, nativo_mmap_cerrar, nativo_mmap_escribir, nativo_mmap_leer,
+    nativo_mmap_page_tamano, nativo_mmap_sincronizar, nativo_mmap_tamano,
+    nativo_terminal_leer_tecla, nativo_terminal_raw, nativo_terminal_tamano,
 };
-pub(crate) use pq::{native_pq_decaps, native_pq_encaps, native_pq_keygen};
+pub(crate) use pq::{nativo_pq_decaps, nativo_pq_encaps, nativo_pq_keygen};
 
 // ═════════════════════════════════════════════════════════════════════════
 // Tipos
@@ -91,28 +91,28 @@ pub(crate) use pq::{native_pq_decaps, native_pq_encaps, native_pq_keygen};
 pub use forja_runtime::socket::*;
 
 /// Tipo de función nativa: recibe la VM y argumentos, retorna valor o error
-pub type NativeFn = fn(&mut dyn Host, &[ValorFast]) -> Result<ValorFast, ErrFast>;
+pub type NativeFn = fn(&mut dyn Anfitrion, &[ValorFast]) -> Result<ValorFast, ErrFast>;
 
 // ═════════════════════════════════════════════════════════════════════════
-// NativeRegistry
+// NativoRegistro
 // ═════════════════════════════════════════════════════════════════════════
 
-pub struct NativeRegistry {
+pub struct NativoRegistro {
     /// TablaSimbolos local para internar nombres → IdSimbolo (lookup O(1))
     tabla_simbolos: TablaSimbolos,
     /// Mapa IdSimbolo → NativeFn: sin string matching en caliente
     funciones: HashMap<IdSimbolo, NativeFn>,
 }
 
-impl Default for NativeRegistry {
+impl Default for NativoRegistro {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn new() -> Self {
-        let mut reg = NativeRegistry {
+        let mut reg = NativoRegistro {
             tabla_simbolos: TablaSimbolos::new(),
             funciones: HashMap::new(),
         };
@@ -168,9 +168,9 @@ impl NativeRegistry {
 
     /// Registra una función nativa internando su nombre como IdSimbolo.
     /// Retorna el IdSimbolo para usar directamente en CallNative (bytecode).
-    pub fn registrar(&mut self, nombre: &str, func: NativeFn) -> IdSimbolo {
+    pub fn registrar(&mut self, nombre: &str, funcion: NativeFn) -> IdSimbolo {
         let sym = self.tabla_simbolos.internar(nombre);
-        self.funciones.insert(sym, func);
+        self.funciones.insert(sym, funcion);
         sym
     }
 
@@ -191,7 +191,7 @@ impl NativeRegistry {
 
     /// Busca una función nativa por IdSimbolo — lookup O(1), sin strings.
     /// Retorna la función (copia de un fn pointer) para que el caller
-    /// pueda ejecutarla sin mantener un borrow sobre la NativeRegistry.
+    /// pueda ejecutarla sin mantener un borrow sobre la NativoRegistro.
     pub fn buscar_fn(&self, sym: IdSimbolo) -> Result<NativeFn, ErrFast> {
         self.funciones
             .get(&sym)
@@ -209,17 +209,17 @@ impl NativeRegistry {
     pub fn ejecutar_sym(
         &mut self,
         sym: IdSimbolo,
-        vm: &mut dyn Host,
+        vm: &mut dyn Anfitrion,
         args: &[ValorFast],
     ) -> Result<ValorFast, ErrFast> {
-        let func = self.buscar_fn(sym)?;
-        func(vm, args)
+        let funcion = self.buscar_fn(sym)?;
+        funcion(vm, args)
     }
 
     /// Ejecuta una función nativa por nombre (legacy, menos eficiente)
     pub fn ejecutar(
         &mut self,
-        vm: &mut dyn Host,
+        vm: &mut dyn Anfitrion,
         nombre: &str,
         args: &[ValorFast],
     ) -> Result<ValorFast, ErrFast> {
@@ -236,14 +236,14 @@ impl NativeRegistry {
 
     fn registrar_caracter_conversion(&mut self) {
         // ─── Conversión carácter ↔ código Unicode ────────────────────────
-        self.registrar("a_codigo", helpers::native_a_codigo);
-        self.registrar("a_caracter", helpers::native_a_caracter);
+        self.registrar("a_codigo", helpers::nativo_a_codigo);
+        self.registrar("a_caracter", helpers::nativo_a_caracter);
     }
 
     /// Marcas `@derive(...)` de clase, consultadas por `==` y `escribir`.
     fn registrar_derive(&mut self) {
-        self.registrar("_derive_igual", native_derive_igual);
-        self.registrar("_derive_mostrar", native_derive_mostrar);
+        self.registrar("_derive_igual", nativo_derive_igual);
+        self.registrar("_derive_mostrar", nativo_derive_mostrar);
     }
 
     /// Punteros a funciones de librerías cargadas con `importar externa`.
@@ -251,23 +251,23 @@ impl NativeRegistry {
     fn registrar_ffi(&mut self) {
         self.registrar(
             "_ffi_obtener_funcion",
-            crate::ffi::native_ffi_obtener_funcion,
+            crate::ffi::nativo_ffi_obtener_funcion,
         );
-        self.registrar("_ffi_llamar_entero", crate::ffi::native_ffi_llamar_entero);
-        self.registrar("_ffi_llamar_texto", crate::ffi::native_ffi_llamar_texto);
-        self.registrar("_ffi_buscar_funcion", crate::ffi::native_ffi_buscar_funcion);
-        self.registrar("_ffi_llamar", crate::ffi::native_ffi_llamar);
+        self.registrar("_ffi_llamar_entero", crate::ffi::nativo_ffi_llamar_entero);
+        self.registrar("_ffi_llamar_texto", crate::ffi::nativo_ffi_llamar_texto);
+        self.registrar("_ffi_buscar_funcion", crate::ffi::nativo_ffi_buscar_funcion);
+        self.registrar("_ffi_llamar", crate::ffi::nativo_ffi_llamar);
     }
 }
 
-fn native_derive_igual(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_derive_igual(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let nombre = obtener_texto(vm, args.first().copied().unwrap_or(ValorFast::nulo()))?;
     let sym = vm.tabla_simbolos().internar(&nombre);
     vm.clases_derive_igual().insert(sym);
     Ok(ValorFast::nulo())
 }
 
-fn native_derive_mostrar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_derive_mostrar(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let nombre = obtener_texto(vm, args.first().copied().unwrap_or(ValorFast::nulo()))?;
     let sym = vm.tabla_simbolos().internar(&nombre);
     vm.clases_derive_mostrar().insert(sym);

@@ -9,7 +9,7 @@
 //! configuración global y permite tests en paralelo.
 
 fn ejecutar(estricto: bool, fuente: &str) -> Result<Vec<String>, String> {
-    let sesion = forja_session::Session::nueva(forja_session::Config {
+    let sesion = forja_session::Sesion::nueva(forja_session::Config {
         estricto,
         ..Default::default()
     });

@@ -1,6 +1,6 @@
 use crate::lsp::index_stdlib::StdlibIndex;
 use crate::lsp::snippets::SNIPPETS;
-use crate::token::{Token, TokenKind};
+use crate::token::{Token, TokenTipo};
 
 // ============================================================
 // Context Detection
@@ -28,30 +28,30 @@ pub fn detectar_contexto(tokens: &[Token], cursor: usize) -> CompletionContext {
     let prev_raw = token_prev_raw(tokens, cursor);
 
     match &prev_raw {
-        Some(TokenKind::Punto) => {
+        Some(TokenTipo::Punto) => {
             let objeto = extraer_objeto_antes_del_punto(tokens, cursor);
             return CompletionContext::DotAccess {
                 objeto_expr: objeto,
                 tipo_objeto: None,
             };
         }
-        Some(TokenKind::Texto(_)) if prev_token_is_import(tokens, cursor) => {
+        Some(TokenTipo::Texto(_)) if prev_token_is_import(tokens, cursor) => {
             let ruta = extraer_path_parcial(tokens, cursor);
             return CompletionContext::ImportPath { parcial: ruta };
         }
-        Some(TokenKind::DosPuntos) => {
+        Some(TokenTipo::DosPuntos) => {
             return CompletionContext::TypeAnnotation;
         }
-        Some(TokenKind::Arroba) => {
+        Some(TokenTipo::Arroba) => {
             return CompletionContext::Attribute;
         }
-        Some(TokenKind::Identificador(s)) if s == "tipo" || s == "Tipo" => {
+        Some(TokenTipo::Identificador(s)) if s == "tipo" || s == "Tipo" => {
             return CompletionContext::TypeAnnotation;
         }
-        Some(TokenKind::Variable) | Some(TokenKind::Constante) => {
+        Some(TokenTipo::Variable) | Some(TokenTipo::Constante) => {
             return CompletionContext::VariableDecl;
         }
-        Some(TokenKind::Importar) => {
+        Some(TokenTipo::Importar) => {
             return CompletionContext::ImportPath {
                 parcial: String::new(),
             };
@@ -73,16 +73,16 @@ fn prev_token_is_import(tokens: &[Token], cursor: usize) -> bool {
     while i > 0 {
         i -= 1;
         match &tokens[i].kind {
-            TokenKind::Importar => return true,
-            TokenKind::Texto(_) => continue,
-            TokenKind::EOF => return false,
+            TokenTipo::Importar => return true,
+            TokenTipo::Texto(_) => continue,
+            TokenTipo::EOF => return false,
             _ => return false,
         }
     }
     false
 }
 
-fn token_prev_raw(tokens: &[Token], cursor: usize) -> Option<TokenKind> {
+fn token_prev_raw(tokens: &[Token], cursor: usize) -> Option<TokenTipo> {
     if cursor > 0 && cursor <= tokens.len() {
         Some(tokens[cursor.saturating_sub(1)].kind.clone())
     } else {
@@ -96,8 +96,8 @@ fn extraer_objeto_antes_del_punto(tokens: &[Token], cursor: usize) -> String {
     while i > 0 {
         i = i.saturating_sub(1);
         match &tokens[i].kind {
-            TokenKind::Identificador(s) => return s.clone(),
-            TokenKind::Este => return "este".to_string(),
+            TokenTipo::Identificador(s) => return s.clone(),
+            TokenTipo::Este => return "este".to_string(),
             _ => {
                 if i == 0 {
                     break;
@@ -111,7 +111,7 @@ fn extraer_objeto_antes_del_punto(tokens: &[Token], cursor: usize) -> String {
 fn extraer_prefijo_identificador(tokens: &[Token], cursor: usize) -> String {
     if cursor > 0 && cursor <= tokens.len() {
         let anterior = &tokens[cursor.saturating_sub(1)].kind;
-        if let TokenKind::Identificador(s) = anterior {
+        if let TokenTipo::Identificador(s) = anterior {
             return s.clone();
         }
     }
@@ -123,10 +123,10 @@ fn extraer_path_parcial(tokens: &[Token], cursor: usize) -> String {
         if i >= tokens.len() {
             continue;
         }
-        if let TokenKind::Texto(s) = &tokens[i].kind {
+        if let TokenTipo::Texto(s) = &tokens[i].kind {
             return s.clone();
         }
-        if matches!(tokens[i].kind, TokenKind::Importar | TokenKind::EOF) {
+        if matches!(tokens[i].kind, TokenTipo::Importar | TokenTipo::EOF) {
             break;
         }
     }

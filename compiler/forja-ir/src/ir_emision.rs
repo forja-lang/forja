@@ -29,12 +29,12 @@ pub fn emitir_bytecode_canonico(
     overloads: Overloads,
 ) -> Result<(Vec<Opcode>, Vec<ContratoBytecode>), String> {
     let mut gen = GeneradorBytecode::new();
-    gen.set_tipos_inferidos(tipos);
-    gen.set_funciones_overload(overloads);
+    gen.fijar_tipos_inferidos(tipos);
+    gen.fijar_funciones_overload(overloads);
     // los contratos referencian globales por índice, así que el
     // generador necesita la tabla antes de emitir (no después).
     let globales = globales_de(programa);
-    gen.set_globales(globales.clone());
+    gen.fijar_globales(globales.clone());
     let bytecode = gen.generar(programa).map_err(|errores| {
         // Propagar el primer diagnóstico real: el fallback a IR vuelve a
         // fallar con el mismo programa y este mensaje es el útil.

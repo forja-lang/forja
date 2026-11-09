@@ -1,86 +1,86 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_web(&mut self) {
         // ─── HTTP Parsing ─────────────────────────────────────────────────
-        self.registrar("_http_parsear_solicitud", native_http_parsear_solicitud);
-        self.registrar("_http_parsear_respuesta", native_http_parsear_respuesta);
-        self.registrar("_http_parsear_cabeceras", native_http_parsear_cabeceras);
-        self.registrar("_http_texto_status", native_http_texto_status);
-        self.registrar("_http_fecha_texto", native_http_fecha_texto);
+        self.registrar("_http_parsear_solicitud", nativo_http_parsear_solicitud);
+        self.registrar("_http_parsear_respuesta", nativo_http_parsear_respuesta);
+        self.registrar("_http_parsear_cabeceras", nativo_http_parsear_cabeceras);
+        self.registrar("_http_texto_status", nativo_http_texto_status);
+        self.registrar("_http_fecha_texto", nativo_http_fecha_texto);
 
         // ─── URL ──────────────────────────────────────────────────────────
-        self.registrar("_url_decodificar", native_url_decodificar);
-        self.registrar("_url_codificar", native_url_codificar);
-        self.registrar("_query_parsear", native_query_parsear);
+        self.registrar("_url_decodificar", nativo_url_decodificar);
+        self.registrar("_url_codificar", nativo_url_codificar);
+        self.registrar("_query_parsear", nativo_query_parsear);
 
         // ─── URL Encoding Binario ─────────────────────────────────────────
-        self.registrar("_url_encode_binario", native_url_encode_binario);
+        self.registrar("_url_encode_binario", nativo_url_codificar_binario);
 
         // ─── MIME ─────────────────────────────────────────────────────────
-        self.registrar("_mime_tipo_archivo", native_mime_tipo_archivo);
-        self.registrar("_mime_extension_por_tipo", native_mime_extension_por_tipo);
+        self.registrar("_mime_tipo_archivo", nativo_mime_tipo_archivo);
+        self.registrar("_mime_extension_por_tipo", nativo_mime_extension_por_tipo);
 
         // ─── WebSocket ────────────────────────────────────────────────────
-        self.registrar("_ws_handshake_aceptar", native_ws_handshake_aceptar);
-        self.registrar("_ws_frame_codificar", native_ws_frame_codificar);
-        self.registrar("_ws_frame_decodificar", native_ws_frame_decodificar);
+        self.registrar("_ws_handshake_aceptar", nativo_ws_handshake_aceptar);
+        self.registrar("_ws_frame_codificar", nativo_ws_frame_codificar);
+        self.registrar("_ws_frame_decodificar", nativo_ws_frame_decodificar);
 
         // ─── Chunked Transfer ─────────────────────────────────────────────
-        self.registrar("_chunked_codificar", native_chunked_codificar);
-        self.registrar("_chunked_decodificar", native_chunked_decodificar);
+        self.registrar("_chunked_codificar", nativo_chunked_codificar);
+        self.registrar("_chunked_decodificar", nativo_chunked_decodificar);
 
         // ─── Construcción de mensajes ─────────────────────────────────────
-        self.registrar("_http_crear_solicitud_raw", native_http_crear_solicitud_raw);
-        self.registrar("_http_crear_respuesta_raw", native_http_crear_respuesta_raw);
+        self.registrar("_http_crear_solicitud_raw", nativo_http_crear_solicitud_raw);
+        self.registrar("_http_crear_respuesta_raw", nativo_http_crear_respuesta_raw);
 
         // ─── HTTP/2 ────────────────────────────────────────────────────────
         #[cfg(not(target_arch = "wasm32"))]
         {
-            self.registrar("_h2_preface", crate::native_h2_core::native_h2_preface);
+            self.registrar("_h2_preface", crate::native_h2_core::nativo_h2_preface);
             self.registrar(
                 "_h2_escribir_frame",
-                crate::native_h2_core::native_h2_escribir_frame,
+                crate::native_h2_core::nativo_h2_escribir_frame,
             );
             self.registrar(
                 "_h2_leer_frame",
-                crate::native_h2_core::native_h2_leer_frame,
+                crate::native_h2_core::nativo_h2_leer_frame,
             );
             self.registrar(
                 "_hpack_codificar",
-                crate::native_h2_core::native_hpack_codificar,
+                crate::native_h2_core::nativo_hpack_codificar,
             );
             self.registrar(
                 "_hpack_decodificar",
-                crate::native_h2_core::native_hpack_decodificar,
+                crate::native_h2_core::nativo_hpack_decodificar,
             );
             self.registrar(
                 "_h2_settings_default",
-                crate::native_h2_core::native_h2_settings_default,
+                crate::native_h2_core::nativo_h2_settings_predeterminado,
             );
             self.registrar(
                 "_h2_enviar_goaway",
-                crate::native_h2_core::native_h2_enviar_goaway,
+                crate::native_h2_core::nativo_h2_enviar_goaway,
             );
             self.registrar(
                 "_h2_enviar_rst_stream",
-                crate::native_h2_core::native_h2_enviar_rst_stream,
+                crate::native_h2_core::nativo_h2_enviar_rst_stream,
             );
             self.registrar(
                 "_h2_enviar_window_update",
-                crate::native_h2_core::native_h2_enviar_window_update,
+                crate::native_h2_core::nativo_h2_enviar_ventana_actualizar,
             );
             self.registrar(
                 "_h2_enviar_ping",
-                crate::native_h2_core::native_h2_enviar_ping,
+                crate::native_h2_core::nativo_h2_enviar_ping,
             );
             self.registrar(
                 "_h2_enviar_bytes_raw",
-                crate::native_h2_core::native_h2_enviar_bytes_raw,
+                crate::native_h2_core::nativo_h2_enviar_bytes_raw,
             );
             self.registrar(
                 "_h2_negociar_h2c",
-                crate::native_h2_core::native_h2_negociar_h2c,
+                crate::native_h2_core::nativo_h2_negociar_h2c,
             );
         }
     }
@@ -109,9 +109,9 @@ pub fn parsear_mapa_texto(texto: &str) -> HashMap<String, String> {
 // ─── HTTP Parsing ──────────────────────────────────────────────────
 
 /// Parsea una solicitud HTTP raw y retorna sus componentes como mapa textual
-/// Formato retorno: "metodo|GET|ruta|/hola|cabeceras|Host: ejemplo.com\nUser-Agent: curl|cuerpo|"
-pub fn native_http_parsear_solicitud(
-    vm: &mut dyn Host,
+/// Formato retorno: "metodo|GET|ruta|/hola|cabeceras|Anfitrion: ejemplo.com\nUser-Agent: curl|cuerpo|"
+pub fn nativo_http_parsear_solicitud(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -165,14 +165,14 @@ pub fn native_http_parsear_solicitud(
         ("cuerpo", &cuerpo),
     ]);
 
-    let indice = vm.alloc_str(Arc::from(salida.as_str()));
+    let indice = vm.reservar_texto(Arc::from(salida.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
 /// Parsea una respuesta HTTP raw
 /// Formato retorno: "codigo|200|status|OK|cabeceras|Content-Type: text/plain\n|cuerpo|..."
-pub fn native_http_parsear_respuesta(
-    vm: &mut dyn Host,
+pub fn nativo_http_parsear_respuesta(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -225,13 +225,13 @@ pub fn native_http_parsear_respuesta(
         ("cuerpo", &cuerpo),
     ]);
 
-    let indice = vm.alloc_str(Arc::from(salida.as_str()));
+    let indice = vm.reservar_texto(Arc::from(salida.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
 /// Parsea cabeceras HTTP (texto separado por \n) a mapa textual "|"
-pub fn native_http_parsear_cabeceras(
-    vm: &mut dyn Host,
+pub fn nativo_http_parsear_cabeceras(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -252,13 +252,13 @@ pub fn native_http_parsear_cabeceras(
 
     let pares: Vec<(&str, &str)> = mapa.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     let salida = construir_mapa_texto(&pares);
-    let indice = vm.alloc_str(Arc::from(salida.as_str()));
+    let indice = vm.reservar_texto(Arc::from(salida.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
 /// Retorna el texto descriptivo de un código de status HTTP
-pub fn native_http_texto_status(
-    _vm: &mut dyn Host,
+pub fn nativo_http_texto_status(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -291,13 +291,13 @@ pub fn native_http_texto_status(
         503 => "Service Unavailable",
         _ => "Unknown",
     };
-    let indice = _vm.alloc_str(Arc::from(texto));
+    let indice = _vm.reservar_texto(Arc::from(texto));
     Ok(ValorFast::texto(indice))
 }
 
 /// Retorna la fecha actual en formato RFC 7231 (HTTP-date)
-pub fn native_http_fecha_texto(
-    _vm: &mut dyn Host,
+pub fn nativo_http_fecha_texto(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let timestamp = if args.is_empty() {
@@ -358,14 +358,17 @@ pub fn native_http_fecha_texto(
         Err(_) => "Thu, 01 Jan 1970 00:00:00 GMT".to_string(),
     };
 
-    let indice = _vm.alloc_str(Arc::from(datetime.as_str()));
+    let indice = _vm.reservar_texto(Arc::from(datetime.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
 // ─── URL / Query ──────────────────────────────────────────────────
 
 /// Decodifica una URL (percent-encoding)
-pub fn native_url_decodificar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_url_decodificar(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_url_decodificar requiere 1 argumento: texto".into(),
@@ -392,12 +395,15 @@ pub fn native_url_decodificar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<V
     }
 
     let decodificado = String::from_utf8_lossy(&resultado).to_string();
-    let indice = vm.alloc_str(Arc::from(decodificado.as_str()));
+    let indice = vm.reservar_texto(Arc::from(decodificado.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
 /// Codifica una URL (percent-encoding)
-pub fn native_url_codificar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_url_codificar(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_url_codificar requiere 1 argumento: texto".into(),
@@ -417,12 +423,15 @@ pub fn native_url_codificar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
         }
     }
 
-    let indice = vm.alloc_str(Arc::from(resultado.as_str()));
+    let indice = vm.reservar_texto(Arc::from(resultado.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
 /// Parsea una query string a mapa textual "|"
-pub fn native_query_parsear(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_query_parsear(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_query_parsear requiere 1 argumento: texto".into(),
@@ -443,7 +452,7 @@ pub fn native_query_parsear(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
 
     let pares_ref: Vec<(&str, &str)> = mapa.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     let salida = construir_mapa_texto(&pares_ref);
-    let indice = vm.alloc_str(Arc::from(salida.as_str()));
+    let indice = vm.reservar_texto(Arc::from(salida.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
@@ -518,8 +527,8 @@ static MIME_TABLE: &[(&str, &str)] = &[
 ];
 
 /// Retorna el Content-Type para una extensión de archivo
-pub fn native_mime_tipo_archivo(
-    _vm: &mut dyn Host,
+pub fn nativo_mime_tipo_archivo(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -536,13 +545,13 @@ pub fn native_mime_tipo_archivo(
         .map(|(_, v)| *v)
         .unwrap_or("application/octet-stream");
 
-    let indice = _vm.alloc_str(Arc::from(mime));
+    let indice = _vm.reservar_texto(Arc::from(mime));
     Ok(ValorFast::texto(indice))
 }
 
 /// Retorna la extensión sugerida para un Content-Type
-pub fn native_mime_extension_por_tipo(
-    _vm: &mut dyn Host,
+pub fn nativo_mime_extension_por_tipo(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -558,7 +567,7 @@ pub fn native_mime_extension_por_tipo(
         .map(|(k, _)| *k)
         .unwrap_or("bin");
 
-    let indice = _vm.alloc_str(Arc::from(ext));
+    let indice = _vm.reservar_texto(Arc::from(ext));
     Ok(ValorFast::texto(indice))
 }
 
@@ -566,8 +575,8 @@ pub fn native_mime_extension_por_tipo(
 
 /// Genera el Accept clave para WebSocket handshake (RFC 6455)
 /// clave: el valor del header Sec-WebSocket-Key
-pub fn native_ws_handshake_aceptar(
-    vm: &mut dyn Host,
+pub fn nativo_ws_handshake_aceptar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -582,7 +591,7 @@ pub fn native_ws_handshake_aceptar(
     let hash = crate::hash::Sha256::digest(concatenado.as_bytes());
     let accept = crate::base64::b64_encode(&hash);
 
-    let indice = vm.alloc_str(Arc::from(accept.as_str()));
+    let indice = vm.reservar_texto(Arc::from(accept.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
@@ -590,8 +599,8 @@ pub fn native_ws_handshake_aceptar(
 /// args[0]: datos (Texto)
 /// args[1]: opcode (Entero) — 1=texto, 8=close, 9=ping, 0xA=pong
 /// args[2]: enmascarado (Booleano, opcional, default falso)
-pub fn native_ws_frame_codificar(
-    vm: &mut dyn Host,
+pub fn nativo_ws_frame_codificar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
@@ -611,7 +620,7 @@ pub fn native_ws_frame_codificar(
     let longitud = payload.len();
 
     // Calcular tamaño del frame
-    let header_size =
+    let header_tamano =
         2 + if longitud > 125 && longitud <= 65535 {
             2
         } else if longitud > 65535 {
@@ -620,7 +629,7 @@ pub fn native_ws_frame_codificar(
             0
         } + if enmascarado { 4 } else { 0 };
 
-    let mut frame = Vec::with_capacity(header_size + longitud);
+    let mut frame = Vec::with_capacity(header_tamano + longitud);
 
     // Byte 1: FIN + opcode
     frame.push(0x80 | (opcode & 0x0F));
@@ -641,7 +650,7 @@ pub fn native_ws_frame_codificar(
     }
 
     // Masking clave (si enmascarado)
-    let mask_key = if enmascarado {
+    let mask_clave = if enmascarado {
         let clave: [u8; 4] = [
             (std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -661,21 +670,21 @@ pub fn native_ws_frame_codificar(
     // Payload (enmascarar si es necesario)
     if enmascarado {
         for (i, &b) in payload.iter().enumerate() {
-            frame.push(b ^ mask_key[i % 4]);
+            frame.push(b ^ mask_clave[i % 4]);
         }
     } else {
         frame.extend_from_slice(payload);
     }
 
     let frame_str = String::from_utf8_lossy(&frame).to_string();
-    let indice = vm.alloc_str(Arc::from(frame_str.as_str()));
+    let indice = vm.reservar_texto(Arc::from(frame_str.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
 /// Decodifica un frame WebSocket
 /// Retorna: "opcode|1|datos|...|fin|true|longitud|5"
-pub fn native_ws_frame_decodificar(
-    vm: &mut dyn Host,
+pub fn nativo_ws_frame_decodificar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -723,7 +732,7 @@ pub fn native_ws_frame_decodificar(
         n => n as usize,
     };
 
-    let mask_key = if enmascarado {
+    let mask_clave = if enmascarado {
         if frame.len() < desplazamiento + 4 {
             return Err(ErrFast::TipoInv(
                 "ws_frame_invalido: máscara mal formada".into(),
@@ -751,7 +760,7 @@ pub fn native_ws_frame_decodificar(
         frame[desplazamiento..desplazamiento + longitud]
             .iter()
             .enumerate()
-            .map(|(i, &b)| b ^ mask_key[i % 4])
+            .map(|(i, &b)| b ^ mask_clave[i % 4])
             .collect()
     } else {
         frame[desplazamiento..desplazamiento + longitud].to_vec()
@@ -766,15 +775,15 @@ pub fn native_ws_frame_decodificar(
         ("longitud", &longitud.to_string()),
     ]);
 
-    let indice = vm.alloc_str(Arc::from(salida.as_str()));
+    let indice = vm.reservar_texto(Arc::from(salida.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
 // ─── Chunked Transfer Encoding ──────────────────────────────────
 
 /// Codifica datos en chunked transfer encoding
-pub fn native_chunked_codificar(
-    vm: &mut dyn Host,
+pub fn nativo_chunked_codificar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -784,13 +793,13 @@ pub fn native_chunked_codificar(
     }
     let datos = obtener_texto(vm, args[0])?;
     let octetos = datos.as_bytes();
-    let chunk_size = 4096; // tamaño de chunk
+    let chunk_tamano = 4096; // tamaño de chunk
 
     let mut resultado = String::new();
     let mut posicion = 0;
 
     while posicion < octetos.len() {
-        let fin = (posicion + chunk_size).min(octetos.len());
+        let fin = (posicion + chunk_tamano).min(octetos.len());
         let chunk = &octetos[posicion..fin];
         resultado.push_str(&format!("{:x}\r\n", chunk.len()));
         resultado.push_str(&String::from_utf8_lossy(chunk));
@@ -801,13 +810,13 @@ pub fn native_chunked_codificar(
     // Chunk final
     resultado.push_str("0\r\n\r\n");
 
-    let indice = vm.alloc_str(Arc::from(resultado.as_str()));
+    let indice = vm.reservar_texto(Arc::from(resultado.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
 /// Decodifica chunked transfer encoding
-pub fn native_chunked_decodificar(
-    vm: &mut dyn Host,
+pub fn nativo_chunked_decodificar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -868,7 +877,7 @@ pub fn native_chunked_decodificar(
         resultado.join("")
     };
 
-    let indice = vm.alloc_str(Arc::from(decodificado.as_str()));
+    let indice = vm.reservar_texto(Arc::from(decodificado.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
@@ -876,8 +885,8 @@ pub fn native_chunked_decodificar(
 
 /// Construye una solicitud HTTP raw a partir de componentes
 /// args: metodo, ruta, cabeceras (mapa textual "|"), cuerpo
-pub fn native_http_crear_solicitud_raw(
-    vm: &mut dyn Host,
+pub fn nativo_http_crear_solicitud_raw(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
@@ -914,14 +923,14 @@ pub fn native_http_crear_solicitud_raw(
         solicitud.push_str("\r\n");
     }
 
-    let indice = vm.alloc_str(Arc::from(solicitud.as_str()));
+    let indice = vm.reservar_texto(Arc::from(solicitud.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
 /// Construye una respuesta HTTP raw a partir de componentes
 /// args: codigo, cabeceras_texto, cuerpo
-pub fn native_http_crear_respuesta_raw(
-    vm: &mut dyn Host,
+pub fn nativo_http_crear_respuesta_raw(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -979,6 +988,6 @@ pub fn native_http_crear_respuesta_raw(
         respuesta.push_str("Content-Length: 0\r\n\r\n");
     }
 
-    let indice = vm.alloc_str(Arc::from(respuesta.as_str()));
+    let indice = vm.reservar_texto(Arc::from(respuesta.as_str()));
     Ok(ValorFast::texto(indice))
 }

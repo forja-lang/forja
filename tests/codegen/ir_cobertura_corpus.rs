@@ -156,10 +156,10 @@ fn ejecutar_bytecode(bc: Vec<forja::bytecode::Opcode>) -> Result<Vec<String>, St
     let mut vm = forja::vm_fast::ForjaFast::new();
     // Tope de instrucciones: los ejemplos que lo alcanzan se comparan como
     // «ambos Limite» y no cuentan como divergencia.
-    vm.set_max_inst(300_000);
+    vm.fijar_max_inst(300_000);
     vm.cargar_bytecode(bc);
     vm.ejecutar().map_err(|e| format!("{e:?}"))?;
-    Ok(vm.obtener_output().to_vec())
+    Ok(vm.obtener_salida().to_vec())
 }
 
 #[test]

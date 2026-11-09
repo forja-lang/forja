@@ -235,12 +235,12 @@ pub(crate) fn cmd_transpile(args: &[String]) {
     };
 
     // FASE 4: Type Checker + Type Inference
-    let mut verificador = semantics::TypeChecker::new();
+    let mut verificador = semantics::TipoChecker::new();
     let _ = verificador.analizar(&programa);
     // FASE 4b: Borrow Checker — verifica ownership y préstamos
     // (con los nuevos fixes de scope tracking ya no hay falsos positivos)
     let mut prestamo_checker =
-        semantics::BorrowChecker::con_estricto(forja::config::actual().estricto);
+        semantics::PrestamoChecker::con_estricto(forja::config::actual().estricto);
     let _ = prestamo_checker.analizar(&programa);
 
     // FASE 5: Transpilador

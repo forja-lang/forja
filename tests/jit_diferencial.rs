@@ -7,7 +7,7 @@
 //!    `vm_fast::ForjaFast`) y de [`forja::ejecutar_jit`] (ruta JIT `jit_tiered`)
 //!    debe ser idéntica, y coincidir con el golden de `tests/golden/`.
 //! 2. **Fuzzing de generación de código**: se ejercita el pipeline
-//!    `stack_to_reg → live intervals → register allocation → codegen_reg`
+//!    `pila_to_reg → live intervals → register allocation → codegen_reg`
 //!    (emisión x86-64, **sin ejecutar**) sobre el corpus y sobre cientos de
 //!    programas generados aleatoriamente (PRNG determinista), verificando que no
 //!    entra en *panic*.
@@ -74,7 +74,7 @@ fn bytecode(fuente: &str) -> Vec<Opcode> {
 }
 
 /// Ejecuta el pipeline de generación de código nativo **sin ejecutarlo**:
-/// `stack_to_reg → live intervals → register allocation → codegen_reg`.
+/// `pila_to_reg → live intervals → register allocation → codegen_reg`.
 ///
 /// Devuelve el tamaño del código máquina emitido (0 si el codegen no soporta el
 /// programa, que es un caso válido y previsto: el caller cae a la VM).
@@ -86,14 +86,14 @@ fn emitir_nativo(bc: &[Opcode]) -> usize {
 /// (registro de funciones, llamadas y iteraciones de bucle). No ejecuta nada:
 /// valida que la capa de decisión del JIT procesa el corpus sin *panic*.
 fn alimentar_tiered(bc: &[Opcode]) {
-    use forja::jit_tiered::{ShouldCompile, TieredJit};
+    use forja::jit_tiered::{ShouldCompilar, TieredJit};
 
     let mut tiered = TieredJit::new();
     for (ip, op) in bc.iter().enumerate() {
         match op {
             Opcode::DefinirFuncion(nombre, _) => tiered.register_function(nombre.as_ref()),
             Opcode::Llamar(nombre, _) => {
-                if let ShouldCompile::Yes(_tier) = tiered.on_function_call(nombre.as_ref()) {}
+                if let ShouldCompilar::Yes(_tier) = tiered.on_function_call(nombre.as_ref()) {}
             }
             _ => {}
         }

@@ -224,7 +224,7 @@ pub(crate) fn lint_un_archivo(
             return (0, 0);
         }
     };
-    let diags = match linter::lint_source(&fuente, config.clone()) {
+    let diags = match linter::lint_fuente(&fuente, config.clone()) {
         Ok(d) => d,
         Err(errores) => {
             let detalle = errores

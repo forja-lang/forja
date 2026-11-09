@@ -1,6 +1,6 @@
 //! Primitivas y registro nativo de Forja.
 //!
-//! No depende de `forja-vm`: los nativos reciben `&mut dyn Host`.
+//! No depende de `forja-vm`: los nativos reciben `&mut dyn Anfitrion`.
 
 pub use forja_bytecode as bytecode;
 pub use forja_bytecode::symbol_table;
@@ -23,4 +23,4 @@ pub mod native_registry;
 pub mod native_sqlite;
 pub use forja_runtime::sandbox;
 pub mod terminal;
-pub use native_registry::NativeRegistry;
+pub use native_registry::NativoRegistro;

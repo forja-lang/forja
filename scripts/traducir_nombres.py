@@ -107,6 +107,30 @@ GLOSARIO = {
 }
 
 
+# Métodos de `std`/`gtk` que empiezan con `is_`: renombrarlos rompe las llamadas (`.is_empty()`).
+NO_TOCAR = {
+    # métodos de std (y de serde/tower-lsp) con estos nombres: renombrar `.clear()` o `.is_empty()`
+    # rompe el build. Se hacen archivo por archivo (PLAN §7, lección 2), no en una pasada global.
+    "is_empty", "is_some", "is_none", "is_ok", "is_err", "is_dir", "is_file", "is_nan",
+    "is_ascii", "is_absolute", "is_relative", "is_infinite", "is_finite", "is_digit",
+    "is_lowercase", "is_uppercase", "is_alphabetic", "is_alphanumeric", "is_numeric",
+    "is_whitespace", "is_control", "is_char_boundary", "is_displayed", "is_enabled",
+    "is_visible", "is_focused", "is_read_only", "is_modified", "is_toggled",
+    "is_sensitive", "is_mapped", "is_active", "is_expanded", "is_selected",
+    "clear", "len", "map", "insert", "get", "set", "push", "pop", "read", "write", "load",
+    "store", "entry", "output", "update", "reset", "send", "recv", "join", "split", "trim",
+    "contains", "find", "filter", "collect", "iter", "next", "add", "remove", "delete",
+    "append", "extend", "drain", "retain", "sort", "reverse", "replace", "take", "wait",
+    "spawn", "lock", "borrow", "clone", "drop", "hash", "eq", "cmp", "fmt", "default",
+    "from", "into", "to_string", "to_owned", "swap", "fill", "or_insert", "parse", "check",
+    "stop", "run", "close", "open", "free", "copy", "move", "mark", "apply", "process",
+    "execute", "compile", "generate", "decode", "encode", "serialize", "show", "hide",
+    "draw", "capacity", "truncate", "reserve", "as_str", "as_slice", "as_ref", "as_mut",
+    "unwrap", "expect", "unwrap_or", "unwrap_or_else", "unwrap_or_default", "chars", "bytes",
+    "starts_with", "ends_with", "split_whitespace", "to_vec", "to_owned", "begin", "finish",
+}
+
+
 def segmentos(nombre: str) -> list[str]:
     if "_" in nombre:
         return [p for p in nombre.split("_") if p]
@@ -129,7 +153,7 @@ def traducir_partes(parte: str) -> str | None:
 
 
 def traducir(nombre: str) -> str | None:
-    if nombre in renombrar.PROTEGIDOS:
+    if nombre in renombrar.PROTEGIDOS or nombre in NO_TOCAR:
         return None
     original = nombre
     prefijo = ""
@@ -160,6 +184,7 @@ def recolectar(archivos: list[Path]) -> dict:
     funciones: set[str] = set()
     tipos: set[str] = set()
     campos: set[str] = set()
+    modulos: set[str] = set()
     for ruta in archivos:
         codigo = ruta.read_text(encoding="utf-8", errors="ignore")
         violaciones |= {nombre for _, nombre in nombres.revisar(ruta)}
@@ -168,13 +193,26 @@ def recolectar(archivos: list[Path]) -> dict:
         funciones |= set(renombrar.RE_FN.findall(codigo_sin_texto))
         tipos |= renombrar.tipos_del_archivo(codigo_sin_texto)
         campos |= renombrar.campos_del_archivo(codigo_sin_texto)
+        modulos |= renombrar.modulos_del_archivo(codigo_sin_texto)
     return {
         "violaciones": violaciones,
         "presentes": presentes,
         "funciones": funciones,
         "tipos": tipos,
         "campos": campos,
+        "modulos": modulos,
     }
+
+
+def es_item(nombre: str, datos: dict) -> bool:
+    """True si es un ítem con alcance de crate (fn, tipo, campo, const, mod)."""
+    return (
+        nombre in datos["funciones"]
+        or nombre in datos["tipos"]
+        or nombre in datos["campos"]
+        # variantes de enum: PascalCase, alcance de crate
+        or nombre[:1].isupper()
+    )
 
 
 def planificar(datos: dict) -> tuple[dict[str, str], list[str]]:
@@ -190,7 +228,9 @@ def planificar(datos: dict) -> tuple[dict[str, str], list[str]]:
         mapa[nombre] = destino
     # colisiones: destino ya existente en la crate o dos orígenes al mismo destino
     for nombre, destino in list(mapa.items()):
-        if (destino in datos["presentes"] and destino != nombre) or destinos[destino] > 1:
+        # colisión de crate sólo para ítems; un local se valida por archivo (ver `main`)
+        choque = es_item(nombre, datos) and destino in datos["presentes"] and destino != nombre
+        if choque or destinos[destino] > 1:
             saltados.append(nombre)
             del mapa[nombre]
     return mapa, saltados
@@ -207,15 +247,22 @@ def main(argv: list[str]) -> int:
     mapa, saltados = planificar(datos)
     total = 0
     for ruta in archivos:
+        codigo = ruta.read_text(encoding="utf-8", errors="ignore")
+        sin_texto = "".join(t for t, es_codigo in renombrar.segmentar(codigo) if es_codigo)
+        presentes = set(RE_IDENT.findall(sin_texto))
+        mapa_archivo = {
+            k: v for k, v in mapa.items() if v not in presentes or es_item(k, datos)
+        }
         total += renombrar.procesar(
             ruta,
-            mapa,
+            mapa_archivo,
             aplicar,
             solo_locales=True,
             incluir_funciones=True,
             tipos_extra=datos["tipos"],
             funciones_extra=datos["funciones"],
             campos_extra=datos["campos"],
+            modulos_extra=datos["modulos"],
         )
     if saltados:
         print(f"salteados: {', '.join(sorted(saltados))}")

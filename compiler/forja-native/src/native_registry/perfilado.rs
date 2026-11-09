@@ -1,10 +1,10 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_perfilado(&mut self) {
-        self.registrar("_perfilado_iniciar", native_perfilado_iniciar);
-        self.registrar("_perfilado_detener", native_perfilado_detener);
-        self.registrar("_perfilado_reportes", native_perfilado_reportes);
+        self.registrar("_perfilado_iniciar", nativo_perfilado_iniciar);
+        self.registrar("_perfilado_detener", nativo_perfilado_detener);
+        self.registrar("_perfilado_reportes", nativo_perfilado_reportes);
     }
 }
 
@@ -13,7 +13,7 @@ use std::collections::HashMap as HashMap_collections;
 static PERFIL: OnceLock<Mutex<HashMap_collections<String, (u128, u64)>>> = OnceLock::new();
 static PERFIL_INICIOS: OnceLock<Mutex<HashMap_collections<String, u128>>> = OnceLock::new();
 
-fn perfil_map() -> &'static Mutex<HashMap_collections<String, (u128, u64)>> {
+fn perfil_mapa() -> &'static Mutex<HashMap_collections<String, (u128, u64)>> {
     PERFIL.get_or_init(|| Mutex::new(HashMap_collections::new()))
 }
 
@@ -27,8 +27,8 @@ pub fn now_ms() -> u128 {
         .as_millis()
 }
 
-pub fn native_perfilado_iniciar(
-    _vm: &mut dyn Host,
+pub fn nativo_perfilado_iniciar(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let etiqueta = obtener_texto(_vm, args[0])?;
@@ -36,8 +36,8 @@ pub fn native_perfilado_iniciar(
     Ok(ValorFast::nulo())
 }
 
-pub fn native_perfilado_detener(
-    vm: &mut dyn Host,
+pub fn nativo_perfilado_detener(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let etiqueta = obtener_texto(vm, args[0])?;
@@ -47,7 +47,7 @@ pub fn native_perfilado_detener(
         .remove(&etiqueta)
         .unwrap_or(now_ms());
     let total_ms = (now_ms() - inicio) as i64;
-    let mut mapa = perfil_map().lock().unwrap();
+    let mut mapa = perfil_mapa().lock().unwrap();
     let entrada = mapa.entry(etiqueta.clone()).or_insert((0, 0));
     entrada.0 += total_ms as u128;
     entrada.1 += 1;
@@ -57,7 +57,7 @@ pub fn native_perfilado_detener(
     let mut obj = forja_runtime::ObjVal::new(sym, id_forma);
     obj.campos_vec = vec![
         {
-            let indice = vm.alloc_str(Arc::from(etiqueta.as_str()));
+            let indice = vm.reservar_texto(Arc::from(etiqueta.as_str()));
             ValorFast::texto(indice)
         },
         ValorFast::entero(total_ms),
@@ -68,14 +68,14 @@ pub fn native_perfilado_detener(
             0
         }),
     ];
-    Ok(ValorFast::objeto(vm.alloc_obj(obj)))
+    Ok(ValorFast::objeto(vm.reservar_objeto(obj)))
 }
 
-pub fn native_perfilado_reportes(
-    vm: &mut dyn Host,
+pub fn nativo_perfilado_reportes(
+    vm: &mut dyn Anfitrion,
     _args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let mapa = perfil_map().lock().unwrap();
+    let mapa = perfil_mapa().lock().unwrap();
     let mut reportes: Vec<ValorFast> = Vec::new();
     for (etiqueta, (tiempo_total, iteraciones)) in mapa.iter() {
         let sym = vm.tabla_simbolos().internar("ReportePerfilado");
@@ -83,7 +83,7 @@ pub fn native_perfilado_reportes(
         let mut obj = forja_runtime::ObjVal::new(sym, id_forma);
         obj.campos_vec = vec![
             {
-                let indice = vm.alloc_str(Arc::from(etiqueta.as_str()));
+                let indice = vm.reservar_texto(Arc::from(etiqueta.as_str()));
                 ValorFast::texto(indice)
             },
             ValorFast::entero(*tiempo_total as i64),
@@ -94,7 +94,7 @@ pub fn native_perfilado_reportes(
                 0
             }),
         ];
-        reportes.push(ValorFast::objeto(vm.alloc_obj(obj)));
+        reportes.push(ValorFast::objeto(vm.reservar_objeto(obj)));
     }
-    Ok(ValorFast::arreglo(vm.alloc_arr(reportes)))
+    Ok(ValorFast::arreglo(vm.reservar_arr(reportes)))
 }

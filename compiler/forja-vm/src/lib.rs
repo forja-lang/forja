@@ -35,12 +35,12 @@ pub mod vm_fast;
 
 pub const MAX_ARCHIVO_DEFAULT_MB: u64 = 10;
 
-pub use forja_native::NativeRegistry;
+pub use forja_native::NativoRegistro;
 pub use forja_native::{ffi, native_h2_core, native_registry};
 pub use forja_registry::{
-    package_resolver, registry, registry_remote, registry_server, stdlib_embedded,
+    package_resolver, registro, registry_remote, registry_server, stdlib_embedded,
 };
 pub use gc_intrinsics::*;
 pub use jit_tiered::*;
-pub use module::{ModuleCache, ModuleId, ModuleInfo, ModuleResolver};
+pub use module::{ModuleId, ModuloCache, ModuloInformacion, ModuloResolver};
 pub use vm_fast::ForjaFast;

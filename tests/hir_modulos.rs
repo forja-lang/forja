@@ -65,7 +65,7 @@ fn hir_interna_nombres_entre_modulos() {
 #[test]
 fn typeck_consume_hir() {
     use forja_hir::Hir;
-    use forja_types::semantics::TypeChecker;
+    use forja_types::semantics::TipoChecker;
 
     let mut hir = Hir::nuevo();
     let programa = {
@@ -74,14 +74,14 @@ fn typeck_consume_hir() {
         forja::parser::Parser::new(t).parse().unwrap()
     };
     hir.agregar_modulo("a", &programa);
-    let mut tc = TypeChecker::new();
+    let mut tc = TipoChecker::new();
     tc.analizar_hir(&hir).expect("HIR debe typechequear");
 }
 
 #[test]
 fn borrowck_consume_hir() {
     use forja_hir::Hir;
-    use forja_types::semantics::BorrowChecker;
+    use forja_types::semantics::PrestamoChecker;
 
     let mut hir = Hir::nuevo();
     let programa = {
@@ -90,6 +90,6 @@ fn borrowck_consume_hir() {
         forja::parser::Parser::new(t).parse().unwrap()
     };
     hir.agregar_modulo("a", &programa);
-    let mut bc = BorrowChecker::new();
+    let mut bc = PrestamoChecker::new();
     bc.analizar_hir(&hir).expect("HIR debe pasar préstamos");
 }

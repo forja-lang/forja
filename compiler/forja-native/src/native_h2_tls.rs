@@ -5,9 +5,9 @@
 // por lo que el Mutex nunca tiene contención real.
 
 use crate::native_registry::{
-    extraer_indice_socket, obtener_entero, obtener_texto, NativeRegistry,
+    extraer_indice_socket, obtener_entero, obtener_texto, NativoRegistro,
 };
-use forja_runtime::{ErrFast, Host, ValorFast};
+use forja_runtime::{Anfitrion, ErrFast, ValorFast};
 use rustls::pki_types::ServerName;
 use std::io::{Read, Write};
 use std::sync::Mutex;
@@ -25,12 +25,12 @@ static TLS_HEAP: Mutex<Vec<Option<ConexionTls>>> = Mutex::new(Vec::new());
 // API interna (usada desde native_registry para registrar)
 // ═══════════════════════════════════════════════════════════════════════
 
-pub fn registrar_tls(reg: &mut NativeRegistry) {
-    reg.registrar("_tls_conectar", native_tls_conectar);
-    reg.registrar("_tls_enviar", native_tls_enviar);
-    reg.registrar("_tls_recibir", native_tls_recibir);
-    reg.registrar("_tls_cerrar", native_tls_cerrar);
-    reg.registrar("_tls_activo", native_tls_activo);
+pub fn registrar_tls(reg: &mut NativoRegistro) {
+    reg.registrar("_tls_conectar", nativo_tls_conectar);
+    reg.registrar("_tls_enviar", nativo_tls_enviar);
+    reg.registrar("_tls_recibir", nativo_tls_recibir);
+    reg.registrar("_tls_cerrar", nativo_tls_cerrar);
+    reg.registrar("_tls_activo", nativo_tls_activo);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -39,7 +39,7 @@ pub fn registrar_tls(reg: &mut NativeRegistry) {
 
 /// _tls_conectar(socket_idx, hostname) -> tls_idx
 /// Envuelve un TcpStream ya conectado en TLS usando el hostname dado.
-fn native_tls_conectar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_tls_conectar(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
             "_tls_conectar requiere 2 args: socket, hostname".into(),
@@ -50,7 +50,7 @@ fn native_tls_conectar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFas
 
     // Obtener el TcpStream del socket (lo clonamos para tener ownership)
     let stream = {
-        let state = vm.socket_get(socket_idx);
+        let state = vm.socket_obtener(socket_idx);
         match &state.tcp_stream {
             Some(arc) => {
                 let guard = arc.lock().unwrap();
@@ -63,17 +63,17 @@ fn native_tls_conectar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFas
     };
 
     // Configurar cliente TLS con root certs de webpki
-    let mut root_store = rustls::RootCertStore::empty();
-    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let mut raiz_almacen = rustls::RootCertStore::empty();
+    raiz_almacen.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_store)
+        .with_root_certificates(raiz_almacen)
         .with_no_client_auth();
     let config = std::sync::Arc::new(config);
 
-    let server_name = ServerName::try_from(hostname)
+    let servidor_name = ServerName::try_from(hostname)
         .map_err(|_| ErrFast::TipoInv("tls_error: hostname inválido".into()))?;
 
-    let conn = rustls::ClientConnection::new(config, server_name)
+    let conn = rustls::ClientConnection::new(config, servidor_name)
         .map_err(|e| ErrFast::TipoInv(format!("tls_error: {}", e)))?;
 
     let stream_tls = rustls::StreamOwned::new(conn, stream);
@@ -87,7 +87,7 @@ fn native_tls_conectar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFas
 }
 
 /// _tls_enviar(tls_idx, datos) -> bool
-fn native_tls_enviar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_tls_enviar(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
             "_tls_enviar requiere 2 args: tls_idx, datos".into(),
@@ -110,7 +110,7 @@ fn native_tls_enviar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast,
 }
 
 /// _tls_recibir(tls_idx) -> texto
-fn native_tls_recibir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_tls_recibir(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_tls_recibir requiere 1 argumento: tls_idx".into(),
@@ -131,16 +131,16 @@ fn native_tls_recibir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast
         .map_err(|e| ErrFast::TipoInv(format!("tls_error: {}", e)))?;
 
     if n == 0 {
-        return Ok(ValorFast::texto(vm.alloc_str("".into())));
+        return Ok(ValorFast::texto(vm.reservar_texto("".into())));
     }
     buf.truncate(n);
     let s = String::from_utf8(buf)
         .map_err(|_| ErrFast::TipoInv("tls_error: datos no son UTF-8".into()))?;
-    Ok(ValorFast::texto(vm.alloc_str(s.into())))
+    Ok(ValorFast::texto(vm.reservar_texto(s.into())))
 }
 
 /// _tls_cerrar(tls_idx) -> nulo
-fn native_tls_cerrar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_tls_cerrar(_vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_tls_cerrar requiere 1 argumento: tls_idx".into(),
@@ -158,7 +158,7 @@ fn native_tls_cerrar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast
 }
 
 /// _tls_activo(tls_idx) -> bool
-fn native_tls_activo(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_tls_activo(_vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_tls_activo requiere 1 argumento: tls_idx".into(),

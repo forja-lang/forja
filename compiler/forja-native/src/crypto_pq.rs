@@ -143,11 +143,11 @@ fn sample_uniform(seed: &[u8], nonce: u8) -> Poly {
     let mut idx = 0;
     let mut counter: u8 = 0;
     while idx < N {
-        let mut input = Vec::with_capacity(seed.len() + 2);
-        input.extend_from_slice(seed);
-        input.push(nonce);
-        input.push(counter);
-        let hash = Sha256::digest(&input);
+        let mut entrada = Vec::with_capacity(seed.len() + 2);
+        entrada.extend_from_slice(seed);
+        entrada.push(nonce);
+        entrada.push(counter);
+        let hash = Sha256::digest(&entrada);
         // Extraer coeficientes de 14 bits (2 bytes) del hash, rechazar >= Q
         for j in (0..hash.len()).step_by(2) {
             if idx >= N {
@@ -189,7 +189,7 @@ fn decompress(x: i16, d: usize) -> i16 {
 // ─── KEM: Key Encapsulation Mechanism (k=1) ──────────────────────────────
 
 /// Par de claves para el KEM
-pub struct PQKeyPair {
+pub struct PQClavePair {
     pub public: Vec<u8>,
     pub secret: Vec<u8>,
 }
@@ -198,7 +198,7 @@ pub struct PQKeyPair {
 ///
 /// Clave pública: pk = t_serializado || seed_A  (donde t = A*s + e)
 /// Clave secreta: sk = s_serializado
-pub fn pq_keygen() -> Result<PQKeyPair, &'static str> {
+pub fn pq_keygen() -> Result<PQClavePair, &'static str> {
     let seed = random_bytes(32)?;
 
     // A: un solo polinomio uniforme generado desde seed
@@ -218,7 +218,7 @@ pub fn pq_keygen() -> Result<PQKeyPair, &'static str> {
     // Serializar clave secreta: bytes(s)
     let sk = s.to_bytes();
 
-    Ok(PQKeyPair {
+    Ok(PQClavePair {
         public: pk,
         secret: sk,
     })
@@ -250,10 +250,10 @@ pub fn pq_encaps(pk: &[u8]) -> Result<(Vec<u8>, Vec<u8>), &'static str> {
     let e2 = sample_cbd(&random_bytes(32)?);
 
     // Mensaje: 32 bytes → 256 bits, cada bit se codifica como mensaje[i] = (Q/2) * bit
-    let msg_seed = random_bytes(32)?;
+    let mensaje_seed = random_bytes(32)?;
     let mut mensaje = Poly::new();
     for i in 0..256.min(N) {
-        let byte = msg_seed[i / 8];
+        let byte = mensaje_seed[i / 8];
         let bit = (byte >> (i % 8)) & 1;
         mensaje.coeffs[i] = (Q / 2) * (bit as i16);
     }
@@ -276,7 +276,7 @@ pub fn pq_encaps(pk: &[u8]) -> Result<(Vec<u8>, Vec<u8>), &'static str> {
 
     // Shared secret = hash(msg_seed) para aleatoriedad adicional
     use crate::hash::Sha256;
-    let shared = Sha256::digest(&msg_seed).to_vec();
+    let shared = Sha256::digest(&mensaje_seed).to_vec();
 
     Ok((shared, ct))
 }
@@ -287,12 +287,12 @@ pub fn pq_encaps(pk: &[u8]) -> Result<(Vec<u8>, Vec<u8>), &'static str> {
 /// Salida:  shared_secret
 pub fn pq_decaps(sk: &[u8], ct: &[u8]) -> Result<Vec<u8>, &'static str> {
     let poly_bytes = N * 2;
-    let v_compressed_len = N;
+    let v_compressed_longitud = N;
 
     if sk.len() < poly_bytes {
         return Err("SK: longitud incorrecta");
     }
-    if ct.len() < poly_bytes + v_compressed_len {
+    if ct.len() < poly_bytes + v_compressed_longitud {
         return Err("CT: longitud incorrecta");
     }
 
@@ -310,24 +310,24 @@ pub fn pq_decaps(sk: &[u8], ct: &[u8]) -> Result<Vec<u8>, &'static str> {
     }
 
     // mensaje' = v - s*u
-    let msg_prime = sub(&v, &mul_naive(&s, &u));
+    let mensaje_prime = sub(&v, &mul_naive(&s, &u));
 
     // Recuperar shared secret: cada bit se decodifica por cercanía a 0 o Q/2
-    let mut msg_seed = vec![0u8; 32];
+    let mut mensaje_seed = vec![0u8; 32];
     for i in 0..256.min(N) {
-        let val = msg_prime.coeffs[i].rem_euclid(Q);
+        let val = mensaje_prime.coeffs[i].rem_euclid(Q);
         // Si |val| < Q/4 → bit 0; si |val| > Q/4 → bit 1
         let bit = if val > Q / 4 && val < (3 * Q) / 4 {
             1
         } else {
             0
         };
-        msg_seed[i / 8] |= bit << (i % 8);
+        mensaje_seed[i / 8] |= bit << (i % 8);
     }
 
     // Shared secret = hash(seed)
     use crate::hash::Sha256;
-    let shared = Sha256::digest(&msg_seed).to_vec();
+    let shared = Sha256::digest(&mensaje_seed).to_vec();
 
     Ok(shared)
 }

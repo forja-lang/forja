@@ -1,30 +1,33 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_sandbox(&mut self) {
         // Restringir anfitrion de red
-        self.registrar("_sandbox_restringir_host", native_sandbox_restringir_host);
+        self.registrar(
+            "_sandbox_restringir_host",
+            nativo_sandbox_restringir_anfitrion,
+        );
         // Restringir puerto de red
         self.registrar(
             "_sandbox_restringir_puerto",
-            native_sandbox_restringir_puerto,
+            nativo_sandbox_restringir_puerto,
         );
         // Restringir directorio de archivos
         self.registrar(
             "_sandbox_restringir_directorio",
-            native_sandbox_restringir_directorio,
+            nativo_sandbox_restringir_directorio,
         );
         // Restringir comando de procesos
         self.registrar(
             "_sandbox_restringir_comando",
-            native_sandbox_restringir_comando,
+            nativo_sandbox_restringir_comando,
         );
         // Consultar estado del sandbox
-        self.registrar("_sandbox_estado", native_sandbox_estado);
+        self.registrar("_sandbox_estado", nativo_sandbox_estado);
     }
 }
-pub fn native_sandbox_restringir_host(
-    vm: &mut dyn Host,
+pub fn nativo_sandbox_restringir_anfitrion(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let anfitrion = obtener_texto(vm, args[0])?;
@@ -47,8 +50,8 @@ pub fn native_sandbox_restringir_host(
 }
 
 /// Restringe un puerto de red. Uso: _sandbox_restringir_puerto(80)
-pub fn native_sandbox_restringir_puerto(
-    vm: &mut dyn Host,
+pub fn nativo_sandbox_restringir_puerto(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let puerto = obtener_entero(args[0])? as u16;
@@ -66,8 +69,8 @@ pub fn native_sandbox_restringir_puerto(
 }
 
 /// Restringe un directorio de archivos. Uso: _sandbox_restringir_directorio("/etc")
-pub fn native_sandbox_restringir_directorio(
-    vm: &mut dyn Host,
+pub fn nativo_sandbox_restringir_directorio(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let directorio = obtener_texto(vm, args[0])?;
@@ -88,8 +91,8 @@ pub fn native_sandbox_restringir_directorio(
 }
 
 /// Restringe un comando de procesos. Uso: _sandbox_restringir_comando("rm")
-pub fn native_sandbox_restringir_comando(
-    vm: &mut dyn Host,
+pub fn nativo_sandbox_restringir_comando(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let cmd = obtener_texto(vm, args[0])?;
@@ -110,7 +113,10 @@ pub fn native_sandbox_restringir_comando(
 }
 
 /// Retorna el estado actual del sandbox como mapa. Uso: _sandbox_estado()
-pub fn native_sandbox_estado(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_sandbox_estado(
+    vm: &mut dyn Anfitrion,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let mut mapa = std::collections::HashMap::new();
 
     // Estado de red
@@ -121,7 +127,7 @@ pub fn native_sandbox_estado(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<V
     };
     mapa.insert(
         "red".to_string(),
-        ValorFast::texto(vm.alloc_str(Arc::from(red))),
+        ValorFast::texto(vm.reservar_texto(Arc::from(red))),
     );
 
     // Estado de archivos
@@ -132,7 +138,7 @@ pub fn native_sandbox_estado(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<V
     };
     mapa.insert(
         "archivos".to_string(),
-        ValorFast::texto(vm.alloc_str(Arc::from(archivos))),
+        ValorFast::texto(vm.reservar_texto(Arc::from(archivos))),
     );
 
     // Estado de procesos
@@ -143,9 +149,9 @@ pub fn native_sandbox_estado(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<V
     };
     mapa.insert(
         "procesos".to_string(),
-        ValorFast::texto(vm.alloc_str(Arc::from(procesos))),
+        ValorFast::texto(vm.reservar_texto(Arc::from(procesos))),
     );
 
-    let midx = vm.alloc_map(mapa);
+    let midx = vm.reservar_mapa(mapa);
     Ok(ValorFast::mapa(midx))
 }

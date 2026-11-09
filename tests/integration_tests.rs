@@ -22,7 +22,7 @@ fn ejecutar(fuente: &str) -> Result<Vec<String>, String> {
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().map_err(|e| format!("{}", e))?;
 
-    Ok(vm.obtener_output().to_vec())
+    Ok(vm.obtener_salida().to_vec())
 }
 
 // ============================================================
@@ -638,10 +638,10 @@ escribir(p.edad)
 fn ejecutar_todos_los_motores(fuente: &str) -> Vec<String> {
     fn correr_vm(bc: Vec<forja::bytecode::Opcode>) -> Vec<String> {
         let mut vm = ForjaFast::new();
-        vm.set_max_inst(2_000_000);
+        vm.fijar_max_inst(2_000_000);
         vm.cargar_bytecode(bc);
         vm.ejecutar().expect("vm");
-        vm.obtener_output().to_vec()
+        vm.obtener_salida().to_vec()
     }
 
     let (bc_ir, _) = forja::compilar_desde_ir(fuente).expect("ruta IR");

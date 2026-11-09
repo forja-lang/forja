@@ -19,7 +19,7 @@ enum Operand {
 
 /// Tabla de llamadas vacía (para codegen sin resolución de funciones)
 static EMPTY_CALL_TABLE: std::sync::OnceLock<HashMap<String, u64>> = std::sync::OnceLock::new();
-fn empty_call_table() -> &'static HashMap<String, u64> {
+fn empty_llamada_tabla() -> &'static HashMap<String, u64> {
     EMPTY_CALL_TABLE.get_or_init(HashMap::new)
 }
 
@@ -51,7 +51,7 @@ pub struct CodegenReg<'a> {
     spill_frame: i32,
     /// Direcciones de funciones compiladas para resolver `Call`.
     /// key = nombre de función, valor = dirección de código máquina.
-    call_addresses: &'a HashMap<String, u64>,
+    direcciones_llamada: &'a HashMap<String, u64>,
 }
 
 impl<'a> CodegenReg<'a> {
@@ -63,14 +63,14 @@ impl<'a> CodegenReg<'a> {
             fixups: Vec::new(),
             vars_ptr: PhysReg::RBX,
             spill_frame: 0,
-            call_addresses: empty_call_table(),
+            direcciones_llamada: empty_llamada_tabla(),
         }
     }
 
     /// Crea un codegen con una tabla de direcciones de funciones para `Call`.
-    pub fn with_call_addresses(
+    pub fn con_direcciones_llamada(
         assignments: &'a HashMap<VirtReg, Location>,
-        call_addresses: &'a HashMap<String, u64>,
+        direcciones_llamada: &'a HashMap<String, u64>,
     ) -> Self {
         CodegenReg {
             assignments,
@@ -79,7 +79,7 @@ impl<'a> CodegenReg<'a> {
             fixups: Vec::new(),
             vars_ptr: PhysReg::RBX,
             spill_frame: 0,
-            call_addresses,
+            direcciones_llamada,
         }
     }
 
@@ -97,7 +97,7 @@ impl<'a> CodegenReg<'a> {
     }
 
     /// Emit el programa completo (prólogo + bloques + resolución de saltos)
-    pub fn emit_program(&mut self, prog: &RegProgram, vars_ptr: PhysReg, spill_frame: i32) {
+    pub fn emitir_program(&mut self, prog: &RegProgram, vars_ptr: PhysReg, spill_frame: i32) {
         self.vars_ptr = vars_ptr;
         self.spill_frame = spill_frame;
 
@@ -107,7 +107,7 @@ impl<'a> CodegenReg<'a> {
         self.bytes.push(0x55); // push rbp
         self.bytes.extend_from_slice(&[0x53, 0x41, 0x56]); // push rbx; push r14
         self.bytes.extend_from_slice(&[0x48, 0x89, 0xE5]); // mov rbp, rsp
-        self.emit_mov_reg_reg(vars_ptr, PhysReg::RCX); // mov vars_ptr, rcx
+        self.emitir_mov_reg_reg(vars_ptr, PhysReg::RCX); // mov vars_ptr, rcx
         self.bytes.extend_from_slice(&[0x49, 0x89, 0xd6]); // mov r14, rdx (output ptr)
         if spill_frame > 0 {
             self.bytes.extend_from_slice(&[0x48, 0x81, 0xEC]); // sub rsp, imm32
@@ -121,11 +121,11 @@ impl<'a> CodegenReg<'a> {
 
             // Emit instrucciones del bloque
             for inst in &block.instructions {
-                self.emit_instruction(inst);
+                self.emitir_instruction(inst);
             }
 
             // Emit terminator
-            self.emit_instruction(&block.terminator);
+            self.emitir_instruction(&block.terminator);
         }
 
         // Resolver fixups (saltos relativos)
@@ -133,24 +133,24 @@ impl<'a> CodegenReg<'a> {
     }
 
     /// Emit una única instrucción
-    fn emit_instruction(&mut self, inst: &RegInstruction) {
+    fn emitir_instruction(&mut self, inst: &RegInstruction) {
         match inst {
             RegInstruction::LoadImm { dst, valor } => {
                 let d = self.resolve(*dst);
                 match d {
                     Operand::Reg(r) => {
-                        if r.is_xmm() {
+                        if r.es_xmm() {
                             // Para XMM: mov rax, imm64; movq xmm, rax
-                            self.emit_mov_rax_imm64(*valor);
-                            self.emit_movq_xmm_rax(r);
+                            self.emitir_mov_rax_imm64(*valor);
+                            self.emitir_movq_xmm_rax(r);
                         } else {
                             // mov reg, imm64 (con REX.W si necesario)
-                            self.emit_mov_reg_imm64(r, *valor);
+                            self.emitir_mov_reg_imm64(r, *valor);
                         }
                     }
                     Operand::Stack(off) => {
-                        self.emit_mov_rax_imm64(*valor);
-                        self.emit_store_rax_stack(off);
+                        self.emitir_mov_rax_imm64(*valor);
+                        self.emitir_almacen_rax_pila(off);
                     }
                 }
             }
@@ -158,12 +158,12 @@ impl<'a> CodegenReg<'a> {
             RegInstruction::LoadFloat { dst, valor } => {
                 let d = self.resolve(*dst);
                 let bits = valor.to_bits() as i64;
-                self.emit_mov_rax_imm64(bits);
+                self.emitir_mov_rax_imm64(bits);
                 match d {
-                    Operand::Reg(r) => self.emit_movq_xmm_rax(r),
+                    Operand::Reg(r) => self.emitir_movq_xmm_rax(r),
                     Operand::Stack(off) => {
-                        self.emit_movq_xmm_rax(PhysReg::XMM0);
-                        self.emit_store_xmm0_stack(off);
+                        self.emitir_movq_xmm_rax(PhysReg::XMM0);
+                        self.emitir_almacen_xmm0_pila(off);
                     }
                 }
             }
@@ -171,7 +171,7 @@ impl<'a> CodegenReg<'a> {
             RegInstruction::Move { dst, src, .. } => {
                 let d = self.resolve(*dst);
                 let s = self.resolve(*src);
-                self.emit_mov_operands(&d, &s);
+                self.emitir_mov_operands(&d, &s);
             }
 
             RegInstruction::RegAdd { dst, a, b } => {
@@ -179,8 +179,8 @@ impl<'a> CodegenReg<'a> {
                 let a_op = self.resolve(*a);
                 let b_op = self.resolve(*b);
                 // dst = a + b
-                self.emit_mov_operands(&d, &a_op);
-                self.emit_add_operands(&d, &b_op);
+                self.emitir_mov_operands(&d, &a_op);
+                self.emitir_sumar_operands(&d, &b_op);
             }
 
             RegInstruction::RegSub { dst, a, b } => {
@@ -188,8 +188,8 @@ impl<'a> CodegenReg<'a> {
                 let a_op = self.resolve(*a);
                 let b_op = self.resolve(*b);
                 // dst = a - b
-                self.emit_mov_operands(&d, &a_op);
-                self.emit_sub_operands(&d, &b_op);
+                self.emitir_mov_operands(&d, &a_op);
+                self.emitir_sub_operands(&d, &b_op);
             }
 
             RegInstruction::RegMul { dst, a, b } => {
@@ -197,8 +197,8 @@ impl<'a> CodegenReg<'a> {
                 let a_op = self.resolve(*a);
                 let b_op = self.resolve(*b);
                 // dst = a * b
-                self.emit_mov_operands(&d, &a_op);
-                self.emit_imul_operands(&d, &b_op);
+                self.emitir_mov_operands(&d, &a_op);
+                self.emitir_imul_operands(&d, &b_op);
             }
 
             RegInstruction::RegDiv { dst, a, b } => {
@@ -207,13 +207,13 @@ impl<'a> CodegenReg<'a> {
                 let b_op = self.resolve(*b);
                 let d = self.resolve(*dst);
                 // Mover a a rax
-                self.emit_mov_to_rax(&a_op);
+                self.emitir_mov_to_rax(&a_op);
                 // cqo (sign-extend rax → rdx:rax)
                 self.bytes.extend_from_slice(&[0x48, 0x99]);
                 // idiv b
-                self.emit_idiv_operand(&b_op);
+                self.emitir_idiv_operand(&b_op);
                 // Mover resultado (rax) a dst
-                self.emit_mov_from_rax(&d);
+                self.emitir_mov_from_rax(&d);
             }
 
             RegInstruction::RegCmp { dst, a, b, op } => {
@@ -221,7 +221,7 @@ impl<'a> CodegenReg<'a> {
                 let b_op = self.resolve(*b);
                 let d = self.resolve(*dst);
                 // cmp a, b
-                self.emit_cmp_operands(&a_op, &b_op);
+                self.emitir_cmp_operands(&a_op, &b_op);
                 // setCC al
                 let setcc = match op {
                     CmpOp::Eq => 0x94u8,
@@ -235,34 +235,34 @@ impl<'a> CodegenReg<'a> {
                 self.bytes.push(setcc);
                 self.bytes.push(0xC0); // al
                                        // movzx dst, al
-                self.emit_movzx_al_to(&d);
+                self.emitir_movzx_al_to(&d);
             }
 
             RegInstruction::RegAnd { dst, a, b } => {
                 let d = self.resolve(*dst);
                 let a_op = self.resolve(*a);
                 let b_op = self.resolve(*b);
-                self.emit_mov_operands(&d, &a_op);
-                self.emit_and_operands(&d, &b_op);
+                self.emitir_mov_operands(&d, &a_op);
+                self.emitir_and_operands(&d, &b_op);
             }
 
             RegInstruction::RegOr { dst, a, b } => {
                 let d = self.resolve(*dst);
                 let a_op = self.resolve(*a);
                 let b_op = self.resolve(*b);
-                self.emit_mov_operands(&d, &a_op);
-                self.emit_or_operands(&d, &b_op);
+                self.emitir_mov_operands(&d, &a_op);
+                self.emitir_or_operands(&d, &b_op);
             }
 
             RegInstruction::RegNot { dst, src } => {
                 let s = self.resolve(*src);
                 let d = self.resolve(*dst);
                 // cmp src, 0
-                self.emit_cmp_zero(&s);
+                self.emitir_cmp_zero(&s);
                 // setz al
                 self.bytes.extend_from_slice(&[0x0F, 0x94, 0xC0]);
                 // movzx dst, al
-                self.emit_movzx_al_to(&d);
+                self.emitir_movzx_al_to(&d);
             }
 
             RegInstruction::LoadVar { dst, var_idx, .. } => {
@@ -271,11 +271,11 @@ impl<'a> CodegenReg<'a> {
                 match d {
                     Operand::Reg(r) => {
                         // mov reg, [vars_ptr + idx*8]
-                        self.emit_load_from_vars(r, offset);
+                        self.emitir_cargar_from_vars(r, offset);
                     }
                     Operand::Stack(off) => {
-                        self.emit_load_from_vars(PhysReg::RAX, offset);
-                        self.emit_store_rax_stack(off);
+                        self.emitir_cargar_from_vars(PhysReg::RAX, offset);
+                        self.emitir_almacen_rax_pila(off);
                     }
                 }
             }
@@ -286,25 +286,25 @@ impl<'a> CodegenReg<'a> {
                 match s {
                     Operand::Reg(r) => {
                         // mov [vars_ptr + idx*8], reg
-                        self.emit_store_to_vars(r, offset);
+                        self.emitir_almacen_to_vars(r, offset);
                     }
                     Operand::Stack(off) => {
-                        self.emit_load_rax_stack(off);
-                        self.emit_store_to_vars(PhysReg::RAX, offset);
+                        self.emitir_cargar_rax_pila(off);
+                        self.emitir_almacen_to_vars(PhysReg::RAX, offset);
                     }
                 }
             }
 
             RegInstruction::Jump { etiqueta } => {
-                self.emit_jmp(*etiqueta);
+                self.emitir_jmp(*etiqueta);
             }
 
             RegInstruction::JumpIfFalse { cond, etiqueta } => {
                 let c = self.resolve(*cond);
                 // test cond, cond
-                self.emit_test_operand(&c);
+                self.emitir_test_operand(&c);
                 // jz etiqueta (rel32)
-                self.emit_jcc_rel32(0x84, *etiqueta); // 0x84 = jz
+                self.emitir_jcc_rel32(0x84, *etiqueta); // 0x84 = jz
             }
 
             RegInstruction::Label(etiqueta) => {
@@ -318,7 +318,7 @@ impl<'a> CodegenReg<'a> {
                 if matches!(s, Operand::Reg(PhysReg::RAX)) {
                     // Ya está en RAX
                 } else {
-                    self.emit_mov_to_rax(&s);
+                    self.emitir_mov_to_rax(&s);
                 }
                 // Epilogue: restaurar frame pointer, callee-saved y retornar
                 // Orden inverso al prologue: push rbp; push rbx; push r14
@@ -349,7 +349,7 @@ impl<'a> CodegenReg<'a> {
 
                 // 1. Guardar caller-saved GPRs en slots de temporales en el stack.
                 //    Usamos [rsp + off] apuntando a memoria justo debajo del frame.
-                let save_offsets: [(PhysReg, u32); 7] = [
+                let guardar_offsets: [(PhysReg, u32); 7] = [
                     (PhysReg::RAX, 0),
                     (PhysReg::RCX, 8),
                     (PhysReg::RDX, 16),
@@ -363,12 +363,12 @@ impl<'a> CodegenReg<'a> {
                 let call_frame = 64u32;
                 self.bytes.extend_from_slice(&[0x48, 0x81, 0xEC]); // sub rsp, imm32
                 self.u32(call_frame);
-                for (reg, off) in save_offsets {
-                    self.emit_store_gpr_to_rsp(reg, off);
+                for (reg, off) in guardar_offsets {
+                    self.emitir_almacen_gpr_to_rsp(reg, off);
                 }
                 // XMM0-XMM7 (16 bytes cada uno no necesario — solo 64 bits por valor)
                 for i in 0..8 {
-                    self.emit_store_xmm_to_rsp(i, 56 + (i as u32) * 8);
+                    self.emitir_almacen_xmm_to_rsp(i, 56 + (i as u32) * 8);
                 }
 
                 // 2. Escribir args en vars[0..nargs] (callee los lee con LoadVar).
@@ -377,43 +377,43 @@ impl<'a> CodegenReg<'a> {
                     // carga el arg en RAX y lo escribe en vars_ptr + i*8
                     match a {
                         Operand::Reg(PhysReg::RAX) => {}
-                        Operand::Reg(r) => self.emit_mov_reg_reg(PhysReg::RAX, r),
-                        Operand::Stack(off) => self.emit_load_rax_stack(off),
+                        Operand::Reg(r) => self.emitir_mov_reg_reg(PhysReg::RAX, r),
+                        Operand::Stack(off) => self.emitir_cargar_rax_pila(off),
                     }
-                    self.emit_store_to_vars(PhysReg::RAX, (i as i32) * 8);
+                    self.emitir_almacen_to_vars(PhysReg::RAX, (i as i32) * 8);
                 }
 
                 // 3. Pasar vars_ptr (RBX) → RCX y output (R14) → RDX.
-                self.emit_mov_reg_reg(PhysReg::RCX, self.vars_ptr);
-                self.emit_mov_reg_reg(PhysReg::RDX, PhysReg::R14);
+                self.emitir_mov_reg_reg(PhysReg::RCX, self.vars_ptr);
+                self.emitir_mov_reg_reg(PhysReg::RDX, PhysReg::R14);
 
                 // 4. Cargar dirección de la función y llamar.
                 //    Si no está en la tabla, llamar a un stub que retorna 0.
-                let target = self
-                    .call_addresses
+                let destino = self
+                    .direcciones_llamada
                     .get(nombre_funcion)
                     .copied()
                     .unwrap_or_else(stub_nop_addr);
-                self.emit_mov_rax_imm64(target as i64);
+                self.emitir_mov_rax_imm64(destino as i64);
                 self.bytes.push(0xFF); // call rax
                 self.bytes.push(0xD0);
 
                 // 5. Guardar el resultado (RAX) temporalmente para restaurar regs.
-                self.emit_store_rax_to_rsp(0);
+                self.emitir_almacen_rax_to_rsp(0);
 
                 // 6. Restaurar caller-saved GPRs.
-                for (reg, off) in save_offsets.into_iter().rev() {
+                for (reg, off) in guardar_offsets.into_iter().rev() {
                     if reg != PhysReg::RAX {
-                        self.emit_load_gpr_from_rsp(reg, off);
+                        self.emitir_cargar_gpr_from_rsp(reg, off);
                     }
                 }
                 // Restaurar XMM0-XMM7
                 for i in 0..8 {
-                    self.emit_load_xmm_from_rsp(i, 56 + (i as u32) * 8);
+                    self.emitir_cargar_xmm_from_rsp(i, 56 + (i as u32) * 8);
                 }
 
                 // 7. Re-cargar el resultado en RAX y liberar el frame de llamada.
-                self.emit_load_rax_from_rsp(0);
+                self.emitir_cargar_rax_from_rsp(0);
                 self.bytes.extend_from_slice(&[0x48, 0x81, 0xC4]); // add rsp, imm32
                 self.u32(call_frame);
 
@@ -427,7 +427,7 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === Helper: mov reg, imm64 ===
-    fn emit_mov_reg_imm64(&mut self, reg: PhysReg, valor: i64) {
+    fn emitir_mov_reg_imm64(&mut self, reg: PhysReg, valor: i64) {
         let idx = reg.rex_index();
         let rex = 0x48 | if idx >= 8 { 0x01 } else { 0 }; // REX.W + REX.B
                                                           // REX + mov r64, imm64 = 0xB8 + reg (low 3 bits)
@@ -436,35 +436,35 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === Helper: mov rax, imm64 ===
-    fn emit_mov_rax_imm64(&mut self, valor: i64) {
+    fn emitir_mov_rax_imm64(&mut self, valor: i64) {
         self.bytes.push(0x48); // REX.W
         self.bytes.push(0xB8); // mov rax, imm64
         self.i64(valor);
     }
 
     // === Helper: movq xmm, rax ===
-    fn emit_movq_xmm_rax(&mut self, xmm: PhysReg) {
+    fn emitir_movq_xmm_rax(&mut self, xmm: PhysReg) {
         let xmm_idx = (xmm as u8) - PhysReg::XMM0 as u8;
         self.bytes.extend_from_slice(&[0x66, 0x48, 0x0F, 0x6E]);
         self.bytes.push(0xC0 | xmm_idx); // ModRM: mod=11, reg=xmm, rm=rax
     }
 
     // === Helper: store rax → [rbp - (off+8)] ===
-    fn emit_store_rax_stack(&mut self, off: usize) {
+    fn emitir_almacen_rax_pila(&mut self, off: usize) {
         let abs_off = (off + 8) as i32;
         self.bytes.extend_from_slice(&[0x48, 0x89, 0x85]); // mov [rbp + disp32], rax
         self.i32(-abs_off);
     }
 
     // === Helper: load [rbp - (off+8)] → rax ===
-    fn emit_load_rax_stack(&mut self, off: usize) {
+    fn emitir_cargar_rax_pila(&mut self, off: usize) {
         let abs_off = (off + 8) as i32;
         self.bytes.extend_from_slice(&[0x48, 0x8B, 0x85]); // mov rax, [rbp + disp32]
         self.i32(-abs_off);
     }
 
     // === Helper: store xmm0 → [rbp - (off+8)] ===
-    fn emit_store_xmm0_stack(&mut self, off: usize) {
+    fn emitir_almacen_xmm0_pila(&mut self, off: usize) {
         let abs_off = (off + 8) as i32;
         self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x11, 0x85]); // movsd [rbp + disp32], xmm0
         self.i32(-abs_off);
@@ -473,19 +473,19 @@ impl<'a> CodegenReg<'a> {
     // ─── Helpers para el frame temporal de Call (acceso vía RSP) ───────────
 
     /// store rax → [rsp + off]
-    fn emit_store_rax_to_rsp(&mut self, off: u32) {
+    fn emitir_almacen_rax_to_rsp(&mut self, off: u32) {
         self.bytes.extend_from_slice(&[0x48, 0x89, 0x84, 0x24]);
         self.u32(off); // mov [rsp+off], rax
     }
 
     /// load [rsp + off] → rax
-    fn emit_load_rax_from_rsp(&mut self, off: u32) {
+    fn emitir_cargar_rax_from_rsp(&mut self, off: u32) {
         self.bytes.extend_from_slice(&[0x48, 0x8B, 0x84, 0x24]);
         self.u32(off); // mov rax, [rsp+off]
     }
 
     /// store GPR (enteros) → [rsp + off]
-    fn emit_store_gpr_to_rsp(&mut self, reg: PhysReg, off: u32) {
+    fn emitir_almacen_gpr_to_rsp(&mut self, reg: PhysReg, off: u32) {
         let r_code = reg.rex_index() & 7;
         let rex = 0x48 | if reg.rex_index() >= 8 { 0x04 } else { 0 }; // REX.W + REX.R
                                                                       // mov [rsp+disp32], reg → ModRM mod=10, reg=r_code, rm=100(SIB); SIB base=rsp
@@ -495,7 +495,7 @@ impl<'a> CodegenReg<'a> {
     }
 
     /// load [rsp + off] → GPR (enteros)
-    fn emit_load_gpr_from_rsp(&mut self, reg: PhysReg, off: u32) {
+    fn emitir_cargar_gpr_from_rsp(&mut self, reg: PhysReg, off: u32) {
         let r_code = reg.rex_index() & 7;
         let rex = 0x48 | if reg.rex_index() >= 8 { 0x04 } else { 0 }; // REX.W + REX.R
         self.bytes
@@ -504,7 +504,7 @@ impl<'a> CodegenReg<'a> {
     }
 
     /// store xmm_idx → [rsp + off]
-    fn emit_store_xmm_to_rsp(&mut self, xmm_idx: u8, off: u32) {
+    fn emitir_almacen_xmm_to_rsp(&mut self, xmm_idx: u8, off: u32) {
         // movsd [rsp+disp32], xmm_idx — ModRM reg campo = xmm_idx (0-7, sin REX.R)
         // 66 0F 11 /r movsd r/m64, xmm (opcode real: F2 0F 11)
         self.bytes
@@ -516,7 +516,7 @@ impl<'a> CodegenReg<'a> {
     }
 
     /// load [rsp + off] → xmm_idx
-    fn emit_load_xmm_from_rsp(&mut self, xmm_idx: u8, off: u32) {
+    fn emitir_cargar_xmm_from_rsp(&mut self, xmm_idx: u8, off: u32) {
         // movsd xmm_idx, [rsp+disp32] — F2 0F 10 /r
         self.bytes
             .extend_from_slice(&[0xF2, 0x0F, 0x10, 0x84, 0x24]);
@@ -526,30 +526,30 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === Helper: mov operand → operand ===
-    fn emit_mov_operands(&mut self, dst: &Operand, src: &Operand) {
+    fn emitir_mov_operands(&mut self, dst: &Operand, src: &Operand) {
         if matches!(dst, Operand::Reg(r) if matches!(src, Operand::Reg(s) if *r == *s)) {
             return; // noop
         }
         match (dst, src) {
             (Operand::Reg(d), Operand::Reg(s)) => {
-                self.emit_mov_reg_reg(*d, *s);
+                self.emitir_mov_reg_reg(*d, *s);
             }
             (Operand::Reg(r), Operand::Stack(off)) => {
-                self.emit_load_reg_stack(*r, *off);
+                self.emitir_cargar_reg_pila(*r, *off);
             }
             (Operand::Stack(off), Operand::Reg(r)) => {
-                self.emit_store_reg_stack(*r, *off);
+                self.emitir_almacen_reg_pila(*r, *off);
             }
             (Operand::Stack(d), Operand::Stack(s)) => {
-                self.emit_load_rax_stack(*s);
-                self.emit_store_rax_stack(*d);
+                self.emitir_cargar_rax_pila(*s);
+                self.emitir_almacen_rax_pila(*d);
             }
         }
     }
 
     // === Helper: mov reg, reg ===
-    fn emit_mov_reg_reg(&mut self, dst: PhysReg, src: PhysReg) {
-        match (dst.is_xmm(), src.is_xmm()) {
+    fn emitir_mov_reg_reg(&mut self, dst: PhysReg, src: PhysReg) {
+        match (dst.es_xmm(), src.es_xmm()) {
             (true, true) => {
                 // movsd xmm_dst, xmm_src
                 let d_idx = (dst as u8) - PhysReg::XMM0 as u8;
@@ -559,11 +559,11 @@ impl<'a> CodegenReg<'a> {
             }
             (true, false) => {
                 // movq xmm_dst, gpr_src (GPR → XMM): 66 REX.W 0F 6E /r
-                self.emit_movq_xmm_gpr(dst, src);
+                self.emitir_movq_xmm_gpr(dst, src);
             }
             (false, true) => {
                 // movq gpr_dst, xmm_src (XMM → GPR): 66 REX.W 0F 7E /r
-                self.emit_movq_gpr_xmm(dst, src);
+                self.emitir_movq_gpr_xmm(dst, src);
             }
             (false, false) => {
                 let rex = self.rex_w_r_b(src, dst); // mov r/m64, r64: src=reg, dst=rm
@@ -576,7 +576,7 @@ impl<'a> CodegenReg<'a> {
     }
 
     /// `movq xmm, gpr` — mueve los 64 bits de un GPR a un registro XMM.
-    fn emit_movq_xmm_gpr(&mut self, xmm: PhysReg, gpr: PhysReg) {
+    fn emitir_movq_xmm_gpr(&mut self, xmm: PhysReg, gpr: PhysReg) {
         let x_idx = (xmm as u8) - PhysReg::XMM0 as u8;
         let rex = 0x48 | if gpr.rex_index() >= 8 { 0x01 } else { 0 }; // REX.W + REX.B
         self.bytes.extend_from_slice(&[0x66, rex, 0x0F, 0x6E]);
@@ -585,7 +585,7 @@ impl<'a> CodegenReg<'a> {
     }
 
     /// `movq gpr, xmm` — mueve los 64 bits de un registro XMM a un GPR.
-    fn emit_movq_gpr_xmm(&mut self, gpr: PhysReg, xmm: PhysReg) {
+    fn emitir_movq_gpr_xmm(&mut self, gpr: PhysReg, xmm: PhysReg) {
         let x_idx = (xmm as u8) - PhysReg::XMM0 as u8;
         let rex = 0x48 | if gpr.rex_index() >= 8 { 0x01 } else { 0 }; // REX.W + REX.B
         self.bytes.extend_from_slice(&[0x66, rex, 0x0F, 0x7E]);
@@ -594,9 +594,9 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === Helper: load [rbp-(off+8)] → reg ===
-    fn emit_load_reg_stack(&mut self, reg: PhysReg, off: usize) {
+    fn emitir_cargar_reg_pila(&mut self, reg: PhysReg, off: usize) {
         let abs_off = (off + 8) as i32;
-        if reg.is_xmm() {
+        if reg.es_xmm() {
             // movsd xmm, [rbp + disp32]
             let r_idx = (reg as u8) - PhysReg::XMM0 as u8;
             self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x10]);
@@ -613,9 +613,9 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === Helper: store reg → [rbp-(off+8)] ===
-    fn emit_store_reg_stack(&mut self, reg: PhysReg, off: usize) {
+    fn emitir_almacen_reg_pila(&mut self, reg: PhysReg, off: usize) {
         let abs_off = (off + 8) as i32;
-        if reg.is_xmm() {
+        if reg.es_xmm() {
             // movsd [rbp + disp32], xmm
             let r_idx = (reg as u8) - PhysReg::XMM0 as u8;
             self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x11]);
@@ -632,9 +632,9 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === Helper: mov [vars_ptr+offset], reg ===
-    fn emit_store_to_vars(&mut self, reg: PhysReg, offset: i32) {
+    fn emitir_almacen_to_vars(&mut self, reg: PhysReg, offset: i32) {
         let base_rm = self.vars_ptr.rex_index() & 7;
-        if reg.is_xmm() {
+        if reg.es_xmm() {
             let r_idx = (reg as u8) - PhysReg::XMM0 as u8;
             // movsd [vars_ptr+offset], xmm
             self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x11]);
@@ -668,9 +668,9 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === Helper: mov reg, [vars_ptr+offset] ===
-    fn emit_load_from_vars(&mut self, reg: PhysReg, offset: i32) {
+    fn emitir_cargar_from_vars(&mut self, reg: PhysReg, offset: i32) {
         let base_rm = self.vars_ptr.rex_index() & 7;
-        if reg.is_xmm() {
+        if reg.es_xmm() {
             let r_idx = (reg as u8) - PhysReg::XMM0 as u8;
             // movsd xmm, [vars_ptr+offset]
             self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x10]);
@@ -704,20 +704,20 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === Helper: add dst, src (enteros) ===
-    fn emit_add_operands(&mut self, dst: &Operand, src: &Operand) {
+    fn emitir_sumar_operands(&mut self, dst: &Operand, src: &Operand) {
         match (dst, src) {
             (Operand::Reg(d), Operand::Reg(s)) => {
-                self.emit_add_reg_reg(*d, *s);
+                self.emitir_sumar_reg_reg(*d, *s);
             }
             (Operand::Reg(r), Operand::Stack(off)) => {
                 // mov tmp, [rsp+off]; add reg, tmp
-                self.emit_load_reg_stack(PhysReg::R10, *off);
-                self.emit_add_reg_reg(*r, PhysReg::R10);
+                self.emitir_cargar_reg_pila(PhysReg::R10, *off);
+                self.emitir_sumar_reg_reg(*r, PhysReg::R10);
             }
             _ => {
                 // Fallback: load src a rax, add
-                self.emit_mov_operands(&Operand::Reg(PhysReg::RAX), src);
-                self.emit_add_reg_reg(self.dst_phys_or_rax(dst), PhysReg::RAX);
+                self.emitir_mov_operands(&Operand::Reg(PhysReg::RAX), src);
+                self.emitir_sumar_reg_reg(self.dst_phys_or_rax(dst), PhysReg::RAX);
             }
         }
     }
@@ -729,8 +729,8 @@ impl<'a> CodegenReg<'a> {
         }
     }
 
-    fn emit_add_reg_reg(&mut self, dst: PhysReg, src: PhysReg) {
-        if dst.is_xmm() && src.is_xmm() {
+    fn emitir_sumar_reg_reg(&mut self, dst: PhysReg, src: PhysReg) {
+        if dst.es_xmm() && src.es_xmm() {
             let d_idx = (dst as u8) - PhysReg::XMM0 as u8;
             let s_idx = (src as u8) - PhysReg::XMM0 as u8;
             self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x58]);
@@ -745,24 +745,24 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === Helper: sub dst, src ===
-    fn emit_sub_operands(&mut self, dst: &Operand, src: &Operand) {
+    fn emitir_sub_operands(&mut self, dst: &Operand, src: &Operand) {
         match (dst, src) {
             (Operand::Reg(d), Operand::Reg(s)) => {
-                self.emit_sub_reg_reg(*d, *s);
+                self.emitir_sub_reg_reg(*d, *s);
             }
             (Operand::Reg(r), Operand::Stack(off)) => {
-                self.emit_load_reg_stack(PhysReg::R10, *off);
-                self.emit_sub_reg_reg(*r, PhysReg::R10);
+                self.emitir_cargar_reg_pila(PhysReg::R10, *off);
+                self.emitir_sub_reg_reg(*r, PhysReg::R10);
             }
             _ => {
-                self.emit_mov_operands(&Operand::Reg(PhysReg::RAX), src);
-                self.emit_sub_reg_reg(self.dst_phys_or_rax(dst), PhysReg::RAX);
+                self.emitir_mov_operands(&Operand::Reg(PhysReg::RAX), src);
+                self.emitir_sub_reg_reg(self.dst_phys_or_rax(dst), PhysReg::RAX);
             }
         }
     }
 
-    fn emit_sub_reg_reg(&mut self, dst: PhysReg, src: PhysReg) {
-        if dst.is_xmm() && src.is_xmm() {
+    fn emitir_sub_reg_reg(&mut self, dst: PhysReg, src: PhysReg) {
+        if dst.es_xmm() && src.es_xmm() {
             let d_idx = (dst as u8) - PhysReg::XMM0 as u8;
             let s_idx = (src as u8) - PhysReg::XMM0 as u8;
             self.bytes.extend_from_slice(&[0xF2, 0x0F, 0x5C]);
@@ -777,23 +777,23 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === Helper: imul dst, src ===
-    fn emit_imul_operands(&mut self, dst: &Operand, src: &Operand) {
+    fn emitir_imul_operands(&mut self, dst: &Operand, src: &Operand) {
         match (dst, src) {
             (Operand::Reg(d), Operand::Reg(s)) => {
-                self.emit_imul_reg_reg(*d, *s);
+                self.emitir_imul_reg_reg(*d, *s);
             }
             (Operand::Reg(r), Operand::Stack(off)) => {
-                self.emit_load_reg_stack(PhysReg::R10, *off);
-                self.emit_imul_reg_reg(*r, PhysReg::R10);
+                self.emitir_cargar_reg_pila(PhysReg::R10, *off);
+                self.emitir_imul_reg_reg(*r, PhysReg::R10);
             }
             _ => {
-                self.emit_mov_operands(&Operand::Reg(PhysReg::RAX), src);
-                self.emit_imul_reg_reg(self.dst_phys_or_rax(dst), PhysReg::RAX);
+                self.emitir_mov_operands(&Operand::Reg(PhysReg::RAX), src);
+                self.emitir_imul_reg_reg(self.dst_phys_or_rax(dst), PhysReg::RAX);
             }
         }
     }
 
-    fn emit_imul_reg_reg(&mut self, dst: PhysReg, src: PhysReg) {
+    fn emitir_imul_reg_reg(&mut self, dst: PhysReg, src: PhysReg) {
         let rex = self.rex_w_r_b(dst, src);
         self.bytes.push(rex);
         self.bytes.push(0x0F);
@@ -803,7 +803,7 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === Helper: idiv operand ===
-    fn emit_idiv_operand(&mut self, op: &Operand) {
+    fn emitir_idiv_operand(&mut self, op: &Operand) {
         match op {
             Operand::Reg(r) => {
                 let rex = 0x48 | if r.rex_index() >= 8 { 0x01 } else { 0 }; // REX.W + REX.B
@@ -812,7 +812,7 @@ impl<'a> CodegenReg<'a> {
                 self.bytes.push(0xF8 | (r.rex_index() & 7));
             }
             Operand::Stack(off) => {
-                self.emit_load_reg_stack(PhysReg::R10, *off);
+                self.emitir_cargar_reg_pila(PhysReg::R10, *off);
                 let rex = 0x48
                     | if PhysReg::R10.rex_index() >= 8 {
                         0x01
@@ -827,28 +827,28 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === Helper: cmp a, b ===
-    fn emit_cmp_operands(&mut self, a: &Operand, b: &Operand) {
+    fn emitir_cmp_operands(&mut self, a: &Operand, b: &Operand) {
         match (a, b) {
             (Operand::Reg(a_r), Operand::Reg(b_r)) => {
-                self.emit_cmp_reg_reg(*a_r, *b_r);
+                self.emitir_cmp_reg_reg(*a_r, *b_r);
             }
             (Operand::Reg(r), Operand::Stack(off)) => {
-                self.emit_load_reg_stack(PhysReg::R10, *off);
-                self.emit_cmp_reg_reg(*r, PhysReg::R10);
+                self.emitir_cargar_reg_pila(PhysReg::R10, *off);
+                self.emitir_cmp_reg_reg(*r, PhysReg::R10);
             }
             (Operand::Stack(off), Operand::Reg(r)) => {
-                self.emit_load_reg_stack(PhysReg::R10, *off);
-                self.emit_cmp_reg_reg(PhysReg::R10, *r);
+                self.emitir_cargar_reg_pila(PhysReg::R10, *off);
+                self.emitir_cmp_reg_reg(PhysReg::R10, *r);
             }
             (Operand::Stack(a_off), Operand::Stack(b_off)) => {
-                self.emit_load_reg_stack(PhysReg::RAX, *a_off);
-                self.emit_load_reg_stack(PhysReg::R10, *b_off);
-                self.emit_cmp_reg_reg(PhysReg::RAX, PhysReg::R10);
+                self.emitir_cargar_reg_pila(PhysReg::RAX, *a_off);
+                self.emitir_cargar_reg_pila(PhysReg::R10, *b_off);
+                self.emitir_cmp_reg_reg(PhysReg::RAX, PhysReg::R10);
             }
         }
     }
 
-    fn emit_cmp_reg_reg(&mut self, a: PhysReg, b: PhysReg) {
+    fn emitir_cmp_reg_reg(&mut self, a: PhysReg, b: PhysReg) {
         let rex = self.rex_w_r_b(b, a); // cmp r/m64, r64: b=reg, a=rm
         self.bytes.push(rex);
         self.bytes.push(0x39);
@@ -857,7 +857,7 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === Helper: cmp operand, 0 ===
-    fn emit_cmp_zero(&mut self, op: &Operand) {
+    fn emitir_cmp_zero(&mut self, op: &Operand) {
         match op {
             Operand::Reg(r) => {
                 // test reg, reg (igual para enteros y flotantes-por-bits)
@@ -868,19 +868,19 @@ impl<'a> CodegenReg<'a> {
                     .push(0xC0 | ((r.rex_index() & 7) << 3) | (r.rex_index() & 7));
             }
             Operand::Stack(off) => {
-                self.emit_load_rax_stack(*off);
+                self.emitir_cargar_rax_pila(*off);
                 self.bytes.extend_from_slice(&[0x48, 0x85, 0xC0]);
             }
         }
     }
 
     // === Helper: test operand ===
-    fn emit_test_operand(&mut self, op: &Operand) {
-        self.emit_cmp_zero(op);
+    fn emitir_test_operand(&mut self, op: &Operand) {
+        self.emitir_cmp_zero(op);
     }
 
     // === Helper: and dst, src ===
-    fn emit_and_operands(&mut self, dst: &Operand, src: &Operand) {
+    fn emitir_and_operands(&mut self, dst: &Operand, src: &Operand) {
         match (dst, src) {
             (Operand::Reg(d), Operand::Reg(s)) => {
                 let rex = self.rex_w_r_b(*s, *d); // and r/m64, r64: s=reg, d=rm
@@ -890,16 +890,16 @@ impl<'a> CodegenReg<'a> {
                     .push(0xC0 | ((s.rex_index() & 7) << 3) | (d.rex_index() & 7));
             }
             _ => {
-                self.emit_mov_operands(&Operand::Reg(PhysReg::R10), src);
-                self.emit_mov_operands(dst, &Operand::Reg(PhysReg::RAX));
+                self.emitir_mov_operands(&Operand::Reg(PhysReg::R10), src);
+                self.emitir_mov_operands(dst, &Operand::Reg(PhysReg::RAX));
                 self.bytes.extend_from_slice(&[0x4C, 0x21, 0xD0]); // and rax, r10
-                self.emit_mov_operands(dst, &Operand::Reg(PhysReg::RAX));
+                self.emitir_mov_operands(dst, &Operand::Reg(PhysReg::RAX));
             }
         }
     }
 
     // === Helper: or dst, src ===
-    fn emit_or_operands(&mut self, dst: &Operand, src: &Operand) {
+    fn emitir_or_operands(&mut self, dst: &Operand, src: &Operand) {
         match (dst, src) {
             (Operand::Reg(d), Operand::Reg(s)) => {
                 let rex = self.rex_w_r_b(*s, *d); // or r/m64, r64: s=reg, d=rm
@@ -909,22 +909,22 @@ impl<'a> CodegenReg<'a> {
                     .push(0xC0 | ((s.rex_index() & 7) << 3) | (d.rex_index() & 7));
             }
             _ => {
-                self.emit_mov_operands(&Operand::Reg(PhysReg::R10), src);
-                self.emit_mov_operands(dst, &Operand::Reg(PhysReg::RAX));
+                self.emitir_mov_operands(&Operand::Reg(PhysReg::R10), src);
+                self.emitir_mov_operands(dst, &Operand::Reg(PhysReg::RAX));
                 self.bytes.extend_from_slice(&[0x4C, 0x09, 0xD0]); // or rax, r10
-                self.emit_mov_operands(dst, &Operand::Reg(PhysReg::RAX));
+                self.emitir_mov_operands(dst, &Operand::Reg(PhysReg::RAX));
             }
         }
     }
 
     // === Helper: movzx al → dst ===
-    fn emit_movzx_al_to(&mut self, dst: &Operand) {
+    fn emitir_movzx_al_to(&mut self, dst: &Operand) {
         match dst {
             Operand::Reg(r) => {
-                if r.is_xmm() {
+                if r.es_xmm() {
                     // Convertir al a entero en xmm
                     self.bytes.extend_from_slice(&[0x48, 0x0F, 0xB6, 0xC0]); // movzx rax, al
-                    self.emit_movq_xmm_rax(*r);
+                    self.emitir_movq_xmm_rax(*r);
                 } else {
                     let r_code = r.rex_index() & 7;
                     let rex = if (r.rex_index()) >= 8 { 0x49 } else { 0x48 };
@@ -934,46 +934,46 @@ impl<'a> CodegenReg<'a> {
             }
             Operand::Stack(off) => {
                 self.bytes.extend_from_slice(&[0x48, 0x0F, 0xB6, 0xC0]); // movzx rax, al
-                self.emit_store_rax_stack(*off);
+                self.emitir_almacen_rax_pila(*off);
             }
         }
     }
 
     // === Helper: mov to rax ===
-    fn emit_mov_to_rax(&mut self, src: &Operand) {
+    fn emitir_mov_to_rax(&mut self, src: &Operand) {
         match src {
             Operand::Reg(PhysReg::RAX) => {} // noop
             Operand::Reg(r) => {
-                self.emit_mov_reg_reg(PhysReg::RAX, *r);
+                self.emitir_mov_reg_reg(PhysReg::RAX, *r);
             }
             Operand::Stack(off) => {
-                self.emit_load_rax_stack(*off);
+                self.emitir_cargar_rax_pila(*off);
             }
         }
     }
 
     // === Helper: mov from rax ===
-    fn emit_mov_from_rax(&mut self, dst: &Operand) {
+    fn emitir_mov_from_rax(&mut self, dst: &Operand) {
         match dst {
             Operand::Reg(PhysReg::RAX) => {} // noop
             Operand::Reg(r) => {
-                self.emit_mov_reg_reg(*r, PhysReg::RAX);
+                self.emitir_mov_reg_reg(*r, PhysReg::RAX);
             }
             Operand::Stack(off) => {
-                self.emit_store_rax_stack(*off);
+                self.emitir_almacen_rax_pila(*off);
             }
         }
     }
 
     // === Helper: jmp etiqueta ===
-    fn emit_jmp(&mut self, etiqueta: usize) {
+    fn emitir_jmp(&mut self, etiqueta: usize) {
         self.bytes.push(0xE9); // jmp rel32
         self.fixups.push((etiqueta, self.bytes.len()));
         self.i32(0); // placeholder
     }
 
     // === Helper: jcc rel32 ===
-    fn emit_jcc_rel32(&mut self, opcode: u8, etiqueta: usize) {
+    fn emitir_jcc_rel32(&mut self, opcode: u8, etiqueta: usize) {
         self.bytes.push(0x0F);
         self.bytes.push(opcode);
         self.fixups.push((etiqueta, self.bytes.len()));
@@ -984,8 +984,8 @@ impl<'a> CodegenReg<'a> {
     fn resolve_fixups(&mut self) {
         let fixups: Vec<(usize, usize)> = std::mem::take(&mut self.fixups);
         for (etiqueta, offset) in fixups {
-            if let Some(&target) = self.desplazamientos_etiquetas.get(&etiqueta) {
-                let rel = (target as i64 - (offset + 4) as i64) as i32;
+            if let Some(&destino) = self.desplazamientos_etiquetas.get(&etiqueta) {
+                let rel = (destino as i64 - (offset + 4) as i64) as i32;
                 self.bytes[offset..offset + 4].copy_from_slice(&rel.to_le_bytes());
             }
         }
@@ -1030,28 +1030,28 @@ impl<'a> CodegenReg<'a> {
 /// * `prog` - Programa en IR register-based
 /// * `assignments` - Asignaciones de VirtReg → Location (del allocador)
 /// * `cantidad_derrames` - Número de slots de spill
-/// * `call_addresses` - Tabla nombre de función → dirección de código (para Call)
+/// * `direcciones_llamada` - Tabla nombre de función → dirección de código (para Call)
 ///
 /// # Returns
 /// Vector de bytes con el código máquina x86-64 (sin prologue/epilogue)
-pub fn emit_program(
+pub fn emitir_program(
     prog: &RegProgram,
     assignments: &HashMap<VirtReg, Location>,
     cantidad_derrames: usize,
 ) -> Vec<u8> {
-    emit_program_with_calls(prog, assignments, cantidad_derrames, empty_call_table())
+    emitir_program_con_calls(prog, assignments, cantidad_derrames, empty_llamada_tabla())
 }
 
-/// Igual que `emit_program` pero permite resolver `Call` a direcciones reales.
-pub fn emit_program_with_calls(
+/// Igual que `emitir_program` pero permite resolver `Call` a direcciones reales.
+pub fn emitir_program_con_calls(
     prog: &RegProgram,
     assignments: &HashMap<VirtReg, Location>,
     cantidad_derrames: usize,
-    call_addresses: &HashMap<String, u64>,
+    direcciones_llamada: &HashMap<String, u64>,
 ) -> Vec<u8> {
     let spill_frame = (cantidad_derrames * 8) as i32;
-    let mut codegen = CodegenReg::with_call_addresses(assignments, call_addresses);
-    codegen.emit_program(prog, PhysReg::RBX, spill_frame);
+    let mut codegen = CodegenReg::con_direcciones_llamada(assignments, direcciones_llamada);
+    codegen.emitir_program(prog, PhysReg::RBX, spill_frame);
     codegen.finish()
 }
 
@@ -1063,9 +1063,9 @@ mod tests {
     #[test]
     fn test_codegen_basic() {
         let mut prog = RegProgram::new();
-        let v0 = prog.alloc_vreg();
-        let v1 = prog.alloc_vreg();
-        let v2 = prog.alloc_vreg();
+        let v0 = prog.reservar_vreg();
+        let v1 = prog.reservar_vreg();
+        let v2 = prog.reservar_vreg();
 
         let block = crate::register_ir::BloqueBasico {
             etiqueta: 0,
@@ -1087,14 +1087,14 @@ mod tests {
         assignments.insert(v1, Location::Reg(PhysReg::RCX));
         assignments.insert(v2, Location::Reg(PhysReg::RAX));
 
-        let code = emit_program(&prog, &assignments, 0);
+        let code = emitir_program(&prog, &assignments, 0);
         assert!(!code.is_empty());
     }
 
     #[test]
     fn test_codegen_prologue_y_epilogo() {
         let mut prog = RegProgram::new();
-        let v0 = prog.alloc_vreg();
+        let v0 = prog.reservar_vreg();
         let block = crate::register_ir::BloqueBasico {
             etiqueta: 0,
             instructions: vec![RegInstruction::LoadImm { dst: v0, valor: 42 }],
@@ -1106,7 +1106,7 @@ mod tests {
         // v0 en un slot de spill → exige frame (sub rsp) y epílogo
         assignments.insert(v0, Location::Stack(0));
 
-        let code = emit_program(&prog, &assignments, 1);
+        let code = emitir_program(&prog, &assignments, 1);
         assert!(!code.is_empty());
 
         // Prólogo: push rbp; push rbx; push r14; mov rbp, rsp; mov rbx, rcx; mov r14, rdx
@@ -1132,7 +1132,7 @@ mod tests {
     #[test]
     fn test_codegen_sin_spill_no_reserva_frame() {
         let mut prog = RegProgram::new();
-        let v0 = prog.alloc_vreg();
+        let v0 = prog.reservar_vreg();
         let block = crate::register_ir::BloqueBasico {
             etiqueta: 0,
             instructions: vec![RegInstruction::LoadImm { dst: v0, valor: 7 }],
@@ -1144,7 +1144,7 @@ mod tests {
         assignments.insert(v0, Location::Reg(PhysReg::RAX));
 
         // Sin spills: no debe haber sub rsp
-        let code = emit_program(&prog, &assignments, 0);
+        let code = emitir_program(&prog, &assignments, 0);
         // Prólogo: push rbp; push rbx; push r14; mov rbp, rsp; mov rbx, rcx; mov r14, rdx
         assert_eq!(&code[0..1], &[0x55]); // push rbp
         assert_eq!(&code[1..4], &[0x53, 0x41, 0x56]); // push rbx; push r14
@@ -1161,7 +1161,7 @@ mod tests {
     #[test]
     fn test_codegen_call_emite_call_rax() {
         let mut prog = RegProgram::new();
-        let v0 = prog.alloc_vreg();
+        let v0 = prog.reservar_vreg();
         let block = crate::register_ir::BloqueBasico {
             etiqueta: 0,
             instructions: vec![RegInstruction::Call {
@@ -1176,9 +1176,9 @@ mod tests {
         assignments.insert(v0, Location::Reg(PhysReg::RAX));
 
         // Con tabla de direcciones vacía → usa stub (call rax tras mov rax, imm64)
-        let mut addresses = HashMap::new();
-        addresses.insert("foo".to_string(), 0x1234u64);
-        let code = emit_program_with_calls(&prog, &assignments, 0, &addresses);
+        let mut direcciones = HashMap::new();
+        direcciones.insert("foo".to_string(), 0x1234u64);
+        let code = emitir_program_con_calls(&prog, &assignments, 0, &direcciones);
 
         // Buscar la secuencia "mov rax, imm64(0x1234); call rax"
         // mov rax, imm64 = 48 B8 + 8 bytes
@@ -1201,7 +1201,7 @@ mod tests {
     #[test]
     fn test_codegen_call_sin_tabla_usa_stub() {
         let mut prog = RegProgram::new();
-        let v0 = prog.alloc_vreg();
+        let v0 = prog.reservar_vreg();
         let block = crate::register_ir::BloqueBasico {
             etiqueta: 0,
             instructions: vec![RegInstruction::Call {
@@ -1215,7 +1215,7 @@ mod tests {
         let mut assignments = HashMap::new();
         assignments.insert(v0, Location::Reg(PhysReg::RAX));
 
-        let code = emit_program(&prog, &assignments, 0);
+        let code = emitir_program(&prog, &assignments, 0);
 
         // Debe existir un call rax (FF D0) en el código generado
         let found_call = code.windows(2).any(|w| w[0] == 0xFF && w[1] == 0xD0);

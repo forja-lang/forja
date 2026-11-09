@@ -15,15 +15,15 @@ impl ForjaFast {
             // ── Exacto operations (BigDecimal) ─────────────────────────
             Uop::PushExacto(coeff, scale) => {
                 let v = self.exacto_valor(*coeff, *scale);
-                self.push_valor(v);
+                self.empujar_valor(v);
                 self.ip += 1;
             }
             Uop::AddExact => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 let val = if a.es_exacto() && b.es_exacto() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let be = self.get_exacto(b.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
                         ae.coeficiente,
                         ae.escala,
@@ -33,7 +33,7 @@ impl ForjaFast {
                     let r = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
                     self.exacto_valor(r, escala)
                 } else if a.es_entero() && b.es_exacto() {
-                    let be = self.get_exacto(b.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
                         a.a_entero() as i128,
                         0,
@@ -43,7 +43,7 @@ impl ForjaFast {
                     let r = a_adj.checked_add(b_adj).ok_or(ErrFast::OverflowArit)?;
                     self.exacto_valor(r, escala)
                 } else if a.es_exacto() && b.es_entero() {
-                    let ae = self.get_exacto(a.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
                     let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
                         ae.coeficiente,
                         ae.escala,
@@ -55,15 +55,15 @@ impl ForjaFast {
                 } else {
                     ValorFast::nulo()
                 };
-                self.push_valor(val);
+                self.empujar_valor(val);
                 self.ip += 1;
             }
             Uop::SubExact => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 let val = if a.es_exacto() && b.es_exacto() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let be = self.get_exacto(b.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
                         ae.coeficiente,
                         ae.escala,
@@ -73,7 +73,7 @@ impl ForjaFast {
                     let r = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
                     self.exacto_valor(r, escala)
                 } else if a.es_entero() && b.es_exacto() {
-                    let be = self.get_exacto(b.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
                         a.a_entero() as i128,
                         0,
@@ -83,7 +83,7 @@ impl ForjaFast {
                     let r = a_adj.checked_sub(b_adj).ok_or(ErrFast::OverflowArit)?;
                     self.exacto_valor(r, escala)
                 } else if a.es_exacto() && b.es_entero() {
-                    let ae = self.get_exacto(a.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
                     let (a_adj, b_adj, escala) = homogeneizar_exacto_fast(
                         ae.coeficiente,
                         ae.escala,
@@ -95,28 +95,28 @@ impl ForjaFast {
                 } else {
                     ValorFast::nulo()
                 };
-                self.push_valor(val);
+                self.empujar_valor(val);
                 self.ip += 1;
             }
             Uop::MulExact => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 let val = if a.es_exacto() && b.es_exacto() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let be = self.get_exacto(b.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let mul = ae
                         .coeficiente
                         .checked_mul(be.coeficiente)
                         .ok_or(ErrFast::OverflowArit)?;
                     self.exacto_valor(mul, ae.escala + be.escala)
                 } else if a.es_entero() && b.es_exacto() {
-                    let be = self.get_exacto(b.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let mul = (a.a_entero() as i128)
                         .checked_mul(be.coeficiente)
                         .ok_or(ErrFast::OverflowArit)?;
                     self.exacto_valor(mul, be.escala)
                 } else if a.es_exacto() && b.es_entero() {
-                    let ae = self.get_exacto(a.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
                     let mul = ae
                         .coeficiente
                         .checked_mul(b.a_entero() as i128)
@@ -125,15 +125,15 @@ impl ForjaFast {
                 } else {
                     ValorFast::nulo()
                 };
-                self.push_valor(val);
+                self.empujar_valor(val);
                 self.ip += 1;
             }
             Uop::DivExact => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 let val = if a.es_exacto() && b.es_exacto() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let be = self.get_exacto(b.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     if be.coeficiente == 0 {
                         ValorFast::nulo()
                     } else {
@@ -161,7 +161,7 @@ impl ForjaFast {
                         self.exacto_valor(cociente, escala_final)
                     }
                 } else if a.es_entero() && b.es_exacto() {
-                    let be = self.get_exacto(b.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     if be.coeficiente == 0 {
                         ValorFast::nulo()
                     } else {
@@ -176,7 +176,7 @@ impl ForjaFast {
                         self.exacto_valor(cociente, extra.wrapping_sub(be.escala))
                     }
                 } else if a.es_exacto() && b.es_entero() {
-                    let ae = self.get_exacto(a.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
                     if b.a_entero() == 0 {
                         ValorFast::nulo()
                     } else {
@@ -189,15 +189,15 @@ impl ForjaFast {
                 } else {
                     ValorFast::nulo()
                 };
-                self.push_valor(val);
+                self.empujar_valor(val);
                 self.ip += 1;
             }
             Uop::IgualExact => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 let igual = if a.es_exacto() && b.es_exacto() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let be = self.get_exacto(b.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let (a_adj, b_adj, _) = homogeneizar_exacto_fast(
                         ae.coeficiente,
                         ae.escala,
@@ -208,15 +208,15 @@ impl ForjaFast {
                 } else {
                     false
                 };
-                self.push_valor(ValorFast::booleano(igual));
+                self.empujar_valor(ValorFast::booleano(igual));
                 self.ip += 1;
             }
             Uop::MenorExact => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 let menor = if a.es_exacto() && b.es_exacto() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let be = self.get_exacto(b.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let (a_adj, b_adj, _) = homogeneizar_exacto_fast(
                         ae.coeficiente,
                         ae.escala,
@@ -227,15 +227,15 @@ impl ForjaFast {
                 } else {
                     false
                 };
-                self.push_valor(ValorFast::booleano(menor));
+                self.empujar_valor(ValorFast::booleano(menor));
                 self.ip += 1;
             }
             Uop::MayorExact => {
-                let b = self.pop_valor()?;
-                let a = self.pop_valor()?;
+                let b = self.desapilar_valor()?;
+                let a = self.desapilar_valor()?;
                 let mayor = if a.es_exacto() && b.es_exacto() {
-                    let ae = self.get_exacto(a.indice_exacto());
-                    let be = self.get_exacto(b.indice_exacto());
+                    let ae = self.obtener_exacto(a.indice_exacto());
+                    let be = self.obtener_exacto(b.indice_exacto());
                     let (a_adj, b_adj, _) = homogeneizar_exacto_fast(
                         ae.coeficiente,
                         ae.escala,
@@ -246,29 +246,29 @@ impl ForjaFast {
                 } else {
                     false
                 };
-                self.push_valor(ValorFast::booleano(mayor));
+                self.empujar_valor(ValorFast::booleano(mayor));
                 self.ip += 1;
             }
             Uop::EnteroAExacto => {
-                let val = self.pop_valor()?;
+                let val = self.desapilar_valor()?;
                 if val.es_entero() {
                     let v = self.exacto_valor(val.a_entero() as i128, 0);
-                    self.push_valor(v);
+                    self.empujar_valor(v);
                 } else {
-                    self.push_valor(val);
+                    self.empujar_valor(val);
                 }
                 self.ip += 1;
             }
             Uop::DecimalAExacto => {
-                let val = self.pop_valor()?;
+                let val = self.desapilar_valor()?;
                 if val.es_flotante() {
                     let d = val.a_flotante();
                     let escala = 10u32;
                     let coeff = (d * 10_f64.powi(escala as i32)) as i128;
                     let exact = self.exacto_valor(coeff, escala);
-                    self.push_valor(exact);
+                    self.empujar_valor(exact);
                 } else {
-                    self.push_valor(val);
+                    self.empujar_valor(val);
                 }
                 self.ip += 1;
             }

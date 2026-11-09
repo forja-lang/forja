@@ -7,7 +7,7 @@
 //   4. ChaCha20 + Poly1305 (AEAD RFC 8439)
 //   5. PBKDF2-HMAC-SHA256 (con salt automático)
 
-use crate::hash::{hex_encode, hmac_sha256};
+use crate::hash::{hex_codificar, hmac_sha256};
 
 // ═════════════════════════════════════════════════════════════════════════════
 // 1. CSPRNG — Aleatoriedad segura del sistema operativo
@@ -141,7 +141,7 @@ fn rot_word(w: [u8; 4]) -> [u8; 4] {
 }
 
 /// Expande una clave de 32 bytes a 60 palabras (240 bytes) para 14 rondas AES-256
-fn aes256_key_expand(clave: &[u8; 32]) -> [[u8; 4]; 60] {
+fn aes256_clave_expandir(clave: &[u8; 32]) -> [[u8; 4]; 60] {
     let mut w = [[0u8; 4]; 60];
     for i in 0..8 {
         w[i] = [
@@ -152,24 +152,24 @@ fn aes256_key_expand(clave: &[u8; 32]) -> [[u8; 4]; 60] {
         ];
     }
     for i in 8..60 {
-        let mut temp = w[i - 1];
+        let mut temporal = w[i - 1];
         if i % 8 == 0 {
-            temp = sub_word(rot_word(temp));
-            temp[0] ^= RCON[i / 8 - 1];
+            temporal = sub_word(rot_word(temporal));
+            temporal[0] ^= RCON[i / 8 - 1];
         } else if i % 8 == 4 {
-            temp = sub_word(temp);
+            temporal = sub_word(temporal);
         }
         w[i] = [
-            w[i - 8][0] ^ temp[0],
-            w[i - 8][1] ^ temp[1],
-            w[i - 8][2] ^ temp[2],
-            w[i - 8][3] ^ temp[3],
+            w[i - 8][0] ^ temporal[0],
+            w[i - 8][1] ^ temporal[1],
+            w[i - 8][2] ^ temporal[2],
+            w[i - 8][3] ^ temporal[3],
         ];
     }
     w
 }
 
-fn add_round_key(state: &mut [u8; 16], rk: &[[u8; 4]; 4]) {
+fn sumar_round_clave(state: &mut [u8; 16], rk: &[[u8; 4]; 4]) {
     for i in 0..16 {
         state[i] ^= rk[i / 4][i % 4];
     }
@@ -270,7 +270,7 @@ fn aes256_encrypt_block(block: &[u8; 16], w: &[[u8; 4]; 60]) -> [u8; 16] {
     let mut state = *block;
     let mut rk = [[0u8; 4]; 4];
     rk.copy_from_slice(&w[..4]);
-    add_round_key(&mut state, &rk);
+    sumar_round_clave(&mut state, &rk);
 
     for round in 1..=13 {
         sub_bytes(&mut state);
@@ -279,13 +279,13 @@ fn aes256_encrypt_block(block: &[u8; 16], w: &[[u8; 4]; 60]) -> [u8; 16] {
         for i in 0..4 {
             rk[i] = w[round * 4 + i];
         }
-        add_round_key(&mut state, &rk);
+        sumar_round_clave(&mut state, &rk);
     }
 
     sub_bytes(&mut state);
     shift_rows(&mut state);
     rk.copy_from_slice(&w[56..60]);
-    add_round_key(&mut state, &rk);
+    sumar_round_clave(&mut state, &rk);
     state
 }
 
@@ -294,7 +294,7 @@ fn aes256_decrypt_block(block: &[u8; 16], w: &[[u8; 4]; 60]) -> [u8; 16] {
     let mut state = *block;
     let mut rk = [[0u8; 4]; 4];
     rk.copy_from_slice(&w[56..60]);
-    add_round_key(&mut state, &rk);
+    sumar_round_clave(&mut state, &rk);
 
     for round in (1..=13).rev() {
         shift_rows_inv(&mut state);
@@ -302,20 +302,20 @@ fn aes256_decrypt_block(block: &[u8; 16], w: &[[u8; 4]; 60]) -> [u8; 16] {
         for i in 0..4 {
             rk[i] = w[round * 4 + i];
         }
-        add_round_key(&mut state, &rk);
+        sumar_round_clave(&mut state, &rk);
         mix_columns_inv(&mut state);
     }
 
     shift_rows_inv(&mut state);
     sub_bytes_inv(&mut state);
     rk.copy_from_slice(&w[..4]);
-    add_round_key(&mut state, &rk);
+    sumar_round_clave(&mut state, &rk);
     state
 }
 
 /// Cifra datos con AES-256-CBC (padding PKCS7)
 pub fn aes256_cbc_encrypt(clave: &[u8; 32], iv: &[u8; 16], datos: &[u8]) -> Vec<u8> {
-    let w = aes256_key_expand(clave);
+    let w = aes256_clave_expandir(clave);
     let blocks = datos.len().div_ceil(16);
     let mut out = Vec::with_capacity(blocks * 16);
     let mut anterior = *iv;
@@ -363,7 +363,7 @@ pub fn aes256_cbc_decrypt(
     if !datos.len().is_multiple_of(16) || datos.is_empty() {
         return Err("AES-CBC: datos deben ser múltiplo de 16 bytes");
     }
-    let w = aes256_key_expand(clave);
+    let w = aes256_clave_expandir(clave);
     let blocks = datos.len() / 16;
     let mut out = Vec::with_capacity(datos.len());
     let mut anterior = *iv;
@@ -440,7 +440,7 @@ fn gf128_mul(x: [u8; 16], y: [u8; 16]) -> [u8; 16] {
 
 /// Cifra/descifra con AES-256 en modo CTR (usado internamente por GCM)
 fn aes256_ctr(clave: &[u8; 32], nonce: &[u8; 12], datos: &[u8]) -> Vec<u8> {
-    let w = aes256_key_expand(clave);
+    let w = aes256_clave_expandir(clave);
     let mut counter = [0u8; 16];
     counter[..12].copy_from_slice(nonce);
     let mut out = Vec::with_capacity(datos.len());
@@ -473,30 +473,30 @@ pub fn aes256_gcm_encrypt(clave: &[u8; 32], nonce: &[u8; 12], datos: &[u8], ad: 
     // GHASH
     let h = {
         let zero_block = [0u8; 16];
-        let w = aes256_key_expand(clave);
+        let w = aes256_clave_expandir(clave);
         aes256_encrypt_block(&zero_block, &w)
     };
 
     // GHASH(H, A || C || len(A) || len(C))
-    let mut ghash_input = Vec::new();
-    ghash_input.extend_from_slice(ad);
+    let mut ghash_entrada = Vec::new();
+    ghash_entrada.extend_from_slice(ad);
     // Padding A to 16 bytes
     let relleno_a = (16 - ad.len() % 16) % 16;
-    ghash_input.extend(std::iter::repeat_n(0u8, relleno_a));
-    ghash_input.extend_from_slice(&cifrado);
+    ghash_entrada.extend(std::iter::repeat_n(0u8, relleno_a));
+    ghash_entrada.extend_from_slice(&cifrado);
     let relleno_c = (16 - cifrado.len() % 16) % 16;
-    ghash_input.extend(std::iter::repeat_n(0u8, relleno_c));
+    ghash_entrada.extend(std::iter::repeat_n(0u8, relleno_c));
     // Longitudes en bits
-    ghash_input.extend_from_slice(&(ad.len() as u64 * 8).to_be_bytes());
-    ghash_input.extend_from_slice(&(cifrado.len() as u64 * 8).to_be_bytes());
+    ghash_entrada.extend_from_slice(&(ad.len() as u64 * 8).to_be_bytes());
+    ghash_entrada.extend_from_slice(&(cifrado.len() as u64 * 8).to_be_bytes());
 
-    let mut tag = gcm_ghash(&h, &ghash_input);
+    let mut tag = gcm_ghash(&h, &ghash_entrada);
 
     // XOR tag con AES(J0) where J0 = nonce || 0x00000001
     let mut j0 = [0u8; 16];
     j0[..12].copy_from_slice(nonce);
     j0[15] = 1;
-    let w = aes256_key_expand(clave);
+    let w = aes256_clave_expandir(clave);
     let enc_j0 = aes256_encrypt_block(&j0, &w);
     for i in 0..16 {
         tag[i] ^= enc_j0[i];
@@ -524,20 +524,20 @@ pub fn aes256_gcm_decrypt(
 
     // Recalcular GHASH
     let zero_block = [0u8; 16];
-    let w = aes256_key_expand(clave);
+    let w = aes256_clave_expandir(clave);
     let h = aes256_encrypt_block(&zero_block, &w);
 
-    let mut ghash_input = Vec::new();
-    ghash_input.extend_from_slice(ad);
+    let mut ghash_entrada = Vec::new();
+    ghash_entrada.extend_from_slice(ad);
     let relleno_a = (16 - ad.len() % 16) % 16;
-    ghash_input.extend(std::iter::repeat_n(0u8, relleno_a));
-    ghash_input.extend_from_slice(cifrado);
+    ghash_entrada.extend(std::iter::repeat_n(0u8, relleno_a));
+    ghash_entrada.extend_from_slice(cifrado);
     let relleno_c = (16 - cifrado.len() % 16) % 16;
-    ghash_input.extend(std::iter::repeat_n(0u8, relleno_c));
-    ghash_input.extend_from_slice(&(ad.len() as u64 * 8).to_be_bytes());
-    ghash_input.extend_from_slice(&(cifrado.len() as u64 * 8).to_be_bytes());
+    ghash_entrada.extend(std::iter::repeat_n(0u8, relleno_c));
+    ghash_entrada.extend_from_slice(&(ad.len() as u64 * 8).to_be_bytes());
+    ghash_entrada.extend_from_slice(&(cifrado.len() as u64 * 8).to_be_bytes());
 
-    let mut computed_tag = gcm_ghash(&h, &ghash_input);
+    let mut computed_tag = gcm_ghash(&h, &ghash_entrada);
 
     // XOR con AES(J0)
     let mut j0 = [0u8; 16];
@@ -847,9 +847,9 @@ pub fn chacha20_poly1305_encrypt(
     ad: &[u8],
 ) -> Vec<u8> {
     // Generar Poly1305 clave usando ChaCha20 con counter=0
-    let poly_key_block = chacha20_block(clave, nonce, 0);
-    let mut poly_key = [0u8; 32];
-    poly_key.copy_from_slice(&poly_key_block[..32]);
+    let poly_clave_block = chacha20_block(clave, nonce, 0);
+    let mut poly_clave = [0u8; 32];
+    poly_clave.copy_from_slice(&poly_clave_block[..32]);
 
     // Cifrar datos con ChaCha20 (counter empieza en 1)
     let cifrado = {
@@ -869,17 +869,17 @@ pub fn chacha20_poly1305_encrypt(
     };
 
     // Construir input para Poly1305: A || relleno(A) || C || relleno(C) || len(A) || len(C)
-    let mut poly_input = Vec::new();
-    poly_input.extend_from_slice(ad);
+    let mut poly_entrada = Vec::new();
+    poly_entrada.extend_from_slice(ad);
     let relleno_a = (16 - ad.len() % 16) % 16;
-    poly_input.extend(std::iter::repeat_n(0u8, relleno_a));
-    poly_input.extend_from_slice(&cifrado);
+    poly_entrada.extend(std::iter::repeat_n(0u8, relleno_a));
+    poly_entrada.extend_from_slice(&cifrado);
     let relleno_c = (16 - cifrado.len() % 16) % 16;
-    poly_input.extend(std::iter::repeat_n(0u8, relleno_c));
-    poly_input.extend_from_slice(&(ad.len() as u64).to_le_bytes());
-    poly_input.extend_from_slice(&(cifrado.len() as u64).to_le_bytes());
+    poly_entrada.extend(std::iter::repeat_n(0u8, relleno_c));
+    poly_entrada.extend_from_slice(&(ad.len() as u64).to_le_bytes());
+    poly_entrada.extend_from_slice(&(cifrado.len() as u64).to_le_bytes());
 
-    let tag = poly1305_mac(&poly_key, &poly_input);
+    let tag = poly1305_mac(&poly_clave, &poly_entrada);
 
     let mut resultado = cifrado;
     resultado.extend_from_slice(&tag);
@@ -900,21 +900,21 @@ pub fn chacha20_poly1305_decrypt(
     let tag_expected: &[u8; 16] = tag_expected.try_into().unwrap();
 
     // Recalcular Poly1305 tag
-    let poly_key_block = chacha20_block(clave, nonce, 0);
-    let mut poly_key = [0u8; 32];
-    poly_key.copy_from_slice(&poly_key_block[..32]);
+    let poly_clave_block = chacha20_block(clave, nonce, 0);
+    let mut poly_clave = [0u8; 32];
+    poly_clave.copy_from_slice(&poly_clave_block[..32]);
 
-    let mut poly_input = Vec::new();
-    poly_input.extend_from_slice(ad);
+    let mut poly_entrada = Vec::new();
+    poly_entrada.extend_from_slice(ad);
     let relleno_a = (16 - ad.len() % 16) % 16;
-    poly_input.extend(std::iter::repeat_n(0u8, relleno_a));
-    poly_input.extend_from_slice(cifrado);
+    poly_entrada.extend(std::iter::repeat_n(0u8, relleno_a));
+    poly_entrada.extend_from_slice(cifrado);
     let relleno_c = (16 - cifrado.len() % 16) % 16;
-    poly_input.extend(std::iter::repeat_n(0u8, relleno_c));
-    poly_input.extend_from_slice(&(ad.len() as u64).to_le_bytes());
-    poly_input.extend_from_slice(&(cifrado.len() as u64).to_le_bytes());
+    poly_entrada.extend(std::iter::repeat_n(0u8, relleno_c));
+    poly_entrada.extend_from_slice(&(ad.len() as u64).to_le_bytes());
+    poly_entrada.extend_from_slice(&(cifrado.len() as u64).to_le_bytes());
 
-    let computed_tag = poly1305_mac(&poly_key, &poly_input);
+    let computed_tag = poly1305_mac(&poly_clave, &poly_entrada);
     if !constant_time_equal(&computed_tag, tag_expected) {
         return Err("ChaCha20-Poly1305: tag inválido — datos alterados");
     }
@@ -955,11 +955,11 @@ pub fn pbkdf2_hmac_sha256(
 
     while dk.len() < largo_dk {
         // U_1 = HMAC(password, salt || INT_32_BE(i))
-        let mut input = Vec::with_capacity(salt.len() + 4);
-        input.extend_from_slice(salt);
-        input.extend_from_slice(&block_index.to_be_bytes());
+        let mut entrada = Vec::with_capacity(salt.len() + 4);
+        entrada.extend_from_slice(salt);
+        entrada.extend_from_slice(&block_index.to_be_bytes());
 
-        let mut u = hmac_sha256(password, &input);
+        let mut u = hmac_sha256(password, &entrada);
         let mut t = u;
 
         for _ in 1..iterations {
@@ -985,8 +985,8 @@ pub fn hash_password(password: &str) -> Result<String, &'static str> {
     Ok(format!(
         "$pbkdf2-sha256${}${}${}",
         iterations,
-        hex_encode(&salt),
-        hex_encode(&hash),
+        hex_codificar(&salt),
+        hex_codificar(&hash),
     ))
 }
 
@@ -1011,14 +1011,14 @@ pub fn verify_password(password: &str, hash_str: &str) -> bool {
 
 // ─── scrypt — memory-hard KDF (RFC 7914) ───────────────────────────────────
 
-fn salsa20_8_block(input: &[u8; 64]) -> [u8; 64] {
+fn salsa20_8_block(entrada: &[u8; 64]) -> [u8; 64] {
     let mut x = [0u32; 16];
     for i in 0..16 {
         x[i] = u32::from_le_bytes([
-            input[i * 4],
-            input[i * 4 + 1],
-            input[i * 4 + 2],
-            input[i * 4 + 3],
+            entrada[i * 4],
+            entrada[i * 4 + 1],
+            entrada[i * 4 + 2],
+            entrada[i * 4 + 3],
         ]);
     }
     let mut y = x;
@@ -1159,7 +1159,7 @@ mod tests {
     #[test]
     fn test_aes256_ecb_roundtrip() {
         let clave = [0x2b; 32];
-        let w = aes256_key_expand(&clave);
+        let w = aes256_clave_expandir(&clave);
         let block = [0x6b; 16];
         let encrypted = aes256_encrypt_block(&block, &w);
         let decrypted = aes256_decrypt_block(&encrypted, &w);
@@ -1234,7 +1234,7 @@ mod tests {
         let dk = pbkdf2_hmac_sha256(b"password", b"salt", 1, 32);
         // RFC 6070 test vector
         assert_eq!(
-            hex_encode(&dk),
+            hex_codificar(&dk),
             "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b"
         );
     }
@@ -1271,27 +1271,27 @@ mod tests {
 
         // empty
         assert_eq!(
-            hex_encode(&poly1305_mac(&clave, b"")),
+            hex_codificar(&poly1305_mac(&clave, b"")),
             "c93256054f2d09f1379abcea43b61039"
         );
         // 5 bytes
         assert_eq!(
-            hex_encode(&poly1305_mac(&clave, b"Hello")),
+            hex_codificar(&poly1305_mac(&clave, b"Hello")),
             "724a8babd1c756b143e551a9a6221696"
         );
         // 16 bytes
         assert_eq!(
-            hex_encode(&poly1305_mac(&clave, &[b'A'; 16])),
+            hex_codificar(&poly1305_mac(&clave, &[b'A'; 16])),
             "ad5ef76e4f5d1363129a12ebdfca02e1"
         );
         // 32 bytes
         assert_eq!(
-            hex_encode(&poly1305_mac(&clave, &[b'A'; 32])),
+            hex_codificar(&poly1305_mac(&clave, &[b'A'; 32])),
             "a3767d22e24bff460da9be377fbb7aee"
         );
         // 33 bytes (partial block)
         assert_eq!(
-            hex_encode(&poly1305_mac(&clave, &[b'A'; 33])),
+            hex_codificar(&poly1305_mac(&clave, &[b'A'; 33])),
             "8f614e60aaab74afb3d96bd7cd84e2dc"
         );
     }

@@ -66,7 +66,7 @@ pub fn try_selfrun() -> Option<()> {
     let fast_math = crate::config::leer_disco()
         .map(|c| c.matematica_rapida)
         .unwrap_or(true);
-    vm.set_fast_math(fast_math);
+    vm.fijar_fast_math(fast_math);
 
     // Habilitar verificación de contratos si la variable de entorno está activa
     if std::env::var("FORJA_VERIFY_CONTRACTS").is_ok() {
@@ -81,7 +81,7 @@ pub fn try_selfrun() -> Option<()> {
     // Salida mediante I/O con buffer para máximo rendimiento
     let stdout = std::io::stdout();
     let mut manejador = BufWriter::new(stdout.lock());
-    for line in vm.obtener_output() {
+    for line in vm.obtener_salida() {
         let _ = writeln!(manejador, "{}", line);
     }
     let _ = manejador.flush();

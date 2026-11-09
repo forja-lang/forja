@@ -53,7 +53,7 @@ pub struct DefId(pub u32);
 
 /// Clase de ítem exportable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClaseItem {
+pub enum ClaseElemento {
     Funcion,
     Clase,
     Enum,
@@ -64,11 +64,11 @@ pub enum ClaseItem {
 
 /// Un ítem exportado por un módulo.
 #[derive(Debug, Clone)]
-pub struct Item {
+pub struct Elemento {
     pub def: DefId,
     pub nombre: String,
     pub nombre_id: SimboloId,
-    pub clase: ClaseItem,
+    pub clase: ClaseElemento,
 }
 
 /// Declaración indexada. Se guarda el AST original para no duplicar el lowering.
@@ -78,7 +78,7 @@ pub struct Def {
     pub modulo: ModuloId,
     pub nombre: String,
     pub nombre_id: SimboloId,
-    pub clase: ClaseItem,
+    pub clase: ClaseElemento,
     pub declaracion: Declaracion,
 }
 
@@ -93,7 +93,7 @@ pub struct Modulo {
 /// Resultado de resolver un nombre.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Resolucion {
-    Item(DefId),
+    Elemento(DefId),
     NoEncontrado,
     Ambiguedad(Vec<DefId>),
 }
@@ -124,11 +124,11 @@ impl Hir {
         let mut repetidos: BTreeMap<String, Vec<DefId>> = BTreeMap::new();
         for decl in &programa.declaraciones {
             let (nombre, clase) = match decl {
-                Declaracion::Funcion { nombre, .. } => (nombre.clone(), ClaseItem::Funcion),
-                Declaracion::Clase { nombre, .. } => (nombre.clone(), ClaseItem::Clase),
-                Declaracion::Enum { nombre, .. } => (nombre.clone(), ClaseItem::Enum),
-                Declaracion::Rasgo { nombre, .. } => (nombre.clone(), ClaseItem::Rasgo),
-                Declaracion::Variable { nombre, .. } => (nombre.clone(), ClaseItem::Variable),
+                Declaracion::Funcion { nombre, .. } => (nombre.clone(), ClaseElemento::Funcion),
+                Declaracion::Clase { nombre, .. } => (nombre.clone(), ClaseElemento::Clase),
+                Declaracion::Enum { nombre, .. } => (nombre.clone(), ClaseElemento::Enum),
+                Declaracion::Rasgo { nombre, .. } => (nombre.clone(), ClaseElemento::Rasgo),
+                Declaracion::Variable { nombre, .. } => (nombre.clone(), ClaseElemento::Variable),
                 _ => continue,
             };
             let def = DefId(self.defs.len() as u32);
@@ -188,7 +188,7 @@ impl Hir {
     /// `nombre` tal como se escribe (`modulo.item`), sin depender del aplanado.
     pub fn resolver_calificado(&self, modulo: ModuloId, nombre: &str) -> Resolucion {
         match self.item(modulo, nombre) {
-            Some(id) => Resolucion::Item(id),
+            Some(id) => Resolucion::Elemento(id),
             None => Resolucion::NoEncontrado,
         }
     }
@@ -257,8 +257,8 @@ mod tests {
         assert_ne!(ma, mb);
         let da = hir.resolver_calificado(ma, "obtener");
         let db = hir.resolver_calificado(mb, "obtener");
-        assert!(matches!(da, Resolucion::Item(_)));
-        assert!(matches!(db, Resolucion::Item(_)));
+        assert!(matches!(da, Resolucion::Elemento(_)));
+        assert!(matches!(db, Resolucion::Elemento(_)));
         assert_ne!(da, db);
         assert_eq!(hir.nombres(ma), vec!["obtener"]);
         assert_eq!(hir.colisiones_entre(ma, mb), vec!["obtener"]);

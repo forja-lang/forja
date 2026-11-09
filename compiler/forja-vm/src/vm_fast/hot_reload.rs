@@ -20,7 +20,7 @@ impl ForjaFast {
             .get(&sym)
             .copied()
             .unwrap_or(usize::MAX);
-        let entry = FuncVersion {
+        let entry = FuncionVersion {
             ip,
             vars_size,
             version,
@@ -29,11 +29,11 @@ impl ForjaFast {
 
         if idx == usize::MAX {
             // Nueva función
-            let new_idx = self.function_table.entries.len();
+            let nuevo_indice = self.function_table.entries.len();
             self.function_table.entries.push(entry);
-            self.sym_to_func_idx.insert(sym, new_idx);
+            self.sym_to_func_idx.insert(sym, nuevo_indice);
             self.function_versions.insert(sym, version);
-            new_idx
+            nuevo_indice
         } else {
             // Reemplazar función existente (hot reload)
             self.function_table.entries[idx] = entry;
@@ -47,13 +47,13 @@ impl ForjaFast {
         &mut self,
         sym: IdSimbolo,
         nueva_ip: usize,
-        nuevo_vars_size: usize,
+        nuevo_vars_tamano: usize,
     ) -> bool {
         if let Some(&idx) = self.sym_to_func_idx.get(&sym) {
             let version = self.function_versions.get(&sym).copied().unwrap_or(0) + 1;
-            self.function_table.entries[idx] = FuncVersion {
+            self.function_table.entries[idx] = FuncionVersion {
                 ip: nueva_ip,
-                vars_size: nuevo_vars_size,
+                vars_size: nuevo_vars_tamano,
                 version,
                 module_id: self.function_table.entries[idx].module_id,
             };
@@ -71,7 +71,7 @@ impl ForjaFast {
 
     /// Buscar una función en la function_table (indirección para hot reload)
     /// Retorna None si no está registrada; en ese caso se cae a funciones nativas.
-    pub fn lookup_func_entry(&self, sym: IdSimbolo) -> Option<FuncVersion> {
+    pub fn lookup_funcion_entrada(&self, sym: IdSimbolo) -> Option<FuncionVersion> {
         self.sym_to_func_idx
             .get(&sym)
             .copied()
@@ -90,7 +90,7 @@ impl ForjaFast {
     ///
     /// El módulo debe estar registrado en `modulo_bytecode_ranges`.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn hot_swap_module(
+    pub fn hot_swap_modulo(
         &mut self,
         module_id: ModuleId,
         nuevo_bc: &ModuloBytecode,
@@ -120,11 +120,11 @@ impl ForjaFast {
                     module_id.0
                 )
             })?;
-        let old_len = end - start;
-        let new_len = nuevo_bc.codigos.len();
+        let old_longitud = end - start;
+        let nuevo_longitud = nuevo_bc.codigos.len();
 
         // 4. Reemplazar bytecode del módulo in-place
-        if new_len == old_len {
+        if nuevo_longitud == old_longitud {
             for (dst, src) in self.bytecode[start..end]
                 .iter_mut()
                 .zip(nuevo_bc.codigos.iter())
@@ -139,7 +139,7 @@ impl ForjaFast {
             self.bytecode.extend(tail);
 
             // Ajustar rangos de otros módulos que están después
-            let shift = (new_len as isize) - (old_len as isize);
+            let shift = (nuevo_longitud as isize) - (old_longitud as isize);
             let otros: Vec<(ModuleId, (usize, usize))> = self
                 .modulo_bytecode_ranges
                 .iter()
@@ -160,9 +160,9 @@ impl ForjaFast {
         }
 
         // 5. Actualizar rango del módulo
-        let new_end = start + new_len;
+        let nuevo_end = start + nuevo_longitud;
         self.modulo_bytecode_ranges
-            .insert(module_id, (start, new_end));
+            .insert(module_id, (start, nuevo_end));
 
         // 6. Re-mapear funciones del módulo en la function_table
         let funciones = nuevo_bc.desglosar();
@@ -171,7 +171,7 @@ impl ForjaFast {
             let ip_absoluta = start + ip_rel;
 
             if let Some(&idx) = self.sym_to_func_idx.get(&sym) {
-                self.function_table.entries[idx] = FuncVersion {
+                self.function_table.entries[idx] = FuncionVersion {
                     ip: ip_absoluta,
                     vars_size: *vars_size,
                     version: nueva_version,
@@ -193,7 +193,7 @@ impl ForjaFast {
         self.contador_especializacion = vec![0u8; self.bytecode.len()];
         self.ic_getfield = vec![Pic::Empty; self.bytecode.len()];
         self.ic_setfield = vec![Pic::Empty; self.bytecode.len()];
-        self.ic_miss_count = vec![0u8; self.bytecode.len()];
+        self.ic_miss_cantidad = vec![0u8; self.bytecode.len()];
         self.ic_callmethod = vec![Pic::Empty; self.bytecode.len()];
         self.ic_arrayget = vec![None; self.bytecode.len()];
         self.ic_arrayset = vec![None; self.bytecode.len()];

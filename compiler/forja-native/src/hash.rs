@@ -59,12 +59,12 @@ impl Sha256 {
     pub fn finalize(mut self) -> [u8; 32] {
         // FIPS 180-4 §5.1.1: agrega 0x80, luego ceros hasta que (len + 8) % 64 == 0,
         // y al final la longitud en bits como entero de 64 bits
-        let bit_len = self.len.wrapping_mul(8).to_be_bytes();
+        let bit_longitud = self.len.wrapping_mul(8).to_be_bytes();
         self.update(&[0x80]);
         while (self.len as usize) % 64 != 56 {
             self.update(&[0]);
         }
-        self.update(&bit_len);
+        self.update(&bit_longitud);
 
         let mut resultado = [0u8; 32];
         for (i, &h) in self.h.iter().enumerate() {
@@ -116,23 +116,23 @@ fn sha256_compress(h: &mut [u32; 8], block: &[u8; 64]) {
     for i in 0..64 {
         let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
         let ch = (e & f) ^ ((!e) & g);
-        let temp1 = hh
+        let temporal1 = hh
             .wrapping_add(s1)
             .wrapping_add(ch)
             .wrapping_add(K256[i])
             .wrapping_add(w[i]);
         let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
         let maj = (a & b) ^ (a & c) ^ (b & c);
-        let temp2 = s0.wrapping_add(maj);
+        let temporal2 = s0.wrapping_add(maj);
 
         hh = g;
         g = f;
         f = e;
-        e = d.wrapping_add(temp1);
+        e = d.wrapping_add(temporal1);
         d = c;
         c = b;
         b = a;
-        a = temp1.wrapping_add(temp2);
+        a = temporal1.wrapping_add(temporal2);
     }
 
     h[0] = h[0].wrapping_add(a);
@@ -197,12 +197,12 @@ impl Sha1 {
     pub fn finalize(mut self) -> [u8; 20] {
         // FIPS 180-4 §5.1.1: agrega 0x80, luego ceros hasta que (len + 8) % 64 == 0,
         // y al final la longitud en bits como entero de 64 bits
-        let bit_len = self.len.wrapping_mul(8).to_be_bytes();
+        let bit_longitud = self.len.wrapping_mul(8).to_be_bytes();
         self.update(&[0x80]);
         while (self.len as usize) % 64 != 56 {
             self.update(&[0]);
         }
-        self.update(&bit_len);
+        self.update(&bit_longitud);
 
         let mut resultado = [0u8; 20];
         for (i, &h) in self.h.iter().enumerate() {
@@ -241,7 +241,7 @@ fn sha1_compress(h: &mut [u32; 5], block: &[u8; 64]) {
             40..=59 => ((b & c) | (b & d) | (c & d), 0x8f1bbcdc),
             _ => (b ^ c ^ d, 0xca62c1d6),
         };
-        let temp = a
+        let temporal = a
             .rotate_left(5)
             .wrapping_add(f)
             .wrapping_add(e)
@@ -251,7 +251,7 @@ fn sha1_compress(h: &mut [u32; 5], block: &[u8; 64]) {
         d = c;
         c = b.rotate_left(30);
         b = a;
-        a = temp;
+        a = temporal;
     }
 
     h[0] = h[0].wrapping_add(a);
@@ -363,14 +363,14 @@ impl Sha512 {
         // (16 bytes). Antes se escribían sólo 8, el bloque quedaba en 120 bytes y
         // nunca se comprimía: `digest` devolvía el estado inicial para cualquier
         // entrada.
-        let bit_len = self.len.wrapping_mul(8).to_be_bytes();
+        let bit_longitud = self.len.wrapping_mul(8).to_be_bytes();
         self.update(&[0x80]);
         while (self.len as usize) % 128 != 112 {
             self.update(&[0]);
         }
         // `buf` tiene 112 bytes rellenos y sin comprimir: completar el bloque.
         self.buf[112..120].copy_from_slice(&[0u8; 8]);
-        self.buf[120..128].copy_from_slice(&bit_len);
+        self.buf[120..128].copy_from_slice(&bit_longitud);
         self.len += 16;
         sha512_compress(&mut self.h, &self.buf);
         let mut resultado = [0u8; 64];
@@ -497,22 +497,22 @@ fn sha512_compress(h: &mut [u64; 8], block: &[u8; 128]) {
     for i in 0..80 {
         let s1 = e.rotate_right(14) ^ e.rotate_right(18) ^ e.rotate_right(41);
         let ch = (e & f) ^ ((!e) & g);
-        let temp1 = hh
+        let temporal1 = hh
             .wrapping_add(s1)
             .wrapping_add(ch)
             .wrapping_add(K512[i])
             .wrapping_add(w[i]);
         let s0 = a.rotate_right(28) ^ a.rotate_right(34) ^ a.rotate_right(39);
         let maj = (a & b) ^ (a & c) ^ (b & c);
-        let temp2 = s0.wrapping_add(maj);
+        let temporal2 = s0.wrapping_add(maj);
         hh = g;
         g = f;
         f = e;
-        e = d.wrapping_add(temp1);
+        e = d.wrapping_add(temporal1);
         d = c;
         c = b;
         b = a;
-        a = temp1.wrapping_add(temp2);
+        a = temporal1.wrapping_add(temporal2);
     }
     h[0] = h[0].wrapping_add(a);
     h[1] = h[1].wrapping_add(b);
@@ -605,7 +605,7 @@ pub fn hmac_sha256(clave: &[u8], data: &[u8]) -> [u8; 32] {
 }
 
 /// Convierte un slice de bytes a hexadecimal en minúsculas
-pub fn hex_encode(data: &[u8]) -> String {
+pub fn hex_codificar(data: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = Vec::with_capacity(data.len() * 2);
     for &b in data {
@@ -623,7 +623,7 @@ mod tests {
     fn test_sha256_empty() {
         let hash = Sha256::digest(b"");
         assert_eq!(
-            hex_encode(&hash),
+            hex_codificar(&hash),
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
     }
@@ -632,7 +632,7 @@ mod tests {
     fn test_sha256_abc() {
         let hash = Sha256::digest(b"abc");
         assert_eq!(
-            hex_encode(&hash),
+            hex_codificar(&hash),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
     }
@@ -641,7 +641,7 @@ mod tests {
     fn test_sha256_hello() {
         let hash = Sha256::digest(b"hello world");
         assert_eq!(
-            hex_encode(&hash),
+            hex_codificar(&hash),
             "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
         );
     }
@@ -650,7 +650,7 @@ mod tests {
     fn test_sha1_empty() {
         let hash = Sha1::digest(b"");
         assert_eq!(
-            hex_encode(&hash),
+            hex_codificar(&hash),
             "da39a3ee5e6b4b0d3255bfef95601890afd80709"
         );
     }
@@ -659,7 +659,7 @@ mod tests {
     fn test_sha1_abc() {
         let hash = Sha1::digest(b"abc");
         assert_eq!(
-            hex_encode(&hash),
+            hex_codificar(&hash),
             "a9993e364706816aba3e25717850c26c9cd0d89d"
         );
     }
@@ -668,7 +668,7 @@ mod tests {
     fn test_sha1_hello() {
         let hash = Sha1::digest(b"hello world");
         assert_eq!(
-            hex_encode(&hash),
+            hex_codificar(&hash),
             "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed"
         );
     }
@@ -678,7 +678,7 @@ mod tests {
         let data = b"a".repeat(1000);
         let hash = Sha256::digest(&data);
         assert_eq!(
-            hex_encode(&hash),
+            hex_codificar(&hash),
             "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3"
         );
     }

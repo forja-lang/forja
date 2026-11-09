@@ -24,7 +24,7 @@ fn ejecutar_con_gc(fuente: &str, umbral_presion: usize) -> (Vec<String>, ForjaFa
     vm.set_gc_pressure_threshold(umbral_presion);
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().expect("la VM debe ejecutar sin error");
-    let salida = vm.obtener_output().to_vec();
+    let salida = vm.obtener_salida().to_vec();
     (salida, vm)
 }
 
@@ -122,7 +122,7 @@ main()
     vm.set_gc_pressure_threshold(usize::MAX);
     vm.cargar_bytecode(bytecode);
     vm.ejecutar().expect("ejecuta");
-    assert_eq!(vm.obtener_output(), &["ok".to_string()]);
+    assert_eq!(vm.obtener_salida(), &["ok".to_string()]);
 
     let antes = vm.heap_slots();
     vm.forzar_gc();

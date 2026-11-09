@@ -14,7 +14,7 @@ use forja_runtime::Generation;
 
 /// Un slot en el stack que contiene un puntero GC
 #[derive(Debug, Clone, Copy)]
-pub struct GcStackSlot {
+pub struct GcPilaSlot {
     /// Offset desde el frame pointer
     pub offset: i32,
     /// Es puntero raíz (debe ser rastreado por el GC)
@@ -23,13 +23,13 @@ pub struct GcStackSlot {
 
 /// Mapa de stack para una función compilada
 #[derive(Debug, Clone)]
-pub struct StackMap {
+pub struct PilaMapa {
     /// ID único de esta función
     pub function_id: u32,
     /// Punto de safe point (offset del PC donde el GC puede pausar)
     pub safe_point_offset: u32,
     /// Slots de stack que contienen punteros GC
-    pub gc_slots: Vec<GcStackSlot>,
+    pub gc_slots: Vec<GcPilaSlot>,
     /// Registros que contienen punteros GC
     pub gc_registers: Vec<GcRegister>,
 }
@@ -45,7 +45,7 @@ pub struct GcRegister {
 
 /// Write barrier — se inserta antes de cada Store que escribe un puntero GC
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WriteBarrier {
+pub enum EscribirBarrier {
     /// No se necesita write barrier
     None,
     /// El objeto destino está en old generation y el valor podría estar en young
@@ -54,13 +54,13 @@ pub enum WriteBarrier {
     YoungOnly,
 }
 
-impl WriteBarrier {
+impl EscribirBarrier {
     /// Determina qué write barrier se necesita para una escritura
-    pub fn for_write(obj_gen: Generation, val_gen: Generation) -> Self {
+    pub fn for_escribir(obj_gen: Generation, val_gen: Generation) -> Self {
         match (obj_gen, val_gen) {
-            (Generation::Old, Generation::Young) => WriteBarrier::RememberedSet,
-            (Generation::Young, _) => WriteBarrier::YoungOnly,
-            _ => WriteBarrier::None,
+            (Generation::Old, Generation::Young) => EscribirBarrier::RememberedSet,
+            (Generation::Young, _) => EscribirBarrier::YoungOnly,
+            _ => EscribirBarrier::None,
         }
     }
 }
@@ -71,7 +71,7 @@ pub struct SafePoint {
     /// Offset del PC donde está el safe point
     pub pc_offset: u32,
     /// Mapa de stack asociado a este safe point
-    pub stack_map: StackMap,
+    pub stack_map: PilaMapa,
     /// Número de frames en la call stack en este punto
     pub frame_depth: u32,
 }
@@ -79,32 +79,32 @@ pub struct SafePoint {
 /// Manager de GC intrinsics para el backend LLVM
 pub struct GcIntrinsicsManager {
     /// Stack maps por función
-    stack_maps: Vec<StackMap>,
+    pila_maps: Vec<PilaMapa>,
     /// Safe points por función
     safe_points: Vec<SafePoint>,
     /// Contador de funciones con stack maps
-    next_function_id: u32,
+    siguiente_funcion_id: u32,
 }
 
 impl GcIntrinsicsManager {
     pub fn new() -> Self {
         GcIntrinsicsManager {
-            stack_maps: Vec::new(),
+            pila_maps: Vec::new(),
             safe_points: Vec::new(),
-            next_function_id: 1,
+            siguiente_funcion_id: 1,
         }
     }
 
     /// Crea un nuevo function ID para stack maps
-    pub fn new_function_id(&mut self) -> u32 {
-        let id = self.next_function_id;
-        self.next_function_id += 1;
+    pub fn nuevo_funcion_id(&mut self) -> u32 {
+        let id = self.siguiente_funcion_id;
+        self.siguiente_funcion_id += 1;
         id
     }
 
     /// Registra un stack map para una función
-    pub fn register_stack_map(&mut self, stack_map: StackMap) {
-        self.stack_maps.push(stack_map);
+    pub fn register_pila_mapa(&mut self, stack_map: PilaMapa) {
+        self.pila_maps.push(stack_map);
     }
 
     /// Registra un safe point
@@ -113,8 +113,8 @@ impl GcIntrinsicsManager {
     }
 
     /// Retorna el stack map más cercano a un PC dado
-    pub fn find_stack_map(&self, function_id: u32, pc_offset: u32) -> Option<&StackMap> {
-        self.stack_maps
+    pub fn buscar_pila_mapa(&self, function_id: u32, pc_offset: u32) -> Option<&PilaMapa> {
+        self.pila_maps
             .iter()
             .filter(|sm| sm.function_id == function_id)
             .min_by_key(|sm| pc_offset.abs_diff(sm.safe_point_offset))
@@ -129,7 +129,7 @@ impl GcIntrinsicsManager {
     }
 
     /// Verifica si un PC está en un safe point
-    pub fn is_safe_point(&self, function_id: u32, pc_offset: u32) -> bool {
+    pub fn es_safe_point(&self, function_id: u32, pc_offset: u32) -> bool {
         self.safe_points
             .iter()
             .any(|sp| sp.stack_map.function_id == function_id && sp.pc_offset == pc_offset)
@@ -141,8 +141,8 @@ impl GcIntrinsicsManager {
     }
 
     /// Cuenta el número total de stack maps
-    pub fn total_stack_maps(&self) -> usize {
-        self.stack_maps.len()
+    pub fn total_pila_maps(&self) -> usize {
+        self.pila_maps.len()
     }
 }
 
@@ -174,12 +174,12 @@ impl LlvmGcPatterns {
     }
 
     /// Patrón LLVM IR para gc.result
-    pub fn result_pattern() -> &'static str {
+    pub fn resultado_pattern() -> &'static str {
         "llvm.experimental.gc.result"
     }
 
     /// Genera el LLVM IR para un safe point
-    pub fn emit_safe_point(_function_id: u32, stack_map: &StackMap) -> String {
+    pub fn emitir_safe_point(_function_id: u32, stack_map: &PilaMapa) -> String {
         let num_roots = stack_map.gc_slots.iter().filter(|s| s.is_root).count();
         format!(
             "; GC safe point ({} roots)\n  call void @llvm.experimental.gc.safepoint()",
@@ -188,11 +188,11 @@ impl LlvmGcPatterns {
     }
 
     /// Genera el LLVM IR para un write barrier check
-    pub fn emit_write_barrier(barrier: WriteBarrier) -> &'static str {
+    pub fn emitir_escribir_barrier(barrier: EscribirBarrier) -> &'static str {
         match barrier {
-            WriteBarrier::None => "; no barrier needed",
-            WriteBarrier::RememberedSet => "call void @__gc_write_barrier(ptr %obj, ptr %val)",
-            WriteBarrier::YoungOnly => "; young object, no barrier needed",
+            EscribirBarrier::None => "; no barrier needed",
+            EscribirBarrier::RememberedSet => "call void @__gc_write_barrier(ptr %obj, ptr %val)",
+            EscribirBarrier::YoungOnly => "; young object, no barrier needed",
         }
     }
 }
@@ -204,42 +204,42 @@ mod tests {
     #[test]
     fn test_gc_intrinsics_manager() {
         let mut mgr = GcIntrinsicsManager::new();
-        let fid = mgr.new_function_id();
+        let fid = mgr.nuevo_funcion_id();
 
-        let sm = StackMap {
+        let sm = PilaMapa {
             function_id: fid,
             safe_point_offset: 100,
             gc_slots: vec![
-                GcStackSlot {
+                GcPilaSlot {
                     offset: -8,
                     is_root: true,
                 },
-                GcStackSlot {
+                GcPilaSlot {
                     offset: -16,
                     is_root: true,
                 },
-                GcStackSlot {
+                GcPilaSlot {
                     offset: -24,
                     is_root: false,
                 },
             ],
             gc_registers: vec![],
         };
-        mgr.register_stack_map(sm);
+        mgr.register_pila_mapa(sm);
 
-        assert_eq!(mgr.total_stack_maps(), 1);
-        let found = mgr.find_stack_map(fid, 100);
+        assert_eq!(mgr.total_pila_maps(), 1);
+        let found = mgr.buscar_pila_mapa(fid, 100);
         assert!(found.is_some());
     }
 
     #[test]
     fn test_safe_point_registration() {
         let mut mgr = GcIntrinsicsManager::new();
-        let fid = mgr.new_function_id();
+        let fid = mgr.nuevo_funcion_id();
 
         let sp = SafePoint {
             pc_offset: 50,
-            stack_map: StackMap {
+            stack_map: PilaMapa {
                 function_id: fid,
                 safe_point_offset: 50,
                 gc_slots: vec![],
@@ -249,24 +249,24 @@ mod tests {
         };
         mgr.register_safe_point(sp);
 
-        assert!(mgr.is_safe_point(fid, 50));
-        assert!(!mgr.is_safe_point(fid, 51));
+        assert!(mgr.es_safe_point(fid, 50));
+        assert!(!mgr.es_safe_point(fid, 51));
         assert_eq!(mgr.total_safe_points(), 1);
     }
 
     #[test]
-    fn test_write_barrier() {
+    fn test_escribir_barrier() {
         assert_eq!(
-            WriteBarrier::for_write(Generation::Old, Generation::Young),
-            WriteBarrier::RememberedSet
+            EscribirBarrier::for_escribir(Generation::Old, Generation::Young),
+            EscribirBarrier::RememberedSet
         );
         assert_eq!(
-            WriteBarrier::for_write(Generation::Young, Generation::Old),
-            WriteBarrier::YoungOnly
+            EscribirBarrier::for_escribir(Generation::Young, Generation::Old),
+            EscribirBarrier::YoungOnly
         );
         assert_eq!(
-            WriteBarrier::for_write(Generation::Old, Generation::Old),
-            WriteBarrier::None
+            EscribirBarrier::for_escribir(Generation::Old, Generation::Old),
+            EscribirBarrier::None
         );
     }
 
@@ -283,17 +283,17 @@ mod tests {
     }
 
     #[test]
-    fn test_find_closest_stack_map() {
+    fn test_buscar_closest_pila_mapa() {
         let mut mgr = GcIntrinsicsManager::new();
-        let fid = mgr.new_function_id();
+        let fid = mgr.nuevo_funcion_id();
 
-        mgr.register_stack_map(StackMap {
+        mgr.register_pila_mapa(PilaMapa {
             function_id: fid,
             safe_point_offset: 100,
             gc_slots: vec![],
             gc_registers: vec![],
         });
-        mgr.register_stack_map(StackMap {
+        mgr.register_pila_mapa(PilaMapa {
             function_id: fid,
             safe_point_offset: 200,
             gc_slots: vec![],
@@ -301,11 +301,11 @@ mod tests {
         });
 
         // PC 120 debería encontrar el stack map en 100 (más cercano)
-        let found = mgr.find_stack_map(fid, 120);
+        let found = mgr.buscar_pila_mapa(fid, 120);
         assert_eq!(found.unwrap().safe_point_offset, 100);
 
         // PC 190 debería encontrar el stack map en 200
-        let found = mgr.find_stack_map(fid, 190);
+        let found = mgr.buscar_pila_mapa(fid, 190);
         assert_eq!(found.unwrap().safe_point_offset, 200);
     }
 }

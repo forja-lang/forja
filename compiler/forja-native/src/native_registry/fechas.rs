@@ -1,10 +1,10 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_fechas(&mut self) {
         // ─── Fechas y Hora ─────────────────────────────────────────────────
-        self.registrar("_fecha_desde_timestamp", native_fecha_desde_timestamp);
-        self.registrar("_fecha_a_timestamp", native_fecha_a_timestamp);
+        self.registrar("_fecha_desde_timestamp", nativo_fecha_desde_timestamp);
+        self.registrar("_fecha_a_timestamp", nativo_fecha_a_timestamp);
     }
 }
 pub fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
@@ -67,8 +67,8 @@ const NOMBRES_MES: [&str; 12] = [
 
 /// Convierte un timestamp Unix (segundos desde epoch) a un texto JSON con
 /// los componentes de fecha: año, mes, dia, hora, minuto, segundo, nombre_dia, nombre_mes
-pub fn native_fecha_desde_timestamp(
-    vm: &mut dyn Host,
+pub fn nativo_fecha_desde_timestamp(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -95,14 +95,14 @@ pub fn native_fecha_desde_timestamp(
         año, mes, dia, hora, minuto, segundo, nombre_dia, nombre_mes
     );
 
-    let indice = vm.alloc_str(Arc::from(salida.as_str()));
+    let indice = vm.reservar_texto(Arc::from(salida.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
 /// Convierte componentes de fecha a timestamp Unix (segundos desde epoch)
 /// args: (año, mes, dia, hora, minuto, segundo)
-pub fn native_fecha_a_timestamp(
-    _vm: &mut dyn Host,
+pub fn nativo_fecha_a_timestamp(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 6 {

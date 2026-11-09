@@ -126,7 +126,7 @@ pub(crate) fn cmd_install() {
 
     let directorio_proyecto =
         std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
-    let mut resolver = PackageResolver::new(&directorio_proyecto);
+    let mut resolver = PaqueteResolver::new(&directorio_proyecto);
 
     println!("📦 Instalando dependencias...");
     for (nombre, version) in &config.dependencias {
@@ -154,7 +154,7 @@ pub(crate) fn cmd_install() {
 /// forja publish|publicar [--dir <ruta>]
 ///
 /// Empaqueta el proyecto actual (o el indicado con --dir) en un tarball
-/// `.fapkg`, lo firma y lo publica en el registry local (~/.forja/registry).
+/// `.fapkg`, lo firma y lo publica en el registro local (~/.forja/registro).
 /// Lee nombre/version/autor/descripcion de `forja.json`.
 pub(crate) fn cmd_publish(args: &[String]) {
     rechazar_flags(args);
@@ -179,7 +179,7 @@ pub(crate) fn cmd_publish(args: &[String]) {
         }
     };
 
-    if !forja::registry::Semver::es_valida(&config.version) {
+    if !forja::registro::Semver::es_valida(&config.version) {
         eprintln!(
             "❌ La versión '{}' de forja.json no es semver válido (usa mayor.menor.parche)",
             config.version
@@ -191,7 +191,7 @@ pub(crate) fn cmd_publish(args: &[String]) {
         "📦 Publicando {}@{} en el registry local...",
         config.nombre, config.version
     );
-    match forja::registry::publicar(
+    match forja::registro::publicar(
         &directorio,
         &config.nombre,
         &config.version,
@@ -201,10 +201,10 @@ pub(crate) fn cmd_publish(args: &[String]) {
         Ok(hash) => {
             println!("✅ Publicado {}@{}", config.nombre, config.version);
             println!("   sha256: {}", hash);
-            println!("   index:  {}", forja::registry::ruta_index().display());
+            println!("   index:  {}", forja::registro::ruta_index().display());
             println!(
                 "   tarball: {}",
-                forja::registry::ruta_tarball(&config.nombre, &config.version).display()
+                forja::registro::ruta_tarball(&config.nombre, &config.version).display()
             );
             match forja::registry_remote::publicar_si_configurado(
                 &config.nombre,
@@ -230,16 +230,16 @@ pub(crate) fn cmd_publish(args: &[String]) {
     }
 }
 
-/// forja registry-serve [--dir <ruta>] [--port <puerto>] [--token <token>]
+/// forja registro-serve [--dir <ruta>] [--port <puerto>] [--token <token>]
 ///
-/// Servidor HTTP mínimo del registry remoto. Pensado para desarrollo y
+/// Servidor HTTP mínimo del registro remoto. Pensado para desarrollo y
 /// pruebas; en producción va detrás de un proxy TLS.
 pub(crate) fn cmd_registro_serve(args: &[String]) {
     rechazar_flags(args);
     let directorio = args
         .first()
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| forja::registry::dir_registry().join("server"));
+        .unwrap_or_else(|| forja::registro::directorio_registro().join("server"));
     let puerto: u16 = args
         .get(1)
         .and_then(|p| p.parse().ok())
@@ -274,7 +274,7 @@ pub(crate) fn cmd_registro_serve(args: &[String]) {
 
 /// forja yank|retirar <paquete> <version>
 ///
-/// Marca una versión como retirada en el index del registry local. No borra
+/// Marca una versión como retirada en el index del registro local. No borra
 /// el tarball; simplemente deja de resolverse con `latest` ni por versión.
 pub(crate) fn cmd_yank(args: &[String]) {
     if args.len() < 2 {
@@ -283,7 +283,7 @@ pub(crate) fn cmd_yank(args: &[String]) {
     }
     let nombre = &args[0];
     let version = &args[1];
-    match forja::registry::yank(nombre, version) {
+    match forja::registro::yank(nombre, version) {
         Ok(_) => {
             println!("✅ Versión '{}' de '{}' retirada (yanked)", version, nombre);
             if forja::registry_remote::configurado() {

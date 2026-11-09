@@ -14,6 +14,6 @@ pub mod ir_ssa;
 pub mod ir_to_bytecode;
 pub mod optimizer;
 pub mod optimizer_pipeline;
+pub mod pila_to_reg;
 pub mod register_alloc;
 pub mod register_ir;
-pub mod stack_to_reg;

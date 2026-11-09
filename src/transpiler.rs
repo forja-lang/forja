@@ -3530,7 +3530,7 @@ mod tests {
     use super::*;
     use crate::lexer::Lexer;
     use crate::parser::Parser;
-    use crate::semantics::BorrowChecker;
+    use crate::semantics::PrestamoChecker;
 
     fn transpilar_source(source: &str) -> Result<String, Vec<ErrorForja>> {
         let mut lexer = Lexer::new(source);
@@ -3538,7 +3538,7 @@ mod tests {
         let mut parser = Parser::new(tokens);
         let programa = parser.parse()?;
 
-        let mut checker = BorrowChecker::new();
+        let mut checker = PrestamoChecker::new();
         checker.analizar(&programa)?;
 
         let mut transpiler = Transpiler::new();

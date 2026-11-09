@@ -10,22 +10,22 @@ use super::super::*;
 /// - Tamaño del cuerpo ≤ `MAX_INLINE_SIZE` declaraciones
 /// - Número de llamadas = 1 (monomórfico)
 /// - Sin recursion (directa ni indirecta)
-pub struct FunctionInliner {
+pub struct FuncionInliner {
     pub inlines_realizados: usize,
     /// Tamaño máximo del cuerpo para considerar inline
     pub max_inline_size: usize,
 }
 
-impl FunctionInliner {
+impl FuncionInliner {
     pub fn new() -> Self {
-        FunctionInliner {
+        FuncionInliner {
             inlines_realizados: 0,
             max_inline_size: 10,
         }
     }
 
     /// Ejecuta el pase de inlining sobre el programa completo.
-    pub fn inline(&mut self, programa: &Programa) -> Programa {
+    pub fn en_linea(&mut self, programa: &Programa) -> Programa {
         // 1. Recolectar definiciones de funciones
         let mut funcs: HashMap<String, (Vec<Parametro>, Vec<Declaracion>)> = HashMap::new();
         for decl in &programa.declaraciones {
@@ -48,19 +48,19 @@ impl FunctionInliner {
         }
 
         // 3. Identificar candidatos a inline (llamada 1 vez, cuerpo pequeño)
-        let mut inline_candidates: HashMap<String, (Vec<Parametro>, Vec<Declaracion>)> =
+        let mut en_linea_candidates: HashMap<String, (Vec<Parametro>, Vec<Declaracion>)> =
             HashMap::new();
         for (nombre, (params, body)) in &funcs {
-            let count = call_counts.get(nombre).copied().unwrap_or(0);
-            if count == 1 && body.len() <= self.max_inline_size {
+            let cantidad = call_counts.get(nombre).copied().unwrap_or(0);
+            if cantidad == 1 && body.len() <= self.max_inline_size {
                 // Verificar que no es main
                 if nombre != "main" {
-                    inline_candidates.insert(nombre.clone(), (params.clone(), body.clone()));
+                    en_linea_candidates.insert(nombre.clone(), (params.clone(), body.clone()));
                 }
             }
         }
 
-        if inline_candidates.is_empty() {
+        if en_linea_candidates.is_empty() {
             return programa.clone();
         }
 
@@ -68,12 +68,12 @@ impl FunctionInliner {
         let mut declaraciones_nuevas = Vec::new();
         for decl in &programa.declaraciones {
             match decl {
-                Declaracion::Funcion { nombre, .. } if inline_candidates.contains_key(nombre) => {
+                Declaracion::Funcion { nombre, .. } if en_linea_candidates.contains_key(nombre) => {
                     // Eliminar la función candidata (será inlined)
                     self.inlines_realizados += 1;
                 }
                 _ => {
-                    declaraciones_nuevas.extend(self.inline_en_decl(decl, &inline_candidates));
+                    declaraciones_nuevas.extend(self.en_linea_en_decl(decl, &en_linea_candidates));
                 }
             }
         }
@@ -156,7 +156,7 @@ impl FunctionInliner {
         }
     }
 
-    fn inline_en_decl(
+    fn en_linea_en_decl(
         &mut self,
         decl: &Declaracion,
         candidates: &HashMap<String, (Vec<Parametro>, Vec<Declaracion>)>,
@@ -236,11 +236,11 @@ impl FunctionInliner {
             } => {
                 let verdadero_nuevo: Vec<Declaracion> = bloque_verdadero
                     .iter()
-                    .flat_map(|d| self.inline_en_decl(d, candidates))
+                    .flat_map(|d| self.en_linea_en_decl(d, candidates))
                     .collect();
                 let falso_nuevo: Option<Vec<Declaracion>> = bloque_falso.as_ref().map(|bf| {
                     bf.iter()
-                        .flat_map(|d| self.inline_en_decl(d, candidates))
+                        .flat_map(|d| self.en_linea_en_decl(d, candidates))
                         .collect()
                 });
                 vec![Declaracion::Si {
@@ -252,7 +252,7 @@ impl FunctionInliner {
             Declaracion::Mientras { condicion, bloque } => {
                 let nuevo_bloque: Vec<Declaracion> = bloque
                     .iter()
-                    .flat_map(|d| self.inline_en_decl(d, candidates))
+                    .flat_map(|d| self.en_linea_en_decl(d, candidates))
                     .collect();
                 vec![Declaracion::Mientras {
                     condicion: condicion.clone(),
@@ -267,7 +267,7 @@ impl FunctionInliner {
             } => {
                 let nuevo_bloque: Vec<Declaracion> = bloque
                     .iter()
-                    .flat_map(|d| self.inline_en_decl(d, candidates))
+                    .flat_map(|d| self.en_linea_en_decl(d, candidates))
                     .collect();
                 vec![Declaracion::Para {
                     inicializacion: inicializacion.clone(),
@@ -281,7 +281,7 @@ impl FunctionInliner {
     }
 }
 
-impl Default for FunctionInliner {
+impl Default for FuncionInliner {
     fn default() -> Self {
         Self::new()
     }

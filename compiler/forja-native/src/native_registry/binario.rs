@@ -1,21 +1,21 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_binario(&mut self) {
-        self.registrar("_binario_empaquetar", native_binario_empaquetar);
-        self.registrar("_binario_desempaquetar", native_binario_desempaquetar);
-        self.registrar("_binario_a_hex", native_binario_a_hex);
-        self.registrar("_binario_desde_hex", native_binario_desde_hex);
-        self.registrar("_binario_tamano", native_binario_tamano);
+        self.registrar("_binario_empaquetar", nativo_binario_empaquetar);
+        self.registrar("_binario_desempaquetar", nativo_binario_desempaquetar);
+        self.registrar("_binario_a_hex", nativo_binario_a_hex);
+        self.registrar("_binario_desde_hex", nativo_binario_desde_hex);
+        self.registrar("_binario_tamano", nativo_binario_tamano);
     }
 }
-pub fn native_binario_empaquetar(
-    vm: &mut dyn Host,
+pub fn nativo_binario_empaquetar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let formato = obtener_texto(vm, args[0])?;
     let arr_idx = args[1].indice_arreglo() as usize;
-    let arr = vm.get_arr(arr_idx as u32);
+    let arr = vm.obtener_arr(arr_idx as u32);
     let mut buffer: Vec<u8> = Vec::new();
     let mut posicion = 0usize;
     let fmt_bytes = formato.as_bytes();
@@ -63,13 +63,13 @@ pub fn native_binario_empaquetar(
     }
     let salida = String::from_utf8(buffer).unwrap_or_default();
     Ok({
-        let indice = vm.alloc_str(Arc::from(salida.as_str()));
+        let indice = vm.reservar_texto(Arc::from(salida.as_str()));
         ValorFast::texto(indice)
     })
 }
 
-pub fn native_binario_desempaquetar(
-    vm: &mut dyn Host,
+pub fn nativo_binario_desempaquetar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let formato = obtener_texto(vm, args[0])?;
@@ -137,21 +137,24 @@ pub fn native_binario_desempaquetar(
         }
         i += skip;
     }
-    let arr_idx = vm.alloc_arr(vals);
+    let arr_idx = vm.reservar_arr(vals);
     Ok(ValorFast::arreglo(arr_idx))
 }
 
-pub fn native_binario_a_hex(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_binario_a_hex(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let datos = obtener_texto(vm, args[0])?;
     let hex: String = datos.bytes().map(|b| format!("{:02x}", b)).collect();
     Ok({
-        let indice = vm.alloc_str(Arc::from(hex.as_str()));
+        let indice = vm.reservar_texto(Arc::from(hex.as_str()));
         ValorFast::texto(indice)
     })
 }
 
-pub fn native_binario_desde_hex(
-    vm: &mut dyn Host,
+pub fn nativo_binario_desde_hex(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let hex = obtener_texto(vm, args[0])?;
@@ -161,12 +164,15 @@ pub fn native_binario_desde_hex(
         .collect();
     let salida = String::from_utf8(octetos).unwrap_or_default();
     Ok({
-        let indice = vm.alloc_str(Arc::from(salida.as_str()));
+        let indice = vm.reservar_texto(Arc::from(salida.as_str()));
         ValorFast::texto(indice)
     })
 }
 
-pub fn native_binario_tamano(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_binario_tamano(
+    _vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let formato = obtener_texto(_vm, args[0])?;
     let mut tamano = 0i64;
     for ch in formato.chars() {

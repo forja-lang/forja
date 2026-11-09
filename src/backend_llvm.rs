@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 
-use crate::gc_intrinsics::{GcIntrinsicsManager, GcRegister, GcStackSlot, SafePoint, StackMap};
+use crate::gc_intrinsics::{GcIntrinsicsManager, GcPilaSlot, GcRegister, PilaMapa, SafePoint};
 
 /// Tipo LLVM
 #[derive(Debug, Clone, PartialEq)]
@@ -525,7 +525,7 @@ impl LlvmBackend {
         if let Some(idx) = func_idx {
             // Crear manager temporal para generar stack maps
             let mut gc_mgr = GcIntrinsicsManager::new();
-            let function_id = gc_mgr.new_function_id();
+            let function_id = gc_mgr.nuevo_funcion_id();
 
             // Analizar los bloques de la función para encontrar loops (back-edges)
             let blocks = self.module.functions[idx].blocks.clone();
@@ -577,15 +577,15 @@ impl LlvmBackend {
         gc_mgr: &mut GcIntrinsicsManager,
     ) {
         // Crear un stack map para este safe point
-        let stack_map = StackMap {
+        let stack_map = PilaMapa {
             function_id,
             safe_point_offset: (block_idx * 8) as u32, // offset aproximado
             gc_slots: vec![
-                GcStackSlot {
+                GcPilaSlot {
                     offset: -8,
                     is_root: true,
                 },
-                GcStackSlot {
+                GcPilaSlot {
                     offset: -16,
                     is_root: true,
                 },
@@ -597,7 +597,7 @@ impl LlvmBackend {
         };
 
         // Registrar el stack map y safe point
-        gc_mgr.register_stack_map(stack_map.clone());
+        gc_mgr.register_pila_mapa(stack_map.clone());
         gc_mgr.register_safe_point(SafePoint {
             pc_offset: (block_idx * 8) as u32,
             stack_map,

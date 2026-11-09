@@ -1,7 +1,7 @@
 //! Auditoría de la frontera nativo ↔ módulo Forja.
 //!
 //! 1. Toda llamada `_nativa(...)` de `library/std` debe existir en el
-//!    `NativeRegistry` (una función huérfana es un módulo roto en runtime).
+//!    `NativoRegistro` (una función huérfana es un módulo roto en runtime).
 //! 2. Ningún módulo puede exportar una función con nombre de builtin o keyword:
 //!    al resolverse los imports se inlinean y pisarían el nombre del usuario.
 
@@ -63,7 +63,7 @@ fn es_ident(b: u8) -> bool {
 
 #[test]
 fn toda_llamada_nativa_existe_en_el_registro() {
-    let registro: HashSet<String> = forja::native_registry::NativeRegistry::new()
+    let registro: HashSet<String> = forja::native_registry::NativoRegistro::new()
         .nombres()
         .into_iter()
         .collect();

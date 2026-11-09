@@ -17,13 +17,13 @@ use super::super::*;
 /// variable a = _cse_0
 /// variable b = _cse_0
 /// ```
-pub struct CsePass {
+pub struct CsePasada {
     pub cse_realizados: usize,
 }
 
-impl CsePass {
+impl CsePasada {
     pub fn new() -> Self {
-        CsePass { cse_realizados: 0 }
+        CsePasada { cse_realizados: 0 }
     }
 
     /// Ejecuta CSE sobre el programa.
@@ -47,7 +47,7 @@ impl CsePass {
             Declaracion::Variable {
                 valor: Some(expr), ..
             } => {
-                if Self::expr_has_side_effects(expr) {
+                if Self::expresion_tiene_side_effects(expr) {
                     return vec![decl.clone()];
                 }
                 // Si la expresión es binaria, buscar duplicados en el mismo batch
@@ -69,13 +69,13 @@ impl CsePass {
                 precondiciones,
                 postcondiciones,
             } => {
-                let new_body = self.cse_block(cuerpo);
+                let nuevo_body = self.cse_block(cuerpo);
                 vec![Declaracion::Funcion {
                     nombre: nombre.clone(),
                     parametros_tipo: parametros_tipo.clone(),
                     parametros: parametros.clone(),
                     tipo_retorno: tipo_retorno.clone(),
-                    cuerpo: new_body,
+                    cuerpo: nuevo_body,
                     externa: *externa,
                     asincrona: *asincrona,
                     enlace_nombre: enlace_nombre.clone(),
@@ -100,9 +100,9 @@ impl CsePass {
                     valor: Some(expr),
                     nombre,
                     ..
-                } if !Self::expr_has_side_effects(expr) => {
-                    let key = Self::expr_hash_key(expr);
-                    if let Some(existing_var) = seen.get(&key) {
+                } if !Self::expresion_tiene_side_effects(expr) => {
+                    let clave = Self::expresion_hash_clave(expr);
+                    if let Some(existing_var) = seen.get(&clave) {
                         // CSE: reemplazar expresión con referencia a variable existente
                         self.cse_realizados += 1;
                         resultado.push(Declaracion::Variable {
@@ -118,7 +118,7 @@ impl CsePass {
                             columna: 0,
                         });
                     } else {
-                        seen.insert(key, nombre.clone());
+                        seen.insert(clave, nombre.clone());
                         resultado.push(decl.clone());
                     }
                 }
@@ -130,7 +130,7 @@ impl CsePass {
         resultado
     }
 
-    fn expr_hash_key(expr: &Expresion) -> String {
+    fn expresion_hash_clave(expr: &Expresion) -> String {
         match expr {
             // Literales
             Expresion::LiteralNumero(n) => format!("num:{}", n),
@@ -149,17 +149,18 @@ impl CsePass {
                 format!(
                     "bin:{:?}:{}:{}",
                     operador,
-                    Self::expr_hash_key(izquierda),
-                    Self::expr_hash_key(derecha)
+                    Self::expresion_hash_clave(izquierda),
+                    Self::expresion_hash_clave(derecha)
                 )
             }
             // Unaria — recursivo
             Expresion::Unaria { operador, expr } => {
-                format!("unary:{:?}:{}", operador, Self::expr_hash_key(expr))
+                format!("unary:{:?}:{}", operador, Self::expresion_hash_clave(expr))
             }
             // Llamada a función — recursivo en argumentos
             Expresion::LlamadaFuncion { nombre, argumentos } => {
-                let args_hash: Vec<String> = argumentos.iter().map(Self::expr_hash_key).collect();
+                let args_hash: Vec<String> =
+                    argumentos.iter().map(Self::expresion_hash_clave).collect();
                 format!("call:{}:{}", nombre, args_hash.join(","))
             }
             // Llamada a método — recursivo en objeto y argumentos
@@ -168,45 +169,53 @@ impl CsePass {
                 metodo,
                 argumentos,
             } => {
-                let args_hash: Vec<String> = argumentos.iter().map(Self::expr_hash_key).collect();
+                let args_hash: Vec<String> =
+                    argumentos.iter().map(Self::expresion_hash_clave).collect();
                 format!(
                     "meth:{}:{}:{}",
-                    Self::expr_hash_key(objeto),
+                    Self::expresion_hash_clave(objeto),
                     metodo,
                     args_hash.join(",")
                 )
             }
             // Arreglo literal — recursivo en elementos
             Expresion::Arreglo(elementos) => {
-                let elems: Vec<String> = elementos.iter().map(Self::expr_hash_key).collect();
+                let elems: Vec<String> = elementos.iter().map(Self::expresion_hash_clave).collect();
                 format!("arr:[{}]", elems.join(","))
             }
             // Index — recursivo en objeto e índice
             Expresion::Index { objeto, indice } => {
                 format!(
                     "idx:{}:{}",
-                    Self::expr_hash_key(objeto),
-                    Self::expr_hash_key(indice)
+                    Self::expresion_hash_clave(objeto),
+                    Self::expresion_hash_clave(indice)
                 )
             }
             // AccesoMiembro — recursivo en objeto
             Expresion::AccesoMiembro { objeto, miembro } => {
-                format!("dot:{}:{}", Self::expr_hash_key(objeto), miembro)
+                format!("dot:{}:{}", Self::expresion_hash_clave(objeto), miembro)
             }
             // Instanciación — recursivo en argumentos
             Expresion::Instanciacion { clase, argumentos } => {
-                let args_hash: Vec<String> = argumentos.iter().map(Self::expr_hash_key).collect();
+                let args_hash: Vec<String> =
+                    argumentos.iter().map(Self::expresion_hash_clave).collect();
                 format!("new:{}:{}", clase, args_hash.join(","))
             }
             // Grupo (paréntesis) — recursivo
             Expresion::Grupo(expr) => {
-                format!("grp:{}", Self::expr_hash_key(expr))
+                format!("grp:{}", Self::expresion_hash_clave(expr))
             }
             // Mapa literal — recursivo en claves y valores
             Expresion::Mapa(pares) => {
                 let pairs: Vec<String> = pares
                     .iter()
-                    .map(|(k, v)| format!("{}={}", Self::expr_hash_key(k), Self::expr_hash_key(v)))
+                    .map(|(k, v)| {
+                        format!(
+                            "{}={}",
+                            Self::expresion_hash_clave(k),
+                            Self::expresion_hash_clave(v)
+                        )
+                    })
                     .collect();
                 format!("map:[{}]", pairs.join(","))
             }
@@ -218,26 +227,26 @@ impl CsePass {
             } => {
                 format!(
                     "tern:{}:{}:{}",
-                    Self::expr_hash_key(condicion),
-                    Self::expr_hash_key(si_verdadero),
-                    Self::expr_hash_key(si_falso)
+                    Self::expresion_hash_clave(condicion),
+                    Self::expresion_hash_clave(si_verdadero),
+                    Self::expresion_hash_clave(si_falso)
                 )
             }
             // Referencia — recursivo
             Expresion::Referencia { expr, mutable } => {
-                format!("ref:{}:{}", mutable, Self::expr_hash_key(expr))
+                format!("ref:{}:{}", mutable, Self::expresion_hash_clave(expr))
             }
             // Ok/Error/Algo — recursivo
-            Expresion::Ok(expr) => format!("ok:{}", Self::expr_hash_key(expr)),
-            Expresion::Error(expr) => format!("err:{}", Self::expr_hash_key(expr)),
-            Expresion::Algo(expr) => format!("algo:{}", Self::expr_hash_key(expr)),
+            Expresion::Ok(expr) => format!("ok:{}", Self::expresion_hash_clave(expr)),
+            Expresion::Error(expr) => format!("err:{}", Self::expresion_hash_clave(expr)),
+            Expresion::Algo(expr) => format!("algo:{}", Self::expresion_hash_clave(expr)),
             Expresion::Nada => "nada".to_string(),
             Expresion::Ninguno => "ninguno".to_string(),
             // Try — recursivo
-            Expresion::Try(expr) => format!("try:{}", Self::expr_hash_key(expr)),
+            Expresion::Try(expr) => format!("try:{}", Self::expresion_hash_clave(expr)),
             // Asignación como expresión — recursivo
             Expresion::Asignacion { variable, valor } => {
-                format!("asgn:{}:{}", variable, Self::expr_hash_key(valor))
+                format!("asgn:{}:{}", variable, Self::expresion_hash_clave(valor))
             }
             // Asignación a campo — recursivo
             Expresion::AsignacionCampo {
@@ -247,17 +256,17 @@ impl CsePass {
             } => {
                 format!(
                     "asgnf:{}:{}:{}",
-                    Self::expr_hash_key(objeto),
+                    Self::expresion_hash_clave(objeto),
                     campo,
-                    Self::expr_hash_key(valor)
+                    Self::expresion_hash_clave(valor)
                 )
             }
             // ArraySet — recursivo
             Expresion::ArraySet { array, valor } => {
                 format!(
                     "arrset:{}:{}",
-                    Self::expr_hash_key(array),
-                    Self::expr_hash_key(valor)
+                    Self::expresion_hash_clave(array),
+                    Self::expresion_hash_clave(valor)
                 )
             }
             Expresion::AsignacionCompuesta {
@@ -268,8 +277,8 @@ impl CsePass {
                 format!(
                     "acomp:{:?}:{}:{}",
                     operador,
-                    Self::expr_hash_key(objetivo),
-                    Self::expr_hash_key(valor)
+                    Self::expresion_hash_clave(objetivo),
+                    Self::expresion_hash_clave(valor)
                 )
             }
             // Fallback: usar Debug sin puntero (hash determinista del contenido)
@@ -277,7 +286,7 @@ impl CsePass {
         }
     }
 
-    fn expr_has_side_effects(expr: &Expresion) -> bool {
+    fn expresion_tiene_side_effects(expr: &Expresion) -> bool {
         matches!(
             expr,
             Expresion::LlamadaFuncion { .. }
@@ -289,7 +298,7 @@ impl CsePass {
     }
 }
 
-impl Default for CsePass {
+impl Default for CsePasada {
     fn default() -> Self {
         Self::new()
     }

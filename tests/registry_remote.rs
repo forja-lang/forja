@@ -1,4 +1,4 @@
-//! end-to-end del registry remoto (cliente + servidor HTTP).
+//! end-to-end del registro remoto (cliente + servidor HTTP).
 //!
 //! Cubre publicación/descarga/yank, la firma **asimétrica** del autor
 //! (Ed25519), el rechazo de firmas que no corresponden y el registro de
@@ -72,7 +72,7 @@ fn registro_remoto_publica_descarga_y_extraer() {
         "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
     );
 
-    let datos = forja::registry::empaquetar(&proyecto, "demo", "1.0.0").unwrap();
+    let datos = forja::registro::empaquetar(&proyecto, "demo", "1.0.0").unwrap();
 
     // Sin token, el servidor rechaza.
     std::env::remove_var("FORJA_REGISTRY_TOKEN");
@@ -101,7 +101,7 @@ fn registro_remoto_publica_descarga_y_extraer() {
     assert_eq!(version.clave_publica.len(), 64, "clave pública hex");
     assert_eq!(version.firma.len(), 128, "firma Ed25519 hex");
     assert!(
-        forja::registry::verificar_firma_ed25519(
+        forja::registro::verificar_firma_ed25519(
             &version.sha256,
             &version.firma,
             &version.clave_publica
@@ -152,7 +152,7 @@ fn servidor_rechaza_firma_que_no_corresponde() {
         .expect("servidor");
 
     let datos = b"contenido del paquete".to_vec();
-    let hash = forja::registry::sha256_hex(&datos);
+    let hash = forja::registro::sha256_hex(&datos);
     let claves = forja::ed25519::par_desde_semilla(&[3u8; 32]);
     let publica_hex: String = claves
         .publica
@@ -161,7 +161,7 @@ fn servidor_rechaza_firma_que_no_corresponde() {
         .collect();
 
     // Firma válida pero sobre otro contenido: no sirve para este paquete.
-    let firma_otra = forja::registry::firmar_hash_ed25519("00", &claves.privada);
+    let firma_otra = forja::registro::firmar_hash_ed25519("00", &claves.privada);
     let alterada = forja::registry_remote::Publicacion {
         autor: "tester".into(),
         descripcion: "alterado".into(),
@@ -180,7 +180,7 @@ fn servidor_rechaza_firma_que_no_corresponde() {
     let correcta = forja::registry_remote::Publicacion {
         autor: "tester".into(),
         descripcion: "correcto".into(),
-        firma: forja::registry::firmar_hash_ed25519(&hash, &claves.privada),
+        firma: forja::registro::firmar_hash_ed25519(&hash, &claves.privada),
         clave_publica: publica_hex,
         tarball_b64: forja::base64::b64_encode(&datos),
     };
@@ -198,12 +198,12 @@ fn servidor_rechaza_firma_que_no_corresponde() {
         .join("alterado-1.0.0.fapkg");
     assert!(tarball.exists(), "el tarball debe existir");
     std::fs::write(&tarball, b"contenido manipulado").unwrap();
-    let indice = forja::registry::Index::cargar(&raiz.join("server").join("index.json")).unwrap();
+    let indice = forja::registro::Index::cargar(&raiz.join("server").join("index.json")).unwrap();
     let version = indice
         .resolver_version("alterado", "1.0.0")
         .unwrap()
         .clone();
-    let err = forja::registry::verificar_tarball(b"contenido manipulado", &version)
+    let err = forja::registro::verificar_tarball(b"contenido manipulado", &version)
         .expect_err("el paquete alterado debe rechazarse");
     assert!(err.contains("Integridad") || err.contains("Firma"), "{err}");
 

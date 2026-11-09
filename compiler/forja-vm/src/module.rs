@@ -4,7 +4,7 @@ use crate::ast::*;
 use crate::bytecode::Opcode;
 use crate::error::ErrorForja;
 use crate::lexer::Lexer;
-use crate::package_resolver::PackageResolver;
+use crate::package_resolver::PaqueteResolver;
 use crate::parser::Parser;
 use crate::symbol_table::IdSimbolo;
 use std::collections::hash_map::DefaultHasher;
@@ -17,7 +17,7 @@ pub type ModuleId = IdSimbolo;
 
 /// Metadatos de un módulo cargado
 #[derive(Debug, Clone)]
-pub struct ModuleInfo {
+pub struct ModuloInformacion {
     pub source_path: String,
     pub source_hash: u64,
     pub funciones: Vec<IdSimbolo>,
@@ -30,22 +30,22 @@ pub struct ModuleInfo {
 
 /// Caché central de módulos
 #[derive(Debug, Clone)]
-pub struct ModuleCache {
+pub struct ModuloCache {
     pub por_ruta: HashMap<String, ModuleId>,
-    pub por_id: HashMap<ModuleId, ModuleInfo>,
+    pub por_id: HashMap<ModuleId, ModuloInformacion>,
     pub grafo_importaciones: HashMap<ModuleId, Vec<ModuleId>>,
     pub grafo_dependientes: HashMap<ModuleId, Vec<ModuleId>>,
 }
 
-impl Default for ModuleCache {
+impl Default for ModuloCache {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ModuleCache {
+impl ModuloCache {
     pub fn new() -> Self {
-        ModuleCache {
+        ModuloCache {
             por_ruta: HashMap::new(),
             por_id: HashMap::new(),
             grafo_importaciones: HashMap::new(),
@@ -54,21 +54,21 @@ impl ModuleCache {
     }
 }
 
-pub struct ModuleResolver {
-    root_dir: PathBuf,
+pub struct ModuloResolver {
+    raiz_directorio: PathBuf,
     cache: HashMap<String, Programa>,
-    pub package_resolver: Option<PackageResolver>,
+    pub package_resolver: Option<PaqueteResolver>,
     /// Caché de módulos enriquecido con metadatos (Fase 2)
-    pub module_cache: ModuleCache,
+    pub module_cache: ModuloCache,
 }
 
-impl ModuleResolver {
-    pub fn new(root_dir: &str) -> Self {
-        ModuleResolver {
-            root_dir: PathBuf::from(root_dir),
+impl ModuloResolver {
+    pub fn new(raiz_directorio: &str) -> Self {
+        ModuloResolver {
+            raiz_directorio: PathBuf::from(raiz_directorio),
             cache: HashMap::new(),
             package_resolver: None,
-            module_cache: ModuleCache::new(),
+            module_cache: ModuloCache::new(),
         }
     }
 
@@ -107,25 +107,25 @@ impl ModuleResolver {
             (ruta_limpia.clone(), std::path::PathBuf::from(&ruta_limpia))
         } else {
             let clean = ruta_limpia.trim_start_matches('/');
-            let p = self.root_dir.join(format!("{}.fa", clean));
+            let p = self.raiz_directorio.join(format!("{}.fa", clean));
             (clean.to_string(), p)
         };
 
         // Intentar obtener del cache primero
         if let Some(prog) = self.cache.get(&ruta_key) {
-            let module_id = self
+            let modulo_id = self
                 .module_cache
                 .por_ruta
                 .get(&ruta_key)
                 .copied()
                 .unwrap_or(IdSimbolo(0));
-            return Ok((prog.clone(), module_id));
+            return Ok((prog.clone(), modulo_id));
         }
 
         // Intentar resolver la ruta localmente
         if let Ok(canonical) = path.canonicalize() {
             let canonical_str = canonical.to_str().unwrap_or("").to_string();
-            let module_id = IdSimbolo(
+            let modulo_id = IdSimbolo(
                 canonical_str
                     .bytes()
                     .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
@@ -133,9 +133,9 @@ impl ModuleResolver {
 
             if es_absoluta
                 || canonical.starts_with(
-                    self.root_dir
+                    self.raiz_directorio
                         .canonicalize()
-                        .unwrap_or(self.root_dir.clone()),
+                        .unwrap_or(self.raiz_directorio.clone()),
                 )
             {
                 // Verificar límite de tamaño antes de leer
@@ -163,7 +163,7 @@ impl ModuleResolver {
                         "Aumentá `max_archivo_mb` en forja.yaml para subir el límite al compilar el archivo principal.",
                     )]);
                 }
-                let source = std::fs::read_to_string(&canonical).map_err(|e| {
+                let fuente = std::fs::read_to_string(&canonical).map_err(|e| {
                     vec![ErrorForja::new(
                         crate::error::ErrorTipo::ErrorSemantico,
                         0,
@@ -172,7 +172,7 @@ impl ModuleResolver {
                         "Verificá que el archivo exista.",
                     )]
                 })?;
-                let mut lexer = Lexer::new(&source);
+                let mut lexer = Lexer::new(&fuente);
                 let tokens = lexer.tokenize()?;
                 let mut parser = Parser::new(tokens);
                 let mut programa = parser.parse()?;
@@ -204,9 +204,9 @@ impl ModuleResolver {
                 self.cache.insert(ruta_key.clone(), programa.clone());
 
                 // Registrar en module_cache
-                self.module_cache.por_ruta.insert(ruta_key, module_id);
+                self.module_cache.por_ruta.insert(ruta_key, modulo_id);
 
-                return Ok((programa, module_id));
+                return Ok((programa, modulo_id));
             }
             if !es_absoluta {
                 return Err(vec![ErrorForja::new(
@@ -254,7 +254,7 @@ impl ModuleResolver {
                         "Aumentá `max_archivo_mb` en forja.yaml para subir el límite al compilar el archivo principal.",
                     )]);
                 }
-                let source = std::fs::read_to_string(&ruta_resuelta).map_err(|e| {
+                let fuente = std::fs::read_to_string(&ruta_resuelta).map_err(|e| {
                     vec![ErrorForja::new(
                         crate::error::ErrorTipo::ErrorSemantico,
                         0,
@@ -263,12 +263,12 @@ impl ModuleResolver {
                         "Verificá que el paquete esté instalado.",
                     )]
                 })?;
-                let mut lexer = Lexer::new(&source);
+                let mut lexer = Lexer::new(&fuente);
                 let tokens = lexer.tokenize()?;
                 let mut parser = Parser::new(tokens);
                 let mut programa = parser.parse()?;
 
-                let module_id = IdSimbolo(
+                let modulo_id = IdSimbolo(
                     ruta_str
                         .bytes()
                         .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
@@ -299,9 +299,9 @@ impl ModuleResolver {
                 }
                 programa.declaraciones = dedup_declaraciones(final_decls);
                 self.cache.insert(ruta_key.clone(), programa.clone());
-                self.module_cache.por_ruta.insert(ruta_key, module_id);
+                self.module_cache.por_ruta.insert(ruta_key, modulo_id);
 
-                return Ok((programa, module_id));
+                return Ok((programa, modulo_id));
             }
         }
 
@@ -321,12 +321,12 @@ impl ModuleResolver {
     }
 
     /// Recompila un módulo desde disco y retorna el nuevo Programa
-    pub fn recargar(&mut self, module_id: ModuleId) -> Result<Programa, Vec<ErrorForja>> {
+    pub fn recargar(&mut self, modulo_id: ModuleId) -> Result<Programa, Vec<ErrorForja>> {
         // Buscar la ruta del módulo por su ModuleId
         let ruta = self
             .module_cache
             .por_id
-            .get(&module_id)
+            .get(&modulo_id)
             .map(|info| info.source_path.clone());
 
         let ruta = match ruta {
@@ -337,7 +337,7 @@ impl ModuleResolver {
                     .module_cache
                     .por_ruta
                     .iter()
-                    .find(|(_, &id)| id == module_id)
+                    .find(|(_, &id)| id == modulo_id)
                     .map(|(ruta, _)| ruta.clone());
                 match ruta_opt {
                     Some(r) => r,
@@ -365,17 +365,17 @@ impl ModuleResolver {
     /// Verifica si un módulo cambió en disco comparando hashes
     pub fn modulo_cambio(&mut self, ruta: &str) -> bool {
         // Obtener ModuleId
-        let module_id = match self.module_cache.por_ruta.get(ruta) {
+        let modulo_id = match self.module_cache.por_ruta.get(ruta) {
             Some(&id) => id,
             None => return false, // No registrado → no hay cambio detectable
         };
 
-        let info = match self.module_cache.por_id.get(&module_id) {
+        let info = match self.module_cache.por_id.get(&modulo_id) {
             Some(i) => i,
             None => return false,
         };
 
-        let path = self.root_dir.join(format!("{}.fa", ruta));
+        let path = self.raiz_directorio.join(format!("{}.fa", ruta));
         let ruta_archivo = path.to_str().unwrap_or(ruta);
         let nuevo_hash = Self::hash_fuente(ruta_archivo);
         nuevo_hash != info.source_hash && nuevo_hash != 0
@@ -384,50 +384,52 @@ impl ModuleResolver {
     /// Lista los módulos cuyo hash cambió en disco
     pub fn modulos_cambiados(&self) -> Vec<(ModuleId, String)> {
         let mut cambiados = Vec::new();
-        for (module_id, info) in &self.module_cache.por_id {
-            let ruta_archivo = self.root_dir.join(format!("{}.fa", info.source_path));
+        for (modulo_id, info) in &self.module_cache.por_id {
+            let ruta_archivo = self
+                .raiz_directorio
+                .join(format!("{}.fa", info.source_path));
             let ruta_str = ruta_archivo.to_str().unwrap_or(&info.source_path);
             let nuevo_hash = Self::hash_fuente(ruta_str);
             if nuevo_hash != info.source_hash && nuevo_hash != 0 {
-                cambiados.push((*module_id, info.source_path.clone()));
+                cambiados.push((*modulo_id, info.source_path.clone()));
             }
         }
         cambiados
     }
 
     /// Agrega un módulo al cache con su información completa
-    pub fn registrar_modulo(&mut self, module_id: ModuleId, info: ModuleInfo) {
+    pub fn registrar_modulo(&mut self, modulo_id: ModuleId, info: ModuloInformacion) {
         self.module_cache
             .por_ruta
-            .insert(info.source_path.clone(), module_id);
-        self.module_cache.por_id.insert(module_id, info.clone());
+            .insert(info.source_path.clone(), modulo_id);
+        self.module_cache.por_id.insert(modulo_id, info.clone());
         for import in &info.imports {
             self.module_cache
                 .grafo_importaciones
-                .entry(module_id)
+                .entry(modulo_id)
                 .or_default()
                 .push(*import);
             self.module_cache
                 .grafo_dependientes
                 .entry(*import)
                 .or_default()
-                .push(module_id);
+                .push(modulo_id);
         }
     }
 
     /// Retorna los dependientes directos de un módulo
-    pub fn dependientes_de(&self, module_id: ModuleId) -> Option<&[ModuleId]> {
+    pub fn dependientes_de(&self, modulo_id: ModuleId) -> Option<&[ModuleId]> {
         self.module_cache
             .grafo_dependientes
-            .get(&module_id)
+            .get(&modulo_id)
             .map(|v| v.as_slice())
     }
 
     /// Retorna las importaciones directas de un módulo
-    pub fn importaciones_de(&self, module_id: ModuleId) -> Option<&[ModuleId]> {
+    pub fn importaciones_de(&self, modulo_id: ModuleId) -> Option<&[ModuleId]> {
         self.module_cache
             .grafo_importaciones
-            .get(&module_id)
+            .get(&modulo_id)
             .map(|v| v.as_slice())
     }
 
@@ -443,17 +445,17 @@ impl ModuleResolver {
 
         // Intentar obtener del cache primero
         if let Some(prog) = self.cache.get(nombre_modulo) {
-            let module_id = self
+            let modulo_id = self
                 .module_cache
                 .por_ruta
                 .get(nombre_modulo)
                 .copied()
                 .unwrap_or(IdSimbolo(0));
-            return Ok((prog.clone(), module_id));
+            return Ok((prog.clone(), modulo_id));
         }
 
         // Obtener fuente desde stdlib embebida
-        let (source, _es_gui) = crate::stdlib_embedded::obtener(nombre_modulo)
+        let (fuente, _es_gui) = crate::stdlib_embedded::obtener(nombre_modulo)
             .ok_or_else(|| vec![ErrorForja::new(
                 crate::error::ErrorTipo::ErrorSemantico,
                 0, 0,
@@ -462,14 +464,14 @@ impl ModuleResolver {
             )])?;
 
         // Generar ModuleId a partir del nombre
-        let module_id = IdSimbolo(
+        let modulo_id = IdSimbolo(
             nombre_modulo
                 .bytes()
                 .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)),
         );
 
         // Parsear el código fuente
-        let mut lexer = crate::lexer::Lexer::new(source);
+        let mut lexer = crate::lexer::Lexer::new(fuente);
         let tokens = lexer.tokenize()?;
         let mut parser = crate::parser::Parser::new(tokens);
         let mut programa = parser.parse()?;
@@ -496,9 +498,9 @@ impl ModuleResolver {
             .insert(nombre_modulo.to_string(), programa.clone());
         self.module_cache
             .por_ruta
-            .insert(nombre_modulo.to_string(), module_id);
+            .insert(nombre_modulo.to_string(), modulo_id);
 
-        Ok((programa, module_id))
+        Ok((programa, modulo_id))
     }
 }
 

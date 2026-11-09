@@ -100,7 +100,7 @@ impl ConstPropagator {
                 postcondiciones,
             } => {
                 let saved = std::mem::take(&mut self.constantes);
-                let new_cuerpo: Vec<Declaracion> = cuerpo
+                let nuevo_cuerpo: Vec<Declaracion> = cuerpo
                     .iter()
                     .flat_map(|d| self.propagar_declaracion(d))
                     .collect();
@@ -110,7 +110,7 @@ impl ConstPropagator {
                     parametros_tipo: parametros_tipo.clone(),
                     parametros: parametros.clone(),
                     tipo_retorno: tipo_retorno.clone(),
-                    cuerpo: new_cuerpo,
+                    cuerpo: nuevo_cuerpo,
                     externa: *externa,
                     asincrona: *asincrona,
                     enlace_nombre: enlace_nombre.clone(),
@@ -201,7 +201,7 @@ impl ConstPropagator {
                 incremento,
                 bloque,
             } => {
-                let new_inicializacion = inicializacion
+                let nuevo_inicializacion = inicializacion
                     .as_ref()
                     .map(|ini| Box::new(self.clonar_y_propagar(ini)));
                 let nuevo_bloque: Vec<Declaracion> = bloque
@@ -209,7 +209,7 @@ impl ConstPropagator {
                     .flat_map(|d| self.propagar_declaracion(d))
                     .collect();
                 Declaracion::Para {
-                    inicializacion: new_inicializacion,
+                    inicializacion: nuevo_inicializacion,
                     condicion: condicion
                         .as_ref()
                         .map(|c| Box::new(self.propagar_expresion(c))),

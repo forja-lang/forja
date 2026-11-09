@@ -4,7 +4,7 @@
 //! representación intermedia entre el bytecode stack-based y la
 //! generación de código nativo con register allocation.
 
-use crate::register_alloc::{RegClass, VirtReg};
+use crate::register_alloc::{RegClase, VirtReg};
 
 /// Instrucción del IR register-based
 #[derive(Debug, Clone)]
@@ -13,7 +13,7 @@ pub enum RegInstruction {
     Move {
         dst: VirtReg,
         src: VirtReg,
-        clase: RegClass,
+        clase: RegClase,
     },
     LoadImm {
         dst: VirtReg,
@@ -74,12 +74,12 @@ pub enum RegInstruction {
     LoadVar {
         dst: VirtReg,
         var_idx: usize,
-        clase: RegClass,
+        clase: RegClase,
     },
     StoreVar {
         src: VirtReg,
         var_idx: usize,
-        clase: RegClass,
+        clase: RegClase,
     },
 
     // Saltos
@@ -138,19 +138,19 @@ impl RegProgram {
         }
     }
 
-    pub fn alloc_vreg(&mut self) -> VirtReg {
+    pub fn reservar_vreg(&mut self) -> VirtReg {
         let v = self.next_vreg;
         self.next_vreg += 1;
         v
     }
 
     /// Retorna el número total de bloques
-    pub fn block_count(&self) -> usize {
+    pub fn block_cantidad(&self) -> usize {
         self.blocks.len()
     }
 
     /// Retorna el número total de instrucciones (incluyendo terminadores)
-    pub fn instruction_count(&self) -> usize {
+    pub fn instruction_cantidad(&self) -> usize {
         self.blocks.iter().map(|b| b.instructions.len() + 1).sum()
     }
 }
@@ -162,8 +162,8 @@ impl Default for RegProgram {
 }
 
 /// Extrae (uses, defs) de una instrucción
-pub fn get_uses_defs(instr: &RegInstruction) -> (Vec<(VirtReg, RegClass)>, Vec<VirtReg>) {
-    use crate::register_alloc::RegClass as RClass;
+pub fn obtener_uses_defs(instr: &RegInstruction) -> (Vec<(VirtReg, RegClase)>, Vec<VirtReg>) {
+    use crate::register_alloc::RegClase as RClass;
     match instr {
         RegInstruction::LoadImm { dst, .. } => (vec![], vec![*dst]),
         RegInstruction::LoadFloat { dst, .. } => (vec![], vec![*dst]),
@@ -202,9 +202,9 @@ pub fn get_uses_defs(instr: &RegInstruction) -> (Vec<(VirtReg, RegClass)>, Vec<V
 /// Esto es imprescindible para que un `AddFloat` no reciba un registro GPR.
 fn clase_de_def(
     instr: &RegInstruction,
-    clases: &std::collections::HashMap<VirtReg, RegClass>,
-) -> Option<RegClass> {
-    use crate::register_alloc::RegClass as RClass;
+    clases: &std::collections::HashMap<VirtReg, RegClase>,
+) -> Option<RegClase> {
+    use crate::register_alloc::RegClase as RClass;
     match instr {
         RegInstruction::LoadImm { .. } => Some(RClass::Integer),
         RegInstruction::LoadFloat { .. } => Some(RClass::Float),
@@ -234,7 +234,7 @@ fn clase_de_def(
 /// También registra las posiciones de uso de cada variable para soportar interval splitting.
 pub fn compute_live_intervals(prog: &RegProgram) -> Vec<crate::register_alloc::LiveInterval> {
     use crate::register_alloc::LiveInterval;
-    use crate::register_alloc::RegClass as RClass;
+    use crate::register_alloc::RegClase as RClass;
     use std::collections::HashMap;
 
     // Pasada 1: clase de cada vreg, en orden de programa. Los defs toman su clase
@@ -248,7 +248,7 @@ pub fn compute_live_intervals(prog: &RegProgram) -> Vec<crate::register_alloc::L
             .iter()
             .chain(std::iter::once(&block.terminator))
         {
-            let (uses, defs) = get_uses_defs(instr);
+            let (uses, defs) = obtener_uses_defs(instr);
             if let Some(c) = clase_de_def(instr, &clases) {
                 for d in &defs {
                     clases.insert(*d, c);
@@ -270,7 +270,7 @@ pub fn compute_live_intervals(prog: &RegProgram) -> Vec<crate::register_alloc::L
             .iter()
             .chain(std::iter::once(&block.terminator))
         {
-            let (uses, defs) = get_uses_defs(instr);
+            let (uses, defs) = obtener_uses_defs(instr);
             let clase_def = clase_de_def(instr, &clases).unwrap_or(RClass::Integer);
             for vreg in defs {
                 let c = clases.get(&vreg).copied().unwrap_or(clase_def);
@@ -307,87 +307,87 @@ pub fn compute_live_intervals(prog: &RegProgram) -> Vec<crate::register_alloc::L
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::register_alloc::RegClass;
+    use crate::register_alloc::RegClase;
 
     #[test]
-    fn test_reg_program_alloc_vreg() {
+    fn test_reg_program_reservar_vreg() {
         let mut prog = RegProgram::new();
-        assert_eq!(prog.alloc_vreg(), 0);
-        assert_eq!(prog.alloc_vreg(), 1);
-        assert_eq!(prog.alloc_vreg(), 2);
+        assert_eq!(prog.reservar_vreg(), 0);
+        assert_eq!(prog.reservar_vreg(), 1);
+        assert_eq!(prog.reservar_vreg(), 2);
         assert_eq!(prog.next_vreg, 3);
     }
 
     #[test]
-    fn test_get_uses_defs_load_imm() {
+    fn test_obtener_uses_defs_cargar_imm() {
         let instr = RegInstruction::LoadImm { dst: 5, valor: 42 };
-        let (uses, defs) = get_uses_defs(&instr);
+        let (uses, defs) = obtener_uses_defs(&instr);
         assert!(uses.is_empty());
         assert_eq!(defs, vec![5]);
     }
 
     #[test]
-    fn test_get_uses_defs_add() {
+    fn test_obtener_uses_defs_sumar() {
         let instr = RegInstruction::RegAdd { dst: 3, a: 1, b: 2 };
-        let (uses, defs) = get_uses_defs(&instr);
+        let (uses, defs) = obtener_uses_defs(&instr);
         assert_eq!(uses.len(), 2);
         assert_eq!(defs, vec![3]);
     }
 
     #[test]
-    fn test_get_uses_defs_store_var() {
+    fn test_obtener_uses_defs_almacen_variable() {
         let instr = RegInstruction::StoreVar {
             src: 0,
             var_idx: 3,
-            clase: RegClass::Integer,
+            clase: RegClase::Integer,
         };
-        let (uses, defs) = get_uses_defs(&instr);
+        let (uses, defs) = obtener_uses_defs(&instr);
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].0, 0);
         assert!(defs.is_empty());
     }
 
     #[test]
-    fn test_get_uses_defs_load_var() {
+    fn test_obtener_uses_defs_cargar_variable() {
         let instr = RegInstruction::LoadVar {
             dst: 2,
             var_idx: 1,
-            clase: RegClass::Float,
+            clase: RegClase::Float,
         };
-        let (uses, defs) = get_uses_defs(&instr);
+        let (uses, defs) = obtener_uses_defs(&instr);
         assert!(uses.is_empty());
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0], 2);
     }
 
     #[test]
-    fn test_get_uses_defs_jump_if_false() {
+    fn test_obtener_uses_defs_salto_if_false() {
         let instr = RegInstruction::JumpIfFalse {
             cond: 4,
             etiqueta: 10,
         };
-        let (uses, defs) = get_uses_defs(&instr);
+        let (uses, defs) = obtener_uses_defs(&instr);
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].0, 4);
         assert!(defs.is_empty());
     }
 
     #[test]
-    fn test_get_uses_defs_return() {
+    fn test_obtener_uses_defs_return() {
         let instr = RegInstruction::Return { src: 0 };
-        let (uses, defs) = get_uses_defs(&instr);
+        let (uses, defs) = obtener_uses_defs(&instr);
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].0, 0);
         assert!(defs.is_empty());
     }
 
     #[test]
-    fn test_get_uses_defs_call() {
+    fn test_obtener_uses_defs_llamada() {
         let instr = RegInstruction::Call {
             nombre_funcion: "foo".into(),
             args: vec![1, 2, 3],
         };
-        let (uses, defs) = get_uses_defs(&instr);
+        let (uses, defs) = obtener_uses_defs(&instr);
         assert_eq!(uses.len(), 3);
         assert!(defs.is_empty());
     }
@@ -435,7 +435,7 @@ mod tests {
                 RegInstruction::LoadVar {
                     dst: 1,
                     var_idx: 0,
-                    clase: RegClass::Integer,
+                    clase: RegClase::Integer,
                 }, // idx 1, v0 dead after idx 0
                 RegInstruction::LoadImm { dst: 2, valor: 2 }, // idx 2, v1 dead after idx 1
             ],
@@ -458,7 +458,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reg_program_instruction_count() {
+    fn test_reg_program_instruction_cantidad() {
         let mut prog = RegProgram::new();
         let block = BloqueBasico {
             etiqueta: 0,
@@ -466,6 +466,6 @@ mod tests {
             terminator: RegInstruction::Nop,
         };
         prog.blocks.push(block);
-        assert_eq!(prog.instruction_count(), 3); // 2 + 1 terminator
+        assert_eq!(prog.instruction_cantidad(), 3); // 2 + 1 terminator
     }
 }

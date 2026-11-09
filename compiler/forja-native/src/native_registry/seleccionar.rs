@@ -11,9 +11,9 @@
 
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_seleccionar(&mut self) {
-        self.registrar("_seleccionar_canales", native_seleccionar_canales);
+        self.registrar("_seleccionar_canales", nativo_seleccionar_canales);
     }
 }
 
@@ -23,16 +23,16 @@ const ESPERA_INFINITA: i64 = 0;
 
 /// Índice de recepción del canal contenido en `val`:
 /// `CanalReceptor` → su índice de monticulo; `[tx, rx]` → el del receptor.
-fn indice_receptor(vm: &dyn Host, val: ValorFast) -> Option<usize> {
+fn indice_receptor(vm: &dyn Anfitrion, val: ValorFast) -> Option<usize> {
     if val.es_objeto() {
-        let obj = vm.get_obj(val.indice_objeto());
+        let obj = vm.obtener_objeto(val.indice_objeto());
         if obj.clase == vm.sym_canal_receptor() {
             return obj.campos_vec.first().map(|v| v.a_entero().max(0) as usize);
         }
         return None;
     }
     if val.es_arreglo() {
-        let arr = vm.get_arr(val.indice_arreglo());
+        let arr = vm.obtener_arr(val.indice_arreglo());
         // `[emisor, receptor]` como lo devuelve `canal()`.
         for v in arr.iter().rev() {
             if let Some(indice) = indice_receptor(vm, *v) {
@@ -43,8 +43,8 @@ fn indice_receptor(vm: &dyn Host, val: ValorFast) -> Option<usize> {
     None
 }
 
-pub fn native_seleccionar_canales(
-    vm: &mut dyn Host,
+pub fn nativo_seleccionar_canales(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let modo = match args.get(1) {
@@ -53,7 +53,7 @@ pub fn native_seleccionar_canales(
     };
     let receptores: Vec<usize> = match args.first() {
         Some(v) if v.es_arreglo() => {
-            let canales = vm.get_arr(v.indice_arreglo()).clone();
+            let canales = vm.obtener_arr(v.indice_arreglo()).clone();
             canales
                 .into_iter()
                 .filter_map(|c| indice_receptor(vm, c))
@@ -67,7 +67,7 @@ pub fn native_seleccionar_canales(
         for (i, &rx) in receptores.iter().enumerate() {
             if let Some(cv) = vm.canal_try_recibir(rx) {
                 let valor = vm.valor_de_channel(cv);
-                let indice = vm.alloc_arr(vec![ValorFast::entero(i as i64), valor]);
+                let indice = vm.reservar_arr(vec![ValorFast::entero(i as i64), valor]);
                 return Ok(ValorFast::arreglo(indice));
             }
         }
@@ -80,6 +80,6 @@ pub fn native_seleccionar_canales(
         std::thread::sleep(std::time::Duration::from_micros(200));
     }
     // Ningún canal listo: índice -1 (el `sino` del desugardo corre el `otro`/`tiempo`).
-    let indice = vm.alloc_arr(vec![ValorFast::entero(-1), ValorFast::nulo()]);
+    let indice = vm.reservar_arr(vec![ValorFast::entero(-1), ValorFast::nulo()]);
     Ok(ValorFast::arreglo(indice))
 }

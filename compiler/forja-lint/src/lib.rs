@@ -1171,7 +1171,7 @@ pub fn lint_programa(programa: &Programa, config: ConfigLint) -> Vec<Diagnostico
 /// Analiza código fuente completo (tokeniza + parsea + lint).
 ///
 /// Devuelve `Err` con los errores de lexer/parser si el código no compila.
-pub fn lint_source(
+pub fn lint_fuente(
     fuente: &str,
     config: ConfigLint,
 ) -> Result<Vec<DiagnosticoLint>, Vec<ErrorForja>> {
@@ -1187,7 +1187,7 @@ mod tests {
     use super::*;
 
     fn lint(fuente: &str) -> Vec<DiagnosticoLint> {
-        lint_source(fuente, ConfigLint::default()).expect("debe parsear")
+        lint_fuente(fuente, ConfigLint::default()).expect("debe parsear")
     }
 
     fn tiene_regla(diags: &[DiagnosticoLint], regla: Regla) -> bool {
@@ -1246,7 +1246,7 @@ mod tests {
     fn test_regla_desactivada() {
         let mut cfg = ConfigLint::default();
         cfg.establecer(Regla::VariableSinUsar, Severidad::Off);
-        let diags = lint_source("variable x = 5\n", cfg).unwrap();
+        let diags = lint_fuente("variable x = 5\n", cfg).unwrap();
         assert!(!tiene_regla(&diags, Regla::VariableSinUsar));
     }
 
@@ -1268,7 +1268,7 @@ mod tests {
             ..Default::default()
         };
         let src = "funcion f(n) {\n  si n > 0 {\n    si n > 1 {\n      si n > 2 {\n        escribir(n)\n      }\n    }\n  }\n}\nf(1)\n";
-        let diags = lint_source(src, cfg).unwrap();
+        let diags = lint_fuente(src, cfg).unwrap();
         assert!(tiene_regla(&diags, Regla::Complejidad));
     }
 

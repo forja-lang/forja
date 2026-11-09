@@ -30,12 +30,12 @@ impl Chunk {
         }
     }
 
-    fn has_space(&self, tamano: usize, align: usize) -> bool {
+    fn tiene_space(&self, tamano: usize, align: usize) -> bool {
         let aligned = (self.offset.get() + align - 1) & !(align - 1);
         aligned + tamano <= self.tamano
     }
 
-    fn alloc_bytes(&self, tamano: usize, align: usize) -> *mut u8 {
+    fn reservar_bytes(&self, tamano: usize, align: usize) -> *mut u8 {
         let aligned = (self.offset.get() + align - 1) & !(align - 1);
         debug_assert!(aligned + tamano <= self.tamano);
         let ptr = unsafe { self.ptr.add(aligned) };
@@ -72,40 +72,40 @@ pub struct Arena {
 impl Arena {
     /// Crea una arena con chunk tamano por defecto (64KB).
     pub fn new() -> Self {
-        Self::with_chunk_size(64 * 1024)
+        Self::con_tamano_bloque(64 * 1024)
     }
 
     /// Crea una arena con un chunk tamano específico.
-    pub fn with_chunk_size(chunk_size: usize) -> Self {
+    pub fn con_tamano_bloque(chunk_tamano: usize) -> Self {
         Arena {
-            chunks: vec![Chunk::new(chunk_size)],
-            tamano_bloque_predeterminado: chunk_size,
+            chunks: vec![Chunk::new(chunk_tamano)],
+            tamano_bloque_predeterminado: chunk_tamano,
             total_allocated: 0,
         }
     }
 
     /// Obtiene un chunk que tenga espacio suficiente, o crea uno nuevo.
     /// Retorna el índice del chunk.
-    fn get_chunk_idx_for(&mut self, tamano: usize, align: usize) -> usize {
+    fn obtener_chunk_indice_for(&mut self, tamano: usize, align: usize) -> usize {
         // Buscar en chunks existentes
         for (i, chunk) in self.chunks.iter().enumerate() {
-            if chunk.has_space(tamano, align) {
+            if chunk.tiene_space(tamano, align) {
                 return i;
             }
         }
         // Crear chunk nuevo
-        let chunk_size = self.tamano_bloque_predeterminado.max(tamano + align);
-        self.chunks.push(Chunk::new(chunk_size));
+        let chunk_tamano = self.tamano_bloque_predeterminado.max(tamano + align);
+        self.chunks.push(Chunk::new(chunk_tamano));
         self.chunks.len() - 1
     }
 
     /// Asigna un valor en la arena y retorna un raw pointer.
     /// El caller debe garantizar que la arena viva más que el puntero.
-    pub fn alloc_raw<T>(&mut self, valor: T) -> *mut T {
+    pub fn reservar_raw<T>(&mut self, valor: T) -> *mut T {
         let tamano = std::mem::size_of::<T>();
         let align = std::mem::align_of::<T>();
-        let idx = self.get_chunk_idx_for(tamano, align);
-        let ptr = self.chunks[idx].alloc_bytes(tamano, align) as *mut T;
+        let idx = self.obtener_chunk_indice_for(tamano, align);
+        let ptr = self.chunks[idx].reservar_bytes(tamano, align) as *mut T;
         unsafe {
             ptr.write(valor);
         }
@@ -118,15 +118,15 @@ impl Arena {
     /// **Nota**: Solo funciona correctamente cuando no se mantienen
     /// referencias previas al hacer nuevas asignaciones (patrón secuencial típico de compiladores).
     pub fn alloc<T>(&mut self, valor: T) -> &mut T {
-        unsafe { &mut *self.alloc_raw(valor) }
+        unsafe { &mut *self.reservar_raw(valor) }
     }
 
     /// Asigna un slice de valores en la arena y retorna una referencia.
-    pub fn alloc_slice<T: Clone>(&mut self, slice: &[T]) -> &[T] {
+    pub fn reservar_slice<T: Clone>(&mut self, slice: &[T]) -> &[T] {
         let tamano = std::mem::size_of_val(slice);
         let align = std::mem::align_of::<T>();
-        let idx = self.get_chunk_idx_for(tamano, align);
-        let ptr = self.chunks[idx].alloc_bytes(tamano, align) as *mut T;
+        let idx = self.obtener_chunk_indice_for(tamano, align);
+        let ptr = self.chunks[idx].reservar_bytes(tamano, align) as *mut T;
         unsafe {
             for (i, item) in slice.iter().enumerate() {
                 ptr.add(i).write(item.clone());
@@ -154,7 +154,7 @@ impl Arena {
     }
 
     /// Retorna el número de chunks activos.
-    pub fn chunk_count(&self) -> usize {
+    pub fn chunk_cantidad(&self) -> usize {
         self.chunks.len()
     }
 
@@ -190,21 +190,21 @@ impl ScopedArena {
         }
     }
 
-    pub fn with_chunk_size(chunk_size: usize) -> Self {
+    pub fn con_tamano_bloque(chunk_tamano: usize) -> Self {
         ScopedArena {
-            arena: Arena::with_chunk_size(chunk_size),
+            arena: Arena::con_tamano_bloque(chunk_tamano),
             pila_ambitos: Vec::new(),
         }
     }
 
     /// Inicia un nuevo scope.
-    pub fn push_scope(&mut self) {
+    pub fn empujar_scope(&mut self) {
         self.pila_ambitos.push(self.arena.total_allocated);
     }
 
     /// Cierra el scope actual y resetea la arena al punto anterior.
     /// **Cuidado**: Esto invalida todas las referencias asignadas desde push_scope.
-    pub fn pop_scope(&mut self) {
+    pub fn desapilar_scope(&mut self) {
         if let Some(saved) = self.pila_ambitos.pop() {
             // Resetear todos los chunks al saved point
             let mut remaining = saved;
@@ -227,8 +227,8 @@ impl ScopedArena {
         self.arena.alloc(valor)
     }
 
-    pub fn alloc_slice<T: Clone>(&mut self, slice: &[T]) -> &[T] {
-        self.arena.alloc_slice(slice)
+    pub fn reservar_slice<T: Clone>(&mut self, slice: &[T]) -> &[T] {
+        self.arena.reservar_slice(slice)
     }
 
     pub fn reset(&mut self) {
@@ -252,7 +252,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_arena_alloc_basic() {
+    fn test_arena_reservar_basico() {
         let mut arena = Arena::new();
         let x = arena.alloc(42u64);
         assert_eq!(*x, 42);
@@ -261,14 +261,14 @@ mod tests {
     }
 
     #[test]
-    fn test_arena_alloc_slice() {
+    fn test_arena_reservar_slice() {
         let mut arena = Arena::new();
-        let slice = arena.alloc_slice(&[1, 2, 3, 4, 5]);
+        let slice = arena.reservar_slice(&[1, 2, 3, 4, 5]);
         assert_eq!(slice, &[1, 2, 3, 4, 5]);
     }
 
     #[test]
-    fn test_arena_reset() {
+    fn test_arena_reiniciar() {
         let mut arena = Arena::new();
         arena.alloc(42u64);
         arena.alloc(100u64);
@@ -280,14 +280,14 @@ mod tests {
 
     #[test]
     fn test_arena_many_allocs() {
-        let mut arena = Arena::with_chunk_size(256);
+        let mut arena = Arena::con_tamano_bloque(256);
         // Asignar muchos valores para forzar múltiples chunks
         for i in 0..1000 {
             let val = arena.alloc(i as u64);
             assert_eq!(*val, i as u64);
         }
         assert!(
-            arena.chunk_count() > 1,
+            arena.chunk_cantidad() > 1,
             "Expected multiple chunks with 256-byte chunks"
         );
     }
@@ -299,15 +299,15 @@ mod tests {
         assert_eq!(*a, 42);
         let b = arena.alloc(2.5f64);
         assert_eq!(*b, 2.5);
-        let c = arena.alloc_slice(&["hello", "world"]);
+        let c = arena.reservar_slice(&["hello", "world"]);
         assert_eq!(c, &["hello", "world"]);
     }
 
     #[test]
     fn test_arena_memory_reserved() {
-        let mut arena = Arena::with_chunk_size(256);
-        let reserved_before = arena.memory_reserved();
-        assert_eq!(reserved_before, 256);
+        let mut arena = Arena::con_tamano_bloque(256);
+        let reserved_antes = arena.memory_reserved();
+        assert_eq!(reserved_antes, 256);
 
         // Llenar el chunk (256 bytes / 1 byte cada alloc = 256 allocs + header overhead)
         for _ in 0..300 {
@@ -326,14 +326,14 @@ mod tests {
         let mut arena = ScopedArena::new();
         arena.alloc(1u64);
 
-        arena.push_scope();
+        arena.empujar_scope();
         arena.alloc(2u64);
         arena.alloc(3u64);
-        let before = arena.bytes_allocated();
-        assert!(before > 0);
+        let antes = arena.bytes_allocated();
+        assert!(antes > 0);
 
-        arena.pop_scope();
+        arena.desapilar_scope();
         // Después de pop_scope, el allocated vuelve al punto anterior
-        assert!(arena.bytes_allocated() < before);
+        assert!(arena.bytes_allocated() < antes);
     }
 }

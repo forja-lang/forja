@@ -1,15 +1,15 @@
 use forja::bytecode::{deserializar_bytecode, serializar_bytecode, GeneradorBytecode, Opcode};
 use forja::lexer::Lexer;
 use forja::parser::Parser;
-use forja::token::TokenKind;
+use forja::token::TokenTipo;
 use forja::uops::{expandir_a_uops, Uop};
 use std::sync::Arc;
 
 // ============================================================
-// Missing TokenKind coverage
+// Missing TokenTipo coverage
 // ============================================================
 
-fn kinds(fuente: &str) -> Vec<TokenKind> {
+fn kinds(fuente: &str) -> Vec<TokenTipo> {
     let mut lexer = Lexer::new(fuente);
     lexer
         .tokenize()
@@ -25,7 +25,7 @@ fn test_tk_canal_identifier() {
     let k = kinds("canal(");
     assert!(k.len() >= 2);
     match &k[0] {
-        TokenKind::Identificador(_) | TokenKind::Canal => {}
+        TokenTipo::Identificador(_) | TokenTipo::Canal => {}
         _ => panic!("unexpected token"),
     }
 }
@@ -34,51 +34,51 @@ fn test_tk_canal_identifier() {
 fn test_tk_tipo_texto_as_ident() {
     let k = kinds("x: Texto");
     // En el lexer, las palabras de tipo como Texto o Entero se tokenizan como identificadores
-    assert_eq!(k[2], TokenKind::Identificador("Texto".to_string()));
+    assert_eq!(k[2], TokenTipo::Identificador("Texto".to_string()));
 }
 
 #[test]
 fn test_tk_tipo_entero_as_ident() {
     let k = kinds("x: Entero");
-    assert_eq!(k[2], TokenKind::Identificador("Entero".to_string()));
+    assert_eq!(k[2], TokenTipo::Identificador("Entero".to_string()));
 }
 
 #[test]
 fn test_tk_tipo_decimal_as_ident() {
     let k = kinds("x: Decimal");
-    assert_eq!(k[2], TokenKind::Identificador("Decimal".to_string()));
+    assert_eq!(k[2], TokenTipo::Identificador("Decimal".to_string()));
 }
 
 #[test]
 fn test_tk_tipo_booleano_as_ident() {
     let k = kinds("x: Booleano");
-    assert_eq!(k[2], TokenKind::Identificador("Booleano".to_string()));
+    assert_eq!(k[2], TokenTipo::Identificador("Booleano".to_string()));
 }
 
 #[test]
 fn test_tk_tipo_exacto_as_ident() {
     let k = kinds("x: Exacto");
-    assert_eq!(k[2], TokenKind::Identificador("Exacto".to_string()));
+    assert_eq!(k[2], TokenTipo::Identificador("Exacto".to_string()));
 }
 
 #[test]
 fn test_token_caracter_simple_entrecomillar_as_texto() {
     // Single-quoted strings are parsed as Texto, not Caracter
     let k = kinds("'a'");
-    assert_eq!(k[0], TokenKind::Texto("a".to_string()));
+    assert_eq!(k[0], TokenTipo::Texto("a".to_string()));
 }
 
 #[test]
 fn test_token_simple_entrecomillar_basico() {
     let k = kinds("'a'");
-    assert_eq!(k[0], TokenKind::Texto("a".to_string()));
+    assert_eq!(k[0], TokenTipo::Texto("a".to_string()));
 }
 
 #[test]
 fn test_tk_doc_comment_exact() {
     let k = kinds("/// Documentacion\nfuncion f");
     match &k[0] {
-        TokenKind::DocComment(s) => assert!(s.contains("Documentacion")),
+        TokenTipo::DocComment(s) => assert!(s.contains("Documentacion")),
         _ => panic!("expected DocComment"),
     }
 }

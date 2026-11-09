@@ -146,6 +146,12 @@ def campos_del_archivo(codigo: str) -> set[str]:
     return campos
 
 
+RE_MOD = re.compile(r"\bmod\s+([a-z_][a-z0-9_]*)\s*;")
+def modulos_del_archivo(codigo: str) -> set[str]:
+    """Módulos declarados en el archivo: `modulo::Nombre` sí se renombra."""
+    return set(RE_MOD.findall(codigo))
+
+
 def tipos_del_archivo(codigo: str) -> set[str]:
     """Nombres de `struct`/`enum`/`trait` declarados acá: sus `Tipo::fn` sí se renombran."""
     return set(re.findall(r"\b(?:struct|enum|trait)\s+([A-Za-z_][A-Za-z0-9_]*)", codigo))
@@ -195,6 +201,7 @@ def reemplazar_codigo(
     campos: set[str] | None = None,
     tipos: set[str] | None = None,
     funciones: set[str] | None = None,
+    modulos: set[str] | None = None,
 ) -> str:
 
     def una(m: re.Match) -> str:
@@ -209,7 +216,9 @@ def reemplazar_codigo(
         if anterior.endswith("::"):
             # `Vec::new` es de std; `Self::new` y `TipoPropio::new` sí son de este archivo.
             calificador = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*::$", codigo[:inicio])
-            propio = calificador and (calificador.group(1) == "Self" or calificador.group(1) in (tipos or set()))
+            nombre_cal = calificador.group(1) if calificador else ""
+            propio = nombre_cal in {"Self", "crate", "self", "super"} or nombre_cal.startswith("forja")
+            propio = propio or nombre_cal in (tipos or set()) or nombre_cal in (modulos or set())
             if not propio:
                 return palabra
         if anterior.endswith(".#"):
@@ -227,8 +236,10 @@ def reemplazar_codigo(
                 return palabra
         # campo de struct/patrón (`nombre: tipo`): puede ser de un tipo de otra crate.
         # Los parámetros (`fn f(nombre: T)`) sí se renombran: son locales de este archivo.
+        # `use a::{B, C}` no es un campo de struct: se renombra
+        es_use = re.search(r"\buse\s+[^;]*$", previo) is not None
         # campo abreviado de patrón o de literal: `Expresion::Unaria { expr, .. }`
-        if previo[-1:] in "{," and siguiente[:1] in "}," and en_llaves(codigo, inicio):
+        if not es_use and previo[-1:] in "{," and siguiente[:1] in "}," and en_llaves(codigo, inicio):
             return palabra
         # campo de patrón o de literal con valor: `Unaria { expr: e }`
         if (
@@ -285,6 +296,7 @@ def procesar(
     tipos_extra: set[str] | None = None,
     funciones_extra: set[str] | None = None,
     campos_extra: set[str] | None = None,
+    modulos_extra: set[str] | None = None,
 ) -> int:
     original = ruta.read_text(encoding="utf-8")
     partes = segmentar(original)
@@ -295,9 +307,10 @@ def procesar(
         permitidos |= set(RE_FN.findall(codigo_completo))
     # sólo importan los nombres que efectivamente se renombran (`len`/`map` de std quedan fuera)
     renombrables = set(mapa)
-    campos = (campos_del_archivo(codigo_completo) | (campos_extra or set())) & renombrables
-    tipos = (tipos_del_archivo(codigo_completo) | (tipos_extra or set())) & renombrables
+    campos = campos_del_archivo(codigo_completo) | (campos_extra or set())
+    tipos = tipos_del_archivo(codigo_completo) | (tipos_extra or set())
     funciones = (set(RE_FN.findall(codigo_completo)) | (funciones_extra or set())) & renombrables
+    modulos = modulos_del_archivo(codigo_completo) | (modulos_extra or set())
     if permitidos is not None:
         # ítems de toda la crate (fn, tipos, campos): se renombran también en este archivo
         permitidos |= tipos | funciones | campos
@@ -307,14 +320,14 @@ def procesar(
     vistos: set[str] = set()
     for trozo, es_codigo in partes:
         if es_codigo:
-            reemplazar_codigo(trozo, mapa, permitidos, vistos, campos, tipos, funciones)
+            reemplazar_codigo(trozo, mapa, permitidos, vistos, campos, tipos, funciones, modulos)
 
     # 2ª pasada: reconstruir respetando el orden original
     nuevas: list[str] = []
     cambios = 0
     for trozo, es_codigo in partes:
         if es_codigo:
-            nuevas.append(reemplazar_codigo(trozo, mapa, permitidos, None, campos, tipos, funciones))
+            nuevas.append(reemplazar_codigo(trozo, mapa, permitidos, None, campos, tipos, funciones, modulos))
         else:
             nuevas.append(reemplazar_en_format(trozo, mapa, vistos) if trozo.startswith('"') else trozo)
     resultado = "".join(nuevas)

@@ -1,14 +1,14 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_temporizador(&mut self) {
-        self.registrar("_temporizador_nuevo", native_temporizador_nuevo);
-        self.registrar("_temporizador_dormir", native_temporizador_dormir);
-        self.registrar("_sistema_tiempo_ms", native_sistema_tiempo_ms);
+        self.registrar("_temporizador_nuevo", nativo_temporizador_nuevo);
+        self.registrar("_temporizador_dormir", nativo_temporizador_dormir);
+        self.registrar("_sistema_tiempo_ms", nativo_sistema_tiempo_ms);
     }
 }
-pub fn native_sistema_tiempo_ms(
-    _vm: &mut dyn Host,
+pub fn nativo_sistema_tiempo_ms(
+    _vm: &mut dyn Anfitrion,
     _args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let ms = std::time::SystemTime::now()
@@ -18,8 +18,8 @@ pub fn native_sistema_tiempo_ms(
     Ok(ValorFast::entero(ms))
 }
 
-pub fn native_temporizador_nuevo(
-    vm: &mut dyn Host,
+pub fn nativo_temporizador_nuevo(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let ms = obtener_entero(args[0])?;
@@ -33,12 +33,12 @@ pub fn native_temporizador_nuevo(
         ValorFast::entero(ms),
         ValorFast::booleano(true),
     ];
-    let indice = vm.alloc_obj(obj);
+    let indice = vm.reservar_objeto(obj);
     Ok(ValorFast::objeto(indice))
 }
 
-pub fn native_temporizador_dormir(
-    _vm: &mut dyn Host,
+pub fn nativo_temporizador_dormir(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let ms = obtener_entero(args[0])? as u64;

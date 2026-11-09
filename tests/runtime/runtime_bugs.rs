@@ -220,10 +220,10 @@ fn ejecutar_ambos(fuente: &str) -> Vec<String> {
 
     fn correr(bc: Vec<Opcode>) -> Vec<String> {
         let mut vm = ForjaFast::new();
-        vm.set_max_inst(2_000_000);
+        vm.fijar_max_inst(2_000_000);
         vm.cargar_bytecode(bc);
         vm.ejecutar().expect("la VM debe ejecutar sin error");
-        vm.obtener_output().to_vec()
+        vm.obtener_salida().to_vec()
     }
 
     let raiz = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));

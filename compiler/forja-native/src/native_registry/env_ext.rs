@@ -1,42 +1,45 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_env_ext(&mut self) {
-        self.registrar("_env_establecer", native_env_establecer);
-        self.registrar("_env_todos", native_env_todos);
-        self.registrar("_env_cargar_desde_texto", native_env_cargar_desde_texto);
-        self.registrar("_env_expandir", native_env_expandir);
-        self.registrar("_env_parsear_entero", native_env_parsear_entero);
-        self.registrar("_env_parsear_booleano", native_env_parsear_booleano);
+        self.registrar("_env_establecer", nativo_env_establecer);
+        self.registrar("_env_todos", nativo_env_todos);
+        self.registrar("_env_cargar_desde_texto", nativo_env_cargar_desde_texto);
+        self.registrar("_env_expandir", nativo_env_expandir);
+        self.registrar("_env_parsear_entero", nativo_env_parsear_entero);
+        self.registrar("_env_parsear_booleano", nativo_env_parsear_booleano);
     }
 }
-pub fn native_env_establecer(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_env_establecer(
+    _vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let nombre = obtener_texto(_vm, args[0])?;
     let valor = obtener_texto(_vm, args[1])?;
     std::env::set_var(&nombre, &valor);
     Ok(ValorFast::nulo())
 }
 
-pub fn native_env_todos(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_env_todos(vm: &mut dyn Anfitrion, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let pairs: Vec<ValorFast> = std::env::vars()
         .map(|(k, v)| {
             let k_val = {
-                let indice = vm.alloc_str(Arc::from(k.as_str()));
+                let indice = vm.reservar_texto(Arc::from(k.as_str()));
                 ValorFast::texto(indice)
             };
             let v_val = {
-                let indice = vm.alloc_str(Arc::from(v.as_str()));
+                let indice = vm.reservar_texto(Arc::from(v.as_str()));
                 ValorFast::texto(indice)
             };
-            let arr = vm.alloc_arr(vec![k_val, v_val]);
+            let arr = vm.reservar_arr(vec![k_val, v_val]);
             ValorFast::arreglo(arr)
         })
         .collect();
-    Ok(ValorFast::arreglo(vm.alloc_arr(pairs)))
+    Ok(ValorFast::arreglo(vm.reservar_arr(pairs)))
 }
 
-pub fn native_env_cargar_desde_texto(
-    vm: &mut dyn Host,
+pub fn nativo_env_cargar_desde_texto(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let texto = obtener_texto(vm, args[0])?;
@@ -91,17 +94,20 @@ pub fn simple_env_expand(texto: &str) -> String {
     salida
 }
 
-pub fn native_env_expandir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_env_expandir(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let texto = obtener_texto(vm, args[0])?;
     let expanded = simple_env_expand(&texto);
     Ok({
-        let indice = vm.alloc_str(Arc::from(expanded.as_str()));
+        let indice = vm.reservar_texto(Arc::from(expanded.as_str()));
         ValorFast::texto(indice)
     })
 }
 
-pub fn native_env_parsear_entero(
-    _vm: &mut dyn Host,
+pub fn nativo_env_parsear_entero(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(_vm, args[0])?;
@@ -111,8 +117,8 @@ pub fn native_env_parsear_entero(
     }
 }
 
-pub fn native_env_parsear_booleano(
-    _vm: &mut dyn Host,
+pub fn nativo_env_parsear_booleano(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(_vm, args[0])?.to_lowercase();

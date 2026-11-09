@@ -1,6 +1,6 @@
 use super::*;
 
-pub fn obtener_texto(vm: &mut dyn Host, val: ValorFast) -> Result<String, ErrFast> {
+pub fn obtener_texto(vm: &mut dyn Anfitrion, val: ValorFast) -> Result<String, ErrFast> {
     if val.es_texto() {
         let s = vm.get_str(val.indice_texto()).to_string();
         Ok(s)
@@ -11,7 +11,7 @@ pub fn obtener_texto(vm: &mut dyn Host, val: ValorFast) -> Result<String, ErrFas
 
 /// Convierte un carácter (texto de 1 char) a su código Unicode (entero).
 /// args[0]: texto de un solo carácter
-pub fn native_a_codigo(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_a_codigo(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "a_codigo requiere 1 argumento: carácter (texto)".into(),
@@ -26,7 +26,7 @@ pub fn native_a_codigo(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFas
 
 /// Convierte un código Unicode (entero) a su carácter correspondiente (texto).
 /// args[0]: entero con el código Unicode
-pub fn native_a_caracter(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_a_caracter(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "a_caracter requiere 1 argumento: código (entero)".into(),
@@ -38,7 +38,7 @@ pub fn native_a_caracter(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorF
     })?;
     let mut buffer = [0u8; 4];
     let s = ch.encode_utf8(&mut buffer);
-    let indice = vm.alloc_str(Arc::from(s));
+    let indice = vm.reservar_texto(Arc::from(s));
     Ok(ValorFast::texto(indice))
 }
 
@@ -52,12 +52,12 @@ pub fn obtener_entero(val: ValorFast) -> Result<i64, ErrFast> {
     }
 }
 
-pub fn extraer_indice_socket(vm: &mut dyn Host, val: ValorFast) -> Result<u32, ErrFast> {
+pub fn extraer_indice_socket(vm: &mut dyn Anfitrion, val: ValorFast) -> Result<u32, ErrFast> {
     if !val.es_objeto() {
         return Err(ErrFast::TipoInv("se esperaba un objeto Socket".into()));
     }
     let obj_idx = val.indice_objeto();
-    let obj = vm.get_obj(obj_idx);
+    let obj = vm.obtener_objeto(obj_idx);
     if obj.campos_vec.is_empty() {
         return Err(ErrFast::TipoInv(
             "socket inválido: no tiene campo _idx".into(),
@@ -72,9 +72,9 @@ pub fn extraer_indice_socket(vm: &mut dyn Host, val: ValorFast) -> Result<u32, E
     Ok(idx_val.a_entero() as u32)
 }
 
-pub fn crear_valor_socket(vm: &mut dyn Host, socket_idx: u32) -> ValorFast {
+pub fn crear_valor_socket(vm: &mut dyn Anfitrion, socket_idx: u32) -> ValorFast {
     let sym_socket = vm.tabla_simbolos().internar("@Socket");
-    vm.class_descriptors().entry(sym_socket).or_insert_with(|| {
+    vm.clase_descriptors().entry(sym_socket).or_insert_with(|| {
         use crate::class_descriptor::{DescriptorClase, FormaCampos};
 
         DescriptorClase {
@@ -88,7 +88,7 @@ pub fn crear_valor_socket(vm: &mut dyn Host, socket_idx: u32) -> ValorFast {
     let id_forma = vm.registro_formas().obtener_o_crear(sym_socket);
     let mut obj = forja_runtime::ObjVal::new(sym_socket, id_forma);
     obj.campos_vec.push(ValorFast::entero(socket_idx as i64));
-    let obj_idx = vm.alloc_obj(obj);
+    let obj_idx = vm.reservar_objeto(obj);
     vm.formas_objeto_mut()[obj_idx as usize] = id_forma;
     ValorFast::objeto(obj_idx)
 }

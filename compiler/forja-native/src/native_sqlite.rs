@@ -4,8 +4,8 @@
 // La VM Forja es single-threaded para ejecución de scripts,
 // por lo que el Mutex nunca tiene contención real.
 
-use crate::native_registry::{obtener_entero, obtener_texto, NativeRegistry};
-use forja_runtime::{ErrFast, Host, ValorFast};
+use crate::native_registry::{obtener_entero, obtener_texto, NativoRegistro};
+use forja_runtime::{Anfitrion, ErrFast, ValorFast};
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
 
@@ -16,17 +16,17 @@ static SQLITE_HEAP: Mutex<Vec<Option<Arc<Mutex<Connection>>>>> = Mutex::new(Vec:
 // API interna (usada desde native_registry para registrar)
 // ═══════════════════════════════════════════════════════════════════════
 
-pub fn registrar_sqlite(reg: &mut NativeRegistry) {
-    reg.registrar("BD", native_bd);
-    reg.registrar("_sqlite_abrir", native_sqlite_abrir);
-    reg.registrar("_sqlite_cerrar", native_sqlite_cerrar);
-    reg.registrar("_sqlite_ejecutar", native_sqlite_ejecutar);
-    reg.registrar("_sqlite_consultar", native_sqlite_consultar);
-    reg.registrar("_sqlite_ultimo_id", native_sqlite_ultimo_id);
-    reg.registrar("_sqlite_ejecutar_params", native_sqlite_ejecutar_params);
-    reg.registrar("_sqlite_consultar_params", native_sqlite_consultar_params);
-    reg.registrar("_sqlite_tablas", native_sqlite_tablas);
-    reg.registrar("_sqlite_columnas", native_sqlite_columnas);
+pub fn registrar_sqlite(reg: &mut NativoRegistro) {
+    reg.registrar("BD", nativo_bd);
+    reg.registrar("_sqlite_abrir", nativo_sqlite_abrir);
+    reg.registrar("_sqlite_cerrar", nativo_sqlite_cerrar);
+    reg.registrar("_sqlite_ejecutar", nativo_sqlite_ejecutar);
+    reg.registrar("_sqlite_consultar", nativo_sqlite_consultar);
+    reg.registrar("_sqlite_ultimo_id", nativo_sqlite_ultimo_id);
+    reg.registrar("_sqlite_ejecutar_params", nativo_sqlite_ejecutar_params);
+    reg.registrar("_sqlite_consultar_params", nativo_sqlite_consultar_params);
+    reg.registrar("_sqlite_tablas", nativo_sqlite_tablas);
+    reg.registrar("_sqlite_columnas", nativo_sqlite_columnas);
 }
 
 /// `BD(especificación)` — abre una conexión SQLite y retorna su manejador.
@@ -35,7 +35,7 @@ pub fn registrar_sqlite(reg: &mut NativeRegistry) {
 /// - `"sqlite:memoria"` → base en memoria (`:memory:`)
 /// - `"sqlite:<ruta>"` → archivo en `<ruta>`
 /// - cualquier otra ruta → se abre como archivo SQLite
-fn native_bd(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_bd(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "BD requiere 1 argumento: especificación (texto), ej. BD(\"sqlite:memoria\")".into(),
@@ -93,7 +93,7 @@ fn obtener_conn(idx: usize) -> Result<Arc<Mutex<Connection>>, ErrFast> {
 }
 
 /// Convierte un valor Forja (texto, entero, decimal, booleano, nulo) al tipo SQLite correspondiente.
-fn valor_forja_a_sqlite(vm: &dyn Host, val: ValorFast) -> Box<dyn rusqlite::types::ToSql> {
+fn valor_forja_a_sqlite(vm: &dyn Anfitrion, val: ValorFast) -> Box<dyn rusqlite::types::ToSql> {
     if val.es_entero() {
         Box::new(val.a_entero())
     } else if val.es_flotante() {
@@ -109,17 +109,17 @@ fn valor_forja_a_sqlite(vm: &dyn Host, val: ValorFast) -> Box<dyn rusqlite::type
 }
 
 /// Convierte un Value de SQLite a ValorFast.
-fn sqlite_valor_a_forja(vm: &mut dyn Host, val: rusqlite::types::Value) -> ValorFast {
+fn sqlite_valor_a_forja(vm: &mut dyn Anfitrion, val: rusqlite::types::Value) -> ValorFast {
     match val {
         rusqlite::types::Value::Null => ValorFast::nulo(),
         rusqlite::types::Value::Integer(n) => ValorFast::entero(n),
         rusqlite::types::Value::Real(f) => ValorFast::flotante(f),
         rusqlite::types::Value::Text(s) => {
-            ValorFast::texto(vm.alloc_str(std::sync::Arc::from(s.as_str())))
+            ValorFast::texto(vm.reservar_texto(std::sync::Arc::from(s.as_str())))
         }
         rusqlite::types::Value::Blob(b) => {
             let s = String::from_utf8_lossy(&b).to_string();
-            ValorFast::texto(vm.alloc_str(std::sync::Arc::from(s.as_str())))
+            ValorFast::texto(vm.reservar_texto(std::sync::Arc::from(s.as_str())))
         }
     }
 }
@@ -129,7 +129,7 @@ fn sqlite_valor_a_forja(vm: &mut dyn Host, val: rusqlite::types::Value) -> Valor
 // ═══════════════════════════════════════════════════════════════════════
 
 /// _sqlite_abrir(ruta) -> indice_conexion | -1 si error
-fn native_sqlite_abrir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_sqlite_abrir(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_sqlite_abrir requiere 1 argumento: ruta (texto)".into(),
@@ -151,7 +151,7 @@ fn native_sqlite_abrir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFas
 }
 
 /// _sqlite_cerrar(indice_conexion) -> 0 si éxito, -1 si error
-fn native_sqlite_cerrar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_sqlite_cerrar(_vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_sqlite_cerrar requiere 1 argumento: indice_conexion (entero)".into(),
@@ -173,7 +173,10 @@ fn native_sqlite_cerrar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorF
 }
 
 /// _sqlite_ejecutar(indice_conexion, sql) -> filas_afectadas | -1 si error
-fn native_sqlite_ejecutar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_sqlite_ejecutar(
+    _vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
             "_sqlite_ejecutar requiere 2 argumentos: indice_conexion, sql".into(),
@@ -195,7 +198,10 @@ fn native_sqlite_ejecutar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
 
 /// _sqlite_consultar(indice_conexion, sql) -> arreglo_de_mapas | -1 si error
 /// Cada fila es un mapa: { "columna1": valor1, "columna2": valor2, ... }
-fn native_sqlite_consultar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_sqlite_consultar(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
             "_sqlite_consultar requiere 2 argumentos: indice_conexion, sql".into(),
@@ -214,16 +220,16 @@ fn native_sqlite_consultar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
         Err(e) => return Err(ErrFast::TipoInv(format!("sqlite_error_consulta: {}", e))),
     };
 
-    let column_count = stmt.column_count();
-    let column_names: Vec<String> = (0..column_count)
+    let column_cantidad = stmt.column_count();
+    let column_names: Vec<String> = (0..column_cantidad)
         .map(|i| stmt.column_name(i).unwrap_or("?").to_string())
         .collect();
 
     // Extraer TODOS los datos de las filas como tuplas Rust (sin referencia a vm)
     // para evitar el problema del closure que captura vm.
     let rows_data: Vec<Vec<(String, rusqlite::types::Value)>> = match stmt.query_map([], |row| {
-        let mut row_data = Vec::with_capacity(column_count);
-        for (i, name) in column_names.iter().enumerate().take(column_count) {
+        let mut row_data = Vec::with_capacity(column_cantidad);
+        for (i, name) in column_names.iter().enumerate().take(column_cantidad) {
             let name = name.clone();
             let val = row
                 .get::<_, rusqlite::types::Value>(i)
@@ -254,16 +260,19 @@ fn native_sqlite_consultar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
         for (name, val) in row_data {
             map.insert(name, sqlite_valor_a_forja(vm, val));
         }
-        let midx = vm.alloc_map(map);
+        let midx = vm.reservar_mapa(map);
         resultados.push(ValorFast::mapa(midx));
     }
 
-    let aidx = vm.alloc_arr(resultados);
+    let aidx = vm.reservar_arr(resultados);
     Ok(ValorFast::arreglo(aidx))
 }
 
 /// _sqlite_ultimo_id(indice_conexion) -> ultimo_rowid
-fn native_sqlite_ultimo_id(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_sqlite_ultimo_id(
+    _vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_sqlite_ultimo_id requiere 1 argumento: indice_conexion (entero)".into(),
@@ -279,8 +288,8 @@ fn native_sqlite_ultimo_id(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
 }
 
 /// _sqlite_ejecutar_params(indice_conexion, sql, arreglo_valores) -> filas_afectadas | -1
-fn native_sqlite_ejecutar_params(
-    vm: &mut dyn Host,
+fn nativo_sqlite_ejecutar_params(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 {
@@ -298,7 +307,7 @@ fn native_sqlite_ejecutar_params(
         ));
     }
     let arr_idx = args[2].indice_arreglo();
-    let arr = vm.get_arr(arr_idx);
+    let arr = vm.obtener_arr(arr_idx);
 
     // Convertir valores Forja a tipos SQLite (sin closure)
     let params: Vec<Box<dyn rusqlite::types::ToSql>> =
@@ -317,8 +326,8 @@ fn native_sqlite_ejecutar_params(
 }
 
 /// _sqlite_consultar_params(indice_conexion, sql, arreglo_valores) -> arreglo_de_mapas | -1
-fn native_sqlite_consultar_params(
-    vm: &mut dyn Host,
+fn nativo_sqlite_consultar_params(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 {
@@ -336,7 +345,7 @@ fn native_sqlite_consultar_params(
         ));
     }
     let arr_idx = args[2].indice_arreglo();
-    let arr = vm.get_arr(arr_idx);
+    let arr = vm.obtener_arr(arr_idx);
 
     // Convertir valores Forja a tipos SQLite (sin mantener el borrow del array)
     let params: Vec<Box<dyn rusqlite::types::ToSql>> =
@@ -353,16 +362,16 @@ fn native_sqlite_consultar_params(
         Err(e) => return Err(ErrFast::TipoInv(format!("sqlite_error_consulta: {}", e))),
     };
 
-    let column_count = stmt.column_count();
-    let column_names: Vec<String> = (0..column_count)
+    let column_cantidad = stmt.column_count();
+    let column_names: Vec<String> = (0..column_cantidad)
         .map(|i| stmt.column_name(i).unwrap_or("?").to_string())
         .collect();
 
     // Extraer datos sin mantener el borrow del closure sobre vm
     let rows_data: Vec<Vec<(String, rusqlite::types::Value)>> =
         match stmt.query_map(params_refs.as_slice(), |row| {
-            let mut row_data = Vec::with_capacity(column_count);
-            for (i, name) in column_names.iter().enumerate().take(column_count) {
+            let mut row_data = Vec::with_capacity(column_cantidad);
+            for (i, name) in column_names.iter().enumerate().take(column_cantidad) {
                 let name = name.clone();
                 let val = row
                     .get::<_, rusqlite::types::Value>(i)
@@ -393,16 +402,16 @@ fn native_sqlite_consultar_params(
         for (name, val) in row_data {
             map.insert(name, sqlite_valor_a_forja(vm, val));
         }
-        let midx = vm.alloc_map(map);
+        let midx = vm.reservar_mapa(map);
         resultados.push(ValorFast::mapa(midx));
     }
 
-    let aidx = vm.alloc_arr(resultados);
+    let aidx = vm.reservar_arr(resultados);
     Ok(ValorFast::arreglo(aidx))
 }
 
 /// _sqlite_tablas(indice_conexion) -> arreglo_de_textos con nombres de tablas
-fn native_sqlite_tablas(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_sqlite_tablas(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_sqlite_tablas requiere 1 argumento: indice_conexion (entero)".into(),
@@ -447,16 +456,19 @@ fn native_sqlite_tablas(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFa
     // Convertir a Forja
     let mut tablas = Vec::with_capacity(nombres.len());
     for nombre in nombres {
-        let idx_s = vm.alloc_str(std::sync::Arc::from(nombre.as_str()));
+        let idx_s = vm.reservar_texto(std::sync::Arc::from(nombre.as_str()));
         tablas.push(ValorFast::texto(idx_s));
     }
-    let aidx = vm.alloc_arr(tablas);
+    let aidx = vm.reservar_arr(tablas);
     Ok(ValorFast::arreglo(aidx))
 }
 
 /// _sqlite_columnas(indice_conexion, tabla) -> arreglo_de_mapas con info de columnas
 /// Cada mapa contiene: cid, nombre, tipo, not_null, default, pk
-fn native_sqlite_columnas(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+fn nativo_sqlite_columnas(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
             "_sqlite_columnas requiere 2 argumentos: indice_conexion, tabla".into(),
@@ -478,7 +490,7 @@ fn native_sqlite_columnas(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valor
 
     // Extraer datos crudos sin capturar vm
     #[derive(Debug)]
-    struct ColInfo {
+    struct ColInformacion {
         cid: i64,
         nombre: String,
         tipo: String,
@@ -487,8 +499,8 @@ fn native_sqlite_columnas(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valor
         pk: i64,
     }
 
-    let cols: Vec<ColInfo> = match stmt.query_map([], |row| {
-        Ok(ColInfo {
+    let cols: Vec<ColInformacion> = match stmt.query_map([], |row| {
+        Ok(ColInformacion {
             cid: row.get(0)?,
             nombre: row.get(1)?,
             tipo: row.get(2)?,
@@ -519,25 +531,25 @@ fn native_sqlite_columnas(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valor
         map.insert("cid".to_string(), ValorFast::entero(c.cid));
         map.insert(
             "nombre".to_string(),
-            ValorFast::texto(vm.alloc_str(std::sync::Arc::from(c.nombre.as_str()))),
+            ValorFast::texto(vm.reservar_texto(std::sync::Arc::from(c.nombre.as_str()))),
         );
         map.insert(
             "tipo".to_string(),
-            ValorFast::texto(vm.alloc_str(std::sync::Arc::from(c.tipo.as_str()))),
+            ValorFast::texto(vm.reservar_texto(std::sync::Arc::from(c.tipo.as_str()))),
         );
         map.insert("not_null".to_string(), ValorFast::booleano(c.not_null));
         map.insert(
             "default".to_string(),
             match c.default {
-                Some(d) => ValorFast::texto(vm.alloc_str(std::sync::Arc::from(d.as_str()))),
+                Some(d) => ValorFast::texto(vm.reservar_texto(std::sync::Arc::from(d.as_str()))),
                 None => ValorFast::nulo(),
             },
         );
         map.insert("pk".to_string(), ValorFast::entero(c.pk));
-        let midx = vm.alloc_map(map);
+        let midx = vm.reservar_mapa(map);
         resultados.push(ValorFast::mapa(midx));
     }
 
-    let aidx = vm.alloc_arr(resultados);
+    let aidx = vm.reservar_arr(resultados);
     Ok(ValorFast::arreglo(aidx))
 }

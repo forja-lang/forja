@@ -5,23 +5,23 @@ use super::super::*;
 ///
 /// Detecta `mientras (cond) { si (invariante) { A } sino { B } }` y lo
 /// convierte en `si (invariante) { mientras (cond) { A } } sino { mientras (cond) { B } }`.
-pub struct LoopUnswitcher {
+pub struct BucleUnswitcher {
     pub unswitches_realizados: usize,
 }
 
-impl LoopUnswitcher {
+impl BucleUnswitcher {
     pub fn new() -> Self {
-        LoopUnswitcher {
+        BucleUnswitcher {
             unswitches_realizados: 0,
         }
     }
 
     /// Ejecuta el pase de loop unswitching.
-    pub fn unswitch(&mut self, programa: &Programa) -> Programa {
+    pub fn desanidar(&mut self, programa: &Programa) -> Programa {
         let declaraciones_nuevas: Vec<Declaracion> = programa
             .declaraciones
             .iter()
-            .flat_map(|d| self.unswitch_decl(d))
+            .flat_map(|d| self.desanidar_decl(d))
             .collect();
         Programa {
             spans: Vec::new(),
@@ -32,7 +32,7 @@ impl LoopUnswitcher {
         }
     }
 
-    fn unswitch_decl(&mut self, decl: &Declaracion) -> Vec<Declaracion> {
+    fn desanidar_decl(&mut self, decl: &Declaracion) -> Vec<Declaracion> {
         match decl {
             Declaracion::Mientras { condicion, bloque } => {
                 // Buscar un Si con condición invariante como primer statement del loop
@@ -42,21 +42,21 @@ impl LoopUnswitcher {
                     bloque_falso,
                 }) = bloque.first()
                 {
-                    if self.es_invariante_en_loop(si_cond, condicion, bloque) {
+                    if self.es_invariante_en_bucle(si_cond, condicion, bloque) {
                         self.unswitches_realizados += 1;
                         // Crear dos loops: uno para verdadero, otro para falso
-                        let loop_verdadero = Declaracion::Mientras {
+                        let bucle_verdadero = Declaracion::Mientras {
                             condicion: condicion.clone(),
                             bloque: bloque_verdadero.clone(),
                         };
-                        let loop_falso = Declaracion::Mientras {
+                        let bucle_falso = Declaracion::Mientras {
                             condicion: condicion.clone(),
                             bloque: bloque_falso.clone().unwrap_or_default(),
                         };
                         return vec![Declaracion::Si {
                             condicion: si_cond.clone(),
-                            bloque_verdadero: vec![loop_verdadero],
-                            bloque_falso: Some(vec![loop_falso]),
+                            bloque_verdadero: vec![bucle_verdadero],
+                            bloque_falso: Some(vec![bucle_falso]),
                         }];
                     }
                 }
@@ -69,11 +69,11 @@ impl LoopUnswitcher {
             } => {
                 let verdadero_nuevo: Vec<Declaracion> = bloque_verdadero
                     .iter()
-                    .flat_map(|d| self.unswitch_decl(d))
+                    .flat_map(|d| self.desanidar_decl(d))
                     .collect();
                 let falso_nuevo = bloque_falso
                     .as_ref()
-                    .map(|bf| bf.iter().flat_map(|d| self.unswitch_decl(d)).collect());
+                    .map(|bf| bf.iter().flat_map(|d| self.desanidar_decl(d)).collect());
                 vec![Declaracion::Si {
                     condicion: condicion.clone(),
                     bloque_verdadero: verdadero_nuevo,
@@ -94,14 +94,14 @@ impl LoopUnswitcher {
                 precondiciones,
                 postcondiciones,
             } => {
-                let new_cuerpo: Vec<Declaracion> =
-                    cuerpo.iter().flat_map(|d| self.unswitch_decl(d)).collect();
+                let nuevo_cuerpo: Vec<Declaracion> =
+                    cuerpo.iter().flat_map(|d| self.desanidar_decl(d)).collect();
                 vec![Declaracion::Funcion {
                     nombre: nombre.clone(),
                     parametros_tipo: parametros_tipo.clone(),
                     parametros: parametros.clone(),
                     tipo_retorno: tipo_retorno.clone(),
-                    cuerpo: new_cuerpo,
+                    cuerpo: nuevo_cuerpo,
                     externa: *externa,
                     asincrona: *asincrona,
                     enlace_nombre: enlace_nombre.clone(),
@@ -118,21 +118,21 @@ impl LoopUnswitcher {
     /// Verifica si una expresión es invariante dentro de un loop.
     /// Una expresión es invariante si no depende de variables que cambien en el loop.
     /// Considera tanto las variables de la condición del loop como las modificadas en el body.
-    fn es_invariante_en_loop(
+    fn es_invariante_en_bucle(
         &self,
         expr: &Expresion,
-        loop_cond: &Expresion,
-        cuerpo_loop: &[Declaracion],
+        bucle_cond: &Expresion,
+        cuerpo_bucle: &[Declaracion],
     ) -> bool {
         // 1. La variable no debe aparecer en la condición del loop
-        let vars_loop = self.extraer_identificadores(loop_cond);
+        let vars_bucle = self.extraer_identificadores(bucle_cond);
         let vars_expr = self.extraer_identificadores(expr);
-        if vars_expr.iter().any(|v| vars_loop.contains(v)) {
+        if vars_expr.iter().any(|v| vars_bucle.contains(v)) {
             return false;
         }
         // 2. La variable no debe ser modificada en el body del loop
         for v in &vars_expr {
-            if self.body_modifica_var(cuerpo_loop, v) {
+            if self.body_modifica_var(cuerpo_bucle, v) {
                 return false;
             }
         }
@@ -228,7 +228,7 @@ impl LoopUnswitcher {
     }
 }
 
-impl Default for LoopUnswitcher {
+impl Default for BucleUnswitcher {
     fn default() -> Self {
         Self::new()
     }

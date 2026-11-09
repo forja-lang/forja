@@ -4,7 +4,7 @@
 // extracción de variables del stack/frames.
 
 use crate::bytecode::Opcode;
-use crate::vm_fast::{get_small_int_fast, ErrFast, ForjaFast, FrmFast, ValorFast};
+use crate::vm_fast::{obtener_small_entero_fast, ErrFast, ForjaFast, FrmFast, ValorFast};
 use std::collections::HashMap;
 
 /// Estado del debugger
@@ -278,47 +278,47 @@ impl Debugger {
     fn ejecutar_un_paso(&mut self, op: &Opcode) -> Result<(), ErrFast> {
         match op {
             Opcode::PushEntero(n) => {
-                self.vm.push_valor(get_small_int_fast(*n));
+                self.vm.empujar_valor(obtener_small_entero_fast(*n));
                 self.vm.ip += 1;
             }
             Opcode::PushDecimal(d) => {
-                self.vm.push_valor(ValorFast::flotante(*d));
+                self.vm.empujar_valor(ValorFast::flotante(*d));
                 self.vm.ip += 1;
             }
             Opcode::PushTexto(s) => {
-                let idx = self.vm.alloc_str(s.clone());
-                self.vm.push_valor(ValorFast::texto(idx));
+                let idx = self.vm.reservar_texto(s.clone());
+                self.vm.empujar_valor(ValorFast::texto(idx));
                 self.vm.ip += 1;
             }
             Opcode::PushBooleano(b) => {
-                self.vm.push_valor(ValorFast::booleano(*b));
+                self.vm.empujar_valor(ValorFast::booleano(*b));
                 self.vm.ip += 1;
             }
             Opcode::PushNulo => {
-                self.vm.push_valor(ValorFast::nulo());
+                self.vm.empujar_valor(ValorFast::nulo());
                 self.vm.ip += 1;
             }
             Opcode::Descartar => {
-                self.vm.pop_valor()?;
+                self.vm.desapilar_valor()?;
                 self.vm.ip += 1;
             }
             Opcode::Duplicar => {
                 let v = *self.vm.peek_valor(0);
-                self.vm.push_valor(v);
+                self.vm.empujar_valor(v);
                 self.vm.ip += 1;
             }
             Opcode::CargarIndice(idx) => {
-                self.vm.push_valor(self.vm.load_local(*idx));
+                self.vm.empujar_valor(self.vm.cargar_local(*idx));
                 self.vm.ip += 1;
             }
             Opcode::GuardarIndice(idx) => {
-                let val = self.vm.pop_valor()?;
-                self.vm.store_local(*idx, val);
+                let val = self.vm.desapilar_valor()?;
+                self.vm.almacen_local(*idx, val);
                 self.vm.ip += 1;
             }
             Opcode::DeclararIndice(idx, _mutable) => {
                 // Ensure local slot exists
-                self.vm.store_local(*idx, self.vm.load_local(*idx));
+                self.vm.almacen_local(*idx, self.vm.cargar_local(*idx));
                 self.vm.ip += 1;
             }
             Opcode::Sumar => {
@@ -341,7 +341,7 @@ impl Debugger {
                 self.vm.ip = *target;
             }
             Opcode::SaltoSiFalso(target) => {
-                let cond = self.vm.pop_valor()?;
+                let cond = self.vm.desapilar_valor()?;
                 if !cond.es_verdadero() {
                     self.vm.ip = *target;
                 } else {
@@ -366,7 +366,7 @@ impl Debugger {
                 self.vm.ip += 1;
             }
             Opcode::Imprimir => {
-                let val = self.vm.pop_valor()?;
+                let val = self.vm.desapilar_valor()?;
                 let s = self.vm.mostrar_valor(&val);
                 self.vm.output.lock().unwrap().push(s);
                 self.vm.ip += 1;
@@ -392,8 +392,9 @@ impl Debugger {
                 ejecutar_o(self)?;
             }
             Opcode::No => {
-                let v = self.vm.pop_valor()?;
-                self.vm.push_valor(ValorFast::booleano(!v.es_verdadero()));
+                let v = self.vm.desapilar_valor()?;
+                self.vm
+                    .empujar_valor(ValorFast::booleano(!v.es_verdadero()));
                 self.vm.ip += 1;
             }
 
@@ -586,10 +587,10 @@ impl Debugger {
     /// Evaluar un AST de expresión contra el estado actual de la VM.
     fn evaluar_ast(&mut self, ast: &ExprAst) -> Result<ValorFast, String> {
         match ast {
-            ExprAst::Entero(n) => Ok(get_small_int_fast(*n)),
+            ExprAst::Entero(n) => Ok(obtener_small_entero_fast(*n)),
             ExprAst::Decimal(d) => Ok(ValorFast::flotante(*d)),
             ExprAst::Texto(s) => {
-                let idx = self.vm.alloc_str(s.clone().into());
+                let idx = self.vm.reservar_texto(s.clone().into());
                 Ok(ValorFast::texto(idx))
             }
             ExprAst::Booleano(b) => Ok(ValorFast::booleano(*b)),
@@ -600,7 +601,7 @@ impl Debugger {
                 match op {
                     ExprOpUnaria::Neg => {
                         if v.es_entero() {
-                            Ok(get_small_int_fast(-v.a_entero()))
+                            Ok(obtener_small_entero_fast(-v.a_entero()))
                         } else {
                             Ok(ValorFast::flotante(-v.a_flotante()))
                         }
@@ -1100,28 +1101,28 @@ fn aplicar_binaria(op: &ExprOpBinaria, a: ValorFast, b: ValorFast) -> ValorFast 
     match op {
         ExprOpBinaria::Suma => {
             if a_int && b_int {
-                get_small_int_fast(a.a_entero() + b.a_entero())
+                obtener_small_entero_fast(a.a_entero() + b.a_entero())
             } else {
                 ValorFast::flotante(num(a, a_int) + num(b, b_int))
             }
         }
         ExprOpBinaria::Resta => {
             if a_int && b_int {
-                get_small_int_fast(a.a_entero() - b.a_entero())
+                obtener_small_entero_fast(a.a_entero() - b.a_entero())
             } else {
                 ValorFast::flotante(num(a, a_int) - num(b, b_int))
             }
         }
         ExprOpBinaria::Mul => {
             if a_int && b_int {
-                get_small_int_fast(a.a_entero() * b.a_entero())
+                obtener_small_entero_fast(a.a_entero() * b.a_entero())
             } else {
                 ValorFast::flotante(num(a, a_int) * num(b, b_int))
             }
         }
         ExprOpBinaria::Div => {
             if a_int && b_int && b.a_entero() != 0 {
-                get_small_int_fast(a.a_entero() / b.a_entero())
+                obtener_small_entero_fast(a.a_entero() / b.a_entero())
             } else {
                 ValorFast::flotante(num(a, a_int) / num(b, b_int))
             }
@@ -1174,13 +1175,13 @@ fn comparar_igual(a: ValorFast, b: ValorFast) -> bool {
 // ======================================================================
 
 fn ejecutar_add(dbg: &mut Debugger) -> Result<(), ErrFast> {
-    let b = dbg.vm.pop_valor()?;
-    let a = dbg.vm.pop_valor()?;
+    let b = dbg.vm.desapilar_valor()?;
+    let a = dbg.vm.desapilar_valor()?;
     let a_int = a.es_entero();
     let b_int = b.es_entero();
     if a_int && b_int {
         dbg.vm
-            .push_valor(get_small_int_fast(a.a_entero() + b.a_entero()));
+            .empujar_valor(obtener_small_entero_fast(a.a_entero() + b.a_entero()));
     } else {
         let af = if a_int {
             a.a_entero() as f64
@@ -1192,19 +1193,19 @@ fn ejecutar_add(dbg: &mut Debugger) -> Result<(), ErrFast> {
         } else {
             b.a_flotante()
         };
-        dbg.vm.push_valor(ValorFast::flotante(af + bf));
+        dbg.vm.empujar_valor(ValorFast::flotante(af + bf));
     }
     Ok(())
 }
 
 fn ejecutar_sub(dbg: &mut Debugger) -> Result<(), ErrFast> {
-    let b = dbg.vm.pop_valor()?;
-    let a = dbg.vm.pop_valor()?;
+    let b = dbg.vm.desapilar_valor()?;
+    let a = dbg.vm.desapilar_valor()?;
     let a_int = a.es_entero();
     let b_int = b.es_entero();
     if a_int && b_int {
         dbg.vm
-            .push_valor(get_small_int_fast(a.a_entero() - b.a_entero()));
+            .empujar_valor(obtener_small_entero_fast(a.a_entero() - b.a_entero()));
     } else {
         let af = if a_int {
             a.a_entero() as f64
@@ -1216,19 +1217,19 @@ fn ejecutar_sub(dbg: &mut Debugger) -> Result<(), ErrFast> {
         } else {
             b.a_flotante()
         };
-        dbg.vm.push_valor(ValorFast::flotante(af - bf));
+        dbg.vm.empujar_valor(ValorFast::flotante(af - bf));
     }
     Ok(())
 }
 
 fn ejecutar_mul(dbg: &mut Debugger) -> Result<(), ErrFast> {
-    let b = dbg.vm.pop_valor()?;
-    let a = dbg.vm.pop_valor()?;
+    let b = dbg.vm.desapilar_valor()?;
+    let a = dbg.vm.desapilar_valor()?;
     let a_int = a.es_entero();
     let b_int = b.es_entero();
     if a_int && b_int {
         dbg.vm
-            .push_valor(get_small_int_fast(a.a_entero() * b.a_entero()));
+            .empujar_valor(obtener_small_entero_fast(a.a_entero() * b.a_entero()));
     } else {
         let af = if a_int {
             a.a_entero() as f64
@@ -1240,19 +1241,19 @@ fn ejecutar_mul(dbg: &mut Debugger) -> Result<(), ErrFast> {
         } else {
             b.a_flotante()
         };
-        dbg.vm.push_valor(ValorFast::flotante(af * bf));
+        dbg.vm.empujar_valor(ValorFast::flotante(af * bf));
     }
     Ok(())
 }
 
 fn ejecutar_div(dbg: &mut Debugger) -> Result<(), ErrFast> {
-    let b = dbg.vm.pop_valor()?;
-    let a = dbg.vm.pop_valor()?;
+    let b = dbg.vm.desapilar_valor()?;
+    let a = dbg.vm.desapilar_valor()?;
     let a_int = a.es_entero();
     let b_int = b.es_entero();
     if a_int && b_int && b.a_entero() != 0 {
         dbg.vm
-            .push_valor(get_small_int_fast(a.a_entero() / b.a_entero()));
+            .empujar_valor(obtener_small_entero_fast(a.a_entero() / b.a_entero()));
     } else {
         let af = if a_int {
             a.a_entero() as f64
@@ -1264,14 +1265,14 @@ fn ejecutar_div(dbg: &mut Debugger) -> Result<(), ErrFast> {
         } else {
             b.a_flotante()
         };
-        dbg.vm.push_valor(ValorFast::flotante(af / bf));
+        dbg.vm.empujar_valor(ValorFast::flotante(af / bf));
     }
     Ok(())
 }
 
 fn ejecutar_igual(dbg: &mut Debugger) -> Result<(), ErrFast> {
-    let b = dbg.vm.pop_valor()?;
-    let a = dbg.vm.pop_valor()?;
+    let b = dbg.vm.desapilar_valor()?;
+    let a = dbg.vm.desapilar_valor()?;
     let igual = if a.es_entero() && b.es_entero() {
         a.a_entero() == b.a_entero()
     } else {
@@ -1287,13 +1288,13 @@ fn ejecutar_igual(dbg: &mut Debugger) -> Result<(), ErrFast> {
         };
         (af - bf).abs() < 1e-12
     };
-    dbg.vm.push_valor(ValorFast::booleano(igual));
+    dbg.vm.empujar_valor(ValorFast::booleano(igual));
     Ok(())
 }
 
 fn ejecutar_menor(dbg: &mut Debugger) -> Result<(), ErrFast> {
-    let b = dbg.vm.pop_valor()?;
-    let a = dbg.vm.pop_valor()?;
+    let b = dbg.vm.desapilar_valor()?;
+    let a = dbg.vm.desapilar_valor()?;
     let menor = if a.es_entero() && b.es_entero() {
         a.a_entero() < b.a_entero()
     } else {
@@ -1309,13 +1310,13 @@ fn ejecutar_menor(dbg: &mut Debugger) -> Result<(), ErrFast> {
         };
         af < bf
     };
-    dbg.vm.push_valor(ValorFast::booleano(menor));
+    dbg.vm.empujar_valor(ValorFast::booleano(menor));
     Ok(())
 }
 
 fn ejecutar_mayor(dbg: &mut Debugger) -> Result<(), ErrFast> {
-    let b = dbg.vm.pop_valor()?;
-    let a = dbg.vm.pop_valor()?;
+    let b = dbg.vm.desapilar_valor()?;
+    let a = dbg.vm.desapilar_valor()?;
     let mayor = if a.es_entero() && b.es_entero() {
         a.a_entero() > b.a_entero()
     } else {
@@ -1331,38 +1332,38 @@ fn ejecutar_mayor(dbg: &mut Debugger) -> Result<(), ErrFast> {
         };
         af > bf
     };
-    dbg.vm.push_valor(ValorFast::booleano(mayor));
+    dbg.vm.empujar_valor(ValorFast::booleano(mayor));
     Ok(())
 }
 
 fn ejecutar_y(dbg: &mut Debugger) -> Result<(), ErrFast> {
-    let b = dbg.vm.pop_valor()?;
-    let a = dbg.vm.pop_valor()?;
+    let b = dbg.vm.desapilar_valor()?;
+    let a = dbg.vm.desapilar_valor()?;
     dbg.vm
-        .push_valor(ValorFast::booleano(a.es_verdadero() && b.es_verdadero()));
+        .empujar_valor(ValorFast::booleano(a.es_verdadero() && b.es_verdadero()));
     Ok(())
 }
 
 fn ejecutar_o(dbg: &mut Debugger) -> Result<(), ErrFast> {
-    let b = dbg.vm.pop_valor()?;
-    let a = dbg.vm.pop_valor()?;
+    let b = dbg.vm.desapilar_valor()?;
+    let a = dbg.vm.desapilar_valor()?;
     dbg.vm
-        .push_valor(ValorFast::booleano(a.es_verdadero() || b.es_verdadero()));
+        .empujar_valor(ValorFast::booleano(a.es_verdadero() || b.es_verdadero()));
     Ok(())
 }
 
 /// Ejecutar Call en modo debug.
 ///
 /// Usa el mismo mecanismo que ForjaFast::ejecutar para Call:
-/// 1. Lookup de función via `lookup_func_entry` (soporta hot-reload)
+/// 1. Lookup de función via `lookup_funcion_entrada` (soporta hot-reload)
 /// 2. Creación de FrmFast con ip_ret, func_version
 /// 3. Push de nuevo frame_locals Vec para el nuevo ámbito
 /// 4. Paso de argumentos en los índices 0, 1, 2...
 fn ejecutar_call_debug(dbg: &mut Debugger, nombre: &str, nargs: usize) -> Result<(), ErrFast> {
     let sym = dbg.vm.runtime.tabla_simbolos.internar(nombre);
-    if let Some(entry) = dbg.vm.lookup_func_entry(sym) {
+    if let Some(entry) = dbg.vm.lookup_funcion_entrada(sym) {
         // Sincronizar cache stack → stack real
-        dbg.vm.flush_stack();
+        dbg.vm.flush_pila();
 
         let max_frames = dbg.vm.frame_buffer.len();
         if dbg.vm.frame_count >= max_frames {
@@ -1382,7 +1383,7 @@ fn ejecutar_call_debug(dbg: &mut Debugger, nombre: &str, nargs: usize) -> Result
         // Pop args del stack de valores y revesarlos (orden normal)
         let mut args: Vec<ValorFast> = Vec::with_capacity(nargs);
         for _ in 0..nargs {
-            args.push(dbg.vm.pop_valor()?);
+            args.push(dbg.vm.desapilar_valor()?);
         }
         args.reverse();
 
@@ -1411,7 +1412,7 @@ fn ejecutar_call_debug(dbg: &mut Debugger, nombre: &str, nargs: usize) -> Result
 /// Sigue exactamente el mismo mecanismo que ForjaFast::ejecutar:
 /// - NO toca el stack de valores (el valor de retorno ya está ahí)
 /// - frame_count -= 1
-/// - flush_stack (sincroniza cache)
+/// - flush_pila (sincroniza cache)
 /// - pop frame_locals (libera vars de la función que termina)
 /// - restaura ip desde el frame
 fn ejecutar_return_debug(dbg: &mut Debugger) -> Result<(), ErrFast> {
@@ -1421,7 +1422,7 @@ fn ejecutar_return_debug(dbg: &mut Debugger) -> Result<(), ErrFast> {
     dbg.vm.frame_count -= 1;
     let frame = dbg.vm.frame_buffer[dbg.vm.frame_count];
     // Sincronizar cache
-    dbg.vm.flush_stack();
+    dbg.vm.flush_pila();
     // Liberar vars de la función que termina
     dbg.vm.frame_locals.pop();
     dbg.vm.ip = frame.ip_ret;

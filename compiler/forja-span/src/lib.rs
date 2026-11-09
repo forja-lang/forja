@@ -1,16 +1,16 @@
 //! Source map y spans de Forja.
 //!
 //! Un `Span` identifica un rango de bytes dentro de un archivo. La conversión a
-//! línea/columna se hace con [`SourceMap::ubicacion`], que cuenta saltos de
+//! línea/columna se hace con [`FuenteMapa::ubicacion`], que cuenta saltos de
 //! línea una sola vez por archivo.
 
 use std::path::{Path, PathBuf};
 
 /// Identificador estable de un archivo fuente.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct FileId(u32);
+pub struct ArchivoId(u32);
 
-impl FileId {
+impl ArchivoId {
     pub fn indice(self) -> usize {
         self.0 as usize
     }
@@ -19,13 +19,13 @@ impl FileId {
 /// Rango de bytes `[inicio, fin)` dentro de un archivo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
-    pub archivo: FileId,
+    pub archivo: ArchivoId,
     pub inicio: u32,
     pub fin: u32,
 }
 
 impl Span {
-    pub fn nuevo(archivo: FileId, inicio: usize, fin: usize) -> Self {
+    pub fn nuevo(archivo: ArchivoId, inicio: usize, fin: usize) -> Self {
         Span {
             archivo,
             inicio: inicio as u32,
@@ -33,7 +33,7 @@ impl Span {
         }
     }
 
-    pub fn vacio(archivo: FileId, pos: usize) -> Self {
+    pub fn vacio(archivo: ArchivoId, pos: usize) -> Self {
         Span::nuevo(archivo, pos, pos)
     }
 
@@ -76,16 +76,16 @@ struct Archivo {
 
 /// Registro de archivos fuente y conversión de offsets a línea/columna.
 #[derive(Debug, Clone, Default)]
-pub struct SourceMap {
+pub struct FuenteMapa {
     archivos: Vec<Archivo>,
 }
 
-impl SourceMap {
+impl FuenteMapa {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn agregar(&mut self, nombre: impl Into<PathBuf>, fuente: impl Into<String>) -> FileId {
+    pub fn agregar(&mut self, nombre: impl Into<PathBuf>, fuente: impl Into<String>) -> ArchivoId {
         let fuente = fuente.into();
         let mut inicios = vec![0];
         for (i, b) in fuente.bytes().enumerate() {
@@ -93,7 +93,7 @@ impl SourceMap {
                 inicios.push(i + 1);
             }
         }
-        let id = FileId(self.archivos.len() as u32);
+        let id = ArchivoId(self.archivos.len() as u32);
         self.archivos.push(Archivo {
             nombre: nombre.into(),
             fuente,
@@ -106,13 +106,13 @@ impl SourceMap {
         self.archivos.len()
     }
 
-    pub fn nombre(&self, archivo: FileId) -> Option<&Path> {
+    pub fn nombre(&self, archivo: ArchivoId) -> Option<&Path> {
         self.archivos
             .get(archivo.indice())
             .map(|a| a.nombre.as_path())
     }
 
-    pub fn fuente(&self, archivo: FileId) -> Option<&str> {
+    pub fn fuente(&self, archivo: ArchivoId) -> Option<&str> {
         self.archivos
             .get(archivo.indice())
             .map(|a| a.fuente.as_str())
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn ubicacion_convierte_offsets() {
-        let mut mapa = SourceMap::new();
+        let mut mapa = FuenteMapa::new();
         let archivo = mapa.agregar("a.fa", "uno\ndos\n");
         assert_eq!(
             mapa.ubicacion(Span::nuevo(archivo, 0, 3)).unwrap(),
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn texto_y_longitud() {
-        let mut mapa = SourceMap::new();
+        let mut mapa = FuenteMapa::new();
         let archivo = mapa.agregar("a.fa", "hola mundo");
         let span = Span::nuevo(archivo, 5, 10);
         assert_eq!(mapa.texto(span), Some("mundo"));
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn archivos_distintos_no_se_unen() {
-        let mut mapa = SourceMap::new();
+        let mut mapa = FuenteMapa::new();
         let archivo_a = mapa.agregar("a.fa", "aaa");
         let archivo_b = mapa.agregar("b.fa", "bbb");
         let span_a = Span::nuevo(archivo_a, 0, 1);

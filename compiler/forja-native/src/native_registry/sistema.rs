@@ -1,67 +1,70 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_sistema(&mut self) {
         // ─── Sistema / OS ─────────────────────────────────────────────────────
-        self.registrar("_args", native_args);
-        self.registrar("_salir", native_salir);
-        self.registrar("_env", native_env);
-        self.registrar("_ejecutar", native_ejecutar);
-        self.registrar("_leer_linea", native_leer_linea);
-        self.registrar("_imprimir_error", native_imprimir_error);
-        self.registrar("_char", native_char);
-        self.registrar("_codigo_char", native_codigo_char);
-        self.registrar("_numero_a_texto_base", native_numero_a_texto_base);
+        self.registrar("_args", nativo_args);
+        self.registrar("_salir", nativo_salir);
+        self.registrar("_env", nativo_env);
+        self.registrar("_ejecutar", nativo_ejecutar);
+        self.registrar("_leer_linea", nativo_leer_linea);
+        self.registrar("_imprimir_error", nativo_imprimir_error);
+        self.registrar("_char", nativo_caracter);
+        self.registrar("_codigo_char", nativo_codigo_caracter);
+        self.registrar("_numero_a_texto_base", nativo_numero_a_texto_base);
         // Las usa `std/sistema.fa`; faltaban en el registro, así que
         // `sistema.sistema_operativo()` y `directorio_actual()` fallaban con
         // "función no definida".
-        self.registrar("_sistema_so", native_sistema_so);
+        self.registrar("_sistema_so", nativo_sistema_so);
         self.registrar(
             "_sistema_directorio_actual",
-            native_sistema_directorio_actual,
+            nativo_sistema_directorio_actual,
         );
         // `std/sistema.fa` usa estos nombres; el registro tenía los cortos
         // (`_args`, `_env`, `_salir`, `_sistema_tiempo_ms`).
-        self.registrar("_sistema_argumentos", native_args);
-        self.registrar("_sistema_salir", native_salir);
-        self.registrar("_sistema_variable_entorno", native_env);
+        self.registrar("_sistema_argumentos", nativo_args);
+        self.registrar("_sistema_salir", nativo_salir);
+        self.registrar("_sistema_variable_entorno", nativo_env);
         self.registrar(
             "_sistema_tiempo_actual_ms",
-            crate::native_registry::temporizador::native_sistema_tiempo_ms,
+            crate::native_registry::temporizador::nativo_sistema_tiempo_ms,
         );
     }
 }
 
 /// Nombre del sistema operativo (`_sistema_so()`), como lo reporta Rust.
-pub fn native_sistema_so(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let indice = vm.alloc_str(Arc::from(std::env::consts::OS));
+pub fn nativo_sistema_so(
+    vm: &mut dyn Anfitrion,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
+    let indice = vm.reservar_texto(Arc::from(std::env::consts::OS));
     Ok(ValorFast::texto(indice))
 }
 
 /// Directorio de trabajo actual (`_sistema_directorio_actual()`).
-pub fn native_sistema_directorio_actual(
-    vm: &mut dyn Host,
+pub fn nativo_sistema_directorio_actual(
+    vm: &mut dyn Anfitrion,
     _args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let directorio = std::env::current_dir()
         .map_err(|e| ErrFast::TipoInv(format!("no se pudo leer el directorio actual: {e}")))?;
-    let indice = vm.alloc_str(Arc::from(directorio.to_string_lossy().as_ref()));
+    let indice = vm.reservar_texto(Arc::from(directorio.to_string_lossy().as_ref()));
     Ok(ValorFast::texto(indice))
 }
-pub fn native_args(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_args(vm: &mut dyn Anfitrion, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let args: Vec<ValorFast> = std::env::args()
         .map(|a| {
-            let indice = vm.alloc_str(Arc::from(a.as_str()));
+            let indice = vm.reservar_texto(Arc::from(a.as_str()));
             ValorFast::texto(indice)
         })
         .collect();
-    let arr_idx = vm.alloc_arr(args);
+    let arr_idx = vm.reservar_arr(args);
     Ok(ValorFast::arreglo(arr_idx))
 }
 
 /// Termina el proceso con el código dado.
 /// _salir(codigo: Entero)
-pub fn native_salir(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_salir(_vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let codigo = if args.is_empty() {
         0i32
     } else {
@@ -72,14 +75,14 @@ pub fn native_salir(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast,
 
 /// Obtiene el valor de una variable de entorno.
 /// _env(nombre: Texto) → Texto | nulo
-pub fn native_env(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_env(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Ok(ValorFast::nulo());
     }
     let nombre = obtener_texto(vm, args[0])?;
     match std::env::var(&nombre) {
         Ok(val) => {
-            let indice = vm.alloc_str(Arc::from(val.as_str()));
+            let indice = vm.reservar_texto(Arc::from(val.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(_) => Ok(ValorFast::nulo()),
@@ -88,7 +91,7 @@ pub fn native_env(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, Er
 
 /// Ejecuta un comando de shell y retorna su salida estándar como texto.
 /// _ejecutar(cmd: Texto) → Texto  (o nulo si error)
-pub fn native_ejecutar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_ejecutar(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_ejecutar requiere un argumento: comando (texto)".into(),
@@ -107,7 +110,7 @@ pub fn native_ejecutar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFas
     match resultado {
         Ok(out) => {
             let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            let indice = vm.alloc_str(Arc::from(stdout.as_str()));
+            let indice = vm.reservar_texto(Arc::from(stdout.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("_ejecutar: {}", e))),
@@ -116,7 +119,10 @@ pub fn native_ejecutar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFas
 
 /// Lee una línea de la entrada estándar (stdin).
 /// _leer_linea() → Texto  (sin el '\n' final)
-pub fn native_leer_linea(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_leer_linea(
+    vm: &mut dyn Anfitrion,
+    _args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     use std::io::BufRead;
     let stdin = std::io::stdin();
     let mut linea = String::new();
@@ -129,7 +135,7 @@ pub fn native_leer_linea(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<Valor
             if linea.ends_with('\r') {
                 linea.pop();
             }
-            let indice = vm.alloc_str(Arc::from(linea.as_str()));
+            let indice = vm.reservar_texto(Arc::from(linea.as_str()));
             Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(format!("_leer_linea: {}", e))),
@@ -138,7 +144,10 @@ pub fn native_leer_linea(vm: &mut dyn Host, _args: &[ValorFast]) -> Result<Valor
 
 /// Imprime un mensaje en la salida de error estándar (stderr).
 /// _imprimir_error(mensaje: Texto)
-pub fn native_imprimir_error(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_imprimir_error(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         eprintln!();
         return Ok(ValorFast::nulo());
@@ -150,7 +159,7 @@ pub fn native_imprimir_error(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Va
 
 /// Convierte un código de punto Unicode (entero) en un texto de un carácter.
 /// _char(codigo: Entero) → Texto  (o nulo si código inválido)
-pub fn native_char(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_caracter(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Ok(ValorFast::nulo());
     }
@@ -158,7 +167,7 @@ pub fn native_char(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, E
     match u32::try_from(codigo).ok().and_then(char::from_u32) {
         Some(c) => {
             let s: String = c.to_string();
-            let indice = vm.alloc_str(Arc::from(s.as_str()));
+            let indice = vm.reservar_texto(Arc::from(s.as_str()));
             Ok(ValorFast::texto(indice))
         }
         None => Ok(ValorFast::nulo()),
@@ -167,7 +176,10 @@ pub fn native_char(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, E
 
 /// Retorna el código de punto Unicode del primer carácter de un texto.
 /// _codigo_char(s: Texto) → Entero  (o nulo si vacío)
-pub fn native_codigo_char(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_codigo_caracter(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Ok(ValorFast::nulo());
     }
@@ -180,8 +192,8 @@ pub fn native_codigo_char(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valor
 
 /// Convierte un entero a texto en la base dada (2-36).
 /// _numero_a_texto_base(n: Entero, base: Entero) → Texto
-pub fn native_numero_a_texto_base(
-    vm: &mut dyn Host,
+pub fn nativo_numero_a_texto_base(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
@@ -236,6 +248,6 @@ pub fn native_numero_a_texto_base(
         String::from_utf8(digits).unwrap_or_default()
     };
 
-    let indice = vm.alloc_str(Arc::from(resultado.as_str()));
+    let indice = vm.reservar_texto(Arc::from(resultado.as_str()));
     Ok(ValorFast::texto(indice))
 }

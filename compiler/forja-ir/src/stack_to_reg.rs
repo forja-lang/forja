@@ -3,62 +3,62 @@
 //! Convierte bytecode stack-based a IR register-based usando un algoritmo
 //! de evaluación de expresiones con una pila de virtual registers.
 
-use crate::register_alloc::{RegClass, VirtReg};
+use crate::register_alloc::{RegClase, VirtReg};
 use crate::register_ir::{BloqueBasico, CmpOp, RegInstruction, RegProgram};
 use forja_bytecode::Opcode;
 
 /// Convierte bytecode stack-based a IR register-based
-pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
+pub fn pila_to_reg(ops: &[Opcode]) -> RegProgram {
     let mut prog = RegProgram::new();
-    let mut stack: Vec<(VirtReg, RegClass)> = Vec::new();
-    let mut current_block = BloqueBasico {
+    let mut pila: Vec<(VirtReg, RegClase)> = Vec::new();
+    let mut actual_block = BloqueBasico {
         etiqueta: 0,
         instructions: Vec::new(),
         terminator: RegInstruction::Nop,
     };
-    let mut label_counter = 1usize;
+    let mut etiqueta_counter = 1usize;
 
     for op in ops {
         match op {
             // === Pila ===
             Opcode::PushEntero(n) => {
-                let v = prog.alloc_vreg();
-                current_block
+                let v = prog.reservar_vreg();
+                actual_block
                     .instructions
                     .push(RegInstruction::LoadImm { dst: v, valor: *n });
-                stack.push((v, RegClass::Integer));
+                pila.push((v, RegClase::Integer));
             }
             Opcode::PushDecimal(d) => {
-                let v = prog.alloc_vreg();
-                current_block
+                let v = prog.reservar_vreg();
+                actual_block
                     .instructions
                     .push(RegInstruction::LoadFloat { dst: v, valor: *d });
-                stack.push((v, RegClass::Float));
+                pila.push((v, RegClase::Float));
             }
             Opcode::PushBooleano(b) => {
-                let v = prog.alloc_vreg();
-                current_block.instructions.push(RegInstruction::LoadImm {
+                let v = prog.reservar_vreg();
+                actual_block.instructions.push(RegInstruction::LoadImm {
                     dst: v,
                     valor: if *b { 1 } else { 0 },
                 });
-                stack.push((v, RegClass::Integer));
+                pila.push((v, RegClase::Integer));
             }
             Opcode::PushNulo => {
-                let v = prog.alloc_vreg();
-                current_block
+                let v = prog.reservar_vreg();
+                actual_block
                     .instructions
                     .push(RegInstruction::LoadImm { dst: v, valor: 0 });
-                stack.push((v, RegClass::Integer));
+                pila.push((v, RegClase::Integer));
             }
             Opcode::Descartar => {
-                stack.pop();
+                pila.pop();
             }
 
             // === Aritméticas ===
             Opcode::Sumar | Opcode::Restar | Opcode::Multiplicar | Opcode::Dividir => {
-                let (b, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                let (a, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                let dst = prog.alloc_vreg();
+                let (b, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                let (a, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                let dst = prog.reservar_vreg();
                 let instr = match op {
                     Opcode::Sumar => RegInstruction::RegAdd { dst, a, b },
                     Opcode::Restar => RegInstruction::RegSub { dst, a, b },
@@ -66,8 +66,8 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                     Opcode::Dividir => RegInstruction::RegDiv { dst, a, b },
                     _ => unreachable!(),
                 };
-                current_block.instructions.push(instr);
-                stack.push((dst, RegClass::Integer));
+                actual_block.instructions.push(instr);
+                pila.push((dst, RegClase::Integer));
             }
 
             // === Aritméticas especializadas ===
@@ -79,9 +79,9 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
             | Opcode::MultiplicarDecimal
             | Opcode::DividirEntero
             | Opcode::DividirDecimal => {
-                let (b, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                let (a, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                let dst = prog.alloc_vreg();
+                let (b, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                let (a, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                let dst = prog.reservar_vreg();
                 let instr = match op {
                     Opcode::SumarEntero | Opcode::SumarDecimal => {
                         RegInstruction::RegAdd { dst, a, b }
@@ -97,50 +97,50 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                     }
                     _ => unreachable!(),
                 };
-                current_block.instructions.push(instr);
+                actual_block.instructions.push(instr);
                 let clase = match op {
                     Opcode::SumarDecimal
                     | Opcode::RestarDecimal
                     | Opcode::MultiplicarDecimal
-                    | Opcode::DividirDecimal => RegClass::Float,
-                    _ => RegClass::Integer,
+                    | Opcode::DividirDecimal => RegClase::Float,
+                    _ => RegClase::Integer,
                 };
-                stack.push((dst, clase));
+                pila.push((dst, clase));
             }
 
             // === Carga de variables ===
             Opcode::CargarIndice(idx) | Opcode::CargarIndiceEntero(idx) => {
-                let v = prog.alloc_vreg();
-                current_block.instructions.push(RegInstruction::LoadVar {
+                let v = prog.reservar_vreg();
+                actual_block.instructions.push(RegInstruction::LoadVar {
                     dst: v,
                     var_idx: *idx,
-                    clase: RegClass::Integer,
+                    clase: RegClase::Integer,
                 });
-                stack.push((v, RegClass::Integer));
+                pila.push((v, RegClase::Integer));
             }
             Opcode::CargarIndiceDecimal(idx) => {
-                let v = prog.alloc_vreg();
-                current_block.instructions.push(RegInstruction::LoadVar {
+                let v = prog.reservar_vreg();
+                actual_block.instructions.push(RegInstruction::LoadVar {
                     dst: v,
                     var_idx: *idx,
-                    clase: RegClass::Float,
+                    clase: RegClase::Float,
                 });
-                stack.push((v, RegClass::Float));
+                pila.push((v, RegClase::Float));
             }
             Opcode::GuardarIndice(idx) | Opcode::GuardarIndiceEntero(idx) => {
-                let (src, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                current_block.instructions.push(RegInstruction::StoreVar {
+                let (src, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                actual_block.instructions.push(RegInstruction::StoreVar {
                     src,
                     var_idx: *idx,
-                    clase: RegClass::Integer,
+                    clase: RegClase::Integer,
                 });
             }
             Opcode::GuardarIndiceDecimal(idx) => {
-                let (src, _) = stack.pop().unwrap_or((0, RegClass::Float));
-                current_block.instructions.push(RegInstruction::StoreVar {
+                let (src, _) = pila.pop().unwrap_or((0, RegClase::Float));
+                actual_block.instructions.push(RegInstruction::StoreVar {
                     src,
                     var_idx: *idx,
-                    clase: RegClass::Float,
+                    clase: RegClase::Float,
                 });
             }
 
@@ -151,9 +151,9 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
             | Opcode::Mayor
             | Opcode::MenorIgual
             | Opcode::MayorIgual => {
-                let (b, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                let (a, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                let dst = prog.alloc_vreg();
+                let (b, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                let (a, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                let dst = prog.reservar_vreg();
                 let op_cmp = match op {
                     Opcode::Igual => CmpOp::Eq,
                     Opcode::Diferente => CmpOp::Ne,
@@ -163,13 +163,13 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                     Opcode::MayorIgual => CmpOp::Ge,
                     _ => unreachable!(),
                 };
-                current_block.instructions.push(RegInstruction::RegCmp {
+                actual_block.instructions.push(RegInstruction::RegCmp {
                     dst,
                     a,
                     b,
                     op: op_cmp,
                 });
-                stack.push((dst, RegClass::Integer));
+                pila.push((dst, RegClase::Integer));
             }
 
             // Comparaciones especializadas — mismas que las genéricas
@@ -182,9 +182,9 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
             | Opcode::MayorDecimal
             | Opcode::MenorIgualDecimal
             | Opcode::MayorIgualDecimal => {
-                let (b, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                let (a, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                let dst = prog.alloc_vreg();
+                let (b, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                let (a, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                let dst = prog.reservar_vreg();
                 let op_cmp = match op {
                     Opcode::IgualEntero | Opcode::IgualDecimal => CmpOp::Eq,
                     Opcode::DistintoDecimal => CmpOp::Ne,
@@ -194,133 +194,133 @@ pub fn stack_to_reg(ops: &[Opcode]) -> RegProgram {
                     Opcode::MayorIgualDecimal => CmpOp::Ge,
                     _ => unreachable!(),
                 };
-                current_block.instructions.push(RegInstruction::RegCmp {
+                actual_block.instructions.push(RegInstruction::RegCmp {
                     dst,
                     a,
                     b,
                     op: op_cmp,
                 });
-                stack.push((dst, RegClass::Integer));
+                pila.push((dst, RegClase::Integer));
             }
 
             // === Lógicas ===
             Opcode::Y => {
-                let (b, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                let (a, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                let dst = prog.alloc_vreg();
-                current_block
+                let (b, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                let (a, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                let dst = prog.reservar_vreg();
+                actual_block
                     .instructions
                     .push(RegInstruction::RegAnd { dst, a, b });
-                stack.push((dst, RegClass::Integer));
+                pila.push((dst, RegClase::Integer));
             }
             Opcode::O => {
-                let (b, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                let (a, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                let dst = prog.alloc_vreg();
-                current_block
+                let (b, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                let (a, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                let dst = prog.reservar_vreg();
+                actual_block
                     .instructions
                     .push(RegInstruction::RegOr { dst, a, b });
-                stack.push((dst, RegClass::Integer));
+                pila.push((dst, RegClase::Integer));
             }
             Opcode::No => {
-                let (src, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                let dst = prog.alloc_vreg();
-                current_block
+                let (src, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                let dst = prog.reservar_vreg();
+                actual_block
                     .instructions
                     .push(RegInstruction::RegNot { dst, src });
-                stack.push((dst, RegClass::Integer));
+                pila.push((dst, RegClase::Integer));
             }
 
             // === Control de flujo ===
             Opcode::Salto(etiqueta) => {
-                current_block.terminator = RegInstruction::Jump {
+                actual_block.terminator = RegInstruction::Jump {
                     etiqueta: *etiqueta,
                 };
-                prog.blocks.push(current_block);
-                current_block = BloqueBasico {
-                    etiqueta: label_counter,
+                prog.blocks.push(actual_block);
+                actual_block = BloqueBasico {
+                    etiqueta: etiqueta_counter,
                     instructions: Vec::new(),
                     terminator: RegInstruction::Nop,
                 };
-                label_counter += 1;
+                etiqueta_counter += 1;
             }
             Opcode::SaltoSiFalso(etiqueta) => {
-                let (cond, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                current_block.terminator = RegInstruction::JumpIfFalse {
+                let (cond, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                actual_block.terminator = RegInstruction::JumpIfFalse {
                     cond,
                     etiqueta: *etiqueta,
                 };
-                prog.blocks.push(current_block);
-                current_block = BloqueBasico {
-                    etiqueta: label_counter,
+                prog.blocks.push(actual_block);
+                actual_block = BloqueBasico {
+                    etiqueta: etiqueta_counter,
                     instructions: Vec::new(),
                     terminator: RegInstruction::Nop,
                 };
-                label_counter += 1;
+                etiqueta_counter += 1;
             }
             Opcode::Etiqueta(l) => {
-                prog.blocks.push(current_block);
-                current_block = BloqueBasico {
+                prog.blocks.push(actual_block);
+                actual_block = BloqueBasico {
                     etiqueta: *l,
                     instructions: Vec::new(),
                     terminator: RegInstruction::Nop,
                 };
             }
             Opcode::Detener => {
-                current_block.terminator = RegInstruction::Return { src: 0 };
-                prog.blocks.push(current_block);
-                current_block = BloqueBasico {
-                    etiqueta: label_counter,
+                actual_block.terminator = RegInstruction::Return { src: 0 };
+                prog.blocks.push(actual_block);
+                actual_block = BloqueBasico {
+                    etiqueta: etiqueta_counter,
                     instructions: Vec::new(),
                     terminator: RegInstruction::Nop,
                 };
-                label_counter += 1;
+                etiqueta_counter += 1;
             }
 
             // === Funciones ===
             Opcode::Llamar(nombre_funcion, nargs) => {
                 let mut args = Vec::new();
                 for _ in 0..*nargs {
-                    args.push(stack.pop().unwrap_or((0, RegClass::Integer)).0);
+                    args.push(pila.pop().unwrap_or((0, RegClase::Integer)).0);
                 }
                 args.reverse(); // Los args se pasan en orden original
-                let v = prog.alloc_vreg();
-                current_block.instructions.push(RegInstruction::Call {
+                let v = prog.reservar_vreg();
+                actual_block.instructions.push(RegInstruction::Call {
                     nombre_funcion: nombre_funcion.to_string(),
                     args,
                 });
                 // La función empuja un resultado en la pila virtual
-                stack.push((v, RegClass::Integer));
+                pila.push((v, RegClase::Integer));
             }
             Opcode::Retornar => {
-                let (src, _) = stack.pop().unwrap_or((0, RegClass::Integer));
-                current_block.terminator = RegInstruction::Return { src };
-                prog.blocks.push(current_block);
-                current_block = BloqueBasico {
-                    etiqueta: label_counter,
+                let (src, _) = pila.pop().unwrap_or((0, RegClase::Integer));
+                actual_block.terminator = RegInstruction::Return { src };
+                prog.blocks.push(actual_block);
+                actual_block = BloqueBasico {
+                    etiqueta: etiqueta_counter,
                     instructions: Vec::new(),
                     terminator: RegInstruction::Nop,
                 };
-                label_counter += 1;
+                etiqueta_counter += 1;
             }
 
             // === Opcodes no soportados aún → Nop ===
             _ => {
-                current_block.instructions.push(RegInstruction::Nop);
+                actual_block.instructions.push(RegInstruction::Nop);
             }
         }
     }
 
     // Terminar el último bloque si no tiene terminador
-    if matches!(current_block.terminator, RegInstruction::Nop) {
-        if !stack.is_empty() {
-            let (src, _) = stack.last().unwrap();
-            current_block.terminator = RegInstruction::Return { src: *src };
+    if matches!(actual_block.terminator, RegInstruction::Nop) {
+        if !pila.is_empty() {
+            let (src, _) = pila.last().unwrap();
+            actual_block.terminator = RegInstruction::Return { src: *src };
         } else {
-            current_block.terminator = RegInstruction::Return { src: 0 };
+            actual_block.terminator = RegInstruction::Return { src: 0 };
         }
     }
-    prog.blocks.push(current_block);
+    prog.blocks.push(actual_block);
 
     prog
 }
@@ -331,7 +331,7 @@ mod tests {
     use forja_bytecode::Opcode;
 
     #[test]
-    fn test_simple_push_add() {
+    fn test_simple_empujar_sumar() {
         // PushEntero(5) + PushEntero(3) + Add
         let ops = vec![
             Opcode::PushEntero(5),
@@ -339,7 +339,7 @@ mod tests {
             Opcode::Sumar,
             Opcode::Detener,
         ];
-        let prog = stack_to_reg(&ops);
+        let prog = pila_to_reg(&ops);
 
         // Debería tener al menos 1 bloque
         assert!(!prog.blocks.is_empty());
@@ -379,7 +379,7 @@ mod tests {
     }
 
     #[test]
-    fn test_push_sub_mul() {
+    fn test_empujar_sub_mul() {
         // PushEntero(10) + PushEntero(2) + Sub + PushEntero(3) + Mul
         let ops = vec![
             Opcode::PushEntero(10),
@@ -389,7 +389,7 @@ mod tests {
             Opcode::Multiplicar,
             Opcode::Detener,
         ];
-        let prog = stack_to_reg(&ops);
+        let prog = pila_to_reg(&ops);
 
         let block = &prog.blocks[0];
         assert_eq!(block.instructions.len(), 5);
@@ -416,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn test_load_store_variables() {
+    fn test_cargar_almacen_variables() {
         // PushEntero(42) + StoreIdx(0) + LoadIdx(0)
         let ops = vec![
             Opcode::PushEntero(42),
@@ -424,7 +424,7 @@ mod tests {
             Opcode::CargarIndice(0),
             Opcode::Detener,
         ];
-        let prog = stack_to_reg(&ops);
+        let prog = pila_to_reg(&ops);
 
         let block = &prog.blocks[0];
 
@@ -437,7 +437,7 @@ mod tests {
             } => {
                 assert_eq!(*src, 0);
                 assert_eq!(*var_idx, 0);
-                assert_eq!(*clase, RegClass::Integer);
+                assert_eq!(*clase, RegClase::Integer);
             }
             _ => panic!("Expected StoreVar"),
         }
@@ -451,7 +451,7 @@ mod tests {
             } => {
                 assert_eq!(*dst, 1);
                 assert_eq!(*var_idx, 0);
-                assert_eq!(*clase, RegClass::Integer);
+                assert_eq!(*clase, RegClase::Integer);
             }
             _ => panic!("Expected LoadVar"),
         }
@@ -465,7 +465,7 @@ mod tests {
             Opcode::Mayor,
             Opcode::Detener,
         ];
-        let prog = stack_to_reg(&ops);
+        let prog = pila_to_reg(&ops);
 
         let block = &prog.blocks[0];
         match &block.instructions[2] {
@@ -488,7 +488,7 @@ mod tests {
             Opcode::Etiqueta(1),
             Opcode::Detener,
         ];
-        let prog = stack_to_reg(&ops);
+        let prog = pila_to_reg(&ops);
 
         // Debería tener al menos 2 bloques
         assert!(prog.blocks.len() >= 2);
@@ -505,14 +505,14 @@ mod tests {
 
     #[test]
     fn test_empty_program() {
-        let prog = stack_to_reg(&[]);
+        let prog = pila_to_reg(&[]);
         assert_eq!(prog.blocks.len(), 1); // Un bloque vacío con Return
     }
 
     #[test]
-    fn test_push_decimal() {
+    fn test_empujar_decimal() {
         let ops = vec![Opcode::PushDecimal(2.5), Opcode::Detener];
-        let prog = stack_to_reg(&ops);
+        let prog = pila_to_reg(&ops);
 
         let block = &prog.blocks[0];
         match &block.instructions[0] {
@@ -532,7 +532,7 @@ mod tests {
             Opcode::Y,
             Opcode::Detener,
         ];
-        let prog = stack_to_reg(&ops);
+        let prog = pila_to_reg(&ops);
 
         let block = &prog.blocks[0];
         match &block.instructions[2] {

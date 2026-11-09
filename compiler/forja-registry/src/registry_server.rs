@@ -1,4 +1,4 @@
-//! Servidor del registry remoto (HTTP/1.1, sin dependencias).
+//! Servidor del registro remoto (HTTP/1.1, sin dependencias).
 //!
 //! Sirve el protocolo que consume [`crate::registry_remote`] y cubre la parte
 //! de que no depende de infraestructura externa:
@@ -14,7 +14,7 @@
 //!
 //! Uso desde el CLI:
 //! ```text
-//! forja registry-serve --directorio ~/.forja/registry-server --port 8787 [--token X]
+//! forja registro-serve --directorio ~/.forja/registro-server --port 8787 [--token X]
 //! ```
 //!
 //! Producción: el TLS se termina en un **proxy** (nginx/Caddy/Cloudflare) delante
@@ -23,7 +23,7 @@
 //! Pendiente para OIDC (hoy es un token compartido) y `forja verify`
 //! como comando de usuario.
 
-use crate::registry::{firmar_hash, sha256_hex, Index, Semver, VersionPublicada};
+use crate::registro::{firmar_hash, sha256_hex, Index, Semver, VersionPublicada};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -71,7 +71,7 @@ impl Estado {
         }
     }
 
-    /// Deja constancia de las operaciones que cambian el registry.
+    /// Deja constancia de las operaciones que cambian el registro.
     fn auditar(&self, ip: std::net::IpAddr, metodo: &str, ruta: &str, status: u16) {
         let Some(ruta_log) = &self.auditoria else {
             return;
@@ -352,7 +352,7 @@ fn atender(
             // alterado o firmado con otra clave se rechaza.
             let hash_calculado = sha256_hex(&datos);
             if !publicacion.clave_publica.is_empty()
-                && !crate::registry::verificar_firma_ed25519(
+                && !crate::registro::verificar_firma_ed25519(
                     &hash_calculado,
                     &publicacion.firma,
                     &publicacion.clave_publica,
@@ -370,14 +370,14 @@ fn atender(
             std::fs::write(&ruta, &datos).map_err(|e| e.to_string())?;
             let hash = sha256_hex(&datos);
             let firma = if publicacion.firma.is_empty() {
-                firmar_hash(&hash, &crate::registry::clave_firma())
+                firmar_hash(&hash, &crate::registro::clave_firma())
             } else {
                 publicacion.firma.clone()
             };
             let entrada = index
                 .paquetes
                 .entry((*nombre).to_string())
-                .or_insert_with(|| crate::registry::EntradaPaquete {
+                .or_insert_with(|| crate::registro::EntradaPaquete {
                     nombre: (*nombre).to_string(),
                     versiones: BTreeMap::new(),
                 });

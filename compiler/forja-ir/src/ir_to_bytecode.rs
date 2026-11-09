@@ -32,20 +32,20 @@ type PhisPorBloque = HashMap<IdBloque, Vec<Phi>>;
 /// Conversor de IR SSA a bytecode
 pub struct ConversorABytecode {
     /// Mapa de IdValor → índice de variable en el bytecode
-    value_to_var: HashMap<IdValor, usize>,
+    valor_to_variable: HashMap<IdValor, usize>,
     /// Siguiente índice de variable temporal
     next_var: usize,
     /// Tabla de símbolos
     simbolos: TablaSimbolosIr,
     /// true si se está convirtiendo main.
-    es_main: bool,
+    es_principal: bool,
     /// Desplazamiento de labels para funciones múltiples.
-    label_offset: usize,
+    etiqueta_offset: usize,
     /// definiciones de closures diferidas al final del programa.
     defs_diferidas: Vec<Opcode>,
     /// siguiente etiqueta libre para las funciones diferidas. Usa un
     /// espacio propio para no colisionar con los bloques del programa.
-    next_label_diferido: usize,
+    siguiente_etiqueta_diferido: usize,
     /// slot preasignado a cada `IdValor` (en el orden de emisión). Los
     /// φ pueden referenciar valores definidos más adelante en el orden de
     /// bloques (φ de bucles), así que el slot se resuelve por id y no por el
@@ -60,19 +60,19 @@ impl ConversorABytecode {
     /// Crea el conversor con la tabla de símbolos del programa IR.
     pub fn new(simbolos: TablaSimbolosIr) -> Self {
         ConversorABytecode {
-            value_to_var: HashMap::new(),
+            valor_to_variable: HashMap::new(),
             next_var: 0,
             simbolos,
-            es_main: false,
-            label_offset: 0,
+            es_principal: false,
+            etiqueta_offset: 0,
             defs_diferidas: Vec::new(),
-            next_label_diferido: LABEL_BASE_DIFERIDO,
+            siguiente_etiqueta_diferido: LABEL_BASE_DIFERIDO,
             slots_valor: HashMap::new(),
         }
     }
 
     /// Carga una variable local o global según su rango.
-    fn load_var(&self, var: usize) -> Opcode {
+    fn cargar_variable(&self, var: usize) -> Opcode {
         if var >= LOCAL_BASE.0 {
             Opcode::CargarIndice(var - LOCAL_BASE.0)
         } else {
@@ -81,7 +81,7 @@ impl ConversorABytecode {
     }
 
     /// Guarda una variable local o global según su rango.
-    fn store_var(&self, var: usize) -> Opcode {
+    fn almacen_variable(&self, var: usize) -> Opcode {
         if var >= LOCAL_BASE.0 {
             Opcode::GuardarIndice(var - LOCAL_BASE.0)
         } else {
@@ -99,8 +99,8 @@ impl ConversorABytecode {
             // sintética que arma `programa_a_ir`), no cualquiera llamada
             // "main". Un programa que declara `funcion main()` tiene además esa
             // función de usuario, que sí debe emitirse con su `FunctionDef`.
-            let es_main = i == 0;
-            if !es_main {
+            let es_principal = i == 0;
+            if !es_principal {
                 let parametros: Vec<Arc<str>> = funcion
                     .parametros
                     .iter()
@@ -111,8 +111,8 @@ impl ConversorABytecode {
                     parametros,
                 ));
             }
-            bytecode.extend(self.convert_function(funcion, es_main));
-            self.label_offset += funcion.bloques.len();
+            bytecode.extend(self.convert_funcion(funcion, es_principal));
+            self.etiqueta_offset += funcion.bloques.len();
         }
         // los closures se definen al final, fuera del flujo principal
         // (la VM ejecuta secuencialmente; un `FunctionDef` inline haría que su
@@ -122,9 +122,9 @@ impl ConversorABytecode {
     }
 
     /// Convierte una función IR completa a bytecode.
-    pub fn convert_function(&mut self, funcion: &FuncionSsa, es_main: bool) -> Vec<Opcode> {
-        self.es_main = es_main;
-        self.value_to_var.clear();
+    pub fn convert_funcion(&mut self, funcion: &FuncionSsa, es_principal: bool) -> Vec<Opcode> {
+        self.es_principal = es_principal;
+        self.valor_to_variable.clear();
         let mut bytecode = Vec::new();
 
         // Los temporales SSA se asignan por encima del mayor índice de memoria
@@ -135,7 +135,7 @@ impl ConversorABytecode {
         // deben empezar por encima de los parámetros (`LOCAL_BASE + i`); si no,
         // un temporal pisa el slot de un parámetro.
         let max_mem = max_mem_idx(funcion);
-        let minimo = if es_main {
+        let minimo = if es_principal {
             LOCAL_BASE.0
         } else {
             LOCAL_BASE.0 + funcion.parametros.len()
@@ -153,7 +153,7 @@ impl ConversorABytecode {
         let mut slot = self.next_var;
         for block in &funcion.bloques {
             for inst in &block.instrucciones {
-                if produces_value(inst) {
+                if produces_valor(inst) {
                     self.slots_valor.insert(siguiente_valor, slot);
                     slot += 1;
                     siguiente_valor += 1;
@@ -176,7 +176,7 @@ impl ConversorABytecode {
                     ));
                     let _ = slot;
                 }
-                if produces_value(inst) {
+                if produces_valor(inst) {
                     siguiente_valor += 1;
                 }
             }
@@ -184,15 +184,15 @@ impl ConversorABytecode {
 
         let mut siguiente_valor: IdValor = IdValor(0);
         for block in &funcion.bloques {
-            bytecode.push(Opcode::Etiqueta(self.label_offset + block.id.0));
+            bytecode.push(Opcode::Etiqueta(self.etiqueta_offset + block.id.0));
 
             for inst in &block.instrucciones {
-                if produces_value(inst) {
+                if produces_valor(inst) {
                     let v = siguiente_valor;
                     siguiente_valor += 1;
-                    self.emit_inst(&mut bytecode, inst, Some(v));
+                    self.emitir_inst(&mut bytecode, inst, Some(v));
                 } else {
-                    self.emit_inst(&mut bytecode, inst, None);
+                    self.emitir_inst(&mut bytecode, inst, None);
                 }
             }
 
@@ -213,12 +213,12 @@ impl ConversorABytecode {
                     let Some(&destino) = self.slots_valor.get(phi_valor) else {
                         continue;
                     };
-                    bytecode.push(self.load_var(origen));
-                    bytecode.push(self.store_var(destino));
+                    bytecode.push(self.cargar_variable(origen));
+                    bytecode.push(self.almacen_variable(destino));
                 }
             }
 
-            self.emit_terminator(&mut bytecode, &block.terminador);
+            self.emitir_terminator(&mut bytecode, &block.terminador);
         }
 
         bytecode
@@ -238,26 +238,26 @@ impl ConversorABytecode {
             .map(|(sym, _)| Arc::from(self.simbolos.nombre_de(*sym)))
             .collect();
 
-        let value_to_var_previo = std::mem::take(&mut self.value_to_var);
+        let valor_to_variable_previo = std::mem::take(&mut self.valor_to_variable);
         let slots_valor_previos = std::mem::take(&mut self.slots_valor);
         let next_var_previo = self.next_var;
-        let es_main_previo = self.es_main;
-        let label_offset_previo = self.label_offset;
-        self.label_offset = self.next_label_diferido;
+        let es_principal_previo = self.es_principal;
+        let etiqueta_offset_previo = self.etiqueta_offset;
+        self.etiqueta_offset = self.siguiente_etiqueta_diferido;
 
         let mut definicion = Vec::new();
         definicion.push(Opcode::DefinirFuncion(
             Arc::from(nombre.as_str()),
             parametros,
         ));
-        definicion.extend(self.convert_function(funcion, false));
+        definicion.extend(self.convert_funcion(funcion, false));
         definicion.push(Opcode::Retornar);
 
-        self.next_label_diferido += funcion.bloques.len();
-        self.label_offset = label_offset_previo;
-        self.es_main = es_main_previo;
+        self.siguiente_etiqueta_diferido += funcion.bloques.len();
+        self.etiqueta_offset = etiqueta_offset_previo;
+        self.es_principal = es_principal_previo;
         self.next_var = next_var_previo;
-        self.value_to_var = value_to_var_previo;
+        self.valor_to_variable = valor_to_variable_previo;
         self.slots_valor = slots_valor_previos;
 
         self.defs_diferidas.extend(definicion);
@@ -273,28 +273,30 @@ impl ConversorABytecode {
         }
     }
 
-    fn emit_terminator(&mut self, bytecode: &mut Vec<Opcode>, term: &Terminador) {
+    fn emitir_terminator(&mut self, bytecode: &mut Vec<Opcode>, term: &Terminador) {
         match term {
-            Terminador::Salto(target) => bytecode.push(Opcode::Salto(self.label_offset + target.0)),
+            Terminador::Salto(target) => {
+                bytecode.push(Opcode::Salto(self.etiqueta_offset + target.0))
+            }
             Terminador::Rama(cond, then, else_) => {
-                let cvar = self.value_to_var.get(cond).copied().unwrap_or(0);
-                bytecode.push(self.load_var(cvar));
-                bytecode.push(Opcode::SaltoSiFalso(self.label_offset + else_.0));
-                bytecode.push(Opcode::Salto(self.label_offset + then.0));
+                let cvar = self.valor_to_variable.get(cond).copied().unwrap_or(0);
+                bytecode.push(self.cargar_variable(cvar));
+                bytecode.push(Opcode::SaltoSiFalso(self.etiqueta_offset + else_.0));
+                bytecode.push(Opcode::Salto(self.etiqueta_offset + then.0));
             }
             Terminador::Retorno(val) => {
                 if let Some(v) = val {
-                    if let Some(&var) = self.value_to_var.get(v) {
-                        bytecode.push(self.load_var(var));
+                    if let Some(&var) = self.valor_to_variable.get(v) {
+                        bytecode.push(self.cargar_variable(var));
                     }
                 }
-                bytecode.push(if self.es_main {
+                bytecode.push(if self.es_principal {
                     Opcode::Detener
                 } else {
                     Opcode::Retornar
                 });
             }
-            Terminador::Inalcanzable => bytecode.push(if self.es_main {
+            Terminador::Inalcanzable => bytecode.push(if self.es_principal {
                 Opcode::Detener
             } else {
                 Opcode::Retornar
@@ -311,10 +313,10 @@ impl ConversorABytecode {
     }
 
     fn operando(&self, v: &IdValor) -> usize {
-        self.value_to_var.get(v).copied().unwrap_or(0)
+        self.valor_to_variable.get(v).copied().unwrap_or(0)
     }
 
-    fn emit_inst(
+    fn emitir_inst(
         &mut self,
         bytecode: &mut Vec<Opcode>,
         inst: &Instruccion,
@@ -333,8 +335,8 @@ impl ConversorABytecode {
                     // `DeclareIdxGlobal`, que solo inicializa la primera vez y
                     // dejaría valores obsoletos en temporales recomputados dentro
                     // de un bucle).
-                    $b.push(self.store_var(var));
-                    self.value_to_var.insert(v, var);
+                    $b.push(self.almacen_variable(var));
+                    self.valor_to_variable.insert(v, var);
                 } else {
                     // Sin consumidor: descartar el valor de la pila.
                     $b.push(Opcode::Descartar);
@@ -358,7 +360,7 @@ impl ConversorABytecode {
 
             Instruccion::AExacto(valor, desde_entero) => {
                 let var = self.operando(valor);
-                bytecode.push(self.load_var(var));
+                bytecode.push(self.cargar_variable(var));
                 bytecode.push(if *desde_entero {
                     Opcode::EnteroAExacto
                 } else {
@@ -381,7 +383,7 @@ impl ConversorABytecode {
             }
             Instruccion::ParsearEntero(texto) => {
                 let var = self.operando(texto);
-                bytecode.push(self.load_var(var));
+                bytecode.push(self.cargar_variable(var));
                 bytecode.push(Opcode::ParsearEntero);
                 guardar!(bytecode);
             }
@@ -413,17 +415,17 @@ impl ConversorABytecode {
                         Some(var) => var,
                         None => self.temp(),
                     };
-                    self.value_to_var.insert(v, var);
+                    self.valor_to_variable.insert(v, var);
                 }
             }
             Instruccion::Cargar(mem) => {
-                bytecode.push(self.load_var(mem.0));
+                bytecode.push(self.cargar_variable(mem.0));
                 guardar!(bytecode);
             }
             Instruccion::Guardar(mem, val) => {
                 let v = self.operando(val);
-                bytecode.push(self.load_var(v));
-                bytecode.push(self.store_var(mem.0));
+                bytecode.push(self.cargar_variable(v));
+                bytecode.push(self.almacen_variable(mem.0));
             }
             Instruccion::Sumar(l, r) => self.binaria(bytecode, l, r, Opcode::Sumar, resultado),
             Instruccion::Restar(l, r) => self.binaria(bytecode, l, r, Opcode::Restar, resultado),
@@ -449,11 +451,11 @@ impl ConversorABytecode {
                 // a % b = a - (a / b) * b
                 let lv = self.operando(l);
                 let rv = self.operando(r);
-                bytecode.push(self.load_var(lv)); // a
-                bytecode.push(self.load_var(lv)); // a, a
-                bytecode.push(self.load_var(rv)); // a, a, b
+                bytecode.push(self.cargar_variable(lv)); // a
+                bytecode.push(self.cargar_variable(lv)); // a, a
+                bytecode.push(self.cargar_variable(rv)); // a, a, b
                 bytecode.push(Opcode::Dividir); // a, a/b
-                bytecode.push(self.load_var(rv)); // a, a/b, b
+                bytecode.push(self.cargar_variable(rv)); // a, a/b, b
                 bytecode.push(Opcode::Multiplicar); // a, (a/b)*b
                 bytecode.push(Opcode::Restar); // a - (a/b)*b
                 guardar!(bytecode);
@@ -461,13 +463,13 @@ impl ConversorABytecode {
             Instruccion::Negar(v) => {
                 let var = self.operando(v);
                 bytecode.push(Opcode::PushEntero(0));
-                bytecode.push(self.load_var(var));
+                bytecode.push(self.cargar_variable(var));
                 bytecode.push(Opcode::Restar);
                 guardar!(bytecode);
             }
             Instruccion::No(v) => {
                 let var = self.operando(v);
-                bytecode.push(self.load_var(var));
+                bytecode.push(self.cargar_variable(var));
                 bytecode.push(Opcode::No);
                 guardar!(bytecode);
             }
@@ -476,7 +478,7 @@ impl ConversorABytecode {
                 if nombre == "escribir" {
                     for arg in args {
                         let var = self.operando(arg);
-                        bytecode.push(self.load_var(var));
+                        bytecode.push(self.cargar_variable(var));
                         bytecode.push(Opcode::Imprimir);
                     }
                     // `escribir` devuelve nulo en el IR; materializar.
@@ -486,7 +488,7 @@ impl ConversorABytecode {
                     // Llamadas a funciones de usuario no están en el subconjunto.
                     for arg in args {
                         let var = self.operando(arg);
-                        bytecode.push(self.load_var(var));
+                        bytecode.push(self.cargar_variable(var));
                     }
                     let nargs = args.len();
                     bytecode.push(Opcode::Llamar(Arc::from(nombre.as_str()), nargs));
@@ -501,21 +503,21 @@ impl ConversorABytecode {
                 // pase el entorno a la función anónima.
                 bytecode.push(Opcode::NuevoObjeto(Arc::from("Closure")));
                 let obj_var = self.temp();
-                bytecode.push(self.store_var(obj_var));
+                bytecode.push(self.almacen_variable(obj_var));
                 // fn = "<nombre>"
                 bytecode.push(Opcode::PushTexto(Arc::from(nombre.as_str())));
-                bytecode.push(self.load_var(obj_var));
+                bytecode.push(self.cargar_variable(obj_var));
                 bytecode.push(Opcode::FijarCampo(Arc::from("fn")));
                 // env = [capturado_0, ..., capturado_n]
                 for cap in capturados {
                     let c = self.operando(cap);
-                    bytecode.push(self.load_var(c));
+                    bytecode.push(self.cargar_variable(c));
                 }
                 bytecode.push(Opcode::NuevoArreglo(capturados.len()));
-                bytecode.push(self.load_var(obj_var));
+                bytecode.push(self.cargar_variable(obj_var));
                 bytecode.push(Opcode::FijarCampo(Arc::from("env")));
                 if let Some(v) = resultado {
-                    self.value_to_var.insert(v, obj_var);
+                    self.valor_to_variable.insert(v, obj_var);
                 }
             }
             Instruccion::CrearHilo(funcion, capturadas) => {
@@ -524,7 +526,7 @@ impl ConversorABytecode {
                 // justo antes de lanzar el hilo.
                 for cap in capturadas {
                     let c = self.operando(cap);
-                    bytecode.push(self.load_var(c));
+                    bytecode.push(self.cargar_variable(c));
                 }
                 bytecode.push(Opcode::CrearHilo(
                     Arc::from(nombre.as_str()),
@@ -541,7 +543,7 @@ impl ConversorABytecode {
                 // los nombres sin conocer los slots que ya usa el IR y podía
                 // pisar un temporal (rompía `self.campo = Variante` en métodos).
                 let obj_var = self.temp();
-                bytecode.push(self.store_var(obj_var));
+                bytecode.push(self.almacen_variable(obj_var));
                 // `valor` primero y `tipo` después: `Opcode::Intentar` busca los
                 // campos en el descriptor por nombre, pero el orden de creación
                 // es el del backend AST (valor=0, tipo=1).
@@ -552,28 +554,28 @@ impl ConversorABytecode {
                 match valor {
                     Some(v) => {
                         let var = self.operando(v);
-                        bytecode.push(self.load_var(var));
+                        bytecode.push(self.cargar_variable(var));
                     }
                     None => bytecode.push(Opcode::PushNulo),
                 }
-                bytecode.push(self.load_var(obj_var));
+                bytecode.push(self.cargar_variable(obj_var));
                 bytecode.push(Opcode::FijarCampo(Arc::from("valor")));
                 bytecode.push(Opcode::PushTexto(Arc::from(tipo_txt.as_str())));
-                bytecode.push(self.load_var(obj_var));
+                bytecode.push(self.cargar_variable(obj_var));
                 bytecode.push(Opcode::FijarCampo(Arc::from("tipo")));
                 if let Some(v) = resultado {
-                    self.value_to_var.insert(v, obj_var);
+                    self.valor_to_variable.insert(v, obj_var);
                 }
             }
             Instruccion::Intentar(valor) => {
                 let var = self.operando(valor);
-                bytecode.push(self.load_var(var));
+                bytecode.push(self.cargar_variable(var));
                 bytecode.push(Opcode::Intentar);
                 guardar!(bytecode);
             }
             Instruccion::NuevoCanalConCapacidad(capacidad) => {
                 let var = self.operando(capacidad);
-                bytecode.push(self.load_var(var));
+                bytecode.push(self.cargar_variable(var));
                 bytecode.push(Opcode::NuevoCanalConCapacidad);
                 bytecode.push(Opcode::NuevoArreglo(2));
                 guardar!(bytecode);
@@ -588,10 +590,10 @@ impl ConversorABytecode {
             Instruccion::LlamarClausura(callee, args) => {
                 // Pila: [callee, arg1, ..., argN].
                 let c = self.operando(callee);
-                bytecode.push(self.load_var(c));
+                bytecode.push(self.cargar_variable(c));
                 for arg in args {
                     let a = self.operando(arg);
-                    bytecode.push(self.load_var(a));
+                    bytecode.push(self.cargar_variable(a));
                 }
                 bytecode.push(Opcode::LlamarClausura(args.len()));
                 guardar!(bytecode);
@@ -602,25 +604,25 @@ impl ConversorABytecode {
                 // temporal anónimo del IR en vez de `Declare(nombre)` (ver
                 // `EnumObject`).
                 let obj_var = self.temp();
-                bytecode.push(self.store_var(obj_var));
+                bytecode.push(self.almacen_variable(obj_var));
                 for (campo, valor) in campos {
                     // `SetField` ya consume [valor, objeto]: un `Pop` extra
                     // vaciaría la pila y podría comerse un valor anterior
                     // (`f(nuevo P(1), x)`).
                     let v = self.operando(valor);
                     let nombre = self.simbolos.nombre_de(*campo).to_string();
-                    bytecode.push(self.load_var(v));
-                    bytecode.push(self.load_var(obj_var));
+                    bytecode.push(self.cargar_variable(v));
+                    bytecode.push(self.cargar_variable(obj_var));
                     bytecode.push(Opcode::FijarCampo(Arc::from(nombre.as_str())));
                 }
                 if let Some(v) = resultado {
-                    self.value_to_var.insert(v, obj_var);
+                    self.valor_to_variable.insert(v, obj_var);
                 }
             }
             Instruccion::ObtenerCampo(objeto, campo) => {
                 let o = self.operando(objeto);
                 let nombre = self.simbolos.nombre_de(*campo).to_string();
-                bytecode.push(self.load_var(o));
+                bytecode.push(self.cargar_variable(o));
                 bytecode.push(Opcode::ObtenerCampo(Arc::from(nombre.as_str())));
                 guardar!(bytecode);
             }
@@ -628,32 +630,32 @@ impl ConversorABytecode {
                 let o = self.operando(objeto);
                 let v = self.operando(valor);
                 let nombre = self.simbolos.nombre_de(*campo).to_string();
-                bytecode.push(self.load_var(v));
-                bytecode.push(self.load_var(o));
+                bytecode.push(self.cargar_variable(v));
+                bytecode.push(self.cargar_variable(o));
                 bytecode.push(Opcode::FijarCampo(Arc::from(nombre.as_str())));
                 bytecode.push(Opcode::Descartar);
             }
             Instruccion::FijarCampoPorIndice(objeto, idx, valor) => {
                 let o = self.operando(objeto);
                 let v = self.operando(valor);
-                bytecode.push(self.load_var(v));
-                bytecode.push(self.load_var(o));
+                bytecode.push(self.cargar_variable(v));
+                bytecode.push(self.cargar_variable(o));
                 bytecode.push(Opcode::FijarCampoPorIndice(*idx));
                 bytecode.push(Opcode::Descartar);
             }
             Instruccion::ExtraerCampoPorIndice(objeto, idx) => {
                 let o = self.operando(objeto);
-                bytecode.push(self.load_var(o));
+                bytecode.push(self.cargar_variable(o));
                 bytecode.push(Opcode::ExtraerCampo(*idx));
                 guardar!(bytecode);
             }
             Instruccion::LlamarMetodo(objeto, metodo, args) => {
                 let o = self.operando(objeto);
                 let nombre = self.simbolos.nombre_de(*metodo).to_string();
-                bytecode.push(self.load_var(o));
+                bytecode.push(self.cargar_variable(o));
                 for arg in args {
                     let a = self.operando(arg);
-                    bytecode.push(self.load_var(a));
+                    bytecode.push(self.cargar_variable(a));
                 }
                 bytecode.push(Opcode::LlamarMetodo(Arc::from(nombre.as_str()), args.len()));
                 guardar!(bytecode);
@@ -661,7 +663,7 @@ impl ConversorABytecode {
             Instruccion::NuevoArreglo(valores) => {
                 for v in valores {
                     let var = self.operando(v);
-                    bytecode.push(self.load_var(var));
+                    bytecode.push(self.cargar_variable(var));
                 }
                 bytecode.push(Opcode::NuevoArreglo(valores.len()));
                 guardar!(bytecode);
@@ -669,8 +671,8 @@ impl ConversorABytecode {
             Instruccion::ObtenerElemento(array, indice) => {
                 let a = self.operando(array);
                 let i = self.operando(indice);
-                bytecode.push(self.load_var(a));
-                bytecode.push(self.load_var(i));
+                bytecode.push(self.cargar_variable(a));
+                bytecode.push(self.cargar_variable(i));
                 bytecode.push(Opcode::ObtenerElemento);
                 guardar!(bytecode);
             }
@@ -680,9 +682,9 @@ impl ConversorABytecode {
                 let v = self.operando(valor);
                 // El intérprete hace pop(indice), pop(array), pop(valor):
                 // el orden de empuje es valor, array, índice.
-                bytecode.push(self.load_var(v));
-                bytecode.push(self.load_var(a));
-                bytecode.push(self.load_var(i));
+                bytecode.push(self.cargar_variable(v));
+                bytecode.push(self.cargar_variable(a));
+                bytecode.push(self.cargar_variable(i));
                 bytecode.push(Opcode::FijarElemento);
                 guardar!(bytecode);
             }
@@ -690,8 +692,8 @@ impl ConversorABytecode {
                 for (clave, valor) in pares {
                     let k = self.operando(clave);
                     let v = self.operando(valor);
-                    bytecode.push(self.load_var(k));
-                    bytecode.push(self.load_var(v));
+                    bytecode.push(self.cargar_variable(k));
+                    bytecode.push(self.cargar_variable(v));
                 }
                 bytecode.push(Opcode::NuevoMapa(pares.len()));
                 guardar!(bytecode);
@@ -699,8 +701,8 @@ impl ConversorABytecode {
             Instruccion::ObtenerValorDeMapa(mapa, clave) => {
                 let m = self.operando(mapa);
                 let k = self.operando(clave);
-                bytecode.push(self.load_var(m));
-                bytecode.push(self.load_var(k));
+                bytecode.push(self.cargar_variable(m));
+                bytecode.push(self.cargar_variable(k));
                 bytecode.push(Opcode::ObtenerValorDeMapa);
                 guardar!(bytecode);
             }
@@ -708,9 +710,9 @@ impl ConversorABytecode {
                 let m = self.operando(mapa);
                 let k = self.operando(clave);
                 let v = self.operando(valor);
-                bytecode.push(self.load_var(m));
-                bytecode.push(self.load_var(k));
-                bytecode.push(self.load_var(v));
+                bytecode.push(self.cargar_variable(m));
+                bytecode.push(self.cargar_variable(k));
+                bytecode.push(self.cargar_variable(v));
                 bytecode.push(Opcode::FijarValorDeMapa);
                 guardar!(bytecode);
             }
@@ -732,8 +734,8 @@ impl ConversorABytecode {
     ) {
         let lv = self.operando(l);
         let rv = self.operando(r);
-        bytecode.push(self.load_var(lv));
-        bytecode.push(self.load_var(rv));
+        bytecode.push(self.cargar_variable(lv));
+        bytecode.push(self.cargar_variable(rv));
         bytecode.push(op);
         if let Some(v) = resultado {
             // el slot del valor está preasignado (ver `convert_function`).
@@ -741,8 +743,8 @@ impl ConversorABytecode {
                 Some(var) => var,
                 None => self.temp(),
             };
-            bytecode.push(self.store_var(var));
-            self.value_to_var.insert(v, var);
+            bytecode.push(self.almacen_variable(var));
+            self.valor_to_variable.insert(v, var);
         } else {
             bytecode.push(Opcode::Descartar);
         }
@@ -751,7 +753,7 @@ impl ConversorABytecode {
 
 /// Indica si una instrucción produce un `IdValor` (debe coincidir con el orden
 /// en que `ConstructorIr` los asigna).
-fn produces_value(inst: &Instruccion) -> bool {
+fn produces_valor(inst: &Instruccion) -> bool {
     crate::ir::produce_valor(inst)
 }
 
@@ -779,13 +781,13 @@ mod tests {
     /// Construye `doble(x) = x + x` (IR a mano) y verifica que los operandos se
     /// referencian por variables correctas (no todas `0`) y que hay `Add`.
     #[test]
-    fn test_value_to_var_no_todo_cero() {
+    fn test_valor_to_variable_no_todo_cero() {
         let mut simbolos = TablaSimbolosIr::new();
         let nombre_funcion = simbolos.internar("doble");
 
         let mut builder = ConstructorIr::new();
         builder.simbolos = simbolos.clone();
-        let _entry = builder.nuevo_bloque();
+        let entrada = builder.nuevo_bloque();
         let param0 = builder.emitir_parametro(0); // v0
         let resultado = builder.emitir_suma(param0, param0); // v1
         builder.terminar_con_retorno(Some(resultado));
@@ -793,16 +795,19 @@ mod tests {
         let funcion = builder.construir_funcion(nombre_funcion, TipoIr::Entero, vec![]);
 
         let mut conversor = ConversorABytecode::new(simbolos);
-        let bytecode = conversor.convert_function(&funcion, true);
+        let bytecode = conversor.convert_funcion(&funcion, true);
 
         assert!(bytecode.iter().any(|op| matches!(op, Opcode::Sumar)));
         // los temporales viven en el espacio local (`>= LOCAL_BASE`)
         // aunque la función no tenga memorias; si empezaran en 0 pisarían los
         // slots de los parámetros (y se leerían como globales).
         let base = crate::ir_constructor::LOCAL_BASE;
-        assert_eq!(conversor.value_to_var.get(&param0).copied(), Some(base.0));
         assert_eq!(
-            conversor.value_to_var.get(&resultado).copied(),
+            conversor.valor_to_variable.get(&param0).copied(),
+            Some(base.0)
+        );
+        assert_eq!(
+            conversor.valor_to_variable.get(&resultado).copied(),
             Some((base + 1).0)
         );
     }
@@ -814,7 +819,7 @@ mod tests {
 
         let mut builder = ConstructorIr::new();
         builder.simbolos = simbolos.clone();
-        let _entry = builder.nuevo_bloque();
+        let entrada = builder.nuevo_bloque();
         let _v0 = builder.emitir_const_entero(42);
         let _v1 = builder.emitir_const_decimal(2.5);
         let _v2 = builder.emitir_const_booleano(true);
@@ -823,7 +828,7 @@ mod tests {
         let funcion = builder.construir_funcion(nombre_funcion, TipoIr::Vacio, vec![]);
 
         let mut conversor = ConversorABytecode::new(simbolos);
-        let bytecode = conversor.convert_function(&funcion, true);
+        let bytecode = conversor.convert_funcion(&funcion, true);
 
         assert!(bytecode
             .iter()
@@ -844,7 +849,7 @@ mod tests {
         let nombre_funcion = simbolos.internar("main");
         let mut builder = ConstructorIr::new();
         builder.simbolos = simbolos.clone();
-        let _entry = builder.nuevo_bloque();
+        let entrada = builder.nuevo_bloque();
 
         // s = 0
         builder.emitir_reserva(IdxMemoria(0));
@@ -857,9 +862,9 @@ mod tests {
         builder.terminar_con_salto(header);
 
         builder.iniciar_bloque(header);
-        let s_load = builder.emitir_carga(IdxMemoria(0));
+        let s_cargar = builder.emitir_carga(IdxMemoria(0));
         let tres = builder.emitir_const_entero(3);
-        let cond = builder.emitir_menor(s_load, tres);
+        let cond = builder.emitir_menor(s_cargar, tres);
         builder.terminar_con_rama(cond, body, exit);
 
         builder.iniciar_bloque(body);
@@ -878,7 +883,7 @@ mod tests {
         let funcion = builder.construir_funcion(nombre_funcion, TipoIr::Vacio, vec![]);
         // Usar la tabla de símbolos del builder (que ya incluye "escribir").
         let mut conversor = ConversorABytecode::new(builder.simbolos.clone());
-        let bytecode = conversor.convert_function(&funcion, true);
+        let bytecode = conversor.convert_funcion(&funcion, true);
 
         assert!(bytecode.iter().any(|op| matches!(op, Opcode::Etiqueta(_))));
         assert!(bytecode.iter().any(|op| matches!(op, Opcode::Salto(_))));

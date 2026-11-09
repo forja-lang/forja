@@ -81,8 +81,8 @@ pub fn b64_decode(texto: &str) -> Result<Vec<u8>, &'static str> {
     };
 
     let chunks = len / 4;
-    let out_len = chunks * 3 - relleno;
-    let mut out = Vec::with_capacity(out_len);
+    let out_longitud = chunks * 3 - relleno;
+    let mut out = Vec::with_capacity(out_longitud);
 
     for i in 0..chunks {
         let off = i * 4;
@@ -149,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn test_b64_invalid() {
+    fn test_b64_invalido() {
         assert!(b64_decode("!!!").is_err());
         assert!(b64_decode("AAAA").is_ok());
     }

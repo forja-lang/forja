@@ -1,67 +1,73 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_ruta(&mut self) {
-        self.registrar("_ruta_normalizar", native_ruta_normalizar);
-        self.registrar("_ruta_unir", native_ruta_unir);
-        self.registrar("_ruta_extension", native_ruta_extension);
-        self.registrar("_ruta_sin_extension", native_ruta_sin_extension);
-        self.registrar("_ruta_nombre_archivo", native_ruta_nombre_archivo);
-        self.registrar("_ruta_dir_padre", native_ruta_dir_padre);
-        self.registrar("_ruta_absoluta", native_ruta_absoluta);
-        self.registrar("_ruta_es_absoluta", native_ruta_es_absoluta);
-        self.registrar("_ruta_separador", native_ruta_separador);
+        self.registrar("_ruta_normalizar", nativo_ruta_normalizar);
+        self.registrar("_ruta_unir", nativo_ruta_unir);
+        self.registrar("_ruta_extension", nativo_ruta_extension);
+        self.registrar("_ruta_sin_extension", nativo_ruta_sin_extension);
+        self.registrar("_ruta_nombre_archivo", nativo_ruta_nombre_archivo);
+        self.registrar("_ruta_dir_padre", nativo_ruta_directorio_padre);
+        self.registrar("_ruta_absoluta", nativo_ruta_absoluta);
+        self.registrar("_ruta_es_absoluta", nativo_ruta_es_absoluta);
+        self.registrar("_ruta_separador", nativo_ruta_separador);
     }
 }
-pub fn native_ruta_normalizar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_ruta_normalizar(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(vm, args[0])?;
     let p = std::path::Path::new(&s);
     let normalized = p.components().collect::<std::path::PathBuf>();
     let salida = normalized.to_string_lossy().replace('\\', "/");
     Ok({
-        let indice = vm.alloc_str(Arc::from(salida.as_str()));
+        let indice = vm.reservar_texto(Arc::from(salida.as_str()));
         ValorFast::texto(indice)
     })
 }
 
-pub fn native_ruta_unir(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_ruta_unir(vm: &mut dyn Anfitrion, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let base = obtener_texto(vm, args[0])?;
     let part = obtener_texto(vm, args[1])?;
     let p = std::path::Path::new(&base).join(&part);
     let salida = p.to_string_lossy().replace('\\', "/");
     Ok({
-        let indice = vm.alloc_str(Arc::from(salida.as_str()));
+        let indice = vm.reservar_texto(Arc::from(salida.as_str()));
         ValorFast::texto(indice)
     })
 }
 
-pub fn native_ruta_extension(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_ruta_extension(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(vm, args[0])?;
     let ext = std::path::Path::new(&s)
         .extension()
         .map(|e| e.to_string_lossy().to_string())
         .unwrap_or_default();
     Ok({
-        let indice = vm.alloc_str(Arc::from(ext.as_str()));
+        let indice = vm.reservar_texto(Arc::from(ext.as_str()));
         ValorFast::texto(indice)
     })
 }
 
-pub fn native_ruta_sin_extension(
-    vm: &mut dyn Host,
+pub fn nativo_ruta_sin_extension(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(vm, args[0])?;
     let p = std::path::Path::new(&s);
     let salida = p.with_extension("").to_string_lossy().replace('\\', "/");
     Ok({
-        let indice = vm.alloc_str(Arc::from(salida.as_str()));
+        let indice = vm.reservar_texto(Arc::from(salida.as_str()));
         ValorFast::texto(indice)
     })
 }
 
-pub fn native_ruta_nombre_archivo(
-    vm: &mut dyn Host,
+pub fn nativo_ruta_nombre_archivo(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(vm, args[0])?;
@@ -70,24 +76,30 @@ pub fn native_ruta_nombre_archivo(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
     Ok({
-        let indice = vm.alloc_str(Arc::from(nombre.as_str()));
+        let indice = vm.reservar_texto(Arc::from(nombre.as_str()));
         ValorFast::texto(indice)
     })
 }
 
-pub fn native_ruta_dir_padre(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_ruta_directorio_padre(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(vm, args[0])?;
-    let parent = std::path::Path::new(&s)
+    let padre = std::path::Path::new(&s)
         .parent()
         .map(|p| p.to_string_lossy().replace('\\', "/"))
         .unwrap_or_default();
     Ok({
-        let indice = vm.alloc_str(Arc::from(parent.as_str()));
+        let indice = vm.reservar_texto(Arc::from(padre.as_str()));
         ValorFast::texto(indice)
     })
 }
 
-pub fn native_ruta_absoluta(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_ruta_absoluta(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(vm, args[0])?;
     let p = std::path::Path::new(&s);
     let abs = if p.is_absolute() {
@@ -100,26 +112,26 @@ pub fn native_ruta_absoluta(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
     };
     let salida = abs.to_string_lossy().replace('\\', "/");
     Ok({
-        let indice = vm.alloc_str(Arc::from(salida.as_str()));
+        let indice = vm.reservar_texto(Arc::from(salida.as_str()));
         ValorFast::texto(indice)
     })
 }
 
-pub fn native_ruta_es_absoluta(
-    _vm: &mut dyn Host,
+pub fn nativo_ruta_es_absoluta(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let s = obtener_texto(_vm, args[0])?;
     Ok(ValorFast::booleano(std::path::Path::new(&s).is_absolute()))
 }
 
-pub fn native_ruta_separador(
-    _vm: &mut dyn Host,
+pub fn nativo_ruta_separador(
+    _vm: &mut dyn Anfitrion,
     _args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     let sep = std::path::MAIN_SEPARATOR.to_string();
     Ok({
-        let indice = _vm.alloc_str(Arc::from(sep.as_str()));
+        let indice = _vm.reservar_texto(Arc::from(sep.as_str()));
         ValorFast::texto(indice)
     })
 }

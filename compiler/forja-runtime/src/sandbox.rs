@@ -52,17 +52,17 @@ impl SandboxRed {
     /// - Si el sandbox está en modo air-gapped (`hosts_permitidos = None`).
     /// - Si el host no está en la lista de hosts permitidos.
     /// - Si el puerto no está en la lista de puertos permitidos.
-    pub fn verificar_conexion(&self, host: &str, puerto: u16) -> Result<(), String> {
+    pub fn verificar_conexion(&self, anfitrion: &str, puerto: u16) -> Result<(), String> {
         // Verificar hosts
         if let Some(hosts) = &self.hosts_permitidos {
             // Si la lista contiene "*", todos los hosts están permitidos
             if hosts.iter().any(|h| h == "*") {
-                // Host permitido, verificar puerto
-            } else if !hosts.iter().any(|h| h == host) {
+                // Anfitrion permitido, verificar puerto
+            } else if !hosts.iter().any(|h| h == anfitrion) {
                 let texto_hosts = hosts.join(", ");
                 return Err(format!(
                     "Host no permitido: '{}'. Hosts permitidos: [{}]. Usa --bloquear-red para restringir.",
-                    host, texto_hosts
+                    anfitrion, texto_hosts
                 ));
             }
         } else {
@@ -143,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn host_y_puerto_combinados() {
+    fn anfitrion_y_puerto_combinados() {
         let s = SandboxRed {
             hosts_permitidos: Some(vec!["localhost".into()]),
             puertos_permitidos: Some(vec![3000]),
@@ -172,7 +172,7 @@ mod tests {
     }
 
     #[test]
-    fn conexion_con_host_permitido_y_sin_restriccion_de_puertos() {
+    fn conexion_con_anfitrion_permitido_y_sin_restriccion_de_puertos() {
         let s = SandboxRed {
             hosts_permitidos: Some(vec!["localhost".into()]),
             puertos_permitidos: None, // sin restricción de puertos
@@ -183,7 +183,7 @@ mod tests {
     }
 
     #[test]
-    fn comodin_de_host_con_puertos_restringidos() {
+    fn comodin_de_anfitrion_con_puertos_restringidos() {
         let s = SandboxRed {
             hosts_permitidos: Some(vec!["*".into()]),
             puertos_permitidos: Some(vec![80, 443, 8080]),
@@ -432,7 +432,7 @@ mod tests_sandbox_fs {
     }
 
     #[test]
-    fn fs_rechaza_escape_de_ruta() {
+    fn fs_rechaza_escapar_de_ruta() {
         let s = SandboxFilesystem {
             directorios_permitidos: Some(vec!["/tmp".into()]),
             solo_lectura: false,

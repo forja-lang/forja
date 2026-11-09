@@ -5,7 +5,7 @@
 // implementación de `exec_builtin` como bloque `impl ForjaFast` adicional.
 
 use super::ForjaFast;
-use forja_runtime::tipos::{get_small_int_fast, ErrFast, ValorFast};
+use forja_runtime::tipos::{obtener_small_entero_fast, ErrFast, ValorFast};
 use std::sync::Arc;
 
 pub enum BuiltinFast {
@@ -93,180 +93,180 @@ impl ForjaFast {
     pub fn exec_builtin(&mut self, b: BuiltinFast, _nargs: usize) -> Result<(), ErrFast> {
         match b {
             BuiltinFast::Len => {
-                let v = self.pop_valor()?;
+                let v = self.desapilar_valor()?;
                 if v.es_texto() {
-                    self.push_valor(get_small_int_fast(
-                        self.get_str(v.indice_texto()).len() as i64
+                    self.empujar_valor(obtener_small_entero_fast(
+                        self.get_str(v.indice_texto()).len() as i64,
                     ));
                 } else if v.es_arreglo() {
-                    self.push_valor(get_small_int_fast(
-                        self.get_arr(v.indice_arreglo()).len() as i64
+                    self.empujar_valor(obtener_small_entero_fast(
+                        self.obtener_arr(v.indice_arreglo()).len() as i64,
                     ));
                 } else {
-                    self.push_valor(get_small_int_fast(0));
+                    self.empujar_valor(obtener_small_entero_fast(0));
                 }
             }
             BuiltinFast::Upper => {
-                let v = self.pop_valor()?;
+                let v = self.desapilar_valor()?;
                 if v.es_texto() {
                     let s = self.get_str(v.indice_texto()).to_uppercase();
-                    let idx = self.alloc_str(Arc::from(s.as_str()));
-                    self.push_valor(ValorFast::texto(idx));
+                    let idx = self.reservar_texto(Arc::from(s.as_str()));
+                    self.empujar_valor(ValorFast::texto(idx));
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
             BuiltinFast::Lower => {
-                let v = self.pop_valor()?;
+                let v = self.desapilar_valor()?;
                 if v.es_texto() {
                     let s = self.get_str(v.indice_texto()).to_lowercase();
-                    let idx = self.alloc_str(Arc::from(s.as_str()));
-                    self.push_valor(ValorFast::texto(idx));
+                    let idx = self.reservar_texto(Arc::from(s.as_str()));
+                    self.empujar_valor(ValorFast::texto(idx));
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
             BuiltinFast::Contains => {
-                let sub = self.pop_valor()?;
-                let v = self.pop_valor()?;
+                let sub = self.desapilar_valor()?;
+                let v = self.desapilar_valor()?;
                 if v.es_texto() && sub.es_texto() {
-                    self.push_valor(ValorFast::booleano(
+                    self.empujar_valor(ValorFast::booleano(
                         self.get_str(v.indice_texto())
                             .contains(self.get_str(sub.indice_texto()).as_ref()),
                     ));
                 } else {
-                    self.push_valor(ValorFast::booleano(false));
+                    self.empujar_valor(ValorFast::booleano(false));
                 }
             }
             BuiltinFast::Split => {
-                let sep = self.pop_valor()?;
-                let v = self.pop_valor()?;
+                let sep = self.desapilar_valor()?;
+                let v = self.desapilar_valor()?;
                 if v.es_texto() && sep.es_texto() {
                     let s = self.get_str(v.indice_texto()).clone();
                     let sep_s = self.get_str(sep.indice_texto()).clone();
                     let parts: Vec<ValorFast> = s
                         .split(sep_s.as_ref())
                         .map(|p| {
-                            let idx = self.alloc_str(Arc::from(p));
+                            let idx = self.reservar_texto(Arc::from(p));
                             ValorFast::texto(idx)
                         })
                         .collect();
-                    let arr_idx = self.alloc_arr(parts);
-                    self.push_valor(ValorFast::arreglo(arr_idx));
+                    let arr_idx = self.reservar_arr(parts);
+                    self.empujar_valor(ValorFast::arreglo(arr_idx));
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
             BuiltinFast::Trim => {
-                let v = self.pop_valor()?;
+                let v = self.desapilar_valor()?;
                 if v.es_texto() {
                     let s = self.get_str(v.indice_texto()).trim().to_string();
-                    let idx = self.alloc_str(Arc::from(s.as_str()));
-                    self.push_valor(ValorFast::texto(idx));
+                    let idx = self.reservar_texto(Arc::from(s.as_str()));
+                    self.empujar_valor(ValorFast::texto(idx));
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
             BuiltinFast::Reverse => {
-                let v = self.pop_valor()?;
+                let v = self.desapilar_valor()?;
                 if v.es_texto() {
                     let r: String = self.get_str(v.indice_texto()).chars().rev().collect();
-                    let idx = self.alloc_str(Arc::from(r.as_str()));
-                    self.push_valor(ValorFast::texto(idx));
+                    let idx = self.reservar_texto(Arc::from(r.as_str()));
+                    self.empujar_valor(ValorFast::texto(idx));
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
             BuiltinFast::Obtener => {
-                let idx_val = self.pop_valor()?;
-                let arr_val = self.pop_valor()?;
+                let idx_val = self.desapilar_valor()?;
+                let arr_val = self.desapilar_valor()?;
                 if arr_val.es_arreglo() && idx_val.es_entero() {
-                    let arr = self.get_arr(arr_val.indice_arreglo());
+                    let arr = self.obtener_arr(arr_val.indice_arreglo());
                     let i = idx_val.a_entero();
                     if i >= 0 && (i as usize) < arr.len() {
-                        self.push_valor(arr[i as usize]);
+                        self.empujar_valor(arr[i as usize]);
                     } else {
-                        self.push_valor(ValorFast::nulo());
+                        self.empujar_valor(ValorFast::nulo());
                     }
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
             BuiltinFast::Empujar => {
-                let val = self.pop_valor()?;
-                let arr_val = self.pop_valor()?;
+                let val = self.desapilar_valor()?;
+                let arr_val = self.desapilar_valor()?;
                 if arr_val.es_arreglo() {
                     let arr_idx = arr_val.indice_arreglo();
-                    self.get_arr_mut(arr_idx).push(val);
-                    self.push_valor(arr_val);
+                    self.obtener_arr_mut(arr_idx).push(val);
+                    self.empujar_valor(arr_val);
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
             BuiltinFast::Remover => {
-                let idx_val = self.pop_valor()?;
-                let arr_val = self.pop_valor()?;
+                let idx_val = self.desapilar_valor()?;
+                let arr_val = self.desapilar_valor()?;
                 if arr_val.es_arreglo() && idx_val.es_entero() {
                     let arr_idx = arr_val.indice_arreglo();
                     let i = idx_val.a_entero();
-                    let arr = self.get_arr_mut(arr_idx);
+                    let arr = self.obtener_arr_mut(arr_idx);
                     if i >= 0 && (i as usize) < arr.len() {
                         arr.remove(i as usize);
                     }
-                    self.push_valor(arr_val);
+                    self.empujar_valor(arr_val);
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
 
             // ── Self-hosting string builtins ────────────────────────────────
             BuiltinFast::StartsWith => {
-                let prefix = self.pop_valor()?;
-                let v = self.pop_valor()?;
+                let prefix = self.desapilar_valor()?;
+                let v = self.desapilar_valor()?;
                 if v.es_texto() && prefix.es_texto() {
-                    let result = self
+                    let resultado = self
                         .get_str(v.indice_texto())
                         .starts_with(self.get_str(prefix.indice_texto()).as_ref());
-                    self.push_valor(ValorFast::booleano(result));
+                    self.empujar_valor(ValorFast::booleano(resultado));
                 } else {
-                    self.push_valor(ValorFast::booleano(false));
+                    self.empujar_valor(ValorFast::booleano(false));
                 }
             }
 
             BuiltinFast::EndsWith => {
-                let suffix = self.pop_valor()?;
-                let v = self.pop_valor()?;
+                let suffix = self.desapilar_valor()?;
+                let v = self.desapilar_valor()?;
                 if v.es_texto() && suffix.es_texto() {
-                    let result = self
+                    let resultado = self
                         .get_str(v.indice_texto())
                         .ends_with(self.get_str(suffix.indice_texto()).as_ref());
-                    self.push_valor(ValorFast::booleano(result));
+                    self.empujar_valor(ValorFast::booleano(resultado));
                 } else {
-                    self.push_valor(ValorFast::booleano(false));
+                    self.empujar_valor(ValorFast::booleano(false));
                 }
             }
 
             BuiltinFast::CharAt => {
-                let idx_val = self.pop_valor()?;
-                let v = self.pop_valor()?;
+                let idx_val = self.desapilar_valor()?;
+                let v = self.desapilar_valor()?;
                 if v.es_texto() && idx_val.es_entero() {
                     let s = self.get_str(v.indice_texto()).clone();
                     let i = idx_val.a_entero();
                     if i >= 0 && (i as usize) < s.chars().count() {
                         let c: String = s.chars().nth(i as usize).into_iter().collect();
-                        let idx = self.alloc_str(Arc::from(c.as_str()));
-                        self.push_valor(ValorFast::texto(idx));
+                        let idx = self.reservar_texto(Arc::from(c.as_str()));
+                        self.empujar_valor(ValorFast::texto(idx));
                     } else {
-                        self.push_valor(ValorFast::nulo());
+                        self.empujar_valor(ValorFast::nulo());
                     }
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
 
             BuiltinFast::IndexOf => {
-                let sub = self.pop_valor()?;
-                let v = self.pop_valor()?;
+                let sub = self.desapilar_valor()?;
+                let v = self.desapilar_valor()?;
                 if v.es_texto() && sub.es_texto() {
                     let haystack = self.get_str(v.indice_texto()).clone();
                     let needle = self.get_str(sub.indice_texto()).clone();
@@ -274,117 +274,117 @@ impl ForjaFast {
                         .find(needle.as_ref())
                         .map(|b| haystack[..b].chars().count() as i64)
                         .unwrap_or(-1);
-                    self.push_valor(get_small_int_fast(pos));
+                    self.empujar_valor(obtener_small_entero_fast(pos));
                 } else {
-                    self.push_valor(get_small_int_fast(-1));
+                    self.empujar_valor(obtener_small_entero_fast(-1));
                 }
             }
 
             BuiltinFast::Substr => {
-                let len_arg = self.pop_valor()?;
-                let start_arg = self.pop_valor()?;
-                let v = self.pop_valor()?;
-                if v.es_texto() && start_arg.es_entero() && len_arg.es_entero() {
+                let longitud_arg = self.desapilar_valor()?;
+                let inicio_arg = self.desapilar_valor()?;
+                let v = self.desapilar_valor()?;
+                if v.es_texto() && inicio_arg.es_entero() && longitud_arg.es_entero() {
                     let s = self.get_str(v.indice_texto()).clone();
-                    let start = start_arg.a_entero().max(0) as usize;
-                    let len = len_arg.a_entero().max(0) as usize;
+                    let inicio = inicio_arg.a_entero().max(0) as usize;
+                    let len = longitud_arg.a_entero().max(0) as usize;
                     let chars: Vec<char> = s.chars().collect();
-                    let end = (start + len).min(chars.len());
-                    let sub: String = if start < chars.len() {
-                        chars[start..end].iter().collect()
+                    let end = (inicio + len).min(chars.len());
+                    let sub: String = if inicio < chars.len() {
+                        chars[inicio..end].iter().collect()
                     } else {
                         String::new()
                     };
-                    let idx = self.alloc_str(Arc::from(sub.as_str()));
-                    self.push_valor(ValorFast::texto(idx));
+                    let idx = self.reservar_texto(Arc::from(sub.as_str()));
+                    self.empujar_valor(ValorFast::texto(idx));
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
 
             BuiltinFast::Replace => {
-                let new_s = self.pop_valor()?;
-                let old_s = self.pop_valor()?;
-                let v = self.pop_valor()?;
-                if v.es_texto() && old_s.es_texto() && new_s.es_texto() {
+                let nuevo_s = self.desapilar_valor()?;
+                let old_s = self.desapilar_valor()?;
+                let v = self.desapilar_valor()?;
+                if v.es_texto() && old_s.es_texto() && nuevo_s.es_texto() {
                     let s = self.get_str(v.indice_texto()).clone();
                     let old = self.get_str(old_s.indice_texto()).clone();
-                    let new = self.get_str(new_s.indice_texto()).clone();
-                    let result = s.replace(old.as_ref(), new.as_ref());
-                    let idx = self.alloc_str(Arc::from(result.as_str()));
-                    self.push_valor(ValorFast::texto(idx));
+                    let new = self.get_str(nuevo_s.indice_texto()).clone();
+                    let resultado = s.replace(old.as_ref(), new.as_ref());
+                    let idx = self.reservar_texto(Arc::from(resultado.as_str()));
+                    self.empujar_valor(ValorFast::texto(idx));
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
 
             BuiltinFast::ParseEntero => {
-                let v = self.pop_valor()?;
+                let v = self.desapilar_valor()?;
                 if v.es_texto() {
                     let s = self.get_str(v.indice_texto());
                     match s.trim().parse::<i64>() {
-                        Ok(n) => self.push_valor(get_small_int_fast(n)),
-                        Err(_) => self.push_valor(ValorFast::nulo()),
+                        Ok(n) => self.empujar_valor(obtener_small_entero_fast(n)),
+                        Err(_) => self.empujar_valor(ValorFast::nulo()),
                     }
                 } else if v.es_entero() {
-                    self.push_valor(v);
+                    self.empujar_valor(v);
                 } else if v.es_flotante() {
-                    self.push_valor(get_small_int_fast(v.a_flotante() as i64));
+                    self.empujar_valor(obtener_small_entero_fast(v.a_flotante() as i64));
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
 
             BuiltinFast::ParseFlotante => {
-                let v = self.pop_valor()?;
+                let v = self.desapilar_valor()?;
                 if v.es_texto() {
                     let s = self.get_str(v.indice_texto());
                     match s.trim().parse::<f64>() {
-                        Ok(f) => self.push_valor(ValorFast::flotante(f)),
-                        Err(_) => self.push_valor(ValorFast::nulo()),
+                        Ok(f) => self.empujar_valor(ValorFast::flotante(f)),
+                        Err(_) => self.empujar_valor(ValorFast::nulo()),
                     }
                 } else if v.es_flotante() {
-                    self.push_valor(v);
+                    self.empujar_valor(v);
                 } else if v.es_entero() {
-                    self.push_valor(ValorFast::flotante(v.a_entero() as f64));
+                    self.empujar_valor(ValorFast::flotante(v.a_entero() as f64));
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
 
             BuiltinFast::Repetir => {
-                let count_val = self.pop_valor()?;
-                let v = self.pop_valor()?;
-                if v.es_texto() && count_val.es_entero() {
+                let cantidad_val = self.desapilar_valor()?;
+                let v = self.desapilar_valor()?;
+                if v.es_texto() && cantidad_val.es_entero() {
                     let s = self.get_str(v.indice_texto()).clone();
-                    let n = count_val.a_entero().max(0) as usize;
-                    let result = s.repeat(n);
-                    let idx = self.alloc_str(Arc::from(result.as_str()));
-                    self.push_valor(ValorFast::texto(idx));
+                    let n = cantidad_val.a_entero().max(0) as usize;
+                    let resultado = s.repeat(n);
+                    let idx = self.reservar_texto(Arc::from(resultado.as_str()));
+                    self.empujar_valor(ValorFast::texto(idx));
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
 
             BuiltinFast::Join => {
                 // arr.join(sep) → join array elements with separator
-                let sep_val = self.pop_valor()?;
-                let arr_val = self.pop_valor()?;
+                let sep_val = self.desapilar_valor()?;
+                let arr_val = self.desapilar_valor()?;
                 if arr_val.es_arreglo() && sep_val.es_texto() {
                     let sep = self.get_str(sep_val.indice_texto()).clone();
-                    let arr = self.get_arr(arr_val.indice_arreglo()).clone();
+                    let arr = self.obtener_arr(arr_val.indice_arreglo()).clone();
                     // Recolecta las representaciones de texto antes de reservar el resultado
                     let parts: Vec<String> = arr.iter().map(|v| self.mostrar_valor(v)).collect();
-                    let result = parts.join(sep.as_ref());
-                    let idx = self.alloc_str(Arc::from(result.as_str()));
-                    self.push_valor(ValorFast::texto(idx));
+                    let resultado = parts.join(sep.as_ref());
+                    let idx = self.reservar_texto(Arc::from(resultado.as_str()));
+                    self.empujar_valor(ValorFast::texto(idx));
                 } else {
-                    self.push_valor(ValorFast::nulo());
+                    self.empujar_valor(ValorFast::nulo());
                 }
             }
 
             BuiltinFast::Esperar => {
-                let v = self.pop_valor()?;
+                let v = self.desapilar_valor()?;
                 // `esperar(250)` duerme milisegundos; `esperar(0.25)` duerme
                 // segundos (escala de los ejemplos del curso). Antes un decimal
                 // caía en la rama de enteros y no dormía nada.
@@ -397,7 +397,7 @@ impl ForjaFast {
                         std::thread::sleep(std::time::Duration::from_secs_f64(s));
                     }
                 }
-                self.push_valor(ValorFast::nulo());
+                self.empujar_valor(ValorFast::nulo());
             }
         }
         Ok(())

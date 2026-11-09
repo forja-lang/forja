@@ -5,13 +5,13 @@ use super::super::*;
 ///
 /// Detecta asignaciones de la forma `variable b = a` donde `a` es un
 /// identificador simple, y reemplaza las subsiguientes referencias a `b` por `a`.
-pub struct CopyPropagation {
+pub struct CopiaPropagation {
     pub propagaciones: usize,
 }
 
-impl CopyPropagation {
+impl CopiaPropagation {
     pub fn new() -> Self {
-        CopyPropagation { propagaciones: 0 }
+        CopiaPropagation { propagaciones: 0 }
     }
 
     pub fn propagar(&mut self, programa: &Programa) -> Programa {
@@ -45,13 +45,13 @@ impl CopyPropagation {
                 precondiciones,
                 postcondiciones,
             } => {
-                let new_body = self.propagar_block(cuerpo);
+                let nuevo_body = self.propagar_block(cuerpo);
                 vec![Declaracion::Funcion {
                     nombre: nombre.clone(),
                     parametros_tipo: parametros_tipo.clone(),
                     parametros: parametros.clone(),
                     tipo_retorno: tipo_retorno.clone(),
-                    cuerpo: new_body,
+                    cuerpo: nuevo_body,
                     externa: *externa,
                     asincrona: *asincrona,
                     enlace_nombre: enlace_nombre.clone(),
@@ -85,12 +85,12 @@ impl CopyPropagation {
                     valor: Some(expr), ..
                 } => {
                     // Reemplazar referencias a copias en la expresión
-                    let new_expr = self.reemplazar_copias_expr(expr, &copies);
-                    let mut new_decl = decl.clone();
-                    if let Declaracion::Variable { valor, .. } = &mut new_decl {
-                        *valor = Some(new_expr);
+                    let nuevo_expresion = self.reemplazar_copias_expr(expr, &copies);
+                    let mut nuevo_decl = decl.clone();
+                    if let Declaracion::Variable { valor, .. } = &mut nuevo_decl {
+                        *valor = Some(nuevo_expresion);
                     }
-                    resultado.push(new_decl);
+                    resultado.push(nuevo_decl);
                 }
                 Declaracion::Asignacion { nombre, valor, .. } => {
                     // Si se asigna a una variable que es copia, invalidar la copia
@@ -98,12 +98,12 @@ impl CopyPropagation {
                     // También invalidar entradas cuyo VALOR apunte a este nombre
                     // (porque "nombre" acaba de cambiar de valor)
                     copies.retain(|_, v| v != nombre);
-                    let new_val = self.reemplazar_copias_expr(valor, &copies);
-                    let mut new_decl = decl.clone();
-                    if let Declaracion::Asignacion { valor, .. } = &mut new_decl {
-                        **valor = new_val;
+                    let nuevo_val = self.reemplazar_copias_expr(valor, &copies);
+                    let mut nuevo_decl = decl.clone();
+                    if let Declaracion::Asignacion { valor, .. } = &mut nuevo_decl {
+                        **valor = nuevo_val;
                     }
-                    resultado.push(new_decl);
+                    resultado.push(nuevo_decl);
                 }
                 _ => {
                     resultado.push(decl.clone());
@@ -149,7 +149,7 @@ impl CopyPropagation {
     }
 }
 
-impl Default for CopyPropagation {
+impl Default for CopiaPropagation {
     fn default() -> Self {
         Self::new()
     }

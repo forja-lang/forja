@@ -13,7 +13,7 @@ mod unix {
         fn tcgetattr(fd: RawFd, termios: *mut Termios) -> i32;
         fn tcsetattr(fd: RawFd, action: i32, termios: *const Termios) -> i32;
         fn ioctl(fd: RawFd, request: u64, ...) -> i32;
-        fn read(fd: RawFd, buf: *mut std::ffi::c_void, count: usize) -> isize;
+        fn read(fd: RawFd, buf: *mut std::ffi::c_void, cantidad: usize) -> isize;
     }
 
     #[repr(C)]
@@ -130,7 +130,7 @@ mod windows_impl {
         fn SetConsoleMode(hConsoleHandle: *mut std::ffi::c_void, dwMode: u32) -> i32;
         fn GetConsoleScreenBufferInfo(
             hConsoleOutput: *mut std::ffi::c_void,
-            lpConsoleScreenBufferInfo: *mut ConsoleScreenBufferInfo,
+            lpConsoleScreenBufferInfo: *mut ConsoleScreenBufferInformacion,
         ) -> i32;
         fn ReadConsoleW(
             hConsoleInput: *mut std::ffi::c_void,
@@ -157,7 +157,7 @@ mod windows_impl {
 
     #[repr(C)]
     #[allow(non_snake_case)]
-    struct ConsoleScreenBufferInfo {
+    struct ConsoleScreenBufferInformacion {
         dwSize: Coord,
         dwCursorPosition: Coord,
         wAttributes: u16,
@@ -232,7 +232,7 @@ mod windows_impl {
         if h_out.is_null() {
             return Err("GetStdHandle falló".into());
         }
-        let mut info = ConsoleScreenBufferInfo {
+        let mut informacion = ConsoleScreenBufferInformacion {
             dwSize: Coord { x: 0, y: 0 },
             dwCursorPosition: Coord { x: 0, y: 0 },
             wAttributes: 0,
@@ -244,14 +244,18 @@ mod windows_impl {
             },
             dwMaximumWindowSize: Coord { x: 0, y: 0 },
         };
-        let ret =
-            unsafe { GetConsoleScreenBufferInfo(h_out, &mut info as *mut ConsoleScreenBufferInfo) };
+        let ret = unsafe {
+            GetConsoleScreenBufferInfo(
+                h_out,
+                &mut informacion as *mut ConsoleScreenBufferInformacion,
+            )
+        };
         if ret == 0 {
             return Err("GetConsoleScreenBufferInfo falló".into());
         }
         Ok((
-            (info.srWindow.right - info.srWindow.left + 1) as i64,
-            (info.srWindow.bottom - info.srWindow.top + 1) as i64,
+            (informacion.srWindow.right - informacion.srWindow.left + 1) as i64,
+            (informacion.srWindow.bottom - informacion.srWindow.top + 1) as i64,
         ))
     }
 

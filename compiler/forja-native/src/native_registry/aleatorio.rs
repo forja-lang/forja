@@ -3,15 +3,15 @@ use super::*;
 /// Estado global para el generador aleatorio xorshift32
 static _ESTADO_ALEATORIO: AtomicI32 = AtomicI32::new(123456789);
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_aleatorio(&mut self) {
         // ─── Aleatorio ─────────────────────────────────────────────────────
-        self.registrar("_aleatorio_semilla", native_aleatorio_semilla);
-        self.registrar("_aleatorio_entero", native_aleatorio_entero);
+        self.registrar("_aleatorio_semilla", nativo_aleatorio_semilla);
+        self.registrar("_aleatorio_entero", nativo_aleatorio_entero);
     }
 }
-pub fn native_aleatorio_semilla(
-    _vm: &mut dyn Host,
+pub fn nativo_aleatorio_semilla(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -25,8 +25,8 @@ pub fn native_aleatorio_semilla(
 }
 
 /// Genera un entero aleatorio en [0, max) usando xorshift32
-pub fn native_aleatorio_entero(
-    _vm: &mut dyn Host,
+pub fn nativo_aleatorio_entero(
+    _vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {

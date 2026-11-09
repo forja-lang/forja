@@ -28,7 +28,7 @@ impl ForjaFast {
                 }
                 let contrato = &self.contratos[*idx].clone();
                 let resultado = self.ejecutar_uops_contrato(&contrato.condicion, None);
-                if !resultado.es_verdadero_con_heap(&self.runtime.str_heap) {
+                if !resultado.es_verdadero_con_monticulo(&self.runtime.str_heap) {
                     return Err(ErrFast::Contrato(format!(
                         "precondición no se cumple: {}",
                         contrato.mensaje
@@ -47,17 +47,17 @@ impl ForjaFast {
                 }
                 let contrato = &self.contratos[*idx].clone();
                 // El valor de retorno está en el tope del stack
-                let valor_retorno = self.pop_valor()?;
+                let valor_retorno = self.desapilar_valor()?;
                 let resultado =
                     self.ejecutar_uops_contrato(&contrato.condicion, Some(valor_retorno));
-                if !resultado.es_verdadero_con_heap(&self.runtime.str_heap) {
+                if !resultado.es_verdadero_con_monticulo(&self.runtime.str_heap) {
                     return Err(ErrFast::Contrato(format!(
                         "postcondición no se cumple: {}",
                         contrato.mensaje
                     )));
                 }
                 // Re-push el valor de retorno para el Return posterior
-                self.push_valor(valor_retorno);
+                self.empujar_valor(valor_retorno);
                 self.ip += 1;
             }
             Opcode::GuardarAnterior(slot) => {
@@ -65,7 +65,7 @@ impl ForjaFast {
                 // vale para parámetros, globales y campos por igual. Se popea
                 // siempre para no desbalancear la pila si los contratos están
                 // desactivados.
-                let valor = self.pop_valor()?;
+                let valor = self.desapilar_valor()?;
                 if self.verificar_contratos {
                     self.anterior_stack.insert(*slot, valor);
                 }
@@ -82,7 +82,7 @@ impl ForjaFast {
                 }
                 let contrato = &self.contratos[*idx].clone();
                 let resultado = self.ejecutar_uops_contrato(&contrato.condicion, None);
-                if !resultado.es_verdadero_con_heap(&self.runtime.str_heap) {
+                if !resultado.es_verdadero_con_monticulo(&self.runtime.str_heap) {
                     return Err(ErrFast::Contrato(format!(
                         "invariante no se cumple: {}",
                         contrato.mensaje

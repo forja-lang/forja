@@ -334,7 +334,7 @@ pub enum Opcode {
     VerificarInvariante(usize),
 
     // === Funciones Nativas (Native Registry) ===
-    /// Llama a una función nativa registrada en NativeRegistry
+    /// Llama a una función nativa registrada en NativoRegistro
     /// (nombre_función, número_de_argumentos)
     LlamarNativa(Arc<str>, usize),
 

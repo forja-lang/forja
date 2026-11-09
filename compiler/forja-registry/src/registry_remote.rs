@@ -1,4 +1,4 @@
-//! cliente del registry remoto de Forja.
+//! cliente del registro remoto de Forja.
 //!
 //! Protocolo HTTP/1.1 mínimo sobre `TcpStream` (sin dependencias nuevas):
 //!
@@ -13,7 +13,7 @@
 //! para `https://` este cliente devuelve un error explicativo si no se compiló
 //! con un cliente TLS (ver deuda documentada en el CHANGELOG).
 
-use crate::registry::{
+use crate::registro::{
     desempaquetar, ruta_index, sha256_hex, verificar_firma, Index, Semver, VersionPublicada,
 };
 use forja_native::base64::{b64_decode, b64_encode};
@@ -37,7 +37,7 @@ pub struct Publicacion {
     pub tarball_b64: String,
 }
 
-/// URL base del registry (`FORJA_REGISTRY_URL`), sin barra final.
+/// URL base del registro (`FORJA_REGISTRY_URL`), sin barra final.
 pub fn url_base() -> Option<String> {
     std::env::var("FORJA_REGISTRY_URL")
         .ok()
@@ -142,7 +142,7 @@ fn esperar_correcto(status: u16, cuerpo: &[u8], contexto: &str) -> Result<(), St
     ))
 }
 
-/// Publica un paquete en el registry remoto.
+/// Publica un paquete en el registro remoto.
 pub fn publicar_remoto(
     nombre: &str,
     version: &str,
@@ -155,8 +155,8 @@ pub fn publicar_remoto(
     }
     let hash = sha256_hex(datos);
     // el autor firma con su clave privada Ed25519 y adjunta la pública.
-    let claves = crate::registry::clave_autor()?;
-    let firma = crate::registry::firmar_hash_ed25519(&hash, &claves.privada);
+    let claves = crate::registro::clave_autor()?;
+    let firma = crate::registro::firmar_hash_ed25519(&hash, &claves.privada);
     let clave_publica = claves
         .publica
         .iter()
@@ -194,7 +194,7 @@ pub fn descargar_remoto(nombre: &str, version: &str) -> Result<Vec<u8>, String> 
     Ok(cuerpo)
 }
 
-/// Resuelve e instala un paquete desde el registry remoto.
+/// Resuelve e instala un paquete desde el registro remoto.
 pub fn instalar_desde_remoto(nombre: &str, req: &str, destino: &Path) -> Result<String, String> {
     let index = indice_remoto()?;
     let publicada = index
@@ -215,7 +215,7 @@ pub fn instalar_desde_remoto(nombre: &str, req: &str, destino: &Path) -> Result<
         ));
     }
     if !publicada.firma.is_empty()
-        && !verificar_firma(&hash, &publicada.firma, &crate::registry::clave_firma())
+        && !verificar_firma(&hash, &publicada.firma, &crate::registro::clave_firma())
     {
         // La firma es del autor; si no coincide con la clave local se acepta por
         // SHA-256 y se deja constancia (la verificación fuerte de autor llega con
@@ -229,14 +229,14 @@ pub fn instalar_desde_remoto(nombre: &str, req: &str, destino: &Path) -> Result<
     Ok(publicada.version)
 }
 
-/// Retira (yank) una versión en el registry remoto.
+/// Retira (yank) una versión en el registro remoto.
 pub fn yank_remoto(nombre: &str, version: &str) -> Result<(), String> {
     let ruta = format!("/api/v1/packages/{}/{}", nombre, version);
     let (status, cuerpo) = peticion("DELETE", &ruta, None, true)?;
     esperar_correcto(status, &cuerpo, &format!("yank {}@{}", nombre, version))
 }
 
-/// Publica el paquete recién creado en el registry local también en el remoto,
+/// Publica el paquete recién creado en el registro local también en el remoto,
 /// si `FORJA_REGISTRY_URL` está configurada. No falla si no hay URL.
 pub fn publicar_si_configurado(
     nombre: &str,
@@ -247,14 +247,14 @@ pub fn publicar_si_configurado(
     if url_base().is_none() {
         return Ok(None);
     }
-    let tarball = crate::registry::ruta_tarball(nombre, version);
+    let tarball = crate::registro::ruta_tarball(nombre, version);
     let datos = std::fs::read(&tarball)
         .map_err(|e| format!("no se pudo leer {}: {}", tarball.display(), e))?;
     publicar_remoto(nombre, version, autor, descripcion, &datos)?;
     Ok(Some(()))
 }
 
-/// Indica si el registry remoto está configurado.
+/// Indica si el registro remoto está configurado.
 pub fn configurado() -> bool {
     url_base().is_some()
 }
@@ -291,7 +291,7 @@ pub fn registrar_version(
 ) {
     use std::collections::BTreeMap;
     let entrada = index.paquetes.entry(nombre.to_string()).or_insert_with(|| {
-        crate::registry::EntradaPaquete {
+        crate::registro::EntradaPaquete {
             nombre: nombre.to_string(),
             versiones: BTreeMap::new(),
         }

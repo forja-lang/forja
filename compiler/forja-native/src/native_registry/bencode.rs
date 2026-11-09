@@ -1,13 +1,13 @@
 use super::*;
 
-impl NativeRegistry {
+impl NativoRegistro {
     pub fn registrar_bencode(&mut self) {
         // ─── Bencode / Hex Decoding ────────────────────────────────────────────
-        self.registrar("_hex_decodificar_nativo", native_hex_decodificar);
-        self.registrar("_hex_decimal_a_entero", native_hex_decimal_a_entero);
-        self.registrar("_buscar_desde", native_buscar_desde);
-        self.registrar("_bencode_decodificar", native_bencode_decodificar);
-        self.registrar("_entero_a_hex", native_entero_a_hex);
+        self.registrar("_hex_decodificar_nativo", nativo_hex_decodificar);
+        self.registrar("_hex_decimal_a_entero", nativo_hex_decimal_a_entero);
+        self.registrar("_buscar_desde", nativo_buscar_desde);
+        self.registrar("_bencode_decodificar", nativo_bencode_decodificar);
+        self.registrar("_entero_a_hex", nativo_entero_a_hex);
     }
 }
 pub fn hex_digit_val(byte: u8) -> i8 {
@@ -26,7 +26,10 @@ pub fn hex_digit_val(byte: u8) -> i8 {
 /// Decodifica un string hexadecimal a texto UTF-8 (pérdida mínima).
 /// args[0]: hex_texto (Texto) — datos en hexadecimal
 /// Retorna: texto decodificado, o cadena vacía si el hex es inválido
-pub fn native_hex_decodificar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_hex_decodificar(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
         return Err(ErrFast::TipoInv(
             "_hex_decodificar_nativo requiere 1 argumento: hex_str (texto)".into(),
@@ -35,7 +38,7 @@ pub fn native_hex_decodificar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<V
 
     let hex_texto = obtener_texto(vm, args[0])?;
     if hex_texto.len() < 2 || hex_texto.len() % 2 != 0 {
-        let indice = vm.alloc_str(Arc::from(""));
+        let indice = vm.reservar_texto(Arc::from(""));
         return Ok(ValorFast::texto(indice));
     }
 
@@ -46,7 +49,7 @@ pub fn native_hex_decodificar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<V
         let high = hex_digit_val(caracteres[i]);
         let low = hex_digit_val(caracteres[i + 1]);
         if high < 0 || low < 0 {
-            let indice = vm.alloc_str(Arc::from(""));
+            let indice = vm.reservar_texto(Arc::from(""));
             return Ok(ValorFast::texto(indice));
         }
         octetos.push((high as u8) << 4 | low as u8);
@@ -54,7 +57,7 @@ pub fn native_hex_decodificar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<V
     }
 
     let decoded = String::from_utf8_lossy(&octetos).to_string();
-    let indice = vm.alloc_str(Arc::from(decoded.as_str()));
+    let indice = vm.reservar_texto(Arc::from(decoded.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
@@ -63,7 +66,10 @@ pub fn native_hex_decodificar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<V
 /// args[1]: num_bytes (Entero) — cantidad de bytes en la salida (2, 4, 8, etc.)
 /// Retorna: texto con la representación hexadecimal en minúsculas, zero-padded
 /// Ejemplo: _entero_a_hex(8080, 4) → "00001f90"
-pub fn native_entero_a_hex(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_entero_a_hex(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
             "_entero_a_hex requiere 2 argumentos: numero (entero), num_bytes (entero)".into(),
@@ -96,7 +102,7 @@ pub fn native_entero_a_hex(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
         hex_string
     };
 
-    let indice = vm.alloc_str(Arc::from(resultado.as_str()));
+    let indice = vm.reservar_texto(Arc::from(resultado.as_str()));
     Ok(ValorFast::texto(indice))
 }
 
@@ -107,8 +113,8 @@ pub fn native_entero_a_hex(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
 /// args[1]: pos (Entero) — posición inicial en hex chars (0-based)
 /// args[2]: length (Entero) — longitud en hex chars (debe ser par)
 /// Retorna: entero convertido, o 0 si error
-pub fn native_hex_decimal_a_entero(
-    vm: &mut dyn Host,
+pub fn nativo_hex_decimal_a_entero(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.len() < 3 {
@@ -151,7 +157,10 @@ pub fn native_hex_decimal_a_entero(
 /// args[1]: needle_hex (Texto) — substring a buscar (ej: "3a" para encontrar ":")
 /// args[2]: start_pos (Entero, opcional) — posición inicial, default 0
 /// Retorna: posición encontrada (Entero), o -1 si no se encuentra
-pub fn native_buscar_desde(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
+pub fn nativo_buscar_desde(
+    vm: &mut dyn Anfitrion,
+    args: &[ValorFast],
+) -> Result<ValorFast, ErrFast> {
     if args.len() < 2 {
         return Err(ErrFast::TipoInv(
             "_buscar_desde requiere 2 argumentos: haystack, needle_hex, [start_pos]".into(),
@@ -176,14 +185,14 @@ pub fn native_buscar_desde(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
     }
 
     // Alinear inicio a la siguiente posición par
-    let start_even = if inicio % 2 == 0 { inicio } else { inicio + 1 };
-    let needle_len = needle.len();
+    let inicio_even = if inicio % 2 == 0 { inicio } else { inicio + 1 };
+    let needle_longitud = needle.len();
     let caracteres = haystack.as_bytes();
 
     // Buscar solo en posiciones pares (byte-aligned) para evitar falsos positivos
-    let mut i = start_even;
-    while i + needle_len <= haystack.len() {
-        if &caracteres[i..i + needle_len] == needle.as_bytes() {
+    let mut i = inicio_even;
+    while i + needle_longitud <= haystack.len() {
+        if &caracteres[i..i + needle_longitud] == needle.as_bytes() {
             return Ok(ValorFast::entero(i as i64));
         }
         i += 2; // step by 2 — byte alignment
@@ -194,8 +203,8 @@ pub fn native_buscar_desde(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valo
 
 /// Parsea un string bencode desde bytes y retorna (ValorFast, new_position).
 /// Los strings se decodifican como UTF-8 si es posible, sino se retornan como hex.
-pub fn parse_bencode_str(
-    vm: &mut dyn Host,
+pub fn parsear_bencode_texto(
+    vm: &mut dyn Anfitrion,
     data: &[u8],
     posicion: &mut usize,
     _hex_original: &str,
@@ -204,9 +213,9 @@ pub fn parse_bencode_str(
         Some(p) => *posicion + p,
         None => return Ok(ValorFast::nulo()),
     };
-    let len_str = std::str::from_utf8(&data[*posicion..colon])
+    let longitud_texto = std::str::from_utf8(&data[*posicion..colon])
         .map_err(|_| ErrFast::TipoInv("bencode: length no UTF-8".into()))?;
-    let longitud: usize = len_str
+    let longitud: usize = longitud_texto
         .parse()
         .map_err(|_| ErrFast::TipoInv("bencode: length inválido".into()))?;
     let inicio = colon + 1;
@@ -219,18 +228,18 @@ pub fn parse_bencode_str(
     let raw = &data[inicio..*posicion];
     // Intentar decodificar como UTF-8
     if let Ok(s) = std::str::from_utf8(raw) {
-        let indice = vm.alloc_str(Arc::from(s));
+        let indice = vm.reservar_texto(Arc::from(s));
         Ok(ValorFast::texto(indice))
     } else {
         // Retornar como hex
         let hex_texto: String = raw.iter().map(|b| format!("{:02x}", b)).collect();
-        let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+        let indice = vm.reservar_texto(Arc::from(hex_texto.as_str()));
         Ok(ValorFast::texto(indice))
     }
 }
 
 /// Parsea un entero bencode: i123e
-pub fn parse_bencode_int(data: &[u8], posicion: &mut usize) -> i64 {
+pub fn parsear_bencode_entero(data: &[u8], posicion: &mut usize) -> i64 {
     if *posicion >= data.len() || data[*posicion] != b'i' {
         return 0;
     }
@@ -248,13 +257,13 @@ pub fn parse_bencode_int(data: &[u8], posicion: &mut usize) -> i64 {
 /// Parsea un valor bencode recursivamente.
 /// hex_original: string hex completo (para extraer info_hex).
 /// info_start/info_end: se llenan cuando se encuentra la clave "info".
-pub fn parse_bencode_value(
-    vm: &mut dyn Host,
+pub fn parsear_bencode_valor(
+    vm: &mut dyn Anfitrion,
     data: &[u8],
     posicion: &mut usize,
     hex_original: &str,
-    info_start: &mut usize,
-    info_end: &mut usize,
+    informacion_inicio: &mut usize,
+    informacion_end: &mut usize,
 ) -> Result<ValorFast, ErrFast> {
     if *posicion >= data.len() {
         return Ok(ValorFast::nulo());
@@ -262,21 +271,27 @@ pub fn parse_bencode_value(
 
     match data[*posicion] {
         b'i' => {
-            let val = parse_bencode_int(data, posicion);
+            let val = parsear_bencode_entero(data, posicion);
             Ok(ValorFast::entero(val))
         }
         b'l' => {
             *posicion += 1; // skip 'l'
             let mut items = Vec::new();
             while *posicion < data.len() && data[*posicion] != b'e' {
-                let elemento =
-                    parse_bencode_value(vm, data, posicion, hex_original, info_start, info_end)?;
+                let elemento = parsear_bencode_valor(
+                    vm,
+                    data,
+                    posicion,
+                    hex_original,
+                    informacion_inicio,
+                    informacion_end,
+                )?;
                 items.push(elemento);
             }
             if *posicion < data.len() {
                 *posicion += 1; // skip 'e'
             }
-            let indice = vm.alloc_arr(items);
+            let indice = vm.reservar_arr(items);
             Ok(ValorFast::arreglo(indice))
         }
         b'd' => {
@@ -295,22 +310,28 @@ pub fn parse_bencode_value(
                     .map_err(|_| ErrFast::TipoInv("bencode: key length inválido".into()))?;
                 let kstart = colon + 1;
                 let kend = kstart + klen;
-                let key_raw = &data[kstart..kend];
-                let clave = String::from_utf8_lossy(key_raw).to_string();
+                let clave_raw = &data[kstart..kend];
+                let clave = String::from_utf8_lossy(clave_raw).to_string();
                 *posicion = kend;
 
                 // Track "info" position in ORIGINAL hex chars
-                let is_info = clave == "info";
-                if is_info {
-                    *info_start = *posicion; // byte position
+                let es_informacion = clave == "info";
+                if es_informacion {
+                    *informacion_inicio = *posicion; // byte position
                 }
 
                 // Parse valor
-                let val =
-                    parse_bencode_value(vm, data, posicion, hex_original, info_start, info_end)?;
+                let val = parsear_bencode_valor(
+                    vm,
+                    data,
+                    posicion,
+                    hex_original,
+                    informacion_inicio,
+                    informacion_end,
+                )?;
 
-                if is_info {
-                    *info_end = *posicion; // byte position
+                if es_informacion {
+                    *informacion_end = *posicion; // byte position
                 }
 
                 mapa.insert(clave, val);
@@ -318,12 +339,12 @@ pub fn parse_bencode_value(
             if *posicion < data.len() {
                 *posicion += 1; // skip 'e'
             }
-            let indice = vm.alloc_map(mapa);
+            let indice = vm.reservar_mapa(mapa);
             Ok(ValorFast::mapa(indice))
         }
         _ => {
             // String
-            parse_bencode_str(vm, data, posicion, hex_original)
+            parsear_bencode_texto(vm, data, posicion, hex_original)
         }
     }
 }
@@ -331,8 +352,8 @@ pub fn parse_bencode_value(
 /// Parsea un string hexadecimal en formato bencode y retorna la estructura Forja.
 /// args[0]: hex_bencode (Texto) — string hex del torrent
 /// Retorna: mapa con "valor" (estructura parseada) e "info_hex" (raw hex del info dict)
-pub fn native_bencode_decodificar(
-    vm: &mut dyn Host,
+pub fn nativo_bencode_decodificar(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -345,35 +366,35 @@ pub fn native_bencode_decodificar(
     let data = hex_a_bytes(&hex_bencode);
 
     if data.is_empty() {
-        let _idx = vm.alloc_str(Arc::from(""));
+        let _idx = vm.reservar_texto(Arc::from(""));
         let mut mapa = std::collections::HashMap::new();
         let nulo = ValorFast::nulo();
         mapa.insert("valor".to_string(), nulo);
-        let ih = vm.alloc_str(Arc::from(""));
+        let ih = vm.reservar_texto(Arc::from(""));
         mapa.insert("info_hex".to_string(), ValorFast::texto(ih));
-        let midx = vm.alloc_map(mapa);
+        let midx = vm.reservar_mapa(mapa);
         return Ok(ValorFast::mapa(midx));
     }
 
     let mut posicion = 0;
-    let mut info_start = 0;
-    let mut info_end = 0;
+    let mut informacion_inicio = 0;
+    let mut informacion_end = 0;
 
-    let valor = parse_bencode_value(
+    let valor = parsear_bencode_valor(
         vm,
         &data,
         &mut posicion,
         &hex_bencode,
-        &mut info_start,
-        &mut info_end,
+        &mut informacion_inicio,
+        &mut informacion_end,
     )?;
 
     // Extraer info_hex del hex original (marcadores en bytes × 2 = hex chars)
-    let info_hex = if info_end > info_start {
-        let hex_start = info_start * 2;
-        let hex_len = (info_end - info_start) * 2;
-        if hex_start + hex_len <= hex_bencode.len() {
-            hex_bencode[hex_start..hex_start + hex_len].to_string()
+    let informacion_hex = if informacion_end > informacion_inicio {
+        let hex_inicio = informacion_inicio * 2;
+        let hex_longitud = (informacion_end - informacion_inicio) * 2;
+        if hex_inicio + hex_longitud <= hex_bencode.len() {
+            hex_bencode[hex_inicio..hex_inicio + hex_longitud].to_string()
         } else {
             String::new()
         }
@@ -381,12 +402,12 @@ pub fn native_bencode_decodificar(
         String::new()
     };
 
-    let mut result_map = std::collections::HashMap::new();
-    result_map.insert("valor".to_string(), valor);
-    let ih_idx = vm.alloc_str(Arc::from(info_hex.as_str()));
-    result_map.insert("info_hex".to_string(), ValorFast::texto(ih_idx));
+    let mut resultado_mapa = std::collections::HashMap::new();
+    resultado_mapa.insert("valor".to_string(), valor);
+    let ih_idx = vm.reservar_texto(Arc::from(informacion_hex.as_str()));
+    resultado_mapa.insert("info_hex".to_string(), ValorFast::texto(ih_idx));
 
-    let midx = vm.alloc_map(result_map);
+    let midx = vm.reservar_mapa(resultado_mapa);
     Ok(ValorFast::mapa(midx))
 }
 
@@ -399,8 +420,8 @@ pub fn native_bencode_decodificar(
 /// Los demás se convierten a %XX (hex mayúscula).
 /// args[0]: hex_texto (datos en hex a codificar)
 /// Retorna: string URL-encoded
-pub fn native_url_encode_binario(
-    vm: &mut dyn Host,
+pub fn nativo_url_codificar_binario(
+    vm: &mut dyn Anfitrion,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
     if args.is_empty() {
@@ -424,6 +445,6 @@ pub fn native_url_encode_binario(
         }
     }
 
-    let indice = vm.alloc_str(Arc::from(resultado.as_str()));
+    let indice = vm.reservar_texto(Arc::from(resultado.as_str()));
     Ok(ValorFast::texto(indice))
 }

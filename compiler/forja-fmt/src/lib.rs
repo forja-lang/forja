@@ -60,9 +60,9 @@ fn insertar_comentarios(base: String, comentarios: &[forja_syntax::lexer::Coment
     for t in &tokens {
         if matches!(
             t.kind,
-            forja_syntax::token::TokenKind::DocComment(_)
-                | forja_syntax::token::TokenKind::EOF
-                | forja_syntax::token::TokenKind::Error(_)
+            forja_syntax::token::TokenTipo::DocComment(_)
+                | forja_syntax::token::TokenTipo::EOF
+                | forja_syntax::token::TokenTipo::Error(_)
         ) {
             continue;
         }
