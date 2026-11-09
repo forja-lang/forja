@@ -119,11 +119,11 @@ static ESTADO_RESTAURAR: Mutex<Option<(i64, i64, u8, u8)>> = Mutex::new(None);
 #[cfg(target_os = "windows")]
 unsafe extern "system" fn handler_ctrl(_tipo_de_evento: u32) -> i32 {
     if let Ok(guard) = ESTADO_RESTAURAR.lock() {
-        if let Some((handle, direccion, b1, b2)) = *guard {
+        if let Some((manejador, direccion, b1, b2)) = *guard {
             let bytes = [b1, b2];
             let mut escritos: usize = 0;
             WriteProcessMemory(
-                handle as *mut std::ffi::c_void,
+                manejador as *mut std::ffi::c_void,
                 direccion as *mut std::ffi::c_void,
                 bytes.as_ptr() as *const std::ffi::c_void,
                 bytes.len(),
@@ -241,7 +241,7 @@ pub fn native_proceso_obtener_pid(
 
 // ═════════════════════════════════════════════════════════════════════════
 // _proceso_abrir_pid(pid: Entero, acceso: Entero) -> Entero
-// Abre el proceso con OpenProcess y devuelve el handle (0 si falla).
+// Abre el proceso con OpenProcess y devuelve el manejador (0 si falla).
 // ═════════════════════════════════════════════════════════════════════════
 
 pub fn native_proceso_abrir_pid(
@@ -293,22 +293,22 @@ pub fn native_proceso_ultimo_error(
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-// _proceso_cerrar(handle: Entero) -> Booleano
-// Cierra el handle del proceso (CloseHandle).
+// _proceso_cerrar(manejador: Entero) -> Booleano
+// Cierra el manejador del proceso (CloseHandle).
 // ═════════════════════════════════════════════════════════════════════════
 
 pub fn native_proceso_cerrar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
-    let handle = obtener_entero(args[0])?;
+    let manejador = obtener_entero(args[0])?;
 
     #[cfg(target_os = "windows")]
     {
-        let r = unsafe { CloseHandle(handle as *mut std::ffi::c_void) };
+        let r = unsafe { CloseHandle(manejador as *mut std::ffi::c_void) };
         Ok(ValorFast::booleano(r != 0))
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = handle;
+        let _ = manejador;
         Ok(ValorFast::booleano(false))
     }
 }
@@ -400,7 +400,7 @@ pub fn native_proceso_modulo_tamano(
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-// _proceso_leer_bytes(handle: Entero, direccion: Entero, tamano: Entero)
+// _proceso_leer_bytes(manejador: Entero, direccion: Entero, tamano: Entero)
 //   -> Arreglo<Entero>
 // Lee `tamano` bytes de la memoria del proceso y los devuelve como un
 // arreglo de enteros 0-255. Si falla, devuelve un arreglo vacío.
@@ -410,7 +410,7 @@ pub fn native_proceso_leer_bytes(
     vm: &mut dyn Host,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let handle = obtener_entero(args[0])?;
+    let manejador = obtener_entero(args[0])?;
     let direccion = obtener_entero(args[1])?;
     let tamano = obtener_entero(args[2])?;
 
@@ -435,7 +435,7 @@ pub fn native_proceso_leer_bytes(
             let mut leidos: usize = 0;
             unsafe {
                 ReadProcessMemory(
-                    handle as *mut std::ffi::c_void,
+                    manejador as *mut std::ffi::c_void,
                     base_addr as *mut std::ffi::c_void,
                     buffer[offset..].as_mut_ptr() as *mut std::ffi::c_void,
                     n,
@@ -455,14 +455,14 @@ pub fn native_proceso_leer_bytes(
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (handle, direccion, tamano);
+        let _ = (manejador, direccion, tamano);
         let idx = vm.alloc_arr(Vec::new());
         Ok(ValorFast::arreglo(idx))
     }
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-// _proceso_escribir_bytes(handle: Entero, direccion: Entero,
+// _proceso_escribir_bytes(manejador: Entero, direccion: Entero,
 //   bytes: Arreglo<Entero>) -> Booleano
 // Escribe los bytes del arreglo en la memoria del proceso.
 // ═════════════════════════════════════════════════════════════════════════
@@ -471,7 +471,7 @@ pub fn native_proceso_escribir_bytes(
     vm: &mut dyn Host,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let handle = obtener_entero(args[0])?;
+    let manejador = obtener_entero(args[0])?;
     let direccion = obtener_entero(args[1])?;
 
     let arr_idx = args[2].indice_arreglo();
@@ -486,7 +486,7 @@ pub fn native_proceso_escribir_bytes(
         let mut escritos: usize = 0;
         let ok = unsafe {
             WriteProcessMemory(
-                handle as *mut std::ffi::c_void,
+                manejador as *mut std::ffi::c_void,
                 direccion as *mut std::ffi::c_void,
                 buffer.as_ptr() as *const std::ffi::c_void,
                 buffer.len(),
@@ -498,7 +498,7 @@ pub fn native_proceso_escribir_bytes(
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (handle, direccion, buffer);
+        let _ = (manejador, direccion, buffer);
         Ok(ValorFast::booleano(false))
     }
 }
@@ -569,7 +569,7 @@ pub fn native_flanco_tecla(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
         let presionada = ((state as u16) & 0x8000) != 0;
         let mut guard = ESTADO_TECLA_ANTERIOR.lock().unwrap();
         let flanco = match *guard {
-            Some((vk_prev, prev)) if vk_prev == vk => presionada && !prev,
+            Some((vk_prev, anterior)) if vk_prev == vk => presionada && !anterior,
             _ => presionada,
         };
         *guard = Some((vk, presionada));
@@ -648,7 +648,7 @@ pub fn native_imprimir_stdout(vm: &mut dyn Host, args: &[ValorFast]) -> Result<V
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-// _restaurar_al_salir(handle: Entero, direccion: Entero,
+// _restaurar_al_salir(manejador: Entero, direccion: Entero,
 //   byte1: Entero, byte2: Entero) -> Booleano
 // Registra un manejador de Ctrl+C / cierre de consola que restaura los
 // bytes originales (WriteProcessMemory) automáticamente al salir.
@@ -658,7 +658,7 @@ pub fn native_restaurar_al_salir(
     _vm: &mut dyn Host,
     args: &[ValorFast],
 ) -> Result<ValorFast, ErrFast> {
-    let handle = obtener_entero(args[0])?;
+    let manejador = obtener_entero(args[0])?;
     let direccion = obtener_entero(args[1])?;
     let byte1 = obtener_entero(args[2])? as u8;
     let byte2 = obtener_entero(args[3])? as u8;
@@ -666,7 +666,7 @@ pub fn native_restaurar_al_salir(
     #[cfg(target_os = "windows")]
     {
         if let Ok(mut guard) = ESTADO_RESTAURAR.lock() {
-            *guard = Some((handle, direccion, byte1, byte2));
+            *guard = Some((manejador, direccion, byte1, byte2));
         }
         let r = unsafe { SetConsoleCtrlHandler(Some(handler_ctrl), 1) };
         Ok(ValorFast::booleano(r != 0))
@@ -674,7 +674,7 @@ pub fn native_restaurar_al_salir(
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (handle, direccion, byte1, byte2);
+        let _ = (manejador, direccion, byte1, byte2);
         Ok(ValorFast::booleano(false))
     }
 }
