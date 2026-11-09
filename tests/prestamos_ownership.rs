@@ -22,7 +22,7 @@ fn salida(estricto: bool, fuente: &str) -> Vec<String> {
 
 fn error(estricto: bool, fuente: &str) -> String {
     match ejecutar(estricto, fuente) {
-        Ok(out) => panic!("debía fallar y devolvió: {out:?}\n{fuente}"),
+        Ok(salida) => panic!("debía fallar y devolvió: {salida:?}\n{fuente}"),
         Err(e) => e,
     }
 }
@@ -43,31 +43,31 @@ fn usar_la_variable_original_despues_del_move_falla() {
 
 #[test]
 fn el_nuevo_dueno_si_puede_usarla() {
-    let out = salida(
+    let salida = salida(
         true,
         &format!("{CLASE}variable a = nuevo C()\nvariable b = a\nescribir(b.v)"),
     );
-    assert_eq!(out, vec!["7"]);
+    assert_eq!(salida, vec!["7"]);
 }
 
 #[test]
 fn sin_estricto_el_move_de_clases_no_se_marca() {
-    let out = salida(
+    let salida = salida(
         false,
         &format!("{CLASE}variable a = nuevo C()\nvariable b = a\nescribir(a.v)"),
     );
-    assert_eq!(out, vec!["7"]);
+    assert_eq!(salida, vec!["7"]);
 }
 
 #[test]
 fn pasar_la_misma_clase_dos_veces_no_es_un_move() {
-    let out = salida(
+    let salida = salida(
         true,
         &format!(
             "{CLASE}funcion ver(c: C) -> Entero {{ retornar c.v }}\nvariable a = nuevo C()\nescribir(ver(a))\nescribir(ver(a))"
         ),
     );
-    assert_eq!(out, vec!["7", "7"]);
+    assert_eq!(salida, vec!["7", "7"]);
 }
 
 #[test]
@@ -90,32 +90,32 @@ fn escribir_el_original_bajo_un_prestamo_mutable_falla() {
 
 #[test]
 fn el_prestamo_mutable_permite_usar_al_prestatario() {
-    let out = salida(
+    let salida = salida(
         false,
         "variable mut v = 1\nvariable r = &mut v\nsi (verdadero) {\n    escribir(r)\n}",
     );
-    assert_eq!(out, vec!["1"]);
+    assert_eq!(salida, vec!["1"]);
 }
 
 #[test]
 fn un_prestamo_mutable_pasado_a_una_funcion_es_temporal() {
     // `&mut x` como argumento termina al volver de la llamada: después se
     // puede leer (y modificar) `x` otra vez.
-    let out = salida(
+    let salida = salida(
         false,
         "funcion duplicar(prestado mut v) -> Entero { retornar v * 2 }
 variable x = 5
 escribir(duplicar(&mut x))
 escribir(x)",
     );
-    assert_eq!(out, vec!["10", "5"]);
+    assert_eq!(salida, vec!["10", "5"]);
 }
 
 #[test]
 fn el_prestamo_inmutable_no_bloquea_leer_el_original() {
-    let out = salida(
+    let salida = salida(
         false,
         "variable datos = [10, 20]\nvariable p = &datos\nescribir(datos[0])",
     );
-    assert_eq!(out, vec!["10"]);
+    assert_eq!(salida, vec!["10"]);
 }
