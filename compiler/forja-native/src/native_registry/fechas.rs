@@ -95,8 +95,8 @@ pub fn native_fecha_desde_timestamp(
         año, mes, dia, hora, minuto, segundo, nombre_dia, nombre_mes
     );
 
-    let idx = vm.alloc_str(Arc::from(salida.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(salida.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Convierte componentes de fecha a timestamp Unix (segundos desde epoch)
