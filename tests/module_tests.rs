@@ -3,8 +3,8 @@ use forja::lexer::Lexer;
 use forja::parser::Parser;
 use forja::vm_fast::ForjaFast;
 
-fn ejecutar(source: &str) -> Result<Vec<String>, String> {
-    let mut lexer = Lexer::new(source);
+fn ejecutar(fuente: &str) -> Result<Vec<String>, String> {
+    let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
@@ -22,9 +22,9 @@ fn ejecutar(source: &str) -> Result<Vec<String>, String> {
 
 #[test]
 fn test_repl_compila() {
-    let result = ejecutar("escribir(\"test\")");
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap(), vec!["test"]);
+    let resultado = ejecutar("escribir(\"test\")");
+    assert!(resultado.is_ok());
+    assert_eq!(resultado.unwrap(), vec!["test"]);
 }
 
 #[test]
@@ -37,8 +37,8 @@ fn test_formatter_disponible() {
         span: None,
         declaraciones: vec![],
     };
-    let out = f.formatear(&prog);
-    assert_eq!(out, "");
+    let salida = f.formatear(&prog);
+    assert_eq!(salida, "");
 }
 
 #[test]
