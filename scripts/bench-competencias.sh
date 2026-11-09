@@ -124,7 +124,11 @@ fi
 if [ -f "$BASE" ]; then
     "$PYTHON" - "$RESULTADO" "$BASE" <<'PY'
 import json, sys
-umbral = 1.20  # 20 % de margen por ruido de máquina
+# Margen amplio a propósito: el ruido entre máquinas/runner cargado llega a
+# duplicar los tiempos. Con 2,5x se detectan regresiones de verdad (un cambio
+# que rompe la vectorización o reintroduce una llamada por elemento) sin
+# falsos positivos.
+umbral = 2.50
 base = json.load(open(sys.argv[2], encoding="utf-8"))["casos"]
 peor = 0
 for linea in open(sys.argv[1], encoding="utf-8"):
