@@ -29,9 +29,9 @@ pub fn native_sha256(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast,
 
     let data = obtener_texto(vm, args[0])?;
     let hash = crate::hash::Sha256::digest(data.as_bytes());
-    let hex_str = crate::hash::hex_encode(&hash);
-    let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
-    Ok(ValorFast::texto(idx))
+    let hex_texto = crate::hash::hex_encode(&hash);
+    let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Calcula SHA-1 de un texto y retorna el hash como hexadecimal (40 caracteres)
@@ -46,9 +46,9 @@ pub fn native_sha1(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, E
 
     let data = obtener_texto(vm, args[0])?;
     let hash = crate::hash::Sha1::digest(data.as_bytes());
-    let hex_str = crate::hash::hex_encode(&hash);
-    let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
-    Ok(ValorFast::texto(idx))
+    let hex_texto = crate::hash::hex_encode(&hash);
+    let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Calcula SHA-1 de un texto en formato hexadecimal (bytes decodificados) y retorna el hash hexadecimal
@@ -64,9 +64,9 @@ pub fn native_sha1_hex(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFas
     let data_hex = obtener_texto(vm, args[0])?;
     let data = hex_a_bytes(&data_hex);
     let hash = crate::hash::Sha1::digest(&data);
-    let hex_str = crate::hash::hex_encode(&hash);
-    let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
-    Ok(ValorFast::texto(idx))
+    let hex_texto = crate::hash::hex_encode(&hash);
+    let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -83,9 +83,9 @@ pub fn native_sha224(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast,
     }
     let data = obtener_texto(vm, args[0])?;
     let hash = crate::hash::Sha224::digest(data.as_bytes());
-    let hex_str = crate::hash::hex_encode(&hash);
-    let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
-    Ok(ValorFast::texto(idx))
+    let hex_texto = crate::hash::hex_encode(&hash);
+    let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Calcula SHA-512 de un texto y retorna el hash como hexadecimal (128 caracteres)
@@ -98,9 +98,9 @@ pub fn native_sha512(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast,
     }
     let data = obtener_texto(vm, args[0])?;
     let hash = crate::hash::Sha512::digest(data.as_bytes());
-    let hex_str = crate::hash::hex_encode(&hash);
-    let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
-    Ok(ValorFast::texto(idx))
+    let hex_texto = crate::hash::hex_encode(&hash);
+    let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Calcula SHA-384 de un texto y retorna el hash como hexadecimal (96 caracteres)
@@ -113,9 +113,9 @@ pub fn native_sha384(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast,
     }
     let data = obtener_texto(vm, args[0])?;
     let hash = crate::hash::Sha384::digest(data.as_bytes());
-    let hex_str = crate::hash::hex_encode(&hash);
-    let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
-    Ok(ValorFast::texto(idx))
+    let hex_texto = crate::hash::hex_encode(&hash);
+    let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Calcula HMAC-SHA256 de un mensaje con una clave
@@ -131,7 +131,7 @@ pub fn native_hmac_sha256(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Valor
     let clave = obtener_texto(vm, args[0])?;
     let datos = obtener_texto(vm, args[1])?;
     let hash = crate::hash::hmac_sha256(clave.as_bytes(), datos.as_bytes());
-    let hex_str = crate::hash::hex_encode(&hash);
-    let idx = vm.alloc_str(Arc::from(hex_str.as_str()));
-    Ok(ValorFast::texto(idx))
+    let hex_texto = crate::hash::hex_encode(&hash);
+    let indice = vm.alloc_str(Arc::from(hex_texto.as_str()));
+    Ok(ValorFast::texto(indice))
 }
