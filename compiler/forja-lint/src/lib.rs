@@ -1172,10 +1172,10 @@ pub fn lint_programa(programa: &Programa, config: ConfigLint) -> Vec<Diagnostico
 ///
 /// Devuelve `Err` con los errores de lexer/parser si el código no compila.
 pub fn lint_source(
-    source: &str,
+    fuente: &str,
     config: ConfigLint,
 ) -> Result<Vec<DiagnosticoLint>, Vec<ErrorForja>> {
-    let mut lexer = forja_syntax::lexer::Lexer::new(source);
+    let mut lexer = forja_syntax::lexer::Lexer::new(fuente);
     let tokens = lexer.tokenize()?;
     let mut parser = forja_syntax::parser::Parser::new(tokens);
     let programa = parser.parse()?;
@@ -1186,8 +1186,8 @@ pub fn lint_source(
 mod tests {
     use super::*;
 
-    fn lint(source: &str) -> Vec<DiagnosticoLint> {
-        lint_source(source, ConfigLint::default()).expect("debe parsear")
+    fn lint(fuente: &str) -> Vec<DiagnosticoLint> {
+        lint_source(fuente, ConfigLint::default()).expect("debe parsear")
     }
 
     fn tiene_regla(diags: &[DiagnosticoLint], regla: Regla) -> bool {
