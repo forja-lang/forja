@@ -40,8 +40,8 @@ pub struct CodegenReg<'a> {
     assignments: &'a HashMap<VirtReg, Location>,
     bytes: Vec<u8>,
     /// Labels → offset de byte en el código generado
-    label_offsets: HashMap<usize, usize>,
-    /// Pendientes: (label, byte_offset donde escribir rel32)
+    desplazamientos_etiquetas: HashMap<usize, usize>,
+    /// Pendientes: (etiqueta, byte_offset donde escribir rel32)
     fixups: Vec<(usize, usize)>,
     /// Registro base de variables (se carga desde RCX en el prólogo).
     /// Los helpers de vars emiten `[base + idx*8]` con este registro.
@@ -50,7 +50,7 @@ pub struct CodegenReg<'a> {
     /// libera con `add rsp` en el epílogo para que `[rsp+slot]` sea válido).
     spill_frame: i32,
     /// Direcciones de funciones compiladas para resolver `Call`.
-    /// key = nombre de función, value = dirección de código máquina.
+    /// key = nombre de función, valor = dirección de código máquina.
     call_addresses: &'a HashMap<String, u64>,
 }
 
@@ -59,7 +59,7 @@ impl<'a> CodegenReg<'a> {
         CodegenReg {
             assignments,
             bytes: Vec::with_capacity(1024),
-            label_offsets: HashMap::new(),
+            desplazamientos_etiquetas: HashMap::new(),
             fixups: Vec::new(),
             vars_ptr: PhysReg::RBX,
             spill_frame: 0,
@@ -75,7 +75,7 @@ impl<'a> CodegenReg<'a> {
         CodegenReg {
             assignments,
             bytes: Vec::with_capacity(1024),
-            label_offsets: HashMap::new(),
+            desplazamientos_etiquetas: HashMap::new(),
             fixups: Vec::new(),
             vars_ptr: PhysReg::RBX,
             spill_frame: 0,
@@ -115,8 +115,9 @@ impl<'a> CodegenReg<'a> {
         }
 
         for block in &prog.blocks {
-            // Emit label
-            self.label_offsets.insert(block.label, self.bytes.len());
+            // Emit etiqueta
+            self.desplazamientos_etiquetas
+                .insert(block.etiqueta, self.bytes.len());
 
             // Emit instrucciones del bloque
             for inst in &block.instructions {
@@ -134,29 +135,29 @@ impl<'a> CodegenReg<'a> {
     /// Emit una única instrucción
     fn emit_instruction(&mut self, inst: &RegInstruction) {
         match inst {
-            RegInstruction::LoadImm { dst, value } => {
+            RegInstruction::LoadImm { dst, valor } => {
                 let d = self.resolve(*dst);
                 match d {
                     Operand::Reg(r) => {
                         if r.is_xmm() {
                             // Para XMM: mov rax, imm64; movq xmm, rax
-                            self.emit_mov_rax_imm64(*value);
+                            self.emit_mov_rax_imm64(*valor);
                             self.emit_movq_xmm_rax(r);
                         } else {
                             // mov reg, imm64 (con REX.W si necesario)
-                            self.emit_mov_reg_imm64(r, *value);
+                            self.emit_mov_reg_imm64(r, *valor);
                         }
                     }
                     Operand::Stack(off) => {
-                        self.emit_mov_rax_imm64(*value);
+                        self.emit_mov_rax_imm64(*valor);
                         self.emit_store_rax_stack(off);
                     }
                 }
             }
 
-            RegInstruction::LoadFloat { dst, value } => {
+            RegInstruction::LoadFloat { dst, valor } => {
                 let d = self.resolve(*dst);
-                let bits = value.to_bits() as i64;
+                let bits = valor.to_bits() as i64;
                 self.emit_mov_rax_imm64(bits);
                 match d {
                     Operand::Reg(r) => self.emit_movq_xmm_rax(r),
@@ -294,20 +295,21 @@ impl<'a> CodegenReg<'a> {
                 }
             }
 
-            RegInstruction::Jump { label } => {
-                self.emit_jmp(*label);
+            RegInstruction::Jump { etiqueta } => {
+                self.emit_jmp(*etiqueta);
             }
 
-            RegInstruction::JumpIfFalse { cond, label } => {
+            RegInstruction::JumpIfFalse { cond, etiqueta } => {
                 let c = self.resolve(*cond);
                 // test cond, cond
                 self.emit_test_operand(&c);
-                // jz label (rel32)
-                self.emit_jcc_rel32(0x84, *label); // 0x84 = jz
+                // jz etiqueta (rel32)
+                self.emit_jcc_rel32(0x84, *etiqueta); // 0x84 = jz
             }
 
-            RegInstruction::Label(label) => {
-                self.label_offsets.insert(*label, self.bytes.len());
+            RegInstruction::Label(etiqueta) => {
+                self.desplazamientos_etiquetas
+                    .insert(*etiqueta, self.bytes.len());
             }
 
             RegInstruction::Return { src } => {
@@ -327,7 +329,10 @@ impl<'a> CodegenReg<'a> {
                 self.bytes.push(0xC3); // ret
             }
 
-            RegInstruction::Call { func_name, args } => {
+            RegInstruction::Call {
+                nombre_funcion,
+                args,
+            } => {
                 // Llamada a función compilada.
                 //
                 // Convención usada por el JIT (consistente con jit.rs::execute):
@@ -386,7 +391,7 @@ impl<'a> CodegenReg<'a> {
                 //    Si no está en la tabla, llamar a un stub que retorna 0.
                 let target = self
                     .call_addresses
-                    .get(func_name)
+                    .get(nombre_funcion)
                     .copied()
                     .unwrap_or_else(stub_nop_addr);
                 self.emit_mov_rax_imm64(target as i64);
@@ -422,19 +427,19 @@ impl<'a> CodegenReg<'a> {
     }
 
     // === Helper: mov reg, imm64 ===
-    fn emit_mov_reg_imm64(&mut self, reg: PhysReg, value: i64) {
+    fn emit_mov_reg_imm64(&mut self, reg: PhysReg, valor: i64) {
         let idx = reg.rex_index();
         let rex = 0x48 | if idx >= 8 { 0x01 } else { 0 }; // REX.W + REX.B
                                                           // REX + mov r64, imm64 = 0xB8 + reg (low 3 bits)
         self.bytes.extend_from_slice(&[rex, 0xB8 + (idx & 7)]);
-        self.i64(value);
+        self.i64(valor);
     }
 
     // === Helper: mov rax, imm64 ===
-    fn emit_mov_rax_imm64(&mut self, value: i64) {
+    fn emit_mov_rax_imm64(&mut self, valor: i64) {
         self.bytes.push(0x48); // REX.W
         self.bytes.push(0xB8); // mov rax, imm64
-        self.i64(value);
+        self.i64(valor);
     }
 
     // === Helper: movq xmm, rax ===
@@ -500,14 +505,14 @@ impl<'a> CodegenReg<'a> {
 
     /// store xmm_idx → [rsp + off]
     fn emit_store_xmm_to_rsp(&mut self, xmm_idx: u8, off: u32) {
-        // movsd [rsp+disp32], xmm_idx — ModRM reg field = xmm_idx (0-7, sin REX.R)
+        // movsd [rsp+disp32], xmm_idx — ModRM reg campo = xmm_idx (0-7, sin REX.R)
         // 66 0F 11 /r movsd r/m64, xmm (opcode real: F2 0F 11)
         self.bytes
             .extend_from_slice(&[0xF2, 0x0F, 0x11, 0x84, 0x24]);
         self.u32(off); // ModRM 0x84 = mod10, reg=000 (xmm0-7), rm=100(SIB); SIB 0x24 = base rsp
-        let len = self.bytes.len();
+        let longitud = self.bytes.len();
         // fijar el campo reg del ModRM al xmm_idx real
-        self.bytes[len - 6] = 0x84 | ((xmm_idx & 7) << 3);
+        self.bytes[longitud - 6] = 0x84 | ((xmm_idx & 7) << 3);
     }
 
     /// load [rsp + off] → xmm_idx
@@ -516,8 +521,8 @@ impl<'a> CodegenReg<'a> {
         self.bytes
             .extend_from_slice(&[0xF2, 0x0F, 0x10, 0x84, 0x24]);
         self.u32(off);
-        let len = self.bytes.len();
-        self.bytes[len - 6] = 0x84 | ((xmm_idx & 7) << 3);
+        let longitud = self.bytes.len();
+        self.bytes[longitud - 6] = 0x84 | ((xmm_idx & 7) << 3);
     }
 
     // === Helper: mov operand → operand ===
@@ -960,26 +965,26 @@ impl<'a> CodegenReg<'a> {
         }
     }
 
-    // === Helper: jmp label ===
-    fn emit_jmp(&mut self, label: usize) {
+    // === Helper: jmp etiqueta ===
+    fn emit_jmp(&mut self, etiqueta: usize) {
         self.bytes.push(0xE9); // jmp rel32
-        self.fixups.push((label, self.bytes.len()));
+        self.fixups.push((etiqueta, self.bytes.len()));
         self.i32(0); // placeholder
     }
 
     // === Helper: jcc rel32 ===
-    fn emit_jcc_rel32(&mut self, opcode: u8, label: usize) {
+    fn emit_jcc_rel32(&mut self, opcode: u8, etiqueta: usize) {
         self.bytes.push(0x0F);
         self.bytes.push(opcode);
-        self.fixups.push((label, self.bytes.len()));
+        self.fixups.push((etiqueta, self.bytes.len()));
         self.i32(0); // placeholder
     }
 
     // === Resolver fixups de saltos ===
     fn resolve_fixups(&mut self) {
         let fixups: Vec<(usize, usize)> = std::mem::take(&mut self.fixups);
-        for (label, offset) in fixups {
-            if let Some(&target) = self.label_offsets.get(&label) {
+        for (etiqueta, offset) in fixups {
+            if let Some(&target) = self.desplazamientos_etiquetas.get(&etiqueta) {
                 let rel = (target as i64 - (offset + 4) as i64) as i32;
                 self.bytes[offset..offset + 4].copy_from_slice(&rel.to_le_bytes());
             }
@@ -1024,7 +1029,7 @@ impl<'a> CodegenReg<'a> {
 /// # Arguments
 /// * `prog` - Programa en IR register-based
 /// * `assignments` - Asignaciones de VirtReg → Location (del allocador)
-/// * `spill_count` - Número de slots de spill
+/// * `cantidad_derrames` - Número de slots de spill
 /// * `call_addresses` - Tabla nombre de función → dirección de código (para Call)
 ///
 /// # Returns
@@ -1032,19 +1037,19 @@ impl<'a> CodegenReg<'a> {
 pub fn emit_program(
     prog: &RegProgram,
     assignments: &HashMap<VirtReg, Location>,
-    spill_count: usize,
+    cantidad_derrames: usize,
 ) -> Vec<u8> {
-    emit_program_with_calls(prog, assignments, spill_count, empty_call_table())
+    emit_program_with_calls(prog, assignments, cantidad_derrames, empty_call_table())
 }
 
 /// Igual que `emit_program` pero permite resolver `Call` a direcciones reales.
 pub fn emit_program_with_calls(
     prog: &RegProgram,
     assignments: &HashMap<VirtReg, Location>,
-    spill_count: usize,
+    cantidad_derrames: usize,
     call_addresses: &HashMap<String, u64>,
 ) -> Vec<u8> {
-    let spill_frame = (spill_count * 8) as i32;
+    let spill_frame = (cantidad_derrames * 8) as i32;
     let mut codegen = CodegenReg::with_call_addresses(assignments, call_addresses);
     codegen.emit_program(prog, PhysReg::RBX, spill_frame);
     codegen.finish()
@@ -1063,10 +1068,10 @@ mod tests {
         let v2 = prog.alloc_vreg();
 
         let block = crate::register_ir::BloqueBasico {
-            label: 0,
+            etiqueta: 0,
             instructions: vec![
-                RegInstruction::LoadImm { dst: v0, value: 5 },
-                RegInstruction::LoadImm { dst: v1, value: 3 },
+                RegInstruction::LoadImm { dst: v0, valor: 5 },
+                RegInstruction::LoadImm { dst: v1, valor: 3 },
                 RegInstruction::RegAdd {
                     dst: v2,
                     a: v0,
@@ -1091,8 +1096,8 @@ mod tests {
         let mut prog = RegProgram::new();
         let v0 = prog.alloc_vreg();
         let block = crate::register_ir::BloqueBasico {
-            label: 0,
-            instructions: vec![RegInstruction::LoadImm { dst: v0, value: 42 }],
+            etiqueta: 0,
+            instructions: vec![RegInstruction::LoadImm { dst: v0, valor: 42 }],
             terminator: RegInstruction::Return { src: v0 },
         };
         prog.blocks.push(block);
@@ -1116,12 +1121,12 @@ mod tests {
 
         // Epílogo final: mov rsp, rbp; pop r14; pop rbx; pop rbp; ret
         // Layout: [48 89 EC] [41 5E] [5B] [5D] [C3] = 8 bytes
-        let len = code.len();
-        assert_eq!(&code[len - 8..len - 5], &[0x48, 0x89, 0xEC]); // mov rsp, rbp
-        assert_eq!(&code[len - 5..len - 3], &[0x41, 0x5E]); // pop r14
-        assert_eq!(code[len - 3], 0x5B); // pop rbx
-        assert_eq!(code[len - 2], 0x5D); // pop rbp
-        assert_eq!(code[len - 1], 0xC3); // ret
+        let longitud = code.len();
+        assert_eq!(&code[longitud - 8..longitud - 5], &[0x48, 0x89, 0xEC]); // mov rsp, rbp
+        assert_eq!(&code[longitud - 5..longitud - 3], &[0x41, 0x5E]); // pop r14
+        assert_eq!(code[longitud - 3], 0x5B); // pop rbx
+        assert_eq!(code[longitud - 2], 0x5D); // pop rbp
+        assert_eq!(code[longitud - 1], 0xC3); // ret
     }
 
     #[test]
@@ -1129,8 +1134,8 @@ mod tests {
         let mut prog = RegProgram::new();
         let v0 = prog.alloc_vreg();
         let block = crate::register_ir::BloqueBasico {
-            label: 0,
-            instructions: vec![RegInstruction::LoadImm { dst: v0, value: 7 }],
+            etiqueta: 0,
+            instructions: vec![RegInstruction::LoadImm { dst: v0, valor: 7 }],
             terminator: RegInstruction::Return { src: v0 },
         };
         prog.blocks.push(block);
@@ -1145,12 +1150,12 @@ mod tests {
         assert_eq!(&code[1..4], &[0x53, 0x41, 0x56]); // push rbx; push r14
         assert_eq!(&code[4..7], &[0x48, 0x89, 0xE5]); // mov rbp, rsp
                                                       // Epílogo: mov rsp, rbp; pop r14; pop rbx; pop rbp; ret
-        let len = code.len();
-        assert_eq!(&code[len - 8..len - 5], &[0x48, 0x89, 0xEC]); // mov rsp, rbp
-        assert_eq!(&code[len - 5..len - 3], &[0x41, 0x5E]); // pop r14
-        assert_eq!(code[len - 3], 0x5B); // pop rbx
-        assert_eq!(code[len - 2], 0x5D); // pop rbp
-        assert_eq!(code[len - 1], 0xC3); // ret
+        let longitud = code.len();
+        assert_eq!(&code[longitud - 8..longitud - 5], &[0x48, 0x89, 0xEC]); // mov rsp, rbp
+        assert_eq!(&code[longitud - 5..longitud - 3], &[0x41, 0x5E]); // pop r14
+        assert_eq!(code[longitud - 3], 0x5B); // pop rbx
+        assert_eq!(code[longitud - 2], 0x5D); // pop rbp
+        assert_eq!(code[longitud - 1], 0xC3); // ret
     }
 
     #[test]
@@ -1158,9 +1163,9 @@ mod tests {
         let mut prog = RegProgram::new();
         let v0 = prog.alloc_vreg();
         let block = crate::register_ir::BloqueBasico {
-            label: 0,
+            etiqueta: 0,
             instructions: vec![RegInstruction::Call {
-                func_name: "foo".into(),
+                nombre_funcion: "foo".into(),
                 args: vec![v0],
             }],
             terminator: RegInstruction::Return { src: v0 },
@@ -1198,9 +1203,9 @@ mod tests {
         let mut prog = RegProgram::new();
         let v0 = prog.alloc_vreg();
         let block = crate::register_ir::BloqueBasico {
-            label: 0,
+            etiqueta: 0,
             instructions: vec![RegInstruction::Call {
-                func_name: "desconocida".into(),
+                nombre_funcion: "desconocida".into(),
                 args: vec![v0],
             }],
             terminator: RegInstruction::Return { src: v0 },
