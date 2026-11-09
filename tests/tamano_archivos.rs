@@ -5,8 +5,8 @@ use std::path::Path;
 
 const EXCEPCIONES: &[&str] = &[];
 
-fn recorrer(dir: &Path, out: &mut Vec<String>) {
-    for e in std::fs::read_dir(dir).expect("directorio") {
+fn recorrer(directorio: &Path, out: &mut Vec<String>) {
+    for e in std::fs::read_dir(directorio).expect("directorio") {
         let p = e.unwrap().path();
         if p.is_dir() {
             recorrer(&p, out);
