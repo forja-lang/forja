@@ -139,7 +139,7 @@ pub fn native_http_parsear_solicitud(
     let ruta = partes[1];
 
     // Parsear cabeceras
-    let mut cabeceras_str = String::new();
+    let mut texto_cabeceras = String::new();
     let mut cuerpo = String::new();
     let mut en_cuerpo = false;
 
@@ -150,23 +150,23 @@ pub fn native_http_parsear_solicitud(
         } else if linea.is_empty() {
             en_cuerpo = true;
         } else {
-            cabeceras_str.push_str(linea);
-            cabeceras_str.push('\n');
+            texto_cabeceras.push_str(linea);
+            texto_cabeceras.push('\n');
         }
     }
 
     let cuerpo = cuerpo.trim_end().to_string();
-    let cabeceras_str = cabeceras_str.trim_end().to_string();
+    let texto_cabeceras = texto_cabeceras.trim_end().to_string();
 
     let salida = construir_mapa_texto(&[
         ("metodo", metodo),
         ("ruta", ruta),
-        ("cabeceras", &cabeceras_str),
+        ("cabeceras", &texto_cabeceras),
         ("cuerpo", &cuerpo),
     ]);
 
-    let idx = vm.alloc_str(Arc::from(salida.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(salida.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Parsea una respuesta HTTP raw
@@ -199,7 +199,7 @@ pub fn native_http_parsear_respuesta(
     let codigo = partes[1];
     let status = if partes.len() >= 3 { partes[2] } else { "" };
 
-    let mut cabeceras_str = String::new();
+    let mut texto_cabeceras = String::new();
     let mut cuerpo = String::new();
     let mut en_cuerpo = false;
 
@@ -210,23 +210,23 @@ pub fn native_http_parsear_respuesta(
         } else if linea.is_empty() {
             en_cuerpo = true;
         } else {
-            cabeceras_str.push_str(linea);
-            cabeceras_str.push('\n');
+            texto_cabeceras.push_str(linea);
+            texto_cabeceras.push('\n');
         }
     }
 
     let cuerpo = cuerpo.trim_end().to_string();
-    let cabeceras_str = cabeceras_str.trim_end().to_string();
+    let texto_cabeceras = texto_cabeceras.trim_end().to_string();
 
     let salida = construir_mapa_texto(&[
         ("codigo", codigo),
         ("status", status),
-        ("cabeceras", &cabeceras_str),
+        ("cabeceras", &texto_cabeceras),
         ("cuerpo", &cuerpo),
     ]);
 
-    let idx = vm.alloc_str(Arc::from(salida.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(salida.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Parsea cabeceras HTTP (texto separado por \n) a mapa textual "|"
@@ -243,17 +243,17 @@ pub fn native_http_parsear_cabeceras(
     let mut mapa = Vec::new();
 
     for linea in texto.lines() {
-        if let Some(pos) = linea.find(':') {
-            let clave = linea[..pos].trim().to_lowercase();
-            let valor = linea[pos + 1..].trim().to_string();
+        if let Some(posicion) = linea.find(':') {
+            let clave = linea[..posicion].trim().to_lowercase();
+            let valor = linea[posicion + 1..].trim().to_string();
             mapa.push((clave, valor));
         }
     }
 
     let pares: Vec<(&str, &str)> = mapa.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     let salida = construir_mapa_texto(&pares);
-    let idx = vm.alloc_str(Arc::from(salida.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(salida.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Retorna el texto descriptivo de un código de status HTTP
@@ -291,8 +291,8 @@ pub fn native_http_texto_status(
         503 => "Service Unavailable",
         _ => "Unknown",
     };
-    let idx = _vm.alloc_str(Arc::from(texto));
-    Ok(ValorFast::texto(idx))
+    let indice = _vm.alloc_str(Arc::from(texto));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Retorna la fecha actual en formato RFC 7231 (HTTP-date)
@@ -358,8 +358,8 @@ pub fn native_http_fecha_texto(
         Err(_) => "Thu, 01 Jan 1970 00:00:00 GMT".to_string(),
     };
 
-    let idx = _vm.alloc_str(Arc::from(datetime.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = _vm.alloc_str(Arc::from(datetime.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 // ─── URL / Query ──────────────────────────────────────────────────
@@ -374,14 +374,14 @@ pub fn native_url_decodificar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<V
     let texto = obtener_texto(vm, args[0])?;
 
     let mut resultado = Vec::with_capacity(texto.len());
-    let mut chars = texto.bytes();
+    let mut caracteres = texto.bytes();
 
-    while let Some(b) = chars.next() {
+    while let Some(b) = caracteres.next() {
         match b {
             b'+' => resultado.push(b' '),
             b'%' => {
-                let hi = chars.next().and_then(|c| (c as char).to_digit(16));
-                let lo = chars.next().and_then(|c| (c as char).to_digit(16));
+                let hi = caracteres.next().and_then(|c| (c as char).to_digit(16));
+                let lo = caracteres.next().and_then(|c| (c as char).to_digit(16));
                 match (hi, lo) {
                     (Some(h), Some(l)) => resultado.push((h * 16 + l) as u8),
                     _ => resultado.push(b'%'),
@@ -392,8 +392,8 @@ pub fn native_url_decodificar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<V
     }
 
     let decodificado = String::from_utf8_lossy(&resultado).to_string();
-    let idx = vm.alloc_str(Arc::from(decodificado.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(decodificado.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Codifica una URL (percent-encoding)
@@ -417,8 +417,8 @@ pub fn native_url_codificar(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
         }
     }
 
-    let idx = vm.alloc_str(Arc::from(resultado.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(resultado.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Parsea una query string a mapa textual "|"
@@ -432,9 +432,9 @@ pub fn native_query_parsear(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
 
     let mut mapa = Vec::new();
     for par in texto.split('&') {
-        if let Some(pos) = par.find('=') {
-            let clave = url_decodificar_simple(&par[..pos]);
-            let valor = url_decodificar_simple(&par[pos + 1..]);
+        if let Some(posicion) = par.find('=') {
+            let clave = url_decodificar_simple(&par[..posicion]);
+            let valor = url_decodificar_simple(&par[posicion + 1..]);
             mapa.push((clave, valor));
         } else if !par.is_empty() {
             mapa.push((url_decodificar_simple(par), String::new()));
@@ -443,20 +443,20 @@ pub fn native_query_parsear(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
 
     let pares_ref: Vec<(&str, &str)> = mapa.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     let salida = construir_mapa_texto(&pares_ref);
-    let idx = vm.alloc_str(Arc::from(salida.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(salida.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Decodificación URL simple (reusable, sin VM)
 pub fn url_decodificar_simple(texto: &str) -> String {
     let mut resultado = Vec::with_capacity(texto.len());
-    let mut chars = texto.bytes();
-    while let Some(b) = chars.next() {
+    let mut caracteres = texto.bytes();
+    while let Some(b) = caracteres.next() {
         match b {
             b'+' => resultado.push(b' '),
             b'%' => {
-                let hi = chars.next().and_then(|c| (c as char).to_digit(16));
-                let lo = chars.next().and_then(|c| (c as char).to_digit(16));
+                let hi = caracteres.next().and_then(|c| (c as char).to_digit(16));
+                let lo = caracteres.next().and_then(|c| (c as char).to_digit(16));
                 match (hi, lo) {
                     (Some(h), Some(l)) => resultado.push((h * 16 + l) as u8),
                     _ => resultado.push(b'%'),
@@ -536,8 +536,8 @@ pub fn native_mime_tipo_archivo(
         .map(|(_, v)| *v)
         .unwrap_or("application/octet-stream");
 
-    let idx = _vm.alloc_str(Arc::from(mime));
-    Ok(ValorFast::texto(idx))
+    let indice = _vm.alloc_str(Arc::from(mime));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Retorna la extensión sugerida para un Content-Type
@@ -558,14 +558,14 @@ pub fn native_mime_extension_por_tipo(
         .map(|(k, _)| *k)
         .unwrap_or("bin");
 
-    let idx = _vm.alloc_str(Arc::from(ext));
-    Ok(ValorFast::texto(idx))
+    let indice = _vm.alloc_str(Arc::from(ext));
+    Ok(ValorFast::texto(indice))
 }
 
 // ─── WebSocket ──────────────────────────────────────────────────
 
-/// Genera el Accept key para WebSocket handshake (RFC 6455)
-/// key: el valor del header Sec-WebSocket-Key
+/// Genera el Accept clave para WebSocket handshake (RFC 6455)
+/// clave: el valor del header Sec-WebSocket-Key
 pub fn native_ws_handshake_aceptar(
     vm: &mut dyn Host,
     args: &[ValorFast],
@@ -575,15 +575,15 @@ pub fn native_ws_handshake_aceptar(
             "_ws_handshake_aceptar requiere 1 argumento: key (texto)".into(),
         ));
     }
-    let key = obtener_texto(vm, args[0])?;
+    let clave = obtener_texto(vm, args[0])?;
     const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-5AB9DC11B85B";
 
-    let concatenado = format!("{}{}", key.trim(), WS_GUID);
+    let concatenado = format!("{}{}", clave.trim(), WS_GUID);
     let hash = crate::hash::Sha256::digest(concatenado.as_bytes());
     let accept = crate::base64::b64_encode(&hash);
 
-    let idx = vm.alloc_str(Arc::from(accept.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(accept.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Codifica un frame WebSocket (RFC 6455)
@@ -608,41 +608,41 @@ pub fn native_ws_frame_codificar(
     };
 
     let payload = datos.as_bytes();
-    let len = payload.len();
+    let longitud = payload.len();
 
     // Calcular tamaño del frame
     let header_size =
-        2 + if len > 125 && len <= 65535 {
+        2 + if longitud > 125 && longitud <= 65535 {
             2
-        } else if len > 65535 {
+        } else if longitud > 65535 {
             8
         } else {
             0
         } + if enmascarado { 4 } else { 0 };
 
-    let mut frame = Vec::with_capacity(header_size + len);
+    let mut frame = Vec::with_capacity(header_size + longitud);
 
     // Byte 1: FIN + opcode
     frame.push(0x80 | (opcode & 0x0F));
 
     // Byte 2+: length
-    if len < 126 {
+    if longitud < 126 {
         frame.push(if enmascarado {
-            0x80 | len as u8
+            0x80 | longitud as u8
         } else {
-            len as u8
+            longitud as u8
         });
-    } else if len <= 65535 {
+    } else if longitud <= 65535 {
         frame.push(if enmascarado { 0xFE } else { 126 });
-        frame.extend_from_slice(&(len as u16).to_be_bytes());
+        frame.extend_from_slice(&(longitud as u16).to_be_bytes());
     } else {
         frame.push(if enmascarado { 0xFF } else { 127 });
-        frame.extend_from_slice(&(len as u64).to_be_bytes());
+        frame.extend_from_slice(&(longitud as u64).to_be_bytes());
     }
 
-    // Masking key (si enmascarado)
+    // Masking clave (si enmascarado)
     let mask_key = if enmascarado {
-        let key: [u8; 4] = [
+        let clave: [u8; 4] = [
             (std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -652,8 +652,8 @@ pub fn native_ws_frame_codificar(
             0x5E,
             0x2B,
         ];
-        frame.extend_from_slice(&key);
-        key
+        frame.extend_from_slice(&clave);
+        clave
     } else {
         [0u8; 4]
     };
@@ -668,8 +668,8 @@ pub fn native_ws_frame_codificar(
     }
 
     let frame_str = String::from_utf8_lossy(&frame).to_string();
-    let idx = vm.alloc_str(Arc::from(frame_str.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(frame_str.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Decodifica un frame WebSocket
@@ -695,9 +695,9 @@ pub fn native_ws_frame_decodificar(
     let fin = (frame[0] & 0x80) != 0;
     let opcode = frame[0] & 0x0F;
     let enmascarado = (frame[1] & 0x80) != 0;
-    let mut offset = 2;
+    let mut desplazamiento = 2;
 
-    let len = match frame[1] & 0x7F {
+    let longitud = match frame[1] & 0x7F {
         126 => {
             if frame.len() < 4 {
                 return Err(ErrFast::TipoInv(
@@ -705,7 +705,7 @@ pub fn native_ws_frame_decodificar(
                 ));
             }
             let l = u16::from_be_bytes([frame[2], frame[3]]) as usize;
-            offset += 2;
+            desplazamiento += 2;
             l
         }
         127 => {
@@ -717,44 +717,44 @@ pub fn native_ws_frame_decodificar(
             let l = u64::from_be_bytes([
                 frame[2], frame[3], frame[4], frame[5], frame[6], frame[7], frame[8], frame[9],
             ]) as usize;
-            offset += 8;
+            desplazamiento += 8;
             l
         }
         n => n as usize,
     };
 
     let mask_key = if enmascarado {
-        if frame.len() < offset + 4 {
+        if frame.len() < desplazamiento + 4 {
             return Err(ErrFast::TipoInv(
                 "ws_frame_invalido: máscara mal formada".into(),
             ));
         }
-        let key = [
-            frame[offset],
-            frame[offset + 1],
-            frame[offset + 2],
-            frame[offset + 3],
+        let clave = [
+            frame[desplazamiento],
+            frame[desplazamiento + 1],
+            frame[desplazamiento + 2],
+            frame[desplazamiento + 3],
         ];
-        offset += 4;
-        key
+        desplazamiento += 4;
+        clave
     } else {
         [0u8; 4]
     };
 
-    if frame.len() < offset + len {
+    if frame.len() < desplazamiento + longitud {
         return Err(ErrFast::TipoInv(
             "ws_frame_invalido: payload truncado".into(),
         ));
     }
 
     let payload_decodificado: Vec<u8> = if enmascarado {
-        frame[offset..offset + len]
+        frame[desplazamiento..desplazamiento + longitud]
             .iter()
             .enumerate()
             .map(|(i, &b)| b ^ mask_key[i % 4])
             .collect()
     } else {
-        frame[offset..offset + len].to_vec()
+        frame[desplazamiento..desplazamiento + longitud].to_vec()
     };
 
     let datos = String::from_utf8_lossy(&payload_decodificado).to_string();
@@ -763,11 +763,11 @@ pub fn native_ws_frame_decodificar(
         ("opcode", &opcode.to_string()),
         ("datos", &datos),
         ("fin", if fin { "true" } else { "false" }),
-        ("longitud", &len.to_string()),
+        ("longitud", &longitud.to_string()),
     ]);
 
-    let idx = vm.alloc_str(Arc::from(salida.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(salida.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 // ─── Chunked Transfer Encoding ──────────────────────────────────
@@ -783,26 +783,26 @@ pub fn native_chunked_codificar(
         ));
     }
     let datos = obtener_texto(vm, args[0])?;
-    let bytes = datos.as_bytes();
+    let octetos = datos.as_bytes();
     let chunk_size = 4096; // tamaño de chunk
 
     let mut resultado = String::new();
-    let mut pos = 0;
+    let mut posicion = 0;
 
-    while pos < bytes.len() {
-        let end = (pos + chunk_size).min(bytes.len());
-        let chunk = &bytes[pos..end];
+    while posicion < octetos.len() {
+        let fin = (posicion + chunk_size).min(octetos.len());
+        let chunk = &octetos[posicion..fin];
         resultado.push_str(&format!("{:x}\r\n", chunk.len()));
         resultado.push_str(&String::from_utf8_lossy(chunk));
         resultado.push_str("\r\n");
-        pos = end;
+        posicion = fin;
     }
 
     // Chunk final
     resultado.push_str("0\r\n\r\n");
 
-    let idx = vm.alloc_str(Arc::from(resultado.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(resultado.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Decodifica chunked transfer encoding
@@ -868,8 +868,8 @@ pub fn native_chunked_decodificar(
         resultado.join("")
     };
 
-    let idx = vm.alloc_str(Arc::from(decodificado.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(decodificado.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 // ─── Construcción de mensajes HTTP raw ──────────────────────────
@@ -914,8 +914,8 @@ pub fn native_http_crear_solicitud_raw(
         solicitud.push_str("\r\n");
     }
 
-    let idx = vm.alloc_str(Arc::from(solicitud.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(solicitud.as_str()));
+    Ok(ValorFast::texto(indice))
 }
 
 /// Construye una respuesta HTTP raw a partir de componentes
@@ -979,6 +979,6 @@ pub fn native_http_crear_respuesta_raw(
         respuesta.push_str("Content-Length: 0\r\n\r\n");
     }
 
-    let idx = vm.alloc_str(Arc::from(respuesta.as_str()));
-    Ok(ValorFast::texto(idx))
+    let indice = vm.alloc_str(Arc::from(respuesta.as_str()));
+    Ok(ValorFast::texto(indice))
 }
