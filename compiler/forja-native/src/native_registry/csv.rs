@@ -17,12 +17,12 @@ impl NativeRegistry {
 pub fn native_csv_parsear(vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let texto = obtener_texto(vm, args[0])?;
     let mut filas: Vec<ValorFast> = Vec::new();
-    for line in texto.lines() {
-        let campos: Vec<ValorFast> = line
+    for linea in texto.lines() {
+        let campos: Vec<ValorFast> = linea
             .split(',')
             .map(|c| {
-                let idx = vm.alloc_str(Arc::from(c.trim()));
-                ValorFast::texto(idx)
+                let indice = vm.alloc_str(Arc::from(c.trim()));
+                ValorFast::texto(indice)
             })
             .collect();
         filas.push(ValorFast::arreglo(vm.alloc_arr(campos)));
@@ -42,22 +42,22 @@ pub fn native_csv_parsear_con_cabeceras(
     }
     let headers: Vec<&str> = lines[0].split(',').map(|c| c.trim()).collect();
     let mut filas: Vec<ValorFast> = Vec::new();
-    for line in &lines[1..] {
-        let vals: Vec<&str> = line.split(',').map(|c| c.trim()).collect();
-        let mut map = Vec::new();
+    for linea in &lines[1..] {
+        let vals: Vec<&str> = linea.split(',').map(|c| c.trim()).collect();
+        let mut mapa = Vec::new();
         for (i, h) in headers.iter().enumerate() {
             let v = vals.get(i).copied().unwrap_or("");
             let h_val = {
-                let idx = vm.alloc_str(Arc::from(*h));
-                ValorFast::texto(idx)
+                let indice = vm.alloc_str(Arc::from(*h));
+                ValorFast::texto(indice)
             };
             let v_val = {
-                let idx = vm.alloc_str(Arc::from(v));
-                ValorFast::texto(idx)
+                let indice = vm.alloc_str(Arc::from(v));
+                ValorFast::texto(indice)
             };
-            map.push(ValorFast::arreglo(vm.alloc_arr(vec![h_val, v_val])));
+            mapa.push(ValorFast::arreglo(vm.alloc_arr(vec![h_val, v_val])));
         }
-        filas.push(ValorFast::arreglo(vm.alloc_arr(map)));
+        filas.push(ValorFast::arreglo(vm.alloc_arr(mapa)));
     }
     Ok(ValorFast::arreglo(vm.alloc_arr(filas)))
 }
@@ -65,20 +65,20 @@ pub fn native_csv_parsear_con_cabeceras(
 pub fn native_csv_generar(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorFast, ErrFast> {
     let arr_idx = args[0].indice_arreglo() as usize;
     let filas_arr = _vm.get_arr(arr_idx as u32).clone();
-    let mut out = String::new();
+    let mut salida = String::new();
     for fila_val in filas_arr.iter() {
         let f_idx = fila_val.indice_arreglo() as usize;
         let campos = _vm.get_arr(f_idx as u32).clone();
-        let line: Vec<String> = campos
+        let linea: Vec<String> = campos
             .iter()
             .map(|c| _vm.get_str(c.indice_texto()).to_string())
             .collect();
-        out.push_str(&line.join(","));
-        out.push('\n');
+        salida.push_str(&linea.join(","));
+        salida.push('\n');
     }
     Ok({
-        let idx = _vm.alloc_str(Arc::from(out.as_str()));
-        ValorFast::texto(idx)
+        let indice = _vm.alloc_str(Arc::from(salida.as_str()));
+        ValorFast::texto(indice)
     })
 }
 
@@ -89,21 +89,21 @@ pub fn native_csv_generar_con_cabeceras(
     let headers = obtener_texto(_vm, args[0])?;
     let arr_idx = args[1].indice_arreglo() as usize;
     let filas = _vm.get_arr(arr_idx as u32).clone();
-    let mut out = String::new();
-    out.push_str(&headers);
-    out.push('\n');
+    let mut salida = String::new();
+    salida.push_str(&headers);
+    salida.push('\n');
     for fila_val in filas.iter() {
         let f_idx = fila_val.indice_arreglo() as usize;
         let campos = _vm.get_arr(f_idx as u32).clone();
-        let line: Vec<String> = campos
+        let linea: Vec<String> = campos
             .iter()
             .map(|c| _vm.get_str(c.indice_texto()).to_string())
             .collect();
-        out.push_str(&line.join(","));
-        out.push('\n');
+        salida.push_str(&linea.join(","));
+        salida.push('\n');
     }
     Ok({
-        let idx = _vm.alloc_str(Arc::from(out.as_str()));
-        ValorFast::texto(idx)
+        let indice = _vm.alloc_str(Arc::from(salida.as_str()));
+        ValorFast::texto(indice)
     })
 }
