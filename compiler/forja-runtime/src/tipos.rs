@@ -131,9 +131,9 @@ impl ValorFast {
     const TAG_TRUE: u64 = 0x0002000000000000;
     const TAG_INT: u64 = 0x0003000000000000;
     pub const TAG_OBJ: u64 = 0x0004000000000000;
-    const TAG_STR: u64 = 0x0005000000000000;
+    const ETIQUETA_TEXTO: u64 = 0x0005000000000000;
     const TAG_ARR: u64 = 0x0006000000000000;
-    const TAG_MAP: u64 = 0x0007000000000000;
+    const ETIQUETA_MAPA: u64 = 0x0007000000000000;
 
     // ─── Constructores ────────────────────────────────────────────────────────
     #[inline(always)]
@@ -175,7 +175,7 @@ impl ValorFast {
 
     #[inline(always)]
     pub fn texto(idx: u32) -> Self {
-        ValorFast(Self::QNAN | Self::TAG_STR | idx as u64)
+        ValorFast(Self::QNAN | Self::ETIQUETA_TEXTO | idx as u64)
     }
 
     #[inline(always)]
@@ -185,7 +185,7 @@ impl ValorFast {
 
     #[inline(always)]
     pub fn mapa(idx: u32) -> Self {
-        ValorFast(Self::QNAN | Self::TAG_MAP | idx as u64)
+        ValorFast(Self::QNAN | Self::ETIQUETA_MAPA | idx as u64)
     }
 
     // ─── Constante Exacto ──────────────────────────────────────────────────
@@ -235,7 +235,7 @@ impl ValorFast {
 
     #[inline(always)]
     pub fn es_texto(&self) -> bool {
-        self.es_tagged() && (self.0 & Self::TAG_MASK) == Self::TAG_STR
+        self.es_tagged() && (self.0 & Self::TAG_MASK) == Self::ETIQUETA_TEXTO
     }
 
     #[inline(always)]
@@ -245,7 +245,7 @@ impl ValorFast {
 
     #[inline(always)]
     pub fn es_mapa(&self) -> bool {
-        self.es_tagged() && (self.0 & Self::TAG_MASK) == Self::TAG_MAP
+        self.es_tagged() && (self.0 & Self::TAG_MASK) == Self::ETIQUETA_MAPA
     }
 
     #[inline(always)]
@@ -646,17 +646,17 @@ impl Pic {
                 // pero primero movemos cualquier hit existente al final (promoción LRU).
                 if let Some(hit_pos) = arr.iter().position(|&(c, _)| c == clase) {
                     // Hit: clase ya está en el cache, solo actualizar idx y mover al final
-                    let mut new_arr = arr;
+                    let mut arreglo_nuevo = arr;
                     // Shift izquierda desde hit_pos
                     for i in hit_pos..(count as usize - 1) {
-                        new_arr[i] = new_arr[i + 1];
+                        arreglo_nuevo[i] = arreglo_nuevo[i + 1];
                     }
-                    new_arr[count as usize - 1] = (clase, idx);
-                    Pic::Poly(new_arr, count)
+                    arreglo_nuevo[count as usize - 1] = (clase, idx);
+                    Pic::Poly(arreglo_nuevo, count)
                 } else {
                     // Miss: reemplazar la entrada más antigua (posición 0)
-                    let new_arr = [arr[1], arr[2], arr[3], (clase, idx)];
-                    Pic::Poly(new_arr, 4)
+                    let arreglo_nuevo = [arr[1], arr[2], arr[3], (clase, idx)];
+                    Pic::Poly(arreglo_nuevo, 4)
                 }
             }
             Pic::Mega => Pic::Mega,
