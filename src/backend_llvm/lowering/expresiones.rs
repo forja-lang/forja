@@ -59,10 +59,24 @@ impl Lowering {
                 ));
                 Ok(V::Texto(r))
             }
+            // El runtime de Exacto (`runtime.c`) está escrito, pero la ruta
+            // nativa todavía no se habilita: el caso mínimo revienta y no hay
+            // benchmark que lo ejercite. Mejor un error que un binario roto.
+            // Upgrade: habilitar cuando `forja aot` corra 400_exacto.fa igual
+            // que la VM (ver el bloque `forja_exacto_*` de runtime.c).
             Expresion::LiteralExacto(..) => Err(
-                "`Exacto` (BigDecimal) no está soportado en la ruta LLVM; usá Decimal o la VM"
+                "`Exacto` (BigDecimal) todavía no está habilitado en la ruta nativa: compilá con la VM o usá Decimal"
                     .into(),
             ),
+            #[allow(unreachable_patterns)]
+            Expresion::LiteralExacto(coef, escala) => {
+                let r = self.r();
+                self.linea(&format!(
+                    "{} = call ptr @forja_exacto_nuevo(i128 {}, i64 {})",
+                    r, coef, escala
+                ));
+                Ok(V::Exacto(r))
+            }
             Expresion::Identificador { nombre, .. } => self.identificador(nombre),
             Expresion::Grupo(g) => self.expr(g),
             Expresion::Binaria {
@@ -147,6 +161,7 @@ impl Lowering {
                         T::Texto => Ok(V::Texto(r)),
                         T::Arreglo => Ok(V::Arreglo(r)),
                         T::Mapa => Ok(V::Mapa(r)),
+                        T::Exacto => Ok(V::Exacto(r)),
                         T::Enum(c) => Ok(V::Enum(r, c)),
                         T::Canal => Ok(V::Canal(r)),
                         T::Closure => Ok(V::Closure(r)),
@@ -553,6 +568,50 @@ impl Lowering {
             return Ok(V::Int(cmp));
         }
 
+        // Exacto: si alguno es Exacto, todo se convierte a Exacto (como la VM).
+        if a.t() == T::Exacto || b.t() == T::Exacto {
+            let x = self.a_exacto(&a);
+            let y = self.a_exacto(&b);
+            let r = self.r();
+            match operador {
+                Suma | Resta | Multiplicacion | Division => {
+                    let f = match operador {
+                        Suma => "forja_exacto_sumar",
+                        Resta => "forja_exacto_restar",
+                        Multiplicacion => "forja_exacto_multiplicar",
+                        _ => "forja_exacto_dividir",
+                    };
+                    self.linea(&format!("{} = call ptr @{}(ptr {}, ptr {})", r, f, x, y));
+                    return Ok(V::Exacto(r));
+                }
+                IgualIgual | Diferente | Mayor | Menor | MayorIgual | MenorIgual => {
+                    let c = self.r();
+                    self.linea(&format!(
+                        "{} = call i64 @forja_exacto_comparar(ptr {}, ptr {})",
+                        c, x, y
+                    ));
+                    let op = match operador {
+                        IgualIgual => "eq",
+                        Diferente => "ne",
+                        Mayor => "sgt",
+                        Menor => "slt",
+                        MayorIgual => "sge",
+                        _ => "sle",
+                    };
+                    let z = self.r();
+                    self.linea(&format!("{} = icmp {} i64 {}, 0", z, op, c));
+                    let zb = self.r();
+                    self.linea(&format!("{} = zext i1 {} to i64", zb, z));
+                    return Ok(V::Int(zb));
+                }
+                Modulo | Y | O => {
+                    return Err(
+                        "`%`/`y`/`o` sobre `Exacto` no está soportado en la ruta LLVM".into(),
+                    )
+                }
+            }
+        }
+
         let decimal = a.t() == T::Dec || b.t() == T::Dec;
         if decimal {
             let x = self.como(&a, T::Dec);
@@ -697,6 +756,48 @@ impl Lowering {
             self.linea("call void @forja_nueva_linea()");
             return Ok(V::Int("0".into()));
         }
+        // Las funciones del programa (incluida la stdlib inlineada) tienen
+        // prioridad sobre los builtins: `dividir` puede ser del usuario.
+        if let Some((params, ret)) = self.firmas.get(nombre).cloned() {
+            let mut args = Vec::new();
+            for (i, a) in argumentos.iter().enumerate() {
+                let v = self.expr(a)?;
+                let t = params.get(i).cloned().unwrap_or_else(|| v.t());
+                args.push((self.como(&v, t.clone()), t.llvm().to_llvm_ir()));
+            }
+            let r = self.r();
+            let lista: Vec<String> = args.iter().map(|(v, t)| format!("{} {}", t, v)).collect();
+            let destino = if nombre == "main" {
+                "forja_main_usuario".to_string()
+            } else {
+                nombre.to_string()
+            };
+            if matches!(ret, T::Nulo) {
+                self.linea(&format!("call void @{}({})", destino, lista.join(", ")));
+                return Ok(V::Nulo);
+            }
+            self.linea(&format!(
+                "{} = call {} @{}({})",
+                r,
+                ret.llvm().to_llvm_ir(),
+                destino,
+                lista.join(", ")
+            ));
+            return Ok(match &ret {
+                T::Dec => V::Dec(r),
+                T::Texto => V::Texto(r),
+                T::Arreglo => V::Arreglo(r),
+                T::Mapa => V::Mapa(r),
+                T::Exacto => V::Exacto(r),
+                T::Enum(c) => V::Enum(r, c.clone()),
+                T::Canal => V::Canal(r),
+                T::Closure => V::Closure(r),
+                T::Clase(c) => V::Clase(r, c.clone()),
+                T::Funcion => V::Funcion(r),
+                T::Nulo => V::Nulo,
+                T::Int => V::Int(r),
+            });
+        }
         if let Some(v) = self.builtin(nombre, argumentos)? {
             return Ok(v);
         }
@@ -814,45 +915,6 @@ impl Lowering {
                 return Ok(V::Int(r));
             }
         }
-        if let Some((params, ret)) = self.firmas.get(nombre).cloned() {
-            let mut args = Vec::new();
-            for (i, a) in argumentos.iter().enumerate() {
-                let v = self.expr(a)?;
-                let t = params.get(i).cloned().unwrap_or_else(|| v.t());
-                args.push((self.como(&v, t.clone()), t.llvm().to_llvm_ir()));
-            }
-            let r = self.r();
-            let lista: Vec<String> = args.iter().map(|(v, t)| format!("{} {}", t, v)).collect();
-            let destino = if nombre == "main" {
-                "forja_main_usuario".to_string()
-            } else {
-                nombre.to_string()
-            };
-            if matches!(ret, T::Nulo) {
-                self.linea(&format!("call void @{}({})", destino, lista.join(", ")));
-                return Ok(V::Nulo);
-            }
-            self.linea(&format!(
-                "{} = call {} @{}({})",
-                r,
-                ret.llvm().to_llvm_ir(),
-                destino,
-                lista.join(", ")
-            ));
-            return Ok(match &ret {
-                T::Dec => V::Dec(r),
-                T::Texto => V::Texto(r),
-                T::Arreglo => V::Arreglo(r),
-                T::Mapa => V::Mapa(r),
-                T::Enum(c) => V::Enum(r, c.clone()),
-                T::Canal => V::Canal(r),
-                T::Closure => V::Closure(r),
-                T::Clase(c) => V::Clase(r, c.clone()),
-                T::Funcion => V::Funcion(r),
-                T::Nulo => V::Nulo,
-                T::Int => V::Int(r),
-            });
-        }
         if let Some((params, ret)) = self.externas.get(nombre).cloned() {
             let real = self
                 .nombres_externos
@@ -899,7 +961,7 @@ impl Lowering {
 
     fn builtin(&mut self, nombre: &str, args: &[Expresion]) -> Result<Option<V>, String> {
         let v = match nombre {
-            "longitud" | "len" => {
+            "longitud" | "len" | "largo" => {
                 let v = self.arg(nombre, args, 0)?;
                 match v.t() {
                     T::Texto => {
@@ -924,27 +986,54 @@ impl Lowering {
             }
             "a_texto" => {
                 let v = self.arg(nombre, args, 0)?;
+                if v.t() == T::Exacto {
+                    let e = self.como(&v, T::Exacto);
+                    let r = self.r();
+                    self.linea(&format!(
+                        "{} = call ptr @forja_exacto_a_texto(ptr {})",
+                        r, e
+                    ));
+                    return Ok(Some(V::Texto(r)));
+                }
                 let s = self.como(&v, T::Texto);
                 V::Texto(s)
             }
-            "a_entero" => {
+            "a_entero" | "a_numero" => {
                 let v = self.arg(nombre, args, 0)?;
+                if v.t() == T::Exacto {
+                    let e = self.como(&v, T::Exacto);
+                    let r = self.r();
+                    self.linea(&format!(
+                        "{} = call i64 @forja_exacto_a_entero(ptr {})",
+                        r, e
+                    ));
+                    return Ok(Some(V::Int(r)));
+                }
                 let s = self.como(&v, T::Int);
                 V::Int(s)
             }
             "a_decimal" | "a_flotante" => {
                 let v = self.arg(nombre, args, 0)?;
+                if v.t() == T::Exacto {
+                    let e = self.como(&v, T::Exacto);
+                    let r = self.r();
+                    self.linea(&format!(
+                        "{} = call double @forja_exacto_a_decimal(ptr {})",
+                        r, e
+                    ));
+                    return Ok(Some(V::Dec(r)));
+                }
                 let d = self.como(&v, T::Dec);
                 V::Dec(d)
             }
-            "tiempo_ms" => {
+            "tiempo_ms" | "tiempo_actual" => {
                 let r = self.r();
                 self.linea(&format!("{} = call i64 @forja_tiempo_ms()", r));
                 V::Int(r)
             }
             "indice_de" => {
-                let arg0 = self.arg(nombre, args, 0)?;
-                let s = self.como(&arg0, T::Texto);
+                let v = self.arg(nombre, args, 0)?;
+                let s = self.como(&v, T::Texto);
                 let arg1 = self.arg(nombre, args, 1)?;
                 let sub = self.como(&arg1, T::Texto);
                 let r = self.r();
@@ -955,8 +1044,8 @@ impl Lowering {
                 V::Int(r)
             }
             "subcadena" => {
-                let arg0 = self.arg(nombre, args, 0)?;
-                let s = self.como(&arg0, T::Texto);
+                let v = self.arg(nombre, args, 0)?;
+                let s = self.como(&v, T::Texto);
                 let arg1 = self.arg(nombre, args, 1)?;
                 let i = self.como(&arg1, T::Int);
                 let arg2 = self.arg(nombre, args, 2)?;
@@ -969,22 +1058,22 @@ impl Lowering {
                 V::Texto(r)
             }
             "a_mayusculas" => {
-                let arg0 = self.arg(nombre, args, 0)?;
-                let s = self.como(&arg0, T::Texto);
+                let v = self.arg(nombre, args, 0)?;
+                let s = self.como(&v, T::Texto);
                 let r = self.r();
                 self.linea(&format!("{} = call ptr @forja_a_mayusculas(ptr {})", r, s));
                 V::Texto(r)
             }
             "a_minusculas" => {
-                let arg0 = self.arg(nombre, args, 0)?;
-                let s = self.como(&arg0, T::Texto);
+                let v = self.arg(nombre, args, 0)?;
+                let s = self.como(&v, T::Texto);
                 let r = self.r();
                 self.linea(&format!("{} = call ptr @forja_a_minusculas(ptr {})", r, s));
                 V::Texto(r)
             }
             "contiene" | "empieza_con" | "termina_con" => {
-                let arg0 = self.arg(nombre, args, 0)?;
-                let s = self.como(&arg0, T::Texto);
+                let v = self.arg(nombre, args, 0)?;
+                let s = self.como(&v, T::Texto);
                 let arg1 = self.arg(nombre, args, 1)?;
                 let sub = self.como(&arg1, T::Texto);
                 let r = self.r();
@@ -1006,6 +1095,82 @@ impl Lowering {
                 ));
                 V::Arreglo(r)
             }
+            "absoluto" => {
+                let v = self.arg(nombre, args, 0)?;
+                match v {
+                    V::Int(r) => {
+                        let neg = self.r();
+                        self.linea(&format!("{} = icmp slt i64 {}, 0", neg, r));
+                        let cero = self.r();
+                        self.linea(&format!("{} = sub i64 0, {}", cero, r));
+                        let res = self.r();
+                        self.linea(&format!(
+                            "{} = select i1 {}, i64 {}, i64 {}",
+                            res, neg, cero, r
+                        ));
+                        V::Int(res)
+                    }
+                    V::Dec(r) => {
+                        let neg = self.r();
+                        self.linea(&format!("{} = fcmp olt double {}, 0.0", neg, r));
+                        let cero = self.r();
+                        self.linea(&format!("{} = fneg double {}", cero, r));
+                        let res = self.r();
+                        self.linea(&format!(
+                            "{} = select i1 {}, double {}, double {}",
+                            res, neg, cero, r
+                        ));
+                        V::Dec(res)
+                    }
+                    V::Exacto(r) => {
+                        // |x| = x si x >= 0, si no 0 - x
+                        let e = self.como(&V::Exacto(r.clone()), T::Exacto);
+                        let cero = self.r();
+                        self.linea(&format!(
+                            "{} = call ptr @forja_exacto_desde_entero(i64 0)",
+                            cero
+                        ));
+                        let cmp = self.r();
+                        self.linea(&format!(
+                            "{} = call i64 @forja_exacto_comparar(ptr {}, ptr {})",
+                            cmp, e, cero
+                        ));
+                        let neg = self.r();
+                        self.linea(&format!("{} = icmp slt i64 {}, 0", neg, cmp));
+                        let rest = self.r();
+                        self.linea(&format!(
+                            "{} = call ptr @forja_exacto_restar(ptr {}, ptr {})",
+                            rest, cero, e
+                        ));
+                        let res = self.r();
+                        self.linea(&format!(
+                            "{} = select i1 {}, ptr {}, ptr {}",
+                            res, neg, rest, e
+                        ));
+                        V::Exacto(res)
+                    }
+                    otro => return Err(format!("`absoluto` no aplica a un {}", otro.t().nombre())),
+                }
+            }
+            "dividir" => {
+                let a0 = self.arg(nombre, args, 0)?;
+                let s = self.como(&a0, T::Texto);
+                let a1 = self.arg(nombre, args, 1)?;
+                let sep = self.como(&a1, T::Texto);
+                let r = self.r();
+                self.linea(&format!(
+                    "{} = call ptr @forja_dividir(ptr {}, ptr {})",
+                    r, s, sep
+                ));
+                V::Arreglo(r)
+            }
+            "recortar" => {
+                let a0 = self.arg(nombre, args, 0)?;
+                let s = self.como(&a0, T::Texto);
+                let r = self.r();
+                self.linea(&format!("{} = call ptr @forja_recortar(ptr {})", r, s));
+                V::Texto(r)
+            }
             "reservar" | "reservar_capacidad" => {
                 let arr = self.arg(nombre, args, 0)?;
                 let a = self.como(&arr, T::Arreglo);
@@ -1015,8 +1180,8 @@ impl Lowering {
                 V::Nulo
             }
             "empujar" => {
-                let arg0 = self.arg(nombre, args, 0)?;
-                let arr = self.como(&arg0, T::Arreglo);
+                let v = self.arg(nombre, args, 0)?;
+                let arr = self.como(&v, T::Arreglo);
                 let arg1 = self.arg(nombre, args, 1)?;
                 let v = self.como_slot(&arg1);
                 // Camino rápido inlineado (len < cap → store) y llamada al
@@ -1454,6 +1619,35 @@ impl Lowering {
     /// viajan como `ptrtoint` (no como el número que "parezca" el texto).
     /// Inverso de [`Self::como_slot`]: reconstruye un valor tipado desde la
     /// casilla i64 de un arreglo, entorno o payload de enum.
+    /// Convierte un valor numérico a `Exacto` (Entero → escala 0,
+    /// Decimal → escala 10, igual que la VM).
+    fn a_exacto(&mut self, v: &V) -> String {
+        match v {
+            V::Exacto(r) => r.clone(),
+            V::Dec(r) => {
+                let d = self.r();
+                self.linea(&format!("{} = fmul double {}, 10000000000.0", d, r));
+                let i = self.r();
+                self.linea(&format!("{} = fptosi double {} to i128", i, d));
+                let e = self.r();
+                self.linea(&format!(
+                    "{} = call ptr @forja_exacto_nuevo(i128 {}, i64 10)",
+                    e, i
+                ));
+                e
+            }
+            other => {
+                let i = self.como(other, T::Int);
+                let e = self.r();
+                self.linea(&format!(
+                    "{} = call ptr @forja_exacto_desde_entero(i64 {})",
+                    e, i
+                ));
+                e
+            }
+        }
+    }
+
     pub(super) fn desde_slot(&mut self, crudo: &str, t: &T) -> V {
         match t {
             T::Texto => {
@@ -1480,6 +1674,11 @@ impl Lowering {
                 let p = self.r();
                 self.linea(&format!("{} = inttoptr i64 {} to ptr", p, crudo));
                 V::Closure(p)
+            }
+            T::Exacto => {
+                let p = self.r();
+                self.linea(&format!("{} = inttoptr i64 {} to ptr", p, crudo));
+                V::Exacto(p)
             }
             T::Enum(c) => {
                 let p = self.r();
@@ -1549,6 +1748,12 @@ impl Lowering {
             T::Mapa => {
                 let r = self.como(&v, T::Mapa);
                 self.linea(&format!("call void @forja_imprimir_mapa(ptr {})", r));
+            }
+            T::Exacto => {
+                let e = self.como(&v, T::Exacto);
+                let r = self.r();
+                self.linea(&format!("{} = call ptr @forja_exacto_a_texto(ptr {})", r, e));
+                self.linea(&format!("call void @forja_imprimir_texto(ptr {})", r));
             }
             T::Canal | T::Closure | T::Clase(_) | T::Funcion => {
                 return Err(
@@ -1655,6 +1860,14 @@ impl Lowering {
         metodo: &str,
         argumentos: &[Expresion],
     ) -> Result<V, String> {
+        // Métodos de primitivos: `arr.empujar(x)`, `s.longitud()`, `n.absoluto()`
+        // son `empujar(arr, x)`, `longitud(s)`, `absoluto(n)`.
+        if es_builtin(metodo) || metodo == "absoluto" {
+            let mut args = Vec::with_capacity(argumentos.len() + 1);
+            args.push(objeto.clone());
+            args.extend(argumentos.iter().cloned());
+            return self.llamada(metodo, &args);
+        }
         // Canal: `e.enviar(v)` / `r.recibir()`.
         if let V::Canal(c) = self.expr(objeto)? {
             match metodo {
@@ -1735,6 +1948,7 @@ fn valor_desde(r: &str, t: &T) -> V {
         T::Texto => V::Texto(r.to_string()),
         T::Arreglo => V::Arreglo(r.to_string()),
         T::Mapa => V::Mapa(r.to_string()),
+        T::Exacto => V::Exacto(r.to_string()),
         T::Enum(c) => V::Enum(r.to_string(), c.clone()),
         T::Canal => V::Canal(r.to_string()),
         T::Closure => V::Closure(r.to_string()),
@@ -1743,4 +1957,36 @@ fn valor_desde(r: &str, t: &T) -> V {
         T::Nulo => V::Nulo,
         T::Int => V::Int(r.to_string()),
     }
+}
+
+/// ¿El nombre es un builtin que acepta el receptor como primer argumento?
+/// Lo usa el azúcar de métodos (`arr.empujar(x)` → `empujar(arr, x)`).
+fn es_builtin(nombre: &str) -> bool {
+    matches!(
+        nombre,
+        "longitud"
+            | "len"
+            | "largo"
+            | "a_texto"
+            | "a_entero"
+            | "a_numero"
+            | "a_decimal"
+            | "a_flotante"
+            | "tiempo_ms"
+            | "tiempo_actual"
+            | "indice_de"
+            | "subcadena"
+            | "a_mayusculas"
+            | "a_minusculas"
+            | "contiene"
+            | "empieza_con"
+            | "termina_con"
+            | "reservar"
+            | "reservar_capacidad"
+            | "repetir_arreglo"
+            | "arreglo_relleno"
+            | "empujar"
+            | "dividir"
+            | "recortar"
+    )
 }

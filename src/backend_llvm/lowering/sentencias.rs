@@ -484,6 +484,7 @@ fn valor_param(t: &T, i: usize) -> V {
         T::Texto => V::Texto(format!("%p{}", i)),
         T::Arreglo => V::Arreglo(format!("%p{}", i)),
         T::Mapa => V::Mapa(format!("%p{}", i)),
+        T::Exacto => V::Exacto(format!("%p{}", i)),
         T::Enum(c) => V::Enum(format!("%p{}", i), c.clone()),
         T::Canal => V::Canal(format!("%p{}", i)),
         T::Closure => V::Closure(format!("%p{}", i)),

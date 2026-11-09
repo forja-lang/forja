@@ -534,3 +534,192 @@ void forja_imprimir_mapa(void *pm) {
     }
     fputc('}', stdout);
 }
+
+/* ── Exacto (decimal de precisión arbitraria) ─────────────────────────── */
+/* Mismo modelo que la VM: coeficiente entero de 128 bits y escala decimal.
+ * valor = coef / 10^escala. Las operaciones replican la semántica de
+ * `compiler/forja-runtime/src/tipos.rs` (homogeneizar, mul con suma de escalas,
+ * div con 20 dígitos extra) para que un programa dé lo mismo en la VM y nativo. */
+typedef struct {
+    __int128 coef;
+    uint32_t escala;
+} ForjaExacto;
+
+static void forja_error(const char *msg) {
+    fprintf(stderr, "forja: %s\n", msg);
+    exit(1);
+}
+
+typedef struct {
+    __int128 coef;
+    uint32_t escala;
+} ParExacto;
+
+void *forja_exacto_nuevo(__int128 coef, int64_t escala) {
+    ForjaExacto *e = (ForjaExacto *)forja_alloc((int64_t)sizeof(ForjaExacto));
+    e->coef = coef;
+    e->escala = (uint32_t)escala;
+    return e;
+}
+
+static void homogeneizar2(__int128 *a, uint32_t *sa, __int128 *b, uint32_t *sb) {
+    if (*sa == *sb) return;
+    if (*sa < *sb) {
+        __int128 f = 1;
+        for (uint32_t i = 0; i < *sb - *sa; i++) {
+            if (f > 0 && f > (__int128)0x7fffffffffffffffLL / 10) { /* se deja envolver como la VM */
+            }
+            f *= 10;
+        }
+        *a *= f;
+        *sa = *sb;
+    } else {
+        __int128 f = 1;
+        for (uint32_t i = 0; i < *sa - *sb; i++) f *= 10;
+        *b *= f;
+        *sb = *sa;
+    }
+}
+
+static __int128 pow10_exacto(uint32_t n) {
+    __int128 f = 1;
+    for (uint32_t i = 0; i < n; i++) f *= 10;
+    return f;
+}
+
+void *forja_exacto_desde_entero(int64_t v) {
+    return forja_exacto_nuevo((__int128)v, 0);
+}
+
+void *forja_exacto_sumar(void *pa, void *pb) {
+    ForjaExacto a = *(ForjaExacto *)pa;
+    ForjaExacto b = *(ForjaExacto *)pb;
+    homogeneizar2(&a.coef, &a.escala, &b.coef, &b.escala);
+    return forja_exacto_nuevo(a.coef + b.coef, a.escala);
+}
+
+void *forja_exacto_restar(void *pa, void *pb) {
+    ForjaExacto a = *(ForjaExacto *)pa;
+    ForjaExacto b = *(ForjaExacto *)pb;
+    homogeneizar2(&a.coef, &a.escala, &b.coef, &b.escala);
+    return forja_exacto_nuevo(a.coef - b.coef, a.escala);
+}
+
+void *forja_exacto_multiplicar(void *pa, void *pb) {
+    ForjaExacto a = *(ForjaExacto *)pa;
+    ForjaExacto b = *(ForjaExacto *)pb;
+    return forja_exacto_nuevo(a.coef * b.coef, (int64_t)a.escala + b.escala);
+}
+
+void *forja_exacto_dividir(void *pa, void *pb) {
+    ForjaExacto a = *(ForjaExacto *)pa;
+    ForjaExacto b = *(ForjaExacto *)pb;
+    if (b.coef == 0) return NULL; /* la VM devuelve nulo */
+    homogeneizar2(&a.coef, &a.escala, &b.coef, &b.escala);
+    const uint32_t extra = 20;
+    __int128 dividendo = a.coef * pow10_exacto(extra);
+    return forja_exacto_nuevo(dividendo / b.coef, extra);
+}
+
+int64_t forja_exacto_comparar(void *pa, void *pb) {
+    ForjaExacto a = *(ForjaExacto *)pa;
+    ForjaExacto b = *(ForjaExacto *)pb;
+    homogeneizar2(&a.coef, &a.escala, &b.coef, &b.escala);
+    if (a.coef < b.coef) return -1;
+    if (a.coef > b.coef) return 1;
+    return 0;
+}
+
+int64_t forja_exacto_a_entero(void *pe) {
+    if (!pe) return 0;
+    ForjaExacto e = *(ForjaExacto *)pe;
+    return (int64_t)(e.coef / pow10_exacto(e.escala));
+}
+
+double forja_exacto_a_decimal(void *pe) {
+    if (!pe) return 0.0;
+    ForjaExacto e = *(ForjaExacto *)pe;
+    return (double)e.coef / (double)pow10_exacto(e.escala);
+}
+
+/* Formato idéntico a `mostrar_exacto` de la VM: punto decimal, sin recortar
+ * ceros (150 con escala 2 → "1.50"). */
+char *forja_exacto_a_texto(void *pe) {
+    if (!pe) return forja_dup("nulo");
+    ForjaExacto e = *(ForjaExacto *)pe;
+    char crudo[64];
+    int n = 0;
+    __int128 v = e.coef;
+    int negativo = v < 0;
+    /* se toma el valor absoluto sin desbordar con el mínimo */
+    unsigned __int128 abs_v = negativo ? (unsigned __int128)(-(v + 1)) + 1 : (unsigned __int128)v;
+    char digitos[64];
+    do {
+        digitos[n++] = (char)('0' + (int)(abs_v % 10));
+        abs_v /= 10;
+    } while (abs_v > 0);
+    int total = n + (negativo ? 1 : 0);
+    if (e.escala == 0) {
+        int k = 0;
+        if (negativo) crudo[k++] = '-';
+        for (int i = n - 1; i >= 0; i--) crudo[k++] = digitos[i];
+        crudo[k] = '\0';
+        return forja_dup(crudo);
+    }
+    /* insertar el punto: (digitos - escala) dígitos enteros */
+    int escala = (int)e.escala;
+    int k = 0;
+    if (negativo) crudo[k++] = '-';
+    int enteros = n - escala;
+    if (enteros <= 0) {
+        crudo[k++] = '0';
+        crudo[k++] = '.';
+        for (int i = 0; i < -enteros; i++) crudo[k++] = '0';
+        for (int i = n - 1; i >= 0; i--) crudo[k++] = digitos[i];
+    } else {
+        for (int i = n - 1; i >= escala; i--) crudo[k++] = digitos[i];
+        crudo[k++] = '.';
+        for (int i = escala - 1; i >= 0; i--) crudo[k++] = digitos[i];
+    }
+    crudo[k] = '\0';
+    (void)total;
+    return forja_dup(crudo);
+}
+
+/* Divide `s` por `sep` y devuelve un arreglo de textos (no incluye el separador). */
+void *forja_dividir(const char *s, const char *sep) {
+    ForjaArreglo *a = (ForjaArreglo *)forja_arreglo_nuevo(0, 1);
+    if (!s || !sep || !*sep) {
+        forja_empujar(a, (int64_t)(size_t)forja_dup(s ? s : ""));
+        return a;
+    }
+    size_t lsep = strlen(sep);
+    const char *ini = s;
+    for (;;) {
+        const char *p = strstr(ini, sep);
+        size_t n = p ? (size_t)(p - ini) : strlen(ini);
+        char *trozo = (char *)forja_alloc((int64_t)n + 1);
+        memcpy(trozo, ini, n);
+        trozo[n] = '\0';
+        forja_empujar(a, (int64_t)(size_t)trozo);
+        if (!p) break;
+        ini = p + lsep;
+    }
+    return a;
+}
+
+/* Recorta espacios (y \t\r\n) de ambos extremos. */
+char *forja_recortar(const char *s) {
+    if (!s) return forja_dup("");
+    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
+    size_t n = strlen(s);
+    while (n > 0) {
+        char c = s[n - 1];
+        if (c != ' ' && c != '\t' && c != '\n' && c != '\r') break;
+        n--;
+    }
+    char *r = (char *)forja_alloc((int64_t)n + 1);
+    memcpy(r, s, n);
+    r[n] = '\0';
+    return r;
+}

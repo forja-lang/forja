@@ -29,6 +29,7 @@ enum T {
     Texto,
     Arreglo,
     Mapa,
+    Exacto,
     Enum(String),
     Canal,
     Closure,
@@ -45,6 +46,7 @@ impl T {
             T::Texto
             | T::Arreglo
             | T::Mapa
+            | T::Exacto
             | T::Enum(_)
             | T::Canal
             | T::Closure
@@ -62,6 +64,7 @@ impl T {
             Tipo::Nulo => T::Nulo,
             Tipo::Clase(n) => T::Clase(n.clone()),
             Tipo::Arreglo(_) => T::Arreglo,
+            Tipo::Exacto => T::Exacto,
             // `Resultado`/`Opcion` son los tipos del preludio: se representan
             // como los enums homónimos (tag + un payload i64).
             Tipo::Resultado(..) => T::Enum("Resultado".to_string()),
@@ -79,6 +82,7 @@ impl T {
             T::Mapa => "Mapa",
             T::Enum(n) => n,
             T::Canal => "Canal",
+            T::Exacto => "Exacto",
             T::Closure => "closure",
             T::Clase(n) => n,
             T::Funcion => "funcion",
@@ -95,6 +99,7 @@ enum V {
     Texto(String),
     Arreglo(String),
     Mapa(String),
+    Exacto(String),
     Enum(String, String),
     Canal(String),
     Closure(String),
@@ -111,6 +116,7 @@ impl V {
             | V::Texto(r)
             | V::Arreglo(r)
             | V::Mapa(r)
+            | V::Exacto(r)
             | V::Enum(r, _)
             | V::Canal(r)
             | V::Closure(r)
@@ -126,6 +132,7 @@ impl V {
             V::Texto(_) => T::Texto,
             V::Arreglo(_) => T::Arreglo,
             V::Mapa(_) => T::Mapa,
+            V::Exacto(_) => T::Exacto,
             V::Enum(_, c) => T::Enum(c.clone()),
             V::Canal(_) => T::Canal,
             V::Closure(_) => T::Closure,
@@ -221,6 +228,18 @@ const RUNTIME: &[(&str, &str)] = &[
     ("forja_arreglo_rellenar", "ptr (i64, i64, i64)"),
     ("forja_imprimir_arreglo", "void (ptr)"),
     ("forja_imprimir_mapa", "void (ptr)"),
+    ("forja_exacto_nuevo", "ptr (i128, i64)"),
+    ("forja_exacto_desde_entero", "ptr (i64)"),
+    ("forja_exacto_sumar", "ptr (ptr, ptr)"),
+    ("forja_exacto_restar", "ptr (ptr, ptr)"),
+    ("forja_exacto_multiplicar", "ptr (ptr, ptr)"),
+    ("forja_exacto_dividir", "ptr (ptr, ptr)"),
+    ("forja_exacto_comparar", "i64 (ptr, ptr)"),
+    ("forja_exacto_a_entero", "i64 (ptr)"),
+    ("forja_exacto_a_decimal", "double (ptr)"),
+    ("forja_exacto_a_texto", "ptr (ptr)"),
+    ("forja_dividir", "ptr (ptr, ptr)"),
+    ("forja_recortar", "ptr (ptr)"),
     ("forja_arreglo_obtener", "i64 (ptr, i64)"),
     ("forja_arreglo_fijar", "void (ptr, i64, i64)"),
     ("forja_empujar", "void (ptr, i64)"),
@@ -352,6 +371,7 @@ impl Lowering {
             T::Texto => V::Texto(r),
             T::Arreglo => V::Arreglo(r),
             T::Mapa => V::Mapa(r),
+            T::Exacto => V::Exacto(r),
             T::Enum(c) => V::Enum(r, c.clone()),
             T::Canal => V::Canal(r),
             T::Closure => V::Closure(r),
@@ -439,6 +459,7 @@ impl Lowering {
             }
             (v, T::Arreglo)
             | (v, T::Mapa)
+            | (v, T::Exacto)
             | (v, T::Enum(_))
             | (v, T::Canal)
             | (v, T::Closure)
@@ -469,6 +490,21 @@ impl Lowering {
             V::Dec(r) => {
                 let c = self.r();
                 self.linea(&format!("{} = fcmp one double {}, 0.0", c, r));
+                c
+            }
+            V::Exacto(r) => {
+                let cero = self.r();
+                self.linea(&format!(
+                    "{} = call ptr @forja_exacto_desde_entero(i64 0)",
+                    cero
+                ));
+                let cmp = self.r();
+                self.linea(&format!(
+                    "{} = call i64 @forja_exacto_comparar(ptr {}, ptr {})",
+                    cmp, r, cero
+                ));
+                let c = self.r();
+                self.linea(&format!("{} = icmp ne i64 {}, 0", c, cmp));
                 c
             }
             V::Texto(r)
@@ -914,6 +950,7 @@ impl Lowering {
             Expresion::LiteralNumero(_) => T::Int,
             Expresion::Arreglo(_) => T::Arreglo,
             Expresion::Mapa(_) => T::Mapa,
+            Expresion::LiteralExacto(..) => T::Exacto,
             Expresion::CanalNuevo(_) => T::Canal,
             Expresion::Closure { .. } => T::Closure,
             Expresion::LlamadaFuncion { nombre, .. } if self.variantes.contains_key(nombre) => {
@@ -980,6 +1017,7 @@ fn cero(t: &T) -> &'static str {
         T::Texto
         | T::Arreglo
         | T::Mapa
+        | T::Exacto
         | T::Enum(_)
         | T::Canal
         | T::Closure
@@ -1182,6 +1220,8 @@ fn tipo_builtin(nombre: &str) -> Option<T> {
         "a_mayusculas" | "a_minusculas" => T::Texto,
         "tiempo_ms" => T::Int,
         "repetir_arreglo" | "arreglo_relleno" => T::Arreglo,
+        "dividir" => T::Arreglo,
+        "recortar" => T::Texto,
         "contiene" | "empieza_con" | "termina_con" => T::Int,
         _ => return None,
     })

@@ -1678,8 +1678,32 @@ pub fn compilar_a_llvm(codigo: &str) -> Result<String, Vec<error::ErrorForja>> {
 
     // FASE 2-3: Parser
     let mut parser = parser::Parser::nuevo(tokens);
-    let mut programa = parser.parsear()?;
+    let programa = parser.parsear()?;
+    compilar_a_llvm_programa(programa)
+}
 
+/// Igual que [`compilar_a_llvm`] pero **resolviendo `importar`** contra la raíz
+/// del proyecto: sin esto la ruta nativa no veía la stdlib (`tempo_ms`,
+/// `absoluto`, …) y fallaba con «función no definida». Es la que usa la CLI.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn compilar_a_llvm_desde(
+    codigo: &str,
+    raiz: &std::path::Path,
+) -> Result<String, Vec<error::ErrorForja>> {
+    let programa = resolver_imports(codigo, raiz).map_err(|e| {
+        vec![error::ErrorForja::nuevo(
+            error::ErrorTipo::ErrorSemantico,
+            0,
+            0,
+            &e,
+            "Revisá los `importar` del programa.",
+        )]
+    })?;
+    compilar_a_llvm_programa(programa)
+}
+
+/// Fases compartidas: type checker → préstamos → mono → optimizador → backend.
+fn compilar_a_llvm_programa(mut programa: ast::Programa) -> Result<String, Vec<error::ErrorForja>> {
     // FASE 4: Type Checker
     let mut tipo_checker = semantics::TipoChecker::nuevo();
     tipo_checker.analizar(&programa)?;
@@ -1869,7 +1893,8 @@ fn es_firma_enteros(linea: &str) -> bool {
     let Some((_, params)) = linea.split_once('(') else {
         return false;
     };
-    let params = params.trim_end_matches('{').trim_end_matches(')').trim();
+    // `i64 %p0) {` → `i64 %p0`
+    let params = params.split(')').next().unwrap_or("").trim();
     if params.is_empty() {
         return false;
     }
@@ -1932,7 +1957,7 @@ fn memoizar_puras(ir: &str) -> String {
                     // clave = mezcla de todos los parámetros i64
                     let params: Vec<&str> = t
                         .split_once('(')
-                        .map(|(_, r)| r.trim_end_matches('{').trim_end_matches(')'))
+                        .map(|(_, r)| r.split(')').next().unwrap_or(""))
                         .unwrap_or("")
                         .split(',')
                         .map(|p| p.trim().trim_start_matches("i64 "))

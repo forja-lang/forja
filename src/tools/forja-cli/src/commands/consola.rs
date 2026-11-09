@@ -460,7 +460,25 @@ pub(crate) fn cmd_llvm(args: &[String]) {
             process::exit(1);
         }
     };
-    match forja::compilar_a_llvm(&fuente) {
+    // Igual que `forja aot`: resolver `importar` contra la raíz del proyecto,
+    // si no la stdlib no está disponible y el IR sale incompleto.
+    let raiz = {
+        let p = std::path::Path::new(ruta);
+        let dir = if p.is_file() {
+            p.parent().unwrap_or(std::path::Path::new("."))
+        } else {
+            p
+        };
+        let mut r = dir.to_path_buf();
+        for ancestro in dir.ancestors() {
+            if ancestro.join("library").exists() || ancestro.join("stdlib").exists() {
+                r = ancestro.to_path_buf();
+                break;
+            }
+        }
+        r
+    };
+    match forja::compilar_a_llvm_desde(&fuente, &raiz) {
         Ok(ir) => {
             let out = args
                 .get(1)

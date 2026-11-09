@@ -4,7 +4,21 @@ use super::*;
 
 /// Compila LLVM nativo de Forja a un ejecutable con clang.
 pub(crate) fn compilar_llvm_a(fuente: &str, salida: &std::path::Path) -> Result<(), String> {
-    let ir = forja::compilar_a_llvm(fuente).map_err(|e| format!("{e:?}"))?;
+    // Resolver `importar` contra la raíz del proyecto (stdlib incluida): sin esto
+    // la ruta nativa fallaba con «función no definida: tiempo_ms».
+    let raiz = {
+        let p = std::path::Path::new(fuente);
+        let _ = p;
+        let mut r = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        for ancestro in r.clone().ancestors() {
+            if ancestro.join("library").exists() || ancestro.join("stdlib").exists() {
+                r = ancestro.to_path_buf();
+                break;
+            }
+        }
+        r
+    };
+    let ir = forja::compilar_a_llvm_desde(fuente, &raiz).map_err(|e| format!("{e:?}"))?;
     let directorio = std::env::temp_dir().join(format!("forja_llvm_{}", std::process::id()));
     std::fs::create_dir_all(&directorio).map_err(|e| e.to_string())?;
     let ll = directorio.join("main.ll");
