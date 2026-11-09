@@ -2,7 +2,7 @@
 <!-- MSI de Forja sólo para el usuario actual: %LOCALAPPDATA%\Programs\Forja y
      PATH del usuario. No necesita permisos de administrador.
 
-       wix build -arch x64 -d Version=0.10.1 -o forja-installer-x64.msi ^
+       wix build -arch x64 -d Version=0.10.2 -o forja-installer-x64.msi ^
                  installer\msi.wxs -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="Forja"
