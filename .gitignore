@@ -31,6 +31,7 @@ tmp/
 actions-runner/
 plans/
 /plans
+frontera-modulos.generated.md
 
 # ── Ejecutables ──
 *.exe

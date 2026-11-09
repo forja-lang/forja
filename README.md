@@ -334,9 +334,10 @@ español y enseñanza). La regla: la seguridad y el acceso al sistema viven en
 nativo; el módulo es la fachada pública y nunca puede saltarse el sandbox.
 
 La frontera nativo/módulo está protegida por [`tests/frontera_crates.rs`](tests/frontera_crates.rs)
-(solo dependencias hacia abajo entre crates de `compiler/`). Clasificación
-generada (módulo/función → H/M) por `scripts/generar-frontera.py`:
-[`frontera-modulos.generated.md`](frontera-modulos.generated.md).
+(solo dependencias hacia abajo entre crates de `compiler/`). La clasificación
+(módulo/función → H/M) la genera `scripts/generar-frontera.py` en
+`frontera-modulos.generated.md`, que no se versiona: se regenera cuando cambia
+la frontera.
 ## Estructura del repositorio
 
 Workspace de Cargo con el compilador (`forja`) y sus crates. El repositorio raíz
