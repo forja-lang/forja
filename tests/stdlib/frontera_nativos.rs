@@ -32,29 +32,29 @@ fn modulos() -> Vec<(String, String)> {
 
 /// Nombres de funciones nativas invocadas en un fuente: `_foo(`.
 fn llamadas_nativas(fuente: &str) -> HashSet<String> {
-    let bytes = fuente.as_bytes();
-    let mut out = HashSet::new();
+    let octetos = fuente.as_bytes();
+    let mut salida = HashSet::new();
     let mut i = 0;
-    while i < bytes.len() {
-        let empieza = bytes[i] == b'_' && (i == 0 || !es_ident(bytes[i - 1]));
+    while i < octetos.len() {
+        let empieza = octetos[i] == b'_' && (i == 0 || !es_ident(octetos[i - 1]));
         if !empieza {
             i += 1;
             continue;
         }
         let mut j = i + 1;
-        while j < bytes.len() && es_ident(bytes[j]) {
+        while j < octetos.len() && es_ident(octetos[j]) {
             j += 1;
         }
         let mut k = j;
-        while k < bytes.len() && bytes[k].is_ascii_whitespace() {
+        while k < octetos.len() && octetos[k].is_ascii_whitespace() {
             k += 1;
         }
-        if k < bytes.len() && bytes[k] == b'(' {
-            out.insert(fuente[i..j].to_string());
+        if k < octetos.len() && octetos[k] == b'(' {
+            salida.insert(fuente[i..j].to_string());
         }
         i = j;
     }
-    out
+    salida
 }
 
 fn es_ident(b: u8) -> bool {
