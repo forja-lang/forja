@@ -28,13 +28,14 @@ impl Sha256 {
         s.finalize()
     }
     fn update(&mut self, data: &[u8]) {
-        let mut offset = 0;
-        while offset < data.len() {
+        let mut desplazamiento = 0;
+        while desplazamiento < data.len() {
             let space = 64 - self.len;
-            let take = (data.len() - offset).min(space);
-            self.buf[self.len..self.len + take].copy_from_slice(&data[offset..offset + take]);
+            let take = (data.len() - desplazamiento).min(space);
+            self.buf[self.len..self.len + take]
+                .copy_from_slice(&data[desplazamiento..desplazamiento + take]);
             self.len += take;
-            offset += take;
+            desplazamiento += take;
             if self.len == 64 {
                 self.compress();
                 self.len = 0;
@@ -59,11 +60,11 @@ impl Sha256 {
         }
         self.buf[56..64].copy_from_slice(&bits.to_be_bytes());
         self.compress();
-        let mut out = [0u8; 32];
+        let mut salida = [0u8; 32];
         for i in 0..8 {
-            out[i * 4..(i + 1) * 4].copy_from_slice(&self.h[i].to_be_bytes());
+            salida[i * 4..(i + 1) * 4].copy_from_slice(&self.h[i].to_be_bytes());
         }
-        out
+        salida
     }
     fn compress(&mut self) {
         let w = &mut [0u32; 64];
@@ -122,10 +123,10 @@ const K256: [u32; 64] = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
-fn hex_encode(bytes: &[u8]) -> String {
+fn hex_encode(octetos: &[u8]) -> String {
     let h = b"0123456789abcdef";
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
+    let mut s = String::with_capacity(octetos.len() * 2);
+    for b in octetos {
         s.push(h[(b >> 4) as usize] as char);
         s.push(h[(b & 0x0f) as usize] as char);
     }
@@ -217,9 +218,9 @@ fn clamp_r_limbs(r_bytes: &[u8; 16]) -> [u64; 5] {
     h[4] = (clamped >> 104) as u64;
     h
 }
-fn poly1305_mac(key: &[u8; 32], data: &[u8]) -> [u8; 16] {
-    let r_limbs = clamp_r_limbs(&key[..16].try_into().unwrap());
-    let s = u128::from_le_bytes(key[16..32].try_into().unwrap());
+fn poly1305_mac(clave: &[u8; 32], data: &[u8]) -> [u8; 16] {
+    let r_limbs = clamp_r_limbs(&clave[..16].try_into().unwrap());
+    let s = u128::from_le_bytes(clave[16..32].try_into().unwrap());
     let mut h = [0u64; 5];
     for chunk in data.chunks(16) {
         let n = le_bytes_to_limbs(chunk);
@@ -249,7 +250,7 @@ fn poly1305_mac(key: &[u8; 32], data: &[u8]) -> [u8; 16] {
 // ════════════════════════════════════════
 // ChaCha20 block (para roundtrip test)
 // ════════════════════════════════════════
-fn chacha20_block(key: &[u8; 32], nonce: &[u8; 12], counter: u32) -> [u8; 64] {
+fn chacha20_block(clave: &[u8; 32], nonce: &[u8; 12], counter: u32) -> [u8; 64] {
     fn qr(a: u32, b: u32, c: u32, d: u32) -> (u32, u32, u32, u32) {
         let a2 = a.wrapping_add(b);
         let d2 = (d ^ a2).rotate_left(16);
@@ -267,7 +268,12 @@ fn chacha20_block(key: &[u8; 32], nonce: &[u8; 12], counter: u32) -> [u8; 64] {
     s[2] = 0x79622d32;
     s[3] = 0x6b206574;
     for i in 0..8 {
-        s[4 + i] = u32::from_le_bytes([key[i * 4], key[i * 4 + 1], key[i * 4 + 2], key[i * 4 + 3]]);
+        s[4 + i] = u32::from_le_bytes([
+            clave[i * 4],
+            clave[i * 4 + 1],
+            clave[i * 4 + 2],
+            clave[i * 4 + 3],
+        ]);
     }
     s[12] = counter;
     for i in 0..3 {
@@ -325,11 +331,11 @@ fn chacha20_block(key: &[u8; 32], nonce: &[u8; 12], counter: u32) -> [u8; 64] {
     for i in 0..16 {
         s[i] = s[i].wrapping_add(state[i]);
     }
-    let mut out = [0u8; 64];
+    let mut salida = [0u8; 64];
     for i in 0..16 {
-        out[i * 4..(i + 1) * 4].copy_from_slice(&s[i].to_le_bytes());
+        salida[i * 4..(i + 1) * 4].copy_from_slice(&s[i].to_le_bytes());
     }
-    out
+    salida
 }
 
 fn test_chacha20_poly1305_roundtrip() {
@@ -345,8 +351,8 @@ fn test_chacha20_poly1305_roundtrip() {
     let mut off = 0;
     while off < datos.len() {
         let ks = chacha20_block(&clave, &nonce, ctr);
-        let end = (off + 64).min(datos.len());
-        for i in off..end {
+        let fin = (off + 64).min(datos.len());
+        for i in off..fin {
             cifrado.push(datos[i] ^ ks[i - off]);
         }
         off += 64;
@@ -379,8 +385,8 @@ fn test_chacha20_poly1305_roundtrip() {
     let mut off2 = 0;
     while off2 < cifrado.len() {
         let ks = chacha20_block(&clave, &nonce, ctr2);
-        let end = (off2 + 64).min(cifrado.len());
-        for i in off2..end {
+        let fin = (off2 + 64).min(cifrado.len());
+        for i in off2..fin {
             descifrado.push(cifrado[i] ^ ks[i - off2]);
         }
         off2 += 64;
@@ -402,23 +408,23 @@ impl Poly {
     fn new() -> Self {
         Self { coeffs: [0i16; N] }
     }
-    fn from_bytes(bytes: &[u8]) -> Self {
+    fn from_bytes(octetos: &[u8]) -> Self {
         let mut p = Self::new();
-        let n = N.min(bytes.len() / 2);
+        let n = N.min(octetos.len() / 2);
         for i in 0..n {
-            let v = (bytes[i * 2] as u16 | (bytes[i * 2 + 1] as u16) << 8) % Q as u16;
+            let v = (octetos[i * 2] as u16 | (octetos[i * 2 + 1] as u16) << 8) % Q as u16;
             p.coeffs[i] = v as i16;
         }
         p
     }
     fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(N * 2);
+        let mut salida = Vec::with_capacity(N * 2);
         for &c in &self.coeffs {
             let v = c.rem_euclid(Q) as u16;
-            out.push(v as u8);
-            out.push((v >> 8) as u8);
+            salida.push(v as u8);
+            salida.push((v >> 8) as u8);
         }
-        out
+        salida
     }
 }
 fn add(a: &Poly, b: &Poly) -> Poly {
@@ -448,16 +454,16 @@ fn mul_naive(a: &Poly, b: &Poly) -> Poly {
             if bj == 0 {
                 continue;
             }
-            let idx = (i + j) % N;
+            let indice = (i + j) % N;
             let sign: i32 = if i + j < N { 1 } else { -1 };
-            c[idx] = (c[idx] + ai * bj * sign).rem_euclid(q);
+            c[indice] = (c[indice] + ai * bj * sign).rem_euclid(q);
         }
     }
-    let mut out = Poly::new();
-    for (o, &ci) in out.coeffs.iter_mut().zip(c.iter()) {
+    let mut salida = Poly::new();
+    for (o, &ci) in salida.coeffs.iter_mut().zip(c.iter()) {
         *o = ci as i16;
     }
-    out
+    salida
 }
 fn sample_cbd(seed: &[u8]) -> Poly {
     let mut p = Poly::new();
@@ -471,22 +477,22 @@ fn sample_cbd(seed: &[u8]) -> Poly {
 }
 fn sample_uniform(seed: &[u8], nonce: u8) -> Poly {
     let mut p = Poly::new();
-    let mut idx = 0;
+    let mut indice = 0;
     let mut cnt: u8 = 0;
-    while idx < N {
+    while indice < N {
         let mut inp = Vec::with_capacity(seed.len() + 2);
         inp.extend_from_slice(seed);
         inp.push(nonce);
         inp.push(cnt);
         let hash = Sha256::digest(&inp);
         for j in (0..hash.len()).step_by(2) {
-            if idx >= N {
+            if indice >= N {
                 break;
             }
             let val = hash[j] as u16 | (hash[(j + 1) % hash.len()] as u16) << 8;
             if val < Q as u16 {
-                p.coeffs[idx] = val as i16;
-                idx += 1;
+                p.coeffs[indice] = val as i16;
+                indice += 1;
             }
         }
         cnt = cnt.wrapping_add(1);
@@ -518,13 +524,13 @@ fn pq_encaps(pk: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let e1 = sample_cbd(&[0x34u8; 32]);
     let e2 = sample_cbd(&[0x56u8; 32]);
     let ms = [0x78u8; 32];
-    let mut msg = Poly::new();
+    let mut mensaje = Poly::new();
     for i in 0..256.min(N) {
         let bit = (ms[i / 8] >> (i % 8)) & 1;
-        msg.coeffs[i] = (Q / 2) * (bit as i16);
+        mensaje.coeffs[i] = (Q / 2) * (bit as i16);
     }
     let u = add(&mul_naive(&a, &r), &e1);
-    let v = add(&add(&mul_naive(&t, &r), &e2), &msg);
+    let v = add(&add(&mul_naive(&t, &r), &e2), &mensaje);
     let mut ct = Vec::new();
     ct.extend_from_slice(&u.to_bytes());
     ct.extend_from_slice(&v.to_bytes());
@@ -566,7 +572,7 @@ fn main() {
 }
 
 fn test_poly1305() {
-    let key: [u8; 32] = [
+    let clave: [u8; 32] = [
         0xdc, 0x97, 0xfc, 0xb3, 0x5e, 0x28, 0xbf, 0x02, 0x2e, 0x0f, 0x8a, 0x3f, 0xb3, 0x0f, 0x92,
         0x85, 0xc9, 0x32, 0x56, 0x05, 0x4f, 0x2d, 0x09, 0xf1, 0x37, 0x9a, 0xbc, 0xea, 0x43, 0xb6,
         0x10, 0x39,
@@ -579,9 +585,9 @@ fn test_poly1305() {
         (&[b'A'; 33], "8f614e60aaab74afb3d96bd7cd84e2dc"),
     ];
     for (data, exp) in &cases {
-        let got = hex_encode(&poly1305_mac(&key, data));
-        println!("  poly1305: {}", if got == *exp { "✓" } else { "✗" });
-        assert_eq!(&got, exp);
+        let obtenido = hex_encode(&poly1305_mac(&clave, data));
+        println!("  poly1305: {}", if obtenido == *exp { "✓" } else { "✗" });
+        assert_eq!(&obtenido, exp);
     }
 }
 
