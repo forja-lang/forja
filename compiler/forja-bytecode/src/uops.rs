@@ -455,15 +455,15 @@ pub fn expandir_a_uops(bytecode: &[Opcode]) -> Vec<Uop> {
                 uops.push(Uop::PushEntero(*n));
                 uops.push(Uop::AddInt);
             }
-            // LoadJumpSiFalso(idx, target) → LoadIdx(idx), JumpSiFalso(target)
-            Opcode::CargarSaltoSiFalso(idx, target) => {
+            // LoadJumpSiFalso(idx, destino) → LoadIdx(idx), JumpSiFalso(destino)
+            Opcode::CargarSaltoSiFalso(idx, destino) => {
                 uops.push(Uop::LoadIdx(*idx));
-                uops.push(Uop::JumpSiFalso(*target));
+                uops.push(Uop::JumpSiFalso(*destino));
             }
-            // LoadJump(idx, target) → LoadIdx(idx), Jump(target)
-            Opcode::CargarSalto(idx, target) => {
+            // LoadJump(idx, destino) → LoadIdx(idx), Jump(destino)
+            Opcode::CargarSalto(idx, destino) => {
                 uops.push(Uop::LoadIdx(*idx));
-                uops.push(Uop::Jump(*target));
+                uops.push(Uop::Jump(*destino));
             }
             // DupAddInt → Dup, AddInt
             Opcode::DuplicarSumarEntero => {
@@ -693,7 +693,7 @@ fn construir_mapeo_posiciones(bytecode: &[Opcode]) -> Vec<usize> {
 
     for op in bytecode {
         mapeo.push(uop_idx);
-        let expansion_len = match op {
+        let largo_expansion = match op {
             Opcode::DeclararOperacionEntero(_, _) => 3,
             Opcode::GuardarOperacionEntero(_, _) => 2,
             Opcode::DeclararOperacionBooleano(_, _) => 3,
@@ -731,7 +731,7 @@ fn construir_mapeo_posiciones(bytecode: &[Opcode]) -> Vec<usize> {
             Opcode::SumarGuardarExacto(_) => 2,
             _ => 1,
         };
-        uop_idx += expansion_len;
+        uop_idx += largo_expansion;
     }
 
     mapeo
@@ -744,10 +744,10 @@ pub fn remapear_saltos_uops(uops: &mut [Uop], bytecode: &[Opcode]) {
 
     for uop in uops.iter_mut() {
         match uop {
-            Uop::Jump(target) | Uop::JumpSiFalso(target) | Uop::Label(target)
-                if *target < mapeo.len() =>
+            Uop::Jump(destino) | Uop::JumpSiFalso(destino) | Uop::Label(destino)
+                if *destino < mapeo.len() =>
             {
-                *target = mapeo[*target];
+                *destino = mapeo[*destino];
             }
             _ => {}
         }
@@ -803,7 +803,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_expandir_declare_entero() {
+    fn expandir_declare_entero() {
         let bc = vec![Opcode::DeclararOperacionEntero(0, 42)];
         let uops = expandir_a_uops(&bc);
         assert_eq!(uops.len(), 3);
@@ -813,7 +813,7 @@ mod tests {
     }
 
     #[test]
-    fn test_expandir_store_entero() {
+    fn expandir_store_entero() {
         let bc = vec![Opcode::GuardarOperacionEntero(1, 99)];
         let uops = expandir_a_uops(&bc);
         assert_eq!(uops.len(), 2);
@@ -822,7 +822,7 @@ mod tests {
     }
 
     #[test]
-    fn test_expandir_declare_booleano() {
+    fn expandir_declare_booleano() {
         let bc = vec![Opcode::DeclararOperacionBooleano(2, true)];
         let uops = expandir_a_uops(&bc);
         assert_eq!(uops.len(), 3);
@@ -832,7 +832,7 @@ mod tests {
     }
 
     #[test]
-    fn test_expandir_pasa_atomicos() {
+    fn expandir_pasa_atomicos() {
         let bc = vec![Opcode::PushEntero(10), Opcode::Sumar, Opcode::Detener];
         let uops = expandir_a_uops(&bc);
         assert_eq!(uops.len(), 3);
@@ -842,7 +842,7 @@ mod tests {
     }
 
     #[test]
-    fn test_optimizar_incr_var() {
+    fn optimizar_incr_var() {
         // Patrón: LoadIdx(0), PushEntero(1), Add, StoreIdx(0) → IncrVar(0)
         let uops = vec![
             Uop::LoadIdx(0),
@@ -856,7 +856,7 @@ mod tests {
     }
 
     #[test]
-    fn test_optimizar_add_assign() {
+    fn optimizar_add_assign() {
         // Patrón: LoadIdx(0), PushEntero(5), Add, StoreIdx(0) → AddAssign(0, 5)
         let uops = vec![
             Uop::LoadIdx(0),
@@ -870,7 +870,7 @@ mod tests {
     }
 
     #[test]
-    fn test_optimizar_sub_assign() {
+    fn optimizar_sub_assign() {
         // Patrón: LoadIdx(0), PushEntero(3), Sub, StoreIdx(0) → SubAssign(0, 3)
         let uops = vec![
             Uop::LoadIdx(0),
@@ -884,7 +884,7 @@ mod tests {
     }
 
     #[test]
-    fn test_optimizar_push_pop_eliminacion() {
+    fn optimizar_push_pop_eliminacion() {
         // Patrón: PushEntero(n), Pop → eliminar ambos
         let uops = vec![Uop::PushEntero(42), Uop::Pop];
         let opt = optimizar_uops(&uops);
@@ -902,7 +902,7 @@ mod tests {
     }
 
     #[test]
-    fn test_optimizar_declare_init_fusion() {
+    fn optimizar_declare_init_fusion() {
         // Patrón: DeclareVar(0), StorePop(0) → DeclareInit(0)
         let uops = vec![Uop::DeclareVar(0), Uop::StorePop(0)];
         let opt = optimizar_uops(&uops);
@@ -911,7 +911,7 @@ mod tests {
     }
 
     #[test]
-    fn test_tiene_opcodes_compuestos() {
+    fn detecta_opcodes_compuestos() {
         let bc = vec![Opcode::DeclararOperacionEntero(0, 42)];
         assert!(tiene_opcodes_compuestos(&bc));
 
