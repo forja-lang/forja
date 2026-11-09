@@ -7,8 +7,8 @@ pub fn native_pq_keygen(_vm: &mut dyn Host, _args: &[ValorFast]) -> Result<Valor
             let sk_hex = crate::hash::hex_encode(&keys.secret);
             pk_hex.push('|');
             pk_hex.push_str(&sk_hex);
-            let idx = _vm.alloc_str(Arc::from(pk_hex.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = _vm.alloc_str(Arc::from(pk_hex.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(e.into())),
     }
@@ -22,11 +22,11 @@ pub fn native_pq_encaps(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorF
     let pk = crate::crypto::hex_to_bytes(&pk_hex).unwrap_or_default();
     match crate::crypto_pq::pq_encaps(&pk) {
         Ok((secret, ct)) => {
-            let mut result = crate::hash::hex_encode(&secret);
-            result.push('|');
-            result.push_str(&crate::hash::hex_encode(&ct));
-            let idx = _vm.alloc_str(Arc::from(result.as_str()));
-            Ok(ValorFast::texto(idx))
+            let mut resultado = crate::hash::hex_encode(&secret);
+            resultado.push('|');
+            resultado.push_str(&crate::hash::hex_encode(&ct));
+            let indice = _vm.alloc_str(Arc::from(resultado.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(e.into())),
     }
@@ -43,8 +43,8 @@ pub fn native_pq_decaps(_vm: &mut dyn Host, args: &[ValorFast]) -> Result<ValorF
     match crate::crypto_pq::pq_decaps(&sk, &ct) {
         Ok(secret) => {
             let s = crate::hash::hex_encode(&secret);
-            let idx = _vm.alloc_str(Arc::from(s.as_str()));
-            Ok(ValorFast::texto(idx))
+            let indice = _vm.alloc_str(Arc::from(s.as_str()));
+            Ok(ValorFast::texto(indice))
         }
         Err(e) => Err(ErrFast::TipoInv(e.into())),
     }
