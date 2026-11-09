@@ -59,10 +59,10 @@ impl SandboxRed {
             if hosts.iter().any(|h| h == "*") {
                 // Host permitido, verificar puerto
             } else if !hosts.iter().any(|h| h == host) {
-                let hosts_str = hosts.join(", ");
+                let texto_hosts = hosts.join(", ");
                 return Err(format!(
                     "Host no permitido: '{}'. Hosts permitidos: [{}]. Usa --bloquear-red para restringir.",
-                    host, hosts_str
+                    host, texto_hosts
                 ));
             }
         } else {
@@ -78,11 +78,11 @@ impl SandboxRed {
                 ));
             }
             if !puertos.contains(&puerto) {
-                let puertos_str: Vec<String> = puertos.iter().map(|p| p.to_string()).collect();
+                let texto_puertos: Vec<String> = puertos.iter().map(|p| p.to_string()).collect();
                 return Err(format!(
                     "Puerto no permitido: {}. Puertos permitidos: [{}].",
                     puerto,
-                    puertos_str.join(", ")
+                    texto_puertos.join(", ")
                 ));
             }
         }
@@ -102,7 +102,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_todo_permitido_por_defecto() {
+    fn todo_permitido_por_defecto() {
         let s = SandboxRed::new();
         // Por defecto todo está permitido
         assert!(s.verificar_conexion("localhost", 80).is_ok());
@@ -111,7 +111,7 @@ mod tests {
     }
 
     #[test]
-    fn test_todo_permitido() {
+    fn todo_permitido() {
         let s = SandboxRed::todo_permitido();
         assert!(s.verificar_conexion("google.com", 443).is_ok());
         assert!(s.verificar_conexion("localhost", 80).is_ok());
@@ -143,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn test_host_y_puerto_combinados() {
+    fn host_y_puerto_combinados() {
         let s = SandboxRed {
             hosts_permitidos: Some(vec!["localhost".into()]),
             puertos_permitidos: Some(vec![3000]),
@@ -165,14 +165,14 @@ mod tests {
     }
 
     #[test]
-    fn test_default_trait() {
+    fn trait_por_defecto() {
         let s: SandboxRed = Default::default();
         // Default = todo permitido
         assert!(s.verificar_conexion("localhost", 80).is_ok());
     }
 
     #[test]
-    fn test_conexion_con_host_permitido_y_sin_restriccion_puertos() {
+    fn conexion_con_host_permitido_y_sin_restriccion_de_puertos() {
         let s = SandboxRed {
             hosts_permitidos: Some(vec!["localhost".into()]),
             puertos_permitidos: None, // sin restricción de puertos
@@ -183,7 +183,7 @@ mod tests {
     }
 
     #[test]
-    fn test_wildcard_host_con_puertos_restringidos() {
+    fn comodin_de_host_con_puertos_restringidos() {
         let s = SandboxRed {
             hosts_permitidos: Some(vec!["*".into()]),
             puertos_permitidos: Some(vec![80, 443, 8080]),
@@ -263,8 +263,8 @@ impl SandboxFilesystem {
             let ruta_normalizada = Self::normalizar_ruta(ruta);
 
             for dir in directorios {
-                let dir_normalizado = Self::normalizar_ruta(dir);
-                if ruta_normalizada.starts_with(&dir_normalizado) {
+                let directorio_normalizado = Self::normalizar_ruta(dir);
+                if ruta_normalizada.starts_with(&directorio_normalizado) {
                     if escritura && self.solo_lectura {
                         return Err(
                             "Escritura denegada: sandbox en modo solo-lectura. Usa --allow-write para habilitar escritura.".into()
@@ -274,16 +274,16 @@ impl SandboxFilesystem {
                 }
             }
 
-            let dirs_str = directorios.join(", ");
+            let texto_directorios = directorios.join(", ");
             if escritura {
                 Err(format!(
                     "Escritura denegada en '{}'. Directorios permitidos: [{}].",
-                    ruta, dirs_str
+                    ruta, texto_directorios
                 ))
             } else {
                 Err(format!(
                     "Lectura denegada en '{}'. Directorios permitidos: [{}].",
-                    ruta, dirs_str
+                    ruta, texto_directorios
                 ))
             }
         } else {
@@ -377,10 +377,10 @@ impl SandboxProceso {
                 return Ok(());
             }
 
-            let cmds_str = comandos.join(", ");
+            let texto_comandos = comandos.join(", ");
             Err(format!(
                 "Comando no permitido: '{}'. Comandos permitidos: [{}].",
-                nombre_corto, cmds_str
+                nombre_corto, texto_comandos
             ))
         } else {
             Err("Ejecución de procesos habilitada (sin restricciones).".into())
@@ -399,14 +399,14 @@ mod tests_sandbox_fs {
     use super::*;
 
     #[test]
-    fn test_fs_todo_permitido_por_defecto() {
+    fn fs_todo_permitido_por_defecto() {
         let s = SandboxFilesystem::new();
         assert!(s.verificar_lectura("/tmp/test.txt").is_ok());
         assert!(s.verificar_escritura("/tmp/test.txt").is_ok());
     }
 
     #[test]
-    fn test_fs_todo_permitido() {
+    fn fs_todo_permitido() {
         let s = SandboxFilesystem::todo_permitido();
         assert!(s.verificar_lectura("/tmp/test.txt").is_ok());
         assert!(s.verificar_escritura("/tmp/test.txt").is_ok());
@@ -432,7 +432,7 @@ mod tests_sandbox_fs {
     }
 
     #[test]
-    fn test_fs_path_traversal() {
+    fn fs_rechaza_escape_de_ruta() {
         let s = SandboxFilesystem {
             directorios_permitidos: Some(vec!["/tmp".into()]),
             solo_lectura: false,
@@ -447,14 +447,14 @@ mod tests_sandbox_proc {
     use super::*;
 
     #[test]
-    fn test_proc_todo_permitido_por_defecto() {
+    fn proc_todo_permitido_por_defecto() {
         let s = SandboxProceso::new();
         assert!(s.verificar_comando("ls").is_ok());
         assert!(s.verificar_comando("cmd /c dir").is_ok());
     }
 
     #[test]
-    fn test_proc_todo_permitido() {
+    fn proc_todo_permitido() {
         let s = SandboxProceso::todo_permitido();
         assert!(s.verificar_comando("ls -la").is_ok());
         assert!(s.verificar_comando("python script.py").is_ok());
