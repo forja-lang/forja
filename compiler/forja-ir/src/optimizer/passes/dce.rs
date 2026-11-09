@@ -228,7 +228,7 @@ impl DeadCodeEliminator {
                 } else if !self.funciones_definidas.contains(nombre) {
                     // un nombre invocado que no es una función declarada
                     // puede ser un closure/callback guardado en una variable
-                    // (`variable f = func(x) {...}` + `f(1)`). Sin marcarlo, el
+                    // (`variable f = funcion(x) {...}` + `f(1)`). Sin marcarlo, el
                     // DCE borraba la variable y la llamada quedaba como
                     // `Call("f")` en vez de `CallClosure`.
                     self.variables_usadas.insert(nombre.clone());
