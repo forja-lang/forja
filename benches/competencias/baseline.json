@@ -1,0 +1,55 @@
+{
+  "casos": {
+    "concurrencia": {
+      "forja_ms": 41,
+      "ratio": 1.02,
+      "rust_ms": 40
+    },
+    "dispatch": {
+      "forja_ms": 56,
+      "ratio": 1.0,
+      "rust_ms": 56
+    },
+    "erroresanidados": {
+      "forja_ms": 1101,
+      "ratio": 0.85,
+      "rust_ms": 1289
+    },
+    "ffi": {
+      "forja_ms": 41,
+      "ratio": 0.91,
+      "rust_ms": 45
+    },
+    "hash": {
+      "forja_ms": 284,
+      "ratio": 1.06,
+      "rust_ms": 268
+    },
+    "memcache": {
+      "forja_ms": 248,
+      "ratio": 2.79,
+      "rust_ms": 89
+    },
+    "overflowpanic": {
+      "forja_ms": 41,
+      "ratio": 0.59,
+      "rust_ms": 70
+    },
+    "parseo": {
+      "forja_ms": 1102,
+      "ratio": 2.15,
+      "rust_ms": 513
+    },
+    "stress": {
+      "forja_ms": 328,
+      "ratio": 1.29,
+      "rust_ms": 255
+    },
+    "vectores": {
+      "forja_ms": 111,
+      "ratio": 1.66,
+      "rust_ms": 67
+    }
+  },
+  "nota": "Ratio = forja/rust (pared, m\u00ednimo de N). Regenerar con scripts/bench-competencias.sh --update"
+}

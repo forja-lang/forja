@@ -1,0 +1,43 @@
+// 1. Test de Estrés de Memoria y Heap Allocations (Árboles / Nodos Dinámicos)
+// Este evalúa la velocidad del asignador de memoria al crear 5 millones de nodos
+// en el heap con referencias de propiedad (ownership) encadenadas.
+importar "std/sistema"
+
+clase Nodo {
+    variable id: Entero
+    variable valor: Entero
+    variable siguiente
+
+    constructor(i: Entero) {
+        este.id = i
+        este.valor = (i * 3) / 2
+        este.siguiente = nulo
+    }
+}
+
+funcion crear_lista(n: Entero) {
+    variable cabeza = nulo
+    // El nodo se declara fuera del bucle: declararlo dentro hace crecer el frame
+    // una casilla por iteración y desborda la pila del hilo principal.
+    variable nuevo_nodo = nulo
+
+    // Construcción iterativa hacia atrás para simular el heap alloc masivo
+    variable i = n
+    mientras (i > 0) {
+        i = i - 1
+        nuevo_nodo = nuevo Nodo(i)
+        nuevo_nodo.siguiente = cabeza
+        cabeza = nuevo_nodo
+    }
+    retornar cabeza
+}
+
+escribir("Iniciando prueba de allocations masivas en Forja...")
+variable inicio = tiempo_ms()
+
+variable lista = crear_lista(100000) // 100k: el runtime de Forja desborda la pila
+// con cadenas de objetos de m00e1s de ~100k nodos
+
+variable duracion = tiempo_ms() - inicio
+escribir("Memoria asignada y procesada correctamente.")
+escribir("Tiempo de ejecución: " + a_texto(duracion) + " ms")

@@ -1864,6 +1864,18 @@ mod jit_fallback_tests {
 ///
 /// Sólo aplica cuando el cuerpo no llama a otras funciones ni toca globals/I/O.
 /// La caché es directa, de 4096 entradas; una colisión sólo provoca un miss.
+/// ¿La firma es `define i64 @f(i64 %p0, i64 %p1, …)`? (cualquier aridad)
+fn es_firma_enteros(linea: &str) -> bool {
+    let Some((_, params)) = linea.split_once('(') else {
+        return false;
+    };
+    let params = params.trim_end_matches('{').trim_end_matches(')').trim();
+    if params.is_empty() {
+        return false;
+    }
+    params.split(',').all(|p| p.trim().starts_with("i64 %"))
+}
+
 fn memoizar_puras(ir: &str) -> String {
     if !crate::config::actual().memoizacion {
         return ir.to_string();
@@ -1875,7 +1887,7 @@ fn memoizar_puras(ir: &str) -> String {
     while i < lineas.len() {
         let l = lineas[i];
         let t = l.trim_start();
-        if t.starts_with("define i64 @") && t.contains("(i64 %p0)") {
+        if t.starts_with("define i64 @") && es_firma_enteros(t) {
             let name = t
                 .strip_prefix("define i64 @")
                 .and_then(|x| x.split('(').next())
@@ -1917,20 +1929,37 @@ fn memoizar_puras(ir: &str) -> String {
                         "{val} = internal global [4096 x i64] zeroinitializer"
                     ));
                     out.push(l.to_string());
-                    out.push(format!("  %cache_idx_{name} = urem i64 %p0, 4096"));
-                    out.push(format!("  %cache_kp_{name} = getelementptr [4096 x i64], [4096 x i64]* {clave}, i64 0, i64 %cache_idx_{name}"));
-                    out.push(format!("  %cache_vp_{name} = getelementptr [4096 x i64], [4096 x i64]* {val}, i64 0, i64 %cache_idx_{name}"));
+                    // clave = mezcla de todos los parámetros i64
+                    let params: Vec<&str> = t
+                        .split_once('(')
+                        .map(|(_, r)| r.trim_end_matches('{').trim_end_matches(')'))
+                        .unwrap_or("")
+                        .split(',')
+                        .map(|p| p.trim().trim_start_matches("i64 "))
+                        .filter(|p| p.starts_with('%'))
+                        .collect();
+                    let mut mezcla = params.first().copied().unwrap_or("%p0").to_string();
+                    for (k, r) in params.iter().enumerate().skip(1) {
+                        out.push(format!("  %cache_p{k}_{name} = mul i64 {r}, {}", 31 + k));
+                        out.push(format!(
+                            "  %cache_m{k}_{name} = add i64 {mezcla}, %cache_p{k}_{name}"
+                        ));
+                        mezcla = format!("%cache_m{k}_{name}");
+                    }
+                    out.push(format!("  %cache_idx_{name} = urem i64 {mezcla}, 4096"));
+                    out.push(format!("  %cache_kp_{name} = getelementptr inbounds [4096 x i64], ptr {clave}, i64 0, i64 %cache_idx_{name}"));
+                    out.push(format!("  %cache_vp_{name} = getelementptr inbounds [4096 x i64], ptr {val}, i64 0, i64 %cache_idx_{name}"));
                     out.push(format!(
-                        "  %cache_k_{name} = load i64, i64* %cache_kp_{name}"
+                        "  %cache_k_{name} = load i64, ptr %cache_kp_{name}"
                     ));
-                    out.push(format!("  %cache_exp_{name} = add i64 %p0, 1"));
+                    out.push(format!("  %cache_exp_{name} = add i64 {mezcla}, 1"));
                     out.push(format!(
                         "  %cache_es_hit_{name} = icmp eq i64 %cache_k_{name}, %cache_exp_{name}"
                     ));
                     out.push(format!("  br i1 %cache_es_hit_{name}, label %cache_hit_{name}, label %cache_miss_{name}"));
                     out.push(format!("cache_hit_{name}:"));
                     out.push(format!(
-                        "  %cache_v_{name} = load i64, i64* %cache_vp_{name}"
+                        "  %cache_v_{name} = load i64, ptr %cache_vp_{name}"
                     ));
                     out.push(format!("  ret i64 %cache_v_{name}"));
                     out.push(format!("cache_miss_{name}:"));
@@ -1942,9 +1971,9 @@ fn memoizar_puras(ir: &str) -> String {
                         if let Some(v) = xt.strip_prefix("ret i64 ") {
                             let v = v.trim();
                             out.push(format!(
-                                "  store i64 %cache_exp_{name}, i64* %cache_kp_{name}"
+                                "  store i64 %cache_exp_{name}, ptr %cache_kp_{name}"
                             ));
-                            out.push(format!("  store i64 {v}, i64* %cache_vp_{name}"));
+                            out.push(format!("  store i64 {v}, ptr %cache_vp_{name}"));
                             out.push(format!("  ret i64 {v}"));
                         } else {
                             out.push(x.to_string());

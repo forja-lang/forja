@@ -956,7 +956,54 @@ impl Lowering {
                 let arr = self.como(&arg0, T::Arreglo);
                 let arg1 = self.arg(nombre, args, 1)?;
                 let v = self.como_slot(&arg1);
+                // Camino rápido inlineado (len < cap → store) y llamada al
+                // runtime sólo cuando hay que crecer. Evita una llamada por
+                // elemento en los bucles que llenan arreglos.
+                let ptr_len = self.r();
+                self.linea(&format!(
+                    "{} = getelementptr inbounds %ForjaArreglo, ptr {}, i32 0, i32 0",
+                    ptr_len, arr
+                ));
+                let len = self.r();
+                self.linea(&format!("{} = load i64, ptr {}", len, ptr_len));
+                let ptr_cap = self.r();
+                self.linea(&format!(
+                    "{} = getelementptr inbounds %ForjaArreglo, ptr {}, i32 0, i32 1",
+                    ptr_cap, arr
+                ));
+                let cap = self.r();
+                self.linea(&format!("{} = load i64, ptr {}", cap, ptr_cap));
+                let hay = self.r();
+                self.linea(&format!("{} = icmp slt i64 {}, {}", hay, len, cap));
+                let llenar = self.bloque("empujar.lleno");
+                let crecer = self.bloque("empujar.crecer");
+                let fin = self.bloque("empujar.fin");
+                self.linea(&format!(
+                    "br i1 {}, label %{}, label %{}",
+                    hay, llenar, crecer
+                ));
+                self.etiqueta(&crecer);
                 self.linea(&format!("call void @forja_empujar(ptr {}, i64 {})", arr, v));
+                self.linea(&format!("br label %{}", fin));
+                self.etiqueta(&llenar);
+                let ptr_datos = self.r();
+                self.linea(&format!(
+                    "{} = getelementptr inbounds %ForjaArreglo, ptr {}, i32 0, i32 3",
+                    ptr_datos, arr
+                ));
+                let datos = self.r();
+                self.linea(&format!("{} = load ptr, ptr {}", datos, ptr_datos));
+                let slot = self.r();
+                self.linea(&format!(
+                    "{} = getelementptr inbounds i64, ptr {}, i64 {}",
+                    slot, datos, len
+                ));
+                self.linea(&format!("store i64 {}, ptr {}", v, slot));
+                let nuevo = self.r();
+                self.linea(&format!("{} = add i64 {}, 1", nuevo, len));
+                self.linea(&format!("store i64 {}, ptr {}", nuevo, ptr_len));
+                self.linea(&format!("br label %{}", fin));
+                self.etiqueta(&fin);
                 V::Nulo
             }
             _ => return Ok(None),

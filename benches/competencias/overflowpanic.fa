@@ -1,0 +1,55 @@
+// 6. Test de Manejo de Errores y Seguridad (Pánico Controlado / Overflow)
+// Evalúa cómo reacciona el runtime ante condiciones de fallo crítico
+// (desbordamiento aritmético) capturándolas de forma segura sin corromper
+// la memoria.
+//
+// Nota: el equivalente a `panic::catch_unwind` es devolver el estado como
+// valor (clase Estado) en vez de tumbar el proceso.
+importar "std/sistema"
+
+clase Estado {
+    variable es_error: Booleano
+    variable mensaje: Texto
+
+    constructor(error: Booleano, texto: Texto) {
+        este.es_error = error
+        este.mensaje = texto
+    }
+}
+
+// u32::MAX en Forja (Entero es de 64 bits: el desbordamiento de 32 bits se
+// simula explícitamente para reproducir `wrapping_add`).
+
+funcion operacion_insegura(trigger: Booleano) -> Entero {
+    variable val = 4294967295
+    si (trigger) {
+        val = (val + 1) - 4294967296
+    }
+    retornar val
+}
+
+funcion ejecucion_segura() -> Estado {
+    variable i = 0
+    variable val = 0
+    mientras (i < 50000000) {
+        // Forzamos condiciones límite en bucle cerrado
+        val = operacion_insegura(i == 25000000)
+        i = i + 1
+    }
+    retornar nuevo Estado(falso, "Ejecución exitosa sin corrupción de memoria")
+}
+
+escribir("Iniciando prueba de Manejo de Errores y Safety...")
+variable inicio = tiempo_ms()
+
+variable resultado = ejecucion_segura()
+
+variable duracion = tiempo_ms() - inicio
+
+si (resultado.es_error) {
+    escribir("Error capturado de forma segura por el runtime.")
+} sino {
+    escribir("Estado: " + resultado.mensaje)
+}
+
+escribir("Tiempo de ejecución: " + a_texto(duracion) + " ms")

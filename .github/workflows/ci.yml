@@ -284,6 +284,29 @@ jobs:
             target/cov-asm/cov/asm.lcov
           if-no-files-found: warn
 
+  # Los 10 programas de `benches/competencias/` compilados con el backend
+  # LLVM nativo y con `rustc -O`, comparados contra una baseline de ratios.
+  # Protege el rendimiento del backend: si un caso deja de compilar o el ratio
+  # empeora más de 20 %, el job falla.
+  bench-competencias:
+    name: Bench competencias (nativo vs Rust)
+    needs: [cambios, lint, elige-runner]
+    if: github.event_name == 'workflow_dispatch' || needs.cambios.outputs.codigo == 'true'
+    runs-on: ${{ fromJSON(needs.elige-runner.outputs.linux) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+      - name: Instalar clang
+        run: sudo apt-get update -qq && sudo apt-get install -y clang
+      - name: Compilar la CLI (release)
+        run: cargo build --locked --release -p forja-cli
+      - name: Medir y comparar con la baseline
+        run: bash scripts/bench-competencias.sh
+
   build-and-test:
     name: Build y Test (${{ matrix.os }})
     needs: [cambios, lint, elige-runner]

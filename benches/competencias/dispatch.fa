@@ -1,0 +1,37 @@
+// 4. Test de Dispatch Dinámico (Vtables / Trait Objects)
+// Mide el costo del polimorfismo en tiempo de ejecución (llamadas a través de
+// un puntero a función elegido en runtime).
+//
+// Nota: `Entero` en Forja está acotado a ±2^47, así que con 100 millones de
+// iteraciones el acumulador desborda. Se usan 10 millones en ambos lados
+// (ver medicion/rust_escala/dispatch.rs).
+importar "std/sistema"
+
+// Dos implementaciones de la misma "interfaz" (función con la misma firma).
+funcion sumador(x: Entero) -> Entero {
+    retornar x + 5
+}
+
+funcion multiplicador(x: Entero) -> Entero {
+    retornar x * 2
+}
+
+escribir("Iniciando prueba de Dispatch Dinámico (Trait Objects / vtable)...")
+variable inicio = tiempo_ms()
+
+// Tabla de funciones: el equivalente a un vector de objetos `dyn Operacion`.
+variable operaciones = [sumador, multiplicador]
+
+variable acumulador = 0
+variable i = 0
+mientras (i < 10000000) {
+    // Alternamos entre las implementaciones usando dispatch dinámico
+    variable indice = i - (i / 2) * 2
+    variable op = operaciones[indice]
+    acumulador = acumulador + op(i)
+    i = i + 1
+}
+
+variable duracion = tiempo_ms() - inicio
+escribir("Resultado acumulado: " + a_texto(acumulador))
+escribir("Tiempo de ejecución: " + a_texto(duracion) + " ms")

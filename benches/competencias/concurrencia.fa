@@ -1,0 +1,43 @@
+// 2. Test de Concurrencia y Hilos Nativos (Multithreading)
+// Lanza hilos paralelos y sincroniza los resultados mediante canales.
+//
+// Nota: el runtime de Forja limita cada `hilo` a 500.000 instrucciones, así que
+// la carga por hilo es 50.000 iteraciones (la copia Rust equivalente en
+// medicion/rust_escala/concurrencia.rs usa la misma carga).
+importar "std/sistema"
+
+funcion tarea_pesada(iteraciones: Entero) -> Entero {
+    variable suma = 0
+    variable i = 0
+    mientras (i < iteraciones) {
+        suma = suma + i
+        i = i + 1
+    }
+    retornar suma
+}
+
+escribir("Iniciando prueba de concurrencia en Forja...")
+variable inicio = tiempo_ms()
+
+variable e, r = canal()
+variable hilos_totales = 8
+variable carga = 50000
+
+variable h = 0
+mientras (h < hilos_totales) {
+    hilo {
+        e.enviar(tarea_pesada(carga))
+    }
+    h = h + 1
+}
+
+variable total_general = 0
+variable k = 0
+mientras (k < hilos_totales) {
+    total_general = total_general + r.recibir()
+    k = k + 1
+}
+
+variable duracion = tiempo_ms() - inicio
+escribir("Resultado concurrente total: " + a_texto(total_general))
+escribir("Tiempo de ejecución: " + a_texto(duracion) + " ms")

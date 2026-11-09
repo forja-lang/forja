@@ -1,0 +1,26 @@
+// 7. Test de Procesamiento de Cadenas y Parsing (String Allocations & Splitting)
+// Estresa la creación de strings dinámicos, la búsqueda de subcadenas y el
+// parsing de números en bucles cerrados.
+importar "std/sistema"
+
+escribir("Iniciando prueba de Procesamiento de Cadenas y Parsing...")
+variable inicio = tiempo_ms()
+
+variable suma_total = 0
+variable i = 0
+mientras (i < 2000000) {
+    // Generamos un string formateado dinámicamente
+    variable cadena = "item_" + a_texto(i) + ":val_" + a_texto(i * 2)
+
+    // Simulamos parsing extrayendo la subcadena numérica y convirtiéndola
+    variable pos = indice_de(cadena, "val_")
+    si (pos >= 0) {
+        variable num_str = subcadena(cadena, pos + 4, longitud(cadena))
+        suma_total = suma_total + a_entero(num_str)
+    }
+    i = i + 1
+}
+
+variable duracion = tiempo_ms() - inicio
+escribir("Suma total parseada: " + a_texto(suma_total))
+escribir("Tiempo de ejecución: " + a_texto(duracion) + " ms")

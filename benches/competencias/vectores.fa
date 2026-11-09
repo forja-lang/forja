@@ -1,0 +1,26 @@
+// 10. Test de Crecimiento Dinámico de Vectores (Vector Reallocations)
+// Hace crecer múltiples listas dinámicas sin pre-asignar capacidad, forzando
+// realojamientos de memoria (realloc) sucesivos.
+importar "std/sistema"
+
+escribir("Iniciando prueba de Crecimiento Dinámico de Vectores...")
+variable inicio = tiempo_ms()
+
+variable coleccion_vectores = []
+
+variable i = 0
+mientras (i < 1000) {
+    variable v = []
+    // Crecimiento forzado sin reserva previa
+    variable j = 0
+    mientras (j < 5000) {
+        empujar(v, j)
+        j = j + 1
+    }
+    empujar(coleccion_vectores, v)
+    i = i + 1
+}
+
+variable duracion = tiempo_ms() - inicio
+escribir("Total vectores creados: " + a_texto(longitud(coleccion_vectores)))
+escribir("Tiempo de ejecución: " + a_texto(duracion) + " ms")

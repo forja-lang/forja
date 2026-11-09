@@ -1,0 +1,20 @@
+// 3. Test de Interoperabilidad FFI (Foreign Function Interface)
+// Llama directamente a funciones de la librería C del sistema para medir el
+// costo de la interoperabilidad.
+importar "std/sistema"
+
+// En Windows la libc es msvcrt; en Unix es libc/libSystem. Enlace automático.
+importar externa "msvcrt.dll"
+funcion externa puts(s: Texto) -> Entero;
+funcion externa abs(i: Entero) -> Entero;
+
+escribir("Iniciando prueba FFI en Forja...")
+variable inicio = tiempo_ms()
+
+puts("Hola desde C a traves de Forja FFI!")
+variable negativo = -42
+variable absoluto = abs(negativo)
+escribir("Valor absoluto via FFI C: " + a_texto(absoluto))
+
+variable duracion = tiempo_ms() - inicio
+escribir("Tiempo de ejecución: " + a_texto(duracion) + " ms")

@@ -1,0 +1,43 @@
+// 9. Test de Localidad de Memoria y Cache CPU (Matriz 2D / Stride Access)
+// Recorre una matriz gigante bidimensional en dos sentidos: por filas (cache
+// friendly) y por columnas (cache misses).
+importar "std/sistema"
+
+variable filas = 4096
+variable cols = 4096
+
+escribir("Iniciando prueba de Localidad de Memoria y Cache CPU...")
+
+// Matriz aplanada contigua en el heap
+variable matriz = repetir_arreglo(1, filas * cols)
+
+// Recorrido continuo en memoria (Cache Line Hit)
+variable inicio_hit = tiempo_ms()
+variable suma_hit = 0
+variable r = 0
+mientras (r < filas) {
+    variable c = 0
+    mientras (c < cols) {
+        suma_hit = suma_hit + matriz[r * cols + c]
+        c = c + 1
+    }
+    r = r + 1
+}
+variable duracion_hit = tiempo_ms() - inicio_hit
+
+// Recorrido a saltos (Cache Line Miss)
+variable inicio_miss = tiempo_ms()
+variable suma_miss = 0
+variable c2 = 0
+mientras (c2 < cols) {
+    variable r2 = 0
+    mientras (r2 < filas) {
+        suma_miss = suma_miss + matriz[r2 * cols + c2]
+        r2 = r2 + 1
+    }
+    c2 = c2 + 1
+}
+variable duracion_miss = tiempo_ms() - inicio_miss
+
+escribir("Suma Hit: " + a_texto(suma_hit) + " | Tiempo: " + a_texto(duracion_hit) + " ms")
+escribir("Suma Miss: " + a_texto(suma_miss) + " | Tiempo: " + a_texto(duracion_miss) + " ms")

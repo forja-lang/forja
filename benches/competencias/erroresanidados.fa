@@ -1,0 +1,65 @@
+// 5. Test de Análisis Estático y Errores Anidados (Inferencia y Tipado)
+// Construye un árbol de expresiones profundamente anidado (AST) y lo recorre
+// simulando un type checker recursivo.
+//
+// Nota: Forja no expone `Result<T, E>` con destructuring fiable en el toplevel,
+// así que el resultado del chequeo se modela con una clase (mismo trabajo).
+importar "std/sistema"
+
+tipo Expr = Literal(Entero) | BinOp(Expr, Texto, Expr)
+
+clase Chequeo {
+    variable es_error: Booleano
+    variable nombre: Texto
+
+    constructor(error: Booleano, texto: Texto) {
+        este.es_error = error
+        este.nombre = texto
+    }
+}
+
+// Función recursiva que simula el recorrido del type checker.
+funcion verificar_tipos(expr: Expr) -> Chequeo {
+    coincidir (expr) {
+        caso Literal(n) {
+            retornar nuevo Chequeo(falso, "i64")
+        }
+        caso BinOp(izq, op, der) {
+            variable tipo_izq = verificar_tipos(izq)
+            si (tipo_izq.es_error) {
+                retornar tipo_izq
+            }
+            variable tipo_der = verificar_tipos(der)
+            si (tipo_der.es_error) {
+                retornar tipo_der
+            }
+            si (tipo_izq.nombre == tipo_der.nombre) {
+                retornar nuevo Chequeo(falso, tipo_izq.nombre)
+            }
+            retornar nuevo Chequeo(verdadero, "Tipos incompatibles en operación")
+        }
+    }
+}
+
+funcion construir_ast_gigante(profundidad: Entero) {
+    si (profundidad == 0) {
+        retornar Literal(42)
+    }
+    retornar BinOp(construir_ast_gigante(profundidad - 1), "+", construir_ast_gigante(profundidad - 1))
+}
+
+escribir("Iniciando prueba de Análisis Estático (AST recursivo)...")
+variable inicio = tiempo_ms()
+
+// Árbol masivo (profundidad 22 = millones de nodos)
+variable ast = construir_ast_gigante(22)
+variable resultado = verificar_tipos(ast)
+
+variable duracion = tiempo_ms() - inicio
+
+si (resultado.es_error) {
+    escribir("Verificación de tipos completada: Error(\"" + resultado.nombre + "\")")
+} sino {
+    escribir("Verificación de tipos completada: Ok(\"" + resultado.nombre + "\")")
+}
+escribir("Tiempo de análisis: " + a_texto(duracion) + " ms")

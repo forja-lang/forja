@@ -1,0 +1,31 @@
+// 8. Test de Estructuras de Datos Hash (HashMap / Tabla de Símbolos)
+// Simula una tabla de símbolos: insertos masivos, búsquedas y acumulación.
+importar "std/sistema"
+
+escribir("Iniciando prueba de HashMap e Insertos Masivos...")
+variable inicio = tiempo_ms()
+
+variable mapa = {}
+
+// 1. Inserción masiva
+variable i = 0
+mientras (i < 3000000) {
+    mapa[i] = i * 3
+    i = i + 1
+}
+
+// 2. Búsqueda masiva y mutación en caliente
+variable acumulador = 0
+variable j = 0
+mientras (j < 3000000) {
+    variable val = mapa[j]
+    si (val != nulo) {
+        acumulador = acumulador + val
+    }
+    j = j + 2
+}
+
+variable duracion = tiempo_ms() - inicio
+escribir("Tamaño final del mapa: " + a_texto(i))
+escribir("Acumulador de lookups: " + a_texto(acumulador))
+escribir("Tiempo de ejecución: " + a_texto(duracion) + " ms")
