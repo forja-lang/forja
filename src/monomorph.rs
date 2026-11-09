@@ -148,8 +148,8 @@ impl Monomorphizer {
 
     /// Fase 1: Extraer definiciones genéricas del programa
     pub fn extract_generics(&mut self, programa: &Programa) {
-        for decl in &programa.declaraciones {
-            match decl {
+        for declaracion in &programa.declaraciones {
+            match declaracion {
                 Declaracion::Funcion {
                     nombre,
                     parametros_tipo,
@@ -194,16 +194,17 @@ impl Monomorphizer {
 
     /// Fase 2: Recolectar instanciaciones concretas usadas en el programa
     pub fn collect_instantiations(&mut self, programa: &Programa) {
-        for decl in &programa.declaraciones {
-            self.collect_from_decl(decl);
+        for declaracion in &programa.declaraciones {
+            self.collect_from_decl(declaracion);
         }
     }
 
-    fn collect_from_decl(&mut self, decl: &Declaracion) {
-        match decl {
+    fn collect_from_decl(&mut self, declaracion: &Declaracion) {
+        match declaracion {
             Declaracion::Variable {
-                valor: Some(expr), ..
-            } => self.collect_from_expr(expr),
+                valor: Some(expresion),
+                ..
+            } => self.collect_from_expr(expresion),
             Declaracion::Funcion { cuerpo, .. } => {
                 for d in cuerpo {
                     self.collect_from_decl(d);
@@ -220,8 +221,8 @@ impl Monomorphizer {
         }
     }
 
-    fn collect_from_expr(&mut self, expr: &Expresion) {
-        match expr {
+    fn collect_from_expr(&mut self, expresion: &Expresion) {
+        match expresion {
             Expresion::LlamadaFuncion { nombre, argumentos } => {
                 // Recolectar argumentos recursivamente
                 for arg in argumentos {
@@ -389,8 +390,8 @@ impl Monomorphizer {
     /// Intenta inferir un ConcreteType a partir de una expresión.
     /// Funciona directamente para literales; para variables y otras expresiones
     /// retorna None (requiere type checker para inferencia completa).
-    fn infer_concrete_from_expr(&self, expr: &Expresion) -> Option<ConcreteType> {
-        match expr {
+    fn infer_concrete_from_expr(&self, expresion: &Expresion) -> Option<ConcreteType> {
+        match expresion {
             Expresion::LiteralNumero(_) => Some(ConcreteType::Entero),
             Expresion::LiteralDecimal(_) => Some(ConcreteType::Decimal),
             Expresion::LiteralTexto(_) => Some(ConcreteType::Texto),
@@ -543,10 +544,10 @@ impl Monomorphizer {
 
     /// Retorna las especializaciones generadas como declaraciones
     pub fn get_specializations(&self) -> Vec<Declaracion> {
-        let mut result = Vec::new();
-        result.extend(self.specialized_classes.clone());
-        result.extend(self.specialized_functions.clone());
-        result
+        let mut resultado = Vec::new();
+        resultado.extend(self.specialized_classes.clone());
+        resultado.extend(self.specialized_functions.clone());
+        resultado
     }
 }
 
@@ -662,8 +663,8 @@ mod tests {
     fn test_replace_type_params() {
         let mono = Monomorphizer::new();
         let tipo = Tipo::Parametro("T".to_string());
-        let args = vec![("T".to_string(), ConcreteType::Entero)];
-        let result = mono.replace_type_params(&tipo, &args);
-        assert_eq!(result, Some(Tipo::Entero));
+        let argumentos = vec![("T".to_string(), ConcreteType::Entero)];
+        let resultado = mono.replace_type_params(&tipo, &argumentos);
+        assert_eq!(resultado, Some(Tipo::Entero));
     }
 }
