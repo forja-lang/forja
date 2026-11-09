@@ -141,26 +141,26 @@ impl REPL {
 
             let readline = self.rl.readline(prompt);
             match readline {
-                Ok(line) => {
-                    let line = line.trim().to_string();
+                Ok(linea) => {
+                    let linea = linea.trim().to_string();
                     // Sin esto, ↑/↓ sólo repite lo que estaba en el archivo al
                     // arrancar: la sesión actual nunca entra en la historia.
-                    let _ = self.rl.add_history_entry(line.as_str());
-                    self.registrar_en_historial(&line);
-                    if line.is_empty() {
+                    let _ = self.rl.add_history_entry(linea.as_str());
+                    self.registrar_en_historial(&linea);
+                    if linea.is_empty() {
                         continue;
                     }
 
                     // Los comandos del REPL llevan `/` obligatoriamente; el
                     // resto se interpreta como código Forja.
-                    let (comando, argumento) = match line.strip_prefix('/') {
+                    let (comando, argumento) = match linea.strip_prefix('/') {
                         Some(resto) => match resto.trim().split_once(char::is_whitespace) {
                             Some((nombre, arg)) => (nombre, arg.trim().to_string()),
                             None => (resto.trim(), String::new()),
                         },
                         None => {
                             let parece = matches!(
-                                line.split_whitespace().next().unwrap_or(""),
+                                linea.split_whitespace().next().unwrap_or(""),
                                 "salir"
                                     | "exit"
                                     | "quit"
@@ -414,9 +414,9 @@ impl REPL {
                         }
                     }
 
-                    self.buffer.push_str(&line);
+                    self.buffer.push_str(&linea);
                     self.buffer.push('\n');
-                    let source = self.buffer.clone();
+                    let fuente = self.buffer.clone();
 
                     if !self.chequear_completud() {
                         // Faltan cerrar llaves { } — el usuario sigue escribiendo.
@@ -425,7 +425,7 @@ impl REPL {
                         continue;
                     }
 
-                    match self.compilar_y_ejecutar(&source) {
+                    match self.compilar_y_ejecutar(&fuente) {
                         Ok(nuevo_source) => {
                             self.source_acumulado.push_str(&nuevo_source);
                             self.buffer.clear();
@@ -448,11 +448,11 @@ impl REPL {
     ///
     /// Retorna Ok(nuevo_source) si compiló bien (solo el source nuevo,
     /// no el acumulado), para que el llamador lo agregue al acumulado.
-    fn compilar_y_ejecutar(&mut self, source: &str) -> Result<String, String> {
+    fn compilar_y_ejecutar(&mut self, fuente: &str) -> Result<String, String> {
         // Compilar TODO: acumulado + nuevo con el pipeline de la CLI.
         // Antes se hacía lexer→parser→bytecode a mano: sin el type checker, el
         // REPL aceptaba `hola` o `hola = 1` sin `variable` (el lenguaje no).
-        let full_source = format!("{}{}", self.source_acumulado, source);
+        let full_source = format!("{}{}", self.source_acumulado, fuente);
         let (bytecode, contratos_vm) = forja::compilar_pipeline_completa(&full_source)?;
 
         // VM nueva por entrada: la persistencia de variables la da recompilar
@@ -474,7 +474,7 @@ impl REPL {
             println!("{linea}");
         }
         resultado?;
-        Ok(source.to_string())
+        Ok(fuente.to_string())
     }
 
     /// Devuelve sólo las líneas de salida que todavía no se mostraron.
@@ -597,8 +597,8 @@ impl REPL {
 /// Nombres de las variables y constantes declaradas en `source`, en orden.
 ///
 /// Es sólo para `/variables`: si el código no parsea devuelve lo que pudo.
-fn variables_declaradas(source: &str) -> Vec<String> {
-    let mut lexer = Lexer::new(source);
+fn variables_declaradas(fuente: &str) -> Vec<String> {
+    let mut lexer = Lexer::new(fuente);
     let Ok(tokens) = lexer.tokenize() else {
         return Vec::new();
     };
@@ -982,7 +982,7 @@ variable n = 7
 ",
         ] {
             match repl.compilar_y_ejecutar(linea) {
-                Ok(source) => repl.source_acumulado.push_str(&source),
+                Ok(fuente) => repl.source_acumulado.push_str(&fuente),
                 Err(e) => panic!("error en {linea:?}: {e}"),
             }
         }
@@ -1000,8 +1000,8 @@ variable n = 7
             "escribir(\"c\")
 ",
         ] {
-            let source = repl.compilar_y_ejecutar(linea).unwrap();
-            repl.source_acumulado.push_str(&source);
+            let fuente = repl.compilar_y_ejecutar(linea).unwrap();
+            repl.source_acumulado.push_str(&fuente);
         }
     }
 
