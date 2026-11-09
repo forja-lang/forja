@@ -25,16 +25,16 @@ fn crc32(data: &[u8]) -> u32 {
 /// (runtime-only) a sus equivalentes genéricos.
 /// Safety net para codigos que no tengan representación binaria.
 pub fn sanitizar_para_serializacion(bc: &[Opcode]) -> Vec<Opcode> {
-    let mut result = Vec::with_capacity(bc.len());
+    let mut resultado = Vec::with_capacity(bc.len());
     for op in bc {
         match op {
             Opcode::EmpujarSumarEntero(n) => {
-                result.push(Opcode::PushEntero(*n));
-                result.push(Opcode::SumarEntero);
+                resultado.push(Opcode::PushEntero(*n));
+                resultado.push(Opcode::SumarEntero);
             }
             Opcode::DuplicarSumarEntero => {
-                result.push(Opcode::Duplicar);
-                result.push(Opcode::SumarEntero);
+                resultado.push(Opcode::Duplicar);
+                resultado.push(Opcode::SumarEntero);
             }
             // Runtime-only: CallBuiltin → Call genérico
             Opcode::LlamarIncorporada(kind, nargs) => {
@@ -51,19 +51,19 @@ pub fn sanitizar_para_serializacion(bc: &[Opcode]) -> Vec<Opcode> {
                     TipoIncorporada::Remover => "remover",
                     TipoIncorporada::Nuevo => "nuevo",
                 };
-                result.push(Opcode::Llamar(Arc::from(name), *nargs));
+                resultado.push(Opcode::Llamar(Arc::from(name), *nargs));
             }
             Opcode::LlamarDirecto(_, nargs) => {
-                result.push(Opcode::Llamar(Arc::from("__direct"), *nargs));
+                resultado.push(Opcode::Llamar(Arc::from("__direct"), *nargs));
             }
             Opcode::LlamarMetodoCacheado(_, nargs) => {
-                result.push(Opcode::LlamarMetodo(Arc::from("__cached"), *nargs));
+                resultado.push(Opcode::LlamarMetodo(Arc::from("__cached"), *nargs));
             }
             // Cualquier otro opcode se mantiene (la mayoría son serializables ahora)
-            _ => result.push(op.clone()),
+            _ => resultado.push(op.clone()),
         }
     }
-    result
+    resultado
 }
 
 /// Serializa bytecode a binario (formato .fbc v2 con checksum CRC32)
@@ -76,8 +76,8 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
     bytes.extend_from_slice(&metadata::FORMAT_VERSION.to_le_bytes());
 
     // Primero, recolectar todos los strings
-    let mut string_pool: Vec<String> = Vec::new();
-    let mut string_indices: std::collections::HashMap<String, u32> =
+    let mut reserva_textos: Vec<String> = Vec::new();
+    let mut indices_textos: std::collections::HashMap<String, u32> =
         std::collections::HashMap::new();
 
     for op in codigos {
@@ -93,11 +93,11 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
             | Opcode::FijarCampo(s)
             | Opcode::ObtenerCampo(s)
             | Opcode::LlamarMetodo(s, _) => {
-                let s_str: &str = s.as_ref();
-                if !string_indices.contains_key(s_str) {
-                    let idx = string_pool.len() as u32;
-                    string_indices.insert(s_str.to_string(), idx);
-                    string_pool.push(s_str.to_string());
+                let texto: &str = s.as_ref();
+                if !indices_textos.contains_key(texto) {
+                    let idx = reserva_textos.len() as u32;
+                    indices_textos.insert(texto.to_string(), idx);
+                    reserva_textos.push(texto.to_string());
                 }
             }
             _ => {}
@@ -105,8 +105,8 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
     }
 
     // Escribir string pool
-    bytes.extend_from_slice(&(string_pool.len() as u32).to_le_bytes());
-    for s in &string_pool {
+    bytes.extend_from_slice(&(reserva_textos.len() as u32).to_le_bytes());
+    for s in &reserva_textos {
         let s_bytes = s.as_bytes();
         bytes.extend_from_slice(&(s_bytes.len() as u32).to_le_bytes());
         bytes.extend_from_slice(s_bytes);
@@ -120,11 +120,11 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
             Opcode::PushEntero(n) => bytes.extend_from_slice(&n.to_le_bytes()),
             Opcode::PushDecimal(d) => bytes.extend_from_slice(&d.to_le_bytes()),
             Opcode::PushTexto(s) | Opcode::Cargar(s) | Opcode::Guardar(s) => {
-                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
+                let idx = indices_textos.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
             }
             Opcode::Declarar(s, mutable) => {
-                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
+                let idx = indices_textos.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
                 bytes.push(if *mutable { 1 } else { 0 });
             }
@@ -157,11 +157,11 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
                 bytes.extend_from_slice(&(*b as u32).to_le_bytes());
             }
             Opcode::PushBooleano(b) => bytes.push(if *b { 1 } else { 0 }),
-            Opcode::Salto(target) | Opcode::SaltoSiFalso(target) | Opcode::Etiqueta(target) => {
-                bytes.extend_from_slice(&(*target as u32).to_le_bytes());
+            Opcode::Salto(destino) | Opcode::SaltoSiFalso(destino) | Opcode::Etiqueta(destino) => {
+                bytes.extend_from_slice(&(*destino as u32).to_le_bytes());
             }
             Opcode::DefinirFuncion(s, params) => {
-                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
+                let idx = indices_textos.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
                 bytes.extend_from_slice(&(params.len() as u32).to_le_bytes());
                 for p in params {
@@ -171,17 +171,17 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
                 }
             }
             Opcode::Llamar(s, n) | Opcode::LlamadaFinal(s, n) => {
-                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
+                let idx = indices_textos.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
                 bytes.extend_from_slice(&(*n as u32).to_le_bytes());
             }
             Opcode::LlamarMetodo(s, n) => {
-                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
+                let idx = indices_textos.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
                 bytes.extend_from_slice(&(*n as u32).to_le_bytes());
             }
             Opcode::NuevoObjeto(s) | Opcode::FijarCampo(s) | Opcode::ObtenerCampo(s) => {
-                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
+                let idx = indices_textos.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
             }
             Opcode::DeclararOperacionEntero(idx, n) => {
@@ -288,15 +288,15 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
                 bytes.extend_from_slice(&(*idx as u32).to_le_bytes());
                 bytes.push(if *mutable { 1 } else { 0 });
             }
-            // Debug: SetLine(line) — payload: 4 bytes (u32)
-            Opcode::FijarLinea(line) => {
-                bytes.extend_from_slice(&(*line as u32).to_le_bytes());
+            // Debug: SetLine(linea) — payload: 4 bytes (u32)
+            Opcode::FijarLinea(linea) => {
+                bytes.extend_from_slice(&(*linea as u32).to_le_bytes());
             }
             Opcode::EmpujarSumarEntero(n) => {
                 bytes.extend_from_slice(&n.to_le_bytes());
             }
             Opcode::CrearHilo(s, nargs) | Opcode::LlamarNativa(s, nargs) => {
-                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
+                let idx = indices_textos.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
                 bytes.extend_from_slice(&(*nargs as u32).to_le_bytes());
             }
@@ -304,7 +304,7 @@ pub fn serializar_bytecode(codigos: &[Opcode]) -> Vec<u8> {
                 bytes.extend_from_slice(&(*nargs as u32).to_le_bytes());
             }
             Opcode::ConsultarSocket(s) => {
-                let idx = string_indices.get(s.as_ref()).unwrap_or(&0);
+                let idx = indices_textos.get(s.as_ref()).unwrap_or(&0);
                 bytes.extend_from_slice(&idx.to_le_bytes());
             }
             _ => {} // Opcodes sin payload
@@ -613,12 +613,12 @@ fn byte_to_opcode(byte: u8) -> Option<Opcode> {
 /// Límites de seguridad para deserialización de bytecode
 const MAX_STRINGS: usize = 10000;
 const MAX_OPCODES: usize = 100000;
-const MAX_PARAMS_PER_FUNCTION: usize = 100;
-const MAX_STRING_LENGTH: usize = 65536;
+const MAX_PARAMETROS_POR_FUNCION: usize = 100;
+const MAX_LARGO_TEXTO: usize = 65536;
 
 /// Helper seguro para obtener un string del pool por índice.
 /// Retorna None si el índice está fuera de rango (seguridad contra datos corruptos).
-fn string_pool_get(pool: &[String], idx: usize) -> Option<Arc<str>> {
+fn texto_de_reserva(pool: &[String], idx: usize) -> Option<Arc<str>> {
     if idx < pool.len() {
         Some(Arc::from(pool[idx].as_str()))
     } else {
@@ -663,8 +663,8 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
             data[data.len() - 1],
         ]);
         // Calcular checksum sobre los datos sin el footer de checksum
-        let data_without_checksum = &data[..data.len() - 4];
-        let computed = crc32(data_without_checksum);
+        let datos_sin_suma = &data[..data.len() - 4];
+        let computed = crc32(datos_sin_suma);
         if stored_checksum != computed {
             eprintln!(
                 "[BC] checksum falla: stored={:08X} computed={:08X} len={}",
@@ -688,32 +688,35 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
         return None; // Demasiados strings, probable archivo corrupto
     }
 
-    let mut string_pool: Vec<String> = Vec::new();
+    let mut reserva_textos: Vec<String> = Vec::new();
     for si in 0..num_strings {
         if pos + 4 > data.len() {
             eprintln!("[BC] string pool: pos+4 > len en string {}", si);
             return None;
         }
-        let s_len =
+        let largo_texto =
             u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         pos += 4;
-        if s_len > MAX_STRING_LENGTH {
-            eprintln!("[BC] string pool: s_len {} > MAX en string {}", s_len, si);
+        if largo_texto > MAX_LARGO_TEXTO {
+            eprintln!(
+                "[BC] string pool: largo_texto {} > MAX en string {}",
+                largo_texto, si
+            );
             return None;
         }
-        if pos + s_len > data.len() {
-            eprintln!("[BC] string pool: pos+s_len > len en string {}", si);
+        if pos + largo_texto > data.len() {
+            eprintln!("[BC] string pool: pos+largo_texto > len en string {}", si);
             return None;
         }
-        let s = match String::from_utf8(data[pos..pos + s_len].to_vec()) {
+        let s = match String::from_utf8(data[pos..pos + largo_texto].to_vec()) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("[BC] string pool: utf8 invalido en string {}: {}", si, e);
                 return None;
             }
         };
-        pos += s_len;
-        string_pool.push(s);
+        pos += largo_texto;
+        reserva_textos.push(s);
     }
     eprintln!("[BC] string pool OK: {} strings, pos={}", num_strings, pos);
 
@@ -797,8 +800,8 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                     u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
                         as usize;
                 pos += 4;
-                // Validación de seguridad: el índice debe estar dentro del string_pool
-                let s = string_pool_get(&string_pool, idx)?;
+                // Validación de seguridad: el índice debe estar dentro del reserva_textos
+                let s = texto_de_reserva(&reserva_textos, idx)?;
                 codigos.push(match byte {
                     2 => Opcode::PushTexto(s),
                     10 => Opcode::Cargar(s),
@@ -816,8 +819,8 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 pos += 4;
                 let mutable = data[pos] == 1;
                 pos += 1;
-                // Validación de seguridad: el índice debe estar dentro del string_pool
-                let s = string_pool_get(&string_pool, idx)?;
+                // Validación de seguridad: el índice debe estar dentro del reserva_textos
+                let s = texto_de_reserva(&reserva_textos, idx)?;
                 codigos.push(Opcode::Declarar(s, mutable));
             }
             13 | 14 | 163 | 164 | 165 | 168 | 169 | 170 | 171 => {
@@ -877,7 +880,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 codigos.push(Opcode::CargarSumarEntero(idx, n));
             }
             161 | 162 | 166 | 167 => {
-                // Opcodes con payload de 2x u32 (idx/dst, target/idx)
+                // Opcodes con payload de 2x u32 (idx/dst, destino/idx)
                 if pos + 8 > data.len() {
                     return None;
                 }
@@ -1102,14 +1105,14 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                 if pos + 4 > data.len() {
                     return None;
                 }
-                let target =
+                let destino =
                     u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
                         as usize;
                 pos += 4;
                 codigos.push(match byte {
-                    50 => Opcode::Salto(target),
-                    51 => Opcode::SaltoSiFalso(target),
-                    _ => Opcode::Etiqueta(target),
+                    50 => Opcode::Salto(destino),
+                    51 => Opcode::SaltoSiFalso(destino),
+                    _ => Opcode::Etiqueta(destino),
                 });
             }
             55 => {
@@ -1125,30 +1128,30 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                     u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
                         as usize;
                 pos += 4;
-                if nparams > MAX_PARAMS_PER_FUNCTION {
+                if nparams > MAX_PARAMETROS_POR_FUNCION {
                     return None;
                 }
-                let name = string_pool_get(&string_pool, idx)?;
+                let name = texto_de_reserva(&reserva_textos, idx)?;
                 let mut params = Vec::with_capacity(nparams);
                 for _ in 0..nparams {
                     if pos + 4 > data.len() {
                         return None;
                     }
-                    let p_len = u32::from_le_bytes([
+                    let largo_params = u32::from_le_bytes([
                         data[pos],
                         data[pos + 1],
                         data[pos + 2],
                         data[pos + 3],
                     ]) as usize;
                     pos += 4;
-                    if p_len > MAX_STRING_LENGTH {
+                    if largo_params > MAX_LARGO_TEXTO {
                         return None;
                     }
-                    if pos + p_len > data.len() {
+                    if pos + largo_params > data.len() {
                         return None;
                     }
-                    let p = String::from_utf8(data[pos..pos + p_len].to_vec()).ok()?;
-                    pos += p_len;
+                    let p = String::from_utf8(data[pos..pos + largo_params].to_vec()).ok()?;
+                    pos += largo_params;
                     params.push(Arc::from(p.as_str()));
                 }
                 codigos.push(Opcode::DefinirFuncion(name, params));
@@ -1166,7 +1169,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                     u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
                         as usize;
                 pos += 4;
-                let s = string_pool_get(&string_pool, idx)?;
+                let s = texto_de_reserva(&reserva_textos, idx)?;
                 codigos.push(Opcode::Llamar(s, nargs));
             }
             65 => {
@@ -1182,7 +1185,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                     u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
                         as usize;
                 pos += 4;
-                let s = string_pool_get(&string_pool, idx)?;
+                let s = texto_de_reserva(&reserva_textos, idx)?;
                 codigos.push(Opcode::LlamarMetodo(s, nargs));
             }
             90 => {
@@ -1214,7 +1217,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                     u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
                         as usize;
                 pos += 4;
-                let s = string_pool_get(&string_pool, idx)?;
+                let s = texto_de_reserva(&reserva_textos, idx)?;
                 codigos.push(match byte {
                     62 => Opcode::NuevoObjeto(s),
                     63 => Opcode::FijarCampo(s),
@@ -1448,16 +1451,16 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                     _ => Opcode::GuardarIndiceGlobal(idx),
                 });
             }
-            // Debug: SetLine(line) — 4 bytes payload (u32 linea)
+            // Debug: SetLine(linea) — 4 bytes payload (u32 linea)
             150 => {
                 if pos + 4 > data.len() {
                     return None;
                 }
-                let line =
+                let linea =
                     u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
                         as usize;
                 pos += 4;
-                codigos.push(Opcode::FijarLinea(line));
+                codigos.push(Opcode::FijarLinea(linea));
             }
             // PushAddInt(i64) — 8 bytes payload
             189 => {
@@ -1490,7 +1493,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                     u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
                         as usize;
                 pos += 4;
-                let s = string_pool_get(&string_pool, idx)?;
+                let s = texto_de_reserva(&reserva_textos, idx)?;
                 codigos.push(Opcode::CrearHilo(s, nargs));
             }
             // CallNative(Arc<str>, usize) — string_idx(4) + nargs(4)
@@ -1506,7 +1509,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                     u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
                         as usize;
                 pos += 4;
-                let s = string_pool_get(&string_pool, idx)?;
+                let s = texto_de_reserva(&reserva_textos, idx)?;
                 codigos.push(Opcode::LlamarNativa(s, nargs));
             }
             // SocketPoll(Arc<str>) — string_idx(4)
@@ -1518,7 +1521,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                     u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
                         as usize;
                 pos += 4;
-                let s = string_pool_get(&string_pool, idx)?;
+                let s = texto_de_reserva(&reserva_textos, idx)?;
                 codigos.push(Opcode::ConsultarSocket(s));
             }
             // TailCall (255): igual formato que Call
@@ -1534,7 +1537,7 @@ pub fn deserializar_bytecode(data: &[u8]) -> Option<Vec<Opcode>> {
                     u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
                         as usize;
                 pos += 4;
-                let s = string_pool_get(&string_pool, idx)?;
+                let s = texto_de_reserva(&reserva_textos, idx)?;
                 codigos.push(Opcode::LlamadaFinal(s, nargs));
             }
             _ => {
