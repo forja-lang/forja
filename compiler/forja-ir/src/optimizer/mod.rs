@@ -381,9 +381,9 @@ impl Optimizer {
             self.profundidad_expresion -= 1;
             return Expresion::LiteralNulo;
         }
-        let result = self.optimizar_expresion_inner(expr);
+        let resultado = self.optimizar_expresion_inner(expr);
         self.profundidad_expresion -= 1;
-        result
+        resultado
     }
 
     fn optimizar_expresion_inner(&mut self, expr: &Expresion) -> Expresion {
@@ -822,12 +822,12 @@ impl Optimizer {
                 let (a_adj, b_adj, escala) = homogeneizar_exacto(*a, *sa, *b, *sb)?;
                 match op {
                     Suma => {
-                        let result = a_adj.checked_add(b_adj)?;
-                        Some(ValorConstante::Exacto(result, escala))
+                        let resultado = a_adj.checked_add(b_adj)?;
+                        Some(ValorConstante::Exacto(resultado, escala))
                     }
                     Resta => {
-                        let result = a_adj.checked_sub(b_adj)?;
-                        Some(ValorConstante::Exacto(result, escala))
+                        let resultado = a_adj.checked_sub(b_adj)?;
+                        Some(ValorConstante::Exacto(resultado, escala))
                     }
                     Multiplicacion => {
                         // Multiplicar coeficientes, sumar escalas
@@ -882,8 +882,8 @@ mod tests {
     use forja_syntax::lexer::Lexer;
     use forja_syntax::parser::Parser;
 
-    fn optimizar_source(source: &str) -> Programa {
-        let mut lexer = Lexer::new(source);
+    fn optimizar_source(fuente: &str) -> Programa {
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
@@ -943,8 +943,8 @@ mod tests {
     }
 
     // DCE tests
-    fn dce_source(source: &str) -> Programa {
-        let mut lexer = Lexer::new(source);
+    fn dce_source(fuente: &str) -> Programa {
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
@@ -1104,8 +1104,8 @@ mod tests {
     }
 
     // ─── ConstProp tests ─────────────────────────────────────────────────
-    fn constprop_source(source: &str) -> Programa {
-        let mut lexer = Lexer::new(source);
+    fn constprop_source(fuente: &str) -> Programa {
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
@@ -1359,8 +1359,8 @@ mod tests {
 
     #[test]
     fn test_inline_funcion_trivial() {
-        let source = "funcion doble(x) { retornar x + x }\nvariable y = doble(5)";
-        let mut lexer = Lexer::new(source);
+        let fuente = "funcion doble(x) { retornar x + x }\nvariable y = doble(5)";
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
@@ -1379,8 +1379,8 @@ mod tests {
 
     #[test]
     fn test_inline_no_main() {
-        let source = "funcion main() { escribir(\"hola\") }\nfuncion aux(x) { retornar x }\nvariable y = aux(1)";
-        let mut lexer = Lexer::new(source);
+        let fuente = "funcion main() { escribir(\"hola\") }\nfuncion aux(x) { retornar x }\nvariable y = aux(1)";
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
@@ -1398,8 +1398,8 @@ mod tests {
 
     #[test]
     fn test_no_inline_too_large() {
-        let source = "funcion grande(x) {\n  variable a = 1\n  variable b = 2\n  variable c = 3\n  variable d = 4\n  variable e = 5\n  variable f = 6\n  variable g = 7\n  variable h = 8\n  variable i = 9\n  variable j = 10\n  variable k = 11\n  retornar x + k\n}\nvariable y = grande(5)";
-        let mut lexer = Lexer::new(source);
+        let fuente = "funcion grande(x) {\n  variable a = 1\n  variable b = 2\n  variable c = 3\n  variable d = 4\n  variable e = 5\n  variable f = 6\n  variable g = 7\n  variable h = 8\n  variable i = 9\n  variable j = 10\n  variable k = 11\n  retornar x + k\n}\nvariable y = grande(5)";
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
@@ -1419,8 +1419,8 @@ mod tests {
 
     #[test]
     fn test_unswitch_simple() {
-        let source = "mientras (i < 10) {\n  si (modo_rapido) {\n    variable x = 1\n  } sino {\n    variable x = 2\n  }\n}";
-        let mut lexer = Lexer::new(source);
+        let fuente = "mientras (i < 10) {\n  si (modo_rapido) {\n    variable x = 1\n  } sino {\n    variable x = 2\n  }\n}";
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
@@ -1449,8 +1449,8 @@ mod tests {
     #[test]
     fn test_no_unswitch_variant() {
         // Si la condición del Si depende de i, no se puede unswitch
-        let source = "mientras (i < 10) {\n  si (i > 5) {\n    variable x = 1\n  }\n}";
-        let mut lexer = Lexer::new(source);
+        let fuente = "mientras (i < 10) {\n  si (i > 5) {\n    variable x = 1\n  }\n}";
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
