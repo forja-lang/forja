@@ -7,8 +7,8 @@
 //
 // Esquema:
 //   KeyGen:  t = A*s + e
-//   Encaps:  u = A*r + e1, v = t*r + e2 + msg  →  ct = (u, v')
-//   Decaps:  msg = v - s*u
+//   Encaps:  u = A*r + e1, v = t*r + e2 + mensaje  →  ct = (u, v')
+//   Decaps:  mensaje = v - s*u
 
 use crate::crypto::random_bytes;
 
@@ -230,7 +230,7 @@ pub fn pq_keygen() -> Result<PQKeyPair, &'static str> {
 /// Salida:  (shared_secret, ciphertext)
 ///   ciphertext = bytes(u) || bytes(v_comprimido)
 ///   u = A*r + e1
-///   v = t*r + e2 + msg
+///   v = t*r + e2 + mensaje
 pub fn pq_encaps(pk: &[u8]) -> Result<(Vec<u8>, Vec<u8>), &'static str> {
     let poly_bytes = N * 2;
 
@@ -249,20 +249,20 @@ pub fn pq_encaps(pk: &[u8]) -> Result<(Vec<u8>, Vec<u8>), &'static str> {
     let e1 = sample_cbd(&random_bytes(32)?);
     let e2 = sample_cbd(&random_bytes(32)?);
 
-    // Mensaje: 32 bytes → 256 bits, cada bit se codifica como msg[i] = (Q/2) * bit
+    // Mensaje: 32 bytes → 256 bits, cada bit se codifica como mensaje[i] = (Q/2) * bit
     let msg_seed = random_bytes(32)?;
-    let mut msg = Poly::new();
+    let mut mensaje = Poly::new();
     for i in 0..256.min(N) {
         let byte = msg_seed[i / 8];
         let bit = (byte >> (i % 8)) & 1;
-        msg.coeffs[i] = (Q / 2) * (bit as i16);
+        mensaje.coeffs[i] = (Q / 2) * (bit as i16);
     }
 
     // u = A*r + e1
     let u = add(&mul_naive(&a, &r), &e1);
 
-    // v = t*r + e2 + msg
-    let v = add(&add(&mul_naive(&t, &r), &e2), &msg);
+    // v = t*r + e2 + mensaje
+    let v = add(&add(&mul_naive(&t, &r), &e2), &mensaje);
 
     // Comprimir ciphertext
     let mut ct = Vec::new();
@@ -309,7 +309,7 @@ pub fn pq_decaps(sk: &[u8], ct: &[u8]) -> Result<Vec<u8>, &'static str> {
         v.coeffs[i] = decompress(compressed, 4);
     }
 
-    // msg' = v - s*u
+    // mensaje' = v - s*u
     let msg_prime = sub(&v, &mul_naive(&s, &u));
 
     // Recuperar shared secret: cada bit se decodifica por cercanía a 0 o Q/2
@@ -337,7 +337,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_pq_keygen_encaps_decaps() {
+    fn pq_keygen_encaps_decaps() {
         let keys = pq_keygen().unwrap();
         assert!(!keys.public.is_empty());
         assert!(!keys.secret.is_empty());
@@ -352,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn test_poly_add_sub_neg() {
+    fn poly_add_sub_neg() {
         let a = {
             let mut p = Poly::new();
             p.coeffs[0] = 1000;
@@ -382,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn test_poly_mul_naive() {
+    fn poly_mul_naive() {
         // a = x^2 + 1, b = x + 1
         let a = {
             let mut p = Poly::new();
@@ -420,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn test_compress_decompress_roundtrip() {
+    fn compress_decompress_roundtrip() {
         // Verificar que decompress(compress(x)) ≈ x
         for x in [0, 1, 100, 1000, 2000, 3328].iter() {
             let c = compress(*x, 4);
@@ -439,7 +439,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sample_cbd_range() {
+    fn sample_cbd_range() {
         let seed = [0xABu8; 32];
         let p = sample_cbd(&seed);
         for i in 0..N {
