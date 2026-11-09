@@ -29,6 +29,8 @@ forjaX/
 tmp/
 *.profraw
 actions-runner/
+plans/
+/plans
 
 # ── Ejecutables ──
 *.exe
