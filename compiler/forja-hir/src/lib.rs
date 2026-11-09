@@ -241,16 +241,16 @@ mod tests {
     use forja_syntax::lexer::Lexer;
     use forja_syntax::parser::Parser;
 
-    fn parse(src: &str) -> Programa {
-        let mut l = Lexer::new(src);
-        let t = l.tokenize().unwrap();
-        Parser::new(t).parse().unwrap()
+    fn analizar(fuente: &str) -> Programa {
+        let mut lexer = Lexer::new(fuente);
+        let tokens = lexer.tokenize().unwrap();
+        Parser::new(tokens).parse().unwrap()
     }
 
     #[test]
-    fn dos_modulos_resuelven_su_propio_item() {
-        let a = parse("funcion obtener() { retornar 1 }");
-        let b = parse("funcion obtener() { retornar 2 }");
+    fn dos_modulos_resuelven_su_propio_elemento() {
+        let a = analizar("funcion obtener() { retornar 1 }");
+        let b = analizar("funcion obtener() { retornar 2 }");
         let mut hir = Hir::nuevo();
         let ma = hir.agregar_modulo("a", &a);
         let mb = hir.agregar_modulo("b", &b);
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn detecta_duplicado_en_el_mismo_modulo() {
-        let p = parse("funcion f() { retornar 1 }\nfuncion f() { retornar 2 }");
+        let p = analizar("funcion f() { retornar 1 }\nfuncion f() { retornar 2 }");
         let mut hir = Hir::nuevo();
         let m = hir.agregar_modulo("m", &p);
         assert_eq!(hir.duplicados.len(), 1);
@@ -276,8 +276,8 @@ mod tests {
     }
 
     #[test]
-    fn item_inexistente_no_resuelve() {
-        let p = parse("funcion f() { retornar 1 }");
+    fn elemento_inexistente_no_resuelve() {
+        let p = analizar("funcion f() { retornar 1 }");
         let mut hir = Hir::nuevo();
         let m = hir.agregar_modulo("m", &p);
         assert_eq!(hir.resolver_calificado(m, "g"), Resolucion::NoEncontrado);
