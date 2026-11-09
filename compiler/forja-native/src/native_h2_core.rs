@@ -173,9 +173,9 @@ fn static_table_entry(idx: usize) -> Option<(&'static str, &'static str)> {
     }
 }
 
-fn static_table_index(name: &str, value: &str) -> Option<usize> {
+fn static_table_index(name: &str, valor: &str) -> Option<usize> {
     for (i, (n, v)) in STATIC_TABLE.iter().enumerate() {
-        if *n == name && *v == value {
+        if *n == name && *v == valor {
             return Some(i + 1);
         }
     }
@@ -211,8 +211,8 @@ impl TablaDinamica {
         }
     }
 
-    fn entry_size(name: &str, value: &str) -> usize {
-        name.len() + value.len() + 32
+    fn entry_size(name: &str, valor: &str) -> usize {
+        name.len() + valor.len() + 32
     }
 
     pub fn get(&self, idx: usize) -> Option<(&str, &str)> {
@@ -229,11 +229,11 @@ impl TablaDinamica {
         }
     }
 
-    pub fn add(&mut self, name: &str, value: &str) {
-        let size = Self::entry_size(name, value);
+    pub fn add(&mut self, name: &str, valor: &str) {
+        let tamano = Self::entry_size(name, valor);
         self.entries
-            .insert(0, (name.to_string(), value.to_string()));
-        self.current_size += size;
+            .insert(0, (name.to_string(), valor.to_string()));
+        self.current_size += tamano;
         self.evict();
     }
 
@@ -258,14 +258,14 @@ impl TablaDinamica {
         self.len() == 0
     }
 
-    pub fn buscar(&self, name: &str, value: &str) -> Option<usize> {
+    pub fn buscar(&self, name: &str, valor: &str) -> Option<usize> {
         // Buscar en tabla estática primero
-        if let Some(idx) = static_table_index(name, value) {
+        if let Some(idx) = static_table_index(name, valor) {
             return Some(idx);
         }
         // Buscar en dinámica
         for (i, (n, v)) in self.entries.iter().enumerate() {
-            if n == name && v == value {
+            if n == name && v == valor {
                 return Some(STATIC_TABLE.len() + 1 + i);
             }
         }
@@ -583,18 +583,18 @@ fn huffman_encode(input: &str) -> Vec<u8> {
 /// Árbol de Huffman para decodificación
 struct HuffmanNode {
     children: [Option<Box<HuffmanNode>>; 2],
-    value: Option<u8>,
+    valor: Option<u8>,
 }
 
 impl HuffmanNode {
     fn new() -> Self {
         Self {
             children: [None, None],
-            value: None,
+            valor: None,
         }
     }
 
-    fn insert(&mut self, code: u32, len: u8, value: u8) {
+    fn insert(&mut self, code: u32, len: u8, valor: u8) {
         let mut node = self;
         for i in (0..len).rev() {
             let bit = ((code >> (len - 1 - i)) & 1) as usize;
@@ -603,7 +603,7 @@ impl HuffmanNode {
             }
             node = node.children[bit].as_mut().unwrap();
         }
-        node.value = Some(value);
+        node.valor = Some(valor);
     }
 }
 
@@ -635,7 +635,7 @@ fn huffman_decode(input: &[u8]) -> Result<Vec<u8>, ()> {
             match &node.children[bit] {
                 Some(child) => {
                     node = child.as_ref();
-                    if let Some(val) = node.value {
+                    if let Some(val) = node.valor {
                         // EOS check: si encontramos EOS (valor 256), terminamos
                         if val == 0x00 && node.children[0].is_none() && node.children[1].is_none() {
                             // Podría ser EOS o byte 0x00 real. Verificamos bits restantes.
@@ -664,8 +664,8 @@ fn huffman_decode(input: &[u8]) -> Result<Vec<u8>, ()> {
     Ok(output)
 }
 
-fn check_all_ones_remaining(data: &[u8], start: usize) -> bool {
-    for &byte in &data[start..] {
+fn check_all_ones_remaining(data: &[u8], inicio: usize) -> bool {
+    for &byte in &data[inicio..] {
         if byte != 0xFF {
             // Último byte puede tener algunos bits 0
             let zeros = (!byte).leading_zeros();
@@ -682,28 +682,28 @@ fn check_all_ones_remaining(data: &[u8], start: usize) -> bool {
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Codifica un entero en HPACK (RFC 7541 §5.1)
-fn encode_integer(mut value: u64, prefix_bits: u8, buf: &mut Vec<u8>) {
+fn encode_integer(mut valor: u64, prefix_bits: u8, buf: &mut Vec<u8>) {
     let prefix_max = (1 << prefix_bits) - 1;
-    if value < prefix_max {
-        buf.push(value as u8);
+    if valor < prefix_max {
+        buf.push(valor as u8);
     } else {
-        value -= prefix_max;
+        valor -= prefix_max;
         buf.push(prefix_max as u8);
-        while value >= 128 {
-            buf.push((value & 0x7F) as u8 | 0x80);
-            value >>= 7;
+        while valor >= 128 {
+            buf.push((valor & 0x7F) as u8 | 0x80);
+            valor >>= 7;
         }
-        buf.push(value as u8);
+        buf.push(valor as u8);
     }
 }
 
 /// Decodifica un entero HPACK
 fn decode_integer(data: &[u8], offset: &mut usize, prefix_bits: u8) -> Result<u64, ()> {
     let prefix_max = (1 << prefix_bits) - 1;
-    let mut value = (data[*offset] & prefix_max) as u64;
-    if value < prefix_max as u64 {
+    let mut valor = (data[*offset] & prefix_max) as u64;
+    if valor < prefix_max as u64 {
         *offset += 1;
-        return Ok(value);
+        return Ok(valor);
     }
     *offset += 1;
     let mut m: u64 = 0;
@@ -712,14 +712,14 @@ fn decode_integer(data: &[u8], offset: &mut usize, prefix_bits: u8) -> Result<u6
             return Err(());
         }
         let byte = data[*offset];
-        value += ((byte & 0x7F) as u64) << m;
+        valor += ((byte & 0x7F) as u64) << m;
         m += 7;
         *offset += 1;
         if byte & 0x80 == 0 {
             break;
         }
     }
-    Ok(value)
+    Ok(valor)
 }
 
 /// Codifica un string literal HPACK (con o sin Huffman)
@@ -767,9 +767,9 @@ fn decode_string(data: &[u8], offset: &mut usize) -> Result<String, ()> {
 pub fn hpack_codificar(cabeceras: &HashMap<String, String>, tabla: &mut TablaDinamica) -> Vec<u8> {
     let mut output = Vec::new();
 
-    for (name, value) in cabeceras {
+    for (name, valor) in cabeceras {
         // ─── Tipo 1: Indexed Header Field (1xxxxxxx) ───
-        if let Some(idx) = tabla.buscar(name, value) {
+        if let Some(idx) = tabla.buscar(name, valor) {
             let pos = output.len();
             encode_integer(idx as u64, 7, &mut output);
             output[pos] |= 0x80; // flag de indexed
@@ -782,14 +782,14 @@ pub fn hpack_codificar(cabeceras: &HashMap<String, String>, tabla: &mut TablaDin
             let pos = output.len();
             encode_integer(idx as u64, 6, &mut output);
             output[pos] |= 0x40; // tipo 01
-            encode_string(value, true, &mut output);
+            encode_string(valor, true, &mut output);
         } else {
             // Nombre literal + valor literal
             output.push(0x40); // tipo 01, índice 0 (nombre no indexado)
             encode_string(name, true, &mut output);
-            encode_string(value, true, &mut output);
+            encode_string(valor, true, &mut output);
         }
-        tabla.add(name, value);
+        tabla.add(name, valor);
     }
 
     output
@@ -801,7 +801,7 @@ pub fn hpack_codificar(cabeceras: &HashMap<String, String>, tabla: &mut TablaDin
 
 #[derive(Debug, Clone)]
 pub struct H2Frame {
-    pub frame_type: u8,
+    pub tipo_frame: u8,
     pub flags: u8,
     pub stream_id: u32,
     pub payload: Vec<u8>,
@@ -819,7 +819,7 @@ impl H2Frame {
         buf.push(len as u8);
 
         // Type
-        buf.push(self.frame_type);
+        buf.push(self.tipo_frame);
 
         // Flags
         buf.push(self.flags);
@@ -842,29 +842,29 @@ impl H2Frame {
             return None;
         }
         let len = ((data[0] as usize) << 16) | ((data[1] as usize) << 8) | (data[2] as usize);
-        let frame_type = data[3];
+        let tipo_frame = data[3];
         let flags = data[4];
         let stream_id = ((data[5] as u32) << 24)
             | ((data[6] as u32) << 16)
             | ((data[7] as u32) << 8)
             | (data[8] as u32);
         let stream_id = stream_id & 0x7FFFFFFF;
-        Some((len, frame_type, flags, stream_id))
+        Some((len, tipo_frame, flags, stream_id))
     }
 
     /// Crea un frame SETTINGS vacío (ACK o con settings)
     pub fn settings(ack: bool, settings: &[(u16, u32)]) -> Self {
         let mut payload = Vec::with_capacity(settings.len() * 6);
-        for &(id, value) in settings {
+        for &(id, valor) in settings {
             payload.push((id >> 8) as u8);
             payload.push(id as u8);
-            payload.push((value >> 24) as u8);
-            payload.push((value >> 16) as u8);
-            payload.push((value >> 8) as u8);
-            payload.push(value as u8);
+            payload.push((valor >> 24) as u8);
+            payload.push((valor >> 16) as u8);
+            payload.push((valor >> 8) as u8);
+            payload.push(valor as u8);
         }
         Self {
-            frame_type: FRAME_SETTINGS,
+            tipo_frame: FRAME_SETTINGS,
             flags: if ack { FLAG_ACK } else { 0 },
             stream_id: 0,
             payload,
@@ -877,11 +877,11 @@ impl H2Frame {
         for chunk in payload.chunks(6) {
             if chunk.len() == 6 {
                 let id = ((chunk[0] as u16) << 8) | (chunk[1] as u16);
-                let value = ((chunk[2] as u32) << 24)
+                let valor = ((chunk[2] as u32) << 24)
                     | ((chunk[3] as u32) << 16)
                     | ((chunk[4] as u32) << 8)
                     | (chunk[5] as u32);
-                settings.push((id, value));
+                settings.push((id, valor));
             }
         }
         settings
@@ -903,7 +903,7 @@ pub fn crear_frame_headers(
     }
 
     let frame = H2Frame {
-        frame_type: FRAME_HEADERS,
+        tipo_frame: FRAME_HEADERS,
         flags,
         stream_id,
         payload: hpack_block,
@@ -914,7 +914,7 @@ pub fn crear_frame_headers(
 /// Crea un frame DATA
 pub fn crear_frame_data(stream_id: u32, datos: &[u8], end_stream: bool) -> Vec<u8> {
     let frame = H2Frame {
-        frame_type: FRAME_DATA,
+        tipo_frame: FRAME_DATA,
         flags: if end_stream { FLAG_END_STREAM } else { 0 },
         stream_id,
         payload: datos.to_vec(),
@@ -931,7 +931,7 @@ pub fn crear_frame_rst_stream(stream_id: u32, error_code: u32) -> Vec<u8> {
         error_code as u8,
     ];
     let frame = H2Frame {
-        frame_type: FRAME_RST_STREAM,
+        tipo_frame: FRAME_RST_STREAM,
         flags: 0,
         stream_id,
         payload,
@@ -953,7 +953,7 @@ pub fn crear_frame_goaway(last_stream_id: u32, error_code: u32, debug: &str) -> 
     payload.push(error_code as u8);
     payload.extend_from_slice(debug.as_bytes());
     let frame = H2Frame {
-        frame_type: FRAME_GOAWAY,
+        tipo_frame: FRAME_GOAWAY,
         flags: 0,
         stream_id: 0,
         payload,
@@ -971,7 +971,7 @@ pub fn crear_frame_window_update(stream_id: u32, increment: u32) -> Vec<u8> {
         inc as u8,
     ];
     let frame = H2Frame {
-        frame_type: FRAME_WINDOW_UPDATE,
+        tipo_frame: FRAME_WINDOW_UPDATE,
         flags: 0,
         stream_id,
         payload,
@@ -982,7 +982,7 @@ pub fn crear_frame_window_update(stream_id: u32, increment: u32) -> Vec<u8> {
 /// Crea un frame PING
 pub fn crear_frame_ping(payload: &[u8; 8], ack: bool) -> Vec<u8> {
     let frame = H2Frame {
-        frame_type: FRAME_PING,
+        tipo_frame: FRAME_PING,
         flags: if ack { FLAG_ACK } else { 0 },
         stream_id: 0,
         payload: payload.to_vec(),
@@ -1005,10 +1005,10 @@ pub fn detectar_h2c_upgrade(data: &str) -> Option<String> {
     let lower = data.to_lowercase();
     if lower.contains("upgrade: h2c") || lower.contains("upgrade: h2") {
         // Extraer HTTP2-Settings si existe
-        for line in data.lines() {
-            let l = line.to_lowercase();
+        for linea in data.lines() {
+            let l = linea.to_lowercase();
             if l.starts_with("http2-settings:") {
-                let settings = line.split(':').nth(1).unwrap_or("").trim().to_string();
+                let settings = linea.split(':').nth(1).unwrap_or("").trim().to_string();
                 return Some(settings);
             }
         }
@@ -1060,8 +1060,8 @@ pub fn hpack_decodificar(
             if idx == 0 {
                 return None;
             }
-            if let Some((name, value)) = tabla.get(idx as usize) {
-                cabeceras.insert(name.to_string(), value.to_string());
+            if let Some((name, valor)) = tabla.get(idx as usize) {
+                cabeceras.insert(name.to_string(), valor.to_string());
             } else {
                 return None;
             }
@@ -1070,10 +1070,10 @@ pub fn hpack_decodificar(
             let use_name_index = (byte & 0x3F) != 0;
             if use_name_index {
                 let idx = decode_integer(data, &mut offset, 6).ok()?;
-                let value = decode_string(data, &mut offset).ok()?;
+                let valor = decode_string(data, &mut offset).ok()?;
                 let entry = tabla
                     .get(idx as usize)
-                    .map(|(n, _)| (n.to_string(), value.clone()));
+                    .map(|(n, _)| (n.to_string(), valor.clone()));
                 if let Some((name, val)) = entry {
                     cabeceras.insert(name.clone(), val.clone());
                     tabla.add(&name, &val);
@@ -1087,15 +1087,15 @@ pub fn hpack_decodificar(
                 if byte & 0x3F == 0 {
                     offset += 1; // consumir el 0x40
                     let name = decode_string(data, &mut offset).ok()?;
-                    let value = decode_string(data, &mut offset).ok()?;
-                    cabeceras.insert(name.clone(), value.clone());
-                    tabla.add(&name, &value);
+                    let valor = decode_string(data, &mut offset).ok()?;
+                    cabeceras.insert(name.clone(), valor.clone());
+                    tabla.add(&name, &valor);
                 } else {
                     let idx = decode_integer(data, &mut offset, 6).ok()?;
-                    let value = decode_string(data, &mut offset).ok()?;
+                    let valor = decode_string(data, &mut offset).ok()?;
                     let entry = tabla
                         .get(idx as usize)
-                        .map(|(n, _)| (n.to_string(), value.clone()));
+                        .map(|(n, _)| (n.to_string(), valor.clone()));
                     if let Some((name, val)) = entry {
                         cabeceras.insert(name.clone(), val.clone());
                         tabla.add(&name, &val);
@@ -1115,16 +1115,16 @@ pub fn hpack_decodificar(
             let use_name_index = (byte & 0x0F) != 0;
             if use_name_index {
                 let idx = decode_integer(data, &mut offset, 4).ok()?;
-                let value = decode_string(data, &mut offset).ok()?;
+                let valor = decode_string(data, &mut offset).ok()?;
                 if let Some((name, _)) = tabla.get(idx as usize) {
-                    cabeceras.insert(name.to_string(), value);
+                    cabeceras.insert(name.to_string(), valor);
                 } else {
                     return None;
                 }
             } else {
                 let name = decode_string(data, &mut offset).ok()?;
-                let value = decode_string(data, &mut offset).ok()?;
-                cabeceras.insert(name, value);
+                let valor = decode_string(data, &mut offset).ok()?;
+                cabeceras.insert(name, valor);
             }
         }
     }
@@ -1199,7 +1199,7 @@ pub fn native_h2_escribir_frame(
         ));
     }
     let socket_idx = extraer_indice_socket(vm, args[0])?;
-    let frame_type = obtener_entero(args[1])? as u8;
+    let tipo_frame = obtener_entero(args[1])? as u8;
     let flags = obtener_entero(args[2])? as u8;
     let stream_id = obtener_entero(args[3])? as u32;
     let payload_b64 = obtener_texto(vm, args[4])?;
@@ -1208,7 +1208,7 @@ pub fn native_h2_escribir_frame(
     let payload = b64_decodificar(&payload_b64)?;
 
     let frame = H2Frame {
-        frame_type,
+        tipo_frame,
         flags,
         stream_id,
         payload,
@@ -1261,7 +1261,7 @@ pub fn native_h2_leer_frame(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
         }
     }
 
-    let (len, frame_type, flags, stream_id) = H2Frame::parse_header(&header)
+    let (len, tipo_frame, flags, stream_id) = H2Frame::parse_header(&header)
         .ok_or_else(|| ErrFast::TipoInv("h2_frame_invalido: header mal formado".into()))?;
 
     // Validar tamaño máximo
@@ -1290,7 +1290,7 @@ pub fn native_h2_leer_frame(vm: &mut dyn Host, args: &[ValorFast]) -> Result<Val
     // Retornar como mapa: type|N|flags|N|stream_id|N|payload|B64
     let mapa = format!(
         "type|{}|flags|{}|stream_id|{}|payload|{}",
-        frame_type, flags, stream_id, payload_b64
+        tipo_frame, flags, stream_id, payload_b64
     );
     Ok(ValorFast::texto(vm.alloc_str(mapa.into())))
 }
