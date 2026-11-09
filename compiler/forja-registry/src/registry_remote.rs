@@ -129,7 +129,7 @@ pub fn peticion(
     Ok((status, respuesta[separador + 4..].to_vec()))
 }
 
-fn esperar_ok(status: u16, cuerpo: &[u8], contexto: &str) -> Result<(), String> {
+fn esperar_correcto(status: u16, cuerpo: &[u8], contexto: &str) -> Result<(), String> {
     if (200..300).contains(&status) {
         return Ok(());
     }
@@ -172,13 +172,13 @@ pub fn publicar_remoto(
     let cuerpo = serde_json::to_vec(&payload).map_err(|e| e.to_string())?;
     let ruta = format!("/api/v1/packages/{}/{}", nombre, version);
     let (status, resp) = peticion("PUT", &ruta, Some(&cuerpo), true)?;
-    esperar_ok(status, &resp, &format!("publicar {}@{}", nombre, version))
+    esperar_correcto(status, &resp, &format!("publicar {}@{}", nombre, version))
 }
 
 /// Descarga el índice remoto.
 pub fn indice_remoto() -> Result<Index, String> {
     let (status, cuerpo) = peticion("GET", "/api/v1/index", None, false)?;
-    esperar_ok(status, &cuerpo, "descargar índice del registry")?;
+    esperar_correcto(status, &cuerpo, "descargar índice del registry")?;
     serde_json::from_slice(&cuerpo).map_err(|e| format!("índice remoto inválido: {}", e))
 }
 
@@ -186,7 +186,7 @@ pub fn indice_remoto() -> Result<Index, String> {
 pub fn descargar_remoto(nombre: &str, version: &str) -> Result<Vec<u8>, String> {
     let ruta = format!("/api/v1/packages/{}/{}/download", nombre, version);
     let (status, cuerpo) = peticion("GET", &ruta, None, false)?;
-    esperar_ok(
+    esperar_correcto(
         status,
         &cuerpo,
         &format!("descargar {}@{}", nombre, version),
@@ -233,7 +233,7 @@ pub fn instalar_desde_remoto(nombre: &str, req: &str, destino: &Path) -> Result<
 pub fn yank_remoto(nombre: &str, version: &str) -> Result<(), String> {
     let ruta = format!("/api/v1/packages/{}/{}", nombre, version);
     let (status, cuerpo) = peticion("DELETE", &ruta, None, true)?;
-    esperar_ok(status, &cuerpo, &format!("yank {}@{}", nombre, version))
+    esperar_correcto(status, &cuerpo, &format!("yank {}@{}", nombre, version))
 }
 
 /// Publica el paquete recién creado en el registry local también en el remoto,
