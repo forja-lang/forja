@@ -1,8 +1,8 @@
 use forja::lexer::Lexer;
 use forja::token::TokenKind;
 
-fn kinds(source: &str) -> Vec<TokenKind> {
-    let mut lexer = Lexer::new(source);
+fn kinds(fuente: &str) -> Vec<TokenKind> {
+    let mut lexer = Lexer::new(fuente);
     lexer
         .tokenize()
         .unwrap()
