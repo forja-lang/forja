@@ -17,15 +17,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# FORJA=/ruta/al/binario permite reusar uno ya compilado (lo que hace el CI).
+# Sin esa variable se recompila: usar un binario viejo da falsos negativos.
 FORJA="${FORJA:-}"
-if [ -z "$FORJA" ]; then
-    for candidato in target/debug/forja target/release/forja target/debug/forja.exe target/release/forja.exe; do
-        if [ -x "$candidato" ] || [ -f "$candidato.exe" ]; then
-            FORJA="$candidato"
-            break
-        fi
-    done
-fi
 if [ -z "$FORJA" ]; then
     echo "▶ compilando forja-cli…"
     cargo build -q -p forja-cli --bin forja || exit 1
