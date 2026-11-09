@@ -156,28 +156,28 @@ impl Index {
         }
     }
 
-    pub fn cargar(path: &Path) -> Result<Self, String> {
-        if !path.exists() {
+    pub fn cargar(ruta_archivo: &Path) -> Result<Self, String> {
+        if !ruta_archivo.exists() {
             return Ok(Index::nuevo());
         }
-        let contenido = fs::read_to_string(path)
-            .map_err(|e| format!("Error leyendo index {}: {}", path.display(), e))?;
+        let contenido = fs::read_to_string(ruta_archivo)
+            .map_err(|e| format!("Error leyendo index {}: {}", ruta_archivo.display(), e))?;
         if contenido.trim().is_empty() {
             return Ok(Index::nuevo());
         }
         serde_json::from_str(&contenido)
-            .map_err(|e| format!("Error parseando index {}: {}", path.display(), e))
+            .map_err(|e| format!("Error parseando index {}: {}", ruta_archivo.display(), e))
     }
 
-    pub fn guardar(&self, path: &Path) -> Result<(), String> {
-        if let Some(dir) = path.parent() {
+    pub fn guardar(&self, ruta_archivo: &Path) -> Result<(), String> {
+        if let Some(dir) = ruta_archivo.parent() {
             fs::create_dir_all(dir)
                 .map_err(|e| format!("Error creando directorio del index: {}", e))?;
         }
         let contenido = serde_json::to_string_pretty(self)
             .map_err(|e| format!("Error serializando index: {}", e))?;
-        fs::write(path, contenido)
-            .map_err(|e| format!("Error escribiendo index {}: {}", path.display(), e))
+        fs::write(ruta_archivo, contenido)
+            .map_err(|e| format!("Error escribiendo index {}: {}", ruta_archivo.display(), e))
     }
 
     /// Devuelve la versión más alta NO retirada de un paquete.
@@ -306,12 +306,12 @@ pub fn verificar_tarball(datos: &[u8], version: &VersionPublicada) -> Result<(),
             version.version, version.version
         ));
     }
-    let firma_ok = if version.clave_publica.is_empty() {
+    let firma_valida = if version.clave_publica.is_empty() {
         verificar_firma(&hash, &version.firma, &clave_firma())
     } else {
         verificar_firma_ed25519(&hash, &version.firma, &version.clave_publica)
     };
-    if !firma_ok {
+    if !firma_valida {
         return Err(format!(
             "Firma inválida para {} (posible manipulación o autor no verificado)",
             version.version
@@ -372,15 +372,19 @@ pub fn ruta_tarball(nombre: &str, version: &str) -> PathBuf {
 ///
 /// Se usa un formato de texto plano (no comprimido) para mantener el núcleo
 /// sin dependencias externas y garantizar determinismo byte a byte.
-pub fn empaquetar(project_dir: &Path, nombre: &str, version: &str) -> Result<Vec<u8>, String> {
+pub fn empaquetar(
+    directorio_proyecto: &Path,
+    nombre: &str,
+    version: &str,
+) -> Result<Vec<u8>, String> {
     let mut archivos: Vec<PathBuf> = Vec::new();
-    recolectar_fa(project_dir, &mut archivos)?;
+    recolectar_fa(directorio_proyecto, &mut archivos)?;
     archivos.sort();
 
     if archivos.is_empty() {
         return Err(format!(
             "No se encontraron archivos .fa en {}",
-            project_dir.display()
+            directorio_proyecto.display()
         ));
     }
 
@@ -390,7 +394,7 @@ pub fn empaquetar(project_dir: &Path, nombre: &str, version: &str) -> Result<Vec
     out.push_str(&format!("version={}\n", version));
     for archivo in &archivos {
         let rel = archivo
-            .strip_prefix(project_dir)
+            .strip_prefix(directorio_proyecto)
             .unwrap_or(archivo)
             .to_string_lossy()
             .replace('\\', "/");
@@ -409,17 +413,17 @@ pub fn empaquetar(project_dir: &Path, nombre: &str, version: &str) -> Result<Vec
 fn recolectar_fa(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
     let entries =
         fs::read_dir(dir).map_err(|e| format!("Error leyendo {}: {}", dir.display(), e))?;
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("Error de entrada: {}", e))?;
-        let path = entry.path();
-        let nombre = entry.file_name().to_string_lossy().to_string();
-        if path.is_dir() {
+    for entrada in entries {
+        let entrada = entrada.map_err(|e| format!("Error de entrada: {}", e))?;
+        let ruta_archivo = entrada.path();
+        let nombre = entrada.file_name().to_string_lossy().to_string();
+        if ruta_archivo.is_dir() {
             if nombre == "target" || nombre == ".git" || nombre == ".forja" || nombre == "modulos" {
                 continue;
             }
-            recolectar_fa(&path, out)?;
-        } else if path.extension().map(|e| e == "fa").unwrap_or(false) {
-            out.push(path);
+            recolectar_fa(&ruta_archivo, out)?;
+        } else if ruta_archivo.extension().map(|e| e == "fa").unwrap_or(false) {
+            out.push(ruta_archivo);
         }
     }
     Ok(())
@@ -471,7 +475,7 @@ pub fn desempaquetar(datos: &[u8], destino: &Path) -> Result<(), String> {
 ///
 /// Devuelve el hash SHA-256 (hex) del tarball publicado.
 pub fn publicar(
-    project_dir: &Path,
+    directorio_proyecto: &Path,
     nombre: &str,
     version: &str,
     autor: &str,
@@ -484,8 +488,8 @@ pub fn publicar(
         ));
     }
 
-    let index_path = ruta_index();
-    let mut index = Index::cargar(&index_path)?;
+    let ruta_indice = ruta_index();
+    let mut index = Index::cargar(&ruta_indice)?;
 
     // No permitir republicar una versión ya existente.
     if let Some(entrada) = index.paquetes.get(nombre) {
@@ -497,7 +501,7 @@ pub fn publicar(
         }
     }
 
-    let datos = empaquetar(project_dir, nombre, version)?;
+    let datos = empaquetar(directorio_proyecto, nombre, version)?;
     let hash = sha256_hex(&datos);
     // firma **asimétrica** con la clave del autor (el servidor sólo
     // necesita la pública para verificar).
@@ -537,14 +541,14 @@ pub fn publicar(
         },
     );
 
-    index.guardar(&index_path)?;
+    index.guardar(&ruta_indice)?;
     Ok(hash)
 }
 
 /// Retira (yank) una versión del index. No borra el tarball.
 pub fn yank(nombre: &str, version: &str) -> Result<(), String> {
-    let index_path = ruta_index();
-    let mut index = Index::cargar(&index_path)?;
+    let ruta_indice = ruta_index();
+    let mut index = Index::cargar(&ruta_indice)?;
     let entrada = index
         .paquetes
         .get_mut(nombre)
@@ -560,7 +564,7 @@ pub fn yank(nombre: &str, version: &str) -> Result<(), String> {
         ));
     }
     v.yanked = true;
-    index.guardar(&index_path)?;
+    index.guardar(&ruta_indice)?;
     Ok(())
 }
 
@@ -645,25 +649,25 @@ mod tests {
 
     #[test]
     fn empaquetar_y_desempaquetar_roundtrip() {
-        let tmp = std::env::temp_dir().join(format!("forja_pkg_test_{}", std::process::id()));
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
-        fs::write(tmp.join("main.fa"), "escribir(\"hola\")\n").unwrap();
-        fs::write(tmp.join("lib.fa"), "funcion f() { retornar 1 }\n").unwrap();
+        let temporal = std::env::temp_dir().join(format!("forja_pkg_test_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temporal);
+        fs::create_dir_all(&temporal).unwrap();
+        fs::write(temporal.join("main.fa"), "escribir(\"hola\")\n").unwrap();
+        fs::write(temporal.join("lib.fa"), "funcion f() { retornar 1 }\n").unwrap();
 
-        let datos = empaquetar(&tmp, "demo", "1.0.0").unwrap();
+        let datos = empaquetar(&temporal, "demo", "1.0.0").unwrap();
         let texto = String::from_utf8(datos.clone()).unwrap();
         assert!(texto.starts_with("FORJAPKG1\n"));
         assert!(texto.contains("nombre=demo"));
         assert!(texto.contains("=== main.fa ==="));
         assert!(texto.contains("=== lib.fa ==="));
 
-        let destino = tmp.join("extraido");
+        let destino = temporal.join("extraido");
         desempaquetar(&datos, &destino).unwrap();
         let main = fs::read_to_string(destino.join("main.fa")).unwrap();
         assert!(main.contains("hola"));
 
-        let _ = fs::remove_dir_all(&tmp);
+        let _ = fs::remove_dir_all(&temporal);
     }
 
     #[test]
