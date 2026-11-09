@@ -1,6 +1,6 @@
 [package]
 name = "forja-driver"
-version = "0.10.1"
+version = "0.10.2"
 edition = "2021"
 description = "Driver y caché de compilación de Forja"
 authors = ["forja-lang"]
