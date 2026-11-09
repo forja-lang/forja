@@ -13,7 +13,7 @@ fn deps(crate_dir: &str) -> Vec<String> {
     let texto =
         std::fs::read_to_string(&ruta).unwrap_or_else(|e| panic!("{}: {e}", ruta.display()));
     let mut en_deps = false;
-    let mut out = Vec::new();
+    let mut salida = Vec::new();
     for linea in texto.lines() {
         let l = linea.trim();
         if l.starts_with('[') {
@@ -24,10 +24,10 @@ fn deps(crate_dir: &str) -> Vec<String> {
             continue;
         }
         if let Some((nombre, _)) = l.split_once('=') {
-            out.push(nombre.trim().to_string());
+            salida.push(nombre.trim().to_string());
         }
     }
-    out
+    salida
 }
 
 #[test]
