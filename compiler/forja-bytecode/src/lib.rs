@@ -40,8 +40,8 @@ mod tests {
     use forja_types::semantics::TypeChecker;
     use std::sync::Arc;
 
-    fn generar_bytecode(source: &str) -> Result<Vec<Opcode>, Vec<ErrorForja>> {
-        let mut lexer = Lexer::new(source);
+    fn generar_bytecode(fuente: &str) -> Result<Vec<Opcode>, Vec<ErrorForja>> {
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize()?;
         let mut parser = Parser::new(tokens);
         let programa = parser.parse()?;
@@ -50,7 +50,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bytecode_variable() {
+    fn bytecode_variable() {
         let bc = generar_bytecode("variable x = 5").unwrap();
         assert_eq!(bc[0], Opcode::PushEntero(5));
         assert_eq!(bc[1], Opcode::Declarar(Arc::from("x"), true));
@@ -58,7 +58,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bytecode_constante() {
+    fn bytecode_constante() {
         let bc = generar_bytecode("constante x = 10").unwrap();
         assert_eq!(bc[0], Opcode::PushEntero(10));
         assert_eq!(bc[1], Opcode::Declarar(Arc::from("x"), false));
@@ -66,7 +66,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bytecode_aritmetica() {
+    fn bytecode_aritmetica() {
         let bc = generar_bytecode("variable x = 2 + 3").unwrap();
         assert_eq!(bc[0], Opcode::PushEntero(2));
         assert_eq!(bc[1], Opcode::PushEntero(3));
@@ -77,7 +77,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bytecode_escribir() {
+    fn bytecode_escribir() {
         let bc = generar_bytecode("escribir(\"Hola\")").unwrap();
         assert_eq!(bc[0], Opcode::PushTexto(Arc::from("Hola")));
         assert_eq!(bc[1], Opcode::Imprimir);
@@ -85,7 +85,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bytecode_si() {
+    fn bytecode_si() {
         let bc = generar_bytecode("si (verdadero) { variable x = 1 }").unwrap();
         // debe contener: PushBooleano(true), JumpSiFalso, PushEntero(1), Declare("x"), Jump, Label, Halt
         assert!(bc.iter().any(|op| matches!(op, Opcode::PushBooleano(true))));
@@ -94,20 +94,20 @@ mod tests {
     }
 
     #[test]
-    fn test_bytecode_mientras() {
+    fn bytecode_mientras() {
         let bc = generar_bytecode("mientras (verdadero) { }").unwrap();
         assert!(bc.iter().any(|op| matches!(op, Opcode::PushBooleano(true))));
         assert!(bc.iter().any(|op| matches!(op, Opcode::SaltoSiFalso(_))));
     }
 
     #[test]
-    fn test_bytecode_repetir() {
+    fn bytecode_repetir() {
         let bc = generar_bytecode("repetir (3) { }").unwrap();
         assert!(bc.iter().any(|op| matches!(op, Opcode::PushEntero(3))));
     }
 
     #[test]
-    fn test_serializacion() {
+    fn serializacion() {
         let bc = vec![
             Opcode::PushEntero(42),
             Opcode::Declarar(Arc::from("x"), true),
@@ -123,21 +123,21 @@ mod tests {
     // ============================================================
 
     /// Helper que usa el pipeline completo (con TypeChecker + tipos inferidos)
-    fn generar_bytecode_con_tipos(source: &str) -> Result<Vec<Opcode>, String> {
+    fn generar_bytecode_con_tipos(fuente: &str) -> Result<Vec<Opcode>, String> {
         use forja_syntax::lexer::Lexer;
         use forja_syntax::parser::Parser;
         use forja_types::semantics::TypeChecker;
 
-        let mut lexer = Lexer::new(source);
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().map_err(|e| format!("{}", e[0]))?;
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().map_err(|e| format!("{}", e[0]))?;
 
-        let mut type_checker = TypeChecker::new();
-        type_checker
+        let mut verificador = TypeChecker::new();
+        verificador
             .analizar(&programa)
             .map_err(|e| format!("{}", e[0]))?;
-        let tipos_inferidos = type_checker.obtener_tipos_inferidos();
+        let tipos_inferidos = verificador.obtener_tipos_inferidos();
 
         let mut gen = GeneradorBytecode::new();
         gen.set_tipos_inferidos(tipos_inferidos);
@@ -146,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn test_especializacion_entero_suma() {
+    fn especializacion_entero_suma() {
         // 5 + 3 debe emitir AddInt (ambos operandos son LiteralNumero → Entero)
         let bc = generar_bytecode_con_tipos("variable x = 5 + 3").unwrap();
         assert!(
@@ -157,7 +157,7 @@ mod tests {
     }
 
     #[test]
-    fn test_especializacion_decimal_suma() {
+    fn especializacion_decimal_suma() {
         // 2.5 + 3.7 debe emitir AddFloat (ambos operandos son LiteralDecimal → Decimal)
         let bc = generar_bytecode_con_tipos("variable x = 2.5 + 3.7").unwrap();
         assert!(
@@ -168,7 +168,7 @@ mod tests {
     }
 
     #[test]
-    fn test_especializacion_entero_multiplicacion() {
+    fn especializacion_entero_multiplicacion() {
         // 4 * 2 debe emitir MulInt
         let bc = generar_bytecode_con_tipos("variable x = 4 * 2").unwrap();
         assert!(
@@ -179,7 +179,7 @@ mod tests {
     }
 
     #[test]
-    fn test_especializacion_entero_comparacion() {
+    fn especializacion_entero_comparacion() {
         // 5 < 3 debe emitir MenorInt
         let bc = generar_bytecode_con_tipos("variable x = 5 < 3").unwrap();
         assert!(
@@ -190,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn test_especializacion_con_variable() {
+    fn especializacion_con_variable() {
         // variable x = 5; variable y = x + 3 → x es Entero, 3 es Entero → AddInt
         let bc = generar_bytecode_con_tipos("variable x = 5\nvariable y = x + 3").unwrap();
         assert!(
@@ -201,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fallback_generico_variables_sin_tipo() {
+    fn fallback_generico_variables_sin_tipo() {
         // Sin type inference para variables (solo literales tienen tipo conocido),
         // el generador debe emitir codigos genéricos para operaciones entre variables.
         // Nota: los literales SIEMPRE se especializan (AddInt para 5 + 3).
@@ -220,30 +220,30 @@ mod tests {
     // ═════════════════════════════════════════════════════════════════════
 
     fn generar_bytecode_para_modulo(
-        source: &str,
-        module_id: IdSimbolo,
+        fuente: &str,
+        id_modulo: IdSimbolo,
     ) -> Result<ModuloBytecode, Vec<ErrorForja>> {
         use forja_syntax::lexer::Lexer;
         use forja_syntax::parser::Parser;
         use forja_types::semantics;
 
-        let mut lexer = Lexer::new(source);
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize()?;
         let mut parser = Parser::new(tokens);
         let programa = parser.parse()?;
 
-        let mut type_checker = semantics::TypeChecker::new();
-        type_checker.analizar(&programa)?;
-        let tipos_inferidos = type_checker.obtener_tipos_inferidos();
+        let mut verificador = semantics::TypeChecker::new();
+        verificador.analizar(&programa)?;
+        let tipos_inferidos = verificador.obtener_tipos_inferidos();
 
         let mut gen = GeneradorBytecode::new();
         gen.set_tipos_inferidos(tipos_inferidos);
-        gen.generar_para_modulo(&programa, module_id)
+        gen.generar_para_modulo(&programa, id_modulo)
     }
 
     #[test]
-    fn test_generar_para_modulo_con_funciones() {
-        let source = "\
+    fn generar_para_modulo_con_funciones() {
+        let fuente = "\
 fun saludar(nombre) {
     escribir(\"Hola, ${nombre}\")
 }
@@ -256,27 +256,27 @@ fun version() {
     retornar 1
 }
 ";
-        let module_id = IdSimbolo(42);
-        let module_bc = generar_bytecode_para_modulo(source, module_id).unwrap();
+        let id_modulo = IdSimbolo(42);
+        let bytecode_modulo = generar_bytecode_para_modulo(fuente, id_modulo).unwrap();
 
-        // El ModuloBytecode debe tener el module_id correcto
-        assert_eq!(module_bc.module_id, module_id);
+        // El ModuloBytecode debe tener el id_modulo correcto
+        assert_eq!(bytecode_modulo.id_modulo, id_modulo);
         // Debe haber al menos un opcode
         assert!(
-            !module_bc.codigos.is_empty(),
+            !bytecode_modulo.codigos.is_empty(),
             "El bytecode no debe estar vacío"
         );
         // Debe tener 3 funciones registradas
         assert_eq!(
-            module_bc.function_sym_ids.len(),
+            bytecode_modulo.ids_simbolos_funcion.len(),
             3,
             "Se esperaban 3 funciones (saludar, sumar, version)"
         );
     }
 
     #[test]
-    fn test_generar_para_modulo_con_globales() {
-        let source = "\
+    fn generar_para_modulo_con_globales() {
+        let fuente = "\
 variable contador = 0
 variable nombre = \"test\"
 
@@ -288,16 +288,16 @@ fun obtener() {
     retornar contador
 }
 ";
-        let module_id = IdSimbolo(7);
-        let module_bc = generar_bytecode_para_modulo(source, module_id).unwrap();
+        let id_modulo = IdSimbolo(7);
+        let bytecode_modulo = generar_bytecode_para_modulo(fuente, id_modulo).unwrap();
 
         // Debe tener al menos una variable global (contador, nombre)
         assert!(
-            !module_bc.global_var_indices.is_empty(),
+            !bytecode_modulo.global_var_indices.is_empty(),
             "Debe haber al menos una variable global registrada"
         );
         // Cada entrada debe ser (nombre -> mutable)
-        for (_nombre, mutable) in &module_bc.global_var_indices {
+        for (_nombre, mutable) in &bytecode_modulo.global_var_indices {
             assert!(
                 *mutable,
                 "Las variables declaradas deben ser mutables, got {}",
@@ -307,8 +307,8 @@ fun obtener() {
     }
 
     #[test]
-    fn test_module_bytecode_desglosar() {
-        let source = "\
+    fn module_bytecode_desglosar() {
+        let fuente = "\
 fun foo(a, b) {
     escribir(a + b)
 }
@@ -317,10 +317,10 @@ fun bar(x) {
     retornar x * 2
 }
 ";
-        let module_id = IdSimbolo(99);
-        let module_bc = generar_bytecode_para_modulo(source, module_id).unwrap();
+        let id_modulo = IdSimbolo(99);
+        let bytecode_modulo = generar_bytecode_para_modulo(fuente, id_modulo).unwrap();
 
-        let funciones = module_bc.desglosar();
+        let funciones = bytecode_modulo.desglosar();
 
         // Debe encontrar exactamente 2 funciones
         assert_eq!(
@@ -365,7 +365,7 @@ fun bar(x) {
     }
 
     #[test]
-    fn test_declare_idx_global_serializacion_roundtrip() {
+    fn declare_idx_global_serializacion_roundtrip() {
         let codigos = vec![
             Opcode::DeclararIndiceGlobal(0, true),   // idx 0, mutable
             Opcode::DeclararIndiceGlobal(5, false),  // idx 5, inmutable
@@ -394,7 +394,7 @@ fun bar(x) {
     }
 
     #[test]
-    fn test_opcodes_especializados_serializacion_roundtrip() {
+    fn opcodes_especializados_serializacion_roundtrip() {
         let codigos = vec![
             Opcode::SumarEntero,
             Opcode::RestarDecimal,
@@ -429,33 +429,33 @@ fun bar(x) {
     }
 
     #[test]
-    fn test_module_bytecode_serializacion() {
-        let source = "\
+    fn module_bytecode_serializacion() {
+        let fuente = "\
 variable global_x = 42
 
 fun probar() {
     retornar global_x
 }
 ";
-        let module_id = IdSimbolo(100);
-        let module_bc = generar_bytecode_para_modulo(source, module_id).unwrap();
+        let id_modulo = IdSimbolo(100);
+        let bytecode_modulo = generar_bytecode_para_modulo(fuente, id_modulo).unwrap();
 
         // Verificar que tiene DeclareIdxGlobal
-        let has_declare_idx = module_bc
+        let tiene_declarar_indice = bytecode_modulo
             .codigos
             .iter()
             .any(|op| matches!(op, Opcode::DeclararIndiceGlobal(_, _)));
         assert!(
-            has_declare_idx,
+            tiene_declarar_indice,
             "El bytecode del módulo debe contener DeclareIdxGlobal"
         );
 
         // Serialización round-trip
-        let serialized = serializar_bytecode(&module_bc.codigos);
+        let serialized = serializar_bytecode(&bytecode_modulo.codigos);
         let deserialized = deserializar_bytecode(&serialized).unwrap();
-        assert_eq!(module_bc.codigos.len(), deserialized.len(),
+        assert_eq!(bytecode_modulo.codigos.len(), deserialized.len(),
             "La cantidad de codigos debe coincidir tras round-trip. Original: {}, deserializado: {}",
-            module_bc.codigos.len(), deserialized.len());
+            bytecode_modulo.codigos.len(), deserialized.len());
 
         // Verificar que los idx globales sobreviven
         for op in &deserialized {
@@ -471,11 +471,11 @@ fun probar() {
     // ═════════════════════════════════════════════════════════════════════
 
     #[test]
-    fn test_sobrecarga_funciones_con_tipos_distintos() {
+    fn sobrecarga_funciones_con_tipos_distintos() {
         // Dos funciones con mismo nombre pero diferentes tipos de parámetros.
         // TypeChecker debe recolectar ambos como overloads y el bytecode
         // debe resolver el nombre mangled correcto para cada llamada.
-        let source = "\
+        let fuente = "\
 funcion mcd(a: Texto, b: Texto) -> Texto {
     retornar a
 }
@@ -485,16 +485,16 @@ funcion mcd(a, b) {
 variable x = mcd(\"a\", \"b\")
 variable y = mcd(10, 20)
 ";
-        let mut lexer = Lexer::new(source);
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
 
-        let mut type_checker = TypeChecker::new();
+        let mut verificador = TypeChecker::new();
         // Debe analizar sin errores: ambas funciones deben coexistir
-        type_checker.analizar(&programa).unwrap();
-        let tipos_inferidos = type_checker.obtener_tipos_inferidos();
-        let funciones_overload = type_checker.obtener_funciones();
+        verificador.analizar(&programa).unwrap();
+        let tipos_inferidos = verificador.obtener_tipos_inferidos();
+        let funciones_overload = verificador.obtener_funciones();
 
         // Verificar que mcd tiene 2 overloads
         let overloads = funciones_overload.get("mcd");
@@ -532,10 +532,10 @@ variable y = mcd(10, 20)
     }
 
     #[test]
-    fn test_sobrecarga_sin_conflicto_con_nombre_sin_tipo() {
+    fn sobrecarga_sin_conflicto_con_nombre_sin_tipo() {
         // Una función sin tipo y otra con tipo deben resolverse correctamente
         // cuando se llaman con tipos que matchean exactamente.
-        let source = "\
+        let fuente = "\
     funcion sumar(a: Texto, b: Texto) -> Texto {
         retornar a + b
     }
@@ -545,21 +545,21 @@ variable y = mcd(10, 20)
     variable texto = sumar(\"hola \", \"mundo\")
     variable entero = sumar(3, 4)
     ";
-        let mut lexer = Lexer::new(source);
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
 
-        let mut type_checker = TypeChecker::new();
-        type_checker.analizar(&programa).unwrap();
-        let funciones_overload = type_checker.obtener_funciones();
+        let mut verificador = TypeChecker::new();
+        verificador.analizar(&programa).unwrap();
+        let funciones_overload = verificador.obtener_funciones();
 
         let overloads = funciones_overload.get("sumar");
         assert!(overloads.is_some(), "sumar debe estar en overloads");
         assert_eq!(overloads.unwrap().len(), 2, "sumar debe tener 2 overloads");
 
         let mut gen = GeneradorBytecode::new();
-        gen.set_tipos_inferidos(type_checker.obtener_tipos_inferidos());
+        gen.set_tipos_inferidos(verificador.obtener_tipos_inferidos());
         gen.set_funciones_overload(funciones_overload);
         gen.generar(&programa).unwrap();
 
@@ -586,23 +586,23 @@ variable y = mcd(10, 20)
     }
 
     #[test]
-    fn test_sobrecarga_funcion_unica_sin_mangling() {
+    fn sobrecarga_funcion_unica_sin_mangling() {
         // Una sola función sin overloads debe mantener su nombre original
         // (sin sufijo $ov)
-        let source = "\
+        let fuente = "\
     funcion saludar(nombre: Texto) {
         escribir(nombre)
     }
     saludar(\"Pepe\")
     ";
-        let mut lexer = Lexer::new(source);
+        let mut lexer = Lexer::new(fuente);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let programa = parser.parse().unwrap();
 
-        let mut type_checker = TypeChecker::new();
-        type_checker.analizar(&programa).unwrap();
-        let funciones_overload = type_checker.obtener_funciones();
+        let mut verificador = TypeChecker::new();
+        verificador.analizar(&programa).unwrap();
+        let funciones_overload = verificador.obtener_funciones();
 
         // Verificar que sigue teniendo solo 1 overload
         let overloads = funciones_overload.get("saludar");
@@ -610,7 +610,7 @@ variable y = mcd(10, 20)
         assert_eq!(overloads.unwrap().len(), 1);
 
         let mut gen = GeneradorBytecode::new();
-        gen.set_tipos_inferidos(type_checker.obtener_tipos_inferidos());
+        gen.set_tipos_inferidos(verificador.obtener_tipos_inferidos());
         gen.set_funciones_overload(funciones_overload);
         gen.generar(&programa).unwrap();
 
