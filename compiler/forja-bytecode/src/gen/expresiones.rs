@@ -283,7 +283,7 @@ impl GeneradorBytecode {
                                 self.emitir(Opcode::FijarCampo(Arc::from(nombre_campo.as_str())));
                             }
                         }
-                        // Leave the object on the stack
+                        // Deja el objeto en la pila
                         self.emitir(Opcode::Cargar(tmp));
                     }
                 }

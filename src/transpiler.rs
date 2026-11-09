@@ -2157,7 +2157,7 @@ impl Transpiler {
                 self.indent();
 
                 // Generar el bloque encerrado en una lambda o scope para el continue
-                // For simplicity, generate the block directly
+                // Por simplicidad genera el bloque directamente
                 for d in bloque {
                     self.transpilar_declaracion(d);
                 }

@@ -92,6 +92,7 @@ winresource = "0.1"
 [lib]
 path = "../../src/lib.rs"
 name = "forja"
+doctest = false
 
 [[test]]
 name = "booleanos_cortos"

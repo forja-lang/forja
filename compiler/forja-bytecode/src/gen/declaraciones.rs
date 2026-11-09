@@ -525,8 +525,9 @@ impl GeneradorBytecode {
                     self.emitir_llamada_despacho(&nombre_real, argumentos.len(), indirecta);
                     // Las funciones nativas (como _imprimir_error) dejan su valor de retorno
                     // en la pila. Para llamadas a nivel de declaración, descartamos ese valor.
-                    // Forja functions are balanced (no return value pushed), so Pop is safe
-                    // even when empty (pop_valor returns nulo instead of underflow).
+                    // Las funciones de Forja están balanceadas (no dejan valor de retorno
+                    // en la pila), así que descartar es seguro incluso con la pila vacía
+                    // (pop_valor devuelve nulo en vez de fallar).
                     self.emitir(Opcode::Descartar);
                 }
             }

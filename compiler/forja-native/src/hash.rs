@@ -57,7 +57,8 @@ impl Sha256 {
     }
 
     pub fn finalize(mut self) -> [u8; 32] {
-        // FIPS 180-4 §5.1.1: append 0x80, then zeros until (len + 8) % 64 == 0, then 64-bit bitlen
+        // FIPS 180-4 §5.1.1: agrega 0x80, luego ceros hasta que (len + 8) % 64 == 0,
+        // y al final la longitud en bits como entero de 64 bits
         let bit_len = self.len.wrapping_mul(8).to_be_bytes();
         self.update(&[0x80]);
         while (self.len as usize) % 64 != 56 {
@@ -194,7 +195,8 @@ impl Sha1 {
     }
 
     pub fn finalize(mut self) -> [u8; 20] {
-        // FIPS 180-4 §5.1.1: append 0x80, then zeros until (len + 8) % 64 == 0, then 64-bit bitlen
+        // FIPS 180-4 §5.1.1: agrega 0x80, luego ceros hasta que (len + 8) % 64 == 0,
+        // y al final la longitud en bits como entero de 64 bits
         let bit_len = self.len.wrapping_mul(8).to_be_bytes();
         self.update(&[0x80]);
         while (self.len as usize) % 64 != 56 {

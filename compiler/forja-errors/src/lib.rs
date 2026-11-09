@@ -6,11 +6,11 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 // ══════════════════════════════════════════════════════════════════════
 
 /// Nivel de verbose global (0=Normal, 1=Verbose, 2=Debug, 3=Trace)
-static NIVEL_VERBOSE_ATOMIC: AtomicU8 = AtomicU8::new(0);
+static NIVEL_DETALLE: AtomicU8 = AtomicU8::new(0);
 /// Modo JSON global
-static JSON_MODE_ATOMIC: AtomicBool = AtomicBool::new(false);
+static MODO_JSON: AtomicBool = AtomicBool::new(false);
 /// Modo color global (true = ANSI habilitado, false = sin color)
-static COLOR_MODE_ATOMIC: AtomicBool = AtomicBool::new(true);
+static MODO_COLOR: AtomicBool = AtomicBool::new(true);
 
 /// Colores ANSI para terminal
 #[allow(dead_code)]
@@ -63,12 +63,12 @@ pub mod color {
     }
 
     /// Etiqueta decorativa para logs
-    pub fn etiqueta(tipo: &str, s: &str) -> String {
-        format!("{}{} {}{}", NEGRITA, wrap(tipo, s), s, RESET)
+    pub fn etiqueta(tipo: &str, texto: &str) -> String {
+        format!("{}{} {}{}", NEGRITA, envolver(tipo, texto), texto, RESET)
     }
-    fn wrap(label: &str, s: &str) -> String {
-        let pad = " ".repeat(if s.len() > 6 { 0 } else { 6 - s.len() });
-        format!("{}{}{}{} ", DIM, label, pad, RESET)
+    fn envolver(etiqueta: &str, texto: &str) -> String {
+        let relleno = " ".repeat(if texto.len() > 6 { 0 } else { 6 - texto.len() });
+        format!("{}{}{}{} ", DIM, etiqueta, relleno, RESET)
     }
 }
 
@@ -94,48 +94,56 @@ fn con_color(s: String) -> String {
 }
 
 /// Helpers de log: info (cyan), ok (verde), warning (ámbar), error (rojo), debug (gris).
-pub fn info(msg: &str) -> String {
-    con_color(format!("{} {}", color::negrita("INFO"), color::cyan(msg)))
+pub fn info(mensaje: &str) -> String {
+    con_color(format!(
+        "{} {}",
+        color::negrita("INFO"),
+        color::cyan(mensaje)
+    ))
 }
-pub fn ok(msg: &str) -> String {
-    con_color(format!("{}{}{}", color::VERDE, msg, color::RESET))
+pub fn ok(mensaje: &str) -> String {
+    con_color(format!("{}{}{}", color::VERDE, mensaje, color::RESET))
 }
-pub fn exito(msg: &str) -> String {
+pub fn exito(mensaje: &str) -> String {
     con_color(format!(
         "{} {}",
         distintivo("OK", color::VERDE_FONDO),
-        color::verde(msg)
+        color::verde(mensaje)
     ))
 }
-pub fn warning(msg: &str) -> String {
+pub fn warning(mensaje: &str) -> String {
     con_color(format!(
         "{} {}",
         distintivo("AVISO", color::AMARILLO_FONDO),
-        color::amarillo(msg)
+        color::amarillo(mensaje)
     ))
 }
-pub fn error(msg: &str) -> String {
+pub fn error(mensaje: &str) -> String {
     con_color(format!(
         "{} {}",
         distintivo("ERROR", color::ROJO_FONDO),
-        color::rojo(msg)
+        color::rojo(mensaje)
     ))
 }
-pub fn debug_msg(msg: &str) -> String {
-    con_color(format!("{} {}", color::negrita("DEBUG"), color::gris(msg)))
+pub fn debug_msg(mensaje: &str) -> String {
+    con_color(format!(
+        "{} {}",
+        color::negrita("DEBUG"),
+        color::gris(mensaje)
+    ))
 }
-pub fn resaltado(msg: &str) -> String {
-    con_color(format!("{}{}{}", color::NEGRITA, msg, color::RESET))
+pub fn resaltado(mensaje: &str) -> String {
+    con_color(format!("{}{}{}", color::NEGRITA, mensaje, color::RESET))
 }
-pub fn archivo(msg: &str) -> String {
+pub fn archivo(mensaje: &str) -> String {
     con_color(format!(
         "{} {}",
         color::negrita("ARCHIVO"),
-        color::amarillo(msg)
+        color::amarillo(mensaje)
     ))
 }
-pub fn numero(msg: &str) -> String {
-    con_color(format!("{}{}{}", color::MAGENTA, msg, color::RESET))
+pub fn numero(mensaje: &str) -> String {
+    con_color(format!("{}{}{}", color::MAGENTA, mensaje, color::RESET))
 }
 
 // ============================================================
@@ -152,11 +160,11 @@ pub enum NivelVerbose {
 }
 
 pub fn establecer_nivel(nivel: NivelVerbose) {
-    NIVEL_VERBOSE_ATOMIC.store(nivel as u8, Ordering::Relaxed);
+    NIVEL_DETALLE.store(nivel as u8, Ordering::Relaxed);
 }
 
 pub fn nivel_actual() -> NivelVerbose {
-    match NIVEL_VERBOSE_ATOMIC.load(Ordering::Relaxed) {
+    match NIVEL_DETALLE.load(Ordering::Relaxed) {
         0 => NivelVerbose::Normal,
         1 => NivelVerbose::Verbose,
         2 => NivelVerbose::Debug,
@@ -166,56 +174,56 @@ pub fn nivel_actual() -> NivelVerbose {
 }
 
 pub fn establecer_json_mode(activo: bool) {
-    JSON_MODE_ATOMIC.store(activo, Ordering::Relaxed);
+    MODO_JSON.store(activo, Ordering::Relaxed);
 }
 
 pub fn json_mode() -> bool {
-    JSON_MODE_ATOMIC.load(Ordering::Relaxed)
+    MODO_JSON.load(Ordering::Relaxed)
 }
 
 /// Activa o desactiva la salida con colores ANSI (flag `--color`/`--no-color`).
 pub fn establecer_color_mode(activo: bool) {
-    COLOR_MODE_ATOMIC.store(activo, Ordering::Relaxed);
+    MODO_COLOR.store(activo, Ordering::Relaxed);
 }
 
 /// Indica si la salida con colores ANSI está habilitada.
 pub fn color_mode() -> bool {
-    COLOR_MODE_ATOMIC.load(Ordering::Relaxed)
+    MODO_COLOR.load(Ordering::Relaxed)
 }
 
-pub fn log_info(msg: &str) {
+pub fn log_info(mensaje: &str) {
     if nivel_actual() >= NivelVerbose::Normal {
-        eprintln!("{}", info(msg));
+        eprintln!("{}", info(mensaje));
     }
 }
-pub fn log_ok(msg: &str) {
+pub fn log_ok(mensaje: &str) {
     if nivel_actual() >= NivelVerbose::Normal {
-        eprintln!("{}", ok(msg));
+        eprintln!("{}", ok(mensaje));
     }
 }
-pub fn log_warn(msg: &str) {
+pub fn log_warn(mensaje: &str) {
     if nivel_actual() >= NivelVerbose::Normal {
-        eprintln!("{}", warning(msg));
+        eprintln!("{}", warning(mensaje));
     }
 }
-pub fn log_error(msg: &str) {
+pub fn log_error(mensaje: &str) {
     if nivel_actual() >= NivelVerbose::Normal {
-        eprintln!("{}", error(msg));
+        eprintln!("{}", error(mensaje));
     }
 }
-pub fn log_verbose(msg: &str) {
+pub fn log_verbose(mensaje: &str) {
     if nivel_actual() >= NivelVerbose::Verbose {
-        eprintln!("{}", debug_msg(msg));
+        eprintln!("{}", debug_msg(mensaje));
     }
 }
-pub fn log_debug(msg: &str) {
+pub fn log_debug(mensaje: &str) {
     if nivel_actual() >= NivelVerbose::Debug {
-        eprintln!("{}", debug_msg(msg));
+        eprintln!("{}", debug_msg(mensaje));
     }
 }
-pub fn log_trace(msg: &str) {
+pub fn log_trace(mensaje: &str) {
     if nivel_actual() >= NivelVerbose::Trace {
-        eprintln!("{}", debug_msg(msg));
+        eprintln!("{}", debug_msg(mensaje));
     }
 }
 
@@ -421,29 +429,29 @@ impl ErrorForja {
     ///    │
     ///    = ayuda: convierte con `a_entero()`
     /// ```
-    pub fn mostrar_con_contexto(&self, source: &str) -> String {
-        let mut result = String::new();
-        let lines: Vec<&str> = source.lines().collect();
-        let idx = if self.linea > 0 { self.linea - 1 } else { 0 };
-        let color_lin = color::GRIS;
-        let color_arrow = self.tipo.color_ansi();
+    pub fn mostrar_con_contexto(&self, fuente: &str) -> String {
+        let mut salida = String::new();
+        let lineas: Vec<&str> = fuente.lines().collect();
+        let indice = if self.linea > 0 { self.linea - 1 } else { 0 };
+        let color_linea = color::GRIS;
+        let color_flecha = self.tipo.color_ansi();
         let codigo = self.codigo_efectivo();
 
         // Ancho del margen según el número de línea más largo (mínimo 4),
         // para que el │ y el subrayado queden siempre alineados con el código.
-        let ancho_num = lines.len().to_string().len().max(4);
+        let ancho_numero = lineas.len().to_string().len().max(4);
 
         // Cabecera: "error[Exxxx]: mensaje"
-        result.push_str(&format!(
+        salida.push_str(&format!(
             "{}{}error[{}]{}: {}\n",
             color::NEGRITA,
-            color_arrow,
+            color_flecha,
             codigo,
             color::RESET,
             self.mensaje
         ));
         // Ubicación: "  --> línea N, columna C"
-        result.push_str(&format!(
+        salida.push_str(&format!(
             "  {}-->{} {}línea {}, columna {}{}\n",
             color::AZUL,
             color::RESET,
@@ -454,14 +462,14 @@ impl ErrorForja {
         ));
 
         // Línea de código: " <n> │ código"
-        let linea_ctx = |n: usize| {
+        let linea_de_contexto = |n: usize| {
             format!(
                 " {} {:>ancho$} {}│{} ",
                 color::DIM,
                 n,
-                color_lin,
+                color_linea,
                 color::RESET,
-                ancho = ancho_num
+                ancho = ancho_numero
             )
         };
         // Margen vacío (sin número) para las líneas de subrayado.
@@ -469,43 +477,55 @@ impl ErrorForja {
             " {} {:>ancho$} {}│{} ",
             color::DIM,
             "",
-            color_lin,
+            color_linea,
             color::RESET,
-            ancho = ancho_num
+            ancho = ancho_numero
         );
 
-        if idx > 0 && idx - 1 < lines.len() {
-            result.push_str(&format!("{}{}\n", linea_ctx(idx), lines[idx - 1]));
+        if indice > 0 && indice - 1 < lineas.len() {
+            salida.push_str(&format!(
+                "{}{}\n",
+                linea_de_contexto(indice),
+                lineas[indice - 1]
+            ));
         }
-        if idx < lines.len() {
-            result.push_str(&format!("{}{}\n", linea_ctx(idx + 1), lines[idx]));
+        if indice < lineas.len() {
+            salida.push_str(&format!(
+                "{}{}\n",
+                linea_de_contexto(indice + 1),
+                lineas[indice]
+            ));
             let span = self.span_efectivo();
-            let indent = if span.inicio > 0 { span.inicio - 1 } else { 0 };
+            let sangria = if span.inicio > 0 { span.inicio - 1 } else { 0 };
             let largo = span.longitud();
             // Subrayado `^^^^` que abarca el span del error.
-            result.push_str(&format!(
+            salida.push_str(&format!(
                 "{}{}{}{}{}\n",
                 margen_vacio,
-                " ".repeat(indent as usize),
-                color_arrow,
+                " ".repeat(sangria as usize),
+                color_flecha,
                 "^".repeat(largo),
                 color::RESET
             ));
         } else {
-            result.push_str(&format!(
+            salida.push_str(&format!(
                 " {} {:>ancho$} {}│{} (fin del archivo)\n",
                 color::DIM,
                 self.linea,
-                color_lin,
+                color_linea,
                 color::RESET,
-                ancho = ancho_num
+                ancho = ancho_numero
             ));
         }
-        if idx + 1 < lines.len() && idx + 1 > 0 {
-            result.push_str(&format!("{}{}\n", linea_ctx(idx + 2), lines[idx + 1]));
+        if indice + 1 < lineas.len() && indice + 1 > 0 {
+            salida.push_str(&format!(
+                "{}{}\n",
+                linea_de_contexto(indice + 2),
+                lineas[indice + 1]
+            ));
         }
         if !self.sugerencia.is_empty() {
-            result.push_str(&format!(
+            salida.push_str(&format!(
                 " {} {}={} {}ayuda:{} {}\n",
                 color::DIM,
                 color::GRIS,
@@ -516,9 +536,9 @@ impl ErrorForja {
             ));
         }
         if color_mode() {
-            result
+            salida
         } else {
-            limpiar_ansi(&result)
+            limpiar_ansi(&salida)
         }
     }
 
@@ -548,39 +568,39 @@ impl ErrorForja {
         let span = self.span_efectivo();
         format!(
             r#"{{"error":"{}","codigo":"{}","linea":{},"columna":{},"span":{{"inicio":{},"fin":{}}},"mensaje":"{}","sugerencia":"{}"}}"#,
-            self.tipo_colorless(),
+            self.tipo_sin_color(),
             self.codigo_efectivo(),
             self.linea,
             self.columna,
             span.inicio,
             span.fin,
-            self.escape_json(&self.mensaje),
-            self.escape_json(&self.sugerencia),
+            self.escapar_json(&self.mensaje),
+            self.escapar_json(&self.sugerencia),
         )
     }
 
-    fn tipo_colorless(&self) -> String {
+    fn tipo_sin_color(&self) -> String {
         match &self.tipo {
             ErrorTipo::DemasiadaAnidacion { max: _ } => "DemasiadaAnidacion".to_string(),
             _ => format!("{:?}", self.tipo),
         }
     }
 
-    fn escape_json(&self, s: &str) -> String {
-        let mut result = String::with_capacity(s.len());
+    fn escapar_json(&self, s: &str) -> String {
+        let mut salida = String::with_capacity(s.len());
         for c in s.chars() {
             match c {
-                '\\' => result.push_str("\\\\"),
-                '"' => result.push_str("\\\""),
-                '\n' => result.push_str("\\n"),
-                '\r' => result.push_str("\\r"),
-                '\t' => result.push_str("\\t"),
-                '\0' => result.push_str("\\u0000"),
-                c if c.is_control() => result.push_str(&format!("\\u{:04x}", c as u32)),
-                c => result.push(c),
+                '\\' => salida.push_str("\\\\"),
+                '"' => salida.push_str("\\\""),
+                '\n' => salida.push_str("\\n"),
+                '\r' => salida.push_str("\\r"),
+                '\t' => salida.push_str("\\t"),
+                '\0' => salida.push_str("\\u0000"),
+                c if c.is_control() => salida.push_str(&format!("\\u{:04x}", c as u32)),
+                c => salida.push(c),
             }
         }
-        result
+        salida
     }
 }
 
@@ -600,24 +620,24 @@ pub fn categoria_educativa(tipo: &ErrorTipo) -> &'static str {
 
 /// Elimina las secuencias de escape ANSI de un texto (para `--no-color`).
 pub fn limpiar_ansi(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
+    let mut salida = String::with_capacity(s.len());
+    let mut caracteres = s.chars().peekable();
+    while let Some(c) = caracteres.next() {
         if c == '\x1b' {
             // Consumir hasta la letra final del CSI (rango @-~).
-            if chars.peek() == Some(&'[') {
-                chars.next();
-                for c2 in chars.by_ref() {
+            if caracteres.peek() == Some(&'[') {
+                caracteres.next();
+                for c2 in caracteres.by_ref() {
                     if ('@'..='~').contains(&c2) {
                         break;
                     }
                 }
             }
         } else {
-            result.push(c);
+            salida.push(c);
         }
     }
-    result
+    salida
 }
 
 impl fmt::Display for ErrorForja {
@@ -653,10 +673,10 @@ impl fmt::Display for ErrorForja {
     }
 }
 
-/// Formatea un error de runtime de la VM con su backtrace en español.
+/// Formatea un error de runtime de la VM con su pila en español.
 ///
 /// `mensaje` es la descripción clara del error (p. ej. "división por cero: ...")
-/// y `backtrace` es la pila de llamadas con nombres de función Forja y líneas.
+/// y `pila` es la pila de llamadas con nombres de función Forja y líneas.
 ///
 /// Salida típica:
 /// ```text
@@ -667,51 +687,51 @@ impl fmt::Display for ErrorForja {
 ///   en calcular (línea 27)
 ///   en <principal> (línea 3)
 /// ```
-pub fn formatear_error_runtime(mensaje: &str, backtrace: &[String]) -> String {
-    let mut out = String::new();
+pub fn formatear_error_runtime(mensaje: &str, pila: &[String]) -> String {
+    let mut salida = String::new();
     let cabecera = format!(
         "{} En ejecución: {}",
         distintivo("ERROR", color::ROJO_FONDO),
         mensaje
     );
     if color_mode() {
-        out.push_str(&cabecera);
+        salida.push_str(&cabecera);
     } else {
-        out.push_str(&limpiar_ansi(&cabecera));
+        salida.push_str(&limpiar_ansi(&cabecera));
     }
 
-    if !backtrace.is_empty() {
-        out.push_str("\n\n");
+    if !pila.is_empty() {
+        salida.push_str("\n\n");
         let titulo = "Pila de llamadas (más reciente primero):";
         if color_mode() {
-            out.push_str(&color::negrita(titulo));
+            salida.push_str(&color::negrita(titulo));
         } else {
-            out.push_str(titulo);
+            salida.push_str(titulo);
         }
-        for linea in backtrace {
-            out.push('\n');
-            out.push_str(linea);
+        for linea in pila {
+            salida.push('\n');
+            salida.push_str(linea);
         }
     }
 
-    out
+    salida
 }
 
 /// Renderiza una lista completa de errores con contexto
-pub fn mostrar_errores(source: &str, errores: &[ErrorForja], json_mode: bool) {
+pub fn mostrar_errores(fuente: &str, errores: &[ErrorForja], modo_json: bool) {
     if errores.is_empty() {
         return;
     }
 
-    if json_mode {
-        for err in errores {
-            eprintln!("{}", err.to_json());
+    if modo_json {
+        for fallo in errores {
+            eprintln!("{}", fallo.to_json());
         }
         return;
     }
 
     let total = errores.len();
-    for (i, err) in errores.iter().enumerate() {
+    for (i, fallo) in errores.iter().enumerate() {
         if total > 1 {
             eprintln!(
                 "{} {}/{}",
@@ -720,7 +740,7 @@ pub fn mostrar_errores(source: &str, errores: &[ErrorForja], json_mode: bool) {
                 total
             );
         }
-        eprintln!("{}", err.mostrar_con_contexto(source));
+        eprintln!("{}", fallo.mostrar_con_contexto(fuente));
     }
 }
 

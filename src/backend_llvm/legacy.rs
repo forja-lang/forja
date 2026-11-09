@@ -197,7 +197,7 @@ impl LlvmBackend {
     }
 
     /// Walk expression tree and collect Anterior sub-expressions identifiers
-    /// Returns list of (key, alloca_ptr) for each anterior snapshot
+    /// Devuelve la lista de (clave, alloca_ptr) de cada copia de `anterior`
     fn recolectar_anterior_temps(&mut self, expr: &Expresion) -> Result<(), String> {
         match expr {
             Expresion::Anterior(inner) => {
@@ -285,8 +285,8 @@ impl LlvmBackend {
         }
     }
 
-    /// Generate expression code for postcondiciones, replacing 'resultado' with ret_val
-    /// and 'anterior(expr)' with saved snapshot values
+    /// Genera el código de la expresión de la postcondición: reemplaza 'resultado'
+    /// por ret_val y 'anterior(expr)' por los valores guardados
     fn generar_expr_con_resultado(
         &mut self,
         expr: &Expresion,
@@ -311,7 +311,7 @@ impl LlvmBackend {
                             );
                             Ok(r)
                         } else {
-                            // No snapshot found, use current value
+                            // Sin copia guardada: usa el valor actual
                             if let Some(r) = self.load(name) {
                                 Ok(r)
                             } else {
@@ -533,7 +533,7 @@ impl LlvmBackend {
                 raw!(self.out, "{}:", end);
                 Ok("0".into())
             }
-            // For other expression types, return 0
+            // Para otros tipos de expresión, devuelve 0
             _ => Ok("0".into()),
         }
     }
@@ -654,7 +654,7 @@ impl LlvmBackend {
             Declaracion::AccesoMiembro { .. } => {}
             Declaracion::Retornar { valor, .. } => {
                 if self.postcondiciones_activas {
-                    // Store return value in retval alloca and jump to unified end
+                    // Guarda el valor de retorno en el alloca de retval y salta al final común
                     if let Some(v) = valor {
                         let r = self.expr(v)?;
                         let rp = self.retval_ptr.as_ref().unwrap();
@@ -756,7 +756,7 @@ impl LlvmBackend {
 
         // ─── Postcondiciones + retorno unificado ───
         if has_post {
-            // Jump to end label if the body didn't have an explicit return
+            // Salta a la etiqueta final si el cuerpo no tuvo un `retornar` explícito
             if !body
                 .iter()
                 .any(|x| matches!(x, Declaracion::Retornar { .. }))

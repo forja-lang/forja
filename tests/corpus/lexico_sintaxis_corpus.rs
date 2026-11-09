@@ -1641,6 +1641,12 @@ fn ffi_enlace_automatico_sin_resolver_de_imports() {
          funcion externa lstrlenA(s: Texto) -> Entero;\n\
          escribir(GetCurrentProcessId() > 0)\n\
          escribir(lstrlenA(\"hola\"))\n"
+    } else if cfg!(target_os = "macos") {
+        "importar externa \"libSystem.B.dylib\"\n\
+         funcion externa getpid() -> Entero;\n\
+         funcion externa strlen(s: Texto) -> Entero;\n\
+         escribir(getpid() > 0)\n\
+         escribir(strlen(\"hola\"))\n"
     } else {
         "importar externa \"libc.so.6\"\n\
          funcion externa getpid() -> Entero;\n\

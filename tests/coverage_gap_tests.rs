@@ -33,7 +33,7 @@ fn test_tk_canal_identifier() {
 #[test]
 fn test_tk_tipo_texto_as_ident() {
     let k = kinds("x: Texto");
-    // In the lexer, type keywords like Texto, Entero are lexed as identifiers
+    // En el lexer, las palabras de tipo como Texto o Entero se tokenizan como identificadores
     assert_eq!(k[2], TokenKind::Identificador("Texto".to_string()));
 }
 
@@ -631,7 +631,7 @@ fn test_uop_expand_set_line() {
 }
 
 // ============================================================
-// E2E: generate bytecode from source and verify it runs
+// De punta a punta: genera bytecode desde el fuente y verifica que corra
 // ============================================================
 
 #[test]

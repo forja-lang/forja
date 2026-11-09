@@ -171,7 +171,7 @@ fn test_uops_expand_multiples() {
 #[test]
 fn test_uops_expand_declare_idx() {
     let uops = expandir(vec![Opcode::DeclararIndice(3, true)]);
-    // DeclareIdx with mutable flag should expand
+    // DeclareIdx con bandera de mutabilidad debe expandirse
     assert_eq!(uops[0], Uop::DeclareInit(3));
 }
 

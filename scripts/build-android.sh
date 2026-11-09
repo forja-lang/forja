@@ -5,6 +5,7 @@
 # Detects NDK, installs missing rustup targets, and builds.
 # Usage:
 #   bash scripts/build-android.sh [target] [profile] [features]
+#   Compila `forja-android-rt` (runtime Android con GUI).
 #
 # Examples:
 #   bash scripts/build-android.sh                    # all targets, release
@@ -45,10 +46,11 @@ build_target() {
     echo "  Perfil:   ${PROFILE}"
     echo "  Features:  ${FEATURES}"
     echo "=========================================="
+    # Android usa `forja-android-rt`, que ya incluye la GUI (forja-gui-rt).
     if [ -n "$FEATURES" ]; then
-        cargo build --target "$target" --features "$FEATURES" --profile "$PROFILE"
+        cargo build -p forja-android-rt --target "$target" --features "$FEATURES" --profile "$PROFILE"
     else
-        cargo build --target "$target" --profile "$PROFILE"
+        cargo build -p forja-android-rt --target "$target" --profile "$PROFILE"
     fi
 }
 

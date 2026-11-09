@@ -141,24 +141,24 @@ mod tests {
 
     #[test]
     fn ubicacion_convierte_offsets() {
-        let mut map = SourceMap::new();
-        let f = map.agregar("a.fa", "uno\ndos\n");
+        let mut mapa = SourceMap::new();
+        let archivo = mapa.agregar("a.fa", "uno\ndos\n");
         assert_eq!(
-            map.ubicacion(Span::nuevo(f, 0, 3)).unwrap(),
+            mapa.ubicacion(Span::nuevo(archivo, 0, 3)).unwrap(),
             Ubicacion {
                 linea: 1,
                 columna: 1
             }
         );
         assert_eq!(
-            map.ubicacion(Span::nuevo(f, 4, 7)).unwrap(),
+            mapa.ubicacion(Span::nuevo(archivo, 4, 7)).unwrap(),
             Ubicacion {
                 linea: 2,
                 columna: 1
             }
         );
         assert_eq!(
-            map.ubicacion(Span::vacio(f, 6)).unwrap(),
+            mapa.ubicacion(Span::vacio(archivo, 6)).unwrap(),
             Ubicacion {
                 linea: 2,
                 columna: 3
@@ -168,21 +168,21 @@ mod tests {
 
     #[test]
     fn texto_y_longitud() {
-        let mut map = SourceMap::new();
-        let f = map.agregar("a.fa", "hola mundo");
-        let s = Span::nuevo(f, 5, 10);
-        assert_eq!(map.texto(s), Some("mundo"));
-        assert_eq!(s.longitud(), 5);
-        assert!(s.contiene(9));
-        assert!(!s.contiene(10));
+        let mut mapa = SourceMap::new();
+        let archivo = mapa.agregar("a.fa", "hola mundo");
+        let span = Span::nuevo(archivo, 5, 10);
+        assert_eq!(mapa.texto(span), Some("mundo"));
+        assert_eq!(span.longitud(), 5);
+        assert!(span.contiene(9));
+        assert!(!span.contiene(10));
     }
 
     #[test]
     fn archivos_distintos_no_se_unen() {
-        let mut map = SourceMap::new();
-        let a = map.agregar("a.fa", "aaa");
-        let b = map.agregar("b.fa", "bbb");
-        let sa = Span::nuevo(a, 0, 1);
-        assert_eq!(sa.hasta(Span::nuevo(b, 0, 2)), sa);
+        let mut mapa = SourceMap::new();
+        let archivo_a = mapa.agregar("a.fa", "aaa");
+        let archivo_b = mapa.agregar("b.fa", "bbb");
+        let span_a = Span::nuevo(archivo_a, 0, 1);
+        assert_eq!(span_a.hasta(Span::nuevo(archivo_b, 0, 2)), span_a);
     }
 }

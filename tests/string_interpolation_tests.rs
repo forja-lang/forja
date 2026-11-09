@@ -104,7 +104,7 @@ fn test_interp_con_index() {
 #[test]
 fn test_interp_texto_sin_interpolar() {
     let k = kinds(r#"escribir("Hola ${nombre}")"#);
-    // Still should have interpolation tokens
+    // Igual debe tener tokens de interpolación
     assert!(k.iter().any(|t| matches!(t, TokenKind::Identificador(_))));
 }
 
@@ -126,7 +126,7 @@ fn test_interp_escapada_backslash() {
 #[test]
 fn test_interp_vacia_dentro() {
     let k = kinds(r#"escribir("${}")"#);
-    // Should have empty text fragments
+    // Debe tener fragmentos de texto vacíos
     assert_eq!(k[2], TokenKind::Texto("".to_string()));
 }
 

@@ -678,7 +678,7 @@ impl TargetArch {
         match self {
             TargetArch::X86_64Windows | TargetArch::X86_64Linux => {
                 // movzx requires the source to be 8-bit or 16-bit.
-                // If dst == src, the source is the result of a setcc, so use the 8-bit name.
+                // Si destino == origen, el origen viene de un setcc: hay que usar el nombre de 8 bits.
                 let src8 = if dst == src {
                     Self::to_8bit_reg(src)
                 } else {
@@ -2512,7 +2512,7 @@ impl CompilerAsm {
                 // ── Epílogo con postcondiciones ──
                 self.emit_line("");
                 if has_post {
-                    // Jump to end label (if body didn't have explicit return)
+                    // Salta a la etiqueta final (si el cuerpo no tuvo un `retornar` explícito)
                     let has_explicit_ret = cuerpo
                         .iter()
                         .any(|x| matches!(x, Declaracion::Retornar { .. }));
@@ -2527,7 +2527,7 @@ impl CompilerAsm {
                     // Generate postcondición checks
                     for c in postcondiciones {
                         // We currently don't evaluate postcondición expressions in ASM for 'resultado'
-                        // For now, emit a comment that this is a postcondición check
+                        // Por ahora emite un comentario que marca la verificación de la postcondición
                         let msg = c
                             .mensaje
                             .clone()
@@ -2535,7 +2535,7 @@ impl CompilerAsm {
                         self.emit_line(format!("    // postcondición: {}", msg));
                         // Note: Full postcondición expression evaluation with 'resultado'
                         // would need a special expression compiler similar to generar_expr_con_resultado
-                        // For now, the value is in rax/x0
+                        // Por ahora el valor está en rax/x0
                     }
                 }
                 // Liberar todos los registros de variables de esta función
@@ -2706,7 +2706,7 @@ impl CompilerAsm {
                     }
                     self.emit_line(a.jump(&lbl));
                 } else if self.postcondiciones_activas {
-                    // Store return value and jump to end label
+                    // Guarda el valor de retorno y salta a la etiqueta final
                     if let Some(val) = valor {
                         self.compilar_expresion_asm(val);
                     } else {
@@ -2806,7 +2806,7 @@ impl CompilerAsm {
             Operador::Diferente => {
                 vec![a.cmp_reg_reg(ret, tmp), a.set_ne(ret), a.movzx(ret, ret)]
             }
-            // AND lógico: normalizar ambos operandos a 0/1 y hacer AND bit a bit
+            // AND lógico: normalizar ambos operandos a 0/1 y combinar bit a bit
             Operador::Y => {
                 let mut lines = a.bool_normalize(ret);
                 // Guardar lhs booleano en pila
@@ -3507,8 +3507,8 @@ impl CompilerAsm {
             }
             Expresion::Nada | Expresion::Ninguno => String::new(),
             Expresion::Resultado => {
-                // 'resultado' - return value in postcondiciones
-                // Return value is in rax/x0 (or on stack if postcondiciones_activas)
+                // 'resultado' es el valor de retorno dentro de la postcondición
+                // El valor de retorno está en rax/x0 (o en la pila si postcondiciones_activas)
                 let a = self.arch;
                 let ret = a.ret_reg();
                 if self.postcondiciones_activas {
@@ -3530,14 +3530,14 @@ impl CompilerAsm {
                         ));
                     }
                 } else {
-                    // Should not happen normally, but just return the current ret
+                    // No debería pasar; por las dudas devuelve el valor actual
                     self.emit_line("    // resultado (sin postcondición activa)");
                 }
                 ret.to_string()
             }
             Expresion::Anterior(expr) => {
-                // 'anterior(expr)' - value before function execution
-                // For now, just evaluate the expression (current value)
+                // 'anterior(expr)' es el valor previo a la ejecución de la función
+                // Por ahora evalúa la expresión y usa el valor actual
                 self.emit_line("    // anterior() - usando valor actual");
                 self.compilar_expresion_asm(expr)
             }
@@ -5226,6 +5226,7 @@ escribir(a[0])",
             nombre: "q.f".into(),
             argumentos: vec![],
         });
+        c.compilar_texto_operando(&Expresion::LiteralNumero(1));
         for arch in [TargetArch::AArch64, TargetArch::RiscV64] {
             let mut c = CompilerAsm::with_target(arch);
             c.variables.insert(

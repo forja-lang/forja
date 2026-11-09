@@ -229,7 +229,7 @@ pub struct ForjaFast {
 }
 
 // `FrmFast`, `ErrFast` y `TipoInferido` se extrajeron a `tipos.rs` y se
-// re-exportan arriba vía `pub use`/`pub use`.
+// re-exportan arriba vía `pub use`.
 
 impl Default for ForjaFast {
     fn default() -> Self {

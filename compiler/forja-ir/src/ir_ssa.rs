@@ -216,7 +216,7 @@ impl ArbolDominadores {
 
 /// Natural loop detector
 pub struct InfoBucles {
-    /// aristas_de_retorno[i] = (from, to) donde to domina from (back edge)
+    /// aristas_de_retorno[i] = (from, to) donde to domina from (arista de retorno)
     pub aristas_de_retorno: Vec<(IdBloque, IdBloque)>,
     /// bucles[i] = conjunto de bloques en el loop cuyo cabecera es i
     pub bucles: HashMap<IdBloque, HashSet<IdBloque>>,

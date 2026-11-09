@@ -228,7 +228,7 @@ pub enum Opcode {
     /// Para enteros: i % 2 → i & 1 (siempre branchless)
     ModuloDos(usize),
 
-    // === AVX2 PACKED SIMD codigos (for loop unrolling with AVX2) ===
+    // === opcodes SIMD empaquetados AVX2 (desenrollado de bucles) ===
     /// Packed Add: vars[i1..i1+3] += vars[i2..i2+3]; vars[i3..i3+3] += vars[i4..i4+3]
     /// Emite: vmovapd ymm0,[rbx+i1*8]; vaddpd ymm0,[rbx+i2*8]; vmovapd [rbx+i1*8],ymm0
     ///        vmovapd ymm1,[rbx+i3*8]; vaddpd ymm1,[rbx+i4*8]; vmovapd [rbx+i3*8],ymm1

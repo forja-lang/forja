@@ -373,7 +373,7 @@ impl ForjaFast {
                 if arr_val.es_arreglo() && sep_val.es_texto() {
                     let sep = self.get_str(sep_val.indice_texto()).clone();
                     let arr = self.get_arr(arr_val.indice_arreglo()).clone();
-                    // Collect string representations before allocating the result
+                    // Recolecta las representaciones de texto antes de reservar el resultado
                     let parts: Vec<String> = arr.iter().map(|v| self.mostrar_valor(v)).collect();
                     let result = parts.join(sep.as_ref());
                     let idx = self.alloc_str(Arc::from(result.as_str()));

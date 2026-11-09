@@ -44,7 +44,12 @@ cargo build                  # compila en modo debug
 cargo test --workspace       # tests del paquete raíz y de los crates
 cargo fmt --all -- --check   # verifica el formato
 cargo clippy --workspace --all-targets   # análisis estático (incluye crates)
+python scripts/nombres.py    # nombres en inglés pendientes (ver CONVENCIONES.md)
 ```
+
+Los nombres de tipos, funciones, campos y módulos siguen
+[`CONVENCIONES.md`](CONVENCIONES.md): identificadores en español, ASCII, una sola palabra por
+concepto. `scripts/nombres.py --max N` es la puerta que usará el CI para que la deuda no crezca.
 
 Compilaciones optimizadas:
 
