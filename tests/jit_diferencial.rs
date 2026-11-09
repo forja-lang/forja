@@ -202,13 +202,13 @@ fn generar_programa(rng: &mut Lcg) -> String {
     let mut s = String::new();
     s.push_str(&format!("variable a0 = {}\n", rng.rango(100)));
     for i in 1..n {
-        let prev = rng.rango(i as u64);
+        let anterior = rng.rango(i as u64);
         let k = rng.rango(50);
         let op = ["+", "-", "*"][rng.rango(3) as usize];
-        s.push_str(&format!("variable a{i} = a{prev} {op} {k}\n"));
+        s.push_str(&format!("variable a{i} = a{anterior} {op} {k}\n"));
     }
-    let last = rng.rango(n as u64);
-    s.push_str(&format!("escribir(a{last})\n"));
+    let ultimo = rng.rango(n as u64);
+    s.push_str(&format!("escribir(a{ultimo})\n"));
     s
 }
 
