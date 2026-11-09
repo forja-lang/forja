@@ -3,8 +3,8 @@ use forja::lexer::Lexer;
 use forja::parser::Parser;
 use forja::vm_fast::ForjaFast;
 
-fn ejecutar(source: &str) -> ForjaFast {
-    let mut lexer = Lexer::new(source);
+fn ejecutar(fuente: &str) -> ForjaFast {
+    let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
@@ -18,8 +18,8 @@ fn ejecutar(source: &str) -> ForjaFast {
     vm
 }
 
-fn output(source: &str) -> Vec<String> {
-    ejecutar(source).obtener_output().to_vec()
+fn output(fuente: &str) -> Vec<String> {
+    ejecutar(fuente).obtener_output().to_vec()
 }
 
 // ============================================================
@@ -315,8 +315,8 @@ fn test_vm_array_get() {
 
 #[test]
 fn test_vm_array_set() {
-    let out = output("variable arr = [1, 2, 3]\narr[1] = 99\nescribir(arr[1])");
-    assert_eq!(out, vec!["99"]);
+    let salida = output("variable arr = [1, 2, 3]\narr[1] = 99\nescribir(arr[1])");
+    assert_eq!(salida, vec!["99"]);
 }
 
 #[test]
@@ -429,8 +429,8 @@ fn test_vm_cuando_verdadero() {
 // ForjaFast — Async/Await runtime test
 // ============================================================
 
-fn output_fast(source: &str) -> Vec<String> {
-    let mut lexer = Lexer::new(source);
+fn output_fast(fuente: &str) -> Vec<String> {
+    let mut lexer = Lexer::new(fuente);
     let tokens = lexer.tokenize().unwrap();
     let mut parser = Parser::new(tokens);
     let programa = parser.parse().unwrap();
@@ -443,21 +443,21 @@ fn output_fast(source: &str) -> Vec<String> {
     // ForjaFast empieza en ip=0 (FunctionDef se skipean solos)
     vm.set_max_inst(50000);
     vm.ejecutar().unwrap();
-    let out = vm.output.lock().unwrap().clone();
-    out
+    let salida = vm.output.lock().unwrap().clone();
+    salida
 }
 
 #[test]
 fn test_vm_fast_hola_mundo() {
-    let out = output_fast("escribir(\"hola fast\")");
-    assert_eq!(out, vec!["hola fast"]);
+    let salida = output_fast("escribir(\"hola fast\")");
+    assert_eq!(salida, vec!["hola fast"]);
 }
 
 #[test]
 fn test_vm_fast_async_hilo_return_int() {
     // Las strings no se pueden pasar entre threads (str_heap es local).
     // Los enteros sí funcionan.
-    let out = output_fast(
+    let salida = output_fast(
         "funcion asincrona foo() -> Entero {
              retornar 42
          }
@@ -468,7 +468,7 @@ fn test_vm_fast_async_hilo_return_int() {
          }
          main()",
     );
-    assert_eq!(out, vec!["42"]);
+    assert_eq!(salida, vec!["42"]);
 }
 
 // (Strings no se pueden pasar entre threads porque str_heap es local a cada VM)
