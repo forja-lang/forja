@@ -10,12 +10,12 @@
 // ──────────────────────────────────────────────
 #[test]
 fn parentesis_infinitos_no_crashea() {
-    let input = "(".repeat(100_000);
-    let result = std::panic::catch_unwind(|| {
-        let _ = forja::transpilar_a_rust(&input);
+    let entrada = "(".repeat(100_000);
+    let resultado = std::panic::catch_unwind(|| {
+        let _ = forja::transpilar_a_rust(&entrada);
     });
     assert!(
-        result.is_ok(),
+        resultado.is_ok(),
         "100k paréntesis no deberían crashear el compilador"
     );
 }
@@ -27,11 +27,11 @@ fn parentesis_infinitos_no_crashea() {
 fn archivo_gigante_rechazado() {
     // Pasar una ruta inexistente verifica que leer_archivo_con_limite
     // retorna un error normal (Err) en vez de crashear (panic).
-    let result = std::panic::catch_unwind(|| {
+    let resultado = std::panic::catch_unwind(|| {
         let _ = forja::leer_archivo_con_limite("ruta_inexistente_xyz_fake", 10);
     });
     assert!(
-        result.is_ok(),
+        resultado.is_ok(),
         "leer_archivo_con_limite no debería crashear con ruta inexistente"
     );
 }
@@ -41,14 +41,14 @@ fn archivo_gigante_rechazado() {
 // ──────────────────────────────────────────────
 #[test]
 fn utf8_invalido_no_crashea() {
-    let input = vec![0xff, 0xfe, 0x00, 0x01];
-    let s = String::from_utf8_lossy(&input);
-    let result = std::panic::catch_unwind(|| {
+    let entrada = vec![0xff, 0xfe, 0x00, 0x01];
+    let s = String::from_utf8_lossy(&entrada);
+    let resultado = std::panic::catch_unwind(|| {
         let mut lexer = forja::lexer::Lexer::new(&s);
         let _ = lexer.tokenize();
     });
     assert!(
-        result.is_ok(),
+        resultado.is_ok(),
         "UTF-8 inválido no debería crashear el lexer"
     );
 }
@@ -58,12 +58,12 @@ fn utf8_invalido_no_crashea() {
 // ──────────────────────────────────────────────
 #[test]
 fn unicode_raro_no_crashea() {
-    let input = "𝒻𝑜𝓇𝒿𝒶\n零\n😀😀😀😀\n";
-    let result = std::panic::catch_unwind(|| {
-        let _ = forja::transpilar_a_rust(input);
+    let entrada = "𝒻𝑜𝓇𝒿𝒶\n零\n😀😀😀😀\n";
+    let resultado = std::panic::catch_unwind(|| {
+        let _ = forja::transpilar_a_rust(entrada);
     });
     assert!(
-        result.is_ok(),
+        resultado.is_ok(),
         "Unicode raro no debería crashear el compilador"
     );
 }
@@ -73,12 +73,12 @@ fn unicode_raro_no_crashea() {
 // ──────────────────────────────────────────────
 #[test]
 fn bytes_nulos_no_crashean() {
-    let input = "let a = \x00\x00\x001;\n".to_string();
-    let result = std::panic::catch_unwind(|| {
-        let mut lexer = forja::lexer::Lexer::new(&input);
+    let entrada = "let a = \x00\x00\x001;\n".to_string();
+    let resultado = std::panic::catch_unwind(|| {
+        let mut lexer = forja::lexer::Lexer::new(&entrada);
         let _ = lexer.tokenize();
     });
-    assert!(result.is_ok(), "Bytes NUL no deberían crashear el lexer");
+    assert!(resultado.is_ok(), "Bytes NUL no deberían crashear el lexer");
 }
 
 // ──────────────────────────────────────────────
@@ -89,7 +89,7 @@ fn bytes_nulos_no_crashean() {
 #[test]
 fn binario_fijo_no_crashea() {
     // Bytes representativos de casos borde: nulos, altos, control, etc.
-    let bytes: Vec<u8> = vec![
+    let octetos: Vec<u8> = vec![
         // NUL bytes y bajos
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
         0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,
@@ -98,13 +98,13 @@ fn binario_fijo_no_crashea() {
         0xf8, 0xfe, 0xff, // Bytes altos varios
         0xaa, 0xbb, 0xcc, 0xdd, 0xee,
     ];
-    let s = String::from_utf8_lossy(&bytes);
-    let result = std::panic::catch_unwind(|| {
+    let s = String::from_utf8_lossy(&octetos);
+    let resultado = std::panic::catch_unwind(|| {
         let mut lexer = forja::lexer::Lexer::new(&s);
         let _ = lexer.tokenize();
     });
     assert!(
-        result.is_ok(),
+        resultado.is_ok(),
         "Binario fijo (bytes extremos) no debería crashear el lexer"
     );
 }
@@ -120,12 +120,12 @@ fn expresion_gigante_no_crashea() {
     // Con 100 términos es seguro para el stack por defecto (~2MB por hilo).
     // TODO: Convertir la traversal semántica a iterativa para soportar 10k+ términos.
     let expr: String = (0..100).map(|i| format!("{} + ", i)).collect::<String>() + "0";
-    let input = format!("let x = {};\n", expr);
-    let result = std::panic::catch_unwind(|| {
-        let _ = forja::transpilar_a_rust(&input);
+    let entrada = format!("let x = {};\n", expr);
+    let resultado = std::panic::catch_unwind(|| {
+        let _ = forja::transpilar_a_rust(&entrada);
     });
     assert!(
-        result.is_ok(),
+        resultado.is_ok(),
         "Expresión grande (100 términos) no debería crashear"
     );
 }
